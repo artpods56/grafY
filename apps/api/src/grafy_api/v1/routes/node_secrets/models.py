@@ -66,7 +66,7 @@ class ProjectNodeSecretsResponse(NodeSecretApiModel):
     def from_state(
         cls,
         state: "GraphNodeSecretState",
-    ) -> "GraphNodeSecretsResponse":
+    ) -> "ProjectNodeSecretsResponse":
         return cls(
             project_id=state.project_id,
             graph_id=state.graph_id,

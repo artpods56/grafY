@@ -90,23 +90,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/v1/me/graphs": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** List Accessible Graphs */
-        readonly get: operations["list_accessible_graphs_v1_me_graphs_get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/v1/me/invitations": {
         readonly parameters: {
             readonly query?: never;
@@ -152,6 +135,23 @@ export interface paths {
         readonly put?: never;
         /** Decline Workspace Invitation */
         readonly post: operations["decline_workspace_invitation_v1_me_invitations__invitation_id__decline_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/me/projects": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Accessible Projects */
+        readonly get: operations["list_accessible_projects_v1_me_projects_get"];
+        readonly put?: never;
+        readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -380,356 +380,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/v1/workspaces/{workspace_id}/executions": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Start Graph Execution */
-        readonly post: operations["start_graph_execution_v1_workspaces__workspace_id__executions_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/executions/{execution_id}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Graph Execution */
-        readonly get: operations["get_graph_execution_v1_workspaces__workspace_id__executions__execution_id__get"];
-        readonly put?: never;
-        readonly post?: never;
-        /** Cancel Graph Execution */
-        readonly delete: operations["cancel_graph_execution_v1_workspaces__workspace_id__executions__execution_id__delete"];
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/executions/{execution_id}/events": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Stream Graph Execution Events */
-        readonly get: operations["stream_graph_execution_events_v1_workspaces__workspace_id__executions__execution_id__events_get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graph-folders": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** List Graph Folders */
-        readonly get: operations["list_graph_folders_v1_workspaces__workspace_id__graph_folders_get"];
-        readonly put?: never;
-        /** Create Graph Folder */
-        readonly post: operations["create_graph_folder_v1_workspaces__workspace_id__graph_folders_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graph-folders/{folder_id}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        readonly post?: never;
-        /** Delete Graph Folder */
-        readonly delete: operations["delete_graph_folder_v1_workspaces__workspace_id__graph_folders__folder_id__delete"];
-        readonly options?: never;
-        readonly head?: never;
-        /** Rename Graph Folder */
-        readonly patch: operations["rename_graph_folder_v1_workspaces__workspace_id__graph_folders__folder_id__patch"];
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** List Saved Graphs */
-        readonly get: operations["list_saved_graphs_v1_workspaces__workspace_id__graphs_get"];
-        readonly put?: never;
-        /** Create Saved Graph */
-        readonly post: operations["create_saved_graph_v1_workspaces__workspace_id__graphs_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Saved Graph */
-        readonly get: operations["get_saved_graph_v1_workspaces__workspace_id__graphs__graph_id__get"];
-        /** Update Saved Graph */
-        readonly put: operations["update_saved_graph_v1_workspaces__workspace_id__graphs__graph_id__put"];
-        readonly post?: never;
-        /** Delete Saved Graph */
-        readonly delete: operations["delete_saved_graph_v1_workspaces__workspace_id__graphs__graph_id__delete"];
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/archive": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        /** Archive Graph */
-        readonly put: operations["archive_graph_v1_workspaces__workspace_id__graphs__graph_id__archive_put"];
-        readonly post?: never;
-        /** Restore Graph */
-        readonly delete: operations["restore_graph_v1_workspaces__workspace_id__graphs__graph_id__archive_delete"];
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Checkpoint Graph */
-        readonly post: operations["checkpoint_graph_v1_workspaces__workspace_id__graphs__graph_id__checkpoint_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/commands": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Submit Graph Command */
-        readonly post: operations["submit_graph_command_v1_workspaces__workspace_id__graphs__graph_id__commands_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** List Graph Executions */
-        readonly get: operations["list_graph_executions_v1_workspaces__workspace_id__graphs__graph_id__executions_get"];
-        readonly put?: never;
-        /** Start Saved Graph Execution */
-        readonly post: operations["start_saved_graph_execution_v1_workspaces__workspace_id__graphs__graph_id__executions_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions/{execution_id}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Graph Execution History */
-        readonly get: operations["get_graph_execution_history_v1_workspaces__workspace_id__graphs__graph_id__executions__execution_id__get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/folder": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        /** Assign Graph Folder */
-        readonly put: operations["assign_graph_folder_v1_workspaces__workspace_id__graphs__graph_id__folder_put"];
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Canonical Collaborative Head */
-        readonly get: operations["get_canonical_collaborative_head_v1_workspaces__workspace_id__graphs__graph_id__head_document_get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/materializations": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Graph Materializations */
-        readonly get: operations["get_graph_materializations_v1_workspaces__workspace_id__graphs__graph_id__materializations_get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/node-secrets": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Node Secret Status */
-        readonly get: operations["get_node_secret_status_v1_workspaces__workspace_id__graphs__graph_id__node_secrets_get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        /** Configure Node Secret */
-        readonly put: operations["configure_node_secret_v1_workspaces__workspace_id__graphs__graph_id__nodes__node_id__secrets__name__put"];
-        readonly post?: never;
-        /** Delete Node Secret */
-        readonly delete: operations["delete_node_secret_v1_workspaces__workspace_id__graphs__graph_id__nodes__node_id__secrets__name__delete"];
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/opened": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Record Graph Open */
-        readonly post: operations["record_graph_open_v1_workspaces__workspace_id__graphs__graph_id__opened_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/{graph_id}/star": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        /** Star Graph */
-        readonly put: operations["star_graph_v1_workspaces__workspace_id__graphs__graph_id__star_put"];
-        readonly post?: never;
-        /** Unstar Graph */
-        readonly delete: operations["unstar_graph_v1_workspaces__workspace_id__graphs__graph_id__star_delete"];
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/graphs/copies": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Copy Exact Head */
-        readonly post: operations["copy_exact_head_v1_workspaces__workspace_id__graphs_copies_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/v1/workspaces/{workspace_id}/invitation-candidates/resolve": {
         readonly parameters: {
             readonly query?: never;
@@ -819,7 +469,7 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/v1/workspaces/{workspace_id}/library/artifacts/from-run": {
+    readonly "/v1/workspaces/{workspace_id}/library/artifacts/from-instance": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -828,8 +478,8 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** Save Library Artifact From Run */
-        readonly post: operations["save_library_artifact_from_run_v1_workspaces__workspace_id__library_artifacts_from_run_post"];
+        /** Save Library Artifact From Instance */
+        readonly post: operations["save_library_artifact_from_instance_v1_workspaces__workspace_id__library_artifacts_from_instance_post"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -964,57 +614,6 @@ export interface paths {
         readonly patch: operations["change_member_role_v1_workspaces__workspace_id__members__user_id__patch"];
         readonly trace?: never;
     };
-    readonly "/v1/workspaces/{workspace_id}/modules": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** List Modules */
-        readonly get: operations["list_modules_v1_workspaces__workspace_id__modules_get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/modules/{module_id}": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Module */
-        readonly get: operations["get_module_v1_workspaces__workspace_id__modules__module_id__get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
-    readonly "/v1/workspaces/{workspace_id}/modules/publish": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly get?: never;
-        readonly put?: never;
-        /** Publish Module Release */
-        readonly post: operations["publish_module_release_v1_workspaces__workspace_id__modules_publish_post"];
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/v1/workspaces/{workspace_id}/nodes": {
         readonly parameters: {
             readonly query?: never;
@@ -1067,7 +666,25 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/v1/workspaces/{workspace_id}/runs": {
+    readonly "/v1/workspaces/{workspace_id}/project-folders": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Project Folders */
+        readonly get: operations["list_project_folders_v1_workspaces__workspace_id__project_folders_get"];
+        readonly put?: never;
+        /** Create Project Folder */
+        readonly post: operations["create_project_folder_v1_workspaces__workspace_id__project_folders_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/project-folders/{folder_id}": {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -1076,8 +693,373 @@ export interface paths {
         };
         readonly get?: never;
         readonly put?: never;
-        /** Run Graph */
-        readonly post: operations["run_graph_v1_workspaces__workspace_id__runs_post"];
+        readonly post?: never;
+        /** Delete Project Folder */
+        readonly delete: operations["delete_project_folder_v1_workspaces__workspace_id__project_folders__folder_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        /** Rename Project Folder */
+        readonly patch: operations["rename_project_folder_v1_workspaces__workspace_id__project_folders__folder_id__patch"];
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Projects */
+        readonly get: operations["list_projects_v1_workspaces__workspace_id__projects_get"];
+        readonly put?: never;
+        /** Create Project */
+        readonly post: operations["create_project_v1_workspaces__workspace_id__projects_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Project */
+        readonly get: operations["get_project_v1_workspaces__workspace_id__projects__project_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        /** Delete Project */
+        readonly delete: operations["delete_project_v1_workspaces__workspace_id__projects__project_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/archive": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Archive Project */
+        readonly put: operations["archive_project_v1_workspaces__workspace_id__projects__project_id__archive_put"];
+        readonly post?: never;
+        /** Restore Project */
+        readonly delete: operations["restore_project_v1_workspaces__workspace_id__projects__project_id__archive_delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/checkpoints": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Project Checkpoints */
+        readonly get: operations["list_project_checkpoints_v1_workspaces__workspace_id__projects__project_id__checkpoints_get"];
+        readonly put?: never;
+        /** Checkpoint Project */
+        readonly post: operations["checkpoint_project_v1_workspaces__workspace_id__projects__project_id__checkpoints_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/checkpoints/{revision}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Project Checkpoint */
+        readonly get: operations["get_project_checkpoint_v1_workspaces__workspace_id__projects__project_id__checkpoints__revision__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/checkpoints/{revision}/restore": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Restore Project Checkpoint
+         * @description Bring a retained checkpoint back as the current state.
+         *
+         *     Checkpoints are append-only, so this writes the old document forward under a new
+         *     revision and reopens the room: peers rehydrate rather than rewind.
+         */
+        readonly post: operations["restore_project_checkpoint_v1_workspaces__workspace_id__projects__project_id__checkpoints__revision__restore_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/commands": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Submit Project Commands */
+        readonly post: operations["submit_project_commands_v1_workspaces__workspace_id__projects__project_id__commands_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/folder": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Assign Project Folder */
+        readonly put: operations["assign_project_folder_v1_workspaces__workspace_id__projects__project_id__folder_put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/instances": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * List Graph Instances
+         * @description Derived state for every instance of one Graph: fresh, queued, running,
+         *     failed or stale. Nothing here is stored; it is read off the document, the
+         *     result store and what this API owner has in flight.
+         */
+        readonly get: operations["list_graph_instances_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__instances_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Configure Node Secret */
+        readonly put: operations["configure_node_secret_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__put"];
+        readonly post?: never;
+        /** Delete Node Secret */
+        readonly delete: operations["delete_node_secret_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/head": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Project Head */
+        readonly get: operations["get_project_head_v1_workspaces__workspace_id__projects__project_id__head_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/instance-result": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Instance Result
+         * @description One instance's state and the last result it produced, possibly stale.
+         *
+         *     Outputs are artifact references and inline values, so this route demands
+         *     ``view_artifacts`` as well as ``view_runs``: the first says you may see that an
+         *     instance ran, the second that you may read what it handed back. Both go through
+         *     ``require_workspace_capability`` rather than one check plus ``access.require``,
+         *     because a Personal Access Token's scope is only consulted on that path — a
+         *     narrower token must not reach outputs its scope leaves out.
+         */
+        readonly get: operations["get_instance_result_v1_workspaces__workspace_id__projects__project_id__instance_result_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/node-secrets": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Node Secret Status
+         * @description Secret status for one Graph of the Project's live head.
+         *
+         *     A Project holds several Graphs and a secret belongs to a node of exactly one of
+         *     them, so the listing stays per-Graph and defaults to the Graph a new Project
+         *     opens on.
+         */
+        readonly get: operations["get_node_secret_status_v1_workspaces__workspace_id__projects__project_id__node_secrets_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/opened": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Record Project Open */
+        readonly post: operations["record_project_open_v1_workspaces__workspace_id__projects__project_id__opened_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/runs": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Runs */
+        readonly get: operations["list_runs_v1_workspaces__workspace_id__projects__project_id__runs_get"];
+        readonly put?: never;
+        /**
+         * Start Run
+         * @description Ask for a Graph's targets to become fresh, and start satisfying the demand.
+         */
+        readonly post: operations["start_run_v1_workspaces__workspace_id__projects__project_id__runs_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/runs/{run_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Run */
+        readonly get: operations["get_run_v1_workspaces__workspace_id__projects__project_id__runs__run_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/runs/{run_id}/cancel": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Cancel Run
+         * @description Withdraw one Run's demand; a computation another Run still needs goes on.
+         */
+        readonly post: operations["cancel_run_v1_workspaces__workspace_id__projects__project_id__runs__run_id__cancel_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/star": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Star Project */
+        readonly put: operations["star_project_v1_workspaces__workspace_id__projects__project_id__star_put"];
+        readonly post?: never;
+        /** Unstar Project */
+        readonly delete: operations["unstar_project_v1_workspaces__workspace_id__projects__project_id__star_delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/copies": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Copy Exact Head */
+        readonly post: operations["copy_exact_head_v1_workspaces__workspace_id__projects_copies_post"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1139,6 +1121,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AddCallNodeCommand
+         * @description Place a sibling Graph as a node in another Graph.
+         */
+        readonly AddCallNodeCommand: {
+            /** Callee Graph Id */
+            readonly callee_graph_id: string;
+            /** Graph Id */
+            readonly graph_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "add_call_node";
+            /** Node Id */
+            readonly node_id: string;
+            readonly position: components["schemas"]["GraphPoint"];
+        };
         /** AddEdgeCommand */
         readonly AddEdgeCommand: {
             readonly edge: components["schemas"]["GraphEdge"];
@@ -1147,6 +1147,19 @@ export interface components {
              * @enum {string}
              */
             readonly kind: "add_edge";
+        };
+        /** AddGraphCommand */
+        readonly AddGraphCommand: {
+            readonly document?: components["schemas"]["GraphDocument"];
+            /** Graph Id */
+            readonly graph_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "add_graph";
+            /** Name */
+            readonly name: string;
         };
         /** AddNodeCommand */
         readonly AddNodeCommand: {
@@ -1209,13 +1222,6 @@ export interface components {
             /** Version */
             readonly version: number;
         };
-        /** ArtifactConversionRequest */
-        readonly ArtifactConversionRequest: {
-            /** Id */
-            readonly id: string;
-            /** Version */
-            readonly version: number;
-        };
         /** ArtifactConversionSpecResponse */
         readonly ArtifactConversionSpecResponse: {
             readonly key: components["schemas"]["ArtifactConversionKeyResponse"];
@@ -1241,6 +1247,7 @@ export interface components {
             readonly format: string;
         };
         readonly ArtifactInteractionScalar: string | number | boolean | null;
+        readonly ArtifactOutputValue: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
         /** ArtifactRef */
         readonly ArtifactRef: {
             /**
@@ -1311,12 +1318,6 @@ export interface components {
             /** Text */
             readonly text?: string | null;
         };
-        /** ArtifactTypeBindingModel */
-        readonly ArtifactTypeBindingModel: {
-            readonly artifact_type: components["schemas"]["ArtifactTypeKeyResponse"];
-            /** Variable */
-            readonly variable: string;
-        };
         /** ArtifactTypeKey */
         readonly ArtifactTypeKey: {
             /** Id */
@@ -1351,13 +1352,13 @@ export interface components {
             /** Title */
             readonly title: string;
         };
-        /** AssignGraphFolderRequest */
-        readonly AssignGraphFolderRequest: {
+        /** AssignProjectFolderRequest */
+        readonly AssignProjectFolderRequest: {
             /** Folder Id */
             readonly folder_id: string | null;
         };
-        /** CheckpointGraphRequest */
-        readonly CheckpointGraphRequest: {
+        /** CheckpointProjectRequest */
+        readonly CheckpointProjectRequest: {
             /**
              * Expected Room Epoch
              * Format: uuid
@@ -1366,11 +1367,11 @@ export interface components {
             /** Expected Sequence */
             readonly expected_sequence: number;
         };
-        /** CheckpointGraphResponse */
-        readonly CheckpointGraphResponse: {
-            readonly head: components["schemas"]["CollaborativeHeadResponse"];
-            /** Saved Revision */
-            readonly saved_revision: number;
+        /** CheckpointProjectResponse */
+        readonly CheckpointProjectResponse: {
+            /** Checkpoint Revision */
+            readonly checkpoint_revision: number;
+            readonly head: components["schemas"]["ProjectHeadResponse"];
         };
         /** ClearNodeArtifactTypeBindingCommand */
         readonly ClearNodeArtifactTypeBindingCommand: {
@@ -1386,44 +1387,14 @@ export interface components {
             readonly variable: string;
         };
         /**
-         * CollaborativeHeadResponse
-         * @description Collaboration metadata paired with the canonical saved graph document.
-         */
-        readonly CollaborativeHeadResponse: {
-            /** Checkpoint Revision */
-            readonly checkpoint_revision: number;
-            /** Checkpoint Sequence */
-            readonly checkpoint_sequence: number;
-            /** Collaboration Sequence */
-            readonly collaboration_sequence: number;
-            readonly document: components["schemas"]["GraphDocument"];
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-            /** Name */
-            readonly name: string;
-            /**
-             * Room Epoch
-             * Format: uuid
-             */
-            readonly room_epoch: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-        };
-        /**
          * CommandReceiptOutcome
          * @enum {string}
          */
         readonly CommandReceiptOutcome: "accepted" | "idempotent_replay";
         /** ConfigureNodeSecretRequest */
         readonly ConfigureNodeSecretRequest: {
-            /** Expected Graph Revision */
-            readonly expected_graph_revision: number;
+            /** Expected Head Sequence */
+            readonly expected_head_sequence: number;
             /**
              * Value
              * Format: password
@@ -1458,10 +1429,15 @@ export interface components {
             /** Name */
             readonly name?: string | null;
             /**
-             * Source Graph Id
+             * Project Id
              * Format: uuid
              */
-            readonly source_graph_id: string;
+            readonly project_id: string;
+            /**
+             * Source Project Id
+             * Format: uuid
+             */
+            readonly source_project_id: string;
             /**
              * Source Workspace Id
              * Format: uuid
@@ -1478,11 +1454,24 @@ export interface components {
             /** Parent Id */
             readonly parent_id: string | null;
         };
-        /** CreateSavedGraphRequest */
-        readonly CreateSavedGraphRequest: {
-            readonly document: components["schemas"]["GraphDocument"];
+        /** CreateProjectRequest */
+        readonly CreateProjectRequest: {
+            /** Command Id */
+            readonly command_id?: string | null;
+            /**
+             * Graph Id
+             * @default main
+             */
+            readonly graph_id: string;
+            /**
+             * Graph Name
+             * @default Main
+             */
+            readonly graph_name: string;
             /** Name */
             readonly name: string;
+            /** Project Id */
+            readonly project_id?: string | null;
         };
         /**
          * CreateUploadRequest
@@ -1506,11 +1495,6 @@ export interface components {
             readonly node: components["schemas"]["GraphNode"];
             /** Source Node Id */
             readonly source_node_id: string;
-        };
-        /** FieldProjectionRequest */
-        readonly FieldProjectionRequest: {
-            /** Path */
-            readonly path: readonly string[];
         };
         /** FieldProjectionResponse */
         readonly FieldProjectionResponse: {
@@ -1801,105 +1785,32 @@ export interface components {
             /** Variable */
             readonly variable: string;
         };
-        /** GraphBrowserCreatorResponse */
-        readonly GraphBrowserCreatorResponse: {
-            /** Display Name */
-            readonly display_name: string | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            readonly id: string;
-        };
-        /** GraphBrowserFolderResponse */
-        readonly GraphBrowserFolderResponse: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            readonly id: string;
-            /** Name */
-            readonly name: string;
-        };
-        /**
-         * GraphBrowserItemResponse
-         * @description The shared discovery summary plus workspace location and per-user state.
-         */
-        readonly GraphBrowserItemResponse: {
-            /** Archived */
-            readonly archived: boolean;
-            /** Archived At */
-            readonly archived_at: string | null;
-            readonly creator: components["schemas"]["GraphBrowserCreatorResponse"] | null;
-            /** Draft Pending */
-            readonly draft_pending: boolean;
-            /** Edge Count */
-            readonly edge_count: number;
-            readonly folder: components["schemas"]["GraphBrowserFolderResponse"] | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            readonly id: string;
-            /** Last Opened At */
-            readonly last_opened_at: string | null;
-            readonly location: components["schemas"]["GraphBrowserLocationResponse"];
-            /** Name */
-            readonly name: string;
-            /** Node Count */
-            readonly node_count: number;
-            /** Revision */
-            readonly revision: number;
-            /** Starred */
-            readonly starred: boolean;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-        };
-        /** GraphBrowserListResponse */
-        readonly GraphBrowserListResponse: {
-            /** Graphs */
-            readonly graphs: readonly components["schemas"]["GraphBrowserItemResponse"][];
-        };
-        /** GraphBrowserLocationResponse */
-        readonly GraphBrowserLocationResponse: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            readonly id: string;
-            readonly kind: components["schemas"]["WorkspaceKind"];
-            /** Name */
-            readonly name: string;
-            /** Slug */
-            readonly slug: string;
-        };
-        /** GraphCommandReceiptResponse */
-        readonly GraphCommandReceiptResponse: {
-            /** Accepted Sequence */
-            readonly accepted_sequence: number;
-            /**
-             * Command Id
-             * Format: uuid
-             */
-            readonly command_id: string;
-            /** Deduplicated */
-            readonly deduplicated: boolean;
-            readonly outcome: components["schemas"]["CommandReceiptOutcome"];
-            /**
-             * Room Epoch
-             * Format: uuid
-             */
-            readonly room_epoch: string;
-        };
         /** GraphConversion */
         readonly GraphConversion: {
             /** Id */
             readonly id: string;
             /** Version */
             readonly version: number;
+        };
+        /**
+         * GraphDefinition
+         * @description One Graph of a Project: its interface, its nodes, its layout.
+         *
+         *     A call node is a ``GraphNode`` with ``kind == "call"``, ``operator_id``
+         *     set to the callee Graph's id and ``operator_version == 1``. Boundary nodes
+         *     declare the interface: a builtin running ``graph.input`` or ``graph.output``
+         *     whose config carries ``public_name`` and, for inputs only, ``required``.
+         */
+        readonly GraphDefinition: {
+            readonly document: components["schemas"]["GraphDocument"];
+            /** Id */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /** Refresh Generations */
+            readonly refresh_generations?: {
+                readonly [key: string]: number;
+            };
         };
         /** GraphDocument */
         readonly GraphDocument: {
@@ -1959,162 +1870,12 @@ export interface components {
             /** To Port */
             readonly to_port: string;
         };
-        /** GraphExecutionDetailResponse */
-        readonly GraphExecutionDetailResponse: {
-            /** Artifact Count */
-            readonly artifact_count: number;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            readonly created_at: string;
-            /** Error */
-            readonly error: string | null;
-            /**
-             * Execution Id
-             * Format: uuid
-             */
-            readonly execution_id: string;
-            /** Finished At */
-            readonly finished_at: string | null;
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-            /** Graph Revision */
-            readonly graph_revision: number;
-            /** Node Count */
-            readonly node_count: number;
-            /** Node Results */
-            readonly node_results: readonly components["schemas"]["GraphExecutionNodeResultResponse"][];
-            /** Requested Node Ids */
-            readonly requested_node_ids: readonly string[];
-            readonly scope: components["schemas"]["GraphExecutionScope"];
-            /** Started At */
-            readonly started_at: string | null;
-            readonly status: components["schemas"]["GraphExecutionStatus"];
-            /** Workflow Run Id */
-            readonly workflow_run_id: string | null;
-        };
-        /** GraphExecutionListResponse */
-        readonly GraphExecutionListResponse: {
-            /** Items */
-            readonly items: readonly components["schemas"]["GraphExecutionSummaryResponse"][];
-            /** Next Cursor */
-            readonly next_cursor: string | null;
-        };
-        /** GraphExecutionNodeResultResponse */
-        readonly GraphExecutionNodeResultResponse: {
-            /**
-             * Completed At
-             * Format: date-time
-             */
-            readonly completed_at: string;
-            /** Diagnostics */
-            readonly diagnostics?: {
-                readonly [key: string]: unknown;
-            } | null;
-            /** Error */
-            readonly error: string | null;
-            /** Node Id */
-            readonly node_id: string;
-            /** Outputs */
-            readonly outputs: readonly components["schemas"]["RunPortOutputResponse"][];
-            /** Position */
-            readonly position: number;
-            readonly status: components["schemas"]["GraphExecutionNodeStatus"];
-        };
-        /** @enum {string} */
-        readonly GraphExecutionNodeStatus: "succeeded" | "failed" | "skipped";
-        /** @enum {string} */
-        readonly GraphExecutionScope: "all" | "selected" | "selected-with-dependencies";
-        /** @enum {string} */
-        readonly GraphExecutionStatus: "queued" | "running" | "cancelling" | "cancelled" | "succeeded" | "failed";
-        /** GraphExecutionSummaryResponse */
-        readonly GraphExecutionSummaryResponse: {
-            /** Artifact Count */
-            readonly artifact_count: number;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            readonly created_at: string;
-            /** Error */
-            readonly error: string | null;
-            /**
-             * Execution Id
-             * Format: uuid
-             */
-            readonly execution_id: string;
-            /** Finished At */
-            readonly finished_at: string | null;
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-            /** Graph Revision */
-            readonly graph_revision: number;
-            /** Node Count */
-            readonly node_count: number;
-            /** Requested Node Ids */
-            readonly requested_node_ids: readonly string[];
-            readonly scope: components["schemas"]["GraphExecutionScope"];
-            /** Started At */
-            readonly started_at: string | null;
-            readonly status: components["schemas"]["GraphExecutionStatus"];
-            /** Workflow Run Id */
-            readonly workflow_run_id: string | null;
-        };
-        /** GraphFolderListResponse */
-        readonly GraphFolderListResponse: {
-            /** Folders */
-            readonly folders: readonly components["schemas"]["GraphFolderResponse"][];
-        };
-        /** GraphFolderResponse */
-        readonly GraphFolderResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            readonly created_at: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            readonly id: string;
-            /** Name */
-            readonly name: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-        };
-        /** GraphFolderWriteRequest */
-        readonly GraphFolderWriteRequest: {
-            /** Name */
-            readonly name: string;
-        };
         /** GraphInputPlug */
         readonly GraphInputPlug: {
             /** Id */
             readonly id: string;
             /** Port */
             readonly port: string;
-        };
-        /** GraphMaterializationsResponse */
-        readonly GraphMaterializationsResponse: {
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-            /** Graph Revision */
-            readonly graph_revision: number;
-            /** Node Runs */
-            readonly node_runs: readonly components["schemas"]["RunNodeResponse"][];
         };
         /** GraphNode */
         readonly GraphNode: {
@@ -2157,34 +1918,6 @@ export interface components {
             readonly body_height?: number | null;
             /** Width */
             readonly width?: number | null;
-        };
-        /** GraphNodeSecretsResponse */
-        readonly GraphNodeSecretsResponse: {
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-            /** Graph Revision */
-            readonly graph_revision: number;
-            /** Secrets */
-            readonly secrets: readonly components["schemas"]["NodeSecretStatusResponse"][];
-            /** Unresolved Nodes */
-            readonly unresolved_nodes: readonly components["schemas"]["NodeSecretResolutionResponse"][];
-        };
-        /** GraphOrganizationResponse */
-        readonly GraphOrganizationResponse: {
-            /** Archived */
-            readonly archived: boolean;
-            /** Archived At */
-            readonly archived_at: string | null;
-            /** Folder Id */
-            readonly folder_id: string | null;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
         };
         /**
          * GraphOrigin
@@ -2343,6 +2076,73 @@ export interface components {
             /** Upload Key */
             readonly upload_key: string;
         };
+        /**
+         * InGraphCommand
+         * @description Apply one per-graph command to one Graph of the Project.
+         */
+        readonly InGraphCommand: {
+            /** Command */
+            readonly command: components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
+            /** Graph Id */
+            readonly graph_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "in_graph";
+        };
+        /** InstanceKeyResponse */
+        readonly InstanceKeyResponse: {
+            /** Call Path */
+            readonly call_path: readonly string[];
+            /** Graph Id */
+            readonly graph_id: string;
+            /** Map Index */
+            readonly map_index?: number | null;
+            /** Node Id */
+            readonly node_id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            readonly project_id: string;
+        };
+        /** InstanceResultResponse */
+        readonly InstanceResultResponse: {
+            /** Created At */
+            readonly created_at: string | null;
+            readonly instance: components["schemas"]["InstanceStateResponse"];
+            /** Outputs */
+            readonly outputs: {
+                readonly [key: string]: components["schemas"]["ArtifactOutputValue"];
+            } | null;
+            /** Result Fingerprint */
+            readonly result_fingerprint: string | null;
+        };
+        /**
+         * InstanceState
+         * @enum {string}
+         */
+        readonly InstanceState: "fresh" | "stale" | "queued" | "running" | "failed";
+        /**
+         * InstanceStateListResponse
+         * @description Every instance of one Graph of the head document, with its derived state.
+         */
+        readonly InstanceStateListResponse: {
+            /** Instances */
+            readonly instances: readonly components["schemas"]["InstanceStateResponse"][];
+        };
+        /** InstanceStateResponse */
+        readonly InstanceStateResponse: {
+            /** Error */
+            readonly error: string | null;
+            /** Fingerprint */
+            readonly fingerprint: string;
+            readonly key: components["schemas"]["InstanceKeyResponse"];
+            /** Last Result Fingerprint */
+            readonly last_result_fingerprint: string | null;
+            readonly state: components["schemas"]["InstanceState"];
+        };
         /** LibraryFolderListResponse */
         readonly LibraryFolderListResponse: {
             /** Folders */
@@ -2386,26 +2186,27 @@ export interface components {
             /** Name */
             readonly name: string;
             readonly provenance: components["schemas"]["LibraryProvenanceResponse"];
-            readonly run?: components["schemas"]["LibraryRunResponse"] | null;
         };
         /** LibraryListResponse */
         readonly LibraryListResponse: {
             /** Items */
             readonly items: readonly components["schemas"]["LibraryItemResponse"][];
         };
-        /**
-         * LibraryProvenanceResponse
-         * @description The birth record frozen when the artifact entered the Library.
-         */
+        /** LibraryProvenanceResponse */
         readonly LibraryProvenanceResponse: {
-            /** Execution Id */
-            readonly execution_id?: string | null;
+            /**
+             * Call Path
+             * @default []
+             */
+            readonly call_path: readonly string[];
             /** Graph Id */
             readonly graph_id?: string | null;
-            /** Graph Revision */
-            readonly graph_revision?: number | null;
             /** Graph Title */
             readonly graph_title?: string | null;
+            /** Item Index */
+            readonly item_index?: number | null;
+            /** Map Index */
+            readonly map_index?: number | null;
             /** Name */
             readonly name?: string | null;
             /** Node Id */
@@ -2414,128 +2215,29 @@ export interface components {
             readonly node_title?: string | null;
             /** Original Filename */
             readonly original_filename?: string | null;
+            /** Output Port */
+            readonly output_port?: string | null;
+            /** Project Id */
+            readonly project_id?: string | null;
+            /** Project Title */
+            readonly project_title?: string | null;
+            /** Result Fingerprint */
+            readonly result_fingerprint?: string | null;
             /**
              * Saved At
              * Format: date-time
              */
             readonly saved_at: string;
-            /**
-             * Source
-             * @enum {string}
-             */
-            readonly source: "run" | "upload";
+            readonly source: components["schemas"]["LibrarySource"];
         };
-        /**
-         * LibraryRunResponse
-         * @description The retained run behind a run-sourced Library item.
-         *
-         *     Present only while execution history still holds the run, which is exactly
-         *     when the item can link back to it.
-         */
-        readonly LibraryRunResponse: {
-            /**
-             * Execution Id
-             * Format: uuid
-             */
-            readonly execution_id: string;
-            /** Finished At */
-            readonly finished_at?: string | null;
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-        };
+        /** @enum {string} */
+        readonly LibrarySource: "instance" | "upload";
         /** MagicSegmentResponse */
         readonly MagicSegmentResponse: {
             /** Offset */
             readonly offset: number;
             /** Value */
             readonly value: string;
-        };
-        /** ModuleListResponse */
-        readonly ModuleListResponse: {
-            /** Modules */
-            readonly modules: readonly components["schemas"]["ModuleResponse"][];
-        };
-        /** ModulePortResponse */
-        readonly ModulePortResponse: {
-            readonly artifact_type: components["schemas"]["ArtifactTypeKeyResponse"];
-            /** Description */
-            readonly description?: string | null;
-            /** Direction */
-            readonly direction: string;
-            /** Name */
-            readonly name: string;
-            /** Required */
-            readonly required: boolean;
-        };
-        /**
-         * ModulePublicationState
-         * @description Publication state of a stored Module.
-         * @enum {string}
-         */
-        readonly ModulePublicationState: "published";
-        /** ModuleReleaseResponse */
-        readonly ModuleReleaseResponse: {
-            /**
-             * Is Current Library Release
-             * @default false
-             */
-            readonly is_current_library_release: boolean;
-            /**
-             * Published At
-             * Format: date-time
-             */
-            readonly published_at: string;
-            /** Revision */
-            readonly revision: number;
-            /**
-             * Source Graph Id
-             * Format: uuid
-             */
-            readonly source_graph_id: string;
-        };
-        /** ModuleResponse */
-        readonly ModuleResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            readonly created_at: string;
-            /** Current Library Release */
-            readonly current_library_release?: number | null;
-            /** Description */
-            readonly description?: string | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            readonly id: string;
-            /** Inputs */
-            readonly inputs?: readonly components["schemas"]["ModulePortResponse"][];
-            /** Name */
-            readonly name: string;
-            /** Outputs */
-            readonly outputs?: readonly components["schemas"]["ModulePortResponse"][];
-            readonly publication_state: components["schemas"]["ModulePublicationState"];
-            /** Releases */
-            readonly releases?: readonly components["schemas"]["ModuleReleaseResponse"][];
-            /**
-             * Source Graph Id
-             * Format: uuid
-             */
-            readonly source_graph_id: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
-            /**
-             * Workspace Id
-             * Format: uuid
-             */
-            readonly workspace_id: string;
         };
         /** MoveAnnotationPosition */
         readonly MoveAnnotationPosition: {
@@ -2622,8 +2324,6 @@ export interface components {
             readonly nodes: readonly components["schemas"]["NodeSpecResponse"][];
             /** Plugins */
             readonly plugins: readonly components["schemas"]["PluginSpecResponse"][];
-            /** Unavailable Modules */
-            readonly unavailable_modules?: readonly components["schemas"]["UnavailableGraphModuleResponse"][];
         };
         /** NodeSecretInputResponse */
         readonly NodeSecretInputResponse: {
@@ -2680,14 +2380,6 @@ export interface components {
             };
             /** Inputs */
             readonly inputs: readonly components["schemas"]["PortResponse"][];
-            /** Is Current Library Release */
-            readonly is_current_library_release?: boolean | null;
-            /** Module Graph Id */
-            readonly module_graph_id?: string | null;
-            /** Module Graph Revision */
-            readonly module_graph_revision?: number | null;
-            /** Module Id */
-            readonly module_id?: string | null;
             /** Operator Id */
             readonly operator_id: string;
             /** Operator Version */
@@ -2695,9 +2387,9 @@ export interface components {
             /**
              * Origin
              * @default builtin
-             * @enum {string}
+             * @constant
              */
-            readonly origin: "builtin" | "module";
+            readonly origin: "builtin";
             /** Output Schema */
             readonly output_schema: {
                 readonly [key: string]: unknown;
@@ -2805,29 +2497,20 @@ export interface components {
          * @enum {string}
          */
         readonly PersonalAccessTokenScope: "view_project" | "view_artifacts" | "view_runs" | "create_project" | "edit_project" | "checkpoint_project" | "start_run" | "cancel_run" | "manage_secrets";
-        /** PinnedOutputRequest */
-        readonly PinnedOutputRequest: {
-            /** From Node */
-            readonly from_node: string;
-            /** From Port */
-            readonly from_port: string;
-            /** Value */
-            readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
-        };
         /** PluginSpecResponse */
         readonly PluginSpecResponse: {
             /**
              * Entry Kind
              * @default plugin
-             * @enum {string}
+             * @constant
              */
-            readonly entry_kind: "plugin" | "module";
+            readonly entry_kind: "plugin";
             /**
              * Origin
              * @default builtin
-             * @enum {string}
+             * @constant
              */
-            readonly origin: "builtin" | "module";
+            readonly origin: "builtin";
             /** Slug */
             readonly slug: string;
             /** Title */
@@ -2880,19 +2563,318 @@ export interface components {
          * @enum {string}
          */
         readonly PortShape: "one" | "many";
-        /** PublishModuleReleaseRequest */
-        readonly PublishModuleReleaseRequest: {
-            /** Description */
-            readonly description?: string | null;
-            /** Name */
-            readonly name?: string | null;
-            /** Revision */
-            readonly revision?: number | null;
+        /** ProjectBrowserCreatorResponse */
+        readonly ProjectBrowserCreatorResponse: {
+            /** Display Name */
+            readonly display_name: string | null;
             /**
-             * Source Graph Id
+             * Id
              * Format: uuid
              */
-            readonly source_graph_id: string;
+            readonly id: string;
+        };
+        /** ProjectBrowserFolderResponse */
+        readonly ProjectBrowserFolderResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+        };
+        /**
+         * ProjectBrowserItemResponse
+         * @description The shared discovery summary plus workspace location and per-user state.
+         */
+        readonly ProjectBrowserItemResponse: {
+            /** Archived */
+            readonly archived: boolean;
+            /** Archived At */
+            readonly archived_at: string | null;
+            readonly creator: components["schemas"]["ProjectBrowserCreatorResponse"] | null;
+            /** Draft Pending */
+            readonly draft_pending: boolean;
+            /** Edge Count */
+            readonly edge_count: number;
+            readonly folder: components["schemas"]["ProjectBrowserFolderResponse"] | null;
+            /** Graph Count */
+            readonly graph_count: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Last Opened At */
+            readonly last_opened_at: string | null;
+            readonly location: components["schemas"]["ProjectBrowserLocationResponse"];
+            /** Name */
+            readonly name: string;
+            /** Node Count */
+            readonly node_count: number;
+            /** Revision */
+            readonly revision: number;
+            /** Starred */
+            readonly starred: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /** ProjectBrowserListResponse */
+        readonly ProjectBrowserListResponse: {
+            /** Projects */
+            readonly projects: readonly components["schemas"]["ProjectBrowserItemResponse"][];
+        };
+        /** ProjectBrowserLocationResponse */
+        readonly ProjectBrowserLocationResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            readonly kind: components["schemas"]["WorkspaceKind"];
+            /** Name */
+            readonly name: string;
+            /** Slug */
+            readonly slug: string;
+        };
+        /** ProjectCheckpointListResponse */
+        readonly ProjectCheckpointListResponse: {
+            /** Checkpoints */
+            readonly checkpoints: readonly components["schemas"]["ProjectCheckpointSummaryResponse"][];
+        };
+        /**
+         * ProjectCheckpointResponse
+         * @description One retained checkpoint with the exact document it froze.
+         */
+        readonly ProjectCheckpointResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            readonly document: components["schemas"]["ProjectDocument"];
+            /** Name */
+            readonly name: string;
+            /** Revision */
+            readonly revision: number;
+        };
+        /**
+         * ProjectCheckpointSummaryResponse
+         * @description One retained checkpoint without its document.
+         */
+        readonly ProjectCheckpointSummaryResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Name */
+            readonly name: string;
+            /** Revision */
+            readonly revision: number;
+        };
+        /** ProjectCommandReceiptResponse */
+        readonly ProjectCommandReceiptResponse: {
+            /** Accepted Sequence */
+            readonly accepted_sequence: number;
+            /**
+             * Command Id
+             * Format: uuid
+             */
+            readonly command_id: string;
+            /** Deduplicated */
+            readonly deduplicated: boolean;
+            readonly outcome: components["schemas"]["CommandReceiptOutcome"];
+            /**
+             * Room Epoch
+             * Format: uuid
+             */
+            readonly room_epoch: string;
+        };
+        /**
+         * ProjectDocument
+         * @description The document of a Project: its Graphs and the calls between them.
+         */
+        readonly ProjectDocument: {
+            /**
+             * Graphs
+             * @default []
+             */
+            readonly graphs: readonly components["schemas"]["GraphDefinition"][];
+        };
+        /** ProjectFolderListResponse */
+        readonly ProjectFolderListResponse: {
+            /** Folders */
+            readonly folders: readonly components["schemas"]["ProjectFolderResponse"][];
+        };
+        /** ProjectFolderResponse */
+        readonly ProjectFolderResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /** ProjectFolderWriteRequest */
+        readonly ProjectFolderWriteRequest: {
+            /** Name */
+            readonly name: string;
+        };
+        /**
+         * ProjectHeadResponse
+         * @description Collaboration metadata paired with the canonical Project document.
+         */
+        readonly ProjectHeadResponse: {
+            /** Checkpoint Revision */
+            readonly checkpoint_revision: number;
+            /** Checkpoint Sequence */
+            readonly checkpoint_sequence: number;
+            /** Collaboration Sequence */
+            readonly collaboration_sequence: number;
+            readonly document: components["schemas"]["ProjectDocument"];
+            /** Name */
+            readonly name: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            readonly project_id: string;
+            /**
+             * Room Epoch
+             * Format: uuid
+             */
+            readonly room_epoch: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /** ProjectListResponse */
+        readonly ProjectListResponse: {
+            /** Projects */
+            readonly projects: readonly components["schemas"]["ProjectSummaryResponse"][];
+        };
+        /**
+         * ProjectNodeSecretsResponse
+         * @description Secret status for one Graph of a Project's live head.
+         */
+        readonly ProjectNodeSecretsResponse: {
+            /** Graph Id */
+            readonly graph_id: string;
+            /** Head Sequence */
+            readonly head_sequence: number;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            readonly project_id: string;
+            /** Secrets */
+            readonly secrets: readonly components["schemas"]["NodeSecretStatusResponse"][];
+            /** Unresolved Nodes */
+            readonly unresolved_nodes: readonly components["schemas"]["NodeSecretResolutionResponse"][];
+        };
+        /** ProjectOrganizationResponse */
+        readonly ProjectOrganizationResponse: {
+            /** Archived */
+            readonly archived: boolean;
+            /** Archived At */
+            readonly archived_at: string | null;
+            /** Folder Id */
+            readonly folder_id: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /** ProjectResponse */
+        readonly ProjectResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /**
+         * ProjectSummaryResponse
+         * @description Authoritative summary shared by every graph discovery surface.
+         *
+         *     Counts and ``updated_at`` describe the collaborative draft head (what the
+         *     canvas shows). ``revision`` is the durable checkpoint revision used by
+         *     lifecycle writes, and ``draft_pending`` labels a head that is ahead of that
+         *     checkpoint. Located lists reuse this model and add workspace metadata.
+         */
+        readonly ProjectSummaryResponse: {
+            /** Draft Pending */
+            readonly draft_pending: boolean;
+            /** Edge Count */
+            readonly edge_count: number;
+            /** Graph Count */
+            readonly graph_count: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /** Node Count */
+            readonly node_count: number;
+            /** Revision */
+            readonly revision: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+        };
+        /**
+         * RefreshNodeCommand
+         * @description Advance one node's refresh generation, the non-deterministic node's clock.
+         *
+         *     The comparison is against the generation the client last saw, so two
+         *     participants refreshing the same node cannot both advance it blindly.
+         */
+        readonly RefreshNodeCommand: {
+            /** Expected Generation */
+            readonly expected_generation: number;
+            /** Graph Id */
+            readonly graph_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "refresh_node";
+            /** Node Id */
+            readonly node_id: string;
         };
         /** RemoveEdgesCommand */
         readonly RemoveEdgesCommand: {
@@ -2903,6 +2885,16 @@ export interface components {
              * @enum {string}
              */
             readonly kind: "remove_edges";
+        };
+        /** RemoveGraphCommand */
+        readonly RemoveGraphCommand: {
+            /** Graph Id */
+            readonly graph_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "remove_graph";
         };
         /** RemoveNodesCommand */
         readonly RemoveNodesCommand: {
@@ -2928,6 +2920,8 @@ export interface components {
         readonly RenameGraphCommand: {
             /** Expected Name */
             readonly expected_name: string;
+            /** Graph Id */
+            readonly graph_id: string;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -2941,6 +2935,18 @@ export interface components {
             /** Name */
             readonly name: string;
         };
+        /** RenameProjectCommand */
+        readonly RenameProjectCommand: {
+            /** Expected Name */
+            readonly expected_name: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "rename_project";
+            /** Name */
+            readonly name: string;
+        };
         /** ReplaceDocumentCommand */
         readonly ReplaceDocumentCommand: {
             readonly document: components["schemas"]["GraphDocument"];
@@ -2949,8 +2955,6 @@ export interface components {
              * @enum {string}
              */
             readonly kind: "replace_document";
-            /** Name */
-            readonly name: string;
         };
         /** ReplacePresentationCommand */
         readonly ReplacePresentationCommand: {
@@ -2961,269 +2965,89 @@ export interface components {
             readonly kind: "replace_presentation";
             readonly presentation: components["schemas"]["GraphPresentationDocument"];
         };
-        /** RunEdgeRequest */
-        readonly RunEdgeRequest: {
-            /**
-             * Collection Mode
-             * @default direct
-             * @enum {string}
-             */
-            readonly collection_mode: "direct" | "map";
-            /** Conversion Path */
-            readonly conversion_path?: readonly components["schemas"]["ArtifactConversionRequest"][];
-            /** From Node */
-            readonly from_node: string;
-            /** From Port */
-            readonly from_port: string;
-            readonly projection?: components["schemas"]["FieldProjectionRequest"] | null;
-            /** To Node */
-            readonly to_node: string;
-            /** To Plug */
-            readonly to_plug?: string | null;
-            /** To Port */
-            readonly to_port: string;
-        };
-        /** RunExecutionCapacityErrorDetail */
-        readonly RunExecutionCapacityErrorDetail: {
-            /**
-             * Error Code
-             * @constant
-             */
-            readonly error_code: "execution_capacity_exceeded";
-            /** Max Active Executions */
-            readonly max_active_executions: number;
-            /** Message */
-            readonly message: string;
-        };
-        /** RunExecutionCapacityErrorResponse */
-        readonly RunExecutionCapacityErrorResponse: {
-            readonly detail: components["schemas"]["RunExecutionCapacityErrorDetail"];
-        };
-        /** RunExecutionQueueFullErrorDetail */
-        readonly RunExecutionQueueFullErrorDetail: {
-            /**
-             * Error Code
-             * @constant
-             */
-            readonly error_code: "execution_queue_full";
-            /** Max Pending Graphs */
-            readonly max_pending_graphs: number;
-            /** Message */
-            readonly message: string;
-        };
-        /** RunExecutionQueueFullErrorResponse */
-        readonly RunExecutionQueueFullErrorResponse: {
-            readonly detail: components["schemas"]["RunExecutionQueueFullErrorDetail"];
-        };
-        /** RunExecutionResponse */
-        readonly RunExecutionResponse: {
-            /** Active Node Id */
-            readonly active_node_id: string | null;
-            /** Error */
-            readonly error: string | null;
-            /**
-             * Execution Id
-             * Format: uuid
-             */
-            readonly execution_id: string;
-            /** Queue Position */
-            readonly queue_position?: number | null;
-            readonly result: components["schemas"]["RunResponse"] | null;
-            /**
-             * Status
-             * @enum {string}
-             */
-            readonly status: "queued" | "running" | "cancelling" | "cancelled" | "succeeded" | "failed";
-        };
-        /** RunInputPlugRequest */
-        readonly RunInputPlugRequest: {
-            /** Id */
-            readonly id: string;
-            /** Port */
-            readonly port: string;
-        };
-        /** RunNodeRequest */
-        readonly RunNodeRequest: {
-            /** Artifact Type Bindings */
-            readonly artifact_type_bindings?: readonly components["schemas"]["ArtifactTypeBindingModel"][];
-            /** Config */
-            readonly config?: {
-                readonly [key: string]: unknown;
-            };
-            /** Id */
-            readonly id: string;
-            /** Input Plugs */
-            readonly input_plugs?: readonly components["schemas"]["RunInputPlugRequest"][];
-            /**
-             * Kind
-             * @enum {string}
-             */
-            readonly kind: "builtin" | "module" | "call";
-            /** Operator Id */
-            readonly operator_id: string;
-            /** Operator Version */
-            readonly operator_version: number;
-        };
-        /** RunNodeResponse */
-        readonly RunNodeResponse: {
-            /** Error */
-            readonly error: string | null;
-            /** Node Id */
-            readonly node_id: string;
-            /** Outputs */
-            readonly outputs: readonly components["schemas"]["RunPortOutputResponse"][];
-            /**
-             * Status
-             * @enum {string}
-             */
-            readonly status: "succeeded" | "failed" | "skipped";
-        };
-        /** RunOriginRequest */
-        readonly RunOriginRequest: {
-            /**
-             * Collection Mode
-             * @default direct
-             * @enum {string}
-             */
-            readonly collection_mode: "direct" | "map";
-            /** Conversion Path */
-            readonly conversion_path?: readonly components["schemas"]["ArtifactConversionRequest"][];
-            /** To Node */
-            readonly to_node: string;
-            /** To Plug */
-            readonly to_plug?: string | null;
-            /** To Port */
-            readonly to_port: string;
-            /** Value */
-            readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
-        };
-        /** RunPortOutputResponse */
-        readonly RunPortOutputResponse: {
-            /** Artifacts */
-            readonly artifacts: readonly components["schemas"]["ArtifactSummaryResponse"][];
-            /**
-             * Kind
-             * @enum {string}
-             */
-            readonly kind: "single" | "sequence";
-            /** Port */
-            readonly port: string;
-            /** Value */
-            readonly value: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
-        };
-        /** RunRequest */
-        readonly RunRequest: {
-            /** Edges */
-            readonly edges?: readonly components["schemas"]["RunEdgeRequest"][];
-            /** Graph Id */
-            readonly graph_id?: string | null;
-            /** Graph Revision */
-            readonly graph_revision?: number | null;
-            /** Nodes */
-            readonly nodes: readonly components["schemas"]["RunNodeRequest"][];
-            /** Origins */
-            readonly origins?: readonly components["schemas"]["RunOriginRequest"][];
-            /** Pinned Outputs */
-            readonly pinned_outputs?: readonly components["schemas"]["PinnedOutputRequest"][];
-            /** @default all */
-            readonly scope: components["schemas"]["GraphExecutionScope"];
-            /** Secret Graph Id */
-            readonly secret_graph_id?: string | null;
-            /** Secret Graph Revision */
-            readonly secret_graph_revision?: number | null;
+        /**
+         * RunListResponse
+         * @description The Runs of one Project, newest first, optionally only the active ones.
+         */
+        readonly RunListResponse: {
+            /** Runs */
+            readonly runs: readonly components["schemas"]["RunResponse"][];
         };
         /** RunResponse */
         readonly RunResponse: {
-            /** Node Runs */
-            readonly node_runs: readonly components["schemas"]["RunNodeResponse"][];
-            /**
-             * Status
-             * @enum {string}
-             */
-            readonly status: "succeeded" | "failed";
-        };
-        /** SavedGraphExecutionRequest */
-        readonly SavedGraphExecutionRequest: {
-            /** Expected Revision */
-            readonly expected_revision: number;
-        };
-        /** SavedGraphListResponse */
-        readonly SavedGraphListResponse: {
-            /** Graphs */
-            readonly graphs: readonly components["schemas"]["SavedGraphSummaryResponse"][];
-        };
-        /** SavedGraphResponse */
-        readonly SavedGraphResponse: {
             /**
              * Created At
              * Format: date-time
              */
             readonly created_at: string;
-            readonly document: components["schemas"]["GraphDocument"];
+            /** Error */
+            readonly error: string | null;
+            /** Finished At */
+            readonly finished_at: string | null;
+            /** Graph Id */
+            readonly graph_id: string;
             /**
              * Id
              * Format: uuid
              */
             readonly id: string;
-            /** Name */
-            readonly name: string;
-            /** Revision */
-            readonly revision: number;
             /**
-             * Updated At
-             * Format: date-time
+             * Project Id
+             * Format: uuid
              */
-            readonly updated_at: string;
+            readonly project_id: string;
+            /** Started By User Id */
+            readonly started_by_user_id: string | null;
+            readonly status: components["schemas"]["RunStatus"];
+            /** Targets */
+            readonly targets: readonly components["schemas"]["RunTargetRequest"][];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            readonly workspace_id: string;
         };
         /**
-         * SavedGraphSummaryResponse
-         * @description Authoritative summary shared by every graph discovery surface.
-         *
-         *     Counts and ``updated_at`` describe the collaborative draft head (what the
-         *     canvas shows). ``revision`` is the durable checkpoint revision used by
-         *     lifecycle writes, and ``draft_pending`` labels a head that is ahead of that
-         *     checkpoint. Located lists reuse this model and add workspace metadata.
+         * RunStatus
+         * @enum {string}
          */
-        readonly SavedGraphSummaryResponse: {
-            /** Draft Pending */
-            readonly draft_pending: boolean;
-            /** Edge Count */
-            readonly edge_count: number;
+        readonly RunStatus: "running" | "succeeded" | "failed" | "cancelled" | "interrupted";
+        /** RunTargetRequest */
+        readonly RunTargetRequest: {
             /**
-             * Id
-             * Format: uuid
+             * Call Path
+             * @default []
              */
-            readonly id: string;
-            /** Name */
-            readonly name: string;
-            /** Node Count */
-            readonly node_count: number;
-            /** Revision */
-            readonly revision: number;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            readonly updated_at: string;
+            readonly call_path: readonly string[];
+            /** Node Id */
+            readonly node_id: string;
         };
-        /** SaveRunArtifactRequest */
-        readonly SaveRunArtifactRequest: {
+        /** SaveInstanceArtifactRequest */
+        readonly SaveInstanceArtifactRequest: {
             /**
-             * Artifact Id
-             * Format: uuid
+             * Call Path
+             * @default []
              */
-            readonly artifact_id: string;
-            /**
-             * Execution Id
-             * Format: uuid
-             */
-            readonly execution_id: string;
+            readonly call_path: readonly string[];
+            /** Graph Id */
+            readonly graph_id: string;
+            /** Item Index */
+            readonly item_index?: number | null;
+            /** Map Index */
+            readonly map_index?: number | null;
             /** Name */
             readonly name: string;
             /** Node Id */
             readonly node_id: string;
-            /** Node Title */
-            readonly node_title: string;
+            /** Output Port */
+            readonly output_port: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            readonly project_id: string;
+            /** Result Fingerprint */
+            readonly result_fingerprint: string;
         };
         /** SaveUploadedArtifactRequest */
         readonly SaveUploadedArtifactRequest: {
@@ -3294,6 +3118,16 @@ export interface components {
             /** Node Id */
             readonly node_id: string;
         };
+        /** StartRunRequest */
+        readonly StartRunRequest: {
+            /** Graph Id */
+            readonly graph_id: string;
+            /**
+             * Targets
+             * @default []
+             */
+            readonly targets: readonly components["schemas"]["RunTargetRequest"][];
+        };
         /**
          * StorageUploadTargetResponse
          * @description Signed object-storage target; send only the required signed headers.
@@ -3320,15 +3154,15 @@ export interface components {
             /** Url */
             readonly url: string;
         };
-        /** SubmitGraphCommandRequest */
-        readonly SubmitGraphCommandRequest: {
-            /** Command */
-            readonly command: components["schemas"]["RenameGraphCommand"] | components["schemas"]["AddNodeCommand"] | components["schemas"]["DuplicateNodeCommand"] | components["schemas"]["RemoveNodesCommand"] | components["schemas"]["MoveNodesCommand"] | components["schemas"]["UpdateNodeConfigurationCommand"] | components["schemas"]["UpdateNodeLayoutCommand"] | components["schemas"]["SetNodeInputPlugsCommand"] | components["schemas"]["UpdateNodeConfigurationAndInputPlugsCommand"] | components["schemas"]["SetNodeArtifactTypeBindingCommand"] | components["schemas"]["ClearNodeArtifactTypeBindingCommand"] | components["schemas"]["AddEdgeCommand"] | components["schemas"]["UpdateEdgeCommand"] | components["schemas"]["RemoveEdgesCommand"] | components["schemas"]["AddOriginCommand"] | components["schemas"]["UpdateOriginCommand"] | components["schemas"]["RemoveOriginsCommand"] | components["schemas"]["ReplaceDocumentCommand"] | components["schemas"]["ReplacePresentationCommand"] | components["schemas"]["MoveArtifactViewersCommand"] | components["schemas"]["MoveAnnotationsCommand"];
+        /** SubmitProjectCommandRequest */
+        readonly SubmitProjectCommandRequest: {
             /**
              * Command Id
              * Format: uuid
              */
             readonly command_id: string;
+            /** Commands */
+            readonly commands: readonly (components["schemas"]["RenameProjectCommand"] | components["schemas"]["AddGraphCommand"] | components["schemas"]["RenameGraphCommand"] | components["schemas"]["RemoveGraphCommand"] | components["schemas"]["RefreshNodeCommand"] | components["schemas"]["AddCallNodeCommand"] | components["schemas"]["InGraphCommand"])[];
             /** Observed Sequence */
             readonly observed_sequence: number;
             /**
@@ -3337,10 +3171,10 @@ export interface components {
              */
             readonly room_epoch: string;
         };
-        /** SubmitGraphCommandResponse */
-        readonly SubmitGraphCommandResponse: {
-            readonly head: components["schemas"]["CollaborativeHeadResponse"];
-            readonly receipt: components["schemas"]["GraphCommandReceiptResponse"];
+        /** SubmitProjectCommandResponse */
+        readonly SubmitProjectCommandResponse: {
+            readonly head: components["schemas"]["ProjectHeadResponse"];
+            readonly receipt: components["schemas"]["ProjectCommandReceiptResponse"];
         };
         /** TableCellPreviewResponse */
         readonly TableCellPreviewResponse: {
@@ -3450,20 +3284,6 @@ export interface components {
          * @enum {string}
          */
         readonly TableValueType: "text" | "integer" | "number" | "decimal" | "boolean" | "date" | "datetime" | "json" | "binary" | "unknown" | "mixed";
-        /** UnavailableGraphModuleResponse */
-        readonly UnavailableGraphModuleResponse: {
-            /**
-             * Graph Id
-             * Format: uuid
-             */
-            readonly graph_id: string;
-            /** Name */
-            readonly name: string;
-            /** Reason */
-            readonly reason: string;
-            /** Revision */
-            readonly revision: number;
-        };
         /** UpdateEdgeCommand */
         readonly UpdateEdgeCommand: {
             readonly edge: components["schemas"]["GraphEdge"];
@@ -3537,21 +3357,13 @@ export interface components {
             readonly kind: "update_origin";
             readonly origin: components["schemas"]["GraphOrigin"];
         };
-        /** UpdateSavedGraphRequest */
-        readonly UpdateSavedGraphRequest: {
-            readonly document: components["schemas"]["GraphDocument"];
-            /** Expected Revision */
-            readonly expected_revision: number;
-            /** Name */
-            readonly name: string;
-        };
         /**
          * UploadTargetResponse
          * @description Discriminated upload target returned by reserve.
          */
         readonly UploadTargetResponse: components["schemas"]["ApiUploadTargetResponse"] | components["schemas"]["StorageUploadTargetResponse"];
-        /** UserGraphStateResponse */
-        readonly UserGraphStateResponse: {
+        /** UserProjectStateResponse */
+        readonly UserProjectStateResponse: {
             /** Last Opened At */
             readonly last_opened_at: string | null;
             /** Starred */
@@ -3882,26 +3694,6 @@ export interface operations {
             };
         };
     };
-    readonly list_accessible_graphs_v1_me_graphs_get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphBrowserListResponse"];
-                };
-            };
-        };
-    };
     readonly list_my_workspace_invitations_v1_me_invitations_get: {
         readonly parameters: {
             readonly query?: never;
@@ -3978,6 +3770,26 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_accessible_projects_v1_me_projects_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectBrowserListResponse"];
                 };
             };
         };
@@ -4794,1045 +4606,6 @@ export interface operations {
             };
         };
     };
-    readonly start_graph_execution_v1_workspaces__workspace_id__executions_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: {
-                readonly "Idempotency-Key"?: string | null;
-            };
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["RunRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 202: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["RunExecutionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description The durable pending queue is full, or a non-durable draft run cannot acquire active capacity */
-            readonly 429: {
-                headers: {
-                    /** @description Minimum delay before retrying, in seconds */
-                    readonly "Retry-After"?: number;
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["RunExecutionQueueFullErrorResponse"] | components["schemas"]["RunExecutionCapacityErrorResponse"];
-                };
-            };
-        };
-    };
-    readonly get_graph_execution_v1_workspaces__workspace_id__executions__execution_id__get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly execution_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["RunExecutionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly cancel_graph_execution_v1_workspaces__workspace_id__executions__execution_id__delete: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly execution_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["RunExecutionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly stream_graph_execution_events_v1_workspaces__workspace_id__executions__execution_id__events_get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: {
-                readonly "Last-Event-ID"?: string | null;
-            };
-            readonly path: {
-                readonly execution_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Server-sent execution lifecycle and node progress events */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "text/event-stream": string;
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly list_graph_folders_v1_workspaces__workspace_id__graph_folders_get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphFolderListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly create_graph_folder_v1_workspaces__workspace_id__graph_folders_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["GraphFolderWriteRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 201: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphFolderResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly delete_graph_folder_v1_workspaces__workspace_id__graph_folders__folder_id__delete: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly folder_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 204: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly rename_graph_folder_v1_workspaces__workspace_id__graph_folders__folder_id__patch: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly folder_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["GraphFolderWriteRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphFolderResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly list_saved_graphs_v1_workspaces__workspace_id__graphs_get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["SavedGraphListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly create_saved_graph_v1_workspaces__workspace_id__graphs_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["CreateSavedGraphRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 201: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["SavedGraphResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly get_saved_graph_v1_workspaces__workspace_id__graphs__graph_id__get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["SavedGraphResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly update_saved_graph_v1_workspaces__workspace_id__graphs__graph_id__put: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["UpdateSavedGraphRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["SavedGraphResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly delete_saved_graph_v1_workspaces__workspace_id__graphs__graph_id__delete: {
-        readonly parameters: {
-            readonly query: {
-                readonly expected_revision: number;
-                readonly expected_room_epoch?: string | null;
-                readonly expected_sequence?: number | null;
-            };
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 204: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly archive_graph_v1_workspaces__workspace_id__graphs__graph_id__archive_put: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphOrganizationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly restore_graph_v1_workspaces__workspace_id__graphs__graph_id__archive_delete: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphOrganizationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly checkpoint_graph_v1_workspaces__workspace_id__graphs__graph_id__checkpoint_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["CheckpointGraphRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["CheckpointGraphResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly submit_graph_command_v1_workspaces__workspace_id__graphs__graph_id__commands_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["SubmitGraphCommandRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["SubmitGraphCommandResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly list_graph_executions_v1_workspaces__workspace_id__graphs__graph_id__executions_get: {
-        readonly parameters: {
-            readonly query?: {
-                readonly cursor?: string | null;
-                readonly graph_revision?: number | null;
-                readonly limit?: number;
-                readonly node_id?: string | null;
-                readonly status?: components["schemas"]["GraphExecutionStatus"] | null;
-            };
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphExecutionListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly start_saved_graph_execution_v1_workspaces__workspace_id__graphs__graph_id__executions_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: {
-                readonly "Idempotency-Key"?: string | null;
-            };
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["SavedGraphExecutionRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 202: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["RunExecutionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description The durable pending execution queue is full */
-            readonly 429: {
-                headers: {
-                    /** @description Minimum delay before retrying, in seconds */
-                    readonly "Retry-After"?: number;
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["RunExecutionQueueFullErrorResponse"];
-                };
-            };
-        };
-    };
-    readonly get_graph_execution_history_v1_workspaces__workspace_id__graphs__graph_id__executions__execution_id__get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly execution_id: string;
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphExecutionDetailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly assign_graph_folder_v1_workspaces__workspace_id__graphs__graph_id__folder_put: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["AssignGraphFolderRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphOrganizationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly get_canonical_collaborative_head_v1_workspaces__workspace_id__graphs__graph_id__head_document_get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["CollaborativeHeadResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly get_graph_materializations_v1_workspaces__workspace_id__graphs__graph_id__materializations_get: {
-        readonly parameters: {
-            readonly query: {
-                readonly graph_revision: number;
-            };
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphMaterializationsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly get_node_secret_status_v1_workspaces__workspace_id__graphs__graph_id__node_secrets_get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["GraphNodeSecretsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly configure_node_secret_v1_workspaces__workspace_id__graphs__graph_id__nodes__node_id__secrets__name__put: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly name: string;
-                readonly node_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["ConfigureNodeSecretRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["NodeSecretStatusResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly delete_node_secret_v1_workspaces__workspace_id__graphs__graph_id__nodes__node_id__secrets__name__delete: {
-        readonly parameters: {
-            readonly query: {
-                readonly expected_graph_revision: number;
-            };
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly name: string;
-                readonly node_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 204: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly record_graph_open_v1_workspaces__workspace_id__graphs__graph_id__opened_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["UserGraphStateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly star_graph_v1_workspaces__workspace_id__graphs__graph_id__star_put: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["UserGraphStateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly unstar_graph_v1_workspaces__workspace_id__graphs__graph_id__star_delete: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly graph_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["UserGraphStateResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly copy_exact_head_v1_workspaces__workspace_id__graphs_copies_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["CopyExactHeadRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 201: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["SavedGraphResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     readonly resolve_invitation_candidate_v1_workspaces__workspace_id__invitation_candidates_resolve_post: {
         readonly parameters: {
             readonly query?: never;
@@ -6025,7 +4798,7 @@ export interface operations {
             };
         };
     };
-    readonly save_library_artifact_from_run_v1_workspaces__workspace_id__library_artifacts_from_run_post: {
+    readonly save_library_artifact_from_instance_v1_workspaces__workspace_id__library_artifacts_from_instance_post: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -6036,7 +4809,7 @@ export interface operations {
         };
         readonly requestBody: {
             readonly content: {
-                readonly "application/json": components["schemas"]["SaveRunArtifactRequest"];
+                readonly "application/json": components["schemas"]["SaveInstanceArtifactRequest"];
             };
         };
         readonly responses: {
@@ -6393,104 +5166,6 @@ export interface operations {
             };
         };
     };
-    readonly list_modules_v1_workspaces__workspace_id__modules_get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["ModuleListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly get_module_v1_workspaces__workspace_id__modules__module_id__get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly module_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["ModuleResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    readonly publish_module_release_v1_workspaces__workspace_id__modules_publish_post: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path: {
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody: {
-            readonly content: {
-                readonly "application/json": components["schemas"]["PublishModuleReleaseRequest"];
-            };
-        };
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 201: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["ModuleResponse"];
-                };
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     readonly list_nodes_v1_workspaces__workspace_id__nodes_get: {
         readonly parameters: {
             readonly query?: never;
@@ -6618,7 +5293,38 @@ export interface operations {
             };
         };
     };
-    readonly run_graph_v1_workspaces__workspace_id__runs_post: {
+    readonly list_project_folders_v1_workspaces__workspace_id__project_folders_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectFolderListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly create_project_folder_v1_workspaces__workspace_id__project_folders_post: {
         readonly parameters: {
             readonly query?: never;
             readonly header?: never;
@@ -6629,9 +5335,826 @@ export interface operations {
         };
         readonly requestBody: {
             readonly content: {
-                readonly "application/json": components["schemas"]["RunRequest"];
+                readonly "application/json": components["schemas"]["ProjectFolderWriteRequest"];
             };
         };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectFolderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly delete_project_folder_v1_workspaces__workspace_id__project_folders__folder_id__delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly folder_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly rename_project_folder_v1_workspaces__workspace_id__project_folders__folder_id__patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly folder_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ProjectFolderWriteRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectFolderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_projects_v1_workspaces__workspace_id__projects_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly create_project_v1_workspaces__workspace_id__projects_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateProjectRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_project_v1_workspaces__workspace_id__projects__project_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly delete_project_v1_workspaces__workspace_id__projects__project_id__delete: {
+        readonly parameters: {
+            readonly query?: {
+                readonly expected_room_epoch?: string | null;
+                readonly expected_sequence?: number | null;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly archive_project_v1_workspaces__workspace_id__projects__project_id__archive_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectOrganizationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly restore_project_v1_workspaces__workspace_id__projects__project_id__archive_delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectOrganizationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_project_checkpoints_v1_workspaces__workspace_id__projects__project_id__checkpoints_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectCheckpointListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly checkpoint_project_v1_workspaces__workspace_id__projects__project_id__checkpoints_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CheckpointProjectRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CheckpointProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_project_checkpoint_v1_workspaces__workspace_id__projects__project_id__checkpoints__revision__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly revision: number;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectCheckpointResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly restore_project_checkpoint_v1_workspaces__workspace_id__projects__project_id__checkpoints__revision__restore_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly revision: number;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CheckpointProjectRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CheckpointProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly submit_project_commands_v1_workspaces__workspace_id__projects__project_id__commands_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SubmitProjectCommandRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["SubmitProjectCommandResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly assign_project_folder_v1_workspaces__workspace_id__projects__project_id__folder_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["AssignProjectFolderRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectOrganizationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_graph_instances_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__instances_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly graph_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InstanceStateListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly configure_node_secret_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly graph_id: string;
+                readonly name: string;
+                readonly node_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ConfigureNodeSecretRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["NodeSecretStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly delete_node_secret_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__delete: {
+        readonly parameters: {
+            readonly query: {
+                readonly expected_head_sequence: number;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly graph_id: string;
+                readonly name: string;
+                readonly node_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_project_head_v1_workspaces__workspace_id__projects__project_id__head_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectHeadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_instance_result_v1_workspaces__workspace_id__projects__project_id__instance_result_get: {
+        readonly parameters: {
+            readonly query: {
+                /** @description The call path of the callee, one repeated parameter per call node, in call order. Empty for an instance of the root Graph. */
+                readonly call_path?: readonly string[];
+                readonly graph_id: string;
+                readonly node_id: string;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["InstanceResultResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_node_secret_status_v1_workspaces__workspace_id__projects__project_id__node_secrets_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly graph_id?: string;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectNodeSecretsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly record_project_open_v1_workspaces__workspace_id__projects__project_id__opened_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["UserProjectStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_runs_v1_workspaces__workspace_id__projects__project_id__runs_get: {
+        readonly parameters: {
+            readonly query?: {
+                /** @description Only the Runs still active in this Project. */
+                readonly active?: boolean;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RunListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly start_run_v1_workspaces__workspace_id__projects__project_id__runs_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["StartRunRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["RunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_run_v1_workspaces__workspace_id__projects__project_id__runs__run_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly run_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
         readonly responses: {
             /** @description Successful Response */
             readonly 200: {
@@ -6651,15 +6174,136 @@ export interface operations {
                     readonly "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description The process-wide active execution limit is exhausted */
-            readonly 429: {
+        };
+    };
+    readonly cancel_run_v1_workspaces__workspace_id__projects__project_id__runs__run_id__cancel_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly run_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
                 headers: {
-                    /** @description Minimum delay before retrying, in seconds */
-                    readonly "Retry-After"?: number;
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["RunExecutionCapacityErrorResponse"];
+                    readonly "application/json": components["schemas"]["RunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly star_project_v1_workspaces__workspace_id__projects__project_id__star_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["UserProjectStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly unstar_project_v1_workspaces__workspace_id__projects__project_id__star_delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["UserProjectStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly copy_exact_head_v1_workspaces__workspace_id__projects_copies_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CopyExactHeadRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
