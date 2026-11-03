@@ -183,12 +183,13 @@ export function workspaceMobileContextLabel(
   pathname: string,
   workspace: Pick<Workspace, "kind" | "name"> | undefined,
 ): string {
-  if (pathname === "/" || pathname === "/graphs") return "Graphs";
+  if (pathname === "/" || pathname === "/graphs" || pathname === "/projects")
+    return "Graphs";
   if (/^\/workspaces\/[^/]+\/settings\/?$/.test(pathname)) return "Settings";
   if (pathname === "/workspaces" || /^\/workspaces\/[^/]+\/?$/.test(pathname)) {
     return "Teams & access";
   }
-  if (/^\/workspaces\/[^/]+\/graphs(?:\/|$)/.test(pathname)) {
+  if (/^\/workspaces\/[^/]+\/projects(?:\/|$)/.test(pathname)) {
     return workspaceSelectorLabel(workspace);
   }
   return "Graphs";
@@ -383,7 +384,7 @@ export function WorkspaceRail({
     closeMobileNavigation(true);
     const suffix = /^\/workspaces\/[^/]+\/settings\/?$/.test(pathname)
       ? "/settings"
-      : "/graphs";
+      : "/projects";
     router.push(`/workspaces/${encodeURIComponent(slug)}${suffix}`);
   };
 
