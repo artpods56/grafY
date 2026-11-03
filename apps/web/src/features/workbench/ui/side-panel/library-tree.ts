@@ -321,7 +321,7 @@ export function libraryFileDisplayName(item: PlacedLibraryItem): string {
 export function libraryFileSubtitle(item: PlacedLibraryItem): string {
   const size = formatLibraryByteSize(item.artifact.byte_size);
   const origin =
-    item.provenance.source === "upload" ? "uploaded" : "from a run";
+    item.provenance.source === "upload" ? "uploaded" : "saved from a node";
   return size ? `${size} · ${origin}` : origin;
 }
 

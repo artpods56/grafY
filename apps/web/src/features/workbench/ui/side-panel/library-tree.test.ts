@@ -363,24 +363,30 @@ describe("the rows keep the Library's file naming", () => {
           original_filename: null,
         }),
       ),
-    ).toBe("from a run");
+    ).toBe("saved from a node");
   });
 
-  it("reads a run artifact's birth record from its provenance", () => {
+  it("reads a saved artifact's birth record from its provenance", () => {
     const runItem: PlacedLibraryItem = {
       ...item("run", { source: "instance", original_filename: null }),
       provenance: {
         source: "instance",
         call_path: [],
+        project_id: "p",
+        project_title: "Field ops",
         graph_id: "g",
         graph_title: "Site survey",
         node_id: "n",
         node_title: "GeoTIFF scan",
+        result_fingerprint: "fp-1",
         saved_at: "2026-01-01T00:00:00Z",
       },
     };
+    // The row names the node the artifact came from. It does not name a revision
+    // or a Run: the Run retired once the result was stored, and the artifact
+    // outlives both.
     expect(libraryProvenanceLine(runItem)).toBe(
-      "Site survey · GeoTIFF scan · revision 4 · from a run",
+      "Field ops · Site survey · GeoTIFF scan",
     );
   });
 

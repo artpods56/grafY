@@ -53,7 +53,8 @@ export function LibraryArtifactTile({
   // An item remembers the node instance it was saved from, not the Run that
   // happened to make that result fresh: the Run is gone, the instance is not.
   const { provenance } = item;
-  const fromGraph = provenance.source === "instance" ? provenance.graph_id : null;
+  const fromGraph =
+    provenance.source === "instance" ? provenance.graph_id : null;
   const location = ["Library", ...libraryFolderPath(folders, item.folder_id)];
   const size = formatLibraryByteSize(item.artifact.byte_size);
   const [imageFailed, setImageFailed] = React.useState(false);
@@ -141,10 +142,7 @@ export function LibraryArtifactTile({
             <button
               type="button"
               onClick={() =>
-                onOpenInstance(
-                  fromGraph,
-                  provenance.result_fingerprint ?? null,
-                )
+                onOpenInstance(fromGraph, provenance.result_fingerprint ?? null)
               }
               {...stylex.props(s.action)}
             >

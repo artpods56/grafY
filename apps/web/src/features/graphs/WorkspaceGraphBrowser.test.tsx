@@ -219,7 +219,9 @@ describe("workspace graph browser", () => {
     };
     const container = await renderBrowser();
 
-    expect(apiMocks.useWorkspaceProjects).toHaveBeenCalledWith("workspace-atlas");
+    expect(apiMocks.useWorkspaceProjects).toHaveBeenCalledWith(
+      "workspace-atlas",
+    );
     expect(container.textContent).toContain("Atlas");
     expect(
       container.querySelector('[aria-label="Filter by location"]'),

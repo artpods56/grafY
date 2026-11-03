@@ -165,10 +165,7 @@ export function checkpointProject(
   );
 }
 
-export function listProjectCheckpoints(
-  workspaceId: string,
-  projectId: string,
-) {
+export function listProjectCheckpoints(workspaceId: string, projectId: string) {
   return request<ProjectCheckpointList>(
     "GET",
     projectPath(workspaceId, projectId, "/checkpoints"),
@@ -323,11 +320,9 @@ export function startRun(
   projectId: string,
   body: StartRunRequest,
 ) {
-  return request<Run>(
-    "POST",
-    projectPath(workspaceId, projectId, "/runs"),
-    { body },
-  );
+  return request<Run>("POST", projectPath(workspaceId, projectId, "/runs"), {
+    body,
+  });
 }
 
 export function listRuns(
@@ -337,9 +332,11 @@ export function listRuns(
   signal?: AbortSignal,
 ) {
   const query =
-    options.activeOnly === true ? "?active=true" : options.activeOnly === false
-      ? "?active=false"
-      : "";
+    options.activeOnly === true
+      ? "?active=true"
+      : options.activeOnly === false
+        ? "?active=false"
+        : "";
   return request<RunList>(
     "GET",
     projectPath(workspaceId, projectId, `/runs${query}`),

@@ -54,9 +54,7 @@ export interface GraphRoomPersistenceResult {
 export interface GraphRoomPersistenceAdapter {
   readonly canPersist: boolean;
   /** Keep the exact checkpoint separate from a newer effective room head. */
-  persistDocument: (
-    draft: GraphDraft,
-  ) => Promise<GraphRoomPersistenceResult>;
+  persistDocument: (draft: GraphDraft) => Promise<GraphRoomPersistenceResult>;
 }
 
 interface UseSavedGraphLifecycleOptions {
@@ -204,13 +202,10 @@ export function useSavedGraphLifecycle({
     () => savedGraphExecutionFingerprint(currentDraft),
     [currentDraft],
   );
-  const rememberSavedDraft = React.useCallback(
-    (draft: GraphDraft) => {
-      setSavedFingerprint(savedGraphFingerprint(draft));
-      setSavedExecutionFingerprint(savedGraphExecutionFingerprint(draft));
-    },
-    [],
-  );
+  const rememberSavedDraft = React.useCallback((draft: GraphDraft) => {
+    setSavedFingerprint(savedGraphFingerprint(draft));
+    setSavedExecutionFingerprint(savedGraphExecutionFingerprint(draft));
+  }, []);
 
   React.useEffect(() => {
     currentFingerprintRef.current = currentFingerprint;
@@ -309,7 +304,9 @@ export function useSavedGraphLifecycle({
   const syncFromCollaborativeHead = React.useCallback(
     (head: CollaborativeHead): void => {
       const responseDocument = authoredGraphDocument(head);
-      const responsePresentation = presentationFromGraphDocument(savedGraph.document);
+      const responsePresentation = presentationFromGraphDocument(
+        savedGraph.document,
+      );
       const nextActiveGraph = {
         id: head.graph_id,
         revision: head.checkpoint_revision,

@@ -36,7 +36,11 @@ import {
 import { applyRoomCommandsToHead } from "./room-command-bridge";
 import { instanceKeyText } from "./protocol";
 
-export type { ProjectRoomStatus, ProjectRoomTerminalReason, RoomProjectCommand };
+export type {
+  ProjectRoomStatus,
+  ProjectRoomTerminalReason,
+  RoomProjectCommand,
+};
 export type { ProjectRoomFailure, ProjectRoomRecoveryReason };
 export { ProjectRoomCommandError } from "./command-outbox";
 export type { ProjectRoomCommandResult } from "./command-outbox";
@@ -736,7 +740,11 @@ export class ProjectRoomSession {
     }
 
     try {
-      this.head = applyRoomCommandsToHead(head, message.commands, message.sequence);
+      this.head = applyRoomCommandsToHead(
+        head,
+        message.commands,
+        message.sequence,
+      );
     } catch {
       this.outbox.requestHeadRefresh();
       return;

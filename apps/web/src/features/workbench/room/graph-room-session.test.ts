@@ -72,7 +72,9 @@ function graph(
  * The head of a Project: every Graph it holds, each with its own document.
  * `name` is the Project's name, which is why a Project-level rename moves it.
  */
-function projectHead(overrides: Partial<CollaborativeHead> = {}): CollaborativeHead {
+function projectHead(
+  overrides: Partial<CollaborativeHead> = {},
+): CollaborativeHead {
   return {
     project_id: PROJECT_ID,
     room_epoch: ROOM_EPOCH,
@@ -104,7 +106,10 @@ function openGraphDocument(head: CollaborativeHead | null) {
   return headGraph(head, GRAPH_ID)?.document;
 }
 
-function renameProject(name: string, expectedName = "Room project"): RoomProjectCommand {
+function renameProject(
+  name: string,
+  expectedName = "Room project",
+): RoomProjectCommand {
   return { kind: "rename_project", name, expected_name: expectedName };
 }
 
@@ -113,7 +118,12 @@ function renameGraph(
   name: string,
   expectedName: string,
 ): RoomProjectCommand {
-  return { kind: "rename_graph", graph_id: graphId, name, expected_name: expectedName };
+  return {
+    kind: "rename_graph",
+    graph_id: graphId,
+    name,
+    expected_name: expectedName,
+  };
 }
 
 function replacePresentation(
@@ -144,7 +154,11 @@ function replaceGraphDocument(
   graphId: string,
   document: SavedGraphDocument,
 ): RoomProjectCommand {
-  return { kind: "in_graph", graph_id: graphId, command: { kind: "replace_document", document } };
+  return {
+    kind: "in_graph",
+    graph_id: graphId,
+    command: { kind: "replace_document", document },
+  };
 }
 
 function participant(
@@ -155,7 +169,10 @@ function participant(
   return {
     project_room_session_id: sessionId,
     actor: {
-      actor_id: sessionId === SESSION_ID ? ACTOR_ID : "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      actor_id:
+        sessionId === SESSION_ID
+          ? ACTOR_ID
+          : "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       display_name: displayName,
       color: sessionId === SESSION_ID ? "emerald" : "indigo",
     },
@@ -331,10 +348,7 @@ function accepted(
   };
 }
 
-function receipt(
-  commandId: string,
-  overrides: Record<string, unknown> = {},
-) {
+function receipt(commandId: string, overrides: Record<string, unknown> = {}) {
   return {
     protocol_version: 1,
     type: "project.command.receipt",
@@ -370,7 +384,8 @@ function connectReadySession(
 
 function reconnectedSocket(socket: FakeWebSocket): FakeWebSocket {
   const next = FakeWebSocket.instances.at(-1);
-  if (!next || next === socket) throw new Error("expected a replacement websocket");
+  if (!next || next === socket)
+    throw new Error("expected a replacement websocket");
   next.open();
   return next;
 }
@@ -442,10 +457,9 @@ describe("ProjectRoomSession", () => {
     expect(session.getHead()?.project_id).toBe(PROJECT_ID);
     expect(session.getHead()?.collaboration_sequence).toBe(4);
     // The ready snapshot is the whole Project: both of its Graphs are there.
-    expect(session.getHead()?.document.graphs.map((item) => item.name)).toEqual([
-      "Main",
-      "Second",
-    ]);
+    expect(session.getHead()?.document.graphs.map((item) => item.name)).toEqual(
+      ["Main", "Second"],
+    );
     // A fresh room reports no open Run and no instance state, not a guess.
     expect(session.getActiveRuns()).toEqual([]);
     expect(session.getInstances()).toEqual([]);
@@ -501,7 +515,10 @@ describe("ProjectRoomSession", () => {
 
     // A Run is one demand for freshness, and a Project may hold many at once,
     // in different Graphs.
-    const firstRun = activeRun("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01", GRAPH_ID);
+    const firstRun = activeRun(
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01",
+      GRAPH_ID,
+    );
     socket.emitMessage({
       protocol_version: 1,
       type: "run.started",
@@ -575,7 +592,10 @@ describe("ProjectRoomSession", () => {
       protocol_version: 1,
       type: "instances.changed",
       changed: [],
-      removed: [instanceKey(GRAPH_ID, "n1", null), instanceKey(GRAPH_ID, "n1", 0)],
+      removed: [
+        instanceKey(GRAPH_ID, "n1", null),
+        instanceKey(GRAPH_ID, "n1", 0),
+      ],
       head_sequence: 8,
     });
     expect(session.getInstances()).toEqual([otherRunning]);
@@ -643,7 +663,10 @@ describe("ProjectRoomSession", () => {
 
     // The server's snapshot is authoritative: the client's guess is gone, and
     // what it did not report is not kept from before the drop.
-    const serverRun = activeRun("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb02", GRAPH_ID);
+    const serverRun = activeRun(
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb02",
+      GRAPH_ID,
+    );
     const serverInstance = instanceState(OTHER_GRAPH_ID, "n2", "stale");
     session.connect();
     const reconnect = reconnectedSocket(socket);
@@ -715,7 +738,9 @@ describe("ProjectRoomSession", () => {
       commands,
     });
 
-    socket.emitMessage(accepted("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", 5, commands));
+    socket.emitMessage(
+      accepted("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", 5, commands),
+    );
     socket.emitMessage(receipt("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
 
     const result = await pending;
@@ -946,9 +971,7 @@ describe("ProjectRoomSession", () => {
     expect(onCommandAccepted).not.toHaveBeenCalled();
     expect(onHeadRefreshRequired).toHaveBeenCalledOnce();
 
-    const pending = session.submitCommands([
-      renameProject("Wait for refresh"),
-    ]);
+    const pending = session.submitCommands([renameProject("Wait for refresh")]);
     expect(socket.sent).toHaveLength(0);
     session.disconnect();
     await expect(pending).rejects.toMatchObject({ errorCode: "disconnected" });
@@ -1023,9 +1046,7 @@ describe("ProjectRoomSession", () => {
       createCommandId: () => "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     });
 
-    const pending = session.submitCommands([
-      renameProject("Nope", "Wrong"),
-    ]);
+    const pending = session.submitCommands([renameProject("Nope", "Wrong")]);
     socket.emitMessage({
       protocol_version: 1,
       type: "project.command.rejected",
@@ -1128,10 +1149,9 @@ describe("ProjectRoomSession", () => {
     );
 
     expect(session.getHead()?.collaboration_sequence).toBe(6);
-    expect(session.getHead()?.document.graphs.map((item) => item.name)).toEqual([
-      "Main",
-      "Second",
-    ]);
+    expect(session.getHead()?.document.graphs.map((item) => item.name)).toEqual(
+      ["Main", "Second"],
+    );
     expect(session.getHead()?.document.graphs[0]).toBe(graphsBefore?.[0]);
   });
 
@@ -1243,11 +1263,14 @@ describe("ProjectRoomSession", () => {
     expect(socket.sent).toHaveLength(1);
 
     socket.emitMessage(
-      accepted("dddddddd-dddd-4ddd-8ddd-dddddddddddd", 5, [
-        renameGraph(GRAPH_ID, "Peer rename", "Main"),
-      ], {
-        project_room_session_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-      }),
+      accepted(
+        "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        5,
+        [renameGraph(GRAPH_ID, "Peer rename", "Main")],
+        {
+          project_room_session_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        },
+      ),
     );
     expect(session.getHead()?.collaboration_sequence).toBe(5);
     expect(headGraph(session.getHead(), GRAPH_ID)?.name).toBe("Peer rename");
@@ -1302,9 +1325,7 @@ describe("ProjectRoomSession", () => {
         replacePresentation(GRAPH_ID, ["artifact-viewer-1"]),
       ]),
     );
-    socket.emitMessage(
-      receipt("ffffffff-ffff-4fff-8fff-ffffffffffff"),
-    );
+    socket.emitMessage(receipt("ffffffff-ffff-4fff-8fff-ffffffffffff"));
     await first;
     expect(socket.sent).toHaveLength(2);
     const drainedFrame = JSON.parse(socket.sent[1]!) as Record<string, unknown>;
@@ -1616,8 +1637,13 @@ describe("ProjectRoomSession", () => {
         activity_target_ids: ["n1"],
       }),
     });
-    expect(session.getRemoteParticipants()[0]?.cursor).toEqual({ x: 10, y: 20 });
-    expect(session.getRemoteParticipants()[0]?.selected_node_ids).toEqual(["n1"]);
+    expect(session.getRemoteParticipants()[0]?.cursor).toEqual({
+      x: 10,
+      y: 20,
+    });
+    expect(session.getRemoteParticipants()[0]?.selected_node_ids).toEqual([
+      "n1",
+    ]);
     expect(session.getRemoteParticipants()[0]?.graph_id).toBe(OTHER_GRAPH_ID);
 
     // Publishing names the Graph this client is showing, so two people in two

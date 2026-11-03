@@ -408,6 +408,10 @@ export function serializeRunNode(
   return {
     kind: "builtin",
     id,
+    // A stored node says where it sits. The canvas keeps that on the React Flow
+    // node, and a node the drag never placed has no position to report, so the
+    // origin is the honest answer rather than a field the document lacks.
+    position: nodePosition(data),
     operator_id: data.spec.operator_id,
     operator_version: data.spec.operator_version,
     config: data.config,
@@ -416,6 +420,15 @@ export function serializeRunNode(
       : inputPlugs,
     artifact_type_bindings: serializeArtifactTypeBindings(data),
   };
+}
+
+/** The node's own position, as the canvas holds it. */
+function nodePosition(data: WorkflowNodeData): { x: number; y: number } {
+  const read = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const x = read(data.x);
+  const y = read(data.y);
+  return { x: x ?? 0, y: y ?? 0 };
 }
 
 export function serializeInputPlugs(data: WorkflowNodeData): InputPlugInput[] {

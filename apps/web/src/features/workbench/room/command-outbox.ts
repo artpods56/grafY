@@ -110,7 +110,9 @@ export class ProjectRoomCommandOutbox {
    * Queue one command batch, replacing unsent snapshot batches of the same
    * kind. The returned promise settles with the batch's receipt.
    */
-  submit(commands: readonly RoomProjectCommand[]): ProjectRoomCommandSubmission {
+  submit(
+    commands: readonly RoomProjectCommand[],
+  ): ProjectRoomCommandSubmission {
     this.supersedeQueuedSnapshotCommand(commands);
     if (this.queue.length + (this.inFlight ? 1 : 0) >= ROOM_COMMAND_QUEUE_CAP) {
       return {
@@ -315,7 +317,8 @@ export class ProjectRoomCommandOutbox {
     if (kind === null) return;
     for (let index = this.queue.length - 1; index >= 0; index -= 1) {
       const item = this.queue[index];
-      if (!item || item.sent || snapshotCommandKind(item.commands) !== kind) continue;
+      if (!item || item.sent || snapshotCommandKind(item.commands) !== kind)
+        continue;
       this.queue.splice(index, 1);
       this.localCommandIds.delete(item.commandId);
       item.reject(

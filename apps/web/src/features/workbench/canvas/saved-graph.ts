@@ -277,9 +277,7 @@ export function savedGraphFingerprint(graph: GraphDraft): string {
  * Fingerprint of execution-relevant graph structure only.
  * Presentation (viewers/annotations) must not block materialization.
  */
-export function savedGraphExecutionFingerprint(
-  graph: GraphDraft,
-): string {
+export function savedGraphExecutionFingerprint(graph: GraphDraft): string {
   const normalized = {
     name: graph.name,
     schema_version: graph.document.schema_version,

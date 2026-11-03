@@ -14,6 +14,7 @@ function participant(
 ): PresenceParticipant {
   return {
     project_room_session_id: sessionId,
+    graph_id: "graph-1",
     actor: {
       actor_id: "00000000-0000-4000-8000-000000000001",
       display_name: "Ada",

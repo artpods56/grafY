@@ -191,9 +191,7 @@ describe("room-command-bridge", () => {
       name: "Next",
       expected_name: "Demo",
     });
-    expect(room).toEqual(
-      toRoomRenameGraphCommand(GRAPH_ID, "Next", "Demo"),
-    );
+    expect(room).toEqual(toRoomRenameGraphCommand(GRAPH_ID, "Next", "Demo"));
     // There is no in-graph form of a rename to map to.
     expect(
       toRoomGraphBodyCommand({ kind: "rename_graph", name: "Next" }, document),
@@ -233,7 +231,11 @@ describe("room-command-bridge", () => {
       selected: true,
       onClick: () => undefined,
     };
-    const room = toRoomGraphCommand({ kind: "add_node", node }, document, GRAPH_ID);
+    const room = toRoomGraphCommand(
+      { kind: "add_node", node },
+      document,
+      GRAPH_ID,
+    );
     if (room?.kind !== "in_graph" || room.command.kind !== "add_node") {
       throw new Error("Expected an addressed add_node");
     }
@@ -316,7 +318,11 @@ describe("room-command-bridge", () => {
       collaboration_sequence: 8,
       document: {
         graphs: [
-          { id: GRAPH_ID, name: "Demo", document: { nodes: [{ id: "scoped" }] } },
+          {
+            id: GRAPH_ID,
+            name: "Demo",
+            document: { nodes: [{ id: "scoped" }] },
+          },
           { id: OTHER_GRAPH_ID, name: "Other" },
         ],
       },
@@ -562,7 +568,10 @@ describe("room-command-bridge", () => {
     // The pins travelled: a replayed node is still bound to its release.
     expect(nodesOf(afterDuplicate, GRAPH_ID)[2]).toMatchObject({
       artifact_type_bindings: [
-        { variable: "T", artifact_type: { id: "table.data", schema_version: 2 } },
+        {
+          variable: "T",
+          artifact_type: { id: "table.data", schema_version: 2 },
+        },
       ],
     });
     expect(nodesOf(afterDuplicate, OTHER_GRAPH_ID)).toEqual([]);
@@ -614,7 +623,12 @@ describe("room-command-bridge", () => {
         kind: "replace_presentation",
         presentation: {
           viewers: [
-            { id: "other-viewer", position: { x: 3, y: 4 }, layout: null, mode: null },
+            {
+              id: "other-viewer",
+              position: { x: 3, y: 4 },
+              layout: null,
+              mode: null,
+            },
           ],
           links: [],
           bindings: [],
@@ -677,7 +691,9 @@ describe("room-command-bridge", () => {
     ).toBeNull();
     // A Project-level batch addresses the Project, not a Graph.
     expect(
-      commandBatchGraphId([toRoomRenameProjectCommand("Project", "Room project")]),
+      commandBatchGraphId([
+        toRoomRenameProjectCommand("Project", "Room project"),
+      ]),
     ).toBeNull();
   });
 
@@ -742,7 +758,12 @@ describe("room-command-bridge", () => {
         kind: "replace_presentation",
         presentation: {
           viewers: [
-            { id: "artifact-viewer-1", position: { x: 1, y: 2 }, layout: null, mode: null },
+            {
+              id: "artifact-viewer-1",
+              position: { x: 1, y: 2 },
+              layout: null,
+              mode: null,
+            },
           ],
           links: [],
           bindings: [],
@@ -764,8 +785,13 @@ describe("room-command-bridge", () => {
       5,
     );
 
-    const callNode = nodesOf(next, GRAPH_ID).find((candidate) => candidate.id === "a");
-    expect(callNode).toMatchObject({ kind: "call", position: { x: 30, y: 40 } });
+    const callNode = nodesOf(next, GRAPH_ID).find(
+      (candidate) => candidate.id === "a",
+    );
+    expect(callNode).toMatchObject({
+      kind: "call",
+      position: { x: 30, y: 40 },
+    });
     // The Graph keeps the viewers it already had: converting a node is not a
     // reason to drop the rest of the Graph's presentation.
     expect(viewersOf(next, GRAPH_ID)).toHaveLength(1);
@@ -795,9 +821,9 @@ describe("room-command-bridge", () => {
       toRoomRenameGraphCommand(UNKNOWN_GRAPH_ID, "Ghost", "Whatever"),
       5,
     );
-    expect(afterRename.document.graphs.map((candidate) => candidate.name)).toEqual(
-      ["Demo", "Other"],
-    );
+    expect(
+      afterRename.document.graphs.map((candidate) => candidate.name),
+    ).toEqual(["Demo", "Other"]);
     expect(afterRename.document.graphs[0]).toBe(graphsBefore[0]);
     expect(afterRename.document.graphs[1]).toBe(graphsBefore[1]);
     expect(afterRename.collaboration_sequence).toBe(5);

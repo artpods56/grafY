@@ -253,7 +253,7 @@ describe("ProjectRoomCommandOutbox", () => {
   });
 
   it("resolves a receipt that the head already covers with no accepted at all", async () => {
-    let head: ProjectRoomHeadPointer | null = {
+    const head: ProjectRoomHeadPointer | null = {
       room_epoch: EPOCH_ONE,
       collaboration_sequence: 5,
     };
@@ -350,7 +350,7 @@ describe("ProjectRoomCommandOutbox", () => {
   });
 
   it("rejects the caller when the driver cannot write a returned frame", async () => {
-    let head: ProjectRoomHeadPointer | null = {
+    const head: ProjectRoomHeadPointer | null = {
       room_epoch: EPOCH_ONE,
       collaboration_sequence: 4,
     };
@@ -390,7 +390,9 @@ describe("ProjectRoomCommandOutbox", () => {
       createCommandId: nextId(["command-a", "command-b", "command-c"]),
     });
 
-    const replaceDocument = (viewerId: string): readonly RoomProjectCommand[] => [
+    const replaceDocument = (
+      viewerId: string,
+    ): readonly RoomProjectCommand[] => [
       {
         kind: "in_graph",
         graph_id: GRAPH_ID,

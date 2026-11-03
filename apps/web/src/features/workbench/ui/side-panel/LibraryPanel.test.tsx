@@ -99,10 +99,7 @@ const RUN_ITEM: PlacedLibraryItem = {
     graph_title: "Sales",
     node_id: "resize-1",
     node_title: "Resize",
-  },
-  run: {
-    graph_id: "graph-1",
-    finished_at: "2026-09-11T11:59:00Z",
+    result_fingerprint: "fp-sales-resize",
   },
   folder_id: "september",
 };
@@ -790,13 +787,11 @@ describe("LibraryPanel", () => {
     );
     expect(tile).not.toBeNull();
     expect(tile!.textContent).toContain("Library / Fieldwork / September");
-    expect(tile!.textContent).toContain(
-      "Sales · Resize · revision 4 · from a run",
-    );
+    expect(tile!.textContent).toContain("Sales · Resize");
     expect(tile!.querySelector("pre")?.textContent).toContain("plot(x),y(x)");
   });
 
-  it("opens the run a selected artifact came from", async () => {
+  it("opens the Graph a selected artifact came from", async () => {
     const { onOpenInstance } = await renderPanel({
       folders: [FIELDWORK],
       items: [RUN_ITEM],
@@ -812,11 +807,16 @@ describe("LibraryPanel", () => {
           '[aria-label="Selected artifact"] button',
         ),
       ]
-        .find((button) => button.textContent === "Execution history")!
+        .find((button) => button.textContent === "Where it came from")!
         .click();
     });
 
-    expect(onOpenInstance).toHaveBeenCalledWith("graph-1", "execution-1");
+    // It names the Graph and the result, not an execution: the Run is retired,
+    // the result and the node that made it are not.
+    expect(onOpenInstance).toHaveBeenCalledWith(
+      "graph-1",
+      "fp-sales-resize",
+    );
   });
 
   it("falls back to the folder icon when a thumbnail cannot load", async () => {

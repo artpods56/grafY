@@ -98,10 +98,14 @@ describe("PresenceOverlay", () => {
       participant("Grace", { x: 5, y: 6 }, { graph_id: OTHER_GRAPH_ID }),
       // The room carries this client's own participant too; it never chairs
       // itself alongside the others.
-      participant("Me", { x: 0, y: 0 }, {
-        project_room_session_id: LOCAL_SESSION_ID,
-        graph_id: PROJECT_ID,
-      }),
+      participant(
+        "Me",
+        { x: 0, y: 0 },
+        {
+          project_room_session_id: LOCAL_SESSION_ID,
+          graph_id: PROJECT_ID,
+        },
+      ),
     ]);
 
     const strip = container.querySelector('[aria-label="Collaborators"]');
@@ -113,9 +117,13 @@ describe("PresenceOverlay", () => {
 
   it("renders nothing when the Project room holds only this session", () => {
     const container = render([
-      participant("Me", { x: 0, y: 0 }, {
-        project_room_session_id: LOCAL_SESSION_ID,
-      }),
+      participant(
+        "Me",
+        { x: 0, y: 0 },
+        {
+          project_room_session_id: LOCAL_SESSION_ID,
+        },
+      ),
     ]);
 
     expect(container.textContent).toBe("");

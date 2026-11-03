@@ -36,9 +36,7 @@ export default function ProjectsLayout({ children }: ProjectsLayoutProps) {
         key={`${session.user_id}:${workspace.id}`}
         workspaceId={workspace.id}
         workspaceSlug={workspaceSlug}
-        initialProjectId={
-          projectId === NEW_PROJECT_ROUTE_ID ? null : projectId
-        }
+        initialProjectId={projectId === NEW_PROJECT_ROUTE_ID ? null : projectId}
       />
       {children}
     </>

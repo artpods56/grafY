@@ -54,10 +54,7 @@ import {
   type Workspace,
   type WorkspaceRole,
 } from "@/lib/api";
-import {
-  deleteSavedGraphRemote,
-  renameSavedGraphRemote,
-} from "./graph-actions";
+import { deleteProjectRemote, renameProjectRemote } from "./graph-actions";
 import { GraphRowMenu, promptGraphRename } from "./GraphRowMenu";
 import { sortGraphsByRecency } from "./WorkspaceGraphPanel";
 
@@ -644,10 +641,7 @@ export function WorkspaceRail({
         if (chrome) {
           await chrome.deleteGraph(graph);
         } else {
-          const deleted = await deleteProjectRemote(
-            activeWorkspace.id,
-            graph,
-          );
+          const deleted = await deleteProjectRemote(activeWorkspace.id, graph);
           if (!deleted) return;
         }
         void refreshGraphSummaries(activeWorkspace.id);
