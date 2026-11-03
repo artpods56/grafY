@@ -5,11 +5,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
-from grafy_core.domain.collaboration import GraphCommand
-from grafy_core.domain.execution_history import GraphExecutionScope
+from grafy_core.domain.collaboration import ProjectCommand
 from grafy_core.domain.identity import WorkspaceCapability
 
-from grafy_api.graph_contracts import CollaborativeHeadResponse
+from grafy_api.project_contracts import ProjectHeadResponse
 
 
 PROTOCOL_VERSION = 1
@@ -29,10 +28,6 @@ ACTOR_DISPLAY_COLORS = (
     "teal",
     "orange",
 )
-
-
-ActiveExecutionLifecycleStatus = Literal["queued", "running", "cancelling"]
-TerminalExecutionStatus = Literal["cancelled", "succeeded", "failed"]
 
 
 class PresenceActivityKind(StrEnum):
@@ -89,8 +84,9 @@ def _normalize_presence_ids(value: tuple[str, ...] | list[str]) -> tuple[str, ..
 class PresenceParticipant(RoomProtocolModel):
     """Ephemeral collaborator state keyed by graph-room session id."""
 
-    graph_room_session_id: UUID
+    project_room_session_id: UUID
     actor: ActorPresentation
+    graph_id: str | None = Field(default=None, min_length=1, max_length=255)
     presence_sequence: int = Field(ge=0)
     cursor: PresencePoint | None = None
     selected_node_ids: tuple[str, ...] = ()
@@ -114,7 +110,7 @@ class PresenceJoinMessage(RoomProtocolModel):
 class PresenceLeaveMessage(RoomProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
     type: Literal["presence.leave"] = "presence.leave"
-    graph_room_session_id: UUID
+    project_room_session_id: UUID
 
 
 class PresenceUpdateMessage(RoomProtocolModel):
@@ -130,6 +126,7 @@ class PresenceUpdateSubmitMessage(RoomProtocolModel):
 
     protocol_version: Literal[1] = PROTOCOL_VERSION
     type: Literal["presence.update"] = "presence.update"
+    graph_id: str | None = Field(default=None, min_length=1, max_length=255)
     presence_sequence: int = Field(ge=1)
     cursor: PresencePoint | None = None
     selected_node_ids: tuple[str, ...] = Field(
@@ -154,35 +151,6 @@ class PresenceUpdateSubmitMessage(RoomProtocolModel):
         return _normalize_presence_ids(value)
 
 
-class ActiveExecutionSummary(RoomProtocolModel):
-    """Shared discovery facts for the one active graph execution."""
-
-    execution_id: UUID
-    graph_revision: int = Field(ge=1)
-    status: ActiveExecutionLifecycleStatus
-    scope: GraphExecutionScope = "all"
-    requested_node_ids: list[str] = Field(default_factory=list)
-    starter: ActorPresentation
-    active_node_id: str | None = None
-    overlays_compatible: bool = True
-    cancellable: bool = True
-
-    @field_validator("requested_node_ids")
-    @classmethod
-    def _normalize_requested_node_ids(cls, value: list[str]) -> list[str]:
-        normalized: list[str] = []
-        seen: set[str] = set()
-        for raw in value:
-            node_id = raw.strip()
-            if node_id == "" or node_id in seen:
-                continue
-            if len(node_id) > 255:
-                raise ValueError("requested node id must be at most 255 characters")
-            seen.add(node_id)
-            normalized.append(node_id)
-        return normalized
-
-
 InstanceStateName = Literal["fresh", "stale", "queued", "running", "failed"]
 RunLifecycleStatus = Literal[
     "running", "succeeded", "failed", "cancelled", "interrupted"
@@ -205,13 +173,17 @@ class ActiveRunSummary(RoomProtocolModel):
     cancellable: bool = True
 
 
-class InstanceStateEntry(RoomProtocolModel):
-    """Derived state of one node instance, keyed by its full instance key."""
-
+class InstanceKeyEntry(RoomProtocolModel):
+    project_id: UUID
     graph_id: str = Field(min_length=1, max_length=255)
     call_path: tuple[str, ...] = ()
     node_id: str = Field(min_length=1, max_length=PRESENCE_ID_MAX_LENGTH)
-    map_index: int | None = None
+    map_index: int | None = Field(default=None, ge=0)
+
+
+class InstanceStateEntry(InstanceKeyEntry):
+    """Derived state addressed by the complete node instance key."""
+
     state: InstanceStateName
     fingerprint: str
     last_result_fingerprint: str | None = None
@@ -242,7 +214,7 @@ class InstancesChangedMessage(RoomProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
     type: Literal["instances.changed"] = "instances.changed"
     changed: tuple[InstanceStateEntry, ...] = ()
-    removed: tuple[InstanceStateEntry, ...] = ()
+    removed: tuple[InstanceKeyEntry, ...] = ()
     head_sequence: int = Field(ge=0)
 
 
@@ -250,58 +222,40 @@ class RoomReadyMessage(RoomProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
     type: Literal["room.ready"] = "room.ready"
     workspace_id: UUID
-    graph_id: UUID
-    graph_room_session_id: UUID
+    project_id: UUID
+    project_room_session_id: UUID
     actor: ActorPresentation
     capabilities: CapabilitySnapshot
-    head: CollaborativeHeadResponse
+    head: ProjectHeadResponse
     participants: list[PresenceParticipant] = Field(default_factory=list)
-    active_execution: ActiveExecutionSummary | None = None
+    active_runs: tuple[ActiveRunSummary, ...] = ()
+    instances: tuple[InstanceStateEntry, ...] = ()
     registry_marker: str = "builtin"
 
 
-class ExecutionActiveMessage(RoomProtocolModel):
-    """Room announcement when an active execution is accepted or changes lifecycle."""
-
+class ProjectCommandSubmitMessage(RoomProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
-    type: Literal["execution.active"] = "execution.active"
-    execution: ActiveExecutionSummary
-
-
-class ExecutionClearedMessage(RoomProtocolModel):
-    """Room announcement after durable terminal state and active-slot release."""
-
-    protocol_version: Literal[1] = PROTOCOL_VERSION
-    type: Literal["execution.cleared"] = "execution.cleared"
-    execution_id: UUID
-    status: TerminalExecutionStatus
-    graph_revision: int = Field(ge=1)
-    error: str | None = Field(default=None, max_length=2000)
-
-
-class GraphCommandSubmitMessage(RoomProtocolModel):
-    protocol_version: Literal[1] = PROTOCOL_VERSION
-    type: Literal["graph.command.submit"] = "graph.command.submit"
+    type: Literal["project.command.submit"] = "project.command.submit"
     command_id: UUID
     room_epoch: UUID
     observed_sequence: int = Field(ge=0)
-    command: GraphCommand
+    commands: tuple[ProjectCommand, ...] = Field(min_length=1)
 
 
-class GraphCommandAcceptedMessage(RoomProtocolModel):
+class ProjectCommandAcceptedMessage(RoomProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
-    type: Literal["graph.command.accepted"] = "graph.command.accepted"
+    type: Literal["project.command.accepted"] = "project.command.accepted"
     command_id: UUID
     room_epoch: UUID
     sequence: int = Field(ge=0)
     actor: ActorPresentation
-    graph_room_session_id: UUID | None = None
-    command: GraphCommand
+    project_room_session_id: UUID | None = None
+    commands: tuple[ProjectCommand, ...] = Field(min_length=1)
 
 
-class GraphCommandReceiptMessage(RoomProtocolModel):
+class ProjectCommandReceiptMessage(RoomProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
-    type: Literal["graph.command.receipt"] = "graph.command.receipt"
+    type: Literal["project.command.receipt"] = "project.command.receipt"
     command_id: UUID
     outcome: Literal["accepted", "idempotent_replay"]
     accepted_room_epoch: UUID
@@ -312,9 +266,9 @@ class GraphCommandReceiptMessage(RoomProtocolModel):
     requires_head_rehydration: bool = False
 
 
-class GraphCommandRejectedMessage(RoomProtocolModel):
+class ProjectCommandRejectedMessage(RoomProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
-    type: Literal["graph.command.rejected"] = "graph.command.rejected"
+    type: Literal["project.command.rejected"] = "project.command.rejected"
     command_id: UUID
     error_code: str = Field(min_length=1, max_length=64)
     detail: str = Field(min_length=1, max_length=500)
@@ -326,7 +280,7 @@ class RoomRehydrateMessage(RoomProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
     type: Literal["room.rehydrate"] = "room.rehydrate"
     reason: Literal["epoch_reset"] = "epoch_reset"
-    head: CollaborativeHeadResponse
+    head: ProjectHeadResponse
 
 
 class RoomHeartbeatMessage(RoomProtocolModel):
@@ -338,12 +292,12 @@ class RoomHeartbeatMessage(RoomProtocolModel):
 
 
 ClientRoomMessage = Annotated[
-    GraphCommandSubmitMessage | PresenceUpdateSubmitMessage,
+    ProjectCommandSubmitMessage | PresenceUpdateSubmitMessage,
     Field(discriminator="type"),
 ]
 
 CLIENT_ROOM_MESSAGE_ADAPTER: TypeAdapter[
-    GraphCommandSubmitMessage | PresenceUpdateSubmitMessage
+    ProjectCommandSubmitMessage | PresenceUpdateSubmitMessage
 ] = TypeAdapter(ClientRoomMessage)
 
 

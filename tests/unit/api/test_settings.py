@@ -24,7 +24,7 @@ from grafy_shared.config.app import (
 )
 
 from grafy_api.services.application import workbench_egress_policy
-from grafy_api.realtime.hub import GraphRoomHub
+from grafy_api.realtime.hub import ProjectRoomHub
 from grafy_api.settings import Settings
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
 from grafy_core.egress import TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE
@@ -47,8 +47,6 @@ CONFIG_SECTIONS: tuple[type, ...] = (
 # deliberately out of scope here, so the environment-binding test names it instead
 # of pretending it resolves.
 ADVERTISED_BUT_UNOWNED_VARIABLES = frozenset({"GRAFY_OIDC_BOOTSTRAP_SUBJECT"})
-
-
 
 
 def test_no_setting_field_is_owned_by_more_than_one_section() -> None:
@@ -171,8 +169,6 @@ def test_parent_reads_one_env_file_for_every_section(
     assert isolated.egress.egress_trusted_destinations == ()
 
 
-
-
 def test_default_workspace_does_not_reuse_legacy_data(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -187,14 +183,6 @@ def test_default_workspace_does_not_reuse_legacy_data(
 
 
 # pyright: ignore[reportCallIssue]
-
-
-
-
-
-
-
-
 
 
 def test_database_url_does_not_reuse_legacy_database(tmp_path: Path) -> None:  # pyright: ignore[reportCallIssue]
@@ -223,46 +211,19 @@ def test_map_max_concurrency_must_be_positive() -> None:
         ExecutionConfig(_env_file=None, map_max_concurrency=0)  # pyright: ignore[reportCallIssue]
 
 
-def test_max_active_executions_can_be_selected_from_the_environment(
+def test_project_computation_concurrency_can_be_selected_from_the_environment(
     monkeypatch: pytest.MonkeyPatch,  # pyright: ignore[reportCallIssue]
 ) -> None:
-    monkeypatch.setenv("GRAFY_MAX_ACTIVE_EXECUTIONS", "6")
+    monkeypatch.setenv("GRAFY_PROJECT_COMPUTATION_CONCURRENCY", "6")
 
-    assert ExecutionConfig(_env_file=None).max_active_executions == 6  # pyright: ignore[reportCallIssue]
+    assert ExecutionConfig(_env_file=None).project_computation_concurrency == 6  # pyright: ignore[reportCallIssue]
 
 
 # pyright: ignore[reportCallIssue]
 @pytest.mark.parametrize("value", [0, 33])
-def test_max_active_executions_is_bounded(value: int) -> None:
+def test_project_computation_concurrency_is_bounded(value: int) -> None:
     with pytest.raises(ValidationError):
-        ExecutionConfig(_env_file=None, max_active_executions=value)  # pyright: ignore[reportCallIssue]
-
-
-def test_max_pending_graphs_can_be_selected_from_the_environment(
-    monkeypatch: pytest.MonkeyPatch,  # pyright: ignore[reportCallIssue]
-) -> None:
-    monkeypatch.setenv("GRAFY_MAX_PENDING_GRAPHS", "80")
-
-    assert ExecutionConfig(_env_file=None).max_pending_graphs == 80  # pyright: ignore[reportCallIssue]
-
-
-# pyright: ignore[reportCallIssue]
-@pytest.mark.parametrize("value", [0, 1_001])
-def test_max_pending_graphs_is_bounded(value: int) -> None:
-    with pytest.raises(ValidationError):
-        ExecutionConfig(_env_file=None, max_pending_graphs=value)  # pyright: ignore[reportCallIssue]
-
-
-
-
-
-
-
-
-
-
-
-
+        ExecutionConfig(_env_file=None, project_computation_concurrency=value)  # pyright: ignore[reportCallIssue]
 
 
 def test_oidc_domain_workspaces_stay_raw_for_the_api_to_parse() -> None:  # pyright: ignore[reportCallIssue]
@@ -413,21 +374,13 @@ def test_command_hmac_key_fails_closed_when_empty() -> None:
         keys.resolved_command_hmac_key()
 
 
-
-
-
-
-
-
-
-
 def test_realtime_presence_bounds_are_independent_of_execution(
     monkeypatch: pytest.MonkeyPatch,  # pyright: ignore[reportCallIssue]
 ) -> None:
     monkeypatch.setenv("GRAFY_GRAPH_ROOM_HEARTBEAT_SECONDS", "3")
 
     realtime = RealtimeConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
-    hub = GraphRoomHub.from_settings(realtime)
+    hub = ProjectRoomHub.from_settings(realtime)
 
     assert realtime.graph_room_heartbeat_seconds == 3.0
     assert hub.heartbeat_seconds == 3.0

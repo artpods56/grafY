@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from grafy_core.application.projects import ProjectService
     from grafy_persistence.database import Database
     from grafy_api.node_secrets import NodeSecretService
-    from grafy_api.realtime.hub import GraphRoomHub
+    from grafy_api.realtime.hub import ProjectRoomHub
     from grafy_api.runs.service import RunService
     from grafy_api.services.composition import WorkbenchComponents
     from grafy_api.v1.routes.auth.services import AuthService
@@ -43,10 +43,10 @@ class AppResources:
     runs: RunService
     collaboration: CollaborationService
     node_secrets: NodeSecretService
-    graph_room_hub: GraphRoomHub
+    project_room_hub: ProjectRoomHub
 
     async def cleanup(self) -> None:
-        await self.graph_room_hub.shutdown()
+        await self.project_room_hub.shutdown()
         await self.runs.close()
         await self.workbench.artifacts.close()
 

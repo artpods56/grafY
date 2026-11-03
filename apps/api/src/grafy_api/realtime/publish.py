@@ -4,23 +4,23 @@ from collections.abc import Callable
 from uuid import UUID
 
 from grafy_core.domain.collaboration import (
-    CollaborativeGraphHead,
-    GraphCommand,
-    GraphCommandReceipt,
+    ProjectHead,
+    ProjectCommand,
+    ProjectCommandReceipt,
 )
 from grafy_core.domain.identity import ActorContext
-from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
+from grafy_core.ports.identity import IdentityUnitOfWorkPort
 
-from grafy_api.graph_contracts import CollaborativeHeadResponse
+from grafy_api.project_contracts import ProjectHeadResponse
 from grafy_api.realtime.hub import (
     CLOSE_ACCESS_REVOKED,
-    CLOSE_GRAPH_DELETED,
+    CLOSE_PROJECT_DELETED,
     CLOSE_PERMISSIONS_CHANGED,
-    GraphRoomHub,
+    ProjectRoomHub,
 )
 from grafy_api.realtime.protocol import (
     ActorPresentation,
-    GraphCommandAcceptedMessage,
+    ProjectCommandAcceptedMessage,
     RoomRehydrateMessage,
     actor_display_color,
     bounded_display_name,
@@ -28,7 +28,7 @@ from grafy_api.realtime.protocol import (
 
 
 async def actor_presentation_for(
-    uow_factory: Callable[[], SqlAlchemyUnitOfWork],
+    uow_factory: Callable[[], IdentityUnitOfWorkPort],
     actor: ActorContext,
 ) -> ActorPresentation:
     async with uow_factory() as unit_of_work:
@@ -44,63 +44,63 @@ async def actor_presentation_for(
 
 
 async def publish_accepted_command(
-    hub: GraphRoomHub,
+    hub: ProjectRoomHub,
     *,
     actor: ActorContext,
     workspace_id: UUID,
-    graph_id: UUID,
-    command: GraphCommand,
-    receipt: GraphCommandReceipt,
-    graph_room_session_id: UUID | None = None,
-    uow_factory: Callable[[], SqlAlchemyUnitOfWork],
+    project_id: UUID,
+    commands: tuple[ProjectCommand, ...],
+    receipt: ProjectCommandReceipt,
+    project_room_session_id: UUID | None = None,
+    uow_factory: Callable[[], IdentityUnitOfWorkPort],
 ) -> None:
     presentation = await actor_presentation_for(uow_factory, actor)
     await hub.publish_accepted(
         workspace_id=workspace_id,
-        graph_id=graph_id,
-        accepted=GraphCommandAcceptedMessage(
+        project_id=project_id,
+        accepted=ProjectCommandAcceptedMessage(
             command_id=receipt.command_id,
             room_epoch=receipt.room_epoch,
             sequence=receipt.accepted_sequence,
             actor=presentation,
-            graph_room_session_id=graph_room_session_id,
-            command=command,
+            project_room_session_id=project_room_session_id,
+            commands=commands,
         ),
     )
 
 
 async def publish_epoch_reset(
-    hub: GraphRoomHub,
+    hub: ProjectRoomHub,
     *,
     workspace_id: UUID,
-    graph_id: UUID,
-    head: CollaborativeGraphHead,
+    project_id: UUID,
+    head: ProjectHead,
 ) -> None:
     await hub.publish_rehydrate(
         workspace_id=workspace_id,
-        graph_id=graph_id,
+        project_id=project_id,
         message=RoomRehydrateMessage(
-            head=CollaborativeHeadResponse.from_head(head),
+            head=ProjectHeadResponse.from_head(head),
         ),
     )
 
 
-async def close_graph_room(
-    hub: GraphRoomHub,
+async def close_project_room(
+    hub: ProjectRoomHub,
     *,
     workspace_id: UUID,
-    graph_id: UUID,
+    project_id: UUID,
 ) -> None:
-    await hub.close_graph(
+    await hub.close_project(
         workspace_id=workspace_id,
-        graph_id=graph_id,
-        code=CLOSE_GRAPH_DELETED[0],
-        reason=CLOSE_GRAPH_DELETED[1],
+        project_id=project_id,
+        code=CLOSE_PROJECT_DELETED[0],
+        reason=CLOSE_PROJECT_DELETED[1],
     )
 
 
 async def close_user_rooms_for_permission_change(
-    hub: GraphRoomHub,
+    hub: ProjectRoomHub,
     *,
     workspace_id: UUID,
     user_id: UUID,

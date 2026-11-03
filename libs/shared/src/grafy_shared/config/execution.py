@@ -1,4 +1,4 @@
-"""Admission limits for graph execution and Plugin invocation."""
+"""Per-Project computation and MAP concurrency."""
 
 from typing import ClassVar
 
@@ -9,10 +9,9 @@ from grafy_shared.config.base import SECTION_SETTINGS
 
 
 class ExecutionConfig(BaseSettings):
-    """How much graph work one API process admits at once."""
+    """The computation budget of each Project scheduler."""
 
     model_config: ClassVar[SettingsConfigDict] = SECTION_SETTINGS
 
     map_max_concurrency: int = Field(default=4, ge=1)
-    max_active_executions: int = Field(default=2, ge=1, le=32)
-    max_pending_graphs: int = Field(default=20, ge=1, le=1_000)
+    project_computation_concurrency: int = Field(default=2, ge=1, le=32)

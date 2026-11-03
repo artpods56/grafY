@@ -3,20 +3,20 @@ from typing import ClassVar
 from uuid import UUID
 
 from grafy_core.domain.collaboration import (
-    CollaborativeGraphHead,
+    ProjectHead,
     CommandReceiptOutcome,
-    GraphCommand,
-    GraphCommandReceipt,
+    ProjectCommand,
+    ProjectCommandReceipt,
 )
 from grafy_core.domain.identity import WorkspaceKind
-from grafy_core.domain.graph_documents import (
-    GraphBrowserItem,
-    GraphFolder,
-    GraphOrganization,
-    SavedGraph,
-    GraphDocument,
-    UserGraphState,
+from grafy_core.domain.projects import (
+    ProjectBrowserItem,
+    ProjectFolder,
+    ProjectOrganization,
+    Project,
+    UserProjectState,
 )
+from grafy_core.kernel.project import ProjectDocument
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -25,54 +25,38 @@ from pydantic import (
 )
 
 
-class SavedGraphApiModel(BaseModel):
+class ProjectApiModel(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(
         extra="forbid",
         allow_inf_nan=False,
     )
 
 
-class SavedGraphWriteRequest(SavedGraphApiModel):
+class CreateProjectRequest(ProjectApiModel):
     name: str = Field(min_length=1, max_length=160)
-    document: GraphDocument
+    graph_id: str = Field(default="main", min_length=1)
+    graph_name: str = Field(default="Main", min_length=1)
+    project_id: UUID | None = None
+    command_id: UUID | None = None
 
-    @field_validator("name", mode="before")
+    @field_validator("name", "graph_name", mode="before")
     @classmethod
     def normalize_name(cls, value: object) -> object:
-        if isinstance(value, str):
-            return value.strip()
-        return value
+        return value.strip() if isinstance(value, str) else value
 
 
-class CreateSavedGraphRequest(SavedGraphWriteRequest):
-    pass
-
-
-class UpdateSavedGraphRequest(SavedGraphWriteRequest):
-    expected_revision: int = Field(ge=1)
-
-
-class SavedGraphResponse(SavedGraphApiModel):
+class ProjectResponse(ProjectApiModel):
     id: UUID
     name: str
-    revision: int
     created_at: datetime
     updated_at: datetime
-    document: GraphDocument
 
     @classmethod
-    def from_graph(cls, graph: SavedGraph) -> "SavedGraphResponse":
-        return cls(
-            id=graph.id,
-            name=graph.name,
-            revision=graph.revision,
-            created_at=graph.created_at,
-            updated_at=graph.updated_at,
-            document=graph.document,
-        )
+    def from_project(cls, project: Project) -> "ProjectResponse":
+        return cls.model_validate(project, from_attributes=True)
 
 
-def graph_browser_updated_at(item: GraphBrowserItem) -> datetime:
+def project_browser_updated_at(item: ProjectBrowserItem) -> datetime:
     """Freshness shared by every graph discovery surface for one graph."""
 
     updated_at = item.draft.updated_at
@@ -84,7 +68,7 @@ def graph_browser_updated_at(item: GraphBrowserItem) -> datetime:
     return updated_at
 
 
-class SavedGraphSummaryResponse(SavedGraphApiModel):
+class ProjectSummaryResponse(ProjectApiModel):
     """Authoritative summary shared by every graph discovery surface.
 
     Counts and ``updated_at`` describe the collaborative draft head (what the
@@ -96,35 +80,37 @@ class SavedGraphSummaryResponse(SavedGraphApiModel):
     id: UUID
     name: str
     revision: int
+    graph_count: int
     node_count: int
     edge_count: int
     updated_at: datetime
     draft_pending: bool
 
     @staticmethod
-    def from_browser_item(item: GraphBrowserItem) -> "SavedGraphSummaryResponse":
-        return SavedGraphSummaryResponse(
+    def from_browser_item(item: ProjectBrowserItem) -> "ProjectSummaryResponse":
+        return ProjectSummaryResponse(
             id=item.id,
             name=item.draft.name,
             revision=item.draft.checkpoint_revision,
+            graph_count=item.draft.graph_count,
             node_count=item.draft.node_count,
             edge_count=item.draft.edge_count,
-            updated_at=graph_browser_updated_at(item),
+            updated_at=project_browser_updated_at(item),
             draft_pending=item.draft.head_sequence > item.draft.checkpoint_sequence,
         )
 
 
-class SavedGraphListResponse(SavedGraphApiModel):
-    graphs: list[SavedGraphSummaryResponse]
+class ProjectListResponse(ProjectApiModel):
+    projects: list[ProjectSummaryResponse]
 
     @classmethod
-    def from_items(cls, items: list[GraphBrowserItem]) -> "SavedGraphListResponse":
+    def from_items(cls, items: list[ProjectBrowserItem]) -> "ProjectListResponse":
         return cls(
-            graphs=[SavedGraphSummaryResponse.from_browser_item(item) for item in items]
+            projects=[ProjectSummaryResponse.from_browser_item(item) for item in items]
         )
 
 
-class GraphFolderWriteRequest(SavedGraphApiModel):
+class ProjectFolderWriteRequest(ProjectApiModel):
     name: str = Field(min_length=1, max_length=160)
 
     @field_validator("name", mode="before")
@@ -135,14 +121,14 @@ class GraphFolderWriteRequest(SavedGraphApiModel):
         return value
 
 
-class GraphFolderResponse(SavedGraphApiModel):
+class ProjectFolderResponse(ProjectApiModel):
     id: UUID
     name: str
     created_at: datetime
     updated_at: datetime
 
     @classmethod
-    def from_folder(cls, folder: GraphFolder) -> "GraphFolderResponse":
+    def from_folder(cls, folder: ProjectFolder) -> "ProjectFolderResponse":
         return cls(
             id=folder.id,
             name=folder.name,
@@ -151,21 +137,21 @@ class GraphFolderResponse(SavedGraphApiModel):
         )
 
 
-class GraphFolderListResponse(SavedGraphApiModel):
-    folders: list[GraphFolderResponse]
+class ProjectFolderListResponse(ProjectApiModel):
+    folders: list[ProjectFolderResponse]
 
     @classmethod
-    def from_folders(cls, folders: list[GraphFolder]) -> "GraphFolderListResponse":
+    def from_folders(cls, folders: list[ProjectFolder]) -> "ProjectFolderListResponse":
         return cls(
-            folders=[GraphFolderResponse.from_folder(folder) for folder in folders]
+            folders=[ProjectFolderResponse.from_folder(folder) for folder in folders]
         )
 
 
-class AssignGraphFolderRequest(SavedGraphApiModel):
+class AssignProjectFolderRequest(ProjectApiModel):
     folder_id: UUID | None
 
 
-class GraphOrganizationResponse(SavedGraphApiModel):
+class ProjectOrganizationResponse(ProjectApiModel):
     folder_id: UUID | None
     archived: bool
     archived_at: datetime | None
@@ -174,8 +160,8 @@ class GraphOrganizationResponse(SavedGraphApiModel):
     @classmethod
     def from_organization(
         cls,
-        organization: GraphOrganization,
-    ) -> "GraphOrganizationResponse":
+        organization: ProjectOrganization,
+    ) -> "ProjectOrganizationResponse":
         return cls(
             folder_id=organization.folder_id,
             archived=organization.is_archived,
@@ -184,52 +170,52 @@ class GraphOrganizationResponse(SavedGraphApiModel):
         )
 
 
-class UserGraphStateResponse(SavedGraphApiModel):
+class UserProjectStateResponse(ProjectApiModel):
     starred: bool
     last_opened_at: datetime | None
 
     @classmethod
-    def from_state(cls, state: UserGraphState) -> "UserGraphStateResponse":
+    def from_state(cls, state: UserProjectState) -> "UserProjectStateResponse":
         return cls(
             starred=state.starred,
             last_opened_at=state.last_opened_at,
         )
 
 
-class GraphBrowserLocationResponse(SavedGraphApiModel):
+class ProjectBrowserLocationResponse(ProjectApiModel):
     id: UUID
     slug: str
     name: str
     kind: WorkspaceKind
 
 
-class GraphBrowserFolderResponse(SavedGraphApiModel):
+class ProjectBrowserFolderResponse(ProjectApiModel):
     id: UUID
     name: str
 
 
-class GraphBrowserCreatorResponse(SavedGraphApiModel):
+class ProjectBrowserCreatorResponse(ProjectApiModel):
     id: UUID
     display_name: str | None
 
 
-class GraphBrowserItemResponse(SavedGraphSummaryResponse):
+class ProjectBrowserItemResponse(ProjectSummaryResponse):
     """The shared discovery summary plus workspace location and per-user state."""
 
-    location: GraphBrowserLocationResponse
-    folder: GraphBrowserFolderResponse | None
+    location: ProjectBrowserLocationResponse
+    folder: ProjectBrowserFolderResponse | None
     archived: bool
     archived_at: datetime | None
     starred: bool
     last_opened_at: datetime | None
-    creator: GraphBrowserCreatorResponse | None
+    creator: ProjectBrowserCreatorResponse | None
 
     @classmethod
-    def from_item(cls, item: GraphBrowserItem) -> "GraphBrowserItemResponse":
-        summary = SavedGraphSummaryResponse.from_browser_item(item)
+    def from_item(cls, item: ProjectBrowserItem) -> "ProjectBrowserItemResponse":
+        summary = ProjectSummaryResponse.from_browser_item(item)
         return cls(
             **summary.model_dump(),
-            location=GraphBrowserLocationResponse(
+            location=ProjectBrowserLocationResponse(
                 id=item.location.id,
                 slug=item.location.slug,
                 name=item.location.name,
@@ -238,7 +224,7 @@ class GraphBrowserItemResponse(SavedGraphSummaryResponse):
             folder=(
                 None
                 if item.folder is None
-                else GraphBrowserFolderResponse(
+                else ProjectBrowserFolderResponse(
                     id=item.folder.id,
                     name=item.folder.name,
                 )
@@ -250,7 +236,7 @@ class GraphBrowserItemResponse(SavedGraphSummaryResponse):
             creator=(
                 None
                 if item.creator is None
-                else GraphBrowserCreatorResponse(
+                else ProjectBrowserCreatorResponse(
                     id=item.creator.id,
                     display_name=item.creator.display_name,
                 )
@@ -258,39 +244,43 @@ class GraphBrowserItemResponse(SavedGraphSummaryResponse):
         )
 
 
-class GraphBrowserListResponse(SavedGraphApiModel):
-    graphs: list[GraphBrowserItemResponse]
+class ProjectBrowserListResponse(ProjectApiModel):
+    projects: list[ProjectBrowserItemResponse]
 
     @classmethod
-    def from_items(cls, items: list[GraphBrowserItem]) -> "GraphBrowserListResponse":
-        return cls(graphs=[GraphBrowserItemResponse.from_item(item) for item in items])
+    def from_items(
+        cls, items: list[ProjectBrowserItem]
+    ) -> "ProjectBrowserListResponse":
+        return cls(
+            projects=[ProjectBrowserItemResponse.from_item(item) for item in items]
+        )
 
 
-class CollaborativeHeadResponse(SavedGraphApiModel):
-    """Collaboration metadata paired with the canonical saved graph document."""
+class ProjectHeadResponse(ProjectApiModel):
+    """Collaboration metadata paired with the canonical Project document."""
 
-    graph_id: UUID
+    project_id: UUID
     room_epoch: UUID
     collaboration_sequence: int
     checkpoint_sequence: int
     checkpoint_revision: int
     name: str
     updated_at: datetime
-    document: GraphDocument
+    document: ProjectDocument
 
     @classmethod
-    def from_head(cls, head: CollaborativeGraphHead) -> "CollaborativeHeadResponse":
+    def from_head(cls, head: ProjectHead) -> "ProjectHeadResponse":
         return cls.model_validate(head, from_attributes=True)
 
 
-class SubmitGraphCommandRequest(SavedGraphApiModel):
+class SubmitProjectCommandRequest(ProjectApiModel):
     command_id: UUID
     room_epoch: UUID
     observed_sequence: int = Field(ge=0)
-    command: GraphCommand
+    commands: tuple[ProjectCommand, ...] = Field(min_length=1)
 
 
-class GraphCommandReceiptResponse(SavedGraphApiModel):
+class ProjectCommandReceiptResponse(ProjectApiModel):
     command_id: UUID
     outcome: CommandReceiptOutcome
     accepted_sequence: int
@@ -300,8 +290,8 @@ class GraphCommandReceiptResponse(SavedGraphApiModel):
     @classmethod
     def from_receipt(
         cls,
-        receipt: GraphCommandReceipt,
-    ) -> "GraphCommandReceiptResponse":
+        receipt: ProjectCommandReceipt,
+    ) -> "ProjectCommandReceiptResponse":
         return cls(
             command_id=receipt.command_id,
             outcome=receipt.outcome,
@@ -311,24 +301,25 @@ class GraphCommandReceiptResponse(SavedGraphApiModel):
         )
 
 
-class SubmitGraphCommandResponse(SavedGraphApiModel):
-    head: CollaborativeHeadResponse
-    receipt: GraphCommandReceiptResponse
+class SubmitProjectCommandResponse(ProjectApiModel):
+    head: ProjectHeadResponse
+    receipt: ProjectCommandReceiptResponse
 
 
-class CheckpointGraphRequest(SavedGraphApiModel):
+class CheckpointProjectRequest(ProjectApiModel):
     expected_room_epoch: UUID
     expected_sequence: int = Field(ge=0)
 
 
-class CheckpointGraphResponse(SavedGraphApiModel):
-    head: CollaborativeHeadResponse
-    saved_revision: int
+class CheckpointProjectResponse(ProjectApiModel):
+    head: ProjectHeadResponse
+    checkpoint_revision: int
 
 
-class CopyExactHeadRequest(SavedGraphApiModel):
+class CopyExactHeadRequest(ProjectApiModel):
     source_workspace_id: UUID
-    source_graph_id: UUID
+    source_project_id: UUID
+    project_id: UUID
     expected_room_epoch: UUID
     expected_sequence: int = Field(ge=0)
     command_id: UUID
