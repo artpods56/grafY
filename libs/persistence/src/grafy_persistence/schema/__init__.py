@@ -7,6 +7,9 @@ from grafy_persistence.column_types import (
     GraphDocumentType as GraphDocumentType,
 )
 from grafy_persistence.column_types import (
+    ProjectDocumentType as ProjectDocumentType,
+)
+from grafy_persistence.column_types import (
     UTCDateTime as UTCDateTime,
 )
 
@@ -16,45 +19,6 @@ from .artifacts import (
 from .uploads import uploads as uploads
 from .base import NAMING_CONVENTION as NAMING_CONVENTION
 from .base import metadata as metadata
-from .execution import (
-    graph_execution_nodes as graph_execution_nodes,
-)
-from .execution import (
-    graph_executions as graph_executions,
-)
-from .execution import (
-    invocation_cache_entries as invocation_cache_entries,
-)
-from .execution import (
-    materialized_node_outputs as materialized_node_outputs,
-)
-from .graphs import (
-    collaborative_graph_heads as collaborative_graph_heads,
-)
-from .graphs import (
-    graph_checkpoint_mappings as graph_checkpoint_mappings,
-)
-from .graphs import (
-    graph_command_receipts as graph_command_receipts,
-)
-from .graphs import (
-    graph_folders as graph_folders,
-)
-from .graphs import (
-    graph_organizations as graph_organizations,
-)
-from .graphs import (
-    node_secrets as node_secrets,
-)
-from .graphs import (
-    saved_graph_revisions as saved_graph_revisions,
-)
-from .graphs import (
-    saved_graphs as saved_graphs,
-)
-from .graphs import (
-    user_graph_states as user_graph_states,
-)
 from .identity import (
     SecurityAuditActorKindType as SecurityAuditActorKindType,
 )
@@ -101,18 +65,35 @@ from .identity import (
     workspaces as workspaces,
 )
 from .library import (
-    ModulePublicationStateType as ModulePublicationStateType,
-)
-from .library import (
     library_artifact_placements as library_artifact_placements,
 )
 from .library import (
     library_folders as library_folders,
 )
-from .library import (
-    module_releases as module_releases,
+from .node_secrets import (
+    node_secrets as node_secrets,
 )
-from .library import (
-    modules as modules,
+from .projects import (
+    project_checkpoint_mappings as project_checkpoint_mappings,
 )
-from .execution import transient_executions as transient_executions
+from .projects import (
+    project_checkpoints as project_checkpoints,
+)
+from .projects import (
+    project_command_receipts as project_command_receipts,
+)
+from .projects import (
+    project_folders as project_folders,
+)
+from .projects import (
+    project_heads as project_heads,
+)
+from .projects import (
+    project_organizations as project_organizations,
+)
+from .projects import (
+    projects as projects,
+)
+from .projects import (
+    user_project_states as user_project_states,
+)
