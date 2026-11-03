@@ -1,6 +1,6 @@
 import { expect, nodeRegistry, test } from "./workbench.fixture";
 import { libraryStub } from "./library-folders-stub";
-import type { LibraryList, NodeRegistry, Run } from "../src/lib/api/contract";
+import type { LibraryList, NodeRegistry } from "../src/lib/api/contract";
 import type { Locator, Page } from "@playwright/test";
 
 const DOCKED_MIN_WIDTH = 1100;
@@ -1044,46 +1044,29 @@ test.describe("artifact wiring", () => {
     test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
     const source = await addNode(page, "CSV source");
-    const nodeId = await source.getAttribute("data-id");
-    if (!nodeId) throw new Error("CSV source has no node ID");
-    // The Run surface is mid-flight in #195: a Run is made with
-    // `POST …/projects/{id}/runs` and its per-node results are read per
-    // instance (`GET …/instance-result`, then `instances.changed` on the room),
-    // not from an execution body or an SSE stream. The stubs below are the
-    // addresses that replace the old ones; the result payload they must carry
-    // is settled by the run-surface work, so this journey is skipped with a
-    // reason rather than left asserting against a route that no longer exists.
-    test.skip(
-      true,
-      "awaiting the Run surface: results are read per node instance (#195)",
+
+    // A Run is a demand for freshness inside a Project, so the draft has to
+    // become a Project first: the rail's Save creates one, replaces its Graph
+    // document, and checkpoints it. The address naming the new Project is what
+    // proves that whole chain went through the fixture's Project surface.
+    // An unnamed draft is named through a prompt.
+    const namePrompt = page.waitForEvent("dialog");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await (await namePrompt).accept("Pilot pipeline");
+    await expect(page).toHaveURL(
+      /\/workspaces\/mobile-test\/projects\/[0-9a-f-]{36}$/,
     );
 
-    const run: Run = {
-      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      project_id: "22222222-2222-4222-8222-222222222222",
-      workspace_id: "11111111-1111-4111-8111-111111111111",
-      graph_id: "33333333-3333-4333-8333-333333333333",
-      status: "succeeded",
-      error: null,
-      targets: [{ node_id: nodeId, call_path: [] }],
-      started_by_user_id: null,
-      created_at: "2026-10-07T12:00:00Z",
-      started_at: "2026-10-07T12:00:00Z",
-      finished_at: "2026-10-07T12:00:05Z",
-    } as Run;
-    await page.route("**/api/v1/workspaces/*/projects/*/runs", (route) =>
-      route.request().method() === "POST"
-        ? route.fulfill({ json: run })
-        : route.fallback(),
-    );
-    await page.route(
-      "**/api/v1/workspaces/*/projects/*/instance-result**",
-      (route) => route.fulfill({ json: { state: "fresh", result: null } }),
-    );
-
+    // Running answers from the Run surface the fixture keeps: `POST …/runs`
+    // makes the targets fresh and stores each target's result on its node
+    // instance; the surface then reads `GET …/runs/{id}` and the instance
+    // result. The room's `run.finished` and `instances.changed` are WebSocket
+    // pushes this fixture cannot send, and the run surface polls this same
+    // HTTP state when no room carries it, so the assertion below holds either
+    // way — it just cannot prove a room push happened.
     await page.getByRole("button", { name: "Run", exact: true }).click();
     await expect(page.locator("main > span[role='status']")).toHaveText(
-      "Execution completed successfully.",
+      "Run made its targets fresh.",
     );
 
     const output = source.locator(".react-flow__handle.source");
