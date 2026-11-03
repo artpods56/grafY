@@ -1,4 +1,4 @@
-import type { SavedGraphOrigin } from "@/lib/api";
+import type { GraphDraft, SavedGraphOrigin } from "@/lib/api";
 import type {
   SavedGraphDocument,
   SavedGraphEdge,
@@ -17,15 +17,6 @@ export interface AuthoredGraphDocument {
   readonly nodes: readonly SavedGraphNode[];
   readonly edges: readonly SavedGraphEdge[];
   readonly origins: readonly SavedGraphOrigin[];
-}
-
-/**
- * One Graph as the authoring surface holds it: its name beside its document.
- * This is what a save sends and what the room replays; the Project wraps it.
- */
-export interface GraphDraft {
-  readonly name: string;
-  readonly document: SavedGraphDocument;
 }
 
 export type AuthoredGraphNode = SavedGraphNode;
@@ -762,6 +753,9 @@ export function applyGraphCommandNormalized(
 }
 
 /** Normalize the document, apply one command, and return the result. */
+/** @deprecated a Graph draft is authored, not posted whole; the room replays commands. */
+export const createSavedGraphRequest = createGraphDraft;
+
 export function applyGraphCommand(
   document: AuthoredGraphDocument,
   command: GraphCommand,

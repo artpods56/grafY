@@ -18,7 +18,6 @@ export {
   type ProjectRoomTerminalReason,
   type RoomInstanceState,
   type RoomInstanceKey,
-  type RoomProjectCommand,
 } from "./graph-room-session";
 export { projectRoomWebSocketUrl } from "./project-room-url";
 export {

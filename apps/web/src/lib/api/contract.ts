@@ -128,6 +128,8 @@ export type GraphBrowserGraph = ProjectBrowserGraph;
 /** @deprecated use ProjectBrowserList. */
 export type GraphBrowserList = ProjectBrowserList;
 export type SavedGraphSummary = ProjectSummary;
+/** The `/me/projects` feed: every Project this person can reach, by workspace. */
+export type ProjectList = Schemas["ProjectListResponse"];
 
 export type ProjectFolder = Schemas["ProjectFolderResponse"];
 export type ProjectFolderList = Schemas["ProjectFolderListResponse"];
@@ -146,6 +148,54 @@ export type Run = Schemas["RunResponse"];
 export type RunList = Schemas["RunListResponse"];
 export type RunTargetInput = Schemas["RunTargetRequest"];
 export type StartRunRequest = Schemas["StartRunRequest"];
+
+/**
+ * One step of an edge's conversion path, as the Graph stores it.
+ *
+ * The client used to send a run request that carried edges, origins and pinned
+ * values; the head is the request now, so these are stored-Graph shapes rather
+ * than input shapes.
+ */
+export type GraphConversion = Schemas["GraphConversion"];
+
+/** One input plug of a stored node: which port of the operator it stands for. */
+export type GraphInputPlug = Schemas["GraphInputPlug"];
+
+/** A projected read of an upstream field, as the Graph stores it. */
+export type GraphProjectionShape = Schemas["GraphProjection"];
+
+/** How an edge feeds its target: one value, or one per item of a map. */
+export type EdgeCollectionMode = SavedGraphEdge["collection_mode"];
+
+/**
+ * One Graph as a person authors it: its name beside its document.
+ *
+ * A Project holds the Graphs, so this is not a save request of its own — it is
+ * the unit a `replace_document` command carries and the unit the canvas edits.
+ */
+export interface GraphDraft {
+  readonly name: string;
+  readonly document: SavedGraphDocument;
+}
+
+/** @deprecated use EdgeCollectionMode. */
+export type RunEdgeCollectionMode = EdgeCollectionMode;
+/** @deprecated use GraphProjectionShape. */
+export type RunEdgeProjectionInput = GraphProjectionShape;
+/** @deprecated use GraphInputPlug. */
+export type InputPlugInput = GraphInputPlug;
+/** @deprecated use SavedGraphNode. */
+export type RunNodeInput = SavedGraphNode;
+/** @deprecated use GraphConversion. */
+export type ArtifactConversionInput = GraphConversion;
+/** @deprecated use the conversion path of a stored edge. */
+export type ArtifactConversionPathInput = readonly GraphConversion[];
+/** @deprecated a saved Graph is authored, not posted whole. */
+export type CreateSavedGraphRequest = GraphDraft;
+/** @deprecated a node's secrets belong to the Project that holds it. */
+export type GraphNodeSecrets = ProjectNodeSecrets;
+/** @deprecated a browser entry is a Project; the Graph it names is where it opens. */
+export type ProjectBrowserItem = ProjectBrowserGraph;
 
 export type InstanceKey = Schemas["InstanceKeyResponse"];
 export type InstanceStateName = Schemas["InstanceState"];
@@ -208,10 +258,7 @@ export interface ActiveRunSummary {
 
 export type ActiveRunLifecycleStatus = RunStatus;
 export type TerminalRunStatus =
-  | "succeeded"
-  | "failed"
-  | "cancelled"
-  | "interrupted";
+  "succeeded" | "failed" | "cancelled" | "interrupted";
 
 // --- Secrets ---------------------------------------------------------------
 

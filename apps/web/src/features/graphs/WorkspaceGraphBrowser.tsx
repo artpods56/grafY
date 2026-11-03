@@ -46,7 +46,7 @@ function GraphRow({
   return (
     <li>
       <Link
-        href={workbenchGraphPath(workspaceSlug, graph.id)}
+        href={workbenchProjectPath(workspaceSlug, graph.id)}
         className="grafy-graphs__row"
         aria-label={`Open ${graph.name} in ${workspaceName}`}
       >
