@@ -202,7 +202,7 @@ async def change_member_role(
         role=payload.role,
     )
     await close_user_rooms_for_permission_change(
-        get_resources(request.app).graph_room_hub,
+        get_resources(request.app).project_room_hub,
         workspace_id=workspace_id,
         user_id=user_id,
         access_revoked=False,
@@ -224,7 +224,7 @@ async def remove_member(
         user_id=user_id,
     )
     await close_user_rooms_for_permission_change(
-        get_resources(request.app).graph_room_hub,
+        get_resources(request.app).project_room_hub,
         workspace_id=workspace_id,
         user_id=user_id,
         access_revoked=True,
