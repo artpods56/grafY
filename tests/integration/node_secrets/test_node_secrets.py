@@ -160,9 +160,7 @@ def _project_document(document: GraphDocument) -> ProjectDocument:
     """One Graph under the id every Project route and run reads by default."""
 
     return ProjectDocument(
-        graphs=(
-            GraphDefinition(id=MAIN_GRAPH_ID, name="Main", document=document),
-        )
+        graphs=(GraphDefinition(id=MAIN_GRAPH_ID, name="Main", document=document),)
     )
 
 
@@ -267,9 +265,7 @@ async def _replace_main_graph(
 async def _stored_secret_count(database: Database, project_id: UUID) -> int:
     async with database.engine.connect() as connection:
         stored = await connection.scalar(
-            text(
-                "SELECT COUNT(*) FROM node_secrets WHERE project_id = :project_id"
-            ),
+            text("SELECT COUNT(*) FROM node_secrets WHERE project_id = :project_id"),
             {"project_id": project_id.hex},
         )
     return int(stored or 0)
@@ -691,9 +687,7 @@ async def test_status_is_false_and_resolution_fails_with_different_server_key(
         value=SecretStr("secret"),
         expected_head_sequence=0,
     )
-    wrong_key_service = _secret_service(
-        database, registry, key=_encryption_key(b"z")
-    )
+    wrong_key_service = _secret_service(database, registry, key=_encryption_key(b"z"))
 
     status = await wrong_key_service.status(WORKSPACE_ID, project_id, MAIN_GRAPH_ID)
 

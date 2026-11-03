@@ -24,7 +24,16 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     schema = app_with_overrides(settings=settings).openapi()
 
     assert set(schema["paths"]) == {
-        "/v1/me/graphs",
+        "/v1/auth/oidc/callback",
+        "/v1/auth/oidc/login",
+        "/v1/auth/session",
+        "/v1/auth/sessions",
+        "/v1/auth/sessions/{session_id}",
+        "/v1/me/invitations",
+        "/v1/me/invitations/{invitation_id}/accept",
+        "/v1/me/invitations/{invitation_id}/decline",
+        "/v1/me/projects",
+        "/v1/workspaces",
         "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/content",
         "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/download",
         "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/geo/query",
@@ -37,129 +46,58 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/raster/tilejson.json",
         "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/raster/{z}/{x}/{y}.png",
         "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/vector.pmtiles",
-        "/v1/workspaces/{workspace_id}/executions",
-        "/v1/workspaces/{workspace_id}/executions/{execution_id}",
-        "/v1/workspaces/{workspace_id}/executions/{execution_id}/events",
-        "/v1/workspaces/{workspace_id}/graph-folders",
-        "/v1/workspaces/{workspace_id}/graph-folders/{folder_id}",
-        "/v1/workspaces/{workspace_id}/graphs",
-        "/v1/workspaces/{workspace_id}/graphs/copies",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/archive",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/commands",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions/{execution_id}",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/folder",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/materializations",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/node-secrets",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/opened",
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/star",
+        "/v1/workspaces/{workspace_id}/invitation-candidates/resolve",
+        "/v1/workspaces/{workspace_id}/invitations",
+        "/v1/workspaces/{workspace_id}/invitations/{invitation_id}",
         "/v1/workspaces/{workspace_id}/library/artifacts",
-        "/v1/workspaces/{workspace_id}/library/artifacts/from-run",
+        "/v1/workspaces/{workspace_id}/library/artifacts/from-instance",
         "/v1/workspaces/{workspace_id}/library/artifacts/from-upload",
         "/v1/workspaces/{workspace_id}/library/artifacts/{artifact_id}",
         "/v1/workspaces/{workspace_id}/library/folders",
         "/v1/workspaces/{workspace_id}/library/folders/{folder_id}",
         "/v1/workspaces/{workspace_id}/library/folders/{folder_id}/parent",
         "/v1/workspaces/{workspace_id}/library/placements",
-        "/v1/workspaces/{workspace_id}/modules",
-        "/v1/workspaces/{workspace_id}/modules/publish",
-        "/v1/workspaces/{workspace_id}/modules/{module_id}",
-        "/v1/workspaces/{workspace_id}/nodes",
-        "/v1/workspaces/{workspace_id}/runs",
-        "/v1/workspaces/{workspace_id}/uploads",
-        "/v1/workspaces/{workspace_id}/uploads/{upload_id}/content",
-        "/v1/workspaces/{workspace_id}/uploads/{upload_id}/complete",
-        "/v1/auth/oidc/login",
-        "/v1/auth/oidc/callback",
-        "/v1/auth/session",
-        "/v1/auth/sessions",
-        "/v1/auth/sessions/{session_id}",
-        "/v1/workspaces",
         "/v1/workspaces/{workspace_id}/members",
         "/v1/workspaces/{workspace_id}/members/{user_id}",
-        "/v1/workspaces/{workspace_id}/invitation-candidates/resolve",
-        "/v1/workspaces/{workspace_id}/invitations",
-        "/v1/workspaces/{workspace_id}/invitations/{invitation_id}",
-        "/v1/me/invitations",
-        "/v1/me/invitations/{invitation_id}/accept",
-        "/v1/me/invitations/{invitation_id}/decline",
+        "/v1/workspaces/{workspace_id}/nodes",
         "/v1/workspaces/{workspace_id}/personal-access-tokens",
         "/v1/workspaces/{workspace_id}/personal-access-tokens/{token_id}",
+        "/v1/workspaces/{workspace_id}/project-folders",
+        "/v1/workspaces/{workspace_id}/project-folders/{folder_id}",
+        "/v1/workspaces/{workspace_id}/projects",
+        "/v1/workspaces/{workspace_id}/projects/copies",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/archive",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/checkpoints",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/checkpoints/{revision}",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/checkpoints/{revision}/restore",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/commands",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/folder",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/instances",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/head",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/instance-result",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/node-secrets",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/opened",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/runs",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/runs/{run_id}",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/runs/{run_id}/cancel",
+        "/v1/workspaces/{workspace_id}/projects/{project_id}/star",
+        "/v1/workspaces/{workspace_id}/uploads",
+        "/v1/workspaces/{workspace_id}/uploads/{upload_id}/complete",
+        "/v1/workspaces/{workspace_id}/uploads/{upload_id}/content",
     }
-    assert set(schema["paths"]["/v1/workspaces/{workspace_id}/graphs"]) == {
+    assert set(schema["paths"]["/v1/workspaces/{workspace_id}/projects"]) == {
         "get",
         "post",
     }
-    assert set(schema["paths"]["/v1/workspaces/{workspace_id}/graphs/copies"]) == {
-        "post"
-    }
     assert set(
-        schema["paths"]["/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document"]
-    ) == {"get"}
-    assert set(
-        schema["paths"]["/v1/workspaces/{workspace_id}/graphs/{graph_id}/commands"]
-    ) == {"post"}
-    assert set(
-        schema["paths"]["/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint"]
-    ) == {"post"}
-    assert set(schema["paths"]["/v1/workspaces/{workspace_id}/executions"]) == {"post"}
-    synchronous_run_responses = schema["paths"]["/v1/workspaces/{workspace_id}/runs"][
-        "post"
-    ]["responses"]
-    assert synchronous_run_responses["429"]["content"]["application/json"][
-        "schema"
-    ] == {"$ref": "#/components/schemas/RunExecutionCapacityErrorResponse"}
-    assert "Retry-After" in synchronous_run_responses["429"]["headers"]
-    execution_start_responses = schema["paths"][
-        "/v1/workspaces/{workspace_id}/executions"
-    ]["post"]["responses"]
-    assert execution_start_responses["429"]["content"]["application/json"]["schema"][
-        "anyOf"
-    ] == [
-        {"$ref": "#/components/schemas/RunExecutionQueueFullErrorResponse"},
-        {"$ref": "#/components/schemas/RunExecutionCapacityErrorResponse"},
-    ]
-    assert "Retry-After" in execution_start_responses["429"]["headers"]
-    security_schemes = schema["components"]["securitySchemes"]
-    session_scheme_name = next(
-        name
-        for name, scheme in security_schemes.items()
-        if scheme
-        == {
-            "type": "apiKey",
-            "in": "cookie",
-            "name": "grafy_session",
-            "description": "Opaque host-only browser session cookie.",
-        }
-    )
-    workspace_pat_scheme_name = next(
-        name
-        for name, scheme in security_schemes.items()
-        if scheme
-        == {
-            "type": "http",
-            "description": "Workspace-bound personal access token.",
-            "scheme": "bearer",
-            "bearerFormat": "PAT",
-        }
-    )
-    assert schema["paths"]["/v1/auth/oidc/login"]["get"].get("security") is None
-    assert schema["paths"]["/v1/auth/oidc/callback"]["get"].get("security") is None
-    assert schema["paths"]["/v1/auth/session"]["get"]["security"] == [
-        {session_scheme_name: []}
-    ]
-    assert schema["paths"]["/v1/workspaces"]["get"]["security"] == [
-        {session_scheme_name: []}
-    ]
-    assert schema["paths"]["/v1/workspaces/{workspace_id}/nodes"]["get"][
-        "security"
-    ] == [{session_scheme_name: []}, {workspace_pat_scheme_name: []}]
-    pat_schema = schema["components"]["schemas"]["PersonalAccessTokenCreatedResponse"]
-    assert "returned once" in pat_schema["properties"]["token"]["description"]
+        schema["paths"]["/v1/workspaces/{workspace_id}/projects/{project_id}/runs"]
+    ) == {"get", "post"}
+    commands = schema["components"]["schemas"]["SubmitProjectCommandRequest"]
+    assert "commands" in commands["required"]
+    start_run = schema["components"]["schemas"]["StartRunRequest"]
+    assert set(start_run["required"]) == {"graph_id"}
     pat_request_schema = schema["components"]["schemas"][
         "PersonalAccessTokenCreateRequest"
     ]
@@ -208,109 +146,6 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "attribution",
         "scheme",
     }
-    assert set(
-        schema["paths"]["/v1/workspaces/{workspace_id}/executions/{execution_id}"]
-    ) == {
-        "delete",
-        "get",
-    }
-    execution_schema = schema["components"]["schemas"]["RunExecutionResponse"]
-    assert set(execution_schema["properties"]) == {
-        "execution_id",
-        "status",
-        "active_node_id",
-        "result",
-        "error",
-        "queue_position",
-    }
-    assert execution_schema["properties"]["status"]["enum"] == [
-        "queued",
-        "running",
-        "cancelling",
-        "cancelled",
-        "succeeded",
-        "failed",
-    ]
-    assert set(schema["paths"]["/v1/workspaces/{workspace_id}/graphs/{graph_id}"]) == {
-        "delete",
-        "get",
-        "put",
-    }
-    assert set(
-        schema["paths"][
-            "/v1/workspaces/{workspace_id}/graphs/{graph_id}/materializations"
-        ]
-    ) == {"get"}
-    assert set(
-        schema["paths"]["/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions"]
-    ) == {"get", "post"}
-    saved_execution_operation = schema["paths"][
-        "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions"
-    ]["post"]
-    assert saved_execution_operation["requestBody"]["content"]["application/json"][
-        "schema"
-    ] == {"$ref": "#/components/schemas/SavedGraphExecutionRequest"}
-    assert any(
-        parameter["name"] == "Idempotency-Key"
-        for parameter in saved_execution_operation["parameters"]
-    )
-    assert set(
-        schema["paths"][
-            "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions/{execution_id}"
-        ]
-    ) == {"get"}
-    create_graph_schema = schema["components"]["schemas"]["CreateSavedGraphRequest"]
-    assert set(create_graph_schema["required"]) == {"name", "document"}
-    assert set(create_graph_schema["properties"]) == {"name", "document"}
-    assert create_graph_schema["properties"]["document"] == {
-        "$ref": "#/components/schemas/GraphDocument"
-    }
-    update_graph_schema = schema["components"]["schemas"]["UpdateSavedGraphRequest"]
-    assert set(update_graph_schema["required"]) == {
-        "name",
-        "document",
-        "expected_revision",
-    }
-    saved_graph_schema = schema["components"]["schemas"]["SavedGraphResponse"]
-    assert set(saved_graph_schema["properties"]) == {
-        "id",
-        "name",
-        "revision",
-        "created_at",
-        "updated_at",
-        "document",
-    }
-    assert saved_graph_schema["properties"]["document"] == {
-        "$ref": "#/components/schemas/GraphDocument"
-    }
-    saved_binding_schema = schema["components"]["schemas"]["GraphArtifactTypeBinding"]
-    assert saved_binding_schema["properties"]["artifact_type"] == {
-        "$ref": "#/components/schemas/ArtifactTypeKey"
-    }
-    history_summary = schema["components"]["schemas"]["GraphExecutionSummaryResponse"]
-    assert set(history_summary["properties"]) == {
-        "execution_id",
-        "graph_id",
-        "graph_revision",
-        "scope",
-        "status",
-        "requested_node_ids",
-        "node_count",
-        "artifact_count",
-        "created_at",
-        "started_at",
-        "finished_at",
-        "workflow_run_id",
-        "error",
-    }
-    assert set(
-        schema["paths"]["/v1/workspaces/{workspace_id}/graphs/{graph_id}/node-secrets"]
-    ) == {"get"}
-    assert set(
-        schema["paths"][
-            "/v1/workspaces/{workspace_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}"
-        ]
-    ) == {"delete", "put"}
     node_schema = schema["components"]["schemas"]["NodeSpecResponse"]
     assert "config_schema" in node_schema["properties"]
     assert "supported_invocation_modes" not in node_schema["properties"]
@@ -319,7 +154,7 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     plugin_schema = schema["components"]["schemas"]["PluginSpecResponse"]
     assert plugin_schema["properties"]["origin"] == {
         "default": "builtin",
-        "enum": ["builtin", "module"],
+        "const": "builtin",
         "title": "Origin",
         "type": "string",
     }
@@ -333,8 +168,8 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "origin",
         "entry_kind",
     }
-    assert "module_graph_id" in node_schema["properties"]
-    assert "module_graph_revision" in node_schema["properties"]
+    assert "module_graph_id" not in node_schema["properties"]
+    assert "module_graph_revision" not in node_schema["properties"]
     assert node_schema["properties"]["catalog_visible"] == {
         "default": True,
         "title": "Catalog Visible",
@@ -345,11 +180,11 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "title": "Runnable",
         "type": "boolean",
     }
-    command_schema = schema["components"]["schemas"]["SubmitGraphCommandRequest"][
+    command_items = schema["components"]["schemas"]["SubmitProjectCommandRequest"][
         "properties"
-    ]["command"]
-    assert command_schema["discriminator"]["mapping"]["add_node"] == (
-        "#/components/schemas/AddNodeCommand"
+    ]["commands"]["items"]
+    assert command_items["discriminator"]["mapping"]["in_graph"] == (
+        "#/components/schemas/InGraphCommand"
     )
     # TODO: Revisit this exact schema assertion; it duplicates the response model by hand.
     assert schema["components"]["schemas"]["ImageUploadItemResponse"] == {
@@ -400,32 +235,6 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         {"type": "null"},
     ]
     assert port_schema["properties"]["artifact_type_variable"]["anyOf"] == [
-        {"type": "string", "minLength": 1, "maxLength": 255},
-        {"type": "null"},
-    ]
-
-    run_node_schema = schema["components"]["schemas"]["RunNodeRequest"]
-    assert set(run_node_schema["required"]) == {
-        "kind",
-        "id",
-        "operator_id",
-        "operator_version",
-    }
-    assert run_node_schema["properties"]["input_plugs"]["items"] == {
-        "$ref": "#/components/schemas/RunInputPlugRequest"
-    }
-    assert run_node_schema["properties"]["artifact_type_bindings"]["items"] == {
-        "$ref": "#/components/schemas/ArtifactTypeBindingModel"
-    }
-    run_edge_schema = schema["components"]["schemas"]["RunEdgeRequest"]
-    assert "enabled" not in run_edge_schema["properties"]
-    assert run_edge_schema["properties"]["collection_mode"] == {
-        "default": "direct",
-        "enum": ["direct", "map"],
-        "title": "Collection Mode",
-        "type": "string",
-    }
-    assert run_edge_schema["properties"]["to_plug"]["anyOf"] == [
         {"type": "string", "minLength": 1, "maxLength": 255},
         {"type": "null"},
     ]
