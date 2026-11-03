@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from grafy_persistence.column_types import ArtifactOutputsType
 from grafy_persistence.column_types import LibraryProvenanceType
 from grafy_persistence.column_types import ProjectDocumentType
 from grafy_persistence.column_types import UTCDateTime
@@ -299,6 +300,22 @@ def upgrade() -> None:
         unique=True,
         sqlite_where=sa.text("parent_id IS NULL"),
         postgresql_where=sa.text("parent_id IS NULL"),
+    )
+    op.create_table(
+        "node_results",
+        sa.Column("workspace_id", sa.Uuid(), nullable=False),
+        sa.Column("fingerprint", sa.String(length=64), nullable=False),
+        sa.Column("outputs", ArtifactOutputsType(), nullable=False),
+        sa.Column("created_at", UTCDateTime(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["workspace_id"],
+            ["workspaces.id"],
+            name=op.f("fk_node_results_workspace_id_workspaces"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "workspace_id", "fingerprint", name=op.f("pk_node_results")
+        ),
     )
     op.create_table(
         "personal_access_tokens",
@@ -604,6 +621,51 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
+        "instance_pointers",
+        sa.Column("workspace_id", sa.Uuid(), nullable=False),
+        sa.Column("instance_digest", sa.String(length=64), nullable=False),
+        sa.Column("project_id", sa.Uuid(), nullable=False),
+        sa.Column("graph_id", sa.String(length=255), nullable=False),
+        sa.Column("call_path", sa.JSON(), nullable=False),
+        sa.Column("node_id", sa.String(length=255), nullable=False),
+        sa.Column("map_index", sa.Integer(), nullable=True),
+        sa.Column("last_result_fingerprint", sa.String(length=64), nullable=True),
+        sa.Column("failure_fingerprint", sa.String(length=64), nullable=True),
+        sa.Column("failure_message", sa.Text(), nullable=True),
+        sa.Column("failed_at", UTCDateTime(), nullable=True),
+        sa.CheckConstraint(
+            "map_index IS NULL OR map_index >= 0",
+            name=op.f("ck_instance_pointers_ck_instance_pointers_map_index_nonneg"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "last_result_fingerprint"],
+            ["node_results.workspace_id", "node_results.fingerprint"],
+            name=op.f("fk_instance_pointers_workspace_id_node_results"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name=op.f("fk_instance_pointers_workspace_id_projects"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id"],
+            ["workspaces.id"],
+            name=op.f("fk_instance_pointers_workspace_id_workspaces"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "workspace_id", "instance_digest", name=op.f("pk_instance_pointers")
+        ),
+    )
+    op.create_index(
+        "ix_instance_pointers_workspace_project",
+        "instance_pointers",
+        ["workspace_id", "project_id"],
+        unique=False,
+    )
+    op.create_table(
         "library_artifact_placements",
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("artifact_id", sa.Uuid(), nullable=False),
@@ -784,6 +846,47 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
+        "project_runs",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("workspace_id", sa.Uuid(), nullable=False),
+        sa.Column("project_id", sa.Uuid(), nullable=False),
+        sa.Column("graph_id", sa.String(length=255), nullable=False),
+        sa.Column("targets", sa.JSON(), nullable=False),
+        sa.Column("started_by_user_id", sa.Uuid(), nullable=True),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("created_at", UTCDateTime(), nullable=False),
+        sa.Column("finished_at", UTCDateTime(), nullable=True),
+        sa.Column("error", sa.Text(), nullable=True),
+        sa.CheckConstraint(
+            "(status = 'running') = (finished_at IS NULL)",
+            name=op.f("ck_project_runs_ck_project_runs_running_iff_unfinished"),
+        ),
+        sa.CheckConstraint(
+            "status IN ('running', 'succeeded', 'failed', 'cancelled', 'interrupted')",
+            name=op.f("ck_project_runs_ck_project_runs_status_known"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["started_by_user_id"],
+            ["users.id"],
+            name=op.f("fk_project_runs_started_by_user_id_users"),
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name=op.f("fk_project_runs_workspace_id_projects"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_project_runs")),
+    )
+    op.create_index("ix_project_runs_status", "project_runs", ["status"], unique=False)
+    op.create_index(
+        "ix_project_runs_workspace_project_created",
+        "project_runs",
+        ["workspace_id", "project_id", "created_at"],
+        unique=False,
+    )
+    op.create_table(
         "user_project_states",
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("project_id", sa.Uuid(), nullable=False),
@@ -893,6 +996,11 @@ def downgrade() -> None:
     )
     op.drop_table("user_project_states")
     op.drop_index(
+        "ix_project_runs_workspace_project_created", table_name="project_runs"
+    )
+    op.drop_index("ix_project_runs_status", table_name="project_runs")
+    op.drop_table("project_runs")
+    op.drop_index(
         "ix_project_organizations_workspace_folder_archived",
         table_name="project_organizations",
     )
@@ -911,6 +1019,10 @@ def downgrade() -> None:
         table_name="library_artifact_placements",
     )
     op.drop_table("library_artifact_placements")
+    op.drop_index(
+        "ix_instance_pointers_workspace_project", table_name="instance_pointers"
+    )
+    op.drop_table("instance_pointers")
     op.drop_index(
         "ix_workspace_memberships_workspace_role_active",
         table_name="workspace_memberships",
@@ -949,6 +1061,7 @@ def downgrade() -> None:
         "ix_personal_access_tokens_expiry_revoked", table_name="personal_access_tokens"
     )
     op.drop_table("personal_access_tokens")
+    op.drop_table("node_results")
     op.drop_index(
         "uq_library_folders_root_name",
         table_name="library_folders",

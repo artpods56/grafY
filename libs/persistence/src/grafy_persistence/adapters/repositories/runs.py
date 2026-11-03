@@ -20,6 +20,7 @@ from typing import cast, override
 from uuid import UUID
 
 from sqlalchemy import String, insert, select, update
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
@@ -73,15 +74,20 @@ def _targets_to_storage(targets: tuple[RunTarget, ...]) -> list[dict[str, object
     ]
 
 
+class _StoredRunTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    node_id: str
+    call_path: list[str]
+
+
+_RUN_TARGETS = TypeAdapter(list[_StoredRunTarget])
+_CALL_PATH = TypeAdapter(list[str])
+
+
 def _targets_from_storage(value: object) -> tuple[RunTarget, ...]:
-    if not isinstance(value, list):
-        raise ValueError("Run targets storage payload must be a list")
     return tuple(
-        RunTarget(
-            node_id=str(raw["node_id"]),
-            call_path=tuple(str(segment) for segment in raw["call_path"]),
-        )
-        for raw in cast(list[dict[str, object]], value)
+        RunTarget(node_id=target.node_id, call_path=tuple(target.call_path))
+        for target in _RUN_TARGETS.validate_python(value, strict=True)
     )
 
 
@@ -90,7 +96,7 @@ def _pointer_key_from_row(row) -> InstanceKey:
     return InstanceKey(
         project_id=str(cast(UUID, row["project_id"])),
         graph_id=cast(str, row["graph_id"]),
-        call_path=tuple(str(segment) for segment in cast(list[str], call_path)),
+        call_path=tuple(_CALL_PATH.validate_python(call_path, strict=True)),
         node_id=cast(str, row["node_id"]),
         map_index=None if row["map_index"] is None else int(row["map_index"]),
     )
