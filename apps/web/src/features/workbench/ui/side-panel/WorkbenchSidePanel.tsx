@@ -119,7 +119,7 @@ const s = stylex.create({
 export function WorkbenchSidePanel({
   workspaceId,
   sidePanel,
-  onOpenRun,
+  onOpenInstance,
   graphId,
   nodeTitles,
   registry,
@@ -128,7 +128,7 @@ export function WorkbenchSidePanel({
 }: {
   workspaceId: string;
   sidePanel: WorkbenchSidePanelState;
-  onOpenRun: (graphId: string, executionId: string) => void;
+  onOpenInstance: (graphId: string, resultFingerprint: string | null) => void;
   graphId: string | null;
   nodeTitles: Readonly<Record<string, string>>;
   registry: NodeRegistry | null;
@@ -160,7 +160,7 @@ export function WorkbenchSidePanel({
     ) : (
       <LibraryPanel
         workspaceId={workspaceId}
-        onOpenRun={onOpenRun}
+        onOpenInstance={onOpenInstance}
         // Saving an artifact and changing the Library are the same capability,
         // so the Generated view's `canSave` is the Library's `canEdit`.
         canEdit={canSave}

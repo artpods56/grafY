@@ -302,10 +302,10 @@ describe("selection over the rows the Library actually renders", () => {
       name: id,
       provenance: {
         source: "upload",
+        call_path: [],
         saved_at: "2026-09-11T12:00:00Z",
         original_filename: `${id}.png`,
       },
-      run: null,
       folder_id: folderId,
     };
   }

@@ -23,7 +23,7 @@ function item(
     content_type: string;
     byte_size: number | null;
     original_filename: string | null;
-    source: "upload" | "run";
+    source: "upload" | "instance";
     saved_at: string;
     folder_id: string | null;
   }> = {},
@@ -342,7 +342,8 @@ describe("the rows keep the Library's file naming", () => {
       libraryFileDisplayName(
         item("run", {
           name: "Scan result",
-          source: "run",
+          source: "instance",
+          call_path: [],
           original_filename: null,
         }),
       ),
@@ -356,7 +357,8 @@ describe("the rows keep the Library's file naming", () => {
     expect(
       libraryFileSubtitle(
         item("run", {
-          source: "run",
+          source: "instance",
+          call_path: [],
           byte_size: null,
           original_filename: null,
         }),
@@ -366,15 +368,14 @@ describe("the rows keep the Library's file naming", () => {
 
   it("reads a run artifact's birth record from its provenance", () => {
     const runItem: PlacedLibraryItem = {
-      ...item("run", { source: "run", original_filename: null }),
+      ...item("run", { source: "instance", original_filename: null }),
       provenance: {
-        source: "run",
+        source: "instance",
+        call_path: [],
         graph_id: "g",
         graph_title: "Site survey",
-        graph_revision: 4,
         node_id: "n",
         node_title: "GeoTIFF scan",
-        execution_id: "e",
         saved_at: "2026-01-01T00:00:00Z",
       },
     };

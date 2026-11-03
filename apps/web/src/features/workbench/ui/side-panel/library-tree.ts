@@ -280,13 +280,13 @@ export function libraryProvenanceLine(item: PlacedLibraryItem): string {
       ? `uploaded · ${provenance.original_filename}`
       : "uploaded";
   }
+  // The item names the node it came from. It does not name a Run: the Run was
+  // the demand that made that result fresh and is retired, while the result and
+  // the node that produced it both outlive it.
   const parts = [
+    provenance.project_title,
     provenance.graph_title,
     provenance.node_title,
-    provenance.graph_revision == null
-      ? null
-      : `revision ${provenance.graph_revision}`,
-    "from a run",
   ].filter((part): part is string => Boolean(part));
   return parts.join(" · ");
 }

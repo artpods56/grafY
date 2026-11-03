@@ -64,7 +64,7 @@ async function renderPanel(sidePanel: WorkbenchSidePanelState): Promise<void> {
         registry={null}
         canSave={false}
         executionRunning={false}
-        onOpenRun={vi.fn()}
+        onOpenInstance={vi.fn()}
       />,
     );
   });
@@ -122,7 +122,7 @@ describe("WorkbenchSidePanel", () => {
             registry={null}
             canSave={false}
             executionRunning={false}
-            onOpenRun={vi.fn()}
+            onOpenInstance={vi.fn()}
           />,
         );
       await React.act(async () => render(true));

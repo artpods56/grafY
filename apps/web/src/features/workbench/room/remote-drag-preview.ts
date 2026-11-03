@@ -23,7 +23,7 @@ export function remoteDragTargetsFromParticipants(
 ): Map<string, TransientNodePosition> {
   const targets = new Map<string, TransientNodePosition>();
   for (const participant of participants) {
-    if (participant.graph_room_session_id === localSessionId) continue;
+    if (participant.project_room_session_id === localSessionId) continue;
     for (const position of participant.transient_node_positions) {
       // Later participants in the list win when two peers drag the same node.
       targets.set(position.node_id, position);
