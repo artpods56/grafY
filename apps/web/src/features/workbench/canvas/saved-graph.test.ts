@@ -278,7 +278,7 @@ describe("saved node layout", () => {
 });
 
 describe("saved edge enablement", () => {
-  it("hydrates a legacy edge as enabled and keeps enablement out of run transport", () => {
+  it("hydrates an enabled edge and keeps enablement out of run transport", () => {
     const hydrated = hydrateSavedGraph(
       graphWithEdge({ conversion_path: conversionPath }),
       registry(),
@@ -292,12 +292,12 @@ describe("saved edge enablement", () => {
   });
 
   it("keeps disabled state in the dirty fingerprint", () => {
-    const legacyGraph = graphWithEdge({ conversion_path: conversionPath });
+    const enabledGraph = graphWithEdge({ conversion_path: conversionPath });
     const disabledGraph: SavedGraph = {
-      ...legacyGraph,
+      ...enabledGraph,
       document: {
-        ...legacyGraph.document,
-        edges: legacyGraph.document.edges.map((edge) => ({
+        ...enabledGraph.document,
+        edges: enabledGraph.document.edges.map((edge) => ({
           ...edge,
           enabled: false,
         })),
@@ -306,7 +306,7 @@ describe("saved edge enablement", () => {
     const disabled = hydrateSavedGraph(disabledGraph, registry());
     const enabledDraft = {
       name: "Edge state",
-      document: legacyGraph.document,
+      document: enabledGraph.document,
     };
     const disabledDraft = {
       name: "Edge state",
@@ -316,32 +316,6 @@ describe("saved edge enablement", () => {
     expect(disabled.edges[0]?.data?.enabled).toBe(false);
     expect(disabledDraft.document.edges[0]).toMatchObject({ enabled: false });
     expect(savedGraphFingerprint(disabledDraft)).not.toBe(
-      savedGraphFingerprint(enabledDraft),
-    );
-  });
-
-  it("normalizes a missing legacy flag to enabled in the fingerprint", () => {
-    const graph = graphWithEdge({ conversion_path: conversionPath });
-    const enabledDraft = {
-      name: "Legacy fingerprint",
-      document: graph.document,
-    };
-    const enabledEdge = enabledDraft.document.edges[0];
-    if (!enabledEdge) throw new Error("enabled-edge fixture is incomplete");
-    const legacyEdge = { ...enabledEdge } as Omit<
-      typeof enabledEdge,
-      "enabled"
-    > & { enabled?: boolean };
-    delete legacyEdge.enabled;
-    const legacyDraft = {
-      ...enabledDraft,
-      document: {
-        ...enabledDraft.document,
-        edges: [legacyEdge],
-      },
-    } as unknown as typeof enabledDraft;
-
-    expect(savedGraphFingerprint(legacyDraft)).toBe(
       savedGraphFingerprint(enabledDraft),
     );
   });

@@ -19,7 +19,7 @@ import {
 } from "./handles";
 
 describe("typed handle ids", () => {
-  it("keeps legacy five-part handles unchanged", () => {
+  it("keeps the plain five-part port handle unchanged", () => {
     const id = encodeHandleId({
       portName: "input",
       artifactTypeId: "text",

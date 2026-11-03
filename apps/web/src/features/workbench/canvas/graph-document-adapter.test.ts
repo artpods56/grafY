@@ -280,6 +280,7 @@ describe("Workbench authored document adapter", () => {
   it("normalizes replacement documents before they enter adapter state", () => {
     const replacement = {
       name: "Replacement",
+      origins: [],
       nodes: [
         {
           ...source,

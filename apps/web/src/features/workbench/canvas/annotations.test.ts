@@ -76,9 +76,10 @@ describe("canvas annotations", () => {
     expect(ANNOTATION_Z_INDEX + 1000).toBeLessThan(0);
   });
 
-  it("normalizes legacy named colors and hex values", () => {
-    expect(normalizeAnnotationColor("amber")).toBe("#b45309");
+  it("normalizes hex colors and rejects anything else", () => {
+    expect(normalizeAnnotationColor("#b45309")).toBe("#b45309");
     expect(normalizeAnnotationColor("#AbCDeF")).toBe("#abcdef");
+    expect(normalizeAnnotationColor("amber")).toBe(DEFAULT_ANNOTATION_COLOR);
     expect(normalizeAnnotationColor("nope")).toBe(DEFAULT_ANNOTATION_COLOR);
   });
 });
