@@ -1,6 +1,7 @@
 import type {
   CollaborativeHead,
   GraphDefinition,
+  GraphDraft,
   GraphPresentationDocument,
   InGraphCommand,
   ProjectCommand,
@@ -21,7 +22,6 @@ import {
   projectSavedGraphEdge,
   projectSavedGraphOrigin,
   type AuthoredGraphDocument,
-  type GraphDraft,
   type GraphCommand,
 } from "../model/graph-document";
 
@@ -54,7 +54,7 @@ export function toInGraphCommand(
  */
 export function toRoomReplaceDocumentCommand(
   draft: GraphDraft,
-  graphId?: string,
+  graphId: string,
 ): RoomProjectCommand {
   const document = authoredGraphDocument(draft);
   const presentation = draft.document.presentation ?? emptyGraphPresentation();
@@ -73,9 +73,7 @@ export function toRoomReplaceDocumentCommand(
       },
     },
   };
-  return graphId === undefined
-    ? command
-    : toInGraphCommand(graphId, command);
+  return toInGraphCommand(graphId, command);
 }
 
 /** Rename the Graph itself. Graphs are named by the Project that holds them. */
@@ -100,19 +98,19 @@ export function toRoomRenameProjectCommand(
  *
  * Every Graph command is addressed to one Graph, so `graphId` is required: a
  * Project holds several Graphs and an unaddressed edit names none of them.
+ * Renaming a Graph is the exception that proves the rule — the name belongs to
+ * the Project, so it leaves as a Project command, not as an edit inside one.
  */
 export function toRoomGraphCommand(
   command: GraphCommand,
   document: AuthoredGraphDocument,
-  graphId?: string,
+  graphId: string,
 ): RoomProjectCommand | null {
+  if (command.kind === "rename_graph") {
+    return toRoomRenameGraphCommand(graphId, command.name, document.name);
+  }
   const body = toRoomGraphBodyCommand(command, document);
   if (body === null) return null;
-  if (body.kind === "rename_graph") {
-    if (graphId === undefined) return null;
-    return toRoomRenameGraphCommand(graphId, body.name, document.name);
-  }
-  if (graphId === undefined) return body;
   return toInGraphCommand(graphId, body);
 }
 
@@ -155,8 +153,6 @@ export function toRoomGraphBodyCommand(
         kind: "remove_origins",
         origin_ids: [...command.origin_ids],
       });
-    case "rename_graph":
-      return asRoomBody({ kind: "rename_graph", name: command.name });
     case "update_node_configuration": {
       const node = document.nodes.find(
         (candidate) => candidate.id === command.node_id,
@@ -252,21 +248,12 @@ export function toRoomGraphBodyCommand(
       };
     }
     case "replace_document": {
-      const draft = createGraphDraft(command.document);
-      const presentation =
-        command.document.presentation ?? emptyGraphPresentation();
-      return {
+      // The authored document holds no presentation: replacing the body of a
+      // Graph is the same projection a local apply performs.
+      return asRoomBody({
         kind: "replace_document",
-        document: {
-          ...draft.document,
-          presentation: {
-            annotations: [...presentation.annotations],
-            bindings: [...presentation.bindings],
-            links: [...presentation.links],
-            viewers: [...presentation.viewers],
-          },
-        },
-      };
+        document: createGraphDraft(command.document).document,
+      });
     }
     case "add_input_plug":
     case "remove_input_plug":
@@ -288,6 +275,9 @@ export function toRoomGraphBodyCommand(
       });
     }
   }
+  // Renaming a Graph is a Project command and a local replace_document is
+  // mapped above: anything else has no in-graph wire form to map to.
+  return null;
 }
 
 /**
@@ -322,8 +312,6 @@ export function toLocalGraphCommand(
       return { kind: "add_edge", edge: body.edge };
     case "remove_edges":
       return { kind: "remove_edges", edge_ids: body.edge_ids };
-    case "rename_graph":
-      return { kind: "rename_graph", name: body.name };
     case "update_node_configuration":
       return {
         kind: "update_node_configuration",
@@ -572,7 +560,7 @@ export function applyRoomCommandToHead(
   }
 
   if (command.kind === "add_call_node") {
-    return mapGraphDocument(head, command.graph_id, (graph, presentation) => {
+    return mapGraphDocument(head, command.graph_id, (graph) => {
       const nodes = graph.document.nodes.map((node) =>
         node.id === command.node_id
           ? {
@@ -585,7 +573,6 @@ export function applyRoomCommandToHead(
       return withGraphDocument(graph, {
         ...graph.document,
         nodes,
-        presentation,
       });
     }, sequence);
   }

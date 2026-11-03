@@ -1,23 +1,39 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  GraphRoomCommandError,
-  GraphRoomCommandOutbox,
-  type GraphRoomHeadPointer,
+  ProjectRoomCommandError,
+  ProjectRoomCommandOutbox,
+  type ProjectRoomHeadPointer,
 } from "./command-outbox";
 import type {
-  GraphCommandAcceptedMessage,
-  GraphCommandReceiptMessage,
-  GraphCommandRejectedMessage,
-  RoomGraphCommand,
+  ProjectCommandAcceptedMessage,
+  ProjectCommandReceiptMessage,
+  ProjectCommandRejectedMessage,
+  RoomProjectCommand,
 } from "./protocol";
 
+const GRAPH_ID = "11111111-1111-4111-8111-111111111111";
 const EPOCH_ONE = "33333333-3333-4333-8333-333333333333";
 const EPOCH_TWO = "44444444-4444-4444-8444-444444444444";
 const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 
-function rename(name: string): RoomGraphCommand {
-  return { kind: "rename_graph", name, expected_name: "Room graph" };
+/** A Project-level command: it renames the Project, not one of its Graphs. */
+function renameProject(name: string): RoomProjectCommand {
+  return { kind: "rename_project", name, expected_name: "Room project" };
+}
+
+/** One command addressed inside a Graph, as a batch entry. */
+function moveNode(nodeId: string, x: number): RoomProjectCommand {
+  return {
+    kind: "in_graph",
+    graph_id: GRAPH_ID,
+    command: { kind: "move_nodes", positions: [{ node_id: nodeId, x, y: 0 }] },
+  };
+}
+
+/** A save batch: the Graph's new name and its new document travel together. */
+function batch(name: string): readonly RoomProjectCommand[] {
+  return [renameProject(name), moveNode("a", 10)];
 }
 
 function nextId(ids: string[]): () => string {
@@ -32,11 +48,11 @@ function nextId(ids: string[]): () => string {
 function acceptedMessage(
   commandId: string,
   sequence: number,
-  overrides: Partial<GraphCommandAcceptedMessage> = {},
-): GraphCommandAcceptedMessage {
+  overrides: Partial<ProjectCommandAcceptedMessage> = {},
+): ProjectCommandAcceptedMessage {
   return {
     protocol_version: 1,
-    type: "graph.command.accepted",
+    type: "project.command.accepted",
     command_id: commandId,
     room_epoch: EPOCH_ONE,
     sequence,
@@ -45,19 +61,19 @@ function acceptedMessage(
       display_name: "Owner",
       color: "emerald",
     },
-    graph_room_session_id: SESSION_ID,
-    command: rename("Renamed"),
+    project_room_session_id: SESSION_ID,
+    commands: batch("Renamed"),
     ...overrides,
   };
 }
 
 function receiptMessage(
   commandId: string,
-  overrides: Partial<GraphCommandReceiptMessage> = {},
-): GraphCommandReceiptMessage {
+  overrides: Partial<ProjectCommandReceiptMessage> = {},
+): ProjectCommandReceiptMessage {
   return {
     protocol_version: 1,
-    type: "graph.command.receipt",
+    type: "project.command.receipt",
     command_id: commandId,
     outcome: "accepted",
     accepted_room_epoch: EPOCH_ONE,
@@ -72,11 +88,11 @@ function receiptMessage(
 
 function rejectedMessage(
   commandId: string,
-  overrides: Partial<GraphCommandRejectedMessage> = {},
-): GraphCommandRejectedMessage {
+  overrides: Partial<ProjectCommandRejectedMessage> = {},
+): ProjectCommandRejectedMessage {
   return {
     protocol_version: 1,
-    type: "graph.command.rejected",
+    type: "project.command.rejected",
     command_id: commandId,
     error_code: "head_conflict",
     detail: "Collaborative head moved: expected sequence 4, actual 5.",
@@ -86,30 +102,36 @@ function rejectedMessage(
   };
 }
 
-describe("GraphRoomCommandOutbox", () => {
-  it("replays an interrupted command first and keeps queue order across an epoch change", async () => {
-    let head: GraphRoomHeadPointer | null = {
+describe("ProjectRoomCommandOutbox", () => {
+  it("sends a whole batch as one frame and replays an interrupted batch first across an epoch change", async () => {
+    let head: ProjectRoomHeadPointer | null = {
       room_epoch: EPOCH_ONE,
       collaboration_sequence: 4,
     };
     const onHeadRefreshRequired = vi.fn();
-    const outbox = new GraphRoomCommandOutbox({
+    const outbox = new ProjectRoomCommandOutbox({
       headPointer: () => head,
       createCommandId: nextId(["command-a", "command-b", "command-c"]),
       onHeadRefreshRequired,
     });
 
-    const first = outbox.submit(rename("Committed during disconnect"));
-    const second = outbox.submit(rename("Queued second"));
-    const third = outbox.submit(rename("Queued third"));
+    const first = outbox.submit(batch("Committed during disconnect"));
+    const second = outbox.submit([renameProject("Queued second")]);
+    const third = outbox.submit([renameProject("Queued third")]);
 
     expect(first.sends.map((send) => send.message.command_id)).toEqual([
       "command-a",
     ]);
+    // One batch is one unit of work: one frame carrying every command in order.
     expect(first.sends[0]?.message).toMatchObject({
+      type: "project.command.submit",
       room_epoch: EPOCH_ONE,
       observed_sequence: 4,
     });
+    expect(first.sends[0]?.message.commands).toEqual([
+      renameProject("Committed during disconnect"),
+      moveNode("a", 10),
+    ]);
     expect(second.sends).toEqual([]);
     expect(third.sends).toEqual([]);
 
@@ -126,6 +148,10 @@ describe("GraphRoomCommandOutbox", () => {
       room_epoch: EPOCH_ONE,
       observed_sequence: 4,
     });
+    expect(resumed[0]?.message.commands).toEqual([
+      renameProject("Committed during disconnect"),
+      moveNode("a", 10),
+    ]);
 
     // command-a is replayed in the old epoch while the room already lives in
     // the new one, so its receipt still settles it and hands the slot to b.
@@ -182,18 +208,18 @@ describe("GraphRoomCommandOutbox", () => {
   });
 
   it("holds a receipt that arrives before its accepted and settles it with that accepted", async () => {
-    let head: GraphRoomHeadPointer | null = {
+    let head: ProjectRoomHeadPointer | null = {
       room_epoch: EPOCH_ONE,
       collaboration_sequence: 4,
     };
     const onHeadRefreshRequired = vi.fn();
-    const outbox = new GraphRoomCommandOutbox({
+    const outbox = new ProjectRoomCommandOutbox({
       headPointer: () => head,
       createCommandId: nextId(["command-a"]),
       onHeadRefreshRequired,
     });
 
-    const submitted = outbox.submit(rename("Receipt first"));
+    const submitted = outbox.submit(batch("Receipt first"));
     expect(submitted.sends).toHaveLength(1);
 
     const held = outbox.applyReceipt(
@@ -227,18 +253,18 @@ describe("GraphRoomCommandOutbox", () => {
   });
 
   it("resolves a receipt that the head already covers with no accepted at all", async () => {
-    const head: GraphRoomHeadPointer | null = {
+    let head: ProjectRoomHeadPointer | null = {
       room_epoch: EPOCH_ONE,
       collaboration_sequence: 5,
     };
     const onHeadRefreshRequired = vi.fn();
-    const outbox = new GraphRoomCommandOutbox({
+    const outbox = new ProjectRoomCommandOutbox({
       headPointer: () => head,
       createCommandId: nextId(["command-a"]),
       onHeadRefreshRequired,
     });
 
-    const submitted = outbox.submit(rename("Replayed commit"));
+    const submitted = outbox.submit(batch("Replayed commit"));
     const sends = outbox.applyReceipt(
       receiptMessage("command-a", {
         outcome: "idempotent_replay",
@@ -257,22 +283,22 @@ describe("GraphRoomCommandOutbox", () => {
     });
   });
 
-  it("counts only the first accepted as local and keeps the latest accepted payload", async () => {
-    let head: GraphRoomHeadPointer | null = {
+  it("counts only the first accepted as local and keeps the latest accepted batch", async () => {
+    let head: ProjectRoomHeadPointer | null = {
       room_epoch: EPOCH_ONE,
       collaboration_sequence: 4,
     };
-    const outbox = new GraphRoomCommandOutbox({
+    const outbox = new ProjectRoomCommandOutbox({
       headPointer: () => head,
       createCommandId: nextId(["command-a"]),
     });
 
-    const submitted = outbox.submit(rename("Fanout twice"));
+    const submitted = outbox.submit(batch("Fanout twice"));
     expect(outbox.recordAccepted(acceptedMessage("command-a", 5))).toBe(true);
     expect(
       outbox.recordAccepted(
         acceptedMessage("command-a", 5, {
-          command: rename("Redelivered rename"),
+          commands: batch("Redelivered rename"),
         }),
       ),
     ).toBe(false);
@@ -283,27 +309,27 @@ describe("GraphRoomCommandOutbox", () => {
     const result = await submitted.promise;
     expect(result.accepted).toMatchObject({
       sequence: 5,
-      command: rename("Redelivered rename"),
+      commands: batch("Redelivered rename"),
     });
   });
 
   it("ignores late messages for a command whose promise already rejected", async () => {
-    let head: GraphRoomHeadPointer | null = {
+    let head: ProjectRoomHeadPointer | null = {
       room_epoch: EPOCH_ONE,
       collaboration_sequence: 4,
     };
     const onCommandRejected = vi.fn();
-    const outbox = new GraphRoomCommandOutbox({
+    const outbox = new ProjectRoomCommandOutbox({
       headPointer: () => head,
       createCommandId: nextId(["command-a", "command-b"]),
       onCommandRejected,
     });
 
-    const rejected = outbox.submit(rename("Conflicting"));
+    const rejected = outbox.submit([renameProject("Conflicting")]);
     outbox.applyRejected(rejectedMessage("command-a"));
     expect(onCommandRejected).toHaveBeenCalledOnce();
     await expect(rejected.promise).rejects.toMatchObject({
-      name: "GraphRoomCommandError",
+      name: "ProjectRoomCommandError",
       errorCode: "head_conflict",
     });
 
@@ -313,7 +339,7 @@ describe("GraphRoomCommandOutbox", () => {
     expect(outbox.pendingReceiptIsCovered()).toBe(false);
 
     // The rejected command also parked the drain; a queued command resumes it.
-    const queued = outbox.submit(rename("After conflict"));
+    const queued = outbox.submit([renameProject("After conflict")]);
     expect(queued.sends).toEqual([]);
     head = { room_epoch: EPOCH_ONE, collaboration_sequence: 5 };
     const resumed = outbox.finishHeadRehydration();
@@ -324,16 +350,16 @@ describe("GraphRoomCommandOutbox", () => {
   });
 
   it("rejects the caller when the driver cannot write a returned frame", async () => {
-    const head: GraphRoomHeadPointer | null = {
+    let head: ProjectRoomHeadPointer | null = {
       room_epoch: EPOCH_ONE,
       collaboration_sequence: 4,
     };
-    const outbox = new GraphRoomCommandOutbox({
+    const outbox = new ProjectRoomCommandOutbox({
       headPointer: () => head,
       createCommandId: nextId(["command-a", "command-b"]),
     });
 
-    const first = outbox.submit(rename("Never written"));
+    const first = outbox.submit(batch("Never written"));
     expect(first.sends).toHaveLength(1);
     outbox.sendFailed(
       first.sends[0]?.commandId ?? "",
@@ -342,13 +368,72 @@ describe("GraphRoomCommandOutbox", () => {
     await expect(first.promise).rejects.toThrow("socket send rejected");
 
     // A non-Error failure still carries the command id and an error code.
-    const second = outbox.submit(rename("Second"));
+    const second = outbox.submit(batch("Second"));
     expect(second.sends).toHaveLength(1);
     outbox.sendFailed(second.sends[0]?.commandId ?? "", "socket exploded");
-    await expect(second.promise).rejects.toBeInstanceOf(GraphRoomCommandError);
+    await expect(second.promise).rejects.toBeInstanceOf(
+      ProjectRoomCommandError,
+    );
     await expect(second.promise).rejects.toMatchObject({
       commandId: "command-b",
       errorCode: "send_failed",
     });
+  });
+
+  it("supersedes an unsent snapshot batch by its inner kind, addressed or bare", async () => {
+    let head: ProjectRoomHeadPointer | null = {
+      room_epoch: EPOCH_ONE,
+      collaboration_sequence: 4,
+    };
+    const outbox = new ProjectRoomCommandOutbox({
+      headPointer: () => head,
+      createCommandId: nextId(["command-a", "command-b", "command-c"]),
+    });
+
+    const replaceDocument = (viewerId: string): readonly RoomProjectCommand[] => [
+      {
+        kind: "in_graph",
+        graph_id: GRAPH_ID,
+        command: {
+          kind: "replace_document",
+          document: {
+            schema_version: 7,
+            nodes: [],
+            edges: [],
+            origins: [],
+            presentation: {
+              viewers: [{ id: viewerId, position: { x: 1, y: 1 } }],
+              links: [],
+              bindings: [],
+              annotations: [],
+            },
+          },
+        },
+      },
+    ];
+
+    const first = outbox.submit([renameProject("In flight")]);
+    expect(first.sends).toHaveLength(1);
+
+    // A save snapshot replaces a whole body, so an unsent one is worthless as
+    // soon as a newer snapshot of the same kind is queued.
+    const stale = outbox.submit(replaceDocument("stale"));
+    const latest = outbox.submit(replaceDocument("latest"));
+    await expect(stale.promise).rejects.toMatchObject({
+      errorCode: "superseded",
+    });
+    expect(latest.sends).toEqual([]);
+
+    head = { room_epoch: EPOCH_ONE, collaboration_sequence: 5 };
+    const drained = outbox.finishHeadRehydration();
+    expect(drained).toEqual([]);
+
+    // The in-flight Project rename settles, then the surviving snapshot goes.
+    const released = outbox.applyReceipt(receiptMessage("command-a"));
+    expect(released[0]?.message.commands).toEqual(replaceDocument("latest"));
+    await expect(first.promise).resolves.toMatchObject({
+      receipt: { accepted_sequence: 5 },
+    });
+    latest.promise.catch(() => undefined);
   });
 });
