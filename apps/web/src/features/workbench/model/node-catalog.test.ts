@@ -176,6 +176,31 @@ describe("node catalog listings", () => {
     ]);
   });
 
+  it("lists Collect, which gathers live producers as well as Library cards", () => {
+    const base = registry();
+    const collect = nodeSpec("sequence.collect", "builtin", 1, true, {
+      title: "Collect",
+      inputs: [
+        port("items", "input", {
+          artifact_type: null,
+          artifact_type_variable: "T",
+          instance_plugs: true,
+          variadic: true,
+        }),
+      ],
+      outputs: [port("items", "output", { shape: "many" })],
+    });
+
+    const available = catalogNodeSpecs({
+      ...base,
+      nodes: [...base.nodes, collect],
+    });
+
+    expect(available.map((spec) => spec.operator_id)).toContain(
+      "sequence.collect",
+    );
+  });
+
   it("keeps catalog_visible false operators out of the listing", () => {
     const catalog = registry();
     const hidden = nodeSpec("notes.draft", "builtin", 1, false);

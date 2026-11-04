@@ -1365,10 +1365,11 @@ test.describe("collections", () => {
     await expect(collection).toContainText("3 items");
     await expect(cards).toHaveCount(0);
 
-    // Collect is no longer a node to pick from the catalog.
+    // Collect is a node you can pick, not only a card gesture: an empty one is
+    // how a graph starts a sequence that live edges then feed.
     await page.getByRole("button", { name: "Add node", exact: true }).click();
     await page.getByRole("textbox", { name: "Search nodes" }).fill("Collect");
-    await expect(page.getByRole("option", { name: /^Collect/ })).toHaveCount(0);
+    await expect(page.getByRole("option", { name: /^Collect/ })).toHaveCount(1);
     // The first Escape clears the search, the second closes the picker.
     await page.keyboard.press("Escape");
     await expect(
