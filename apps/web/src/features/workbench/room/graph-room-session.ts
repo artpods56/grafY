@@ -1,3 +1,4 @@
+import { publishAgentRoom } from "../agents/stream";
 import type {
   ActiveRunSummary,
   CollaborativeHead,
@@ -557,6 +558,14 @@ export class ProjectRoomSession {
         detail: `Expected Project-room protocol ${ROOM_PROTOCOL_VERSION}, received ${protocolVersion ?? "no version"}.`,
       });
       return;
+    }
+    if (messageType?.startsWith("agent.") || messageType === "room.ready") {
+      publishAgentRoom({
+        workspaceId: this.workspaceId,
+        projectId: this.projectId,
+        raw,
+      });
+      if (messageType.startsWith("agent.")) return;
     }
     if (messageType !== null && !KNOWN_SERVER_MESSAGE_TYPES.has(messageType)) {
       return;

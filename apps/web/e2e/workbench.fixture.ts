@@ -134,6 +134,7 @@ export const nodeRegistry = {
 const invitations: readonly WorkspaceInvitationForRecipient[] = [];
 
 export interface GrafyApiFixtures {
+  readonly onRoomSend?: (send: (message: JsonObject) => void) => void;
   readonly workspaces: readonly Workspace[];
   /** Saved Projects keyed by workspace id, the way the API addresses them. */
   readonly projectsByWorkspace: Readonly<Record<string, ProjectList>>;
@@ -874,6 +875,7 @@ function projectWorld(fixtures: GrafyApiFixtures) {
       roomSockets.set(record.id, sockets);
     }
     sockets.add(send);
+    fixtures.onRoomSend?.(send);
     connection.onClose(() => sockets.delete(send));
 
     send({
@@ -1023,11 +1025,20 @@ export async function mockGrafyApi(
   return () => unhandledApiRequests;
 }
 
-export const test = base.extend<{ registry: NodeRegistry }>({
+export const test = base.extend<{
+  registry: NodeRegistry;
+  agentRoom: { send?: (message: JsonObject) => void };
+}>({
+  agentRoom: async ({}, provide) => {
+    await provide({});
+  },
   registry: [nodeRegistry, { option: true }],
-  page: async ({ page, registry }, runTest) => {
+  page: async ({ page, registry, agentRoom }, runTest) => {
     const unhandled = await mockGrafyApi(page, {
       ...workbenchApiFixtures,
+      onRoomSend: (send) => {
+        agentRoom.send = send;
+      },
       registry,
     });
 

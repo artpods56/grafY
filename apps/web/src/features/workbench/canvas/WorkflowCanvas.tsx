@@ -1,4 +1,5 @@
 "use client";
+import AgentCard from "../agents/AgentCard";
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
@@ -52,6 +53,7 @@ import { ARTIFACT_ORIGIN_EDGE_TYPE } from "./artifact-origin-edge";
 import ArtifactOriginEdgeControl from "./edges/ArtifactOriginEdge";
 
 export const nodeTypes: NodeTypes = {
+  grafyAgent: AgentCard,
   [WORKFLOW_NODE_TYPE]: WorkflowNodeCard,
   [ARTIFACT_VIEWER_NODE_TYPE]: ArtifactViewerNode,
   [ANNOTATION_NODE_TYPE]: AnnotationNode,

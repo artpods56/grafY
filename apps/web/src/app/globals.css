@@ -2869,3 +2869,43 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   .maplibregl-canvas-container.maplibregl-interactive:active {
   cursor: grabbing;
 }
+
+.grafy-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid light-dark(#cbd5e1, #475569);
+  border-radius: 10px;
+  background: light-dark(#fff, #1e293b);
+  color: light-dark(#0f172a, #f1f5f9);
+  overflow: hidden;
+}
+.grafy-agent header {
+  display: flex;
+  justify-content: space-between;
+  cursor: grab;
+}
+.grafy-agent form,
+.grafy-agent label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.grafy-agent__transcript {
+  flex: 1;
+  min-height: 40px;
+  overflow: auto;
+}
+.grafy-agent button,
+.grafy-agent select,
+.grafy-agent textarea,
+.grafy-agent input {
+  font: inherit;
+  max-width: 100%;
+}
+.grafy-agent__configuration {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

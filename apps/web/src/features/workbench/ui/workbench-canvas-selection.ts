@@ -11,6 +11,7 @@ import type { ArtifactViewerCanvasState } from "../canvas/artifact-viewer";
  * the `selected` flag on a card and on an annotation.
  */
 export type CanvasSelection = {
+  readonly agentIds?: readonly string[];
   readonly annotationIds?: readonly string[];
   readonly edgeIds?: readonly string[];
   readonly nodeIds?: readonly string[];
@@ -18,6 +19,9 @@ export type CanvasSelection = {
 };
 
 export type CanvasSelectionDeps = {
+  setSelectedAgentIds?: React.Dispatch<
+    React.SetStateAction<ReadonlySet<string>>
+  >;
   setArtifactViewers: React.Dispatch<
     React.SetStateAction<ArtifactViewerCanvasState>
   >;
@@ -69,8 +73,12 @@ export function withoutPresentationSelection(
  * before, and a person who then drags the new thing drags the old one with it.
  */
 export function useCanvasSelection(deps: CanvasSelectionDeps) {
-  const { setArtifactViewers, setSelectedEdgeIdSet, setSelectedNodeIdSet } =
-    deps;
+  const {
+    setSelectedAgentIds,
+    setArtifactViewers,
+    setSelectedEdgeIdSet,
+    setSelectedNodeIdSet,
+  } = deps;
 
   /**
    * Let go of every node and edge.
@@ -80,13 +88,15 @@ export function useCanvasSelection(deps: CanvasSelectionDeps) {
    * selection, so the caller clears this layer only when its commit landed.
    */
   const clearWorkflowSelection = React.useCallback(() => {
+    setSelectedAgentIds?.(EMPTY_SELECTION);
     setSelectedNodeIdSet(EMPTY_SELECTION);
     setSelectedEdgeIdSet(EMPTY_SELECTION);
-  }, [setSelectedEdgeIdSet, setSelectedNodeIdSet]);
+  }, [setSelectedAgentIds, setSelectedEdgeIdSet, setSelectedNodeIdSet]);
 
   /** Hold nothing but `selection`, in every layer the canvas draws from. */
   const selectOnly = React.useCallback(
     (selection: CanvasSelection) => {
+      setSelectedAgentIds?.(new Set(selection.agentIds ?? []));
       const viewerIds = new Set(selection.viewerIds ?? []);
       const annotationIds = new Set(selection.annotationIds ?? []);
       setSelectedNodeIdSet(
@@ -104,7 +114,12 @@ export function useCanvasSelection(deps: CanvasSelectionDeps) {
         return { ...current, annotations, nodes };
       });
     },
-    [setArtifactViewers, setSelectedEdgeIdSet, setSelectedNodeIdSet],
+    [
+      setSelectedAgentIds,
+      setArtifactViewers,
+      setSelectedEdgeIdSet,
+      setSelectedNodeIdSet,
+    ],
   );
 
   return { clearWorkflowSelection, selectOnly };
