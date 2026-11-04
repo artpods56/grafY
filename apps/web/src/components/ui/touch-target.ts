@@ -17,6 +17,24 @@ import * as stylex from "@stylexjs/stylex";
  * size at any zoom and at any viewport. Surfaces that already carried the phone
  * rule before the kit existed keep it through this export, unchanged.
  *
+ * ## Three breakpoints ask for 44px, and this covers one of them
+ *
+ * The tree has three families, and they are not the same question:
+ *
+ * - `max-width: 620px` — the shell: rail, search fields, selects, member rows.
+ *   This export covers this family, and only this family.
+ * - `max-width: 720px` — the workbench chrome: activity bar, rail button, drawer
+ *   header. Collapsing it to 620 would leave a control in a 620-720px window with
+ *   no 44px floor at all, so the kit does not do it silently.
+ * - `pointer: coarse` — the node inspector and the node result list. Collapsing it
+ *   to a width would take the target away from a tablet at 1024px, which is the
+ *   opposite of the rule.
+ *
+ * Which of the three the app promises is a product decision, not a mechanical one
+ * (issue #211). Until it is taken, a surface whose rule is not the 620px family keeps
+ * its own media query and stays out of here; `phoneTouch.on` is not the answer to
+ * "make this control bigger on a small window".
+ *
  * ## One property, so one owner
  *
  * StyleX keys a rule by its CSS property and keeps only the last one that sets it,

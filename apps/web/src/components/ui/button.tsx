@@ -7,8 +7,8 @@ import Link from "next/link";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 export type ButtonVariant =
-  "primary" | "secondary" | "soft" | "ghost" | "danger";
-export type ButtonSize = "xs" | "sm" | "md" | "lg";
+  "primary" | "secondary" | "soft" | "ghost" | "danger" | "plain" | "dashed";
+export type ButtonSize = "xs" | "sm" | "md" | "lg" | "text";
 export type IconButtonVariant = "ghost" | "soft" | "primary" | "danger";
 export type IconButtonSize = "xs" | "sm" | "md" | "lg";
 
@@ -27,6 +27,12 @@ export type ButtonProps = SharedProps & {
   size?: ButtonSize;
   /** When given, the button is a toggle: sets `aria-pressed` and the pressed look. */
   pressed?: boolean;
+  /**
+   * A colour chip before the label: an annotation's colour, a layer's fill.
+   * No kit part took a per-option colour, so a swatch picker had to paint its
+   * own chip inside the label.
+   */
+  swatch?: string;
 };
 
 export type IconButtonProps = Omit<SharedProps, "children" | "aria-label"> & {
@@ -99,6 +105,18 @@ const button = stylex.create({
     paddingInline: "14px",
     fontSize: tokens.fontSizeMd,
   },
+  /**
+   * For a control inside something that already has a text baseline: a table
+   * cell, a list row. Its box comes from the surrounding type, so a row of these
+   * does not change the height of the line it sits on.
+   */
+  text: {
+    height: "auto",
+    paddingInline: "3px",
+    paddingBlock: "1px",
+    fontSize: "inherit",
+    borderRadius: tokens.radiusSm,
+  },
   primary: {
     backgroundColor: {
       default: tokens.colorAccent,
@@ -153,6 +171,50 @@ const button = stylex.create({
     },
   },
   /**
+   * A word that acts, on the line it describes: a truncated table cell, a row's
+   * "Show more". It borrows the surrounding type and only says it is clickable
+   * when the pointer is on it or a key has focus.
+   */
+  plain: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorHover,
+    },
+    borderColor: "transparent",
+    color: {
+      default: tokens.colorText,
+      ":disabled": tokens.colorTextDisabled,
+    },
+    textDecoration: {
+      default: "none",
+      ":hover:not(:disabled)": "underline",
+      ":focus-visible": "underline",
+    },
+    fontWeight: "inherit",
+  },
+  /**
+   * The affordance for appending a thing to a list: dashed because it holds
+   * nothing yet, quiet because the row it adds is the point.
+   */
+  dashed: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorHover,
+    },
+    borderStyle: "dashed",
+    borderColor: {
+      default: tokens.colorBorder,
+      ":hover:not(:disabled)": tokens.colorBorderStrong,
+      ":disabled": tokens.colorDivider,
+    },
+    color: {
+      default: tokens.colorSubtle,
+      ":hover:not(:disabled)": tokens.colorText,
+      ":disabled": tokens.colorTextDisabled,
+    },
+    fontWeight: 500,
+  },
+  /**
    * A toggle's own state, so a text button does not have to write `aria-pressed`
    * and invent a colour for it. Applied over the variant, under `xstyle`.
    */
@@ -162,6 +224,16 @@ const button = stylex.create({
       ":hover:not(:disabled)": tokens.colorHoverStrong,
     },
     color: tokens.colorText,
+  },
+  swatch: {
+    display: "block",
+    width: "8px",
+    height: "8px",
+    flexShrink: 0,
+    borderRadius: "2px",
+    // A colour the person picked can be anything, so it keeps a hairline to stay
+    // visible against a surface of the same colour.
+    boxShadow: `inset 0 0 0 1px ${tokens.colorBorder}`,
   },
 });
 
@@ -264,15 +336,17 @@ function joinClassNames(...names: Array<string | undefined>) {
   return names.filter(Boolean).join(" ") || undefined;
 }
 
-/** Text button for toolbars, dialogs, and forms, in five variants and three sizes. */
+/** Text button for toolbars, dialogs, and forms, in seven variants and five sizes. */
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(
     {
       variant = "secondary",
       size = "md",
       pressed,
+      swatch,
       className,
       xstyle,
+      children,
       ...props
     },
     ref,
@@ -291,7 +365,16 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-pressed={pressed}
         className={joinClassNames(styled.className, className)}
         style={styled.style}
-      />
+      >
+        {swatch != null ? (
+          <span
+            aria-hidden="true"
+            {...stylex.props(button.swatch)}
+            style={{ backgroundColor: swatch }}
+          />
+        ) : null}
+        {children}
+      </BaseButton>
     );
   },
 );
