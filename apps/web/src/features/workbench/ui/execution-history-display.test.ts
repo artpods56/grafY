@@ -1,14 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { Run, RunTargetInput, WorkspaceMember } from "@/lib/api";
-
-// Vitest has no StyleX Babel pass, so `stylex.create` throws at runtime. Same
-// substitution as `ExecutionHistoryDrawer.test.tsx`: each rule keeps its own
-// identity, which is what these assertions compare.
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles>(styles: Styles) => styles,
-  props: () => ({}),
-}));
 
 import { executionHistoryDrawerStyles } from "./ExecutionHistoryDrawer.styles";
 import {

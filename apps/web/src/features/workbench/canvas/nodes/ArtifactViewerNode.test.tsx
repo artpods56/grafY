@@ -16,11 +16,6 @@ const previewMocks = vi.hoisted(() => ({
   render: vi.fn(),
 }));
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@xyflow/react", () => ({
   useNodeId: () => null,
   Handle: ({
@@ -94,6 +89,20 @@ vi.mock("@base-ui/react/menu", () => ({
       <button type="button" {...props}>
         {children}
       </button>
+    ),
+    RadioGroup: ({ children }: { children: React.ReactNode }) => (
+      <div role="radiogroup">{children}</div>
+    ),
+    RadioItem: ({
+      children,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+    RadioItemIndicator: ({ children }: { children?: React.ReactNode }) => (
+      <>{children}</>
     ),
   },
 }));

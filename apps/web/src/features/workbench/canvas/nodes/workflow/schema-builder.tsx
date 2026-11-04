@@ -4,6 +4,9 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 
+import { Button, IconButton } from "@/components/ui/button";
+import { Field, TextInput } from "@/components/ui/field";
+import { Notice } from "@/components/ui/notice";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CanvasPortBall } from "../CanvasNodeChrome";
@@ -44,44 +47,18 @@ const s = stylex.create({
     alignItems: "end",
     gap: "6px",
   },
-  schemaMetadataField: { display: "grid", gap: "3px" },
-  schemaMetadataLabel: {
-    color: tokens.colorMuted,
-    fontSize: "10px",
-    fontWeight: 600,
-  },
-  schemaToggle: {
-    height: "28px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingInline: "8px",
-    borderWidth: 0,
-    borderRadius: "7px",
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorHoverStrong,
+  /** A metadata row keeps its label 3px off the control. */
+  metaField: { gap: "3px" },
+  /**
+   * The required flag is warning-coloured rather than the kit's neutral pressed
+   * fill, and that colour carries meaning: which fields a caller must send. The
+   * state itself comes from <Button pressed>, so only the hue is owned here.
+   */
+  requiredActive: {
+    color: {
+      default: tokens.colorWarning,
+      ":hover:not(:disabled)": tokens.colorWarning,
     },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: "10px",
-    fontWeight: 600,
-    whiteSpace: "nowrap",
-  },
-  schemaToggleActive: {
-    backgroundColor: tokens.colorAccentSoft,
-    color: tokens.colorTextEmphasis,
-    boxShadow: `inset 0 0 0 1px ${tokens.colorAccentBorder}`,
-  },
-  schemaEmpty: {
-    margin: 0,
-    padding: "12px 10px",
-    borderRadius: tokens.radiusMd,
-    backgroundColor: tokens.colorSurfaceMuted,
-    color: tokens.colorSubtle,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.45,
-    textAlign: "center",
   },
   schemaFieldRowDragging: {
     backgroundColor: tokens.colorAccentSoft,
@@ -94,19 +71,15 @@ const s = stylex.create({
     alignItems: "center",
     gap: "4px",
   },
-  schemaFieldGrip: {
+  /** The handle keeps the 18px column the row budgets it, and its grab cursor. */
+  grip: {
     width: "18px",
     height: "26px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
     borderRadius: "5px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorSubtle,
     cursor: "grab",
     touchAction: "none",
   },
+  /** The kit has no select, so the kind pickers keep their own native one. */
   schemaSelect: {
     width: "100%",
     minWidth: 0,
@@ -131,20 +104,11 @@ const s = stylex.create({
     gap: "4px",
     marginLeft: "40px",
   },
-  schemaRequired: {
-    height: "24px",
-    paddingInline: "7px",
-    borderWidth: 0,
-    borderRadius: "6px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorSubtle,
-    cursor: "pointer",
-    fontSize: "10px",
-    fontWeight: 600,
-  },
-  schemaRequiredActive: {
-    backgroundColor: tokens.colorAccentSoft,
-    color: tokens.colorWarning,
+  /** Row actions keep the 18px the detail row budgets them. */
+  rowAction: {
+    width: "18px",
+    height: "22px",
+    borderRadius: "5px",
   },
   schemaItemRow: {
     minWidth: 0,
@@ -252,36 +216,26 @@ export function SchemaBuilderBody({
     <div {...stylex.props(sharedStyles.schemaBody)}>
       <div {...stylex.props(s.schemaMetadata)}>
         <div {...stylex.props(s.schemaMetadataRow)}>
-          <label {...stylex.props(s.schemaMetadataField)}>
-            <span {...stylex.props(s.schemaMetadataLabel)}>
-              Schema title · optional
-            </span>
-            <input
+          <Field label="Schema title · optional" xstyle={s.metaField}>
+            <TextInput
               type="text"
               value={
                 typeof data.config.title === "string" ? data.config.title : ""
               }
               placeholder="Response"
-              {...nodeInteractionProps(
-                stylex.props(sharedStyles.schemaCompactInput),
-              )}
+              className="nodrag nowheel"
+              xstyle={sharedStyles.denseControl}
               onChange={(event) =>
                 data.onConfigChange?.(id, "title", event.currentTarget.value)
               }
             />
-          </label>
-          <button
-            type="button"
-            aria-pressed={data.config.additional_properties === true}
+          </Field>
+          <Button
+            variant="soft"
+            size="sm"
+            pressed={data.config.additional_properties === true}
             title="Allow properties not declared below"
-            {...nodeInteractionProps(
-              stylex.props(
-                s.schemaToggle,
-                data.config.additional_properties === true
-                  ? s.schemaToggleActive
-                  : null,
-              ),
-            )}
+            className="nodrag nowheel"
             onClick={() =>
               data.onConfigChange?.(
                 id,
@@ -291,13 +245,10 @@ export function SchemaBuilderBody({
             }
           >
             Extra fields
-          </button>
+          </Button>
         </div>
-        <label {...stylex.props(s.schemaMetadataField)}>
-          <span {...stylex.props(s.schemaMetadataLabel)}>
-            Description · optional
-          </span>
-          <input
+        <Field label="Description · optional" xstyle={s.metaField}>
+          <TextInput
             type="text"
             value={
               typeof data.config.description === "string"
@@ -305,9 +256,8 @@ export function SchemaBuilderBody({
                 : ""
             }
             placeholder="What this response contains"
-            {...nodeInteractionProps(
-              stylex.props(sharedStyles.schemaCompactInput),
-            )}
+            className="nodrag nowheel"
+            xstyle={sharedStyles.denseControl}
             onChange={(event) =>
               data.onConfigChange?.(
                 id,
@@ -316,7 +266,7 @@ export function SchemaBuilderBody({
               )
             }
           />
-        </label>
+        </Field>
       </div>
 
       <section
@@ -372,11 +322,12 @@ export function SchemaBuilderBody({
                   ) : null}
 
                   <div {...stylex.props(s.schemaFieldTop)}>
-                    <button
-                      type="button"
-                      aria-label={`Drag to reorder field ${index + 1}`}
+                    <IconButton
+                      label={`Drag to reorder field ${index + 1}`}
                       title="Drag to reorder; arrow buttons also move this field"
-                      {...nodeInteractionProps(stylex.props(s.schemaFieldGrip))}
+                      size="xs"
+                      className="nodrag nowheel"
+                      xstyle={s.grip}
                       onPointerDown={(event) => {
                         if (event.button !== 0) return;
                         event.stopPropagation();
@@ -421,18 +372,17 @@ export function SchemaBuilderBody({
                       onPointerCancel={finishPointerDrag}
                     >
                       <GripVertical size={12} />
-                    </button>
+                    </IconButton>
                     <span {...stylex.props(sharedStyles.schemaFieldIndex)}>
                       {index + 1}
                     </span>
-                    <input
+                    <TextInput
                       type="text"
                       value={field.name}
                       placeholder="field_name"
                       aria-label={`Field ${index + 1} name`}
-                      {...nodeInteractionProps(
-                        stylex.props(sharedStyles.schemaCompactInput),
-                      )}
+                      className="nodrag nowheel"
+                      xstyle={sharedStyles.denseControl}
                       onChange={(event) =>
                         replaceField(field.id, {
                           ...field,
@@ -463,14 +413,13 @@ export function SchemaBuilderBody({
                   </div>
 
                   <div {...stylex.props(s.schemaFieldDetail)}>
-                    <input
+                    <TextInput
                       type="text"
                       value={field.description}
                       placeholder="Description (optional)"
                       aria-label={`Field ${index + 1} description`}
-                      {...nodeInteractionProps(
-                        stylex.props(sharedStyles.schemaCompactInput),
-                      )}
+                      className="nodrag nowheel"
+                      xstyle={sharedStyles.denseControl}
                       onChange={(event) =>
                         replaceField(field.id, {
                           ...field,
@@ -478,16 +427,13 @@ export function SchemaBuilderBody({
                         })
                       }
                     />
-                    <button
-                      type="button"
-                      aria-pressed={field.required}
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      pressed={field.required}
+                      xstyle={field.required ? s.requiredActive : null}
                       aria-label={`${field.required ? "Make" : "Mark"} field ${index + 1} ${field.required ? "optional" : "required"}`}
-                      {...nodeInteractionProps(
-                        stylex.props(
-                          s.schemaRequired,
-                          field.required ? s.schemaRequiredActive : null,
-                        ),
-                      )}
+                      className="nodrag nowheel"
                       onClick={() =>
                         replaceField(field.id, {
                           ...field,
@@ -496,21 +442,15 @@ export function SchemaBuilderBody({
                       }
                     >
                       Required
-                    </button>
+                    </Button>
                     <span {...stylex.props(sharedStyles.schemaFieldActions)}>
-                      <button
-                        type="button"
-                        disabled={index === 0}
-                        aria-label={`Move field ${index + 1} up`}
+                      <IconButton
+                        label={`Move field ${index + 1} up`}
                         title="Move field up"
-                        {...nodeInteractionProps(
-                          stylex.props(
-                            sharedStyles.schemaFieldAction,
-                            index === 0
-                              ? sharedStyles.schemaFieldActionDisabled
-                              : null,
-                          ),
-                        )}
+                        size="xs"
+                        className="nodrag nowheel"
+                        xstyle={s.rowAction}
+                        disabled={index === 0}
                         onClick={() =>
                           commitFields(
                             moveSchemaBuilderField(fields, field.id, index - 1),
@@ -518,20 +458,14 @@ export function SchemaBuilderBody({
                         }
                       >
                         <ArrowUp size={10} />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={index === fields.length - 1}
-                        aria-label={`Move field ${index + 1} down`}
+                      </IconButton>
+                      <IconButton
+                        label={`Move field ${index + 1} down`}
                         title="Move field down"
-                        {...nodeInteractionProps(
-                          stylex.props(
-                            sharedStyles.schemaFieldAction,
-                            index === fields.length - 1
-                              ? sharedStyles.schemaFieldActionDisabled
-                              : null,
-                          ),
-                        )}
+                        size="xs"
+                        className="nodrag nowheel"
+                        xstyle={s.rowAction}
+                        disabled={index === fields.length - 1}
                         onClick={() =>
                           commitFields(
                             moveSchemaBuilderField(fields, field.id, index + 1),
@@ -539,17 +473,14 @@ export function SchemaBuilderBody({
                         }
                       >
                         <ArrowDown size={10} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Remove field ${index + 1}`}
+                      </IconButton>
+                      <IconButton
+                        label={`Remove field ${index + 1}`}
                         title="Remove field and its connection"
-                        {...nodeInteractionProps(
-                          stylex.props(
-                            sharedStyles.schemaFieldAction,
-                            sharedStyles.schemaFieldRemove,
-                          ),
-                        )}
+                        variant="danger"
+                        size="xs"
+                        className="nodrag nowheel"
+                        xstyle={s.rowAction}
                         onClick={() =>
                           commitFields(
                             fields.filter(
@@ -559,7 +490,7 @@ export function SchemaBuilderBody({
                         }
                       >
                         <Trash2 size={10} />
-                      </button>
+                      </IconButton>
                     </span>
                   </div>
 
@@ -640,14 +571,15 @@ export function SchemaBuilderBody({
             })}
           </div>
         ) : (
-          <p {...stylex.props(s.schemaEmpty)}>
+          <Notice tone="neutral">
             Add a field to define this object schema.
-          </p>
+          </Notice>
         )}
 
-        <button
-          type="button"
-          {...nodeInteractionProps(stylex.props(sharedStyles.schemaAddField))}
+        <Button
+          variant="soft"
+          size="sm"
+          className="nodrag nowheel"
           onClick={() => {
             const names = new Set(fields.map((field) => field.name));
             let fieldNumber = fields.length + 1;
@@ -660,7 +592,7 @@ export function SchemaBuilderBody({
         >
           <Plus size={11} />
           Add field
-        </button>
+        </Button>
       </section>
     </div>
   );

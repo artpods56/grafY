@@ -42,11 +42,6 @@ const tableMocks = vi.hoisted(
   }),
 );
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@xyflow/react", () => ({
   useNodeId: () => null,
   useUpdateNodeInternals: () => vi.fn(),
@@ -171,6 +166,20 @@ vi.mock("@base-ui/react/menu", () => ({
       <div data-testid="menu-info">{children}</div>
     ),
     Separator: () => <hr />,
+    RadioGroup: ({ children }: { children: React.ReactNode }) => (
+      <div role="radiogroup">{children}</div>
+    ),
+    RadioItem: ({
+      children,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+    RadioItemIndicator: ({ children }: { children?: React.ReactNode }) => (
+      <>{children}</>
+    ),
   },
 }));
 

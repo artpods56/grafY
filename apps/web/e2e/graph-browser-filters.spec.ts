@@ -88,8 +88,14 @@ const test = base.extend<{ graphApiFixtures: void }>({
 
 const search = (page: Page) => page.getByLabel("Search graphs");
 const rowTitles = (page: Page) => page.locator(".grafy-graphs__row-title");
+/**
+ * Recent/All is one labelled radio group, not a pair of toggle buttons, so a
+ * view is addressed as a `radio` and read off `aria-checked`.
+ */
 const tab = (page: Page, name: "Recent" | "All") =>
-  page.getByRole("button", { name, exact: true });
+  page
+    .getByRole("radiogroup", { name: "Graph views" })
+    .getByRole("radio", { name, exact: true });
 /** A graph row is addressed by the workbench path it opens. */
 const rowFor = (page: Page, slug: string, graphId: string) =>
   page.locator(`a[href="/workspaces/${slug}/projects/${graphId}"]`);
@@ -99,8 +105,8 @@ async function titles(page: Page): Promise<string[]> {
 }
 
 /**
- * Address, input, list, and tabs read in one pass through the page, so a
- * result either agrees everywhere or fails the assertion.
+ * Address, input, list, and the view that is showing read in one pass through
+ * the page, so a result either agrees everywhere or fails the assertion.
  */
 async function snapshot(page: Page) {
   return page.evaluate(() => {
@@ -114,9 +120,11 @@ async function snapshot(page: Page) {
       titles: Array.from(
         document.querySelectorAll(".grafy-graphs__row-title"),
       ).map((title) => title.textContent?.trim() ?? ""),
-      pressed: Array.from(
-        document.querySelectorAll("[aria-pressed='true']"),
-      ).map((button) => button.textContent?.trim() ?? ""),
+      checked: Array.from(
+        document.querySelectorAll(
+          '[role="radiogroup"][aria-label="Graph views"] [role="radio"][aria-checked="true"]',
+        ),
+      ).map((option) => option.textContent?.trim() ?? ""),
     };
   });
 }
@@ -130,8 +138,8 @@ test("opens the location, the search, and the view the address asked for", async
     "/workspaces/atlas/projects?q=invoice&view=all&utm_source=email",
   );
   await expect(search(page)).toHaveValue("invoice");
-  await expect(tab(page, "All")).toHaveAttribute("aria-pressed", "true");
-  await expect(tab(page, "Recent")).toHaveAttribute("aria-pressed", "false");
+  await expect(tab(page, "All")).toBeChecked();
+  await expect(tab(page, "Recent")).not.toBeChecked();
   await expect
     .poll(() => titles(page))
     .toEqual(["Invoice intake", "Invoice archive audit"]);
@@ -147,7 +155,7 @@ test("opens the same address again after a reload", async ({ page }) => {
 
   await expect(page).toHaveURL("/workspaces/atlas/projects?view=all&q=invoice");
   await expect(search(page)).toHaveValue("invoice");
-  await expect(tab(page, "All")).toHaveAttribute("aria-pressed", "true");
+  await expect(tab(page, "All")).toBeChecked();
   await expect
     .poll(() => titles(page))
     .toEqual(["Invoice intake", "Invoice archive audit"]);
@@ -190,7 +198,7 @@ test("writes the address while typing without stacking a step per keystroke", as
       address: "/workspaces/atlas/projects?q=sync",
       query: "sync",
       titles: ["Nightly sync"],
-      pressed: ["Recent"],
+      checked: ["Recent"],
     });
   await expect(rowFor(page, "atlas", "atlas-invoice-intake")).toHaveCount(0);
 
@@ -217,7 +225,7 @@ test("gives history the last word about the filters", async ({ page }) => {
   await page.goForward();
   await expect(page).toHaveURL("/workspaces/atlas/projects?q=invoice&view=all");
   await expect(search(page)).toHaveValue("invoice");
-  await expect(tab(page, "All")).toHaveAttribute("aria-pressed", "true");
+  await expect(tab(page, "All")).toBeChecked();
   await expect
     .poll(() => titles(page))
     .toEqual(["Invoice intake", "Invoice archive audit"]);

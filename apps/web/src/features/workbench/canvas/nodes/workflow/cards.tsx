@@ -11,6 +11,7 @@ import { TriangleAlert, X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { IconButton } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 
 import { CanvasNodeHeader } from "../CanvasNodeChrome";
 import { artifactTypeKey } from "../../artifact-type-key";
@@ -76,12 +77,6 @@ const s = stylex.create({
     gap: "9px",
     padding: "4px 12px 13px",
   },
-  compatibilityIssue: {
-    margin: 0,
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.5,
-  },
   compatibilityConfig: {
     overflow: "hidden",
     borderWidth: 1,
@@ -111,24 +106,6 @@ const s = stylex.create({
     lineHeight: 1.45,
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
-  },
-  header: {
-    display: "grid",
-    gap: "2px",
-    padding: "12px 16px 12px 12px",
-  },
-  titleRow: {
-    minWidth: 0,
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-  },
-  operatorRow: {
-    minWidth: 0,
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    marginLeft: "56px",
   },
   plugPorts: {
     display: "grid",
@@ -287,9 +264,9 @@ export function IncompatibleWorkflowNodeCard({
       />
       <div {...stylex.props(s.compatibilityBody)}>
         {compatibility.issues.map((issue) => (
-          <p key={issue} role="status" {...stylex.props(s.compatibilityIssue)}>
+          <Notice key={issue} tone="neutral">
             {issue}
-          </p>
+          </Notice>
         ))}
         <details {...nodeInteractionProps(stylex.props(s.compatibilityConfig))}>
           <summary {...stylex.props(s.compatibilityConfigSummary)}>

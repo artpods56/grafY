@@ -16,6 +16,10 @@ import {
   type TableQueryInput,
 } from "@/lib/api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
+import { Button, ButtonLink, IconButton } from "@/components/ui/button";
+import { TextArea } from "@/components/ui/field";
+import { Notice } from "@/components/ui/notice";
+
 import { isTableArtifact } from "../../artifact-card";
 import {
   interactionScalarFromIntegerEncoding,
@@ -35,6 +39,22 @@ const DEFAULT_TABLE_PAGE_SIZE = 50;
 const TABLE_CELL_PREVIEW_CHARACTERS = 256;
 
 const TABLE_SELECTION_ACTIVITY_DELAY_MS = 200;
+
+/**
+ * The full value is read in a box the reader resizes: the kit's `<TextArea>`
+ * draws it, and these only keep the room it takes in each surface.
+ */
+const cellValueStyles = stylex.create({
+  inspector: {
+    minHeight: "100px",
+    resize: "vertical",
+  },
+  canvas: {
+    height: "100%",
+    minHeight: "0px",
+    resize: "none",
+  },
+});
 
 function tableCellText(value: unknown): string {
   if (value === null || value === undefined) return "—";
@@ -243,32 +263,34 @@ function TableArtifactRendererState({
   );
 
   if (!page) {
+    const loadFailed = Boolean(tableSchemaError || pageError);
     return (
       <div
         {...stylex.props(s.tablePreview, canvas ? s.tableCanvasLoading : null)}
       >
-        <span
-          role={tableSchemaError || pageError ? "alert" : "status"}
-          aria-live={tableSchemaError || pageError ? undefined : "polite"}
-          {...stylex.props(s.tableLimit)}
+        <Notice
+          tone={loadFailed ? "danger" : "neutral"}
+          action={
+            loadFailed ? (
+              <Button
+                size="xs"
+                variant="secondary"
+                className="nodrag"
+                onClick={() =>
+                  void (tableSchemaError ? retryTableSchema() : retryPage())
+                }
+              >
+                Retry
+              </Button>
+            ) : null
+          }
         >
           {tableSchemaError
             ? "Could not load the table columns."
             : pageError
               ? "Could not load this table page."
               : "Loading table page…"}
-        </span>
-        {tableSchemaError || pageError ? (
-          <button
-            type="button"
-            {...stylex.props(s.tablePagerButton)}
-            onClick={() =>
-              void (tableSchemaError ? retryTableSchema() : retryPage())
-            }
-          >
-            Retry
-          </button>
-        ) : null}
+        </Notice>
       </div>
     );
   }
@@ -442,38 +464,29 @@ function TableArtifactRendererState({
               </span>
             ) : null}
           </span>
-          <button
-            type="button"
-            aria-label="Close full cell value"
+          <IconButton
+            label="Close full cell value"
             title="Close (Esc)"
-            {...stylex.props(s.tablePagerButton, s.tablePagerIconButton)}
+            variant="soft"
+            className="nodrag"
             onClick={closeCellDetail}
           >
-            <X size={13} aria-hidden="true" />
-          </button>
+            <X size={13} />
+          </IconButton>
         </div>
         {fullCellLoading ? (
-          <span
-            role="status"
-            aria-live="polite"
-            {...stylex.props(s.tableLimit)}
-          >
-            Loading full cell…
-          </span>
+          <Notice tone="neutral">Loading full cell…</Notice>
         ) : fullCellError ? (
-          <span role="alert" {...stylex.props(s.tableLimit)}>
-            Could not load the full cell value.
-          </span>
+          <Notice tone="danger">Could not load the full cell value.</Notice>
         ) : fullCell ? (
-          <textarea
+          <TextArea
             ref={focusCellValue}
             readOnly
+            mono
             aria-label="Full cell value"
             value={fullCellText}
-            {...stylex.props(
-              s.tableCellDetailValue,
-              canvas ? s.tableCanvasCellDetailValue : null,
-            )}
+            className="nodrag nowheel"
+            xstyle={canvas ? cellValueStyles.canvas : cellValueStyles.inspector}
           />
         ) : null}
       </div>
@@ -486,13 +499,22 @@ function TableArtifactRendererState({
       {...stylex.props(s.tablePreview, canvas ? s.tableCanvas : null)}
     >
       {pageError ? (
-        <span role="alert" {...stylex.props(s.tableLimit)}>
+        <Notice
+          tone="danger"
+          action={
+            <Button
+              size="xs"
+              variant="secondary"
+              className="nodrag"
+              onClick={() => void retryPage()}
+            >
+              Retry
+            </Button>
+          }
+        >
           Could not load the requested table page. The previous page is still
-          available.{" "}
-          <button type="button" onClick={() => void retryPage()}>
-            Retry
-          </button>
-        </span>
+          available.
+        </Notice>
       ) : null}
       <div
         {...stylex.props(s.tableSummary, canvas ? s.tableCanvasToolbar : null)}
@@ -510,14 +532,17 @@ function TableArtifactRendererState({
         </span>
         <span {...stylex.props(s.tableToolbarActions)}>
           {contentUrl ? (
-            <a
+            <ButtonLink
               href={contentUrl}
               download
+              prefetch={false}
+              variant="ghost"
+              size="xs"
               title="Download the complete table as JSON"
-              {...stylex.props(s.tableDownload)}
+              className="nodrag"
             >
               Download JSON
-            </a>
+            </ButtonLink>
           ) : null}
           {tableSchema?.columns.length ? (
             <TableColumnPicker
@@ -677,6 +702,9 @@ function TableArtifactRendererState({
                             )}
                           >
                             {cell.truncated ? (
+                              /* A cell's preview is text the reader expands: the
+                                 kit's Button is a fixed-height chip, so this stays
+                                 an inline button that inherits the cell's type. */
                               <button
                                 type="button"
                                 aria-expanded={

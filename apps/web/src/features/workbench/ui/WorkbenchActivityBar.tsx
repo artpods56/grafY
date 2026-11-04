@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { BrandLoader } from "@/components/brand";
+import { Button } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 export type WorkbenchActivityTone =
@@ -123,57 +124,11 @@ const s = stylex.create({
   },
   messageWarning: { color: tokens.colorWarning },
   messageError: { color: tokens.colorDanger },
-  action: {
+  /** The action takes its look from `Button`; this owns only its box. */
+  touchAction: {
     height: {
       default: "32px",
       "@media (max-width: 720px)": "44px",
-    },
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "6px",
-    paddingInline: "10px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: {
-      default: tokens.colorBorderStrong,
-      ":hover": tokens.colorAccent,
-      ":disabled": tokens.colorBorder,
-    },
-    borderRadius: "8px",
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
-    outlineStyle: "solid",
-    outlineColor: tokens.colorAccent,
-    outlineOffset: "2px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-      ":disabled": "transparent",
-    },
-    color: {
-      default: tokens.colorMuted,
-      ":hover": tokens.colorText,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 700,
-  },
-  actionCancel: {
-    borderColor: {
-      default: tokens.colorBorderStrong,
-      ":hover": tokens.colorDanger,
-      ":disabled": tokens.colorBorder,
-    },
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-      ":disabled": "transparent",
-    },
-    color: {
-      default: tokens.colorMuted,
-      ":hover": tokens.colorDanger,
-      ":disabled": tokens.colorTextDisabled,
     },
   },
   spinner: {
@@ -241,14 +196,12 @@ export function WorkbenchActivityBar({
         </span>
       </span>
       {action ? (
-        <button
-          type="button"
+        <Button
+          variant={action.kind === "cancel" ? "danger" : "ghost"}
+          size="md"
           disabled={action.disabled}
           aria-label={action.ariaLabel}
-          {...stylex.props(
-            s.action,
-            action.kind === "cancel" ? s.actionCancel : null,
-          )}
+          xstyle={s.touchAction}
           onClick={action.onInvoke}
         >
           {activity.tone === "cancelling" ? (
@@ -257,7 +210,7 @@ export function WorkbenchActivityBar({
             <ActionIcon kind={action.kind} />
           )}
           {action.label}
-        </button>
+        </Button>
       ) : null}
     </aside>
   );

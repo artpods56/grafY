@@ -6,6 +6,7 @@ import { RotateCcw } from "lucide-react";
 import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { IconButton } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 
 import { nodeSecretDependencyRevision } from "../../node-secrets";
 import { resolvedNodeWidth, type WorkflowNodeLayout } from "../../node-layout";
@@ -33,18 +34,6 @@ import {
 import { ANY_TYPE_LABEL, nodeInteractionProps } from "./ports";
 
 const s = stylex.create({
-  configValidationError: {
-    margin: 0,
-    color: tokens.colorDanger,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.4,
-  },
-  configValidationSummary: {
-    margin: "0 12px 8px",
-    color: tokens.colorDanger,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.4,
-  },
   // The type a generic node works with, as one quiet line at the top of the
   // plate: a label, the choice, and a reset. Its colour is on the balls. Only
   // for a type no visible port carries.
@@ -322,13 +311,12 @@ export function GenericBody({
                     {issues
                       .filter((issue) => issue.fieldName === brick.field.name)
                       .map((issue, index) => (
-                        <p
+                        <Notice
                           key={`${brick.field.name}-config-issue-${index}`}
-                          role="alert"
-                          {...stylex.props(s.configValidationError)}
+                          tone="danger"
                         >
                           {issue.message}
-                        </p>
+                        </Notice>
                       ))}
                   </>
                 ) : (
@@ -345,10 +333,10 @@ export function GenericBody({
         </div>
       ) : null}
       {summaryIssues.length ? (
-        <p role="alert" {...stylex.props(s.configValidationSummary)}>
+        <Notice tone="danger">
           This node has configuration errors in fields that cannot be edited
           here.
-        </p>
+        </Notice>
       ) : null}
     </div>
   );

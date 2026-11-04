@@ -7,11 +7,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
   useWorkspaceContext: () => ({
     workspace: {
@@ -98,6 +93,10 @@ function jsonType(id: string): ArtifactTypeSpec {
 async function renderPreview(
   output: RunPortOutput,
   artifactTypes: readonly ArtifactTypeSpec[] = [],
+  mode: {
+    modeChoice?: string | null;
+    onModeChoiceChange?: (mode: string) => void;
+  } = {},
 ): Promise<{ container: HTMLDivElement; root: Root }> {
   const container = document.createElement("div");
   const root = createRoot(container);
@@ -110,6 +109,8 @@ async function renderPreview(
           output,
           artifactTypes,
           previewHeight: 320,
+          modeChoice: mode.modeChoice,
+          onModeChoiceChange: mode.onModeChoiceChange,
         }),
       ),
     );
@@ -375,6 +376,63 @@ describe("artifact payload loading policy", () => {
     expect(container.querySelector("pre")?.textContent).toBe(
       '{\n  "value": 5\n}',
     );
+    await act(async () => root.unmount());
+  });
+});
+
+describe("the artifact view mode", () => {
+  it("switches modes through one labelled radio group, not a row of toggles", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response('{"value":5}', {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+    );
+    const onModeChoiceChange = vi.fn();
+    const artifact = referenceFor("integer-artifact", "scalar.integer");
+
+    const { container, root } = await renderPreview(
+      outputFor([artifact]),
+      [jsonType("scalar.integer")],
+      { onModeChoiceChange },
+    );
+
+    const group = container.querySelector<HTMLElement>(
+      '[role="radiogroup"][aria-label="Artifact view mode"]',
+    );
+    const radios = [
+      ...(group?.querySelectorAll<HTMLElement>('[role="radio"]') ?? []),
+    ];
+
+    // The renderer declares raw and pretty, in that order, and the card shows
+    // the first until someone chooses otherwise.
+    expect(radios.map((radio) => radio.textContent)).toEqual(["raw", "pretty"]);
+    expect(radios.map((radio) => radio.getAttribute("aria-checked"))).toEqual([
+      "true",
+      "false",
+    ]);
+    // One choice, so nothing in the row carries a pressed state any more.
+    expect(group?.querySelectorAll("[aria-pressed]")).toHaveLength(0);
+    // The row sits on a draggable card: the pointer must not drag or zoom the pane.
+    expect(group?.className.split(" ")).toEqual(
+      expect.arrayContaining(["nodrag", "nowheel"]),
+    );
+
+    const pretty = radios[1];
+    if (!pretty) throw new Error("the scalar renderer has a pretty mode");
+    await act(async () => {
+      pretty.click();
+    });
+
+    expect(onModeChoiceChange).toHaveBeenCalledOnce();
+    expect(onModeChoiceChange).toHaveBeenCalledWith("pretty");
+    expect(pretty.getAttribute("aria-checked")).toBe("true");
+    expect(radios[0]?.getAttribute("aria-checked")).toBe("false");
+
     await act(async () => root.unmount());
   });
 });

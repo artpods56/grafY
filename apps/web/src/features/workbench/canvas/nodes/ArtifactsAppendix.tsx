@@ -12,6 +12,7 @@ import {
   type RunPortOutput,
 } from "@/lib/api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { artifactTypeFor, declaredArtifactContentType } from "../artifact-card";
 import type { ArtifactViewerInteractionContext } from "../artifact-interactions";
@@ -87,29 +88,9 @@ const s = stylex.create({
     fontFamily: MONO,
     fontSize: "10px",
   },
-  modeToggle: {
+  /** The segmented row brings its own track; the card only says where it sits. */
+  modeSwitch: {
     marginLeft: "auto",
-    display: "flex",
-    gap: "2px",
-    padding: "2px",
-    borderRadius: "8px",
-    backgroundColor: tokens.colorSurfaceMuted,
-  },
-  modeButton: {
-    height: "20px",
-    paddingInline: "9px",
-    borderWidth: 0,
-    borderRadius: "6px",
-    backgroundColor: tokens.colorSurfaceMuted,
-    color: tokens.colorSubtle,
-    cursor: "pointer",
-    fontSize: "10px",
-    fontWeight: 700,
-  },
-  modeButtonActive: {
-    backgroundColor: tokens.colorSurface,
-    boxShadow: tokens.shadowNode,
-    color: tokens.colorTextEmphasis,
   },
   fieldSelect: {
     width: "100%",
@@ -642,6 +623,9 @@ export function ArtifactPortPreview({
   const feedProjectionLabel = feedPath
     ? feedPath.join(".")
     : selectedField?.name;
+  // A field projection asks its own pretty/raw question; otherwise the renderer
+  // answers which of its modes is showing. Either way one mode is on.
+  const selectedMode = showingFeedProjection ? projectionMode : mode;
   return (
     <section
       draggable
@@ -656,38 +640,23 @@ export function ArtifactPortPreview({
           {sequence ? `sequence · ${artifacts.length}` : "single"}
         </span>
         {visibleModes.length > 1 ? (
-          <div
-            role="group"
+          <SegmentedControl
             aria-label="Artifact view mode"
-            {...stylex.props(s.modeToggle)}
-          >
-            {visibleModes.map((option) => {
-              const selectedMode = showingFeedProjection
-                ? projectionMode
-                : mode;
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  aria-pressed={selectedMode === option}
-                  {...nodeInteractionProps(
-                    stylex.props(
-                      s.modeButton,
-                      selectedMode === option ? s.modeButtonActive : null,
-                    ),
-                  )}
-                  onClick={() => {
-                    if (controlledModeChoice === undefined) {
-                      setLocalModeChoice(option);
-                    }
-                    onModeChoiceChange?.(option);
-                  }}
-                >
-                  {option}
-                </button>
-              );
-            })}
-          </div>
+            size="sm"
+            className="nodrag nowheel"
+            xstyle={s.modeSwitch}
+            value={selectedMode}
+            options={visibleModes.map((option) => ({
+              value: option,
+              label: option,
+            }))}
+            onValueChange={(option) => {
+              if (controlledModeChoice === undefined) {
+                setLocalModeChoice(option);
+              }
+              onModeChoiceChange?.(option);
+            }}
+          />
         ) : null}
       </div>
       {isBlobArtifact(active) ? (

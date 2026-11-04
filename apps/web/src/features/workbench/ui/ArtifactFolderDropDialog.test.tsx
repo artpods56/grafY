@@ -5,11 +5,6 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles extends Record<string, object>>(styles: Styles) => styles,
-  defineVars: <Variables,>(variables: Variables) => variables,
-  props: () => ({ className: "" }),
-}));
 vi.mock("../canvas/use-artifact-type-catalog", () => ({
   useArtifactTypeCatalog: () => [],
 }));

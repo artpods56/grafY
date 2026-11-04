@@ -6,7 +6,10 @@ import { Plus, Trash2 } from "lucide-react";
 
 import { createUuid } from "@/features/workbench/model/uuid";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { IconButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
+import { Field, TextInput } from "@/components/ui/field";
+import { Notice } from "@/components/ui/notice";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { WorkflowNodeData } from "../types";
 
 type CategoryValue = string | number | boolean;
@@ -199,32 +202,15 @@ const s = stylex.create({
     alignItems: "center",
     gap: "5px",
   },
-  addButton: {
-    minHeight: "28px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "5px",
-    paddingInline: "9px",
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: tokens.colorBorderStrong,
-    borderRadius: "7px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-    },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: "10px",
-    fontWeight: 700,
-  },
-  error: {
-    color: tokens.colorDanger,
-    fontSize: "10px",
-  },
 });
 
+/**
+ * The controls the kit cannot draw — a colour well, the value-type `select`, a
+ * category title with no label of its own — sit outside a `<Field>`, so React
+ * Flow still needs the classes on the control itself. A `<Field>` carries them
+ * on its root and React Flow resolves the class by walking up from the event
+ * target, so a control inside one does not repeat them.
+ */
 function interactionProps(props: ReturnType<typeof stylex.props>) {
   return {
     ...props,
@@ -280,6 +266,33 @@ function parseValues(value: string, kind: CategoryValueKind): CategoryValue[] {
   return parts;
 }
 
+/**
+ * A colour well. The kit draws no swatch, and `<Field>`'s label only wires a
+ * `<Field.Control>`, so this one keeps the native input inside the `<label>`
+ * that names it.
+ */
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label {...stylex.props(s.field)}>
+      <span {...stylex.props(s.label)}>{label}</span>
+      <input
+        type="color"
+        value={value}
+        {...interactionProps(stylex.props(s.color))}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      />
+    </label>
+  );
+}
+
 function LabelPropertyField({
   label,
   onChange,
@@ -288,13 +301,10 @@ function LabelPropertyField({
   onChange: (label: LabelStyle | null) => void;
 }) {
   return (
-    <label {...stylex.props(s.field)}>
-      <span {...stylex.props(s.label)}>Label property</span>
-      <input
-        type="text"
+    <Field label="Label property" className="nodrag nopan nowheel">
+      <TextInput
         value={label?.property ?? ""}
         placeholder="No labels"
-        {...interactionProps(stylex.props(s.input))}
         onChange={(event) => {
           const property = event.currentTarget.value;
           onChange(
@@ -302,7 +312,7 @@ function LabelPropertyField({
           );
         }}
       />
-    </label>
+    </Field>
   );
 }
 
@@ -329,6 +339,7 @@ function CategoryValuesField({
 
   return (
     <>
+      {/* The kit draws no select, so the value type keeps its native one. */}
       <label {...stylex.props(s.field)}>
         <span {...stylex.props(s.label)}>Value type</span>
         <select
@@ -350,14 +361,11 @@ function CategoryValuesField({
           <option value="boolean">Booleans</option>
         </select>
       </label>
-      <label {...stylex.props(s.field)}>
-        <span {...stylex.props(s.label)}>Values</span>
-        <input
-          type="text"
+      <Field label="Values" className="nodrag nopan nowheel">
+        <TextInput
           aria-invalid={invalid}
           value={draft}
           placeholder="1, 2, 3"
-          {...interactionProps(stylex.props(s.input))}
           onChange={(event) => {
             setDraft(event.currentTarget.value);
             setInvalid(false);
@@ -370,15 +378,20 @@ function CategoryValuesField({
             }
           }}
         />
-      </label>
+      </Field>
       {invalid ? (
-        <span role="alert" {...stylex.props(s.error, s.wide)}>
+        <Notice tone="danger" xstyle={s.wide}>
           Enter at least one comma-separated value of the selected type.
-        </span>
+        </Notice>
       ) : null}
     </>
   );
 }
+
+const STYLE_MODE_OPTIONS = [
+  { value: "vector", label: "Uniform" },
+  { value: "categorized_points", label: "Categories" },
+] as const;
 
 export function VectorLayerStyleBody({
   id,
@@ -395,47 +408,37 @@ export function VectorLayerStyleBody({
     <section aria-label="Vector layer style" {...stylex.props(s.body)}>
       <div {...stylex.props(s.header)}>
         <span {...stylex.props(s.title)}>Feature style</span>
-        <select
+        <SegmentedControl
           aria-label="Feature style mode"
+          size="sm"
+          className="nodrag nopan nowheel"
           value={style.kind}
-          {...interactionProps(stylex.props(s.select))}
-          onChange={(event) =>
+          options={STYLE_MODE_OPTIONS}
+          onValueChange={(kind) =>
             commit(
-              event.currentTarget.value === "categorized_points"
+              kind === "categorized_points"
                 ? DEFAULT_CATEGORIZED_STYLE
                 : DEFAULT_UNIFORM_STYLE,
             )
           }
-        >
-          <option value="vector">Uniform</option>
-          <option value="categorized_points">Categories</option>
-        </select>
+        />
       </div>
 
       {style.kind === "vector" ? (
         <div {...stylex.props(s.grid)}>
-          <label {...stylex.props(s.field)}>
-            <span {...stylex.props(s.label)}>Point color</span>
-            <input
-              type="color"
-              value={style.point.color}
-              {...interactionProps(stylex.props(s.color))}
-              onChange={(event) =>
-                commit({
-                  ...style,
-                  point: { ...style.point, color: event.currentTarget.value },
-                })
-              }
-            />
-          </label>
-          <label {...stylex.props(s.field)}>
-            <span {...stylex.props(s.label)}>Point radius</span>
-            <input
+          <ColorField
+            label="Point color"
+            value={style.point.color}
+            onChange={(color) =>
+              commit({ ...style, point: { ...style.point, color } })
+            }
+          />
+          <Field label="Point radius" className="nodrag nopan nowheel">
+            <TextInput
               type="number"
               min={0}
               max={128}
               value={style.point.radius}
-              {...interactionProps(stylex.props(s.input))}
               onChange={(event) =>
                 commit({
                   ...style,
@@ -446,30 +449,21 @@ export function VectorLayerStyleBody({
                 })
               }
             />
-          </label>
-          <label {...stylex.props(s.field)}>
-            <span {...stylex.props(s.label)}>Line color</span>
-            <input
-              type="color"
-              value={style.line.color}
-              {...interactionProps(stylex.props(s.color))}
-              onChange={(event) =>
-                commit({
-                  ...style,
-                  line: { ...style.line, color: event.currentTarget.value },
-                })
-              }
-            />
-          </label>
-          <label {...stylex.props(s.field)}>
-            <span {...stylex.props(s.label)}>Line width</span>
-            <input
+          </Field>
+          <ColorField
+            label="Line color"
+            value={style.line.color}
+            onChange={(color) =>
+              commit({ ...style, line: { ...style.line, color } })
+            }
+          />
+          <Field label="Line width" className="nodrag nopan nowheel">
+            <TextInput
               type="number"
               min={0}
               max={64}
               step="0.5"
               value={style.line.width}
-              {...interactionProps(stylex.props(s.input))}
               onChange={(event) =>
                 commit({
                   ...style,
@@ -480,30 +474,21 @@ export function VectorLayerStyleBody({
                 })
               }
             />
-          </label>
-          <label {...stylex.props(s.field)}>
-            <span {...stylex.props(s.label)}>Fill color</span>
-            <input
-              type="color"
-              value={style.fill.color}
-              {...interactionProps(stylex.props(s.color))}
-              onChange={(event) =>
-                commit({
-                  ...style,
-                  fill: { ...style.fill, color: event.currentTarget.value },
-                })
-              }
-            />
-          </label>
-          <label {...stylex.props(s.field)}>
-            <span {...stylex.props(s.label)}>Fill opacity</span>
-            <input
+          </Field>
+          <ColorField
+            label="Fill color"
+            value={style.fill.color}
+            onChange={(color) =>
+              commit({ ...style, fill: { ...style.fill, color } })
+            }
+          />
+          <Field label="Fill opacity" className="nodrag nopan nowheel">
+            <TextInput
               type="number"
               min={0}
               max={1}
               step="0.05"
               value={style.fill.opacity}
-              {...interactionProps(stylex.props(s.input))}
               onChange={(event) =>
                 commit({
                   ...style,
@@ -514,7 +499,7 @@ export function VectorLayerStyleBody({
                 })
               }
             />
-          </label>
+          </Field>
           <div {...stylex.props(s.wide)}>
             <LabelPropertyField
               label={style.label}
@@ -525,12 +510,9 @@ export function VectorLayerStyleBody({
       ) : (
         <>
           <div {...stylex.props(s.grid)}>
-            <label {...stylex.props(s.field)}>
-              <span {...stylex.props(s.label)}>Category property</span>
-              <input
-                type="text"
+            <Field label="Category property" className="nodrag nopan nowheel">
+              <TextInput
                 value={style.category_property}
-                {...interactionProps(stylex.props(s.input))}
                 onChange={(event) =>
                   commit({
                     ...style,
@@ -538,7 +520,7 @@ export function VectorLayerStyleBody({
                   })
                 }
               />
-            </label>
+            </Field>
             <LabelPropertyField
               label={style.label}
               onChange={(label) => commit({ ...style, label })}
@@ -557,6 +539,7 @@ export function VectorLayerStyleBody({
               return (
                 <div key={category.id} {...stylex.props(s.category)}>
                   <div {...stylex.props(s.categoryHeader)}>
+                    {/* Named by its aria-label, and naked in the category row. */}
                     <input
                       type="text"
                       aria-label={`Category ${categoryIndex + 1} title`}
@@ -594,31 +577,22 @@ export function VectorLayerStyleBody({
                       category={category}
                       onChange={replaceCategory}
                     />
-                    <label {...stylex.props(s.field)}>
-                      <span {...stylex.props(s.label)}>Color</span>
-                      <input
-                        type="color"
-                        value={category.point.color}
-                        {...interactionProps(stylex.props(s.color))}
-                        onChange={(event) =>
-                          replaceCategory({
-                            ...category,
-                            point: {
-                              ...category.point,
-                              color: event.currentTarget.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                    <label {...stylex.props(s.field)}>
-                      <span {...stylex.props(s.label)}>Radius</span>
-                      <input
+                    <ColorField
+                      label="Color"
+                      value={category.point.color}
+                      onChange={(color) =>
+                        replaceCategory({
+                          ...category,
+                          point: { ...category.point, color },
+                        })
+                      }
+                    />
+                    <Field label="Radius" className="nodrag nopan nowheel">
+                      <TextInput
                         type="number"
                         min={0}
                         max={128}
                         value={category.point.radius}
-                        {...interactionProps(stylex.props(s.input))}
                         onChange={(event) =>
                           replaceCategory({
                             ...category,
@@ -629,15 +603,13 @@ export function VectorLayerStyleBody({
                           })
                         }
                       />
-                    </label>
-                    <label {...stylex.props(s.field)}>
-                      <span {...stylex.props(s.label)}>Min zoom</span>
-                      <input
+                    </Field>
+                    <Field label="Min zoom" className="nodrag nopan nowheel">
+                      <TextInput
                         type="number"
                         min={0}
                         max={24}
                         value={category.min_zoom}
-                        {...interactionProps(stylex.props(s.input))}
                         onChange={(event) =>
                           replaceCategory({
                             ...category,
@@ -645,15 +617,13 @@ export function VectorLayerStyleBody({
                           })
                         }
                       />
-                    </label>
-                    <label {...stylex.props(s.field)}>
-                      <span {...stylex.props(s.label)}>Max zoom</span>
-                      <input
+                    </Field>
+                    <Field label="Max zoom" className="nodrag nopan nowheel">
+                      <TextInput
                         type="number"
                         min={0}
                         max={24}
                         value={category.max_zoom}
-                        {...interactionProps(stylex.props(s.input))}
                         onChange={(event) =>
                           replaceCategory({
                             ...category,
@@ -661,17 +631,18 @@ export function VectorLayerStyleBody({
                           })
                         }
                       />
-                    </label>
+                    </Field>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant="secondary"
+            className="nodrag nopan nowheel"
             disabled={style.categories.length >= 128}
-            {...interactionProps(stylex.props(s.addButton))}
             onClick={() => {
               const number = style.categories.length + 1;
               commit({
@@ -695,7 +666,7 @@ export function VectorLayerStyleBody({
           >
             <Plus size={11} />
             Add category
-          </button>
+          </Button>
         </>
       )}
     </section>

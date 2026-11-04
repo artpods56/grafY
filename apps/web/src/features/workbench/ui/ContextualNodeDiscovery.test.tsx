@@ -14,11 +14,6 @@ import {
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@xyflow/react", () => ({
   useNodeId: () => null,
   ViewportPortal: ({ children }: { children: React.ReactNode }) => (
@@ -380,6 +375,12 @@ describe("ContextualNodeDiscovery", () => {
     await React.act(async () => annotate?.click());
     expect(onConfirm).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Connect Annotate text");
+    // Step two stays a list of options, not a strip of loose buttons.
+    expect(
+      [...document.querySelectorAll('[role="listbox"] [role="option"]')].some(
+        (option) => option.textContent?.includes("Body"),
+      ),
+    ).toBe(true);
 
     const bodyRoute = [...document.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Body"),
@@ -395,6 +396,21 @@ describe("ContextualNodeDiscovery", () => {
     expect(document.body.textContent).toContain("Transform text description");
     expect(document.body.textContent).toContain("Annotate text description");
     expect(document.body.textContent).not.toContain("Built-in ·");
+    // The shared Button carries the listbox semantics it was handed.
+    const options = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="listbox"] [role="option"]',
+      ),
+    ];
+    expect(options.map((option) => option.tagName)).toEqual([
+      "BUTTON",
+      "BUTTON",
+    ]);
+    expect(
+      options.filter(
+        (option) => option.getAttribute("aria-selected") === "true",
+      ),
+    ).toHaveLength(1);
     const preview = document.querySelector(
       '[data-testid="canvas-preview"] article',
     );

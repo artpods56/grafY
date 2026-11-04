@@ -3,6 +3,7 @@
 import * as stylex from "@stylexjs/stylex";
 import type { Connection } from "@xyflow/react";
 
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -12,7 +13,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { RunEdgeCollectionMode } from "@/lib/api";
-import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { ConnectionRoute } from "../canvas/handles";
 import { formatArtifactTypeTooltip } from "../canvas/artifact-type-label";
@@ -101,22 +101,21 @@ const s = stylex.create({
     fontSize: tokens.fontSizeSm,
   },
   projectionChoices: { display: "grid", gap: "6px" },
+  /**
+   * A feed spans the whole row with its projection path at the far end.
+   * `Button` draws the box, the focus ring and the colours; this lays out the
+   * two lines.
+   */
   projectionChoice: {
     width: "100%",
+    height: "auto",
     minHeight: "44px",
-    display: "flex",
-    alignItems: "center",
     justifyContent: "space-between",
     gap: "12px",
-    padding: "8px 10px",
-    borderRadius: "6px",
-    outlineColor: tokens.colorAccent,
-    outlineStyle: "solid",
-    outlineOffset: "-3px",
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
-    color: tokens.colorText,
-    cursor: "pointer",
+    paddingBlock: "8px",
+    paddingInline: "10px",
     textAlign: "left",
+    whiteSpace: "normal",
   },
   projectionChoiceTitle: { fontSize: tokens.fontSizeSm, fontWeight: 720 },
   projectionChoicePath: {
@@ -129,16 +128,6 @@ const s = stylex.create({
     display: "flex",
     justifyContent: "flex-end",
     marginTop: "12px",
-  },
-  projectionCancel: {
-    minHeight: "29px",
-    paddingInline: "10px",
-    borderWidth: 0,
-    borderRadius: "5px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeSm,
   },
 });
 
@@ -221,13 +210,14 @@ export function ConnectionRouteDialog({
                       )
                     : undefined;
                   return (
-                    <button
+                    <Button
                       key={`${candidate.kind}-${description}-${index}`}
-                      type="button"
+                      variant="secondary"
+                      size="md"
                       autoFocus={index === 0}
                       aria-label={`Feed ${title} from ${pendingRoute.source.nodeTitle}`}
                       title={identityTooltip}
-                      {...stylex.props(overlay.item, s.projectionChoice)}
+                      xstyle={s.projectionChoice}
                       onClick={() => {
                         onSelect(candidate);
                         onClose();
@@ -239,18 +229,14 @@ export function ConnectionRouteDialog({
                       <span {...stylex.props(s.projectionChoicePath)}>
                         {description}
                       </span>
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
               <div {...stylex.props(s.projectionActions)}>
-                <button
-                  type="button"
-                  {...stylex.props(s.projectionCancel)}
-                  onClick={onClose}
-                >
+                <Button variant="ghost" size="sm" onClick={onClose}>
                   {pendingRoute.refineEdgeId ? "Keep whole output" : "Cancel"}
-                </button>
+                </Button>
               </div>
             </>
           ) : null}

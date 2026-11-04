@@ -2,17 +2,12 @@
 
 import * as React from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { RunNodeResult, RunPortArtifact, RunPortOutput } from "@/lib/api";
 import type { WorkflowNodeProgressEntry } from "../types";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
 
 import {
   NodeExecutionAppendix,

@@ -78,6 +78,7 @@ import type {
   ContextualCandidate,
   ContextualRouteChoice,
 } from "../model/node-catalog";
+import { IconButton } from "@/components/ui/button";
 import { createUuid } from "@/features/workbench/model/uuid";
 import { artifactGroupingDisabledReason } from "../model/artifact-grouping";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
@@ -4814,12 +4815,12 @@ function WorkbenchBody({
           <Maximize2 size={14} />
           <span {...stylex.props(s.railLabel)}>Fit</span>
         </button>
-        <button
-          type="button"
-          aria-label="Canvas lab"
-          aria-pressed={gridPanelOpen}
+        <IconButton
+          size="lg"
+          label="Canvas lab"
+          pressed={gridPanelOpen}
           title="Experiment with canvas behavior"
-          {...stylex.props(s.railButton, gridPanelOpen ? s.railPrimary : null)}
+          xstyle={[s.railButton, gridPanelOpen ? s.railPrimary : null]}
           onClick={() => {
             closeGraphBrowser();
             setLibraryOpen(false);
@@ -4827,8 +4828,7 @@ function WorkbenchBody({
           }}
         >
           <Grid3x3 size={14} />
-          <span {...stylex.props(s.railLabel)}>Canvas</span>
-        </button>
+        </IconButton>
         <span {...stylex.props(s.railDivider)} />
         <button
           type="button"

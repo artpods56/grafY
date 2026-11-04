@@ -13,6 +13,8 @@ import {
 
 import type { Run, RunList, WorkspaceMember } from "@/lib/api";
 
+import { Button, IconButton } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { executionHistoryDrawerStyles as s } from "./ExecutionHistoryDrawer.styles";
 import {
   errorMessage,
@@ -166,12 +168,11 @@ export function ExecutionHistoryDrawer({
               : "Demands for fresh results"}
           </span>
         </span>
-        <button
-          type="button"
-          aria-label="Refresh runs"
-          title="Refresh runs"
+        <IconButton
+          label="Refresh runs"
+          size="md"
           disabled={isValidating}
-          {...stylex.props(s.headerButton)}
+          xstyle={s.headerButton}
           onClick={() => {
             void refreshRuns();
           }}
@@ -180,16 +181,16 @@ export function ExecutionHistoryDrawer({
             size={13}
             {...stylex.props(isValidating ? s.spinner : null)}
           />
-        </button>
-        <button
+        </IconButton>
+        <IconButton
           ref={closeButtonRef}
-          type="button"
-          aria-label="Close runs"
-          {...stylex.props(s.headerButton)}
+          label="Close runs"
+          size="md"
+          xstyle={s.headerButton}
           onClick={closeDrawer}
         >
           <X size={14} />
-        </button>
+        </IconButton>
       </header>
 
       <div {...stylex.props(s.content)}>
@@ -201,22 +202,27 @@ export function ExecutionHistoryDrawer({
                 waiting for.
               </div>
             ) : isLoading ? (
-              <div role="status" {...stylex.props(s.message)}>
+              <Notice tone="neutral" xstyle={s.message}>
                 <LoaderCircle size={16} {...stylex.props(s.spinner)} />
                 Loading runs…
-              </div>
+              </Notice>
             ) : listError && runs.length === 0 ? (
-              <div role="alert" {...stylex.props(s.message, s.messageError)}>
+              <Notice
+                tone="danger"
+                xstyle={s.message}
+                action={
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    onClick={() => void refreshRuns()}
+                  >
+                    Try again
+                  </Button>
+                }
+              >
                 <CircleAlert size={16} />
                 {listError}
-                <button
-                  type="button"
-                  {...stylex.props(s.retry)}
-                  onClick={() => void refreshRuns()}
-                >
-                  Try again
-                </button>
-              </div>
+              </Notice>
             ) : runs.length === 0 ? (
               <div {...stylex.props(s.message)}>
                 No run has been started in this project yet.
@@ -234,9 +240,7 @@ export function ExecutionHistoryDrawer({
           </div>
           {runs.length > 0 && listError ? (
             <div {...stylex.props(s.noticeWrap)}>
-              <div role="alert" {...stylex.props(s.messageError, s.meta)}>
-                {listError}
-              </div>
+              <Notice tone="danger">{listError}</Notice>
             </div>
           ) : null}
         </section>

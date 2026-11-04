@@ -3,14 +3,9 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
 
 import { SchemaDrill } from "./type-inspector";
 

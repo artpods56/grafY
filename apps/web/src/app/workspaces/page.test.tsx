@@ -63,11 +63,27 @@ vi.mock("@/hooks/use-api", () => ({
 
 vi.mock("@/lib/api", () => ({ createWorkspace: vi.fn() }));
 
+import { createWorkspace } from "@/lib/api";
 import WorkspacesPage from "./page";
 
 afterEach(() => {
   document.body.replaceChildren();
+  vi.clearAllMocks();
 });
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function buttonByText(container: HTMLElement, text: string) {
+  return Array.from(container.querySelectorAll("button")).find((candidate) =>
+    candidate.textContent?.includes(text),
+  )!;
+}
 
 it("presents the workspace directory as separate administration", async () => {
   const container = document.createElement("div");
@@ -86,14 +102,38 @@ it("presents the workspace directory as separate administration", async () => {
   expect(container.textContent).not.toContain("manage_members");
   expect(container.textContent).not.toContain("private-user-id");
 
-  const joinButton = Array.from(container.querySelectorAll("button")).find(
-    (candidate) => candidate.textContent?.includes("Join a team"),
-  )!;
+  const joinButton = buttonByText(container, "Join a team");
   await act(async () =>
     joinButton.dispatchEvent(new MouseEvent("click", { bubbles: true })),
   );
   expect(container.textContent).toContain("Ask a team owner to add you.");
   expect(container.textContent).not.toContain("private-user-id");
+
+  await act(async () => root.unmount());
+});
+
+it("announces a team that could not be created as an alert", async () => {
+  vi.mocked(createWorkspace).mockRejectedValueOnce(new Error("offline"));
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(<WorkspacesPage />));
+
+  await act(async () => buttonByText(container, "Create team").click());
+
+  const nameInput = container.querySelector<HTMLInputElement>(
+    ".grafy-workspace-create input",
+  )!;
+  await act(async () => setInputValue(nameInput, "Atlas"));
+  await act(async () => {
+    container
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "The team could not be created.",
+  );
 
   await act(async () => root.unmount());
 });

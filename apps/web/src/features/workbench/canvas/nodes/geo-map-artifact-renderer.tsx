@@ -7,6 +7,8 @@ import useSWR from "swr";
 
 import { getArtifactGeoRender, type ArtifactSummary } from "@/lib/api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
+import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 
 import type { ArtifactViewerInteractionContext } from "../artifact-interactions";
 
@@ -53,13 +55,13 @@ function GeoMapRendererState({
             <span {...stylex.props(s.placeholderCopy)}>
               Load the render descriptor when you want to inspect this artifact.
             </span>
-            <button
-              type="button"
-              {...mapInteractionProps(stylex.props(s.primaryButton))}
+            <Button
+              variant="primary"
+              size="md"
               onClick={() => setLoadRequested(true)}
             >
               Load interactive map
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -70,29 +72,37 @@ function GeoMapRendererState({
     return (
       <div {...mapInteractionProps(stylex.props(s.shell))}>
         <div {...stylex.props(s.placeholder)}>
-          <div role="alert" {...stylex.props(s.placeholderContent)}>
-            <span {...stylex.props(s.placeholderTitle)}>
-              GIS preview unavailable
-            </span>
-            <span {...stylex.props(s.placeholderCopy)}>
-              The render descriptor could not be loaded.
-            </span>
-            <span {...stylex.props(s.actions)}>
-              <button
-                type="button"
-                {...stylex.props(s.primaryButton)}
-                onClick={() => void mutate()}
-              >
-                Retry
-              </button>
-              <button
-                type="button"
-                {...stylex.props(s.resetButton)}
-                onClick={() => setLoadRequested(false)}
-              >
-                Unload
-              </button>
-            </span>
+          <div {...stylex.props(s.placeholderContent)}>
+            <Notice
+              tone="danger"
+              action={
+                <>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => void mutate()}
+                  >
+                    Retry
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setLoadRequested(false)}
+                  >
+                    Unload
+                  </Button>
+                </>
+              }
+            >
+              <span {...stylex.props(s.noticeLines)}>
+                <span {...stylex.props(s.placeholderTitle)}>
+                  GIS preview unavailable
+                </span>
+                <span {...stylex.props(s.placeholderCopy)}>
+                  The render descriptor could not be loaded.
+                </span>
+              </span>
+            </Notice>
           </div>
         </div>
       </div>
@@ -102,8 +112,8 @@ function GeoMapRendererState({
   if (isLoading || !descriptor) {
     return (
       <div {...mapInteractionProps(stylex.props(s.shell))}>
-        <div role="status" {...stylex.props(s.placeholder)}>
-          Loading GIS render descriptor…
+        <div {...stylex.props(s.placeholder)}>
+          <Notice tone="neutral">Loading GIS render descriptor…</Notice>
         </div>
       </div>
     );
@@ -117,13 +127,13 @@ function GeoMapRendererState({
             {descriptor.kind} · {descriptor.layers.length}{" "}
             {descriptor.layers.length === 1 ? "layer" : "layers"}
           </span>
-          <button
-            type="button"
-            {...stylex.props(s.resetButton)}
+          <Button
+            size="xs"
+            variant="secondary"
             onClick={() => setLoadRequested(false)}
           >
             Unload
-          </button>
+          </Button>
         </div>
         <pre {...stylex.props(s.raw)}>
           {JSON.stringify(descriptor, null, 2)}

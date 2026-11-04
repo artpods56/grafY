@@ -376,33 +376,20 @@ export function useSavedGraphLifecycle({
     presentationRef.current = presentation;
   }, [currentFingerprint, presentation]);
 
-  const {
-    isDirty,
-    workAtRisk,
-    canMaterializeSavedGraph,
-    persistenceOperationBusy,
-  } = savedGraphDirtiness({
-    document,
-    presentation,
-    hasActiveGraph: activeGraph !== null,
-    currentFingerprint,
-    savedFingerprint,
-    currentExecutionFingerprint,
-    savedExecutionFingerprint,
-    hasUnsyncedRoomEdits,
-    saving,
-    openingGraphId,
-    deletingGraphId,
-  });
-
-  React.useEffect(() => {
-    if (!workAtRisk) return;
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener("beforeunload", warnBeforeUnload);
-    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
-  }, [workAtRisk]);
+  const { isDirty, canMaterializeSavedGraph, persistenceOperationBusy } =
+    savedGraphDirtiness({
+      document,
+      presentation,
+      hasActiveGraph: activeGraph !== null,
+      currentFingerprint,
+      savedFingerprint,
+      currentExecutionFingerprint,
+      savedExecutionFingerprint,
+      hasUnsyncedRoomEdits,
+      saving,
+      openingGraphId,
+      deletingGraphId,
+    });
 
   React.useEffect(() => {
     mountedRef.current = true;
@@ -413,13 +400,12 @@ export function useSavedGraphLifecycle({
     };
   }, []);
 
+  // Leaving a graph used to ask before discarding edits that exist only in
+  // this tab. That confirm fired on ordinary page changes and blocked the
+  // in-app browser, so navigation proceeds without it.
   const confirmDiscard = React.useCallback(
-    (action: string): boolean =>
-      !workAtRisk ||
-      window.confirm(
-        `“${document.name.trim() || NEW_GRAPH_NAME}” has changes that are only in this tab. Discard them and ${action}?`,
-      ),
-    [document.name, workAtRisk],
+    (_action: string): boolean => true,
+    [],
   );
 
   const showBlankGraph = React.useCallback(() => {

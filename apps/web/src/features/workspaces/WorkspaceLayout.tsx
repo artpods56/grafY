@@ -24,6 +24,8 @@ import { useSWRConfig } from "swr";
 import { BrandIcon, BrandWordmark } from "@/components/brand";
 import { useTheme } from "@/components/theme";
 import { ThresholdStatus } from "@/components/threshold-status";
+import { Button } from "@/components/ui/button";
+import { Notice, type NoticeTone } from "@/components/ui/notice";
 import {
   Dialog,
   DialogBody,
@@ -150,6 +152,9 @@ export function workspaceRouteGraphId(pathname: string): string | null {
 }
 
 const RAIL_RECENT_GRAPH_LIMIT = 6;
+
+/** A rail message: the tone says which way the operation went. */
+type RailMessage = { text: string; tone: NoticeTone };
 
 export function workspaceRouteAccessState(
   workspaceSlug: string,
@@ -316,9 +321,8 @@ export function WorkspaceRail({
   const [invitationBusyId, setInvitationBusyId] = React.useState<string | null>(
     null,
   );
-  const [invitationMessage, setInvitationMessage] = React.useState<
-    string | null
-  >(null);
+  const [invitationMessage, setInvitationMessage] =
+    React.useState<RailMessage | null>(null);
   const mobileMenuButtonRef = React.useRef<HTMLButtonElement>(null);
   const mobileRailRef = React.useRef<HTMLElement>(null);
   const chrome = useWorkbenchChrome();
@@ -398,9 +402,10 @@ export function WorkspaceRail({
       setInvitationDialogOpen(false);
       router.push(`/workspaces/${encodeURIComponent(acceptedWorkspace.slug)}`);
     } catch {
-      setInvitationMessage(
-        "The invitation could not be accepted. It may have expired or changed.",
-      );
+      setInvitationMessage({
+        text: "The invitation could not be accepted. It may have expired or changed.",
+        tone: "danger",
+      });
     } finally {
       setInvitationBusyId(null);
     }
@@ -412,11 +417,12 @@ export function WorkspaceRail({
     try {
       await declineWorkspaceInvitation(invitationId);
       await mutateInvitations();
-      setInvitationMessage("Invitation declined.");
+      setInvitationMessage({ text: "Invitation declined.", tone: "neutral" });
     } catch {
-      setInvitationMessage(
-        "The invitation could not be declined. It may have expired or changed.",
-      );
+      setInvitationMessage({
+        text: "The invitation could not be declined. It may have expired or changed.",
+        tone: "danger",
+      });
     } finally {
       setInvitationBusyId(null);
     }
@@ -799,11 +805,9 @@ export function WorkspaceRail({
                 Review invitations before joining a shared workspace.
               </DialogDescription>
             </DialogHeader>
-            <DialogBody>
+            <DialogBody className="grafy-dialog-stack">
               {invitationError ? (
-                <p className="grafy-member-message" role="status">
-                  Invitations could not be loaded.
-                </p>
+                <Notice tone="danger">Invitations could not be loaded.</Notice>
               ) : null}
               {!workspaceInvitations ? (
                 <p className="grafy-member-empty">Loading invitations…</p>
@@ -831,31 +835,31 @@ export function WorkspaceRail({
                       </div>
                       <p>{roleDescriptionsForInvitation[invitation.role]}</p>
                       <div>
-                        <button
-                          type="button"
-                          className="grafy-workspace-button"
+                        <Button
+                          variant="secondary"
+                          size="lg"
                           disabled={invitationBusyId === invitation.id}
                           onClick={() => void declineInvitation(invitation.id)}
                         >
                           Decline
-                        </button>
-                        <button
-                          type="button"
-                          className="grafy-workspace-button grafy-workspace-button--primary"
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="lg"
                           disabled={invitationBusyId === invitation.id}
                           onClick={() => void acceptInvitation(invitation.id)}
                         >
                           Accept
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
               {invitationMessage ? (
-                <p className="grafy-member-message" role="status">
-                  {invitationMessage}
-                </p>
+                <Notice tone={invitationMessage.tone}>
+                  {invitationMessage.text}
+                </Notice>
               ) : null}
             </DialogBody>
           </DialogContent>

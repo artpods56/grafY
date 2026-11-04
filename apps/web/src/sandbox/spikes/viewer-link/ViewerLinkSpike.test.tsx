@@ -2,12 +2,6 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-  defineVars: <Vars,>(vars: Vars) => vars,
-}));
-
 vi.mock("next/link", () => ({
   default: ({
     children,

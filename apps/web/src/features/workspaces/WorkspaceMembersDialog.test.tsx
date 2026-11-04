@@ -155,7 +155,14 @@ describe("WorkspaceMembersDialog invitation behavior", () => {
     await submitForm();
 
     const input = document.body.querySelector('input[type="email"]');
-    expect(document.body.textContent).toContain("Enter the verified email");
+    expect(
+      document.body.querySelector('[role="alert"]')?.textContent,
+    ).toContain("Enter the verified email");
+    const describedBy = input?.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)?.textContent).toContain(
+      "Enter the verified email",
+    );
     expect(input?.getAttribute("aria-invalid")).toBe("true");
     expect(document.activeElement).toBe(input);
     expect(mocks.resolveCandidate).not.toHaveBeenCalled();
@@ -191,9 +198,9 @@ describe("WorkspaceMembersDialog invitation behavior", () => {
       role: "viewer",
     });
     expect(mocks.mutateInvitations).toHaveBeenCalledOnce();
-    expect(document.body.textContent).toContain(
-      "Access will begin only after it is accepted",
-    );
+    expect(
+      document.body.querySelector('[role="status"]')?.textContent,
+    ).toContain("Access will begin only after it is accepted");
 
     await act(async () => root.unmount());
   });

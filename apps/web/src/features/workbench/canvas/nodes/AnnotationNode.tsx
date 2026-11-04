@@ -88,6 +88,7 @@ const s = stylex.create({
     boxShadow: tokens.shadowNode,
   },
   colorSwatch: {
+    position: "relative",
     width: "22px",
     height: "22px",
     padding: 0,
@@ -96,6 +97,17 @@ const s = stylex.create({
     borderColor: tokens.colorBorder,
     borderRadius: "6px",
     cursor: "pointer",
+  },
+  /**
+   * A swatch's colour is annotation data, not a theme colour, so it stays an
+   * inline value — on a chip that fills the button's padding box, which is
+   * exactly where a background would have painted.
+   */
+  colorSwatchFill: {
+    position: "absolute",
+    inset: 0,
+    // 6px frame minus the 1px border, so the chip clips like the background did.
+    borderRadius: "5px",
   },
   colorSwatchActive: {
     outlineWidth: "2px",
@@ -227,24 +239,25 @@ function AnnotationColorPicker({
           {ANNOTATION_COLOR_SWATCHES.map((swatch) => {
             const active = swatch === color;
             return (
-              <button
+              <IconButton
                 key={swatch}
-                type="button"
-                aria-label={`Color ${swatch}`}
-                aria-pressed={active}
+                size="xs"
+                label={`Color ${swatch}`}
+                pressed={active}
                 title={swatch}
-                {...stylex.props(
-                  s.colorSwatch,
-                  active ? s.colorSwatchActive : null,
-                )}
-                style={{ backgroundColor: swatch }}
+                xstyle={[s.colorSwatch, active ? s.colorSwatchActive : null]}
                 onPointerDown={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
                   onChange(swatch);
                   setOpen(false);
                 }}
-              />
+              >
+                <span
+                  {...stylex.props(s.colorSwatchFill)}
+                  style={{ backgroundColor: swatch }}
+                />
+              </IconButton>
             );
           })}
         </div>

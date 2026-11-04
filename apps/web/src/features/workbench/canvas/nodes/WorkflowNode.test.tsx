@@ -6,11 +6,6 @@ import { describe, expect, it, vi } from "vitest";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 const xyflowMocks = vi.hoisted(() => ({
   updateNodeInternals: vi.fn(),
 }));
@@ -85,49 +80,89 @@ vi.mock("./TextareaBodyResizeHandle", () => ({
   ),
 }));
 
-vi.mock("@base-ui/react/menu", () => ({
-  Menu: {
-    Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    // Like Base UI's: a `render` element becomes the trigger, taking its
-    // props and children.
-    Trigger: ({
-      children,
-      render,
-      ...props
-    }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-      render?: React.ReactElement<Record<string, unknown>>;
-    }) =>
-      render ? (
-        React.cloneElement(render, props, children)
-      ) : (
+vi.mock("@base-ui/react/menu", () => {
+  const menuRadio = React.createContext<((value: string) => void) | undefined>(
+    undefined,
+  );
+  return {
+    Menu: {
+      Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+      // Like Base UI's: a `render` element becomes the trigger, taking its
+      // props and children.
+      Trigger: ({
+        children,
+        render,
+        ...props
+      }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+        render?: React.ReactElement<Record<string, unknown>>;
+      }) =>
+        render ? (
+          React.cloneElement(render, props, children)
+        ) : (
+          <button type="button" {...props}>
+            {children}
+          </button>
+        ),
+      Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+      Positioner: ({ children }: { children: React.ReactNode }) => (
+        <>{children}</>
+      ),
+      Popup: ({ children }: { children: React.ReactNode }) => (
+        <div role="menu">{children}</div>
+      ),
+      Group: ({ children }: { children: React.ReactNode }) => (
+        <div role="group">{children}</div>
+      ),
+      GroupLabel: ({ children }: { children: React.ReactNode }) => (
+        <div>{children}</div>
+      ),
+      Separator: () => <hr />,
+      Item: ({
+        children,
+        ...props
+      }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
         <button type="button" {...props}>
           {children}
         </button>
       ),
-    Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    Positioner: ({ children }: { children: React.ReactNode }) => (
-      <>{children}</>
-    ),
-    Popup: ({ children }: { children: React.ReactNode }) => (
-      <div role="menu">{children}</div>
-    ),
-    Group: ({ children }: { children: React.ReactNode }) => (
-      <div role="group">{children}</div>
-    ),
-    GroupLabel: ({ children }: { children: React.ReactNode }) => (
-      <div>{children}</div>
-    ),
-    Separator: () => <hr />,
-    Item: ({
-      children,
-      ...props
-    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-      <button type="button" {...props}>
-        {children}
-      </button>
-    ),
-  },
-}));
+      RadioGroup: ({
+        children,
+        onValueChange,
+      }: {
+        children: React.ReactNode;
+        value?: string;
+        onValueChange?: (value: string) => void;
+      }) => (
+        <menuRadio.Provider value={onValueChange}>
+          <div role="radiogroup">{children}</div>
+        </menuRadio.Provider>
+      ),
+      RadioItem: ({
+        children,
+        value,
+        ...props
+      }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+        value?: string;
+      }) => {
+        const onValueChange = React.useContext(menuRadio);
+        return (
+          <button
+            type="button"
+            {...props}
+            onClick={() => {
+              if (typeof value === "string") onValueChange?.(value);
+            }}
+          >
+            {children}
+          </button>
+        );
+      },
+      RadioItemIndicator: ({ children }: { children?: React.ReactNode }) => (
+        <>{children}</>
+      ),
+    },
+  };
+});
 
 vi.mock("@base-ui/react/popover", () => ({
   Popover: {
@@ -1739,6 +1774,379 @@ describe("WorkflowNode artifact type binding", () => {
     // as open.
     expect(typeMenus(container)).toHaveLength(0);
     expect(container.querySelector('[data-port-open="true"]')).not.toBeNull();
+  });
+});
+
+function schemaBuilderSpec(): NodeSpec {
+  return {
+    operator_id: "schema.builder",
+    operator_version: 1,
+    plugin_slug: "builtin",
+    origin: "builtin",
+    title: "Build object",
+    description: "Builds an object schema from named fields.",
+    catalog_visible: true,
+    runnable: true,
+    config_schema: { type: "object", properties: {} },
+    input_schema: {},
+    output_schema: {},
+    inputs: [
+      {
+        name: "schemas",
+        title: "Schemas",
+        description: null,
+        direction: "input",
+        artifact_type: null,
+        artifact_type_variable: "T",
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: true,
+        variadic: true,
+        required: false,
+      },
+    ],
+    outputs: [],
+  };
+}
+
+const PARCELS_FIELD = {
+  id: "field-parcels",
+  name: "parcels",
+  kind: "string",
+  required: false,
+  description: "",
+};
+
+describe("WorkflowNode schema builder toggles", () => {
+  function renderBuilder(
+    config: Record<string, unknown>,
+    onConfigChange = vi.fn(),
+  ) {
+    const data = createWorkflowNodeData(schemaBuilderSpec());
+    data.config = config;
+    data.onConfigChange = onConfigChange;
+    return { ...renderNode("schema-builder", data), onConfigChange };
+  }
+
+  it("writes the extra-fields toggle through config and reports state only through aria-pressed", () => {
+    const { container, root, onConfigChange } = renderBuilder({
+      additional_properties: false,
+      fields: [PARCELS_FIELD],
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[title="Allow properties not declared below"]',
+    );
+    expect(toggle?.textContent).toBe("Extra fields");
+    expect(toggle?.getAttribute("aria-pressed")).toBe("false");
+
+    React.act(() => toggle?.click());
+    expect(onConfigChange).toHaveBeenCalledWith(
+      "schema-builder",
+      "additional_properties",
+      true,
+    );
+
+    React.act(() => root.unmount());
+  });
+
+  it("reads a saved extra-fields setting back as a pressed toggle", () => {
+    const { container, root } = renderBuilder({
+      additional_properties: true,
+      fields: [PARCELS_FIELD],
+    });
+
+    expect(
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[title="Allow properties not declared below"]',
+        )
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+
+    React.act(() => root.unmount());
+  });
+
+  it("flips a field's required flag and its accessible name together", () => {
+    const onSchemaBuilderFieldsChange = vi.fn();
+    const data = createWorkflowNodeData(schemaBuilderSpec());
+    data.config = { fields: [PARCELS_FIELD] };
+    data.onSchemaBuilderFieldsChange = onSchemaBuilderFieldsChange;
+    const { container, root } = renderNode("schema-builder", data);
+
+    const required = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Mark field 1 required"]',
+    );
+    expect(required?.textContent).toBe("Required");
+    expect(required?.getAttribute("aria-pressed")).toBe("false");
+
+    React.act(() => required?.click());
+    const [nodeId, nextFields] =
+      onSchemaBuilderFieldsChange.mock.calls[0] ?? [];
+    expect(nodeId).toBe("schema-builder");
+    expect(nextFields).toEqual([{ ...PARCELS_FIELD, required: true }]);
+
+    React.act(() => root.unmount());
+  });
+
+  it("reorders and removes a field through named row actions", () => {
+    const onSchemaBuilderFieldsChange = vi.fn();
+    const data = createWorkflowNodeData(schemaBuilderSpec());
+    data.config = {
+      fields: [
+        PARCELS_FIELD,
+        { ...PARCELS_FIELD, id: "field-area", name: "area" },
+      ],
+    };
+    data.onSchemaBuilderFieldsChange = onSchemaBuilderFieldsChange;
+    const { container, root } = renderNode("schema-builder", data);
+
+    const removeField = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Remove field 2"]',
+    );
+    expect(removeField).not.toBeNull();
+    React.act(() => removeField?.click());
+    expect(onSchemaBuilderFieldsChange.mock.calls.at(-1)?.[1]).toEqual([
+      PARCELS_FIELD,
+    ]);
+
+    onSchemaBuilderFieldsChange.mockClear();
+    const moveUp = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Move field 2 up"]',
+    );
+    expect(moveUp?.disabled).toBe(false);
+    React.act(() => moveUp?.click());
+    expect(
+      (onSchemaBuilderFieldsChange.mock.calls.at(-1)?.[1] as unknown[]).map(
+        (field) => (field as { name: string }).name,
+      ),
+    ).toEqual(["area", "parcels"]);
+
+    const firstMoveUp = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Move field 1 up"]',
+    );
+    expect(firstMoveUp?.disabled).toBe(true);
+
+    React.act(() => root.unmount());
+  });
+
+  it("wires the schema metadata labels to their inputs", () => {
+    const { container, root } = renderBuilder({
+      title: "Response",
+      fields: [PARCELS_FIELD],
+    });
+
+    const title = container.querySelector<HTMLInputElement>(
+      'input[placeholder="Response"]',
+    );
+    expect(title?.labels?.[0]?.textContent).toBe("Schema title · optional");
+    expect(title?.value).toBe("Response");
+    const description = container.querySelector<HTMLInputElement>(
+      'input[placeholder="What this response contains"]',
+    );
+    expect(description?.labels?.[0]?.textContent).toBe(
+      "Description · optional",
+    );
+
+    React.act(() => root.unmount());
+  });
+
+  it("announces an empty field list as a status message", () => {
+    const { container, root } = renderBuilder({ fields: [] });
+
+    const empty = container.querySelector(
+      '[aria-label="Schema fields"] [role="status"]',
+    );
+    expect(empty?.textContent?.trim()).toBe(
+      "Add a field to define this object schema.",
+    );
+
+    React.act(() => root.unmount());
+  });
+});
+
+describe("WorkflowNode shared field wiring", () => {
+  it("keeps every config brick's label wired to its control", () => {
+    const data = createWorkflowNodeData(chatCompletionSpec());
+    const { container, root } = renderNode("chat", data);
+
+    const fieldNames = [
+      ...container.querySelectorAll<HTMLInputElement>("input"),
+    ].map(
+      (input) =>
+        input.labels?.[0]?.textContent ?? input.getAttribute("aria-label"),
+    );
+    expect(fieldNames).toEqual([
+      "Base Url",
+      "Model",
+      "Temperature",
+      "Timeout Ms",
+      "Strict",
+      "API key",
+    ]);
+    // A boolean stays a checkbox the schema names, not a pressed button.
+    const strict = container.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    );
+    expect(strict?.getAttribute("aria-label")).toBe("Strict");
+    expect(strict?.checked).toBe(false);
+
+    React.act(() => root.unmount());
+  });
+
+  it("draws an enum as a native select its label still names", () => {
+    const spec: NodeSpec = {
+      ...chatCompletionSpec(),
+      config_schema: {
+        type: "object",
+        properties: {
+          mode: { type: "string", title: "Mode", enum: ["fast", "safe"] },
+        },
+        required: ["mode"],
+      },
+    };
+    const data = createWorkflowNodeData(spec);
+    data.config = { mode: "fast" };
+    const { container, root } = renderNode("chat", data);
+
+    const select = container.querySelector<HTMLSelectElement>("select");
+    // The kit has no select, so this control keeps the wrapping label it was
+    // named by before: no aria-label of its own, and `labels` still resolves.
+    expect(select?.hasAttribute("aria-label")).toBe(false);
+    expect(select?.labels?.[0]?.textContent).toContain("Mode");
+    expect([...(select?.options ?? [])].map((option) => option.value)).toEqual([
+      "fast",
+      "safe",
+    ]);
+    expect(select?.value).toBe("fast");
+
+    React.act(() => root.unmount());
+  });
+
+  it("puts the required flag on the label that <Field> draws", () => {
+    const data = createWorkflowNodeData(rawSqlStatementSpec());
+    data.config = { sql: "select 1" };
+    const { container, root } = renderNode("sql-statement", data);
+
+    const textarea = container.querySelector("textarea");
+    expect(textarea?.labels?.[0]?.textContent).toBe("Sql*");
+
+    React.act(() => root.unmount());
+  });
+
+  it("shows a tuple's incomplete entry as an alert beside the inputs", () => {
+    const { inputs, container, root } = renderBoundsField(boundsSpec());
+
+    React.act(() => enterInputValue(inputs[0]!, "19.75"));
+
+    const alert = [...container.querySelectorAll<HTMLElement>("[role]")].find(
+      (element) => element.textContent?.startsWith("Enter all 4 values"),
+    );
+    expect(alert?.getAttribute("role")).toBe("alert");
+
+    React.act(() => root.unmount());
+  });
+});
+
+describe("WorkflowNode secret input brick", () => {
+  function renderSecretBrick() {
+    const onApplyNodeSecret = vi.fn().mockResolvedValue(true);
+    const onRemoveNodeSecret = vi.fn().mockResolvedValue(true);
+    const data = createWorkflowNodeData(chatCompletionSpec());
+    data.secretInputReadiness = { api_key: true };
+    data.secretStatuses = { api_key: { state: "configured" } };
+    data.onApplyNodeSecret = onApplyNodeSecret;
+    data.onRemoveNodeSecret = onRemoveNodeSecret;
+    const rendered = renderNode("chat", data);
+    const brick = rendered.container.querySelector<HTMLInputElement>(
+      'input[aria-label="API key"]',
+    );
+    return { ...rendered, brick, onApplyNodeSecret, onRemoveNodeSecret };
+  }
+
+  it("applies a typed secret through the form's submit button", async () => {
+    const { container, root, brick, onApplyNodeSecret } = renderSecretBrick();
+    // jsdom only runs a form's submit while the form is attached to a document.
+    document.body.append(container);
+    const form = brick?.closest("form");
+    const apply = form?.querySelector<HTMLButtonElement>(
+      'button[type="submit"]',
+    );
+
+    expect(brick?.getAttribute("placeholder")).toBe("Replace secret");
+    expect(brick?.disabled).toBe(false);
+    expect(apply?.textContent).toBe("Apply");
+    // Nothing typed yet: the write stays gated the same way it was.
+    expect(apply?.disabled).toBe(true);
+
+    React.act(() => enterInputValue(brick!, "sk-test"));
+    expect(apply?.disabled).toBe(false);
+
+    React.act(() => apply?.click());
+    await vi.waitFor(() =>
+      expect(onApplyNodeSecret).toHaveBeenCalledWith(
+        "chat",
+        "api_key",
+        "sk-test",
+      ),
+    );
+    await vi.waitFor(() => expect(brick?.value).toBe(""));
+
+    React.act(() => root.unmount());
+    container.remove();
+  });
+
+  it("keeps the status line and the remove action named as they were", async () => {
+    const { container, root, onRemoveNodeSecret } = renderSecretBrick();
+    const form = container.querySelector("form");
+
+    expect(form?.textContent).toContain("Configured");
+    const remove = [
+      ...(form?.querySelectorAll<HTMLButtonElement>("button") ?? []),
+    ].find((button) => button.textContent === "Remove");
+    expect(remove?.disabled).toBe(false);
+
+    React.act(() => remove?.click());
+    await vi.waitFor(() =>
+      expect(onRemoveNodeSecret).toHaveBeenCalledWith("chat", "api_key"),
+    );
+
+    React.act(() => root.unmount());
+  });
+});
+
+describe("WorkflowNode plug row controls", () => {
+  it("keeps every plug control reachable by its accessible name", () => {
+    const data = createWorkflowNodeData(artifactQuerySpec());
+    const { container, root } = renderNode("artifact-query", data);
+
+    const names = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-input-plug-port="statements"] button',
+      ),
+      ...container.querySelectorAll<HTMLButtonElement>("button"),
+    ].map(
+      (button) =>
+        button.getAttribute("aria-label") ?? button.textContent?.trim() ?? "",
+    );
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "Inspect Statements type",
+        "Drag to reorder Statements input 1",
+        "Move Statements input 1 up",
+        "Move Statements input 1 down",
+        "Remove Statements input 1",
+        "Add input",
+      ]),
+    );
+    // The first row cannot move further up, the only row cannot move down.
+    expect(
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Move Statements input 1 up"]',
+      )?.disabled,
+    ).toBe(true);
+
+    React.act(() => root.unmount());
   });
 });
 

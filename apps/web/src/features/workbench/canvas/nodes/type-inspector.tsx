@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Popover } from "@base-ui/react/popover";
 import { ChevronRight } from "lucide-react";
 
+import { phoneTouch } from "@/components/ui/touch-target";
 import { useNodeRegistry } from "@/hooks/use-api";
 import { useOptionalWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import type { Port } from "@/lib/api";
@@ -108,6 +109,13 @@ const s = stylex.create({
     textAlign: "left",
   },
   rowButton: {
+    /**
+     * Its own rule rather than `phoneTouch`: the desktop floor here is a
+     * `min-height`, which is exactly the property the kit export sets, and
+     * StyleX keeps only the last one — so composing it would take the 28px away
+     * above 620px. A row grows with a long field name, so the floor cannot
+     * become a fixed `height` either.
+     */
     minHeight: {
       default: "28px",
       "@media (max-width: 620px)": "44px",
@@ -152,11 +160,11 @@ const s = stylex.create({
     borderBottomStyle: "solid",
     borderBottomColor: tokens.colorDivider,
   },
+  /**
+   * A crumb has no desktop floor of its own — `auto` is what the kit's phone
+   * target leaves it at above 620px — so only the 44px is declared here.
+   */
   crumb: {
-    minHeight: {
-      default: "auto",
-      "@media (max-width: 620px)": "44px",
-    },
     display: "inline-flex",
     alignItems: "center",
     padding: 0,
@@ -230,7 +238,11 @@ export function SchemaDrill({
         <button
           type="button"
           aria-current={path.length === 0 ? "page" : undefined}
-          {...stylex.props(s.crumb, path.length === 0 ? s.crumbCurrent : null)}
+          {...stylex.props(
+            s.crumb,
+            path.length === 0 ? s.crumbCurrent : null,
+            phoneTouch.on,
+          )}
           onClick={() => setPath([])}
         >
           {root}
@@ -244,6 +256,7 @@ export function SchemaDrill({
               {...stylex.props(
                 s.crumb,
                 index === crumbs.length - 1 ? s.crumbCurrent : null,
+                phoneTouch.on,
               )}
               onClick={() => setPath(path.slice(0, index + 1))}
             >

@@ -4,14 +4,27 @@ import * as stylex from "@stylexjs/stylex";
 import { ArrowDown, ArrowUp, Eye, EyeOff, RotateCcw } from "lucide-react";
 
 import type { GeoRenderLayer } from "@/lib/api";
+import { Button, IconButton } from "@/components/ui/button";
+import { Field, TextInput } from "@/components/ui/field";
 
-import { NumberControl, RangeControl } from "./control-primitives";
+import { RangeControl, clampedNumberChange } from "./control-primitives";
 import { s } from "./styles";
 import {
   CategorizedPointControls,
   RasterControls,
   VectorControls,
 } from "./style-controls";
+
+/** The layer's name is the disclosure control, so it has to truncate in one line. */
+const local = stylex.create({
+  disclosure: {
+    minWidth: 0,
+    justifyContent: "flex-start",
+    textAlign: "left",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+});
 
 export function LayerInspector({
   layer,
@@ -35,48 +48,40 @@ export function LayerInspector({
   return (
     <section {...stylex.props(s.layer)}>
       <div {...stylex.props(s.layerHeader)}>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="xs"
           aria-expanded={expanded}
           title={layer.title}
-          {...stylex.props(s.layerTitleButton)}
+          xstyle={local.disclosure}
           onClick={onExpandedChange}
         >
           {index + 1}. {layer.title}
-        </button>
+        </Button>
         <span {...stylex.props(s.layerActions)}>
-          <button
-            type="button"
-            disabled={index === 0}
-            aria-label={`Move ${layer.title} down in the map stack`}
+          <IconButton
+            label={`Move ${layer.title} down in the map stack`}
             title="Move down"
-            {...stylex.props(s.iconButton)}
+            disabled={index === 0}
             onClick={() => onMove(1)}
           >
-            <ArrowDown size={12} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            disabled={index === count - 1}
-            aria-label={`Move ${layer.title} up in the map stack`}
+            <ArrowDown size={12} />
+          </IconButton>
+          <IconButton
+            label={`Move ${layer.title} up in the map stack`}
             title="Move up"
-            {...stylex.props(s.iconButton)}
+            disabled={index === count - 1}
             onClick={() => onMove(-1)}
           >
-            <ArrowUp size={12} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.title}`}
-            {...stylex.props(s.iconButton)}
+            <ArrowUp size={12} />
+          </IconButton>
+          {/* The icon and its name say which way it toggles, so no `pressed`. */}
+          <IconButton
+            label={`${layer.visible ? "Hide" : "Show"} ${layer.title}`}
             onClick={() => onChange({ ...layer, visible: !layer.visible })}
           >
-            {layer.visible ? (
-              <Eye size={13} aria-hidden="true" />
-            ) : (
-              <EyeOff size={13} aria-hidden="true" />
-            )}
-          </button>
+            {layer.visible ? <Eye size={13} /> : <EyeOff size={13} />}
+          </IconButton>
         </span>
       </div>
       {expanded ? (
@@ -90,22 +95,30 @@ export function LayerInspector({
               step={0.05}
               onChange={(opacity) => onChange({ ...layer, opacity })}
             />
-            <NumberControl
-              label="Min zoom"
-              value={layer.min_zoom}
-              min={0}
-              max={layer.max_zoom}
-              step={1}
-              onChange={(min_zoom) => onChange({ ...layer, min_zoom })}
-            />
-            <NumberControl
-              label="Max zoom"
-              value={layer.max_zoom}
-              min={layer.min_zoom}
-              max={24}
-              step={1}
-              onChange={(max_zoom) => onChange({ ...layer, max_zoom })}
-            />
+            <Field label="Min zoom" className="nodrag nopan nowheel">
+              <TextInput
+                type="number"
+                value={layer.min_zoom}
+                min={0}
+                max={layer.max_zoom}
+                step={1}
+                onChange={clampedNumberChange(0, layer.max_zoom, (min_zoom) =>
+                  onChange({ ...layer, min_zoom }),
+                )}
+              />
+            </Field>
+            <Field label="Max zoom" className="nodrag nopan nowheel">
+              <TextInput
+                type="number"
+                value={layer.max_zoom}
+                min={layer.min_zoom}
+                max={24}
+                step={1}
+                onChange={clampedNumberChange(layer.min_zoom, 24, (max_zoom) =>
+                  onChange({ ...layer, max_zoom }),
+                )}
+              />
+            </Field>
           </div>
           {layer.style.kind === "vector" ? (
             <VectorControls
@@ -123,14 +136,10 @@ export function LayerInspector({
               onChange={(style) => onChange({ ...layer, style })}
             />
           )}
-          <button
-            type="button"
-            {...stylex.props(s.resetButton)}
-            onClick={onReset}
-          >
-            <RotateCcw size={11} aria-hidden="true" />
+          <Button size="xs" variant="secondary" onClick={onReset}>
+            <RotateCcw size={11} />
             Reset layer
-          </button>
+          </Button>
         </div>
       ) : null}
     </section>

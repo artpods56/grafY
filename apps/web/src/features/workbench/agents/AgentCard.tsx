@@ -1,7 +1,6 @@
 "use client";
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Menu } from "@base-ui/react/menu";
 import {
   NodeResizeControl,
   NodeToolbar,
@@ -12,7 +11,6 @@ import {
 } from "@xyflow/react";
 import {
   ArrowUp,
-  Check,
   ChevronDown,
   GitBranch,
   MessageSquare,
@@ -33,7 +31,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { overlay } from "@/lib/stylex/overlay.stylex";
+import {
+  Menu,
+  MenuContent,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "@/components/ui/menu";
+import { Notice } from "@/components/ui/notice";
 import { RemoteSelectionRing } from "../room/RemoteSelectionRing";
 import { SafeMarkdown } from "../canvas/safe-markdown";
 import { NodeMenu } from "../canvas/nodes/NodeMenu";
@@ -218,15 +223,6 @@ const s = stylex.create({
     opacity: 0.65,
     fontVariantNumeric: "tabular-nums",
   },
-  alert: {
-    margin: 0,
-    padding: "6px 8px",
-    borderRadius: tokens.radiusMd,
-    backgroundColor: tokens.colorDangerHover,
-    color: tokens.colorDanger,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.4,
-  },
   // The plate: a node's chrome fill and hairline, rounder because it holds a
   // second surface inside, and the same active-tier shadow while selected.
   plate: {
@@ -361,40 +357,8 @@ const s = stylex.create({
     whiteSpace: "nowrap",
   },
   popup: {
-    display: "grid",
-    gap: "1px",
-    minWidth: "200px",
-    maxWidth: "min(300px, calc(100vw - 24px))",
     maxHeight: "min(320px, var(--available-height))",
-    overflowY: "auto",
-    padding: "4px",
-    zIndex: 60,
   },
-  menuItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "6px 8px",
-    borderRadius: tokens.radiusSm,
-    color: tokens.colorText,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeSm,
-    outline: "none",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-      ":focus-visible": tokens.colorHover,
-    },
-  },
-  menuItemText: { flex: 1, minWidth: 0, display: "grid", gap: "1px" },
-  menuItemMeta: { color: tokens.colorSubtle, fontSize: "10px" },
-  menuItemLabel: {
-    minWidth: 0,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  menuCheck: { flexShrink: 0, width: "13px", color: tokens.colorText },
   settings: {
     minHeight: 0,
     display: "grid",
@@ -661,11 +625,7 @@ function Conversation({
               ) : null}
             </div>
           ) : null}
-          {chat.error && (
-            <p role="alert" {...stylex.props(s.alert)}>
-              {chat.error}
-            </p>
-          )}
+          {chat.error && <Notice tone="danger">{chat.error}</Notice>}
         </div>
       </div>
       {head}
@@ -714,8 +674,8 @@ function Conversation({
           </div>
           <div {...interactive(stylex.props(s.footer))}>
             {chat.conversations.length ? (
-              <Menu.Root>
-                <Menu.Trigger
+              <Menu>
+                <MenuTrigger
                   aria-label="Conversation"
                   disabled={chat.busy}
                   render={
@@ -727,45 +687,34 @@ function Conversation({
                     {titles.get(chat.conversationId) ?? "Choose a conversation"}
                   </span>
                   <ChevronDown size={12} {...stylex.props(s.chipIcon)} />
-                </Menu.Trigger>
-                <Menu.Portal>
-                  <Menu.Positioner side="top" align="start" sideOffset={6}>
-                    <Menu.Popup
-                      {...interactive(stylex.props(overlay.popup, s.popup))}
-                    >
-                      {byAge.toReversed().map((item) => (
-                        <Menu.Item
-                          key={item.id}
-                          onClick={() => chat.select(item.id)}
-                          {...stylex.props(
-                            s.menuItem,
-                            item.id === chat.conversationId
-                              ? overlay.itemActive
-                              : null,
-                          )}
-                        >
-                          <span {...stylex.props(s.menuCheck)}>
-                            {item.id === chat.conversationId ? (
-                              <Check size={13} />
-                            ) : null}
-                          </span>
-                          <span {...stylex.props(s.menuItemText)}>
-                            <span {...stylex.props(s.menuItemLabel)}>
-                              {titles.get(item.id)}
-                            </span>
-                            <span {...stylex.props(s.menuItemMeta)}>
-                              {graphAgeLabel(item.updated_at)}
-                              {item.source_conversation_id
-                                ? " · continued"
-                                : ""}
-                            </span>
-                          </span>
-                        </Menu.Item>
-                      ))}
-                    </Menu.Popup>
-                  </Menu.Positioner>
-                </Menu.Portal>
-              </Menu.Root>
+                </MenuTrigger>
+                <MenuContent
+                  side="top"
+                  align="start"
+                  sideOffset={6}
+                  xstyle={s.popup}
+                >
+                  <MenuRadioGroup
+                    value={chat.conversationId ?? ""}
+                    onValueChange={(value) => chat.select(value)}
+                  >
+                    {byAge.toReversed().map((item) => (
+                      <MenuRadioItem
+                        key={item.id}
+                        value={item.id}
+                        detail={
+                          <>
+                            {graphAgeLabel(item.updated_at)}
+                            {item.source_conversation_id ? " · continued" : ""}
+                          </>
+                        }
+                      >
+                        {titles.get(item.id)}
+                      </MenuRadioItem>
+                    ))}
+                  </MenuRadioGroup>
+                </MenuContent>
+              </Menu>
             ) : null}
             {!canSend ? null : chat.conversations.length ? (
               <IconButton
@@ -1008,11 +957,7 @@ function AgentSettings({
             </div>
           </Field>
         ) : null}
-        {error && (
-          <p role="alert" {...stylex.props(s.alert)}>
-            {error}
-          </p>
-        )}
+        {error && <Notice tone="danger">{error}</Notice>}
       </div>
       <div {...stylex.props(s.actions)}>
         <Button variant="ghost" onClick={onCancel}>
@@ -1178,11 +1123,7 @@ export default function AgentCard({
   const notice = (
     <>
       {ring}
-      {error && (
-        <p role="alert" {...stylex.props(s.alert)}>
-          {error}
-        </p>
-      )}
+      {error && <Notice tone="danger">{error}</Notice>}
     </>
   );
 

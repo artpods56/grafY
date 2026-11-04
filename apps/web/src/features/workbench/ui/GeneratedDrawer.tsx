@@ -13,7 +13,8 @@ import {
   X,
 } from "lucide-react";
 
-import { IconButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import {
   getInstanceResult,
   listGraphInstances,
@@ -79,38 +80,10 @@ const s = stylex.create({
     animationIterationCount: "infinite",
     animationTimingFunction: "linear",
   },
-  notice: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "6px",
-    flexShrink: 0,
-    padding: "7px 10px",
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: tokens.colorBorder,
-    backgroundColor: tokens.colorDangerHover,
-    color: tokens.colorDanger,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.45,
-  },
   /**
    * A failed read whose result is still on screen. Warning, not danger: nothing
    * was lost, this line only says how old what is left is.
    */
-  stale: {
-    display: "flex",
-    alignItems: "flex-start",
-    flexWrap: "wrap",
-    gap: "4px 6px",
-    flexShrink: 0,
-    padding: "6px 10px",
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: tokens.colorBorder,
-    color: tokens.colorWarning,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.45,
-  },
   staleInline: {
     display: "flex",
     alignItems: "flex-start",
@@ -166,19 +139,6 @@ const s = stylex.create({
     textAlign: "center",
   },
   messageError: { color: tokens.colorDanger },
-  retry: {
-    height: "26px",
-    paddingInline: "9px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorderStrong,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 700,
-  },
   batch: { display: "grid", gap: "1px" },
   groupTrigger: {
     width: "100%",
@@ -317,26 +277,6 @@ const s = stylex.create({
     color: tokens.colorAccent,
     fontSize: "9px",
     fontWeight: 700,
-  },
-  saveButton: {
-    flexShrink: 0,
-    height: "20px",
-    paddingInline: "7px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusSm,
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHoverStrong,
-      ":disabled": "transparent",
-    },
-    color: {
-      default: tokens.colorMuted,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
-    fontSize: "10px",
   },
   rowMeta: {
     gridColumn: "2 / span 2",
@@ -589,22 +529,40 @@ function RefreshFailure({
   readonly pending: boolean;
   readonly inline?: boolean;
 }) {
+  if (!inline) {
+    return (
+      <Notice
+        variant="banner"
+        tone="warning"
+        action={
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={pending}
+            onClick={onRetry}
+          >
+            {pending ? "Retrying…" : "Try again"}
+          </Button>
+        }
+      >
+        <CircleAlert size={13} aria-hidden /> {reason}
+      </Notice>
+    );
+  }
+
   return (
-    <p role="alert" {...stylex.props(inline ? s.staleInline : s.stale)}>
-      <CircleAlert
-        size={inline ? 11 : 13}
-        aria-hidden
-        {...stylex.props(s.staleIcon)}
-      />
+    <p role="alert" {...stylex.props(s.staleInline)}>
+      <CircleAlert size={11} aria-hidden {...stylex.props(s.staleIcon)} />
       <span {...stylex.props(s.staleText)}>{reason}</span>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="xs"
         disabled={pending}
+        xstyle={s.staleRetry}
         onClick={onRetry}
-        {...stylex.props(s.retry, s.staleRetry)}
       >
         {pending ? "Retrying…" : "Try again"}
-      </button>
+      </Button>
     </p>
   );
 }
@@ -653,22 +611,22 @@ function ArtifactRow({
       <span {...stylex.props(s.rowLabel)}>{label}</span>
       <span {...stylex.props(s.rowActions)}>
         {saved ? <span {...stylex.props(s.savedBadge)}>saved</span> : null}
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="xs"
           disabled={saving || !canSave}
           title={
             canSave
               ? `Save ${label} into the Library`
               : "Saving into the Library needs edit access"
           }
-          {...stylex.props(s.saveButton)}
           onClick={() => {
             const name = window.prompt(`Save ${label} into the Library`, label);
             if (name !== null) onSave(row, name);
           }}
         >
           {saving ? "Saving…" : "Save"}
-        </button>
+        </Button>
       </span>
       <span {...stylex.props(s.rowMeta)}>
         {portLabel(row)} ·{" "}
@@ -1020,10 +978,9 @@ export function GeneratedDrawer({
       </header>
 
       {saveError ? (
-        <p role="alert" {...stylex.props(s.notice)}>
-          <CircleAlert size={13} aria-hidden />
-          {saveError}
-        </p>
+        <Notice variant="banner" tone="danger">
+          <CircleAlert size={13} aria-hidden /> {saveError}
+        </Notice>
       ) : null}
 
       {instancesError && instancesLoaded ? (
@@ -1055,13 +1012,13 @@ export function GeneratedDrawer({
               <p role="alert" {...stylex.props(s.message, s.messageError)}>
                 <CircleAlert size={15} aria-hidden />
                 {instancesError.message}
-                <button
-                  type="button"
-                  {...stylex.props(s.retry)}
+                <Button
+                  variant="secondary"
+                  size="xs"
                   onClick={() => void refreshInstances()}
                 >
                   Try again
-                </button>
+                </Button>
               </p>
             ) : !groups.length ? (
               <p {...stylex.props(s.message)}>

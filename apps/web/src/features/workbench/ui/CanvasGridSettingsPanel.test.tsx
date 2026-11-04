@@ -10,11 +10,6 @@ const settingsMocks = vi.hoisted(() => ({
   patchSettings: vi.fn(),
 }));
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("../canvas/canvas-grid-settings", () => ({
   useCanvasGridSettings: () => ({
     settings: {
@@ -95,5 +90,33 @@ describe("CanvasGridSettingsPanel", () => {
     expect(settingsMocks.patchSettings).toHaveBeenCalledWith({
       onlyRenderVisibleElements: true,
     });
+  });
+
+  it("applies a cell-size preset through its button", () => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    roots.push(root);
+
+    React.act(() => {
+      root.render(
+        <CanvasGridSettingsPanel
+          selectedCount={0}
+          onSnapSelection={() => undefined}
+        />,
+      );
+    });
+
+    const preset = [...container.querySelectorAll("button")].find(
+      (candidate) =>
+        candidate.tagName === "BUTTON" &&
+        candidate.textContent?.trim() === "72",
+    );
+    expect(preset).toBeDefined();
+
+    React.act(() => {
+      preset?.click();
+    });
+
+    expect(settingsMocks.patchSettings).toHaveBeenCalledWith({ cellSize: 72 });
   });
 });

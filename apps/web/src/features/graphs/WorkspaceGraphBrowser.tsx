@@ -1,18 +1,14 @@
 "use client";
 
 import * as React from "react";
-import {
-  ArrowUpRight,
-  Clock3,
-  Plus,
-  RotateCcw,
-  Search,
-  Workflow,
-} from "lucide-react";
+import * as stylex from "@stylexjs/stylex";
+import { ArrowUpRight, Plus, RotateCcw, Search, Workflow } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { BrandLoader } from "@/components/brand";
+import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import {
   useWorkspaceContext,
   workspaceDisplayName,
@@ -30,9 +26,17 @@ import {
 import { useWorkspaceProjects } from "@/hooks/use-api";
 import type { SavedGraphSummary } from "@/lib/api";
 
+import { GraphViewToggle } from "./GraphViewToggle";
 import { useGraphBrowserFilters } from "./use-graph-browser-filters";
 
 const RECENT_GRAPH_LIMIT = 8;
+
+const browserStyles = stylex.create({
+  /** Keeps the strip's own spacing around the list; Notice carries none. */
+  partialNotice: {
+    margin: "16px 0 4px",
+  },
+});
 
 function GraphRow({
   graph,
@@ -118,9 +122,10 @@ function WorkspaceGraphBrowserContent() {
               Find and open graphs in this workspace.
             </p>
           </div>
-          <button
-            type="button"
-            className="grafy-workspace-button grafy-workspace-button--primary"
+          <Button
+            variant="primary"
+            size="lg"
+            className="grafy-graphs__header-action"
             disabled={!canCreate}
             title={
               canCreate
@@ -131,7 +136,7 @@ function WorkspaceGraphBrowserContent() {
           >
             <Plus size={15} aria-hidden="true" />
             New graph
-          </button>
+          </Button>
         </header>
 
         <div className="grafy-graphs__toolbar grafy-graphs__toolbar--scoped">
@@ -149,26 +154,7 @@ function WorkspaceGraphBrowserContent() {
         </div>
 
         <div className="grafy-graphs__view-bar">
-          <div className="grafy-graphs__tabs" aria-label="Graph views">
-            <button
-              type="button"
-              className={view === "recent" ? "is-active" : ""}
-              aria-pressed={view === "recent"}
-              onClick={() => setView("recent")}
-            >
-              <Clock3 size={14} aria-hidden="true" />
-              Recent
-            </button>
-            <button
-              type="button"
-              className={view === "all" ? "is-active" : ""}
-              aria-pressed={view === "all"}
-              onClick={() => setView("all")}
-            >
-              <Workflow size={14} aria-hidden="true" />
-              All
-            </button>
-          </div>
+          <GraphViewToggle value={view} onValueChange={setView} />
           {data ? (
             <span className="grafy-graphs__count">
               {graphs.length} {graphs.length === 1 ? "graph" : "graphs"}
@@ -185,13 +171,14 @@ function WorkspaceGraphBrowserContent() {
               <h2>Graphs couldn&apos;t be loaded</h2>
               <p>Check your connection, then try again.</p>
             </div>
-            <button
-              type="button"
-              className="grafy-workspace-button"
+            <Button
+              variant="secondary"
+              size="lg"
+              className="grafy-graphs__state-action"
               onClick={() => void mutate()}
             >
               <RotateCcw size={14} aria-hidden="true" /> Retry
-            </button>
+            </Button>
           </section>
         ) : data?.projects.length === 0 ? (
           <section className="grafy-graphs__state grafy-graphs__state--empty">
@@ -201,13 +188,14 @@ function WorkspaceGraphBrowserContent() {
               <p>Create your first graph in {workspaceName}.</p>
             </div>
             {canCreate ? (
-              <button
-                type="button"
-                className="grafy-workspace-button"
+              <Button
+                variant="secondary"
+                size="lg"
+                className="grafy-graphs__state-action"
                 onClick={startGraph}
               >
                 <Plus size={14} aria-hidden="true" /> New graph
-              </button>
+              </Button>
             ) : null}
           </section>
         ) : visibleGraphs.length === 0 ? (
@@ -217,13 +205,14 @@ function WorkspaceGraphBrowserContent() {
               <h2>No graphs match your search</h2>
               <p>Try another graph name.</p>
             </div>
-            <button
-              type="button"
-              className="grafy-workspace-button"
+            <Button
+              variant="secondary"
+              size="lg"
+              className="grafy-graphs__state-action"
               onClick={() => setQuery("")}
             >
               Clear search
-            </button>
+            </Button>
           </section>
         ) : (
           <ul
@@ -242,12 +231,18 @@ function WorkspaceGraphBrowserContent() {
         )}
 
         {data && error ? (
-          <p className="grafy-graphs__partial" role="status">
+          <Notice
+            tone="neutral"
+            variant="inline"
+            xstyle={browserStyles.partialNotice}
+            action={
+              <Button size="xs" variant="ghost" onClick={() => void mutate()}>
+                Retry
+              </Button>
+            }
+          >
             The latest graph list could not be refreshed.
-            <button type="button" onClick={() => void mutate()}>
-              Retry
-            </button>
-          </p>
+          </Notice>
         ) : null}
       </main>
     </div>

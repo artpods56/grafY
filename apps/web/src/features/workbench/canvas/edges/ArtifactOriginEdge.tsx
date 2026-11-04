@@ -3,6 +3,7 @@
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "@xyflow/react";
 import * as stylex from "@stylexjs/stylex";
 import { Layers, Unplug } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { ArtifactOriginEdge } from "../artifact-origin-edge";
 import { routedBezierPath } from "./edge-path";
@@ -113,15 +114,14 @@ export default function ArtifactOriginEdgeControl(
             }}
           >
             {canToggleMode ? (
-              <button
-                type="button"
-                aria-pressed={mapped}
+              <Button
+                pressed={mapped}
                 title={
                   mapped
                     ? "Invoking the target once for every item"
                     : "Invoking the target once with the whole sequence"
                 }
-                {...stylex.props(s.mapToggle, mapped && s.mapToggleActive)}
+                xstyle={[s.mapToggle, mapped ? s.mapToggleActive : null]}
                 onClick={() => {
                   if (data)
                     data.onCollectionModeChange?.(
@@ -132,7 +132,7 @@ export default function ArtifactOriginEdgeControl(
               >
                 <Layers size={13} />
                 Map each item
-              </button>
+              </Button>
             ) : null}
             {data?.onDisconnect ? (
               <button

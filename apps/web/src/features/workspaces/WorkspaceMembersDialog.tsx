@@ -3,6 +3,8 @@
 import * as React from "react";
 import { UserPlus } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
+import { Notice, type NoticeTone } from "@/components/ui/notice";
 import {
   Dialog,
   DialogBody,
@@ -45,18 +47,36 @@ function memberName(member: WorkspaceMember): string {
   return member.user.display_name ?? member.user.email ?? "Workspace member";
 }
 
-function operationError(error: unknown): string {
+/** A message in the members panel. Its tone is what the text actually says. */
+type MemberMessage = { text: string; tone: NoticeTone };
+
+function operationError(error: unknown): MemberMessage {
   if (error instanceof MemberListRefreshError)
-    return "Change saved, but member list refresh failed.";
+    return {
+      text: "Change saved, but member list refresh failed.",
+      tone: "warning",
+    };
   if (!(error instanceof ApiError))
-    return "The member change could not be completed.";
+    return {
+      text: "The member change could not be completed.",
+      tone: "danger",
+    };
   if (error.status === 403)
-    return "Permission changed. This dialog was closed; the denied change was not retried.";
+    return {
+      text: "Permission changed. This dialog was closed; the denied change was not retried.",
+      tone: "danger",
+    };
   if (error.status === 404)
-    return "The requested person or workspace is no longer available.";
+    return {
+      text: "The requested person or workspace is no longer available.",
+      tone: "danger",
+    };
   if (error.status === 409)
-    return "The member or invitation state changed elsewhere. Refresh and try again.";
-  return `Member change failed (${error.status}).`;
+    return {
+      text: "The member or invitation state changed elsewhere. Refresh and try again.",
+      tone: "danger",
+    };
+  return { text: `Member change failed (${error.status}).`, tone: "danger" };
 }
 
 export function WorkspaceMembersDialog() {
@@ -79,7 +99,7 @@ export function WorkspaceMembersDialog() {
     React.useState<WorkspaceInvitationCandidate | null>(null);
   const [fieldError, setFieldError] = React.useState<string | null>(null);
   const [busyKey, setBusyKey] = React.useState<string | null>(null);
-  const [message, setMessage] = React.useState<string | null>(null);
+  const [message, setMessage] = React.useState<MemberMessage | null>(null);
   const [memberAction, setMemberAction] = React.useState<MemberAction | null>(
     null,
   );
@@ -158,9 +178,10 @@ export function WorkspaceMembersDialog() {
       setEmail("");
       setRole("viewer");
       setCandidate(null);
-      setMessage(
-        "Invitation sent. Access will begin only after it is accepted.",
-      );
+      setMessage({
+        text: "Invitation sent. Access will begin only after it is accepted.",
+        tone: "neutral",
+      });
     } catch (caught) {
       setMessage(operationError(caught));
     } finally {
@@ -174,7 +195,7 @@ export function WorkspaceMembersDialog() {
     try {
       await cancelWorkspaceInvitation(workspace.id, invitationId);
       await mutateInvitations();
-      setMessage("Invitation cancelled.");
+      setMessage({ text: "Invitation cancelled.", tone: "neutral" });
     } catch (caught) {
       setMessage(operationError(caught));
     } finally {
@@ -200,18 +221,17 @@ export function WorkspaceMembersDialog() {
 
   return (
     <>
-      <button
-        type="button"
-        className="grafy-workspace-button"
+      <Button
+        variant="secondary"
+        size="lg"
+        className="grafy-workspace-settings__action"
         disabled={authorityUncertain}
         onClick={() => setOpen(true)}
       >
         <UserPlus size={14} /> Manage members
-      </button>
+      </Button>
       {authorityUncertain && message ? (
-        <p className="grafy-member-message" role="status">
-          {message}
-        </p>
+        <Notice tone={message.tone}>{message.text}</Notice>
       ) : null}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -222,7 +242,7 @@ export function WorkspaceMembersDialog() {
               whether to join.
             </DialogDescription>
           </DialogHeader>
-          <DialogBody>
+          <DialogBody className="grafy-dialog-stack">
             <form
               className="grafy-member-form"
               onSubmit={(event) => void resolveCandidate(event)}
@@ -247,13 +267,9 @@ export function WorkspaceMembersDialog() {
                   placeholder="person@example.com"
                 />
                 {fieldError ? (
-                  <span
-                    id="workspace-invite-email-error"
-                    className="grafy-member-message"
-                    role="alert"
-                  >
+                  <Notice id="workspace-invite-email-error" tone="danger">
                     {fieldError}
-                  </span>
+                  </Notice>
                 ) : null}
               </label>
               <label htmlFor="workspace-invite-role">
@@ -276,13 +292,14 @@ export function WorkspaceMembersDialog() {
                   {roleDescriptions[role]}
                 </span>
               </label>
-              <button
-                className="grafy-workspace-button grafy-workspace-button--primary"
+              <Button
+                variant="primary"
+                size="lg"
                 type="submit"
                 disabled={busyKey !== null}
               >
                 Find person
-              </button>
+              </Button>
             </form>
 
             {candidate ? (
@@ -300,39 +317,37 @@ export function WorkspaceMembersDialog() {
                   seven days and grants no access until accepted.
                 </p>
                 {role === "owner" ? (
-                  <p className="grafy-member-message" role="status">
+                  <Notice tone="warning">
                     Owners can manage members and all workspace settings.
-                  </p>
+                  </Notice>
                 ) : null}
                 <div>
-                  <button
-                    type="button"
-                    className="grafy-workspace-button"
+                  <Button
+                    variant="secondary"
+                    size="lg"
                     onClick={() => setCandidate(null)}
                   >
                     Back
-                  </button>
-                  <button
-                    type="button"
-                    className="grafy-workspace-button grafy-workspace-button--primary"
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="lg"
                     disabled={busyKey !== null}
                     onClick={() => void sendInvitation()}
                   >
                     Send invitation
-                  </button>
+                  </Button>
                 </div>
               </section>
             ) : null}
 
             {message ? (
-              <p className="grafy-member-message" role="status">
-                {message}
-              </p>
+              <Notice tone={message.tone}>{message.text}</Notice>
             ) : null}
             {invitationsError ? (
-              <p className="grafy-member-message" role="status">
+              <Notice tone="danger">
                 Pending invitations could not be loaded.
-              </p>
+              </Notice>
             ) : null}
             {invitations?.length ? (
               <section>
@@ -351,14 +366,16 @@ export function WorkspaceMembersDialog() {
                           {new Date(invitation.expires_at).toLocaleDateString()}
                         </span>
                       </div>
-                      <button
+                      <Button
                         type="button"
-                        className="grafy-member-remove"
+                        variant="danger"
+                        size="xs"
+                        className="grafy-member-row__remove"
                         disabled={busyKey === invitation.id}
                         onClick={() => void cancelInvitation(invitation.id)}
                       >
                         Cancel invitation
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -366,9 +383,7 @@ export function WorkspaceMembersDialog() {
             ) : null}
 
             {membersError ? (
-              <p className="grafy-member-message" role="status">
-                Members could not be loaded.
-              </p>
+              <Notice tone="danger">Members could not be loaded.</Notice>
             ) : null}
             {!members ? (
               <p className="grafy-member-empty">Loading members…</p>
@@ -400,16 +415,18 @@ export function WorkspaceMembersDialog() {
                         </option>
                       ))}
                     </select>
-                    <button
+                    <Button
                       type="button"
-                      className="grafy-member-remove"
+                      variant="danger"
+                      size="xs"
+                      className="grafy-member-row__remove"
                       disabled={busyKey === member.user.id}
                       onClick={() =>
                         setMemberAction({ kind: "remove", member })
                       }
                     >
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -430,21 +447,22 @@ export function WorkspaceMembersDialog() {
                     : `Change their role from ${memberAction.member.role} to ${memberAction.role}. ${roleDescriptions[memberAction.role]}`}
                 </p>
                 <div>
-                  <button
-                    type="button"
-                    className="grafy-workspace-button"
+                  <Button
+                    variant="secondary"
+                    size="lg"
                     onClick={() => setMemberAction(null)}
                   >
                     Keep current access
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="grafy-member-remove"
+                    variant="danger"
+                    size="lg"
                     disabled={busyKey !== null}
                     onClick={() => void confirmMemberAction()}
                   >
                     Confirm change
-                  </button>
+                  </Button>
                 </div>
               </section>
             ) : null}

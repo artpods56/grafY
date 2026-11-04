@@ -193,6 +193,9 @@ describe("WorkspaceSettings", () => {
       expires_at: "2026-09-09T12:00:00.000Z",
     });
     expect(container.textContent).toContain("nrt_created.secret-value");
+    expect(container.querySelector("[role='status']")?.textContent).toContain(
+      "Copy this token now",
+    );
 
     const copyButton = container.querySelector<HTMLButtonElement>(
       "[aria-label='Copy personal access token']",
@@ -207,6 +210,22 @@ describe("WorkspaceSettings", () => {
     );
     await React.act(async () => revokeButton?.click());
     expect(mocks.revokeToken).toHaveBeenCalledWith("workspace-1", "token-1");
+  });
+
+  it("announces a token that could not be revoked as an alert", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-02T12:00:00Z"));
+    mocks.revokeToken.mockRejectedValueOnce(new Error("offline"));
+
+    const container = await renderSettings();
+    const revokeButton = container.querySelector<HTMLButtonElement>(
+      "[aria-label='Revoke Existing publisher']",
+    );
+    await React.act(async () => revokeButton?.click());
+
+    expect(container.querySelector("[role='alert']")?.textContent).toContain(
+      "The token could not be revoked.",
+    );
   });
 
   it("can issue a module-publishing PAT when graph automation is unavailable", async () => {

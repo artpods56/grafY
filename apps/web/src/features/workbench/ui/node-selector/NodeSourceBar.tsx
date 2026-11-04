@@ -2,10 +2,20 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Menu } from "@base-ui/react/menu";
-import { Check, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 
-import { overlay } from "@/lib/stylex/overlay.stylex";
+import { Button } from "@/components/ui/button";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuContent,
+  MenuGroup,
+  MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { CatalogFilter } from "../../model/node-catalog";
 
@@ -63,16 +73,17 @@ export function NodeSourceBar({
           const active = source.id === activeSourceId;
           const count = counts.get(source.id) ?? 0;
           return (
-            <button
+            <Button
               key={source.id}
               ref={(element) => {
                 if (element) chips.current.set(source.id, element);
                 else chips.current.delete(source.id);
               }}
-              type="button"
+              variant="ghost"
+              size="sm"
               tabIndex={active ? 0 : -1}
               aria-label={`${source.title}, ${nodeCount(count)}`}
-              aria-pressed={active}
+              pressed={active}
               data-source-id={source.id}
               onClick={() => onSelectSource(source.id)}
               onKeyDown={(event) => {
@@ -93,13 +104,13 @@ export function NodeSourceBar({
                   focusSourceAt(sources.length - 1);
                 }
               }}
-              {...stylex.props(s.chip, active && s.chipActive)}
+              xstyle={[s.chip, active ? s.chipActive : null]}
             >
               {source.title}
               <span aria-hidden="true" {...stylex.props(s.count)}>
                 {count}
               </span>
-            </button>
+            </Button>
           );
         })}
       </div>
@@ -128,10 +139,9 @@ function FiltersMenu({
   onInputNodesOnlyChange: (inputNodesOnly: boolean) => void;
 }) {
   const active = Number(artifactFilterId !== null) + Number(inputNodesOnly);
-  const popup = stylex.props(overlay.popup, s.menu);
   return (
-    <Menu.Root>
-      <Menu.Trigger
+    <Menu>
+      <MenuTrigger
         aria-label={active ? `Filters, ${active} on` : "Filters"}
         title="Filters"
         {...stylex.props(s.filtersButton, active > 0 && s.filtersButtonOn)}
@@ -142,63 +152,40 @@ function FiltersMenu({
             {active}
           </span>
         ) : null}
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Positioner
-          side="bottom"
-          align="end"
-          sideOffset={6}
-          collisionPadding={8}
-          {...stylex.props(s.positioner)}
+      </MenuTrigger>
+      <MenuContent
+        side="bottom"
+        align="end"
+        sideOffset={6}
+        positionerXstyle={s.aboveDialog}
+      >
+        <MenuCheckboxItem
+          checked={inputNodesOnly}
+          onCheckedChange={(checked) => onInputNodesOnlyChange(checked)}
+          closeOnClick={false}
         >
-          <Menu.Popup {...popup}>
-            <Menu.CheckboxItem
-              checked={inputNodesOnly}
-              onCheckedChange={(checked) => onInputNodesOnlyChange(checked)}
-              closeOnClick={false}
-              {...stylex.props(overlay.item, s.item)}
-            >
-              <span {...stylex.props(s.check)}>
-                <Menu.CheckboxItemIndicator>
-                  <Check size={13} aria-hidden="true" />
-                </Menu.CheckboxItemIndicator>
-              </span>
-              Starts a workflow
-            </Menu.CheckboxItem>
-            <Menu.Separator {...stylex.props(s.separator)} />
-            <Menu.Group>
-              <Menu.GroupLabel {...stylex.props(s.groupLabel)}>
-                Takes or makes
-              </Menu.GroupLabel>
-              <Menu.RadioGroup
-                value={artifactFilterId ?? ""}
-                onValueChange={(value: string) =>
-                  onArtifactFilterChange(value || null)
-                }
-              >
-                {[{ id: "", title: "Any type" }, ...artifactOptions].map(
-                  (option) => (
-                    <Menu.RadioItem
-                      key={option.id}
-                      value={option.id}
-                      closeOnClick
-                      {...stylex.props(overlay.item, s.item)}
-                    >
-                      <span {...stylex.props(s.check)}>
-                        <Menu.RadioItemIndicator>
-                          <Check size={13} aria-hidden="true" />
-                        </Menu.RadioItemIndicator>
-                      </span>
-                      {option.title}
-                    </Menu.RadioItem>
-                  ),
-                )}
-              </Menu.RadioGroup>
-            </Menu.Group>
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+          Starts a workflow
+        </MenuCheckboxItem>
+        <MenuSeparator />
+        <MenuGroup>
+          <MenuLabel>Takes or makes</MenuLabel>
+          <MenuRadioGroup
+            value={artifactFilterId ?? ""}
+            onValueChange={(value: string) =>
+              onArtifactFilterChange(value || null)
+            }
+          >
+            {[{ id: "", title: "Any type" }, ...artifactOptions].map(
+              (option) => (
+                <MenuRadioItem key={option.id} value={option.id} closeOnClick>
+                  {option.title}
+                </MenuRadioItem>
+              ),
+            )}
+          </MenuRadioGroup>
+        </MenuGroup>
+      </MenuContent>
+    </Menu>
   );
 }
 
@@ -302,50 +289,6 @@ const s = stylex.create({
     fontSize: "10px",
     fontWeight: 700,
   },
-  positioner: { zIndex: 100, outline: "none" },
-  menu: {
-    display: "grid",
-    gap: "1px",
-    minWidth: "220px",
-    maxHeight: "min(420px, var(--available-height))",
-    overflowY: "auto",
-    padding: "4px",
-    outline: "none",
-  },
-  item: {
-    minHeight: { default: "28px", "@media (pointer: coarse)": "40px" },
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "0 10px 0 6px",
-    borderRadius: "5px",
-    color: tokens.colorText,
-    cursor: "default",
-    fontSize: tokens.fontSizeSm,
-    outline: "none",
-    userSelect: "none",
-    backgroundColor: {
-      default: "transparent",
-      ":is([data-highlighted])": tokens.colorHover,
-    },
-  },
-  check: {
-    width: "16px",
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-  },
-  separator: {
-    height: "1px",
-    margin: "4px 2px",
-    backgroundColor: tokens.colorDivider,
-  },
-  groupLabel: {
-    padding: "6px 8px 4px",
-    color: tokens.colorSubtle,
-    fontSize: "10px",
-    fontWeight: 720,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
-  },
+  /** The node picker is a dialog at z-index 100, so its menu has to paint above that. */
+  aboveDialog: { zIndex: 110 },
 });

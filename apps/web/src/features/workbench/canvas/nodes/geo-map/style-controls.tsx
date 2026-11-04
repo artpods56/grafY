@@ -12,12 +12,14 @@ import type {
   GeoRenderRasterStyle,
   GeoRenderVectorStyle,
 } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Field, TextInput } from "@/components/ui/field";
 
 import {
   ColorControl,
   EnabledControl,
-  NumberControl,
   RangeControl,
+  clampedNumberChange,
 } from "./control-primitives";
 import { s } from "./styles";
 import { DEFAULT_LABEL_STYLE } from "./style-constants";
@@ -81,14 +83,18 @@ export function LineControls({
           value={value.color}
           onChange={(color) => onChange({ ...value, color })}
         />
-        <NumberControl
-          label="Width"
-          value={value.width}
-          min={0}
-          max={64}
-          step={0.5}
-          onChange={(width) => onChange({ ...value, width })}
-        />
+        <Field label="Width" className="nodrag nopan nowheel">
+          <TextInput
+            type="number"
+            value={value.width}
+            min={0}
+            max={64}
+            step={0.5}
+            onChange={clampedNumberChange(0, 64, (width) =>
+              onChange({ ...value, width }),
+            )}
+          />
+        </Field>
         <RangeControl
           label="Opacity"
           value={value.opacity}
@@ -128,22 +134,30 @@ export function PointControls({
           value={value.stroke_color}
           onChange={(stroke_color) => onChange({ ...value, stroke_color })}
         />
-        <NumberControl
-          label="Radius"
-          value={value.radius}
-          min={0}
-          max={128}
-          step={0.5}
-          onChange={(radius) => onChange({ ...value, radius })}
-        />
-        <NumberControl
-          label="Stroke width"
-          value={value.stroke_width}
-          min={0}
-          max={32}
-          step={0.5}
-          onChange={(stroke_width) => onChange({ ...value, stroke_width })}
-        />
+        <Field label="Radius" className="nodrag nopan nowheel">
+          <TextInput
+            type="number"
+            value={value.radius}
+            min={0}
+            max={128}
+            step={0.5}
+            onChange={clampedNumberChange(0, 128, (radius) =>
+              onChange({ ...value, radius }),
+            )}
+          />
+        </Field>
+        <Field label="Stroke width" className="nodrag nopan nowheel">
+          <TextInput
+            type="number"
+            value={value.stroke_width}
+            min={0}
+            max={32}
+            step={0.5}
+            onChange={clampedNumberChange(0, 32, (stroke_width) =>
+              onChange({ ...value, stroke_width }),
+            )}
+          />
+        </Field>
         <RangeControl
           label="Opacity"
           value={value.opacity}
@@ -168,17 +182,18 @@ export function LabelControls({
     <div {...stylex.props(s.section)}>
       <span {...stylex.props(s.sectionTitle)}>Label</span>
       <div {...stylex.props(s.controlGrid)}>
-        <label {...stylex.props(s.control, s.controlWide)}>
-          <span>Property</span>
-          <input
-            type="text"
+        <Field
+          label="Property"
+          xstyle={s.controlWide}
+          className="nodrag nopan nowheel"
+        >
+          <TextInput
             value={value.property}
-            {...stylex.props(s.controlInput)}
             onChange={(event) =>
               onChange({ ...value, property: event.currentTarget.value })
             }
           />
-        </label>
+        </Field>
         <ColorControl
           label="Color"
           value={value.color}
@@ -189,22 +204,30 @@ export function LabelControls({
           value={value.halo_color}
           onChange={(halo_color) => onChange({ ...value, halo_color })}
         />
-        <NumberControl
-          label="Size"
-          value={value.size}
-          min={6}
-          max={72}
-          step={1}
-          onChange={(size) => onChange({ ...value, size })}
-        />
-        <NumberControl
-          label="Halo width"
-          value={value.halo_width}
-          min={0}
-          max={16}
-          step={0.5}
-          onChange={(halo_width) => onChange({ ...value, halo_width })}
-        />
+        <Field label="Size" className="nodrag nopan nowheel">
+          <TextInput
+            type="number"
+            value={value.size}
+            min={6}
+            max={72}
+            step={1}
+            onChange={clampedNumberChange(6, 72, (size) =>
+              onChange({ ...value, size }),
+            )}
+          />
+        </Field>
+        <Field label="Halo width" className="nodrag nopan nowheel">
+          <TextInput
+            type="number"
+            value={value.halo_width}
+            min={0}
+            max={16}
+            step={0.5}
+            onChange={clampedNumberChange(0, 16, (halo_width) =>
+              onChange({ ...value, halo_width }),
+            )}
+          />
+        </Field>
       </div>
     </div>
   );
@@ -244,26 +267,26 @@ export function VectorControls({
             value={value.label}
             onChange={(label) => onChange({ ...value, label })}
           />
-          <button
-            type="button"
-            {...stylex.props(s.resetButton)}
+          <Button
+            size="xs"
+            variant="secondary"
             onClick={() => onChange({ ...value, label: null })}
           >
             Disable labels
-          </button>
+          </Button>
         </div>
       ) : (
         <div {...stylex.props(s.section)}>
           <span {...stylex.props(s.sectionTitle)}>Label</span>
-          <button
-            type="button"
-            {...stylex.props(s.resetButton)}
+          <Button
+            size="xs"
+            variant="secondary"
             onClick={() =>
               onChange({ ...value, label: { ...DEFAULT_LABEL_STYLE } })
             }
           >
             Enable labels
-          </button>
+          </Button>
         </div>
       )}
     </>
@@ -370,26 +393,26 @@ export function CategorizedPointControls({
             value={value.label}
             onChange={(label) => onChange({ ...value, label })}
           />
-          <button
-            type="button"
-            {...stylex.props(s.resetButton)}
+          <Button
+            size="xs"
+            variant="secondary"
             onClick={() => onChange({ ...value, label: null })}
           >
             Disable labels
-          </button>
+          </Button>
         </div>
       ) : (
         <div {...stylex.props(s.section)}>
           <span {...stylex.props(s.sectionTitle)}>Label</span>
-          <button
-            type="button"
-            {...stylex.props(s.resetButton)}
+          <Button
+            size="xs"
+            variant="secondary"
             onClick={() =>
               onChange({ ...value, label: { ...DEFAULT_LABEL_STYLE } })
             }
           >
             Enable labels
-          </button>
+          </Button>
         </div>
       )}
     </>
@@ -455,6 +478,7 @@ export function RasterControls({
           step={1}
           onChange={(hue) => onChange({ ...value, hue })}
         />
+        {/* The kit has no select: the resampling choice keeps its native one. */}
         <label {...stylex.props(s.control, s.controlWide)}>
           <span>Resampling</span>
           <select

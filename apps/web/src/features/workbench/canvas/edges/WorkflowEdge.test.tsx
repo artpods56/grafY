@@ -14,11 +14,6 @@ const dockMocks = vi.hoisted(() => ({
   docked: false,
 }));
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@xyflow/react", () => ({
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
   BaseEdge: ({ style }: { style?: React.CSSProperties }) => {

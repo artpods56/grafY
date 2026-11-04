@@ -6,11 +6,6 @@ import { describe, expect, it, vi } from "vitest";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@xyflow/react", () => ({
   useNodeId: () => null,
   useViewport: () => ({ zoom: 1, x: 0, y: 0 }),

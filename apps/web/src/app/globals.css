@@ -477,8 +477,7 @@ body.grafy-side-panel-resizing {
   }
 }
 
-.grafy-auth-threshold__action :is(button, a),
-.grafy-workspace-button {
+.grafy-auth-threshold__action :is(button, a) {
   min-height: 36px;
   display: inline-flex;
   align-items: center;
@@ -499,20 +498,17 @@ body.grafy-side-panel-resizing {
     color 140ms ease;
 }
 
-.grafy-auth-threshold__action :is(button, a):hover,
-.grafy-workspace-button:hover {
+.grafy-auth-threshold__action :is(button, a):hover {
   border-color: light-dark(#6b6b6b, #555555);
   background: light-dark(#f4f4f4, #1a1a1a);
 }
 
-.grafy-workspace-button--primary,
 .grafy-auth-threshold__action :is(button, a) {
   border-color: transparent;
   background: light-dark(#111111, #ffffff);
   color: light-dark(#ffffff, #111111);
 }
 
-.grafy-workspace-button--primary:hover,
 .grafy-auth-threshold__action :is(button, a):hover {
   border-color: transparent;
   background: light-dark(#2a2a2a, #e8e8e8);
@@ -936,23 +932,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   font-size: 11px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-}
-
-.grafy-graph-panel__icon-button {
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: light-dark(#6b6b6b, #a3a3a3);
-  cursor: pointer;
-}
-
-.grafy-graph-panel__icon-button:hover {
-  background: light-dark(#f4f4f4, #1a1a1a);
-  color: light-dark(#111111, #f5f5f5);
 }
 
 .grafy-graph-panel__search {
@@ -1682,40 +1661,9 @@ body.grafy-rail-resizing .grafy-workspace-settings {
     var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.grafy-workspace-settings__created-token {
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  padding: 16px;
-  border: 1px solid light-dark(#b7d7c2, #28513a);
-  border-radius: 6px;
-  background: light-dark(#f4fbf6, #102016);
-}
-
-.grafy-workspace-settings__created-token > div:first-child {
-  display: grid;
-  gap: 4px;
-}
-
-.grafy-workspace-settings__created-token strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.grafy-workspace-settings__created-token span {
-  color: light-dark(#4e6c57, #9ec5aa);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
+/* The revealed token value keeps its own chip inside the Notice. */
 .grafy-workspace-settings__token-secret {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
-  align-items: center;
-  gap: 8px;
-}
-
-.grafy-workspace-settings__token-secret code {
+  display: block;
   min-width: 0;
   overflow-wrap: anywhere;
   padding: 9px 10px;
@@ -1727,32 +1675,9 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   user-select: all;
 }
 
-.grafy-workspace-settings__icon-button {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  border: 1px solid light-dark(#d9d9d9, #333333);
-  border-radius: 5px;
-  background: light-dark(#ffffff, #171717);
-  color: light-dark(#333333, #dddddd);
-}
-
-.grafy-workspace-settings__icon-button:hover:not(:disabled) {
-  border-color: light-dark(#aaaaaa, #555555);
-  background: light-dark(#f4f4f4, #222222);
-}
-
-.grafy-workspace-settings__icon-button--danger:hover:not(:disabled) {
-  border-color: light-dark(#d7a9a9, #6b3333);
-  background: light-dark(#fff5f5, #271313);
-  color: light-dark(#a52222, #f3a2a2);
-}
-
-.grafy-workspace-settings__icon-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
+/* A Notice brings no outer margin; this is the slot it sits in. */
+.grafy-workspace-settings__token-message {
+  margin-block: 12px;
 }
 
 .grafy-workspace-settings__token-list {
@@ -1827,16 +1752,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   gap: 5px;
 }
 
-.grafy-workspace-settings__inline-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 0;
-  color: light-dark(#8a2424, #f0aaaa);
-  font-size: 13px;
-}
-
 .grafy-workspace-edu {
   display: flex;
   align-items: start;
@@ -1866,13 +1781,17 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   display: flex;
   align-items: end;
   gap: 8px;
-  padding-bottom: 18px;
 }
 
-.grafy-member-message {
-  margin-bottom: 12px;
-  color: light-dark(#dc5c5c, #f87171);
-  font-size: 12px;
+/*
+ * `DialogBody` owns padding, not the spacing between its children. A dialog
+ * that stacks a form, a message slot, and a list needs that rhythm from here:
+ * the kit's `Notice` ships `margin: 0`, so an error line would otherwise sit
+ * flush against whatever follows it. The retired `.grafy-member-message` used
+ * to carry the same 12px itself.
+ */
+.grafy-dialog-stack > * + * {
+  margin-top: 12px;
 }
 
 .grafy-member-empty {
@@ -1917,14 +1836,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   text-overflow: ellipsis;
 }
 
-.grafy-member-remove {
-  border: 0;
-  background: transparent;
-  color: light-dark(#dc5c5c, #f87171);
-  cursor: pointer;
-  font-size: 12px;
-}
-
 .grafy-invitation-confirm,
 .grafy-invitation-recipient {
   display: grid;
@@ -1943,7 +1854,8 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   font-size: 12px;
 }
 
-.grafy-invitation-confirm > div,
+/* The action row only: a Notice in this card is also a direct div child. */
+.grafy-invitation-confirm > div:last-child,
 .grafy-invitation-recipient > div:last-child {
   display: flex;
   justify-content: flex-end;
@@ -2093,71 +2005,10 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   border-bottom: 1px solid light-dark(#d9d9d9, #2a2a2a);
 }
 
-.grafy-graphs__tabs {
-  align-self: stretch;
-  display: flex;
-  gap: 18px;
-}
-
-.grafy-graphs__tabs button {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 1px;
-  border: 0;
-  background: transparent;
-  color: light-dark(#6b6b6b, #8a8a8a);
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.grafy-graphs__tabs button::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  background: transparent;
-  transition: background-color 140ms ease;
-}
-
-.grafy-graphs__tabs button:hover,
-.grafy-graphs__tabs button.is-active {
-  color: light-dark(#111111, #f5f5f5);
-}
-
-.grafy-graphs__tabs button.is-active::after {
-  background: light-dark(#111111, #f5f5f5);
-}
-
 .grafy-graphs__count {
   color: light-dark(#6b6b6b, #8a8a8a);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-}
-
-.grafy-graphs__partial {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 16px 0 4px;
-  padding: 10px 12px;
-  border-left: 2px solid light-dark(#8a8a8a, #a3a3a3);
-  background: light-dark(#fafafa, #171717);
-  color: light-dark(#6b6b6b, #a3a3a3);
-  font-size: 12px;
-}
-
-.grafy-graphs__partial button {
-  border: 0;
-  background: transparent;
-  color: light-dark(#111111, #f5f5f5);
-  cursor: pointer;
-  font: inherit;
-  font-weight: 600;
 }
 
 .grafy-graphs__loading {
@@ -2198,7 +2049,7 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   line-height: 1.5;
 }
 
-.grafy-graphs__state > .grafy-workspace-button {
+.grafy-graphs__state > .grafy-graphs__state-action {
   align-self: center;
   grid-column: 3;
   grid-row: 1 / 3;
@@ -2298,54 +2149,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   transform: translate(1px, -1px);
 }
 
-.grafy-graphs__location-options {
-  display: grid;
-}
-
-.grafy-graphs__location-options > button {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 18px;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 6px;
-  border: 0;
-  border-bottom: 1px solid light-dark(#e5e5e5, #242424);
-  background: transparent;
-  color: light-dark(#111111, #f5f5f5);
-  cursor: pointer;
-  text-align: left;
-  transition: background-color 140ms ease;
-}
-
-.grafy-graphs__location-options > button:hover,
-.grafy-graphs__location-options > button:focus-visible {
-  background: light-dark(#fafafa, #1a1a1a);
-}
-
-.grafy-graphs__location-options > button > span:first-child {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  background: light-dark(#f4f4f4, #242424);
-}
-
-.grafy-graphs__location-options > button > span:nth-child(2) {
-  display: grid;
-  gap: 2px;
-}
-
-.grafy-graphs__location-options strong {
-  font-size: 13px;
-  font-weight: 550;
-}
-
-.grafy-graphs__location-options small {
-  color: light-dark(#6b6b6b, #8a8a8a);
-  font-size: 11px;
-}
-
 @keyframes grafy-graphs-enter {
   from {
     opacity: 0;
@@ -2409,7 +2212,7 @@ body.grafy-rail-resizing .grafy-workspace-settings {
     grid-template-columns: 28px minmax(0, 1fr);
   }
 
-  .grafy-graphs__state > .grafy-workspace-button {
+  .grafy-graphs__state > .grafy-graphs__state-action {
     grid-column: 2;
     grid-row: auto;
     justify-self: start;
@@ -2426,16 +2229,9 @@ body.grafy-rail-resizing .grafy-workspace-settings {
 
   .grafy-graphs__main,
   .grafy-graphs__row,
-  .grafy-graphs__row-arrow,
-  .grafy-graphs__location-options > button {
+  .grafy-graphs__row-arrow {
     transition: none;
   }
-}
-
-.grafy-member-remove:disabled,
-.grafy-workspace-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 @media (max-width: 860px) {
@@ -2541,7 +2337,7 @@ body.grafy-rail-resizing .grafy-workspace-settings {
     grid-row: 1;
   }
 
-  .grafy-member-remove {
+  .grafy-member-row__remove {
     grid-column: 1 / -1;
     justify-self: start;
   }
@@ -2723,11 +2519,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
     );
   }
 
-  .grafy-graph-panel__icon-button {
-    width: 44px;
-    height: 44px;
-  }
-
   .grafy-graph-panel__search {
     min-height: 44px;
   }
@@ -2766,7 +2557,7 @@ body.grafy-rail-resizing .grafy-workspace-settings {
     flex-direction: column;
   }
 
-  .grafy-workspace-settings__section-action .grafy-workspace-button {
+  .grafy-workspace-settings__section-action .grafy-workspace-settings__action {
     width: 100%;
   }
 
@@ -2788,12 +2579,11 @@ body.grafy-rail-resizing .grafy-workspace-settings {
 
   .grafy-workspace-directory__actions > *,
   .grafy-workspace-overview__actions > *,
-  .grafy-graphs__header > .grafy-workspace-button {
+  .grafy-graphs__header > .grafy-graphs__header-action {
     min-width: 0;
     flex: 1 1 100%;
   }
 
-  .grafy-workspace-button,
   .grafy-workspace-sort select,
   .grafy-workspace-search,
   .grafy-workspace-create input,
@@ -2801,8 +2591,7 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   .grafy-member-form select,
   .grafy-member-row select,
   .grafy-graphs__search,
-  .grafy-graphs__location-filter select,
-  .grafy-graphs__tabs button {
+  .grafy-graphs__location-filter select {
     min-height: 44px;
   }
 
@@ -2823,7 +2612,7 @@ body.grafy-rail-resizing .grafy-workspace-settings {
     margin-bottom: 22px;
   }
 
-  .grafy-graphs__header > .grafy-workspace-button {
+  .grafy-graphs__header-action {
     width: 100%;
   }
 
@@ -2845,7 +2634,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
 @media (prefers-reduced-motion: reduce) {
   .grafy-workspace-rail,
   .grafy-mobile-nav__backdrop,
-  .grafy-workspace-button,
   .grafy-workspace-list__row,
   .grafy-workspace-rail__item {
     transition: none;

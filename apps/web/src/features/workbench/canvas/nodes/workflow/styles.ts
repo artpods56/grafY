@@ -13,26 +13,6 @@ export const sharedStyles = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  tabs: {
-    display: "grid",
-    gap: "5px",
-    paddingBlock: "2px",
-  },
-  tabsOutput: {
-    display: "grid",
-    gap: "5px",
-    paddingTop: "2px",
-    paddingBottom: "14px",
-  },
-  plugSource: {
-    overflow: "hidden",
-    color: tokens.colorTextEmphasis,
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 600,
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  plugSourceEmpty: { color: tokens.colorMuted, fontWeight: 550 },
   /** Structural schema metadata, so it stays out of the port/type colour range. */
   required: { color: tokens.colorSubtle, fontSize: tokens.fontSizeSm },
   schemaBody: {
@@ -40,20 +20,15 @@ export const sharedStyles = stylex.create({
     gap: "10px",
     padding: "0 8px 12px",
   },
-  schemaCompactInput: {
-    width: "100%",
-    minWidth: 0,
+  /**
+   * Size override for a shared `TextInput` inside a schema row: the kit's
+   * 32px control is a page-sized field, a schema brick is a dense grid.
+   * Colours, focus ring and radius stay the kit's.
+   */
+  denseControl: {
     height: "28px",
-    paddingInline: "8px",
-    borderWidth: 0,
-    borderRadius: "7px",
-    outline: {
-      default: "none",
-      ":focus": `2px solid ${tokens.colorAccentBorder}`,
-    },
-    backgroundColor: tokens.colorSurfaceMuted,
-    color: tokens.colorText,
-    fontSize: tokens.fontSizeXs,
+    paddingInline: "7px",
+    fontSize: "10px",
   },
   schemaFieldsSection: { display: "grid", gap: "5px" },
   schemaFieldsHeader: {
@@ -93,47 +68,6 @@ export const sharedStyles = stylex.create({
     textAlign: "center",
   },
   schemaFieldActions: { display: "flex", alignItems: "center", gap: "1px" },
-  schemaFieldAction: {
-    width: "18px",
-    height: "22px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "5px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
-    cursor: "pointer",
-  },
-  schemaFieldActionDisabled: {
-    color: tokens.colorTextDisabled,
-    cursor: "default",
-    opacity: 0.45,
-  },
-  schemaFieldRemove: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-    },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
-  },
-  schemaAddField: {
-    minHeight: "28px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "5px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorHoverStrong,
-    },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 600,
-  },
   spinner: {
     animationName: "grafy-spin",
     animationDuration: "900ms",

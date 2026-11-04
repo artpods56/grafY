@@ -12,14 +12,6 @@ const flowMocks = vi.hoisted(() => ({
   props: null as Record<string, unknown> | null,
 }));
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  keyframes: () => "keyframes",
-  defaultMarker: () => ({}),
-  when: { ancestor: (selector: string) => selector },
-  props: () => ({}),
-}));
-
 vi.mock("@xyflow/react", () => ({
   useNodeId: () => null,
   ReactFlow: ({

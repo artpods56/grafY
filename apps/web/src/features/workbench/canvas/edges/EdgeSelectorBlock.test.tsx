@@ -10,11 +10,6 @@ const gridMocks = vi.hoisted(() => ({
   cellSize: 50,
 }));
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@base-ui/react/popover", () => ({
   Popover: {
     Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
