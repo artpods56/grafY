@@ -202,13 +202,10 @@ const s = stylex.create({
     whiteSpace: "nowrap",
   },
   /**
-   * The member row's own step: the 20px square the row lays out and its
-   * dimming when the card is not editable. The kit's ghost IconButton draws
-   * the rest — name, hover, focus.
+   * What the member row adds to the kit's `IconButton size="2xs"`: the dimming that
+   * says the card is not editable right now.
    */
   step: {
-    width: "20px",
-    height: "20px",
     borderRadius: "5px",
     ":disabled": { opacity: 0.35, cursor: "default" },
   },
@@ -633,7 +630,7 @@ export function CollectionCard({
               <span>{filled.length} members · in the order they pass on</span>
               <IconButton
                 label="Close members"
-                size="xs"
+                size="2xs"
                 xstyle={s.step}
                 onClick={() => setManaging(false)}
               >
@@ -701,7 +698,7 @@ export function CollectionCard({
                   </span>
                   <IconButton
                     label={`Move member ${index + 1} earlier`}
-                    size="xs"
+                    size="2xs"
                     disabled={!editable || index === 0}
                     xstyle={s.step}
                     onClick={() => moveMember(member.plugId, index - 1)}
@@ -710,7 +707,7 @@ export function CollectionCard({
                   </IconButton>
                   <IconButton
                     label={`Move member ${index + 1} later`}
-                    size="xs"
+                    size="2xs"
                     disabled={!editable || index === filled.length - 1}
                     xstyle={s.step}
                     onClick={() => moveMember(member.plugId, index + 1)}
@@ -719,7 +716,7 @@ export function CollectionCard({
                   </IconButton>
                   <IconButton
                     label={`Remove member ${index + 1}`}
-                    size="xs"
+                    size="2xs"
                     disabled={!editable}
                     xstyle={[s.step, s.stepDanger]}
                     onClick={() => data.onRemoveInputPlug?.(id, member.plugId)}

@@ -110,8 +110,6 @@ const s = stylex.create({
     position: "absolute",
     top: "50%",
     right: "22px",
-    width: "20px",
-    height: "20px",
     transform: "translateY(-50%)",
     backgroundColor: {
       default: "transparent",
@@ -125,8 +123,6 @@ const s = stylex.create({
     position: "absolute",
     top: "50%",
     right: "2px",
-    width: "20px",
-    height: "20px",
     transform: "translateY(-50%)",
     pointerEvents: "all",
     zIndex: 3,
@@ -347,7 +343,7 @@ export function EdgeSelectorBlock({
               <IconButton
                 label={editAriaLabel}
                 title={editTitle}
-                size="xs"
+                size="2xs"
                 shape="round"
                 xstyle={s.menuButton}
                 onPointerDown={(event) => event.stopPropagation()}
@@ -371,7 +367,7 @@ export function EdgeSelectorBlock({
           label={removeAriaLabel}
           title="Remove connection"
           variant="danger"
-          size="xs"
+          size="2xs"
           shape="round"
           xstyle={s.removeButton}
           onPointerDown={(event) => event.stopPropagation()}

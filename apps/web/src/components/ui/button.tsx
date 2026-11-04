@@ -11,7 +11,7 @@ export type ButtonVariant =
 export type ButtonSize = "xs" | "sm" | "md" | "lg" | "text";
 export type IconButtonVariant =
   "ghost" | "soft" | "primary" | "danger" | "accent";
-export type IconButtonSize = "xs" | "sm" | "md" | "lg";
+export type IconButtonSize = "2xs" | "xs" | "sm" | "md" | "lg";
 
 type SharedProps = Omit<
   React.ComponentPropsWithoutRef<typeof BaseButton>,
@@ -276,6 +276,14 @@ const icon = stylex.create({
       default: "120ms",
       "@media (prefers-reduced-motion: reduce)": "0ms",
     },
+  },
+  /**
+   * The furniture step: a member row's reorder squares and an edge pill's controls
+   * are laid out around a 20px box, and three files pinned that by hand.
+   */
+  "2xs": {
+    width: "20px",
+    height: "20px",
   },
   xs: {
     width: "22px",

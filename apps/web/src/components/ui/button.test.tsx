@@ -64,7 +64,7 @@ const iconButtonVariants: IconButtonVariant[] = [
   "danger",
   "accent",
 ];
-const iconButtonSizes: IconButtonSize[] = ["xs", "sm", "md", "lg"];
+const iconButtonSizes: IconButtonSize[] = ["2xs", "xs", "sm", "md", "lg"];
 const iconButtonShapes = ["square", "round"] as const;
 
 describe("Button", () => {

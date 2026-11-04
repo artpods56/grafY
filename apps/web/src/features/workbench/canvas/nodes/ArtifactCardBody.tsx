@@ -285,12 +285,10 @@ const s = stylex.create({
     whiteSpace: "nowrap",
   },
   /**
-   * The reorder row's own square: its 20px size, hairline frame, and flat
-   * colour. The kit's ghost IconButton draws the rest — name, hover, focus.
+   * What the row adds to the kit's `IconButton size="2xs"`: a hairline frame and a
+   * flat colour, so the steps read as one control rather than three floating icons.
    */
   step: {
-    width: "20px",
-    height: "20px",
     borderRadius: "5px",
     borderWidth: 1,
     borderStyle: "solid",
@@ -950,7 +948,7 @@ export function ArtifactCardBody({
               <span>{refs.length} items · use arrows to reorder</span>
               <IconButton
                 label="Close sequence order"
-                size="xs"
+                size="2xs"
                 xstyle={s.step}
                 onClick={() => setReordering(false)}
               >
@@ -997,7 +995,7 @@ export function ArtifactCardBody({
                   </span>
                   <IconButton
                     label="Move earlier in the order"
-                    size="xs"
+                    size="2xs"
                     disabled={index === 0}
                     onClick={() => step(index, -1)}
                     xstyle={[s.step, index === 0 ? s.stepDisabled : null]}
@@ -1006,7 +1004,7 @@ export function ArtifactCardBody({
                   </IconButton>
                   <IconButton
                     label="Move later in the order"
-                    size="xs"
+                    size="2xs"
                     disabled={index === refs.length - 1}
                     onClick={() => step(index, 1)}
                     xstyle={[
