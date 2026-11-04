@@ -117,10 +117,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - When verifying a worktree, use `GRAFY_E2E_PORT` to give its dev server a free
   port. Do not reuse a server from another checkout; its compiled code does not
   verify this worktree.
-- The **Web browser acceptance** job in `.github/workflows/ci.yml` is paused
-  (`if: false`) while the way the suite runs is reworked, so CI does not run
-  `e2e/` at all. Run the specs you touched before pushing. The real-backend
-  smoke job (`e2e-real/`) still runs on every pull request.
+- The **Web browser acceptance** job in `.github/workflows/ci.yml` runs every
+  spec in `e2e/` on desktop, phone, and tablet only for pushes to `main`, where
+  `publish-images` waits for it. Pull requests do not run it, so run the specs
+  you touched before pushing. The real-backend smoke job (`e2e-real/`) runs on
+  every pull request.
 - Run Playwright invocations serially with the default configuration. Separate
   invocations share the output and report directories; a new run can delete
   another run's active traces and cause teardown failures. Parallel invocations
