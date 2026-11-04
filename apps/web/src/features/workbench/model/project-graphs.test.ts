@@ -405,7 +405,7 @@ describe("project-graphs specs", () => {
         description: "Optional note",
         direction: "input",
         artifact_type: null,
-        artifact_type_variable: null,
+        artifact_type_variable: "note",
         shape: "one",
         accepted_shapes: ["one"],
         instance_plugs: false,

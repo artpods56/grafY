@@ -78,6 +78,18 @@ function isCallNode(node: SavedGraphNode): boolean {
   return node.kind === "call";
 }
 
+/**
+ * The kind a node placed from `spec` is saved as: the catalog entry of a
+ * sibling Graph places a call node, every other entry a builtin.
+ */
+export function newNodeKind(spec: NodeSpec): "builtin" | "call" {
+  return spec.plugin_slug === PROJECT_GRAPHS_PLUGIN_SLUG &&
+    spec.operator_id !== GRAPH_INPUT_OPERATOR_ID &&
+    spec.operator_id !== GRAPH_OUTPUT_OPERATOR_ID
+    ? "call"
+    : "builtin";
+}
+
 /** The interface a Graph's boundary nodes declare, in document order. */
 export function graphInterface(graph: GraphDefinition): GraphInterface {
   const inputs: InterfacePort[] = [];
@@ -318,7 +330,9 @@ export function callNodeSpec(
     description: port.description,
     direction: "input",
     artifact_type: port.artifactType,
-    artifact_type_variable: null,
+    // A port the Graph left untyped takes any artifact; each such port is its
+    // own variable so two untyped ports do not have to agree.
+    artifact_type_variable: port.artifactType === null ? port.name : null,
     shape: "one",
     accepted_shapes: ["one"],
     instance_plugs: false,
@@ -331,7 +345,9 @@ export function callNodeSpec(
     description: port.description,
     direction: "output",
     artifact_type: port.artifactType,
-    artifact_type_variable: null,
+    // A port the Graph left untyped takes any artifact; each such port is its
+    // own variable so two untyped ports do not have to agree.
+    artifact_type_variable: port.artifactType === null ? port.name : null,
     shape: "one",
     accepted_shapes: ["one"],
     instance_plugs: false,
