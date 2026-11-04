@@ -4704,6 +4704,19 @@
             "title": "Accepted Shapes",
             "type": "array"
           },
+          "agent_default": {
+            "anyOf": [
+              {
+                "const": "hidden",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter.",
+            "title": "Agent Default"
+          },
           "also_accepts": {
             "items": {
               "$ref": "#/components/schemas/ArtifactTypeKeyResponse"

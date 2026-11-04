@@ -612,3 +612,21 @@ async def test_provider_dials_a_self_hosted_endpoint_only_when_the_operator_allo
 
         assert "127.0.0.1" in str(raised.value)
         assert len(listener.requests) == 1
+
+
+def test_ocr_hides_the_document_url_from_an_agent_by_default() -> None:
+    """A model that could write any address would choose what Mistral fetches."""
+
+    ports = MistralOcrNode.input_contract.ports
+
+    assert ports["document_url"].agent_default == "hidden"
+    assert ports["image"].agent_default == "fill"
+
+
+def test_the_catalog_tells_the_web_which_inputs_an_agent_leaves_alone() -> None:
+    from grafy_api.v1.routes.catalog.models import PortResponse
+
+    ports = MistralOcrNode.input_contract.ports
+
+    assert PortResponse.from_input_port(ports["document_url"]).agent_default == "hidden"
+    assert PortResponse.from_input_port(ports["image"]).agent_default is None

@@ -8,6 +8,7 @@ from typing import (
     Any,
     ClassVar,
     Final,
+    Literal,
     Protocol,
     Union,
     cast,
@@ -106,6 +107,11 @@ class InPort:
     instance_plugs: bool = False
     also_accepts: tuple[ArtifactTypeSpec | ArtifactTypeKey, ...] = ()
     shape_field: str | None = None
+    agent_default: Literal["fill", "hidden"] = "fill"
+    """What an Agent tool link does with this input unless told otherwise.
+
+    ``fill`` offers it to the model as a parameter; ``hidden`` leaves it to the Graph. An
+    input that makes the node fetch whatever address a model writes is hidden by default."""
 
     def __post_init__(self) -> None:
         if self.also_accepts and isinstance(self.accepts, ArtifactTypeVariable):
@@ -147,6 +153,7 @@ class InputPortSpec:
     required: bool = True
     also_accepts: tuple[ArtifactTypeKey, ...] = ()
     shape_field: str | None = None
+    agent_default: Literal["fill", "hidden"] = "fill"
 
     def __post_init__(self) -> None:
         if not self.also_accepts:
@@ -375,6 +382,7 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
             allows_none=allows_none,
             required=field.is_required(),
             shape_field=port.shape_field,
+            agent_default=port.agent_default,
         )
     return InputContract(model=model, ports=ports)
 

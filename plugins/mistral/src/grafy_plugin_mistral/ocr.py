@@ -93,7 +93,8 @@ class MistralOcrConfig(NodeConfig):
 class MistralOcrInput(NodeInput):
     document_url: Annotated[
         str | None,
-        InPort(TEXT_VALUE),
+        # A model that could write any address here would be choosing what Mistral fetches.
+        InPort(TEXT_VALUE, agent_default="hidden"),
         Field(
             description=(
                 "HTTPS URL of a PDF, presentation, or other document Mistral "

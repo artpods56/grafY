@@ -3121,6 +3121,11 @@ export interface components {
         readonly PortResponse: {
             /** Accepted Shapes */
             readonly accepted_shapes: readonly components["schemas"]["PortShape"][];
+            /**
+             * Agent Default
+             * @description 'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter.
+             */
+            readonly agent_default?: "hidden" | null;
             /** Also Accepts */
             readonly also_accepts?: readonly components["schemas"]["ArtifactTypeKeyResponse"][];
             readonly artifact_type?: components["schemas"]["ArtifactTypeKeyResponse"] | null;
