@@ -21,6 +21,7 @@ import {
   type PlacedLibraryItem,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { resolveArtifactCardSource } from "../artifact-connections";
@@ -283,20 +284,18 @@ const s = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
+  /**
+   * The reorder row's own square: its 20px size, hairline frame, and flat
+   * colour. The kit's ghost IconButton draws the rest — name, hover, focus.
+   */
   step: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
     width: "20px",
     height: "20px",
-    padding: 0,
     borderRadius: "5px",
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: tokens.colorBorder,
-    backgroundColor: "transparent",
     color: tokens.colorText,
-    cursor: "pointer",
   },
   stepDisabled: {
     color: tokens.colorTextDisabled,
@@ -949,14 +948,14 @@ export function ArtifactCardBody({
           >
             <span {...stylex.props(s.reorderHead)}>
               <span>{refs.length} items · use arrows to reorder</span>
-              <button
-                type="button"
-                aria-label="Close sequence order"
+              <IconButton
+                label="Close sequence order"
+                size="xs"
+                xstyle={s.step}
                 onClick={() => setReordering(false)}
-                {...stylex.props(s.step)}
               >
                 <X size={12} />
-              </button>
+              </IconButton>
             </span>
             <div role="list" aria-label="Sequence order">
               {refs.map((ref, index) => (
@@ -996,30 +995,27 @@ export function ArtifactCardBody({
                   <span {...stylex.props(s.reorderName)}>
                     {nameOf(ref.artifact_id) ?? ref.artifact_id}
                   </span>
-                  <button
-                    type="button"
+                  <IconButton
+                    label="Move earlier in the order"
+                    size="xs"
                     disabled={index === 0}
-                    aria-label="Move earlier in the order"
                     onClick={() => step(index, -1)}
-                    {...stylex.props(
-                      s.step,
-                      index === 0 ? s.stepDisabled : null,
-                    )}
+                    xstyle={[s.step, index === 0 ? s.stepDisabled : null]}
                   >
                     <ArrowUp size={11} />
-                  </button>
-                  <button
-                    type="button"
+                  </IconButton>
+                  <IconButton
+                    label="Move later in the order"
+                    size="xs"
                     disabled={index === refs.length - 1}
-                    aria-label="Move later in the order"
                     onClick={() => step(index, 1)}
-                    {...stylex.props(
+                    xstyle={[
                       s.step,
                       index === refs.length - 1 ? s.stepDisabled : null,
-                    )}
+                    ]}
                   >
                     <ArrowDown size={11} />
-                  </button>
+                  </IconButton>
                 </div>
               ))}
             </div>

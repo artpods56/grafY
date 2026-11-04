@@ -6,6 +6,7 @@ import { Popover } from "@base-ui/react/popover";
 import { ChevronRight } from "lucide-react";
 
 import { phoneTouch } from "@/components/ui/touch-target";
+import { Button } from "@/components/ui/button";
 import { useNodeRegistry } from "@/hooks/use-api";
 import { useOptionalWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import type { Port } from "@/lib/api";
@@ -97,6 +98,7 @@ const s = stylex.create({
   row: {
     display: "flex",
     alignItems: "center",
+    justifyContent: "flex-start",
     gap: "8px",
     minHeight: "26px",
     width: "100%",
@@ -125,6 +127,10 @@ const s = stylex.create({
       default: "transparent",
       ":hover": tokens.colorHover,
     },
+    // The row is a layout, not a word on a line: the kit's text Button brings
+    // a nowrap chip and a hover underline, and neither belongs here.
+    whiteSpace: "normal",
+    textDecoration: "none",
   },
   fieldName: {
     color: tokens.colorTextEmphasis,
@@ -161,19 +167,13 @@ const s = stylex.create({
     borderBottomColor: tokens.colorDivider,
   },
   /**
-   * A crumb has no desktop floor of its own — `auto` is what the kit's phone
-   * target leaves it at above 620px — so only the 44px is declared here.
+   * The crumb's own type over the kit's text Button; the Button draws the
+   * frame, the hover, and the press, this keeps the monospace crumbs small.
    */
   crumb: {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    color: tokens.colorMuted,
-    cursor: "pointer",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: tokens.fontSizeXs,
+    color: tokens.colorMuted,
   },
   crumbCurrent: {
     color: tokens.colorTextEmphasis,
@@ -235,33 +235,37 @@ export function SchemaDrill({
   return (
     <>
       <nav aria-label="Payload schema path" {...stylex.props(s.crumbs)}>
-        <button
+        <Button
           type="button"
+          size="text"
+          variant="plain"
           aria-current={path.length === 0 ? "page" : undefined}
-          {...stylex.props(
+          xstyle={[
             s.crumb,
             path.length === 0 ? s.crumbCurrent : null,
             phoneTouch.on,
-          )}
+          ]}
           onClick={() => setPath([])}
         >
           {root}
-        </button>
+        </Button>
         {crumbs.map((node, index) => (
           <React.Fragment key={node.id}>
             <span {...stylex.props(s.crumbSep)}>/</span>
-            <button
+            <Button
               type="button"
+              size="text"
+              variant="plain"
               aria-current={index === crumbs.length - 1 ? "page" : undefined}
-              {...stylex.props(
+              xstyle={[
                 s.crumb,
                 index === crumbs.length - 1 ? s.crumbCurrent : null,
                 phoneTouch.on,
-              )}
+              ]}
               onClick={() => setPath(path.slice(0, index + 1))}
             >
               {outlineCrumbLabel(node)}
-            </button>
+            </Button>
           </React.Fragment>
         ))}
       </nav>
@@ -272,17 +276,19 @@ export function SchemaDrill({
       >
         {rows.map((node) =>
           node.expandable ? (
-            <button
+            <Button
               key={node.id}
               type="button"
-              {...stylex.props(s.row, s.rowButton)}
+              size="text"
+              variant="plain"
+              xstyle={[s.row, s.rowButton]}
               onClick={() => setPath([...path, node.id])}
             >
               <TypeMark node={node} />
               <span {...stylex.props(s.chevron)}>
                 <ChevronRight size={13} />
               </span>
-            </button>
+            </Button>
           ) : (
             <div key={node.id} {...stylex.props(s.row)}>
               <TypeMark node={node} />
