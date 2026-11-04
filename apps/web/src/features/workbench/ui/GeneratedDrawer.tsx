@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 
+import { IconButton } from "@/components/ui/button";
 import {
   getInstanceResult,
   listGraphInstances,
@@ -71,25 +72,6 @@ const s = stylex.create({
     fontSize: "10px",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
-  },
-  headerButton: {
-    width: "28px",
-    height: "28px",
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    borderWidth: 0,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-      ":disabled": "transparent",
-    },
-    color: {
-      default: tokens.colorMuted,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
   },
   spinner: {
     animationName: "grafy-spin",
@@ -1014,30 +996,26 @@ export function GeneratedDrawer({
             Results this Graph stores, by node
           </span>
         </span>
-        <button
-          type="button"
-          aria-label="Refresh Generated artifacts"
-          title="Refresh Generated artifacts"
+        <IconButton
+          label="Refresh Generated artifacts"
+          size="md"
           disabled={!graphId || isValidating}
           onClick={refresh}
-          {...stylex.props(s.headerButton)}
         >
           <RefreshCw
             size={13}
             aria-hidden
             {...stylex.props(isValidating ? s.spinner : null)}
           />
-        </button>
+        </IconButton>
         {onClose ? (
-          <button
-            type="button"
-            aria-label="Close Generated artifacts"
-            title="Close Generated artifacts"
+          <IconButton
+            label="Close Generated artifacts"
+            size="md"
             onClick={onClose}
-            {...stylex.props(s.headerButton)}
           >
             <X size={14} aria-hidden />
-          </button>
+          </IconButton>
         ) : null}
       </header>
 

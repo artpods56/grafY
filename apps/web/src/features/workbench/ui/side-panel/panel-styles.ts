@@ -12,26 +12,17 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
  * styles beside its markup.
  */
 export const panelStyles = stylex.create({
+  // The rail's colours on the shared IconButton: pass it as `xstyle`.
   iconButton: {
-    width: "26px",
-    height: "26px",
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    borderWidth: 0,
-    borderStyle: "none",
-    borderRadius: "6px",
     backgroundColor: {
       default: "transparent",
-      ":hover": tokens.colorSurfaceSunken,
-      ":disabled": "transparent",
+      ":hover:not(:disabled)": tokens.colorSurfaceSunken,
     },
     color: {
       default: tokens.colorMuted,
-      ":hover": tokens.colorText,
+      ":hover:not(:disabled)": tokens.colorText,
       ":disabled": tokens.colorTextDisabled,
     },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
   },
   spinner: {
     animationName: "grafy-spin",

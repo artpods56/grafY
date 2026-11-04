@@ -85,8 +85,18 @@ kill <that pid>                    # never a pattern match: several servers run 
 and read the **browser console** of a failing Playwright test, which names the
 missing export in one line.
 
+StyleX has the same blind spot: `npm run check:stylex` compiles every module
+with the real Babel plugin and catches a cross-module style import the build
+cannot resolve, which `tsc` and Vitest both pass.
+
 ## Shared components and call sites
 
+- `src/components/ui` holds the shared controls, Base UI underneath and StyleX
+  on top: `Button`, `IconButton`, `Field` with `TextInput`/`TextArea`,
+  `SegmentedControl`, and `Dialog`. Use them before hand-styling a button or an
+  input. Local overrides go through `xstyle` (applied last), React Flow's
+  `nodrag`/`nopan` through `className`. A Base UI trigger draws one with
+  `render={<IconButton label="…" />}` and passes its children in.
 - `WorkspaceRail` is used by `GraphBrowser`, the Teams & access page, and the
   workspace layout (`[workspaceSlug]/layout.tsx`). Any prop added outside the
   core interface must be optional.
@@ -113,6 +123,8 @@ missing export in one line.
   Do not split one layout contract between global CSS, StyleX, and inline styles.
 - Light/dark theming uses `light-dark()` — do not use raw hex literals for
   component styling.
+- StyleX ranks `:hover` above `:disabled`, so a plain `":hover"` colour also
+  paints a disabled control. Key hover as `":hover:not(:disabled)"`.
 - `--grafy-rail-width` is the single source of truth for sidebar width. Main
   content padding must reference it via `calc(var(--grafy-rail-width, 200px) + …)`.
 
@@ -139,6 +151,10 @@ missing export in one line.
   `renderToStaticMarkup`, import pure functions directly, or mount interaction
   tests with `react-dom/client` and `act`.
 - Test files need `.tsx` extension when they contain JSX.
+- A test double for a Base UI part must honour `render` (clone the element with
+  the part's props and children). A trigger drawn through a shared component
+  takes its accessible name from that element, so a double that ignores
+  `render` drops the name.
 - `npm test` runs the Vitest suite (`vitest run`).
 - When verifying a worktree, use `GRAFY_E2E_PORT` to give its dev server a free
   port. Do not reuse a server from another checkout; its compiled code does not

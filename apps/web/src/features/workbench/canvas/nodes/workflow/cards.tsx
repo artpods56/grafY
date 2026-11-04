@@ -10,8 +10,9 @@ import {
 import { TriangleAlert, X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 
-import { CanvasNodeHeader, nodeChrome } from "../CanvasNodeChrome";
+import { CanvasNodeHeader } from "../CanvasNodeChrome";
 import { artifactTypeKey } from "../../artifact-type-key";
 import { schemaFields, validateConfig } from "../../config-schema";
 import { nodeSecretInputs } from "../../node-secrets";
@@ -121,14 +122,6 @@ const s = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: "4px",
-  },
-  /** Unsupported cards keep a direct remove: removal is the only repair. */
-  removeButton: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-    },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
   },
   operatorRow: {
     minWidth: 0,
@@ -250,17 +243,16 @@ export function IncompatibleWorkflowNodeCard({
           }
         >
           {/* Removal is the only repair, so it stays one click away. */}
-          <button
-            type="button"
-            aria-label={`Remove ${data.spec.title}`}
-            title={`Remove ${data.spec.title}`}
-            {...nodeInteractionProps(
-              stylex.props(nodeChrome.headerButton, s.removeButton),
-            )}
+          <IconButton
+            label={`Remove ${data.spec.title}`}
+            variant="danger"
+            size="xs"
+            shape="round"
+            className="nodrag nowheel"
             onClick={() => data.onRemoveNode?.(id)}
           >
             <X size={13} />
-          </button>
+          </IconButton>
         </CanvasNodeHeader>
       }
       resizeHandle={

@@ -4,6 +4,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ChevronDown, Grid3x3, RotateCcw, X } from "lucide-react";
 
+import { Button, IconButton } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { useCanvasGridSettings } from "../canvas/canvas-grid-settings";
 import {
@@ -109,23 +110,9 @@ const s = stylex.create({
     color: tokens.colorAccent,
     flexShrink: 0,
   },
-  iconButton: {
-    width: {
-      default: "28px",
-      "@media (max-width: 620px)": "44px",
-    },
-    height: {
-      default: "28px",
-      "@media (max-width: 620px)": "44px",
-    },
-    display: "grid",
-    placeItems: "center",
-    borderWidth: 0,
-    borderRadius: "8px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    flexShrink: 0,
+  touchIcon: {
+    width: { default: "28px", "@media (max-width: 620px)": "44px" },
+    height: { default: "28px", "@media (max-width: 620px)": "44px" },
   },
   section: {
     display: "grid",
@@ -253,31 +240,8 @@ const s = stylex.create({
     display: "grid",
     gap: "6px",
   },
-  actionButton: {
-    height: {
-      default: "32px",
-      "@media (max-width: 620px)": "44px",
-    },
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "6px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: "8px",
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorHover,
-      ":disabled": tokens.colorSurfaceMuted,
-    },
-    color: {
-      default: tokens.colorText,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 650,
+  touchAction: {
+    height: { default: "32px", "@media (max-width: 620px)": "44px" },
   },
   bypass: {
     padding: "6px 8px",
@@ -358,23 +322,23 @@ export function CanvasGridSettingsPanel({
           <h2 {...stylex.props(s.title)}>Canvas lab</h2>
           <p {...stylex.props(s.subtitle)}>Grid and snapping controls</p>
         </div>
-        <button
-          type="button"
-          aria-label="Reset canvas settings"
+        <IconButton
+          label="Reset canvas settings"
           title="Reset to defaults"
-          {...stylex.props(s.iconButton)}
+          size="md"
+          xstyle={s.touchIcon}
           onClick={resetSettings}
         >
           <RotateCcw size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label="Close canvas lab"
-          {...stylex.props(s.iconButton)}
+        </IconButton>
+        <IconButton
+          label="Close canvas lab"
+          size="md"
+          xstyle={s.touchIcon}
           onClick={() => setPanelOpen(false)}
         >
           <X size={14} />
-        </button>
+        </IconButton>
       </header>
 
       <div {...stylex.props(s.section)}>
@@ -431,20 +395,21 @@ export function CanvasGridSettingsPanel({
       </div>
 
       <div {...stylex.props(s.actions)}>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="md"
+          xstyle={s.touchAction}
           disabled={!selectedCount || !settings.enabled}
           title={
             selectedCount
               ? `Snap ${selectedCount} selected node${selectedCount === 1 ? "" : "s"} to the grid`
               : "Select nodes to snap"
           }
-          {...stylex.props(s.actionButton)}
           onClick={onSnapSelection}
         >
           Snap selection now
           {selectedCount ? ` (${selectedCount})` : ""}
-        </button>
+        </Button>
       </div>
 
       <details {...stylex.props(s.advanced)}>

@@ -88,14 +88,22 @@ vi.mock("./TextareaBodyResizeHandle", () => ({
 vi.mock("@base-ui/react/menu", () => ({
   Menu: {
     Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    // Like Base UI's: a `render` element becomes the trigger, taking its
+    // props and children.
     Trigger: ({
       children,
+      render,
       ...props
-    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-      <button type="button" {...props}>
-        {children}
-      </button>
-    ),
+    }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+      render?: React.ReactElement<Record<string, unknown>>;
+    }) =>
+      render ? (
+        React.cloneElement(render, props, children)
+      ) : (
+        <button type="button" {...props}>
+          {children}
+        </button>
+      ),
     Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     Positioner: ({ children }: { children: React.ReactNode }) => (
       <>{children}</>

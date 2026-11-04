@@ -6,6 +6,7 @@ import { Menu } from "@base-ui/react/menu";
 import { MoreHorizontal } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { overlay } from "@/lib/stylex/overlay.stylex";
+import { IconButton } from "@/components/ui/button";
 import {
   useRegisterNodeMenu,
   type NodeMenuInfo,
@@ -15,24 +16,6 @@ import {
 export type { NodeMenuInfo, NodeMenuItem };
 
 const s = stylex.create({
-  // Quiet until asked: subtle ink at rest, full ink and a wash on hover or
-  // while its menu is open.
-  trigger: {
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    width: "22px",
-    height: "22px",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "9999px",
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    cursor: "pointer",
-    transitionProperty: "color, background-color",
-    transitionDuration: "120ms",
-    ":focus-visible": { outline: `2px solid ${tokens.colorAccent}` },
-  },
   triggerOpen: {
     color: tokens.colorText,
     backgroundColor: tokens.colorHover,
@@ -134,9 +117,15 @@ export function NodeMenu({
       }}
     >
       <Menu.Trigger
-        {...stylex.props(s.trigger, open ? s.triggerOpen : null)}
-        aria-label={label}
-        title={title}
+        render={
+          <IconButton
+            label={label}
+            title={title}
+            size="xs"
+            shape="round"
+            xstyle={open ? s.triggerOpen : null}
+          />
+        }
       >
         <MoreHorizontal size={14} />
       </Menu.Trigger>

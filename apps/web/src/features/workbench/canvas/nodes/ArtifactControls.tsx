@@ -2,6 +2,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ArrowUpDown, Download, Trash2 } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { Button } from "@/components/ui/button";
 import { ARTIFACT_CARD_OUTPUT_HANDLE } from "../artifact-connections";
 import { ARTIFACT_VIEWER_INPUT_HANDLE } from "../artifact-viewer";
 import { canvasCardRail } from "./CanvasCardLayout";
@@ -12,20 +13,6 @@ import { PortBall, revealDelay, revealStyles } from "./PortBall";
 export const artifactRail = canvasCardRail;
 
 const s = stylex.create({
-  textButton: {
-    display: "inline-flex",
-    alignItems: "center",
-    height: "22px",
-    padding: "0 8px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusSm,
-    color: { default: tokens.colorText, ":disabled": tokens.colorTextDisabled },
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 500,
-    cursor: { default: "pointer", ":disabled": "default" },
-    ":focus-visible": { outline: `2px solid ${tokens.colorAccent}` },
-  },
   toolbar: {
     position: "absolute",
     bottom: "calc(100% + 8px)",
@@ -208,7 +195,6 @@ export function ArtifactSequenceBar({
   onUngroup?: () => void;
   ungroupDisabledReason?: string | null;
 }) {
-  const textButton = stylex.props(s.textButton);
   const toolbar = stylex.props(s.toolbar);
   return (
     <div
@@ -216,18 +202,18 @@ export function ArtifactSequenceBar({
       {...toolbar}
       className={`nodrag nopan ${toolbar.className ?? ""}`}
     >
-      <button
-        type="button"
-        {...textButton}
+      <Button
+        variant="ghost"
+        size="xs"
         disabled={!onUngroup || Boolean(ungroupDisabledReason)}
         title={ungroupDisabledReason ?? "Restore individual artifacts"}
         onClick={onUngroup}
       >
         Ungroup
-      </button>
-      <button type="button" {...textButton} onClick={onRearrange}>
+      </Button>
+      <Button variant="ghost" size="xs" onClick={onRearrange}>
         Rearrange
-      </button>
+      </Button>
     </div>
   );
 }

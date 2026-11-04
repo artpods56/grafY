@@ -5,6 +5,7 @@ import { RotateCcw } from "lucide-react";
 
 import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 
 import { nodeSecretDependencyRevision } from "../../node-secrets";
 import { resolvedNodeWidth, type WorkflowNodeLayout } from "../../node-layout";
@@ -94,23 +95,6 @@ const s = stylex.create({
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: "10.5px",
     textOverflow: "ellipsis",
-  },
-  resetType: {
-    width: "22px",
-    height: "22px",
-    flexShrink: 0,
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "9999px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
-    cursor: "pointer",
-  },
-  resetTypeDisabled: {
-    cursor: "not-allowed",
-    opacity: 0.45,
   },
   body: {
     display: "grid",
@@ -223,25 +207,21 @@ export function GenericArtifactTypeState({
               </span>
             )}
             {artifactType ? (
-              <button
-                type="button"
-                disabled={!resettable || !data.onResetArtifactTypeBinding}
-                aria-label={`Reset artifact type ${variable}`}
+              <IconButton
+                label={`Reset artifact type ${variable}`}
                 title={
                   resettable
                     ? "Reset type"
                     : "Disconnect this node before resetting its type"
                 }
-                {...nodeInteractionProps(
-                  stylex.props(
-                    s.resetType,
-                    resettable ? null : s.resetTypeDisabled,
-                  ),
-                )}
+                size="xs"
+                shape="round"
+                className="nodrag nowheel"
+                disabled={!resettable || !data.onResetArtifactTypeBinding}
                 onClick={() => data.onResetArtifactTypeBinding?.(id, variable)}
               >
                 <RotateCcw size={11} />
-              </button>
+              </IconButton>
             ) : null}
           </div>
         );

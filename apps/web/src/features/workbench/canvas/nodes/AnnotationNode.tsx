@@ -11,6 +11,7 @@ import {
 import { X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
 import {
   ANNOTATION_COLOR_SWATCHES,
@@ -101,21 +102,6 @@ const s = stylex.create({
     outlineStyle: "solid",
     outlineColor: tokens.colorAccentBorder,
     outlineOffset: "1px",
-  },
-  removeButton: {
-    width: "22px",
-    height: "22px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "9999px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-    },
-    color: tokens.colorText,
-    cursor: "pointer",
   },
   textSurface: {
     width: "100%",
@@ -467,10 +453,11 @@ export default function AnnotationNodeCard({
               data.onColorChange?.(id, normalizeAnnotationColor(next));
             }}
           />
-          <button
-            type="button"
-            aria-label="Remove annotation"
-            {...stylex.props(s.removeButton)}
+          <IconButton
+            label="Remove annotation"
+            variant="danger"
+            size="xs"
+            shape="round"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
@@ -478,7 +465,7 @@ export default function AnnotationNodeCard({
             }}
           >
             <X size={12} />
-          </button>
+          </IconButton>
         </div>
       </NodeToolbar>
 

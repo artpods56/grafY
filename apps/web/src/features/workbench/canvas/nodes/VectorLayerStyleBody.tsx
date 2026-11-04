@@ -6,6 +6,7 @@ import { Plus, Trash2 } from "lucide-react";
 
 import { createUuid } from "@/features/workbench/model/uuid";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 import type { WorkflowNodeData } from "../types";
 
 type CategoryValue = string | number | boolean;
@@ -197,25 +198,6 @@ const s = stylex.create({
     gridTemplateColumns: "minmax(0, 1fr) auto",
     alignItems: "center",
     gap: "5px",
-  },
-  iconButton: {
-    width: "24px",
-    height: "24px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "6px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-    },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
-    cursor: "pointer",
-  },
-  iconButtonDisabled: {
-    color: tokens.colorTextDisabled,
-    cursor: "not-allowed",
   },
   addButton: {
     minHeight: "28px",
@@ -587,19 +569,13 @@ export function VectorLayerStyleBody({
                         })
                       }
                     />
-                    <button
-                      type="button"
-                      disabled={style.categories.length === 1}
-                      aria-label={`Remove category ${categoryIndex + 1}`}
+                    <IconButton
+                      label={`Remove category ${categoryIndex + 1}`}
                       title="Remove category"
-                      {...interactionProps(
-                        stylex.props(
-                          s.iconButton,
-                          style.categories.length === 1
-                            ? s.iconButtonDisabled
-                            : null,
-                        ),
-                      )}
+                      variant="danger"
+                      size="sm"
+                      className="nodrag nopan nowheel"
+                      disabled={style.categories.length === 1}
                       onClick={() =>
                         commit({
                           ...style,
@@ -610,7 +586,7 @@ export function VectorLayerStyleBody({
                       }
                     >
                       <Trash2 size={11} />
-                    </button>
+                    </IconButton>
                   </div>
                   <div {...stylex.props(s.grid)}>
                     <CategoryValuesField

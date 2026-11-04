@@ -4,6 +4,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ArrowLeft, Search } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -453,13 +454,13 @@ function NodeBrowser({
                   : "No nodes match the current search or filter."}
               </span>
               {narrowed ? (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={resetSearchAndFilters}
-                  {...stylex.props(s.textButton)}
                 >
                   Reset search and filter
-                </button>
+                </Button>
               ) : null}
             </>
           }
@@ -502,17 +503,18 @@ function NodeBrowser({
               showEnterHint={finePointer}
               leading={
                 showingDetailsOnly ? (
-                  <button
+                  <Button
                     ref={backRef}
-                    type="button"
+                    variant="ghost"
+                    size="lg"
+                    xstyle={s.backPlacement}
                     onClick={() => {
                       pendingOptionFocus.current = listedKey;
                       setPhoneDetailsOpen(false);
                     }}
-                    {...stylex.props(s.backButton)}
                   >
                     <ArrowLeft size={16} aria-hidden="true" /> Back to results
-                  </button>
+                  </Button>
                 ) : null
               }
               onDetailsOpenChange={setNodeDetailsOpen}
@@ -647,26 +649,11 @@ const s = stylex.create({
     borderLeftColor: tokens.colorDivider,
     backgroundColor: tokens.colorSurface,
   },
-  backButton: {
-    minHeight: "40px",
-    display: "inline-flex",
-    alignItems: "center",
+  backPlacement: {
     alignSelf: "flex-start",
-    flexShrink: 0,
-    gap: "6px",
+    height: "40px",
     margin: "8px 8px 0",
     paddingInline: "10px 14px",
-    borderWidth: 0,
-    borderRadius: "8px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorText,
-    fontFamily: "inherit",
-    fontSize: tokens.fontSizeSm,
-    cursor: "pointer",
-    outlineColor: tokens.colorBorderStrong,
-    outlineStyle: "solid",
-    outlineOffset: "0",
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
   },
 
   empty: {
@@ -677,19 +664,6 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: tokens.fontSizeSm,
     textAlign: "center",
-  },
-  textButton: {
-    minHeight: "29px",
-    paddingInline: "10px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorderStrong,
-    borderRadius: "5px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 700,
   },
   visuallyHidden: {
     position: "absolute",

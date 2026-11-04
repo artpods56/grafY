@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Search } from "lucide-react";
 import { useStore, ViewportPortal } from "@xyflow/react";
 
+import { Button } from "@/components/ui/button";
 import type { NodeRegistry } from "@/lib/api";
 import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { overlay } from "@/lib/stylex/overlay.stylex";
@@ -233,19 +234,8 @@ const s = stylex.create({
     borderTopStyle: "solid",
     borderTopColor: tokens.colorBorder,
   },
-  ghostButton: {
-    minHeight: {
-      default: "28px",
-      "@media (max-width: 620px)": "44px",
-    },
-    paddingInline: "8px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusSm,
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 680,
+  touchAction: {
+    height: { default: "28px", "@media (max-width: 620px)": "44px" },
   },
   hint: {
     alignSelf: "center",
@@ -790,24 +780,26 @@ export function ContextualNodeDiscovery({
 
         <div {...stylex.props(s.footer)}>
           {pendingCandidate ? (
-            <button
-              type="button"
-              {...stylex.props(s.ghostButton)}
+            <Button
+              variant="ghost"
+              size="sm"
+              xstyle={s.touchAction}
               onClick={() => {
                 setPendingCandidate(null);
                 setHoveredChoiceIndex(0);
               }}
             >
               Back
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
-              {...stylex.props(s.ghostButton)}
+            <Button
+              variant="ghost"
+              size="sm"
+              xstyle={s.touchAction}
               onClick={onClose}
             >
               Cancel
-            </button>
+            </Button>
           )}
           <span {...stylex.props(s.hint)}>
             {canInsert

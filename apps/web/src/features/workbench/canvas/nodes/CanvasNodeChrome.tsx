@@ -54,21 +54,6 @@ export const nodeChrome = stylex.create({
   // At rest the name recedes, like an artifact's label; picked up it reads in
   // full.
   titleQuiet: { opacity: 0.6 },
-  headerButton: {
-    width: "22px",
-    height: "22px",
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    borderWidth: 0,
-    borderRadius: "9999px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-    },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
-    cursor: "pointer",
-  },
   // The "⋯" hangs in the right column, level with the name: the same column
   // as the output balls (an 8px gap, then a 30px slot), above the first of
   // them; the header is exactly as wide as the plate. It exists only while
