@@ -4792,6 +4792,8 @@ function WorkbenchBody({
                   name: "Agent",
                   instructions: "",
                   model: { kind: "deployment" },
+                  context: [],
+                  tools: [],
                   position: canvasCenter({ x: 480, y: 240 }),
                   width: 360,
                   height: 480,

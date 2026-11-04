@@ -565,6 +565,14 @@ function Conversation({
                 </div>
               );
             }
+            if (
+              event.payload.kind === "tool_call" ||
+              event.payload.kind === "tool_result" ||
+              event.payload.kind === "confirmation_requested"
+            ) {
+              // Tool events are drawn by the tool rows, not as chat bubbles.
+              return null;
+            }
             const fromUser = event.payload.kind === "user_message";
             return (
               <div

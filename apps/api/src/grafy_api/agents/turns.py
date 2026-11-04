@@ -40,16 +40,25 @@ import logging
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from pydantic_ai import Agent, CancellationToken, RunCancelled
+from pydantic_ai import (
+    Agent,
+    CancellationToken,
+    DeferredToolRequests,
+    DeferredToolResults,
+    ExternalToolset,
+    RunCancelled,
+    ToolDefinition,
+)
 from pydantic_ai.messages import ModelMessage, PartDeltaEvent, PartStartEvent
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
 
 from grafy_api.agents.history import history_messages
+from grafy_api.agents.toolbox import AgentToolbox
 from grafy_api.agents.models import (
     AgentModelReader,
     OwnedAgentChatModel,
@@ -67,15 +76,19 @@ from grafy_api.agents.publishing import (
 from grafy_core.domain.agent_conversations import (
     AgentConversation,
     AgentConversationEvent,
+    AgentConversationEventPayload,
     AgentConversationTurnOutcome,
     AssistantMessagePayload,
+    ConfirmationRequestedPayload,
+    ToolCallPayload,
+    ToolResultPayload,
     TurnOutcomePayload,
     UserMessagePayload,
 )
 from grafy_core.domain.agent_turns import AgentTurn, AgentTurnStatus
 from grafy_core.domain.collaboration import ProjectHead
 from grafy_core.domain.errors import NotFoundError
-from grafy_core.domain.graph_documents import GraphAgent
+from grafy_core.domain.graph_documents import GraphAgent, GraphDocument
 from grafy_core.domain.identity import WorkspaceAccess, WorkspaceCapability
 from grafy_core.kernel.project import ProjectDocumentError
 from grafy_core.ports.agent_turns import (
@@ -86,6 +99,14 @@ from grafy_core.ports.agent_turns import (
 
 logger = logging.getLogger(__name__)
 
+type AgentToolboxFactory = Callable[
+    [UUID, UUID, str, GraphAgent, GraphDocument], AgentToolbox | None
+]
+"""``(workspace, project, graph, agent, graph document)`` to the tools the Agent may call.
+
+``None`` or a toolbox with no tools means a turn with no tools, which is every Agent that
+has none connected and every deployment that has not wired tools in."""
+
 MAX_AGENT_TURN_ERROR_DETAIL_CHARS = 2_000
 """How much of a failure the durable record and the log line may carry."""
 
@@ -95,6 +116,14 @@ MAX_AGENT_TURN_NOTIFICATIONS_QUEUED = 256
 At the default coalescing interval that is a couple of seconds of one turn's text, or a
 hundred turns' start-and-finish tellings: enough for a reconnect, and bounded so a room that
 has stopped reading costs a fixed amount of memory instead of as much as the model emits.
+"""
+
+MAX_AGENT_TURN_TOOL_CALLS = 10
+"""How many tool calls a turn makes before it asks a person to go on.
+
+A model with a tool and a vague question can call it for a long time. The limit is on the
+calls a turn has already made, checked before a batch runs: the batch that would pass it is
+not run and not stored, a confirmation request is, and the person's reply is the next turn.
 """
 
 SHUTDOWN_STOP_TIMEOUT_SECONDS = 10.0
@@ -230,6 +259,9 @@ class _RunningTurn:
     text: list[str] = field(default_factory=list)
     published_chars: int = 0
     secrets: tuple[str, ...] = ()
+    toolbox: AgentToolbox | None = None
+    tool_calls: int = 0
+    tool_work: "asyncio.Future[list[ToolResultPayload]] | None" = None
 
     @property
     def received_text(self) -> str:
@@ -258,6 +290,8 @@ class _Admission:
     history: Sequence[AgentConversationEvent]
     user_message: AgentConversationEvent
     user_text: str
+    agent: GraphAgent
+    graph_document: GraphDocument
 
 
 class AgentService:
@@ -273,7 +307,9 @@ class AgentService:
         | None = None,
         partial_interval_seconds: float = AGENT_TEXT_PARTIAL_INTERVAL_SECONDS,
         clock: Callable[[], float] = time.monotonic,
+        toolbox_factory: AgentToolboxFactory | None = None,
     ) -> None:
+        self._toolbox_factory = toolbox_factory
         self._unit_of_work_factory = unit_of_work_factory
         self._models = models
         self._publisher: AgentTurnPublisher = (
@@ -448,6 +484,8 @@ class AgentService:
                 history=history,
                 user_message=event,
                 user_text=text,
+                agent=agent,
+                graph_document=head.document.get_graph(conversation.graph_id).document,
             )
 
     async def _lose_admission_race(
@@ -528,11 +566,28 @@ class AgentService:
             ),
             message_id=message_id,
             secrets=_dial_secrets(admission.resolved),
+            toolbox=self._toolbox_for(turn, admission),
         )
         self._active[turn.conversation_id] = entry
         entry.task = asyncio.create_task(self._run(entry), name=f"agent-turn-{turn.id}")
         entry.task.add_done_callback(lambda _task: self._forget(turn, entry))
         self._publish(lambda publisher: publisher.turn_started(turn))
+
+    def _toolbox_for(
+        self, turn: AgentTurn, admission: _Admission
+    ) -> AgentToolbox | None:
+        """The tools this turn may call, fixed when it starts like its instructions are."""
+
+        if self._toolbox_factory is None or not admission.agent.tools:
+            return None
+        toolbox = self._toolbox_factory(
+            turn.workspace_id,
+            turn.project_id,
+            turn.graph_id,
+            admission.agent,
+            admission.graph_document,
+        )
+        return toolbox if toolbox is not None and toolbox.tools else None
 
     def _forget(self, turn: AgentTurn, entry: _RunningTurn) -> None:
         """Let go of a finished turn, so its conversation can be sent to again."""
@@ -597,39 +652,196 @@ class AgentService:
         await self._finish(entry, status, text=entry.received_text, detail=detail)
 
     async def _stream(self, entry: _RunningTurn) -> str:
-        """One pydantic-ai run, its text handed to the coalescer as it arrives."""
+        """The turn's pydantic-ai runs: the model speaks, may call tools, and speaks again.
 
-        agent = Agent(
+        With no tools this is one run whose text goes to the coalescer as it arrives. With
+        tools the model's calls end a run (they are external: the run stops at them), the
+        calls are executed through the kernel and stored, and a new run resumes with the
+        results, until the model answers in text, the turn has made as many calls as it may
+        unprompted, or it is stopped. What the model said before calling is stored as its
+        own message, ahead of its calls, so the conversation reads in the order it happened.
+        """
+
+        toolbox = entry.toolbox
+        agent: Agent[None, str | DeferredToolRequests] = Agent(
             entry.model.chat_model,
             # The instructions are the receipt's snapshot, so the canvas can move and this
             # turn still says what it was told.
             instructions=entry.turn.instructions or None,
+            toolsets=[ExternalToolset(_definitions(toolbox))] if toolbox else None,
+            output_type=[str, DeferredToolRequests] if toolbox else str,
         )
-        result = ""
-        async with agent.run_stream_events(
-            entry.user_text,
-            message_history=entry.history,
-            cancellation_token=entry.token,
-        ) as events:
-            async for event in events:
-                if isinstance(event, PartStartEvent):
-                    # The first characters of a message arrive here rather than as a delta
-                    # whenever a provider sends a complete part before streaming the rest.
-                    # A reader that only followed deltas would start every answer one
-                    # chunk late, and so would the stored message.
-                    part = event.part
-                    if part.part_kind != "text":
-                        continue
-                    await self._accept(entry, _part_text(getattr(part, "content", "")))
-                elif isinstance(event, PartDeltaEvent):
-                    await self._accept(
-                        entry, _part_text(getattr(event.delta, "content_delta", ""))
-                    )
-                elif isinstance(event, AgentRunResultEvent):
-                    # The run's own answer, which the SDK says in full: the accumulated
-                    # deltas are what the readers saw, this is what the message was.
-                    result = event.result.output
-        return result
+        prompt: str | None = entry.user_text
+        history = entry.history
+        deferred: DeferredToolResults | None = None
+        while True:
+            result: str | DeferredToolRequests = ""
+            messages: list[ModelMessage] = history
+            async with agent.run_stream_events(
+                prompt,
+                message_history=history,
+                deferred_tool_results=deferred,
+                cancellation_token=entry.token,
+            ) as events:
+                async for event in events:
+                    if isinstance(event, PartStartEvent):
+                        # The first characters of a message arrive here rather than as a
+                        # delta whenever a provider sends a complete part before streaming
+                        # the rest. A reader that only followed deltas would start every
+                        # answer one chunk late, and so would the stored message.
+                        part = event.part
+                        if part.part_kind != "text":
+                            continue
+                        await self._accept(
+                            entry, _part_text(getattr(part, "content", ""))
+                        )
+                    elif isinstance(event, PartDeltaEvent):
+                        await self._accept(
+                            entry, _part_text(getattr(event.delta, "content_delta", ""))
+                        )
+                    elif isinstance(event, AgentRunResultEvent):
+                        # The run's own answer, which the SDK says in full: the accumulated
+                        # deltas are what the readers saw, this is what the message was.
+                        result = event.result.output
+                        messages = event.result.all_messages()
+            if not isinstance(result, DeferredToolRequests):
+                return result
+            if toolbox is None:
+                raise RuntimeError("the model called a tool this turn was not given")
+            deferred = await self._call_tools(entry, toolbox, result)
+            if deferred is None:
+                return ""
+            prompt, history = None, messages
+
+    async def _call_tools(
+        self,
+        entry: _RunningTurn,
+        toolbox: AgentToolbox,
+        requests: DeferredToolRequests,
+    ) -> DeferredToolResults | None:
+        """Run the calls one response asked for, and answer them. ``None`` ends the turn.
+
+        What was said so far and the calls themselves are stored before anything runs, so a
+        turn that dies mid-call leaves the call on record rather than nothing. The batch
+        that would take the turn past its limit is neither run nor stored: the confirmation
+        request stands in for it, and the person's reply starts the next turn from the
+        results already there.
+        """
+
+        calls = [
+            ToolCallPayload(
+                call_id=call.tool_call_id,
+                tool_id=(
+                    prepared.link.id
+                    if (prepared := toolbox.tool(call.tool_name)) is not None
+                    else call.tool_name
+                ),
+                tool_name=call.tool_name,
+                arguments=call.args_as_dict(),
+            )
+            for call in requests.calls
+        ]
+        said = await self._take_segment(entry)
+        if entry.tool_calls + len(calls) > MAX_AGENT_TURN_TOOL_CALLS:
+            await self._append_events(
+                entry,
+                [
+                    *said,
+                    ConfirmationRequestedPayload(
+                        tool_calls=entry.tool_calls, limit=MAX_AGENT_TURN_TOOL_CALLS
+                    ),
+                ],
+            )
+            return None
+        await self._append_events(entry, [*said, *calls])
+        entry.tool_calls += len(calls)
+        entry.tool_work = asyncio.gather(*(toolbox.execute(call) for call in calls))
+        try:
+            results: list[ToolResultPayload] = await entry.tool_work
+        except asyncio.CancelledError:
+            task = asyncio.current_task()
+            if (
+                entry.stop_requested is not None
+                and task is not None
+                and task.cancelling() == 0
+            ):
+                # The stop came through `_request_stop`, which withdrew the calls, and not
+                # from somebody cancelling this task: it is a stop, not a shutdown.
+                raise RunCancelled("the turn was stopped during a tool call") from None
+            raise
+        finally:
+            entry.tool_work = None
+        await self._append_events(entry, results)
+        return DeferredToolResults(
+            calls={
+                result.call_id: (
+                    result.model_view
+                    if result.ok
+                    else f"The tool call failed: {result.error or 'no reason given'}"
+                )
+                for result in results
+            }
+        )
+
+    async def _take_segment(
+        self, entry: _RunningTurn
+    ) -> list[AgentConversationEventPayload]:
+        """Close the text the model has said so far, as a message of its own.
+
+        The readers are told the last of the stream, the stored message will replace it, and
+        the next stretch of text starts a message of its own, so a turn that talks, calls and
+        talks again is three things in the conversation and not one run-on paragraph.
+        """
+
+        await self._publish_final(entry)
+        text = entry.received_text
+        entry.text = []
+        entry.published_chars = 0
+        message_id = uuid4()
+        entry.message_id = message_id
+        entry.partial = replace(entry.partial, message_id=message_id, offset=0, text="")
+        entry.coalescer = AgentTextPartialCoalescer(
+            publish=self._publish_partial,
+            interval_seconds=self._partial_interval_seconds,
+            clock=self._clock,
+        )
+        return [AssistantMessagePayload(text=text)] if text else []
+
+    async def _append_events(
+        self,
+        entry: _RunningTurn,
+        payloads: Sequence[AgentConversationEventPayload],
+    ) -> None:
+        """Append events to the conversation while the turn is still the one running.
+
+        The turn row is read in the same transaction: a turn that was cancelled has had its
+        ending written already, and an event appended behind its ending would read as
+        something that happened after the turn was over.
+        """
+
+        if not payloads:
+            return
+        turn = entry.turn
+        at = datetime.now(UTC)
+        appended: list[AgentConversationEvent] = []
+        async with self._unit_of_work_factory() as unit_of_work:
+            current = await unit_of_work.agent_turns.get(turn.workspace_id, turn.id)
+            if current is None or current.status is not AgentTurnStatus.RUNNING:
+                await unit_of_work.rollback()
+                return
+            store = unit_of_work.agent_conversations
+            conversation = await store.lock(turn.workspace_id, turn.conversation_id)
+            if conversation is None:
+                await unit_of_work.rollback()
+                return
+            for payload in payloads:
+                event = conversation.event(turn_id=turn.id, payload=payload, at=at)
+                await store.append(event)
+                appended.append(event)
+                conversation = conversation.appended(at=at)
+            await unit_of_work.commit()
+        for event in appended:
+            self._publish(_announce(turn, event))
 
     async def _accept(self, entry: _RunningTurn, text: str) -> None:
         if not text:
@@ -823,6 +1035,10 @@ class AgentService:
         if entry.stop_requested is None:
             entry.stop_requested = status
         entry.token.cancel()
+        if entry.tool_work is not None and not entry.tool_work.done():
+            # A tool call in flight is the turn's work too: withdrawing it is what lets the
+            # kernel drop a computation nobody else wants.
+            entry.tool_work.cancel()
 
     async def _close_orphan(
         self, turn: AgentTurn, status: AgentTurnStatus, *, detail: str
@@ -1195,6 +1411,22 @@ def _agent_on_graph(head: ProjectHead, conversation: AgentConversation) -> Graph
     if agent is None:
         raise NotFoundError("Agent", conversation.agent_id)
     return agent
+
+
+def _definitions(toolbox: AgentToolbox | None) -> list[ToolDefinition]:
+    """The tools a model is shown: external, so the run stops at a call and Grafy runs it."""
+
+    if toolbox is None:
+        return []
+    return [
+        ToolDefinition(
+            name=tool.link.name,
+            description=tool.description,
+            parameters_json_schema=dict(tool.json_schema),
+            kind="external",
+        )
+        for tool in toolbox.tools
+    ]
 
 
 def _part_text(value: object) -> str:

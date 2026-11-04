@@ -561,7 +561,18 @@ def sanitize_document_for_cross_workspace_copy(
         annotations=document.presentation.annotations,
     )
     return GraphDocument(
-        agents=document.agents,
+        # A Library item belongs to the Workspace it was filed in, so an Agent's
+        # context link to one cannot follow a copy into another Workspace.
+        agents=tuple(
+            agent.model_copy(
+                update={
+                    "context": tuple(
+                        link for link in agent.context if link.kind != "library_item"
+                    )
+                }
+            )
+            for agent in document.agents
+        ),
         nodes=sanitized_nodes,
         edges=document.edges,
         presentation=presentation,
@@ -733,6 +744,7 @@ def _apply_graph_command(
                 origin for origin in document.origins if origin.to_node not in removed
             ),
             presentation=document.presentation.prune_for_removed_nodes(removed),
+            agents=tuple(agent.without_nodes(removed) for agent in document.agents),
         )
 
     if isinstance(command, MoveNodesCommand):

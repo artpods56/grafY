@@ -187,6 +187,84 @@
         "title": "AddOriginCommand",
         "type": "object"
       },
+      "AgentContextLink": {
+        "additionalProperties": false,
+        "description": "One thing connected to an Agent as context, read by reference (ADR 0021).\n\nThe three kinds name what is read, never a copy of it: the output port of a node\nof this Graph, a card on this canvas, or an item of the Library. A card and a\nLibrary item are loose references on purpose. Removing either must not be\nrefused because an Agent still points at it, so a missing one is skipped, and\nsaid so, when a turn reads its context. A node is different: removing it removes\nthe link, as it removes the edges.",
+        "properties": {
+          "card_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Id"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "node_output",
+              "card",
+              "library_item"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "library_item_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Library Item Id"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "AgentContextLink",
+        "type": "object"
+      },
       "AgentConversationEventListResponse": {
         "additionalProperties": false,
         "description": "The events a reader asked for, and the sequence to resume at.\n\n`last_sequence` is what the conversation holds now, so a reader can tell a full catch-up\nfrom a page that stopped at its limit without asking again to find out.",
@@ -227,6 +305,9 @@
             "discriminator": {
               "mapping": {
                 "assistant_message": "#/components/schemas/AssistantMessagePayload",
+                "confirmation_requested": "#/components/schemas/ConfirmationRequestedPayload",
+                "tool_call": "#/components/schemas/ToolCallPayload",
+                "tool_result": "#/components/schemas/ToolResultPayload",
                 "turn_outcome": "#/components/schemas/TurnOutcomePayload",
                 "user_message": "#/components/schemas/UserMessagePayload"
               },
@@ -238,6 +319,15 @@
               },
               {
                 "$ref": "#/components/schemas/AssistantMessagePayload"
+              },
+              {
+                "$ref": "#/components/schemas/ToolCallPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ToolResultPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ConfirmationRequestedPayload"
               },
               {
                 "$ref": "#/components/schemas/TurnOutcomePayload"
@@ -430,6 +520,62 @@
           "key_configured"
         ],
         "title": "AgentModelResponse",
+        "type": "object"
+      },
+      "AgentToolLink": {
+        "additionalProperties": false,
+        "description": "A node of this Graph an Agent may call as a tool (ADR 0021).\n\n``filled_ports`` are the node's open inputs the model gives a value; every other\ninput keeps what the Graph feeds it, so inputs wired from upstream stay fixed.\n``returned_ports`` are the outputs handed back to the model; none named means all\nof them. ``name`` is what the model sees and is unique among an Agent's tools.",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Description",
+            "type": "string"
+          },
+          "filled_ports": {
+            "default": [],
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Filled Ports",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]{0,47}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "returned_ports": {
+            "default": [],
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Returned Ports",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "node_id",
+          "name"
+        ],
+        "title": "AgentToolLink",
         "type": "object"
       },
       "AgentTurnResponse": {
@@ -1158,6 +1304,34 @@
           "expected_head_sequence"
         ],
         "title": "ConfigureNodeSecretRequest",
+        "type": "object"
+      },
+      "ConfirmationRequestedPayload": {
+        "additionalProperties": false,
+        "description": "The turn stopped before a further tool call, and asks a person to go on.\n\nThe model wanted more calls than a turn may make unprompted. The call it asked\nfor is not stored and not run; a person's reply is a new turn, which carries on\nfrom the results already in the conversation.",
+        "properties": {
+          "kind": {
+            "const": "confirmation_requested",
+            "default": "confirmation_requested",
+            "title": "Kind",
+            "type": "string"
+          },
+          "limit": {
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "tool_calls": {
+            "minimum": 1.0,
+            "title": "Tool Calls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tool_calls",
+          "limit"
+        ],
+        "title": "ConfirmationRequestedPayload",
         "type": "object"
       },
       "ConfirmationRuleResponse": {
@@ -2307,6 +2481,14 @@
       "GraphAgent": {
         "additionalProperties": false,
         "properties": {
+          "context": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentContextLink"
+            },
+            "title": "Context",
+            "type": "array"
+          },
           "height": {
             "default": 480,
             "maximum": 16384.0,
@@ -2352,6 +2534,14 @@
           },
           "position": {
             "$ref": "#/components/schemas/GraphPoint"
+          },
+          "tools": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentToolLink"
+            },
+            "title": "Tools",
+            "type": "array"
           },
           "width": {
             "default": 360,
@@ -3525,6 +3715,7 @@
         "title": "InstanceStateResponse",
         "type": "object"
       },
+      "JsonValue": {},
       "LibraryFolderListResponse": {
         "properties": {
           "folders": {
@@ -6459,6 +6650,150 @@
         ],
         "title": "TableValueType",
         "type": "string"
+      },
+      "ToolCallPayload": {
+        "additionalProperties": false,
+        "description": "The model asked to call one of the Agent's tools (ADR 0021).\n\n``call_id`` is the model's own id for the call, which is what the result answers.\n``arguments`` are exactly what the model gave; the artifacts built from them are\nnamed by the result, not copied here.",
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "call_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Call Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "tool_call",
+            "default": "tool_call",
+            "title": "Kind",
+            "type": "string"
+          },
+          "tool_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Tool Id",
+            "type": "string"
+          },
+          "tool_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "tool_id",
+          "tool_name"
+        ],
+        "title": "ToolCallPayload",
+        "type": "object"
+      },
+      "ToolResultArtifact": {
+        "additionalProperties": false,
+        "description": "One output a tool call produced, which a person can drag out of the thread.",
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactOutputValue"
+          },
+          "port": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Port",
+            "type": "string"
+          }
+        },
+        "required": [
+          "port",
+          "artifact"
+        ],
+        "title": "ToolResultArtifact",
+        "type": "object"
+      },
+      "ToolResultPayload": {
+        "additionalProperties": false,
+        "description": "How one tool call ended, and what the model was shown of it.\n\n``fingerprint`` is the temporary instance's, so the call is traceable to the\nresult store entry it used; ``artifacts`` carry what a person can take away.\n``model_view`` is stored because it is what the model saw: rebuilding it from the\nartifacts later could differ from what it actually read.",
+        "properties": {
+          "artifacts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ToolResultArtifact"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "call_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Call Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
+          "kind": {
+            "const": "tool_result",
+            "default": "tool_result",
+            "title": "Kind",
+            "type": "string"
+          },
+          "model_view": {
+            "default": "",
+            "maxLength": 100000,
+            "title": "Model View",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "tool_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Tool Id",
+            "type": "string"
+          },
+          "tool_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "tool_id",
+          "tool_name",
+          "ok"
+        ],
+        "title": "ToolResultPayload",
+        "type": "object"
       },
       "TurnOutcomePayload": {
         "additionalProperties": false,
