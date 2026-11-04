@@ -22,6 +22,7 @@ import {
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { gridShellOutset, shouldSnapSize, snapLength } from "../grid-layout";
 import { SafeMarkdown } from "../safe-markdown";
+import { resizeGrip } from "./LayoutResizeHandle";
 
 const s = stylex.create({
   shell: {
@@ -162,20 +163,6 @@ const s = stylex.create({
     },
     cursor: "nwse-resize",
     touchAction: "none",
-  },
-  resizeGlyph: {
-    position: "absolute",
-    right: "3px",
-    bottom: "3px",
-    width: "7px",
-    height: "7px",
-    borderRightWidth: 2,
-    borderRightStyle: "solid",
-    borderBottomWidth: 2,
-    borderBottomStyle: "solid",
-    borderColor: tokens.colorSubtle,
-    opacity: 0.75,
-    pointerEvents: "none",
   },
 });
 
@@ -347,7 +334,7 @@ function AnnotationResizeHandle({
         onCommit(layout);
       }}
     >
-      <span {...stylex.props(s.resizeGlyph)} />
+      <span {...stylex.props(resizeGrip.glyph)} />
     </button>
   );
 }

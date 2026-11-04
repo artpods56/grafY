@@ -36,16 +36,26 @@ const s = stylex.create({
     cursor: "nwse-resize",
     touchAction: "none",
   },
+});
+
+/**
+ * The corner grip every resizable thing on the canvas draws: a short arc that
+ * follows a rounded corner, a few pixels in from it. A host sets where it
+ * sits only when its corner is rounder than a card's.
+ */
+export const resizeGrip = stylex.create({
   glyph: {
     position: "absolute",
     right: "3px",
     bottom: "3px",
-    width: "7px",
-    height: "7px",
+    width: "9px",
+    height: "9px",
+    boxSizing: "border-box",
     borderRightWidth: 2,
     borderRightStyle: "solid",
     borderBottomWidth: 2,
     borderBottomStyle: "solid",
+    borderBottomRightRadius: "8px",
     borderColor: tokens.colorSubtle,
     opacity: 0.75,
     pointerEvents: "none",
@@ -160,7 +170,7 @@ export function LayoutResizeHandle({
         onDraft(null);
       }}
     >
-      <span aria-hidden="true" {...stylex.props(s.glyph)} />
+      <span aria-hidden="true" {...stylex.props(resizeGrip.glyph)} />
     </button>
   );
 }
