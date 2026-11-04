@@ -14,6 +14,9 @@ const flowMocks = vi.hoisted(() => ({
 
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
+  keyframes: () => "keyframes",
+  defaultMarker: () => ({}),
+  when: { ancestor: (selector: string) => selector },
   props: () => ({}),
 }));
 

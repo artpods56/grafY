@@ -37,6 +37,8 @@ test("places an Agent, streams a reply, stops and reloads durable history", asyn
         title: "New conversation",
         agent_id: agentId,
         graph_id: graphId,
+        created_at: now,
+        updated_at: now,
       };
       json = conversation;
     } else if (path.endsWith("/events"))
@@ -146,13 +148,28 @@ test("places an Agent, streams a reply, stops and reloads durable history", asyn
   ).toBeVisible();
   await expect(node.getByLabel("Streaming reply")).toHaveCount(0);
   await node.getByRole("button", { name: "Configure", exact: true }).click();
-  await node.getByLabel("API key", { exact: true }).fill("test-only-key");
-  await node.getByRole("button", { name: "Set key", exact: true }).click();
-  await expect(node.getByLabel("API key", { exact: true })).toHaveValue("");
+  // Settings open beside the Agent (or in a dialog where there is no room),
+  // and the conversation stays as it was while they are open.
+  const settings = page.getByRole("form", { name: "Agent settings" });
+  await expect(settings).toBeVisible();
+  await expect(
+    node.getByText("Hello 😀, final answer", { exact: true }),
+  ).toBeVisible();
+  // The key belongs to an Agent's own endpoint, so it is offered once one is chosen.
+  await expect(settings.getByLabel("API key", { exact: true })).toHaveCount(0);
+  await settings
+    .getByRole("radio", { name: "Custom endpoint", exact: true })
+    .click();
+  await settings.getByLabel("API key", { exact: true }).fill("test-only-key");
+  await settings.getByRole("button", { name: "Set key", exact: true }).click();
+  await expect(settings.getByLabel("API key", { exact: true })).toHaveValue("");
   await expect.poll(() => configuredKey).toBe(true);
-  await node.getByRole("button", { name: "Clear key", exact: true }).click();
+  await settings
+    .getByRole("button", { name: "Clear key", exact: true })
+    .click();
   await expect.poll(() => configuredKey).toBe(false);
-  await node.getByRole("button", { name: "Cancel", exact: true }).click();
+  await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(settings).toHaveCount(0);
   await page.reload();
   await expect(node).toBeVisible();
   await expect(

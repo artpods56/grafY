@@ -1,5 +1,5 @@
 "use client";
-import type { AgentNode } from "../agents/AgentCard";
+import type { AgentNode } from "../agents/agent-node";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -20,6 +20,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import {
+  Bot,
   Circle,
   Copy,
   Grid3x3,
@@ -3841,7 +3842,14 @@ function WorkbenchBody({
         width: agent.width,
         height: agent.height,
         measured: nodeMeasurements[agent.id],
-        style: { width: agent.width, height: agent.height },
+        // The conversation is set on the canvas above the Agent's plate, so
+        // the box itself passes the pointer through; the card turns it back
+        // on for the plate and the messages.
+        style: {
+          width: agent.width,
+          height: agent.height,
+          pointerEvents: "none",
+        },
         selected: selectedAgentIds.has(agent.id),
         draggable: canEditProject,
         deletable: canEditProject,
@@ -4691,30 +4699,6 @@ function WorkbenchBody({
       <aside aria-label="Canvas actions" {...stylex.props(s.toolDock)}>
         <button
           type="button"
-          disabled={!canEditProject}
-          onClick={() => {
-            const id = createUuid();
-            applyAuthoringCommands([
-              {
-                kind: "add_agent",
-                agent: {
-                  id,
-                  name: "Agent",
-                  instructions: "",
-                  model: { kind: "deployment" },
-                  position: canvasCenter({ x: 480, y: 240 }),
-                  width: 360,
-                  height: 480,
-                },
-              },
-            ]);
-            canvasSelection.selectOnly({ agentIds: [id] });
-          }}
-        >
-          Add Agent
-        </button>
-        <button
-          type="button"
           {...firefoxDynamicButtonProps}
           aria-label="Add node"
           disabled={!registry || !localAuthoringEnabled}
@@ -4790,6 +4774,35 @@ function WorkbenchBody({
             </div>
           ) : null}
         </div>
+        <button
+          type="button"
+          {...firefoxDynamicButtonProps}
+          aria-label="Add Agent"
+          title="Add an Agent to chat with on the canvas"
+          disabled={!canEditProject}
+          {...stylex.props(s.railButton)}
+          onClick={() => {
+            const id = createUuid();
+            applyAuthoringCommands([
+              {
+                kind: "add_agent",
+                agent: {
+                  id,
+                  name: "Agent",
+                  instructions: "",
+                  model: { kind: "deployment" },
+                  position: canvasCenter({ x: 480, y: 240 }),
+                  width: 360,
+                  height: 480,
+                },
+              },
+            ]);
+            canvasSelection.selectOnly({ agentIds: [id] });
+          }}
+        >
+          <Bot size={14} />
+          <span {...stylex.props(s.railLabel)}>Agent</span>
+        </button>
         <button
           type="button"
           {...firefoxDynamicButtonProps}

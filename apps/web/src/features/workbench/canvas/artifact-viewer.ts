@@ -1,4 +1,4 @@
-import type { AgentNode } from "../agents/AgentCard";
+import type { AgentNode } from "../agents/agent-node";
 import type { ArtifactOriginEdge } from "./artifact-origin-edge";
 import type { Edge, Node } from "@xyflow/react";
 

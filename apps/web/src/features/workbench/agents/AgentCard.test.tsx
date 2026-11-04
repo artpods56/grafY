@@ -1,7 +1,16 @@
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ReactFlowProvider } from "@xyflow/react";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+
+vi.mock("@stylexjs/stylex", () => ({
+  create: <Styles,>(styles: Styles) => styles,
+  keyframes: () => "keyframes",
+  defaultMarker: () => ({}),
+  when: { ancestor: (selector: string) => selector },
+  props: () => ({}),
+}));
+
 import AgentCard from "./AgentCard";
 it("shows configuration only to editors and explains unsaved conversations", () => {
   const data = {
