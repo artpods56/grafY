@@ -1272,6 +1272,40 @@ def test_add_call_node_command_rejects_a_call_cycle() -> None:
     )
 
 
+def test_a_call_node_added_as_an_ordinary_node_is_held_to_the_call_rules() -> None:
+    """The canvas places a call node with ``in_graph(add_node)``, not ``add_call_node``.
+
+    So the same cycle and missing-callee rules have to hold on that path.
+    """
+
+    def place(graph_id: str, callee: str) -> InGraphCommand:
+        return InGraphCommand(
+            graph_id=graph_id,
+            command=AddNodeCommand(
+                node=GraphNode(
+                    kind=CALL_NODE_KIND,
+                    id=f"call-{callee}",
+                    operator_id=callee,
+                    operator_version=CALL_NODE_OPERATOR_VERSION,
+                    position=GraphPoint(x=0, y=0),
+                )
+            ),
+        )
+
+    _, with_caller = apply_project_commands(
+        name="Nightly",
+        document=_project("main", "prepare"),
+        commands=[place("main", "prepare")],
+    )
+    assert with_caller.callees_of("main") == ("prepare",)
+
+    cycle = _reject(document=with_caller, commands=[place("prepare", "main")])
+    assert cycle.error_code == "graph_call_cycle"
+
+    missing = _reject(document=with_caller, commands=[place("main", "ghost")])
+    assert missing.error_code == "missing_callee"
+
+
 def test_remove_graph_command_is_refused_while_a_caller_remains() -> None:
     _, with_caller = apply_project_commands(
         name="Nightly",

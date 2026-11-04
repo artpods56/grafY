@@ -14,8 +14,8 @@ happens when I click / open X" without reading every component.
 ## Route inventory
 
 The App Router derives routes from `src/app`. Each route renders a feature
-component. Dynamic segments are shown as `[segment]`; the workbench graph
-route accepts a real graph UUID **or** the reserved literal `new`.
+component. Dynamic segments are shown as `[segment]`; the workbench
+route accepts a real Project UUID **or** the reserved literal `new`.
 
 | URL | Component | Purpose |
 |---|---|---|
@@ -23,7 +23,7 @@ route accepts a real graph UUID **or** the reserved literal `new`.
 | `/graphs` | `GraphBrowser` | Same browser, "Your work" entry |
 | `/workspaces` | `WorkspacesPage` | Teams & access directory |
 | `/workspaces/[workspaceSlug]` | `WorkspaceOverview` | Team / personal settings |
-| `/workspaces/[workspaceSlug]/graphs/[graphId]` | `Workbench` | The canvas; `graphId` is a UUID or `new` |
+| `/workspaces/[workspaceSlug]/projects/[projectId]` | `Workbench` | The canvas of one Project; `projectId` is a UUID or `new` |
 | `(login)` | `AuthSessionBoundary` | SSO threshold rendered over any route |
 
 > The `/templates` and `/templates/new` routes are gone: the Template aggregate
@@ -89,7 +89,6 @@ uses matters for back-button / history semantics.
 | `<Link>` (`next/link`) | GraphBrowser rows, WorkspaceOverview | Normal push; browser back returns |
 | `router.push(...)` | Programmatic flows (create workspace, open graph, new graph, switch workspace) | Normal push |
 | `router.replace(...)` | Post-save / post-delete / room-terminal redirects | **Replaces** current history entry (back skips it) |
-| `window.open(...)` | Workbench "open module source graph" | New tab |
 | `window.location.assign(...)` | SSO login | Full navigation |
 
 ## Graph
@@ -104,8 +103,8 @@ flowchart TD
     GRAPHS["/graphs — GraphBrowser"]
     WS["/workspaces — Teams & access"]
     WSS["/workspaces/[workspaceSlug] — WorkspaceOverview"]
-    WB_NEW["/workspaces/[slug]/graphs/new — blank canvas"]
-    WB_G["/workspaces/[slug]/graphs/[graphId] — canvas"]
+    WB_NEW["/workspaces/[slug]/projects/new — blank canvas"]
+    WB_G["/workspaces/[slug]/projects/[projectId] — canvas"]
 
     %% Graph discovery → everywhere
     ROOT --> GRAPHS
@@ -147,13 +146,11 @@ flowchart TD
 
     %% Room terminal close (access revoked / graph deleted) — router.replace
     WB_G -. replace .-> WSS
-
-    %% Open module source graph — window.open (new tab)
-    WB_G -. new tab .-> WB_G
 ```
 
-*Dashed edges are `router.replace` (history-replacing) and `window.open` (new
-tab). Solid edges are normal `<Link>` / `router.push`.*
+*Dashed edges are `router.replace` (history-replacing). Solid edges are normal
+`<Link>` / `router.push`. Switching between the Graphs of one Project is not an
+edge: it never changes the address (see below).*
 
 ## Edge detail
 
@@ -164,9 +161,9 @@ Dotted edges replace history; plain edges push.
 
 | Trigger | Destination | Mechanism | Owner |
 |---|---|---|---|
-| Click a graph row | `/workspaces/[slug]/graphs/[id]` | `<Link>` | `graphs/GraphBrowser.tsx` (`GraphRow`) |
-| "New graph" (one location) | `/workspaces/[slug]/graphs/new` | `router.push` | `graphs/GraphBrowser.tsx` (`startGraph`) |
-| "New graph" (choose location dialog) | `/workspaces/[slug]/graphs/new` | `router.push` | `graphs/GraphBrowser.tsx` (dialog) |
+| Click a graph row | `/workspaces/[slug]/projects/[id]` | `<Link>` | `graphs/GraphBrowser.tsx` (`GraphRow`) |
+| "New graph" (one location) | `/workspaces/[slug]/projects/new` | `router.push` | `graphs/GraphBrowser.tsx` (`startGraph`) |
+| "New graph" (choose location dialog) | `/workspaces/[slug]/projects/new` | `router.push` | `graphs/GraphBrowser.tsx` (dialog) |
 | Rail brand / "All graphs" | `/graphs` | `router.push` | `workspaces/WorkspaceLayout.tsx` (`goGraphs`) |
 | Rail "Teams & access" | `/workspaces` | `router.push` | `workspaces/WorkspaceLayout.tsx` |
 | Rail workspace switcher | `/workspaces/[slug]` | `router.push` | `workspaces/WorkspaceLayout.tsx` |
@@ -193,28 +190,30 @@ route segment so the canvas can confirm unsaved changes before swapping.
 
 | Trigger | Destination | Mechanism | Owner |
 |---|---|---|---|
-| Rail "New graph" | `/workspaces/[slug]/graphs/new` | `router.push` | `workspaces/WorkspaceLayout.tsx` |
-| Rail recent graph row | `/workspaces/[slug]/graphs/[id]` | `router.push` | `workspaces/WorkspaceLayout.tsx` |
-| Quick-switch panel row | `/workspaces/[slug]/graphs/[id]` | `router.push` | `workspaces/WorkspaceGraphPanel.tsx` |
-| Save a **new** graph (first save) | `/workspaces/[slug]/graphs/[id]` | `router.replace` | `workbench/ui/useSavedGraphLifecycle.ts` |
-| Delete the **active** graph | `/workspaces/[slug]/graphs/new` | `router.replace` | `workbench/ui/useSavedGraphLifecycle.ts` |
+| Rail "New graph" | `/workspaces/[slug]/projects/new` | `router.push` | `workspaces/WorkspaceLayout.tsx` |
+| Rail recent graph row | `/workspaces/[slug]/projects/[id]` | `router.push` | `workspaces/WorkspaceLayout.tsx` |
+| Quick-switch panel row | `/workspaces/[slug]/projects/[id]` | `router.push` | `workspaces/WorkspaceGraphPanel.tsx` |
+| Save a **new** graph (first save) | `/workspaces/[slug]/projects/[id]` | `router.replace` | `workbench/ui/useSavedGraphLifecycle.ts` |
+| Delete the **active** graph | `/workspaces/[slug]/projects/new` | `router.replace` | `workbench/ui/useSavedGraphLifecycle.ts` |
 | "New graph" already on `new` route | *(no nav)* blank canvas | — | `useSavedGraphLifecycle.ts` (`requestNewGraph`) |
 | Browser history nav / back | current vs route graph id, confirm then push/replace | `router.push` | `useSavedGraphLifecycle.ts` (effect) |
-| Module source graph (node / library) | `/workspaces/[slug]/graphs/[id]` | `window.open` (new tab) | `workbench/ui/Workbench.tsx` (`openGraphInNewTab`) |
 | Room terminal close: access revoked / graph deleted | `/workspaces/[slug]` | `router.replace` | `workbench/ui/Workbench.tsx` |
 | Rail "Save" (existing graph) | *(no nav)* | — | `workbench/ui/Workbench.tsx` |
 | Rail "Runs" / duplicate / delete | *(no nav)* in-canvas panels | — | `workbench/ui/Workbench.tsx` |
 
+### Graphs inside a Project (no navigation)
+
+A Project holds several Graphs, and the canvas shows one at a time. Choosing a
+Graph, adding, renaming or deleting one, stepping into a call node's callee and
+stepping back are all **in-page state**: the address stays
+`/workspaces/[slug]/projects/[projectId]` and no history entry is written. The
+open Graph is a projection of the Project head the room already holds, so
+switching fetches nothing. See [Project Graphs on the canvas](project-graphs.md).
+
 > **Important:** the workbench is keyed/kept alive across graph-id changes within
-> `/workspaces/[slug]/graphs/…` (`graphs/layout.tsx` renders `<Workbench>` for
+> `/workspaces/[slug]/projects/…` (`projects/layout.tsx` renders `<Workbench>` for
 > any supported route id). Route changes are the *boundary* that replaces the
 > canvas draft, so unsaved-change confirmation is enforced before a `push`.
-
-### Module library flows (`WorkspaceLibraryDialog`)
-
-| Trigger | Destination | Mechanism | Owner |
-|---|---|---|---|
-| "Open source graph" (module row) | `/workspaces/[slug]/graphs/[id]` | `router.push` | `workspaces/WorkspaceLibraryDialog.tsx` |
 
 ## Auth / SSO
 
@@ -228,11 +227,11 @@ away.
 ## Reasoning guide
 
 - **"Where do I go to open a graph?"** → `GraphBrowser` rows `<Link>` into
-  `/workspaces/[slug]/graphs/[id]`; the rail and quick-switch use `router.push`
+  `/workspaces/[slug]/projects/[id]`; the rail and quick-switch use `router.push`
   to the same family.
 - **"How does the canvas URL change when I save a new graph?"** → first save
-  calls `router.replace` from `…/graphs/new` to `…/graphs/[id]` so the back
+  calls `router.replace` from `…/projects/new` to `…/projects/[id]` so the back
   button does not land on a blank-draft URL.
 - **"Why is graph switching done in-canvas instead of full page?"** →
-  `graphs/layout.tsx` keeps `<Workbench>` alive across supported route ids, and
+  `projects/layout.tsx` keeps `<Workbench>` alive across supported route ids, and
   `useSavedGraphLifecycle` confirms unsaved changes before a `push`.
