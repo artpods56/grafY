@@ -57,4 +57,19 @@ export const phoneTouch = stylex.create({
     minWidth: { default: "unset", "@media (max-width: 620px)": "44px" },
     minHeight: { default: "unset", "@media (max-width: 620px)": "44px" },
   },
+  /**
+   * The workbench chrome: the canvas dock, the selection toolbar, the activity bar.
+   * These grew to 44px at the workbench's own 720px breakpoint, which is a wider
+   * window than the shell's 620px because a dock that a thumb has to hit sits over a
+   * canvas, not in a page.
+   *
+   * This is not the answer to "should the app have two breakpoints" — issue #211
+   * leaves that open, and a human decides it. It is here so a control can move onto
+   * the kit without quietly losing the target it already had, and so the second
+   * family has a name where a reader can find it.
+   */
+  rail: {
+    minWidth: { default: "unset", "@media (max-width: 720px)": "44px" },
+    minHeight: { default: "unset", "@media (max-width: 720px)": "44px" },
+  },
 });

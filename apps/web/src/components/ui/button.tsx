@@ -9,7 +9,8 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 export type ButtonVariant =
   "primary" | "secondary" | "soft" | "ghost" | "danger" | "plain" | "dashed";
 export type ButtonSize = "xs" | "sm" | "md" | "lg" | "text";
-export type IconButtonVariant = "ghost" | "soft" | "primary" | "danger";
+export type IconButtonVariant =
+  "ghost" | "soft" | "primary" | "danger" | "accent";
 export type IconButtonSize = "xs" | "sm" | "md" | "lg";
 
 type SharedProps = Omit<
@@ -43,6 +44,13 @@ export type IconButtonProps = Omit<SharedProps, "children" | "aria-label"> & {
    * be the `render` target of a Base UI trigger, which passes its own children in.
    */
   children?: React.ReactNode;
+  /**
+   * A native tooltip. Defaults to `label`, because an icon with no text is the
+   * case where one earns its place. Pass `null` where the control already sits in
+   * visible text — a nav toggle beside its heading — and the button stops drawing
+   * a tooltip that only repeats what the person can read.
+   */
+  title?: string | null;
   variant?: IconButtonVariant;
   size?: IconButtonSize;
   shape?: "square" | "round";
@@ -330,6 +338,31 @@ const icon = stylex.create({
     },
     color: tokens.colorText,
   },
+  /**
+   * The rail's tint: the accent at a wash, for the dock's main action and for the
+   * control whose panel is open. Not `primary`, which is the accent itself.
+   */
+  accent: {
+    backgroundColor: {
+      default: tokens.colorAccentSoft,
+      ":hover:not(:disabled)": tokens.colorAccentSoft,
+      ":disabled": "transparent",
+    },
+    color: {
+      default: tokens.colorAccent,
+      ":hover:not(:disabled)": tokens.colorAccent,
+      ":disabled": tokens.colorTextDisabled,
+    },
+  },
+  /**
+   * On the tinted variant a pressed control keeps its tint — on a dock where one
+   * control is tinted all the time, turning the open one grey would make it look
+   * like a different group of controls. It takes a ring instead, and
+   * `aria-pressed` says it to assistive tech either way.
+   */
+  accentPressed: {
+    boxShadow: `inset 0 0 0 1px ${tokens.colorAccent}`,
+  },
 });
 
 function joinClassNames(...names: Array<string | undefined>) {
@@ -414,7 +447,7 @@ export const ButtonLink = React.forwardRef<HTMLAnchorElement, ButtonLinkProps>(
   },
 );
 
-/** Icon-only button, square or round, that labels itself through `label` and can act as a toggle. */
+/** Icon-only button, square or round, in five variants, that labels itself through `label` and can act as a toggle. */
 export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
   function IconButton(
     {
@@ -436,7 +469,8 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       icon[variant],
       icon[size],
       icon[shape],
-      pressed ? icon.pressed : null,
+      pressed && variant !== "accent" ? icon.pressed : null,
+      pressed && variant === "accent" ? icon.accentPressed : null,
       xstyle,
     );
     return (
@@ -444,7 +478,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
         ref={ref}
         {...props}
         aria-label={label}
-        title={title ?? label}
+        title={title === null ? undefined : (title ?? label)}
         aria-pressed={pressed}
         className={joinClassNames(styled.className, className)}
         style={styled.style}

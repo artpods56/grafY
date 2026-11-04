@@ -62,6 +62,7 @@ const iconButtonVariants: IconButtonVariant[] = [
   "soft",
   "primary",
   "danger",
+  "accent",
 ];
 const iconButtonSizes: IconButtonSize[] = ["xs", "sm", "md", "lg"];
 const iconButtonShapes = ["square", "round"] as const;
