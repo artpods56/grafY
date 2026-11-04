@@ -57,6 +57,7 @@ from pydantic_ai.messages import ModelMessage, PartDeltaEvent, PartStartEvent
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
 
+from grafy_api.agents.context import AgentContextReader, instructions_with_context
 from grafy_api.agents.history import history_messages
 from grafy_api.agents.toolbox import AgentToolbox
 from grafy_api.agents.models import (
@@ -260,6 +261,8 @@ class _RunningTurn:
     published_chars: int = 0
     secrets: tuple[str, ...] = ()
     toolbox: AgentToolbox | None = None
+    agent: GraphAgent | None = None
+    graph_document: GraphDocument | None = None
     tool_calls: int = 0
     tool_work: "asyncio.Future[list[ToolResultPayload]] | None" = None
 
@@ -308,8 +311,10 @@ class AgentService:
         partial_interval_seconds: float = AGENT_TEXT_PARTIAL_INTERVAL_SECONDS,
         clock: Callable[[], float] = time.monotonic,
         toolbox_factory: AgentToolboxFactory | None = None,
+        context_reader: AgentContextReader | None = None,
     ) -> None:
         self._toolbox_factory = toolbox_factory
+        self._context_reader = context_reader
         self._unit_of_work_factory = unit_of_work_factory
         self._models = models
         self._publisher: AgentTurnPublisher = (
@@ -567,6 +572,8 @@ class AgentService:
             message_id=message_id,
             secrets=_dial_secrets(admission.resolved),
             toolbox=self._toolbox_for(turn, admission),
+            agent=admission.agent,
+            graph_document=admission.graph_document,
         )
         self._active[turn.conversation_id] = entry
         entry.task = asyncio.create_task(self._run(entry), name=f"agent-turn-{turn.id}")
@@ -666,8 +673,11 @@ class AgentService:
         agent: Agent[None, str | DeferredToolRequests] = Agent(
             entry.model.chat_model,
             # The instructions are the receipt's snapshot, so the canvas can move and this
-            # turn still says what it was told.
-            instructions=entry.turn.instructions or None,
+            # turn still says what it was told. What is connected to the Agent is read now,
+            # once, so one turn works from one consistent view of it.
+            instructions=instructions_with_context(
+                entry.turn.instructions, await self._read_context(entry)
+            ),
             toolsets=[ExternalToolset(_definitions(toolbox))] if toolbox else None,
             output_type=[str, DeferredToolRequests] if toolbox else str,
         )
@@ -712,6 +722,25 @@ class AgentService:
             if deferred is None:
                 return ""
             prompt, history = None, messages
+
+    async def _read_context(self, entry: _RunningTurn):
+        """The Agent's connected context as blocks, or none when nothing can say."""
+
+        if (
+            self._context_reader is None
+            or entry.agent is None
+            or entry.graph_document is None
+            or not entry.agent.context
+        ):
+            return []
+        turn = entry.turn
+        return await self._context_reader.read(
+            workspace_id=turn.workspace_id,
+            project_id=turn.project_id,
+            graph_id=turn.graph_id,
+            agent=entry.agent,
+            document=entry.graph_document,
+        )
 
     async def _call_tools(
         self,

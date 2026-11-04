@@ -55,6 +55,7 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
 )
 from grafy_core.domain.graph_documents import GraphDocument, GraphNode
+from grafy_api.agents.context import AgentContextReader
 from grafy_api.agents.turns import AgentToolboxFactory
 from grafy_core.kernel.project import GraphDefinition, ProjectDocument
 from grafy_core.runtime.in_memory import InMemoryDataStore, InMemoryUnitOfWork
@@ -426,8 +427,10 @@ class TurnHarness:
         store: InMemoryDataStore | None = None,
         nodes: Sequence[GraphNode] = (),
         toolbox_factory: AgentToolboxFactory | None = None,
+        context_reader: AgentContextReader | None = None,
     ) -> None:
         self.toolbox_factory = toolbox_factory
+        self.context_reader = context_reader
         self.head = head(agents=agents, nodes=nodes)
         self.store = store if store is not None else InMemoryDataStore()
         self.clock = clock if clock is not None else FakeClock()
@@ -498,6 +501,7 @@ class TurnHarness:
             ),
             clock=self.clock,
             toolbox_factory=self.toolbox_factory,
+            context_reader=self.context_reader,
         )
         self.services.append(service)
         self.service = service
