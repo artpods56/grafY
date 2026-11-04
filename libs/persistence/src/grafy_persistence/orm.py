@@ -1,6 +1,7 @@
 from sqlalchemy.orm import registry
 
 from grafy_core.artifacts import ArtifactObject
+from grafy_core.domain.agent_keys import EncryptedAgentKey
 from grafy_core.domain.collaboration import ProjectHead
 from grafy_core.domain.identity import (
     AuthSession,
@@ -49,6 +50,10 @@ def start_mappers() -> None:
     mapper_registry.map_imperatively(
         EncryptedNodeSecret,
         schema.node_secrets,
+    )
+    mapper_registry.map_imperatively(
+        EncryptedAgentKey,
+        schema.agent_keys,
     )
     mapper_registry.map_imperatively(User, schema.users)
     mapper_registry.map_imperatively(OidcIdentity, schema.oidc_identities)

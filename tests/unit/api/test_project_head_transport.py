@@ -88,8 +88,11 @@ def test_head_serializes_metadata_and_the_document_only(
         "edges",
         "origins",
         "presentation",
+        "agents",
     }
     assert graph["document"]["nodes"] == []
+    # An Agent on the canvas travels with the Graph it was placed on, so a head carries them.
+    assert graph["document"]["agents"] == []
     assert graph["document"]["presentation"] == {
         "viewers": [],
         "links": [],

@@ -38,6 +38,7 @@ function graphDocument(
     nodes: [],
     edges: [],
     origins: [],
+    agents: [],
     presentation: { viewers: [], links: [], bindings: [], annotations: [] },
     ...overrides,
   };
@@ -67,6 +68,7 @@ const document: AuthoredGraphDocument = {
   ],
   edges: [],
   origins: [],
+  agents: [],
 };
 
 /** The head of the Project the caller is editing: it holds both Graphs. */
@@ -277,6 +279,7 @@ describe("room-command-bridge", () => {
           nodes: [scopedNode],
           edges: [],
           origins: [],
+          agents: [],
         },
       },
       document,
@@ -295,6 +298,7 @@ describe("room-command-bridge", () => {
           nodes: [scopedNodeOnTheWire],
           edges: [],
           origins: [],
+          agents: [],
           presentation: {
             viewers: [],
             links: [],
@@ -338,6 +342,7 @@ describe("room-command-bridge", () => {
           nodes: [scopedNode],
           edges: [],
           origins: [],
+          agents: [],
           presentation: {
             viewers: [],
             links: [],
@@ -359,6 +364,7 @@ describe("room-command-bridge", () => {
           nodes: [scopedNodeOnTheWire],
           edges: [],
           origins: [],
+          agents: [],
           presentation: {
             viewers: [],
             links: [],
@@ -827,5 +833,134 @@ describe("room-command-bridge", () => {
     expect(afterRename.document.graphs[0]).toBe(graphsBefore[0]);
     expect(afterRename.document.graphs[1]).toBe(graphsBefore[1]);
     expect(afterRename.collaboration_sequence).toBe(5);
+  });
+});
+
+describe("room-command-bridge agents", () => {
+  /** A card as the canvas holds it: what it is called, what it was told, where it sits. */
+  const scribe: AuthoredGraphDocument["agents"][number] = {
+    id: "agent-scribe",
+    name: "Scribe",
+    instructions: "Read the table back to me",
+    model: {
+      kind: "custom",
+      endpoint: "https://models.example/v1",
+      model: "some-model",
+    },
+    position: { x: 320, y: 40 },
+    width: 360,
+    height: 480,
+  };
+
+  function agentsOf(target: CollaborativeHead, graphId: string) {
+    return graphOf(target, graphId)?.document.agents ?? [];
+  }
+
+  it("carries a new card out, back, and into the head it addressed", () => {
+    // Mutable on purpose: the projection has to copy. A card edited after its command left
+    // must not change what the room was sent, nor what the head now holds.
+    const draft = { ...scribe, position: { x: 320, y: 40 } };
+    const added = toRoomGraphCommand(
+      { kind: "add_agent", agent: draft },
+      document,
+      GRAPH_ID,
+    );
+
+    if (added?.kind !== "in_graph" || added.command.kind !== "add_agent") {
+      throw new Error("Expected an addressed add_agent");
+    }
+    // The Graph's cards belong to the Graph the command named, so the address is half the
+    // command and the body the other half.
+    expect(added.graph_id).toBe(GRAPH_ID);
+    expect(added.command.agent).toEqual(scribe);
+    expect(toLocalGraphCommand(added, document, GRAPH_ID)).toEqual({
+      kind: "add_agent",
+      agent: scribe,
+    });
+
+    const replayed = applyRoomCommandToHead(head, added, 4);
+    expect(agentsOf(replayed, GRAPH_ID)).toEqual([scribe]);
+    // The card belongs to the Graph the command named, not to the Project's other ones.
+    expect(agentsOf(replayed, OTHER_GRAPH_ID)).toEqual([]);
+    expect(replayed.collaboration_sequence).toBe(4);
+
+    draft.name = "Edited on this tab";
+    draft.position.x = 999;
+    expect(agentsOf(replayed, GRAPH_ID)[0]?.name).toBe("Scribe");
+    expect(agentsOf(replayed, GRAPH_ID)[0]?.position).toEqual({
+      x: 320,
+      y: 40,
+    });
+  });
+
+  it("reconfigures a card from the wire with the model choice it now carries", () => {
+    const withCard = applyRoomCommandToHead(
+      head,
+      toInGraphCommand(GRAPH_ID, { kind: "add_agent", agent: scribe }),
+      4,
+    );
+
+    const configured = toInGraphCommand(GRAPH_ID, {
+      kind: "configure_agent",
+      agent: { ...scribe, model: { kind: "deployment" } },
+    });
+    const replayed = applyRoomCommandToHead(withCard, configured, 5);
+
+    expect(agentsOf(replayed, GRAPH_ID)).toEqual([
+      { ...scribe, model: { kind: "deployment" } },
+    ]);
+  });
+
+  it("removes a card by id and leaves the rest of the canvas alone", () => {
+    const other = { ...scribe, id: "agent-other", name: "Other" };
+    const withCards = applyRoomCommandToHead(
+      head,
+      toInGraphCommand(GRAPH_ID, { kind: "add_agent", agent: scribe }),
+      4,
+    );
+    const withBoth = applyRoomCommandToHead(
+      withCards,
+      toInGraphCommand(GRAPH_ID, { kind: "add_agent", agent: other }),
+      5,
+    );
+
+    const replayed = applyRoomCommandToHead(
+      withBoth,
+      toInGraphCommand(GRAPH_ID, { kind: "remove_agent", agent_id: scribe.id }),
+      6,
+    );
+
+    expect(agentsOf(replayed, GRAPH_ID).map((agent) => agent.id)).toEqual([
+      "agent-other",
+    ]);
+    expect(nodesOf(replayed, GRAPH_ID).map((node) => node.id)).toEqual(["a"]);
+  });
+
+  it("reports an agent command for another Graph as not ours to apply", () => {
+    const forOtherGraph = toInGraphCommand(OTHER_GRAPH_ID, {
+      kind: "remove_agent",
+      agent_id: scribe.id,
+    });
+
+    // The caller's canvas shows one Graph: an accepted command addressed to another must not
+    // be applied to it, and must not look like a command this tab cannot understand.
+    expect(toLocalGraphCommand(forOtherGraph, document, GRAPH_ID)).toBeNull();
+  });
+
+  it("saves the cards of a Graph through the whole-document command", () => {
+    const draft = {
+      name: "With a card",
+      document: graphDocument({ agents: [scribe] }),
+    };
+
+    const room = toRoomReplaceDocumentCommand(draft, GRAPH_ID);
+
+    if (room?.kind !== "in_graph" || room.command.kind !== "replace_document") {
+      throw new Error("Expected an addressed replace_document");
+    }
+    expect(room.command.document.agents).toEqual([scribe]);
+
+    const replayed = applyRoomCommandToHead(head, room, 7);
+    expect(agentsOf(replayed, GRAPH_ID)).toEqual([scribe]);
   });
 });

@@ -1,5 +1,14 @@
 """SQLAlchemy repositories, grouped by the feature they persist."""
 
+from .agent_conversations import (
+    SqlAgentConversationRepository as SqlAgentConversationRepository,
+)
+from .agent_keys import (
+    SqlAgentKeyRepository as SqlAgentKeyRepository,
+)
+from .agent_turns import (
+    SqlAgentTurnRepository as SqlAgentTurnRepository,
+)
 from .artifacts import (
     SqlArtifactRepository as SqlArtifactRepository,
 )

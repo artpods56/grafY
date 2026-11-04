@@ -42,6 +42,7 @@ function document(): AuthoredGraphDocument {
       nodes: [node("source"), node("target")],
       edges: [edge],
       origins: [],
+      agents: [],
     }),
   );
 }
@@ -53,6 +54,7 @@ describe("authored graph document", () => {
       nodes: [{ ...node("call"), kind: "call" }],
       edges: [],
       origins: [],
+      agents: [],
     });
     expect(authoredGraphDocument(request).nodes[0]?.kind).toBe("call");
     expect(request.document.nodes[0]?.kind).toBe("call");
@@ -69,6 +71,7 @@ describe("authored graph document", () => {
         nodes: value.nodes,
         edges: value.edges,
         origins: [],
+        agents: value.agents,
         presentation: {
           viewers: [],
           links: [],
@@ -139,6 +142,29 @@ describe("authored graph document", () => {
           },
         ],
         origins: [],
+        agents: [
+          {
+            id: "legacy-agent",
+            name: "Scribe",
+            instructions: "Read the table back to me",
+            model: {
+              kind: "custom",
+              endpoint: "https://models.example/v1",
+              model: "some-model",
+            },
+            position: { x: 40, y: 60 },
+            width: 320,
+            height: 240,
+          },
+          {
+            id: "deployment-agent",
+            name: "Assistant",
+            instructions: "",
+            model: { kind: "deployment" },
+            width: 360,
+            height: 480,
+          },
+        ],
         presentation: {
           viewers: [],
           links: [],
@@ -203,6 +229,29 @@ describe("authored graph document", () => {
           },
         ],
         origins: [],
+        agents: [
+          {
+            id: "legacy-agent",
+            name: "Scribe",
+            instructions: "Read the table back to me",
+            model: {
+              kind: "custom",
+              endpoint: "https://models.example/v1",
+              model: "some-model",
+            },
+            position: { x: 40, y: 60 },
+            width: 320,
+            height: 240,
+          },
+          {
+            id: "deployment-agent",
+            name: "Assistant",
+            instructions: "",
+            model: { kind: "deployment" },
+            width: 360,
+            height: 480,
+          },
+        ],
         presentation: {
           viewers: [],
           links: [],
@@ -250,6 +299,7 @@ describe("authored graph document", () => {
         nodes: [runtimeNode as unknown as SavedGraphDocument["nodes"][number]],
         edges: [runtimeEdge as unknown as SavedGraphDocument["edges"][number]],
         origins: [],
+        agents: [],
         presentation: {
           viewers: [],
           links: [],
@@ -495,6 +545,25 @@ describe("authored graph document", () => {
       origins: [],
       nodes: [runtimeNode],
       edges: [runtimeEdge],
+      agents: [
+        {
+          id: "replacement-agent",
+          name: "Scribe",
+          instructions: "Read the table back",
+          model: {
+            kind: "custom",
+            endpoint: "https://models.example/v1",
+            model: "some-model",
+            selected: true,
+          },
+          position: { x: 40, y: 60, selected: true, dragging: true },
+          width: 320,
+          height: 240,
+          selected: true,
+          presence: { userId: "other-user" },
+          internals: { measured: true },
+        },
+      ],
     };
     result = applyGraphCommand(result, {
       kind: "replace_document",
@@ -513,6 +582,26 @@ describe("authored graph document", () => {
     expectNoRuntimeFields(result.edges[0]?.projection as object);
     expectNoRuntimeFields(result.edges[0]?.conversion_path?.[0] as object);
     expectNoRuntimeFields(result.edges[0]?.route_offset as object);
+    // An Agent is document content like a node, so it crosses the same boundary: the card's
+    // own selection, measured size and peer presence stay on this tab.
+    expectNoRuntimeFields(result.agents[0] as object);
+    expectNoRuntimeFields(result.agents[0]?.position as object);
+    expectNoRuntimeFields(result.agents[0]?.model as object);
+    expect(result.agents).toEqual([
+      {
+        id: "replacement-agent",
+        name: "Scribe",
+        instructions: "Read the table back",
+        model: {
+          kind: "custom",
+          endpoint: "https://models.example/v1",
+          model: "some-model",
+        },
+        position: { x: 40, y: 60 },
+        width: 320,
+        height: 240,
+      },
+    ]);
   });
 
   it("applies a compound node removal and its incident edges atomically", () => {
@@ -789,6 +878,7 @@ describe("saved graph request presentation", () => {
         nodes: [node("source")],
         edges: [],
         origins: [],
+        agents: [],
       },
       {
         viewers: [viewer("artifact-viewer-1"), viewer("artifact-viewer-2")],
@@ -813,7 +903,13 @@ describe("saved graph request presentation", () => {
 
   it("drops card wiring whose viewer is gone and keeps the cards themselves", () => {
     const request = createSavedGraphRequest(
-      { name: "Cards", nodes: [node("source")], edges: [], origins: [] },
+      {
+        name: "Cards",
+        nodes: [node("source")],
+        edges: [],
+        origins: [],
+        agents: [],
+      },
       {
         viewers: [viewer("artifact-viewer-1")],
         links: [
@@ -849,10 +945,146 @@ describe("saved graph request presentation", () => {
     };
 
     const request = createSavedGraphRequest(
-      { name: "Agreeing", nodes: [node("source")], edges: [], origins: [] },
+      {
+        name: "Agreeing",
+        nodes: [node("source")],
+        edges: [],
+        origins: [],
+        agents: [],
+      },
       presentation,
     );
 
     expect(request.document.presentation).toBe(presentation);
+  });
+});
+
+describe("agent commands", () => {
+  const scribe = {
+    id: "agent-scribe",
+    name: "Scribe",
+    instructions: "Read the table back to me",
+    model: {
+      kind: "custom" as const,
+      endpoint: "https://models.example/v1",
+      model: "some-model",
+    },
+    position: { x: 320, y: 40 },
+    width: 360,
+    height: 480,
+  };
+
+  function graphWith(
+    agents: AuthoredGraphDocument["agents"],
+  ): AuthoredGraphDocument {
+    return {
+      name: "With agents",
+      nodes: [node("source")],
+      edges: [],
+      origins: [],
+      agents,
+    };
+  }
+
+  it("adds a card and keeps the cards that were already there", () => {
+    const result = applyGraphCommand(graphWith([]), {
+      kind: "add_agent",
+      agent: scribe,
+    });
+
+    expect(result.agents).toEqual([scribe]);
+  });
+
+  it("refuses a second card with an id the canvas already carries", () => {
+    expect(() =>
+      applyGraphCommand(graphWith([scribe]), {
+        kind: "add_agent",
+        agent: { ...scribe, name: "Impostor" },
+      }),
+    ).toThrow(/duplicate agent/);
+  });
+
+  it("switches a card's model choice whole, dropping the endpoint it no longer uses", () => {
+    const other = { ...scribe, id: "agent-other", name: "Other" };
+    const result = applyGraphCommand(graphWith([scribe, other]), {
+      kind: "configure_agent",
+      agent: {
+        ...scribe,
+        name: "Scribe the second",
+        model: { kind: "deployment" as const },
+      },
+    });
+
+    // The deployment choice carries no endpoint and no model name: keeping the custom pair
+    // would leave a card that says one thing on its face and dials another.
+    expect(result.agents).toEqual([
+      {
+        ...scribe,
+        name: "Scribe the second",
+        model: { kind: "deployment" },
+      },
+      other,
+    ]);
+  });
+
+  it("refuses to configure a card that is not on the canvas", () => {
+    expect(() =>
+      applyGraphCommand(graphWith([]), {
+        kind: "configure_agent",
+        agent: scribe,
+      }),
+    ).toThrow(/missing agent/);
+  });
+
+  it("removes one card and is silent about a card that is already gone", () => {
+    const other = { ...scribe, id: "agent-other" };
+    const once = applyGraphCommand(graphWith([scribe, other]), {
+      kind: "remove_agent",
+      agent_id: scribe.id,
+    });
+    const twice = applyGraphCommand(once, {
+      kind: "remove_agent",
+      agent_id: scribe.id,
+    });
+
+    expect(once.agents.map((agent) => agent.id)).toEqual(["agent-other"]);
+    expect(twice.agents.map((agent) => agent.id)).toEqual(["agent-other"]);
+  });
+
+  it("leaves every node's freshness alone when a card changes", () => {
+    const graph = graphWith([scribe]);
+
+    for (const command of [
+      { kind: "add_agent" as const, agent: { ...scribe, id: "agent-new" } },
+      { kind: "configure_agent" as const, agent: scribe },
+      { kind: "remove_agent" as const, agent_id: scribe.id },
+    ]) {
+      expect(executionInvalidatedNodeIds(graph, command)).toEqual(new Set());
+    }
+  });
+
+  it("saves the cards a person was looking at, and no conversation", () => {
+    const request = createSavedGraphRequest(graphWith([scribe]));
+
+    expect(request.document.agents).toEqual([scribe]);
+    // A thread is a record the server keeps, not canvas content: nothing here may carry one.
+    expect(JSON.stringify(request)).not.toContain("conversation");
+    expect(JSON.stringify(request)).not.toContain("turn");
+    expect(JSON.stringify(request)).not.toContain("key");
+  });
+
+  it("re-reads the cards a saved document carries", () => {
+    const saved: CreateSavedGraphRequest = {
+      name: "From the server",
+      document: {
+        schema_version: 7,
+        nodes: [node("source")],
+        edges: [],
+        origins: [],
+        agents: [scribe],
+      } as SavedGraphDocument,
+    };
+
+    expect(authoredGraphDocument(saved).agents).toEqual([scribe]);
   });
 });

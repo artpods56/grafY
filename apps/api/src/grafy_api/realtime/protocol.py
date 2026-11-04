@@ -5,6 +5,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
+from grafy_core.domain.agent_conversations import (
+    AgentConversationEventPayload,
+    AgentConversationTurnOutcome,
+)
+from grafy_core.domain.agent_turns import AgentTurnStatus
 from grafy_core.domain.collaboration import ProjectCommand
 from grafy_core.domain.identity import WorkspaceCapability
 
@@ -216,6 +221,106 @@ class InstancesChangedMessage(RoomProtocolModel):
     changed: tuple[InstanceStateEntry, ...] = ()
     removed: tuple[InstanceKeyEntry, ...] = ()
     head_sequence: int = Field(ge=0)
+
+
+AGENT_DELTA_MAX_TEXT_CHARS = 8_192
+"""The longest one transient frame may carry.
+
+A coalescing window of a model's fastest output stays well inside this, and the bound exists
+so a frame cannot outgrow the socket buffer it travels on: what a reader does with an
+oversized answer is read it out of the conversation, where it is stored in full.
+"""
+
+
+class AgentTurnSummary(RoomProtocolModel):
+    """What a reader may know about one turn: its scope, its state, and what it is running on.
+
+    No key material, and no message text: the answer is an event of the conversation, and a
+    frame that carried a copy of it would be a second, weaker copy of the record.
+    """
+
+    turn_id: UUID
+    conversation_id: UUID
+    graph_id: str = Field(min_length=1, max_length=255)
+    agent_id: str = Field(min_length=1, max_length=255)
+    status: AgentTurnStatus
+    model_source: Literal["deployment", "agent"]
+    model_name: str = Field(min_length=1, max_length=255)
+    requested_by_user_id: UUID
+    created_at: datetime
+
+
+class AgentConversationEventEntry(RoomProtocolModel):
+    """One stored conversation event, told with the sequence that orders it.
+
+    The payload is Grafy's own event vocabulary, the same one `GET .../events` answers with,
+    so a client reads one shape from the room and from a resync rather than reconciling two.
+    """
+
+    conversation_id: UUID
+    sequence: int = Field(ge=1)
+    turn_id: UUID
+    payload: AgentConversationEventPayload
+    created_at: datetime
+
+
+class AgentTurnStartedMessage(RoomProtocolModel):
+    """A turn was admitted: its receipt exists and its model is being dialled."""
+
+    protocol_version: Literal[1] = PROTOCOL_VERSION
+    type: Literal["agent.turn.started"] = "agent.turn.started"
+    turn: AgentTurnSummary
+
+
+class AgentEventAppendedMessage(RoomProtocolModel):
+    """One event became durable. This is the authoritative telling; a delta is not.
+
+    It carries the question as well as the answer, so a second tab sees the thread grow the
+    way the tab that asked did, and a reader that is not sure it kept up can compare
+    ``sequence`` with what it holds and resync from the route.
+    """
+
+    protocol_version: Literal[1] = PROTOCOL_VERSION
+    type: Literal["agent.event.appended"] = "agent.event.appended"
+    graph_id: str = Field(min_length=1, max_length=255)
+    agent_id: str = Field(min_length=1, max_length=255)
+    event: AgentConversationEventEntry
+
+
+class AgentDeltaMessage(RoomProtocolModel):
+    """Streamed text that is not stored yet, and may never arrive.
+
+    ``offset`` counts characters of the final message, so a reader that missed a frame knows
+    how much it is missing and can show a gap instead of pretending the text is contiguous.
+    The stored assistant message replaces whatever was streamed.
+    """
+
+    protocol_version: Literal[1] = PROTOCOL_VERSION
+    type: Literal["agent.delta"] = "agent.delta"
+    graph_id: str = Field(min_length=1, max_length=255)
+    agent_id: str = Field(min_length=1, max_length=255)
+    conversation_id: UUID
+    turn_id: UUID
+    message_id: UUID
+    offset: int = Field(ge=0)
+    text: str = Field(min_length=1, max_length=AGENT_DELTA_MAX_TEXT_CHARS)
+
+
+class AgentTurnFinishedMessage(RoomProtocolModel):
+    """A turn left the running state, and its events are all stored by now.
+
+    ``detail`` is the redacted account the receipt carries — a failure class and a scrubbed
+    message — never a credential or a provider payload.
+    """
+
+    protocol_version: Literal[1] = PROTOCOL_VERSION
+    type: Literal["agent.turn.finished"] = "agent.turn.finished"
+    graph_id: str = Field(min_length=1, max_length=255)
+    agent_id: str = Field(min_length=1, max_length=255)
+    conversation_id: UUID
+    turn_id: UUID
+    outcome: AgentConversationTurnOutcome
+    detail: str | None = Field(default=None, max_length=2_000)
 
 
 class RoomReadyMessage(RoomProtocolModel):

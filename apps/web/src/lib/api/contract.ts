@@ -69,6 +69,15 @@ export type GeoFeatureQuery = Schemas["GeoFeatureQueryResponse"];
 
 export type SavedGraphDocument = Schemas["GraphDocument"];
 export type SavedGraphNode = Schemas["GraphNode"];
+/**
+ * One Agent on the canvas (ADR 0021): its name, instructions, model choice and place.
+ *
+ * It is document content, not a node — an Agent's conversations are a separate, append-only
+ * record, and this is only what the card says it is.
+ */
+export type SavedGraphAgent = Schemas["GraphAgent"];
+export type AgentModelChoice =
+  Schemas["DeploymentAgentModel"] | Schemas["CustomAgentModel"];
 export type SavedGraphEdge = Schemas["GraphEdge"];
 export type SavedGraphOrigin = Schemas["GraphOrigin"];
 export type GraphPresentationDocument = Schemas["GraphPresentationDocument"];

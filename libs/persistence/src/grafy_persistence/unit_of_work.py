@@ -10,6 +10,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
 
 from grafy_core.domain.errors import ConcurrentWriteError
+from grafy_core.ports.agent_conversations import (
+    AgentConversationRepositoryPort,
+    AgentConversationUnitOfWorkPort,
+)
+from grafy_core.ports.agent_keys import (
+    AgentKeyRepositoryPort,
+    AgentKeyUnitOfWorkPort,
+)
+from grafy_core.ports.agent_turns import (
+    AgentTurnRepositoryPort,
+    AgentTurnUnitOfWorkPort,
+)
 from grafy_core.ports.artifacts import ArtifactRepositoryPort
 from grafy_core.ports.collaboration import (
     CollaborationRepositoryPort,
@@ -37,6 +49,9 @@ from grafy_core.ports.workbench import WorkbenchUnitOfWorkPort
 
 from grafy_persistence.adapters.repositories import (
     SqlProjectRepository,
+    SqlAgentConversationRepository,
+    SqlAgentKeyRepository,
+    SqlAgentTurnRepository,
     SqlArtifactRepository,
     SqlNodeSecretRepository,
     SqlResultStoreRepository,
@@ -57,6 +72,9 @@ class _SqlAlchemyUnitOfWorkState:
     results: ResultStoreRepositoryPort
     artifacts: ArtifactRepositoryPort
     node_secrets: NodeSecretRepositoryPort
+    agent_keys: AgentKeyRepositoryPort
+    agent_conversations: AgentConversationRepositoryPort
+    agent_turns: AgentTurnRepositoryPort
     identity: IdentityRepositoryPort
     security_audit: SecurityAuditRepositoryPort
     uploads: UploadRepositoryPort
@@ -171,6 +189,9 @@ class SqlAlchemyUnitOfWork(
     ProjectUnitOfWorkPort,
     RunUnitOfWorkPort,
     NodeSecretUnitOfWorkPort,
+    AgentKeyUnitOfWorkPort,
+    AgentConversationUnitOfWorkPort,
+    AgentTurnUnitOfWorkPort,
     IdentityUnitOfWorkPort,
     UploadUnitOfWorkPort,
     CollaborationUnitOfWorkPort,
@@ -225,6 +246,21 @@ class SqlAlchemyUnitOfWork(
 
     @property
     @override
+    def agent_keys(self) -> AgentKeyRepositoryPort:
+        return self._entered_state().agent_keys
+
+    @property
+    @override
+    def agent_conversations(self) -> AgentConversationRepositoryPort:
+        return self._entered_state().agent_conversations
+
+    @property
+    @override
+    def agent_turns(self) -> AgentTurnRepositoryPort:
+        return self._entered_state().agent_turns
+
+    @property
+    @override
     def identity(self) -> IdentityRepositoryPort:
         return self._entered_state().identity
 
@@ -261,6 +297,9 @@ class SqlAlchemyUnitOfWork(
                 results=SqlResultStoreRepository(session),
                 artifacts=SqlArtifactRepository(session),
                 node_secrets=SqlNodeSecretRepository(session),
+                agent_keys=SqlAgentKeyRepository(session),
+                agent_conversations=SqlAgentConversationRepository(session),
+                agent_turns=SqlAgentTurnRepository(session),
                 identity=SqlIdentityRepository(session),
                 security_audit=SqlSecurityAuditRepository(session),
                 uploads=SqlUploadRepository(session),

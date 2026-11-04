@@ -13,6 +13,18 @@ from fastapi.utils import is_body_allowed_for_status_code
 from starlette.routing import BaseRoute
 
 from grafy_api.app_state import get_identity
+from grafy_api.agents.conversations import AgentConversationForkRangeError
+from grafy_api.agents.keys import (
+    AgentKeyConfigurationError,
+    AgentKeyDeclarationError,
+    AgentKeyValueError,
+)
+from grafy_api.agents.models import AgentModelConfigurationError
+from grafy_api.agents.turns import (
+    AgentTurnConflictError,
+    AgentTurnRequestError,
+    AgentTurnStoppingError,
+)
 from grafy_api.diagnostics import (
     DiagnosticContext,
     diagnostic_scope,
@@ -33,6 +45,7 @@ from grafy_core.domain.errors import (
     NotFoundError,
     UserDisabledError,
 )
+from grafy_core.ports.agent_turns import AgentTurnBusyError
 
 
 logger = structlog.get_logger(__name__)
@@ -453,12 +466,56 @@ class _HttpMapping:
     headers: Mapping[str, str] | None = None
 
 
+def _agent_conflict(detail: str, *, code: str, **extra: object) -> dict[str, object]:
+    """A refused Agent write, with the machine-readable half the client branches on.
+
+    The message is for a person and gets reworded; the code is stable, and the ids say which
+    turn the refusal was about so a retried send or a pressed twice does not have to guess.
+    """
+
+    return {"code": code, "message": detail, **extra}
+
+
 _HTTP_MAPPINGS: dict[type[Exception], _HttpMapping] = {
     UploadTooLargeError: _HttpMapping(413),
     ArtifactContentUnavailableError: _HttpMapping(500),
     NodeSecretValueError: _HttpMapping(422),
     RunRejectedError: _HttpMapping(422),
     RunNotFoundError: _HttpMapping(404),
+    # An Agent send that was not admitted. The distinction each one carries is the client's:
+    # a busy conversation means wait for the turn it names, a conflict means the caller's own
+    # id was reused for different text, and an unprocessable send will fail again if repeated.
+    AgentTurnBusyError: _HttpMapping(
+        409,
+        lambda error: _agent_conflict(
+            str(error),
+            code="agent_conversation_busy",
+            turn_id=(
+                None if error.running_turn_id is None else str(error.running_turn_id)
+            ),
+        ),
+    ),
+    AgentTurnConflictError: _HttpMapping(
+        409,
+        lambda error: _agent_conflict(
+            str(error), code="agent_turn_id_reused", turn_id=str(error.turn_id)
+        ),
+    ),
+    AgentTurnRequestError: _HttpMapping(
+        422,
+        lambda error: _agent_conflict(str(error), code="agent_turn_rejected"),
+    ),
+    AgentConversationForkRangeError: _HttpMapping(
+        422,
+        lambda error: _agent_conflict(str(error), code="agent_fork_sequence_unknown"),
+    ),
+    # Nothing can be dialed as configured, which is an operator's answer rather than the
+    # caller's: the same shape a node secret with no deployment key gives.
+    AgentModelConfigurationError: _HttpMapping(503),
+    AgentKeyConfigurationError: _HttpMapping(503),
+    AgentTurnStoppingError: _HttpMapping(503),
+    AgentKeyValueError: _HttpMapping(422),
+    AgentKeyDeclarationError: _HttpMapping(404),
 }
 
 

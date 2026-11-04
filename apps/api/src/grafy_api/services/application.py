@@ -21,8 +21,13 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_shared.config import EgressConfig
 
 from grafy_api.app_state import AppIdentity, AppResources
+from grafy_api.agents.conversations import AgentConversationService
+from grafy_api.agents.keys import AgentKeyService
+from grafy_api.agents.models import AgentModelResolver
+from grafy_api.agents.turns import AgentService
 from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
+from grafy_api.realtime.agent_events import ProjectAgentEvents
 from grafy_api.realtime.hub import ProjectRoomHub
 from grafy_api.realtime.run_events import ProjectRunEvents
 from grafy_api.runs.service import RunService
@@ -131,6 +136,29 @@ async def build_app_resources(
         plugin_registry=registry,
         encryption_key=settings.keys.credential_encryption_key,
     )
+    # An Agent's own key is sealed with the same deployment key as a node secret, and
+    # its endpoint is dialed against the same egress grants the workbench was built with.
+    agent_keys = AgentKeyService(
+        unit_of_work_factory=new_unit_of_work,
+        encryption_key=settings.keys.credential_encryption_key,
+    )
+    agent_conversations = AgentConversationService(
+        unit_of_work_factory=new_unit_of_work
+    )
+    agent_models = AgentModelResolver(
+        settings=settings.agents,
+        keys=agent_keys,
+        egress_policy=workbench_egress_policy(settings.egress),
+    )
+    # A turn's frames travel on the same hub the Project room reads, so the tab that sent is
+    # served by the same delivery as every other tab watching the Project. The runtime keeps
+    # its own bounded, lossy queue in front of this, so a reader that stops draining loses
+    # frames and never slows a turn or leaves a receipt unwritten.
+    agent_turns = AgentService(
+        unit_of_work_factory=new_unit_of_work,
+        models=agent_models,
+        publisher=ProjectAgentEvents(hub=project_room_hub),
+    )
     workbench = build_workbench_components(
         plugin_registry=registry,
         workspace=app.workspace,
@@ -168,6 +196,10 @@ async def build_app_resources(
         runs=runs,
         collaboration=collaboration,
         node_secrets=node_secrets,
+        agent_keys=agent_keys,
+        agent_conversations=agent_conversations,
+        agent_models=agent_models,
+        agent_turns=agent_turns,
         project_room_hub=project_room_hub,
     )
     try:
@@ -196,6 +228,11 @@ async def _recover(
         return
     interrupted = await resources.runs.recover_after_restart()
     logger.info("unfinished_runs_interrupted count=%s", len(interrupted))
+    # A turn's task died with the process that ran it, so its receipt is what says it was
+    # running. Marking it interrupted is what releases the conversation for a new send;
+    # leaving it running would hold the thread busy with nothing left to stop.
+    interrupted_turns = await resources.agent_turns.recover_after_restart()
+    logger.info("unfinished_agent_turns_interrupted count=%s", len(interrupted_turns))
 
 
 async def run_periodic_cleanup(

@@ -222,6 +222,7 @@ function initialDocument(): AuthoredGraphDocument {
       ],
       edges: [],
       origins: [],
+      agents: [],
     }),
   );
 }

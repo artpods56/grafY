@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Annotated, ClassVar, Literal, Self, cast
 
 from pydantic import (
+    AnyHttpUrl,
     BaseModel,
     ConfigDict,
     Field,
@@ -477,8 +478,43 @@ def empty_presentation() -> GraphPresentationDocument:
 SAVED_GRAPH_SCHEMA_VERSION = 7
 
 
+class DeploymentAgentModel(GraphValue):
+    kind: Literal["deployment"] = "deployment"
+
+
+class CustomAgentModel(GraphValue):
+    kind: Literal["custom"] = "custom"
+    endpoint: str = Field(min_length=1, max_length=2048)
+    model: GraphIdentifier
+
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, value: str) -> str:
+        from grafy_core.egress import validated_public_destination
+
+        return str(
+            validated_public_destination(AnyHttpUrl(value), service_name="Agent")
+        )
+
+
+AgentModel = Annotated[
+    DeploymentAgentModel | CustomAgentModel, Field(discriminator="kind")
+]
+
+
+class GraphAgent(GraphValue):
+    id: GraphIdentifier
+    name: GraphIdentifier
+    instructions: str = Field(default="", max_length=100_000)
+    model: AgentModel = Field(default_factory=DeploymentAgentModel)
+    position: GraphPoint = Field(default_factory=lambda: GraphPoint(x=0, y=0))
+    width: float = Field(default=360, ge=260, le=GRAPH_LAYOUT_DIMENSION_MAX)
+    height: float = Field(default=480, ge=96, le=GRAPH_LAYOUT_DIMENSION_MAX)
+
+
 class GraphDocument(GraphValue):
     schema_version: Literal[7] = SAVED_GRAPH_SCHEMA_VERSION
+    agents: tuple[GraphAgent, ...] = ()
     nodes: tuple[GraphNode, ...] = ()
     edges: tuple[GraphEdge, ...] = ()
     origins: tuple[GraphOrigin, ...] = ()
@@ -486,6 +522,9 @@ class GraphDocument(GraphValue):
 
     @model_validator(mode="after")
     def validate_structure(self) -> Self:
+        agent_ids = [agent.id for agent in self.agents]
+        if len(agent_ids) != len(set(agent_ids)):
+            raise ValueError("Graph Agent ids must be unique")
         node_ids = [node.id for node in self.nodes]
         if len(node_ids) != len(set(node_ids)):
             raise ValueError("Saved graph node ids must be unique")
@@ -600,6 +639,7 @@ class GraphDocument(GraphValue):
         presentation: GraphPresentationDocument | None = None,
     ) -> "GraphDocument":
         return GraphDocument(
+            agents=self.agents,
             nodes=self.nodes if nodes is None else nodes,
             edges=self.edges if edges is None else edges,
             origins=self.origins if origins is None else origins,

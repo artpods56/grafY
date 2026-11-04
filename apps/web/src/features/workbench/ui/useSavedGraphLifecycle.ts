@@ -95,6 +95,10 @@ function documentOfGraph(graph: SavedGraph): DraftGraphDocument {
     origins: graph.document.origins
       ? graph.document.origins.map((origin) => ({ ...origin }))
       : [],
+    // An Agent is canvas content, so opening a Graph has to carry it across like a node: a
+    // document rebuilt field by field that forgot `agents` would save the canvas without the
+    // cards the person was looking at.
+    agents: (graph.document.agents ?? []).map((agent) => ({ ...agent })),
     presentation: presentationOf(graph),
   };
 }
@@ -422,7 +426,7 @@ export function useSavedGraphLifecycle({
     documentGenerationRef.current += 1;
     openRequestRef.current?.abort();
     replaceDocument(
-      { name: NEW_GRAPH_NAME, nodes: [], edges: [], origins: [] },
+      { name: NEW_GRAPH_NAME, nodes: [], edges: [], origins: [], agents: [] },
       [],
     );
     // A blank draft owns no cards. Without this the previous graph's cards stay on the
@@ -681,6 +685,7 @@ export function useSavedGraphLifecycle({
         nodes: [],
         edges: [],
         origins: [],
+        agents: [],
       },
       [],
     );

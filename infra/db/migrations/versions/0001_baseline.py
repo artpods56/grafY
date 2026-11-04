@@ -739,6 +739,221 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_table(
+        "agent_conversations",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("workspace_id", sa.Uuid(), nullable=False),
+        sa.Column("project_id", sa.Uuid(), nullable=False),
+        sa.Column("graph_id", sa.String(length=255), nullable=False),
+        sa.Column("agent_id", sa.String(length=255), nullable=False),
+        sa.Column("author_user_id", sa.Uuid(), nullable=False),
+        sa.Column("title", sa.String(length=500), nullable=False),
+        sa.Column("source_conversation_id", sa.Uuid(), nullable=True),
+        sa.Column("source_sequence", sa.Integer(), nullable=True),
+        sa.Column("next_sequence", sa.BigInteger(), nullable=False),
+        sa.Column("created_at", UTCDateTime(), nullable=False),
+        sa.Column("updated_at", UTCDateTime(), nullable=False),
+        sa.CheckConstraint(
+            "(source_conversation_id IS NULL) = (source_sequence IS NULL)",
+            name=op.f(
+                "ck_agent_conversations_ck_agent_conversations_fork_records_source_and_sequence"
+            ),
+        ),
+        sa.CheckConstraint(
+            "next_sequence >= 1",
+            name=op.f(
+                "ck_agent_conversations_ck_agent_conversations_next_sequence_positive"
+            ),
+        ),
+        sa.CheckConstraint(
+            "source_sequence IS NULL OR source_sequence >= 1",
+            name=op.f(
+                "ck_agent_conversations_ck_agent_conversations_source_sequence_positive"
+            ),
+        ),
+        sa.ForeignKeyConstraint(
+            ["source_conversation_id"],
+            ["agent_conversations.id"],
+            name=op.f(
+                "fk_agent_conversations_source_conversation_id_agent_conversations"
+            ),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name=op.f("fk_agent_conversations_workspace_id_projects"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_conversations")),
+        sa.UniqueConstraint(
+            "workspace_id",
+            "id",
+            name=op.f("uq_agent_conversations_workspace_id_id"),
+        ),
+    )
+    op.create_index(
+        "ix_agent_conversations_workspace_project_graph_agent",
+        "agent_conversations",
+        ["workspace_id", "project_id", "graph_id", "agent_id"],
+        unique=False,
+    )
+    op.create_table(
+        "agent_conversation_events",
+        sa.Column("workspace_id", sa.Uuid(), nullable=False),
+        sa.Column("conversation_id", sa.Uuid(), nullable=False),
+        sa.Column("sequence", sa.BigInteger(), nullable=False),
+        sa.Column("turn_id", sa.Uuid(), nullable=False),
+        sa.Column("kind", sa.String(length=32), nullable=False),
+        sa.Column("payload", sa.JSON(), nullable=False),
+        sa.Column("created_at", UTCDateTime(), nullable=False),
+        sa.CheckConstraint(
+            "sequence >= 1",
+            name=op.f(
+                "ck_agent_conversation_events_ck_agent_conversation_events_sequence_positive"
+            ),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "conversation_id"],
+            ["agent_conversations.workspace_id", "agent_conversations.id"],
+            name=op.f(
+                "fk_agent_conversation_events_workspace_id_agent_conversations"
+            ),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "workspace_id",
+            "conversation_id",
+            "sequence",
+            name=op.f("pk_agent_conversation_events"),
+        ),
+    )
+    op.create_index(
+        "ix_agent_conversation_events_conversation_turn",
+        "agent_conversation_events",
+        ["conversation_id", "turn_id"],
+        unique=False,
+    )
+    op.create_table(
+        "agent_keys",
+        sa.Column("workspace_id", sa.Uuid(), nullable=False),
+        sa.Column("project_id", sa.Uuid(), nullable=False),
+        sa.Column("graph_id", sa.String(length=255), nullable=False),
+        sa.Column("agent_id", sa.String(length=255), nullable=False),
+        sa.Column("key_id", sa.String(length=64), nullable=False),
+        sa.Column("aad_version", sa.Integer(), nullable=False),
+        sa.Column("nonce", sa.LargeBinary(length=12), nullable=False),
+        sa.Column("ciphertext", sa.LargeBinary(), nullable=False),
+        sa.Column("set_by_user_id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", UTCDateTime(), nullable=False),
+        sa.Column("updated_at", UTCDateTime(), nullable=False),
+        sa.CheckConstraint(
+            "aad_version = 1", name=op.f("ck_agent_keys_ck_agent_keys_aad_version")
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name=op.f("fk_agent_keys_workspace_id_projects"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "workspace_id",
+            "project_id",
+            "graph_id",
+            "agent_id",
+            name=op.f("pk_agent_keys"),
+        ),
+    )
+    op.create_index(
+        "ix_agent_keys_workspace_project_graph",
+        "agent_keys",
+        ["workspace_id", "project_id", "graph_id"],
+        unique=False,
+    )
+    op.create_table(
+        "agent_turns",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("workspace_id", sa.Uuid(), nullable=False),
+        sa.Column("project_id", sa.Uuid(), nullable=False),
+        sa.Column("graph_id", sa.String(length=255), nullable=False),
+        sa.Column("agent_id", sa.String(length=255), nullable=False),
+        sa.Column("conversation_id", sa.Uuid(), nullable=False),
+        # The client's own id for this send, unique per conversation: the idempotency key.
+        sa.Column("client_turn_id", sa.String(length=200), nullable=False),
+        sa.Column("requested_by_user_id", sa.Uuid(), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        # SHA-256 of the admitted user text.
+        sa.Column("request_digest", sa.String(length=64), nullable=False),
+        sa.Column("user_message_sequence", sa.BigInteger(), nullable=False),
+        # The Agent as it was when the turn was accepted, so history stays explicable
+        # after the canvas moves. No key material and no endpoint URL.
+        sa.Column("instructions", sa.Text(), nullable=False),
+        sa.Column("model_source", sa.String(length=16), nullable=False),
+        sa.Column("model_name", sa.String(length=255), nullable=False),
+        sa.Column("outcome_detail", sa.Text(), nullable=True),
+        sa.Column("created_at", UTCDateTime(), nullable=False),
+        sa.Column("finished_at", UTCDateTime(), nullable=True),
+        sa.CheckConstraint(
+            "length(request_digest) = 64",
+            name=op.f(
+                "ck_agent_turns_ck_agent_turns_request_digest_is_a_digest"
+            ),
+        ),
+        sa.CheckConstraint(
+            "user_message_sequence >= 1",
+            name=op.f(
+                "ck_agent_turns_ck_agent_turns_user_message_sequence_positive"
+            ),
+        ),
+        sa.CheckConstraint(
+            "model_source IN ('deployment', 'agent')",
+            name=op.f("ck_agent_turns_ck_agent_turns_model_source_known"),
+        ),
+        sa.CheckConstraint(
+            "status IN ('running', 'completed', 'cancelled', 'failed', "
+            "'interrupted')",
+            name=op.f("ck_agent_turns_ck_agent_turns_status_known"),
+        ),
+        # A turn is running exactly while it has no finish stamp.
+        sa.CheckConstraint(
+            "(status = 'running') = (finished_at IS NULL)",
+            name=op.f("ck_agent_turns_ck_agent_turns_running_iff_unfinished"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name=op.f("fk_agent_turns_workspace_id_projects"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "conversation_id"],
+            ["agent_conversations.workspace_id", "agent_conversations.id"],
+            name=op.f("fk_agent_turns_workspace_id_agent_conversations"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_agent_turns")),
+        sa.UniqueConstraint(
+            "workspace_id",
+            "conversation_id",
+            "client_turn_id",
+            name="uq_agent_turns_conversation_client_turn",
+        ),
+    )
+    op.create_index(
+        "ix_agent_turns_workspace_conversation_created",
+        "agent_turns",
+        ["workspace_id", "conversation_id", "created_at"],
+        unique=False,
+    )
+    # Exactly one live turn per conversation, and any number of finished ones.
+    op.create_index(
+        "uq_agent_turns_one_running_per_conversation",
+        "agent_turns",
+        ["workspace_id", "conversation_id"],
+        unique=True,
+        sqlite_where=sa.text("status = 'running'"),
+        postgresql_where=sa.text("status = 'running'"),
+    )
+    op.create_table(
         "project_checkpoints",
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
         sa.Column("project_id", sa.Uuid(), nullable=False),
@@ -986,6 +1201,30 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
+    # Agent history first: turns receipt conversation events, the events are the
+    # conversation's own rows, and all of it hangs off a Project, so nothing here can
+    # outlive the schema that created it.
+    op.drop_index(
+        "ix_agent_conversation_events_conversation_turn",
+        table_name="agent_conversation_events",
+    )
+    op.drop_table("agent_conversation_events")
+    op.drop_index(
+        "uq_agent_turns_one_running_per_conversation", table_name="agent_turns"
+    )
+    op.drop_index(
+        "ix_agent_turns_workspace_conversation_created", table_name="agent_turns"
+    )
+    op.drop_table("agent_turns")
+    op.drop_index(
+        "ix_agent_conversations_workspace_project_graph_agent",
+        table_name="agent_conversations",
+    )
+    op.drop_table("agent_conversations")
+    op.drop_index(
+        "ix_agent_keys_workspace_project_graph", table_name="agent_keys"
+    )
+    op.drop_table("agent_keys")
     op.drop_table("project_command_receipts")
     op.drop_table("project_checkpoint_mappings")
     op.drop_index(

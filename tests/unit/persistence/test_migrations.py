@@ -20,6 +20,10 @@ MIGRATION_DIRECTORY = REPOSITORY_ROOT / "infra" / "db" / "migrations" / "version
 # appears or disappears here is a schema decision, so it is named rather than
 # read back out of the metadata the migration is checked against.
 BASELINE_TABLES = {
+    "agent_conversation_events",
+    "agent_conversations",
+    "agent_keys",
+    "agent_turns",
     "artifact_objects",
     "auth_sessions",
     "library_artifact_placements",

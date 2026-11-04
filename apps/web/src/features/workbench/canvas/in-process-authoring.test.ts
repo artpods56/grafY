@@ -57,6 +57,7 @@ function savedGraph(operatorId = raster.operator_id): SavedGraph {
       ],
       edges: [],
       origins: [],
+      agents: [],
     },
   };
 }
@@ -75,6 +76,7 @@ describe("in-process family authoring", () => {
       nodes: [command.node],
       edges: [],
       origins: [],
+      agents: [],
     };
     const saved = createGraphDraft(document);
     // A room command is addressed: a Project holds several Graphs, so an

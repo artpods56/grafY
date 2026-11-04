@@ -39,6 +39,7 @@ from grafy_core.domain.graph_documents import (
     GraphPresentationViewer,
     GraphArtifactTypeBinding,
     GraphDocument,
+    GraphAgent,
     GraphEdge,
     GraphIdentifier,
     GraphInputPlug,
@@ -77,6 +78,9 @@ class CommandReceiptOutcome(StrEnum):
 
 
 class GraphCommandKind(StrEnum):
+    ADD_AGENT = "add_agent"
+    CONFIGURE_AGENT = "configure_agent"
+    REMOVE_AGENT = "remove_agent"
     ADD_NODE = "add_node"
     DUPLICATE_NODE = "duplicate_node"
     REMOVE_NODES = "remove_nodes"
@@ -120,6 +124,21 @@ class CollaborationValue(BaseModel):
         frozen=True,
         allow_inf_nan=False,
     )
+
+
+class AddAgentCommand(CollaborationValue):
+    kind: Literal[GraphCommandKind.ADD_AGENT] = GraphCommandKind.ADD_AGENT
+    agent: GraphAgent
+
+
+class ConfigureAgentCommand(CollaborationValue):
+    kind: Literal[GraphCommandKind.CONFIGURE_AGENT] = GraphCommandKind.CONFIGURE_AGENT
+    agent: GraphAgent
+
+
+class RemoveAgentCommand(CollaborationValue):
+    kind: Literal[GraphCommandKind.REMOVE_AGENT] = GraphCommandKind.REMOVE_AGENT
+    agent_id: GraphIdentifier
 
 
 class AddNodeCommand(CollaborationValue):
@@ -277,7 +296,10 @@ class MoveAnnotationsCommand(CollaborationValue):
 
 
 GraphCommand = Annotated[
-    AddNodeCommand
+    AddAgentCommand
+    | ConfigureAgentCommand
+    | RemoveAgentCommand
+    | AddNodeCommand
     | DuplicateNodeCommand
     | RemoveNodesCommand
     | MoveNodesCommand
@@ -539,6 +561,7 @@ def sanitize_document_for_cross_workspace_copy(
         annotations=document.presentation.annotations,
     )
     return GraphDocument(
+        agents=document.agents,
         nodes=sanitized_nodes,
         edges=document.edges,
         presentation=presentation,
@@ -654,6 +677,28 @@ def _apply_graph_command(
     document: GraphDocument,
     command: GraphCommand,
 ) -> GraphDocument:
+    if isinstance(
+        command, (AddAgentCommand, ConfigureAgentCommand, RemoveAgentCommand)
+    ):
+        agent_id = (
+            command.agent_id
+            if isinstance(command, RemoveAgentCommand)
+            else command.agent.id
+        )
+        exists = any(agent.id == agent_id for agent in document.agents)
+        if isinstance(command, AddAgentCommand) and exists:
+            raise _rejected(
+                code="duplicate_agent", message=f"Agent {agent_id} already exists"
+            )
+        if not isinstance(command, AddAgentCommand) and not exists:
+            raise _rejected(
+                code="unknown_agent", message=f"Agent {agent_id} does not exist"
+            )
+        agents = tuple(agent for agent in document.agents if agent.id != agent_id)
+        if not isinstance(command, RemoveAgentCommand):
+            agents = (*agents, command.agent)
+        return GraphDocument.model_validate({**document.model_dump(), "agents": agents})
+
     if isinstance(command, AddNodeCommand):
         if any(node.id == command.node.id for node in document.nodes):
             raise _rejected(

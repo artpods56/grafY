@@ -20,6 +20,7 @@ import {
   createGraphDraft,
   projectSavedGraphNode,
   projectSavedGraphEdge,
+  projectSavedGraphAgent,
   projectSavedGraphOrigin,
   type AuthoredGraphDocument,
   type GraphCommand,
@@ -65,6 +66,7 @@ export function toRoomReplaceDocumentCommand(
       nodes: document.nodes.map(projectSavedGraphNode),
       edges: document.edges.map(projectSavedGraphEdge),
       origins: document.origins.map(projectSavedGraphOrigin),
+      agents: document.agents.map(projectSavedGraphAgent),
       presentation: {
         annotations: [...presentation.annotations],
         bindings: [...presentation.bindings],
@@ -252,6 +254,18 @@ export function toRoomGraphBodyCommand(
         origin: projectSavedGraphOrigin({ ...origin, ...command.update }),
       };
     }
+    case "add_agent":
+      return asRoomBody({
+        kind: "add_agent",
+        agent: projectSavedGraphAgent(command.agent),
+      });
+    case "configure_agent":
+      return asRoomBody({
+        kind: "configure_agent",
+        agent: projectSavedGraphAgent(command.agent),
+      });
+    case "remove_agent":
+      return asRoomBody({ kind: "remove_agent", agent_id: command.agent_id });
     case "replace_document": {
       // The authored document holds no presentation: replacing the body of a
       // Graph is the same projection a local apply performs.
@@ -391,6 +405,15 @@ export function toLocalGraphCommand(
       };
     case "remove_origins":
       return { kind: "remove_origins", origin_ids: body.origin_ids };
+    case "add_agent":
+      return { kind: "add_agent", agent: projectSavedGraphAgent(body.agent) };
+    case "configure_agent":
+      return {
+        kind: "configure_agent",
+        agent: projectSavedGraphAgent(body.agent),
+      };
+    case "remove_agent":
+      return { kind: "remove_agent", agent_id: body.agent_id };
     case "replace_document":
       return {
         kind: "replace_document",
@@ -522,6 +545,7 @@ export function applyRoomCommandToHead(
           nodes: [],
           edges: [],
           origins: [],
+          agents: [],
           presentation: emptyGraphPresentation(),
         } satisfies SavedGraphDocument),
     };

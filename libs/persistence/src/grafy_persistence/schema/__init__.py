@@ -13,6 +13,18 @@ from grafy_persistence.column_types import (
     UTCDateTime as UTCDateTime,
 )
 
+from .agent_conversations import (
+    agent_conversation_events as agent_conversation_events,
+)
+from .agent_conversations import (
+    agent_conversations as agent_conversations,
+)
+from .agent_keys import (
+    agent_keys as agent_keys,
+)
+from .agent_turns import (
+    agent_turns as agent_turns,
+)
 from .artifacts import (
     artifact_objects as artifact_objects,
 )
