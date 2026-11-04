@@ -1,9 +1,13 @@
 "use client";
 
 import * as React from "react";
+import * as stylex from "@stylexjs/stylex";
 import { UserPlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
+import { phoneTouch } from "@/components/ui/touch-target";
 import { Notice, type NoticeTone } from "@/components/ui/notice";
 import {
   Dialog,
@@ -42,6 +46,16 @@ const roleDescriptions: Record<WorkspaceRole, string> = {
 type MemberAction =
   | { kind: "role"; member: WorkspaceMember; role: WorkspaceRole }
   | { kind: "remove"; member: WorkspaceMember };
+
+const s = stylex.create({
+  /**
+   * `.grafy-member-form` is a flex row and gave its `flex: 1` to the `label` it
+   * held. A `Field` root is a div, so the share of the row has to come from here.
+   */
+  formField: {
+    flex: "1 1 0%",
+  },
+});
 
 function memberName(member: WorkspaceMember): string {
   return member.user.display_name ?? member.user.email ?? "Workspace member";
@@ -272,26 +286,30 @@ export function WorkspaceMembersDialog() {
                   </Notice>
                 ) : null}
               </label>
-              <label htmlFor="workspace-invite-role">
-                Requested role
-                <select
-                  id="workspace-invite-role"
+              <Field
+                label="Requested role"
+                description={
+                  <span className="grafy-member-empty">
+                    {roleDescriptions[role]}
+                  </span>
+                }
+                xstyle={s.formField}
+              >
+                <Select
                   value={role}
                   onChange={(event) => {
                     setRole(event.target.value as WorkspaceRole);
                     setCandidate(null);
                   }}
+                  xstyle={phoneTouch.on}
                 >
                   {roles.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
                   ))}
-                </select>
-                <span className="grafy-member-empty">
-                  {roleDescriptions[role]}
-                </span>
-              </label>
+                </Select>
+              </Field>
               <Button
                 variant="primary"
                 size="lg"
@@ -397,7 +415,7 @@ export function WorkspaceMembersDialog() {
                       <strong>{memberName(member)}</strong>
                       <span>{member.user.email ?? "No email available"}</span>
                     </div>
-                    <select
+                    <Select
                       aria-label={`Role for ${memberName(member)}`}
                       value={member.role}
                       disabled={busyKey === member.user.id}
@@ -408,13 +426,14 @@ export function WorkspaceMembersDialog() {
                           role: event.target.value as WorkspaceRole,
                         })
                       }
+                      xstyle={phoneTouch.on}
                     >
                       {roles.map((option) => (
                         <option key={option} value={option}>
                           {option}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                     <Button
                       type="button"
                       variant="danger"
