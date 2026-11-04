@@ -26,7 +26,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from grafy_api.runs.ports import (
     ComputationRunnerFactory,
@@ -36,8 +36,11 @@ from grafy_api.runs.ports import (
     RunEvents,
     RunNotFoundError,
     RunRejectedError,
+    ToolCallFailedError,
+    ToolCallResult,
 )
 from grafy_api.runs.state import InstanceStateTracker
+from grafy_core.domain.graph_documents import GraphOrigin
 from grafy_core.domain.runs import Run, RunStatus, RunTarget
 from grafy_core.kernel.expansion import expand_graph
 from grafy_core.kernel.fingerprints import compute_fingerprints
@@ -54,6 +57,11 @@ from grafy_core.kernel.scheduler import (
     RunResult,
     Scheduler,
     build_scheduler,
+)
+from grafy_core.kernel.tool_calls import (
+    UnknownToolInstanceError,
+    with_arguments,
+    without_pointer,
 )
 from grafy_core.kernel.state import (
     InFlightView,
@@ -223,6 +231,77 @@ class RunService:
             task=asyncio.create_task(self._watch(run.id, runtime, run)),
         )
         return run
+
+    async def call_tool(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID,
+        graph_id: str,
+        call_path: Sequence[str],
+        node_id: str,
+        arguments: Sequence[GraphOrigin],
+    ) -> ToolCallResult:
+        """Compute one node with ``arguments`` on its inputs, and record no instance.
+
+        A tool call is a temporary copy of the node's instance reading the
+        arguments (ADR 0021). It is fingerprinted, planned and scheduled like any
+        computation, so an identical call finds its result in the store and a call
+        that is already in flight is joined rather than repeated. It shares the
+        Project's concurrency budget with Runs. No Run is recorded and no instance
+        pointer moves: the node keeps showing its own result.
+
+        Cancelling the awaiting task withdraws the call's demand, as cancelling a
+        Run does.
+        """
+        document = await self._documents.head_document(workspace_id, project_id)
+        expanded = self._expand(document, graph_id=graph_id, project_id=project_id)
+        key = InstanceKey(
+            project_id=str(project_id),
+            graph_id=graph_id,
+            call_path=tuple(call_path),
+            node_id=node_id,
+        )
+        try:
+            called = with_arguments(expanded, key, arguments)
+        except UnknownToolInstanceError as exc:
+            raise RunRejectedError("unknown_target", str(exc)) from exc
+        facts = await self._facts.for_project(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            document=document,
+        )
+        fingerprints = compute_fingerprints(called, facts)
+        fingerprint = fingerprints[key]
+        runtime = self._runtime(workspace_id, project_id)
+        plan = without_pointer(
+            await plan_run(
+                graph=called,
+                fingerprints=fingerprints,
+                targets=[key],
+                store=runtime.store,
+            ),
+            fingerprint,
+        )
+        if plan.computations:
+            call_id = str(uuid4())
+            scheduler = self._scheduler_for(runtime)
+            await scheduler.submit(call_id, plan)
+            try:
+                result = await scheduler.wait(call_id)
+            except asyncio.CancelledError:
+                await scheduler.cancel(call_id)
+                raise
+            if result.status != "succeeded":
+                raise ToolCallFailedError(
+                    _run_error(result) or f"the tool call was {result.status}"
+                )
+        stored = await runtime.store.get_result(fingerprint)
+        if stored is None:
+            raise ToolCallFailedError(
+                f"{_describe_key(key)} stored no result for this call"
+            )
+        return ToolCallResult(fingerprint=fingerprint, outputs=stored.outputs)
 
     async def cancel(
         self,
