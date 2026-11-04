@@ -1,10 +1,12 @@
 <!-- BEGIN:nextjs-agent-rules -->
+
 # This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
 <!-- BEGIN:grafy-workbench-rules -->
+
 # React Flow canvas checks
 
 - The standalone Artifact Viewer is deprecated. New artifact presentation uses
@@ -32,9 +34,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
   `README.md`. Cover touch pan, pinch, cancellation, blank-pane tap deselection,
   node dragging, port wiring, and desktop mouse selection. A resized viewport
   alone does not test touch.
+
 <!-- END:grafy-workbench-rules -->
 
 <!-- BEGIN:web-app-conventions -->
+
 # Web app conventions
 
 ## Sandbox
@@ -92,11 +96,13 @@ cannot resolve, which `tsc` and Vitest both pass.
 ## Shared components and call sites
 
 - `src/components/ui` holds the shared controls, Base UI underneath and StyleX
-  on top: `Button`, `IconButton`, `Field` with `TextInput`/`TextArea`,
-  `SegmentedControl`, and `Dialog`. Use them before hand-styling a button or an
-  input. Local overrides go through `xstyle` (applied last), React Flow's
-  `nodrag`/`nopan` through `className`. A Base UI trigger draws one with
+  on top: `Button` and `ButtonLink`, `IconButton`, `Field` with
+  `TextInput`/`TextArea`, `SegmentedControl`, `Dialog`, `Menu`, and `Notice`.
+  Use them before hand-styling a button, a menu, or an alert. Local overrides
+  go through `xstyle` (applied last), React Flow's `nodrag`/`nopan` through
+  `className`. A Base UI trigger draws one with
   `render={<IconButton label="…" />}` and passes its children in.
+  `MenuContent` already carries `nodrag nopan nowheel`.
 - `WorkspaceRail` is used by `GraphBrowser`, the Teams & access page, and the
   workspace layout (`[workspaceSlug]/layout.tsx`). Any prop added outside the
   core interface must be optional.
@@ -203,4 +209,5 @@ cannot resolve, which `tsc` and Vitest both pass.
   `localStorage` or `sessionStorage`.
 - Do not add compatibility reads for retired product-name keys. Preference
   migrations must be explicit and time-bounded when they are genuinely needed.
+
 <!-- END:web-app-conventions -->

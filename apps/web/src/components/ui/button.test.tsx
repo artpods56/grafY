@@ -7,30 +7,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Menu } from "@base-ui/react/menu";
 import * as stylex from "@stylexjs/stylex";
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles extends Record<string, object>>(styles: Styles) =>
-    Object.fromEntries(
-      Object.entries(styles).map(([name, style]) => [
-        name,
-        { ...style, __styleName: name },
-      ]),
-    ) as Styles,
-  defineVars: <Variables,>(variables: Variables) => variables,
-  props: (
-    ...styles: Array<{ __styleName?: string } | null | false | undefined>
-  ) => ({
-    className: styles
-      .flatMap((style) =>
-        style && style.__styleName ? [style.__styleName] : [],
-      )
-      .join(" "),
-  }),
-}));
-
 import {
   Button,
   type ButtonSize,
   type ButtonVariant,
+  ButtonLink,
   IconButton,
   type IconButtonSize,
   type IconButtonVariant,
@@ -147,6 +128,53 @@ describe("Button", () => {
     expect(disabledButton.disabled).toBe(true);
     await act(async () => disabledButton.click());
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+  it("draws a toggle without the call site writing aria-pressed", async () => {
+    const on = await mount(<Button pressed>Extra fields</Button>);
+    expect(onlyButton(on).getAttribute("aria-pressed")).toBe("true");
+    expect(onlyButton(on).className.endsWith(" pressed")).toBe(true);
+
+    const off = await mount(<Button pressed={false}>Extra fields</Button>);
+    expect(onlyButton(off).getAttribute("aria-pressed")).toBe("false");
+    expect(onlyButton(off).className.includes("pressed")).toBe(false);
+
+    const plain = await mount(<Button>Extra fields</Button>);
+    expect(onlyButton(plain).hasAttribute("aria-pressed")).toBe(false);
+  });
+
+  it("keeps xstyle above the pressed look", async () => {
+    const container = await mount(
+      <Button
+        pressed
+        xstyle={{ __styleName: "override" } as unknown as stylex.StyleXStyles}
+      >
+        Extra fields
+      </Button>,
+    );
+
+    expect(onlyButton(container).className).toBe(
+      "base secondary md pressed override",
+    );
+  });
+});
+
+describe("ButtonLink", () => {
+  it("is a link styled as a button", async () => {
+    const container = await mount(
+      <ButtonLink href="/workspaces" variant="secondary" size="lg">
+        Teams &amp; access
+      </ButtonLink>,
+    );
+
+    const links = container.querySelectorAll("a");
+    expect(links).toHaveLength(1);
+    const link = links.item(0);
+    if (!link) throw new Error("expected exactly one link");
+
+    expect(link.getAttribute("href")).toBe("/workspaces");
+    expect(link.className).toBe("base secondary lg");
+    expect(link.textContent).toBe("Teams & access");
+    expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 });
 

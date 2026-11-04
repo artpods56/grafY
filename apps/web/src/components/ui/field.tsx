@@ -42,6 +42,12 @@ const field = stylex.create({
     fontSize: "10px",
     lineHeight: 1.4,
   },
+  error: {
+    margin: 0,
+    color: tokens.colorDanger,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.4,
+  },
   control: {
     width: "100%",
     minWidth: 0,
@@ -83,31 +89,62 @@ export type FieldProps = {
   label: React.ReactNode;
   /** Optional hint under the control; the control is described by it. */
   description?: React.ReactNode;
+  /**
+   * What went wrong, under the control. Takes the place of `description` while it
+   * is set: the control is described by the message and marked invalid, so a form
+   * error needs nothing else at the call site — including one the server reported.
+   */
+  error?: React.ReactNode | null;
   /** Optional content at the right end of the label row, e.g. a status like "Configured". */
   aside?: React.ReactNode;
   /** The control: a <TextInput> or <TextArea> from this file. */
   children: React.ReactNode;
   disabled?: boolean;
   name?: string;
+  /**
+   * Plain class names added after the StyleX ones. On a canvas card this is how
+   * a field keeps React Flow's `nodrag nopan nowheel`: the root carries them, and
+   * React Flow walks up from the event target, so the label row is covered too.
+   */
+  className?: string;
   /** Caller overrides made with stylex.create, applied last. */
   xstyle?: stylex.StyleXStyles;
 };
 
-/** A labelled form row: the label, the control and an optional hint, wired together by Base UI. */
+/** A labelled form row: the label, the control and an optional hint or error, wired together. */
 export function Field({
   label,
   description,
+  error,
   aside,
   children,
   disabled,
   name,
+  className,
   xstyle,
 }: FieldProps) {
+  const styled = stylex.props(field.root, xstyle);
+  // Base UI composes `aria-describedby` from the field's own message parts and
+  // ties the label to the control, but it derives `aria-invalid` from browser
+  // validity. A rejected name or a server "already exists" is not a validity
+  // state, so the invalid flag is the field's to say.
+  const control =
+    error == null
+      ? children
+      : React.Children.map(children, (child) =>
+          React.isValidElement(child)
+            ? React.cloneElement(
+                child as React.ReactElement<Record<string, unknown>>,
+                { "aria-invalid": true },
+              )
+            : child,
+        );
   return (
     <BaseField.Root
       disabled={disabled}
       name={name}
-      {...stylex.props(field.root, xstyle)}
+      className={joinClassNames(styled.className, className)}
+      style={styled.style}
     >
       <div {...stylex.props(field.labelRow)}>
         <BaseField.Label {...stylex.props(field.label)}>
@@ -117,8 +154,12 @@ export function Field({
           <span {...stylex.props(field.aside)}>{aside}</span>
         ) : null}
       </div>
-      {children}
-      {description != null ? (
+      {control}
+      {error != null ? (
+        <BaseField.Error match role="alert" {...stylex.props(field.error)}>
+          {error}
+        </BaseField.Error>
+      ) : description != null ? (
         <BaseField.Description {...stylex.props(field.description)}>
           {description}
         </BaseField.Description>

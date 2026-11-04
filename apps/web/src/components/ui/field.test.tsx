@@ -6,26 +6,6 @@ import { createRoot } from "react-dom/client";
 import * as stylex from "@stylexjs/stylex";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles extends Record<string, object>>(styles: Styles) =>
-    Object.fromEntries(
-      Object.entries(styles).map(([name, style]) => [
-        name,
-        { ...style, __styleName: name },
-      ]),
-    ) as Styles,
-  defineVars: <Variables,>(variables: Variables) => variables,
-  props: (
-    ...styles: Array<{ __styleName?: string } | null | false | undefined>
-  ) => ({
-    className: styles
-      .flatMap((style) =>
-        style && style.__styleName ? [style.__styleName] : [],
-      )
-      .join(" "),
-  }),
-}));
-
 import { Field, TextArea, TextInput } from "./field";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -129,6 +109,30 @@ describe("Field", () => {
     );
   });
 
+  it("describes the control with its error instead of its hint", async () => {
+    const container = await mount(
+      <Field
+        label="Email"
+        description="Never shown"
+        error="No such person in this team"
+      >
+        <TextInput value="" onChange={() => {}} />
+      </Field>,
+    );
+
+    const input = container.querySelector("input");
+    const error = container.querySelector<HTMLElement>('[role="alert"]');
+
+    expect(error?.textContent).toBe("No such person in this team");
+    expect(container.textContent).not.toContain("Never shown");
+    expect(input?.getAttribute("aria-describedby") ?? "").toContain(
+      error?.id ?? "\u0000",
+    );
+    expect(input?.getAttribute("aria-invalid")).toBe("true");
+    // The label must still reach the control once an error is on the field.
+    expect(container.querySelector("label")?.htmlFor).toBe(input?.id);
+  });
+
   it("shows the aside in the label row", async () => {
     const container = await mount(
       <Field label="Name" aside={<span>Configured</span>}>
@@ -216,6 +220,17 @@ describe("TextInput", () => {
       </Field>,
     );
     expect(withClass.querySelector("input")?.className).toBe("control nodrag");
+
+    const rootWithClass = await mount(
+      <Field label="x" className="nodrag nopan nowheel">
+        <TextInput value="" onChange={() => {}} />
+      </Field>,
+    );
+    // React Flow looks up from the event target, so the root carries these for
+    // the label row as well as for the control inside it.
+    expect(rootWithClass.firstElementChild?.className).toBe(
+      "root nodrag nopan nowheel",
+    );
 
     const withXstyle = await mount(
       <Field label="x">

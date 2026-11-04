@@ -6,26 +6,6 @@ import { createRoot } from "react-dom/client";
 import * as stylex from "@stylexjs/stylex";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles extends Record<string, object>>(styles: Styles) =>
-    Object.fromEntries(
-      Object.entries(styles).map(([name, style]) => [
-        name,
-        { ...style, __styleName: name },
-      ]),
-    ) as Styles,
-  defineVars: <Variables,>(variables: Variables) => variables,
-  props: (
-    ...styles: Array<{ __styleName?: string } | null | false | undefined>
-  ) => ({
-    className: styles
-      .flatMap((style) =>
-        style && style.__styleName ? [style.__styleName] : [],
-      )
-      .join(" "),
-  }),
-}));
-
 import { SegmentedControl } from "./segmented-control";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -47,19 +27,6 @@ async function mount(element: React.ReactElement) {
   mountedRoots.add(root);
   await act(async () => root.render(element));
   return container;
-}
-
-/**
- * jsdom 26 has no `PointerEvent`, and Base UI's Radio.Root forwards a click to
- * its hidden input with `new (ownerWindow(input).PointerEvent)("click", …)`
- * (radio/root/RadioRoot.mjs:138). Without the constructor that handler throws
- * and the group value never changes, so no click can be tested at all. Both
- * `.click()` and a dispatched `MouseEvent` fail the same way. This shim gives
- * Base UI the constructor it asks for; it changes no behaviour of the component.
- */
-if (!("PointerEvent" in globalThis)) {
-  class PointerEventShim extends MouseEvent {}
-  Object.assign(globalThis, { PointerEvent: PointerEventShim });
 }
 
 const MODEL_OPTIONS = [

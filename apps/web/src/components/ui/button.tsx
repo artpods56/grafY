@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Button as BaseButton } from "@base-ui/react/button";
+import Link from "next/link";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 export type ButtonVariant =
@@ -24,6 +25,8 @@ type SharedProps = Omit<
 export type ButtonProps = SharedProps & {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** When given, the button is a toggle: sets `aria-pressed` and the pressed look. */
+  pressed?: boolean;
 };
 
 export type IconButtonProps = Omit<SharedProps, "children" | "aria-label"> & {
@@ -92,7 +95,7 @@ const button = stylex.create({
     fontSize: tokens.fontSizeSm,
   },
   lg: {
-    height: "36px",
+    height: { default: "36px", "@media (max-width: 620px)": "44px" },
     paddingInline: "14px",
     fontSize: tokens.fontSizeMd,
   },
@@ -148,6 +151,17 @@ const button = stylex.create({
       default: tokens.colorDanger,
       ":disabled": tokens.colorTextDisabled,
     },
+  },
+  /**
+   * A toggle's own state, so a text button does not have to write `aria-pressed`
+   * and invent a colour for it. Applied over the variant, under `xstyle`.
+   */
+  pressed: {
+    backgroundColor: {
+      default: tokens.colorHover,
+      ":hover:not(:disabled)": tokens.colorHoverStrong,
+    },
+    color: tokens.colorText,
   },
 });
 
@@ -253,6 +267,50 @@ function joinClassNames(...names: Array<string | undefined>) {
 /** Text button for toolbars, dialogs, and forms, in five variants and three sizes. */
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   function Button(
+    {
+      variant = "secondary",
+      size = "md",
+      pressed,
+      className,
+      xstyle,
+      ...props
+    },
+    ref,
+  ) {
+    const styled = stylex.props(
+      button.base,
+      button[variant],
+      button[size],
+      pressed ? button.pressed : null,
+      xstyle,
+    );
+    return (
+      <BaseButton
+        ref={ref}
+        {...props}
+        aria-pressed={pressed}
+        className={joinClassNames(styled.className, className)}
+        style={styled.style}
+      />
+    );
+  },
+);
+
+export type ButtonLinkProps = Omit<
+  React.ComponentPropsWithoutRef<typeof Link>,
+  "className" | "style"
+> & {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  /** Plain class names added after the StyleX ones. */
+  className?: string;
+  /** Caller overrides made with stylex.create, applied last. */
+  xstyle?: stylex.StyleXStyles;
+};
+
+/** A link drawn as a Button: navigation that reads as an action, and stays a link for assistive tech. */
+export const ButtonLink = React.forwardRef<HTMLAnchorElement, ButtonLinkProps>(
+  function ButtonLink(
     { variant = "secondary", size = "md", className, xstyle, ...props },
     ref,
   ) {
@@ -263,7 +321,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       xstyle,
     );
     return (
-      <BaseButton
+      <Link
         ref={ref}
         {...props}
         className={joinClassNames(styled.className, className)}

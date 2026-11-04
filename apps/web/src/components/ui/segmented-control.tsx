@@ -46,6 +46,8 @@ const segmented = stylex.create({
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    // A label may be an icon and a word; they space themselves without a wrapper.
+    gap: "6px",
     minWidth: 0,
     boxSizing: "border-box",
     paddingInline: "10px",
