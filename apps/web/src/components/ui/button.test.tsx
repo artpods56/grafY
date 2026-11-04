@@ -133,6 +133,16 @@ describe("Button", () => {
     expect(onlyButton(container).querySelector("span")).toBeNull();
   });
 
+  it("fills the row when the action appends to a list", async () => {
+    const container = await mount(
+      <Button variant="dashed" block>
+        Add field
+      </Button>,
+    );
+
+    expect(onlyButton(container).className).toBe("base dashed md block");
+  });
+
   it("is disabled and calls onClick only when enabled", async () => {
     const onClick = vi.fn();
 

@@ -32,6 +32,16 @@ export type SwitchProps = {
   /** Names the control when `label` is an icon or lives elsewhere. */
   "aria-label"?: string;
   /**
+   * A native tooltip, for the case where the row's own text is truncated and the
+   * tooltip is what expands it.
+   */
+  title?: string;
+  /**
+   * Pointer intent on the control itself — on a canvas, this is where a call site
+   * stops the event so the card does not start dragging.
+   */
+  onClick?: React.MouseEventHandler<HTMLElement>;
+  /**
    * For a switch in a page rather than a canvas card: on the shell's phone
    * breakpoint the row grows to 44px and the track to the pill a thumb aims at.
    * Say it here instead of copying the media query, and never on a control inside
@@ -220,6 +230,8 @@ export function Switch({
   size = "md",
   name,
   phoneTouch: phone = false,
+  title,
+  onClick,
   className,
   xstyle,
   ...props
@@ -260,6 +272,8 @@ export function Switch({
       style={root.style}
     >
       <BaseSwitch.Root
+        title={title}
+        onClick={onClick}
         checked={checked}
         // Base UI hands the change details as a second argument; the kit's own
         // contract is the value alone, so a call site cannot lean on them.

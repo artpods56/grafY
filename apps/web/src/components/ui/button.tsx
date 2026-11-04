@@ -34,6 +34,11 @@ export type ButtonProps = SharedProps & {
    * own chip inside the label.
    */
   swatch?: string;
+  /**
+   * Fill the row. An affordance that appends to a list is a row the person aims at,
+   * not a chip that sits beside the rows.
+   */
+  block?: boolean;
 };
 
 export type IconButtonProps = Omit<SharedProps, "children" | "aria-label"> & {
@@ -118,6 +123,9 @@ const button = stylex.create({
    * cell, a list row. Its box comes from the surrounding type, so a row of these
    * does not change the height of the line it sits on.
    */
+  block: {
+    width: "100%",
+  },
   text: {
     height: "auto",
     paddingInline: "3px",
@@ -377,6 +385,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       size = "md",
       pressed,
       swatch,
+      block = false,
       className,
       xstyle,
       children,
@@ -388,6 +397,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       button.base,
       button[variant],
       button[size],
+      block ? button.block : null,
       pressed ? button.pressed : null,
       xstyle,
     );

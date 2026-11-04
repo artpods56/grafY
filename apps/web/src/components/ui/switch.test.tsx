@@ -151,6 +151,23 @@ describe("Switch", () => {
     expect(onCheckedChange).not.toHaveBeenCalled();
   });
 
+  it("carries a tooltip and a click of its own, which a canvas row needs", async () => {
+    const onClick = vi.fn();
+    const container = await mount(
+      <Switch
+        checked={false}
+        label="Optional input"
+        title="Toggle this connection"
+        onClick={onClick}
+        onCheckedChange={() => {}}
+      />,
+    );
+    const control = switchEl(container);
+    expect(control.title).toBe("Toggle this connection");
+    await act(async () => control.click());
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
   it("leaves React Flow classes on the root so a canvas row keeps its pointer behaviour", async () => {
     const container = await mount(
       <Switch

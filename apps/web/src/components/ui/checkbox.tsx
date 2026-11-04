@@ -25,6 +25,10 @@ export type CheckboxProps = {
   name?: string;
   /** Names the control when `label` is an icon or lives elsewhere. */
   "aria-label"?: string;
+  /** A native tooltip, for a row whose own text is truncated. */
+  title?: string;
+  /** Pointer intent on the control itself, e.g. a canvas call site stopping propagation. */
+  onClick?: React.MouseEventHandler<HTMLElement>;
   /**
    * For a box in a page rather than a canvas card: the row grows to 44px on the
    * shell's phone breakpoint. Never on a control inside a card, which keeps its
@@ -152,6 +156,8 @@ export function Checkbox({
   size = "md",
   name,
   phoneTouch: phone = false,
+  title,
+  onClick,
   className,
   xstyle,
   ...props
@@ -180,6 +186,8 @@ export function Checkbox({
       style={root.style}
     >
       <BaseCheckbox.Root
+        title={title}
+        onClick={onClick}
         checked={checked}
         // Base UI hands the change details as a second argument; the kit's own
         // contract is the value alone.
