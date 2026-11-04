@@ -300,6 +300,7 @@ def test_builder_adds_typed_builtin_node_without_a_plugin_pin() -> None:
         ],
         "edges": [],
         "origins": [],
+        "agents": [],
         "presentation": {
             "viewers": [],
             "links": [],
