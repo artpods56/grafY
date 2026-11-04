@@ -46,6 +46,22 @@ test("switches Graphs, calls one from another and refuses to delete a called Gra
   // The call node's port follows the callee's interface.
   await expect(callNode).toContainText("input");
 
+  // Stepping into the call shows the callee, and Back returns to the caller.
+  await tabs.getByRole("tab").first().click();
+  await callNode.click();
+  await page
+    .getByRole("button", { name: "Open call to “Graph 2”", exact: true })
+    .click();
+  await expect(tabs.getByRole("tab", { selected: true })).toHaveText("Graph 2");
+  await expect(
+    page.locator(".react-flow__node").filter({ hasText: "Graph input" }),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: /^Back to “/ }).click();
+  await expect(tabs.getByRole("tab", { selected: true })).not.toHaveText(
+    "Graph 2",
+  );
+  await expect(page.getByRole("button", { name: /^Back to “/ })).toHaveCount(0);
+
   // Deleting a Graph that still has a caller is refused, in words.
   await tabs.getByRole("tab", { name: "Graph 2" }).click();
   await page.getByRole("button", { name: "Delete Graph", exact: true }).click();

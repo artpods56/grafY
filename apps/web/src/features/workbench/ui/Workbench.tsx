@@ -312,6 +312,7 @@ import {
   GRAPH_INPUT_OPERATOR_ID,
   GRAPH_OUTPUT_OPERATOR_ID,
   graphInterface,
+  newNodeKind,
   nextBoundaryName,
   registryWithProjectGraphs,
 } from "../model/project-graphs";
@@ -1407,21 +1408,56 @@ function WorkbenchBody({
     },
     [commitProjectBatch],
   );
+  /**
+   * The Graphs this canvas was reached through by opening a call, outermost
+   * first. Empty when a Graph was opened directly. What the canvas shows for a
+   * node is its instance under exactly this call path.
+   */
+  const [callTrail, setCallTrail] = React.useState<
+    readonly { graphId: string; nodeId: string; name: string }[]
+  >([]);
   /** Switching is a projection of the head the room already holds. */
-  const openProjectGraph = React.useCallback(
-    (graphId: string) => {
+  const switchProjectGraph = React.useCallback(
+    (graphId: string, trail: typeof callTrail): boolean => {
       const head = projectRoomHeadRef.current;
-      if (!head || graphId === openGraphIdRef.current) return;
+      if (!head || graphId === openGraphIdRef.current) return false;
       if (isExecutionRunning() || unsyncedRoomEdits) {
         setRunError(
           "Finish or wait for the current run and sync before switching Graphs.",
         );
-        return;
+        return false;
       }
+      setCallTrail(trail);
       openGraphInProject(head, graphId);
+      return true;
     },
     [isExecutionRunning, openGraphInProject, setRunError, unsyncedRoomEdits],
   );
+  const openProjectGraph = React.useCallback(
+    (graphId: string) => {
+      switchProjectGraph(graphId, []);
+    },
+    [switchProjectGraph],
+  );
+  /** Open the Graph a call node places, remembering where it was called from. */
+  const openCall = React.useCallback(
+    (nodeId: string, calleeGraphId: string) => {
+      const callerId = openGraphIdRef.current;
+      const caller = projectRoomHeadRef.current?.document.graphs.find(
+        (graph) => graph.id === callerId,
+      );
+      if (callerId === null || !caller) return;
+      switchProjectGraph(calleeGraphId, [
+        ...callTrail,
+        { graphId: callerId, nodeId, name: caller.name },
+      ]);
+    },
+    [callTrail, switchProjectGraph],
+  );
+  const backFromCall = React.useCallback(() => {
+    const last = callTrail[callTrail.length - 1];
+    if (last) switchProjectGraph(last.graphId, callTrail.slice(0, -1));
+  }, [callTrail, switchProjectGraph]);
   React.useEffect(() => {
     roomCommandSyncRef.current = {
       submitLocal: (commands, before) => {
@@ -1572,7 +1608,7 @@ function WorkbenchBody({
         instanceKeyText({
           project_id: projectId,
           graph_id: openGraphId,
-          call_path: [],
+          call_path: callTrail.map((entry) => entry.nodeId),
           node_id: node.id,
           map_index: null,
         }),
@@ -1580,7 +1616,20 @@ function WorkbenchBody({
       if (instance) states[node.id] = instance;
     }
     return states;
-  }, [nodes, openGraphId, projectId, projectRoom.instances]);
+  }, [callTrail, nodes, openGraphId, projectId, projectRoom.instances]);
+
+  /** The call node a person could step into: exactly one node is selected and it is a call. */
+  const selectedCall = React.useMemo(() => {
+    const chosen = nodes.filter((node) => node.selected);
+    const [only] = chosen;
+    if (chosen.length !== 1 || !only) return null;
+    if (newNodeKind(only.data.spec) !== "call") return null;
+    return {
+      nodeId: only.id,
+      calleeGraphId: only.data.spec.operator_id,
+      calleeName: only.data.spec.title,
+    };
+  }, [nodes]);
 
   const graphOperationBusy = persistenceOperationBusy || running;
   const localAuthoringEnabled =
@@ -4690,6 +4739,10 @@ function WorkbenchBody({
             onAdd={addProjectGraph}
             onRename={renameProjectGraph}
             onDelete={removeProjectGraph}
+            selectedCall={selectedCall}
+            onOpenCall={openCall}
+            callTrail={callTrail}
+            onBackFromCall={backFromCall}
           />
         ) : null}
         <NodeMenuRegistryContext.Provider value={nodeMenus}>

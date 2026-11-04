@@ -69,6 +69,10 @@ function tabsIn(container: HTMLElement) {
   return [...container.querySelectorAll<HTMLElement>('[role="tab"]')];
 }
 
+function buttonsIn(container: HTMLElement) {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")];
+}
+
 describe("GraphSwitcher", () => {
   it("renders one tab per Graph in the given order and selects only the open one", async () => {
     const { container } = await mount(
@@ -345,5 +349,193 @@ describe("GraphSwitcher", () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Add Graph"]')
         ?.disabled,
     ).toBe(false);
+  });
+
+  it("offers to open the selected call, and never disables looking", async () => {
+    const onOpenCall = vi.fn();
+    const selectedCall = {
+      nodeId: "call-1",
+      calleeGraphId: "callee-id",
+      calleeName: "Callee",
+    };
+    const { container } = await mount(
+      <GraphSwitcher
+        graphs={[graph("g1", "Caller"), graph("callee-id", "Callee")]}
+        openGraphId="g1"
+        canEdit
+        onOpen={() => undefined}
+        onAdd={() => undefined}
+        onRename={() => undefined}
+        onDelete={() => undefined}
+        selectedCall={selectedCall}
+        onOpenCall={onOpenCall}
+      />,
+    );
+
+    const openCall = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Open call to “Callee”"]',
+    );
+    expect(openCall).not.toBeNull();
+    // It sits in the bar, last, right after Delete.
+    const bar = openCall?.closest("div") as HTMLElement | null;
+    expect(bar?.lastElementChild).toBe(openCall);
+    expect(
+      bar?.querySelector('[aria-label="Delete Graph"]')?.nextElementSibling,
+    ).toBe(openCall);
+
+    await act(async () => openCall?.click());
+    expect(onOpenCall).toHaveBeenCalledOnce();
+    expect(onOpenCall).toHaveBeenCalledWith("call-1", "callee-id");
+
+    // A read-only room may not edit, but it can still look into the callee.
+    const { container: readOnly } = await mount(
+      <GraphSwitcher
+        graphs={[graph("g1", "Caller"), graph("callee-id", "Callee")]}
+        openGraphId="g1"
+        canEdit={false}
+        onOpen={() => undefined}
+        onAdd={() => undefined}
+        onRename={() => undefined}
+        onDelete={() => undefined}
+        selectedCall={selectedCall}
+        onOpenCall={onOpenCall}
+      />,
+    );
+    expect(
+      readOnly.querySelector<HTMLButtonElement>(
+        '[aria-label="Open call to “Callee”"]',
+      )?.disabled,
+    ).toBe(false);
+  });
+
+  it("offers no Open call without a selected call, or without a way to open one", async () => {
+    const { container } = await mount(
+      <GraphSwitcher
+        graphs={[graph("g1", "Caller"), graph("callee-id", "Callee")]}
+        openGraphId="g1"
+        canEdit
+        onOpen={() => undefined}
+        onAdd={() => undefined}
+        onRename={() => undefined}
+        onDelete={() => undefined}
+        onOpenCall={() => undefined}
+      />,
+    );
+    expect(
+      container.querySelectorAll('[aria-label^="Open call to"]').length,
+    ).toBe(0);
+
+    const { container: noHandler } = await mount(
+      <GraphSwitcher
+        graphs={[graph("g1", "Caller"), graph("callee-id", "Callee")]}
+        openGraphId="g1"
+        canEdit
+        onOpen={() => undefined}
+        onAdd={() => undefined}
+        onRename={() => undefined}
+        onDelete={() => undefined}
+        selectedCall={{
+          nodeId: "call-1",
+          calleeGraphId: "callee-id",
+          calleeName: "Callee",
+        }}
+      />,
+    );
+    expect(
+      noHandler.querySelectorAll('[aria-label^="Open call to"]').length,
+    ).toBe(0);
+  });
+
+  it("goes back to the caller a Graph was opened from", async () => {
+    const onBackFromCall = vi.fn();
+    const { container } = await mount(
+      <GraphSwitcher
+        graphs={[graph("main", "Main"), graph("clean", "Clean")]}
+        openGraphId="clean"
+        canEdit
+        onOpen={() => undefined}
+        onAdd={() => undefined}
+        onRename={() => undefined}
+        onDelete={() => undefined}
+        callTrail={[{ graphId: "main", nodeId: "call-1", name: "Main" }]}
+        onBackFromCall={onBackFromCall}
+      />,
+    );
+
+    const back = buttonsIn(container).find((button) =>
+      button.textContent?.includes("Back to"),
+    );
+    expect(back?.textContent).toBe("Back to “Main”");
+    // One caller needs no trail line: the button already names it.
+    expect(container.textContent).not.toContain("›");
+
+    await act(async () => back?.click());
+    expect(onBackFromCall).toHaveBeenCalledOnce();
+  });
+
+  it("names the innermost caller and spells out a trail of two or more", async () => {
+    const onBackFromCall = vi.fn();
+    const { container } = await mount(
+      <GraphSwitcher
+        graphs={[graph("clean", "Clean")]}
+        openGraphId="clean"
+        canEdit
+        onOpen={() => undefined}
+        onAdd={() => undefined}
+        onRename={() => undefined}
+        onDelete={() => undefined}
+        callTrail={[
+          { graphId: "main", nodeId: "call-1", name: "Main" },
+          { graphId: "report", nodeId: "call-2", name: "Report" },
+        ]}
+        onBackFromCall={onBackFromCall}
+      />,
+    );
+
+    const back = buttonsIn(container).find((button) =>
+      button.textContent?.includes("Back to"),
+    );
+    expect(back?.textContent).toBe("Back to “Report”");
+    expect(container.textContent).toContain("Main › Report › Clean");
+
+    await act(async () => back?.click());
+    expect(onBackFromCall).toHaveBeenCalledOnce();
+  });
+
+  it("shows no Back row when the Graph was opened directly", async () => {
+    const openedDirectly = await mount(
+      <GraphSwitcher
+        graphs={[graph("clean", "Clean")]}
+        openGraphId="clean"
+        canEdit
+        onOpen={() => undefined}
+        onAdd={() => undefined}
+        onRename={() => undefined}
+        onDelete={() => undefined}
+        onBackFromCall={() => undefined}
+      />,
+    );
+    const withEmptyTrail = await mount(
+      <GraphSwitcher
+        graphs={[graph("clean", "Clean")]}
+        openGraphId="clean"
+        canEdit
+        onOpen={() => undefined}
+        onAdd={() => undefined}
+        onRename={() => undefined}
+        onDelete={() => undefined}
+        callTrail={[]}
+        onBackFromCall={() => undefined}
+      />,
+    );
+
+    for (const { container } of [openedDirectly, withEmptyTrail]) {
+      expect(container.textContent).not.toContain("Back to");
+      expect(
+        buttonsIn(container).some((button) =>
+          button.textContent?.includes("Back to"),
+        ),
+      ).toBe(false);
+    }
   });
 });
