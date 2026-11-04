@@ -23,6 +23,7 @@ import {
   type PlacedLibraryItem,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 import {
   COLLECTION_PORT,
   collectionSparePlugId,
@@ -200,18 +201,15 @@ const s = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
+  /**
+   * The member row's own step: the 20px square the row lays out and its
+   * dimming when the card is not editable. The kit's ghost IconButton draws
+   * the rest — name, hover, focus.
+   */
   step: {
-    display: "grid",
-    placeItems: "center",
     width: "20px",
     height: "20px",
-    flexShrink: 0,
-    padding: 0,
-    borderWidth: 0,
     borderRadius: "5px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
-    cursor: "pointer",
     ":disabled": { opacity: 0.35, cursor: "default" },
   },
   stepDanger: {
@@ -633,14 +631,14 @@ export function CollectionCard({
           >
             <span {...stylex.props(s.membersHead)}>
               <span>{filled.length} members · in the order they pass on</span>
-              <button
-                type="button"
-                aria-label="Close members"
-                {...stylex.props(s.step)}
+              <IconButton
+                label="Close members"
+                size="xs"
+                xstyle={s.step}
                 onClick={() => setManaging(false)}
               >
                 <X size={12} />
-              </button>
+              </IconButton>
             </span>
             {filled.map((member, index) => {
               const shown = memberRefs(member)[0];
@@ -701,33 +699,33 @@ export function CollectionCard({
                     </span>
                     <span {...stylex.props(s.memberSource)}>{source}</span>
                   </span>
-                  <button
-                    type="button"
+                  <IconButton
+                    label={`Move member ${index + 1} earlier`}
+                    size="xs"
                     disabled={!editable || index === 0}
-                    aria-label={`Move member ${index + 1} earlier`}
-                    {...stylex.props(s.step)}
+                    xstyle={s.step}
                     onClick={() => moveMember(member.plugId, index - 1)}
                   >
                     <ArrowUp size={11} />
-                  </button>
-                  <button
-                    type="button"
+                  </IconButton>
+                  <IconButton
+                    label={`Move member ${index + 1} later`}
+                    size="xs"
                     disabled={!editable || index === filled.length - 1}
-                    aria-label={`Move member ${index + 1} later`}
-                    {...stylex.props(s.step)}
+                    xstyle={s.step}
                     onClick={() => moveMember(member.plugId, index + 1)}
                   >
                     <ArrowDown size={11} />
-                  </button>
-                  <button
-                    type="button"
+                  </IconButton>
+                  <IconButton
+                    label={`Remove member ${index + 1}`}
+                    size="xs"
                     disabled={!editable}
-                    aria-label={`Remove member ${index + 1}`}
-                    {...stylex.props(s.step, s.stepDanger)}
+                    xstyle={[s.step, s.stepDanger]}
                     onClick={() => data.onRemoveInputPlug?.(id, member.plugId)}
                   >
                     <Trash2 size={11} />
-                  </button>
+                  </IconButton>
                 </div>
               );
             })}

@@ -10,6 +10,7 @@ import {
 
 import type { TablePage } from "@/lib/api";
 import { IconButton } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 
 import { s } from "./styles";
 
@@ -49,11 +50,11 @@ export function TablePageNavigation({
             ? "No rows"
             : `${page.offset + 1}–${pageEnd} of ${page.total_rows}`}
         </span>
-        {/* The kit draws no select, so the page size keeps its native one. */}
-        <select
+        <Select
           aria-label="Rows per page"
+          size="dense"
+          block={false}
           value={pageSize}
-          {...stylex.props(s.tablePageSize)}
           onChange={(event) =>
             onPageSizeChange(Number(event.currentTarget.value))
           }
@@ -61,7 +62,7 @@ export function TablePageNavigation({
           <option value={25}>25 / page</option>
           <option value={50}>50 / page</option>
           <option value={100}>100 / page</option>
-        </select>
+        </Select>
       </span>
       <span
         {...stylex.props(

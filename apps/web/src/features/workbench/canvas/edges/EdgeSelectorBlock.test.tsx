@@ -15,14 +15,24 @@ vi.mock("@base-ui/react/popover", () => ({
     Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     Trigger: ({
       children,
+      render,
       ...props
     }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
       children: React.ReactNode;
-    }) => (
-      <button type="button" {...props}>
-        {children}
-      </button>
-    ),
+      render?: React.ReactElement<Record<string, unknown>>;
+    }) => {
+      // A Base UI trigger double must honour `render`: the real trigger draws
+      // the given element with the trigger's props and children, and the
+      // accessible name lives on that element (here: an IconButton's label).
+      if (render) {
+        return React.cloneElement(render, { ...props, children });
+      }
+      return (
+        <button type="button" {...props}>
+          {children}
+        </button>
+      );
+    },
     Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     Positioner: ({ children }: { children: React.ReactNode }) => (
       <>{children}</>

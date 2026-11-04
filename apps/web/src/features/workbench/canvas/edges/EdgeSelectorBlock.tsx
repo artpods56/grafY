@@ -6,6 +6,7 @@ import { Popover } from "@base-ui/react/popover";
 import { ChevronDown, X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import {
@@ -100,24 +101,23 @@ const s = stylex.create({
     whiteSpace: "nowrap",
     textAlign: "left",
   },
+  /**
+   * The pill owns these circles: 20px on the 24px pill, absolutely placed,
+   * reachable through the pill's own `pointer-events: none` face. The kit's
+   * IconButton draws the rest — name, title, focus ring, press look.
+   */
   menuButton: {
     position: "absolute",
     top: "50%",
     right: "22px",
     width: "20px",
     height: "20px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "9999px",
     transform: "translateY(-50%)",
     backgroundColor: {
       default: "transparent",
       ":hover": tokens.colorHoverStrong,
     },
     color: { default: tokens.colorSubtle, ":hover": tokens.colorTextEmphasis },
-    cursor: "pointer",
     pointerEvents: "all",
     zIndex: 3,
   },
@@ -127,18 +127,7 @@ const s = stylex.create({
     right: "2px",
     width: "20px",
     height: "20px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "9999px",
     transform: "translateY(-50%)",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-    },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
-    cursor: "pointer",
     pointerEvents: "all",
     zIndex: 3,
   },
@@ -353,12 +342,17 @@ export function EdgeSelectorBlock({
         </span>
         <Popover.Root onOpenChange={setMenuOpen}>
           <Popover.Trigger
-            type="button"
             disabled={editDisabled}
-            aria-label={editAriaLabel}
-            title={editTitle}
-            {...stylex.props(s.menuButton)}
-            onPointerDown={(event) => event.stopPropagation()}
+            render={
+              <IconButton
+                label={editAriaLabel}
+                title={editTitle}
+                size="xs"
+                shape="round"
+                xstyle={s.menuButton}
+                onPointerDown={(event) => event.stopPropagation()}
+              />
+            }
           >
             <ChevronDown size={11} />
           </Popover.Trigger>
@@ -373,11 +367,13 @@ export function EdgeSelectorBlock({
             </Popover.Positioner>
           </Popover.Portal>
         </Popover.Root>
-        <button
-          type="button"
-          aria-label={removeAriaLabel}
+        <IconButton
+          label={removeAriaLabel}
           title="Remove connection"
-          {...stylex.props(s.removeButton)}
+          variant="danger"
+          size="xs"
+          shape="round"
+          xstyle={s.removeButton}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
@@ -385,7 +381,7 @@ export function EdgeSelectorBlock({
           }}
         >
           <X size={12} aria-hidden="true" />
-        </button>
+        </IconButton>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "@xyflow/react";
 import * as stylex from "@stylexjs/stylex";
 import { Layers, Unplug } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { ArtifactOriginEdge } from "../artifact-origin-edge";
 import { routedBezierPath } from "./edge-path";
@@ -27,39 +27,25 @@ const s = stylex.create({
     pointerEvents: "none",
     whiteSpace: "nowrap",
   },
+  /**
+   * The kit's small Button draws the chip; these keep the control's declared
+   * type and the edge-control surface it wore before the kit existed.
+   */
   mapToggle: {
-    height: "28px",
-    display: "flex",
-    alignItems: "center",
-    gap: "5px",
-    padding: "0 8px",
-    borderRadius: "6px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    backgroundColor: tokens.colorSurfaceRaised,
-    color: tokens.colorText,
     fontSize: tokens.fontSizeXs,
     fontWeight: 650,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
+    backgroundColor: tokens.colorSurfaceRaised,
   },
   mapToggleActive: {
     borderColor: tokens.colorInfo,
     color: tokens.colorInfo,
   },
   disconnect: {
-    display: "grid",
-    placeItems: "center",
-    width: "28px",
-    height: "28px",
-    borderRadius: "6px",
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusSm,
     backgroundColor: tokens.colorSurfaceRaised,
-    color: tokens.colorText,
-    cursor: "pointer",
   },
 });
 
@@ -115,6 +101,7 @@ export default function ArtifactOriginEdgeControl(
           >
             {canToggleMode ? (
               <Button
+                size="sm"
                 pressed={mapped}
                 title={
                   mapped
@@ -135,16 +122,17 @@ export default function ArtifactOriginEdgeControl(
               </Button>
             ) : null}
             {data?.onDisconnect ? (
-              <button
-                type="button"
-                aria-label="Disconnect artifact input"
-                {...stylex.props(s.disconnect)}
+              <IconButton
+                label="Disconnect artifact input"
+                variant="soft"
+                size="md"
+                xstyle={s.disconnect}
                 onClick={() => {
                   if (data) data.onDisconnect?.(data.originId);
                 }}
               >
                 <Unplug size={14} />
-              </button>
+              </IconButton>
             ) : null}
           </div>
         </EdgeLabelRenderer>
