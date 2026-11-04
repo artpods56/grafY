@@ -74,6 +74,7 @@ const s = stylex.create({
    * The switch is the kit's; this only holds its place in the tab's flex row so
    * a long port name squeezes the label, never the control.
    */
+  /** The switch is a fixed square at the end of a port row that can wrap. */
   connectionToggle: {
     flexShrink: 0,
   },
@@ -119,10 +120,9 @@ export function useOptionalInputConnection(
  * the switch is what turns it off, and it is a switch because flipping it takes
  * effect immediately.
  *
- * `Switch` forwards neither `title` nor `onClick`, so the two DOM properties this
- * control has always carried stay on a plain span around it: the tooltip, and the
- * click that must not reach React Flow's node-selection handler. The React Flow
- * classes go on the switch itself, whose root is the element under the pointer.
+ * The React Flow classes and the click that must not reach the node-selection
+ * handler both go on the switch itself: its root is the element under the pointer,
+ * and an extra wrapper would only be a second box that shrinks with the row.
  */
 export function OptionalConnectionToggle({
   connection,
@@ -132,19 +132,16 @@ export function OptionalConnectionToggle({
   label: string;
 }) {
   return (
-    <span
-      {...stylex.props(s.connectionToggle)}
+    <Switch
+      checked={connection.enabled}
+      onCheckedChange={() => connection.toggle()}
+      aria-label={`${label} connection enabled`}
       title={connection.enabled ? "Disable connection" : "Enable connection"}
       onClick={(event) => event.stopPropagation()}
-    >
-      <Switch
-        checked={connection.enabled}
-        onCheckedChange={() => connection.toggle()}
-        aria-label={`${label} connection enabled`}
-        size="dense"
-        className="nodrag nowheel"
-      />
-    </span>
+      size="dense"
+      className="nodrag nowheel"
+      xstyle={s.connectionToggle}
+    />
   );
 }
 
