@@ -89,7 +89,9 @@ class AgentConversationResponse(AgentApiModel):
     updated_at: datetime
 
     @classmethod
-    def from_conversation(cls, conversation: AgentConversation) -> "AgentConversationResponse":
+    def from_conversation(
+        cls, conversation: AgentConversation
+    ) -> "AgentConversationResponse":
         return cls(
             id=conversation.id,
             workspace_id=conversation.workspace_id,
@@ -117,7 +119,9 @@ class AgentConversationEventResponse(AgentApiModel):
     created_at: datetime
 
     @classmethod
-    def from_event(cls, event: AgentConversationEvent) -> "AgentConversationEventResponse":
+    def from_event(
+        cls, event: AgentConversationEvent
+    ) -> "AgentConversationEventResponse":
         return cls(
             sequence=event.sequence,
             turn_id=event.turn_id,

@@ -247,8 +247,7 @@ class AgentKeyService:
         encoded = text.encode("utf-8")
         if len(encoded) > MAX_SEALED_CREDENTIAL_BYTES:
             raise AgentKeyValueError(
-                "Agent key must not exceed "
-                f"{MAX_SEALED_CREDENTIAL_BYTES} UTF-8 bytes"
+                f"Agent key must not exceed {MAX_SEALED_CREDENTIAL_BYTES} UTF-8 bytes"
             )
         return encoded
 

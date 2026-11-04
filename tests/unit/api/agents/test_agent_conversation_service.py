@@ -306,8 +306,9 @@ async def test_a_resuming_reader_asks_for_what_it_does_not_have() -> None:
         await owner.read_events(workspace_id=WORKSPACE, conversation_id=uuid4())
 
 
-async def test_an_append_the_conversation_cannot_see_is_refused_before_it_writes(
-    ) -> None:
+async def test_an_append_the_conversation_cannot_see_is_refused_before_it_writes() -> (
+    None
+):
     store = await store_with(head_with_agents(AGENT_ID))
     owner = service(store)
 

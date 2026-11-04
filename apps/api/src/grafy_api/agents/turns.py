@@ -376,7 +376,9 @@ class AgentService:
             conversation = await store.lock(access.workspace_id, conversation_id)
             if conversation is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
-            if scope is not None and not scope.covers(_conversation_scope(conversation)):
+            if scope is not None and not scope.covers(
+                _conversation_scope(conversation)
+            ):
                 raise NotFoundError("Agent conversation", str(conversation_id))
             already = await turns.get_by_client_turn_id(
                 access.workspace_id, conversation_id, client_turn_id

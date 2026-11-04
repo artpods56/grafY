@@ -199,7 +199,9 @@ class Stage:
         self.api.authenticate(issued)
         return {"Origin": ORIGIN, "X-CSRF-Token": issued.csrf_value}
 
-    def token(self, label: str, *scopes: PersonalAccessTokenScope, who: str = "owner") -> dict[str, str]:
+    def token(
+        self, label: str, *scopes: PersonalAccessTokenScope, who: str = "owner"
+    ) -> dict[str, str]:
         """Mint a Workspace token with exactly these scopes and present nothing else.
 
         Minted by a member of this Workspace, so every token differs from the next only in
@@ -219,24 +221,43 @@ class Stage:
 
     # --- the surface, one method per route ------------------------------------
 
-    def start(self, *, headers: dict[str, str] | None = None, agent: str = RESEARCH,
-              graph: str = MAIN, project: UUID | None = None, title: str = "") -> Response:
+    def start(
+        self,
+        *,
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+        project: UUID | None = None,
+        title: str = "",
+    ) -> Response:
         return self.client.post(
             self.path(self.scoped(agent, graph) + "/conversations", project=project),
             json={"title": title},
             headers=headers or self.as_("editor"),
         )
 
-    def conversations(self, *, headers: dict[str, str] | None = None, agent: str = RESEARCH,
-                      graph: str = MAIN, project: UUID | None = None) -> Response:
+    def conversations(
+        self,
+        *,
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+        project: UUID | None = None,
+    ) -> Response:
         return self.client.get(
             self.path(self.scoped(agent, graph) + "/conversations", project=project),
             headers=headers or self.as_("editor"),
         )
 
-    def conversation(self, conversation_id: UUID, *, headers: dict[str, str] | None = None,
-                     agent: str = RESEARCH, graph: str = MAIN,
-                     project: UUID | None = None) -> Response:
+    def conversation(
+        self,
+        conversation_id: UUID,
+        *,
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+        project: UUID | None = None,
+    ) -> Response:
         return self.client.get(
             self.path(
                 self.scoped(agent, graph) + f"/conversations/{conversation_id}",
@@ -245,19 +266,33 @@ class Stage:
             headers=headers or self.as_("editor"),
         )
 
-    def events(self, conversation_id: UUID, *, query: str = "",
-               headers: dict[str, str] | None = None, agent: str = RESEARCH,
-               graph: str = MAIN, project: UUID | None = None) -> Response:
+    def events(
+        self,
+        conversation_id: UUID,
+        *,
+        query: str = "",
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+        project: UUID | None = None,
+    ) -> Response:
         return self.client.get(
             self.path(
-                self.scoped(agent, graph) + f"/conversations/{conversation_id}/events{query}",
+                self.scoped(agent, graph)
+                + f"/conversations/{conversation_id}/events{query}",
                 project=project,
             ),
             headers=headers or self.as_("editor"),
         )
 
-    def fork(self, conversation_id: UUID, *, at_sequence: int,
-             headers: dict[str, str] | None = None, title: str | None = None) -> Response:
+    def fork(
+        self,
+        conversation_id: UUID,
+        *,
+        at_sequence: int,
+        headers: dict[str, str] | None = None,
+        title: str | None = None,
+    ) -> Response:
         body: dict[str, Any] = {"at_sequence": at_sequence}
         if title is not None:
             body["title"] = title
@@ -267,9 +302,17 @@ class Stage:
             headers=headers or self.as_("editor"),
         )
 
-    def send(self, conversation_id: UUID, *, text: str, turn_id: str,
-             headers: dict[str, str] | None = None, agent: str = RESEARCH, graph: str = MAIN,
-             project: UUID | None = None) -> Response:
+    def send(
+        self,
+        conversation_id: UUID,
+        *,
+        text: str,
+        turn_id: str,
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+        project: UUID | None = None,
+    ) -> Response:
         return self.client.post(
             self.path(
                 self.scoped(agent, graph) + f"/conversations/{conversation_id}/turns",
@@ -279,9 +322,16 @@ class Stage:
             headers=headers or self.as_("editor"),
         )
 
-    def cancel(self, conversation_id: UUID, *, turn_id: str | None = None,
-               headers: dict[str, str] | None = None, agent: str = RESEARCH,
-               graph: str = MAIN, project: UUID | None = None) -> Response:
+    def cancel(
+        self,
+        conversation_id: UUID,
+        *,
+        turn_id: str | None = None,
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+        project: UUID | None = None,
+    ) -> Response:
         return self.client.post(
             self.path(
                 self.scoped(agent, graph) + f"/conversations/{conversation_id}/cancel",
@@ -291,30 +341,55 @@ class Stage:
             headers=headers or self.as_("editor"),
         )
 
-    def active(self, conversation_id: UUID, *, headers: dict[str, str] | None = None,
-               agent: str = RESEARCH, graph: str = MAIN) -> Response:
+    def active(
+        self,
+        conversation_id: UUID,
+        *,
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+    ) -> Response:
         return self.client.get(
-            self.path(self.scoped(agent, graph) + f"/conversations/{conversation_id}/active-turn"),
+            self.path(
+                self.scoped(agent, graph)
+                + f"/conversations/{conversation_id}/active-turn"
+            ),
             headers=headers or self.as_("editor"),
         )
 
-    def model(self, *, headers: dict[str, str] | None = None, agent: str = RESEARCH,
-              graph: str = MAIN) -> Response:
+    def model(
+        self,
+        *,
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+    ) -> Response:
         return self.client.get(
             self.path(self.scoped(agent, graph) + "/model"),
             headers=headers or self.as_("editor"),
         )
 
-    def put_key(self, value: str, *, headers: dict[str, str] | None = None,
-                agent: str = RESEARCH, graph: str = MAIN) -> Response:
+    def put_key(
+        self,
+        value: str,
+        *,
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+    ) -> Response:
         return self.client.put(
             self.path(self.scoped(agent, graph) + "/key"),
             json={"value": value},
             headers=headers or self.as_("editor"),
         )
 
-    def delete_key(self, *, headers: dict[str, str] | None = None, agent: str = RESEARCH,
-                   graph: str = MAIN) -> Response:
+    def delete_key(
+        self,
+        *,
+        headers: dict[str, str] | None = None,
+        agent: str = RESEARCH,
+        graph: str = MAIN,
+    ) -> Response:
         return self.client.delete(
             self.path(self.scoped(agent, graph) + "/key"),
             headers=headers or self.as_("editor"),
@@ -446,8 +521,11 @@ async def _open_project(
         return creation.project.id
 
 
-async def _sessions(settings: Settings, database_url: str, cast: Cast) -> dict[str, IssuedSession]:
+async def _sessions(
+    settings: Settings, database_url: str, cast: Cast
+) -> dict[str, IssuedSession]:
     async with db(database_url) as database:
+
         def unit_of_work_factory() -> SqlAlchemyUnitOfWork:
             return SqlAlchemyUnitOfWork(database.sessions)
 
@@ -471,7 +549,9 @@ def stage(tmp_path: Path, name: str = "agents") -> Iterator[Stage]:
         Settings(app=AppConfig(public_origin=ORIGIN)),
         database_url=SecretStr(database_url),
         workspace=tmp_path / "workbench",
-        credential_encryption_key=SecretStr(base64.b64encode(b"k" * 32).decode("ascii")),
+        credential_encryption_key=SecretStr(
+            base64.b64encode(b"k" * 32).decode("ascii")
+        ),
         agent_default_model="llama-4",
         agent_default_base_url="https://models.example/v1",
         agent_default_api_key=SecretStr(DEPLOYMENT_KEY),
@@ -628,8 +708,13 @@ def test_a_thread_is_opened_read_and_listed_under_its_agent(tmp_path: Path) -> N
         ]
 
         # Another Agent of the same Project has nothing to do with this thread.
-        assert live.conversations(agent=SCRIBE, graph=NOTES).json()["conversations"] == []
-        assert live.conversation(conversation_id, agent=SCRIBE, graph=NOTES).status_code == 404
+        assert (
+            live.conversations(agent=SCRIBE, graph=NOTES).json()["conversations"] == []
+        )
+        assert (
+            live.conversation(conversation_id, agent=SCRIBE, graph=NOTES).status_code
+            == 404
+        )
 
         empty = live.events(conversation_id)
         assert empty.status_code == 200, empty.text
@@ -641,7 +726,9 @@ def test_a_thread_is_opened_read_and_listed_under_its_agent(tmp_path: Path) -> N
         assert idle.json() is None
 
 
-def test_a_conversation_is_only_here_when_the_whole_path_matches(tmp_path: Path) -> None:
+def test_a_conversation_is_only_here_when_the_whole_path_matches(
+    tmp_path: Path,
+) -> None:
     """The same Workspace, the same Project, the wrong card: all of them are 404.
 
     A Workspace-only lookup would answer these as if the caller had named the right thing, and
@@ -668,7 +755,12 @@ def test_a_conversation_is_only_here_when_the_whole_path_matches(tmp_path: Path)
         )
         assert live.events(thread, graph=NOTES, agent=SCRIBE).status_code == 404
         assert live.active(thread, agent=SCRIBE).status_code == 404
-        assert live.send(thread, text="Elsewhere.", turn_id="client-2", graph=NOTES, agent=SCRIBE).status_code == 404
+        assert (
+            live.send(
+                thread, text="Elsewhere.", turn_id="client-2", graph=NOTES, agent=SCRIBE
+            ).status_code
+            == 404
+        )
         assert live.cancel(thread, agent=SCRIBE).status_code == 404
 
         # The write that a body could aim somewhere else: a Stop carrying another thread's
@@ -715,7 +807,9 @@ def test_a_conversation_of_another_workspace_is_not_here_at_all(tmp_path: Path) 
 # --- send, its answer, and its idempotence ------------------------------------
 
 
-def test_a_send_answers_a_receipt_and_the_answer_arrives_in_the_events(tmp_path: Path) -> None:
+def test_a_send_answers_a_receipt_and_the_answer_arrives_in_the_events(
+    tmp_path: Path,
+) -> None:
     """The route is the admission, the events are the answer, the room is the middle."""
 
     with stage(tmp_path) as live:
@@ -785,7 +879,9 @@ def test_the_same_turn_id_with_different_text_is_a_conflict(tmp_path: Path) -> N
         settled(script)
         assert first.status_code == 201, first.text
 
-        mutated = live.send(thread, text="What happened? Be thorough.", turn_id="client-1")
+        mutated = live.send(
+            thread, text="What happened? Be thorough.", turn_id="client-1"
+        )
         assert mutated.status_code == 409, mutated.text
         assert mutated.json()["detail"]["code"] == "agent_turn_id_reused"
         assert mutated.json()["detail"]["turn_id"] == first.json()["id"]
@@ -824,7 +920,9 @@ def test_a_second_question_to_a_busy_conversation_names_the_turn_it_would_have_r
         parked.release()
 
 
-def test_a_stop_is_a_request_and_answering_twice_changes_nothing(tmp_path: Path) -> None:
+def test_a_stop_is_a_request_and_answering_twice_changes_nothing(
+    tmp_path: Path,
+) -> None:
     with stage(tmp_path) as live:
         thread = UUID(opened(live)["id"])
         script = live.scripted.add(Script(["Half."], park_after=0))
@@ -895,15 +993,21 @@ def test_a_fork_copies_the_prefix_and_refuses_a_sequence_it_does_not_have(
         assert copy["project_id"] == str(live.project)
         assert copy["graph_id"] == MAIN
         assert copy["agent_id"] == RESEARCH
-        assert [event["sequence"] for event in live.events(UUID(copy["id"])).json()["events"]] == [1]
+        assert [
+            event["sequence"]
+            for event in live.events(UUID(copy["id"])).json()["events"]
+        ] == [1]
 
         second = live.scripted.add(Script(["Second answer."]))
         assert (
-            live.send(UUID(copy["id"]), text="Q two", turn_id="client-1").status_code == 201
+            live.send(UUID(copy["id"]), text="Q two", turn_id="client-1").status_code
+            == 201
         )
         settled(second)
         # The source keeps going untouched.
-        assert [event["sequence"] for event in live.events(thread).json()["events"]] == [1, 2, 3]
+        assert [
+            event["sequence"] for event in live.events(thread).json()["events"]
+        ] == [1, 2, 3]
         # And the copy's next turn is built from only what it copied: the answer that arrived
         # after the cut is not in the history the model was given, and the question it was cut at
         # is. That is what "continue from here" has to mean for the model, not only for the list.
@@ -924,7 +1028,9 @@ def test_a_fork_copies_the_prefix_and_refuses_a_sequence_it_does_not_have(
 # --- configuration, and the key that never comes back -------------------------
 
 
-def test_the_model_configuration_is_readable_and_the_key_write_only(tmp_path: Path) -> None:
+def test_the_model_configuration_is_readable_and_the_key_write_only(
+    tmp_path: Path,
+) -> None:
     with stage(tmp_path) as live:
         deployment = live.model()
         assert deployment.status_code == 200, deployment.text
@@ -971,7 +1077,11 @@ def test_an_agent_that_needs_a_key_it_does_not_have_says_so(tmp_path: Path) -> N
     with stage(tmp_path) as live:
         thread = UUID(opened(live, graph=NOTES, agent=SCRIBE)["id"])
         refused = live.send(
-            thread, text="Ask the custom model", turn_id="client-1", graph=NOTES, agent=SCRIBE
+            thread,
+            text="Ask the custom model",
+            turn_id="client-1",
+            graph=NOTES,
+            agent=SCRIBE,
         )
         assert refused.status_code == 503, refused.text
         assert AGENT_KEY not in refused.text
@@ -981,7 +1091,11 @@ def test_an_agent_that_needs_a_key_it_does_not_have_says_so(tmp_path: Path) -> N
         assert live.put_key(AGENT_KEY, agent=SCRIBE, graph=NOTES).status_code == 200
         script = live.scripted.add(Script(["With its own key."]))
         sent = live.send(
-            thread, text="Ask the custom model", turn_id="client-1", graph=NOTES, agent=SCRIBE
+            thread,
+            text="Ask the custom model",
+            turn_id="client-1",
+            graph=NOTES,
+            agent=SCRIBE,
         )
         assert sent.status_code == 201, sent.text
         settled(script)
@@ -991,7 +1105,9 @@ def test_an_agent_that_needs_a_key_it_does_not_have_says_so(tmp_path: Path) -> N
 # --- capabilities and scopes --------------------------------------------------
 
 
-def test_reading_a_thread_is_view_project_and_sending_one_is_start_run(tmp_path: Path) -> None:
+def test_reading_a_thread_is_view_project_and_sending_one_is_start_run(
+    tmp_path: Path,
+) -> None:
     with stage(tmp_path) as live:
         thread = UUID(opened(live, who="owner")["id"])
         script = live.scripted.add(Script(["An answer."]))
@@ -1023,7 +1139,9 @@ def test_reading_a_thread_is_view_project_and_sending_one_is_start_run(tmp_path:
         assert live.delete_key(headers=editor).status_code == 204
 
 
-def test_a_token_is_served_by_its_scopes_and_refused_by_the_rest(tmp_path: Path) -> None:
+def test_a_token_is_served_by_its_scopes_and_refused_by_the_rest(
+    tmp_path: Path,
+) -> None:
     """Role is not enough: below the route a token's scope is invisible, so the route is the gate.
 
     Each request is made with a token whose role would allow it, so a 200 can only have come
@@ -1033,7 +1151,12 @@ def test_a_token_is_served_by_its_scopes_and_refused_by_the_rest(tmp_path: Path)
     with stage(tmp_path) as live:
         opened_id = UUID(opened(live, who="owner")["id"])
         script = live.scripted.add(Script(["An answer."]))
-        assert live.send(opened_id, text="Q", turn_id="client-1", headers=live.as_("owner")).status_code == 201
+        assert (
+            live.send(
+                opened_id, text="Q", turn_id="client-1", headers=live.as_("owner")
+            ).status_code
+            == 201
+        )
         settled(script)
 
         run_only = live.token("run-only", PersonalAccessTokenScope.START_RUN)
@@ -1044,7 +1167,12 @@ def test_a_token_is_served_by_its_scopes_and_refused_by_the_rest(tmp_path: Path)
         assert live.conversation(opened_id, headers=reader).status_code == 200
         assert live.events(opened_id, headers=reader).status_code == 200
         assert live.model(headers=reader).status_code == 200
-        assert live.send(opened_id, text="Q2", turn_id="client-2", headers=reader).status_code == 403
+        assert (
+            live.send(
+                opened_id, text="Q2", turn_id="client-2", headers=reader
+            ).status_code
+            == 403
+        )
         assert live.start(headers=reader).status_code == 403
         assert live.cancel(opened_id, headers=reader).status_code == 403
         assert live.put_key(AGENT_KEY, headers=reader).status_code == 403
@@ -1066,6 +1194,19 @@ def test_a_token_is_served_by_its_scopes_and_refused_by_the_rest(tmp_path: Path)
             PersonalAccessTokenScope.VIEW_PROJECT,
             PersonalAccessTokenScope.EDIT_PROJECT,
         )
-        assert live.put_key(AGENT_KEY, headers=configurer, agent=SCRIBE, graph=NOTES).status_code == 200
-        assert live.delete_key(headers=configurer, agent=SCRIBE, graph=NOTES).status_code == 204
-        assert live.send(opened_id, text="Q4", turn_id="client-4", headers=configurer).status_code == 403
+        assert (
+            live.put_key(
+                AGENT_KEY, headers=configurer, agent=SCRIBE, graph=NOTES
+            ).status_code
+            == 200
+        )
+        assert (
+            live.delete_key(headers=configurer, agent=SCRIBE, graph=NOTES).status_code
+            == 204
+        )
+        assert (
+            live.send(
+                opened_id, text="Q4", turn_id="client-4", headers=configurer
+            ).status_code
+            == 403
+        )

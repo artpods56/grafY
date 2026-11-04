@@ -491,9 +491,7 @@ _HTTP_MAPPINGS: dict[type[Exception], _HttpMapping] = {
             str(error),
             code="agent_conversation_busy",
             turn_id=(
-                None
-                if error.running_turn_id is None
-                else str(error.running_turn_id)
+                None if error.running_turn_id is None else str(error.running_turn_id)
             ),
         ),
     ),
@@ -505,15 +503,11 @@ _HTTP_MAPPINGS: dict[type[Exception], _HttpMapping] = {
     ),
     AgentTurnRequestError: _HttpMapping(
         422,
-        lambda error: _agent_conflict(
-            str(error), code="agent_turn_rejected"
-        ),
+        lambda error: _agent_conflict(str(error), code="agent_turn_rejected"),
     ),
     AgentConversationForkRangeError: _HttpMapping(
         422,
-        lambda error: _agent_conflict(
-            str(error), code="agent_fork_sequence_unknown"
-        ),
+        lambda error: _agent_conflict(str(error), code="agent_fork_sequence_unknown"),
     ),
     # Nothing can be dialed as configured, which is an operator's answer rather than the
     # caller's: the same shape a node secret with no deployment key gives.
