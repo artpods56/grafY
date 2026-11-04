@@ -205,6 +205,30 @@ describe("WorkspaceMembersDialog invitation behavior", () => {
     await act(async () => root.unmount());
   });
 
+  it("names the requested role select and keeps its explanation on the row", async () => {
+    const { container, root } = renderDialog();
+    await act(async () => root.render(<WorkspaceMembersDialog />));
+    await openDialog(container);
+
+    const select = document.body.querySelector<HTMLSelectElement>(
+      ".grafy-member-form select",
+    );
+    expect(select).toBeInstanceOf(HTMLSelectElement);
+    const label = document.body.querySelector(`label[for="${select?.id}"]`);
+    expect(label?.textContent).toContain("Requested role");
+    // The role description is now the control's own description, not a stray
+    // span inside the label.
+    const describedBy = select?.getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(
+      [...describedBy!.split(" ")]
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" "),
+    ).toContain("Can view graphs, artifacts, history, and shared activity.");
+
+    await act(async () => root.unmount());
+  });
+
   it("confirms a named role change before mutating membership", async () => {
     const { container, root } = renderDialog();
     await act(async () => root.render(<WorkspaceMembersDialog />));
