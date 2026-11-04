@@ -14,6 +14,7 @@ import {
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { Button, IconButton } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
+import { Surface } from "@/components/ui/surface";
 
 import type {
   ArtifactViewerActivity,
@@ -490,12 +491,17 @@ export function GeoMapPreview({
         aria-label="Interactive GIS map. Click a feature to inspect its properties."
         {...mapInteractionProps(stylex.props(s.map))}
       />
-      <div {...stylex.props(s.mapControls)}>
-        <button
-          type="button"
+      <Surface
+        tone="floating"
+        shape="pill"
+        className="nodrag nowheel nopan"
+        xstyle={s.mapControls}
+      >
+        <Button
+          size="xs"
+          variant="ghost"
           aria-expanded={inspectorOpen}
           aria-controls={inspectorId}
-          {...mapInteractionProps(stylex.props(s.utilityButton))}
           onClick={() => {
             setSelectedFeature(null);
             setInspectorOpen((open) => !open);
@@ -503,34 +509,26 @@ export function GeoMapPreview({
         >
           <Layers3 size={13} aria-hidden="true" />
           {layers.length} {layers.length === 1 ? "layer" : "layers"}
-        </button>
-        <button
-          type="button"
-          disabled={!descriptor.initial_bounds}
-          aria-label="Fit descriptor bounds"
+        </Button>
+        <IconButton
+          label="Fit descriptor bounds"
           title={
             descriptor.initial_bounds
               ? "Fit descriptor bounds"
               : "No descriptor bounds"
           }
-          {...mapInteractionProps(stylex.props(s.utilityButton))}
+          disabled={!descriptor.initial_bounds}
           onClick={() => {
             const map = mapRef.current;
             if (map) fitBounds(map, descriptor.initial_bounds, true);
           }}
         >
-          <LocateFixed size={13} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          aria-label="Unload interactive map"
-          title="Unload interactive map"
-          {...mapInteractionProps(stylex.props(s.utilityButton))}
-          onClick={onUnload}
-        >
-          <X size={13} aria-hidden="true" />
-        </button>
-      </div>
+          <LocateFixed size={13} />
+        </IconButton>
+        <IconButton label="Unload interactive map" onClick={onUnload}>
+          <X size={13} />
+        </IconButton>
+      </Surface>
       {inspectorOpen ? (
         <div
           id={inspectorId}
