@@ -4,6 +4,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Switch as BaseSwitch } from "@base-ui/react/switch";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { phoneTouch } from "./touch-target";
 
 function joinClassNames(...names: Array<string | undefined>) {
   return names.filter(Boolean).join(" ") || undefined;
@@ -30,6 +31,13 @@ export type SwitchProps = {
   name?: string;
   /** Names the control when `label` is an icon or lives elsewhere. */
   "aria-label"?: string;
+  /**
+   * For a switch in a page rather than a canvas card: on the shell's phone
+   * breakpoint the row grows to 44px and the track to the pill a thumb aims at.
+   * Say it here instead of copying the media query, and never on a control inside
+   * a card, which keeps its pixel size at every viewport.
+   */
+  phoneTouch?: boolean;
   /**
    * Plain class names added after the StyleX ones. On a canvas card this is how
    * the row keeps React Flow's `nodrag nopan`: React Flow walks up from the
@@ -145,6 +153,26 @@ const toggle = stylex.create({
     backgroundColor: tokens.colorTextDisabled,
     boxShadow: "none",
   },
+  /**
+   * The phone step, shared by every desktop size: the track becomes the 44x26 pill
+   * a thumb aims at and the thumb the 20px mark inside it. They set `min` sizes, so
+   * they compose with the desktop `width` / `height` rather than replacing them —
+   * see the one-property rule in `touch-target.ts`.
+   */
+  phoneTrack: {
+    minWidth: { default: "unset", "@media (max-width: 620px)": "44px" },
+    minHeight: { default: "unset", "@media (max-width: 620px)": "26px" },
+  },
+  phoneThumb: {
+    minWidth: { default: "unset", "@media (max-width: 620px)": "20px" },
+    minHeight: { default: "unset", "@media (max-width: 620px)": "20px" },
+  },
+  phoneShift: {
+    transform: {
+      default: "translateX(0px)",
+      "@media (max-width: 620px)": "translateX(18px)",
+    },
+  },
   // Each step needs its own travel: track width - thumb width - 2 * inset.
   denseShift: {
     transform: "translateX(8px)",
@@ -191,25 +219,38 @@ export function Switch({
   disabled = false,
   size = "md",
   name,
+  phoneTouch: phone = false,
   className,
   xstyle,
   ...props
 }: SwitchProps) {
+  // A `role="switch"` is not a labelable element, so the `<label>` around this
+  // control hands its text to the hidden input and not to the switch. Pointing
+  // `aria-labelledby` at the label is what makes
+  // `getByRole("switch", { name: "Show grid lines" })` find the switch, and not
+  // nothing at all.
+  const id = React.useId();
+  const labelId = label == null ? undefined : id;
+  const on = checked && !disabled;
   const root = stylex.props(
     toggle.root,
     toggle[size],
+    phone ? phoneTouch.on : null,
     disabled ? toggle.disabled : null,
     xstyle,
   );
   const track = stylex.props(
     toggle.track,
     TRACK_BY_SIZE[size],
+    phone ? toggle.phoneTrack : null,
     disabled ? toggle.trackDisabled : checked ? toggle.on : toggle.off,
   );
   const thumb = stylex.props(
     toggle.thumb,
     THUMB_BY_SIZE[size],
-    checked && !disabled ? SHIFT_BY_SIZE[size] : null,
+    phone ? toggle.phoneThumb : null,
+    on ? SHIFT_BY_SIZE[size] : null,
+    on && phone ? toggle.phoneShift : null,
     disabled ? toggle.thumbDisabled : null,
   );
 
@@ -226,13 +267,16 @@ export function Switch({
         disabled={disabled}
         name={name}
         aria-label={props["aria-label"]}
+        aria-labelledby={labelId}
         className={track.className}
         style={track.style}
       >
         <BaseSwitch.Thumb className={thumb.className} style={thumb.style} />
       </BaseSwitch.Root>
       {label != null ? (
-        <span {...stylex.props(toggle.label)}>{label}</span>
+        <span {...stylex.props(toggle.label)} id={labelId}>
+          {label}
+        </span>
       ) : null}
     </label>
   );

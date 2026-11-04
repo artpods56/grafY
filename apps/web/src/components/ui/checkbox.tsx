@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
 import { Check } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { phoneTouch } from "./touch-target";
 
 function joinClassNames(...names: Array<string | undefined>) {
   return names.filter(Boolean).join(" ") || undefined;
@@ -24,6 +25,12 @@ export type CheckboxProps = {
   name?: string;
   /** Names the control when `label` is an icon or lives elsewhere. */
   "aria-label"?: string;
+  /**
+   * For a box in a page rather than a canvas card: the row grows to 44px on the
+   * shell's phone breakpoint. Never on a control inside a card, which keeps its
+   * pixel size at every viewport.
+   */
+  phoneTouch?: boolean;
   /** Plain class names added after the StyleX ones, e.g. React Flow's "nodrag nopan". */
   className?: string;
   /** Caller overrides made with stylex.create, applied last so they win. */
@@ -144,13 +151,19 @@ export function Checkbox({
   disabled = false,
   size = "md",
   name,
+  phoneTouch: phone = false,
   className,
   xstyle,
   ...props
 }: CheckboxProps) {
+  // A `role="checkbox"` is not a labelable element either, so the visible name has
+  // to be pointed at from the box, not only wrapped around it.
+  const id = React.useId();
+  const labelId = label == null ? undefined : id;
   const root = stylex.props(
     box.root,
     box[size],
+    phone ? phoneTouch.on : null,
     disabled ? box.disabled : null,
     xstyle,
   );
@@ -174,6 +187,7 @@ export function Checkbox({
         disabled={disabled}
         name={name}
         aria-label={props["aria-label"]}
+        aria-labelledby={labelId}
         className={control.className}
         style={control.style}
       >
@@ -185,7 +199,11 @@ export function Checkbox({
           />
         </BaseCheckbox.Indicator>
       </BaseCheckbox.Root>
-      {label != null ? <span {...stylex.props(box.label)}>{label}</span> : null}
+      {label != null ? (
+        <span {...stylex.props(box.label)} id={labelId}>
+          {label}
+        </span>
+      ) : null}
     </label>
   );
 }

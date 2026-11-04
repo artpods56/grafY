@@ -70,6 +70,54 @@ describe("Switch", () => {
     expect(onCheckedChange).toHaveBeenCalledTimes(2);
   });
 
+  it("points its accessible name at the label text", async () => {
+    // A `role="switch"` is not labelable, so the wrapping <label> alone would
+    // leave the switch anonymous and a phone user's screen reader would say
+    // "switch" with nothing after it.
+    const container = await mount(
+      <Switch
+        checked={false}
+        label="Show grid lines"
+        onCheckedChange={() => {}}
+      />,
+    );
+    const labelId = switchEl(container).getAttribute("aria-labelledby");
+    expect(labelId).toBeTruthy();
+    const named = container.querySelector(`span[id="${labelId}"]`);
+    expect(named?.textContent).toBe("Show grid lines");
+  });
+
+  it("grows the row and the track on the phone breakpoint when it is in a page", async () => {
+    const container = await mount(
+      <Switch
+        checked={false}
+        label="Snap to grid"
+        phoneTouch
+        onCheckedChange={() => {}}
+      />,
+    );
+    const root = container.querySelector("label");
+    const track = switchEl(container);
+    expect(root?.className).toContain("on");
+    expect(track.className).toContain("phoneTrack");
+    expect(track.querySelector('[class*="thumb"]')?.className ?? "").toContain(
+      "phoneThumb",
+    );
+  });
+
+  it("does not grow a switch that lives in a canvas card", async () => {
+    const container = await mount(
+      <Switch
+        checked={false}
+        size="dense"
+        label="Show"
+        onCheckedChange={() => {}}
+      />,
+    );
+    expect(switchEl(container).className).not.toContain("phoneTrack");
+    expect(container.querySelector("label")?.className).not.toContain("on");
+  });
+
   it.each(sizes)("keeps one focusable element at size %s", async (size) => {
     const container = await mount(
       <Switch

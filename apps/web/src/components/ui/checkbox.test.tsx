@@ -65,6 +65,21 @@ describe("Checkbox", () => {
     expect(onCheckedChange).toHaveBeenCalledWith(true);
   });
 
+  it("points its accessible name at the label text", async () => {
+    const container = await mount(
+      <Checkbox
+        checked={false}
+        label="Include header"
+        onCheckedChange={() => {}}
+      />,
+    );
+    const labelId = box(container).getAttribute("aria-labelledby");
+    expect(labelId).toBeTruthy();
+    expect(container.querySelector(`span[id="${labelId}"]`)?.textContent).toBe(
+      "Include header",
+    );
+  });
+
   it.each(sizes)("keeps exactly one control at size %s", async (size) => {
     const container = await mount(
       <Checkbox
