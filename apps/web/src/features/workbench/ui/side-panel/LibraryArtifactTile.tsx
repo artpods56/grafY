@@ -4,7 +4,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ArrowUpRight, Download, LoaderCircle, X } from "lucide-react";
 
-import { IconButton } from "@/components/ui/button";
+import { Button, ButtonLink, IconButton } from "@/components/ui/button";
 import {
   artifactContentUrl,
   type LibraryFolder,
@@ -128,27 +128,29 @@ export function LibraryArtifactTile({
       {contentUrl || fromGraph ? (
         <span {...stylex.props(s.actions)}>
           {contentUrl ? (
-            <a
+            <ButtonLink
               href={contentUrl}
               target="_blank"
               rel="noreferrer"
-              {...stylex.props(s.action)}
+              variant="secondary"
+              size="xs"
             >
               <Download size={11} aria-hidden="true" />
               Open original
-            </a>
+            </ButtonLink>
           ) : null}
           {fromGraph ? (
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              size="xs"
               onClick={() =>
                 onOpenInstance(fromGraph, provenance.result_fingerprint ?? null)
               }
-              {...stylex.props(s.action)}
             >
               <ArrowUpRight size={11} aria-hidden="true" />
               Where it came from
-            </button>
+            </Button>
           ) : null}
         </span>
       ) : null}
@@ -312,26 +314,5 @@ const s = stylex.create({
     flexWrap: "wrap",
     gap: "6px",
     marginTop: "2px",
-  },
-  action: {
-    height: "24px",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "4px",
-    paddingInline: "7px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: "6px",
-    backgroundColor: {
-      default: tokens.colorBg,
-      ":hover": tokens.colorSurfaceSunken,
-    },
-    color: tokens.colorText,
-    cursor: "pointer",
-    fontFamily: "inherit",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 560,
-    textDecoration: "none",
   },
 });

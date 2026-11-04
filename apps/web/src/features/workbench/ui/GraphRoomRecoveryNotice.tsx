@@ -1,6 +1,7 @@
 import * as stylex from "@stylexjs/stylex";
 import { RefreshCw } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type {
   GraphReadinessState,
@@ -70,13 +71,25 @@ export function GraphRoomRecoveryNotice({
         ) : null}
       </div>
       {incompatible ? (
-        <button type="button" onClick={onReload} {...stylex.props(s.action)}>
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          xstyle={s.action}
+          onClick={onReload}
+        >
           <RefreshCw size={14} aria-hidden="true" /> Reload graph
-        </button>
+        </Button>
       ) : exhausted ? (
-        <button type="button" onClick={onRetry} {...stylex.props(s.action)}>
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          xstyle={s.action}
+          onClick={onRetry}
+        >
           <RefreshCw size={14} aria-hidden="true" /> Retry connection
-        </button>
+        </Button>
       ) : null}
     </section>
   );
@@ -110,22 +123,15 @@ const s = stylex.create({
     lineHeight: 1.45,
   },
   detail: { color: tokens.colorSubtle, fontSize: tokens.fontSizeXs },
+  /**
+   * What this notice adds to the kit's secondary `Button`: it sits in a row that can
+   * shrink, and the recovery action is 34px rather than the kit's 32 because it is the
+   * one thing a person who lost the connection is aiming at. `min-height` is a
+   * different StyleX key from the kit's `height`, so both hold.
+   */
   action: {
     flexShrink: 0,
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "6px",
     minHeight: "34px",
-    paddingInline: "10px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: "7px",
-    backgroundColor: { default: tokens.colorBg, ":hover": tokens.colorHover },
-    color: tokens.colorTextEmphasis,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 700,
   },
   visuallyHidden: {
     position: "absolute",
