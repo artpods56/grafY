@@ -4,9 +4,9 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Popover } from "@base-ui/react/popover";
 import { useEdges } from "@xyflow/react";
-import { Power } from "lucide-react";
 
 import type { Port } from "@/lib/api";
+import { Switch } from "@/components/ui/switch";
 import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
@@ -70,40 +70,12 @@ const s = stylex.create({
       ":hover": tokens.colorSurfaceSunken,
     },
   },
+  /**
+   * The switch is the kit's; this only holds its place in the tab's flex row so
+   * a long port name squeezes the label, never the control.
+   */
   connectionToggle: {
-    width: "18px",
-    height: "18px",
     flexShrink: 0,
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "9999px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHoverStrong,
-    },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-  },
-  connectionToggleEnabled: {
-    color: tokens.colorAccent,
-    backgroundColor: {
-      default: tokens.colorAccentSoft,
-      ":hover": tokens.colorAccentSoft,
-    },
-  },
-  connectionToggleDisabled: {
-    color: tokens.colorTextDisabled,
-    backgroundColor: {
-      default: tokens.colorSurface,
-      ":hover": tokens.colorHover,
-    },
-  },
-  plugConnectionToggle: {
-    width: "18px",
-    height: "20px",
-    borderRadius: "5px",
   },
 });
 
@@ -142,38 +114,37 @@ export function useOptionalInputConnection(
   }, [edges, nodeId, plugId, port.direction, port.name, port.required]);
 }
 
+/**
+ * Whether an optional input's wire feeds the node. A disabled wire stays drawn;
+ * the switch is what turns it off, and it is a switch because flipping it takes
+ * effect immediately.
+ *
+ * `Switch` forwards neither `title` nor `onClick`, so the two DOM properties this
+ * control has always carried stay on a plain span around it: the tooltip, and the
+ * click that must not reach React Flow's node-selection handler. The React Flow
+ * classes go on the switch itself, whose root is the element under the pointer.
+ */
 export function OptionalConnectionToggle({
   connection,
   label,
-  compact = false,
 }: {
   connection: { enabled: boolean; toggle: () => void };
   label: string;
-  compact?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={connection.enabled}
-      aria-label={`${label} connection enabled`}
+    <span
+      {...stylex.props(s.connectionToggle)}
       title={connection.enabled ? "Disable connection" : "Enable connection"}
-      {...nodeInteractionProps(
-        stylex.props(
-          s.connectionToggle,
-          connection.enabled
-            ? s.connectionToggleEnabled
-            : s.connectionToggleDisabled,
-          compact ? s.plugConnectionToggle : null,
-        ),
-      )}
-      onClick={(event) => {
-        event.stopPropagation();
-        connection.toggle();
-      }}
+      onClick={(event) => event.stopPropagation()}
     >
-      <Power size={compact ? 10 : 11} aria-hidden="true" />
-    </button>
+      <Switch
+        checked={connection.enabled}
+        onCheckedChange={() => connection.toggle()}
+        aria-label={`${label} connection enabled`}
+        size="dense"
+        className="nodrag nowheel"
+      />
+    </span>
   );
 }
 
@@ -467,9 +438,7 @@ export function InstanceInputConnectionToggle({
 }) {
   const connection = useOptionalInputConnection(nodeId, port, plugId);
   if (!connection) return null;
-  return (
-    <OptionalConnectionToggle connection={connection} label={label} compact />
-  );
+  return <OptionalConnectionToggle connection={connection} label={label} />;
 }
 
 export type IncompatibleWorkflowNodeCompatibility = Exclude<
