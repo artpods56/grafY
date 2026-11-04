@@ -1,3 +1,4 @@
+import type { AgentNode } from "../agents/AgentCard";
 import type { ArtifactOriginEdge } from "./artifact-origin-edge";
 import type { Edge, Node } from "@xyflow/react";
 
@@ -114,7 +115,7 @@ export type CanvasWorkflowNode = Node<
   typeof WORKFLOW_NODE_TYPE
 >;
 export type CanvasNode =
-  CanvasWorkflowNode | ArtifactViewerNode | AnnotationNode;
+  CanvasWorkflowNode | ArtifactViewerNode | AnnotationNode | AgentNode;
 export type CanvasEdge =
   | ArtifactOriginEdge
   | WorkflowEdge

@@ -1,4 +1,5 @@
 "use client";
+import type { AgentNode } from "../agents/AgentCard";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -541,7 +542,11 @@ function WorkbenchBody({
   // The canvas draws nodes, cards, and annotations out of three stores, and one
   // gesture can hold any mix of them. Anything that moves what is held goes
   // through here so no layer is left holding what the person already let go.
+  const [selectedAgentIds, setSelectedAgentIds] = React.useState<
+    ReadonlySet<string>
+  >(new Set());
   const canvasSelection = useCanvasSelection({
+    setSelectedAgentIds,
     setArtifactViewers,
     setSelectedEdgeIdSet,
     setSelectedNodeIdSet,
@@ -1761,6 +1766,30 @@ function WorkbenchBody({
   );
   const onNodesChange: OnNodesChange<CanvasNode> = React.useCallback(
     (changes) => {
+      const agents = authoredDocumentRef.current.agents;
+      for (const change of changes) {
+        if (change.type === "add" || change.type === "replace") continue;
+        const agent = agents.find((item) => item.id === change.id);
+        if (!agent) continue;
+        if (change.type === "select")
+          setSelectedAgentIds((current) => {
+            const next = new Set(current);
+            if (change.selected) next.add(agent.id);
+            else next.delete(agent.id);
+            return next;
+          });
+        if (change.type === "remove")
+          applyAuthoringCommands([
+            { kind: "remove_agent", agent_id: agent.id },
+          ]);
+        if (change.type === "position" && change.position && !change.dragging)
+          applyAuthoringCommands([
+            {
+              kind: "configure_agent",
+              agent: { ...agent, position: change.position },
+            },
+          ]);
+      }
       const gridSettings = canvasGridSettingsRef.current;
       const gridBypass = bypassSnapRef.current;
       const draggingPositions = changes.flatMap((change) => {
@@ -2033,20 +2062,28 @@ function WorkbenchBody({
           return changed ? next : current;
         });
       }
-      const measuredUpdates = workflowChanges.flatMap((change) =>
-        change.type === "dimensions" &&
-        change.dimensions &&
-        typeof change.dimensions.width === "number" &&
-        typeof change.dimensions.height === "number"
-          ? [
-              {
-                id: change.id,
-                width: change.dimensions.width,
-                height: change.dimensions.height,
-              },
-            ]
-          : [],
-      );
+      const measuredUpdates = changes
+        .filter(
+          (change) =>
+            change.type !== "add" &&
+            change.type !== "replace" &&
+            (workflowNodeIds.has(change.id) ||
+              agents.some((agent) => agent.id === change.id)),
+        )
+        .flatMap((change) =>
+          change.type === "dimensions" &&
+          change.dimensions &&
+          typeof change.dimensions.width === "number" &&
+          typeof change.dimensions.height === "number"
+            ? [
+                {
+                  id: change.id,
+                  width: change.dimensions.width,
+                  height: change.dimensions.height,
+                },
+              ]
+            : [],
+        );
       if (measuredUpdates.length) {
         setNodeMeasurements((current) => {
           let changed = false;
@@ -2080,6 +2117,14 @@ function WorkbenchBody({
       if (semanticChanges.length) applyAuthoringCommands(semanticChanges);
 
       const dragEnded =
+        changes.some(
+          (change) =>
+            change.type === "position" &&
+            change.dragging === false &&
+            authoredDocumentRef.current.agents.some(
+              (agent) => agent.id === change.id,
+            ),
+        ) ||
         workflowChanges.some(
           (change) => change.type === "position" && change.dragging === false,
         ) ||
@@ -3787,8 +3832,61 @@ function WorkbenchBody({
     ],
   );
 
+  const agentCanvasNodes = React.useMemo<AgentNode[]>(
+    () =>
+      authoredDocument.agents.map((agent) => ({
+        id: agent.id,
+        type: "grafyAgent",
+        position: agent.position ?? { x: 0, y: 0 },
+        width: agent.width,
+        height: agent.height,
+        measured: nodeMeasurements[agent.id],
+        style: { width: agent.width, height: agent.height },
+        selected: selectedAgentIds.has(agent.id),
+        draggable: canEditProject,
+        deletable: canEditProject,
+        data: {
+          agent,
+          scope:
+            projectId && openGraphId
+              ? {
+                  workspaceId,
+                  projectId,
+                  graphId: openGraphId,
+                  agentId: agent.id,
+                }
+              : null,
+          canEdit: canEditProject,
+          canSend: canStartRun,
+          configure: (next) => {
+            if (canEditProject)
+              applyAuthoringCommands([
+                { kind: "configure_agent", agent: next },
+              ]);
+          },
+          remove: () => {
+            if (canEditProject)
+              applyAuthoringCommands([
+                { kind: "remove_agent", agent_id: agent.id },
+              ]);
+          },
+        },
+      })),
+    [
+      nodeMeasurements,
+      authoredDocument.agents,
+      selectedAgentIds,
+      canEditProject,
+      canStartRun,
+      projectId,
+      openGraphId,
+      workspaceId,
+      applyAuthoringCommands,
+    ],
+  );
   const allCanvasNodes = React.useMemo<CanvasNode[]>(() => {
     const combined = [
+      ...agentCanvasNodes,
       ...annotationCanvasNodes,
       ...canvasNodes,
       ...artifactViewerCanvasNodes,
@@ -3851,6 +3949,7 @@ function WorkbenchBody({
       } as CanvasNode;
     });
   }, [
+    agentCanvasNodes,
     annotationCanvasNodes,
     artifactViewerCanvasNodes,
     bypassSnap,
@@ -4590,6 +4689,30 @@ function WorkbenchBody({
       />
 
       <aside aria-label="Canvas actions" {...stylex.props(s.toolDock)}>
+        <button
+          type="button"
+          disabled={!canEditProject}
+          onClick={() => {
+            const id = createUuid();
+            applyAuthoringCommands([
+              {
+                kind: "add_agent",
+                agent: {
+                  id,
+                  name: "Agent",
+                  instructions: "",
+                  model: { kind: "deployment" },
+                  position: canvasCenter({ x: 480, y: 240 }),
+                  width: 360,
+                  height: 480,
+                },
+              },
+            ]);
+            canvasSelection.selectOnly({ agentIds: [id] });
+          }}
+        >
+          Add Agent
+        </button>
         <button
           type="button"
           {...firefoxDynamicButtonProps}

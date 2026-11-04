@@ -45,12 +45,14 @@ type Selection = ReturnType<typeof useCanvasSelection>;
 
 /** Mounts the hook over the four stores the canvas reads its selection from. */
 async function mount(start: {
+  agentIds?: readonly string[];
   nodeIds?: readonly string[];
   edgeIds?: readonly string[];
   viewers?: readonly ArtifactViewerNode[];
   annotations?: readonly AnnotationNode[];
 }) {
   let latest: {
+    agentIds: string[];
     edgeIds: string[];
     nodeIds: string[];
     selectOnly: Selection["selectOnly"];
@@ -58,6 +60,9 @@ async function mount(start: {
   } | null = null;
 
   function HarnessComponent() {
+    const [agentIds, setSelectedAgentIds] = React.useState<ReadonlySet<string>>(
+      new Set(start.agentIds ?? []),
+    );
     const [nodeIds, setSelectedNodeIdSet] = React.useState<ReadonlySet<string>>(
       new Set(start.nodeIds ?? []),
     );
@@ -72,11 +77,13 @@ async function mount(start: {
         annotations: [...(start.annotations ?? [])],
       });
     const { selectOnly } = useCanvasSelection({
+      setSelectedAgentIds,
       setArtifactViewers,
       setSelectedEdgeIdSet,
       setSelectedNodeIdSet,
     });
     latest = {
+      agentIds: [...agentIds],
       edgeIds: [...edgeIds],
       nodeIds: [...nodeIds],
       selectOnly,
@@ -103,6 +110,24 @@ async function mount(start: {
 }
 
 describe("useCanvasSelection", () => {
+  it("hands selection between Agents and every existing layer", async () => {
+    const view = await mount({
+      agentIds: ["old"],
+      nodeIds: ["node"],
+      edgeIds: ["edge"],
+      viewers: [card("card", true)],
+      annotations: [note("note", true)],
+    });
+    await view.select({ agentIds: ["agent"] });
+    expect(view.read().agentIds).toEqual(["agent"]);
+    expect(view.read().nodeIds).toEqual([]);
+    expect(view.read().edgeIds).toEqual([]);
+    expect(view.read().viewers.nodes[0]?.selected).toBe(false);
+    expect(view.read().viewers.annotations[0]?.selected).toBe(false);
+    await view.select({ nodeIds: ["node"] });
+    expect(view.read().agentIds).toEqual([]);
+    view.unmount();
+  });
   it("holds the node it is given and nothing else, in any layer", async () => {
     const view = await mount({
       nodeIds: ["node-1"],
