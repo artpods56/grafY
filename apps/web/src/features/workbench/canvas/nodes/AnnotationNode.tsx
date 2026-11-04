@@ -11,6 +11,7 @@ import {
 import { X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
 import {
   ANNOTATION_COLOR_SWATCHES,
@@ -22,6 +23,7 @@ import {
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { gridShellOutset, shouldSnapSize, snapLength } from "../grid-layout";
 import { SafeMarkdown } from "../safe-markdown";
+import { resizeGrip } from "./LayoutResizeHandle";
 
 const s = stylex.create({
   shell: {
@@ -86,6 +88,7 @@ const s = stylex.create({
     boxShadow: tokens.shadowNode,
   },
   colorSwatch: {
+    position: "relative",
     width: "22px",
     height: "22px",
     padding: 0,
@@ -95,26 +98,22 @@ const s = stylex.create({
     borderRadius: "6px",
     cursor: "pointer",
   },
+  /**
+   * A swatch's colour is annotation data, not a theme colour, so it stays an
+   * inline value — on a chip that fills the button's padding box, which is
+   * exactly where a background would have painted.
+   */
+  colorSwatchFill: {
+    position: "absolute",
+    inset: 0,
+    // 6px frame minus the 1px border, so the chip clips like the background did.
+    borderRadius: "5px",
+  },
   colorSwatchActive: {
     outlineWidth: "2px",
     outlineStyle: "solid",
     outlineColor: tokens.colorAccentBorder,
     outlineOffset: "1px",
-  },
-  removeButton: {
-    width: "22px",
-    height: "22px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "9999px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-    },
-    color: tokens.colorText,
-    cursor: "pointer",
   },
   textSurface: {
     width: "100%",
@@ -162,20 +161,6 @@ const s = stylex.create({
     },
     cursor: "nwse-resize",
     touchAction: "none",
-  },
-  resizeGlyph: {
-    position: "absolute",
-    right: "3px",
-    bottom: "3px",
-    width: "7px",
-    height: "7px",
-    borderRightWidth: 2,
-    borderRightStyle: "solid",
-    borderBottomWidth: 2,
-    borderBottomStyle: "solid",
-    borderColor: tokens.colorSubtle,
-    opacity: 0.75,
-    pointerEvents: "none",
   },
 });
 
@@ -254,24 +239,25 @@ function AnnotationColorPicker({
           {ANNOTATION_COLOR_SWATCHES.map((swatch) => {
             const active = swatch === color;
             return (
-              <button
+              <IconButton
                 key={swatch}
-                type="button"
-                aria-label={`Color ${swatch}`}
-                aria-pressed={active}
+                size="xs"
+                label={`Color ${swatch}`}
+                pressed={active}
                 title={swatch}
-                {...stylex.props(
-                  s.colorSwatch,
-                  active ? s.colorSwatchActive : null,
-                )}
-                style={{ backgroundColor: swatch }}
+                xstyle={[s.colorSwatch, active ? s.colorSwatchActive : null]}
                 onPointerDown={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
                   onChange(swatch);
                   setOpen(false);
                 }}
-              />
+              >
+                <span
+                  {...stylex.props(s.colorSwatchFill)}
+                  style={{ backgroundColor: swatch }}
+                />
+              </IconButton>
             );
           })}
         </div>
@@ -347,7 +333,7 @@ function AnnotationResizeHandle({
         onCommit(layout);
       }}
     >
-      <span {...stylex.props(s.resizeGlyph)} />
+      <span {...stylex.props(resizeGrip.glyph)} />
     </button>
   );
 }
@@ -480,10 +466,11 @@ export default function AnnotationNodeCard({
               data.onColorChange?.(id, normalizeAnnotationColor(next));
             }}
           />
-          <button
-            type="button"
-            aria-label="Remove annotation"
-            {...stylex.props(s.removeButton)}
+          <IconButton
+            label="Remove annotation"
+            variant="danger"
+            size="xs"
+            shape="round"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
@@ -491,7 +478,7 @@ export default function AnnotationNodeCard({
             }}
           >
             <X size={12} />
-          </button>
+          </IconButton>
         </div>
       </NodeToolbar>
 

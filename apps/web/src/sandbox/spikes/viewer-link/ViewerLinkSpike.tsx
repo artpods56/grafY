@@ -14,6 +14,7 @@ import {
 
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 import { portMarkStyle } from "@/features/workbench/canvas/handle-style";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import {
@@ -507,11 +508,14 @@ function ViewerHeader({
         <>
           <Popover.Root>
             <Popover.Trigger
-              type="button"
-              aria-label="About Artifact Viewer"
-              {...canvasNodeInteractionProps(
-                stylex.props(nodeChrome.headerButton),
-              )}
+              render={
+                <IconButton
+                  label="About Artifact Viewer"
+                  size="xs"
+                  shape="round"
+                  className="nodrag nowheel"
+                />
+              }
             >
               <CircleHelp size={13} />
             </Popover.Trigger>
@@ -535,11 +539,14 @@ function ViewerHeader({
           </Popover.Root>
           <Popover.Root>
             <Popover.Trigger
-              type="button"
-              aria-label="Actions for Artifact Viewer"
-              {...canvasNodeInteractionProps(
-                stylex.props(nodeChrome.headerButton),
-              )}
+              render={
+                <IconButton
+                  label="Actions for Artifact Viewer"
+                  size="xs"
+                  shape="round"
+                  className="nodrag nowheel"
+                />
+              }
             >
               <MoreHorizontal size={13} />
             </Popover.Trigger>

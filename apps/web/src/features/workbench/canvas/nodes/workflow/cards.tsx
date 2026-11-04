@@ -10,8 +10,10 @@ import {
 import { TriangleAlert, X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 
-import { CanvasNodeHeader, nodeChrome } from "../CanvasNodeChrome";
+import { CanvasNodeHeader } from "../CanvasNodeChrome";
 import { artifactTypeKey } from "../../artifact-type-key";
 import { schemaFields, validateConfig } from "../../config-schema";
 import { nodeSecretInputs } from "../../node-secrets";
@@ -75,12 +77,6 @@ const s = stylex.create({
     gap: "9px",
     padding: "4px 12px 13px",
   },
-  compatibilityIssue: {
-    margin: 0,
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.5,
-  },
   compatibilityConfig: {
     overflow: "hidden",
     borderWidth: 1,
@@ -110,32 +106,6 @@ const s = stylex.create({
     lineHeight: 1.45,
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
-  },
-  header: {
-    display: "grid",
-    gap: "2px",
-    padding: "12px 16px 12px 12px",
-  },
-  titleRow: {
-    minWidth: 0,
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-  },
-  /** Unsupported cards keep a direct remove: removal is the only repair. */
-  removeButton: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-    },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
-  },
-  operatorRow: {
-    minWidth: 0,
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    marginLeft: "56px",
   },
   plugPorts: {
     display: "grid",
@@ -250,17 +220,16 @@ export function IncompatibleWorkflowNodeCard({
           }
         >
           {/* Removal is the only repair, so it stays one click away. */}
-          <button
-            type="button"
-            aria-label={`Remove ${data.spec.title}`}
-            title={`Remove ${data.spec.title}`}
-            {...nodeInteractionProps(
-              stylex.props(nodeChrome.headerButton, s.removeButton),
-            )}
+          <IconButton
+            label={`Remove ${data.spec.title}`}
+            variant="danger"
+            size="xs"
+            shape="round"
+            className="nodrag nowheel"
             onClick={() => data.onRemoveNode?.(id)}
           >
             <X size={13} />
-          </button>
+          </IconButton>
         </CanvasNodeHeader>
       }
       resizeHandle={
@@ -295,9 +264,9 @@ export function IncompatibleWorkflowNodeCard({
       />
       <div {...stylex.props(s.compatibilityBody)}>
         {compatibility.issues.map((issue) => (
-          <p key={issue} role="status" {...stylex.props(s.compatibilityIssue)}>
+          <Notice key={issue} tone="neutral">
             {issue}
-          </p>
+          </Notice>
         ))}
         <details {...nodeInteractionProps(stylex.props(s.compatibilityConfig))}>
           <summary {...stylex.props(s.compatibilityConfigSummary)}>

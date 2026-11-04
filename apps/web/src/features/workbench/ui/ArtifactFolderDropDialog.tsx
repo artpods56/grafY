@@ -2,6 +2,7 @@
 
 import * as stylex from "@stylexjs/stylex";
 
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -10,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   artifactCardContract,
@@ -50,22 +50,20 @@ const s = stylex.create({
     fontSize: tokens.fontSizeSm,
   },
   choices: { display: "grid", gap: "6px", marginBottom: "12px" },
+  /**
+   * A choice spans the whole row with its detail at the far end. `Button` draws
+   * the box, the focus ring and the colours; this only lays out the two lines.
+   */
   choice: {
     width: "100%",
+    height: "auto",
     minHeight: "44px",
-    display: "flex",
-    alignItems: "center",
     justifyContent: "space-between",
     gap: "12px",
-    padding: "8px 10px",
-    borderRadius: "6px",
-    outlineColor: tokens.colorAccent,
-    outlineStyle: "solid",
-    outlineOffset: "-3px",
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
-    color: tokens.colorText,
-    cursor: "pointer",
+    paddingBlock: "8px",
+    paddingInline: "10px",
     textAlign: "left",
+    whiteSpace: "normal",
   },
   choiceTitle: { fontSize: tokens.fontSizeSm, fontWeight: 720 },
   choiceDetail: {
@@ -74,16 +72,6 @@ const s = stylex.create({
     textAlign: "right",
   },
   actions: { display: "flex", justifyContent: "flex-end" },
-  cancel: {
-    minHeight: "29px",
-    paddingInline: "10px",
-    borderWidth: 0,
-    borderRadius: "5px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeSm,
-  },
 });
 
 function artifactCount(group: ArtifactDropPayload): string {
@@ -121,10 +109,11 @@ export function ArtifactFolderDropDialog({
             <>
               {pending.canPlaceAll ? (
                 <div {...stylex.props(s.choices)}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="md"
                     autoFocus
-                    {...stylex.props(overlay.item, s.choice)}
+                    xstyle={s.choice}
                     onClick={onPlaceAll}
                   >
                     <span {...stylex.props(s.choiceTitle)}>
@@ -133,7 +122,7 @@ export function ArtifactFolderDropDialog({
                     <span {...stylex.props(s.choiceDetail)}>
                       one per artifact type
                     </span>
-                  </button>
+                  </Button>
                 </div>
               ) : null}
               <p {...stylex.props(s.prompt)}>
@@ -148,31 +137,28 @@ export function ArtifactFolderDropDialog({
                     artifactTypes,
                   );
                   return (
-                    <button
+                    <Button
                       key={`${group.value.artifact_type}@${group.value.schema_version}`}
-                      type="button"
+                      variant="secondary"
+                      size="md"
                       autoFocus={!pending.canPlaceAll && index === 0}
                       aria-label={`Place ${title}`}
                       title={artifactCardContractTooltip(group.value)}
-                      {...stylex.props(overlay.item, s.choice)}
+                      xstyle={s.choice}
                       onClick={() => onPlaceGroup(group)}
                     >
                       <span {...stylex.props(s.choiceTitle)}>{title}</span>
                       <span {...stylex.props(s.choiceDetail)}>
                         {artifactCount(group)}
                       </span>
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
               <div {...stylex.props(s.actions)}>
-                <button
-                  type="button"
-                  {...stylex.props(s.cancel)}
-                  onClick={onClose}
-                >
+                <Button variant="ghost" size="sm" onClick={onClose}>
                   Cancel
-                </button>
+                </Button>
               </div>
             </>
           ) : null}

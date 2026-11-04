@@ -11,6 +11,7 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
 import type {
   ArtifactViewerInteractionEdge,
   CanvasEdge,
@@ -62,21 +63,6 @@ const s = stylex.create({
   arrow: {
     color: tokens.colorSubtle,
     textAlign: "center",
-  },
-  iconButton: {
-    width: "24px",
-    height: "24px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "6px",
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorHover,
-    },
-    color: tokens.colorMuted,
-    cursor: "pointer",
   },
   footer: {
     display: "flex",
@@ -276,12 +262,12 @@ export default function ArtifactViewerInteractionEdgeControl({
                     updateBinding({ mappings });
                   }}
                 />
-                <button
-                  type="button"
-                  aria-label={`Remove field mapping ${index + 1}`}
+                <IconButton
+                  label={`Remove field mapping ${index + 1}`}
                   title="Remove mapping"
+                  variant="soft"
+                  size="sm"
                   disabled={binding.mappings.length === 1}
-                  {...stylex.props(s.iconButton)}
                   onClick={() =>
                     updateBinding({
                       mappings: binding.mappings.filter(
@@ -291,7 +277,7 @@ export default function ArtifactViewerInteractionEdgeControl({
                   }
                 >
                   <Trash2 size={11} aria-hidden="true" />
-                </button>
+                </IconButton>
               </div>
             ))}
             <div {...stylex.props(s.footer)}>
@@ -314,12 +300,12 @@ export default function ArtifactViewerInteractionEdgeControl({
                   </label>
                 ))}
               </span>
-              <button
-                type="button"
-                aria-label="Add field mapping"
+              <IconButton
+                label="Add field mapping"
                 title="Add mapping"
+                variant="soft"
+                size="sm"
                 disabled={binding.mappings.length >= 8}
-                {...stylex.props(s.iconButton)}
                 onClick={() =>
                   updateBinding({
                     mappings: [
@@ -330,7 +316,7 @@ export default function ArtifactViewerInteractionEdgeControl({
                 }
               >
                 <Plus size={12} aria-hidden="true" />
-              </button>
+              </IconButton>
             </div>
           </div>
         </EdgeSelectorBlock>

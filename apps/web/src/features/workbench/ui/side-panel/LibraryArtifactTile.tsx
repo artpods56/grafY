@@ -4,6 +4,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ArrowUpRight, Download, LoaderCircle, X } from "lucide-react";
 
+import { IconButton } from "@/components/ui/button";
 import {
   artifactContentUrl,
   type LibraryFolder,
@@ -71,15 +72,14 @@ export function LibraryArtifactTile({
         <span {...stylex.props(s.title)} title={name}>
           {name}
         </span>
-        <button
-          type="button"
-          aria-label="Close preview"
-          title="Close preview"
+        <IconButton
+          label="Close preview"
+          size="xs"
+          xstyle={[panelStyles.iconButton, s.close]}
           onClick={onClose}
-          {...stylex.props(panelStyles.iconButton, s.close)}
         >
           <X size={13} />
-        </button>
+        </IconButton>
       </div>
       <span {...stylex.props(s.facts)}>
         {location.join(" / ")}
@@ -250,7 +250,7 @@ const s = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  close: { width: "22px", height: "22px", marginRight: "-4px" },
+  close: { marginRight: "-4px" },
   facts: {
     marginTop: "-4px",
     color: tokens.colorSubtle,

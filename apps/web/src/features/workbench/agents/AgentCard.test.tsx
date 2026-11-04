@@ -2,6 +2,7 @@ import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ReactFlowProvider } from "@xyflow/react";
 import { expect, it } from "vitest";
+
 import AgentCard from "./AgentCard";
 it("shows configuration only to editors and explains unsaved conversations", () => {
   const data = {

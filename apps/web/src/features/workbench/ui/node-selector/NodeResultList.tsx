@@ -4,6 +4,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Cable } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import type { NodeSpec } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { catalogNodeKey } from "../../model/node-catalog";
@@ -94,13 +95,9 @@ export function NodeResultList({
           <div {...stylex.props(s.empty)}>
             <span>Nodes couldn’t be loaded. {errorMessage}</span>
             {onRetry ? (
-              <button
-                type="button"
-                onClick={onRetry}
-                {...stylex.props(s.textButton)}
-              >
+              <Button variant="secondary" size="sm" onClick={onRetry}>
                 Try again
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : loading ? (
@@ -284,19 +281,6 @@ const s = stylex.create({
     fontSize: tokens.fontSizeSm,
     lineHeight: 1.5,
     textAlign: "center",
-  },
-  textButton: {
-    minHeight: "29px",
-    paddingInline: "10px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorderStrong,
-    borderRadius: "6px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 700,
   },
   note: {
     flexShrink: 0,

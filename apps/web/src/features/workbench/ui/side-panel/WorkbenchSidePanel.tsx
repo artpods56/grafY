@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Drawer } from "@base-ui/react/drawer";
 import { PanelLeftClose } from "lucide-react";
 
+import { IconButton } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   beginSidePanelResize,
@@ -145,15 +146,14 @@ export function WorkbenchSidePanel({
   generatedRefreshToken?: number;
 }) {
   const collapse = (
-    <button
-      type="button"
-      aria-label="Collapse side panel"
-      title="Collapse side panel"
+    <IconButton
+      label="Collapse side panel"
+      size="sm"
+      xstyle={panelStyles.iconButton}
       onClick={() => sidePanel.setOpen(false)}
-      {...stylex.props(panelStyles.iconButton)}
     >
       <PanelLeftClose size={14} />
-    </button>
+    </IconButton>
   );
   const body =
     sidePanel.view === "generated" && projectId !== null ? (

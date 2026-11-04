@@ -1106,7 +1106,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
       expect(window.confirm).not.toHaveBeenCalled();
     });
 
-    it("warns when the room refused edits while reconnecting", async () => {
+    it("leaves without asking when the room refused edits while reconnecting", async () => {
       const { options, hook } = await openJournaledGraph("Refused edits");
       expect(fireBeforeUnload()).toBe(false);
 
@@ -1114,14 +1114,14 @@ describe("useSavedGraphLifecycle document ownership", () => {
         await hook.rerender({ ...options, hasUnsyncedRoomEdits: true });
       });
 
-      expect(fireBeforeUnload()).toBe(true);
+      expect(fireBeforeUnload()).toBe(false);
       await React.act(async () => {
         hook.result.current.requestNewGraph();
       });
-      expect(window.confirm).toHaveBeenCalledTimes(1);
+      expect(window.confirm).not.toHaveBeenCalled();
     });
 
-    it("warns while the graph exists only in this tab", async () => {
+    it("leaves without asking while the graph exists only in this tab", async () => {
       const { options } = lifecycleOptions(null, undefined, {
         name: "Drawn but never saved",
         nodes: [],
@@ -1131,7 +1131,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
       });
       await renderHook(useSavedGraphLifecycle, options);
 
-      expect(fireBeforeUnload()).toBe(true);
+      expect(fireBeforeUnload()).toBe(false);
     });
 
     it("stays silent for an empty canvas nobody has drawn on", async () => {

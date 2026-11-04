@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import type { TablePage } from "@/lib/api";
+import { IconButton } from "@/components/ui/button";
 
 import { s } from "./styles";
 
@@ -48,6 +49,7 @@ export function TablePageNavigation({
             ? "No rows"
             : `${page.offset + 1}–${pageEnd} of ${page.total_rows}`}
         </span>
+        {/* The kit draws no select, so the page size keeps its native one. */}
         <select
           aria-label="Rows per page"
           value={pageSize}
@@ -67,51 +69,51 @@ export function TablePageNavigation({
           canvas ? s.tableCanvasPagerActions : null,
         )}
       >
-        <button
-          type="button"
-          aria-label="First page"
+        <IconButton
+          label="First page"
           title="First page"
+          variant="soft"
+          className="nodrag"
           disabled={requestedOffset === 0}
-          {...stylex.props(s.tablePagerButton, s.tablePagerIconButton)}
           onClick={() => onOffsetChange(0)}
         >
-          <ChevronsLeft size={13} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          aria-label="Previous page"
+          <ChevronsLeft size={13} />
+        </IconButton>
+        <IconButton
+          label="Previous page"
           title="Previous page"
+          variant="soft"
+          className="nodrag"
           disabled={requestedOffset === 0}
-          {...stylex.props(s.tablePagerButton, s.tablePagerIconButton)}
           onClick={() =>
             onOffsetChange(Math.max(0, requestedOffset - pageSize))
           }
         >
-          <ChevronLeft size={13} aria-hidden="true" />
-        </button>
+          <ChevronLeft size={13} />
+        </IconButton>
         <span aria-live="polite" {...stylex.props(s.tablePageIndicator)}>
           Page {currentPage} of {totalPages}
         </span>
-        <button
-          type="button"
-          aria-label="Next page"
+        <IconButton
+          label="Next page"
           title="Next page"
+          variant="soft"
+          className="nodrag"
           disabled={waitingForRows || pageEnd >= page.total_rows}
-          {...stylex.props(s.tablePagerButton, s.tablePagerIconButton)}
           onClick={() => onOffsetChange(pageEnd)}
         >
-          <ChevronRight size={13} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          aria-label="Last page"
+          <ChevronRight size={13} />
+        </IconButton>
+        <IconButton
+          label="Last page"
           title="Last page"
+          variant="soft"
+          className="nodrag"
           disabled={waitingForRows || pageEnd >= page.total_rows}
-          {...stylex.props(s.tablePagerButton, s.tablePagerIconButton)}
           onClick={() => onOffsetChange(lastPageOffset)}
         >
-          <ChevronsRight size={13} aria-hidden="true" />
-        </button>
+          <ChevronsRight size={13} />
+        </IconButton>
       </span>
     </div>
   );

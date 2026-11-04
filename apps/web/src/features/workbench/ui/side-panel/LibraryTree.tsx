@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Menu } from "@base-ui/react/menu";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
 import {
   Boxes,
   ChevronRight,
@@ -671,8 +671,8 @@ function RowMenu({
       onDragStart={stop}
       {...stylex.props(s.rowMenu)}
     >
-      <Menu.Root open={open} onOpenChange={setOpen}>
-        <Menu.Trigger
+      <Menu open={open} onOpenChange={setOpen}>
+        <MenuTrigger
           aria-label={label}
           {...stylex.props(
             s.rowMenuTrigger,
@@ -680,18 +680,16 @@ function RowMenu({
           )}
         >
           <MoreHorizontal size={13} />
-        </Menu.Trigger>
-        <Menu.Portal>
-          <Menu.Positioner
-            side="bottom"
-            align="end"
-            sideOffset={4}
-            {...stylex.props(s.menuPositioner)}
-          >
-            <Menu.Popup {...stylex.props(s.menu)}>{children}</Menu.Popup>
-          </Menu.Positioner>
-        </Menu.Portal>
-      </Menu.Root>
+        </MenuTrigger>
+        <MenuContent
+          side="bottom"
+          align="end"
+          sideOffset={4}
+          positionerXstyle={s.menuLayer}
+        >
+          {children}
+        </MenuContent>
+      </Menu>
     </span>
   );
 }
@@ -708,14 +706,13 @@ function RowMenuItem({
   onSelect: () => void;
 }) {
   return (
-    <Menu.Item
+    <MenuItem
       disabled={disabled}
       onClick={onSelect}
-      {...stylex.props(s.menuItem)}
+      icon={<Icon size={12} aria-hidden="true" />}
     >
-      <Icon size={12} aria-hidden="true" />
       {label}
-    </Menu.Item>
+    </MenuItem>
   );
 }
 
@@ -894,38 +891,6 @@ const s = stylex.create({
   rowMenuTriggerShown: {
     opacity: 1,
   },
-  /** The app's popup layer: a row menu paints over the canvas, not under it. */
-  menuPositioner: { zIndex: 80 },
-  menu: {
-    minWidth: "168px",
-    display: "grid",
-    gap: "1px",
-    padding: "3px",
-    borderRadius: "7px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    backgroundColor: tokens.colorBg,
-    boxShadow: tokens.shadowNode,
-    outline: "none",
-  },
-  menuItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "5px 7px",
-    borderRadius: "5px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-      ":focus-visible": tokens.colorHover,
-    },
-    color: {
-      default: tokens.colorText,
-      ":is([data-disabled])": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":is([data-disabled])": "default" },
-    fontSize: tokens.fontSizeSm,
-    outline: "none",
-  },
+  /** Above the phone drawer (90) and the docked pane, so a row menu is never under them. */
+  menuLayer: { zIndex: 100 },
 });

@@ -14,11 +14,6 @@ const apiMocks = vi.hoisted(() => ({
   listWorkspaceMembers: vi.fn<() => Promise<readonly WorkspaceMember[]>>(),
 }));
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@/lib/api", () => ({
   listRuns: apiMocks.listRuns,
   listWorkspaceMembers: apiMocks.listWorkspaceMembers,
@@ -148,6 +143,17 @@ function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
 
 function rows(container: HTMLElement): HTMLElement[] {
   return [...container.querySelectorAll<HTMLElement>('[role="listitem"]')];
+}
+
+/** The Notice that carries `text`, so a message cannot silently lose its role. */
+function alertMentioning(container: HTMLElement, text: string): HTMLElement {
+  const alert = [
+    ...container.querySelectorAll<HTMLElement>('[role="alert"]'),
+  ].find((node) => node.textContent?.includes(text));
+  if (!alert) {
+    throw new Error(`No alert mentions ${text}`);
+  }
+  return alert;
 }
 
 /** The row at `index`, or a failure that names what the list left out. */
@@ -357,6 +363,15 @@ describe("ExecutionHistoryDrawer", () => {
     await vi.waitFor(() => expect(apiMocks.listRuns).toHaveBeenCalledTimes(2));
   });
 
+  it("announces the list as it reads it", async () => {
+    apiMocks.listRuns.mockImplementation(() => new Promise(() => undefined));
+
+    const { container } = await renderDrawer();
+
+    const status = container.querySelector('[role="status"]');
+    expect(status?.textContent).toContain("Loading runs…");
+  });
+
   it("reports a failed load and retries it", async () => {
     apiMocks.listRuns
       .mockRejectedValueOnce(new Error("Runs unavailable"))
@@ -364,11 +379,16 @@ describe("ExecutionHistoryDrawer", () => {
 
     const { container } = await renderDrawer();
 
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain("Runs unavailable"),
-    );
+    await vi.waitFor(() => {
+      expect(() =>
+        alertMentioning(container, "Runs unavailable"),
+      ).not.toThrow();
+    });
     await React.act(async () => {
-      buttonNamed(container, "Try again").click();
+      buttonNamed(
+        alertMentioning(container, "Runs unavailable"),
+        "Try again",
+      ).click();
     });
     await vi.waitFor(() => expect(apiMocks.listRuns).toHaveBeenCalledTimes(2));
   });

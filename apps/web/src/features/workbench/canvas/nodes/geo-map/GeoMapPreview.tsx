@@ -12,6 +12,8 @@ import {
   type GeoRenderLayer,
 } from "@/lib/api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
+import { Button, IconButton } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 
 import type {
   ArtifactViewerActivity,
@@ -538,14 +540,14 @@ export function GeoMapPreview({
         >
           <div {...stylex.props(s.inspectorHeader)}>
             <span {...stylex.props(s.inspectorTitle)}>Layer inspector</span>
-            <button
-              type="button"
-              {...stylex.props(s.resetButton)}
+            <Button
+              size="xs"
+              variant="secondary"
               onClick={() => setLayers(descriptor.layers.map(cloneLayer))}
             >
-              <RotateCcw size={11} aria-hidden="true" />
+              <RotateCcw size={11} />
               Reset all
-            </button>
+            </Button>
           </div>
           {layers.map((layer, index) => (
             <LayerInspector
@@ -593,11 +595,8 @@ export function GeoMapPreview({
                 {selectedFeature.latitude.toFixed(5)}
               </span>
             </span>
-            <button
-              type="button"
-              aria-label="Close feature details"
-              title="Close feature details"
-              {...mapInteractionProps(stylex.props(s.iconButton))}
+            <IconButton
+              label="Close feature details"
               onClick={() => {
                 setSelectedFeature(null);
                 interaction?.onSelectionChange({
@@ -606,8 +605,8 @@ export function GeoMapPreview({
                 });
               }}
             >
-              <X size={13} aria-hidden="true" />
-            </button>
+              <X size={13} />
+            </IconButton>
           </header>
           {selectedFeature.properties.length ? (
             <dl {...stylex.props(s.featureProperties)}>
@@ -626,9 +625,9 @@ export function GeoMapPreview({
               ))}
             </dl>
           ) : (
-            <p {...stylex.props(s.featureEmpty)}>
+            <Notice tone="neutral" xstyle={s.featureEmpty}>
               This feature has no properties.
-            </p>
+            </Notice>
           )}
         </section>
       ) : null}

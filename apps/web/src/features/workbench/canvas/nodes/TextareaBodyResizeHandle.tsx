@@ -7,6 +7,7 @@ import { useViewport } from "@xyflow/react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { shouldSnapSize, snapNodeLayout } from "../grid-layout";
+import { resizeGrip } from "./LayoutResizeHandle";
 import {
   DEFAULT_BODY_HEIGHT,
   DEFAULT_NODE_WIDTH,
@@ -34,20 +35,6 @@ const s = stylex.create({
     cursor: "nwse-resize",
     touchAction: "none",
     zIndex: 2,
-  },
-  glyph: {
-    position: "absolute",
-    right: "3px",
-    bottom: "3px",
-    width: "7px",
-    height: "7px",
-    borderRightWidth: 2,
-    borderRightStyle: "solid",
-    borderBottomWidth: 2,
-    borderBottomStyle: "solid",
-    borderColor: tokens.colorSubtle,
-    opacity: 0.75,
-    pointerEvents: "none",
   },
 });
 
@@ -161,7 +148,7 @@ export function TextareaBodyResizeHandle({
         onDraft(null);
       }}
     >
-      <span aria-hidden="true" {...stylex.props(s.glyph)} />
+      <span aria-hidden="true" {...stylex.props(resizeGrip.glyph)} />
     </button>
   );
 }

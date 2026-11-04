@@ -4,6 +4,9 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Check, LoaderCircle, Plus, Trash2 } from "lucide-react";
 
+import { Button, IconButton } from "@/components/ui/button";
+import { Field, TextArea, TextInput } from "@/components/ui/field";
+import { Notice } from "@/components/ui/notice";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import {
@@ -48,7 +51,6 @@ const s = stylex.create({
     // Literal keeps StyleX happy (imported layout constants can't be used here).
     minHeight: "96px",
     height: "auto",
-    resize: "none",
   },
   textareaDefault: {
     height: "96px",
@@ -60,6 +62,8 @@ const s = stylex.create({
     flexDirection: "column",
   },
   field: { display: "grid", alignContent: "start", gap: "4px" },
+  /** A label kept only for assistive tech takes no line, and no gap with it. */
+  fieldHiddenLabel: { gap: "0px" },
   tupleField: {
     minWidth: 0,
     margin: 0,
@@ -80,11 +84,6 @@ const s = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  tupleError: {
-    color: tokens.colorDanger,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.4,
-  },
   stringList: {
     display: "grid",
     gap: "5px",
@@ -92,59 +91,41 @@ const s = stylex.create({
   stringListRow: {
     minWidth: 0,
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 31px",
+    gridTemplateColumns: "minmax(0, 1fr) 26px",
     alignItems: "center",
     gap: "5px",
-  },
-  stringListRemove: {
-    width: "31px",
-    height: "31px",
-    display: "grid",
-    placeItems: "center",
-    borderWidth: 0,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorDangerHover,
-    },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
-    cursor: "pointer",
-    opacity: { ":disabled": 0.4 },
-  },
-  stringListAdd: {
-    minHeight: "29px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "5px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorHover,
-    },
-    color: tokens.colorTextEmphasis,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 500,
-    opacity: { ":disabled": 0.4 },
   },
   fieldLabel: {
     minWidth: 0,
     flexShrink: 0,
     display: "flex",
     alignItems: "center",
-    gap: "3px",
     color: tokens.colorTextEmphasis,
     fontSize: tokens.fontSizeSm,
     fontWeight: 500,
-    textTransform: "capitalize",
   },
+  /** The flag sits 3px off the title, in a row or inside <Field>'s label. */
+  requiredGap: { marginLeft: "3px" },
   fieldLabelText: {
     minWidth: 0,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    // Schema titles arrive the way the property reads ("api key"); the brick
+    // shows them as labels.
+    textTransform: "capitalize",
+  },
+  /**
+   * <Field> owns its label element, so a call site cannot give it
+   * `min-width: 0` to make an ellipsis work. Its labels wrap instead of
+   * clipping, which a dense brick can afford and a bleeding line of text
+   * across the neighbouring brick cannot.
+   */
+  fieldLabelTextWrap: {
+    whiteSpace: "normal",
+    overflow: "visible",
+    textOverflow: "clip",
+    overflowWrap: "anywhere",
   },
   srOnly: {
     position: "absolute",
@@ -157,7 +138,11 @@ const s = stylex.create({
     whiteSpace: "nowrap",
     borderWidth: 0,
   },
-  input: {
+  /**
+   * The kit has no select, so the enum field keeps a native one drawn to the
+   * same silhouette as the shared inputs beside it.
+   */
+  select: {
     width: "100%",
     height: "31px",
     paddingInline: "10px",
@@ -171,20 +156,11 @@ const s = stylex.create({
     color: tokens.colorText,
     fontSize: tokens.fontSizeSm,
   },
-  textarea: {
-    paddingBlock: "8px",
-    lineHeight: 1.45,
-    resize: "none",
-  },
-  codeTextarea: {
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-    fontSize: tokens.fontSizeXs,
-    tabSize: 2,
-  },
+  /** <TextArea mono> carries the family; the size and the tab stop stay here. */
+  codeTextarea: { fontSize: tokens.fontSizeXs, tabSize: 2 },
   /**
-   * Same silhouette as text inputs: full-width 31px bar, check on the
-   * trailing edge. Checked state lives on the well, not the bar.
+   * The kit has no checkbox. This is the config brick's own treatment: the
+   * same silhouette as a text input, with the checked state on the well.
    */
   checkBox: {
     position: "relative",
@@ -233,20 +209,7 @@ const s = stylex.create({
     opacity: 1,
     transform: "scale(1)",
   },
-  secretField: { display: "grid", alignContent: "start", gap: "5px" },
-  secretHeader: {
-    minWidth: 0,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "8px",
-  },
-  secretStatus: {
-    flexShrink: 0,
-    color: tokens.colorSubtle,
-    fontSize: "10px",
-    fontWeight: 600,
-  },
+  secretField: { alignContent: "start", gap: "5px" },
   secretStatusConfigured: { color: tokens.colorSuccess },
   secretStatusStale: { color: tokens.colorWarning },
   secretStatusError: { color: tokens.colorDanger },
@@ -254,31 +217,6 @@ const s = stylex.create({
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) auto",
     gap: "5px",
-  },
-  secretInput: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
-  secretButton: {
-    minWidth: "54px",
-    height: "31px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "5px",
-    paddingInline: "9px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: {
-      default: tokens.colorAccentSoft,
-      ":hover": tokens.colorHoverStrong,
-    },
-    color: tokens.colorTextEmphasis,
-    cursor: "pointer",
-    fontSize: "10px",
-    fontWeight: 600,
-  },
-  secretButtonDisabled: {
-    backgroundColor: tokens.colorSurfaceMuted,
-    color: tokens.colorTextDisabled,
-    cursor: "not-allowed",
   },
   secretFooter: {
     minHeight: "18px",
@@ -293,23 +231,6 @@ const s = stylex.create({
     fontSize: "10px",
     lineHeight: 1.35,
   },
-  secretRemove: {
-    flexShrink: 0,
-    padding: 0,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    color: {
-      default: tokens.colorSubtle,
-      ":hover": tokens.colorDanger,
-    },
-    cursor: "pointer",
-    fontSize: "10px",
-    fontWeight: 500,
-  },
-  secretRemoveDisabled: {
-    color: tokens.colorTextDisabled,
-    cursor: "not-allowed",
-  },
 });
 
 /**
@@ -319,14 +240,17 @@ const s = stylex.create({
 function FieldLabelText({
   title,
   description,
+  wrap = false,
 }: {
   title: string;
   description?: string | null;
+  /** Set when <Field> draws the label: its label element cannot ellipsize. */
+  wrap?: boolean;
 }) {
   return (
     <span
       title={description ? `${title} — ${description}` : title}
-      {...stylex.props(s.fieldLabelText)}
+      {...stylex.props(s.fieldLabelText, wrap ? s.fieldLabelTextWrap : null)}
     >
       {title}
     </span>
@@ -445,7 +369,7 @@ function NumberTupleConfigField({
           }
         />
         {field.required ? (
-          <span {...stylex.props(sharedStyles.required)}>*</span>
+          <span {...stylex.props(sharedStyles.required, s.requiredGap)}>*</span>
         ) : null}
       </legend>
       <div {...stylex.props(s.tupleGrid)}>
@@ -454,7 +378,7 @@ function NumberTupleConfigField({
             <span title={item.title} {...stylex.props(s.tupleItemLabel)}>
               {item.title}
             </span>
-            <input
+            <TextInput
               type="number"
               aria-label={`${field.title}: ${item.title}`}
               aria-invalid={showError}
@@ -462,7 +386,7 @@ function NumberTupleConfigField({
               min={item.minimum}
               max={item.maximum}
               step={item.type === "integer" ? 1 : "any"}
-              {...nodeInteractionProps(stylex.props(s.input))}
+              className="nodrag nowheel"
               onChange={(event) => {
                 const nextDraftValues = [...draftValues];
                 nextDraftValues[index] = event.currentTarget.value;
@@ -485,9 +409,9 @@ function NumberTupleConfigField({
         ))}
       </div>
       {showError ? (
-        <span role="alert" {...stylex.props(s.tupleError)}>
+        <Notice tone="danger">
           Enter all {itemCount} values as numbers within the shown ranges.
-        </span>
+        </Notice>
       ) : null}
     </fieldset>
   );
@@ -516,49 +440,51 @@ function StringListConfigField({
       <legend {...stylex.props(s.fieldLabel)}>
         <FieldLabelText title={field.title} description={field.description} />
         {field.required ? (
-          <span {...stylex.props(sharedStyles.required)}>*</span>
+          <span {...stylex.props(sharedStyles.required, s.requiredGap)}>*</span>
         ) : null}
       </legend>
       <div {...stylex.props(s.stringList)}>
         {values.map((item, index) => (
           <div key={index} {...stylex.props(s.stringListRow)}>
-            <input
+            <TextInput
               type="text"
               aria-label={`${field.title} item ${index + 1}`}
               value={item}
               minLength={field.itemMinLength}
               maxLength={field.itemMaxLength}
-              {...nodeInteractionProps(stylex.props(s.input))}
+              className="nodrag nowheel"
               onChange={(event) => {
                 const nextValues = [...values];
                 nextValues[index] = event.currentTarget.value;
                 onChange(nextValues);
               }}
             />
-            <button
-              type="button"
-              aria-label={`Remove ${field.title} item ${index + 1}`}
+            <IconButton
+              label={`Remove ${field.title} item ${index + 1}`}
               title="Remove item"
+              variant="danger"
+              size="sm"
+              className="nodrag nowheel"
               disabled={!canRemove}
-              {...nodeInteractionProps(stylex.props(s.stringListRemove))}
               onClick={() => {
                 onChange(values.filter((_, itemIndex) => itemIndex !== index));
               }}
             >
               <Trash2 size={13} />
-            </button>
+            </IconButton>
           </div>
         ))}
-        <button
-          type="button"
+        <Button
+          variant="soft"
+          size="sm"
           aria-label={`Add ${field.title} item`}
+          className="nodrag nowheel"
           disabled={!canAdd}
-          {...nodeInteractionProps(stylex.props(s.stringListAdd))}
           onClick={() => onChange([...values, ""])}
         >
           <Plus size={13} />
           Add item
-        </button>
+        </Button>
       </div>
     </fieldset>
   );
@@ -608,7 +534,9 @@ export function ConfigField({
         <span {...labelProps}>
           <FieldLabelText title={field.title} description={field.description} />
           {field.required ? (
-            <span {...stylex.props(sharedStyles.required)}>*</span>
+            <span {...stylex.props(sharedStyles.required, s.requiredGap)}>
+              *
+            </span>
           ) : null}
         </span>
         <span {...stylex.props(s.checkBox)}>
@@ -637,20 +565,25 @@ export function ConfigField({
     );
   }
 
-  return (
-    <label {...fieldProps}>
-      <span {...labelProps}>
-        <FieldLabelText title={field.title} description={field.description} />
-        {field.required ? (
-          <span {...stylex.props(sharedStyles.required)}>*</span>
-        ) : null}
-      </span>
-      {field.enumValues ? (
+  const requiredMark = field.required ? (
+    <span {...stylex.props(sharedStyles.required, s.requiredGap)}>*</span>
+  ) : null;
+
+  if (field.enumValues) {
+    // The kit has no select, and a native one cannot take part in <Field>'s
+    // label wiring, so this field keeps its own label wrapping the control.
+    return (
+      <label {...fieldProps}>
+        <span {...labelProps}>
+          <FieldLabelText title={field.title} description={field.description} />
+          {requiredMark}
+        </span>
         <select
           value={
             typeof value === "string" || typeof value === "number" ? value : ""
           }
-          {...nodeInteractionProps(stylex.props(s.input))}
+          className="nodrag nowheel"
+          {...stylex.props(s.select)}
           onChange={(event) => {
             const selected = event.currentTarget.value;
             onChange(
@@ -680,25 +613,53 @@ export function ConfigField({
             </option>
           ))}
         </select>
-      ) : field.type === "string" && field.format === "textarea" ? (
+      </label>
+    );
+  }
+
+  const fieldLabel = (
+    <>
+      <FieldLabelText
+        title={field.title}
+        description={field.description}
+        wrap
+      />
+      {requiredMark}
+    </>
+  );
+
+  return (
+    <Field
+      label={
+        labelHidden ? (
+          <span {...stylex.props(s.srOnly)}>{fieldLabel}</span>
+        ) : (
+          fieldLabel
+        )
+      }
+      xstyle={[
+        s.field,
+        labelHidden ? s.fieldHiddenLabel : null,
+        fillHeight ? s.fieldSized : null,
+      ]}
+    >
+      {field.type === "string" && field.format === "textarea" ? (
         <div
           {...stylex.props(
             s.textareaHost,
             fillHeight ? s.textareaHostFill : null,
           )}
         >
-          <textarea
+          <TextArea
             value={typeof value === "string" ? value : ""}
             minLength={field.minLength}
             maxLength={field.maxLength}
-            {...nodeInteractionProps(
-              stylex.props(
-                s.input,
-                s.textarea,
-                field.codeLanguage ? s.codeTextarea : null,
-                fillHeight ? s.textareaFill : s.textareaDefault,
-              ),
-            )}
+            mono={Boolean(field.codeLanguage)}
+            className="nodrag nowheel"
+            xstyle={[
+              field.codeLanguage ? s.codeTextarea : null,
+              fillHeight ? s.textareaFill : s.textareaDefault,
+            ]}
             onChange={(event) => onChange(event.currentTarget.value)}
           />
           {canResizeBody ? (
@@ -711,7 +672,7 @@ export function ConfigField({
           ) : null}
         </div>
       ) : (
-        <input
+        <TextInput
           type={
             field.type === "number" || field.type === "integer"
               ? "number"
@@ -725,7 +686,7 @@ export function ConfigField({
           minLength={field.minLength}
           maxLength={field.maxLength}
           step={field.type === "integer" ? 1 : undefined}
-          {...nodeInteractionProps(stylex.props(s.input))}
+          className="nodrag nowheel"
           onChange={(event) => {
             const raw = event.currentTarget.value;
             onChange(
@@ -738,7 +699,7 @@ export function ConfigField({
           }}
         />
       )}
-    </label>
+    </Field>
   );
 }
 
@@ -790,7 +751,7 @@ export function SecretInputField({
 
   return (
     <form
-      {...nodeInteractionProps(stylex.props(s.secretField))}
+      className="nodrag nowheel"
       onSubmit={(event) => {
         event.preventDefault();
         if (!canApply) return;
@@ -799,78 +760,73 @@ export function SecretInputField({
         });
       }}
     >
-      <div {...stylex.props(s.secretHeader)}>
-        <span {...stylex.props(s.fieldLabel)}>
-          <FieldLabelText title={input.title} />
-        </span>
-        <span
-          role="status"
-          {...stylex.props(
-            s.secretStatus,
-            status.state === "configured" ? s.secretStatusConfigured : null,
-            status.state === "stale" ? s.secretStatusStale : null,
-            status.state === "error" ? s.secretStatusError : null,
-          )}
-        >
-          {SECRET_STATUS_LABEL[status.state]}
-        </span>
-      </div>
-      <div {...stylex.props(s.secretControl)}>
-        <input
-          type="password"
-          name={`${id}-${input.name}`}
-          value={value}
-          autoComplete="off"
-          autoCapitalize="none"
-          spellCheck={false}
-          data-1p-ignore
-          data-lpignore="true"
-          data-bwignore
-          aria-label={input.title}
-          placeholder={
-            status.state === "configured" ? "Replace secret" : "Enter secret"
-          }
-          disabled={!ready || busy}
-          {...nodeInteractionProps(stylex.props(s.input, s.secretInput))}
-          onChange={(event) => setValue(event.currentTarget.value)}
-        />
-        <button
-          type="submit"
-          disabled={!canApply}
-          {...nodeInteractionProps(
-            stylex.props(
-              s.secretButton,
-              canApply ? null : s.secretButtonDisabled,
-            ),
-          )}
-        >
-          {status.state === "applying" ? (
-            <LoaderCircle size={11} {...stylex.props(sharedStyles.spinner)} />
-          ) : null}
-          Apply
-        </button>
-      </div>
-      <div {...stylex.props(s.secretFooter)}>
-        <p {...stylex.props(s.secretHint)}>{hint}</p>
-        <button
-          type="button"
-          disabled={!canRemove}
-          {...nodeInteractionProps(
-            stylex.props(
-              s.secretRemove,
-              canRemove ? null : s.secretRemoveDisabled,
-            ),
-          )}
-          onClick={() => {
-            if (!canRemove) return;
-            void data.onRemoveNodeSecret?.(id, input.name).then((removed) => {
-              if (removed) setValue("");
-            });
-          }}
-        >
-          Remove
-        </button>
-      </div>
+      <Field
+        label={<FieldLabelText title={input.title} wrap />}
+        aside={
+          <span
+            role="status"
+            {...stylex.props(
+              status.state === "configured" ? s.secretStatusConfigured : null,
+              status.state === "stale" ? s.secretStatusStale : null,
+              status.state === "error" ? s.secretStatusError : null,
+            )}
+          >
+            {SECRET_STATUS_LABEL[status.state]}
+          </span>
+        }
+        xstyle={s.secretField}
+      >
+        <div {...stylex.props(s.secretControl)}>
+          <TextInput
+            mono
+            type="password"
+            name={`${id}-${input.name}`}
+            value={value}
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore
+            aria-label={input.title}
+            placeholder={
+              status.state === "configured" ? "Replace secret" : "Enter secret"
+            }
+            disabled={!ready || busy}
+            className="nodrag nowheel"
+            onChange={(event) => setValue(event.currentTarget.value)}
+          />
+          <Button
+            type="submit"
+            variant="soft"
+            size="sm"
+            className="nodrag nowheel"
+            disabled={!canApply}
+          >
+            {status.state === "applying" ? (
+              <LoaderCircle size={11} {...stylex.props(sharedStyles.spinner)} />
+            ) : null}
+            Apply
+          </Button>
+        </div>
+        <div {...stylex.props(s.secretFooter)}>
+          <p {...stylex.props(s.secretHint)}>{hint}</p>
+          <Button
+            variant="danger"
+            size="xs"
+            className="nodrag nowheel"
+            disabled={!canRemove}
+            onClick={() => {
+              if (!canRemove) return;
+              void data.onRemoveNodeSecret?.(id, input.name).then((removed) => {
+                if (removed) setValue("");
+              });
+            }}
+          >
+            Remove
+          </Button>
+        </div>
+      </Field>
     </form>
   );
 }

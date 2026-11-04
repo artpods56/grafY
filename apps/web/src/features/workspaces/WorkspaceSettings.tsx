@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import useSWR from "swr";
 
+import { Button, IconButton } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import {
   createPersonalAccessToken,
   listPersonalAccessTokens,
@@ -309,13 +311,14 @@ export function WorkspaceSettings() {
                 <option value="30">30 days</option>
               </select>
             </label>
-            <button
+            <Button
               type="submit"
-              className="grafy-workspace-button grafy-workspace-button--primary"
+              variant="primary"
+              size="lg"
               disabled={creating || tokenLabel.trim() === ""}
             >
               {creating ? "Creating…" : "Create token"}
-            </button>
+            </Button>
           </form>
         ) : (
           <p className="grafy-workspace-settings__muted">
@@ -325,24 +328,15 @@ export function WorkspaceSettings() {
         )}
 
         {createdToken ? (
-          <div
-            className="grafy-workspace-settings__created-token"
-            role="status"
-          >
-            <div>
-              <strong>Copy this token now</strong>
-              <span>
-                {createdToken.label} will not be shown again after you leave
-                this page.
-              </span>
-            </div>
-            <div className="grafy-workspace-settings__token-secret">
-              <code>{createdToken.token}</code>
-              <button
-                type="button"
-                className="grafy-workspace-settings__icon-button"
-                aria-label="Copy personal access token"
+          <Notice
+            tone="neutral"
+            className="grafy-workspace-settings__token-message"
+            action={
+              <IconButton
+                label="Copy personal access token"
                 title="Copy token"
+                variant="soft"
+                size="md"
                 onClick={() => void copyToken()}
               >
                 {copied ? (
@@ -350,34 +344,48 @@ export function WorkspaceSettings() {
                 ) : (
                   <Clipboard size={16} aria-hidden="true" />
                 )}
-              </button>
-            </div>
-          </div>
+              </IconButton>
+            }
+          >
+            <strong>Copy this token now</strong>{" "}
+            <span>
+              {createdToken.label} will not be shown again after you leave this
+              page.
+            </span>
+            <code className="grafy-workspace-settings__token-secret">
+              {createdToken.token}
+            </code>
+          </Notice>
         ) : null}
 
         {message ? (
-          <p className="grafy-member-message" role="status">
+          <Notice
+            tone="danger"
+            className="grafy-workspace-settings__token-message"
+          >
             {message}
-          </p>
+          </Notice>
         ) : null}
 
         <div className="grafy-workspace-settings__token-list">
           {tokensLoading ? (
             <p className="grafy-workspace-settings__muted">Loading tokens…</p>
           ) : tokensError ? (
-            <div
-              className="grafy-workspace-settings__inline-error"
-              role="alert"
+            <Notice
+              tone="danger"
+              className="grafy-workspace-settings__token-message"
+              action={
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  onClick={() => void mutateTokens()}
+                >
+                  Retry
+                </Button>
+              }
             >
-              <span>Tokens could not be loaded.</span>
-              <button
-                type="button"
-                className="grafy-workspace-button"
-                onClick={() => void mutateTokens()}
-              >
-                Retry
-              </button>
-            </div>
+              Tokens could not be loaded.
+            </Notice>
           ) : tokens?.length ? (
             tokens.map((token) => {
               const status = tokenState(token, renderedAt);
@@ -405,18 +413,18 @@ export function WorkspaceSettings() {
                     </span>
                     <span>{token.scopes.join(", ")}</span>
                   </div>
-                  <button
-                    type="button"
-                    className="grafy-workspace-settings__icon-button grafy-workspace-settings__icon-button--danger"
-                    aria-label={`Revoke ${token.label}`}
+                  <IconButton
+                    label={`Revoke ${token.label}`}
                     title="Revoke token"
+                    variant="danger"
+                    size="sm"
                     disabled={
                       status.state !== "active" || revokingId === token.id
                     }
                     onClick={() => void revokeToken(token)}
                   >
                     <Trash2 size={15} aria-hidden="true" />
-                  </button>
+                  </IconButton>
                 </div>
               );
             })

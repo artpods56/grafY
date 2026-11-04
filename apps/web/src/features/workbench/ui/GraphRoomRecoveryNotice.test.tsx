@@ -8,11 +8,6 @@ import { GraphRoomRecoveryNotice } from "./GraphRoomRecoveryNotice";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 describe("GraphRoomRecoveryNotice", () => {
   const roots: ReturnType<typeof createRoot>[] = [];
 

@@ -80,6 +80,15 @@ vi.mock("pmtiles", () => ({
   },
 }));
 
+/**
+ * The one deliberate exception to the shared StyleX mock in `vitest.setup.ts`.
+ * This file asserts on raw `renderToStaticMarkup` output — `toContain("<ul>")`,
+ * `not.toContain("<h1>")` — so the class names the shared mock hands back would
+ * land inside the strings under test, and would quietly stop those negative
+ * assertions from discriminating. `stylex.create` still needs stubbing (Vitest
+ * runs no StyleX Babel pass); only `props` stays empty, which is what keeps the
+ * emitted elements attribute-free.
+ */
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
   props: () => ({}),

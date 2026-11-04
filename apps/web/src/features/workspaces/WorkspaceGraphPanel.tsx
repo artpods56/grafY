@@ -4,6 +4,8 @@ import * as React from "react";
 import { Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
+import { IconButton } from "@/components/ui/button";
+import { phoneTouch } from "@/components/ui/touch-target";
 import { useWorkspaceProjects } from "@/hooks/use-api";
 import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import type { SavedGraphSummary } from "@/lib/api";
@@ -156,14 +158,14 @@ export function WorkspaceGraphPanel({
             </span>
           ) : null}
         </p>
-        <button
-          type="button"
-          className="grafy-graph-panel__icon-button"
-          aria-label="Close quick graph switcher"
+        <IconButton
+          label="Close quick graph switcher"
+          size="sm"
+          xstyle={phoneTouch.square}
           onClick={() => onClose("close-button")}
         >
           <X size={14} aria-hidden="true" />
-        </button>
+        </IconButton>
       </div>
 
       <div className="grafy-graph-panel__search">

@@ -5,6 +5,8 @@ import { RotateCcw } from "lucide-react";
 
 import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { IconButton } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 
 import { nodeSecretDependencyRevision } from "../../node-secrets";
 import { resolvedNodeWidth, type WorkflowNodeLayout } from "../../node-layout";
@@ -32,18 +34,6 @@ import {
 import { ANY_TYPE_LABEL, nodeInteractionProps } from "./ports";
 
 const s = stylex.create({
-  configValidationError: {
-    margin: 0,
-    color: tokens.colorDanger,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.4,
-  },
-  configValidationSummary: {
-    margin: "0 12px 8px",
-    color: tokens.colorDanger,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.4,
-  },
   // The type a generic node works with, as one quiet line at the top of the
   // plate: a label, the choice, and a reset. Its colour is on the balls. Only
   // for a type no visible port carries.
@@ -94,23 +84,6 @@ const s = stylex.create({
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: "10.5px",
     textOverflow: "ellipsis",
-  },
-  resetType: {
-    width: "22px",
-    height: "22px",
-    flexShrink: 0,
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
-    borderRadius: "9999px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
-    cursor: "pointer",
-  },
-  resetTypeDisabled: {
-    cursor: "not-allowed",
-    opacity: 0.45,
   },
   body: {
     display: "grid",
@@ -223,25 +196,21 @@ export function GenericArtifactTypeState({
               </span>
             )}
             {artifactType ? (
-              <button
-                type="button"
-                disabled={!resettable || !data.onResetArtifactTypeBinding}
-                aria-label={`Reset artifact type ${variable}`}
+              <IconButton
+                label={`Reset artifact type ${variable}`}
                 title={
                   resettable
                     ? "Reset type"
                     : "Disconnect this node before resetting its type"
                 }
-                {...nodeInteractionProps(
-                  stylex.props(
-                    s.resetType,
-                    resettable ? null : s.resetTypeDisabled,
-                  ),
-                )}
+                size="xs"
+                shape="round"
+                className="nodrag nowheel"
+                disabled={!resettable || !data.onResetArtifactTypeBinding}
                 onClick={() => data.onResetArtifactTypeBinding?.(id, variable)}
               >
                 <RotateCcw size={11} />
-              </button>
+              </IconButton>
             ) : null}
           </div>
         );
@@ -342,13 +311,12 @@ export function GenericBody({
                     {issues
                       .filter((issue) => issue.fieldName === brick.field.name)
                       .map((issue, index) => (
-                        <p
+                        <Notice
                           key={`${brick.field.name}-config-issue-${index}`}
-                          role="alert"
-                          {...stylex.props(s.configValidationError)}
+                          tone="danger"
                         >
                           {issue.message}
-                        </p>
+                        </Notice>
                       ))}
                   </>
                 ) : (
@@ -365,10 +333,10 @@ export function GenericBody({
         </div>
       ) : null}
       {summaryIssues.length ? (
-        <p role="alert" {...stylex.props(s.configValidationSummary)}>
+        <Notice tone="danger">
           This node has configuration errors in fields that cannot be edited
           here.
-        </p>
+        </Notice>
       ) : null}
     </div>
   );

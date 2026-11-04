@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Session, Workspace } from "@/lib/api";
+
 import {
   WorkspaceRail,
   resolveSelectedWorkspace,

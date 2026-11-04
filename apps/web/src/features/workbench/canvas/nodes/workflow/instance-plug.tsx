@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 
 import type { Port } from "@/lib/api";
+import { Button, IconButton } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CanvasPortBall, nodeChrome } from "../CanvasNodeChrome";
@@ -22,7 +23,6 @@ import { PortTypePopover } from "../type-inspector";
 
 import {
   OptionalConnectionToggle,
-  nodeInteractionProps,
   useOptionalInputConnection,
   usePortBallTypeProps,
 } from "./ports";
@@ -43,21 +43,15 @@ const s = stylex.create({
     paddingInline: "10px",
   },
   // Reads like any other port name; the plug balls carry the type colour.
-  plugPortTitle: {
-    display: "flex",
+  portTitle: {
     minWidth: 0,
-    alignItems: "center",
-    gap: "4px",
-    padding: 0,
-    overflow: "hidden",
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 500,
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
+    flexShrink: 1,
+    justifyContent: "flex-start",
+    paddingInline: 0,
+    color: {
+      default: tokens.colorMuted,
+      ":hover:not(:disabled)": tokens.colorText,
+    },
   },
   plugPortRule: {
     flexShrink: 0,
@@ -87,16 +81,11 @@ const s = stylex.create({
     backgroundColor: tokens.colorAccentSoft,
     boxShadow: `inset 0 0 0 1px ${tokens.colorAccentBorder}`,
   },
+  /** The handle keeps the 20px column the plug row budgets it, and its grab cursor. */
   plugGrip: {
     width: "20px",
     height: "26px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
     borderRadius: "5px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorSubtle,
     cursor: "grab",
     touchAction: "none",
   },
@@ -119,48 +108,14 @@ const s = stylex.create({
     whiteSpace: "nowrap",
   },
   plugActions: { display: "flex", alignItems: "center", gap: "1px" },
+  /** Row actions keep the 18px the plug row budgets them. */
   plugAction: {
     width: "18px",
     height: "20px",
-    display: "grid",
-    placeItems: "center",
-    padding: 0,
-    borderWidth: 0,
     borderRadius: "5px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
-    cursor: "pointer",
-  },
-  plugActionDisabled: {
-    color: tokens.colorTextDisabled,
-    cursor: "default",
-    opacity: 0.45,
-  },
-  plugRemove: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-    },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorDanger },
   },
   addPlug: {
-    minHeight: "26px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "5px",
     marginInline: "8px",
-    paddingInline: "8px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorHoverStrong,
-    },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 500,
   },
 });
 
@@ -240,11 +195,12 @@ function InstancePlugRow({
         ariaLabel={accessibleLabel}
         title={`${accessibleLabel}. Connect one compatible output here.`}
       />
-      <button
-        type="button"
-        aria-label={`Drag to reorder ${visibleName} input ${index + 1}`}
+      <IconButton
+        label={`Drag to reorder ${visibleName} input ${index + 1}`}
         title="Drag to reorder; arrow buttons also move this input"
-        {...nodeInteractionProps(stylex.props(s.plugGrip))}
+        size="xs"
+        className="nodrag nowheel"
+        xstyle={s.plugGrip}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           event.stopPropagation();
@@ -285,7 +241,7 @@ function InstancePlugRow({
         onPointerCancel={finishPointerDrag}
       >
         <GripVertical size={12} />
-      </button>
+      </IconButton>
       <span {...stylex.props(s.plugIndex)}>{index + 1}</span>
       {/* An input fed by an origin is marked by its own handle shape, so the
           row copy says nothing about where the value comes from. */}
@@ -302,49 +258,43 @@ function InstancePlugRow({
             compact
           />
         ) : null}
-        <button
-          type="button"
-          disabled={index === 0}
-          aria-label={`Move ${visibleName} input ${index + 1} up`}
+        <IconButton
+          label={`Move ${visibleName} input ${index + 1} up`}
           title="Move input up"
-          {...nodeInteractionProps(
-            stylex.props(
-              s.plugAction,
-              index === 0 ? s.plugActionDisabled : null,
-            ),
-          )}
+          size="xs"
+          className="nodrag nowheel"
+          xstyle={s.plugAction}
+          disabled={index === 0}
           onClick={() =>
             data.onReorderInputPlug?.(id, port.name, plug.id, index - 1)
           }
         >
           <ArrowUp size={10} />
-        </button>
-        <button
-          type="button"
-          disabled={index === plugCount - 1}
-          aria-label={`Move ${visibleName} input ${index + 1} down`}
+        </IconButton>
+        <IconButton
+          label={`Move ${visibleName} input ${index + 1} down`}
           title="Move input down"
-          {...nodeInteractionProps(
-            stylex.props(
-              s.plugAction,
-              index === plugCount - 1 ? s.plugActionDisabled : null,
-            ),
-          )}
+          size="xs"
+          className="nodrag nowheel"
+          xstyle={s.plugAction}
+          disabled={index === plugCount - 1}
           onClick={() =>
             data.onReorderInputPlug?.(id, port.name, plug.id, index + 1)
           }
         >
           <ArrowDown size={10} />
-        </button>
-        <button
-          type="button"
-          aria-label={`Remove ${visibleName} input ${index + 1}`}
+        </IconButton>
+        <IconButton
+          label={`Remove ${visibleName} input ${index + 1}`}
           title="Remove input and its connection"
-          {...nodeInteractionProps(stylex.props(s.plugAction, s.plugRemove))}
+          variant="danger"
+          size="xs"
+          className="nodrag nowheel"
+          xstyle={s.plugAction}
           onClick={() => data.onRemoveInputPlug?.(id, plug.id)}
         >
           <Trash2 size={10} />
-        </button>
+        </IconButton>
       </span>
     </div>
   );
@@ -397,17 +347,19 @@ export function InstancePlugPort({
           shape={port.shape}
           artifactTypeBindings={data.artifactTypeBindings}
         >
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             aria-label={`Inspect ${visibleName} type`}
             title={port.description ?? `Inspect ${visibleName} type`}
-            {...nodeInteractionProps(stylex.props(s.plugPortTitle))}
+            className="nodrag nowheel"
+            xstyle={s.portTitle}
           >
             <span {...stylex.props(nodeChrome.tabLabel)}>{visibleName}</span>
             {port.required ? (
               <span {...stylex.props(sharedStyles.required)}>*</span>
             ) : null}
-          </button>
+          </Button>
         </PortTypePopover>
         <span {...stylex.props(s.plugPortRule)}>
           {acceptedShapeLabel} · plug order
@@ -436,14 +388,16 @@ export function InstancePlugPort({
           />
         ))}
       </div>
-      <button
-        type="button"
-        {...nodeInteractionProps(stylex.props(s.addPlug))}
+      <Button
+        variant="soft"
+        size="sm"
+        className="nodrag nowheel"
+        xstyle={s.addPlug}
         onClick={() => data.onAddInputPlug?.(id, port.name)}
       >
         <Plus size={11} />
         Add input
-      </button>
+      </Button>
     </section>
   );
 }

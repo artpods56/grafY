@@ -4,6 +4,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { SchemaField } from "../canvas/config-schema";
 import { PORT_RING_REACH, portMarkStyle } from "../canvas/handle-style";
@@ -320,20 +321,21 @@ function PreviewPort({
       {...stylex.props(s.previewPortSlot, output ? s.previewPortSlotOut : null)}
     >
       {onSelect ? (
-        <button
-          type="button"
-          aria-pressed={selected}
+        <Button
+          variant="ghost"
+          size="xs"
+          pressed={selected}
           aria-label={`Show nodes that work with ${port.title ?? port.name}`}
-          {...stylex.props(
+          xstyle={[
             s.previewTab,
             output ? s.previewTabOut : s.previewTabIn,
             s.previewTabButton,
             selected ? s.previewTabSelected : null,
-          )}
+          ]}
           onClick={() => onSelect(port)}
         >
           {tab}
-        </button>
+        </Button>
       ) : (
         <span
           {...stylex.props(

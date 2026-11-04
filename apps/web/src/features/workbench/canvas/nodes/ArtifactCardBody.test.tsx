@@ -42,11 +42,6 @@ const tableMocks = vi.hoisted(
   }),
 );
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@xyflow/react", () => ({
   useNodeId: () => null,
   useUpdateNodeInternals: () => vi.fn(),
@@ -133,14 +128,22 @@ vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
 vi.mock("@base-ui/react/menu", () => ({
   Menu: {
     Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    // Like Base UI's: a `render` element becomes the trigger, taking its
+    // props and children.
     Trigger: ({
       children,
+      render,
       ...props
-    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-      <button type="button" {...props}>
-        {children}
-      </button>
-    ),
+    }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+      render?: React.ReactElement<Record<string, unknown>>;
+    }) =>
+      render ? (
+        React.cloneElement(render, props, children)
+      ) : (
+        <button type="button" {...props}>
+          {children}
+        </button>
+      ),
     Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     Positioner: ({ children }: { children: React.ReactNode }) => (
       <>{children}</>
@@ -163,6 +166,20 @@ vi.mock("@base-ui/react/menu", () => ({
       <div data-testid="menu-info">{children}</div>
     ),
     Separator: () => <hr />,
+    RadioGroup: ({ children }: { children: React.ReactNode }) => (
+      <div role="radiogroup">{children}</div>
+    ),
+    RadioItem: ({
+      children,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+      <button type="button" {...props}>
+        {children}
+      </button>
+    ),
+    RadioItemIndicator: ({ children }: { children?: React.ReactNode }) => (
+      <>{children}</>
+    ),
   },
 }));
 

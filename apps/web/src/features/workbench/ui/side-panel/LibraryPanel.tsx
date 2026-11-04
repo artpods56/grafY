@@ -35,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button, IconButton } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   dropEffectFor,
@@ -474,29 +475,27 @@ export function LibraryPanel({
     <div {...stylex.props(s.view)}>
       <header {...stylex.props(s.header)}>
         <h2 {...stylex.props(s.title)}>Artifacts</h2>
-        <button
-          type="button"
-          aria-label="New folder"
-          title="New folder"
+        <IconButton
+          label="New folder"
+          size="sm"
+          xstyle={panelStyles.iconButton}
           onClick={() => void createFolder(null)}
-          {...stylex.props(panelStyles.iconButton)}
         >
           <FolderPlus size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label="Upload files to the Library"
-          title="Upload files to the Library"
+        </IconButton>
+        <IconButton
+          label="Upload files to the Library"
+          size="sm"
+          xstyle={panelStyles.iconButton}
           disabled={upload !== null}
           onClick={() => fileInputRef.current?.click()}
-          {...stylex.props(panelStyles.iconButton)}
         >
           {upload ? (
             <LoaderCircle size={14} {...stylex.props(panelStyles.spinner)} />
           ) : (
             <Upload size={14} />
           )}
-        </button>
+        </IconButton>
         <input
           ref={fileInputRef}
           type="file"
@@ -536,29 +535,29 @@ export function LibraryPanel({
             {...stylex.props(s.searchInput)}
           />
           {query ? (
-            <button
-              type="button"
-              aria-label="Clear Library filter"
+            <IconButton
+              label="Clear Library filter"
+              size="xs"
+              xstyle={panelStyles.iconButton}
               onClick={() => changeQuery("")}
-              {...stylex.props(panelStyles.iconButton, s.clearButton)}
             >
               <X size={12} />
-            </button>
+            </IconButton>
           ) : null}
         </label>
-        <button
-          type="button"
-          aria-label={
+        <IconButton
+          label={
             sort === "name"
               ? "Sort artifacts by newest"
               : "Sort artifacts by name"
           }
           title={sort === "name" ? "Sorted by name" : "Sorted by newest"}
+          size="sm"
+          xstyle={panelStyles.iconButton}
           onClick={() => setSort(sort === "name" ? "recent" : "name")}
-          {...stylex.props(panelStyles.iconButton)}
         >
           {sort === "name" ? <ArrowDownAZ size={14} /> : <Clock size={14} />}
-        </button>
+        </IconButton>
       </div>
 
       <div
@@ -615,15 +614,14 @@ export function LibraryPanel({
               {message ? (
                 <p role="alert" {...stylex.props(s.notice, s.error)}>
                   <span {...stylex.props(s.messageText)}>{message}</span>
-                  <button
-                    type="button"
-                    aria-label="Dismiss"
-                    title="Dismiss"
+                  <IconButton
+                    label="Dismiss"
+                    size="xs"
+                    xstyle={[panelStyles.iconButton, s.dismiss]}
                     onClick={() => setMessage(null)}
-                    {...stylex.props(panelStyles.iconButton, s.dismiss)}
                   >
                     <X size={12} />
-                  </button>
+                  </IconButton>
                 </p>
               ) : null}
               {emptyLibrary ? (
@@ -704,22 +702,22 @@ export function LibraryPanel({
           </DialogHeader>
           <DialogBody>
             <div {...stylex.props(s.dialogActions)}>
-              <button
-                type="button"
-                className="grafy-workspace-button"
+              <Button
+                variant="secondary"
+                size="lg"
                 disabled={deleting}
                 onClick={() => setDeleteTarget(null)}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className="grafy-workspace-button grafy-workspace-button--primary"
+              </Button>
+              <Button
+                variant="primary"
+                size="lg"
                 disabled={deleting}
                 onClick={() => void confirmDeleteArtifacts()}
               >
                 {deleting ? "Deleting…" : "Delete"}
-              </button>
+              </Button>
             </div>
           </DialogBody>
         </DialogContent>
@@ -803,7 +801,6 @@ const s = stylex.create({
     // The field has its own clear button; the browser's would be a second one.
     "::-webkit-search-cancel-button": { appearance: "none" },
   },
-  clearButton: { width: "22px", height: "22px" },
   /** The drop area: the positioned parent of the drop hint. */
   dropRegion: {
     position: "relative",
@@ -875,8 +872,6 @@ const s = stylex.create({
   },
   messageText: { minWidth: 0, flex: 1 },
   dismiss: {
-    width: "20px",
-    height: "20px",
     marginBlock: "-1px",
     color: tokens.colorDanger,
   },

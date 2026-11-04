@@ -150,8 +150,23 @@ function rowTitles(container: ParentNode): string[] {
   );
 }
 
-function pressed(container: ParentNode, name: string): string | null {
-  return button(container, name).getAttribute("aria-pressed");
+/**
+ * Recent/All is one labelled radio group rather than a pair of toggle buttons,
+ * so its state is read off `aria-checked`.
+ */
+function viewOption(container: ParentNode, label: string): HTMLElement {
+  const group = container.querySelector('[role="radiogroup"]');
+  if (!group) throw new Error("Graph view radio group not found");
+  expect(group.getAttribute("aria-label")).toBe("Graph views");
+  const match = Array.from(
+    group.querySelectorAll<HTMLElement>('[role="radio"]'),
+  ).find((option) => option.textContent?.includes(label));
+  if (!match) throw new Error(`Graph view option not found: ${label}`);
+  return match;
+}
+
+function viewChecked(container: ParentNode, label: string): string | null {
+  return viewOption(container, label).getAttribute("aria-checked");
 }
 
 async function click(element: Element) {
@@ -229,7 +244,7 @@ describe("workspace graph browser", () => {
     ).toBeNull();
     expect(container.querySelectorAll(".grafy-graphs__row")).toHaveLength(8);
 
-    await click(button(container, "All"));
+    await click(viewOption(container, "All"));
     expect(container.querySelectorAll(".grafy-graphs__row")).toHaveLength(9);
     expect(
       container
@@ -281,6 +296,22 @@ describe("workspace graph browser", () => {
     const empty = await renderBrowser();
     expect(empty.textContent).toContain("No graphs yet");
   });
+
+  it("keeps the loaded list and announces a failed refresh with its own retry", async () => {
+    browserState.data = { projects: [project("project-1", "Invoice intake")] };
+    browserState.error = new Error("offline");
+    const container = await renderBrowser();
+
+    const strip = container.querySelector('[role="status"]');
+    expect(strip?.textContent).toContain(
+      "The latest graph list could not be refreshed.",
+    );
+    expect(rowTitles(container)).toEqual(["Invoice intake"]);
+
+    if (!strip) throw new Error("Refresh failure was not announced");
+    await click(button(strip, "Retry"));
+    expect(browserState.mutate).toHaveBeenCalledOnce();
+  });
 });
 
 describe("workspace graph browser address filters", () => {
@@ -292,8 +323,8 @@ describe("workspace graph browser address filters", () => {
     const container = await renderBrowser("?q=invoice&view=all");
 
     expect(searchInput(container).value).toBe("invoice");
-    expect(pressed(container, "All")).toBe("true");
-    expect(pressed(container, "Recent")).toBe("false");
+    expect(viewChecked(container, "All")).toBe("true");
+    expect(viewChecked(container, "Recent")).toBe("false");
     expect(rowTitles(container)).toEqual([
       "Invoice intake",
       "Invoice archive audit",
@@ -318,7 +349,7 @@ describe("workspace graph browser address filters", () => {
     const container = await renderBrowser("?view=archive&q=");
 
     expect(searchInput(container).value).toBe("");
-    expect(pressed(container, "Recent")).toBe("true");
+    expect(viewChecked(container, "Recent")).toBe("true");
     expect(rowTitles(container)).toEqual([
       "Invoice intake",
       "Invoice archive audit",
@@ -360,13 +391,13 @@ describe("workspace graph browser address filters", () => {
     };
     const container = await renderBrowser();
 
-    await click(button(container, "All"));
+    await click(viewOption(container, "All"));
     expect(lastWrite()).toBe("/workspaces/atlas/projects?view=all");
-    expect(pressed(container, "All")).toBe("true");
+    expect(viewChecked(container, "All")).toBe("true");
 
-    await click(button(container, "Recent"));
+    await click(viewOption(container, "Recent"));
     expect(lastWrite()).toBe("/workspaces/atlas/projects");
-    expect(pressed(container, "Recent")).toBe("true");
+    expect(viewChecked(container, "Recent")).toBe("true");
   });
 
   it("clears the address through the empty state's own action", async () => {
@@ -419,7 +450,7 @@ describe("workspace graph browser address filters", () => {
     const input = searchInput(container);
 
     await change(input, "nightly");
-    await click(button(container, "All"));
+    await click(viewOption(container, "All"));
 
     // A view change carries the search this page asked for, not the one the
     // address has reached, and the field keeps what the person typed.
@@ -438,7 +469,7 @@ describe("workspace graph browser address filters", () => {
 
     await setUrl("?q=nightly&view=all");
     expect(searchInput(container).value).toBe("nightly");
-    expect(pressed(container, "All")).toBe("true");
+    expect(viewChecked(container, "All")).toBe("true");
     expect(browserState.replace).not.toHaveBeenCalled();
   });
 });

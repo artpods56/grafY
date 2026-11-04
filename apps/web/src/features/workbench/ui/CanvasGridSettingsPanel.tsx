@@ -4,6 +4,8 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ChevronDown, Grid3x3, RotateCcw, X } from "lucide-react";
 
+import { Button, IconButton } from "@/components/ui/button";
+import { phoneTouch } from "@/components/ui/touch-target";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { useCanvasGridSettings } from "../canvas/canvas-grid-settings";
 import {
@@ -83,10 +85,14 @@ const s = stylex.create({
     borderTopColor: tokens.colorDivider,
   },
   advancedSummary: {
-    minHeight: {
-      default: "34px",
-      "@media (max-width: 620px)": "44px",
-    },
+    /**
+     * A fixed-height row. `phoneTouch` grows `min-height`, the one property a
+     * call site may not also set: StyleX keeps only the last `min-height`, so a
+     * `minHeight` here would disappear and the summary would fall to its text
+     * height on a desktop. The disclosure holds one line, so a height is the
+     * same box, and the kit still supplies the 44px phone target.
+     */
+    height: "34px",
     display: "flex",
     listStyle: "none",
     alignItems: "center",
@@ -107,24 +113,6 @@ const s = stylex.create({
   },
   icon: {
     color: tokens.colorAccent,
-    flexShrink: 0,
-  },
-  iconButton: {
-    width: {
-      default: "28px",
-      "@media (max-width: 620px)": "44px",
-    },
-    height: {
-      default: "28px",
-      "@media (max-width: 620px)": "44px",
-    },
-    display: "grid",
-    placeItems: "center",
-    borderWidth: 0,
-    borderRadius: "8px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
     flexShrink: 0,
   },
   section: {
@@ -220,64 +208,15 @@ const s = stylex.create({
     accentColor: tokens.colorAccent,
     cursor: "pointer",
   },
+  /** Preset chips take their look from `Button`; the phone target is the kit's. */
   presets: {
     display: "flex",
     flexWrap: "wrap",
     gap: "4px",
   },
-  preset: {
-    height: {
-      default: "26px",
-      "@media (max-width: 620px)": "44px",
-    },
-    paddingInline: "8px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: "7px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-    },
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 650,
-    cursor: "pointer",
-  },
-  presetActive: {
-    borderColor: tokens.colorAccentBorder,
-    backgroundColor: tokens.colorAccentSoft,
-    color: tokens.colorAccent,
-  },
   actions: {
     display: "grid",
     gap: "6px",
-  },
-  actionButton: {
-    height: {
-      default: "32px",
-      "@media (max-width: 620px)": "44px",
-    },
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "6px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: "8px",
-    backgroundColor: {
-      default: tokens.colorSurfaceMuted,
-      ":hover": tokens.colorHover,
-      ":disabled": tokens.colorSurfaceMuted,
-    },
-    color: {
-      default: tokens.colorText,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 650,
   },
   bypass: {
     padding: "6px 8px",
@@ -358,23 +297,23 @@ export function CanvasGridSettingsPanel({
           <h2 {...stylex.props(s.title)}>Canvas lab</h2>
           <p {...stylex.props(s.subtitle)}>Grid and snapping controls</p>
         </div>
-        <button
-          type="button"
-          aria-label="Reset canvas settings"
+        <IconButton
+          label="Reset canvas settings"
           title="Reset to defaults"
-          {...stylex.props(s.iconButton)}
+          size="md"
+          xstyle={phoneTouch.square}
           onClick={resetSettings}
         >
           <RotateCcw size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label="Close canvas lab"
-          {...stylex.props(s.iconButton)}
+        </IconButton>
+        <IconButton
+          label="Close canvas lab"
+          size="md"
+          xstyle={phoneTouch.square}
           onClick={() => setPanelOpen(false)}
         >
           <X size={14} />
-        </button>
+        </IconButton>
       </header>
 
       <div {...stylex.props(s.section)}>
@@ -409,17 +348,15 @@ export function CanvasGridSettingsPanel({
         />
         <div {...stylex.props(s.presets)}>
           {GRID_CELL_SIZE_PRESETS.map((preset) => (
-            <button
+            <Button
               key={preset}
-              type="button"
-              {...stylex.props(
-                s.preset,
-                settings.cellSize === preset ? s.presetActive : null,
-              )}
+              variant={settings.cellSize === preset ? "primary" : "secondary"}
+              size="xs"
+              xstyle={phoneTouch.on}
               onClick={() => patchSettings({ cellSize: preset })}
             >
               {preset}
-            </button>
+            </Button>
           ))}
         </div>
         <p {...stylex.props(s.example)}>
@@ -431,24 +368,25 @@ export function CanvasGridSettingsPanel({
       </div>
 
       <div {...stylex.props(s.actions)}>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="md"
+          xstyle={phoneTouch.on}
           disabled={!selectedCount || !settings.enabled}
           title={
             selectedCount
               ? `Snap ${selectedCount} selected node${selectedCount === 1 ? "" : "s"} to the grid`
               : "Select nodes to snap"
           }
-          {...stylex.props(s.actionButton)}
           onClick={onSnapSelection}
         >
           Snap selection now
           {selectedCount ? ` (${selectedCount})` : ""}
-        </button>
+        </Button>
       </div>
 
       <details {...stylex.props(s.advanced)}>
-        <summary {...stylex.props(s.advancedSummary)}>
+        <summary {...stylex.props(s.advancedSummary, phoneTouch.on)}>
           Advanced
           <ChevronDown
             aria-hidden="true"

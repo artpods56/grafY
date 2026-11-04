@@ -49,12 +49,6 @@ const apiMocks = vi.hoisted(() => ({
     >(),
 }));
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-  when: { ancestor: () => "" },
-}));
-
 vi.mock("@/lib/api", () => ({
   listGraphInstances: apiMocks.listGraphInstances,
   getInstanceResult: apiMocks.getInstanceResult,

@@ -1,5 +1,5 @@
 "use client";
-import type { AgentNode } from "../agents/AgentCard";
+import type { AgentNode } from "../agents/agent-node";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -20,6 +20,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import {
+  Bot,
   Circle,
   Copy,
   Grid3x3,
@@ -77,6 +78,7 @@ import type {
   ContextualCandidate,
   ContextualRouteChoice,
 } from "../model/node-catalog";
+import { IconButton } from "@/components/ui/button";
 import { createUuid } from "@/features/workbench/model/uuid";
 import { artifactGroupingDisabledReason } from "../model/artifact-grouping";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
@@ -3841,7 +3843,14 @@ function WorkbenchBody({
         width: agent.width,
         height: agent.height,
         measured: nodeMeasurements[agent.id],
-        style: { width: agent.width, height: agent.height },
+        // The conversation is set on the canvas above the Agent's plate, so
+        // the box itself passes the pointer through; the card turns it back
+        // on for the plate and the messages.
+        style: {
+          width: agent.width,
+          height: agent.height,
+          pointerEvents: "none",
+        },
         selected: selectedAgentIds.has(agent.id),
         draggable: canEditProject,
         deletable: canEditProject,
@@ -4691,30 +4700,6 @@ function WorkbenchBody({
       <aside aria-label="Canvas actions" {...stylex.props(s.toolDock)}>
         <button
           type="button"
-          disabled={!canEditProject}
-          onClick={() => {
-            const id = createUuid();
-            applyAuthoringCommands([
-              {
-                kind: "add_agent",
-                agent: {
-                  id,
-                  name: "Agent",
-                  instructions: "",
-                  model: { kind: "deployment" },
-                  position: canvasCenter({ x: 480, y: 240 }),
-                  width: 360,
-                  height: 480,
-                },
-              },
-            ]);
-            canvasSelection.selectOnly({ agentIds: [id] });
-          }}
-        >
-          Add Agent
-        </button>
-        <button
-          type="button"
           {...firefoxDynamicButtonProps}
           aria-label="Add node"
           disabled={!registry || !localAuthoringEnabled}
@@ -4793,6 +4778,35 @@ function WorkbenchBody({
         <button
           type="button"
           {...firefoxDynamicButtonProps}
+          aria-label="Add Agent"
+          title="Add an Agent to chat with on the canvas"
+          disabled={!canEditProject}
+          {...stylex.props(s.railButton)}
+          onClick={() => {
+            const id = createUuid();
+            applyAuthoringCommands([
+              {
+                kind: "add_agent",
+                agent: {
+                  id,
+                  name: "Agent",
+                  instructions: "",
+                  model: { kind: "deployment" },
+                  position: canvasCenter({ x: 480, y: 240 }),
+                  width: 360,
+                  height: 480,
+                },
+              },
+            ]);
+            canvasSelection.selectOnly({ agentIds: [id] });
+          }}
+        >
+          <Bot size={14} />
+          <span {...stylex.props(s.railLabel)}>Agent</span>
+        </button>
+        <button
+          type="button"
+          {...firefoxDynamicButtonProps}
           disabled={!flow}
           title="Fit workflow"
           {...stylex.props(s.railButton)}
@@ -4801,12 +4815,12 @@ function WorkbenchBody({
           <Maximize2 size={14} />
           <span {...stylex.props(s.railLabel)}>Fit</span>
         </button>
-        <button
-          type="button"
-          aria-label="Canvas lab"
-          aria-pressed={gridPanelOpen}
+        <IconButton
+          size="lg"
+          label="Canvas lab"
+          pressed={gridPanelOpen}
           title="Experiment with canvas behavior"
-          {...stylex.props(s.railButton, gridPanelOpen ? s.railPrimary : null)}
+          xstyle={[s.railButton, gridPanelOpen ? s.railPrimary : null]}
           onClick={() => {
             closeGraphBrowser();
             setLibraryOpen(false);
@@ -4814,8 +4828,7 @@ function WorkbenchBody({
           }}
         >
           <Grid3x3 size={14} />
-          <span {...stylex.props(s.railLabel)}>Canvas</span>
-        </button>
+        </IconButton>
         <span {...stylex.props(s.railDivider)} />
         <button
           type="button"

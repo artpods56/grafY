@@ -6,6 +6,7 @@ import { ChevronDown, Columns3 } from "lucide-react";
 
 import type { TableSchema } from "@/lib/api";
 import { overlay } from "@/lib/stylex/overlay.stylex";
+import { Button } from "@/components/ui/button";
 
 import {
   DEFAULT_VISIBLE_COLUMN_COUNT,
@@ -29,7 +30,7 @@ export function TableColumnPicker({
         type="button"
         aria-label="Choose visible table columns"
         title="Choose visible columns"
-        {...stylex.props(s.columnPickerTrigger)}
+        render={<Button size="xs" variant="secondary" className="nodrag" />}
       >
         <Columns3 size={12} aria-hidden="true" />
         Columns
@@ -58,6 +59,7 @@ export function TableColumnPicker({
               </span>
             </div>
             <div {...stylex.props(s.columnPickerList)}>
+              {/* The kit has no checkbox, so each column row keeps a native one. */}
               {columns.map((column) => {
                 const checked = visibleColumnIdSet.has(column.id);
                 const disabled =
@@ -100,9 +102,9 @@ export function TableColumnPicker({
               })}
             </div>
             <div {...stylex.props(s.columnPickerFooter)}>
-              <button
-                type="button"
-                {...stylex.props(s.columnPickerTextButton)}
+              <Button
+                size="xs"
+                variant="ghost"
                 onClick={() =>
                   onVisibleColumnIdsChange(
                     columns
@@ -112,10 +114,10 @@ export function TableColumnPicker({
                 }
               >
                 Show all
-              </button>
-              <button
-                type="button"
-                {...stylex.props(s.columnPickerTextButton)}
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
                 onClick={() =>
                   onVisibleColumnIdsChange(
                     columns
@@ -125,7 +127,7 @@ export function TableColumnPicker({
                 }
               >
                 Reset
-              </button>
+              </Button>
             </div>
           </Popover.Popup>
         </Popover.Positioner>

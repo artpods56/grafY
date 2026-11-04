@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Menu } from "@base-ui/react/menu";
 import { Tooltip } from "@base-ui/react/tooltip";
 import {
   Handle,
@@ -10,9 +9,15 @@ import {
   useConnection,
   useNodeConnections,
 } from "@xyflow/react";
-import { Check } from "lucide-react";
 import type { ArtifactTypeKey } from "@/lib/api";
-import { overlay } from "@/lib/stylex/overlay.stylex";
+import {
+  Menu,
+  MenuContent,
+  MenuGroup,
+  MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
+} from "@/components/ui/menu";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { formatArtifactTypeLabel } from "../artifact-type-label";
 import { artifactTypeKey } from "../artifact-type-key";
@@ -179,34 +184,9 @@ const s = stylex.create({
   },
   tipSwatchOpen: { borderStyle: "dashed", borderWidth: "1.5px" },
   tipHint: { color: tokens.colorSubtle },
-  menu: {
-    display: "grid",
-    gap: "1px",
-    minWidth: "190px",
-    maxHeight: "300px",
-    overflowY: "auto",
-    padding: "4px",
-    zIndex: 70,
-  },
-  menuHead: {
-    padding: "5px 8px 6px",
-    color: tokens.colorSubtle,
-    fontSize: "10px",
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
-  },
   option: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "10px",
-    padding: "5px 8px",
-    borderRadius: tokens.radiusSm,
-    color: tokens.colorText,
-    cursor: "pointer",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: "11px",
-    textAlign: "left",
   },
   optionAny: { fontFamily: "inherit", color: tokens.colorMuted },
   ringHot: { transform: "scale(1.3)" },
@@ -372,47 +352,43 @@ function PortTypeMenu({
   anchor: React.RefObject<HTMLDivElement | null>;
   side: "left" | "right";
 }) {
-  const popup = stylex.props(overlay.popup, s.menu);
   const artifactTypes = useArtifactTypeCatalog();
+  const current = choice.current ? artifactTypeKey(choice.current) : "";
   return (
-    <Menu.Root open={open} onOpenChange={onOpenChange}>
-      <Menu.Portal>
-        <Menu.Positioner
-          anchor={anchor}
-          side={side}
-          align="center"
-          sideOffset={6}
-        >
-          <Menu.Popup
-            {...popup}
-            className={`nodrag nopan nowheel ${popup.className ?? ""}`}
+    <Menu open={open} onOpenChange={onOpenChange}>
+      <MenuContent anchor={anchor} side={side} align="center" sideOffset={6}>
+        <MenuGroup>
+          <MenuLabel>Type of {name}</MenuLabel>
+          <MenuRadioGroup
+            value={current}
+            onValueChange={(value) => {
+              if (!value) {
+                choice.onPick(null);
+                return;
+              }
+              const match = choice.options.find(
+                (type) => artifactTypeKey(type) === value,
+              );
+              if (match) choice.onPick(match);
+            }}
           >
-            <span {...stylex.props(s.menuHead)}>Type of {name}</span>
-            <Menu.Item
-              onClick={() => choice.onPick(null)}
-              {...stylex.props(overlay.item, s.option, s.optionAny)}
-            >
+            <MenuRadioItem value="" xstyle={s.optionAny}>
               {ANY_TYPE}
-              {choice.current ? null : <Check size={12} />}
-            </Menu.Item>
+            </MenuRadioItem>
             {choice.options.map((type) => (
-              <Menu.Item
+              <MenuRadioItem
                 key={artifactTypeKey(type)}
+                value={artifactTypeKey(type)}
                 title={artifactTypeKey(type)}
-                onClick={() => choice.onPick(type)}
-                {...stylex.props(overlay.item, s.option)}
+                xstyle={s.option}
               >
                 {formatArtifactTypeLabel(type, artifactTypes)}
-                {choice.current &&
-                artifactTypeKey(choice.current) === artifactTypeKey(type) ? (
-                  <Check size={12} />
-                ) : null}
-              </Menu.Item>
+              </MenuRadioItem>
             ))}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+          </MenuRadioGroup>
+        </MenuGroup>
+      </MenuContent>
+    </Menu>
   );
 }
 

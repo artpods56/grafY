@@ -5,6 +5,8 @@ import * as stylex from "@stylexjs/stylex";
 import { Search } from "lucide-react";
 import { useStore, ViewportPortal } from "@xyflow/react";
 
+import { Button } from "@/components/ui/button";
+import { phoneTouch } from "@/components/ui/touch-target";
 import type { NodeRegistry } from "@/lib/api";
 import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { overlay } from "@/lib/stylex/overlay.stylex";
@@ -154,10 +156,7 @@ const s = stylex.create({
   },
   search: {
     width: "100%",
-    height: {
-      default: "36px",
-      "@media (max-width: 620px)": "44px",
-    },
+    height: "36px",
     padding: "0 10px 0 32px",
     borderWidth: 1,
     borderStyle: "solid",
@@ -179,23 +178,20 @@ const s = stylex.create({
     gap: "6px",
     padding: "10px",
   },
+  /**
+   * An option spans the list with its two lines stacked. `Button` draws the box,
+   * the highlight and the focus ring; this only lays out the row.
+   */
   item: {
     width: "100%",
+    height: "auto",
     minHeight: "58px",
     display: "grid",
     gap: "4px",
-    padding: "12px 14px",
-    borderRadius: "8px",
-    color: tokens.colorText,
-    cursor: "pointer",
-    fontFamily: "inherit",
+    paddingBlock: "12px",
+    paddingInline: "14px",
     textAlign: "left",
-    outlineColor: tokens.colorAccent,
-    outlineStyle: "solid",
-    outlineOffset: "-3px",
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
-    transitionProperty: "background-color",
-    transitionDuration: "120ms",
+    whiteSpace: "normal",
   },
   itemTitle: {
     overflow: "hidden",
@@ -232,20 +228,6 @@ const s = stylex.create({
     borderTopWidth: 1,
     borderTopStyle: "solid",
     borderTopColor: tokens.colorBorder,
-  },
-  ghostButton: {
-    minHeight: {
-      default: "28px",
-      "@media (max-width: 620px)": "44px",
-    },
-    paddingInline: "8px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusSm,
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 680,
   },
   hint: {
     alignSelf: "center",
@@ -677,7 +659,7 @@ export function ContextualNodeDiscovery({
                 aria-label="Search compatible nodes"
                 value={query}
                 placeholder="Search compatible nodes…"
-                {...stylex.props(s.search)}
+                {...stylex.props(s.search, phoneTouch.on)}
                 onChange={(event) => {
                   setQuery(event.currentTarget.value);
                   setPreviewedKey(null);
@@ -692,17 +674,14 @@ export function ContextualNodeDiscovery({
             pendingCandidate.choices.map((choice, index) => {
               const active = index === hoveredChoiceIndex;
               return (
-                <button
+                <Button
                   key={`${choice.candidatePort.name}-${index}-${connectionRouteTitle(choice.route, null)}`}
-                  type="button"
                   role="option"
                   aria-selected={active}
+                  variant={active ? "soft" : "ghost"}
+                  size="sm"
                   disabled={!canInsert}
-                  {...stylex.props(
-                    overlay.item,
-                    s.item,
-                    active ? overlay.itemActive : null,
-                  )}
+                  xstyle={s.item}
                   onMouseEnter={() => setHoveredChoiceIndex(index)}
                   onFocus={() => setHoveredChoiceIndex(index)}
                   onClick={() => selectChoice(choice)}
@@ -718,7 +697,7 @@ export function ContextualNodeDiscovery({
                       registry.artifact_types,
                     )}
                   </span>
-                </button>
+                </Button>
               );
             })
           ) : candidates.length ? (
@@ -728,17 +707,14 @@ export function ContextualNodeDiscovery({
                 catalogNodeKey(previewedCandidate?.spec ?? candidate.spec) ===
                 key;
               return (
-                <button
+                <Button
                   key={key}
-                  type="button"
                   role="option"
                   aria-selected={active}
+                  variant={active ? "soft" : "ghost"}
+                  size="sm"
                   disabled={!canInsert}
-                  {...stylex.props(
-                    overlay.item,
-                    s.item,
-                    active ? overlay.itemActive : null,
-                  )}
+                  xstyle={s.item}
                   ref={(element) => {
                     if (element) resultRefs.current.set(key, element);
                     else resultRefs.current.delete(key);
@@ -776,7 +752,7 @@ export function ContextualNodeDiscovery({
                       ? ` · ${candidate.choices.length} ways to connect`
                       : ""}
                   </span>
-                </button>
+                </Button>
               );
             })
           ) : (
@@ -790,24 +766,26 @@ export function ContextualNodeDiscovery({
 
         <div {...stylex.props(s.footer)}>
           {pendingCandidate ? (
-            <button
-              type="button"
-              {...stylex.props(s.ghostButton)}
+            <Button
+              variant="ghost"
+              size="sm"
+              xstyle={phoneTouch.on}
               onClick={() => {
                 setPendingCandidate(null);
                 setHoveredChoiceIndex(0);
               }}
             >
               Back
-            </button>
+            </Button>
           ) : (
-            <button
-              type="button"
-              {...stylex.props(s.ghostButton)}
+            <Button
+              variant="ghost"
+              size="sm"
+              xstyle={phoneTouch.on}
               onClick={onClose}
             >
               Cancel
-            </button>
+            </Button>
           )}
           <span {...stylex.props(s.hint)}>
             {canInsert

@@ -47,13 +47,6 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-  defaultMarker: () => ({}),
-  when: { ancestor: (pseudo: string) => pseudo },
-}));
-
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const FIELDWORK: LibraryFolder = {

@@ -148,6 +148,25 @@ function button(container: ParentNode, name: string): HTMLButtonElement {
   return match;
 }
 
+/**
+ * Recent/All is one labelled radio group rather than a pair of toggle buttons,
+ * so its state is read off `aria-checked`.
+ */
+function viewOption(container: ParentNode, label: string): HTMLElement {
+  const group = container.querySelector('[role="radiogroup"]');
+  if (!group) throw new Error("Graph view radio group not found");
+  expect(group.getAttribute("aria-label")).toBe("Graph views");
+  const match = Array.from(
+    group.querySelectorAll<HTMLElement>('[role="radio"]'),
+  ).find((option) => option.textContent?.includes(label));
+  if (!match) throw new Error(`Graph view option not found: ${label}`);
+  return match;
+}
+
+function viewChecked(container: ParentNode, label: string): string | null {
+  return viewOption(container, label).getAttribute("aria-checked");
+}
+
 async function click(element: Element) {
   await act(async () => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -198,8 +217,8 @@ describe("graph-first browser", () => {
     const container = await renderBrowser();
 
     expect(container.querySelector("h1")?.textContent).toBe("Graphs");
-    expect(container.textContent).toContain("Recent");
-    expect(container.textContent).toContain("All");
+    expect(viewChecked(container, "Recent")).toBe("true");
+    expect(viewChecked(container, "All")).toBe("false");
     expect(container.textContent).toContain("My graphs");
     expect(container.textContent).toContain("Atlas");
     expect(container.textContent).not.toContain("private-slug");
@@ -240,8 +259,10 @@ describe("graph-first browser", () => {
     const container = await renderBrowser();
 
     expect(container.querySelectorAll(".grafy-graphs__row")).toHaveLength(8);
-    await click(button(container, "All"));
+    await click(viewOption(container, "All"));
     expect(container.querySelectorAll(".grafy-graphs__row")).toHaveLength(9);
+    expect(viewChecked(container, "All")).toBe("true");
+    expect(viewChecked(container, "Recent")).toBe("false");
 
     const location = container.querySelector<HTMLSelectElement>(
       'select[aria-label="Filter by location"]',
@@ -288,6 +309,7 @@ describe("graph-first browser", () => {
     const multiple = await renderBrowser();
     await click(button(multiple, "New graph"));
     expect(document.body.textContent).toContain("Choose a location");
+    expect(document.body.textContent).toContain("Shared with this team");
     await click(button(document.body, "Atlas"));
     expect(browserState.push).toHaveBeenCalledWith(
       "/workspaces/secret-team-slug/projects/new",

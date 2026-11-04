@@ -8,11 +8,6 @@ import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 import { NodeSelector, type NodeSelectorProps } from "./NodeSelector";
 
 const roots = new Map<Root, HTMLElement>();

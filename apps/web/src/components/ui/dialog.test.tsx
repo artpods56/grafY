@@ -3,27 +3,7 @@
 import * as React from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles extends Record<string, object>>(styles: Styles) =>
-    Object.fromEntries(
-      Object.entries(styles).map(([name, style]) => [
-        name,
-        { ...style, __styleName: name },
-      ]),
-    ) as Styles,
-  defineVars: <Variables,>(variables: Variables) => variables,
-  props: (
-    ...styles: Array<{ __styleName?: string } | null | false | undefined>
-  ) => ({
-    className: styles
-      .flatMap((style) =>
-        style && style.__styleName ? [style.__styleName] : [],
-      )
-      .join(" "),
-  }),
-}));
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   Dialog,

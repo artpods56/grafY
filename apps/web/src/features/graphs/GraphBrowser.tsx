@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
+import * as stylex from "@stylexjs/stylex";
 import {
   ArrowUpRight,
-  Clock3,
   Plus,
   RotateCcw,
   Search,
@@ -14,6 +14,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { BrandLoader } from "@/components/brand";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { GraphViewToggle } from "./GraphViewToggle";
+import type { GraphBrowserView } from "./browser-filters";
 import {
   Dialog,
   DialogBody,
@@ -35,15 +38,66 @@ import {
   NEW_PROJECT_ROUTE_ID,
   workbenchProjectPath,
 } from "@/features/workbench/routes";
+import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   type LocatedProject,
   useAllWorkspacesProjects,
   useWorkspaces,
 } from "@/hooks/use-api";
 
-type GraphBrowserView = "recent" | "all";
-
 const RECENT_GRAPH_LIMIT = 8;
+
+const browserStyles = stylex.create({
+  locationOptions: {
+    display: "grid",
+  },
+  /**
+   * A creation location as a row: icon, two lines of text, then the arrow. The
+   * kit has no list-row button, so only this row geometry is owned here.
+   */
+  locationOption: {
+    display: "grid",
+    gridTemplateColumns: "30px minmax(0, 1fr) 18px",
+    alignItems: "center",
+    gap: "10px",
+    width: "100%",
+    height: "auto",
+    paddingInline: "6px",
+    paddingBlock: "12px",
+    borderRadius: 0,
+    textAlign: "start",
+    whiteSpace: "normal",
+    borderBottomColor: tokens.colorDivider,
+  },
+  locationOptionIcon: {
+    display: "grid",
+    placeItems: "center",
+    width: "30px",
+    height: "30px",
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorSubtle,
+  },
+  locationOptionText: {
+    display: "grid",
+    gap: "2px",
+    minWidth: 0,
+  },
+  locationOptionTitle: {
+    fontSize: tokens.fontSizeMd,
+    fontWeight: 600,
+  },
+  locationOptionSubtitle: {
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 400,
+  },
+});
+
+/**
+ * The Recent/All choice lives in `GraphViewToggle`, shared with the workspace
+ * browser, so the two surfaces cannot drift apart.
+ */
 
 function GraphRow({ graph }: { graph: LocatedProject }) {
   return (
@@ -155,9 +209,10 @@ export function GraphBrowser() {
               Find and open graphs across every location you can access.
             </p>
           </div>
-          <button
-            type="button"
-            className="grafy-workspace-button grafy-workspace-button--primary"
+          <Button
+            variant="primary"
+            size="lg"
+            className="grafy-graphs__header-action"
             disabled={createLocations.length === 0}
             title={
               createLocations.length === 0
@@ -168,7 +223,7 @@ export function GraphBrowser() {
           >
             <Plus size={15} aria-hidden="true" />
             New graph
-          </button>
+          </Button>
         </header>
 
         <div className="grafy-graphs__toolbar">
@@ -200,26 +255,7 @@ export function GraphBrowser() {
         </div>
 
         <div className="grafy-graphs__view-bar">
-          <div className="grafy-graphs__tabs" aria-label="Graph views">
-            <button
-              type="button"
-              className={view === "recent" ? "is-active" : ""}
-              aria-pressed={view === "recent"}
-              onClick={() => setView("recent")}
-            >
-              <Clock3 size={14} aria-hidden="true" />
-              Recent
-            </button>
-            <button
-              type="button"
-              className={view === "all" ? "is-active" : ""}
-              aria-pressed={view === "all"}
-              onClick={() => setView("all")}
-            >
-              <Workflow size={14} aria-hidden="true" />
-              All
-            </button>
-          </div>
+          <GraphViewToggle value={view} onValueChange={setView} />
           {projectState.projects ? (
             <span className="grafy-graphs__count">
               {filteredGraphs.length}{" "}
@@ -236,13 +272,14 @@ export function GraphBrowser() {
               <h2>Locations couldn&apos;t be loaded</h2>
               <p>Check your connection, then try again.</p>
             </div>
-            <button
-              type="button"
-              className="grafy-workspace-button"
+            <Button
+              variant="secondary"
+              size="lg"
+              className="grafy-graphs__state-action"
               onClick={() => void retryWorkspaces()}
             >
               <RotateCcw size={14} aria-hidden="true" /> Retry
-            </button>
+            </Button>
           </section>
         ) : !workspaces ||
           (projectState.error === null &&
@@ -258,9 +295,14 @@ export function GraphBrowser() {
               <h2>No graph locations are available</h2>
               <p>Open Teams &amp; access to create or join a location.</p>
             </div>
-            <Link className="grafy-workspace-button" href="/workspaces">
+            <ButtonLink
+              href="/workspaces"
+              variant="secondary"
+              size="lg"
+              className="grafy-graphs__state-action"
+            >
               Teams &amp; access
-            </Link>
+            </ButtonLink>
           </section>
         ) : projectState.error ? (
           <section className="grafy-graphs__state" role="alert">
@@ -269,13 +311,14 @@ export function GraphBrowser() {
               <h2>Graphs couldn&apos;t be loaded</h2>
               <p>Check your connection, then try again.</p>
             </div>
-            <button
-              type="button"
-              className="grafy-workspace-button"
+            <Button
+              variant="secondary"
+              size="lg"
+              className="grafy-graphs__state-action"
               onClick={() => void projectState.retry()}
             >
               <RotateCcw size={14} aria-hidden="true" /> Retry
-            </button>
+            </Button>
           </section>
         ) : (
           <>
@@ -287,13 +330,14 @@ export function GraphBrowser() {
                   <p>Create your first graph to start building.</p>
                 </div>
                 {createLocations.length > 0 ? (
-                  <button
-                    type="button"
-                    className="grafy-workspace-button"
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    className="grafy-graphs__state-action"
                     onClick={startGraph}
                   >
                     <Plus size={14} aria-hidden="true" /> New graph
-                  </button>
+                  </Button>
                 ) : null}
               </section>
             ) : visibleGraphs.length === 0 ? (
@@ -312,13 +356,14 @@ export function GraphBrowser() {
                   </p>
                 </div>
                 {normalizedQuery ? (
-                  <button
-                    type="button"
-                    className="grafy-workspace-button"
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    className="grafy-graphs__state-action"
                     onClick={() => setQuery("")}
                   >
                     Clear search
-                  </button>
+                  </Button>
                 ) : null}
               </section>
             ) : (
@@ -348,11 +393,13 @@ export function GraphBrowser() {
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
-            <div className="grafy-graphs__location-options">
+            <div {...stylex.props(browserStyles.locationOptions)}>
               {createLocations.map((location) => (
-                <button
+                <Button
                   key={location.id}
-                  type="button"
+                  variant="ghost"
+                  size="md"
+                  xstyle={browserStyles.locationOption}
                   onClick={() => {
                     setCreateOpen(false);
                     router.push(
@@ -360,23 +407,32 @@ export function GraphBrowser() {
                     );
                   }}
                 >
-                  <span aria-hidden="true">
+                  <span
+                    {...stylex.props(browserStyles.locationOptionIcon)}
+                    aria-hidden="true"
+                  >
                     {location.kind === "personal" ? (
                       <Workflow size={16} />
                     ) : (
                       <Users size={16} />
                     )}
                   </span>
-                  <span>
-                    <strong>{workspaceDisplayName(location)}</strong>
-                    <small>
+                  <span {...stylex.props(browserStyles.locationOptionText)}>
+                    <strong
+                      {...stylex.props(browserStyles.locationOptionTitle)}
+                    >
+                      {workspaceDisplayName(location)}
+                    </strong>
+                    <small
+                      {...stylex.props(browserStyles.locationOptionSubtitle)}
+                    >
                       {location.kind === "personal"
                         ? "Private to you"
                         : "Shared with this team"}
                     </small>
                   </span>
                   <ArrowUpRight size={15} aria-hidden="true" />
-                </button>
+                </Button>
               ))}
             </div>
           </DialogBody>

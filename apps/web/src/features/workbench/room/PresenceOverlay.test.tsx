@@ -8,11 +8,6 @@ import type { PresenceParticipant } from "./protocol";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock("@stylexjs/stylex", () => ({
-  create: <Styles,>(styles: Styles) => styles,
-  props: () => ({}),
-}));
-
 vi.mock("@xyflow/react", () => ({
   useNodeId: () => null,
   ViewportPortal: ({ children }: { children: React.ReactNode }) => children,

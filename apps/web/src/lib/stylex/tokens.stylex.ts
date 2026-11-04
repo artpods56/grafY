@@ -32,6 +32,8 @@ export const tokens = stylex.defineVars({
     "light-dark(rgba(17, 17, 17, 0.08), rgba(255, 255, 255, 0.1))",
   colorDangerHover:
     "light-dark(rgba(220, 92, 92, 0.1), rgba(232, 105, 105, 0.12))",
+  colorWarningSoft:
+    "light-dark(rgba(201, 146, 15, 0.1), rgba(251, 191, 36, 0.12))",
   // accents — primary ink, not a brand hue
   colorAccent: "light-dark(#111111, #FFFFFF)",
   colorAccentHover: "light-dark(#2A2A2A, #E8E8E8)",

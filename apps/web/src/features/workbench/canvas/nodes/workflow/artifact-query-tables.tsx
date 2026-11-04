@@ -4,6 +4,8 @@ import * as stylex from "@stylexjs/stylex";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 
 import { createUuid } from "@/features/workbench/model/uuid";
+import { Button, IconButton } from "@/components/ui/button";
+import { TextInput } from "@/components/ui/field";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CanvasPortBall } from "../CanvasNodeChrome";
@@ -27,6 +29,12 @@ import { InstanceInputConnectionToggle, nodeInteractionProps } from "./ports";
 import { sharedStyles } from "./styles";
 
 const s = stylex.create({
+  /** Row actions keep the 18px the relation row budgets them. */
+  rowAction: {
+    width: "18px",
+    height: "22px",
+    borderRadius: "5px",
+  },
   queryRelationTop: {
     minWidth: 0,
     display: "grid",
@@ -160,7 +168,7 @@ export function ArtifactQueryTablesBody({
                   <span {...stylex.props(sharedStyles.schemaFieldIndex)}>
                     {index + 1}
                   </span>
-                  <input
+                  <TextInput
                     type="text"
                     value={relation.alias}
                     pattern="[A-Za-z_][A-Za-z0-9_]*"
@@ -173,9 +181,8 @@ export function ArtifactQueryTablesBody({
                         : "Use a unique SQL identifier: letters, digits, and underscores"
                     }
                     placeholder={`relation_${index + 1}`}
-                    {...nodeInteractionProps(
-                      stylex.props(sharedStyles.schemaCompactInput),
-                    )}
+                    className="nodrag nowheel"
+                    xstyle={sharedStyles.denseControl}
                     onChange={(event) =>
                       replaceRelation(relation.id, {
                         ...relation,
@@ -204,19 +211,13 @@ export function ArtifactQueryTablesBody({
                     />
                   ) : null}
                   <span {...stylex.props(sharedStyles.schemaFieldActions)}>
-                    <button
-                      type="button"
-                      disabled={index === 0}
-                      aria-label={`Move relation ${index + 1} up`}
+                    <IconButton
+                      label={`Move relation ${index + 1} up`}
                       title="Move relation up"
-                      {...nodeInteractionProps(
-                        stylex.props(
-                          sharedStyles.schemaFieldAction,
-                          index === 0
-                            ? sharedStyles.schemaFieldActionDisabled
-                            : null,
-                        ),
-                      )}
+                      size="xs"
+                      className="nodrag nowheel"
+                      xstyle={s.rowAction}
+                      disabled={index === 0}
                       onClick={() =>
                         commitRelations(
                           moveArtifactQueryRelation(
@@ -228,20 +229,14 @@ export function ArtifactQueryTablesBody({
                       }
                     >
                       <ArrowUp size={10} />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={index === relations.length - 1}
-                      aria-label={`Move relation ${index + 1} down`}
+                    </IconButton>
+                    <IconButton
+                      label={`Move relation ${index + 1} down`}
                       title="Move relation down"
-                      {...nodeInteractionProps(
-                        stylex.props(
-                          sharedStyles.schemaFieldAction,
-                          index === relations.length - 1
-                            ? sharedStyles.schemaFieldActionDisabled
-                            : null,
-                        ),
-                      )}
+                      size="xs"
+                      className="nodrag nowheel"
+                      xstyle={s.rowAction}
+                      disabled={index === relations.length - 1}
                       onClick={() =>
                         commitRelations(
                           moveArtifactQueryRelation(
@@ -253,25 +248,19 @@ export function ArtifactQueryTablesBody({
                       }
                     >
                       <ArrowDown size={10} />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={relations.length === 1}
-                      aria-label={`Remove relation ${index + 1}`}
+                    </IconButton>
+                    <IconButton
+                      label={`Remove relation ${index + 1}`}
                       title={
                         relations.length === 1
                           ? "At least one relation is required"
                           : "Remove relation and its connection"
                       }
-                      {...nodeInteractionProps(
-                        stylex.props(
-                          sharedStyles.schemaFieldAction,
-                          sharedStyles.schemaFieldRemove,
-                          relations.length === 1
-                            ? sharedStyles.schemaFieldActionDisabled
-                            : null,
-                        ),
-                      )}
+                      variant="danger"
+                      size="xs"
+                      className="nodrag nowheel"
+                      xstyle={s.rowAction}
+                      disabled={relations.length === 1}
                       onClick={() =>
                         commitRelations(
                           relations.filter(
@@ -281,7 +270,7 @@ export function ArtifactQueryTablesBody({
                       }
                     >
                       <Trash2 size={10} />
-                    </button>
+                    </IconButton>
                   </span>
                 </div>
               </div>
@@ -289,10 +278,11 @@ export function ArtifactQueryTablesBody({
           })}
         </div>
 
-        <button
-          type="button"
+        <Button
+          variant="soft"
+          size="sm"
+          className="nodrag nowheel"
           disabled={relations.length >= 32}
-          {...nodeInteractionProps(stylex.props(sharedStyles.schemaAddField))}
           onClick={() =>
             commitRelations([
               ...relations,
@@ -306,7 +296,7 @@ export function ArtifactQueryTablesBody({
         >
           <Plus size={11} />
           Add relation
-        </button>
+        </Button>
       </section>
     </div>
   );

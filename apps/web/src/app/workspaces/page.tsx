@@ -13,6 +13,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { BrandLoader } from "@/components/brand";
+import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 import {
   WorkspaceRail,
@@ -165,26 +167,26 @@ export default function WorkspacesPage() {
             </p>
           </div>
           <div className="grafy-workspace-directory__actions">
-            <button
-              type="button"
-              className="grafy-workspace-button grafy-workspace-button--primary"
+            <Button
+              variant="primary"
+              size="lg"
               onClick={() => {
                 setCreateOpen((current) => !current);
                 setJoinOpen(false);
               }}
             >
               <Plus size={14} aria-hidden="true" /> Create team
-            </button>
-            <button
-              type="button"
-              className="grafy-workspace-button"
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
               onClick={() => {
                 setJoinOpen((current) => !current);
                 setCreateOpen(false);
               }}
             >
               <Share2 size={14} aria-hidden="true" /> Join a team
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -202,18 +204,15 @@ export default function WorkspacesPage() {
                 autoFocus
               />
             </label>
-            <button
+            <Button
               type="submit"
-              className="grafy-workspace-button grafy-workspace-button--primary"
+              variant="primary"
+              size="lg"
               disabled={busy || name.trim() === ""}
             >
               {busy ? "Creating…" : "Create team"}
-            </button>
-            {message ? (
-              <span className="grafy-member-message" role="status">
-                {message}
-              </span>
-            ) : null}
+            </Button>
+            {message ? <Notice tone="danger">{message}</Notice> : null}
           </form>
         ) : null}
 
@@ -244,16 +243,20 @@ export default function WorkspacesPage() {
         </div>
 
         {error ? (
-          <div className="grafy-workspace-empty" role="alert">
-            <p>Teams and access couldn&apos;t be loaded.</p>
-            <button
-              type="button"
-              className="grafy-workspace-button"
-              onClick={() => void mutate()}
-            >
-              Retry
-            </button>
-          </div>
+          <Notice
+            tone="danger"
+            action={
+              <Button
+                variant="secondary"
+                size="xs"
+                onClick={() => void mutate()}
+              >
+                Retry
+              </Button>
+            }
+          >
+            Teams and access couldn&apos;t be loaded.
+          </Notice>
         ) : !workspaces ? (
           <div className="grafy-workspace-directory__loading">
             <BrandLoader size={40} label="Loading teams and access" />
@@ -267,13 +270,13 @@ export default function WorkspacesPage() {
                 : "No graph locations are available to this account."}
             </p>
             {normalizedQuery ? (
-              <button
-                type="button"
-                className="grafy-workspace-button"
+              <Button
+                variant="secondary"
+                size="lg"
                 onClick={() => setQuery("")}
               >
                 Clear search
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : (

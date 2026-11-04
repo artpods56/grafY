@@ -80,6 +80,10 @@ export const executionHistoryDrawerStyles = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
+  /**
+   * The box the header's IconButtons keep: 30px on desktop, a 44px touch target
+   * on a phone. Colour, focus ring and the disabled state come from the kit.
+   */
   headerButton: {
     width: {
       default: "30px",
@@ -89,21 +93,6 @@ export const executionHistoryDrawerStyles = stylex.create({
       default: "30px",
       "@media (max-width: 720px)": "44px",
     },
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    borderWidth: 0,
-    borderRadius: "7px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-      ":disabled": "transparent",
-    },
-    color: {
-      default: tokens.colorMuted,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
   },
   content: {
     minHeight: 0,
@@ -191,6 +180,7 @@ export const executionHistoryDrawerStyles = stylex.create({
     lineHeight: 1.45,
     whiteSpace: "pre-wrap",
   },
+  /** The tall centred block the list shows in place of its rows. */
   message: {
     minHeight: "150px",
     display: "grid",
@@ -202,20 +192,6 @@ export const executionHistoryDrawerStyles = stylex.create({
     fontSize: tokens.fontSizeSm,
     lineHeight: 1.5,
     textAlign: "center",
-  },
-  messageError: { color: tokens.colorDanger },
-  retry: {
-    height: "29px",
-    paddingInline: "10px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorderStrong,
-    borderRadius: "7px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 700,
   },
   spinner: {
     animationName: "grafy-spin",
