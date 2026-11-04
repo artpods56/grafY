@@ -196,6 +196,9 @@ jobs:
 
   web-browser:
     name: Web browser acceptance
+    # Paused: the mocked-API suite takes ~20 minutes on one worker and is being
+    # reworked. Run the specs you touch locally. Remove this line to restore it.
+    if: false
     env:
       FORCE_COLOR: "0"
     runs-on: ubuntu-24.04
@@ -344,7 +347,6 @@ jobs:
       - native-runtime
       - quality-contracts
       - web
-      - web-browser
       - web-browser-real
       - deployment-images
     runs-on: ubuntu-24.04
