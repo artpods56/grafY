@@ -4,10 +4,10 @@ import * as React from "react";
 import { Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { useSavedGraphs } from "@/hooks/use-api";
+import { useWorkspaceProjects } from "@/hooks/use-api";
 import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import type { SavedGraphSummary } from "@/lib/api";
-import { workbenchGraphPath } from "@/features/workbench/routes";
+import { workbenchProjectPath } from "@/features/workbench/routes";
 import { GraphRowMenu } from "./GraphRowMenu";
 
 export type WorkspaceGraphPanelCloseReason =
@@ -79,7 +79,7 @@ export function WorkspaceGraphPanel({
   onClose: (reason: WorkspaceGraphPanelCloseReason) => void;
 }) {
   const router = useRouter();
-  const { data, isLoading, isValidating } = useSavedGraphs(workspaceId);
+  const { data, isLoading, isValidating } = useWorkspaceProjects(workspaceId);
   const isRefreshing = isValidating && Boolean(data);
   const finePointer = useMediaQuery(FINE_POINTER_QUERY);
   const [query, setQuery] = React.useState("");
@@ -120,14 +120,16 @@ export function WorkspaceGraphPanel({
     };
   }, [onClose]);
 
-  const graphs = React.useMemo(
-    () => filterGraphsByQuery(sortGraphsByRecency(data?.graphs ?? []), query),
+  // A browser row is a Project: it lists by name and opens at the Project's own
+  // address. How many Graphs it holds is shown on the row, not walked here.
+  const projects = React.useMemo(
+    () => filterGraphsByQuery(sortGraphsByRecency(data?.projects ?? []), query),
     [data, query],
   );
-  const total = data?.graphs.length ?? 0;
+  const total = data?.projects.length ?? 0;
 
-  const openGraph = (graphId: string) => {
-    router.push(workbenchGraphPath(workspaceSlug, graphId));
+  const openProject = (projectId: string) => {
+    router.push(workbenchProjectPath(workspaceSlug, projectId));
     onClose("graph-selected");
   };
 
@@ -178,34 +180,34 @@ export function WorkspaceGraphPanel({
 
       <div className="grafy-graph-panel__list">
         {isLoading ? (
-          <p className="grafy-graph-panel__empty">Loading graphs…</p>
-        ) : graphs.length === 0 ? (
+          <p className="grafy-graph-panel__empty">Loading projects…</p>
+        ) : projects.length === 0 ? (
           <p className="grafy-graph-panel__empty">
             {query.trim()
-              ? "No graphs match that search."
-              : "No graphs in this location yet. Use New graph in the sidebar to start one."}
+              ? "No projects match that search."
+              : "No projects in this location yet. Use New graph in the sidebar to start one."}
           </p>
         ) : (
-          graphs.map((graph) => (
+          projects.map((project) => (
             <div
-              key={graph.id}
-              className={`grafy-graph-panel__row${activeGraphId === graph.id ? " is-active" : ""}`}
+              key={project.id}
+              className={`grafy-graph-panel__row${activeGraphId === project.id ? " is-active" : ""}`}
             >
               <button
                 type="button"
                 className="grafy-graph-panel__row-open"
-                onClick={() => openGraph(graph.id)}
+                onClick={() => openProject(project.id)}
               >
                 <span className="grafy-graph-panel__row-name">
-                  {graph.name}
+                  {project.name}
                 </span>
                 <span className="grafy-graph-panel__row-meta">
-                  {`${graphAgeLabel(graph.updated_at)} · ${graphCountLabel(graph)}`}
+                  {`${graphAgeLabel(project.updated_at)} · ${graphCountLabel(project)}`}
                 </span>
               </button>
               <GraphRowMenu
-                graph={graph}
-                busy={busyGraphId === graph.id}
+                graph={project}
+                busy={busyGraphId === project.id}
                 onRename={onRename}
                 onDelete={onDelete}
               />

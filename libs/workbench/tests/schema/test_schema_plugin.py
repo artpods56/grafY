@@ -11,9 +11,7 @@ def test_schema_plugin_preserves_catalog_identity_and_freezes() -> None:
     manifest = PluginCatalogManifest.from_plugin(SCHEMAS)
 
     assert SCHEMAS.slug == "schema"
-    assert {artifact.key for artifact in SCHEMAS.artifact_types} == {
-        JSON_SCHEMA.key
-    }
+    assert {artifact.key for artifact in SCHEMAS.artifact_types} == {JSON_SCHEMA.key}
     assert {(node.operator_id, node.operator_version) for node in manifest.nodes} == {
         ("schema.builder", 1),
     }

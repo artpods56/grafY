@@ -5,13 +5,15 @@ import * as stylex from "@stylexjs/stylex";
 import useSWR from "swr";
 
 import {
-  artifactContentUrl,
+  artifactInlineContentUrl,
   type ArtifactSummary,
   type ArtifactTypeSpec,
+  type RunPortArtifact,
   type RunPortOutput,
 } from "@/lib/api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { artifactTypeFor, declaredArtifactContentType } from "../artifact-card";
 import type { ArtifactViewerInteractionContext } from "../artifact-interactions";
 import { PrettyValue } from "./artifact-renderers/pretty-value";
 import {
@@ -23,7 +25,45 @@ import { writeArtifactDrop } from "../../model/artifact-drop";
 import { BLOB_ARTIFACT_NOTICE, isBlobArtifact } from "../../model/blob-notice";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
-const EAGER_JSON_PREVIEW_BYTE_LIMIT = 512 * 1_024;
+
+/**
+ * The renderer view of one artifact a stored result names.
+ *
+ * A stored result carries a *reference* — id, artifact type, schema version,
+ * content hash — and never a content type, a byte size or inline text: those
+ * belonged to the run that produced them. So the card resolves the bytes
+ * through the artifact route, which serves them with their stored content type,
+ * and reads the only declarations that remain from the artifact-type catalog:
+ * how the payload is bundled, and what a download would be called.
+ */
+export function storedArtifactView(
+  workspaceId: string,
+  artifact: RunPortArtifact,
+  artifactType: ArtifactTypeSpec | undefined,
+): ArtifactSummary {
+  return {
+    artifact_id: artifact.artifact_id,
+    artifact_type: artifact.artifact_type,
+    schema_version: artifact.schema_version,
+    content_type:
+      declaredArtifactContentType(artifactType) ?? "application/octet-stream",
+    content_url: artifactInlineContentUrl(workspaceId, artifact.artifact_id),
+    ...(artifact.content_hash ? { sha256: artifact.content_hash } : {}),
+    ...(artifactType?.export_formats
+      ? { download_formats: artifactType.export_formats }
+      : {}),
+    // No `byte_size` and no `metadata`: a reference carries neither, and the
+    // renderers that take this view show no size and no uploaded filename.
+  };
+}
+
+/**
+ * Whether the card should read this artifact's bytes as JSON before rendering.
+ * The catalog's bundle contract is what still says how a payload is stored.
+ */
+function payloadIsJson(artifactType: ArtifactTypeSpec | undefined): boolean {
+  return declaredArtifactContentType(artifactType) === "application/json";
+}
 
 const s = stylex.create({
   section: { display: "grid", gap: "8px" },
@@ -444,7 +484,8 @@ export function ArtifactPortPreview({
   /** Edge-owned feed: whole output when null/empty, else project along path. */
   feedProjection?: { path: readonly string[] } | null;
   interaction?: ArtifactViewerInteractionContext;
-  onFocusedArtifactChange?: (artifact: ArtifactSummary | null) => void;
+  /** The stored reference the card is showing, for the card's own actions. */
+  onFocusedArtifactChange?: (artifact: RunPortArtifact | null) => void;
 }) {
   const { workspace } = useWorkspaceContext();
   const artifacts = output.artifacts;
@@ -458,8 +499,6 @@ export function ArtifactPortPreview({
   const [localField, setLocalField] = React.useState("");
   const feedPath = feedProjection?.path.length ? feedProjection.path : null;
   const fieldControlledByEdge = feedPath != null;
-  const [requestedPayloadArtifactId, setRequestedPayloadArtifactId] =
-    React.useState<string | null>(null);
 
   const focusedIndex = Math.min(index, artifacts.length - 1);
   const active = artifacts[focusedIndex];
@@ -470,10 +509,13 @@ export function ArtifactPortPreview({
       `ArtifactPortPreview needs at least one artifact (port ${output.port})`,
     );
   }
-  const activeContentUrl = artifactContentUrl(workspace.id, active.content_url);
+  const artifactType = artifactTypeFor(active, artifactTypes);
+  const activeView = storedArtifactView(workspace.id, active, artifactType);
+  const activeContentUrl = activeView.content_url ?? null;
+  const activeJson = payloadIsJson(artifactType);
 
   React.useEffect(() => {
-    onFocusedArtifactChange?.(active ?? null);
+    onFocusedArtifactChange?.(active);
   }, [active, onFocusedArtifactChange]);
   const tableArtifact =
     active.artifact_type === "table.data" && active.schema_version === 1;
@@ -485,20 +527,11 @@ export function ArtifactPortPreview({
       "geo.map_layer",
       "geo.map_document",
     ].includes(active.artifact_type);
+  // Table and map renderers read the paged endpoints for themselves; the card
+  // only loads a whole JSON payload for the pretty and raw views.
   const rendererOwnsPayload = tableArtifact || geoArtifact;
-  const activeJsonSizeIsBounded =
-    active.byte_size != null &&
-    active.byte_size <= EAGER_JSON_PREVIEW_BYTE_LIMIT;
-  const payloadDeferred =
-    !rendererOwnsPayload &&
-    active.content_type === "application/json" &&
-    !activeJsonSizeIsBounded &&
-    requestedPayloadArtifactId !== active.artifact_id;
   const activePayloadKey: ArtifactPayloadKey | null =
-    !rendererOwnsPayload &&
-    !payloadDeferred &&
-    active.content_type === "application/json" &&
-    activeContentUrl
+    !rendererOwnsPayload && activeJson && activeContentUrl
       ? [
           "artifact-json",
           { artifactId: active.artifact_id, url: activeContentUrl },
@@ -509,44 +542,17 @@ export function ArtifactPortPreview({
     error: activePayloadError,
     isLoading: activePayloadLoading,
   } = useSWR(activePayloadKey, loadArtifactPayload);
-  const explicitPayloadLoading =
-    requestedPayloadArtifactId === active.artifact_id && activePayloadLoading;
 
-  const artifactType = artifactTypes.find(
-    (candidate) =>
-      candidate.key.id === active.artifact_type &&
-      candidate.key.schema_version === active.schema_version,
-  );
   const candidateFields =
-    sequence &&
-    !geoArtifact &&
-    active.content_type === "application/json" &&
-    activeContentUrl
+    sequence && !geoArtifact && activeJson && activeContentUrl
       ? projectableFields(artifactType)
       : [];
-  const projectionPayloadByteSize = artifacts.reduce(
-    (total, artifact) => total + (artifact.byte_size ?? 0),
-    0,
-  );
-  const projectionPayloadsAreBounded =
-    artifacts.every(
-      (artifact) =>
-        artifact.content_type === "application/json" &&
-        artifact.byte_size != null,
-    ) && projectionPayloadByteSize <= EAGER_JSON_PREVIEW_BYTE_LIMIT;
-  const fields = projectionPayloadsAreBounded ? candidateFields : [];
-  const feedProjectionDeferred =
-    fieldControlledByEdge && sequence && !projectionPayloadsAreBounded;
-  const projectionDeferred =
-    feedProjectionDeferred ||
-    (!fieldControlledByEdge &&
-      candidateFields.length > 0 &&
-      !projectionPayloadsAreBounded);
+  const fields = candidateFields;
   const localSelectedField = fields.find(
     (option) => option.name === localField,
   );
   const edgeTopLevelField =
-    feedPath?.length === 1 && sequence && !feedProjectionDeferred
+    feedPath?.length === 1 && sequence
       ? (fields.find((option) => option.name === feedPath[0]) ??
         (feedPath[0] ? { name: feedPath[0], type: "unknown" } : undefined))
       : undefined;
@@ -554,21 +560,16 @@ export function ArtifactPortPreview({
     ? edgeTopLevelField
     : localSelectedField;
   const usesPathProjection =
-    fieldControlledByEdge &&
-    feedPath != null &&
-    !feedProjectionDeferred &&
-    !edgeTopLevelField &&
-    sequence;
+    fieldControlledByEdge && feedPath != null && !edgeTopLevelField && sequence;
   const singleFeedProjection =
     fieldControlledByEdge && feedPath != null && !sequence;
 
   const projectionRequests =
     selectedField || usesPathProjection
       ? artifacts.flatMap((artifact) => {
-          const url =
-            artifact.content_type === "application/json"
-              ? artifactContentUrl(workspace.id, artifact.content_url)
-              : null;
+          const url = activeJson
+            ? artifactInlineContentUrl(workspace.id, artifact.artifact_id)
+            : null;
           return url ? [{ artifactId: artifact.artifact_id, url }] : [];
         })
       : [];
@@ -583,18 +584,11 @@ export function ArtifactPortPreview({
     isLoading: projectionLoading,
   } = useSWR(projectionKey, loadSequencePayloads);
 
-  const jsonPayloadMissing =
-    !rendererOwnsPayload &&
-    active.content_type === "application/json" &&
-    !activeContentUrl;
   const jsonPayloadFailed =
-    !rendererOwnsPayload &&
-    active.content_type === "application/json" &&
-    Boolean(activePayloadError);
-  const renderer =
-    jsonPayloadMissing || jsonPayloadFailed || payloadDeferred
-      ? META_ARTIFACT_RENDERER
-      : rendererFor(active, activePayload);
+    !rendererOwnsPayload && activeJson && Boolean(activePayloadError);
+  const renderer = jsonPayloadFailed
+    ? META_ARTIFACT_RENDERER
+    : rendererFor(activeView, activePayload);
   const [firstMode] = renderer.modes;
   // Every renderer declares at least one mode; one with none has nothing to
   // ask its component to paint.
@@ -622,13 +616,12 @@ export function ArtifactPortPreview({
     showingFeedProjection &&
     (Boolean(projectionError) ||
       projectionMissingContent ||
-      (singleFeedProjection &&
-        (Boolean(activePayloadError) || jsonPayloadMissing)));
+      (singleFeedProjection && Boolean(activePayloadError)));
   const visibleModes = showingFeedProjection
     ? projectionFallback
       ? META_ARTIFACT_RENDERER.modes
       : projectionModes
-    : activePayloadLoading || payloadDeferred
+    : activePayloadLoading
       ? []
       : renderer.modes;
   const projectedValues =
@@ -649,14 +642,6 @@ export function ArtifactPortPreview({
   const feedProjectionLabel = feedPath
     ? feedPath.join(".")
     : selectedField?.name;
-  let payloadLoadingNotice =
-    "This JSON artifact is not loaded automatically because its size is unknown.";
-  if (explicitPayloadLoading) {
-    payloadLoadingNotice = "Loading the complete JSON artifact…";
-  } else if (active.byte_size != null) {
-    const sizeMegabytes = (active.byte_size / (1_024 * 1_024)).toFixed(1);
-    payloadLoadingNotice = `This JSON artifact is not loaded automatically (${sizeMegabytes} MB).`;
-  }
   return (
     <section
       draggable
@@ -725,13 +710,6 @@ export function ArtifactPortPreview({
           ))}
         </select>
       ) : null}
-      {projectionDeferred ? (
-        <span {...stylex.props(s.notice)}>
-          {fieldControlledByEdge
-            ? `Field preview for .${feedPath?.join(".")} is disabled because this sequence is too large to load safely in the browser.`
-            : "Field projection is disabled because this sequence is too large to load safely in the browser."}
-        </span>
-      ) : null}
       {showingFeedProjection ? (
         <>
           <span {...stylex.props(s.projectionType)}>
@@ -744,8 +722,7 @@ export function ArtifactPortPreview({
             style={{ maxHeight: previewHeight }}
           >
             {projectionLoading ||
-            (singleFeedProjection &&
-              (activePayloadLoading || payloadDeferred)) ? (
+            (singleFeedProjection && activePayloadLoading) ? (
               <span
                 role="status"
                 aria-live="polite"
@@ -755,8 +732,7 @@ export function ArtifactPortPreview({
               </span>
             ) : projectionError ||
               projectionMissingContent ||
-              (singleFeedProjection &&
-                (Boolean(activePayloadError) || jsonPayloadMissing)) ? (
+              (singleFeedProjection && Boolean(activePayloadError)) ? (
               <>
                 <p
                   role="alert"
@@ -772,7 +748,7 @@ export function ArtifactPortPreview({
                   Projection preview unavailable; showing artifact metadata.
                 </p>
                 <META_ARTIFACT_RENDERER.Component
-                  artifact={active}
+                  artifact={activeView}
                   mode="meta"
                 />
               </>
@@ -817,30 +793,11 @@ export function ArtifactPortPreview({
             )}
             style={{ maxHeight: tableArtifact ? undefined : previewHeight }}
           >
-            {payloadDeferred || explicitPayloadLoading ? (
-              <div {...stylex.props(s.notice)}>
-                <p>{payloadLoadingNotice}</p>
-                <button
-                  type="button"
-                  disabled={explicitPayloadLoading}
-                  {...nodeInteractionProps(stylex.props(s.modeButton))}
-                  onClick={() =>
-                    setRequestedPayloadArtifactId(active.artifact_id)
-                  }
-                >
-                  {explicitPayloadLoading ? "Loading…" : "Load complete JSON"}
-                </button>
-                {explicitPayloadLoading ? (
-                  <span role="status" aria-live="polite">
-                    Loading complete JSON…
-                  </span>
-                ) : null}
-              </div>
-            ) : activePayloadLoading ? (
+            {activePayloadLoading ? (
               <p role="status" aria-live="polite" {...stylex.props(s.notice)}>
                 Loading complete JSON…
               </p>
-            ) : activePayloadError || jsonPayloadMissing ? (
+            ) : activePayloadError ? (
               <p
                 role="alert"
                 title={
@@ -853,9 +810,9 @@ export function ArtifactPortPreview({
                 JSON preview unavailable; showing artifact metadata.
               </p>
             ) : null}
-            {activePayloadLoading || payloadDeferred ? null : (
+            {activePayloadLoading ? null : (
               <renderer.Component
-                artifact={active}
+                artifact={activeView}
                 payload={activePayload}
                 mode={mode}
                 availableHeight={previewHeight}

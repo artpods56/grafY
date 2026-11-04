@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy import event
@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import ConnectionPoolEntry
 
-from grafy_persistence.orm import start_mappers
+from grafy_persistence.unit_of_work import PendingSessionCleanups
 
 
 def _configure_sqlite_connection(
@@ -33,8 +33,15 @@ def _configure_sqlite_connection(
 class Database:
     engine: AsyncEngine
     sessions: async_sessionmaker[AsyncSession]
+    cleanups: PendingSessionCleanups = field(default_factory=PendingSessionCleanups)
+    """Session closes a cancelled unit of work could not finish.
+
+    Passed to the units of work built over this database so that an interrupted close has an
+    owner outliving the request that was cancelled, and is settled here rather than lost.
+    """
 
     async def dispose(self) -> None:
+        await self.cleanups.settle()
         await self.engine.dispose()
 
 
@@ -53,6 +60,8 @@ def prepare_database_url(database_url: str) -> str:
 
 
 def create_database(database_url: str) -> Database:
+    from grafy_persistence.orm import start_mappers
+
     start_mappers()
     prepared_database_url = prepare_database_url(database_url)
     url = make_url(prepared_database_url)

@@ -5,8 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   AppliedNodeSecret,
-  GraphNodeSecrets,
   NodeSpec,
+  ProjectNodeSecrets,
   SavedGraphNode,
 } from "@/lib/api";
 import { WORKFLOW_NODE_TYPE, createWorkflowNodeData } from "../canvas/types";
@@ -16,13 +16,21 @@ import { renderHook } from "./test/renderHook";
 import { useNodeSecrets, type NodeSecretGraph } from "./useNodeSecrets";
 
 const api = vi.hoisted(() => ({
-  getGraphNodeSecrets: vi.fn<typeof import("@/lib/api").getGraphNodeSecrets>(),
+  getProjectNodeSecrets:
+    vi.fn<typeof import("@/lib/api").getProjectNodeSecrets>(),
   applyNodeSecret: vi.fn<typeof import("@/lib/api").applyNodeSecret>(),
   removeNodeSecret: vi.fn<typeof import("@/lib/api").removeNodeSecret>(),
 }));
 
 vi.mock("@/lib/api", () => api);
 
+const workspaceId = "workspace-1";
+/** A Project is addressed by a Project id — never by a Graph id. */
+const projectId = "00000000-0000-4000-8000-000000000001";
+const otherProjectId = "00000000-0000-4000-8000-000000000008";
+/** The Graph inside that Project the node lives in. */
+const graphId = "main";
+const otherGraphId = "analysis";
 const nodeId = "llm-1";
 const secretName = "api_key";
 const savedBaseUrl = "https://api.openai.com/v1";
@@ -79,28 +87,51 @@ function savedNode(baseUrl = savedBaseUrl, id = nodeId): SavedGraphNode {
 }
 
 function graph(
-  id: string,
+  projectId: string,
+  graphId: string,
   revision: number,
   baseUrl = savedBaseUrl,
   nodes: readonly SavedGraphNode[] = [savedNode(baseUrl)],
 ): NodeSecretGraph {
-  return { id, revision, nodes };
+  return { id: projectId, graphId, revision, nodes };
 }
 
-function graphSecrets(
+function projectSecrets(
   activeGraph: NodeSecretGraph,
   configured: boolean,
-): GraphNodeSecrets {
+  headSequence = activeGraph.revision,
+): ProjectNodeSecrets {
   return {
-    graph_id: activeGraph.id,
-    graph_revision: activeGraph.revision,
+    project_id: activeGraph.id,
+    graph_id: activeGraph.graphId,
+    head_sequence: headSequence,
     unresolved_nodes: [],
     secrets: [{ node_id: nodeId, name: secretName, configured }],
   };
 }
 
+/**
+ * What the API answers when `expected_head_sequence` names a head that is gone:
+ * an ApiError carrying 409 and nothing else. A secret write raises no other
+ * status for the head, so a test that means "the head moved" says it this way.
+ */
+function headMoved(): Error {
+  return Object.assign(
+    new Error("API error 409: collaboration head conflict"),
+    {
+      name: "ApiError",
+      status: 409,
+      detail: "collaboration head conflict",
+    },
+  );
+}
+
+function applied(configured = true): AppliedNodeSecret {
+  return { node_id: nodeId, name: secretName, configured };
+}
+
 beforeEach(() => {
-  api.getGraphNodeSecrets.mockReset();
+  api.getProjectNodeSecrets.mockReset();
   api.applyNodeSecret.mockReset();
   api.removeNodeSecret.mockReset();
 });
@@ -115,10 +146,10 @@ describe("useNodeSecrets", () => {
       outputs: [],
       persistedNode: savedNode(),
     };
-    const activeGraph = graph("00000000-0000-4000-8000-000000000001", 1);
+    const activeGraph = graph(projectId, graphId, 1);
     const hook = await renderHook(
       ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
-        useNodeSecrets("workspace-1", nodes),
+        useNodeSecrets(workspaceId, nodes),
       { nodes: [node] },
     );
 
@@ -131,22 +162,50 @@ describe("useNodeSecrets", () => {
     });
 
     expect(refreshed).toBe(true);
-    expect(api.getGraphNodeSecrets).not.toHaveBeenCalled();
+    expect(api.getProjectNodeSecrets).not.toHaveBeenCalled();
     expect(hook.result.current.nodeSecretStatuses).toEqual({});
+  });
+
+  it("asks for the Project and the Graph as two distinct things", async () => {
+    const node = workflowNode();
+    const activeGraph = graph(projectId, graphId, 2);
+    api.getProjectNodeSecrets.mockResolvedValue(
+      projectSecrets(activeGraph, false),
+    );
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+
+    await React.act(async () => {
+      await expect(
+        hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]),
+      ).resolves.toBe(true);
+    });
+
+    expect(api.getProjectNodeSecrets).toHaveBeenCalledWith(
+      workspaceId,
+      projectId,
+      graphId,
+      undefined,
+    );
   });
 
   it("keeps the newest refresh when an older graph request finishes last", async () => {
     const node = workflowNode();
-    const olderGraph = graph("00000000-0000-4000-8000-000000000001", 1);
-    const newerGraph = graph("00000000-0000-4000-8000-000000000002", 3);
-    const olderResponse = deferred<GraphNodeSecrets>();
-    const newerResponse = deferred<GraphNodeSecrets>();
-    api.getGraphNodeSecrets
+    // Both Graphs live in one Project: the Project id alone cannot tell them
+    // apart, so the Graph is what makes an older response stale.
+    const olderGraph = graph(projectId, otherGraphId, 1);
+    const newerGraph = graph(projectId, graphId, 3);
+    const olderResponse = deferred<ProjectNodeSecrets>();
+    const newerResponse = deferred<ProjectNodeSecrets>();
+    api.getProjectNodeSecrets
       .mockReturnValueOnce(olderResponse.promise)
       .mockReturnValueOnce(newerResponse.promise);
     const hook = await renderHook(
       ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
-        useNodeSecrets("workspace-1", nodes),
+        useNodeSecrets(workspaceId, nodes),
       { nodes: [node] },
     );
 
@@ -165,7 +224,7 @@ describe("useNodeSecrets", () => {
 
     let newerRefreshed = false;
     await React.act(async () => {
-      newerResponse.resolve(graphSecrets(newerGraph, true));
+      newerResponse.resolve(projectSecrets(newerGraph, true));
       newerRefreshed = await newerRefresh;
     });
     expect(newerRefreshed).toBe(true);
@@ -175,7 +234,7 @@ describe("useNodeSecrets", () => {
 
     let olderRefreshed = true;
     await React.act(async () => {
-      olderResponse.resolve(graphSecrets(olderGraph, false));
+      olderResponse.resolve(projectSecrets(olderGraph, false));
       olderRefreshed = await olderRefresh;
     });
     expect(olderRefreshed).toBe(false);
@@ -184,14 +243,70 @@ describe("useNodeSecrets", () => {
     });
   });
 
-  it("does not restore statuses after the active graph is cleared", async () => {
+  it("does not apply a listing that names a different Graph than it was asked for", async () => {
     const node = workflowNode();
-    const activeGraph = graph("00000000-0000-4000-8000-000000000003", 2);
-    const response = deferred<GraphNodeSecrets>();
-    api.getGraphNodeSecrets.mockReturnValue(response.promise);
+    const activeGraph = graph(projectId, graphId, 4);
+    api.getProjectNodeSecrets.mockResolvedValue(
+      projectSecrets(graph(projectId, otherGraphId, 4), true),
+    );
     const hook = await renderHook(
       ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
-        useNodeSecrets("workspace-1", nodes),
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+
+    await React.act(async () => {
+      await expect(
+        hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]),
+      ).resolves.toBe(false);
+    });
+
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: {
+        [secretName]: {
+          state: "error",
+          message: "Secret status could not be loaded.",
+        },
+      },
+    });
+  });
+
+  it("does not apply a listing that names a different Project than it was asked for", async () => {
+    const node = workflowNode();
+    const activeGraph = graph(projectId, graphId, 4);
+    api.getProjectNodeSecrets.mockResolvedValue(
+      projectSecrets(graph(otherProjectId, graphId, 4), true),
+    );
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+
+    await React.act(async () => {
+      await expect(
+        hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]),
+      ).resolves.toBe(false);
+    });
+
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: {
+        [secretName]: {
+          state: "error",
+          message: "Secret status could not be loaded.",
+        },
+      },
+    });
+  });
+
+  it("does not restore statuses after the active graph is cleared", async () => {
+    const node = workflowNode();
+    const activeGraph = graph(projectId, graphId, 2);
+    const response = deferred<ProjectNodeSecrets>();
+    api.getProjectNodeSecrets.mockReturnValue(response.promise);
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
       { nodes: [node] },
     );
 
@@ -208,7 +323,7 @@ describe("useNodeSecrets", () => {
     await React.act(() => {
       hook.result.current.clearGraphSecretStatuses();
     });
-    response.resolve(graphSecrets(activeGraph, true));
+    response.resolve(projectSecrets(activeGraph, true));
 
     await expect(refresh).resolves.toBe(false);
     expect(hook.result.current.nodeSecretStatuses).toEqual({});
@@ -216,12 +331,12 @@ describe("useNodeSecrets", () => {
 
   it("does not repopulate a forgotten node when a refresh finishes", async () => {
     const node = workflowNode();
-    const activeGraph = graph("00000000-0000-4000-8000-000000000006", 5);
-    const response = deferred<GraphNodeSecrets>();
-    api.getGraphNodeSecrets.mockReturnValue(response.promise);
+    const activeGraph = graph(projectId, graphId, 5);
+    const response = deferred<ProjectNodeSecrets>();
+    api.getProjectNodeSecrets.mockReturnValue(response.promise);
     const hook = await renderHook(
       ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
-        useNodeSecrets("workspace-1", nodes),
+        useNodeSecrets(workspaceId, nodes),
       { nodes: [node] },
     );
 
@@ -236,7 +351,7 @@ describe("useNodeSecrets", () => {
     });
 
     await React.act(async () => {
-      response.resolve(graphSecrets(activeGraph, true));
+      response.resolve(projectSecrets(activeGraph, true));
       await expect(refresh).resolves.toBe(true);
     });
     expect(hook.result.current.nodeSecretStatuses).toEqual({});
@@ -246,18 +361,17 @@ describe("useNodeSecrets", () => {
     const otherNodeId = "llm-2";
     const firstNode = workflowNode();
     const otherNode = workflowNode(savedBaseUrl, otherNodeId);
-    const activeGraph = graph(
-      "00000000-0000-4000-8000-000000000007",
-      6,
-      savedBaseUrl,
-      [savedNode(), savedNode(savedBaseUrl, otherNodeId)],
-    );
-    const refreshResponse = deferred<GraphNodeSecrets>();
+    const activeGraph = graph(projectId, graphId, 6, savedBaseUrl, [
+      savedNode(),
+      savedNode(savedBaseUrl, otherNodeId),
+    ]);
+    const refreshResponse = deferred<ProjectNodeSecrets>();
     const applyResponse = deferred<AppliedNodeSecret>();
-    api.getGraphNodeSecrets
+    api.getProjectNodeSecrets
       .mockResolvedValueOnce({
-        graph_id: activeGraph.id,
-        graph_revision: activeGraph.revision,
+        project_id: activeGraph.id,
+        graph_id: activeGraph.graphId,
+        head_sequence: activeGraph.revision,
         unresolved_nodes: [],
         secrets: [
           { node_id: nodeId, name: secretName, configured: false },
@@ -268,7 +382,7 @@ describe("useNodeSecrets", () => {
     api.applyNodeSecret.mockReturnValue(applyResponse.promise);
     const hook = await renderHook(
       ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
-        useNodeSecrets("workspace-1", nodes),
+        useNodeSecrets(workspaceId, nodes),
       { nodes: [firstNode, otherNode] },
     );
 
@@ -318,8 +432,9 @@ describe("useNodeSecrets", () => {
     let refreshed = false;
     await React.act(async () => {
       refreshResponse.resolve({
-        graph_id: activeGraph.id,
-        graph_revision: activeGraph.revision,
+        project_id: activeGraph.id,
+        graph_id: activeGraph.graphId,
+        head_sequence: activeGraph.revision,
         unresolved_nodes: [],
         secrets: [
           { node_id: nodeId, name: secretName, configured: false },
@@ -339,13 +454,15 @@ describe("useNodeSecrets", () => {
 
   it("sends the exact write-only value and stores only lifecycle metadata", async () => {
     const node = workflowNode();
-    const activeGraph = graph("00000000-0000-4000-8000-000000000004", 7);
-    api.getGraphNodeSecrets.mockResolvedValue(graphSecrets(activeGraph, false));
+    const activeGraph = graph(projectId, graphId, 7);
+    api.getProjectNodeSecrets.mockResolvedValue(
+      projectSecrets(activeGraph, false),
+    );
     const applyResponse = deferred<AppliedNodeSecret>();
     api.applyNodeSecret.mockReturnValue(applyResponse.promise);
     const hook = await renderHook(
       ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
-        useNodeSecrets("workspace-1", nodes),
+        useNodeSecrets(workspaceId, nodes),
       { nodes: [node] },
     );
     await React.act(async () => {
@@ -363,11 +480,12 @@ describe("useNodeSecrets", () => {
     });
 
     expect(api.applyNodeSecret).toHaveBeenCalledWith(
-      "workspace-1",
+      workspaceId,
       activeGraph.id,
+      activeGraph.graphId,
       nodeId,
       secretName,
-      { value: plaintext, expected_graph_revision: activeGraph.revision },
+      { value: plaintext, expected_head_sequence: activeGraph.revision },
     );
     expect(hook.result.current.nodeSecretStatuses).toEqual({
       [nodeId]: { [secretName]: { state: "applying" } },
@@ -396,11 +514,13 @@ describe("useNodeSecrets", () => {
 
   it("fails closed when a secret dependency no longer matches the saved node", async () => {
     const node = workflowNode("https://openrouter.ai/api/v1");
-    const activeGraph = graph("00000000-0000-4000-8000-000000000005", 4);
-    api.getGraphNodeSecrets.mockResolvedValue(graphSecrets(activeGraph, true));
+    const activeGraph = graph(projectId, graphId, 4);
+    api.getProjectNodeSecrets.mockResolvedValue(
+      projectSecrets(activeGraph, true),
+    );
     const hook = await renderHook(
       ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
-        useNodeSecrets("workspace-1", nodes),
+        useNodeSecrets(workspaceId, nodes),
       { nodes: [node] },
     );
     await React.act(async () => {
@@ -419,5 +539,347 @@ describe("useNodeSecrets", () => {
     expect(hook.result.current.nodeSecretStatuses).toEqual({
       [nodeId]: { [secretName]: { state: "configured" } },
     });
+  });
+
+  it("removes a secret at the head the listing was read at", async () => {
+    const node = workflowNode();
+    // The canvas was opened at head 6; the Project head has moved to 9 since.
+    // The listing says so, and a write has to name 9 to land at all.
+    const activeGraph = graph(projectId, graphId, 6);
+    api.getProjectNodeSecrets.mockResolvedValue(
+      projectSecrets(activeGraph, true, 9),
+    );
+    const removal = deferred<undefined>();
+    api.removeNodeSecret.mockReturnValue(removal.promise);
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
+    });
+
+    let removing!: Promise<boolean>;
+    await React.act(() => {
+      removing = hook.result.current.removeConfiguredNodeSecret(
+        nodeId,
+        secretName,
+      );
+    });
+
+    expect(api.removeNodeSecret).toHaveBeenCalledWith(
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      9,
+    );
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: { [secretName]: { state: "removing" } },
+    });
+
+    await React.act(async () => {
+      removal.resolve(undefined);
+      await expect(removing).resolves.toBe(true);
+    });
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: { [secretName]: { state: "unconfigured" } },
+    });
+  });
+
+  it("applies a secret whose head moved between the listing and the write", async () => {
+    const node = workflowNode();
+    // The canvas was opened at head 4. One accepted batch — this tab dragging a
+    // node, a peer editing the same Project — moves the head to 7 without a
+    // checkpoint, so the listing this token came from is the only thing that is
+    // stale, and the write has to be re-addressed at 7 rather than refused.
+    const activeGraph = graph(projectId, graphId, 4);
+    api.getProjectNodeSecrets
+      .mockResolvedValueOnce(projectSecrets(activeGraph, false))
+      .mockResolvedValueOnce(projectSecrets(activeGraph, false, 7));
+    api.applyNodeSecret
+      .mockRejectedValueOnce(headMoved())
+      .mockResolvedValueOnce(applied());
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
+    });
+
+    let appliedResult = false;
+    await React.act(async () => {
+      appliedResult = await hook.result.current.applyConfiguredNodeSecret(
+        nodeId,
+        secretName,
+        "sk-after-a-drag",
+      );
+    });
+
+    expect(appliedResult).toBe(true);
+    expect(api.applyNodeSecret).toHaveBeenNthCalledWith(
+      1,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      { value: "sk-after-a-drag", expected_head_sequence: 4 },
+    );
+    expect(api.applyNodeSecret).toHaveBeenNthCalledWith(
+      2,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      { value: "sk-after-a-drag", expected_head_sequence: 7 },
+    );
+    // The retry's token came from a listing the server answered at 7 — the only
+    // source this hook will take a head from.
+    expect(api.getProjectNodeSecrets).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: { [secretName]: { state: "configured" } },
+    });
+  });
+
+  it("removes a secret whose head moved between the listing and the write", async () => {
+    const node = workflowNode();
+    const activeGraph = graph(projectId, graphId, 6);
+    api.getProjectNodeSecrets
+      .mockResolvedValueOnce(projectSecrets(activeGraph, true, 9))
+      .mockResolvedValueOnce(projectSecrets(activeGraph, true, 10));
+    api.removeNodeSecret
+      .mockRejectedValueOnce(headMoved())
+      .mockResolvedValueOnce(undefined);
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
+    });
+
+    let removed = false;
+    await React.act(async () => {
+      removed = await hook.result.current.removeConfiguredNodeSecret(
+        nodeId,
+        secretName,
+      );
+    });
+
+    expect(removed).toBe(true);
+    expect(api.removeNodeSecret).toHaveBeenNthCalledWith(
+      1,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      9,
+    );
+    expect(api.removeNodeSecret).toHaveBeenNthCalledWith(
+      2,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      10,
+    );
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: { [secretName]: { state: "unconfigured" } },
+    });
+  });
+
+  it("re-reads the listing for no other failure than a head conflict", async () => {
+    const node = workflowNode();
+    const activeGraph = graph(projectId, graphId, 4);
+    api.getProjectNodeSecrets.mockResolvedValue(
+      projectSecrets(activeGraph, false),
+    );
+    // 503 is the encryption key refusing to load. Retrying it at a fresh head
+    // would send a value the server may already have stored.
+    api.applyNodeSecret.mockRejectedValue(
+      Object.assign(new Error("API error 503: node secret store unavailable"), {
+        name: "ApiError",
+        status: 503,
+      }),
+    );
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
+    });
+
+    let appliedResult = true;
+    await React.act(async () => {
+      appliedResult = await hook.result.current.applyConfiguredNodeSecret(
+        nodeId,
+        secretName,
+        "sk-once-only",
+      );
+    });
+
+    expect(appliedResult).toBe(false);
+    expect(api.applyNodeSecret).toHaveBeenCalledTimes(1);
+    expect(api.getProjectNodeSecrets).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: {
+        [secretName]: {
+          state: "error",
+          message: "The secret could not be applied.",
+        },
+      },
+    });
+  });
+
+  it("keeps the head a conflict revealed so the next write lands", async () => {
+    const node = workflowNode();
+    // The head moved to 4 and moved again before the retry could land, so this
+    // attempt is reported rather than chased. What it must not do is stay stuck:
+    // the listing read during recovery is the next write's token.
+    const activeGraph = graph(projectId, graphId, 3);
+    api.getProjectNodeSecrets
+      .mockResolvedValueOnce(projectSecrets(activeGraph, false))
+      .mockResolvedValueOnce(projectSecrets(activeGraph, false, 4));
+    api.applyNodeSecret
+      .mockRejectedValueOnce(headMoved())
+      .mockRejectedValueOnce(headMoved())
+      .mockResolvedValueOnce(applied());
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]);
+    });
+
+    let firstAttempt = true;
+    await React.act(async () => {
+      firstAttempt = await hook.result.current.applyConfiguredNodeSecret(
+        nodeId,
+        secretName,
+        "sk-conflicted",
+      );
+    });
+    expect(firstAttempt).toBe(false);
+    expect(api.applyNodeSecret).toHaveBeenNthCalledWith(
+      2,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      { value: "sk-conflicted", expected_head_sequence: 4 },
+    );
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: {
+        [secretName]: {
+          state: "error",
+          message: "The secret could not be applied.",
+        },
+      },
+    });
+
+    // Pressing Apply again must not need another listing: the token it holds
+    // already names head 4, which is what the server answered last.
+    let secondAttempt = false;
+    await React.act(async () => {
+      secondAttempt = await hook.result.current.applyConfiguredNodeSecret(
+        nodeId,
+        secretName,
+        "sk-conflicted",
+      );
+    });
+    expect(secondAttempt).toBe(true);
+    expect(api.applyNodeSecret).toHaveBeenNthCalledWith(
+      3,
+      workspaceId,
+      activeGraph.id,
+      activeGraph.graphId,
+      nodeId,
+      secretName,
+      { value: "sk-conflicted", expected_head_sequence: 4 },
+    );
+    expect(api.getProjectNodeSecrets).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: { [secretName]: { state: "configured" } },
+    });
+  });
+
+  it("writes no secret when no listing has told it the head to guard", async () => {
+    const node = workflowNode();
+    const activeGraph = graph(projectId, graphId, 3);
+    api.getProjectNodeSecrets.mockRejectedValue(new Error("offline"));
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await expect(
+        hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]),
+      ).resolves.toBe(false);
+    });
+    expect(hook.result.current.nodeSecretStatuses).toEqual({
+      [nodeId]: {
+        [secretName]: {
+          state: "error",
+          message: "Secret status could not be loaded.",
+        },
+      },
+    });
+
+    // A Project head starts at 0 and the API accepts 0, so a write with no
+    // listing behind it would overwrite the live document rather than fail.
+    await expect(
+      hook.result.current.applyConfiguredNodeSecret(nodeId, secretName, "sk-x"),
+    ).resolves.toBe(false);
+    await expect(
+      hook.result.current.removeConfiguredNodeSecret(nodeId, secretName),
+    ).resolves.toBe(false);
+
+    expect(api.applyNodeSecret).not.toHaveBeenCalled();
+    expect(api.removeNodeSecret).not.toHaveBeenCalled();
+  });
+
+  it("does not carry one Graph's head into another Graph of the same Project", async () => {
+    const node = workflowNode();
+    const openedGraph = graph(projectId, graphId, 5);
+    const switchingGraph = graph(projectId, otherGraphId, 5);
+    const switchResponse = deferred<ProjectNodeSecrets>();
+    api.getProjectNodeSecrets
+      .mockResolvedValueOnce(projectSecrets(openedGraph, true))
+      .mockReturnValueOnce(switchResponse.promise);
+    const hook = await renderHook(
+      ({ nodes }: { nodes: readonly WorkflowNode[] }) =>
+        useNodeSecrets(workspaceId, nodes),
+      { nodes: [node] },
+    );
+    await React.act(async () => {
+      await hook.result.current.refreshNodeSecretStatuses(openedGraph, [node]);
+    });
+    await React.act(() => {
+      void hook.result.current.refreshNodeSecretStatuses(switchingGraph, [
+        node,
+      ]);
+    });
+
+    await expect(
+      hook.result.current.removeConfiguredNodeSecret(nodeId, secretName),
+    ).resolves.toBe(false);
+
+    expect(api.removeNodeSecret).not.toHaveBeenCalled();
+    switchResponse.resolve(projectSecrets(switchingGraph, false));
   });
 });

@@ -5,9 +5,15 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.collaboration import RenameProjectCommand
 
-from grafy_client import ExecutionTimeoutError, GrafyClient, GrafyClientError
+from grafy_client import (
+    ExecutionTimeoutError,
+    GrafyClient,
+    GrafyClientError,
+    ProjectHead,
+    RunTarget,
+)
 
 
 WORKSPACE_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -110,94 +116,121 @@ async def test_catalog_uses_bearer_pat_and_returns_typed_snapshot() -> None:
     assert "nrt_live_secret" not in repr(client)
 
 
-@pytest.mark.asyncio
-async def test_graph_create_sends_canonical_document_and_returns_saved_graph() -> None:
-    graph_id = UUID("22222222-2222-4222-8222-222222222222")
-    document = SavedGraphDocument()
+PROJECT_ID = UUID("22222222-2222-4222-8222-222222222222")
+ROOM_EPOCH = UUID("44444444-4444-4444-8444-444444444444")
+RUN_ID = UUID("55555555-5555-4555-8555-555555555555")
 
-    def respond(request: httpx.Request) -> httpx.Response:
-        assert request.method == "POST"
-        assert request.url.path == f"/v1/workspaces/{WORKSPACE_ID}/graphs"
-        assert json.loads(request.content) == {
-            "name": "Vision E2E",
-            "document": document.model_dump(mode="json"),
-        }
-        return httpx.Response(
-            201,
-            json={
-                "id": str(graph_id),
-                "name": "Vision E2E",
-                "revision": 1,
-                "created_at": "2026-09-01T10:00:00Z",
-                "updated_at": "2026-09-01T10:00:00Z",
-                "document": document.model_dump(mode="json"),
-            },
-        )
 
-    async with GrafyClient(
+def _head_payload(sequence: int = 0) -> dict[str, object]:
+    return {
+        "project_id": str(PROJECT_ID),
+        "room_epoch": str(ROOM_EPOCH),
+        "collaboration_sequence": sequence,
+        "checkpoint_sequence": 0,
+        "checkpoint_revision": 1,
+        "name": "Vision E2E",
+        "updated_at": "2026-09-01T10:00:00Z",
+        "document": {"graphs": []},
+    }
+
+
+def _run_payload(status: str) -> dict[str, object]:
+    return {
+        "id": str(RUN_ID),
+        "workspace_id": str(WORKSPACE_ID),
+        "project_id": str(PROJECT_ID),
+        "graph_id": "main",
+        "targets": [{"node_id": "text", "call_path": []}],
+        "started_by_user_id": None,
+        "status": status,
+        "created_at": "2026-09-01T10:00:00Z",
+        "finished_at": None if status == "running" else "2026-09-01T10:00:01Z",
+        "error": None,
+    }
+
+
+def _client(handler: httpx.MockTransport) -> GrafyClient:
+    return GrafyClient(
         base_url="https://grafy.test",
         token=SecretStr("nrt_live_secret"),
-        transport=httpx.MockTransport(respond),
-    ) as client:
-        saved = await client.graphs.create(
-            WORKSPACE_ID,
-            name="Vision E2E",
-            document=document,
-        )
-
-    assert saved.id == graph_id
-    assert saved.revision == 1
-    assert saved.document == document
+        transport=handler,
+    )
 
 
 @pytest.mark.asyncio
-async def test_graph_get_and_update_use_typed_saved_graph_contract() -> None:
-    graph_id = UUID("22222222-2222-4222-8222-222222222222")
-    document = SavedGraphDocument()
-
+async def test_project_create_and_commands_use_the_project_contract() -> None:
     def respond(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET":
-            revision = 1
-            name = "Existing graph"
-        else:
-            assert request.method == "PUT"
+        base = f"/v1/workspaces/{WORKSPACE_ID}/projects"
+        if request.method == "POST" and request.url.path == base:
             assert json.loads(request.content) == {
-                "name": "Updated graph",
-                "document": document.model_dump(mode="json"),
-                "expected_revision": 1,
+                "name": "Vision E2E",
+                "graph_id": "main",
+                "graph_name": "Main",
             }
-            revision = 2
-            name = "Updated graph"
-        assert request.url.path == (f"/v1/workspaces/{WORKSPACE_ID}/graphs/{graph_id}")
+            return httpx.Response(
+                201,
+                json={
+                    "id": str(PROJECT_ID),
+                    "name": "Vision E2E",
+                    "created_at": "2026-09-01T10:00:00Z",
+                    "updated_at": "2026-09-01T10:00:00Z",
+                },
+            )
+        if request.url.path == f"{base}/{PROJECT_ID}/head":
+            return httpx.Response(200, json=_head_payload())
+        assert request.url.path == f"{base}/{PROJECT_ID}/commands"
+        body = json.loads(request.content)
+        assert body["room_epoch"] == str(ROOM_EPOCH)
+        assert body["observed_sequence"] == 0
+        assert body["commands"] == [
+            {
+                "kind": "rename_project",
+                "name": "Renamed",
+                "expected_name": "Vision E2E",
+            }
+        ]
         return httpx.Response(
             200,
             json={
-                "id": str(graph_id),
-                "name": name,
-                "revision": revision,
-                "created_at": "2026-09-01T10:00:00Z",
-                "updated_at": "2026-09-01T10:00:00Z",
-                "document": document.model_dump(mode="json"),
+                "head": _head_payload(1),
+                "receipt": {
+                    "command_id": body["command_id"],
+                    "outcome": "accepted",
+                    "accepted_sequence": 1,
+                    "room_epoch": str(ROOM_EPOCH),
+                    "deduplicated": False,
+                },
             },
         )
 
-    async with GrafyClient(
-        base_url="https://grafy.test",
-        token=SecretStr("nrt_live_secret"),
-        transport=httpx.MockTransport(respond),
-    ) as client:
-        existing = await client.graphs.get(WORKSPACE_ID, graph_id)
-        updated = await client.graphs.update(
+    async with _client(httpx.MockTransport(respond)) as client:
+        project = await client.projects.create(WORKSPACE_ID, name="Vision E2E")
+        head = await client.projects.head(WORKSPACE_ID, project.id)
+        submitted = await client.projects.submit_commands(
             WORKSPACE_ID,
-            graph_id,
-            name="Updated graph",
-            document=document,
-            expected_revision=existing.revision,
+            project.id,
+            head=head,
+            commands=[RenameProjectCommand(name="Renamed", expected_name="Vision E2E")],
         )
 
-    assert existing.name == "Existing graph"
-    assert updated.name == "Updated graph"
-    assert updated.revision == 2
+    assert project.id == PROJECT_ID
+    assert submitted.head.collaboration_sequence == 1
+    assert submitted.receipt.outcome == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_empty_command_batch_is_refused_before_the_request() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("no request expected")
+
+    async with _client(httpx.MockTransport(respond)) as client:
+        with pytest.raises(ValueError, match="must not be empty"):
+            await client.projects.submit_commands(
+                WORKSPACE_ID,
+                PROJECT_ID,
+                head=ProjectHead.model_validate(_head_payload()),
+                commands=[],
+            )
 
 
 @pytest.mark.asyncio
@@ -236,17 +269,17 @@ async def test_upload_create_sends_multipart_bytes_and_returns_upload_item() -> 
 
 @pytest.mark.asyncio
 async def test_secret_configuration_error_keeps_context_and_redacts_secrets() -> None:
-    graph_id = UUID("22222222-2222-4222-8222-222222222222")
     request_id = "33333333-3333-4333-8333-333333333333"
 
     def respond(request: httpx.Request) -> httpx.Response:
         assert request.method == "PUT"
         assert request.url.path == (
-            f"/v1/workspaces/{WORKSPACE_ID}/graphs/{graph_id}/nodes/llm/secrets/api_key"
+            f"/v1/workspaces/{WORKSPACE_ID}/projects/{PROJECT_ID}/graphs/main/"
+            "nodes/llm/secrets/api_key"
         )
         assert json.loads(request.content) == {
             "value": "sk-test-sensitive",
-            "expected_graph_revision": 3,
+            "expected_head_sequence": 3,
         }
         return httpx.Response(
             422,
@@ -254,23 +287,20 @@ async def test_secret_configuration_error_keeps_context_and_redacts_secrets() ->
             json={"detail": "Provider rejected sk-test-sensitive"},
         )
 
-    async with GrafyClient(
-        base_url="https://grafy.test",
-        token=SecretStr("nrt_live_secret"),
-        transport=httpx.MockTransport(respond),
-    ) as client:
+    async with _client(httpx.MockTransport(respond)) as client:
         with pytest.raises(GrafyClientError) as caught:
-            await client.graphs.configure_secret(
+            await client.projects.configure_secret(
                 WORKSPACE_ID,
-                graph_id,
+                PROJECT_ID,
+                graph_id="main",
                 node_id="llm",
                 secret_name="api_key",
                 value=SecretStr("sk-test-sensitive"),
-                expected_revision=3,
+                head=ProjectHead.model_validate(_head_payload(3)),
             )
 
     error = caught.value
-    assert error.operation == "configure graph node secret"
+    assert error.operation == "configure node secret"
     assert error.status_code == 422
     assert error.request_id == request_id
     assert "<redacted>" in str(error)
@@ -280,142 +310,84 @@ async def test_secret_configuration_error_keeps_context_and_redacts_secrets() ->
 
 
 @pytest.mark.asyncio
-async def test_saved_graph_execution_waits_for_typed_terminal_outputs() -> None:
-    graph_id = UUID("22222222-2222-4222-8222-222222222222")
-    execution_id = UUID("44444444-4444-4444-8444-444444444444")
-    artifact_id = UUID("55555555-5555-4555-8555-555555555555")
-    polls = 0
+async def test_run_start_wait_and_cancel() -> None:
+    polls = iter(["running", "succeeded"])
+    runs = f"/v1/workspaces/{WORKSPACE_ID}/projects/{PROJECT_ID}/runs"
 
     def respond(request: httpx.Request) -> httpx.Response:
-        nonlocal polls
-        if request.method == "POST":
-            assert request.url.path == (
-                f"/v1/workspaces/{WORKSPACE_ID}/graphs/{graph_id}/executions"
-            )
-            assert request.headers["Idempotency-Key"] == "vision-e2e"
-            assert json.loads(request.content) == {"expected_revision": 3}
-            return httpx.Response(
-                202,
-                json={
-                    "execution_id": str(execution_id),
-                    "status": "queued",
-                    "active_node_id": None,
-                    "result": None,
-                    "error": None,
-                    "queue_position": 1,
-                },
-            )
+        if request.method == "POST" and request.url.path == runs:
+            assert json.loads(request.content) == {
+                "graph_id": "main",
+                "targets": [{"node_id": "text", "call_path": []}],
+            }
+            return httpx.Response(201, json=_run_payload("running"))
+        assert request.url.path == f"{runs}/{RUN_ID}"
+        return httpx.Response(200, json=_run_payload(next(polls)))
 
-        assert request.method == "GET"
-        assert request.url.path == (
-            f"/v1/workspaces/{WORKSPACE_ID}/executions/{execution_id}"
-        )
-        polls += 1
-        if polls == 1:
-            return httpx.Response(
-                200,
-                json={
-                    "execution_id": str(execution_id),
-                    "status": "running",
-                    "active_node_id": "llm",
-                    "result": None,
-                    "error": None,
-                    "queue_position": None,
-                },
-            )
-        return httpx.Response(
-            200,
-            json={
-                "execution_id": str(execution_id),
-                "status": "succeeded",
-                "active_node_id": None,
-                "error": None,
-                "queue_position": None,
-                "result": {
-                    "status": "succeeded",
-                    "node_runs": [
-                        {
-                            "node_id": "llm",
-                            "status": "succeeded",
-                            "error": None,
-                            "outputs": [
-                                {
-                                    "port": "completion",
-                                    "kind": "single",
-                                    "value": {
-                                        "artifact_id": str(artifact_id),
-                                        "artifact_type": "llm.completion",
-                                        "schema_version": 1,
-                                    },
-                                    "artifacts": [
-                                        {
-                                            "artifact_id": str(artifact_id),
-                                            "artifact_type": "llm.completion",
-                                            "schema_version": 1,
-                                            "content_type": "application/json",
-                                        }
-                                    ],
-                                }
-                            ],
-                        }
-                    ],
-                },
-            },
-        )
-
-    async with GrafyClient(
-        base_url="https://grafy.test",
-        token=SecretStr("nrt_live_secret"),
-        transport=httpx.MockTransport(respond),
-    ) as client:
-        execution = await client.graphs.execute(
+    async with _client(httpx.MockTransport(respond)) as client:
+        run = await client.runs.start(
             WORKSPACE_ID,
-            graph_id,
-            expected_revision=3,
-            idempotency_key="vision-e2e",
+            PROJECT_ID,
+            graph_id="main",
+            targets=[RunTarget(node_id="text")],
         )
-        terminal = await execution.wait(timeout=1, poll_interval=0)
+        finished = await client.runs.wait(
+            WORKSPACE_ID, PROJECT_ID, run.id, timeout=5, poll_interval=0
+        )
 
-    assert terminal.status == "succeeded"
-    assert terminal.result is not None
-    assert [node.node_id for node in terminal.result.node_runs] == ["llm"]
-    completion = terminal.result.node("llm").output("completion")
-    assert completion.artifact_id == artifact_id
-    assert completion.artifact_type == "llm.completion"
+    assert not run.terminal
+    assert finished.status == "succeeded"
+    assert finished.terminal
 
 
 @pytest.mark.asyncio
-async def test_execution_wait_reports_id_and_last_status_on_timeout() -> None:
-    graph_id = UUID("22222222-2222-4222-8222-222222222222")
-    execution_id = UUID("44444444-4444-4444-8444-444444444444")
+async def test_run_wait_reports_id_and_last_status_on_timeout() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_run_payload("running"))
+
+    async with _client(httpx.MockTransport(respond)) as client:
+        with pytest.raises(ExecutionTimeoutError) as caught:
+            await client.runs.wait(
+                WORKSPACE_ID, PROJECT_ID, RUN_ID, timeout=0.01, poll_interval=0
+            )
+
+    assert str(RUN_ID) in str(caught.value)
+    assert "running" in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_run_cancel_and_instance_states() -> None:
+    base = f"/v1/workspaces/{WORKSPACE_ID}/projects/{PROJECT_ID}"
 
     def respond(request: httpx.Request) -> httpx.Response:
-        status_code = 202 if request.method == "POST" else 200
+        if request.url.path == f"{base}/runs/{RUN_ID}/cancel":
+            assert request.method == "POST"
+            return httpx.Response(200, json=_run_payload("cancelled"))
+        assert request.url.path == f"{base}/graphs/main/instances"
         return httpx.Response(
-            status_code,
+            200,
             json={
-                "execution_id": str(execution_id),
-                "status": "queued",
-                "active_node_id": None,
-                "result": None,
-                "error": None,
-                "queue_position": 1,
+                "instances": [
+                    {
+                        "key": {
+                            "project_id": str(PROJECT_ID),
+                            "graph_id": "main",
+                            "call_path": [],
+                            "node_id": "text",
+                            "map_index": None,
+                        },
+                        "state": "stale",
+                        "fingerprint": "abc",
+                        "last_result_fingerprint": None,
+                        "error": None,
+                    }
+                ]
             },
         )
 
-    async with GrafyClient(
-        base_url="https://grafy.test",
-        token=SecretStr("nrt_live_secret"),
-        transport=httpx.MockTransport(respond),
-    ) as client:
-        execution = await client.graphs.execute(
-            WORKSPACE_ID,
-            graph_id,
-            expected_revision=3,
-        )
-        with pytest.raises(ExecutionTimeoutError) as caught:
-            await execution.wait(timeout=0.001, poll_interval=0.01)
+    async with _client(httpx.MockTransport(respond)) as client:
+        cancelled = await client.runs.cancel(WORKSPACE_ID, PROJECT_ID, RUN_ID)
+        states = await client.runs.instances(WORKSPACE_ID, PROJECT_ID, "main")
 
-    message = str(caught.value)
-    assert str(execution_id) in message
-    assert "last status was 'queued'" in message
+    assert cancelled.status == "cancelled"
+    assert [(state.key.node_id, state.state) for state in states] == [("text", "stale")]

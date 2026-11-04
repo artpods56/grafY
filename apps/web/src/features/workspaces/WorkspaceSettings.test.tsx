@@ -38,12 +38,6 @@ vi.mock("./WorkspaceMembersDialog", () => ({
   WorkspaceMembersDialog: () => <button type="button">Manage members</button>,
 }));
 
-vi.mock("./WorkspaceLibraryDialog", () => ({
-  WorkspaceLibraryDialog: ({ triggerLabel }: { triggerLabel: string }) => (
-    <button type="button">{triggerLabel}</button>
-  ),
-}));
-
 import { WorkspaceSettings } from "./WorkspaceSettings";
 
 const roots = new Set<Root>();
@@ -56,18 +50,18 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
     kind: "shared",
     role: "owner",
     capabilities: [
-      "view_graph",
+      "view_project",
       "view_artifacts",
-      "view_materializations",
-      "view_history",
-      "view_execution",
-      "create_graph",
-      "edit_graph",
-      "checkpoint_graph",
-      "execute_graph",
-      "cancel_execution",
+      "view_runs",
+      "view_runs",
+      "view_runs",
+      "create_project",
+      "edit_project",
+      "checkpoint_project",
+      "start_run",
+      "cancel_run",
       "manage_secrets",
-      "publish_module",
+      "edit_project",
       "manage_members",
     ],
     ...overrides,
@@ -82,7 +76,7 @@ function token(
     workspace_id: "workspace-1",
     public_prefix: "nrt_existing",
     label: "Existing publisher",
-    scopes: ["publish_module"],
+    scopes: ["edit_project"],
     created_at: "2026-09-01T09:00:00Z",
     last_used_at: null,
     expires_at: "2026-09-20T09:00:00Z",
@@ -184,16 +178,16 @@ describe("WorkspaceSettings", () => {
     expect(mocks.createToken).toHaveBeenCalledWith("workspace-1", {
       label: "Notarius publisher",
       scopes: [
-        "view_graph",
+        "view_project",
         "view_artifacts",
-        "view_materializations",
-        "view_history",
-        "view_execution",
-        "create_graph",
-        "edit_graph",
-        "checkpoint_graph",
-        "execute_graph",
-        "cancel_execution",
+        "view_runs",
+        "view_runs",
+        "view_runs",
+        "create_project",
+        "edit_project",
+        "checkpoint_project",
+        "start_run",
+        "cancel_run",
         "manage_secrets",
       ],
       expires_at: "2026-09-09T12:00:00.000Z",
@@ -218,7 +212,7 @@ describe("WorkspaceSettings", () => {
   it("can issue a module-publishing PAT when graph automation is unavailable", async () => {
     mocks.workspace = workspace({
       role: "owner",
-      capabilities: ["publish_module"],
+      capabilities: ["edit_project"],
     });
     mocks.createToken.mockResolvedValue({
       ...token(),
@@ -240,7 +234,7 @@ describe("WorkspaceSettings", () => {
 
     expect(mocks.createToken).toHaveBeenCalledWith("workspace-1", {
       label: "Module publishing",
-      scopes: ["publish_module"],
+      scopes: ["edit_project"],
       expires_at: expect.any(String),
     });
   });
@@ -248,7 +242,7 @@ describe("WorkspaceSettings", () => {
   it("does not offer token creation without a supported purpose", async () => {
     mocks.workspace = workspace({
       role: "viewer",
-      capabilities: ["view_graph"],
+      capabilities: ["view_project"],
     });
 
     const container = await renderSettings();

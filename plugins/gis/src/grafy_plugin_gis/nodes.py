@@ -54,7 +54,7 @@ from grafy_plugin_gis.artifacts import (
     GEO_RASTER_SCAN,
 )
 from grafy_plugin_gis.declaration import GIS
-from grafy_plugin_gis.models import (
+from grafy_core.spatial_contracts import (
     BasemapKind,
     Bounds,
     GeoFeatureArtifactSource,
@@ -63,12 +63,14 @@ from grafy_plugin_gis.models import (
     GeoMapDocument,
     GeoMapLayer,
     GeoRasterArtifactSource,
-    GeoRasterScan,
     GeoRasterStyle,
     GeoVectorStyle,
     GeoWmsSource,
     WmsImageFormat,
     WmsVersion,
+)
+from grafy_plugin_gis.models import (
+    GeoRasterScan,
 )
 from grafy_plugin_gis.wfs import (
     WFS_IMPORT_MAX_FEATURES,

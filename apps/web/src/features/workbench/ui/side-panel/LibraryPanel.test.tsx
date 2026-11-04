@@ -92,19 +92,14 @@ const RUN_ITEM: PlacedLibraryItem = {
   },
   name: "sales-table",
   provenance: {
-    source: "run",
+    source: "instance",
+    call_path: [],
     saved_at: "2026-09-11T12:00:00Z",
     graph_id: "graph-1",
     graph_title: "Sales",
     node_id: "resize-1",
     node_title: "Resize",
-    graph_revision: 4,
-    execution_id: "execution-1",
-  },
-  run: {
-    execution_id: "execution-1",
-    graph_id: "graph-1",
-    finished_at: "2026-09-11T11:59:00Z",
+    result_fingerprint: "fp-sales-resize",
   },
   folder_id: "september",
 };
@@ -124,10 +119,10 @@ const UPLOAD_ITEM: PlacedLibraryItem = {
   name: "PNG image",
   provenance: {
     source: "upload",
+    call_path: [],
     saved_at: "2026-09-11T12:00:00Z",
     original_filename: "harbour-front.jpg",
   },
-  run: null,
   folder_id: null,
 };
 
@@ -146,10 +141,10 @@ const BLOB_ITEM: PlacedLibraryItem = {
   name: "scan.unknown",
   provenance: {
     source: "upload",
+    call_path: [],
     saved_at: "2026-09-11T12:00:00Z",
     original_filename: "scan.unknown",
   },
-  run: null,
   folder_id: null,
 };
 
@@ -355,9 +350,9 @@ let workspaceCounter = 0;
 
 async function renderPanel(
   tree: { folders: LibraryFolder[]; items: PlacedLibraryItem[] },
-  onOpenRun = vi.fn(),
+  onOpenInstance = vi.fn(),
   panelProps: { canEdit?: boolean } = {},
-): Promise<{ onOpenRun: ReturnType<typeof vi.fn>; workspaceId: string }> {
+): Promise<{ onOpenInstance: ReturnType<typeof vi.fn>; workspaceId: string }> {
   listTree.mockResolvedValue(tree);
   workspaceCounter += 1;
   const workspaceId = `workspace-${workspaceCounter}`;
@@ -369,7 +364,7 @@ async function renderPanel(
     root.render(
       <LibraryPanel
         workspaceId={workspaceId}
-        onOpenRun={onOpenRun}
+        onOpenInstance={onOpenInstance}
         canEdit={panelProps.canEdit}
       />,
     );
@@ -379,7 +374,7 @@ async function renderPanel(
       expect(document.body.textContent).not.toContain("Loading the Library"),
     );
   });
-  return { onOpenRun, workspaceId };
+  return { onOpenInstance, workspaceId };
 }
 
 afterEach(() => {
@@ -792,18 +787,16 @@ describe("LibraryPanel", () => {
     );
     expect(tile).not.toBeNull();
     expect(tile!.textContent).toContain("Library / Fieldwork / September");
-    expect(tile!.textContent).toContain(
-      "Sales · Resize · revision 4 · from a run",
-    );
+    expect(tile!.textContent).toContain("Sales · Resize");
     expect(tile!.querySelector("pre")?.textContent).toContain("plot(x),y(x)");
   });
 
-  it("opens the run a selected artifact came from", async () => {
-    const { onOpenRun } = await renderPanel({
+  it("opens the Graph a selected artifact came from", async () => {
+    const { onOpenInstance } = await renderPanel({
       folders: [FIELDWORK],
       items: [RUN_ITEM],
     });
-    onOpenRun.mockClear();
+    onOpenInstance.mockClear();
 
     await React.act(async () => {
       fileRow("artifact-run").click();
@@ -814,11 +807,13 @@ describe("LibraryPanel", () => {
           '[aria-label="Selected artifact"] button',
         ),
       ]
-        .find((button) => button.textContent === "Execution history")!
+        .find((button) => button.textContent === "Where it came from")!
         .click();
     });
 
-    expect(onOpenRun).toHaveBeenCalledWith("graph-1", "execution-1");
+    // It names the Graph and the result, not an execution: the Run is retired,
+    // the result and the node that made it are not.
+    expect(onOpenInstance).toHaveBeenCalledWith("graph-1", "fp-sales-resize");
   });
 
   it("falls back to the folder icon when a thumbnail cannot load", async () => {
@@ -999,7 +994,7 @@ describe("LibraryPanel", () => {
     roots.push(root);
     await React.act(async () => {
       root.render(
-        <LibraryPanel workspaceId="unreachable" onOpenRun={vi.fn()} />,
+        <LibraryPanel workspaceId="unreachable" onOpenInstance={vi.fn()} />,
       );
     });
     await React.act(async () => {
@@ -1049,10 +1044,10 @@ describe("LibraryPanel multi-selection", () => {
       name: filename,
       provenance: {
         source: "upload",
+        call_path: [],
         saved_at: "2026-09-11T12:00:00Z",
         original_filename: filename,
       },
-      run: null,
       folder_id: folderId,
     };
   }

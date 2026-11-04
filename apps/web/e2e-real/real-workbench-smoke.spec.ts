@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 /**
  * The one journey that exercises both applications as shipped: a browser signs in
  * through a real OIDC round trip with the repository's own provider, creates a
- * graph, edits a node, and finds that edit again after a reload. Nothing is
+ * Project, edits a node, and finds that edit again after a reload. Nothing is
  * stubbed with `page.route`; every response comes from the FastAPI process behind
  * the Next proxy.
  *
@@ -98,8 +98,10 @@ test("the provider signs a person in, and their graph edit survives a reload", a
   ).toContainText(ISSUER_EMAIL, { timeout: COLD_ROUTE_MS });
 
   // 4. A graph made through the UI gets a server-assigned id in its own URL.
+  //    A person names a Project and the graph is the one it opens with, so the
+  //    address a new canvas earns is a project address.
   await rail(page).getByRole("button", { name: "New graph" }).click();
-  await page.waitForURL(/\/workspaces\/[^/]+\/graphs\/new$/, {
+  await page.waitForURL(/\/workspaces\/[^/]+\/projects\/new$/, {
     timeout: COLD_ROUTE_MS,
   });
   await addTextNode(page);
@@ -107,24 +109,24 @@ test("the provider signs a person in, and their graph edit survives a reload", a
   await expect(field).toHaveCount(1);
   await field.fill(NODE_TEXT);
 
-  // 5. Saving creates the durable graph. The room and the checkpoint are the API's,
-  //    so the URL changes to the id the API issued.
+  // 5. Saving creates the durable Project. The room and the checkpoint are the
+  //    API's, so the URL changes to the id the API issued.
   await saveButton(page).click();
-  await page.waitForURL(/\/workspaces\/[^/]+\/graphs\/[0-9a-f-]{36}$/, {
+  await page.waitForURL(/\/workspaces\/[^/]+\/projects\/[0-9a-f-]{36}$/, {
     timeout: COLD_ROUTE_MS,
   });
   const savedUrl = page.url();
   await expect(saveButton(page)).toHaveText("Saved");
 
-  // 6. A reload asks the API for the graph. Both the node and its text come out of
+  // 6. A reload asks the API for the Project. Both the node and its text come out of
   //    the saved document, not out of this page's memory.
   await page.reload();
   await expect(textNode(page)).toHaveCount(1);
   await expect(textNode(page).locator("textarea")).toHaveValue(NODE_TEXT);
   expect(page.url()).toBe(savedUrl);
 
-  // 7. The graph browser lists it by name: it exists as a graph of that workspace,
-  //    not only as a canvas that can be redrawn.
+  // 7. The graph browser lists it by name: it exists as a Project of that
+  //    workspace, not only as a canvas that can be redrawn.
   await page.goto(`${origin}/graphs`);
   await expect(
     page.getByRole("link", { name: new RegExp(GRAPH_NAME) }),

@@ -193,6 +193,15 @@ Node requests now leave from the API network. Set
 services that nodes must reach. Keep deployment egress filtering as a backstop;
 the application guard validates and pins graph-configured destinations.
 
+An Agent uses the deployment default model unless whoever configured it gave it an
+endpoint and key of its own, so set all three of `GRAFY_AGENT_DEFAULT_BASE_URL`,
+`GRAFY_AGENT_DEFAULT_MODEL` and `GRAFY_AGENT_DEFAULT_API_KEY` or no Agent can answer.
+The default endpoint may be a private model server listed in
+`GRAFY_EGRESS_TRUSTED_DESTINATIONS`; an Agent's own endpoint is not, and goes through the
+same pinned public-address guard as an LLM node's `base_url`. Agents do not fall back to
+the deployment key: an Agent that names its own endpoint needs its own key set, and
+configuring it costs the person setting it `edit_project`, not `manage_secrets`.
+
 ## Verify and record the deployment
 
 Check the host and the public endpoint:
@@ -233,10 +242,9 @@ If the release fails before Alembic changes the database, run the script with
 the previous SHA. Rollback targets must have published images, so they must be
 commits from after the images were introduced. If Alembic changed the database, stop Grafy and restore the
 matching dump before you start the previous commit. Do not run an older binary
-against a newer schema. If the ADR 0017 migration has dropped release tables,
-its downgrade recreates empty tables. Restore the matching pre-migration dump
-before starting the old application. Retain historical immutable releases for
-that recovery; do not rewrite their manifests.
+against a newer schema. The schema is one baseline revision and its downgrade drops
+every table, so never downgrade a deployed database to roll a release back: restore
+the dump taken before the failed migration instead.
 
 Restore a dump only during a maintenance window:
 

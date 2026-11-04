@@ -4,7 +4,7 @@ import type { NodeRegistry, NodeSpec, SavedGraph } from "@/lib/api";
 import { addNodeCommand } from "./graph-document-adapter";
 import { hydrateSavedGraph } from "./saved-graph";
 import { createWorkflowNodeData, serializeRunNode } from "./types";
-import { createSavedGraphRequest } from "../model/graph-document";
+import { createGraphDraft } from "../model/graph-document";
 import { catalogNodeSpecs } from "../model/node-catalog";
 import { toRoomGraphCommand } from "../room/room-command-bridge";
 
@@ -57,6 +57,7 @@ function savedGraph(operatorId = raster.operator_id): SavedGraph {
       ],
       edges: [],
       origins: [],
+      agents: [],
     },
   };
 }
@@ -75,16 +76,23 @@ describe("in-process family authoring", () => {
       nodes: [command.node],
       edges: [],
       origins: [],
+      agents: [],
     };
-    const saved = createSavedGraphRequest(document);
-    const room = toRoomGraphCommand(command, document);
+    const saved = createGraphDraft(document);
+    // A room command is addressed: a Project holds several Graphs, so an
+    // unaddressed edit would name none of them.
+    const room = toRoomGraphCommand(command, document, "graph-main");
     const run = serializeRunNode("raster-1", data);
     for (const node of [command.node, saved.document.nodes[0], run]) {
       expect(node).toHaveProperty("kind", "builtin");
       expect(node).not.toHaveProperty("plugin_release");
       expect(node).not.toHaveProperty("plugin_release_pin");
     }
-    expect(room).toEqual(command);
+    expect(room).toEqual({
+      kind: "in_graph",
+      graph_id: "graph-main",
+      command,
+    });
     expect(saved.document.schema_version).toBe(7);
   });
 

@@ -11,7 +11,6 @@ import type {
   RunEdgeProjectionInput,
   RunNodeInput,
   RunNodeResult,
-  SavedGraphEdge,
   SavedGraphNode,
 } from "@/lib/api";
 import {
@@ -77,8 +76,6 @@ export interface WorkflowEdgeData extends Record<string, unknown> {
   sourcePortName?: string;
   targetPortName?: string;
   targetPlugId?: string | null;
-  /** Exact API transport retained for a lossless compatibility round trip. */
-  persistedEdge?: SavedGraphEdge;
   /** Registry compatibility failures disable editing and in-scope execution. */
   compatibilityIssues?: readonly string[];
   conversionTitles?: readonly string[];
@@ -275,10 +272,6 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     nodeId: string,
     artifactTypeBindings: WorkflowArtifactTypeBindings,
   ) => void;
-  onOpenModuleSource?: (graphId: string) => void;
-  /** When set, the pinned Module call can upgrade to this library release. */
-  moduleUpgradeRelease?: number | null;
-  onUpgradeModuleCall?: (nodeId: string) => void;
   onOpenExecutionHistory?: (nodeId: string, executionId?: string) => void;
   /** A collection's members in plug order; derived, never persisted. */
   collectionMembers?: readonly CollectionMember[];
@@ -413,8 +406,12 @@ export function serializeRunNode(
   }
   const inputPlugs = serializeInputPlugs(data);
   return {
-    kind: data.spec.origin === "module" ? "module" : "builtin",
+    kind: "builtin",
     id,
+    // A stored node says where it sits. The canvas keeps that on the React Flow
+    // node, and a node the drag never placed has no position to report, so the
+    // origin is the honest answer rather than a field the document lacks.
+    position: nodePosition(data),
     operator_id: data.spec.operator_id,
     operator_version: data.spec.operator_version,
     config: data.config,
@@ -423,6 +420,15 @@ export function serializeRunNode(
       : inputPlugs,
     artifact_type_bindings: serializeArtifactTypeBindings(data),
   };
+}
+
+/** The node's own position, as the canvas holds it. */
+function nodePosition(data: WorkflowNodeData): { x: number; y: number } {
+  const read = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const x = read(data.x);
+  const y = read(data.y);
+  return { x: x ?? 0, y: y ?? 0 };
 }
 
 export function serializeInputPlugs(data: WorkflowNodeData): InputPlugInput[] {

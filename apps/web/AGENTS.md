@@ -49,15 +49,41 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Routing
 
-- Graph is the primary user object. `src/app/page.tsx` (`/`) and `/graphs` both
-  render the canonical cross-location graph browser after authentication.
-- `/workspaces` is the secondary **Teams & access** administration surface.
-  A personal workspace is presented as **My graphs**; a shared workspace is
-  presented by its Team name. Do not expose slugs, roles, capabilities, or user
-  UUIDs on graph-authoring surfaces.
-- `/workspaces/{slug}` remains the location administration overview and
-  `/workspaces/{slug}/graphs/{id}` remains the workspace-scoped workbench route.
-  These routes preserve tenancy but are not the primary discovery hierarchy.
+- **Project** is the primary user object (ADR 0020). A Project holds Graphs and
+  lives in exactly one Workspace. `/graphs` and
+  `/workspaces/{slug}/graphs/{id}` are gone: the workbench route is
+  `/workspaces/{slug}/projects/{projectId}`, and `/projects/new` inside a
+  Workspace opens an unsaved Project. `/graphs/{id}` stays as a redirect entry so
+  an old bookmark lands on the Project that holds it.
+- `src/app/page.tsx` (`/`) renders the cross-location browser; `/workspaces` is
+  the secondary **Teams & access** administration surface. Do not expose slugs,
+  roles, capabilities, or user UUIDs on authoring surfaces.
+- Renaming a route segment is a change to three places at once: the pages under
+  `src/app`, `features/workbench/routes.ts`, and **the `webServer.url` readiness
+  probe in `playwright.config.ts`**. That probe polls for a 2xx; a retired segment
+  answers 404, Playwright waits out its timeout and reports "Next never became
+  ready" on a healthy server.
+
+## A green typecheck does not prove the app builds
+
+`tsc --noEmit` has passed on a tree where a module declared the same binding twice
+and Babel refused to compile it — every Project route returned **HTTP 500** and the
+whole browser suite failed with an unhelpful message. The same is true in the other
+direction at runtime: a **missing value export** (`import { useThing } from "…"`
+where the module no longer exports it) type-checks nothing and throws when the
+browser loads the module, so the canvas never mounts and the failure looks like a
+timing problem.
+
+So when a route is broken, prove the two things the typecheck cannot:
+
+```bash
+npx next dev --webpack -p <port> &   # capture $!
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:<port>/workspaces/<slug>/projects/new
+kill <that pid>                    # never a pattern match: several servers run here
+```
+
+and read the **browser console** of a failing Playwright test, which names the
+missing export in one line.
 
 ## Shared components and call sites
 

@@ -31,11 +31,6 @@ from grafy_core.conversions import (
     ArtifactConversion,
     ArtifactConversionKey,
 )
-from grafy_core.domain.modules import (
-    MODULE_BOUNDARY_OPERATOR_VERSION,
-    MODULE_INPUT_OPERATOR_ID,
-    MODULE_OUTPUT_OPERATOR_ID,
-)
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     ArtifactTypeContract,
@@ -714,39 +709,6 @@ class PluginRegistry:
             )
             self._artifact_types[key] = artifact_type
             self._artifact_type_owners[key] = plugin.slug
-
-    def register_module_boundaries(
-        self,
-        registrations: tuple[NodeRegistration, NodeRegistration],
-    ) -> None:
-        """Register the host-owned Module input/output execution boundaries."""
-
-        if self._frozen:
-            raise PluginRegistrationError("Plugin registry is frozen")
-        expected_keys = {
-            (MODULE_INPUT_OPERATOR_ID, MODULE_BOUNDARY_OPERATOR_VERSION),
-            (MODULE_OUTPUT_OPERATOR_ID, MODULE_BOUNDARY_OPERATOR_VERSION),
-        }
-        observed_keys = {registration.key for registration in registrations}
-        if observed_keys != expected_keys:
-            raise PluginRegistrationError(
-                "Module boundary registrations must contain module.input@1 and "
-                "module.output@1"
-            )
-        duplicate_nodes = [
-            registration.key
-            for registration in registrations
-            if registration.key in self._nodes
-        ]
-        if duplicate_nodes:
-            operator_id, version = duplicate_nodes[0]
-            owner = self._nodes[(operator_id, version)].plugin_slug
-            raise PluginRegistrationError(
-                f"Module boundary {operator_id}@{version} conflicts with "
-                f"plugin {owner!r}"
-            )
-        for registration in registrations:
-            self._nodes[registration.key] = registration
 
     def freeze(self) -> None:
         artifact_contracts_by_key: dict[

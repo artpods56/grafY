@@ -128,9 +128,7 @@ class AsMarkdownOutput(NodeOutput):
     title="As Markdown",
     cache_policy=NodeCachePolicy.EXACT,
 )
-async def as_markdown(
-    _config: NoConfig, inputs: AsMarkdownInput
-) -> AsMarkdownOutput:
+async def as_markdown(_config: NoConfig, inputs: AsMarkdownInput) -> AsMarkdownOutput:
     """Marks text as Markdown without transforming its source."""
     return AsMarkdownOutput(markdown=MarkdownValue(markdown=inputs.text))
 

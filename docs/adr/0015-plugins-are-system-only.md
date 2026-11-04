@@ -97,5 +97,3 @@ System Plugin: add the project under `plugins/`, list it in
   a stored `publish_plugin` when it decodes a token, and pins naming that scope
   are reported as unsupported. A later cleanup can drop the columns once no
   stored pin names them; that is not part of this decision.
-- `docs/plans/workspace-plugins/` describes the removed workflow as delivered
-  history. ADR 0015 governs the vocabulary from here.

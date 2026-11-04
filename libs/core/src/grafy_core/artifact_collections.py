@@ -28,12 +28,8 @@ from grafy_core.runtime.resolvers import (
 
 
 JSON_COLLECTIONS_STORAGE_FORMAT = "grafy.json-collections.chunked.v1"
-LEGACY_JSON_COLLECTIONS_STORAGE_FORMAT = "notarius.json-collections.chunked.v1"
 SUPPORTED_JSON_COLLECTIONS_STORAGE_FORMATS = frozenset(
-    {
-        JSON_COLLECTIONS_STORAGE_FORMAT,
-        LEGACY_JSON_COLLECTIONS_STORAGE_FORMAT,
-    }
+    {JSON_COLLECTIONS_STORAGE_FORMAT}
 )
 JSON_COLLECTION_CHUNK_ITEM_COUNT = 50
 JSON_COLLECTION_CHUNK_TARGET_BYTE_SIZE = 512 * 1_024
@@ -96,10 +92,9 @@ class JsonCollectionDescriptor(BaseModel):
 class JsonCollectionsManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    format: Literal[
-        "grafy.json-collections.chunked.v1",
-        "notarius.json-collections.chunked.v1",
-    ] = JSON_COLLECTIONS_STORAGE_FORMAT
+    format: Literal["grafy.json-collections.chunked.v1"] = (
+        JSON_COLLECTIONS_STORAGE_FORMAT
+    )
     total_items: StrictInt = Field(ge=0)
     collections: list[JsonCollectionDescriptor]
     metadata: JsonObject = Field(default_factory=dict)

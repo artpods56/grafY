@@ -99,6 +99,7 @@ class NotFoundError(GrafyCoreError):
     def diagnostic_context(self) -> Mapping[str, object]:
         return {"resource": self.resource}
 
+
 class ValidationError(GrafyCoreError):
     "Raised during validation."
 
@@ -187,55 +188,58 @@ class CapabilityDeniedError(IdentityInvariantError):
         }
 
 
-class SavedGraphRevisionConflictError(GrafyCoreError):
+class ProjectCheckpointConflictError(GrafyCoreError):
+    """Raised when a checkpoint was written against a stale Project revision."""
+
     failure_spec = FailureSpec(
-        code="graph.revision_conflict",
+        code="project.checkpoint_conflict",
         kind=FailureKind.CONFLICT,
-        public_message="The graph changed while it was being saved",
+        public_message="The project changed while it was being saved",
     )
 
     def __init__(
         self,
         *,
-        graph_id: UUID,
+        project_id: UUID,
         expected_revision: int,
         actual_revision: int | None,
     ) -> None:
-        self.graph_id = graph_id
+        self.project_id = project_id
         self.expected_revision = expected_revision
         self.actual_revision = actual_revision
         if actual_revision is None:
-            detail = "the graph changed while it was being saved"
+            detail = "the project changed while it was being saved"
         else:
             detail = f"the current revision is {actual_revision}"
         super().__init__(
-            f"Saved graph {graph_id} revision conflict: expected "
+            f"Project {project_id} checkpoint conflict: expected "
             f"{expected_revision}, but {detail}"
         )
 
     @property
     def diagnostic_context(self) -> Mapping[str, object]:
         return {
-            "graph_id": self.graph_id,
+            "project_id": self.project_id,
             "expected_revision": self.expected_revision,
             "actual_revision": self.actual_revision,
         }
 
 
-class GraphFolderNameConflictError(GrafyCoreError):
-    """Raised when one workspace already has a folder with the requested name."""
+class ProjectFolderNameConflictError(GrafyCoreError):
+    """Raised when one workspace already has a project folder with the name."""
 
     failure_spec = FailureSpec(
-        code="graph.folder_name_conflict",
+        code="project.folder_name_conflict",
         kind=FailureKind.CONFLICT,
-        public_message="A graph folder with this name already exists",
+        public_message="A project folder with this name already exists",
     )
 
     def __init__(self, *, workspace_id: UUID, name: str) -> None:
         self.workspace_id = workspace_id
         self.name = name
         super().__init__(
-            f"Graph folder name {name!r} is already in use in workspace {workspace_id}"
+            f"Project folder name {name!r} is already in use in workspace "
+            f"{workspace_id}"
         )
 
 
@@ -273,16 +277,7 @@ class LibraryFolderNameConflictError(GrafyCoreError):
 
 
 class LibraryArtifactInUseError(GrafyCoreError):
-    """Raised when a Library artifact is still referenced by saved work.
-
-    A reference lives in a saved graph revision or in execution history, and both
-    outlive the run that made them, so dropping the artifact would leave a
-    dangling reference the user only meets later as a failed load. The refusal
-    names the graphs that hold it. Taking it anyway means the glossary's forced
-    delete, which rewrites each referencing graph's head revision and leaves the
-    input unsatisfied; that is not implemented, so the paths open today are to
-    unfile the artifact, which keeps it, or to delete the referencing graph.
-    """
+    """An artifact referenced by Project documents or immutable results cannot be deleted."""
 
     failure_spec = FailureSpec(
         code="library.artifact_in_use",
@@ -294,27 +289,29 @@ class LibraryArtifactInUseError(GrafyCoreError):
         self,
         *,
         artifact_id: UUID,
-        graph_ids: Sequence[UUID],
-        graph_titles: Sequence[str],
+        project_ids: Sequence[UUID],
+        project_titles: Sequence[str],
+        retained_result: bool = False,
     ) -> None:
         self.artifact_id = artifact_id
-        self.graph_ids = tuple(graph_ids)
-        self.graph_titles = tuple(graph_titles)
-        super().__init__(
-            (
-                f"Library artifact {artifact_id} is referenced by "
-                f"{len(self.graph_titles)} saved graph(s): "
-                f"{', '.join(self.graph_titles)}"
-            )
-        )
+        self.project_ids = tuple(project_ids)
+        self.project_titles = tuple(project_titles)
+        self.retained_result = retained_result
+        super().__init__(f"Library artifact {artifact_id} is referenced by saved work")
 
     @property
     def public_message(self) -> str:
-        return f"Still used by: {_listed_graph_titles(self.graph_titles)}"
+        if self.project_titles:
+            return f"Still used by: {_listed_graph_titles(self.project_titles)}"
+        return "Still used by retained node results"
 
     @property
     def diagnostic_context(self) -> Mapping[str, object]:
-        return {"artifact_id": self.artifact_id, "graph_ids": self.graph_ids}
+        return {
+            "artifact_id": self.artifact_id,
+            "project_ids": self.project_ids,
+            "retained_result": self.retained_result,
+        }
 
 
 def _listed_graph_titles(graph_titles: Sequence[str]) -> str:
@@ -400,14 +397,14 @@ class CollaborationError(GrafyCoreError):
     error_code: str = "collaboration_error"
 
 
-class MissingCollaborativeHeadError(CollaborationError):
-    error_code = "missing_collaborative_head"
+class MissingProjectHeadError(CollaborationError):
+    error_code = "missing_project_head"
 
-    def __init__(self, *, workspace_id: UUID, graph_id: UUID) -> None:
+    def __init__(self, *, workspace_id: UUID, project_id: UUID) -> None:
         self.workspace_id = workspace_id
-        self.graph_id = graph_id
+        self.project_id = project_id
         super().__init__(
-            f"Collaborative head missing for graph {graph_id} in workspace "
+            f"Collaborative head missing for project {project_id} in workspace "
             f"{workspace_id}"
         )
 
@@ -475,23 +472,4 @@ class CollaborationUncheckpointedError(CollaborationError):
             f"Collaborative head for graph {graph_id} has uncheckpointed "
             f"commands at sequence {head_sequence} "
             f"(checkpointed through {checkpoint_sequence})"
-        )
-
-
-class CollaborationActiveExecutionError(CollaborationError):
-    error_code = "active_execution"
-
-    def __init__(
-        self,
-        *,
-        workspace_id: UUID,
-        graph_id: UUID,
-        execution_id: UUID,
-    ) -> None:
-        self.workspace_id = workspace_id
-        self.graph_id = graph_id
-        self.execution_id = execution_id
-        super().__init__(
-            f"Graph {graph_id} in workspace {workspace_id} has active execution "
-            f"{execution_id}"
         )

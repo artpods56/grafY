@@ -6,9 +6,9 @@ from grafy_core.ports.storage import (
     StoredFile,
     StoredObjectInfo,
 )
-from grafy_core.ports.saved_graphs import (
-    SavedGraphRepositoryPort,
-    SavedGraphUnitOfWorkPort,
+from grafy_core.ports.projects import (
+    ProjectRepositoryPort,
+    ProjectUnitOfWorkPort,
 )
 from grafy_core.ports.node_secrets import (
     JsonValue,
@@ -17,14 +17,6 @@ from grafy_core.ports.node_secrets import (
     NodeSecretUnavailableError,
     NodeSecretUnitOfWorkPort,
     UnavailableNodeSecretResolver,
-)
-from grafy_core.ports.modules import (
-    GraphModuleExecutionResult,
-    GraphModuleExecutorPort,
-)
-from grafy_core.ports.execution_history import (
-    ExecutionHistoryUnitOfWorkPort,
-    GraphExecutionHistoryRepositoryPort,
 )
 from grafy_core.ports.identity import (
     IdentityRepositoryPort,
@@ -46,12 +38,8 @@ __all__ = [
     "FileMetadata",
     "FileStoragePort",
     "FileStreamProtocol",
-    "ExecutionHistoryUnitOfWorkPort",
-    "GraphExecutionHistoryRepositoryPort",
     "IdentityRepositoryPort",
     "IdentityUnitOfWorkPort",
-    "GraphModuleExecutionResult",
-    "GraphModuleExecutorPort",
     "JsonValue",
     "NodeSecretRepositoryPort",
     "NodeSecretResolverPort",
@@ -59,8 +47,8 @@ __all__ = [
     "SecurityAuditRepositoryPort",
     "NodeSecretUnitOfWorkPort",
     "SaveFileCommand",
-    "SavedGraphRepositoryPort",
-    "SavedGraphUnitOfWorkPort",
+    "ProjectRepositoryPort",
+    "ProjectUnitOfWorkPort",
     "StoredFile",
     "StoredObjectInfo",
     "UnavailableNodeSecretResolver",

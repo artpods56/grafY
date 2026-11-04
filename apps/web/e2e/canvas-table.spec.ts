@@ -20,10 +20,10 @@ const library: LibraryList = {
       name: "Field survey",
       provenance: {
         source: "upload",
+        call_path: [],
         saved_at: "2026-10-07T12:00:00Z",
         original_filename: "Field survey",
       },
-      run: null,
     },
   ],
 };
@@ -282,6 +282,17 @@ test("a resized canvas table connects to a node through a real pointer drag", as
   await card.locator("[data-artifact-head]").click();
   const output = card.locator(".react-flow__handle.source");
   await output.click({ trial: true });
+  // Selecting the card slides its rail out; measuring the port mid-slide
+  // coordinates the drag on where the handle *was*, and a mouse.down a
+  // gesture-width away from the handle starts no connection. Wait for the
+  // rail's own animations rather than guessing its duration.
+  await card.evaluate((element) =>
+    Promise.all(
+      element
+        .getAnimations({ subtree: true })
+        .map((animation) => animation.finished),
+    ),
+  );
   const from = await center(output);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();

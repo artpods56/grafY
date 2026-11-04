@@ -28,23 +28,35 @@ vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
 }));
 
 import type {
-  ArtifactSummary,
   ArtifactTypeSpec,
+  RunPortArtifact,
   RunPortOutput,
 } from "@/lib/api";
-import { ArtifactPortPreview } from "./ArtifactsAppendix";
+import { ArtifactPortPreview, storedArtifactView } from "./ArtifactsAppendix";
+
+/**
+ * A stored result names its artifacts and nothing more: no content type, no
+ * byte size, no inline text. Every fixture here is that reference.
+ */
+function referenceFor(
+  artifactId: string,
+  artifactType: string,
+  schemaVersion = 1,
+): RunPortArtifact {
+  return {
+    artifact_id: artifactId,
+    artifact_type: artifactType,
+    schema_version: schemaVersion,
+    content_hash: null,
+  };
+}
 
 function outputFor(
-  artifacts: readonly ArtifactSummary[],
+  artifacts: readonly RunPortArtifact[],
   kind: "single" | "sequence" = "single",
 ): RunPortOutput {
-  const refs = artifacts.map((artifact) => ({
-    artifact_id: artifact.artifact_id,
-    artifact_type: artifact.artifact_type,
-    schema_version: artifact.schema_version,
-  }));
   const first = artifacts[0];
-  const firstRef = refs[0];
+  const [firstRef] = artifacts;
   if (!first || !firstRef) {
     throw new Error("outputFor requires at least one artifact");
   }
@@ -53,16 +65,34 @@ function outputFor(
     kind,
     value:
       kind === "single"
-        ? firstRef
+        ? {
+            artifact_id: firstRef.artifact_id,
+            artifact_type: firstRef.artifact_type,
+            schema_version: firstRef.schema_version,
+          }
         : {
             artifact_type: first.artifact_type,
             schema_version: first.schema_version,
             index_key: "order_index",
             ordered: true,
-            item_refs: refs,
+            item_refs: artifacts.map((artifact) => ({
+              artifact_id: artifact.artifact_id,
+              artifact_type: artifact.artifact_type,
+              schema_version: artifact.schema_version,
+            })),
           },
     artifacts,
   };
+}
+
+function jsonType(id: string): ArtifactTypeSpec {
+  return {
+    key: { id, schema_version: 1 },
+    title: `${id} value`,
+    bundle: { format: "inline-json", version: 1 },
+    payload_schema: {},
+    field_projections: [],
+  } as unknown as ArtifactTypeSpec;
 }
 
 async function renderPreview(
@@ -83,12 +113,40 @@ async function renderPreview(
         }),
       ),
     );
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await act(async () => {
+      await Promise.resolve();
+    });
   });
   return { container, root };
 }
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe("a stored reference's renderer view", () => {
+  it("carries the declared type and no size the reference never had", () => {
+    const view = storedArtifactView(
+      "workspace-1",
+      {
+        artifact_id: "a1",
+        artifact_type: "text.markdown",
+        schema_version: 1,
+        content_hash: "ab12",
+      },
+      jsonType("text.markdown"),
+    );
+
+    // The bytes are read back through the artifact's own route, the content type
+    // is the one declared for its type, and the hash travels as the fingerprint it
+    // is. A byte size, inline text and an uploaded filename belong to a Library
+    // summary: a view built from a reference has none of them to hand a renderer.
+    expect(view.content_type).toBe("application/json");
+    expect(view.content_url).toContain("/artifacts/a1/content");
+    expect(view.sha256).toBe("ab12");
+    expect(view).not.toHaveProperty("byte_size");
+    expect(view).not.toHaveProperty("metadata");
+    expect(view).not.toHaveProperty("text");
+  });
+});
 
 describe("artifact payload loading policy", () => {
   it("loads only the bounded page endpoint for table previews", async () => {
@@ -110,18 +168,10 @@ describe("artifact payload loading policy", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const artifact: ArtifactSummary = {
-      artifact_id: "table-artifact",
-      artifact_type: "table.data",
-      schema_version: 1,
-      content_type: "application/json",
-      byte_size: 50_000_000,
-      content_url: "./artifacts/table-artifact/content",
-    };
+    const artifact = referenceFor("table-artifact", "table.data");
 
     const { root } = await renderPreview(outputFor([artifact]));
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(
       fetchMock.mock.calls.some((call) =>
         String(call[0]).includes(
@@ -159,17 +209,7 @@ describe("artifact payload loading policy", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const artifact: ArtifactSummary = {
-      artifact_id: `map-${artifactType}`,
-      artifact_type: artifactType,
-      schema_version: 1,
-      content_type:
-        artifactType === "geo.map_document"
-          ? "application/json"
-          : "application/geo+json",
-      byte_size: 120,
-      content_url: `./artifacts/map-${artifactType}/content`,
-    };
+    const artifact = referenceFor(`map-${artifactType}`, artifactType);
 
     const { container, root } = await renderPreview(outputFor([artifact]));
 
@@ -180,7 +220,7 @@ describe("artifact payload loading policy", () => {
     );
     await act(async () => {
       loadButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await Promise.resolve();
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]![0])).toContain("/geo/render");
@@ -189,32 +229,49 @@ describe("artifact payload loading policy", () => {
     await act(async () => root.unmount());
   });
 
-  it.each([
-    ["known-large", 2_000_000],
-    ["unknown-size", null],
-  ])(
-    "defers %s JSON artifacts until explicit loading",
-    async (id, byteSize) => {
-      const fetchMock = vi.fn();
-      vi.stubGlobal("fetch", fetchMock);
-      const artifact: ArtifactSummary = {
-        artifact_id: id,
-        artifact_type: "json.object",
-        schema_version: 1,
-        content_type: "application/json",
-        byte_size: byteSize,
-        content_url: `./artifacts/${id}/content`,
-      };
+  it("reads a stored result's JSON bytes from the artifact's own route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ answer: 42 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const artifact = referenceFor("json-artifact", "json.object");
 
-      const { container, root } = await renderPreview(outputFor([artifact]));
+    const { container, root } = await renderPreview(outputFor([artifact]), [
+      jsonType("json.object"),
+    ]);
 
-      expect(fetchMock).not.toHaveBeenCalled();
-      expect(container.textContent).toContain("Load complete JSON");
-      await act(async () => root.unmount());
-    },
-  );
+    expect(
+      fetchMock.mock.calls.some((call) =>
+        String(call[0]).includes(
+          "/v1/workspaces/workspace-1/artifacts/json-artifact/content",
+        ),
+      ),
+    ).toBe(true);
+    expect(container.textContent).toContain("42");
+    await act(async () => root.unmount());
+  });
 
-  it("does not let field projection bypass the aggregate byte budget", async () => {
+  it("does not read JSON bytes for a type the catalog stores as a file", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const artifact = referenceFor("geo-artifact", "geo.feature_collection");
+    const geoType: ArtifactTypeSpec = {
+      ...jsonType("geo.feature_collection"),
+      bundle: { format: "binary-file", version: 1 },
+    };
+
+    const { root } = await renderPreview(outputFor([artifact]), [geoType]);
+
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).endsWith("/content")),
+    ).toBe(false);
+    await act(async () => root.unmount());
+  });
+
+  it("projects a sequence field by reading every item's content route", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ statement_index: 0 }), {
         status: 200,
@@ -222,24 +279,16 @@ describe("artifact payload loading policy", () => {
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const artifacts: ArtifactSummary[] = ["first", "second"].map((id) => ({
-      artifact_id: id,
-      artifact_type: "sql.result",
-      schema_version: 1,
-      content_type: "application/json",
-      byte_size: 300_000,
-      content_url: `./artifacts/${id}/content`,
-    }));
+    const artifacts = ["first", "second"].map((id) =>
+      referenceFor(id, "sql.result"),
+    );
     const artifactTypes: ArtifactTypeSpec[] = [
       {
-        key: { id: "sql.result", schema_version: 1 },
-        title: "SQL result",
-        bundle: { format: "inline-json", version: 1 },
+        ...jsonType("sql.result"),
         payload_schema: {
           type: "object",
           properties: { statement_index: { type: "integer" } },
         },
-        field_projections: [],
       },
     ];
 
@@ -248,13 +297,26 @@ describe("artifact payload loading policy", () => {
       artifactTypes,
     );
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0]![0])).toContain(
+    const select = container.querySelector("select");
+    expect(select).not.toBeNull();
+    await act(async () => {
+      if (!select) return;
+      select.value = "statement_index";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const contentCalls = fetchMock.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.endsWith("/content"))
+      .join("\n");
+    expect(contentCalls).toContain(
       "/workspaces/workspace-1/artifacts/first/content",
     );
-    expect(container.textContent).toContain(
-      "Field projection is disabled because this sequence is too large",
+    expect(contentCalls).toContain(
+      "/workspaces/workspace-1/artifacts/second/content",
     );
+    expect(container.textContent).not.toContain("Field projection is disabled");
     await act(async () => root.unmount());
   });
 
@@ -263,14 +325,7 @@ describe("artifact payload loading policy", () => {
       async () => new Response('{"hello": "world"}', { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const artifact: ArtifactSummary = {
-      artifact_id: "blob-artifact",
-      artifact_type: "file.blob",
-      schema_version: 1,
-      content_type: "application/octet-stream",
-      byte_size: 128,
-      content_url: "./artifacts/blob-artifact/content",
-    };
+    const artifact = referenceFor("blob-artifact", "file.blob");
 
     const { container, root } = await renderPreview(outputFor([artifact]));
 
@@ -291,14 +346,7 @@ describe("artifact payload loading policy", () => {
           }),
       ),
     );
-    const artifact: ArtifactSummary = {
-      artifact_id: "binary-artifact",
-      artifact_type: "file.blob",
-      schema_version: 1,
-      content_type: "application/octet-stream",
-      byte_size: 5,
-      content_url: "./artifacts/binary-artifact/content",
-    };
+    const artifact = referenceFor("binary-artifact", "file.blob");
 
     const { container, root } = await renderPreview(outputFor([artifact]));
 
@@ -318,16 +366,11 @@ describe("artifact payload loading policy", () => {
           }),
       ),
     );
-    const artifact: ArtifactSummary = {
-      artifact_id: "integer-artifact",
-      artifact_type: "scalar.integer",
-      schema_version: 1,
-      content_type: "application/json",
-      byte_size: 11,
-      content_url: "./artifacts/integer-artifact/content",
-    };
+    const artifact = referenceFor("integer-artifact", "scalar.integer");
 
-    const { container, root } = await renderPreview(outputFor([artifact]));
+    const { container, root } = await renderPreview(outputFor([artifact]), [
+      jsonType("scalar.integer"),
+    ]);
 
     expect(container.querySelector("pre")?.textContent).toBe(
       '{\n  "value": 5\n}',

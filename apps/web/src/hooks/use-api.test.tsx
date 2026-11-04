@@ -26,11 +26,11 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 import {
-  ALL_GRAPHS_KEY,
-  type AllWorkspacesGraphsResult,
-  revalidateGraphSummaries,
-  useAllWorkspacesGraphs,
-  workspaceGraphsKey,
+  ALL_PROJECTS_KEY,
+  type AllWorkspacesProjectsResult,
+  revalidateProjectSummaries,
+  useAllWorkspacesProjects,
+  workspaceProjectsKey,
 } from "./use-api";
 
 const personal: Workspace = {
@@ -39,7 +39,7 @@ const personal: Workspace = {
   slug: "personal",
   kind: "personal",
   role: "owner",
-  capabilities: ["view_graph", "create_graph"],
+  capabilities: ["view_project", "create_project"],
 };
 
 const team: Workspace = {
@@ -48,19 +48,19 @@ const team: Workspace = {
   slug: "atlas",
   kind: "shared",
   role: "editor",
-  capabilities: ["view_graph", "create_graph"],
+  capabilities: ["view_project", "create_project"],
 };
 
-let latest: AllWorkspacesGraphsResult | undefined;
+let latest: AllWorkspacesProjectsResult | undefined;
 
-function captureLatest(value: AllWorkspacesGraphsResult) {
+function captureLatest(value: AllWorkspacesProjectsResult) {
   latest = value;
 }
 
 function Harness({ workspaces }: { workspaces: readonly Workspace[] }) {
-  const value = useAllWorkspacesGraphs(workspaces);
+  const value = useAllWorkspacesProjects(workspaces);
   React.useEffect(() => captureLatest(value), [value]);
-  return <span>{value.graphs?.length ?? "loading"}</span>;
+  return <span>{value.projects?.length ?? "loading"}</span>;
 }
 
 function browserGraph(
@@ -107,7 +107,7 @@ async function renderGraphs(workspaces: readonly Workspace[]) {
       </SWRConfig>,
     );
   });
-  await vi.waitFor(() => expect(latest?.graphs).not.toBeNull());
+  await vi.waitFor(() => expect(latest?.projects).not.toBeNull());
   return root;
 }
 
@@ -120,10 +120,10 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-describe("useAllWorkspacesGraphs", () => {
-  it("loads every authorized graph through one aggregate request", async () => {
+describe("useAllWorkspacesProjects", () => {
+  it("loads every authorized Project through one aggregate request", async () => {
     apiMocks.request.mockResolvedValue({
-      graphs: [
+      projects: [
         {
           ...browserGraph("graph-1", {
             name: "Invoice intake",
@@ -153,17 +153,17 @@ describe("useAllWorkspacesGraphs", () => {
       );
     });
 
-    await vi.waitFor(() => expect(latest?.graphs).toHaveLength(1));
+    await vi.waitFor(() => expect(latest?.projects).toHaveLength(1));
     expect(apiMocks.request).toHaveBeenCalledOnce();
-    expect(apiMocks.request).toHaveBeenCalledWith("GET", "/v1/me/graphs");
-    expect(latest?.graphs?.[0]?.location).toEqual({
+    expect(apiMocks.request).toHaveBeenCalledWith("GET", "/v1/me/projects");
+    expect(latest?.projects?.[0]?.location).toEqual({
       id: personal.id,
       slug: personal.slug,
       name: personal.name,
       kind: personal.kind,
     });
-    expect(latest?.graphs?.[0]?.name).toBe("Invoice intake");
-    expect(latest?.graphs?.[0]?.starred).toBe(true);
+    expect(latest?.projects?.[0]?.name).toBe("Invoice intake");
+    expect(latest?.projects?.[0]?.starred).toBe(true);
     expect(latest?.error).toBeNull();
 
     await act(async () => latest?.retry());
@@ -184,16 +184,16 @@ describe("useAllWorkspacesGraphs", () => {
       );
     });
 
-    expect(latest?.graphs).toEqual([]);
+    expect(latest?.projects).toEqual([]);
     expect(latest?.isLoading).toBe(false);
     expect(apiMocks.request).not.toHaveBeenCalled();
 
     await act(async () => root.unmount());
   });
 
-  it("passes through the shared draft-head summary from /v1/me/graphs", async () => {
+  it("passes through the shared draft-head summary for a Project from /v1/me/projects", async () => {
     apiMocks.request.mockResolvedValue({
-      graphs: [
+      projects: [
         browserGraph("graph-pending", { draft_pending: true }),
         browserGraph("graph-checkpointed", { draft_pending: false }),
       ],
@@ -202,10 +202,10 @@ describe("useAllWorkspacesGraphs", () => {
     const root = await renderGraphs([personal]);
 
     expect(
-      latest?.graphs?.map((graph) => [
-        graph.name,
-        graph.draft_pending,
-        graph.revision,
+      latest?.projects?.map((project) => [
+        project.name,
+        project.draft_pending,
+        project.revision,
       ]),
     ).toEqual([
       ["graph-pending", true, 1],
@@ -220,22 +220,22 @@ describe("graph summary cache invalidation", () => {
   it("refreshes every discovery surface affected by a workspace mutation", async () => {
     const mutate = vi.fn().mockResolvedValue(undefined);
 
-    await revalidateGraphSummaries(mutate, personal.id);
+    await revalidateProjectSummaries(mutate, personal.id);
 
     expect(mutate.mock.calls).toEqual([
-      [workspaceGraphsKey(personal.id)],
-      [ALL_GRAPHS_KEY],
+      [workspaceProjectsKey(personal.id)],
+      [ALL_PROJECTS_KEY],
     ]);
-    expect(workspaceGraphsKey(personal.id)).toBe(
-      "/v1/workspaces/workspace-personal/graphs",
+    expect(workspaceProjectsKey(personal.id)).toBe(
+      "/v1/workspaces/workspace-personal/projects",
     );
   });
 
   it("refreshes the cross-workspace list when no workspace is scoped", async () => {
     const mutate = vi.fn().mockResolvedValue(undefined);
 
-    await revalidateGraphSummaries(mutate);
+    await revalidateProjectSummaries(mutate);
 
-    expect(mutate.mock.calls).toEqual([[ALL_GRAPHS_KEY]]);
+    expect(mutate.mock.calls).toEqual([[ALL_PROJECTS_KEY]]);
   });
 });

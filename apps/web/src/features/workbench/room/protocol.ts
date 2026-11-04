@@ -1,8 +1,9 @@
-import { collaborativeHeadFromLegacy } from "@/lib/api/graph-head";
 import type {
+  ActiveRunSummary,
   CollaborativeHead,
-  LegacyCollaborativeHead,
-  SubmitGraphCommandRequest,
+  InstanceStateName,
+  ProjectCommand,
+  RunStatus,
   WorkspaceCapability,
 } from "@/lib/api";
 
@@ -13,27 +14,28 @@ export const CLOSE_PERMISSIONS_CHANGED = 4003;
 export const CLOSE_ACCESS_REVOKED = 4004;
 export const CLOSE_PROTOCOL_ERROR = 4008;
 export const CLOSE_SLOW_CONSUMER = 4009;
-export const CLOSE_GRAPH_DELETED = 4010;
+export const CLOSE_PROJECT_DELETED = 4010;
 
-export type RoomGraphCommand = SubmitGraphCommandRequest["command"];
+/** One entry of a Project command batch. */
+export type RoomProjectCommand = ProjectCommand;
 
-export type GraphRoomTerminalReason =
+export type ProjectRoomTerminalReason =
   | "access_revoked"
-  | "graph_deleted"
+  | "project_deleted"
   | "protocol_incompatible"
   | "reconnect_exhausted";
 
-export type GraphRoomRecoveryReason =
+export type ProjectRoomRecoveryReason =
   | "connection_lost"
   | "permissions_changed"
   | "protocol_error"
   | "slow_consumer";
 
-export interface GraphRoomFailure {
+export interface ProjectRoomFailure {
   readonly workspaceId: string;
-  readonly graphId: string;
-  readonly graphRoomSessionId: string | null;
-  readonly reason: GraphRoomRecoveryReason | GraphRoomTerminalReason;
+  readonly projectId: string;
+  readonly projectRoomSessionId: string | null;
+  readonly reason: ProjectRoomRecoveryReason | ProjectRoomTerminalReason;
   readonly retryable: boolean;
   readonly side: "client" | "server" | "network";
   readonly phase: "connect" | "receive" | "close";
@@ -43,7 +45,7 @@ export interface GraphRoomFailure {
   readonly detail: string;
 }
 
-export type GraphRoomStatus =
+export type ProjectRoomStatus =
   | "idle"
   | "connecting"
   | "ready"
@@ -77,8 +79,10 @@ export interface TransientNodePosition {
 }
 
 export interface PresenceParticipant {
-  readonly graph_room_session_id: string;
+  readonly project_room_session_id: string;
   readonly actor: ActorPresentation;
+  /** Which Graph of the Project this participant is looking at, if any. */
+  readonly graph_id: string | null;
   readonly presence_sequence: number;
   readonly cursor: PresencePoint | null;
   readonly selected_node_ids: readonly string[];
@@ -97,7 +101,7 @@ export interface PresenceJoinMessage {
 export interface PresenceLeaveMessage {
   readonly protocol_version: 1;
   readonly type: "presence.leave";
-  readonly graph_room_session_id: string;
+  readonly project_room_session_id: string;
 }
 
 export interface PresenceUpdateMessage {
@@ -107,6 +111,7 @@ export interface PresenceUpdateMessage {
 }
 
 export interface PresenceUpdateSubmit {
+  readonly graph_id?: string | null;
   readonly presence_sequence: number;
   readonly cursor?: PresencePoint | null;
   readonly selected_node_ids?: readonly string[];
@@ -116,75 +121,95 @@ export interface PresenceUpdateSubmit {
   readonly transient_node_positions?: readonly TransientNodePosition[];
 }
 
-export type ActiveExecutionLifecycleStatus =
-  "queued" | "running" | "cancelling";
-export type TerminalExecutionStatus = "cancelled" | "succeeded" | "failed";
+// --- Runs and instances on the wire ----------------------------------------
+// A Run is a demand for freshness, so the room carries the list of active Runs
+// and the derived state of node instances. There is no active execution and no
+// active node: many Runs are live in one Project at once, and each node
+// instance has its own state.
 
-export interface ActiveExecutionSummary {
-  readonly execution_id: string;
-  readonly graph_revision: number;
-  readonly status: ActiveExecutionLifecycleStatus;
-  readonly scope: "all" | "selected" | "selected-with-dependencies";
-  readonly requested_node_ids: readonly string[];
-  readonly starter: ActorPresentation;
-  readonly active_node_id: string | null;
-  readonly overlays_compatible: boolean;
-  readonly cancellable: boolean;
+export type RunLifecycleStatus = RunStatus;
+export type ActiveRunLifecycleStatus = "running";
+export type TerminalRunStatus =
+  "succeeded" | "failed" | "cancelled" | "interrupted";
+
+/** The room's identity for one node instance. */
+export interface RoomInstanceKey {
+  readonly project_id: string;
+  readonly graph_id: string;
+  readonly call_path: readonly string[];
+  readonly node_id: string;
+  readonly map_index: number | null;
 }
 
-/** Parsed client event: the v1 wire head is normalized to a canonical document. */
+/** Derived state of one node instance, as the room publishes it. */
+export interface RoomInstanceState extends RoomInstanceKey {
+  readonly state: InstanceStateName;
+  readonly fingerprint: string;
+  readonly last_result_fingerprint: string | null;
+  readonly error: string | null;
+}
+
 export interface RoomReadyMessage {
   readonly protocol_version: 1;
   readonly type: "room.ready";
   readonly workspace_id: string;
-  readonly graph_id: string;
-  readonly graph_room_session_id: string;
+  readonly project_id: string;
+  readonly project_room_session_id: string;
   readonly actor: ActorPresentation;
   readonly capabilities: CapabilitySnapshot;
   readonly head: CollaborativeHead;
   readonly participants: readonly PresenceParticipant[];
-  readonly active_execution: ActiveExecutionSummary | null;
+  readonly active_runs: readonly ActiveRunSummary[];
+  readonly instances: readonly RoomInstanceState[];
   readonly registry_marker: string;
 }
 
-export interface ExecutionActiveMessage {
+export interface RunStartedMessage {
   readonly protocol_version: 1;
-  readonly type: "execution.active";
-  readonly execution: ActiveExecutionSummary;
+  readonly type: "run.started";
+  readonly run: ActiveRunSummary;
 }
 
-export interface ExecutionClearedMessage {
+export interface RunFinishedMessage {
   readonly protocol_version: 1;
-  readonly type: "execution.cleared";
-  readonly execution_id: string;
-  readonly status: TerminalExecutionStatus;
-  readonly graph_revision: number;
+  readonly type: "run.finished";
+  readonly run_id: string;
+  readonly status: TerminalRunStatus;
   readonly error: string | null;
 }
 
-export interface GraphCommandSubmitMessage {
+/** Instance-state deltas. `removed` names the instances that no longer exist. */
+export interface InstancesChangedMessage {
   readonly protocol_version: 1;
-  readonly type: "graph.command.submit";
+  readonly type: "instances.changed";
+  readonly changed: readonly RoomInstanceState[];
+  readonly removed: readonly RoomInstanceKey[];
+  readonly head_sequence: number;
+}
+
+export interface ProjectCommandSubmitMessage {
+  readonly protocol_version: 1;
+  readonly type: "project.command.submit";
   readonly command_id: string;
   readonly room_epoch: string;
   readonly observed_sequence: number;
-  readonly command: RoomGraphCommand;
+  readonly commands: readonly RoomProjectCommand[];
 }
 
-export interface GraphCommandAcceptedMessage {
+export interface ProjectCommandAcceptedMessage {
   readonly protocol_version: 1;
-  readonly type: "graph.command.accepted";
+  readonly type: "project.command.accepted";
   readonly command_id: string;
   readonly room_epoch: string;
   readonly sequence: number;
   readonly actor: ActorPresentation;
-  readonly graph_room_session_id: string | null;
-  readonly command: RoomGraphCommand;
+  readonly project_room_session_id: string | null;
+  readonly commands: readonly RoomProjectCommand[];
 }
 
-export interface GraphCommandReceiptMessage {
+export interface ProjectCommandReceiptMessage {
   readonly protocol_version: 1;
-  readonly type: "graph.command.receipt";
+  readonly type: "project.command.receipt";
   readonly command_id: string;
   readonly outcome: "accepted" | "idempotent_replay";
   readonly accepted_room_epoch: string;
@@ -195,9 +220,9 @@ export interface GraphCommandReceiptMessage {
   readonly requires_head_rehydration: boolean;
 }
 
-export interface GraphCommandRejectedMessage {
+export interface ProjectCommandRejectedMessage {
   readonly protocol_version: 1;
-  readonly type: "graph.command.rejected";
+  readonly type: "project.command.rejected";
   readonly command_id: string;
   readonly error_code: string;
   readonly detail: string;
@@ -212,17 +237,26 @@ export interface RoomRehydrateMessage {
   readonly head: CollaborativeHead;
 }
 
+/** Server-owned keepalive; it also revalidates membership. */
+export interface RoomHeartbeatMessage {
+  readonly protocol_version: 1;
+  readonly type: "room.heartbeat";
+  readonly authorization_version: number;
+}
+
 export type ServerRoomMessage =
   | RoomReadyMessage
-  | GraphCommandAcceptedMessage
-  | GraphCommandReceiptMessage
-  | GraphCommandRejectedMessage
+  | ProjectCommandAcceptedMessage
+  | ProjectCommandReceiptMessage
+  | ProjectCommandRejectedMessage
   | RoomRehydrateMessage
+  | RoomHeartbeatMessage
   | PresenceJoinMessage
   | PresenceLeaveMessage
   | PresenceUpdateMessage
-  | ExecutionActiveMessage
-  | ExecutionClearedMessage;
+  | RunStartedMessage
+  | RunFinishedMessage
+  | InstancesChangedMessage;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -238,6 +272,10 @@ function isNonNegativeInt(value: unknown): value is number {
 
 function isPositiveInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === "boolean";
 }
 
 function parseActor(value: unknown): ActorPresentation | null {
@@ -303,11 +341,24 @@ function parsePresenceActivity(value: unknown): PresenceActivityKind | null {
   return null;
 }
 
+function optionalString(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return isString(value) ? value : undefined;
+}
+
 function parseParticipant(value: unknown): PresenceParticipant | null {
   if (!isRecord(value)) return null;
   const actor = parseActor(value.actor);
-  if (!actor || !isString(value.graph_room_session_id)) return null;
+  if (!actor || !isString(value.project_room_session_id)) return null;
   if (!isNonNegativeInt(value.presence_sequence)) return null;
+  const graphId = optionalString(value.graph_id);
+  if (
+    graphId === undefined &&
+    value.graph_id !== undefined &&
+    value.graph_id !== null
+  ) {
+    return null;
+  }
   const cursor =
     value.cursor === null || value.cursor === undefined
       ? null
@@ -341,8 +392,9 @@ function parseParticipant(value: unknown): PresenceParticipant | null {
     return null;
   }
   return {
-    graph_room_session_id: value.graph_room_session_id,
+    project_room_session_id: value.project_room_session_id,
     actor,
+    graph_id: graphId ?? null,
     presence_sequence: value.presence_sequence,
     cursor,
     selected_node_ids: selectedNodeIds,
@@ -368,67 +420,163 @@ function parseCapabilities(value: unknown): CapabilitySnapshot | null {
   };
 }
 
-function parseHead(value: unknown): LegacyCollaborativeHead | null {
+/**
+ * The head of a Project: the whole Project document, whose `graphs` each hold
+ * one Graph document. A flat head, or a document without its Graphs, is a
+ * protocol error rather than something to paper over.
+ */
+function parseHead(value: unknown): CollaborativeHead | null {
   if (!isRecord(value)) return null;
   if (
-    !isString(value.graph_id) ||
+    "nodes" in value ||
+    "edges" in value ||
+    "origins" in value ||
+    "presentation" in value ||
+    "graph_id" in value
+  ) {
+    return null;
+  }
+  const document = value.document;
+  if (!isRecord(document) || !Array.isArray(document.graphs)) return null;
+  for (const graph of document.graphs) {
+    if (!isRecord(graph)) return null;
+    if (!isString(graph.id) || !isString(graph.name)) return null;
+    const graphDocument = graph.document;
+    if (
+      !isRecord(graphDocument) ||
+      !Array.isArray(graphDocument.nodes) ||
+      !Array.isArray(graphDocument.edges) ||
+      !Array.isArray(graphDocument.origins)
+    ) {
+      return null;
+    }
+  }
+  if (
+    !isString(value.project_id) ||
     !isString(value.room_epoch) ||
     !isNonNegativeInt(value.collaboration_sequence) ||
     !isNonNegativeInt(value.checkpoint_sequence) ||
     !isPositiveInt(value.checkpoint_revision) ||
     !isString(value.name) ||
-    !isString(value.updated_at) ||
-    !Array.isArray(value.nodes) ||
-    !Array.isArray(value.edges) ||
-    !value.nodes.every((node) => isRecord(node) && !Array.isArray(node)) ||
-    !value.edges.every((edge) => isRecord(edge) && !Array.isArray(edge))
+    !isString(value.updated_at)
   ) {
     return null;
   }
-  return value as LegacyCollaborativeHead;
+  return value as unknown as CollaborativeHead;
 }
 
-function parseActiveExecution(value: unknown): ActiveExecutionSummary | null {
-  if (value === null) return null;
+function parseInstanceKey(value: unknown): RoomInstanceKey | null {
   if (!isRecord(value)) return null;
-  const starter = parseActor(value.starter);
+  const callPath = parseStringIdList(value.call_path ?? []);
   if (
-    !starter ||
-    !isString(value.execution_id) ||
-    !isPositiveInt(value.graph_revision) ||
-    (value.status !== "queued" &&
-      value.status !== "running" &&
-      value.status !== "cancelling") ||
-    (value.scope !== "all" &&
-      value.scope !== "selected" &&
-      value.scope !== "selected-with-dependencies") ||
-    !Array.isArray(value.requested_node_ids) ||
-    !value.requested_node_ids.every((item) => isString(item)) ||
-    typeof value.overlays_compatible !== "boolean" ||
-    typeof value.cancellable !== "boolean"
+    callPath === null ||
+    !isString(value.project_id) ||
+    !isString(value.graph_id) ||
+    !isString(value.node_id)
   ) {
     return null;
   }
   if (
-    value.active_node_id !== null &&
-    value.active_node_id !== undefined &&
-    !isString(value.active_node_id)
+    value.map_index !== null &&
+    value.map_index !== undefined &&
+    !isNonNegativeInt(value.map_index)
   ) {
     return null;
   }
   return {
-    execution_id: value.execution_id,
-    graph_revision: value.graph_revision,
-    status: value.status,
-    scope: value.scope,
-    requested_node_ids: value.requested_node_ids,
-    starter,
-    active_node_id: isString(value.active_node_id)
-      ? value.active_node_id
-      : null,
-    overlays_compatible: value.overlays_compatible,
+    project_id: value.project_id,
+    graph_id: value.graph_id,
+    call_path: callPath,
+    node_id: value.node_id,
+    map_index: isNonNegativeInt(value.map_index) ? value.map_index : null,
+  };
+}
+
+function parseInstanceState(value: unknown): RoomInstanceState | null {
+  const key = parseInstanceKey(value);
+  if (!key || !isRecord(value)) return null;
+  const state = value.state;
+  if (
+    state !== "fresh" &&
+    state !== "stale" &&
+    state !== "queued" &&
+    state !== "running" &&
+    state !== "failed"
+  ) {
+    return null;
+  }
+  if (!isString(value.fingerprint)) return null;
+  const lastResult = optionalString(value.last_result_fingerprint);
+  if (lastResult === undefined && value.last_result_fingerprint != null) {
+    return null;
+  }
+  const error = optionalString(value.error);
+  if (error === undefined && value.error != null) return null;
+  return {
+    ...key,
+    state,
+    fingerprint: value.fingerprint,
+    last_result_fingerprint: lastResult ?? null,
+    error: error ?? null,
+  };
+}
+
+function parseRunTargets(
+  value: unknown,
+): readonly { node_id: string; call_path: readonly string[] }[] | null {
+  if (!Array.isArray(value)) return null;
+  const targets: { node_id: string; call_path: readonly string[] }[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || !isString(item.node_id)) return null;
+    const callPath = parseStringIdList(item.call_path ?? []);
+    if (callPath === null) return null;
+    targets.push({ node_id: item.node_id, call_path: callPath });
+  }
+  return targets;
+}
+
+function parseActiveRun(value: unknown): ActiveRunSummary | null {
+  if (!isRecord(value)) return null;
+  const targets = parseRunTargets(value.targets ?? []);
+  if (
+    targets === null ||
+    !isString(value.run_id) ||
+    !isString(value.graph_id) ||
+    !isString(value.started_at) ||
+    !isBoolean(value.cancellable)
+  ) {
+    return null;
+  }
+  if (value.starter !== null && value.starter !== undefined) {
+    const starter = parseActor(value.starter);
+    if (!starter) return null;
+    return {
+      run_id: value.run_id,
+      graph_id: value.graph_id,
+      targets,
+      starter,
+      started_at: value.started_at,
+      cancellable: value.cancellable,
+    };
+  }
+  return {
+    run_id: value.run_id,
+    graph_id: value.graph_id,
+    targets,
+    starter: null,
+    started_at: value.started_at,
     cancellable: value.cancellable,
   };
+}
+
+function parseCommandList(
+  value: unknown,
+): readonly RoomProjectCommand[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  if (!value.every((command) => isRecord(command) && isString(command.kind))) {
+    return null;
+  }
+  return value as unknown as readonly RoomProjectCommand[];
 }
 
 export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
@@ -436,6 +584,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
     return null;
   }
   const type = raw.type;
+
   if (type === "room.ready") {
     const actor = parseActor(raw.actor);
     const capabilities = parseCapabilities(raw.capabilities);
@@ -445,8 +594,8 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       !capabilities ||
       !head ||
       !isString(raw.workspace_id) ||
-      !isString(raw.graph_id) ||
-      !isString(raw.graph_room_session_id) ||
+      !isString(raw.project_id) ||
+      !isString(raw.project_room_session_id) ||
       !isString(raw.registry_marker)
     ) {
       return null;
@@ -455,69 +604,119 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       ? raw.participants.map(parseParticipant)
       : [];
     if (participants.some((item) => item === null)) return null;
-    const activeExecution =
-      raw.active_execution === null || raw.active_execution === undefined
-        ? null
-        : parseActiveExecution(raw.active_execution);
-    if (raw.active_execution != null && activeExecution === null) return null;
+    if (!Array.isArray(raw.active_runs) || !Array.isArray(raw.instances)) {
+      return null;
+    }
+    const activeRuns = raw.active_runs.map(parseActiveRun);
+    if (activeRuns.some((run) => run === null)) return null;
+    const instances = raw.instances.map(parseInstanceState);
+    if (instances.some((instance) => instance === null)) return null;
     return {
       protocol_version: 1,
       type: "room.ready",
       workspace_id: raw.workspace_id,
-      graph_id: raw.graph_id,
-      graph_room_session_id: raw.graph_room_session_id,
+      project_id: raw.project_id,
+      project_room_session_id: raw.project_room_session_id,
       actor,
       capabilities,
-      head: collaborativeHeadFromLegacy(head),
+      head,
       participants: participants as PresenceParticipant[],
-      active_execution: activeExecution,
+      active_runs: activeRuns as ActiveRunSummary[],
+      instances: instances as RoomInstanceState[],
       registry_marker: raw.registry_marker,
     };
   }
+
   if (type === "presence.join" || type === "presence.update") {
     const participant = parseParticipant(raw.participant);
     if (!participant) return null;
-    return {
-      protocol_version: 1,
-      type,
-      participant,
-    };
+    return { protocol_version: 1, type, participant };
   }
+
   if (type === "presence.leave") {
-    if (!isString(raw.graph_room_session_id)) return null;
+    if (!isString(raw.project_room_session_id)) return null;
     return {
       protocol_version: 1,
       type: "presence.leave",
-      graph_room_session_id: raw.graph_room_session_id,
+      project_room_session_id: raw.project_room_session_id,
     };
   }
-  if (type === "graph.command.accepted") {
-    const actor = parseActor(raw.actor);
+
+  if (type === "run.started") {
+    const run = parseActiveRun(raw.run);
+    if (!run) return null;
+    return { protocol_version: 1, type: "run.started", run };
+  }
+
+  if (type === "run.finished") {
+    const status = raw.status;
     if (
-      !actor ||
-      !isString(raw.command_id) ||
-      !isString(raw.room_epoch) ||
-      !isNonNegativeInt(raw.sequence) ||
-      !isRecord(raw.command)
+      !isString(raw.run_id) ||
+      (status !== "succeeded" &&
+        status !== "failed" &&
+        status !== "cancelled" &&
+        status !== "interrupted")
     ) {
       return null;
     }
-    const sessionId = raw.graph_room_session_id;
+    const error = optionalString(raw.error);
+    if (error === undefined && raw.error != null) return null;
+    return {
+      protocol_version: 1,
+      type: "run.finished",
+      run_id: raw.run_id,
+      status,
+      error: error ?? null,
+    };
+  }
+
+  if (type === "instances.changed") {
+    if (!Array.isArray(raw.changed) || !Array.isArray(raw.removed)) {
+      return null;
+    }
+    if (!isNonNegativeInt(raw.head_sequence)) return null;
+    const changed = raw.changed.map(parseInstanceState);
+    if (changed.some((instance) => instance === null)) return null;
+    const removed = raw.removed.map(parseInstanceKey);
+    if (removed.some((key) => key === null)) return null;
+    return {
+      protocol_version: 1,
+      type: "instances.changed",
+      changed: changed as RoomInstanceState[],
+      removed: removed as RoomInstanceKey[],
+      head_sequence: raw.head_sequence,
+    };
+  }
+
+  if (type === "project.command.accepted") {
+    const actor = parseActor(raw.actor);
+    const commands = parseCommandList(raw.commands);
+    if (
+      !actor ||
+      !commands ||
+      !isString(raw.command_id) ||
+      !isString(raw.room_epoch) ||
+      !isNonNegativeInt(raw.sequence)
+    ) {
+      return null;
+    }
+    const sessionId = raw.project_room_session_id;
     if (sessionId !== null && sessionId !== undefined && !isString(sessionId)) {
       return null;
     }
     return {
       protocol_version: 1,
-      type: "graph.command.accepted",
+      type: "project.command.accepted",
       command_id: raw.command_id,
       room_epoch: raw.room_epoch,
       sequence: raw.sequence,
       actor,
-      graph_room_session_id: isString(sessionId) ? sessionId : null,
-      command: raw.command as RoomGraphCommand,
+      project_room_session_id: isString(sessionId) ? sessionId : null,
+      commands,
     };
   }
-  if (type === "graph.command.receipt") {
+
+  if (type === "project.command.receipt") {
     if (
       !isString(raw.command_id) ||
       (raw.outcome !== "accepted" && raw.outcome !== "idempotent_replay") ||
@@ -525,13 +724,13 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       !isNonNegativeInt(raw.accepted_sequence) ||
       !isString(raw.current_room_epoch) ||
       !isNonNegativeInt(raw.current_sequence) ||
-      typeof raw.deduplicated !== "boolean"
+      !isBoolean(raw.deduplicated)
     ) {
       return null;
     }
     return {
       protocol_version: 1,
-      type: "graph.command.receipt",
+      type: "project.command.receipt",
       command_id: raw.command_id,
       outcome: raw.outcome,
       accepted_room_epoch: raw.accepted_room_epoch,
@@ -542,7 +741,8 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       requires_head_rehydration: raw.requires_head_rehydration === true,
     };
   }
-  if (type === "graph.command.rejected") {
+
+  if (type === "project.command.rejected") {
     if (
       !isString(raw.command_id) ||
       !isString(raw.error_code) ||
@@ -562,7 +762,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
     }
     return {
       protocol_version: 1,
-      type: "graph.command.rejected",
+      type: "project.command.rejected",
       command_id: raw.command_id,
       error_code: raw.error_code,
       detail: raw.detail,
@@ -570,6 +770,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       current_sequence: isNonNegativeInt(sequence) ? sequence : null,
     };
   }
+
   if (type === "room.rehydrate") {
     const head = parseHead(raw.head);
     if (!head || raw.reason !== "epoch_reset") return null;
@@ -577,47 +778,42 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       protocol_version: 1,
       type: "room.rehydrate",
       reason: "epoch_reset",
-      head: collaborativeHeadFromLegacy(head),
+      head,
     };
   }
-  if (type === "execution.active") {
-    const execution = parseActiveExecution(raw.execution);
-    if (!execution) return null;
+
+  if (type === "room.heartbeat") {
+    if (!isPositiveInt(raw.authorization_version)) return null;
     return {
       protocol_version: 1,
-      type: "execution.active",
-      execution,
+      type: "room.heartbeat",
+      authorization_version: raw.authorization_version,
     };
   }
-  if (type === "execution.cleared") {
-    if (
-      !isString(raw.execution_id) ||
-      (raw.status !== "cancelled" &&
-        raw.status !== "succeeded" &&
-        raw.status !== "failed") ||
-      !isPositiveInt(raw.graph_revision)
-    ) {
-      return null;
-    }
-    if (raw.error !== null && raw.error !== undefined && !isString(raw.error)) {
-      return null;
-    }
-    return {
-      protocol_version: 1,
-      type: "execution.cleared",
-      execution_id: raw.execution_id,
-      status: raw.status,
-      graph_revision: raw.graph_revision,
-      error: isString(raw.error) ? raw.error : null,
-    };
-  }
+
   return null;
 }
+
+/** Stable text for one instance key, so a delta can replace what it supersedes. */
+export function instanceKeyText(key: RoomInstanceKey): string {
+  return [
+    key.graph_id,
+    key.call_path.join("/"),
+    key.node_id,
+    key.map_index === null ? "" : String(key.map_index),
+  ].join("\u0000");
+}
+
+export type GraphRoomTerminalReason = ProjectRoomTerminalReason;
+export type GraphRoomRecoveryReason = ProjectRoomRecoveryReason;
+export type GraphRoomStatus = ProjectRoomStatus;
+export type GraphRoomFailure = ProjectRoomFailure;
+export const CLOSE_GRAPH_DELETED = CLOSE_PROJECT_DELETED;
 
 export function terminalReasonFromClose(
   code: number,
   reason: string,
-): GraphRoomRecoveryReason | GraphRoomTerminalReason | null {
+): ProjectRoomRecoveryReason | ProjectRoomTerminalReason | null {
   const normalized = reason.trim();
   if (
     code === CLOSE_PERMISSIONS_CHANGED ||
@@ -628,8 +824,12 @@ export function terminalReasonFromClose(
   if (code === CLOSE_ACCESS_REVOKED || normalized === "access_revoked") {
     return "access_revoked";
   }
-  if (code === CLOSE_GRAPH_DELETED || normalized === "graph_deleted") {
-    return "graph_deleted";
+  if (
+    code === CLOSE_PROJECT_DELETED ||
+    normalized === "project_deleted" ||
+    normalized === "graph_deleted"
+  ) {
+    return "project_deleted";
   }
   if (code === CLOSE_PROTOCOL_ERROR || normalized === "protocol_error") {
     return "protocol_error";

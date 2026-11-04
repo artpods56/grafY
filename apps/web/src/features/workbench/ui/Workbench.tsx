@@ -1,4 +1,5 @@
 "use client";
+import type { AgentNode } from "../agents/AgentCard";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
@@ -26,13 +27,11 @@ import {
   Layers,
   LoaderCircle,
   Maximize2,
-  Package,
   Play,
   Plus,
   Square,
   Trash2,
   Type,
-  Upload,
   Workflow,
 } from "lucide-react";
 
@@ -78,14 +77,11 @@ import type {
   ContextualCandidate,
   ContextualRouteChoice,
 } from "../model/node-catalog";
-import { PublishModuleDialog } from "./PublishModuleDialog";
-import { moduleBoundaries } from "../model/module-boundary";
 import { createUuid } from "@/features/workbench/model/uuid";
 import { artifactGroupingDisabledReason } from "../model/artifact-grouping";
-import { WorkspaceLibraryDialog } from "@/features/workspaces/WorkspaceLibraryDialog";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { usePublishWorkbenchChrome } from "./WorkbenchChromeContext";
-import { renameSavedGraphRemote } from "@/features/workspaces/graph-actions";
+import { renameProjectRemote } from "@/features/workspaces/graph-actions";
 import type { SavedGraphSummary } from "@/lib/api";
 import {
   CanvasGridSettingsProvider,
@@ -114,23 +110,31 @@ import {
   type WorkbenchRoomCommandSync,
 } from "./workbench-authoring-commands";
 import {
-  GraphRoomCommandError,
   PRESENCE_CLIENT_MIN_INTERVAL_MS,
   PresenceOverlay,
+  ProjectRoomCommandError,
+  defaultGraphId,
   graphReadiness,
+  instanceKeyText,
   remoteSelectionColor,
   shouldReplaceCollaborativeHead,
   toLocalGraphCommand,
   toRoomGraphCommand,
+  toRoomRenameGraphCommand,
   toRoomReplaceDocumentCommand,
-  useGraphRoomSession,
+  toRoomRenameProjectCommand,
+  useProjectRoomSession,
   useRemoteDragPreviews,
-  type RoomGraphCommand,
+  type RoomGraphBodyCommand,
+  type RoomInstanceState,
+  type RoomProjectCommand,
   type TransientNodePosition,
 } from "../room";
 import {
-  checkpointGraph,
+  cancelRun,
+  checkpointProject,
   getCollaborativeHead,
+  graphFromProjectHead,
   type CollaborativeHead,
 } from "@/lib/api";
 import {
@@ -269,7 +273,7 @@ import {
   workflowEdgeRouteOption,
 } from "../model/graph-authoring";
 import {
-  createSavedGraphRequest,
+  createGraphDraft,
   type AuthoredGraphDocument,
   type GraphCommand,
 } from "../model/graph-document";
@@ -280,10 +284,9 @@ import {
 import {
   catalogNodeSpecs,
   downstreamCandidatesFromOutput,
-  moduleCallUpgradeTarget,
   upstreamCandidatesFromInput,
 } from "../model/node-catalog";
-import { workbenchGraphPath } from "../routes";
+import { workbenchProjectPath } from "../routes";
 import { useNodeRegistry } from "@/hooks/use-api";
 import {
   artifactDropRowAt,
@@ -308,10 +311,40 @@ import {
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
+/** What a Project with no Graph in it shows where the canvas would be. */
+const emptyProjectStyles = stylex.create({
+  panel: {
+    position: "absolute",
+    zIndex: 20,
+    inset: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "24px",
+    textAlign: "center",
+    backgroundColor: tokens.colorBg,
+    color: tokens.colorText,
+  },
+  title: { fontSize: "15px", fontWeight: 600 },
+  body: {
+    fontSize: "13px",
+    lineHeight: 1.5,
+    maxWidth: "380px",
+    color: tokens.colorMuted,
+  },
+});
+
 interface WorkbenchProps {
   workspaceId: string;
   workspaceSlug: string;
-  initialGraphId: string | null;
+  /**
+   * The Project this address names, or null on the `/projects/new` route, where
+   * the canvas holds a draft until the first save makes it a Project. The Graphs
+   * the person can open are inside the Project, so the address never names one.
+   */
+  initialProjectId: string | null;
 }
 
 interface PendingBoundEdge {
@@ -345,8 +378,10 @@ export function Workbench(props: WorkbenchProps) {
 function WorkbenchBody({
   workspaceId,
   workspaceSlug,
-  initialGraphId,
+  initialProjectId,
 }: WorkbenchProps) {
+  // The address names a Project; the Graphs live inside it.
+  const projectId = initialProjectId;
   const workbenchFitViewOptions = useWorkbenchFitViewOptions();
   const {
     data: registry,
@@ -369,6 +404,7 @@ function WorkbenchBody({
         nodes: [],
         edges: [],
         origins: [],
+        agents: [],
       },
       nodeOverlays: {},
       error: null,
@@ -506,7 +542,11 @@ function WorkbenchBody({
   // The canvas draws nodes, cards, and annotations out of three stores, and one
   // gesture can hold any mix of them. Anything that moves what is held goes
   // through here so no layer is left holding what the person already let go.
+  const [selectedAgentIds, setSelectedAgentIds] = React.useState<
+    ReadonlySet<string>
+  >(new Set());
   const canvasSelection = useCanvasSelection({
+    setSelectedAgentIds,
     setArtifactViewers,
     setSelectedEdgeIdSet,
     setSelectedNodeIdSet,
@@ -542,28 +582,16 @@ function WorkbenchBody({
   const sidePanel = useWorkbenchSidePanel();
   const [contextualDiscovery, setContextualDiscovery] =
     React.useState<ContextualDiscoverySession | null>(null);
-  const [workspaceLibraryOpen, setWorkspaceLibraryOpen] = React.useState(false);
-  const [workspaceLibraryFocusId, setWorkspaceLibraryFocusId] = React.useState<
-    string | null
-  >(null);
-  const [publishModuleOpen, setPublishModuleOpen] = React.useState(false);
-  const canPublishModule = workspace.capabilities.includes("publish_module");
-  const canCreateGraph = workspace.capabilities.includes("create_graph");
-  const canEditGraph = workspace.capabilities.includes("edit_graph");
-  const canExecuteGraph = workspace.capabilities.includes("execute_graph");
-  const canCancelExecution =
-    workspace.capabilities.includes("cancel_execution");
-  const canDeleteGraph = workspace.capabilities.includes("delete_graph");
-  const canEditModuleSource = workspace.capabilities.includes("edit_graph");
+  const canCreateProject = workspace.capabilities.includes("create_project");
+  const canEditProject = workspace.capabilities.includes("edit_project");
+  const canStartRun = workspace.capabilities.includes("start_run");
+  const canCancelRun = workspace.capabilities.includes("cancel_run");
+  const canDeleteProject = workspace.capabilities.includes("delete_project");
   const localAuthoringEnabledRef = React.useRef(
-    initialGraphId === null && canCreateGraph,
+    initialProjectId === null && canCreateProject,
   );
   const localAuthoringBlockedMessageRef = React.useRef(
-    "Editing is unavailable until this graph is synchronized.",
-  );
-  const moduleBoundarySummaries = React.useMemo(
-    () => moduleBoundaries(nodes, edges, registry?.artifact_types ?? null),
-    [edges, nodes, registry],
+    "Editing is unavailable until this Project is synchronized.",
   );
   const [executionHistoryTarget, setExecutionHistoryTarget] = React.useState<{
     nodeId: string | null;
@@ -743,18 +771,16 @@ function WorkbenchBody({
     setRunError,
   });
 
-  const openGraphInNewTab = React.useCallback(
-    (graphId: string) => {
-      // Internal route: workbenchGraphPath() returns a same-origin path from encoded params.
-      // pi-lens-ignore: no-open-redirect
-      window.open(
-        workbenchGraphPath(workspaceSlug, graphId),
-        "_blank",
-        "noopener,noreferrer",
-      );
-    },
-    [workspaceSlug],
-  );
+  const openProjectInNewTab = React.useCallback(() => {
+    if (!projectId) return;
+    // Internal route: workbenchProjectPath() returns a same-origin path from encoded params.
+    // pi-lens-ignore: no-open-redirect
+    window.open(
+      workbenchProjectPath(workspaceSlug, projectId),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }, [projectId, workspaceSlug]);
 
   const openNodeExecutionHistory = React.useCallback(
     (nodeId: string, executionId?: string) => {
@@ -767,47 +793,8 @@ function WorkbenchBody({
     [],
   );
 
-  const upgradeModuleCall = React.useCallback(
-    (nodeId: string) => {
-      if (!registry) return;
-      const node = nodesRef.current.find(
-        (candidate) => candidate.id === nodeId,
-      );
-      if (!node || !workflowNodeIsSupported(node.data)) return;
-      const target = moduleCallUpgradeTarget(registry, node.data.spec);
-      if (!target) return;
-      const before = authoredDocumentRef.current;
-      const authoredNode = before.nodes.find(
-        (candidate) => candidate.id === nodeId,
-      );
-      if (!authoredNode) return;
-      const nextDocument: AuthoredGraphDocument = {
-        ...before,
-        nodes: before.nodes.map((candidate) =>
-          candidate.id === nodeId
-            ? {
-                ...candidate,
-                operator_id: target.operator_id,
-                operator_version: target.operator_version,
-              }
-            : candidate,
-        ),
-      };
-      applyAuthoringCommands([
-        { kind: "replace_document", document: nextDocument },
-      ]);
-      canvasSelection.selectOnly({ nodeIds: [nodeId] });
-      setRunError(null);
-    },
-    [applyAuthoringCommands, canvasSelection, registry],
-  );
-
   const attachNodeCallbacks = React.useCallback(
     (data: WorkflowNodeData): WorkflowNodeData => {
-      const upgradeTarget =
-        registry && workflowNodeIsSupported(data)
-          ? moduleCallUpgradeTarget(registry, data.spec)
-          : null;
       if (!workflowNodeIsSupported(data)) {
         return {
           ...data,
@@ -823,9 +810,6 @@ function WorkbenchBody({
           onBindArtifactTypeBinding: undefined,
           bindableArtifactTypes: undefined,
           onHandlesMeasured: undefined,
-          onOpenModuleSource: undefined,
-          moduleUpgradeRelease: null,
-          onUpgradeModuleCall: undefined,
           onOpenExecutionHistory: openNodeExecutionHistory,
         };
       }
@@ -845,11 +829,6 @@ function WorkbenchBody({
           (artifactType) => artifactType.key,
         ),
         onHandlesMeasured: handleNodeHandlesMeasured,
-        onOpenModuleSource: data.spec.module_graph_id
-          ? openGraphInNewTab
-          : undefined,
-        moduleUpgradeRelease: upgradeTarget?.module_graph_revision ?? null,
-        onUpgradeModuleCall: upgradeTarget ? upgradeModuleCall : undefined,
         onOpenExecutionHistory: openNodeExecutionHistory,
       };
     },
@@ -857,7 +836,6 @@ function WorkbenchBody({
       addNodeInputPlug,
       bindNodeArtifactTypeBinding,
       handleNodeHandlesMeasured,
-      openGraphInNewTab,
       openNodeExecutionHistory,
       registry,
       removeNode,
@@ -868,7 +846,6 @@ function WorkbenchBody({
       updateLayout,
       updateArtifactQueryRelations,
       updateSchemaBuilderFields,
-      upgradeModuleCall,
     ],
   );
 
@@ -918,7 +895,7 @@ function WorkbenchBody({
    * the canvas and the save body read this one value, so they cannot disagree about whose
    * cards are current and a graph opened earlier in the session cannot ride into this
    * save. A presentation that still reached the request holding references the document
-   * dropped is filtered in `createSavedGraphRequest`.
+   * dropped is filtered in `createGraphDraft`.
    */
   const activeArtifactViewers = artifactViewers;
   const sharedPresentation = React.useMemo(
@@ -928,7 +905,7 @@ function WorkbenchBody({
   const currentExecutionFingerprint = React.useMemo(
     () =>
       savedGraphExecutionFingerprint(
-        createSavedGraphRequest(authoredDocument, sharedPresentation),
+        createGraphDraft(authoredDocument, sharedPresentation),
       ),
     [authoredDocument, sharedPresentation],
   );
@@ -953,7 +930,7 @@ function WorkbenchBody({
   const roomPersistenceRef = React.useRef<GraphRoomPersistenceAdapter>({
     canPersist: false,
     persistDocument: async () => {
-      throw new Error("Graph room is not ready.");
+      throw new Error("The Project room is not ready.");
     },
   });
   const roomPersistence = React.useMemo<GraphRoomPersistenceAdapter>(
@@ -961,8 +938,9 @@ function WorkbenchBody({
       get canPersist() {
         return roomPersistenceRef.current.canPersist;
       },
-      persistDocument: (draft) =>
-        roomPersistenceRef.current.persistDocument(draft),
+      // A Project holds several Graphs, so a save has to name the one it writes.
+      persistDocument: (draft, graphId) =>
+        roomPersistenceRef.current.persistDocument(draft, graphId),
     }),
     [],
   );
@@ -976,12 +954,10 @@ function WorkbenchBody({
     graphName,
     setGraphName,
     isDirty,
-    canMaterializeSavedGraph,
     saving,
     openingGraphId,
     deletingGraphId,
     persistenceError,
-    clearPersistenceError,
     dismissPersistenceError,
     persistenceOperationBusy,
     closeGraphBrowser,
@@ -993,7 +969,9 @@ function WorkbenchBody({
   } = useSavedGraphLifecycle({
     workspaceId,
     workspaceSlug,
-    initialGraphId,
+    // The lifecycle hook follows the Workbench address, and a Workbench address
+    // names a Project. Which Graph to project out of it is the head's business.
+    initialGraphId: projectId,
     registry,
     document: authoredDocument,
     presentation: sharedPresentation,
@@ -1014,10 +992,9 @@ function WorkbenchBody({
     hasUnsyncedRoomEdits: unsyncedRoomEdits,
   });
   const router = useRouter();
-  const activeGraphIdRef = React.useRef(activeGraph?.id ?? null);
-  React.useEffect(() => {
-    activeGraphIdRef.current = activeGraph?.id ?? null;
-  }, [activeGraph?.id]);
+  // The room holds one head for the whole Project; every Graph the person can
+  // open is inside it, and the canvas shows one of them at a time.
+  const openGraphIdRef = React.useRef<string | null>(null);
   const syncFromCollaborativeHeadRef = React.useRef(syncFromCollaborativeHead);
   /**
    * Applying an authoritative head means the room took the commands or
@@ -1036,22 +1013,21 @@ function WorkbenchBody({
   const replaceHeadRef = React.useRef<
     (head: CollaborativeHead) => CollaborativeHead
   >((head) => head);
-  const graphRoomHeadRef = React.useRef<CollaborativeHead | null>(null);
+  const projectRoomHeadRef = React.useRef<CollaborativeHead | null>(null);
   const refreshCollaborativeHeadRef = React.useRef<
     (options?: { errorMessage?: string | null }) => void
   >(() => undefined);
   const headRefreshRetryRef = React.useRef<number | null>(null);
   React.useLayoutEffect(() => {
     refreshCollaborativeHeadRef.current = (options) => {
-      const graphId = activeGraphIdRef.current;
-      if (!graphId) return;
-      void getCollaborativeHead(workspaceId, graphId)
+      if (!projectId) return;
+      void getCollaborativeHead(workspaceId, projectId)
         .then((head) => {
           if (headRefreshRetryRef.current !== null) {
             window.clearTimeout(headRefreshRetryRef.current);
             headRefreshRetryRef.current = null;
           }
-          const current = graphRoomHeadRef.current;
+          const current = projectRoomHeadRef.current;
           if (!shouldReplaceCollaborativeHead(current, head)) {
             // Late HTTP snapshot lost the race to a newer WebSocket head.
             // Clear the rehydration pause without wiping presentation/UI.
@@ -1066,7 +1042,7 @@ function WorkbenchBody({
             options?.errorMessage ??
             (error instanceof Error
               ? error.message
-              : "Collaborative head could not be refreshed.");
+              : "The Project head could not be refreshed.");
           setRunError(message);
           if (headRefreshRetryRef.current === null) {
             headRefreshRetryRef.current = window.setTimeout(() => {
@@ -1076,7 +1052,7 @@ function WorkbenchBody({
           }
         });
     };
-  }, [applyRoomHead, workspaceId]);
+  }, [applyRoomHead, projectId, workspaceId]);
 
   React.useEffect(
     () => () => {
@@ -1087,9 +1063,9 @@ function WorkbenchBody({
     [],
   );
 
-  const graphRoom = useGraphRoomSession({
+  const projectRoom = useProjectRoomSession({
     workspaceId,
-    graphId: activeGraph?.id ?? null,
+    projectId,
     onReady: (ready) => {
       // Durable editing is disabled while disconnected, so reconnect always
       // restores the authoritative room snapshot before authoring resumes.
@@ -1102,74 +1078,90 @@ function WorkbenchBody({
       refreshCollaborativeHeadRef.current({ errorMessage: null });
     },
     onCommandAccepted: (message, meta) => {
-      if (meta.local) {
-        // Local presentation commands already updated artifactViewers optimistically.
-        if (
-          message.command.kind === "replace_presentation" ||
-          message.command.kind === "move_artifact_viewers" ||
-          message.command.kind === "move_annotations"
-        ) {
+      // A gesture that reached the room already changed this tab's canvas, and
+      // the room applied the same commands to its own head.
+      if (meta.local) return;
+      const graphId = openGraphIdRef.current;
+      const localCommands: GraphCommand[] = [];
+      for (const entry of message.commands) {
+        // A batch may address any Graph of this Project. Another Graph's
+        // commands change nothing here: the room's head moved, this canvas did
+        // not need to.
+        if (entry.kind === "in_graph" && entry.graph_id !== graphId) continue;
+        if (entry.kind === "rename_project") {
+          // The Project's name belongs to the browser and the rail, not canvas.
+          continue;
+        }
+        if (entry.kind === "rename_graph") {
+          if (entry.graph_id !== graphId) continue;
+          localCommands.push({ kind: "rename_graph", name: entry.name });
+          continue;
+        }
+        if (entry.kind !== "in_graph") {
+          // The Graph set changed, or a Call node appeared: neither is a canvas
+          // edit this tab can replay, so take the whole snapshot instead.
+          refreshCollaborativeHeadRef.current();
           return;
         }
-        // Nothing more to mirror locally: applying the command already pruned the card
-        // links it sourced, and the room applied the same pruning to its own head.
-        return;
-      }
-      if (message.command.kind === "replace_presentation") {
-        // Cards only belong on a saved graph's canvas; the blank draft has no room.
-        if (!activeGraphIdRef.current) return;
-        replacePresentation(message.command.presentation);
-        return;
-      }
-      if (message.command.kind === "move_artifact_viewers") {
-        const positions = new Map(
-          message.command.positions.map((position) => [
-            position.viewer_id,
-            { x: position.x, y: position.y },
-          ]),
-        );
-        setArtifactViewers((current) => ({
-          ...current,
-          nodes: current.nodes.map((node) => {
-            const position = positions.get(node.id);
-            return position ? { ...node, position } : node;
-          }),
-        }));
-        return;
-      }
-      if (message.command.kind === "move_annotations") {
-        const positions = new Map(
-          message.command.positions.map((position) => [
-            position.annotation_id,
-            { x: position.x, y: position.y },
-          ]),
-        );
-        setArtifactViewers((current) => ({
-          ...current,
-          annotations: current.annotations.map((node) => {
-            const position = positions.get(node.id);
-            return position ? { ...node, position } : node;
-          }),
-        }));
-        return;
-      }
-      const localCommand = toLocalGraphCommand(
-        message.command,
-        authoredDocumentRef.current,
-      );
-      if (localCommand) {
-        applyAuthoringCommandsRef.current([localCommand], { syncRoom: false });
-        if (
-          message.command.kind === "replace_document" &&
-          message.command.document.presentation
-        ) {
-          if (activeGraphIdRef.current) {
-            replacePresentation(message.command.document.presentation);
-          }
+        const body = entry.command;
+        if (body.kind === "replace_presentation") {
+          replacePresentation(body.presentation);
+          continue;
         }
-        return;
+        if (body.kind === "move_artifact_viewers") {
+          const positions = new Map(
+            body.positions.map((position) => [
+              position.viewer_id,
+              { x: position.x, y: position.y },
+            ]),
+          );
+          setArtifactViewers((current) => ({
+            ...current,
+            nodes: current.nodes.map((node) => {
+              const position = positions.get(node.id);
+              return position ? { ...node, position } : node;
+            }),
+          }));
+          continue;
+        }
+        if (body.kind === "move_annotations") {
+          const positions = new Map(
+            body.positions.map((position) => [
+              position.annotation_id,
+              { x: position.x, y: position.y },
+            ]),
+          );
+          setArtifactViewers((current) => ({
+            ...current,
+            annotations: current.annotations.map((annotation) => {
+              const position = positions.get(annotation.id);
+              return position ? { ...annotation, position } : annotation;
+            }),
+          }));
+          continue;
+        }
+        if (
+          body.kind === "replace_document" &&
+          body.document.presentation &&
+          graphId !== null
+        ) {
+          // The document rewrite carries the card layout with it.
+          replacePresentation(body.document.presentation);
+        }
+        const localCommand = toLocalGraphCommand(
+          entry,
+          authoredDocumentRef.current,
+          graphId ?? undefined,
+        );
+        if (!localCommand) {
+          refreshCollaborativeHeadRef.current();
+          return;
+        }
+        localCommands.push(localCommand);
       }
-      refreshCollaborativeHeadRef.current();
+      if (localCommands.length) {
+        applyAuthoringCommandsRef.current(localCommands, { syncRoom: false });
+      }
     },
     onCommandRejected: (message) => {
       const isHeadConflict = message.error_code === "head_conflict";
@@ -1183,143 +1175,192 @@ function WorkbenchBody({
       });
     },
     onTerminalClose: (reason) => {
-      if (reason === "access_revoked" || reason === "graph_deleted") {
+      if (reason === "access_revoked" || reason === "project_deleted") {
         purgeLocalGraphState();
         router.replace(`/workspaces/${encodeURIComponent(workspaceSlug)}`);
         return;
       }
     },
   });
-  const displayedGraphReadiness = graphReadiness(
-    graphRoom.status,
-    graphRoom.head !== null,
+
+  /**
+   * The Graph this canvas shows, read out of the room's head: it is a projection
+   * of the one Project document, never a second copy of it. The Project's first
+   * Graph is the one a person lands on; naming another Graph of the same Project
+   * is the picker that #197 will bring.
+   */
+  const openGraphId = React.useMemo(
+    () => (projectRoom.head ? defaultGraphId(projectRoom.head) : null),
+    [projectRoom.head],
   );
-  const graphOperationsTrusted =
-    !activeGraph || displayedGraphReadiness.trusted;
-  const canSubmitRoomCommands = graphRoom.canSubmitCommands;
-  const submitRoomCommand = graphRoom.submitCommand;
-  const reconcileCheckpointHead = graphRoom.reconcileCheckpointHead;
+  const openGraph = React.useMemo(
+    () =>
+      projectRoom.head && openGraphId
+        ? graphFromProjectHead(projectRoom.head, openGraphId)
+        : null,
+    [openGraphId, projectRoom.head],
+  );
+  /**
+   * A Project with no Graph has nothing to draw. Saying so beats a blank canvas
+   * that looks like the author's own unsaved work.
+   */
+  const projectHasNoGraph =
+    projectRoom.head !== null && projectRoom.status === "ready" && !openGraphId;
   React.useLayoutEffect(() => {
-    replaceHeadRef.current = graphRoom.replaceHead;
-    graphRoomHeadRef.current = graphRoom.head;
-  }, [graphRoom.head, graphRoom.replaceHead]);
+    openGraphIdRef.current = openGraphId;
+    replaceHeadRef.current = projectRoom.replaceHead;
+    projectRoomHeadRef.current = projectRoom.head;
+  }, [openGraphId, projectRoom.head, projectRoom.replaceHead]);
+
+  const projectReadiness = graphReadiness(
+    projectRoom.status,
+    projectRoom.head !== null,
+  );
+  const projectEditsTrusted = !activeGraph || projectReadiness.trusted;
+  const canSubmitRoomCommands = projectRoom.canSubmitCommands;
+  // Stable per Project: the chrome below is published to the rail, and a value
+  // that changed identity every render would wake the rail on every keystroke.
+  const submitRoomBatch = projectRoom.submitCommands;
+  const savedProjectName = projectRoom.head?.name ?? "";
+  const reconcileCheckpointHead = projectRoom.reconcileCheckpointHead;
+  /**
+   * The room refused a batch because another writer moved the head first: the
+   * next snapshot carries the truth, so that is not worth interrupting anyone
+   * with. Anything else is.
+   */
+  const reportCommandFailure = React.useCallback(
+    (error: unknown, fallback: string) => {
+      if (
+        error instanceof ProjectRoomCommandError &&
+        (error.errorCode === "superseded" ||
+          error.errorCode === "head_conflict")
+      ) {
+        return;
+      }
+      setRunError(error instanceof Error ? error.message : fallback);
+    },
+    [setRunError],
+  );
+  /** One gesture, one batch: the room accepts a batch or refuses the whole of it. */
+  const submitRoomCommands = React.useCallback(
+    (commands: readonly RoomProjectCommand[], fallback: string) => {
+      if (!canSubmitRoomCommands) {
+        setUnsyncedRoomEdits(true);
+        return;
+      }
+      void submitRoomBatch(commands).catch((error: unknown) =>
+        reportCommandFailure(error, fallback),
+      );
+    },
+    [canSubmitRoomCommands, reportCommandFailure, submitRoomBatch],
+  );
+  /** Address a Graph-body command at the Graph this canvas shows. */
+  const inOpenGraph = React.useCallback(
+    (command: RoomGraphBodyCommand): RoomProjectCommand | null => {
+      const graphId = openGraphIdRef.current;
+      if (graphId === null) return null;
+      return { kind: "in_graph", graph_id: graphId, command };
+    },
+    [],
+  );
+  /**
+   * A Project arrives holding Graphs, and one with none has nothing for the
+   * canvas to show. The way in is the same command any other writer would send.
+   */
+  const addProjectGraph = React.useCallback(() => {
+    if (projectId === null) return;
+    const name = authoredDocumentRef.current.name.trim() || "Untitled workflow";
+    void submitRoomBatch([{ kind: "add_graph", graph_id: createUuid(), name }])
+      .then(({ head }) =>
+        checkpointProject(workspaceId, projectId, {
+          expected_room_epoch: head.room_epoch,
+          expected_sequence: head.collaboration_sequence,
+        }),
+      )
+      .then(({ head }) => applyRoomHead(head))
+      .catch((error: unknown) => {
+        setRunError(
+          error instanceof Error
+            ? error.message
+            : "The Graph could not be added to this Project.",
+        );
+      });
+  }, [applyRoomHead, projectId, setRunError, submitRoomBatch, workspaceId]);
   React.useEffect(() => {
     roomCommandSyncRef.current = {
       submitLocal: (commands, before) => {
-        if (!canSubmitRoomCommands) {
+        const graphId = openGraphIdRef.current;
+        if (graphId === null) {
+          // A draft is not in a Project yet: nothing can leave this tab.
           setUnsyncedRoomEdits(true);
           return;
         }
-        for (const command of commands) {
-          const roomCommand = toRoomGraphCommand(command, before);
-          if (!roomCommand) continue;
-          void submitRoomCommand(roomCommand).catch((error: unknown) => {
-            if (
-              error instanceof GraphRoomCommandError &&
-              (error.errorCode === "superseded" ||
-                error.errorCode === "head_conflict")
-            ) {
-              return;
-            }
-            const detail =
-              error instanceof GraphRoomCommandError
-                ? error.message
-                : error instanceof Error
-                  ? error.message
-                  : "Collaborative sync failed.";
-            setRunError(detail);
-          });
-        }
+        const batch = commands
+          .map((command) => toRoomGraphCommand(command, before, graphId))
+          .filter((command): command is RoomProjectCommand => command !== null);
+        if (!batch.length) return;
+        submitRoomCommands(batch, "Collaborative sync failed.");
       },
     };
-  }, [canSubmitRoomCommands, submitRoomCommand]);
+  }, [submitRoomCommands]);
   React.useEffect(() => {
     presentationRoomSyncRef.current = {
       submitReplace: (state) => {
-        if (!canSubmitRoomCommands) {
+        const command = inOpenGraph({
+          kind: "replace_presentation",
+          presentation: presentationFromArtifactViewers(state),
+        });
+        if (!command) {
           setUnsyncedRoomEdits(true);
           return;
         }
-        const command = {
-          kind: "replace_presentation",
-          presentation: presentationFromArtifactViewers(state),
-        } as RoomGraphCommand;
-        void submitRoomCommand(command).catch((error: unknown) => {
-          if (
-            error instanceof GraphRoomCommandError &&
-            (error.errorCode === "superseded" ||
-              error.errorCode === "head_conflict")
-          ) {
-            return;
-          }
-          const detail =
-            error instanceof GraphRoomCommandError
-              ? error.message
-              : error instanceof Error
-                ? error.message
-                : "Presentation sync failed.";
-          setRunError(detail);
-        });
+        submitRoomCommands([command], "Presentation sync failed.");
       },
       submitMove: (positions) => {
-        if (!canSubmitRoomCommands || !positions.length) return;
-        const command = {
+        if (!positions.length) return;
+        const command = inOpenGraph({
           kind: "move_artifact_viewers",
           positions: [...positions],
-        } as RoomGraphCommand;
-        void submitRoomCommand(command).catch((error: unknown) => {
-          if (
-            error instanceof GraphRoomCommandError &&
-            (error.errorCode === "superseded" ||
-              error.errorCode === "head_conflict")
-          ) {
-            return;
-          }
-          const detail =
-            error instanceof GraphRoomCommandError
-              ? error.message
-              : error instanceof Error
-                ? error.message
-                : "Presentation sync failed.";
-          setRunError(detail);
         });
+        if (!command) {
+          setUnsyncedRoomEdits(true);
+          return;
+        }
+        submitRoomCommands([command], "Presentation sync failed.");
       },
       submitMoveAnnotations: (positions) => {
-        if (!canSubmitRoomCommands || !positions.length) return;
-        const command = {
+        if (!positions.length) return;
+        const command = inOpenGraph({
           kind: "move_annotations",
           positions: [...positions],
-        } as RoomGraphCommand;
-        void submitRoomCommand(command).catch((error: unknown) => {
-          if (
-            error instanceof GraphRoomCommandError &&
-            (error.errorCode === "superseded" ||
-              error.errorCode === "head_conflict")
-          ) {
-            return;
-          }
-          const detail =
-            error instanceof GraphRoomCommandError
-              ? error.message
-              : error instanceof Error
-                ? error.message
-                : "Presentation sync failed.";
-          setRunError(detail);
         });
+        if (!command) {
+          setUnsyncedRoomEdits(true);
+          return;
+        }
+        submitRoomCommands([command], "Presentation sync failed.");
       },
     };
-  }, [canSubmitRoomCommands, submitRoomCommand]);
+  }, [inOpenGraph, submitRoomCommands]);
   React.useEffect(() => {
-    const graphId = activeGraph?.id;
     roomPersistenceRef.current = {
-      canPersist: canSubmitRoomCommands && graphId !== undefined,
+      canPersist: canSubmitRoomCommands && openGraphId !== null,
       persistDocument: async (draft) => {
-        if (!graphId) {
-          throw new Error("Graph room requires a saved graph id.");
+        if (openGraphId === null || projectId === null) {
+          throw new Error("Saving needs a Graph in a saved Project.");
         }
-        const command = toRoomReplaceDocumentCommand(draft);
-        const { head: replacedHead } = await submitRoomCommand(command);
-        const checkpointed = await checkpointGraph(workspaceId, graphId, {
+        // The name and the document it names travel together: a batch is one
+        // unit, so a save cannot leave the Graph's name behind its content.
+        const batch: RoomProjectCommand[] = [];
+        const savedName = openGraph?.name ?? "";
+        if (draft.name !== savedName) {
+          batch.push(
+            toRoomRenameGraphCommand(openGraphId, draft.name, savedName),
+          );
+        }
+        batch.push(toRoomReplaceDocumentCommand(draft, openGraphId));
+        const { head: replacedHead } = await submitRoomBatch(batch);
+        const checkpointed = await checkpointProject(workspaceId, projectId, {
           expected_room_epoch: replacedHead.room_epoch,
           expected_sequence: replacedHead.collaboration_sequence,
         });
@@ -1334,51 +1375,90 @@ function WorkbenchBody({
       },
     };
   }, [
-    activeGraph?.id,
     canSubmitRoomCommands,
+    openGraph?.name,
+    openGraphId,
+    projectId,
     reconcileCheckpointHead,
-    submitRoomCommand,
+    submitRoomBatch,
     workspaceId,
   ]);
   const {
     running,
     runningScope,
-    visibleExecution,
     announcement: executionAnnouncement,
     runWorkflow,
-    cancelCurrentExecution,
   } = useRunExecution({
     workspaceId,
     registryAvailable: Boolean(registry),
     nodes,
     edges,
     origins: authoredDocument.origins,
+    projectId,
     activeGraph,
     currentExecutionFingerprint,
-    canMaterializeSavedGraph,
+    // A Run demands freshness from the saved document, so it may only start from
+    // a canvas that is an authoritative view of it — not one with unsent edits.
+    canRunSavedGraph: canStartRun && projectEditsTrusted && !isDirty,
     nodeSecretStatuses,
-    roomActiveExecution: graphRoom.activeExecution,
+    roomConnected: projectRoom.status === "ready",
+    roomActiveRuns: projectRoom.activeRuns,
+    roomRunsRevision: projectRoom.runsRevision,
+    roomInstancesRevision: projectRoom.instancesRevision,
     setNodes,
     setRunError,
-    onMaterializationsLoaded: clearPersistenceError,
   });
   React.useEffect(() => {
     executionRunningRef.current = running;
   }, [running]);
+  /**
+   * Every Run the room believes is open on the Graph this canvas shows, other
+   * people's included. A Run is one demand for freshness, and a Project is
+   * answering several at once, so nothing here picks a "current" one.
+   */
+  const openGraphRuns = React.useMemo(
+    () =>
+      openGraphId
+        ? projectRoom.activeRuns.filter((run) => run.graph_id === openGraphId)
+        : [],
+    [openGraphId, projectRoom.activeRuns],
+  );
+  const runsInProgress = running || openGraphRuns.length > 0;
+  /**
+   * Freshness of each node's own instance, read by the instance the canvas is
+   * drawing rather than by whichever Run last touched the Graph.
+   */
+  const nodeInstanceStates = React.useMemo(() => {
+    const states: Record<string, RoomInstanceState> = {};
+    if (openGraphId === null || projectId === null) return states;
+    for (const node of nodes) {
+      const instance = projectRoom.instances.get(
+        instanceKeyText({
+          project_id: projectId,
+          graph_id: openGraphId,
+          call_path: [],
+          node_id: node.id,
+          map_index: null,
+        }),
+      );
+      if (instance) states[node.id] = instance;
+    }
+    return states;
+  }, [nodes, openGraphId, projectId, projectRoom.instances]);
 
   const graphOperationBusy = persistenceOperationBusy || running;
   const localAuthoringEnabled =
     !graphOperationBusy &&
-    (activeGraph
-      ? canEditGraph && graphOperationsTrusted && graphRoom.canSubmitCommands
-      : initialGraphId === null && canCreateGraph);
-  const localAuthoringBlockedMessage = !(activeGraph
-    ? canEditGraph
-    : canCreateGraph)
-    ? "You do not have permission to edit this graph."
+    (projectId
+      ? canEditProject && projectEditsTrusted && projectRoom.canSubmitCommands
+      : canCreateProject);
+  const localAuthoringBlockedMessage = !(projectId
+    ? canEditProject
+    : canCreateProject)
+    ? "You do not have permission to edit this Project."
     : graphOperationBusy
-      ? "Editing is paused while another graph operation is in progress."
-      : "Editing is paused until graph synchronization is ready.";
+      ? "Editing is paused while another Project operation is in progress."
+      : "Editing is paused until the Project room is ready.";
   React.useLayoutEffect(() => {
     localAuthoringEnabledRef.current = localAuthoringEnabled;
     localAuthoringBlockedMessageRef.current = localAuthoringBlockedMessage;
@@ -1430,8 +1510,8 @@ function WorkbenchBody({
   const localDraggingNodeIdsRef = React.useRef<ReadonlySet<string>>(new Set());
   const presencePublishTimerRef = React.useRef<number | null>(null);
   const lastPresencePublishAtRef = React.useRef(0);
-  const canPublishRoomPresence = graphRoom.canPublishPresence;
-  const publishRoomPresence = graphRoom.publishPresence;
+  const canPublishRoomPresence = projectRoom.canPublishPresence;
+  const publishRoomPresence = projectRoom.publishPresence;
   const schedulePresenceSnapshot = React.useCallback(() => {
     if (!canPublishRoomPresence) return;
     if (presencePublishTimerRef.current !== null) return;
@@ -1460,13 +1540,13 @@ function WorkbenchBody({
     }, delay);
   }, [canPublishRoomPresence, flow, publishRoomPresence]);
   React.useEffect(() => {
-    if (graphRoom.canPublishPresence) return;
+    if (projectRoom.canPublishPresence) return;
     if (presencePublishTimerRef.current !== null) {
       window.clearTimeout(presencePublishTimerRef.current);
       presencePublishTimerRef.current = null;
     }
     lastPresencePublishAtRef.current = 0;
-  }, [graphRoom.canPublishPresence]);
+  }, [projectRoom.canPublishPresence]);
   React.useEffect(
     () => () => {
       if (presencePublishTimerRef.current !== null) {
@@ -1481,16 +1561,16 @@ function WorkbenchBody({
   }, [presenceSelectionKey, schedulePresenceSnapshot]);
   // Server clears idle cursors after ~5s without updates; keepalives while parked.
   React.useEffect(() => {
-    if (!graphRoom.canPublishPresence) return;
+    if (!projectRoom.canPublishPresence) return;
     const timer = window.setInterval(() => {
       if (!presenceOverCanvasRef.current || !presenceCursorRef.current) return;
       schedulePresenceSnapshot();
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [graphRoom.canPublishPresence, schedulePresenceSnapshot]);
+  }, [projectRoom.canPublishPresence, schedulePresenceSnapshot]);
   const remoteDragPreviews = useRemoteDragPreviews(
-    graphRoom.participants,
-    graphRoom.localSessionId,
+    projectRoom.participants,
+    projectRoom.localSessionId,
     localDraggingNodeIdsRef,
   );
   const selectedNodeCount = selectedNodeIds.length;
@@ -1635,13 +1715,13 @@ function WorkbenchBody({
 
   const runSelectionBusy = !registry || running || selectedWorkflowCount === 0;
   const runSelectedDisabled =
-    !canExecuteGraph ||
-    !graphOperationsTrusted ||
+    !canStartRun ||
+    !projectEditsTrusted ||
     runSelectionBusy ||
     !selectedNodesAreRunnable;
   const runSelectedWithDependenciesDisabled =
-    !canExecuteGraph ||
-    !graphOperationsTrusted ||
+    !canStartRun ||
+    !projectEditsTrusted ||
     runSelectionBusy ||
     !selectedWithDependenciesAreRunnable;
   const globalIssues = React.useMemo<GlobalIssue[]>(() => {
@@ -1658,8 +1738,9 @@ function WorkbenchBody({
     }
     if (persistenceError) {
       issues.push({
+        // The id is the toast's, whose owner still names this channel "graph".
         id: "graph",
-        title: "Graph",
+        title: "Save",
         message: persistenceError,
       });
     }
@@ -1685,6 +1766,30 @@ function WorkbenchBody({
   );
   const onNodesChange: OnNodesChange<CanvasNode> = React.useCallback(
     (changes) => {
+      const agents = authoredDocumentRef.current.agents;
+      for (const change of changes) {
+        if (change.type === "add" || change.type === "replace") continue;
+        const agent = agents.find((item) => item.id === change.id);
+        if (!agent) continue;
+        if (change.type === "select")
+          setSelectedAgentIds((current) => {
+            const next = new Set(current);
+            if (change.selected) next.add(agent.id);
+            else next.delete(agent.id);
+            return next;
+          });
+        if (change.type === "remove")
+          applyAuthoringCommands([
+            { kind: "remove_agent", agent_id: agent.id },
+          ]);
+        if (change.type === "position" && change.position && !change.dragging)
+          applyAuthoringCommands([
+            {
+              kind: "configure_agent",
+              agent: { ...agent, position: change.position },
+            },
+          ]);
+      }
       const gridSettings = canvasGridSettingsRef.current;
       const gridBypass = bypassSnapRef.current;
       const draggingPositions = changes.flatMap((change) => {
@@ -1957,20 +2062,28 @@ function WorkbenchBody({
           return changed ? next : current;
         });
       }
-      const measuredUpdates = workflowChanges.flatMap((change) =>
-        change.type === "dimensions" &&
-        change.dimensions &&
-        typeof change.dimensions.width === "number" &&
-        typeof change.dimensions.height === "number"
-          ? [
-              {
-                id: change.id,
-                width: change.dimensions.width,
-                height: change.dimensions.height,
-              },
-            ]
-          : [],
-      );
+      const measuredUpdates = changes
+        .filter(
+          (change) =>
+            change.type !== "add" &&
+            change.type !== "replace" &&
+            (workflowNodeIds.has(change.id) ||
+              agents.some((agent) => agent.id === change.id)),
+        )
+        .flatMap((change) =>
+          change.type === "dimensions" &&
+          change.dimensions &&
+          typeof change.dimensions.width === "number" &&
+          typeof change.dimensions.height === "number"
+            ? [
+                {
+                  id: change.id,
+                  width: change.dimensions.width,
+                  height: change.dimensions.height,
+                },
+              ]
+            : [],
+        );
       if (measuredUpdates.length) {
         setNodeMeasurements((current) => {
           let changed = false;
@@ -2004,6 +2117,14 @@ function WorkbenchBody({
       if (semanticChanges.length) applyAuthoringCommands(semanticChanges);
 
       const dragEnded =
+        changes.some(
+          (change) =>
+            change.type === "position" &&
+            change.dragging === false &&
+            authoredDocumentRef.current.agents.some(
+              (agent) => agent.id === change.id,
+            ),
+        ) ||
         workflowChanges.some(
           (change) => change.type === "position" && change.dragging === false,
         ) ||
@@ -2918,7 +3039,7 @@ function WorkbenchBody({
   const onConnectEnd = React.useCallback<OnConnectEnd>(
     (event, connectionState) => {
       setContextualDiscovery(null);
-      if (!registry || !canEditGraph || running) return;
+      if (!registry || !canEditProject || running) return;
       if (!("fromHandle" in connectionState) || !connectionState.fromHandle) {
         return;
       }
@@ -3023,7 +3144,7 @@ function WorkbenchBody({
         return;
       }
 
-      const catalogNodes = catalogNodeSpecs(registry, activeGraph?.id ?? null);
+      const catalogNodes = catalogNodeSpecs(registry, openGraphId);
       const candidates = upstream
         ? upstreamCandidatesFromInput({
             targetPort: port as typeof port & {
@@ -3046,7 +3167,7 @@ function WorkbenchBody({
 
       setLibraryOpen(false);
       setContextualDiscovery({
-        graphId: activeGraph?.id ?? null,
+        graphId: openGraphId,
         sourceNodeId: fromNode.id,
         sourceHandle: handleId,
         sourcePortTitle: port.title ?? port.name,
@@ -3057,12 +3178,12 @@ function WorkbenchBody({
       });
     },
     [
-      activeGraph?.id,
-      canEditGraph,
+      canEditProject,
       canvasSelection,
       commitArtifactViewers,
       flow,
       nodes,
+      openGraphId,
       registry,
       running,
     ],
@@ -3070,7 +3191,8 @@ function WorkbenchBody({
 
   const confirmContextualDiscovery = React.useCallback(
     (candidate: ContextualCandidate, choice: ContextualRouteChoice) => {
-      if (!contextualDiscovery || !registry || !canEditGraph || running) return;
+      if (!contextualDiscovery || !registry || !canEditProject || running)
+        return;
 
       const upstream = contextualDiscovery.direction === "upstream";
       const id = `node-${createUuid()}`;
@@ -3153,7 +3275,7 @@ function WorkbenchBody({
       applyAuthoringCommands,
       attachNodeCallbacks,
       canvasSelection,
-      canEditGraph,
+      canEditProject,
       clearRunError,
       contextualDiscovery,
       registry,
@@ -3162,9 +3284,7 @@ function WorkbenchBody({
   );
 
   const activeContextualDiscovery =
-    canEditGraph &&
-    !running &&
-    contextualDiscovery?.graphId === (activeGraph?.id ?? null)
+    canEditProject && !running && contextualDiscovery?.graphId === openGraphId
       ? contextualDiscovery
       : null;
 
@@ -3313,7 +3433,7 @@ function WorkbenchBody({
             ...attachNodeCallbacks(node.data),
             historyContext: {
               workspaceId,
-              graphId: activeGraph?.id ?? null,
+              graphId: openGraphId,
               isDirty,
             },
             secretStatuses: nodeSecretStatuses[node.id] ?? {},
@@ -3335,7 +3455,10 @@ function WorkbenchBody({
                 ),
               ]),
             ),
-            secretInputScope: `${activeGraph?.id ?? "unsaved"}:${activeGraph?.revision ?? "none"}`,
+            secretInputScope: `${openGraphId ?? "unsaved"}:${activeGraph?.revision ?? "none"}`,
+            // Freshness of this node's own instance, looked up by the instance
+            // the card is drawing. A Run computed it; the Run is not what owns it.
+            instanceState: nodeInstanceStates[node.id] ?? null,
             onApplyNodeSecret: applyConfiguredNodeSecret,
             onRemoveNodeSecret: removeConfiguredNodeSecret,
             mappedInputPorts: mappedInputPortsForNode(
@@ -3382,6 +3505,8 @@ function WorkbenchBody({
       isDirty,
       nodeSecretStatuses,
       nodes,
+      nodeInstanceStates,
+      openGraphId,
       registry,
       removeConfiguredNodeSecret,
       workspaceId,
@@ -3707,8 +3832,61 @@ function WorkbenchBody({
     ],
   );
 
+  const agentCanvasNodes = React.useMemo<AgentNode[]>(
+    () =>
+      authoredDocument.agents.map((agent) => ({
+        id: agent.id,
+        type: "grafyAgent",
+        position: agent.position ?? { x: 0, y: 0 },
+        width: agent.width,
+        height: agent.height,
+        measured: nodeMeasurements[agent.id],
+        style: { width: agent.width, height: agent.height },
+        selected: selectedAgentIds.has(agent.id),
+        draggable: canEditProject,
+        deletable: canEditProject,
+        data: {
+          agent,
+          scope:
+            projectId && openGraphId
+              ? {
+                  workspaceId,
+                  projectId,
+                  graphId: openGraphId,
+                  agentId: agent.id,
+                }
+              : null,
+          canEdit: canEditProject,
+          canSend: canStartRun,
+          configure: (next) => {
+            if (canEditProject)
+              applyAuthoringCommands([
+                { kind: "configure_agent", agent: next },
+              ]);
+          },
+          remove: () => {
+            if (canEditProject)
+              applyAuthoringCommands([
+                { kind: "remove_agent", agent_id: agent.id },
+              ]);
+          },
+        },
+      })),
+    [
+      nodeMeasurements,
+      authoredDocument.agents,
+      selectedAgentIds,
+      canEditProject,
+      canStartRun,
+      projectId,
+      openGraphId,
+      workspaceId,
+      applyAuthoringCommands,
+    ],
+  );
   const allCanvasNodes = React.useMemo<CanvasNode[]>(() => {
     const combined = [
+      ...agentCanvasNodes,
       ...annotationCanvasNodes,
       ...canvasNodes,
       ...artifactViewerCanvasNodes,
@@ -3755,8 +3933,8 @@ function WorkbenchBody({
         }
       }
       const remoteColor = remoteSelectionColor(
-        graphRoom.participants,
-        graphRoom.localSessionId,
+        projectRoom.participants,
+        projectRoom.localSessionId,
         node.id,
       );
       if ((positioned.data.remoteSelectionColor ?? null) === remoteColor) {
@@ -3771,13 +3949,14 @@ function WorkbenchBody({
       } as CanvasNode;
     });
   }, [
+    agentCanvasNodes,
     annotationCanvasNodes,
     artifactViewerCanvasNodes,
     bypassSnap,
     canvasGridSettings,
     canvasNodes,
-    graphRoom.localSessionId,
-    graphRoom.participants,
+    projectRoom.localSessionId,
+    projectRoom.participants,
     remoteDragPreviews,
     transientNodePositions,
   ]);
@@ -3929,25 +4108,78 @@ function WorkbenchBody({
   const firefoxDynamicButtonProps: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     autoComplete: "off";
   } = { autoComplete: "off" };
-  const visibleExecutionNodeTitle = visibleExecution?.activeNodeId
-    ? nodes.find((node) => node.id === visibleExecution.activeNodeId)?.data.spec
-        .title
+  // The activity bar answers one question: what is this Graph busy with? The
+  // room's open Runs are the answer — this tab's own included, and no more
+  // privileged than anyone else's. A Project answers several demands at once, so
+  // there is no "current execution" to name.
+  const [cancellingRunId, setCancellingRunId] = React.useState<string | null>(
+    null,
+  );
+  const cancelGraphRun = React.useCallback(
+    (runId: string) => {
+      if (!projectId) return;
+      setCancellingRunId(runId);
+      void cancelRun(workspaceId, projectId, runId)
+        .catch((error: unknown) => {
+          setRunError(
+            error instanceof Error
+              ? error.message
+              : "The Run could not be cancelled.",
+          );
+        })
+        .finally(() => setCancellingRunId(null));
+    },
+    [projectId, setRunError, workspaceId],
+  );
+  // Newest last, as the room publishes them: the newest is what a person is
+  // watching, and the count beside it says how many more are open.
+  const newestRun = openGraphRuns.length
+    ? openGraphRuns[openGraphRuns.length - 1]
     : null;
-  const executionCancelling = visibleExecution?.status === "cancelling";
-  const visibleExecutionTitle =
-    visibleExecutionNodeTitle ??
-    (executionCancelling ? "Stopping execution…" : "Preparing…");
-  const visibleExecutionStatus =
-    visibleExecution?.statusError ??
-    (executionCancelling
-      ? "Waiting for the current node to stop"
-      : visibleExecution?.status === "queued"
-        ? visibleExecution.queuePosition
-          ? `Queue position ${visibleExecution.queuePosition}`
-          : "Waiting for a worker"
-        : visibleExecution?.status === "running"
-          ? "Processing node"
-          : "Starting execution");
+  const newestRunTitle = (() => {
+    if (!newestRun || newestRun.targets.length === 0) return null;
+    const target = newestRun.targets[0];
+    if (!target) return null;
+    const first = nodes.find((node) => node.id === target.node_id);
+    const title = first ? first.data.spec.title : "A node";
+    const rest = newestRun.targets.length - 1;
+    return rest > 0 ? `${title} and ${rest} more` : title;
+  })();
+  const runActivity: WorkbenchActivity | null =
+    ((): WorkbenchActivity | null => {
+      if (!newestRun) {
+        // This tab asked for a Run the room has not published yet.
+        if (!running) return null;
+        return {
+          eyebrow: "Run",
+          title: runningScope === "all" ? "The whole graph" : "The selection",
+          message: "Starting",
+          tone: "working",
+        };
+      }
+      const cancelling = cancellingRunId === newestRun.run_id;
+      return {
+        eyebrow:
+          openGraphRuns.length > 1 ? `Runs · ${openGraphRuns.length}` : "Run",
+        title: newestRunTitle ?? "Running",
+        message: cancelling
+          ? "Waiting for the computation to stop"
+          : newestRun.starter
+            ? `Started by ${newestRun.starter.display_name}`
+            : "Running",
+        tone: cancelling ? "cancelling" : "working",
+        action: {
+          kind: "cancel",
+          label: cancelling ? "Cancelling" : "Cancel",
+          ariaLabel: cancelling
+            ? "Cancelling this Run"
+            : "Cancel this Run for everyone",
+          disabled:
+            !canCancelRun || !newestRun.cancellable || cancellingRunId !== null,
+          onInvoke: () => cancelGraphRun(newestRun.run_id),
+        },
+      };
+    })();
   const viewerActivity = latestArtifactViewerActivity?.value.activity ?? null;
   let viewerActivityAction: WorkbenchActivity["action"];
   if (latestArtifactViewerActivity && viewerActivity?.retry) {
@@ -3972,29 +4204,8 @@ function WorkbenchBody({
         ),
     };
   }
-  const workbenchActivity: WorkbenchActivity | null = visibleExecution
-    ? {
-        eyebrow: "Execution",
-        title: visibleExecutionTitle,
-        message: visibleExecutionStatus,
-        tone: executionCancelling
-          ? "cancelling"
-          : visibleExecution.statusError
-            ? "error"
-            : "working",
-        action: {
-          kind: "cancel",
-          label: executionCancelling ? "Cancelling" : "Cancel",
-          ariaLabel: executionCancelling
-            ? "Cancelling execution"
-            : "Cancel execution",
-          disabled:
-            !canCancelExecution ||
-            !visibleExecution.executionId ||
-            executionCancelling,
-          onInvoke: () => void cancelCurrentExecution(),
-        },
-      }
+  const workbenchActivity: WorkbenchActivity | null = runActivity
+    ? runActivity
     : viewerActivity
       ? {
           eyebrow: "Linked view",
@@ -4156,7 +4367,7 @@ function WorkbenchBody({
       toggleSidePanel: () => toggleSidePanelView("artifacts"),
       generatedPanelOpen: sidePanelIsOpen && sidePanelView === "generated",
       toggleGeneratedPanel: () => toggleSidePanelView("generated"),
-      activeGraphId: activeGraph?.id ?? null,
+      activeGraphId: projectId,
       graphName,
       isDirty,
       saving,
@@ -4178,38 +4389,50 @@ function WorkbenchBody({
         await saveCurrentGraph(name);
       },
       renameGraph: async (graph: SavedGraphSummary, name: string) => {
-        if (!canEditGraph) {
-          throw new Error("You do not have permission to rename graphs.");
+        // A row in the rail or the browser is a Project. Renaming it is a
+        // different act from naming the Graph the canvas shows, which the name
+        // field above does with the document.
+        if (!canEditProject) {
+          throw new Error("You do not have permission to rename Projects.");
         }
-        if (activeGraph?.id === graph.id) {
-          setGraphName(name);
-          await saveCurrentGraph(name);
+        if (graph.id !== projectId || !canSubmitRoomCommands) {
+          await renameProjectRemote(workspaceId, graph, name);
+          void refreshSavedGraphs();
           return;
         }
-        await renameSavedGraphRemote(workspaceId, graph, name);
+        const { head: renamedHead } = await submitRoomBatch([
+          toRoomRenameProjectCommand(name, savedProjectName),
+        ]);
+        await checkpointProject(workspaceId, projectId, {
+          expected_room_epoch: renamedHead.room_epoch,
+          expected_sequence: renamedHead.collaboration_sequence,
+        });
         void refreshSavedGraphs();
       },
       deleteGraph: async (graph: SavedGraphSummary) => {
-        if (!canDeleteGraph) {
-          throw new Error("You do not have permission to delete graphs.");
+        if (!canDeleteProject) {
+          throw new Error("You do not have permission to delete Projects.");
         }
         await removeSavedGraph(graph);
       },
     };
   }, [
     activeGraph,
-    canDeleteGraph,
-    canEditGraph,
+    canDeleteProject,
+    canEditProject,
+    canSubmitRoomCommands,
     closeGraphBrowser,
     deletingGraphId,
     graphName,
     isDirty,
     localAuthoringEnabled,
     openingGraphId,
+    projectId,
     refreshSavedGraphs,
     removeSavedGraph,
     running,
     saveCurrentGraph,
+    savedProjectName,
     saving,
     setGraphName,
     setGridPanelOpen,
@@ -4217,6 +4440,7 @@ function WorkbenchBody({
     setSidePanelView,
     sidePanelIsOpen,
     sidePanelView,
+    submitRoomBatch,
     workspaceId,
   ]);
   usePublishWorkbenchChrome(chromeValue);
@@ -4231,13 +4455,13 @@ function WorkbenchBody({
       >
         {executionAnnouncement}
       </span>
-      {activeGraph ? (
+      {projectId ? (
         <GraphRoomRecoveryNotice
-          readiness={displayedGraphReadiness.state}
-          status={graphRoom.status}
-          failure={graphRoom.failure}
-          terminalReason={graphRoom.terminalReason}
-          onRetry={graphRoom.retry}
+          readiness={projectReadiness.state}
+          status={projectRoom.status}
+          failure={projectRoom.failure}
+          terminalReason={projectRoom.terminalReason}
+          onRetry={projectRoom.retry}
           onReload={() => window.location.reload()}
         />
       ) : null}
@@ -4249,7 +4473,7 @@ function WorkbenchBody({
         onContextMenu={canvasMenuTrigger.onContextMenu}
         onKeyDown={canvasMenuTrigger.onKeyDown}
         onPointerMove={(event) => {
-          if (!graphRoom.canPublishPresence || !flow) return;
+          if (!projectRoom.canPublishPresence || !flow) return;
           presenceOverCanvasRef.current = true;
           presenceClientPointRef.current = {
             x: event.clientX,
@@ -4266,6 +4490,31 @@ function WorkbenchBody({
           schedulePresenceSnapshot();
         }}
       >
+        {projectHasNoGraph ? (
+          <div role="status" {...stylex.props(emptyProjectStyles.panel)}>
+            <p {...stylex.props(emptyProjectStyles.title)}>
+              This Project holds no Graphs.
+            </p>
+            <p {...stylex.props(emptyProjectStyles.body)}>
+              A Graph is the canvas of nodes you compute with. Add one to start
+              building here.
+            </p>
+            <button
+              type="button"
+              disabled={!canSubmitRoomCommands}
+              title={
+                canSubmitRoomCommands
+                  ? "Add a Graph to this Project"
+                  : "Editing is paused until the Project room is ready."
+              }
+              {...stylex.props(s.toolButton, s.primaryButton)}
+              onClick={addProjectGraph}
+            >
+              <Plus size={13} />
+              Add a Graph
+            </button>
+          </div>
+        ) : null}
         <NodeMenuRegistryContext.Provider value={nodeMenus}>
           <WorkflowCanvas
             fitViewOptions={workbenchFitViewOptions}
@@ -4284,7 +4533,7 @@ function WorkbenchBody({
               closeGraphBrowser();
               setGridPanelOpen(false);
             }}
-            animateEdges={running}
+            animateEdges={runsInProgress}
             gridGap={
               canvasGridSettings.showBackground
                 ? canvasGridSettings.cellSize
@@ -4295,8 +4544,8 @@ function WorkbenchBody({
             }
           >
             <PresenceOverlay
-              participants={graphRoom.participants}
-              localSessionId={graphRoom.localSessionId}
+              participants={projectRoom.participants}
+              localSessionId={projectRoom.localSessionId}
             />
             {selectedWorkflowCount ||
             collectsIntoSequence ||
@@ -4370,7 +4619,7 @@ function WorkbenchBody({
                     type="button"
                     disabled={runSelectedDisabled}
                     title={
-                      !graphOperationsTrusted
+                      !projectEditsTrusted
                         ? "Run is unavailable until the displayed graph is current"
                         : selectedNodesAreRunnable
                           ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
@@ -4392,7 +4641,7 @@ function WorkbenchBody({
                     type="button"
                     disabled={runSelectedWithDependenciesDisabled}
                     title={
-                      !graphOperationsTrusted
+                      !projectEditsTrusted
                         ? "Run is unavailable until the displayed graph is current"
                         : selectedWithDependenciesAreRunnable
                           ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
@@ -4442,6 +4691,30 @@ function WorkbenchBody({
       <aside aria-label="Canvas actions" {...stylex.props(s.toolDock)}>
         <button
           type="button"
+          disabled={!canEditProject}
+          onClick={() => {
+            const id = createUuid();
+            applyAuthoringCommands([
+              {
+                kind: "add_agent",
+                agent: {
+                  id,
+                  name: "Agent",
+                  instructions: "",
+                  model: { kind: "deployment" },
+                  position: canvasCenter({ x: 480, y: 240 }),
+                  width: 360,
+                  height: 480,
+                },
+              },
+            ]);
+            canvasSelection.selectOnly({ agentIds: [id] });
+          }}
+        >
+          Add Agent
+        </button>
+        <button
+          type="button"
           {...firefoxDynamicButtonProps}
           aria-label="Add node"
           disabled={!registry || !localAuthoringEnabled}
@@ -4450,52 +4723,12 @@ function WorkbenchBody({
           onClick={() => {
             closeGraphBrowser();
             setGridPanelOpen(false);
-            setWorkspaceLibraryOpen(false);
             pickerInsertAtRef.current = null;
             setLibraryOpen((open) => !open);
           }}
         >
           <Plus size={14} />
           <span {...stylex.props(s.railLabel)}>Node</span>
-        </button>
-        <button
-          type="button"
-          aria-label="Module library"
-          title="Open the Module library"
-          {...stylex.props(s.railButton)}
-          onClick={() => {
-            closeGraphBrowser();
-            setGridPanelOpen(false);
-            setLibraryOpen(false);
-            setWorkspaceLibraryFocusId(null);
-            setWorkspaceLibraryOpen(true);
-          }}
-        >
-          <Package size={14} />
-          <span {...stylex.props(s.railLabel)}>Library</span>
-        </button>
-        <button
-          type="button"
-          aria-label="Module setup"
-          title={
-            running
-              ? "Stop the current execution before opening Module setup"
-              : !graphOperationsTrusted
-                ? "Module setup is unavailable until the displayed graph is current"
-                : "Set up and publish this graph as a Module"
-          }
-          disabled={running || !graphOperationsTrusted}
-          {...stylex.props(s.railButton)}
-          onClick={() => {
-            closeGraphBrowser();
-            setGridPanelOpen(false);
-            setLibraryOpen(false);
-            setWorkspaceLibraryOpen(false);
-            setPublishModuleOpen(true);
-          }}
-        >
-          <Upload size={14} />
-          <span {...stylex.props(s.railLabel)}>Module</span>
         </button>
         <div {...stylex.props(s.shapesMenuWrap)}>
           <button
@@ -4586,11 +4819,11 @@ function WorkbenchBody({
         <span {...stylex.props(s.railDivider)} />
         <button
           type="button"
-          disabled={!activeGraph}
+          disabled={!projectId}
           title={
-            activeGraph
-              ? "Browse previous executions"
-              : "Save the graph to browse executions"
+            projectId
+              ? "Browse this Project's Runs"
+              : "Save the Project to browse its Runs"
           }
           {...stylex.props(s.railButton)}
           onClick={(event) => {
@@ -4647,14 +4880,19 @@ function WorkbenchBody({
 
       {executionHistoryTarget ? (
         <ExecutionHistoryDrawer
-          key={`${activeGraph?.id ?? "unsaved"}:${executionHistoryTarget.nodeId ?? "all"}:${executionHistoryTarget.executionId ?? "latest"}`}
+          key={`${projectId ?? "unsaved"}:${executionHistoryTarget.nodeId ?? "all"}:${executionHistoryTarget.executionId ?? "latest"}`}
           workspaceId={workspaceId}
-          graphId={activeGraph?.id ?? null}
+          // A Run is a demand inside a Project: without this the drawer's read key
+          // never resolves and it can only ever say "open a saved project", which
+          // made the way to see Runs unreachable from the product while its own
+          // tests kept passing a projectId the caller never sent.
+          projectId={projectId}
+          graphId={openGraphId}
           graphName={graphName}
           nodeId={executionHistoryTarget.nodeId}
           initialExecutionId={executionHistoryTarget.executionId}
           nodeTitles={nodeTitles}
-          executionRunning={running}
+          executionRunning={runsInProgress}
           isDirty={isDirty}
           returnFocusRef={executionHistoryReturnFocusRef}
           onClose={() => setExecutionHistoryTarget(null)}
@@ -4664,7 +4902,7 @@ function WorkbenchBody({
       <CanvasContextMenu
         request={canvasMenu}
         registry={registry ?? null}
-        activeGraphId={activeGraph?.id ?? null}
+        activeGraphId={openGraphId}
         canEdit={localAuthoringEnabled}
         selection={canvasMenuSelection}
         nodeMenus={nodeMenus}
@@ -4675,18 +4913,23 @@ function WorkbenchBody({
       <WorkbenchSidePanel
         workspaceId={workspaceId}
         sidePanel={sidePanel}
-        graphId={activeGraph?.id ?? null}
+        projectId={projectId}
+        graphId={openGraphId}
         nodeTitles={nodeTitles}
         registry={registry ?? null}
-        canSave={canEditGraph}
-        executionRunning={running}
-        onOpenRun={(graphId, executionId) => {
-          if (graphId !== activeGraph?.id) {
-            openGraphInNewTab(graphId);
+        canSave={canEditProject}
+        // A stored result belongs to an instance, and the room is what says one
+        // landed; that push is the panel's cue to read the list again.
+        generatedRefreshToken={projectRoom.instancesRevision}
+        onOpenInstance={(graphId) => {
+          if (graphId !== openGraphId) {
+            // A saved artifact can come from another Graph, and every Graph of
+            // this Project lives behind this address.
+            openProjectInNewTab();
             return;
           }
           executionHistoryReturnFocusRef.current = null;
-          setExecutionHistoryTarget({ nodeId: null, executionId });
+          setExecutionHistoryTarget({ nodeId: null, executionId: null });
         }}
       />
 
@@ -4694,7 +4937,7 @@ function WorkbenchBody({
         <NodeSelector
           open={libraryOpen}
           registry={registry}
-          activeGraphId={activeGraph?.id ?? null}
+          activeGraphId={openGraphId}
           canInsert={localAuthoringEnabled}
           insertDisabledReason={localAuthoringBlockedMessage}
           onOpenChange={(open) => {
@@ -4702,66 +4945,8 @@ function WorkbenchBody({
             setLibraryOpen(open);
           }}
           onAddNode={(spec) => addCatalogNode(spec)}
-          onOpenGraph={openGraphInNewTab}
-          onOpenWorkspaceLibrary={() => {
-            setLibraryOpen(false);
-            setWorkspaceLibraryFocusId(null);
-            setWorkspaceLibraryOpen(true);
-          }}
         />
       ) : null}
-
-      <WorkspaceLibraryDialog
-        workspace={workspace}
-        open={workspaceLibraryOpen}
-        onOpenChange={setWorkspaceLibraryOpen}
-        showTrigger={false}
-        focusedModuleId={workspaceLibraryFocusId}
-        onOpenSourceGraph={openGraphInNewTab}
-      />
-
-      <PublishModuleDialog
-        key={`${activeGraph?.id ?? "unsaved"}:${graphName}`}
-        open={publishModuleOpen}
-        onOpenChange={setPublishModuleOpen}
-        workspaceId={workspaceId}
-        sourceGraphId={activeGraph?.id ?? null}
-        graphName={graphName}
-        revision={activeGraph?.revision ?? null}
-        isDirty={isDirty}
-        canPublish={canPublishModule}
-        canEdit={canEditModuleSource}
-        boundaries={moduleBoundarySummaries}
-        canAddInputBoundary={Boolean(
-          registry?.nodes.some((spec) => spec.operator_id === "module.input"),
-        )}
-        canAddOutputBoundary={Boolean(
-          registry?.nodes.some((spec) => spec.operator_id === "module.output"),
-        )}
-        onAddBoundary={(direction) => {
-          const operatorId =
-            direction === "input" ? "module.input" : "module.output";
-          const spec = registry?.nodes.find(
-            (candidate) => candidate.operator_id === operatorId,
-          );
-          if (spec) addCatalogNode(spec);
-        }}
-        onSelectBoundary={(nodeId) => {
-          canvasSelection.selectOnly({ nodeIds: [nodeId] });
-          void flow?.fitView({
-            nodes: [{ id: nodeId }],
-            padding: 0.45,
-            duration: 220,
-          });
-        }}
-        onViewModule={(moduleId) => {
-          setPublishModuleOpen(false);
-          setWorkspaceLibraryFocusId(moduleId);
-          setWorkspaceLibraryOpen(true);
-        }}
-        onOpenSourceGraph={openGraphInNewTab}
-        onPublished={() => refreshNodeRegistry()}
-      />
 
       <ArtifactFolderDropDialog
         pending={pendingFolderDrop?.drop ?? null}

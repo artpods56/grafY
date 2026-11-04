@@ -2,49 +2,16 @@
 
 import * as React from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { SWRConfig } from "swr";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type {
-  ArtifactSummary,
-  GraphExecutionDetail,
-  GraphExecutionList,
-  GraphExecutionNodeResult,
-  GraphExecutionSummary,
-  RunNodeResult,
-  RunPortOutput,
-} from "@/lib/api";
+import type { RunNodeResult, RunPortArtifact, RunPortOutput } from "@/lib/api";
 import type { WorkflowNodeProgressEntry } from "../types";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-const apiMocks = vi.hoisted(() => ({
-  getGraphExecution:
-    vi.fn<
-      (
-        workspaceId: string,
-        graphId: string,
-        executionId: string,
-      ) => Promise<GraphExecutionDetail>
-    >(),
-  listGraphExecutions:
-    vi.fn<
-      (
-        workspaceId: string,
-        graphId: string,
-        options: { limit: number; nodeId: string },
-      ) => Promise<GraphExecutionList>
-    >(),
-}));
-
 vi.mock("@stylexjs/stylex", () => ({
   create: <Styles,>(styles: Styles) => styles,
   props: () => ({}),
-}));
-
-vi.mock("@/lib/api", () => ({
-  getGraphExecution: apiMocks.getGraphExecution,
-  listGraphExecutions: apiMocks.listGraphExecutions,
 }));
 
 import {
@@ -60,7 +27,6 @@ afterEach(async () => {
     container.remove();
   }
   mountedRoots.clear();
-  vi.clearAllMocks();
 });
 
 function progressEntry(
@@ -80,17 +46,18 @@ function progressEntry(
   };
 }
 
-function artifact(id: string): ArtifactSummary {
+/** What a stored result says about one of its artifacts: a reference. */
+function reference(id: string): RunPortArtifact {
   return {
     artifact_id: id,
     artifact_type: "scalar.text",
     schema_version: 1,
-    content_type: "text/plain",
+    content_hash: null,
   };
 }
 
 function output(port: string, artifactIds: readonly string[]): RunPortOutput {
-  const artifacts = artifactIds.map(artifact);
+  const artifacts = artifactIds.map(reference);
   const refs = artifacts.map((item) => ({
     artifact_id: item.artifact_id,
     artifact_type: item.artifact_type,
@@ -117,59 +84,19 @@ function output(port: string, artifactIds: readonly string[]): RunPortOutput {
   };
 }
 
-function runWithArtifacts(
-  nodeId: string,
-  artifactIds: readonly string[],
+function storedResult(
+  overrides: Partial<RunNodeResult> = {},
+  artifactIds: readonly string[] = ["artifact-1"],
 ): RunNodeResult {
   return {
-    node_id: nodeId,
+    node_id: "node-a",
     status: "succeeded",
     error: null,
+    result_fingerprint: "9f2b61c0d4a7b5e8",
+    created_at: "2026-07-20T08:00:02Z",
     outputs: artifactIds.length ? [output("result", artifactIds)] : [],
-  };
-}
-
-function summary(
-  executionId: string,
-  overrides: Partial<GraphExecutionSummary> = {},
-): GraphExecutionSummary {
-  return {
-    execution_id: executionId,
-    graph_id: "graph-1",
-    graph_revision: 7,
-    status: "succeeded",
-    scope: "selected",
-    requested_node_ids: ["node-a"],
-    created_at: "2026-07-20T08:00:00Z",
-    started_at: "2026-07-20T08:00:01Z",
-    finished_at: "2026-07-20T08:00:02Z",
-    workflow_run_id: "workflow-1",
-    error: null,
-    node_count: 2,
-    artifact_count: 10,
     ...overrides,
   };
-}
-
-function nodeResult(
-  nodeId: string,
-  outputs: readonly RunPortOutput[],
-): GraphExecutionNodeResult {
-  return {
-    node_id: nodeId,
-    position: 0,
-    status: "succeeded",
-    error: null,
-    completed_at: "2026-07-20T08:00:02Z",
-    outputs,
-  };
-}
-
-function detail(
-  execution: GraphExecutionSummary,
-  nodeResults: readonly GraphExecutionNodeResult[],
-): GraphExecutionDetail {
-  return { ...execution, node_results: nodeResults };
 }
 
 async function renderAppendix(props: Partial<NodeExecutionAppendixProps> = {}) {
@@ -177,11 +104,6 @@ async function renderAppendix(props: Partial<NodeExecutionAppendixProps> = {}) {
   document.body.append(container);
   const root = createRoot(container);
   mountedRoots.set(root, container);
-  const swrConfig = {
-    provider: () => new Map(),
-    dedupingInterval: 0,
-    revalidateOnFocus: false,
-  };
   let currentProps: NodeExecutionAppendixProps = {
     nodeId: "node-a",
     nodeTitle: "Extract invoice",
@@ -191,18 +113,17 @@ async function renderAppendix(props: Partial<NodeExecutionAppendixProps> = {}) {
     progress: null,
     run: null,
     historyContext: null,
-    onOpenHistory: undefined,
+    instanceState: null,
     ...props,
   };
-  const render = () => (
-    <SWRConfig value={swrConfig}>
-      <NodeExecutionAppendix {...currentProps} />
-    </SWRConfig>
+  await React.act(async () =>
+    root.render(<NodeExecutionAppendix {...currentProps} />),
   );
-  await React.act(async () => root.render(render()));
   const rerender = async (nextProps: Partial<NodeExecutionAppendixProps>) => {
     currentProps = { ...currentProps, ...nextProps };
-    await React.act(async () => root.render(render()));
+    await React.act(async () =>
+      root.render(<NodeExecutionAppendix {...currentProps} />),
+    );
   };
   return { container, rerender };
 }
@@ -211,8 +132,8 @@ function buttonWithText(
   container: HTMLElement,
   text: string,
 ): HTMLButtonElement {
-  const button = [...container.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent?.trim() === text,
+  const button = [...container.querySelectorAll("button")].find((candidate) =>
+    (candidate.textContent ?? "").trim().startsWith(text),
   );
   if (!(button instanceof HTMLButtonElement)) {
     throw new Error(`Button ${text} was not rendered`);
@@ -221,280 +142,140 @@ function buttonWithText(
 }
 
 describe("NodeExecutionAppendix", () => {
-  it("stays off the canvas when a selected idle node has never run", async () => {
-    const { container } = await renderAppendix({
-      expanded: true,
-      execution: { status: "idle" },
-      progress: null,
-      run: null,
-    });
-    expect(container.querySelector("aside")).toBeNull();
-    expect(container.textContent).toBe("");
-  });
-
-  it("does not mount loading chrome while checking saved history for an idle node", async () => {
-    let resolveHistory!: (value: GraphExecutionList) => void;
-    apiMocks.listGraphExecutions.mockReturnValue(
-      new Promise((resolve) => {
-        resolveHistory = resolve;
-      }),
-    );
-    const { container } = await renderAppendix({
-      expanded: true,
-      execution: { status: "idle" },
-      progress: null,
-      run: null,
-      historyContext: {
-        workspaceId: "workspace-1",
-        graphId: "graph-1",
-        isDirty: false,
-      },
-    });
-
-    expect(apiMocks.listGraphExecutions).toHaveBeenCalledWith(
-      "workspace-1",
-      "graph-1",
-      { limit: 5, nodeId: "node-a" },
-    );
-    expect(container.querySelector("aside")).toBeNull();
-    expect(container.textContent).toBe("");
-
-    await React.act(async () => {
-      resolveHistory({ items: [], next_cursor: null });
-    });
+  it("stays off the canvas when a node has never run and never stored a result", async () => {
+    const { container } = await renderAppendix({ expanded: true });
 
     expect(container.querySelector("aside")).toBeNull();
     expect(container.textContent).toBe("");
   });
 
-  it("reveals durable saved history after the idle-node check completes", async () => {
-    const previousExecution = summary("execution-1");
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [previousExecution],
-      next_cursor: null,
-    });
-    apiMocks.getGraphExecution.mockResolvedValue(
-      detail(previousExecution, [
-        nodeResult("node-a", [output("result", ["historic-artifact"])]),
-      ]),
-    );
-
-    const { container } = await renderAppendix({
-      expanded: true,
-      execution: { status: "idle" },
-      progress: null,
-      run: null,
-      historyContext: {
-        workspaceId: "workspace-1",
-        graphId: "graph-1",
-        isDirty: false,
-      },
-    });
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("History 1");
-    });
-    expect(container.querySelector("aside")).not.toBeNull();
-  });
-
-  it("renders one collapsed footprint for the latest event, error, or materialization", async () => {
-    const { container, rerender } = await renderAppendix({
-      execution: { status: "running" },
-      progress: {
-        omittedCount: 0,
-        entries: [
-          progressEntry(1, "Earlier event"),
-          progressEntry(2, "Latest event"),
-        ],
-      },
-    });
-
-    expect(container.textContent).toContain("Latest event");
-    expect(container.textContent).not.toContain("Earlier event");
-    expect(container.querySelector('[role="tablist"]')).toBeNull();
-    const summary = container.querySelector("aside");
-    expect(summary?.classList).toContain("nodrag");
-    expect(summary?.classList).toContain("nopan");
-    expect(summary?.classList).toContain("nowheel");
-
-    await rerender({
-      execution: { status: "failed", error: "The node failed" },
-    });
-    expect(container.textContent).toBe("The node failed");
-    expect(container.querySelector('[role="alert"]')).not.toBeNull();
-
-    await rerender({
-      execution: { status: "succeeded" },
-      progress: null,
-      run: runWithArtifacts("node-a", ["artifact-1", "artifact-2"]),
-    });
-    expect(container.textContent).toBe("Latest result · 2 artifacts");
-  });
-
-  it("renders nested events latest-first, discloses +N, and keeps message text inert", async () => {
-    const unsafeMessage =
-      '<script>window.__appendixXss = true</script> & "exact"';
-    const { container } = await renderAppendix({
-      expanded: true,
-      execution: { status: "running" },
-      progress: {
-        omittedCount: 1,
-        entries: [
-          progressEntry(1, "Preparing"),
-          progressEntry(2, "Fetching"),
-          progressEntry(3, unsafeMessage, {
-            current: 2,
-            total: 5,
-            sourceNodePath: ["module-a", "child-b"],
-            invocationIndex: 1,
-            invocationPath: [2, 1],
-          }),
-        ],
-      },
-    });
-
-    expect(container.textContent).toContain("Events 4");
-    expect(container.textContent).toContain("module-a › child-b · items 3 › 2");
-    expect(container.textContent).toContain(unsafeMessage);
-    expect(container.querySelector("script")).toBeNull();
-    expect(container.textContent).not.toContain("Preparing");
-    expect(buttonWithText(container, "+2").getAttribute("aria-expanded")).toBe(
-      "false",
-    );
-
-    await React.act(async () => {
-      buttonWithText(container, "+2").click();
-    });
-    expect(container.textContent).toContain("Fetching");
-    expect(container.textContent).toContain("Preparing");
-    expect(container.textContent).toContain("1 earlier update omitted");
-  });
-
-  it("loads expanded history, filters exact node materializations, and opens the exact execution", async () => {
-    const first = summary("execution-1", { graph_revision: 9 });
-    const second = summary("execution-2", { graph_revision: 8 });
-    const third = summary("execution-3", { graph_revision: 7 });
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [first, second, third],
-      next_cursor: null,
-    });
-    apiMocks.getGraphExecution.mockImplementation(
-      (_workspaceId, _graphId, executionId) => {
-        if (executionId === first.execution_id) {
-          return Promise.resolve(
-            detail(first, [
-              nodeResult("node-a", [
-                output("target", ["target-1", "target-2"]),
-              ]),
-              nodeResult("node-ab", [
-                output("other", ["other-1", "other-2", "other-3"]),
-              ]),
-            ]),
-          );
-        }
-        if (executionId === second.execution_id) {
-          return Promise.resolve(
-            detail(second, [nodeResult("node-a", [output("empty", [])])]),
-          );
-        }
-        return Promise.resolve(
-          detail(third, [
-            nodeResult("other-node", [output("other", ["other-4"])]),
-          ]),
-        );
-      },
-    );
-    const onOpenHistory = vi.fn();
+  it("shows the derived instance state and the result its instance stored", async () => {
     const { container } = await renderAppendix({
       expanded: true,
       execution: { status: "succeeded" },
-      run: runWithArtifacts("node-a", ["temporary-1"]),
-      historyContext: {
-        workspaceId: "workspace-1",
-        graphId: "graph-1",
-        isDirty: true,
-      },
-      onOpenHistory,
+      instanceState: "stale",
+      run: storedResult({}, ["artifact-1", "artifact-2"]),
     });
 
-    await vi.waitFor(() => {
-      expect(apiMocks.listGraphExecutions).toHaveBeenCalledWith(
-        "workspace-1",
-        "graph-1",
-        { limit: 5, nodeId: "node-a" },
-      );
-      expect(container.textContent).toContain("History 2");
-    });
-    expect(apiMocks.getGraphExecution).toHaveBeenCalledTimes(3);
-    expect(container.textContent).not.toContain("Current result · temporary");
-
+    expect(container.textContent).toContain("Result 2");
     await React.act(async () => {
-      buttonWithText(container, "History 2").click();
+      buttonWithText(container, "Result").click();
     });
-    expect(container.textContent).toContain("Current result · temporary");
-    expect(container.textContent).toContain("r9");
-    expect(container.textContent).toContain("2 artifacts");
-    expect(container.textContent).not.toContain("3 artifacts");
-    const durableRows = container.querySelectorAll('button[role="listitem"]');
-    expect(durableRows).toHaveLength(1);
-
-    await React.act(async () => {
-      (durableRows[0] as HTMLButtonElement).click();
-    });
-    expect(onOpenHistory).toHaveBeenCalledExactlyOnceWith(
-      "node-a",
-      "execution-1",
-    );
-  });
-
-  it("marks an unsaved current result temporary without making a history request", async () => {
-    const { container } = await renderAppendix({
-      expanded: true,
-      execution: { status: "succeeded" },
-      run: runWithArtifacts("node-a", ["temporary-1", "temporary-2"]),
-      historyContext: {
-        workspaceId: "workspace-1",
-        graphId: null,
-        isDirty: true,
-      },
-    });
-
-    expect(apiMocks.listGraphExecutions).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("History 1");
-    await React.act(async () => {
-      buttonWithText(container, "History 1").click();
-    });
-    expect(container.textContent).toContain("Current result · temporary");
-    expect(container.textContent).toContain("2 artifacts");
+    expect(container.textContent).toContain("Stale");
     expect(container.textContent).toContain(
-      "Save the graph to build durable history.",
+      "The graph changed since this instance last computed.",
     );
-    expect(container.querySelector('button[role="listitem"]')).toBeNull();
+    expect(container.textContent).toContain("2 artifacts");
+    expect(container.textContent).toContain("9f2b61c0d4a7");
   });
 
-  it("revalidates expanded history when the current artifact revision changes", async () => {
-    apiMocks.listGraphExecutions.mockResolvedValue({
-      items: [],
-      next_cursor: null,
-    });
-    const { rerender } = await renderAppendix({
-      expanded: true,
-      historyContext: {
-        workspaceId: "workspace-1",
-        graphId: "graph-1",
-        isDirty: false,
-      },
-    });
-    await vi.waitFor(() => {
-      expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(1);
+  it("names a fresh instance by its stored result, not by a run", async () => {
+    const { container } = await renderAppendix({
+      instanceState: "fresh",
+      run: storedResult(),
     });
 
-    await rerender({
-      execution: { status: "succeeded" },
-      run: runWithArtifacts("node-a", ["new-artifact"]),
+    expect(container.textContent).toContain("Fresh result · 1 artifact");
+  });
+
+  it("keeps a failed instance's own error visible", async () => {
+    const { container } = await renderAppendix({
+      expanded: true,
+      execution: { status: "failed", error: "the node said no" },
+      instanceState: "failed",
+      run: storedResult({ status: "failed", error: "the node said no" }, []),
     });
-    await vi.waitFor(() => {
-      expect(apiMocks.listGraphExecutions).toHaveBeenCalledTimes(2);
+
+    expect(container.textContent).toContain("the node said no");
+    await React.act(async () => {
+      buttonWithText(container, "Result").click();
     });
+    expect(container.textContent).toContain("Failed");
+  });
+
+  it("says so when an instance is queued but has nothing stored yet", async () => {
+    const { container } = await renderAppendix({
+      expanded: true,
+      execution: { status: "queued" },
+      instanceState: "queued",
+    });
+
+    await React.act(async () => {
+      buttonWithText(container, "Result").click();
+    });
+    expect(container.textContent).toContain("Queued");
+    expect(container.textContent).toContain(
+      "No stored result for this instance.",
+    );
+  });
+
+  it("derives a running instance from the canvas overlay alone", async () => {
+    const { container } = await renderAppendix({
+      expanded: true,
+      execution: { status: "running" },
+      progress: {
+        entries: [progressEntry(1, "reading pages")],
+        omittedCount: 0,
+      },
+    });
+
+    await React.act(async () => {
+      buttonWithText(container, "Result").click();
+    });
+    expect(container.textContent).toContain("Running");
+    expect(container.textContent).toContain(
+      "A computation for it is in flight.",
+    );
+  });
+
+  it("reads the stored result of an idle node as stale, never as a history entry", async () => {
+    const { container } = await renderAppendix({
+      expanded: true,
+      execution: { status: "idle" },
+      run: storedResult(),
+    });
+
+    expect(container.textContent).toContain("Result 2");
+    await React.act(async () => {
+      buttonWithText(container, "Result").click();
+    });
+    expect(container.textContent).toContain("Stale");
+    expect(container.textContent).not.toContain("History");
+  });
+
+  it("keeps the collapsed footprint on the latest event while a Run works", async () => {
+    const { container } = await renderAppendix({
+      execution: { status: "running" },
+      progress: {
+        entries: [progressEntry(3, "reading pages", { current: 2, total: 5 })],
+        omittedCount: 0,
+      },
+    });
+
+    expect(container.textContent).toContain("reading pages");
+    expect(container.textContent).toContain("Extract invoice");
+  });
+
+  it("counts the omitted events a Run stopped publishing", async () => {
+    const { container } = await renderAppendix({
+      expanded: true,
+      execution: { status: "running" },
+      progress: {
+        entries: [progressEntry(9, "reading pages", { current: 2, total: 5 })],
+        omittedCount: 4,
+      },
+    });
+
+    expect(container.textContent).toContain("4 earlier updates omitted");
+    expect(container.textContent).toContain("2 / 5");
+  });
+
+  it("shows the error in the footprint when the node's own attempt failed", async () => {
+    const { container } = await renderAppendix({
+      execution: { status: "failed", error: "upstream gone" },
+    });
+
+    expect(container.textContent).toContain("upstream gone");
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
   });
 });

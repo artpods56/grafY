@@ -131,7 +131,7 @@ export function PresenceOverlay({
   const remote = React.useMemo(
     () =>
       participants.filter(
-        (participant) => participant.graph_room_session_id !== localSessionId,
+        (participant) => participant.project_room_session_id !== localSessionId,
       ),
     [localSessionId, participants],
   );
@@ -227,7 +227,7 @@ export function PresenceOverlay({
     const sampleAt = now();
 
     for (const participant of remote) {
-      const sessionId = participant.graph_room_session_id;
+      const sessionId = participant.project_room_session_id;
       seen.add(sessionId);
       const color = actorColor(participant.actor.color);
       const existing = tracks.get(sessionId);
@@ -291,7 +291,7 @@ export function PresenceOverlay({
             const activity = activityLabel(participant.activity);
             return (
               <span
-                key={participant.graph_room_session_id}
+                key={participant.project_room_session_id}
                 {...stylex.props(s.chip)}
                 title={participant.actor.display_name}
               >

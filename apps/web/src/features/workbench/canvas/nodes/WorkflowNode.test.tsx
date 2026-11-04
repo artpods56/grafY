@@ -681,56 +681,6 @@ function enterInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-describe("WorkflowNode module upgrade", () => {
-  it("shows an upgrade affordance when a newer library release exists", () => {
-    const onUpgradeModuleCall = vi.fn();
-    const data = createWorkflowNodeData({
-      operator_id: "graph.module.00000000-0000-4000-8000-000000000001",
-      operator_version: 1,
-      plugin_slug: "graph.module",
-      origin: "module",
-      title: "Normalize text",
-      description: "Module call",
-      catalog_visible: true,
-      runnable: true,
-      config_schema: {},
-      input_schema: {},
-      output_schema: {},
-      inputs: [],
-      outputs: [],
-      module_graph_id: "00000000-0000-4000-8000-000000000001",
-      module_graph_revision: 1,
-      module_id: "10000000-0000-4000-8000-000000000001",
-      is_current_library_release: false,
-    });
-    data.moduleUpgradeRelease = 2;
-    data.onUpgradeModuleCall = onUpgradeModuleCall;
-
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "module-call",
-            data,
-            selected: true,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
-
-    const upgradeButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Upgrade module call to release 2"]',
-    );
-    expect(upgradeButton).not.toBeNull();
-    expect(upgradeButton?.textContent).toContain("Upgrade to release 2");
-    React.act(() => upgradeButton?.click());
-    expect(onUpgradeModuleCall).toHaveBeenCalledWith("module-call");
-    React.act(() => root.unmount());
-  });
-});
-
 describe("WorkflowNode compatibility rendering", () => {
   it("renders an unsupported node with inert historical handles and removal", () => {
     const removeNode = vi.fn();
@@ -1440,6 +1390,10 @@ describe("WorkflowNode execution progress", () => {
     const materializedRun: NonNullable<typeof data.run> = {
       node_id: "module-1",
       status: "succeeded",
+      // A result is addressed by the instance that produced it and the
+      // fingerprint it stored under.
+      result_fingerprint: "fp-module-1",
+      created_at: "2026-08-01T00:00:00Z",
       error: null,
       outputs: [
         {
@@ -1452,11 +1406,13 @@ describe("WorkflowNode execution progress", () => {
           },
           artifacts: [
             {
+              // A stored result hands the canvas a reference, not a summary:
+              // content_type and text were never in it, and nothing here read
+              // them.
               artifact_id: "artifact-1",
               artifact_type: "json.object",
               schema_version: 1,
-              content_type: "application/json",
-              text: '{"ready":true}',
+              content_hash: "sha256:artifact-1",
             },
           ],
         },
@@ -1519,7 +1475,7 @@ describe("WorkflowNode execution progress", () => {
       [...appendix!.querySelectorAll('[role="tab"]')].map(
         (tab) => tab.textContent,
       ),
-    ).toEqual(["Events 4", "History 0"]);
+    ).toEqual(["Events 4", "Result 0"]);
     expect(appendix?.textContent).toContain("1 earlier update omitted");
     expect(appendix?.textContent).toContain("branch-a › inner-1 · items 3 › 2");
     expect(appendix?.textContent).toContain("2 / 5");

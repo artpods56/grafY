@@ -9,10 +9,9 @@ supersedes the historical host-eligible Plugin execution model.
 
 | Owner | Responsibility |
 | --- | --- |
-| `apps/api/src/grafy_api` | HTTP and room transport, application composition, graph execution, and the catalog of operators this build registers. |
-| `apps/mcp/src/grafy_mcp` | MCP tools through an injected graph-workspace operations contract. |
+| `apps/api/src/grafy_api` | HTTP and room transport, application composition, Runs, and the catalog of operators this build registers. |
 | `libs/core/src/grafy_core` | Domain models, application workflows, ports, node runtime, artifact contracts, portable cache and storage readers. |
-| `libs/persistence/src/grafy_persistence` | SQL repositories, transaction adapters, table metadata, database setup, System cutover and baseline persistence operations. |
+| `libs/persistence/src/grafy_persistence` | SQL repositories, transaction adapters, table metadata, database setup, and baseline persistence operations. |
 | `libs/storage/src/grafy_storage` | Local and S3 object-store adapters. |
 | `libs/workbench/src/grafy_workbench` | Application-owned builtin families: image, sequence, value, text, schema, table, and file. |
 | `plugins/{gis,image,llm,mistral,sql,table,typesafe}` | Node families with their own packages and provider dependencies, installed into the API process and registered by `apps/api/src/grafy_api/services/families.py`. |
@@ -49,7 +48,8 @@ retains that bundle rather than copying its fields. `AppIdentity` owns the
 identity and authentication services. Request dependencies retrieve these typed
 resources; domain services receive their dependencies directly.
 
-Shutdown closes the graph-room hub, execution manager, optional Plugin runtime,
+Shutdown stops the Agent turn runtime first, so its turns write their own endings,
+then closes the Project room hub, Run service, optional Plugin runtime,
 and artifact HTTP client in that order. The API's owner lease and database
 lifecycle remain in `main.py`. In-memory room coordination requires the configured
 single API owner; multiple workers are not an interchangeable deployment mode.
@@ -61,38 +61,27 @@ Route-local models describe transport. Route files need not contain application
 services merely to satisfy a directory pattern.
 
 Authentication's cookie, OIDC, PAT, and abuse-handling code remains under
-`v1/routes/auth`. Workspace transport models belong to `v1/routes/workspaces`;
-legacy auth imports remain explicit compatibility aliases. Core identity policy
-and transaction-local workspace authorization live in `grafy_core.application.identity`.
+`v1/routes/auth`. Workspace transport models belong to `v1/routes/workspaces`. Core
+identity policy and transaction-local workspace authorization live in
+`grafy_core.application.identity`.
 Graph workflows authorize through that shared policy, including ordered checks
 for cross-workspace copies.
 
-Core `CollaborationService` owns head commands and checkpoints. Shared
-`application/graph_creation.py` stages the saved graph, revision, head, and initial
-checkpoint for creation workflows. Saved graphs and Modules retain their own
-workflows and identities.
+Core `ProjectService` owns Project metadata, folders, organization and per-user state.
+Core `CollaborationService` owns Project creation, head command batches, checkpoints,
+restore, copy and delete; `application/project_creation.py` stages the Project, its
+first checkpoint and head. A Project belongs to exactly one Workspace.
 
-`grafy_api.realtime` owns the room hub and post-commit publishing. The publisher
+`grafy_api.realtime` owns the Project room hub, post-commit publishing and Run/instance-state fan-out. The publisher
 receives its dependencies instead of finding request resources. HTTP/WebSocket
 adapters remain under collaboration routes.
 
-`graph_contracts.py` owns graph transport compatibility. Legacy heads expose
-flattened nodes/edges/presentation and the `plugin_release` alias. The opt-in
-`GET /v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document` exposes
-collaboration metadata plus canonical `SavedGraphDocument`, whose node field is
-`plugin_release_pin`. Existing command/checkpoint responses and room protocol v1
-retain the legacy head shape through `CollaborativeHeadResponse.from_head`.
-The frontend uses canonical head state and normalizes legacy command/checkpoint
-and room responses through one client adapter. Shared layout, pin-presence and
-legacy edge-conversion rules live beside the canonical models. See the [migration decision](../plans/backend-cleanup/graph-transport-migration.md).
+`project_contracts.py` owns Project transport. `ProjectHeadResponse` is the one head shape: collaboration metadata (room epoch, collaboration sequence, checkpoint sequence and checkpoint revision) paired with the canonical `ProjectDocument`. The head, command and checkpoint responses and the room frames in `grafy_api.realtime.protocol` all carry it, so no client normalisation step sits between the server and the canvas. Shared layout and edge-conversion rules live beside the canonical models.
 
 ## MCP
 
-API-owned `mcp/mount.py` authenticates workspace-bound PAT requests and binds a
-request-scoped caller. `mcp/operations.py` implements the operations interface
-used by the independent MCP package. MCP does not import API routes, persistence,
-object storage, or Plugin implementations. Token scope and current workspace
-membership both constrain access.
+There are no MCP packages in this repository; they were removed before the Projects
+rework. A future MCP surface would use the same Project command batches as the web.
 
 ## Node families and the catalog
 
@@ -106,57 +95,46 @@ artifact types and no catalog entry.
 
 The publication and isolated-hosting modules that used to sit under
 `apps/api/src/grafy_api/plugins`, the guest protocol under `grafy_core.runtime`, and the
-standalone egress broker are removed. Reading historical data still normalises: a stored
-document or run request that carries a `plugin_release_pin` key has it dropped and
-`kind: "plugin"` is read as `kind: "builtin"`.
+standalone egress broker are removed. Nothing reads a retired shape: a stored
+document is parsed at its own schema version only, and a node whose stored `kind` is
+neither `builtin` nor `call` fails validation instead of being rewritten.
 
 `grafy_api.catalog.CatalogSnapshot` owns catalog assembly from the installed family
-declarations and Module library results. An entry is what this build registered,
+declarations. An entry is what this build registered,
 so it carries no release identity and no readiness decision: a family that was
 not installed has no entry at all. The upload extension table is built from the
 same artifact declarations and refuses two owners for one extension.
 `PluginRegistry` retains immutable family declarations and lookup indexes.
 Canonical artifact conversions remain deployment-owned in core.
 
-## Graph execution
+## Runs
 
-`grafy_api.execution` owns preparation, compilation, scheduling, cancellation,
-queue lifecycle, history, materialization, and node execution. HTTP endpoints and
-`RunResultPresenter` remain under execution routes. The route model module keeps
-compatibility aliases for durable requests and events. See the
-[execution ownership reference](../../apps/api/src/grafy_api/execution/README.md).
+`grafy_api.runs` owns Run planning, scheduling and node computation; HTTP endpoints
+and models stay under `v1/routes/runs`. See the
+[Runs ownership reference](../../apps/api/src/grafy_api/runs/README.md) and
+[ADR 0020](../adr/0020-projects-hold-graphs-and-results-belong-to-nodes.md).
 
-Preflight resolves each node's contract and secret requirements once, and the
-compiler reuses that preparation. Saved-graph and nested-Module paths share request
-conversions while selecting their own topology.
-
-`GraphExecutionCoordinator` schedules graph work; `NodeExecutionService` executes
-nodes; core `NodeRuntime` owns node-level materialization, invocation, and output
-persistence. These are different responsibilities. Edge projection reads artifact
-rows through the core artifact unit-of-work port, then preserves exact-reference
-checks, projection, conversion order, and provenance. It does not use the HTTP
-artifact reader.
+Results belong to node instances, addressed by fingerprint. The kernel in
+`grafy_core.kernel` expands a Graph (call nodes inlined), fingerprints every instance,
+plans the stale part of a Run's upstream closure and schedules computations with one
+concurrency budget per Project, single-flight per fingerprint. The node computation
+runner reads upstream results from the result store and runs one node in-process through
+core `NodeRuntime`. Any number of Runs are active in a Project; cancelling one withdraws
+its demand only. In-flight state lives in the single API owner, and startup marks
+unfinished Runs interrupted while stored results stay fresh.
 
 ```mermaid
 flowchart LR
-    Request[Run request] --> Prepare[Preflight and compiler]
-    Prepare --> Coordinator[Graph coordinator]
-    Coordinator --> Node[Node execution]
-    Node --> Builtin[Core node runtime]
-    Node --> Plugin[Isolated Plugin invocation]
+    Request[Start Run] --> Plan[Expand, fingerprint, plan]
+    Plan --> Scheduler[Kernel scheduler]
+    Scheduler --> Runner[Node computation runner]
+    Runner --> Builtin[Builtin family in the API process]
+    Runner --> Plugin[Plugin package in the API process]
+    Scheduler --> Store[(Result store)]
 ```
 
-The core persistent invocation-cache adapter shares cache semantics with the node
-runtime. Queued recovery depends on stable request serialization. MAP ordering,
-cancellation, nested execution, and materialization each have behavioral tests.
-System revocation and cutover fence both durable queue rows and transient activity
-markers. Transient activity is registered before preparation and removed after task
-cleanup. Startup only clears stale markers when it holds the exclusive API owner lease;
-otherwise it retains them and refuses startup. Startup recovery has lifespan tests;
-background and synchronous execution races have SQLite and PostgreSQL coverage.
-Synchronous routes use manager-owned activity while retaining HTTP capacity through
-presentation. Saved runs also register activity before preparation, so
-marking saved history interrupted cannot bypass recovery authority.
+Edge projection reads artifact rows through the core artifact unit-of-work port, then
+preserves exact-reference checks, projection, conversion order and provenance.
 
 ## Artifact contracts, reads, and infrastructure
 
@@ -183,10 +161,12 @@ resolution must remain explicit at those workflow boundaries.
 ## Persistence and deployment
 
 `grafy_persistence.adapters.repositories` and `grafy_persistence.schema` are
-packages grouped into identity, graphs, artifacts, execution, plugins, and library.
+packages grouped into identity, projects, runs and results, artifacts, uploads, and library.
 `schema/base.py` owns shared metadata; the schema package loads the tables, and
 `orm.py` maps them. `column_types.py` owns shared Pydantic/enum SQL conversion.
-Alembic revisions under `infra/db/migrations` govern deployed schema changes.
+Alembic revisions under `infra/db/migrations` govern deployed schema changes. The
+history is one baseline revision for the current schema and its downgrade drops
+that schema.
 
 Transaction adapters open task-local sessions and expose the repositories required
 by each port. Writes commit explicitly. Context exit rolls back on error and
@@ -213,10 +193,50 @@ feature suites under `tests/integration`. Frontend tests are colocated with thei
 TypeScript consumers. Schema comparison, generated client consistency, and
 extracted-wheel checks protect contracts that directory checks cannot prove.
 
-Remaining work and per-batch evidence live in the
-[backend cleanup checklist](../plans/backend-cleanup/README.md). Graph transport
-migration and the supported single-owner revocation/recovery implementation are
-complete. The [final audit](../plans/backend-cleanup/final-audit.md) tracks source
-evidence, broad regression and packaging checks, and runtime browser verification.
-The cleanup verification gates are complete with the baseline and platform limits
-listed in that audit. Changes remain in the separate review worktree.
+## Agents
+
+Agents are Graph document values alongside nodes and presentation. Their add,
+configure and remove commands use the same validated Project command batches as
+other canvas edits. Agent setup survives checkpoints and Project copies; keys
+are excluded from the document contract. Expansion and fingerprints read nodes,
+edges and origins and ignore Agents. ADR 0021 defines the conversation runtime and room
+protocol above this document boundary; the turn loop and the room frames are still to be
+built on the parts described below.
+
+### What a conversation stores, and where the sequence is decided
+
+`agent_conversations` holds one row per thread — Workspace, Project, Graph, Agent id,
+the author who started it, and `next_sequence` — and `agent_conversation_events` holds
+the history, keyed by `(workspace_id, conversation_id, sequence)`. Appending is the only
+write: the adapter moves `next_sequence` with an `UPDATE` conditioned on the sequence the
+event claims, and inserts the event only if that update landed. That condition, not a
+service-side mutex, is what "one turn at a time per conversation" rests on; a losing
+append is an error, never a second row at the same sequence. Events are never updated,
+deleted, or reordered, and a fork copies a prefix into a new conversation that records
+the source id and the sequence it stopped at. `author_user_id` is a bare id like a
+command receipt's actor: a conversation is shared with everyone who can read the Project,
+so it outlives the account that started it instead of vanishing with it.
+
+Only starting a thread checks that the Agent is on the Graph. An append does not, so an
+Agent removed mid-turn still records the reply it was writing.
+
+### Keys and models
+
+An Agent's own credential is one row of `agent_keys`, sealed with
+`GRAFY_CREDENTIAL_ENCRYPTION_KEY` under the same AES-GCM and deployment-key-id discipline
+as a node secret (`grafy_api.credential_keys`), and authenticated against the Workspace,
+Project, Graph and Agent id it belongs to — a row copied beside another Agent does not
+open. It is write-only: the configuration surface answers `configured: true|false` and
+nothing else, and the single read path is the in-process model resolver. Unlike a node
+secret it needs `edit_project`, not `manage_secrets`, because configuring an Agent is a
+canvas edit (ADR 0021).
+
+`AgentModelResolver` turns a document choice into something dialable: the deployment
+default (`GRAFY_AGENT_DEFAULT_BASE_URL`, `_MODEL`, `_API_KEY`) for an Agent that asks for
+none, or the Agent's saved endpoint, model and key for one that carries its own. Both
+return the same value carrying key and transport rule together, and both dial through
+`PinnedPublicAddressTransport` with the deployment's egress policy — so an operator's
+private model server works because it is a trusted destination, and an Agent's own
+endpoint is refused if its name resolves to a private address the operator did not grant.
+Falling back to the deployment key for an Agent with its own endpoint is refused rather
+than quietly taken.

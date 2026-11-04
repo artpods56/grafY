@@ -81,6 +81,12 @@ const registryMocks = vi.hoisted(() => ({
   artifactTypes: [] as {
     key: { id: string; schema_version: number };
     title: string;
+    export_formats?: {
+      format: string;
+      content_type: string;
+      filename: string;
+    }[];
+    bundle?: { format: string; version: number };
   }[],
 }));
 
@@ -168,6 +174,7 @@ function libraryItem(artifactId: string, name: string): PlacedLibraryItem {
     folder_id: null,
     provenance: {
       source: "upload",
+      call_path: [],
       saved_at: "2026-01-01T00:00:00Z",
       original_filename: name,
     },
@@ -468,8 +475,7 @@ describe("artifact on the canvas", () => {
                   artifacts: [
                     {
                       ...count,
-                      content_type: "application/json",
-                      byte_size: 12,
+                      content_hash: "c".repeat(64),
                     },
                   ],
                 },
@@ -906,6 +912,100 @@ describe("artifact on the canvas", () => {
     expect(
       container.querySelector("[data-artifact-file-body]")?.textContent,
     ).toMatch(/^PDF · \d+(\.\d)? [KM]B$/);
+  });
+
+  it("states a produced file's format without a size it was never told", () => {
+    // Nothing in the Library describes this artifact and a stored result names it
+    // by reference alone, so its byte size and uploaded filename do not exist.
+    // The card says "PDF" and stops there rather than showing a size that would
+    // be a guess dressed as a measurement.
+    const { container } = mount({
+      artifact_id: "produced-pdf",
+      artifact_type: "file.pdf",
+      schema_version: 1,
+      content_hash: "b".repeat(64),
+    });
+
+    expect(
+      container.querySelector("[data-artifact-file-body]")?.textContent,
+    ).toBe("PDF");
+    expect(container.textContent).not.toMatch(/\d+([.,]\d)?\s[KM]B/);
+    // No recorded filename, so the card names itself generically. The type's own
+    // identity (`file.pdf@1`) is still shown, and it is not a filename.
+    const label = container.querySelector("[data-artifact-label]")?.textContent;
+    if (label === undefined) throw new Error("Expected an artifact label");
+    // A saved file would lead with its name ("report.pdf"); this one leads with
+    // the generic word, because nothing recorded a name for it.
+    expect(label.startsWith("File")).toBe(true);
+    expect(label.startsWith("produced-pdf")).toBe(false);
+  });
+
+  it("takes the content type a catalog declares for the type it names", () => {
+    // `document.export` is not a file extension or a built-in image type, so the
+    // only thing that can say "this is a PDF" is the serialization the artifact
+    // type catalog declares for it — which is what the content route serves.
+    registryMocks.artifactTypes = [
+      {
+        key: { id: "document.export", schema_version: 1 },
+        title: "Export",
+        export_formats: [
+          {
+            format: "pdf",
+            content_type: "application/pdf",
+            filename: "export.pdf",
+          },
+        ],
+      },
+    ];
+    const { container } = mount({
+      artifact_id: "produced-export",
+      artifact_type: "document.export",
+      schema_version: 1,
+    });
+
+    expect(container.querySelector(".lucide-file-text")).not.toBeNull();
+    expect(
+      container.querySelector("[data-artifact-file-body]")?.textContent,
+    ).toBe("PDF");
+  });
+
+  it("prefers the content type a stored Library item reports", () => {
+    // Where the Library holds the bytes, its summary states the content type they
+    // were stored under. That is a fact about these bytes and outranks what the
+    // type catalog declares for the type an artifact merely names.
+    registryMocks.artifactTypes = [
+      {
+        key: { id: "document.export", schema_version: 1 },
+        title: "Export",
+        export_formats: [
+          {
+            format: "pdf",
+            content_type: "application/pdf",
+            filename: "export.pdf",
+          },
+        ],
+      },
+    ];
+    libraryMocks.items = [
+      {
+        ...libraryItem("stored-export", "Field export"),
+        artifact: {
+          artifact_id: "stored-export",
+          artifact_type: "document.export",
+          schema_version: 1,
+          content_type: "image/png",
+        },
+      },
+    ];
+    const { container } = mount({
+      artifact_id: "stored-export",
+      artifact_type: "document.export",
+      schema_version: 1,
+    });
+
+    // `document.export` is not one of the types the card paints as a picture; the
+    // stored content type is the only reason it does.
+    expect(container.querySelector("img")).not.toBeNull();
   });
 
   it("shows image dimensions in info and fits the preview to its aspect ratio", async () => {

@@ -10,31 +10,29 @@ import {
   CircleAlert,
   LoaderCircle,
   RefreshCw,
+  X,
 } from "lucide-react";
 
 import {
-  getGraphExecution,
-  listGraphExecutions,
+  getInstanceResult,
+  listGraphInstances,
   listLibraryArtifacts,
-  saveRunArtifactToLibrary,
-  type ArtifactSummary,
-  type GraphExecutionDetail,
-  type GraphExecutionList,
-  type GraphExecutionSummary,
+  saveInstanceArtifactToLibrary,
+  type ArtifactOutputValue,
+  type InstanceResult,
+  type InstanceStateList,
+  type InstanceStateName,
   type LibraryList,
   type NodeRegistry,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { artifactTypeKey } from "../canvas/artifact-type-key";
+import { formatArtifactTypeLabel } from "../canvas/artifact-type-label";
 import { artifactTypeColor } from "../canvas/nodes.css";
 import { writeArtifactDrop } from "../model/artifact-drop";
 import { BLOB_ARTIFACT_NOTICE, isBlobArtifact } from "../model/blob-notice";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
-/**
- * How many recorded runs one canvas qualifies for. Each one shown under
- * `Previous runs` costs one detail request while that batch is open.
- */
-const HISTORY_LIMIT = 10;
 
 const s = stylex.create({
   drawer: {
@@ -200,43 +198,6 @@ const s = stylex.create({
     fontWeight: 700,
   },
   batch: { display: "grid", gap: "1px" },
-  batchTrigger: {
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "6px 4px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusSm,
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorText,
-    cursor: "pointer",
-    textAlign: "left",
-  },
-  batchTitle: {
-    color: tokens.colorTextEmphasis,
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 700,
-  },
-  batchMeta: {
-    marginInlineStart: "auto",
-    flexShrink: 0,
-    color: tokens.colorSubtle,
-    fontFamily: MONO,
-    fontSize: "10px",
-    whiteSpace: "nowrap",
-  },
-  chevron: {
-    flexShrink: 0,
-    color: tokens.colorSubtle,
-    transitionDuration: "120ms",
-    transitionProperty: "transform",
-    transform: {
-      default: null,
-      [stylex.when.ancestor("[data-panel-open]")]: "rotate(90deg)",
-    },
-  },
-  batchPanel: { display: "grid", gap: "2px", paddingInlineStart: "6px" },
   groupTrigger: {
     width: "100%",
     display: "flex",
@@ -253,9 +214,17 @@ const s = stylex.create({
   groupTitle: {
     minWidth: 0,
     overflow: "hidden",
-    color: tokens.colorMuted,
+    color: tokens.colorText,
     fontSize: tokens.fontSizeXs,
     fontWeight: 650,
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  groupVia: {
+    minWidth: 0,
+    overflow: "hidden",
+    color: tokens.colorSubtle,
+    fontSize: "10px",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
@@ -270,6 +239,60 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: "10px",
     lineHeight: 1.5,
+  },
+  groupHint: {
+    padding: "4px 4px 2px",
+    color: tokens.colorSubtle,
+    fontSize: "10px",
+    lineHeight: 1.45,
+  },
+  groupNotice: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "5px",
+    padding: "4px 4px 6px",
+    color: tokens.colorWarning,
+    fontSize: "10px",
+    lineHeight: 1.45,
+  },
+  groupMeta: {
+    padding: "4px 4px 5px",
+    color: tokens.colorSubtle,
+    fontFamily: MONO,
+    fontSize: "10px",
+  },
+  chevron: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+    transitionDuration: "120ms",
+    transitionProperty: "transform",
+    transform: {
+      default: null,
+      [stylex.when.ancestor("[data-panel-open]")]: "rotate(90deg)",
+    },
+  },
+  stateBadge: {
+    flexShrink: 0,
+    padding: "1px 6px",
+    borderRadius: "9999px",
+    fontSize: "9px",
+    fontWeight: 700,
+    whiteSpace: "nowrap",
+  },
+  /** The instance is up to date: what is stored is what the node computes now. */
+  stateFresh: {
+    backgroundColor: tokens.colorAccentSoft,
+    color: tokens.colorAccent,
+  },
+  /** A stored result the document has moved past: shown, but not current. */
+  stateStale: {
+    backgroundColor: tokens.colorHover,
+    color: tokens.colorWarning,
+  },
+  stateActive: { backgroundColor: tokens.colorHover, color: tokens.colorMuted },
+  stateFailed: {
+    backgroundColor: tokens.colorDangerHover,
+    color: tokens.colorDanger,
   },
   row: {
     display: "grid",
@@ -351,44 +374,74 @@ const s = stylex.create({
   },
 });
 
-interface GeneratedRowArtifact {
-  readonly artifact: ArtifactSummary;
-  readonly executionId: string;
-  readonly nodeId: string;
-  readonly revision: number;
+/**
+ * One stored artifact of a node instance. A stored result carries references,
+ * so a row holds identity only: the bytes stay behind the artifact routes.
+ */
+interface GeneratedRow {
+  readonly artifactId: string;
+  readonly artifactType: string;
+  readonly schemaVersion: number;
+  readonly contentHash: string | null;
+  /** The output port the artifact was handed back on: the Library save names it. */
+  readonly outputPort: string;
+  /** Its place in a sequence output, `null` for a single artifact. */
+  readonly itemIndex: number | null;
 }
 
-interface GeneratedRowGroup {
+/**
+ * One node instance with something stored. The instance is the address — Graph,
+ * node and call path — and `state` says whether what it shows is current.
+ */
+interface GeneratedGroup {
   readonly key: string;
+  /** The Graph the instance belongs to: a callee for an instance reached by call. */
+  readonly graphId: string;
+  readonly nodeId: string;
+  readonly callPath: readonly string[];
   readonly nodeTitle: string;
-  readonly time: string;
-  readonly artifacts: readonly GeneratedRowArtifact[];
+  /** The call nodes that reach this instance, when it is not in the open Graph. */
+  readonly callPathLabel: string | null;
+  readonly state: InstanceStateName;
+  readonly fingerprint: string;
+  readonly resultFingerprint: string;
+  readonly mapIndex: number | null;
+  readonly error: string | null;
 }
 
-type ExecutionDetailKey = readonly [
-  "graph-execution-detail",
+type InstanceListKey = readonly ["graph-instances", string, string, string];
+
+async function loadInstances([
+  ,
+  workspaceId,
+  projectId,
+  graphId,
+]: InstanceListKey): Promise<InstanceStateList> {
+  return listGraphInstances(workspaceId, projectId, graphId);
+}
+
+type InstanceResultKey = readonly [
+  "instance-result",
   string,
   string,
   string,
+  string,
+  readonly string[],
 ];
 
-async function loadExecutionDetail([
+async function loadInstanceResult([
   ,
   workspaceId,
+  projectId,
   graphId,
-  executionId,
-]: ExecutionDetailKey): Promise<GraphExecutionDetail> {
-  return getGraphExecution(workspaceId, graphId, executionId);
-}
-
-type GeneratedHistoryKey = readonly ["generated-runs", string, string];
-
-async function loadGeneratedHistory([
-  ,
-  workspaceId,
-  graphId,
-]: GeneratedHistoryKey): Promise<GraphExecutionList> {
-  return listGraphExecutions(workspaceId, graphId, { limit: HISTORY_LIMIT });
+  nodeId,
+  callPath,
+]: InstanceResultKey): Promise<InstanceResult> {
+  return getInstanceResult(workspaceId, projectId, {
+    graph_id: graphId,
+    node_id: nodeId,
+    call_path: callPath,
+  });
 }
 
 function timeLabel(value: string): string {
@@ -400,86 +453,148 @@ function timeLabel(value: string): string {
   }).format(date);
 }
 
-function executionTimeLabel(execution: GraphExecutionSummary): string {
-  return timeLabel(
-    execution.finished_at ?? execution.started_at ?? execution.created_at,
-  );
+const STATE_LABELS: Readonly<Record<InstanceStateName, string>> = {
+  fresh: "Fresh",
+  stale: "Stale",
+  queued: "Queued",
+  running: "Running",
+  failed: "Failed",
+};
+
+const STATE_TITLES: Readonly<Record<InstanceStateName, string>> = {
+  fresh: "Fresh: this is what the node computes now.",
+  stale: "Stale: the node changed after this result was stored.",
+  queued: "Queued: a Run is waiting to compute this node.",
+  running: "Running: a Run is computing this node.",
+  failed: "Failed: the last attempt at the node's current state failed.",
+};
+
+function stateLabel(state: InstanceStateName): string {
+  return STATE_LABELS[state] ?? state;
+}
+
+function stateTitle(state: InstanceStateName): string {
+  return STATE_TITLES[state] ?? state;
 }
 
 /**
- * The name this artifact carries in the Library: the artifact's own metadata
- * first, then the registry title, mirroring the server's `_artifact_name`.
+ * The call path of an instance as a person reads it: the call nodes that reach
+ * it, by title, outermost first.
  */
-function artifactLabel(
-  artifact: ArtifactSummary,
-  registry: NodeRegistry | null,
-): string {
-  for (const key of ["download_name", "source_name"]) {
-    const value = artifact.metadata?.[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return artifactTypeTitle(
-    registry,
-    artifact.artifact_type,
-    artifact.schema_version,
-  );
-}
-
-function artifactTypeTitle(
-  registry: NodeRegistry | null,
-  artifactType: string,
-  schemaVersion: number,
-): string {
-  return (
-    registry?.artifact_types.find(
-      (candidate) =>
-        candidate.key.id === artifactType &&
-        candidate.key.schema_version === schemaVersion,
-    )?.title ?? `${artifactType}@${schemaVersion}`
-  );
-}
-
-/**
- * One node's artifacts inside one run. A run records its own revision, so every
- * row in the group names the revision the artifact came from.
- */
-function nodeGroups(
-  detail: GraphExecutionDetail,
+function callPathLabel(
+  callPath: readonly string[],
   nodeTitles: Readonly<Record<string, string>>,
-): GeneratedRowGroup[] {
-  const groups: GeneratedRowGroup[] = [];
-  for (const result of detail.node_results.toSorted(
-    (left, right) => left.position - right.position,
-  )) {
-    const seen = new Set<string>();
-    const artifacts: GeneratedRowArtifact[] = [];
-    for (const output of result.outputs) {
-      for (const artifact of output.artifacts) {
-        if (seen.has(artifact.artifact_id)) continue;
-        seen.add(artifact.artifact_id);
-        artifacts.push({
-          artifact,
-          executionId: detail.execution_id,
-          nodeId: result.node_id,
-          revision: detail.graph_revision,
-        });
-      }
-    }
-    if (!artifacts.length) continue;
+): string | null {
+  if (!callPath.length) return null;
+  return `via ${callPath.map((id) => nodeTitles[id] ?? id).join(" / ")}`;
+}
+
+/**
+ * The instances of one Graph that have something to show, in the order the
+ * Graph's own expansion walks them. An instance without a stored result is a
+ * demand nobody satisfied yet, so it is not an entry here.
+ */
+function instanceGroups(
+  list: InstanceStateList,
+  nodeTitles: Readonly<Record<string, string>>,
+): GeneratedGroup[] {
+  const groups: GeneratedGroup[] = [];
+  for (const instance of list.instances) {
+    const resultFingerprint = instance.last_result_fingerprint;
+    if (!resultFingerprint) continue;
+    const { graph_id, node_id, call_path, map_index } = instance.key;
+    const path = call_path ?? [];
     groups.push({
-      key: `${detail.execution_id}:${result.node_id}`,
-      nodeTitle: nodeTitles[result.node_id] ?? result.node_id,
-      time: timeLabel(result.completed_at),
-      artifacts,
+      key: `${graph_id}:${path.join(">")}:${node_id}:${map_index ?? ""}`,
+      graphId: graph_id,
+      nodeId: node_id,
+      callPath: path,
+      nodeTitle: nodeTitles[node_id] ?? node_id,
+      callPathLabel: callPathLabel(path, nodeTitles),
+      state: instance.state,
+      fingerprint: instance.fingerprint,
+      resultFingerprint,
+      mapIndex: map_index ?? null,
+      error: instance.error,
     });
   }
   return groups;
 }
 
+/** Every artifact a stored output hands back, single or in a sequence. */
+function outputRefs(value: ArtifactOutputValue): {
+  artifactId: string;
+  artifactType: string;
+  schemaVersion: number;
+  contentHash: string | null;
+  itemIndex: number | null;
+}[] {
+  if ("item_refs" in value) {
+    return value.item_refs.map((ref, index) => ({
+      artifactId: ref.artifact_id,
+      artifactType: ref.artifact_type,
+      schemaVersion: ref.schema_version,
+      contentHash: ref.content_hash ?? null,
+      itemIndex: index,
+    }));
+  }
+  return [
+    {
+      artifactId: value.artifact_id,
+      artifactType: value.artifact_type,
+      schemaVersion: value.schema_version,
+      contentHash: value.content_hash ?? null,
+      itemIndex: null,
+    },
+  ];
+}
+
+/**
+ * The rows of one stored result: one per artifact, across every output port.
+ * An artifact handed back on two ports is one row, on the first port that
+ * carries it, because a row is a thing to drag and to file, not a port listing.
+ */
+function resultRows(result: InstanceResult): GeneratedRow[] {
+  const outputs = result.outputs;
+  if (!outputs) return [];
+  const rows: GeneratedRow[] = [];
+  const seen = new Set<string>();
+  for (const [port, value] of Object.entries(outputs)) {
+    for (const ref of outputRefs(value)) {
+      if (seen.has(ref.artifactId)) continue;
+      seen.add(ref.artifactId);
+      rows.push({
+        artifactId: ref.artifactId,
+        artifactType: ref.artifactType,
+        schemaVersion: ref.schemaVersion,
+        contentHash: ref.contentHash,
+        outputPort: port,
+        itemIndex: ref.itemIndex,
+      });
+    }
+  }
+  return rows;
+}
+
+/** What a row is called: the catalog's name for its type. */
+function rowLabel(row: GeneratedRow, registry: NodeRegistry | null): string {
+  return formatArtifactTypeLabel(
+    { id: row.artifactType, schema_version: row.schemaVersion },
+    registry?.artifact_types ?? null,
+  );
+}
+
+/** `tables`, or `tables[2]` for one item of a sequence output. */
+function portLabel(row: GeneratedRow): string {
+  return row.itemIndex === null
+    ? row.outputPort
+    : `${row.outputPort}[${row.itemIndex}]`;
+}
+
 /**
  * A read that failed while its result was already on screen. The content stays;
  * this line names the read those rows came from and asks for the failed one
- * again. `inline` sits inside an open batch instead of under the header.
+ * again. `inline` sits inside an open group instead of under the header.
  */
 function RefreshFailure({
   reason,
@@ -513,32 +628,32 @@ function RefreshFailure({
 }
 
 function ArtifactRow({
-  artifact,
+  row,
   registry,
   saved,
   saving,
   canSave,
   onSave,
 }: {
-  artifact: GeneratedRowArtifact;
+  row: GeneratedRow;
   registry: NodeRegistry | null;
   saved: boolean;
   saving: boolean;
   canSave: boolean;
-  onSave: (artifact: GeneratedRowArtifact, name: string) => void;
+  onSave: (row: GeneratedRow, name: string) => void;
 }) {
-  const label = artifactLabel(artifact.artifact, registry);
+  const label = rowLabel(row, registry);
 
   return (
     <div
       draggable
-      data-artifact-row={artifact.artifact.artifact_id}
+      data-artifact-row={row.artifactId}
       onDragStart={(event) => {
         writeArtifactDrop(event.dataTransfer, {
-          artifact_id: artifact.artifact.artifact_id,
-          artifact_type: artifact.artifact.artifact_type,
-          schema_version: artifact.artifact.schema_version,
-          content_hash: artifact.artifact.sha256 ?? null,
+          artifact_id: row.artifactId,
+          artifact_type: row.artifactType,
+          schema_version: row.schemaVersion,
+          content_hash: row.contentHash,
         });
       }}
       {...stylex.props(s.row)}
@@ -548,7 +663,7 @@ function ArtifactRow({
         {...stylex.props(s.swatch)}
         style={{
           backgroundColor: artifactTypeColor(
-            artifact.artifact.artifact_type,
+            row.artifactType,
             tokens.colorAccent,
           ),
         }}
@@ -567,17 +682,23 @@ function ArtifactRow({
           {...stylex.props(s.saveButton)}
           onClick={() => {
             const name = window.prompt(`Save ${label} into the Library`, label);
-            if (name !== null) onSave(artifact, name);
+            if (name !== null) onSave(row, name);
           }}
         >
           {saving ? "Saving…" : "Save"}
         </button>
       </span>
       <span {...stylex.props(s.rowMeta)}>
-        {artifact.artifact.artifact_type}@{artifact.artifact.schema_version} ·
-        rev {artifact.revision}
+        {portLabel(row)} ·{" "}
+        {artifactTypeKey({
+          id: row.artifactType,
+          schema_version: row.schemaVersion,
+        })}
       </span>
-      {isBlobArtifact(artifact.artifact) ? (
+      {isBlobArtifact({
+        artifact_type: row.artifactType,
+        schema_version: row.schemaVersion,
+      }) ? (
         <span role="status" {...stylex.props(s.rowNotice)}>
           {BLOB_ARTIFACT_NOTICE}
         </span>
@@ -586,7 +707,14 @@ function ArtifactRow({
   );
 }
 
-function NodeGroup({
+/**
+ * What one instance last stored. Mounted only while its group is open: a group
+ * closed again costs no read, and the read is addressed by the instance, not by
+ * the Run that happened to ask for it.
+ */
+function InstanceOutputs({
+  workspaceId,
+  projectId,
   group,
   registry,
   savedArtifactIds,
@@ -594,43 +722,97 @@ function NodeGroup({
   canSave,
   onSave,
 }: {
-  group: GeneratedRowGroup;
+  workspaceId: string;
+  projectId: string;
+  group: GeneratedGroup;
   registry: NodeRegistry | null;
   savedArtifactIds: ReadonlySet<string>;
   savingArtifactId: string | null;
   canSave: boolean;
-  onSave: (artifact: GeneratedRowArtifact, name: string) => void;
+  onSave: (group: GeneratedGroup, row: GeneratedRow, name: string) => void;
 }) {
-  return (
-    <Collapsible.Root defaultOpen {...stylex.props(s.batch)}>
-      <Collapsible.Trigger {...stylex.props(s.groupTrigger)}>
-        <ChevronRight size={12} aria-hidden {...stylex.props(s.chevron)} />
-        <span {...stylex.props(s.groupTitle)}>{group.nodeTitle}</span>
-        <span {...stylex.props(s.batchMeta)}>{group.time}</span>
-      </Collapsible.Trigger>
-      <Collapsible.Panel {...stylex.props(s.groupPanel)}>
-        {group.artifacts.map((artifact) => (
-          <ArtifactRow
-            key={artifact.artifact.artifact_id}
-            artifact={artifact}
-            registry={registry}
-            saved={savedArtifactIds.has(artifact.artifact.artifact_id)}
-            saving={savingArtifactId === artifact.artifact.artifact_id}
-            canSave={canSave}
-            onSave={onSave}
+  const {
+    data,
+    error,
+    isLoading,
+    isValidating,
+    mutate: reloadResult,
+  } = useSWR<InstanceResult, Error, InstanceResultKey>(
+    [
+      "instance-result",
+      workspaceId,
+      projectId,
+      group.graphId,
+      group.nodeId,
+      group.callPath,
+    ],
+    loadInstanceResult,
+    // Re-reading this instance, or reading the result a Run just stored, must
+    // not blank the rows an earlier read already put on screen.
+    { keepPreviousData: true },
+  );
+
+  if (isLoading) {
+    return (
+      <p {...stylex.props(s.groupMessage)}>
+        <LoaderCircle size={11} aria-hidden /> Reading this result…
+      </p>
+    );
+  }
+  if (data) {
+    const rows = resultRows(data);
+    return (
+      <>
+        {error ? (
+          <RefreshFailure
+            inline
+            pending={isValidating}
+            onRetry={() => void reloadResult()}
+            reason={`Showing this result from the last successful read. Refresh failed: ${error.message}`}
           />
-        ))}
-      </Collapsible.Panel>
-    </Collapsible.Root>
+        ) : null}
+        {data.created_at ? (
+          <p {...stylex.props(s.groupMeta)}>
+            stored {timeLabel(data.created_at)}
+          </p>
+        ) : null}
+        {rows.length ? (
+          rows.map((row) => (
+            <ArtifactRow
+              key={row.artifactId}
+              row={row}
+              registry={registry}
+              saved={savedArtifactIds.has(row.artifactId)}
+              saving={savingArtifactId === row.artifactId}
+              canSave={canSave}
+              onSave={(row, name) => onSave(group, row, name)}
+            />
+          ))
+        ) : (
+          <p {...stylex.props(s.groupMessage)}>
+            This result handed back no artifacts.
+          </p>
+        )}
+      </>
+    );
+  }
+  // Nothing was ever read for this instance, so there is nothing here to keep.
+  return (
+    <RefreshFailure
+      inline
+      pending={isValidating}
+      onRetry={() => void reloadResult()}
+      reason={error ? error.message : "Could not read this result."}
+    />
   );
 }
 
-/** The node groups of one recorded run. Mounted only while its batch is open. */
-function RunNodeGroups({
+/** One node instance: its title, whether its result is current, and the rows. */
+function InstanceGroup({
   workspaceId,
-  graphId,
-  executionId,
-  nodeTitles,
+  projectId,
+  group,
+  open,
   registry,
   savedArtifactIds,
   savingArtifactId,
@@ -638,118 +820,118 @@ function RunNodeGroups({
   onSave,
 }: {
   workspaceId: string;
-  graphId: string;
-  executionId: string;
-  nodeTitles: Readonly<Record<string, string>>;
+  projectId: string;
+  group: GeneratedGroup;
+  open: boolean;
   registry: NodeRegistry | null;
   savedArtifactIds: ReadonlySet<string>;
   savingArtifactId: string | null;
   canSave: boolean;
-  onSave: (artifact: GeneratedRowArtifact, name: string) => void;
+  onSave: (group: GeneratedGroup, row: GeneratedRow, name: string) => void;
 }) {
-  const {
-    data,
-    error,
-    isLoading,
-    isValidating,
-    mutate: reloadRun,
-  } = useSWR<GraphExecutionDetail, Error, ExecutionDetailKey>(
-    ["graph-execution-detail", workspaceId, graphId, executionId],
-    loadExecutionDetail,
-    // Re-reading this run, or reading the run that just became the latest one,
-    // must not blank the groups an earlier read already put on screen.
-    { keepPreviousData: true },
-  );
-
-  if (isLoading) {
-    return (
-      <p {...stylex.props(s.groupMessage)}>
-        <LoaderCircle size={11} aria-hidden /> Loading this run…
-      </p>
-    );
-  }
-  if (data) {
-    const groups = nodeGroups(data, nodeTitles);
-    return (
-      <>
-        {error ? (
-          <RefreshFailure
-            inline
-            pending={isValidating}
-            onRetry={() => void reloadRun()}
-            reason={`Showing this run from the last successful read. Refresh failed: ${error.message}`}
-          />
-        ) : null}
-        {groups.length ? (
-          groups.map((group) => (
-            <NodeGroup
-              key={group.key}
-              group={group}
-              registry={registry}
-              savedArtifactIds={savedArtifactIds}
-              savingArtifactId={savingArtifactId}
-              canSave={canSave}
-              onSave={onSave}
-            />
-          ))
-        ) : (
-          <p {...stylex.props(s.groupMessage)}>This run recorded no outputs.</p>
-        )}
-      </>
-    );
-  }
-  // Nothing was ever read for this run, so there is nothing here to keep.
   return (
-    <RefreshFailure
-      inline
-      pending={isValidating}
-      onRetry={() => void reloadRun()}
-      reason={error ? error.message : "Could not load this run."}
-    />
+    <Collapsible.Root defaultOpen={open} {...stylex.props(s.batch)}>
+      <Collapsible.Trigger {...stylex.props(s.groupTrigger)}>
+        <ChevronRight size={12} aria-hidden {...stylex.props(s.chevron)} />
+        <span {...stylex.props(s.groupTitle)}>{group.nodeTitle}</span>
+        {group.callPathLabel ? (
+          <span {...stylex.props(s.groupVia)}>{group.callPathLabel}</span>
+        ) : null}
+        <span
+          title={stateTitle(group.state)}
+          {...stylex.props(
+            s.stateBadge,
+            group.state === "fresh"
+              ? s.stateFresh
+              : group.state === "stale"
+                ? s.stateStale
+                : group.state === "failed"
+                  ? s.stateFailed
+                  : s.stateActive,
+          )}
+        >
+          {stateLabel(group.state)}
+        </span>
+      </Collapsible.Trigger>
+      <Collapsible.Panel {...stylex.props(s.groupPanel)}>
+        {group.state === "stale" ? (
+          <p {...stylex.props(s.groupHint)}>
+            The node changed after this result was stored. Run the Graph to
+            store a fresh one.
+          </p>
+        ) : null}
+        {group.error ? (
+          <p role="status" {...stylex.props(s.groupNotice)}>
+            <CircleAlert size={11} aria-hidden {...stylex.props(s.staleIcon)} />
+            <span {...stylex.props(s.staleText)}>{group.error}</span>
+          </p>
+        ) : null}
+        <InstanceOutputs
+          workspaceId={workspaceId}
+          projectId={projectId}
+          group={group}
+          registry={registry}
+          savedArtifactIds={savedArtifactIds}
+          savingArtifactId={savingArtifactId}
+          canSave={canSave}
+          onSave={onSave}
+        />
+      </Collapsible.Panel>
+    </Collapsible.Root>
   );
 }
 
 export interface GeneratedDrawerProps {
   workspaceId: string;
-  /** Null while the canvas is unsaved, so there is no recorded run to read. */
+  /** The Project that holds the open Graph: results are addressed under it. */
+  projectId: string;
+  /** The open Graph, or null while the canvas has no Graph to read results of. */
   graphId: string | null;
   nodeTitles: Readonly<Record<string, string>>;
   registry: NodeRegistry | null;
-  /** The Library save endpoint needs edit access, so a viewer reads Runs only. */
+  /** The Library save endpoint needs edit access, so a viewer reads only. */
   canSave: boolean;
-  /** A finished run adds a recorded execution, so the newest batch re-reads. */
-  executionRunning: boolean;
-  /** The shell's own control, placed at the end of the header row. */
-  headerEnd?: React.ReactNode;
+  /**
+   * Bumped by the shell when a stored result may have changed — a Run finished,
+   * or the room reported an instance state change. Each change re-reads the
+   * Graph's instances.
+   */
+  refreshToken?: number;
+  /** The panel's own close control, placed at the end of the header row. */
+  onClose?: () => void;
 }
 
 /**
- * The Runs drawer: Run artifacts of one canvas, newest first, grouped by run
- * and then by the node that produced them. Rows drag onto ports with the same
- * payload as Library rows, and Save promotes the exact artifact reference into
- * the Library, leaving the row here.
+ * The Generated panel: the results this Graph's node instances store, by node.
+ *
+ * A result belongs to the instance that produced it — Graph, node and call —
+ * so nothing here is keyed by a Run or by a revision. The state beside each
+ * node says whether what it shows is what the node computes now. Rows drag onto
+ * ports with the same payload as Library rows, and Save files the exact result
+ * the row came from into the Library, leaving the row here.
  */
 export function GeneratedDrawer({
   workspaceId,
+  projectId,
   graphId,
   nodeTitles,
   registry,
   canSave,
-  executionRunning,
-  headerEnd,
+  refreshToken = 0,
+  onClose,
 }: GeneratedDrawerProps) {
-  const historyKey: GeneratedHistoryKey | null = graphId
-    ? ["generated-runs", workspaceId, graphId]
+  const instancesKey: InstanceListKey | null = graphId
+    ? ["graph-instances", workspaceId, projectId, graphId]
     : null;
   const {
-    data: history,
-    error: historyError,
+    data: instances,
+    error: instancesError,
     isLoading,
     isValidating,
-    mutate: refreshHistory,
-  } = useSWR<GraphExecutionList, Error, GeneratedHistoryKey | null>(
-    historyKey,
-    loadGeneratedHistory,
+    mutate: refreshInstances,
+  } = useSWR<InstanceStateList, Error, InstanceListKey | null>(
+    instancesKey,
+    loadInstances,
   );
   const { data: library, mutate: refreshLibrary } = useSWR<
     LibraryList,
@@ -763,18 +945,25 @@ export function GeneratedDrawer({
   );
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
-  const previousRunningRef = React.useRef(executionRunning);
-  React.useEffect(() => {
-    const runCompleted = previousRunningRef.current && !executionRunning;
-    previousRunningRef.current = executionRunning;
-    if (runCompleted) void refreshHistory();
-  }, [executionRunning, refreshHistory]);
+  const refresh = React.useCallback(() => {
+    void refreshInstances();
+    // No Graph means no rows, so the Library was never read for this drawer.
+    if (graphId) void refreshLibrary();
+  }, [graphId, refreshInstances, refreshLibrary]);
 
-  const executions = history?.items ?? [];
-  const latest = executions[0] ?? null;
-  const previous = executions.slice(1);
+  const previousTokenRef = React.useRef(refreshToken);
+  React.useEffect(() => {
+    const resultMayHaveChanged = previousTokenRef.current !== refreshToken;
+    previousTokenRef.current = refreshToken;
+    if (resultMayHaveChanged) refresh();
+  }, [refreshToken, refresh]);
+
+  const groups = React.useMemo(
+    () => (instances ? instanceGroups(instances, nodeTitles) : []),
+    [instances, nodeTitles],
+  );
   /** A failed refresh still has the list the last good read returned. */
-  const historyLoaded = history !== undefined;
+  const instancesLoaded = instances !== undefined;
   const savedArtifactIds = React.useMemo(
     () =>
       new Set((library?.items ?? []).map((item) => item.artifact.artifact_id)),
@@ -782,56 +971,53 @@ export function GeneratedDrawer({
   );
 
   const saveArtifact = React.useCallback(
-    async (artifact: GeneratedRowArtifact, requestedName: string) => {
-      const artifactId = artifact.artifact.artifact_id;
+    async (group: GeneratedGroup, row: GeneratedRow, requestedName: string) => {
       const name = requestedName.trim();
       if (!name || name.length > 160) {
         setSaveError("Library names must be between 1 and 160 characters.");
         return;
       }
-      setSavingArtifactId(artifactId);
+      setSavingArtifactId(row.artifactId);
       setSaveError(null);
       try {
-        await saveRunArtifactToLibrary(workspaceId, {
-          artifact_id: artifactId,
-          execution_id: artifact.executionId,
-          node_id: artifact.nodeId,
-          node_title: nodeTitles[artifact.nodeId] ?? artifact.nodeId,
+        await saveInstanceArtifactToLibrary(workspaceId, {
+          project_id: projectId,
+          graph_id: group.graphId,
+          node_id: group.nodeId,
+          output_port: row.outputPort,
           name,
+          result_fingerprint: group.resultFingerprint,
+          call_path: group.callPath,
+          ...(row.itemIndex === null ? {} : { item_index: row.itemIndex }),
+          ...(group.mapIndex === null ? {} : { map_index: group.mapIndex }),
         });
         await refreshLibrary();
       } catch (error) {
         setSaveError(
           error instanceof Error
             ? error.message
-            : "Could not save this Run artifact into the Library.",
+            : "Could not save this result into the Library.",
         );
       } finally {
         setSavingArtifactId(null);
       }
     },
-    [nodeTitles, refreshLibrary, workspaceId],
+    [projectId, refreshLibrary, workspaceId],
   );
-
-  const refresh = () => {
-    void refreshHistory();
-    // No canvas means no rows, so the Library was never read for this drawer.
-    if (graphId) void refreshLibrary();
-  };
 
   return (
     <section aria-label="Generated artifacts" {...stylex.props(s.drawer)}>
       <header {...stylex.props(s.header)}>
         <span {...stylex.props(s.headerCopy)}>
-          <span {...stylex.props(s.title)}>Run artifacts</span>
+          <span {...stylex.props(s.title)}>Generated</span>
           <span {...stylex.props(s.subtitle)}>
-            Run artifacts of this canvas, newest first
+            Results this Graph stores, by node
           </span>
         </span>
         <button
           type="button"
-          aria-label="Refresh Run artifacts"
-          title="Refresh Run artifacts"
+          aria-label="Refresh Generated artifacts"
+          title="Refresh Generated artifacts"
           disabled={!graphId || isValidating}
           onClick={refresh}
           {...stylex.props(s.headerButton)}
@@ -842,7 +1028,17 @@ export function GeneratedDrawer({
             {...stylex.props(isValidating ? s.spinner : null)}
           />
         </button>
-        {headerEnd}
+        {onClose ? (
+          <button
+            type="button"
+            aria-label="Close Generated artifacts"
+            title="Close Generated artifacts"
+            onClick={onClose}
+            {...stylex.props(s.headerButton)}
+          >
+            <X size={14} aria-hidden />
+          </button>
+        ) : null}
       </header>
 
       {saveError ? (
@@ -852,11 +1048,11 @@ export function GeneratedDrawer({
         </p>
       ) : null}
 
-      {historyError && historyLoaded ? (
+      {instancesError && instancesLoaded ? (
         <RefreshFailure
           pending={isValidating}
-          onRetry={() => void refreshHistory()}
-          reason={`Showing the runs from the last successful read. Refresh failed: ${historyError.message}`}
+          onRetry={() => void refreshInstances()}
+          reason={`Showing the results from the last successful read. Refresh failed: ${instancesError.message}`}
         />
       ) : null}
 
@@ -865,8 +1061,8 @@ export function GeneratedDrawer({
           <ScrollArea.Content {...stylex.props(s.scrollContent)}>
             {!graphId ? (
               <p {...stylex.props(s.message)}>
-                Save this graph before browsing the Run artifacts of this
-                canvas. A run of an unsaved graph is not recorded.
+                Open a Graph to browse the results it stores. A result belongs
+                to the node that produced it, inside one Project.
               </p>
             ) : isLoading ? (
               <p role="status" {...stylex.props(s.message)}>
@@ -875,86 +1071,40 @@ export function GeneratedDrawer({
                   aria-hidden
                   {...stylex.props(s.spinner)}
                 />
-                Loading runs…
+                Reading the results of this Graph…
               </p>
-            ) : historyError && !historyLoaded ? (
+            ) : instancesError && !instancesLoaded ? (
               <p role="alert" {...stylex.props(s.message, s.messageError)}>
                 <CircleAlert size={15} aria-hidden />
-                {historyError.message}
+                {instancesError.message}
                 <button
                   type="button"
                   {...stylex.props(s.retry)}
-                  onClick={() => void refreshHistory()}
+                  onClick={() => void refreshInstances()}
                 >
                   Try again
                 </button>
               </p>
-            ) : !latest ? (
+            ) : !groups.length ? (
               <p {...stylex.props(s.message)}>
-                No run of this canvas is recorded yet. Run the graph to record
-                the artifacts it makes.
+                No node of this Graph has stored a result yet. Run the Graph to
+                store what its nodes produce.
               </p>
             ) : (
-              <>
-                <Collapsible.Root defaultOpen {...stylex.props(s.batch)}>
-                  <Collapsible.Trigger {...stylex.props(s.batchTrigger)}>
-                    <ChevronRight
-                      size={13}
-                      aria-hidden
-                      {...stylex.props(s.chevron)}
-                    />
-                    <span {...stylex.props(s.batchTitle)}>Latest run</span>
-                    <span {...stylex.props(s.batchMeta)}>
-                      {executionTimeLabel(latest)} · rev {latest.graph_revision}
-                    </span>
-                  </Collapsible.Trigger>
-                  <Collapsible.Panel {...stylex.props(s.batchPanel)}>
-                    <RunNodeGroups
-                      workspaceId={workspaceId}
-                      graphId={graphId}
-                      executionId={latest.execution_id}
-                      nodeTitles={nodeTitles}
-                      registry={registry}
-                      savedArtifactIds={savedArtifactIds}
-                      savingArtifactId={savingArtifactId}
-                      canSave={canSave}
-                      onSave={saveArtifact}
-                    />
-                  </Collapsible.Panel>
-                </Collapsible.Root>
-
-                {previous.length ? (
-                  <Collapsible.Root {...stylex.props(s.batch)}>
-                    <Collapsible.Trigger {...stylex.props(s.batchTrigger)}>
-                      <ChevronRight
-                        size={13}
-                        aria-hidden
-                        {...stylex.props(s.chevron)}
-                      />
-                      <span {...stylex.props(s.batchTitle)}>Previous runs</span>
-                      <span {...stylex.props(s.batchMeta)}>
-                        {previous.length} run{previous.length === 1 ? "" : "s"}
-                      </span>
-                    </Collapsible.Trigger>
-                    <Collapsible.Panel {...stylex.props(s.batchPanel)}>
-                      {previous.map((execution) => (
-                        <RunNodeGroups
-                          key={execution.execution_id}
-                          workspaceId={workspaceId}
-                          graphId={graphId}
-                          executionId={execution.execution_id}
-                          nodeTitles={nodeTitles}
-                          registry={registry}
-                          savedArtifactIds={savedArtifactIds}
-                          savingArtifactId={savingArtifactId}
-                          canSave={canSave}
-                          onSave={saveArtifact}
-                        />
-                      ))}
-                    </Collapsible.Panel>
-                  </Collapsible.Root>
-                ) : null}
-              </>
+              groups.map((group, index) => (
+                <InstanceGroup
+                  key={group.key}
+                  workspaceId={workspaceId}
+                  projectId={projectId}
+                  group={group}
+                  open={index === 0}
+                  registry={registry}
+                  savedArtifactIds={savedArtifactIds}
+                  savingArtifactId={savingArtifactId}
+                  canSave={canSave}
+                  onSave={saveArtifact}
+                />
+              ))
             )}
           </ScrollArea.Content>
         </ScrollArea.Viewport>

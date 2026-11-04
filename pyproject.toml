@@ -68,6 +68,7 @@ dev = [
     "pyright>=1.1.411",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.3.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.14.6",
     "prek==0.5.4",
     "types-jsonschema>=4.26.0.20261006",

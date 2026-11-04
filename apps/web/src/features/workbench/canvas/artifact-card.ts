@@ -1,4 +1,8 @@
-import type { ArtifactRef, SavedGraphOrigin } from "@/lib/api";
+import type {
+  ArtifactRef,
+  ArtifactTypeSpec,
+  SavedGraphOrigin,
+} from "@/lib/api";
 import { createUuid } from "@/features/workbench/model/uuid";
 import {
   formatArtifactTypeContract,
@@ -213,6 +217,40 @@ export function isImageArtifact(
 ): boolean {
   if (contentType) return contentType.toLowerCase().startsWith("image/");
   return IMAGE_ARTIFACT_TYPES.has(ref.artifact_type);
+}
+
+/** The catalog's entry for a stored artifact's type, when it lists it. */
+export function artifactTypeFor(
+  ref: Pick<ArtifactRef, "artifact_type" | "schema_version">,
+  artifactTypes: readonly ArtifactTypeSpec[],
+): ArtifactTypeSpec | undefined {
+  return artifactTypes.find(
+    (candidate) =>
+      candidate.key.id === ref.artifact_type &&
+      candidate.key.schema_version === ref.schema_version,
+  );
+}
+
+/**
+ * The content type the catalog declares for an artifact type, or `null`.
+ *
+ * A stored result's artifact is a *reference* — id, artifact type, schema
+ * version, content hash — so a card holding one has never received a content
+ * type. What still names one is the type catalog: `export_formats[0]` is how the
+ * type serializes, which is what the content route serves for it, and an
+ * inline-JSON bundle is named by the bundle contract instead. A Library item's
+ * summary carries the content type actually stored and wins wherever a caller
+ * has one; this is the reference-only answer, and it declares a type rather
+ * than reporting a fact about these bytes.
+ */
+export function declaredArtifactContentType(
+  artifactType: ArtifactTypeSpec | undefined,
+): string | null {
+  const declared = artifactType?.export_formats?.[0]?.content_type;
+  if (declared) return declared;
+  return artifactType?.bundle?.format === "inline-json"
+    ? "application/json"
+    : null;
 }
 
 /** Whether a presentation viewer carries artifacts of its own, so it is a card. */

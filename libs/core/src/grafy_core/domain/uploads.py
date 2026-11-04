@@ -71,7 +71,10 @@ class Upload:
             raise ValueError("Upload actual size must not be negative")
         if self.sha256 is not None and len(self.sha256) != 64:
             raise ValueError("Upload digest must be 64 characters")
-        if self.artifact_schema_version is not None and self.artifact_schema_version < 1:
+        if (
+            self.artifact_schema_version is not None
+            and self.artifact_schema_version < 1
+        ):
             raise ValueError("Upload artifact schema version must be positive")
         if self.created_at.tzinfo is None:
             raise ValueError("Upload timestamp must be timezone-aware")
@@ -89,7 +92,9 @@ class Upload:
             # fields because it never creates an ArtifactObject.
             if self.artifact_id is not None:
                 if self.artifact_type is None:
-                    raise ValueError("A ready upload with an artifact id requires an artifact type")
+                    raise ValueError(
+                        "A ready upload with an artifact id requires an artifact type"
+                    )
                 if self.artifact_schema_version is None:
                     raise ValueError(
                         "A ready upload with an artifact id requires an artifact schema version"

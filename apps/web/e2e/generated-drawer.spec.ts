@@ -1,10 +1,43 @@
 import { expect, test } from "./workbench.fixture";
 
+/**
+ * Generated lists the results this canvas' Project stores, by node instance,
+ * so it is a view a draft cannot offer: an unsaved canvas has no Project to
+ * read results back from. The journey therefore starts by saving — the same
+ * rail Save the person uses — and only then opens Generated from the rail.
+ */
 test("shows Generated inside the existing docked workbench side panel", async ({
   page,
 }) => {
   const viewport = page.viewportSize();
   if (!viewport) throw new Error("Playwright page has no viewport");
+
+  // A draft with something on it: Save needs a dirty canvas to be worth
+  // pressing, and the Run surface the panel later reads needs a node.
+  await page.getByRole("button", { name: "Add node", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Search nodes" })
+    .fill("Test text source");
+  await page.getByRole("option", { name: /^Test text source/ }).click();
+  await page
+    .getByRole("button", { name: "Add to canvas", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // A narrow viewport folds the rail into a navigation drawer; its controls
+  // (Save, Generated) are only reachable once it is open.
+  const openNavigation = page.getByRole("button", { name: "Open navigation" });
+  if (await openNavigation.isVisible()) await openNavigation.click();
+
+  // An unnamed draft is named through a prompt. `window.prompt` opens while
+  // the Save click is still being dispatched, so the answer cannot live after
+  // `await click()` — the click would wait for the dialog and the dialog
+  // would wait for an answer that never arrives.
+  page.once("dialog", (dialog) => void dialog.accept("Pilot pipeline"));
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page).toHaveURL(
+    /\/workspaces\/mobile-test\/projects\/[0-9a-f-]{36}$/,
+  );
 
   const canvas = page.getByRole("region", { name: "Workflow canvas" });
   // Wide screens auto-open Artifacts; measure the closed stage explicitly.
@@ -17,10 +50,12 @@ test("shows Generated inside the existing docked workbench side panel", async ({
   if (!canvasBefore) throw new Error("Workflow canvas has no visible bounds");
 
   // On a phone the rail is a navigation drawer that has to be opened first.
-  const openNavigation = page.getByRole("button", { name: "Open navigation" });
   if (await openNavigation.isVisible()) await openNavigation.click();
   const generatedButton = page.getByRole("button", {
     name: "Generated artifacts",
+    // The opened drawer adds "Refresh…" and "Close…" header buttons; only the
+    // rail item carries the expansion state this spec reads.
+    exact: true,
   });
   await generatedButton.click();
 

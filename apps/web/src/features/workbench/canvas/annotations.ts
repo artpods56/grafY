@@ -13,21 +13,16 @@ export const DEFAULT_ANNOTATION_COLOR = "#475569";
  */
 export const ANNOTATION_Z_INDEX = -1001;
 
-const LEGACY_ANNOTATION_COLORS: Record<string, string> = {
-  slate: "#475569",
-  amber: "#b45309",
-  rose: "#be123c",
-  emerald: "#047857",
-  sky: "#0369a1",
-  violet: "#6d28d9",
-};
-
 /**
  * Curated swatches for the annotation color popover (readable on canvas).
- * The legacy aliases come first, in their declaration order.
  */
 export const ANNOTATION_COLOR_SWATCHES: readonly AnnotationColor[] = [
-  ...Object.values(LEGACY_ANNOTATION_COLORS),
+  "#475569",
+  "#b45309",
+  "#be123c",
+  "#047857",
+  "#0369a1",
+  "#6d28d9",
   "#171717",
   "#78716c",
 ];
@@ -84,8 +79,6 @@ export function normalizeAnnotationColor(
   value: string | null | undefined,
 ): AnnotationColor {
   if (!value) return DEFAULT_ANNOTATION_COLOR;
-  const legacy = LEGACY_ANNOTATION_COLORS[value];
-  if (legacy) return legacy;
   if (HEX_COLOR.test(value)) return value.toLowerCase();
   return DEFAULT_ANNOTATION_COLOR;
 }

@@ -28,22 +28,20 @@ export type PersonalAccessTokenCreateRequest =
 export type ArtifactTypeKey = Schemas["ArtifactTypeKeyResponse"];
 export type ArtifactTypeSpec = Schemas["ArtifactTypeSpecResponse"];
 export type ArtifactConversionSpec = Schemas["ArtifactConversionSpecResponse"];
-export type ArtifactConversionInput = Schemas["ArtifactConversionRequest"];
 export type FieldProjection = Schemas["FieldProjectionResponse"];
 export type Port = Schemas["PortResponse"];
 export type NodeSpec = Schemas["NodeSpecResponse"];
+export type PluginSpec = Schemas["PluginSpecResponse"];
 export type ImageUploadItem = Schemas["ImageUploadItemResponse"];
-export type InputPlugInput = Schemas["RunInputPlugRequest"];
-export type RunNodeInput = Schemas["RunNodeRequest"];
-export type NodeConfigInput = NonNullable<RunNodeInput["config"]>;
-export type RunEdgeInput = Schemas["RunEdgeRequest"];
-export type ArtifactConversionPathInput = NonNullable<
-  RunEdgeInput["conversion_path"]
->;
-export type RunEdgeCollectionMode = RunEdgeInput["collection_mode"];
-export type RunEdgeProjectionInput = NonNullable<RunEdgeInput["projection"]>;
-export type PinnedOutputInput = Schemas["PinnedOutputRequest"];
-export type RunOriginInput = Schemas["RunOriginRequest"];
+
+/** One plug on a node instance: a caller-supplied input port. */
+export type InputPlug = Schemas["GraphInputPlug"];
+/** A node's configuration is an open JSON object keyed by config variable. */
+export type NodeConfig = NonNullable<Schemas["GraphNode"]["config"]>;
+
+export type ArtifactRef = Schemas["ArtifactRef"];
+export type ArtifactRefSequence = Schemas["ArtifactRefSequence"];
+export type ArtifactOutputValue = Schemas["ArtifactOutputValue"];
 export type ArtifactSummary = Schemas["ArtifactSummaryResponse"];
 export type ArtifactExportFormat = Schemas["ArtifactExportFormatResponse"];
 export type TablePage = Schemas["TablePageResponse"];
@@ -64,135 +62,246 @@ export type GeoRenderRasterStyle = Schemas["GeoRasterStyle"];
 export type GeoRenderLayer = Schemas["GeoRenderLayerResponse"];
 export type GeoRenderDescriptor = Schemas["GeoRenderResponse"];
 export type GeoFeatureQuery = Schemas["GeoFeatureQueryResponse"];
-export type RunPortOutput = Schemas["RunPortOutputResponse"];
-export type RunNodeResult = Schemas["RunNodeResponse"];
-export type RunExecution = Schemas["RunExecutionResponse"];
-export type RunExecutionNodeStatus = NodeRunStatus | "running";
 
-interface RunExecutionEventBase {
-  sequence: number;
-  execution_id: string;
-  occurred_at: string;
+// --- Graph documents -------------------------------------------------------
+// A Graph is the unit of authoring. It always lives inside a Project, so a
+// document never travels alone: the Project document carries every Graph.
+
+export type SavedGraphDocument = Schemas["GraphDocument"];
+export type SavedGraphNode = Schemas["GraphNode"];
+/**
+ * One Agent on the canvas (ADR 0021): its name, instructions, model choice and place.
+ *
+ * It is document content, not a node — an Agent's conversations are a separate, append-only
+ * record, and this is only what the card says it is.
+ */
+export type SavedGraphAgent = Schemas["GraphAgent"];
+export type AgentModelChoice =
+  Schemas["DeploymentAgentModel"] | Schemas["CustomAgentModel"];
+export type SavedGraphEdge = Schemas["GraphEdge"];
+export type SavedGraphOrigin = Schemas["GraphOrigin"];
+export type GraphPresentationDocument = Schemas["GraphPresentationDocument"];
+export type GraphNodeKind = SavedGraphNode["kind"];
+
+/** A Graph inside a Project document: its own id, name and document. */
+export type GraphDefinition = Schemas["GraphDefinition"];
+
+/**
+ * The authoring view of one Graph inside a Project. The revision is the
+ * Project's collaboration sequence, which is what a save is compared against.
+ */
+export interface SavedGraph {
+  readonly id: string;
+  readonly name: string;
+  readonly revision: number;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly document: SavedGraphDocument;
 }
 
-interface RunExecutionNodeEventBase extends RunExecutionEventBase {
-  node_path: string[];
-  node_id: string;
-  node_run_id: string | null;
-  invocation_index: number | null;
-  invocation_path: number[];
+// --- Projects --------------------------------------------------------------
+
+export type Project = Schemas["ProjectResponse"];
+export type ProjectSummary = Schemas["ProjectSummaryResponse"];
+export type CreateProjectRequest = Schemas["CreateProjectRequest"];
+export type ProjectDocument = Schemas["ProjectDocument"];
+export type ProjectHead = Schemas["ProjectHeadResponse"];
+/** The room's name for the head the author's document is projected from. */
+export type CollaborativeHead = ProjectHead;
+
+export type ProjectCommandReceipt = Schemas["ProjectCommandReceiptResponse"];
+export type SubmitProjectCommandRequest =
+  Schemas["SubmitProjectCommandRequest"];
+export type SubmitProjectCommandResponse =
+  Schemas["SubmitProjectCommandResponse"];
+/** One entry of a Project command batch: a project-level command or one inside a Graph. */
+export type ProjectCommand = SubmitProjectCommandRequest["commands"][number];
+export type InGraphCommand = Schemas["InGraphCommand"];
+/** A command addressed to one Graph, without its Project wrapper. */
+export type GraphCommandInput = InGraphCommand["command"];
+
+export type CheckpointProjectRequest = Schemas["CheckpointProjectRequest"];
+export type CheckpointProjectResponse = Schemas["CheckpointProjectResponse"];
+export type ProjectCheckpointList = Schemas["ProjectCheckpointListResponse"];
+export type ProjectCheckpoint = Schemas["ProjectCheckpointResponse"];
+export type ProjectCheckpointSummary =
+  Schemas["ProjectCheckpointSummaryResponse"];
+
+export type CopyExactHeadRequest = Schemas["CopyExactHeadRequest"];
+export type CopyExactHeadResponse = Schemas["ProjectResponse"];
+
+export type ProjectBrowserGraph = Schemas["ProjectBrowserItemResponse"];
+export type ProjectBrowserList = Schemas["ProjectBrowserListResponse"];
+/** @deprecated use ProjectBrowserGraph. */
+export type GraphBrowserGraph = ProjectBrowserGraph;
+/** @deprecated use ProjectBrowserList. */
+export type GraphBrowserList = ProjectBrowserList;
+export type SavedGraphSummary = ProjectSummary;
+/** The `/me/projects` feed: every Project this person can reach, by workspace. */
+export type ProjectList = Schemas["ProjectListResponse"];
+
+export type ProjectFolder = Schemas["ProjectFolderResponse"];
+export type ProjectFolderList = Schemas["ProjectFolderListResponse"];
+export type ProjectFolderWriteRequest = Schemas["ProjectFolderWriteRequest"];
+export type AssignProjectFolderRequest = Schemas["AssignProjectFolderRequest"];
+export type ProjectOrganization = Schemas["ProjectOrganizationResponse"];
+export type UserProjectState = Schemas["UserProjectStateResponse"];
+
+// --- Runs and instances ----------------------------------------------------
+// A Run is a demand for freshness, not an execution history entry. Results
+// belong to the node instance that produced them and are addressed by
+// (project, graph, call path, node).
+
+export type RunStatus = Schemas["RunStatus"];
+export type Run = Schemas["RunResponse"];
+export type RunList = Schemas["RunListResponse"];
+export type RunTargetInput = Schemas["RunTargetRequest"];
+export type StartRunRequest = Schemas["StartRunRequest"];
+
+/**
+ * One step of an edge's conversion path, as the Graph stores it.
+ *
+ * The client used to send a run request that carried edges, origins and pinned
+ * values; the head is the request now, so these are stored-Graph shapes rather
+ * than input shapes.
+ */
+export type GraphConversion = Schemas["GraphConversion"];
+
+/** One input plug of a stored node: which port of the operator it stands for. */
+export type GraphInputPlug = Schemas["GraphInputPlug"];
+
+/** A projected read of an upstream field, as the Graph stores it. */
+export type GraphProjectionShape = Schemas["GraphProjection"];
+
+/** How an edge feeds its target: one value, or one per item of a map. */
+export type EdgeCollectionMode = SavedGraphEdge["collection_mode"];
+
+/**
+ * One Graph as a person authors it: its name beside its document.
+ *
+ * A Project holds the Graphs, so this is not a save request of its own — it is
+ * the unit a `replace_document` command carries and the unit the canvas edits.
+ */
+export interface GraphDraft {
+  readonly name: string;
+  readonly document: SavedGraphDocument;
 }
 
-export interface RunExecutionStatusEvent extends RunExecutionEventBase {
-  kind: "execution.status";
-  status: RunExecution["status"];
-  active_node_id: string | null;
+/** @deprecated use EdgeCollectionMode. */
+export type RunEdgeCollectionMode = EdgeCollectionMode;
+/** @deprecated use GraphProjectionShape. */
+export type RunEdgeProjectionInput = GraphProjectionShape;
+/** @deprecated use GraphInputPlug. */
+export type InputPlugInput = GraphInputPlug;
+/** @deprecated use SavedGraphNode. */
+export type RunNodeInput = SavedGraphNode;
+/** @deprecated use GraphConversion. */
+export type ArtifactConversionInput = GraphConversion;
+/** @deprecated use the conversion path of a stored edge. */
+export type ArtifactConversionPathInput = readonly GraphConversion[];
+/** @deprecated a saved Graph is authored, not posted whole. */
+export type CreateSavedGraphRequest = GraphDraft;
+// GraphNodeSecrets is gone rather than aliased. A name that puts Graph where the
+// API puts Project is not merely untidy: it is what made a hook importing
+// getGraphNodeSecrets look plausible for a whole port cycle while the route had
+// moved under the Project.
+/** @deprecated a browser entry is a Project; the Graph it names is where it opens. */
+export type ProjectBrowserItem = ProjectBrowserGraph;
+
+export type InstanceKey = Schemas["InstanceKeyResponse"];
+export type InstanceStateName = Schemas["InstanceState"];
+export type InstanceState = Schemas["InstanceStateResponse"];
+export type InstanceStateList = Schemas["InstanceStateListResponse"];
+export type InstanceResult = Schemas["InstanceResultResponse"];
+
+/**
+ * One artifact of a stored result, as the canvas sees it. A stored result
+ * carries artifact *references*; the bytes and their export formats live behind
+ * the artifact routes, so a reference is enough to render a card and the card
+ * reaches `/artifacts/{id}/content` for the bytes themselves.
+ */
+export interface RunPortArtifact {
+  readonly artifact_id: string;
+  readonly artifact_type: string;
+  readonly schema_version: number;
+  readonly content_hash: string | null;
 }
 
-export interface RunExecutionNodeStatusEvent extends RunExecutionNodeEventBase {
-  kind: "node.status";
-  status: RunExecutionNodeStatus;
+/**
+ * One output port of a stored result. Derived from an InstanceResult's
+ * `outputs` map; the canvas reads runs through this shape.
+ */
+export interface RunPortOutput {
+  readonly port: string;
+  readonly kind: "single" | "sequence";
+  readonly artifacts: readonly RunPortArtifact[];
+  readonly value: ArtifactOutputValue;
 }
 
-export interface RunExecutionNodeProgressEvent extends RunExecutionNodeEventBase {
-  kind: "node.progress";
-  message: string;
-  current: number | null;
-  total: number | null;
+/** One node instance's state plus the outputs of the result it last produced. */
+export interface RunNodeResult {
+  readonly node_id: string;
+  readonly status: "succeeded" | "failed" | "skipped";
+  readonly error: string | null;
+  readonly outputs: readonly RunPortOutput[];
+  readonly result_fingerprint: string | null;
+  readonly created_at: string | null;
 }
 
-export type RunExecutionEvent =
-  | RunExecutionStatusEvent
-  | RunExecutionNodeStatusEvent
-  | RunExecutionNodeProgressEvent;
-export type GraphExecutionStatus = Schemas["GraphExecutionStatus"];
-export type GraphExecutionSummary = Schemas["GraphExecutionSummaryResponse"];
-export type GraphExecutionNodeResult =
-  Schemas["GraphExecutionNodeResultResponse"];
-export type GraphExecutionDetail =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions/{execution_id}"]["get"]["responses"][200]["content"]["application/json"];
-export type GraphExecutionList =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions"]["get"]["responses"][200]["content"]["application/json"];
-export type GraphMaterializations = Schemas["GraphMaterializationsResponse"];
-export type SavedGraphDocument = Schemas["SavedGraphDocument"];
-export type SavedGraphNode = Schemas["SavedGraphNode"];
-export type SavedGraphEdge = Schemas["SavedGraphEdge"];
-export type SavedGraphOrigin = Schemas["SavedGraphOrigin"];
-export type ArtifactRef = Schemas["ArtifactRef"];
-export type ArtifactRefSequence = Schemas["ArtifactRefSequence"];
-export type SavedGraphSummary = Schemas["SavedGraphSummaryResponse"];
-export type GraphBrowserGraph = Schemas["GraphBrowserItemResponse"];
-export type GraphBrowserList = Schemas["GraphBrowserListResponse"];
+export type NodeRunStatus = RunNodeResult["status"];
+
+/** The state of a node instance the canvas renders on a card. */
+export type RunExecutionNodeStatus = InstanceStateName;
+
+/** The Project's active Runs, as the room reports them. */
+export interface ActiveRunSummary {
+  readonly run_id: string;
+  readonly graph_id: string;
+  readonly targets: readonly RunTargetInput[];
+  readonly starter: {
+    readonly actor_id: string;
+    readonly display_name: string;
+    readonly color: string;
+  } | null;
+  readonly started_at: string;
+  readonly cancellable: boolean;
+}
+
+export type ActiveRunLifecycleStatus = RunStatus;
+export type TerminalRunStatus =
+  "succeeded" | "failed" | "cancelled" | "interrupted";
+
+// --- Secrets ---------------------------------------------------------------
+
 export type NodeSecretInput = Schemas["NodeSecretInputResponse"];
 export type NodeSecretStatus = Schemas["NodeSecretStatusResponse"];
-export type GraphNodeSecrets = Schemas["GraphNodeSecretsResponse"];
+export type NodeSecretResolution = Schemas["NodeSecretResolutionResponse"];
+export type ProjectNodeSecrets = Schemas["ProjectNodeSecretsResponse"];
 export type ApplyNodeSecretRequest = Schemas["ConfigureNodeSecretRequest"];
 export type AppliedNodeSecret = NodeSecretStatus;
 
+// --- Catalog ---------------------------------------------------------------
+
 export type NodeRegistry =
   paths["/v1/workspaces/{workspace_id}/nodes"]["get"]["responses"][200]["content"]["application/json"];
-export type UnavailableGraphModule = Schemas["UnavailableGraphModuleResponse"];
-export type ModulePublicationState = Schemas["ModulePublicationState"];
-export type ModuleLibraryEntry = Schemas["ModuleResponse"];
-export type ModuleRelease = Schemas["ModuleReleaseResponse"];
-export type ModuleList = Schemas["ModuleListResponse"];
-export type PublishModuleReleaseRequest =
-  Schemas["PublishModuleReleaseRequest"];
-export type UploadResponse = Schemas["ImageUploadItemResponse"];
-export type UploadTarget = Schemas["UploadTargetResponse"];
-export type RunScopeInput = Schemas["GraphExecutionScope"];
-export type RunRequest =
-  paths["/v1/workspaces/{workspace_id}/runs"]["post"]["requestBody"]["content"]["application/json"];
-export type RunResponse =
-  paths["/v1/workspaces/{workspace_id}/runs"]["post"]["responses"][200]["content"]["application/json"];
-export type SavedGraphList =
-  paths["/v1/workspaces/{workspace_id}/graphs"]["get"]["responses"][200]["content"]["application/json"];
-export type CreateSavedGraphRequest =
-  paths["/v1/workspaces/{workspace_id}/graphs"]["post"]["requestBody"]["content"]["application/json"];
-export type CreateSavedGraphResponse =
-  paths["/v1/workspaces/{workspace_id}/graphs"]["post"]["responses"][201]["content"]["application/json"];
-export type SavedGraph =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}"]["get"]["responses"][200]["content"]["application/json"];
-export type UpdateSavedGraphRequest =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}"]["put"]["requestBody"]["content"]["application/json"];
-export type LegacyCollaborativeHead = Schemas["CollaborativeHeadResponse"];
-export type CollaborativeHead =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/head/document"]["get"]["responses"][200]["content"]["application/json"];
-export type SubmitGraphCommandRequest =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/commands"]["post"]["requestBody"]["content"]["application/json"];
-export type LegacySubmitGraphCommandResponse =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/commands"]["post"]["responses"][200]["content"]["application/json"];
-export type CheckpointGraphRequest =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint"]["post"]["requestBody"]["content"]["application/json"];
-export type LegacyCheckpointGraphResponse =
-  paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/checkpoint"]["post"]["responses"][200]["content"]["application/json"];
-export type SubmitGraphCommandResponse = Omit<
-  LegacySubmitGraphCommandResponse,
-  "head"
-> & {
-  readonly head: CollaborativeHead;
-};
-export type CheckpointGraphResponse = Omit<
-  LegacyCheckpointGraphResponse,
-  "head"
-> & {
-  readonly head: CollaborativeHead;
-};
-export type CopyExactHeadRequest =
-  paths["/v1/workspaces/{workspace_id}/graphs/copies"]["post"]["requestBody"]["content"]["application/json"];
-export type CopyExactHeadResponse =
-  paths["/v1/workspaces/{workspace_id}/graphs/copies"]["post"]["responses"][201]["content"]["application/json"];
 
 export type PortDirection = Port["direction"];
 export type PortShape = Port["shape"];
-export type RunStatus = RunResponse["status"];
-export type NodeRunStatus = RunNodeResult["status"];
 export type JsonSchema = NodeSpec["config_schema"];
 
+// --- Library ---------------------------------------------------------------
+
 export type LibraryProvenance = Schemas["LibraryProvenanceResponse"];
-export type LibraryRun = Schemas["LibraryRunResponse"];
 export type LibraryItem = Schemas["LibraryItemResponse"];
 export type LibraryList = Schemas["LibraryListResponse"];
-export type SaveRunArtifactRequest = Schemas["SaveRunArtifactRequest"];
+export type LibraryFolder = Schemas["LibraryFolderResponse"];
+export type LibraryFolderList = Schemas["LibraryFolderListResponse"];
+export type SaveInstanceArtifactRequest =
+  Schemas["SaveInstanceArtifactRequest"];
 export type SaveUploadedArtifactRequest =
   Schemas["SaveUploadedArtifactRequest"];
+
+// --- Uploads ---------------------------------------------------------------
+
+export type UploadResponse = Schemas["ImageUploadItemResponse"];
+export type UploadTarget = Schemas["UploadTargetResponse"];

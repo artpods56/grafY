@@ -1,7 +1,6 @@
 from typing import cast
 
 from grafy_core.domain.identity import (
-    PlatformTokenScope,
     WorkspaceCapability,
     WorkspaceInvitationStatus,
     WorkspaceKind,
@@ -62,47 +61,10 @@ class WorkspaceCapabilityTupleType(TypeDecorator[tuple[WorkspaceCapability, ...]
             if not isinstance(item, str):
                 raise ValueError("Stored string tuple is not a JSON string list")
             items.append(item)
-        # A stored token keeps the scope list it was issued with. Values that are
-        # no longer capabilities belonged to retired features, so they grant nothing
-        # and are dropped rather than failing the token load. Minting a new token
-        # still validates every scope in `PersonalAccessToken`.
-        known = {capability.value for capability in WorkspaceCapability}
-        return tuple(WorkspaceCapability(item) for item in items if item in known)
-
-
-class PlatformTokenScopeTupleType(TypeDecorator[tuple[PlatformTokenScope, ...]]):
-    impl = JSON
-    cache_ok = True
-
-    def process_bind_param(
-        self,
-        value: tuple[PlatformTokenScope, ...] | None,
-        dialect: Dialect,
-    ) -> list[str] | None:
-        del dialect
-        return None if value is None else [scope.value for scope in value]
-
-    def process_result_value(
-        self,
-        value: object | None,
-        dialect: Dialect,
-    ) -> tuple[PlatformTokenScope, ...] | None:
-        del dialect
-        if value is None:
-            return None
-        if not isinstance(value, list):
-            raise ValueError("Stored platform token scopes are not a JSON string list")
-        items: list[str] = []
-        for item in cast(list[object], value):
-            if not isinstance(item, str):
-                raise ValueError(
-                    "Stored platform token scopes are not a JSON string list"
-                )
-            items.append(item)
         try:
-            return tuple(PlatformTokenScope(item) for item in items)
+            return tuple(WorkspaceCapability(item) for item in items)
         except ValueError as exc:
-            raise ValueError("Stored platform token scope is unknown") from exc
+            raise ValueError("Stored workspace capability is unknown") from exc
 
 
 class WorkspaceKindType(StringEnumType[WorkspaceKind]):
@@ -403,34 +365,6 @@ personal_access_tokens = Table(
     ),
     Index(
         "ix_personal_access_tokens_expiry_revoked",
-        "expires_at",
-        "revoked_at",
-    ),
-)
-
-
-platform_access_tokens = Table(
-    "platform_access_tokens",
-    metadata,
-    Column("id", SaUuid(as_uuid=True), primary_key=True),
-    Column("principal_reference", String(120), nullable=False),
-    Column("public_prefix", String(32), nullable=False),
-    Column("secret_digest", LargeBinary(64), nullable=False),
-    Column("label", String(160), nullable=False),
-    Column("scopes", PlatformTokenScopeTupleType(), nullable=False),
-    Column("expires_at", UTCDateTime(), nullable=False),
-    Column("created_at", UTCDateTime(), nullable=False),
-    Column("last_used_at", UTCDateTime(), nullable=True),
-    Column("revoked_at", UTCDateTime(), nullable=True),
-    UniqueConstraint("public_prefix", name="uq_platform_access_tokens_public_prefix"),
-    UniqueConstraint("secret_digest", name="uq_platform_access_tokens_secret_digest"),
-    Index(
-        "ix_platform_access_tokens_principal_revoked",
-        "principal_reference",
-        "revoked_at",
-    ),
-    Index(
-        "ix_platform_access_tokens_expiry_revoked",
         "expires_at",
         "revoked_at",
     ),

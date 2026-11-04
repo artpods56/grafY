@@ -8,14 +8,14 @@ from starlette.testclient import TestClient
 
 from grafy_api.v1.routes.node_secrets.models import (
     ConfigureNodeSecretRequest,
-    GraphNodeSecretsResponse,
     NodeSecretStatusResponse,
+    ProjectNodeSecretsResponse,
 )
 from tests.support.clients._http import _expect, _parse
 
 
 class NodeSecretsApi:
-    """Node secrets under ``/v1/workspaces/{workspace_id}/graphs``."""
+    """Node secrets under ``/v1/workspaces/{workspace_id}/projects``."""
 
     __slots__ = ("_client", "_workspace_id")
 
@@ -23,29 +23,45 @@ class NodeSecretsApi:
         self._client = client
         self._workspace_id = workspace_id
 
-    # -- graph-scoped secret status ------------------------------------------
+    def _base(self, project_id: UUID) -> str:
+        return f"/v1/workspaces/{self._workspace_id}/projects/{project_id}"
+
+    # -- Project-scoped secret status -----------------------------------------
 
     def list_secrets(
-        self, graph_id: UUID, *, headers: Mapping[str, str] | None = None
+        self,
+        project_id: UUID,
+        *,
+        graph_id: str | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> Response:
+        params = {} if graph_id is None else {"graph_id": graph_id}
         return self._client.get(
-            f"/v1/workspaces/{self._workspace_id}/graphs/{graph_id}/node-secrets",
+            f"{self._base(project_id)}/node-secrets",
+            params=params,
             headers=headers,
         )
 
     def list_secrets_ok(
-        self, graph_id: UUID, *, headers: Mapping[str, str] | None = None
-    ) -> GraphNodeSecretsResponse:
+        self,
+        project_id: UUID,
+        *,
+        graph_id: str | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> ProjectNodeSecretsResponse:
         return _parse(
-            GraphNodeSecretsResponse,
-            _expect(self.list_secrets(graph_id, headers=headers), 200),
+            ProjectNodeSecretsResponse,
+            _expect(
+                self.list_secrets(project_id, graph_id=graph_id, headers=headers), 200
+            ),
         )
 
     # -- per-node secret configuration ----------------------------------------
 
     def configure_secret(
         self,
-        graph_id: UUID,
+        project_id: UUID,
+        graph_id: str,
         node_id: str,
         name: str,
         payload: ConfigureNodeSecretRequest,
@@ -63,15 +79,15 @@ class NodeSecretsApi:
         body = payload.model_dump(mode="json")
         body["value"] = payload.value.get_secret_value()
         return self._client.put(
-            f"/v1/workspaces/{self._workspace_id}/graphs/{graph_id}"
-            f"/nodes/{node_id}/secrets/{name}",
+            f"{self._base(project_id)}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
             json=body,
             headers=headers,
         )
 
     def configure_secret_ok(
         self,
-        graph_id: UUID,
+        project_id: UUID,
+        graph_id: str,
         node_id: str,
         name: str,
         payload: ConfigureNodeSecretRequest,
@@ -82,7 +98,7 @@ class NodeSecretsApi:
             NodeSecretStatusResponse,
             _expect(
                 self.configure_secret(
-                    graph_id, node_id, name, payload, headers=headers
+                    project_id, graph_id, node_id, name, payload, headers=headers
                 ),
                 200,
             ),
@@ -90,16 +106,16 @@ class NodeSecretsApi:
 
     def remove_secret(
         self,
-        graph_id: UUID,
+        project_id: UUID,
+        graph_id: str,
         node_id: str,
         name: str,
-        expected_graph_revision: int,
+        expected_head_sequence: int,
         *,
         headers: Mapping[str, str] | None = None,
     ) -> Response:
         return self._client.delete(
-            f"/v1/workspaces/{self._workspace_id}/graphs/{graph_id}"
-            f"/nodes/{node_id}/secrets/{name}",
-            params={"expected_graph_revision": expected_graph_revision},
+            f"{self._base(project_id)}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
+            params={"expected_head_sequence": expected_head_sequence},
             headers=headers,
         )

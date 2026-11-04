@@ -1,4 +1,4 @@
-"""GIS producer input and compatibility imports for shared spatial contracts."""
+"""GIS producer input contracts."""
 
 from pydantic import (
     BaseModel,
@@ -7,38 +7,6 @@ from pydantic import (
     StrictBytes,
     StrictStr,
     field_validator,
-)
-
-from grafy_core.spatial_contracts import (
-    BasemapKind as BasemapKind,
-    Bounds as Bounds,
-    GeoCategorizedPointStyle as GeoCategorizedPointStyle,
-    GeoCategoryValue as GeoCategoryValue,
-    GeoFeatureArtifactSource as GeoFeatureArtifactSource,
-    GeoFeatureCollection as GeoFeatureCollection,
-    GeoFeatureCollectionPayload as GeoFeatureCollectionPayload,
-    GeoFeatureStyle as GeoFeatureStyle,
-    GeoFillStyle as GeoFillStyle,
-    GeoLabelStyle as GeoLabelStyle,
-    GeoLayerSource as GeoLayerSource,
-    GeoLayerStyle as GeoLayerStyle,
-    GeoLineStyle as GeoLineStyle,
-    GeoMapDocument as GeoMapDocument,
-    GeoMapLayer as GeoMapLayer,
-    GeoPointCategory as GeoPointCategory,
-    GeoPointStyle as GeoPointStyle,
-    GeoRasterArtifactSource as GeoRasterArtifactSource,
-    GeoRasterProjectionMetadata as GeoRasterProjectionMetadata,
-    GeoRasterStyle as GeoRasterStyle,
-    GeoVectorProjectionMetadata as GeoVectorProjectionMetadata,
-    GeoVectorStyle as GeoVectorStyle,
-    GeoWmsSource as GeoWmsSource,
-    HexColor as HexColor,
-    RasterProjectionMetadata as RasterProjectionMetadata,
-    RasterResampling as RasterResampling,
-    VectorProjectionMetadata as VectorProjectionMetadata,
-    WmsImageFormat as WmsImageFormat,
-    WmsVersion as WmsVersion,
 )
 
 

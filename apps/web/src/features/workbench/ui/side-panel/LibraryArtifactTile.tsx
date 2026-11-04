@@ -38,18 +38,23 @@ export function LibraryArtifactTile({
   workspaceId,
   item,
   folders,
-  onOpenRun,
+  onOpenInstance,
   onClose,
 }: {
   workspaceId: string;
   item: PlacedLibraryItem;
   folders: readonly LibraryFolder[];
-  onOpenRun: (graphId: string, executionId: string) => void;
+  /** Jump to the Graph the artifact came from, naming the result it came from. */
+  onOpenInstance: (graphId: string, resultFingerprint: string | null) => void;
   onClose: () => void;
 }) {
   const name = libraryFileDisplayName(item);
   const contentUrl = artifactContentUrl(workspaceId, item.artifact.content_url);
-  const { run } = item;
+  // An item remembers the node instance it was saved from, not the Run that
+  // happened to make that result fresh: the Run is gone, the instance is not.
+  const { provenance } = item;
+  const fromGraph =
+    provenance.source === "instance" ? provenance.graph_id : null;
   const location = ["Library", ...libraryFolderPath(folders, item.folder_id)];
   const size = formatLibraryByteSize(item.artifact.byte_size);
   const [imageFailed, setImageFailed] = React.useState(false);
@@ -116,13 +121,11 @@ export function LibraryArtifactTile({
 
       <span {...stylex.props(s.label)}>Provenance</span>
       <span {...stylex.props(s.text)}>{libraryProvenanceLine(item)}</span>
-      {run?.finished_at ? (
-        <span {...stylex.props(s.text)}>
-          Run finished {formatDateTime(run.finished_at)}
-        </span>
-      ) : null}
+      <span {...stylex.props(s.text)}>
+        Saved {formatDateTime(provenance.saved_at)}
+      </span>
 
-      {contentUrl || run ? (
+      {contentUrl || fromGraph ? (
         <span {...stylex.props(s.actions)}>
           {contentUrl ? (
             <a
@@ -135,14 +138,16 @@ export function LibraryArtifactTile({
               Open original
             </a>
           ) : null}
-          {run ? (
+          {fromGraph ? (
             <button
               type="button"
-              onClick={() => onOpenRun(run.graph_id, run.execution_id)}
+              onClick={() =>
+                onOpenInstance(fromGraph, provenance.result_fingerprint ?? null)
+              }
               {...stylex.props(s.action)}
             >
               <ArrowUpRight size={11} aria-hidden="true" />
-              Execution history
+              Where it came from
             </button>
           ) : null}
         </span>

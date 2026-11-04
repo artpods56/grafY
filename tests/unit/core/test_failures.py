@@ -9,7 +9,6 @@ from grafy_core.domain.errors import (
     FailureSpec,
     NotFoundError,
 )
-from grafy_core.domain.module_library import ModuleLibraryError
 
 
 def test_declared_failure_keeps_diagnostics_out_of_public_message() -> None:
@@ -58,9 +57,3 @@ def test_failure_is_frozen_and_rejects_extra_fields() -> None:
         Failure.model_validate({**failure.model_dump(), "diagnostic": "secret"})
     with pytest.raises(ValidationError):
         failure.message = "Changed"  # type: ignore[misc]
-
-
-def test_module_library_validation_is_not_declared_public() -> None:
-    error = ModuleLibraryError("Module name contains internal detail")
-
-    assert not hasattr(error, "public_message")

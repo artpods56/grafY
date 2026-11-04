@@ -1,12 +1,35 @@
+"""Dictionary-backed adapters for the single-process workbench and the tests.
+
+The contracts these classes keep are the ones the SQL adapters keep, and they are
+what makes them usable as stand-ins:
+
+* **Task isolation.** One unit of work is entered by one task at a time; a nested
+  entry fails rather than sharing a transaction.
+* **Clone in, copy out.** A transaction works on a deep clone of the store, and
+  entities are cloned again on the way in and out, so a mutated domain object never
+  writes itself into committed state behind the caller's back.
+* **Rollback.** A commit publishes the working clone; a rollback, or any exception
+  out of ``async with``, throws it away.
+* **Workspace scoping.** Every read carries ``workspace_id``, so a row of another
+  Workspace is indistinguishable from one that was never there.
+
+Where the SQL adapter turns a primary-key violation into ``ConcurrentWriteError``
+(an appended checkpoint revision, a command receipt, a checkpoint mapping) this one
+raises the same error on the same key. What it cannot imitate is a real row lock:
+``lock_head`` is an ordinary read, and the unit of work's transaction lock is what
+serialises writers here.
+"""
+
 from asyncio import Lock
 from collections.abc import Collection, Mapping
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
-from datetime import datetime
-from types import TracebackType
+from datetime import UTC, datetime
+from types import MappingProxyType, TracebackType
 from typing import (
     TYPE_CHECKING,
+    Callable,
     Self,
     final,
     override,
@@ -14,95 +37,94 @@ from typing import (
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from grafy_core.domain.execution_history import (
-        GraphExecution,
-        GraphExecutionCursor,
-        GraphExecutionDetail,
-        GraphExecutionNodeResult,
-        GraphExecutionPage,
-        GraphExecutionStatus,
-    )
-    from grafy_core.domain.invocation_cache import InvocationCacheEntry
-    from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
+    from grafy_core.domain.artifact_outputs import ArtifactOutputValue
     from grafy_core.domain.uploads import Upload
-    from grafy_core.ports.execution_history import (
-        GraphExecutionHistoryRepositoryPort,
-    )
-    from grafy_core.ports.invocation_cache import InvocationCacheRepositoryPort
-    from grafy_core.ports.materialized_outputs import (
-        MaterializedNodeOutputsRepositoryPort,
-    )
     from grafy_core.ports.uploads import UploadRepositoryPort
 
 from grafy_core.artifacts import (
     ArtifactObject,
+    ArtifactRef,
     ArtifactRefSequence,
     ArtifactTypeKey,
 )
-from grafy_core.domain.artifact_outputs import ArtifactOutputValue
-from grafy_core.domain.errors import (
-    CollaborationActiveExecutionError,
-    LibraryFolderNameConflictError,
-    NotFoundError,
-    ObjectAlreadyExistsError,
+from grafy_core.domain.agent_conversations import (
+    AgentConversation,
+    AgentConversationEvent,
 )
-from grafy_core.domain.execution_history import TransientExecution
+from grafy_core.domain.agent_turns import AgentTurn, AgentTurnStatus
+from grafy_core.domain.collaboration import (
+    ProjectCheckpointMapping,
+    ProjectCommandReceipt,
+    ProjectHead,
+)
+from grafy_core.domain.errors import (
+    ConcurrentWriteError,
+    LibraryFolderNameConflictError,
+    ObjectAlreadyExistsError,
+    ProjectFolderNameConflictError,
+)
 from grafy_core.domain.library import LibraryFolder
+from grafy_core.domain.projects import (
+    Project,
+    ProjectBrowserCreator,
+    ProjectBrowserDraft,
+    ProjectBrowserFolder,
+    ProjectBrowserItem,
+    ProjectBrowserLocation,
+    ProjectCheckpoint,
+    ProjectFolder,
+    ProjectOrganization,
+    UserProjectState,
+)
+from grafy_core.domain.runs import Run, RunStatus
 from grafy_core.domain.uploads import UploadStatus
+from grafy_core.kernel.instances import InstanceKey
+from grafy_core.kernel.results import (
+    FailureRecord,
+    InstancePointer,
+    StoredResult,
+)
+from grafy_core.ports.agent_conversations import (
+    AgentConversationAppendError,
+    AgentConversationRepositoryPort,
+)
+from grafy_core.ports.agent_turns import (
+    AgentTurnAlreadyAdmittedError,
+    AgentTurnBusyError,
+    AgentTurnRepositoryPort,
+)
 from grafy_core.ports.artifacts import ArtifactRepositoryPort, UnitOfWorkPort
+from grafy_core.ports.collaboration import CollaborationRepositoryPort
 from grafy_core.ports.library_folders import LibraryFolderRepositoryPort
+from grafy_core.ports.projects import ProjectRepositoryPort
+from grafy_core.ports.runs import ResultStoreRepositoryPort, RunRepositoryPort
 
 
 def _clone[T](value: T) -> T:
     return deepcopy(value)
 
 
-def _output_artifact_ids(outputs: Mapping[str, ArtifactOutputValue]) -> set[UUID]:
-    """Every artifact identity a recorded output names, sequence items included."""
+def _newest_first[T](
+    rows: Collection[T], *, stamp: Callable[[T], datetime], ident: Callable[[T], UUID]
+) -> list[T]:
+    """Order like ``ORDER BY <stamp> DESC, id ASC``.
 
-    artifact_ids: set[UUID] = set()
-    for output in outputs.values():
-        if isinstance(output, ArtifactRefSequence):
-            artifact_ids.update(ref.artifact_id for ref in output.item_refs)
-        else:
-            artifact_ids.add(output.artifact_id)
-    return artifact_ids
+    Python's sort is stable, so ordering by id first and then by the timestamp
+    descending leaves ids ascending inside one timestamp.
+    """
+
+    return sorted(
+        sorted(rows, key=lambda row: str(ident(row))), key=stamp, reverse=True
+    )
 
 
 @dataclass(slots=True)
 class InMemoryDataStore:
-    transient_executions: dict[UUID, TransientExecution] = field(
-        default_factory=dict[UUID, TransientExecution]
-    )
     artifacts: dict[UUID, ArtifactObject] = field(
         default_factory=dict[UUID, ArtifactObject]
     )
-    materialized_outputs: dict[
-        tuple[UUID, UUID, int, str],
-        "MaterializedNodeOutputs",
-    ] = field(
-        default_factory=dict[tuple[UUID, UUID, int, str], "MaterializedNodeOutputs"]
-    )
-    invocation_cache: dict[tuple[UUID, str], "InvocationCacheEntry"] = field(
-        default_factory=dict[tuple[UUID, str], "InvocationCacheEntry"]
-    )
     uploads: dict[tuple[UUID, UUID], "Upload"] = field(
         default_factory=dict[tuple[UUID, UUID], "Upload"]
-    )
-    graph_executions: dict[
-        UUID,
-        "GraphExecution",
-    ] = field(default_factory=dict[UUID, "GraphExecution"])
-    # One row per requested node: stable request position plus the optional
-    # terminal result recorded at most once.
-    graph_execution_nodes: dict[
-        tuple[UUID, UUID, str],
-        tuple[int, "GraphExecutionNodeResult | None"],
-    ] = field(
-        default_factory=dict[
-            tuple[UUID, UUID, str],
-            tuple[int, "GraphExecutionNodeResult | None"],
-        ]
     )
     library_folders: dict[UUID, LibraryFolder] = field(
         default_factory=dict[UUID, LibraryFolder]
@@ -112,20 +134,130 @@ class InMemoryDataStore:
     library_placements: dict[tuple[UUID, UUID], UUID] = field(
         default_factory=dict[tuple[UUID, UUID], UUID]
     )
+    projects: dict[UUID, Project] = field(default_factory=dict[UUID, Project])
+    # (workspace_id, project_id, revision). The composite key is the append-only
+    # guard: a repeated revision is a lost race, never an update.
+    project_checkpoints: dict[tuple[UUID, UUID, int], ProjectCheckpoint] = field(
+        default_factory=dict[tuple[UUID, UUID, int], ProjectCheckpoint]
+    )
+    project_folders: dict[UUID, ProjectFolder] = field(
+        default_factory=dict[UUID, ProjectFolder]
+    )
+    project_organizations: dict[tuple[UUID, UUID], ProjectOrganization] = field(
+        default_factory=dict[tuple[UUID, UUID], ProjectOrganization]
+    )
+    user_project_states: dict[tuple[UUID, UUID, UUID], UserProjectState] = field(
+        default_factory=dict[tuple[UUID, UUID, UUID], UserProjectState]
+    )
+    project_heads: dict[tuple[UUID, UUID], ProjectHead] = field(
+        default_factory=dict[tuple[UUID, UUID], ProjectHead]
+    )
+    project_command_receipts: dict[tuple[UUID, UUID, UUID], ProjectCommandReceipt] = (
+        field(default_factory=dict[tuple[UUID, UUID, UUID], ProjectCommandReceipt])
+    )
+    project_checkpoint_mappings: dict[
+        tuple[UUID, UUID, UUID, int], ProjectCheckpointMapping
+    ] = field(
+        default_factory=dict[tuple[UUID, UUID, UUID, int], ProjectCheckpointMapping]
+    )
+    runs: dict[UUID, Run] = field(default_factory=dict[UUID, Run])
+    # (workspace_id, conversation_id). The conversation row carries the sequence its
+    # next event takes, exactly like the SQL table, so append races the same way here.
+    agent_conversations: dict[tuple[UUID, UUID], AgentConversation] = field(
+        default_factory=dict[tuple[UUID, UUID], AgentConversation]
+    )
+    # (workspace_id, conversation_id, sequence). An event is never edited in place and
+    # never evicted: the sequence is the address of history.
+    agent_conversation_events: dict[
+        tuple[UUID, UUID, int], AgentConversationEvent
+    ] = field(default_factory=dict[tuple[UUID, UUID, int], AgentConversationEvent])
+    # (turn.id). A send's receipt: keyed for a client turn id by the repository, which is
+    # where "one turn at a time per conversation" and "this send was already admitted" are
+    # decided, exactly as the partial unique index decides them in SQL.
+    agent_turns: dict[UUID, AgentTurn] = field(default_factory=dict[UUID, AgentTurn])
+    # (workspace_id, fingerprint). Two Workspaces never share a fingerprint's result.
+    node_results: dict[tuple[UUID, str], StoredResult] = field(
+        default_factory=dict[tuple[UUID, str], StoredResult]
+    )
+    pointers: dict[tuple[UUID, InstanceKey], InstancePointer] = field(
+        default_factory=dict[tuple[UUID, InstanceKey], InstancePointer]
+    )
+    # The browser read joins identity in: which Workspaces a user can see, what
+    # each is called, and what its users are called. This store holds no User or
+    # Workspace aggregate, so a test states those three things outright. A user
+    # with no membership entry sees no Projects, which is what a non-member sees
+    # through the SQL adapter.
+    workspace_locations: dict[UUID, ProjectBrowserLocation] = field(
+        default_factory=dict[UUID, ProjectBrowserLocation]
+    )
+    workspace_members: dict[UUID, set[UUID]] = field(
+        default_factory=dict[UUID, set[UUID]]
+    )
+    user_display_names: dict[UUID, str] = field(default_factory=dict[UUID, str])
 
     def clone(self) -> Self:
         return _clone(self)
 
     def replace_with(self, other: Self) -> None:
-        self.transient_executions = _clone(other.transient_executions)
         self.artifacts = _clone(other.artifacts)
-        self.materialized_outputs = _clone(other.materialized_outputs)
-        self.invocation_cache = _clone(other.invocation_cache)
         self.uploads = _clone(other.uploads)
-        self.graph_executions = _clone(other.graph_executions)
-        self.graph_execution_nodes = _clone(other.graph_execution_nodes)
         self.library_folders = _clone(other.library_folders)
         self.library_placements = _clone(other.library_placements)
+        self.projects = _clone(other.projects)
+        self.project_checkpoints = _clone(other.project_checkpoints)
+        self.project_folders = _clone(other.project_folders)
+        self.project_organizations = _clone(other.project_organizations)
+        self.user_project_states = _clone(other.user_project_states)
+        self.project_heads = _clone(other.project_heads)
+        self.project_command_receipts = _clone(other.project_command_receipts)
+        self.project_checkpoint_mappings = _clone(other.project_checkpoint_mappings)
+        self.runs = _clone(other.runs)
+        self.agent_conversations = _clone(other.agent_conversations)
+        self.agent_conversation_events = _clone(other.agent_conversation_events)
+        self.agent_turns = _clone(other.agent_turns)
+        self.node_results = _clone(other.node_results)
+        self.pointers = _clone(other.pointers)
+        self.workspace_locations = _clone(other.workspace_locations)
+        self.workspace_members = _clone(other.workspace_members)
+        self.user_display_names = _clone(other.user_display_names)
+
+
+def _stored_outputs(
+    outputs: Mapping[str, ArtifactOutputValue],
+) -> dict[str, ArtifactOutputValue]:
+    return {port: value.model_copy(deep=True) for port, value in outputs.items()}
+
+
+def _result_view(result: StoredResult) -> StoredResult:
+    """Hand out a result that cannot be edited in place.
+
+    The stored row keeps a plain dict because a mapping proxy cannot be
+    deep-copied, and the store clones itself at every transaction boundary.
+    """
+
+    return StoredResult(
+        fingerprint=result.fingerprint,
+        outputs=MappingProxyType(dict(result.outputs)),
+        created_at=result.created_at,
+    )
+
+
+def _outputs_reference(
+    outputs: Mapping[str, ArtifactOutputValue], artifact_id: UUID
+) -> bool:
+    """Whether a stored output names ``artifact_id`` as content.
+
+    Only the typed refs count: an id that appears in free metadata text is not a
+    reference, exactly as the SQL adapter decides.
+    """
+
+    for value in outputs.values():
+        if isinstance(value, ArtifactRefSequence):
+            if any(ref.artifact_id == artifact_id for ref in value.item_refs):
+                return True
+        elif isinstance(value, ArtifactRef) and value.artifact_id == artifact_id:
+            return True
+    return False
 
 
 @final
@@ -357,422 +489,6 @@ class InMemoryLibraryFolderRepository(LibraryFolderRepositoryPort):
 
 
 @final
-class InMemoryMaterializedNodeOutputsRepository:
-    def __init__(self, store: InMemoryDataStore) -> None:
-        self._store = store
-
-    async def upsert(self, value: "MaterializedNodeOutputs") -> None:
-        key = (
-            value.workspace_id,
-            value.graph_id,
-            value.graph_revision,
-            value.node_id,
-        )
-        self._store.materialized_outputs[key] = _clone(value)
-
-    async def get(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-        graph_revision: int,
-        node_id: str,
-    ) -> "MaterializedNodeOutputs | None":
-        value = self._store.materialized_outputs.get(
-            (workspace_id, graph_id, graph_revision, node_id)
-        )
-        return _clone(value) if value is not None else None
-
-    async def list_for_graph(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-        graph_revision: int,
-    ) -> list["MaterializedNodeOutputs"]:
-        values = [
-            value
-            for (saved_workspace_id, saved_graph_id, saved_revision, _), value in (
-                self._store.materialized_outputs.items()
-            )
-            if (
-                saved_workspace_id == workspace_id
-                and saved_graph_id == graph_id
-                and saved_revision == graph_revision
-            )
-        ]
-        return _clone(sorted(values, key=lambda value: value.node_id))
-
-
-@final
-class InMemoryInvocationCacheRepository:
-    def __init__(self, store: InMemoryDataStore) -> None:
-        self._store = store
-
-    async def get(
-        self,
-        workspace_id: UUID,
-        key_sha256: str,
-    ) -> "InvocationCacheEntry | None":
-        entry = self._store.invocation_cache.get((workspace_id, key_sha256))
-        return _clone(entry) if entry is not None else None
-
-    async def put_if_absent(self, entry: "InvocationCacheEntry") -> bool:
-        key = (entry.workspace_id, entry.key_sha256)
-        if key in self._store.invocation_cache:
-            return False
-        self._store.invocation_cache[key] = _clone(entry)
-        return True
-
-    async def remove_if_current(
-        self,
-        workspace_id: UUID,
-        key_sha256: str,
-        generation: UUID,
-    ) -> bool:
-        entry = self._store.invocation_cache.get((workspace_id, key_sha256))
-        if entry is None or entry.generation != generation:
-            return False
-        del self._store.invocation_cache[(workspace_id, key_sha256)]
-        return True
-
-
-@final
-class InMemoryGraphExecutionHistoryRepository:
-    def __init__(self, store: InMemoryDataStore) -> None:
-        self._store = store
-
-    async def add_transient(self, execution: TransientExecution) -> None:
-        if execution.execution_id in self._store.transient_executions:
-            raise ObjectAlreadyExistsError(
-                f"Transient execution already exists: {execution.execution_id}"
-            )
-        self._store.transient_executions[execution.execution_id] = execution
-
-    async def remove_transient(self, execution_id: UUID, owner_id: UUID) -> None:
-        execution = self._store.transient_executions.get(execution_id)
-        if execution is not None and execution.owner_id == owner_id:
-            del self._store.transient_executions[execution_id]
-
-    async def list_transient(self) -> tuple[TransientExecution, ...]:
-        return tuple(
-            sorted(
-                self._store.transient_executions.values(),
-                key=lambda execution: (execution.created_at, execution.execution_id),
-            )
-        )
-
-    async def clear_transient(self) -> None:
-        self._store.transient_executions.clear()
-
-    async def add(self, execution: "GraphExecution") -> None:
-        execution_key = execution.execution_id
-        if execution_key in self._store.graph_executions:
-            raise ObjectAlreadyExistsError(
-                f"Graph execution already exists: {execution.execution_id}"
-            )
-        if execution.idempotency_key is not None and any(
-            stored.workspace_id == execution.workspace_id
-            and stored.idempotency_key == execution.idempotency_key
-            for stored in self._store.graph_executions.values()
-        ):
-            raise ObjectAlreadyExistsError(
-                "Graph execution idempotency key already exists: "
-                f"{execution.idempotency_key}"
-            )
-        active_execution_id = await self.find_active_execution_id(
-            execution.workspace_id,
-            execution.graph_id,
-        )
-        if active_execution_id is not None:
-            raise CollaborationActiveExecutionError(
-                workspace_id=execution.workspace_id,
-                graph_id=execution.graph_id,
-                execution_id=active_execution_id,
-            )
-        self._store.graph_executions[execution_key] = _clone(execution)
-        for position, node_id in enumerate(execution.requested_node_ids):
-            self._store.graph_execution_nodes[
-                (execution.workspace_id, execution.execution_id, node_id)
-            ] = (position, None)
-
-    async def update(self, execution: "GraphExecution") -> None:
-        current = self._store.graph_executions.get(execution.execution_id)
-        if current is None or current.workspace_id != execution.workspace_id:
-            raise NotFoundError("Graph execution", str(execution.execution_id))
-        if (
-            current.graph_id != execution.graph_id
-            or current.graph_revision != execution.graph_revision
-            or current.scope != execution.scope
-            or current.requested_node_ids != execution.requested_node_ids
-            or current.submitted_request != execution.submitted_request
-            or current.idempotency_key != execution.idempotency_key
-            or current.submitted_by_actor_id != execution.submitted_by_actor_id
-            or current.created_at != execution.created_at
-        ):
-            raise ValueError(
-                f"Graph execution {execution.execution_id} identity and request "
-                "fields are immutable"
-            )
-        self._store.graph_executions[execution.execution_id] = _clone(execution)
-
-    async def add_node_result(self, result: "GraphExecutionNodeResult") -> None:
-        execution = self._store.graph_executions.get(result.execution_id)
-        if execution is None or execution.workspace_id != result.workspace_id:
-            raise NotFoundError("Graph execution", str(result.execution_id))
-        key = (result.workspace_id, result.execution_id, result.node_id)
-        row = self._store.graph_execution_nodes.get(key)
-        if row is None:
-            raise ValueError(
-                f"Graph execution {result.execution_id} did not request node "
-                f"{result.node_id!r}"
-            )
-        _, existing_result = row
-        if existing_result is not None:
-            raise ObjectAlreadyExistsError(
-                "Graph execution node result already exists: "
-                f"{result.execution_id}/{result.node_id}"
-            )
-        if any(
-            stored_result is not None and stored_result.position == result.position
-            for execution_key, (_, stored_result) in (
-                self._store.graph_execution_nodes.items()
-            )
-            if execution_key[:2] == (result.workspace_id, result.execution_id)
-        ):
-            raise ObjectAlreadyExistsError(
-                "Graph execution node result position already exists: "
-                f"{result.execution_id}/{result.position}"
-            )
-        self._store.graph_execution_nodes[key] = (row[0], _clone(result))
-
-    async def get(
-        self,
-        workspace_id: UUID,
-        execution_id: UUID,
-    ) -> "GraphExecutionDetail | None":
-        from grafy_core.domain.execution_history import GraphExecutionDetail
-
-        execution = self._store.graph_executions.get(execution_id)
-        if execution is None or execution.workspace_id != workspace_id:
-            return None
-        node_results = sorted(
-            (
-                result
-                for stored_key, (_, result) in (
-                    self._store.graph_execution_nodes.items()
-                )
-                if (
-                    stored_key[0] == workspace_id
-                    and stored_key[1] == execution_id
-                    and result is not None
-                )
-            ),
-            key=lambda result: (result.position, result.node_id),
-        )
-        return GraphExecutionDetail(
-            execution=_clone(execution),
-            node_results=tuple(_clone(node_results)),
-        )
-
-    async def list_for_graph(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-        *,
-        limit: int,
-        cursor: "GraphExecutionCursor | None" = None,
-        graph_revision: int | None = None,
-        status: "GraphExecutionStatus | None" = None,
-        node_id: str | None = None,
-    ) -> "GraphExecutionPage":
-        from grafy_core.domain.execution_history import (
-            GraphExecutionCursor,
-            GraphExecutionListItem,
-            GraphExecutionPage,
-        )
-
-        if limit < 1:
-            raise ValueError("Graph execution page limit must be at least 1")
-        if graph_revision is not None and graph_revision < 1:
-            raise ValueError("Graph execution revision filter must be at least 1")
-        normalized_node_id = None
-        if node_id is not None:
-            normalized_node_id = node_id.strip()
-            if normalized_node_id == "":
-                raise ValueError("Graph execution node filter must not be blank")
-
-        values = [
-            execution
-            for execution in self._store.graph_executions.values()
-            if execution.workspace_id == workspace_id
-            and execution.graph_id == graph_id
-            and (graph_revision is None or execution.graph_revision == graph_revision)
-            and (status is None or execution.status == status)
-            and (
-                normalized_node_id is None
-                or normalized_node_id in execution.requested_node_ids
-            )
-        ]
-        if cursor is not None:
-            values = [
-                execution
-                for execution in values
-                if (execution.created_at, execution.execution_id.int)
-                < (cursor.created_at, cursor.execution_id.int)
-            ]
-        values.sort(
-            key=lambda execution: (
-                execution.created_at,
-                execution.execution_id.int,
-            ),
-            reverse=True,
-        )
-        has_more = len(values) > limit
-        page_values = values[:limit]
-        items: list[GraphExecutionListItem] = []
-        for execution in page_values:
-            results = [
-                result
-                for stored_key, (_, result) in (
-                    self._store.graph_execution_nodes.items()
-                )
-                if (
-                    stored_key[0] == workspace_id
-                    and stored_key[1] == execution.execution_id
-                    and result is not None
-                )
-            ]
-            items.append(
-                GraphExecutionListItem(
-                    execution=_clone(execution),
-                    node_count=len(results),
-                    artifact_count=sum(result.artifact_count for result in results),
-                )
-            )
-        next_cursor = None
-        if has_more and page_values:
-            last = page_values[-1]
-            next_cursor = GraphExecutionCursor(
-                created_at=last.created_at,
-                execution_id=last.execution_id,
-            )
-        return GraphExecutionPage(items=tuple(items), next_cursor=next_cursor)
-
-    async def find_active_execution_id(
-        self,
-        workspace_id: UUID,
-        graph_id: UUID,
-    ) -> "UUID | None":
-        active = [
-            execution
-            for execution in self._store.graph_executions.values()
-            if execution.workspace_id == workspace_id
-            and execution.graph_id == graph_id
-            and execution.status in {"queued", "running", "cancelling"}
-        ]
-        if not active:
-            return None
-        return min(
-            active,
-            key=lambda execution: (execution.created_at, execution.execution_id.int),
-        ).execution_id
-
-    async def list_queued(self) -> tuple["GraphExecution", ...]:
-        return tuple(
-            _clone(execution)
-            for execution in sorted(
-                (
-                    execution
-                    for execution in self._store.graph_executions.values()
-                    if execution.status == "queued"
-                ),
-                key=lambda execution: (
-                    execution.created_at,
-                    execution.execution_id.int,
-                ),
-            )
-        )
-
-    async def get_by_idempotency_key(
-        self,
-        workspace_id: UUID,
-        idempotency_key: str,
-    ) -> "GraphExecution | None":
-        for execution in self._store.graph_executions.values():
-            if (
-                execution.workspace_id == workspace_id
-                and execution.idempotency_key == idempotency_key
-            ):
-                return _clone(execution)
-        return None
-
-    async def claim_queued(
-        self,
-        workspace_id: UUID,
-        execution_id: UUID,
-        *,
-        started_at: datetime,
-    ) -> bool:
-        if started_at.tzinfo is None:
-            raise ValueError("Graph execution start timestamp must be timezone-aware")
-        execution = self._store.graph_executions.get(execution_id)
-        if (
-            execution is None
-            or execution.workspace_id != workspace_id
-            or execution.status != "queued"
-        ):
-            return False
-        self._store.graph_executions[execution_id] = replace(
-            execution,
-            status="running",
-            started_at=started_at,
-        )
-        return True
-
-    async def interrupt_started(
-        self,
-        *,
-        finished_at: datetime,
-        error: str,
-    ) -> tuple["GraphExecution", ...]:
-        if finished_at.tzinfo is None:
-            raise ValueError(
-                "Graph execution interruption timestamp must be timezone-aware"
-            )
-        interrupted: list[GraphExecution] = []
-        for execution_key, execution in list(self._store.graph_executions.items()):
-            if execution.status not in {"running", "cancelling"}:
-                continue
-            interrupted.append(_clone(execution))
-            self._store.graph_executions[execution_key] = replace(
-                execution,
-                status="failed",
-                finished_at=finished_at,
-                error=error,
-            )
-        return tuple(interrupted)
-
-    async def graph_ids_with_artifact_output(
-        self,
-        workspace_id: UUID,
-        artifact_id: UUID,
-    ) -> list[UUID]:
-        graph_ids: set[UUID] = set()
-        for (
-            stored_workspace_id,
-            execution_id,
-            _node_id,
-        ), (_position, result) in self._store.graph_execution_nodes.items():
-            if stored_workspace_id != workspace_id or result is None:
-                continue
-            if artifact_id not in _output_artifact_ids(result.outputs):
-                continue
-            execution = self._store.graph_executions.get(execution_id)
-            if execution is not None and execution.workspace_id == workspace_id:
-                graph_ids.add(execution.graph_id)
-        return sorted(graph_ids, key=str)
-
-
-@final
 class InMemoryUploadRepository:
     def __init__(self, store: InMemoryDataStore) -> None:
         self._store = store
@@ -877,15 +593,818 @@ class InMemoryUploadRepository:
         return True
 
 
+@final
+class InMemoryProjectRepository(ProjectRepositoryPort):
+    """Projects, their append-only checkpoints, filing, and the browser read.
+
+    Every read is scoped by Workspace, so a Project of another Workspace is
+    indistinguishable from one that was never there. Projects, folders and
+    organizations are handed out as copies and written back field by field, which
+    is what the SQL adapter does with its rows; checkpoints are appended and never
+    touched again.
+    """
+
+    def __init__(self, store: InMemoryDataStore) -> None:
+        self._store = store
+
+    def _owned(self, workspace_id: UUID, project_id: UUID) -> Project | None:
+        project = self._store.projects.get(project_id)
+        if project is None or project.workspace_id != workspace_id:
+            return None
+        return project
+
+    @override
+    async def add(self, project: Project) -> None:
+        if self._owned(project.workspace_id, project.id) is not None:
+            raise ObjectAlreadyExistsError(f"Project already exists: {project.id}")
+        self._store.projects[project.id] = replace(project)
+
+    @override
+    async def get(self, workspace_id: UUID, project_id: UUID) -> Project | None:
+        project = self._owned(workspace_id, project_id)
+        return None if project is None else replace(project)
+
+    @override
+    async def save(self, project: Project) -> None:
+        # Name and updated_at are the only columns an update writes.
+        stored = self._owned(project.workspace_id, project.id)
+        if stored is None:
+            return
+        stored.name = project.name
+        stored.updated_at = project.updated_at
+
+    @override
+    async def remove(self, workspace_id: UUID, project: Project) -> None:
+        if self._owned(workspace_id, project.id) is None:
+            return
+        _ = self._store.projects.pop(project.id, None)
+
+    @override
+    async def list(self, workspace_id: UUID) -> list[Project]:
+        return _newest_first(
+            [
+                replace(project)
+                for project in self._store.projects.values()
+                if project.workspace_id == workspace_id
+            ],
+            stamp=lambda project: project.updated_at,
+            ident=lambda project: project.id,
+        )
+
+    @override
+    async def list_accessible(
+        self,
+        user_id: UUID,
+        *,
+        workspace_id: UUID | None = None,
+    ) -> list[ProjectBrowserItem]:
+        member_of = {
+            stored_workspace
+            for stored_workspace, members in self._store.workspace_members.items()
+            if user_id in members
+        }
+        # A Project is listed off its head, and only where the user's Workspace is
+        # known: no head is no row, exactly as the browser's inner join.
+        listed = [
+            head
+            for (
+                head_workspace,
+                head_project,
+            ), head in self._store.project_heads.items()
+            if head_project in self._store.projects
+            and head_workspace in member_of
+            and head_workspace in self._store.workspace_locations
+            and (workspace_id is None or head_workspace == workspace_id)
+        ]
+        items: list[ProjectBrowserItem] = []
+        for head in _newest_first(
+            listed,
+            stamp=lambda head: head.updated_at,
+            ident=lambda head: head.project_id,
+        ):
+            project = self._store.projects[head.project_id]
+            document = head.document
+            organization = self._store.project_organizations.get(
+                (head.workspace_id, head.project_id)
+            )
+            state = self._store.user_project_states.get(
+                (head.workspace_id, head.project_id, user_id)
+            )
+            folder = (
+                None
+                if organization is None or organization.folder_id is None
+                else self._store.project_folders.get(organization.folder_id)
+            )
+            display_name = (
+                None
+                if project.created_by_user_id is None
+                else self._store.user_display_names.get(project.created_by_user_id)
+            )
+            items.append(
+                ProjectBrowserItem(
+                    id=head.project_id,
+                    draft=ProjectBrowserDraft(
+                        name=head.name,
+                        head_sequence=head.collaboration_sequence,
+                        checkpoint_sequence=head.checkpoint_sequence,
+                        checkpoint_revision=head.checkpoint_revision,
+                        updated_at=head.updated_at,
+                        graph_count=len(document.graphs),
+                        node_count=sum(
+                            len(graph.document.nodes) for graph in document.graphs
+                        ),
+                        edge_count=sum(
+                            len(graph.document.edges) for graph in document.graphs
+                        ),
+                    ),
+                    location=self._store.workspace_locations[head.workspace_id],
+                    folder=(
+                        None
+                        if folder is None
+                        else ProjectBrowserFolder(id=folder.id, name=folder.name)
+                    ),
+                    archived_at=None
+                    if organization is None
+                    else organization.archived_at,
+                    starred=False if state is None else state.starred,
+                    last_opened_at=None if state is None else state.last_opened_at,
+                    organization_updated_at=(
+                        None if organization is None else organization.updated_at
+                    ),
+                    creator=(
+                        None
+                        if project.created_by_user_id is None or display_name is None
+                        else ProjectBrowserCreator(
+                            id=project.created_by_user_id,
+                            display_name=display_name,
+                        )
+                    ),
+                )
+            )
+        return items
+
+    # --- Append-only checkpoints -------------------------------------------------
+
+    @override
+    async def add_checkpoint(self, checkpoint: ProjectCheckpoint) -> None:
+        key = (checkpoint.workspace_id, checkpoint.project_id, checkpoint.revision)
+        if key in self._store.project_checkpoints:
+            raise ConcurrentWriteError(
+                f"Project checkpoint already exists: {checkpoint.project_id}"
+                f"/r{checkpoint.revision}"
+            )
+        self._store.project_checkpoints[key] = checkpoint
+
+    @override
+    async def get_checkpoint(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        revision: int,
+    ) -> ProjectCheckpoint | None:
+        return self._store.project_checkpoints.get((workspace_id, project_id, revision))
+
+    @override
+    async def list_checkpoints(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> list[ProjectCheckpoint]:
+        return [
+            checkpoint
+            for (checkpoint_workspace, checkpoint_project, _), checkpoint in sorted(
+                self._store.project_checkpoints.items(),
+                key=lambda entry: entry[0][2],
+            )
+            if checkpoint_workspace == workspace_id and checkpoint_project == project_id
+        ]
+
+    # --- Filing: folders ---------------------------------------------------------
+
+    def _folder_by_name(
+        self, workspace_id: UUID, name: str, *, except_folder_id: UUID | None = None
+    ) -> ProjectFolder | None:
+        for folder in self._store.project_folders.values():
+            if folder.workspace_id != workspace_id or folder.name != name:
+                continue
+            if except_folder_id is not None and folder.id == except_folder_id:
+                continue
+            return folder
+        return None
+
+    @override
+    async def add_folder(self, folder: ProjectFolder) -> None:
+        if self._folder_by_name(folder.workspace_id, folder.name) is not None:
+            raise ProjectFolderNameConflictError(
+                workspace_id=folder.workspace_id, name=folder.name
+            )
+        self._store.project_folders[folder.id] = replace(folder)
+
+    @override
+    async def get_folder(
+        self, workspace_id: UUID, folder_id: UUID
+    ) -> ProjectFolder | None:
+        folder = self._store.project_folders.get(folder_id)
+        if folder is None or folder.workspace_id != workspace_id:
+            return None
+        return replace(folder)
+
+    @override
+    async def get_folder_by_name(
+        self, workspace_id: UUID, name: str
+    ) -> ProjectFolder | None:
+        folder = self._folder_by_name(workspace_id, name)
+        return None if folder is None else replace(folder)
+
+    @override
+    async def list_folders(self, workspace_id: UUID) -> list[ProjectFolder]:
+        folders = [
+            replace(folder)
+            for folder in self._store.project_folders.values()
+            if folder.workspace_id == workspace_id
+        ]
+        folders.sort(key=lambda folder: (folder.name, str(folder.id)))
+        return folders
+
+    @override
+    async def save_folder(self, folder: ProjectFolder) -> None:
+        if (
+            self._folder_by_name(
+                folder.workspace_id, folder.name, except_folder_id=folder.id
+            )
+            is not None
+        ):
+            raise ProjectFolderNameConflictError(
+                workspace_id=folder.workspace_id, name=folder.name
+            )
+        stored = await self.get_folder(folder.workspace_id, folder.id)
+        if stored is None:
+            return
+        self._store.project_folders[folder.id] = replace(folder)
+
+    @override
+    async def unfile_projects_in_folder(
+        self, workspace_id: UUID, folder_id: UUID
+    ) -> None:
+        for (
+            organization_workspace,
+            _,
+        ), organization in self._store.project_organizations.items():
+            if (
+                organization_workspace == workspace_id
+                and organization.folder_id == folder_id
+            ):
+                organization.assign_folder(None, updated_at=datetime.now(UTC))
+
+    @override
+    async def remove_folder(self, folder: ProjectFolder) -> None:
+        stored = await self.get_folder(folder.workspace_id, folder.id)
+        if stored is None:
+            return
+        _ = self._store.project_folders.pop(folder.id, None)
+
+    # --- Filing: organization and per-user state ---------------------------------
+
+    @override
+    async def get_organization(
+        self, *, workspace_id: UUID, project_id: UUID
+    ) -> ProjectOrganization | None:
+        organization = self._store.project_organizations.get((workspace_id, project_id))
+        return None if organization is None else replace(organization)
+
+    @override
+    async def save_organization(self, organization: ProjectOrganization) -> None:
+        self._store.project_organizations[
+            (organization.workspace_id, organization.project_id)
+        ] = replace(organization)
+
+    @override
+    async def get_user_state(
+        self, *, workspace_id: UUID, project_id: UUID, user_id: UUID
+    ) -> UserProjectState | None:
+        state = self._store.user_project_states.get((workspace_id, project_id, user_id))
+        return None if state is None else replace(state)
+
+    @override
+    async def save_user_state(self, state: UserProjectState) -> None:
+        self._store.user_project_states[
+            (state.workspace_id, state.project_id, state.user_id)
+        ] = replace(state)
+
+    @override
+    async def titles_referencing_artifact(
+        self, workspace_id: UUID, artifact_id: UUID
+    ) -> dict[UUID, str]:
+        # Like the SQL adapter, the identity is matched as text inside the
+        # serialized document, and both the live head and every retained
+        # checkpoint count: a restored checkpoint must not point at an artifact
+        # that has been deleted.
+        needle = str(artifact_id)
+        referencing: set[UUID] = set()
+        for (document_workspace, project_id), head in self._store.project_heads.items():
+            if document_workspace == workspace_id and needle in str(head.document):
+                referencing.add(project_id)
+        for (
+            document_workspace,
+            project_id,
+            _,
+        ), checkpoint in self._store.project_checkpoints.items():
+            if document_workspace == workspace_id and needle in str(
+                checkpoint.document
+            ):
+                referencing.add(project_id)
+        return {
+            project_id: project.name
+            for project_id, project in self._store.projects.items()
+            if project.workspace_id == workspace_id and project_id in referencing
+        }
+
+
+@final
+class InMemoryCollaborationRepository(CollaborationRepositoryPort):
+    """The Project head, its command receipts, and its checkpoint mappings.
+
+    Receipts and mappings are append-only and raise ``ConcurrentWriteError`` on a
+    repeated key, the same way the SQL adapter turns its primary-key violation.
+    The head is handed out as a copy: the service mutates what it read and writes
+    it back with ``save_head``, and a copy never leaks an uncommitted change into
+    the store.
+    """
+
+    def __init__(self, store: InMemoryDataStore) -> None:
+        self._store = store
+
+    @override
+    async def add_head(self, head: ProjectHead) -> None:
+        key = (head.workspace_id, head.project_id)
+        if key in self._store.project_heads:
+            raise ObjectAlreadyExistsError(f"Project head already exists: {key[1]}")
+        self._store.project_heads[key] = _clone(head)
+
+    @override
+    async def get_head(
+        self, workspace_id: UUID, project_id: UUID
+    ) -> ProjectHead | None:
+        head = self._store.project_heads.get((workspace_id, project_id))
+        return None if head is None else _clone(head)
+
+    @override
+    async def lock_head(
+        self, workspace_id: UUID, project_id: UUID
+    ) -> ProjectHead | None:
+        # One in-process transaction runs at a time: the unit of work's
+        # transaction lock is this store's row lock.
+        return await self.get_head(workspace_id, project_id)
+
+    @override
+    async def save_head(self, head: ProjectHead) -> None:
+        key = (head.workspace_id, head.project_id)
+        if key not in self._store.project_heads:
+            return
+        self._store.project_heads[key] = _clone(head)
+
+    @override
+    async def remove_head(self, workspace_id: UUID, project_id: UUID) -> None:
+        _ = self._store.project_heads.pop((workspace_id, project_id), None)
+
+    @override
+    async def get_receipt(
+        self, workspace_id: UUID, project_id: UUID, command_id: UUID
+    ) -> ProjectCommandReceipt | None:
+        return self._store.project_command_receipts.get(
+            (workspace_id, project_id, command_id)
+        )
+
+    @override
+    async def add_receipt(self, receipt: ProjectCommandReceipt) -> None:
+        key = (receipt.workspace_id, receipt.project_id, receipt.command_id)
+        if key in self._store.project_command_receipts:
+            raise ConcurrentWriteError(
+                f"Project command receipt already recorded: {receipt.project_id}"
+                f"/{receipt.command_id}"
+            )
+        self._store.project_command_receipts[key] = receipt
+
+    @override
+    async def get_checkpoint_mapping(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        room_epoch: UUID,
+        collaboration_sequence: int,
+    ) -> ProjectCheckpointMapping | None:
+        return self._store.project_checkpoint_mappings.get(
+            (workspace_id, project_id, room_epoch, collaboration_sequence)
+        )
+
+    @override
+    async def add_checkpoint_mapping(self, mapping: ProjectCheckpointMapping) -> None:
+        key = (
+            mapping.workspace_id,
+            mapping.project_id,
+            mapping.room_epoch,
+            mapping.collaboration_sequence,
+        )
+        if key in self._store.project_checkpoint_mappings:
+            raise ConcurrentWriteError(
+                f"Project checkpoint mapping already recorded: {mapping.project_id}"
+                f"/{mapping.room_epoch}/{mapping.collaboration_sequence}"
+            )
+        self._store.project_checkpoint_mappings[key] = mapping
+
+
+@final
+class InMemoryRunRepository(RunRepositoryPort):
+    """Run bookkeeping. The results a Run caused belong to instances, not to it."""
+
+    def __init__(self, store: InMemoryDataStore) -> None:
+        self._store = store
+
+    def _owned(self, workspace_id: UUID, project_id: UUID, run_id: UUID) -> Run | None:
+        run = self._store.runs.get(run_id)
+        if (
+            run is None
+            or run.workspace_id != workspace_id
+            or run.project_id != project_id
+        ):
+            return None
+        return run
+
+    @override
+    async def add(self, run: Run) -> None:
+        if run.id in self._store.runs:
+            raise ObjectAlreadyExistsError(f"Run already exists: {run.id}")
+        self._store.runs[run.id] = replace(run)
+
+    @override
+    async def get(
+        self, workspace_id: UUID, project_id: UUID, run_id: UUID
+    ) -> Run | None:
+        run = self._owned(workspace_id, project_id, run_id)
+        return None if run is None else replace(run)
+
+    @override
+    async def save(self, run: Run) -> None:
+        # A transition writes status, finish stamp and error, and nothing else.
+        stored = self._owned(run.workspace_id, run.project_id, run.id)
+        if stored is None:
+            return
+        stored.status = run.status
+        stored.finished_at = run.finished_at
+        stored.error = run.error
+
+    @override
+    async def list_for_project(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        active_only: bool = False,
+        limit: int = 50,
+    ) -> list[Run]:
+        runs = [
+            replace(run)
+            for run in self._store.runs.values()
+            if run.workspace_id == workspace_id
+            and run.project_id == project_id
+            and (not active_only or run.status is RunStatus.RUNNING)
+        ]
+        return _newest_first(
+            runs, stamp=lambda run: run.created_at, ident=lambda run: run.id
+        )[:limit]
+
+    @override
+    async def interrupt_unfinished(self, *, at: datetime, error: str) -> list[Run]:
+        unfinished = [
+            run for run in self._store.runs.values() if run.status is RunStatus.RUNNING
+        ]
+        for run in unfinished:
+            run.status = RunStatus.INTERRUPTED
+            run.finished_at = at
+            run.error = error
+        return [replace(run) for run in unfinished]
+
+
+@final
+class InMemoryResultStoreRepository(ResultStoreRepositoryPort):
+    """Append-once results plus the one mutable pointer per node instance.
+
+    Results are keyed by ``(workspace_id, fingerprint)`` so the same fingerprint in
+    two Workspaces holds two rows, and a stored output payload is copied in and out
+    so nothing can rewrite an appended result.
+    """
+
+    def __init__(self, store: InMemoryDataStore) -> None:
+        self._store = store
+
+    @override
+    async def artifact_is_referenced(
+        self, workspace_id: UUID, artifact_id: UUID
+    ) -> bool:
+        return any(
+            _outputs_reference(row.outputs, artifact_id)
+            for (result_workspace, _), row in self._store.node_results.items()
+            if result_workspace == workspace_id
+        )
+
+    @override
+    async def get_result(
+        self, workspace_id: UUID, fingerprint: str
+    ) -> StoredResult | None:
+        row = self._store.node_results.get((workspace_id, fingerprint))
+        if row is None:
+            return None
+        return _result_view(row)
+
+    @override
+    async def put_result_if_absent(
+        self,
+        workspace_id: UUID,
+        fingerprint: str,
+        outputs: Mapping[str, ArtifactOutputValue],
+        *,
+        created_at: datetime,
+    ) -> StoredResult:
+        key = (workspace_id, fingerprint)
+        row = self._store.node_results.get(key)
+        if row is None:
+            row = StoredResult(
+                fingerprint=fingerprint,
+                outputs=_stored_outputs(outputs),
+                created_at=created_at,
+            )
+            self._store.node_results[key] = row
+        # Whatever happened, the row that is there is the answer: a fingerprint
+        # that already had a result keeps it unchanged.
+        return _result_view(row)
+
+    @override
+    async def get_pointer(
+        self, workspace_id: UUID, instance: InstanceKey
+    ) -> InstancePointer | None:
+        return self._store.pointers.get((workspace_id, instance))
+
+    @override
+    async def list_pointers(
+        self, workspace_id: UUID, project_id: UUID
+    ) -> Mapping[InstanceKey, InstancePointer]:
+        return {
+            instance: pointer
+            for (pointer_workspace, instance), pointer in self._store.pointers.items()
+            if pointer_workspace == workspace_id
+            and instance.project_id == str(project_id)
+        }
+
+    @override
+    async def set_success_pointer(
+        self, workspace_id: UUID, instance: InstanceKey, fingerprint: str
+    ) -> None:
+        self._store.pointers[(workspace_id, instance)] = InstancePointer(
+            last_result_fingerprint=fingerprint, last_failure=None
+        )
+
+    @override
+    async def set_failure_pointer(
+        self,
+        workspace_id: UUID,
+        instance: InstanceKey,
+        failure: FailureRecord,
+    ) -> None:
+        # The previous result pointer is deliberately kept: a failure replaces the
+        # failure and leaves the instance's last result where it was.
+        previous = self._store.pointers.get((workspace_id, instance))
+        self._store.pointers[(workspace_id, instance)] = InstancePointer(
+            last_result_fingerprint=(
+                None if previous is None else previous.last_result_fingerprint
+            ),
+            last_failure=failure,
+        )
+
+
+class InMemoryAgentConversationRepository(AgentConversationRepositoryPort):
+    """Append-only Agent history over the cloned store.
+
+    The conversation row is the sequence authority: an append only lands on the sequence
+    the stored row is waiting for, and the row moves on with it. Frozen values are
+    returned as stored - there is nothing for a caller to mutate behind the clone.
+    """
+
+    def __init__(self, store: InMemoryDataStore) -> None:
+        self._store = store
+
+    @override
+    async def add(self, conversation: AgentConversation) -> None:
+        key = (conversation.workspace_id, conversation.id)
+        if key in self._store.agent_conversations:
+            raise ConcurrentWriteError(
+                f"Agent conversation already exists: {conversation.id}"
+            )
+        self._store.agent_conversations[key] = conversation
+
+    @override
+    async def get(
+        self, workspace_id: UUID, conversation_id: UUID
+    ) -> AgentConversation | None:
+        return self._store.agent_conversations.get((workspace_id, conversation_id))
+
+    @override
+    async def lock(
+        self, workspace_id: UUID, conversation_id: UUID
+    ) -> AgentConversation | None:
+        # No row lock to imitate: the unit of work's transaction lock serialises writers.
+        return await self.get(workspace_id, conversation_id)
+
+    @override
+    async def list_for_agent(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        graph_id: str,
+        agent_id: str,
+    ) -> list[AgentConversation]:
+        rows = [
+            conversation
+            for conversation in self._store.agent_conversations.values()
+            if conversation.workspace_id == workspace_id
+            and conversation.project_id == project_id
+            and conversation.graph_id == graph_id
+            and conversation.agent_id == agent_id
+        ]
+        return _newest_first(
+            rows,
+            stamp=lambda conversation: conversation.created_at,
+            ident=lambda conversation: conversation.id,
+        )
+
+    @override
+    async def append(self, event: AgentConversationEvent) -> None:
+        key = (event.workspace_id, event.conversation_id)
+        conversation = self._store.agent_conversations.get(key)
+        if conversation is None:
+            raise AgentConversationAppendError(
+                f"Agent conversation does not exist: {event.conversation_id}"
+            )
+        if conversation.next_sequence != event.sequence:
+            raise AgentConversationAppendError(
+                f"Agent conversation {event.conversation_id} is at sequence "
+                f"{conversation.next_sequence}, not {event.sequence}"
+            )
+        event_key = (event.workspace_id, event.conversation_id, event.sequence)
+        if event_key in self._store.agent_conversation_events:
+            raise ConcurrentWriteError(
+                f"Agent conversation event already stored: {event_key}"
+            )
+        self._store.agent_conversation_events[event_key] = event
+        self._store.agent_conversations[key] = conversation.appended(
+            at=event.created_at
+        )
+
+    @override
+    async def list_events(
+        self,
+        workspace_id: UUID,
+        conversation_id: UUID,
+        *,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[AgentConversationEvent]:
+        rows = [
+            event
+            for key, event in self._store.agent_conversation_events.items()
+            if key[0] == workspace_id
+            and key[1] == conversation_id
+            and key[2] > after_sequence
+        ]
+        rows.sort(key=lambda event: event.sequence)
+        return rows if limit is None else rows[:limit]
+
+
+class InMemoryAgentTurnRepository(AgentTurnRepositoryPort):
+    """Turn receipts over the shared store.
+
+    The two admission rules are re-implemented here as the checks the SQL schema states as
+    constraints, because an adapter that only *looks* like it refuses a second running turn
+    would let the service believe it owns a conversation it does not: a duplicate receipt id
+    and a conversation that already runs a turn are errors rather than silent overwrites.
+    """
+
+    def __init__(self, store: InMemoryDataStore) -> None:
+        self._store = store
+
+    @override
+    async def add(self, turn: AgentTurn) -> None:
+        if turn.id in self._store.agent_turns:
+            raise ConcurrentWriteError(f"Agent turn already exists: {turn.id}")
+        if (
+            turn.workspace_id,
+            turn.conversation_id,
+            turn.client_turn_id,
+        ) in self._client_turn_keys():
+            raise AgentTurnAlreadyAdmittedError(
+                f"Client turn {turn.client_turn_id} was already admitted for "
+                f"conversation {turn.conversation_id}"
+            )
+        running = await self.running_for_conversation(
+            turn.workspace_id, turn.conversation_id
+        )
+        if running is not None:
+            raise AgentTurnBusyError(turn.conversation_id, running.id)
+        self._store.agent_turns[turn.id] = turn
+
+    def _client_turn_keys(self) -> set[tuple[UUID, UUID, str]]:
+        return {
+            (turn.workspace_id, turn.conversation_id, turn.client_turn_id)
+            for turn in self._store.agent_turns.values()
+        }
+
+    @override
+    async def get(self, workspace_id: UUID, turn_id: UUID) -> AgentTurn | None:
+        turn = self._store.agent_turns.get(turn_id)
+        if turn is None or turn.workspace_id != workspace_id:
+            return None
+        return turn
+
+    @override
+    async def get_by_client_turn_id(
+        self, workspace_id: UUID, conversation_id: UUID, client_turn_id: str
+    ) -> AgentTurn | None:
+        return next(
+            (
+                turn
+                for turn in self._store.agent_turns.values()
+                if turn.workspace_id == workspace_id
+                and turn.conversation_id == conversation_id
+                and turn.client_turn_id == client_turn_id
+            ),
+            None,
+        )
+
+    @override
+    async def running_for_conversation(
+        self, workspace_id: UUID, conversation_id: UUID
+    ) -> AgentTurn | None:
+        rows = await self._for_conversation(workspace_id, conversation_id)
+        return next((turn for turn in rows if turn.is_running), None)
+
+    @override
+    async def list_for_conversation(
+        self, workspace_id: UUID, conversation_id: UUID, *, limit: int | None = None
+    ) -> list[AgentTurn]:
+        rows = await self._for_conversation(workspace_id, conversation_id)
+        return rows if limit is None else rows[:limit]
+
+    async def _for_conversation(
+        self, workspace_id: UUID, conversation_id: UUID
+    ) -> list[AgentTurn]:
+        rows = [
+            turn
+            for turn in self._store.agent_turns.values()
+            if turn.workspace_id == workspace_id
+            and turn.conversation_id == conversation_id
+        ]
+        return _newest_first(
+            rows, stamp=lambda turn: turn.created_at, ident=lambda turn: turn.id
+        )
+
+    @override
+    async def finish(
+        self,
+        workspace_id: UUID,
+        turn_id: UUID,
+        *,
+        status: AgentTurnStatus,
+        at: datetime,
+        detail: str | None = None,
+    ) -> AgentTurn | None:
+        turn = await self.get(workspace_id, turn_id)
+        if turn is None or not turn.is_running:
+            # Already terminal, or never this Workspace's: the caller did not claim it.
+            return None
+        finished = turn.finished(status=status, at=at, detail=detail)
+        self._store.agent_turns[turn_id] = finished
+        return finished
+
+    @override
+    async def list_running(self) -> list[AgentTurn]:
+        return sorted(
+            (turn for turn in self._store.agent_turns.values() if turn.is_running),
+            key=lambda turn: turn.created_at,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class _InMemoryUnitOfWorkState:
     working_store: InMemoryDataStore
     artifacts: ArtifactRepositoryPort
-    materialized_outputs: "MaterializedNodeOutputsRepositoryPort"
-    invocation_cache: "InvocationCacheRepositoryPort"
     uploads: "UploadRepositoryPort"
     library_folders: "LibraryFolderRepositoryPort"
-    execution_history: "GraphExecutionHistoryRepositoryPort"
+    projects: ProjectRepositoryPort
+    collaboration: CollaborationRepositoryPort
+    runs: RunRepositoryPort
+    results: ResultStoreRepositoryPort
+    agent_conversations: AgentConversationRepositoryPort
+    agent_turns: AgentTurnRepositoryPort
 
 
 class InMemoryUnitOfWork(UnitOfWorkPort):
@@ -905,14 +1424,6 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
         return self._entered_state().artifacts
 
     @property
-    def materialized_outputs(self) -> "MaterializedNodeOutputsRepositoryPort":
-        return self._entered_state().materialized_outputs
-
-    @property
-    def invocation_cache(self) -> "InvocationCacheRepositoryPort":
-        return self._entered_state().invocation_cache
-
-    @property
     def uploads(self) -> "UploadRepositoryPort":
         return self._entered_state().uploads
 
@@ -921,8 +1432,32 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
         return self._entered_state().library_folders
 
     @property
-    def execution_history(self) -> "GraphExecutionHistoryRepositoryPort":
-        return self._entered_state().execution_history
+    @override
+    def projects(self) -> ProjectRepositoryPort:
+        return self._entered_state().projects
+
+    @property
+    @override
+    def collaboration(self) -> CollaborationRepositoryPort:
+        return self._entered_state().collaboration
+
+    @property
+    @override
+    def runs(self) -> RunRepositoryPort:
+        return self._entered_state().runs
+
+    @property
+    @override
+    def results(self) -> ResultStoreRepositoryPort:
+        return self._entered_state().results
+
+    @property
+    def agent_conversations(self) -> AgentConversationRepositoryPort:
+        return self._entered_state().agent_conversations
+
+    @property
+    def agent_turns(self) -> AgentTurnRepositoryPort:
+        return self._entered_state().agent_turns
 
     @override
     async def __aenter__(self) -> Self:
@@ -936,15 +1471,16 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
                 _InMemoryUnitOfWorkState(
                     working_store=working_store,
                     artifacts=InMemoryArtifactRepository(working_store),
-                    materialized_outputs=InMemoryMaterializedNodeOutputsRepository(
-                        working_store
-                    ),
-                    invocation_cache=InMemoryInvocationCacheRepository(working_store),
                     uploads=InMemoryUploadRepository(working_store),
                     library_folders=InMemoryLibraryFolderRepository(working_store),
-                    execution_history=InMemoryGraphExecutionHistoryRepository(
+                    projects=InMemoryProjectRepository(working_store),
+                    collaboration=InMemoryCollaborationRepository(working_store),
+                    runs=InMemoryRunRepository(working_store),
+                    results=InMemoryResultStoreRepository(working_store),
+                    agent_conversations=InMemoryAgentConversationRepository(
                         working_store
                     ),
+                    agent_turns=InMemoryAgentTurnRepository(working_store),
                 )
             )
         except BaseException:

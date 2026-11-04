@@ -4,16 +4,16 @@ import { RefreshCw } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type {
   GraphReadinessState,
-  GraphRoomFailure,
-  GraphRoomStatus,
-  GraphRoomTerminalReason,
+  ProjectRoomFailure,
+  ProjectRoomStatus,
+  ProjectRoomTerminalReason,
 } from "../room";
 
 interface GraphRoomRecoveryNoticeProps {
   readonly readiness: GraphReadinessState;
-  readonly status: GraphRoomStatus;
-  readonly failure: GraphRoomFailure | null;
-  readonly terminalReason: GraphRoomTerminalReason | null;
+  readonly status: ProjectRoomStatus;
+  readonly failure: ProjectRoomFailure | null;
+  readonly terminalReason: ProjectRoomTerminalReason | null;
   readonly onRetry: () => void;
   readonly onReload: () => void;
 }
@@ -60,8 +60,8 @@ export function GraphRoomRecoveryNotice({
       <div {...stylex.props(s.copy)}>
         <strong {...stylex.props(s.title)}>{title}</strong>
         <span {...stylex.props(s.message)}>
-          {preservation} Editing, saving, running, and Module setup are
-          unavailable. {recovery}
+          {preservation} Editing, saving, and running are unavailable.
+          {recovery}
         </span>
         {failure?.messageType ? (
           <span {...stylex.props(s.detail)}>

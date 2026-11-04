@@ -1,8 +1,10 @@
-"""Collaboration route dependencies, including WebSocket-scoped resolvers.
+"""Project room dependencies, including WebSocket-scoped resolvers.
 
-WebSocket endpoints resolve through the same ``Depends()`` graph as HTTP
-routes, but from the ``WebSocket`` parameter rather than a ``Request``; the
-``*_ws`` resolvers mirror their HTTP counterparts for those endpoints.
+WebSocket endpoints resolve through the same ``Depends()`` graph as HTTP routes, but
+from the ``WebSocket`` parameter rather than a ``Request``; the ``*_ws`` resolvers
+mirror their HTTP counterparts for those endpoints. The Run service the room reads
+is the one the HTTP Run routes read, resolved from
+:mod:`grafy_api.v1.routes.runs.dependencies`.
 """
 
 from collections.abc import Callable
@@ -15,20 +17,24 @@ from grafy_core.application.identity import IdentityService
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_api.app_state import get_identity, get_resources
+from grafy_api.realtime.hub import ProjectRoomHub
 from grafy_api.v1.routes.auth.services import AuthService
-from grafy_api.realtime.hub import GraphRoomHub
+from grafy_api.v1.routes.runs.dependencies import (
+    RunServiceWsDependency,
+    run_service_ws,
+)
 
 
-def graph_room_hub(request: Request) -> GraphRoomHub:
-    return get_resources(request.app).graph_room_hub
+def project_room_hub(request: Request) -> ProjectRoomHub:
+    return get_resources(request.app).project_room_hub
+
+
+def project_room_hub_ws(websocket: WebSocket) -> ProjectRoomHub:
+    return get_resources(websocket.app).project_room_hub
 
 
 def collaboration_service(request: Request) -> CollaborationService:
     return get_resources(request.app).collaboration
-
-
-def graph_room_hub_ws(websocket: WebSocket) -> GraphRoomHub:
-    return get_resources(websocket.app).graph_room_hub
 
 
 def collaboration_service_ws(websocket: WebSocket) -> CollaborationService:
@@ -49,12 +55,15 @@ def identity_uow_factory_ws(
     return get_identity(websocket.app).identity_uow_factory
 
 
-GraphRoomHubDependency = Annotated[GraphRoomHub, Depends(graph_room_hub)]
+ProjectRoomHubDependency = Annotated[ProjectRoomHub, Depends(project_room_hub)]
+ProjectRoomHubWsDependency = Annotated[
+    ProjectRoomHub,
+    Depends(project_room_hub_ws),
+]
 CollaborationDependency = Annotated[
     CollaborationService,
     Depends(collaboration_service),
 ]
-GraphRoomHubWsDependency = Annotated[GraphRoomHub, Depends(graph_room_hub_ws)]
 CollaborationWsDependency = Annotated[
     CollaborationService,
     Depends(collaboration_service_ws),
@@ -74,15 +83,17 @@ __all__ = [
     "AuthServiceWsDependency",
     "CollaborationDependency",
     "CollaborationWsDependency",
-    "GraphRoomHubDependency",
-    "GraphRoomHubWsDependency",
     "IdentityServiceWsDependency",
     "IdentityUnitOfWorkFactoryWsDependency",
+    "ProjectRoomHubDependency",
+    "ProjectRoomHubWsDependency",
+    "RunServiceWsDependency",
     "auth_service_ws",
     "collaboration_service",
     "collaboration_service_ws",
-    "graph_room_hub",
-    "graph_room_hub_ws",
     "identity_service_ws",
     "identity_uow_factory_ws",
+    "project_room_hub",
+    "project_room_hub_ws",
+    "run_service_ws",
 ]

@@ -126,12 +126,12 @@ function operationErrorMessage(
  */
 export function LibraryPanel({
   workspaceId,
-  onOpenRun,
+  onOpenInstance,
   canEdit = true,
   headerEnd,
 }: {
   workspaceId: string;
-  onOpenRun: (graphId: string, executionId: string) => void;
+  onOpenInstance: (graphId: string, resultFingerprint: string | null) => void;
   /** The capability behind every Library change. Read-only members are told, not refused later. */
   canEdit?: boolean;
   headerEnd?: React.ReactNode;
@@ -667,7 +667,7 @@ export function LibraryPanel({
           workspaceId={workspaceId}
           item={selected}
           folders={folders}
-          onOpenRun={onOpenRun}
+          onOpenInstance={onOpenInstance}
           onClose={() => setPicked(emptyLibrarySelection)}
         />
       ) : null}

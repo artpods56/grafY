@@ -50,8 +50,8 @@ class FakeSecrets:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
@@ -59,20 +59,20 @@ class FakeSecrets:
         assert workspace_id == WORKSPACE_ID
         assert name == "api_key"
         self.dependencies = dependencies
-        del graph_id, graph_revision, node_id
+        del graph_id, node_id, project_id
         return self._value
 
     async def cache_revision(
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> str:
-        del workspace_id, graph_id, graph_revision, node_id, name, dependencies
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
         return "0" * 64
 
 
@@ -322,8 +322,8 @@ def test_evaluate_declares_secret_egress_and_a_question_sequence_input() -> None
 def _context() -> NodeExecutionContext:
     return NodeExecutionContext(
         workspace_id=WORKSPACE_ID,
-        secret_graph_id=uuid4(),
-        secret_graph_revision=2,
+        project_id=uuid4(),
+        graph_id="drafts",
         node_id="evaluate-1",
     )
 

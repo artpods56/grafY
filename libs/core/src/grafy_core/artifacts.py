@@ -305,7 +305,7 @@ class ArtifactRefSequence(BaseModel):
         return self
 
 
-type LibrarySource = Literal["run", "upload"]
+type LibrarySource = Literal["instance", "upload"]
 
 _GRAPH_TITLE_MAX_LENGTH = 160
 _NODE_TITLE_MAX_LENGTH = 160
@@ -325,27 +325,26 @@ def _required_text(value: str, *, label: str, max_length: int) -> str:
     return text
 
 
-# [TODO] from_run and from_upload apply validation but it should be moved to the field definitions so its also applied on direct object construction
 class LibraryProvenance(BaseModel):
-    """Birth record written once when an artifact enters a Workspace Library.
-
-    The run facts are a snapshot of the save gesture: the graph and node titles
-    are frozen here so later renames, replacements, or deletions of the source
-    never rewrite this row. Nothing in the record is resolved live.
-    """
+    """Immutable source of the exact node result or upload saved to the Library."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     source: LibrarySource
     saved_at: datetime
-    graph_id: UUID | None = None
-    graph_title: str | None = None
-    node_id: str | None = None
-    node_title: str | None = None
-    graph_revision: int | None = None
-    execution_id: UUID | None = None
-    original_filename: str | None = None
-    name: str | None = None
+    project_id: UUID | None = None
+    project_title: str | None = Field(default=None, min_length=1, max_length=160)
+    graph_id: str | None = Field(default=None, min_length=1, max_length=255)
+    graph_title: str | None = Field(default=None, min_length=1, max_length=160)
+    call_path: tuple[str, ...] = ()
+    node_id: str | None = Field(default=None, min_length=1, max_length=255)
+    node_title: str | None = Field(default=None, min_length=1, max_length=160)
+    map_index: int | None = Field(default=None, ge=0)
+    result_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    output_port: str | None = Field(default=None, min_length=1, max_length=255)
+    item_index: int | None = Field(default=None, ge=0)
+    original_filename: str | None = Field(default=None, min_length=1, max_length=255)
+    name: str | None = Field(default=None, min_length=1, max_length=160)
 
     @field_validator("saved_at")
     @classmethod
@@ -354,110 +353,108 @@ class LibraryProvenance(BaseModel):
             raise ValueError("Library provenance save time must be timezone-aware")
         return value
 
+    @field_validator(
+        "project_title",
+        "graph_id",
+        "graph_title",
+        "node_id",
+        "node_title",
+        "output_port",
+        "original_filename",
+        "name",
+        mode="before",
+    )
+    @classmethod
+    def trim_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("call_path")
+    @classmethod
+    def validate_call_path(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        for segment in value:
+            _required_text(segment, label="call path", max_length=255)
+        return value
+
     @model_validator(mode="after")
     def validate_source_shape(self) -> Self:
-        if self.source == "run":
-            missing = [
-                label
-                for label, value in (
-                    ("graph id", self.graph_id),
-                    ("graph title", self.graph_title),
-                    ("node id", self.node_id),
-                    ("node title", self.node_title),
-                    ("graph revision", self.graph_revision),
-                    ("execution id", self.execution_id),
-                )
-                if value is None
-            ]
-            if missing:
+        instance_fields = (
+            self.project_id,
+            self.project_title,
+            self.graph_id,
+            self.graph_title,
+            self.node_id,
+            self.node_title,
+            self.result_fingerprint,
+            self.output_port,
+        )
+        if self.source == "instance":
+            if any(value is None for value in instance_fields):
                 raise ValueError(
-                    "A run Library provenance requires " + ", ".join(missing)
+                    "Instance Library provenance requires full instance and result identity"
                 )
-            if self.graph_revision is not None and self.graph_revision < 1:
-                raise ValueError("Library provenance graph revision must be positive")
             if self.original_filename is not None:
                 raise ValueError(
-                    "A run Library provenance cannot carry an uploaded filename"
+                    "Instance Library provenance cannot carry an upload filename"
                 )
-            if self.name is not None:
-                _required_text(
-                    self.name,
-                    label="name",
-                    max_length=_LIBRARY_NAME_MAX_LENGTH,
+        else:
+            if self.original_filename is None:
+                raise ValueError("Upload Library provenance requires a filename")
+            if (
+                any(
+                    value is not None
+                    for value in (
+                        *instance_fields,
+                        self.map_index,
+                        self.item_index,
+                        self.name,
+                    )
                 )
-            return self
-        if self.original_filename is None:
-            raise ValueError("An uploaded Library provenance requires a filename")
-        if any(
-            value is not None
-            for value in (
-                self.graph_id,
-                self.graph_title,
-                self.node_id,
-                self.node_title,
-                self.graph_revision,
-                self.execution_id,
-                self.name,
-            )
-        ):
-            raise ValueError("An uploaded Library provenance cannot carry run facts")
+                or self.call_path
+            ):
+                raise ValueError(
+                    "Upload Library provenance cannot carry instance facts"
+                )
         return self
 
     @classmethod
-    def from_run(
+    def from_instance(
         cls,
         *,
         saved_at: datetime,
-        graph_id: UUID,
+        project_id: UUID,
+        project_title: str,
+        graph_id: str,
         graph_title: str,
         node_id: str,
         node_title: str,
-        graph_revision: int,
-        execution_id: UUID,
+        result_fingerprint: str,
+        output_port: str,
+        call_path: tuple[str, ...] = (),
+        map_index: int | None = None,
+        item_index: int | None = None,
         name: str | None = None,
     ) -> Self:
         return cls(
-            source="run",
+            source="instance",
             saved_at=saved_at,
+            project_id=project_id,
+            project_title=project_title,
             graph_id=graph_id,
-            graph_title=_required_text(
-                graph_title,
-                label="graph title",
-                max_length=_GRAPH_TITLE_MAX_LENGTH,
-            ),
-            node_id=_required_text(
-                node_id,
-                label="node id",
-                max_length=_NODE_ID_MAX_LENGTH,
-            ),
-            node_title=_required_text(
-                node_title,
-                label="node title",
-                max_length=_NODE_TITLE_MAX_LENGTH,
-            ),
-            graph_revision=graph_revision,
-            execution_id=execution_id,
-            name=(
-                None
-                if name is None
-                else _required_text(
-                    name,
-                    label="name",
-                    max_length=_LIBRARY_NAME_MAX_LENGTH,
-                )
-            ),
+            graph_title=graph_title,
+            node_id=node_id,
+            node_title=node_title,
+            call_path=call_path,
+            map_index=map_index,
+            result_fingerprint=result_fingerprint,
+            output_port=output_port,
+            item_index=item_index,
+            name=name,
         )
 
     @classmethod
     def from_upload(cls, *, saved_at: datetime, original_filename: str) -> Self:
         return cls(
-            source="upload",
-            saved_at=saved_at,
-            original_filename=_required_text(
-                original_filename,
-                label="original filename",
-                max_length=_FILENAME_MAX_LENGTH,
-            ),
+            source="upload", saved_at=saved_at, original_filename=original_filename
         )
 
 
@@ -485,59 +482,6 @@ class ArtifactObject:
         )
 
 
-if TYPE_CHECKING:
-    from grafy_core.ports.artifacts import (
-        ArtifactRepositoryPort as ArtifactRepositoryPort,
-    )
-    from grafy_core.ports.artifacts import (
-        UnitOfWorkPort as UnitOfWorkPort,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryArtifactRepository as InMemoryArtifactRepository,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryDataStore as InMemoryDataStore,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryGraphExecutionHistoryRepository as InMemoryGraphExecutionHistoryRepository,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryInvocationCacheRepository as InMemoryInvocationCacheRepository,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryMaterializedNodeOutputsRepository as InMemoryMaterializedNodeOutputsRepository,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryUnitOfWork as InMemoryUnitOfWork,
-    )
-    from grafy_core.runtime.in_memory import (
-        InMemoryUploadRepository as InMemoryUploadRepository,
-    )
-
-
-# [TODO] Remove whatever this is, probably dead code
-def __getattr__(name: str) -> object:
-    # Legacy SDK exports must be lazy: importing ports or runtime while artifact
-    # models initialize re-enters the domain package through its public exports.
-    if name in {"ArtifactRepositoryPort", "UnitOfWorkPort"}:
-        from grafy_core.ports import artifacts
-
-        return getattr(artifacts, name)
-    if name in {
-        "InMemoryArtifactRepository",
-        "InMemoryDataStore",
-        "InMemoryGraphExecutionHistoryRepository",
-        "InMemoryInvocationCacheRepository",
-        "InMemoryMaterializedNodeOutputsRepository",
-        "InMemoryUploadRepository",
-        "InMemoryUnitOfWork",
-    }:
-        from grafy_core.runtime import in_memory
-
-        return getattr(in_memory, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 __all__ = [
     "Artifact",
     "ArtifactBundleContract",
@@ -550,16 +494,8 @@ __all__ = [
     "ArtifactRefSequence",
     "ArtifactReferenceContract",
     "ArtifactReferenceShape",
-    "ArtifactRepositoryPort",
     "ArtifactTypeKey",
     "ArtifactTypeSpec",
-    "InMemoryArtifactRepository",
-    "InMemoryDataStore",
-    "InMemoryGraphExecutionHistoryRepository",
-    "InMemoryInvocationCacheRepository",
-    "InMemoryMaterializedNodeOutputsRepository",
-    "InMemoryUploadRepository",
-    "InMemoryUnitOfWork",
     "ConfirmationRule",
     "JsonObject",
     "MagicSegment",
@@ -569,7 +505,6 @@ __all__ = [
     "NodeConfig",
     "NodeInput",
     "NodeOutput",
-    "UnitOfWorkPort",
     "artifact_id",
     "sequence_id",
     "validate_extension_claims",

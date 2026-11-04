@@ -52,13 +52,13 @@ class ProcessKey:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> SecretStr:
-        del workspace_id, graph_id, graph_revision, node_id
+        del workspace_id, project_id, graph_id, node_id
         if name != "api_key" or dependencies != {"base_url": "https://api.typesafe.ai"}:
             raise NodeSecretUnavailableError("Unexpected TypeSafe secret request")
         if self._key is None:
@@ -69,13 +69,13 @@ class ProcessKey:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> str:
-        del workspace_id, graph_id, graph_revision, node_id, name, dependencies
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
         return self._revision
 
 

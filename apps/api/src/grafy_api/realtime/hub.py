@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import dataclass, field
@@ -11,10 +12,8 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from grafy_api.realtime.protocol import (
     ActorPresentation,
-    ExecutionActiveMessage,
-    ExecutionClearedMessage,
-    GraphCommandAcceptedMessage,
-    GraphCommandReceiptMessage,
+    ProjectCommandAcceptedMessage,
+    ProjectCommandReceiptMessage,
     PresenceJoinMessage,
     PresenceLeaveMessage,
     PresenceParticipant,
@@ -29,23 +28,31 @@ logger = logging.getLogger(__name__)
 OUTBOUND_QUEUE_MAXSIZE = 64
 PRESENCE_DROP_QUEUE_WATERMARK = 48
 
+#: How long a departing room waits for its single sender task to stop.
+#
+#: The sender is cancelled first, so this is the ceiling on an uncooperative task, not
+#: on a slow client. It exists because the process that stops this hub is the process
+#: that has to exit: an unbounded wait here is a shutdown that never returns, a deploy
+#: that hangs, and — under the test client — a `thread.join()` that eats the CI job.
+SENDER_STOP_TIMEOUT_SECONDS = 5.0
+
 CLOSE_PERMISSIONS_CHANGED = (4003, "permissions_changed")
 CLOSE_ACCESS_REVOKED = (4004, "access_revoked")
 CLOSE_PROTOCOL_ERROR = (4008, "protocol_error")
 CLOSE_SLOW_CONSUMER = (4009, "slow_consumer")
-CLOSE_GRAPH_DELETED = (4010, "graph_deleted")
+CLOSE_PROJECT_DELETED = (4010, "project_deleted")
 
 DEFAULT_PRESENCE_TTL_SECONDS = 5.0
 DEFAULT_PRESENCE_MAX_UPDATES_PER_SECOND = 20.0
 
 
 @dataclass(slots=True)
-class GraphRoomSession:
+class ProjectRoomSession:
     """Ephemeral WebSocket connection identity — not an authorization grant."""
 
     workspace_id: UUID
-    graph_id: UUID
-    graph_room_session_id: UUID
+    project_id: UUID
+    project_room_session_id: UUID
     actor_user_id: UUID
     credential_reference: str | None
     authorization_version: int
@@ -73,12 +80,12 @@ class _RoomMember:
     the member has closed; TTL expiry clears presence, never membership.
     """
 
-    session: GraphRoomSession
+    session: ProjectRoomSession
     presence: _PresenceEntry | None = None
 
 
-class GraphRoomHub:
-    """In-process hub keyed by (workspace_id, graph_id)."""
+class ProjectRoomHub:
+    """In-process hub keyed by (workspace_id, project_id)."""
 
     def __init__(
         self,
@@ -98,7 +105,7 @@ class GraphRoomHub:
         self._heartbeat_seconds = heartbeat_seconds
 
     @classmethod
-    def from_settings(cls, cfg: RealtimeConfig) -> "GraphRoomHub":
+    def from_settings(cls, cfg: RealtimeConfig) -> "ProjectRoomHub":
         """Build the hub from the deployment's realtime section."""
 
         return cls(
@@ -115,7 +122,7 @@ class GraphRoomHub:
 
         return self._heartbeat_seconds
 
-    async def join(self, session: GraphRoomSession) -> None:
+    async def join(self, session: ProjectRoomSession) -> None:
         """Register a session while keeping outbound delivery gated.
 
         Messages published after registration are buffered until ``activate``.
@@ -123,19 +130,19 @@ class GraphRoomHub:
         ``room.ready`` before any live event can reach the joining client.
         """
 
-        key = (session.workspace_id, session.graph_id)
+        key = (session.workspace_id, session.project_id)
         async with self._lock:
             room = self._rooms.setdefault(key, {})
-            room[session.graph_room_session_id] = _RoomMember(session=session)
+            room[session.project_room_session_id] = _RoomMember(session=session)
 
-    async def activate(self, session: GraphRoomSession) -> None:
+    async def activate(self, session: ProjectRoomSession) -> None:
         """Release buffered outbound messages for a registered session."""
 
-        key = (session.workspace_id, session.graph_id)
+        key = (session.workspace_id, session.project_id)
         async with self._lock:
             room = self._rooms.get(key)
             member = (
-                room.get(session.graph_room_session_id) if room is not None else None
+                room.get(session.project_room_session_id) if room is not None else None
             )
             if (
                 session.closed
@@ -146,12 +153,22 @@ class GraphRoomHub:
                 return
             session.sender_task = asyncio.create_task(self._sender_loop(session))
 
-    async def leave(self, session: GraphRoomSession) -> None:
+    async def leave(self, session: ProjectRoomSession) -> None:
         await self._close_session(session, code=1000, reason="left")
+
+    def leave_now(self, session: ProjectRoomSession) -> None:
+        """Depart without awaiting: for a caller that may be cancelled mid-departure.
+
+        The registry, the sender task and the peers are settled here, synchronously; what
+        this gives up is the bounded wait for the sender and the close frame, both of which
+        belong to a socket that a cancelled caller has already lost.
+        """
+
+        self._retire(session)
 
     async def close_session(
         self,
-        session: GraphRoomSession,
+        session: ProjectRoomSession,
         *,
         code: int,
         reason: str,
@@ -161,21 +178,23 @@ class GraphRoomHub:
     def new_session_id(self) -> UUID:
         return uuid4()
 
-    async def register_presence(self, session: GraphRoomSession) -> PresenceParticipant:
+    async def register_presence(
+        self, session: ProjectRoomSession
+    ) -> PresenceParticipant:
         """Add the session to ephemeral presence and fan out ``presence.join``."""
 
         now = time.monotonic()
         participant = PresenceParticipant(
-            graph_room_session_id=session.graph_room_session_id,
+            project_room_session_id=session.project_room_session_id,
             actor=session.actor_presentation,
             presence_sequence=0,
         )
-        key = (session.workspace_id, session.graph_id)
+        key = (session.workspace_id, session.project_id)
         async with self._lock:
             removed, cleared = self._expire_locked(key, now)
             room = self._rooms.setdefault(key, {})
             member = room.setdefault(
-                session.graph_room_session_id,
+                session.project_room_session_id,
                 _RoomMember(session=session),
             )
             member.presence = _PresenceEntry(
@@ -186,12 +205,13 @@ class GraphRoomHub:
             recipients = [
                 peer.session
                 for peer in room.values()
-                if peer.session.graph_room_session_id != session.graph_room_session_id
+                if peer.session.project_room_session_id
+                != session.project_room_session_id
                 and not peer.session.closed
             ]
         await self._fanout_expiry(
             workspace_id=session.workspace_id,
-            graph_id=session.graph_id,
+            project_id=session.project_id,
             removed=removed,
             cleared=cleared,
         )
@@ -204,10 +224,10 @@ class GraphRoomHub:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
     ) -> list[PresenceParticipant]:
         now = time.monotonic()
-        key = (workspace_id, graph_id)
+        key = (workspace_id, project_id)
         async with self._lock:
             removed, cleared = self._expire_locked(key, now)
             room = self._rooms.get(key, {})
@@ -218,7 +238,7 @@ class GraphRoomHub:
             ]
         await self._fanout_expiry(
             workspace_id=workspace_id,
-            graph_id=graph_id,
+            project_id=project_id,
             removed=removed,
             cleared=cleared,
         )
@@ -226,7 +246,7 @@ class GraphRoomHub:
 
     async def apply_presence_update(
         self,
-        session: GraphRoomSession,
+        session: ProjectRoomSession,
         message: PresenceUpdateSubmitMessage,
     ) -> PresenceParticipant | None:
         """Accept a rate-limited presence update and fan it out.
@@ -235,25 +255,25 @@ class GraphRoomHub:
         """
 
         now = time.monotonic()
-        key = (session.workspace_id, session.graph_id)
+        key = (session.workspace_id, session.project_id)
         async with self._lock:
             removed, cleared = self._expire_locked(key, now)
             room = self._rooms.get(key)
             member = (
-                room.get(session.graph_room_session_id) if room is not None else None
+                room.get(session.project_room_session_id) if room is not None else None
             )
             # A delayed update must match the exact open registered session; it
             # must never recreate presence for an already-closed member.
             if member is None or member.session is not session or session.closed:
                 drop = True
                 participant = None
-                recipients: list[GraphRoomSession] = []
+                recipients: list[ProjectRoomSession] = []
             else:
                 entry = member.presence
                 if entry is None:
                     entry = _PresenceEntry(
                         participant=PresenceParticipant(
-                            graph_room_session_id=session.graph_room_session_id,
+                            project_room_session_id=session.project_room_session_id,
                             actor=session.actor_presentation,
                             presence_sequence=0,
                         ),
@@ -276,8 +296,9 @@ class GraphRoomHub:
                 else:
                     drop = False
                     participant = PresenceParticipant(
-                        graph_room_session_id=session.graph_room_session_id,
+                        project_room_session_id=session.project_room_session_id,
                         actor=session.actor_presentation,
+                        graph_id=message.graph_id,
                         presence_sequence=message.presence_sequence,
                         cursor=message.cursor,
                         selected_node_ids=message.selected_node_ids,
@@ -292,13 +313,13 @@ class GraphRoomHub:
                     recipients = [
                         peer.session
                         for peer in room.values()
-                        if peer.session.graph_room_session_id
-                        != session.graph_room_session_id
+                        if peer.session.project_room_session_id
+                        != session.project_room_session_id
                         and not peer.session.closed
                     ]
         await self._fanout_expiry(
             workspace_id=session.workspace_id,
-            graph_id=session.graph_id,
+            project_id=session.project_id,
             removed=removed,
             cleared=cleared,
         )
@@ -313,24 +334,24 @@ class GraphRoomHub:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID,
-        accepted: GraphCommandAcceptedMessage,
-        receipt: GraphCommandReceiptMessage | None = None,
+        project_id: UUID,
+        accepted: ProjectCommandAcceptedMessage,
+        receipt: ProjectCommandReceiptMessage | None = None,
         receipt_session_id: UUID | None = None,
     ) -> None:
-        sessions = await self._sessions_for(workspace_id, graph_id)
+        sessions = await self._sessions_for(workspace_id, project_id)
         for session in sessions:
             await self._enqueue(session, accepted)
             if (
                 receipt is not None
                 and receipt_session_id is not None
-                and session.graph_room_session_id == receipt_session_id
+                and session.project_room_session_id == receipt_session_id
             ):
                 await self._enqueue(session, receipt)
 
     async def deliver_private(
         self,
-        session: GraphRoomSession,
+        session: ProjectRoomSession,
         message: BaseModel,
     ) -> None:
         """Deliver a private message (e.g. idempotent receipt) without fanout."""
@@ -341,41 +362,43 @@ class GraphRoomHub:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
         message: RoomRehydrateMessage,
     ) -> None:
-        for session in await self._sessions_for(workspace_id, graph_id):
+        for session in await self._sessions_for(workspace_id, project_id):
             await self._enqueue(session, message)
 
-    async def publish_execution_active(
+    async def publish_model(
+        self, *, workspace_id: UUID, project_id: UUID, message: BaseModel
+    ) -> None:
+        for session in await self._sessions_for(workspace_id, project_id):
+            await self._enqueue(session, message)
+
+    async def publish_transient(
+        self, *, workspace_id: UUID, project_id: UUID, message: BaseModel
+    ) -> None:
+        """Fan out a frame a reader may be without: presence delivery, not command delivery.
+
+        A streamed partial is worth exactly one frame and no more, so a subscriber that has
+        stopped draining its queue loses this one and keeps its room. The alternative — the
+        ``_enqueue`` path above — closes a slow consumer, which is how one unread answer
+        would turn into everyone on the Project being disconnected every time a model talks
+        quickly. What a reader missed is readable: the durable message event follows, and the
+        conversation route has the whole text.
+        """
+
+        for session in await self._sessions_for(workspace_id, project_id):
+            self._offer(session, message)
+
+    async def close_project(
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID,
-        message: ExecutionActiveMessage,
+        project_id: UUID,
+        code: int = CLOSE_PROJECT_DELETED[0],
+        reason: str = CLOSE_PROJECT_DELETED[1],
     ) -> None:
-        for session in await self._sessions_for(workspace_id, graph_id):
-            await self._enqueue(session, message)
-
-    async def publish_execution_cleared(
-        self,
-        *,
-        workspace_id: UUID,
-        graph_id: UUID,
-        message: ExecutionClearedMessage,
-    ) -> None:
-        for session in await self._sessions_for(workspace_id, graph_id):
-            await self._enqueue(session, message)
-
-    async def close_graph(
-        self,
-        *,
-        workspace_id: UUID,
-        graph_id: UUID,
-        code: int = CLOSE_GRAPH_DELETED[0],
-        reason: str = CLOSE_GRAPH_DELETED[1],
-    ) -> None:
-        for session in await self._sessions_for(workspace_id, graph_id):
+        for session in await self._sessions_for(workspace_id, project_id):
             await self._close_session(session, code=code, reason=reason)
 
     async def close_workspace_user(
@@ -391,6 +414,13 @@ class GraphRoomHub:
             await self._close_session(session, code=code, reason=reason)
 
     async def shutdown(self) -> None:
+        """Retire every room so the process holding this hub can finish stopping.
+
+        Every sender is cancelled *and awaited* here, within ``SENDER_STOP_TIMEOUT_SECONDS``
+        each: a lifespan that returns with a live sender hands that task to the event
+        loop's final cleanup, which waits for it without a deadline of its own.
+        """
+
         async with self._lock:
             sessions = [
                 member.session
@@ -404,20 +434,20 @@ class GraphRoomHub:
     async def _sessions_for(
         self,
         workspace_id: UUID,
-        graph_id: UUID,
-    ) -> list[GraphRoomSession]:
+        project_id: UUID,
+    ) -> list[ProjectRoomSession]:
         async with self._lock:
-            room = self._rooms.get((workspace_id, graph_id), {})
+            room = self._rooms.get((workspace_id, project_id), {})
             return [member.session for member in room.values()]
 
     async def _sessions_for_workspace_user(
         self,
         workspace_id: UUID,
         user_id: UUID,
-    ) -> list[GraphRoomSession]:
+    ) -> list[ProjectRoomSession]:
         async with self._lock:
-            matched: list[GraphRoomSession] = []
-            for (room_workspace_id, _graph_id), room in self._rooms.items():
+            matched: list[ProjectRoomSession] = []
+            for (room_workspace_id, _project_id), room in self._rooms.items():
                 if room_workspace_id != workspace_id:
                     continue
                 for member in room.values():
@@ -465,7 +495,7 @@ class GraphRoomHub:
             ):
                 continue
             entry.participant = PresenceParticipant(
-                graph_room_session_id=participant.graph_room_session_id,
+                project_room_session_id=participant.project_room_session_id,
                 actor=participant.actor,
                 presence_sequence=participant.presence_sequence,
             )
@@ -476,36 +506,39 @@ class GraphRoomHub:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
         removed: list[UUID],
         cleared: list[PresenceParticipant],
     ) -> None:
         if not removed and not cleared:
             return
-        sessions = await self._sessions_for(workspace_id, graph_id)
+        sessions = await self._sessions_for(workspace_id, project_id)
         for session_id in removed:
-            message = PresenceLeaveMessage(graph_room_session_id=session_id)
+            message = PresenceLeaveMessage(project_room_session_id=session_id)
             for session in sessions:
                 await self._enqueue_presence(session, message)
         for participant in cleared:
             message = PresenceUpdateMessage(participant=participant)
             for session in sessions:
-                if session.graph_room_session_id == participant.graph_room_session_id:
+                if (
+                    session.project_room_session_id
+                    == participant.project_room_session_id
+                ):
                     continue
                 await self._enqueue_presence(session, message)
 
-    async def _enqueue(self, session: GraphRoomSession, message: BaseModel) -> None:
+    async def _enqueue(self, session: ProjectRoomSession, message: BaseModel) -> None:
         if session.closed:
             return
         try:
             session.outbound.put_nowait(message)
         except asyncio.QueueFull:
             logger.warning(
-                "graph_room_slow_consumer workspace_id=%s graph_id=%s "
-                "graph_room_session_id=%s",
+                "graph_room_slow_consumer workspace_id=%s project_id=%s "
+                "project_room_session_id=%s",
                 session.workspace_id,
-                session.graph_id,
-                session.graph_room_session_id,
+                session.project_id,
+                session.project_room_session_id,
             )
             await self._close_session(
                 session,
@@ -513,40 +546,106 @@ class GraphRoomHub:
                 reason=CLOSE_SLOW_CONSUMER[1],
             )
 
-    async def _enqueue_presence(
-        self,
-        session: GraphRoomSession,
-        message: BaseModel,
-    ) -> None:
-        """Best-effort presence delivery; drop under backpressure before disconnect."""
+    def _offer(self, session: ProjectRoomSession, message: BaseModel) -> None:
+        """Best-effort presence delivery; drop under backpressure before disconnect.
+
+        Synchronous because a departing room has to be able to announce itself from a
+        context that is being cancelled and cannot await.
+        """
 
         if session.closed:
             return
         if session.outbound.qsize() >= PRESENCE_DROP_QUEUE_WATERMARK:
             return
-        try:
+        with contextlib.suppress(asyncio.QueueFull):
             session.outbound.put_nowait(message)
-        except asyncio.QueueFull:
-            return
 
-    async def _sender_loop(self, session: GraphRoomSession) -> None:
+    async def _enqueue_presence(
+        self,
+        session: ProjectRoomSession,
+        message: BaseModel,
+    ) -> None:
+        self._offer(session, message)
+
+    def _cancel_sender(self, session: ProjectRoomSession) -> None:
+        """Ask the room's single sender task to stop, awaiting nothing."""
+
+        task = session.sender_task
+        if task is None or task is asyncio.current_task() or task.done():
+            return
+        task.cancel()
+
+    async def _stop_sender(self, session: ProjectRoomSession) -> None:
+        """Wait for the room's single sender task to stop, with a deadline.
+
+        ``_cancel_sender`` owns the request; this is the part that has to yield, and it is
+        bounded. Waiting is the point: a sender that was only cancelled is still a live
+        task when the call returns, and a task left on the loop at shutdown is waited on
+        unconditionally by whoever closes that loop — with no deadline of its own. A sender
+        still running past this deadline is reported on the room's own failure key rather
+        than dropped quietly, because the frames it held are gone with it.
+        """
+
+        task = session.sender_task
+        self._cancel_sender(session)
+        if task is None or task is asyncio.current_task() or task.done():
+            return
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait({task}, timeout=SENDER_STOP_TIMEOUT_SECONDS)
+        if not task.done():
+            logger.error(
+                "graph_room_sender_failed workspace_id=%s project_id=%s "
+                "project_room_session_id=%s reason=sender_did_not_stop "
+                "deadline_seconds=%s undelivered_frames=%s",
+                session.workspace_id,
+                session.project_id,
+                session.project_room_session_id,
+                SENDER_STOP_TIMEOUT_SECONDS,
+                session.outbound.qsize(),
+            )
+
+    async def _sender_loop(self, session: ProjectRoomSession) -> None:
+        """The room's single writer, from queue to socket.
+
+        Whatever ends this loop, the session leaves the hub with it. A sender that stopped
+        while its session stayed registered is the worst of both: that peer is still
+        counted in presence and still fanned out to, so its queue fills to 64 and its
+        frames go nowhere, and the only thing that notices is a slow-consumer close much
+        later — or nothing at all, if it was the last participant out.
+        """
+
         try:
             while True:
                 message = await session.outbound.get()
                 if message is None or session.closed:
                     return
                 if session.websocket.application_state != WebSocketState.CONNECTED:
+                    logger.debug(
+                        "graph_room_sender_stopped workspace_id=%s project_id=%s "
+                        "project_room_session_id=%s reason=socket_closed",
+                        session.workspace_id,
+                        session.project_id,
+                        session.project_room_session_id,
+                    )
+                    await self._close_session(session, code=1000, reason="disconnected")
                     return
                 await session.websocket.send_json(message.model_dump(mode="json"))
         except WebSocketDisconnect:
-            return
+            logger.debug(
+                "graph_room_sender_stopped workspace_id=%s project_id=%s "
+                "project_room_session_id=%s reason=client_disconnect",
+                session.workspace_id,
+                session.project_id,
+                session.project_room_session_id,
+            )
+            await self._close_session(session, code=1000, reason="disconnected")
         except Exception:
             logger.exception(
-                "graph_room_sender_failed workspace_id=%s graph_id=%s "
-                "graph_room_session_id=%s",
+                "graph_room_sender_failed workspace_id=%s project_id=%s "
+                "project_room_session_id=%s",
                 session.workspace_id,
-                session.graph_id,
-                session.graph_room_session_id,
+                session.project_id,
+                session.project_room_session_id,
             )
             await self._close_session(
                 session,
@@ -554,44 +653,51 @@ class GraphRoomHub:
                 reason=CLOSE_PROTOCOL_ERROR[1],
             )
 
+    def _retire(self, session: ProjectRoomSession) -> bool:
+        """Mark the session dead, drop it from its room, and tell the peers it left.
+
+        Returns whether it was already closed. Every line here runs without awaiting, which
+        is the whole point: a room ends under cancellation as often as under an exception,
+        and a departure that still had a registry pop or a ``presence.leave`` behind an
+        await would leave a participant that is dead, listed, and never missed.
+
+        No hub lock: every critical section in this class is await-free, so the loop already
+        serialises it, and taking the lock would put an await in the one path that must not
+        have one.
+        """
+
+        already_closed = session.closed
+        session.closed = True
+        self._cancel_sender(session)
+        key = (session.workspace_id, session.project_id)
+        room = self._rooms.get(key)
+        if room is not None:
+            member = room.get(session.project_room_session_id)
+            if member is not None and member.session is session:
+                had_presence = member.presence is not None
+                room.pop(session.project_room_session_id, None)
+                if had_presence and not already_closed:
+                    leave_message = PresenceLeaveMessage(
+                        project_room_session_id=session.project_room_session_id,
+                    )
+                    for peer in room.values():
+                        if peer.session is not session:
+                            self._offer(peer.session, leave_message)
+            if not room:
+                self._rooms.pop(key, None)
+        return already_closed
+
     async def _close_session(
         self,
-        session: GraphRoomSession,
+        session: ProjectRoomSession,
         *,
         code: int,
         reason: str,
     ) -> None:
-        if session.closed:
+        already_closed = self._retire(session)
+        await self._stop_sender(session)
+        if already_closed:
             return
-        session.closed = True
-        key = (session.workspace_id, session.graph_id)
-        leave_recipients: list[GraphRoomSession] = []
-        had_presence = False
-        async with self._lock:
-            room = self._rooms.get(key)
-            if room is not None:
-                member = room.get(session.graph_room_session_id)
-                had_presence = member is not None and member.presence is not None
-                room.pop(session.graph_room_session_id, None)
-                if had_presence:
-                    leave_recipients = [
-                        peer.session
-                        for peer in room.values()
-                        if not peer.session.closed
-                    ]
-                if not room:
-                    self._rooms.pop(key, None)
-        if had_presence:
-            leave_message = PresenceLeaveMessage(
-                graph_room_session_id=session.graph_room_session_id,
-            )
-            for peer in leave_recipients:
-                await self._enqueue_presence(peer, leave_message)
-        if (
-            session.sender_task is not None
-            and session.sender_task is not asyncio.current_task()
-        ):
-            session.sender_task.cancel()
         try:
             session.outbound.put_nowait(None)
         except asyncio.QueueFull:
@@ -601,10 +707,10 @@ class GraphRoomHub:
                 await session.websocket.close(code=code, reason=reason[:123])
             except Exception:
                 logger.debug(
-                    "graph_room_close_failed workspace_id=%s graph_id=%s "
-                    "graph_room_session_id=%s",
+                    "graph_room_close_failed workspace_id=%s project_id=%s "
+                    "project_room_session_id=%s",
                     session.workspace_id,
-                    session.graph_id,
-                    session.graph_room_session_id,
+                    session.project_id,
+                    session.project_room_session_id,
                     exc_info=True,
                 )

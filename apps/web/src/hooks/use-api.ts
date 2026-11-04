@@ -3,12 +3,12 @@
 import * as React from "react";
 import useSWR, { useSWRConfig, type ScopedMutator } from "swr";
 import {
-  type GraphBrowserGraph,
-  type GraphBrowserList,
+  type ProjectBrowserItem,
+  type ProjectBrowserList,
   listWorkspaceMembers,
   listWorkspaces,
   type NodeRegistry,
-  type SavedGraphList,
+  type ProjectList,
   type Workspace,
   type WorkspaceInvitation,
   type WorkspaceInvitationForRecipient,
@@ -21,41 +21,41 @@ import { request } from "@/lib/api/client";
 /**
  * Keyed SWR hooks over the Grafy API (global fetcher is `apiFetcher`).
  *
- * Graph summaries come from two endpoints that share one authoritative
+ * Project summaries come from two endpoints that share one authoritative
  * contract: node and edge counts plus `updated_at` always describe the
  * collaborative draft head, `revision` is the durable checkpoint revision,
  * and `draft_pending` marks a head that is ahead of that checkpoint.
  */
 
-/** Every graph the user can reach, across workspaces. */
-export const ALL_GRAPHS_KEY = "/v1/me/graphs";
+/** Every Project the person can reach, across their Workspaces. */
+export const ALL_PROJECTS_KEY = "/v1/me/projects";
 
-/** Saved graphs inside one workspace. */
-export function workspaceGraphsKey(workspaceId: string): string {
-  return `/v1/workspaces/${encodeURIComponent(workspaceId)}/graphs`;
+/** The Projects of one Workspace. */
+export function workspaceProjectsKey(workspaceId: string): string {
+  return `/v1/workspaces/${encodeURIComponent(workspaceId)}/projects`;
 }
 
-/** Revalidate every discovery surface affected by a graph mutation. */
-export async function revalidateGraphSummaries(
+/** Revalidate every discovery surface a Project mutation touches. */
+export async function revalidateProjectSummaries(
   mutate: ScopedMutator,
   workspaceId?: string,
 ): Promise<void> {
   const keys = [
-    workspaceId ? workspaceGraphsKey(workspaceId) : null,
-    ALL_GRAPHS_KEY,
+    workspaceId ? workspaceProjectsKey(workspaceId) : null,
+    ALL_PROJECTS_KEY,
   ];
   await Promise.all(
     keys.filter((key) => key !== null).map((key) => mutate(key)),
   );
 }
 
-/** Revalidate both graph-list caches from any component. */
-export function useGraphSummaryRefresh(): (
+/** Revalidate both Project-list caches from any component. */
+export function useProjectSummaryRefresh(): (
   workspaceId?: string,
 ) => Promise<void> {
   const { mutate } = useSWRConfig();
   return React.useCallback(
-    (workspaceId?: string) => revalidateGraphSummaries(mutate, workspaceId),
+    (workspaceId?: string) => revalidateProjectSummaries(mutate, workspaceId),
     [mutate],
   );
 }
@@ -68,9 +68,9 @@ export function useNodeRegistry(workspaceId?: string) {
   );
 }
 
-export function useSavedGraphs(workspaceId?: string) {
-  return useSWR<SavedGraphList>(
-    workspaceId ? workspaceGraphsKey(workspaceId) : null,
+export function useWorkspaceProjects(workspaceId?: string) {
+  return useSWR<ProjectList>(
+    workspaceId ? workspaceProjectsKey(workspaceId) : null,
   );
 }
 
@@ -81,10 +81,10 @@ export function useWorkspaces(userId: string | undefined) {
   );
 }
 
-export type LocatedGraph = GraphBrowserGraph;
+export type LocatedProject = ProjectBrowserItem;
 
-export interface AllWorkspacesGraphsResult {
-  graphs: readonly LocatedGraph[] | null;
+export interface AllWorkspacesProjectsResult {
+  projects: readonly LocatedProject[] | null;
   error: Error | null;
   isLoading: boolean;
   /** True while a revalidation is in flight over cached summaries. */
@@ -92,21 +92,21 @@ export interface AllWorkspacesGraphsResult {
   retry: () => Promise<void>;
 }
 
-export function useAllWorkspacesGraphs(
+export function useAllWorkspacesProjects(
   workspaces: readonly Workspace[] | undefined,
-): AllWorkspacesGraphsResult {
-  const load = useSWR<GraphBrowserList>(
-    workspaces && workspaces.length > 0 ? ALL_GRAPHS_KEY : null,
-    (path: string) => request<GraphBrowserList>("GET", path),
+): AllWorkspacesProjectsResult {
+  const load = useSWR<ProjectBrowserList>(
+    workspaces && workspaces.length > 0 ? ALL_PROJECTS_KEY : null,
+    (path: string) => request<ProjectBrowserList>("GET", path),
     { shouldRetryOnError: false },
   );
-  const graphs =
+  const projects =
     !workspaces || (workspaces.length > 0 && !load.data)
       ? null
-      : (load.data?.graphs ?? []);
+      : (load.data?.projects ?? []);
 
   return {
-    graphs,
+    projects,
     error: load.error instanceof Error ? load.error : null,
     isLoading: Boolean(workspaces?.length) && load.isLoading,
     isRefreshing: load.isValidating && !load.isLoading,

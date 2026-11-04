@@ -7,7 +7,6 @@
 - **Designs:** [Plugin unification](../design/plugin-unification.md),
   [Plugin development](../design/plugin-development.md), and
   [backend architecture](../design/backend-architecture.md)
-- **Plan:** [Plugin releases implementation plan](../plans/workspace-plugins/README.md)
 
 ## Context
 

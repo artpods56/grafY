@@ -1,43 +1,34 @@
-from typing import Any
-
 import pytest
 from pydantic import ValidationError
 
 from grafy_core.domain.implementation import (
     BuiltinImplementationIdentity,
-    PluginImplementationIdentity,
 )
-from grafy_core.domain.plugin_identity import PluginReleaseScope
-from grafy_core.domain.saved_graphs import (
-    GraphPoint,
+from grafy_core.domain.graph_documents import (
     SAVED_GRAPH_SCHEMA_VERSION,
-    SavedGraphDocument,
-    SavedGraphNode,
-    SavedGraphPluginReleasePin,
+    GraphDocument,
+    GraphNode,
 )
 
 
-PIN = SavedGraphPluginReleasePin(
-    scope=PluginReleaseScope.SYSTEM,
-    slug="external.llm",
-    revision=3,
-)
-
-
-def _node(**overrides: Any) -> SavedGraphNode:
-    payload: dict[str, Any] = {
+def _node_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
         "kind": "builtin",
         "id": "n1",
         "operator_id": "test.arithmetic.add",
         "operator_version": 1,
         "config": {},
-        "position": GraphPoint(x=0.0, y=0.0),
+        "position": {"x": 0.0, "y": 0.0},
     }
     payload.update(overrides)
-    return SavedGraphNode.model_validate(payload)
+    return payload
 
 
-def test_builtin_plugin_and_module_nodes_round_trip() -> None:
+def _node(**overrides: object) -> GraphNode:
+    return GraphNode.model_validate(_node_payload(**overrides))
+
+
+def test_builtin_and_module_nodes_round_trip() -> None:
     builtin = _node()
     module = _node(
         id="n3",
@@ -46,65 +37,64 @@ def test_builtin_plugin_and_module_nodes_round_trip() -> None:
         operator_version=2,
     )
 
-    payload = SavedGraphDocument(nodes=(builtin, module)).model_dump(mode="json")
-    legacy_plugin = dict(payload["nodes"][0])
-    legacy_plugin.update(
-        id="n2",
-        kind="plugin",
-        operator_id="llm.openai_compatible.chat_completion",
-        plugin_release_pin=PIN.model_dump(mode="json"),
-        config={"model": "example"},
-    )
-    payload["nodes"].insert(1, legacy_plugin)
-    restored = SavedGraphDocument.model_validate(payload)
-    assert restored.schema_version == SAVED_GRAPH_SCHEMA_VERSION
-    assert restored.nodes[0].kind == "builtin"
-    assert restored.nodes[1].kind == "builtin"
-    assert restored.nodes[1].operator_id == "llm.openai_compatible.chat_completion"
-    assert restored.nodes[1].config_dict() == {"model": "example"}
-    assert "plugin_release_pin" not in restored.model_dump(mode="json")["nodes"][1]
-    assert restored.nodes[2].kind == "module"
-    assert (
-        SavedGraphDocument.model_validate(restored.model_dump(mode="json")) == restored
-    )
+    document = GraphDocument(nodes=(builtin, module))
+    payload = document.model_dump(mode="json")
+    assert GraphDocument.model_validate(payload) == document
+    assert payload["schema_version"] == SAVED_GRAPH_SCHEMA_VERSION
+    assert [node["kind"] for node in payload["nodes"]] == ["builtin", "module"]
 
 
-def test_builtin_node_discards_legacy_release_pin() -> None:
-    node = _node(plugin_release_pin=PIN)
-    assert node.kind == "builtin"
-    assert "plugin_release_pin" not in node.model_dump(mode="json")
-
-
-@pytest.mark.parametrize("pin", [None, {"revision": "invalid"}])
-def test_legacy_plugin_node_does_not_require_a_valid_release_pin(pin: object) -> None:
-    node = _node(kind="plugin", plugin_release_pin=pin)
-    assert node.kind == "builtin"
-    assert node.operator_id == "test.arithmetic.add"
-    assert "plugin_release_pin" not in node.model_dump(mode="json")
-
-
-def test_legacy_normalization_still_rejects_invalid_node_fields() -> None:
-    with pytest.raises(ValidationError, match="operator_version"):
-        _node(kind="plugin", plugin_release_pin=PIN, operator_version=0)
+def test_plugin_node_kind_is_rejected() -> None:
     with pytest.raises(ValidationError, match="kind"):
-        _node(kind="unknown", plugin_release_pin=PIN)
+        _node(
+            kind="plugin",
+            operator_id="llm.openai_compatible.chat_completion",
+        )
 
 
-def test_saved_graph_document_rejects_legacy_schema_versions() -> None:
-    payload = SavedGraphDocument(nodes=(_node(),)).model_dump(mode="json")
-    for version in (1, 2, 3, 4, 5):
+@pytest.mark.parametrize(
+    "pin",
+    [
+        {"scope": "system", "slug": "external.llm", "revision": 3},
+        None,
+    ],
+)
+def test_release_pin_key_is_rejected(pin: object) -> None:
+    with pytest.raises(ValidationError, match="plugin_release_pin"):
+        _node(plugin_release_pin=pin)
+
+
+def test_invalid_node_fields_are_rejected() -> None:
+    with pytest.raises(ValidationError, match="operator_version"):
+        _node(operator_version=0)
+    with pytest.raises(ValidationError, match="kind"):
+        _node(kind="unknown")
+
+
+def test_saved_graph_document_rejects_other_schema_versions() -> None:
+    payload = GraphDocument(nodes=(_node(),)).model_dump(mode="json")
+    for version in (1, 2, 3, 4, 5, 6):
         payload["schema_version"] = version
-        with pytest.raises(ValidationError, match="is not supported"):
-            SavedGraphDocument.model_validate(payload)
+        with pytest.raises(ValidationError, match="schema_version"):
+            GraphDocument.model_validate(payload)
 
 
-def test_implementation_identity_separates_builtin_build_from_plugin_release() -> None:
+def test_implementation_identity_is_the_build_digest() -> None:
     builtin = BuiltinImplementationIdentity(build_digest="a" * 64)
-    plugin = PluginImplementationIdentity(
-        plugin_release_pin=PIN,
-        manifest_digest="b" * 64,
-        image_digest="c" * 64,
-    )
-    assert builtin.fingerprint_document()["kind"] == "builtin"
-    assert plugin.fingerprint_document()["plugin_release_pin"]["revision"] == 3
-    assert builtin.fingerprint_document() != plugin.fingerprint_document()
+    assert builtin.fingerprint_document() == {
+        "kind": "builtin",
+        "build_digest": "a" * 64,
+    }
+    assert builtin.provenance_document() == builtin.fingerprint_document()
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        BuiltinImplementationIdentity.model_validate(
+            {
+                "kind": "plugin",
+                "build_digest": "a" * 64,
+                "plugin_release_pin": {
+                    "scope": "system",
+                    "slug": "external.llm",
+                    "revision": 3,
+                },
+            }
+        )

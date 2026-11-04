@@ -6,7 +6,7 @@ from uuid import UUID
 import pytest
 
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
-from grafy_core.domain.saved_graphs import SavedGraph, SavedGraphDocument
+from grafy_core.domain.projects import Project
 from grafy_core.domain.identity import Workspace
 
 from grafy_persistence.database import Database, create_database
@@ -40,7 +40,7 @@ async def database(tmp_path: Path) -> AsyncIterator[Database]:
 
 
 def _encrypted_secret(
-    graph_id: UUID,
+    project_id: UUID,
     *,
     workspace_id: UUID,
     ciphertext: bytes = b"ciphertext-with-authentication-tag",
@@ -49,13 +49,14 @@ def _encrypted_secret(
     timestamp = at or datetime(2026, 7, 16, 8, 0, tzinfo=UTC)
     return EncryptedNodeSecret(
         workspace_id=workspace_id,
-        graph_id=graph_id,
+        project_id=project_id,
+        graph_id="main",
         node_id="llm-node",
         name="api_key",
         operator_id="llm.openai.chat-completion",
         operator_version=1,
         key_id="0123456789abcdef",
-        aad_version=2,
+        aad_version=3,
         dependency_sha256="a" * 64,
         nonce=b"0123456789ab",
         ciphertext=ciphertext,
@@ -68,14 +69,13 @@ def _encrypted_secret(
 async def test_node_secret_round_trips_and_upserts_without_replacing_created_at(
     database: Database,
 ) -> None:
-    graph = SavedGraph(
+    graph = Project(
         workspace_id=WORKSPACE_ID,
         name="Encrypted graph",
-        document=SavedGraphDocument(),
     )
     original = _encrypted_secret(graph.id, workspace_id=graph.workspace_id)
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.graphs.add(graph)
+        await unit_of_work.projects.add(graph)
         await unit_of_work.node_secrets.upsert(original)
         await unit_of_work.commit()
 
@@ -94,11 +94,12 @@ async def test_node_secret_round_trips_and_upserts_without_replacing_created_at(
         loaded = await unit_of_work.node_secrets.get(
             graph.workspace_id,
             graph.id,
+            "main",
             "llm-node",
             "api_key",
         )
         listed = await unit_of_work.node_secrets.list_for_graph(
-            graph.workspace_id, graph.id
+            graph.workspace_id, graph.id, "main"
         )
 
     assert loaded is not None
@@ -109,31 +110,30 @@ async def test_node_secret_round_trips_and_upserts_without_replacing_created_at(
 
 
 @pytest.mark.asyncio
-async def test_deleting_saved_graph_cascades_to_node_secrets(
+async def test_deleting_project_cascades_to_node_secrets(
     database: Database,
 ) -> None:
-    graph = SavedGraph(
+    graph = Project(
         workspace_id=WORKSPACE_ID,
         name="Disposable secret",
-        document=SavedGraphDocument(),
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.graphs.add(graph)
+        await unit_of_work.projects.add(graph)
         await unit_of_work.node_secrets.upsert(
             _encrypted_secret(graph.id, workspace_id=graph.workspace_id)
         )
         await unit_of_work.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        loaded_graph = await unit_of_work.graphs.get(graph.workspace_id, graph.id)
+        loaded_graph = await unit_of_work.projects.get(graph.workspace_id, graph.id)
         assert loaded_graph is not None
-        await unit_of_work.graphs.remove(graph.workspace_id, loaded_graph)
+        await unit_of_work.projects.remove(graph.workspace_id, loaded_graph)
         await unit_of_work.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         assert (
             await unit_of_work.node_secrets.get(
-                graph.workspace_id, graph.id, "llm-node", "api_key"
+                graph.workspace_id, graph.id, "main", "llm-node", "api_key"
             )
             is None
         )
@@ -143,13 +143,12 @@ async def test_deleting_saved_graph_cascades_to_node_secrets(
 async def test_node_secret_can_be_removed_without_reading_ciphertext(
     database: Database,
 ) -> None:
-    graph = SavedGraph(
+    graph = Project(
         workspace_id=WORKSPACE_ID,
         name="Clear secret",
-        document=SavedGraphDocument(),
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.graphs.add(graph)
+        await unit_of_work.projects.add(graph)
         await unit_of_work.node_secrets.upsert(
             _encrypted_secret(graph.id, workspace_id=graph.workspace_id)
         )
@@ -157,36 +156,14 @@ async def test_node_secret_can_be_removed_without_reading_ciphertext(
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         await unit_of_work.node_secrets.remove(
-            graph.workspace_id, graph.id, "llm-node", "api_key"
+            graph.workspace_id, graph.id, "main", "llm-node", "api_key"
         )
         await unit_of_work.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         assert (
-            await unit_of_work.node_secrets.list_for_graph(graph.workspace_id, graph.id)
+            await unit_of_work.node_secrets.list_for_graph(
+                graph.workspace_id, graph.id, "main"
+            )
             == []
         )
-
-
-@pytest.mark.asyncio
-async def test_saved_graph_revision_lock_is_a_no_op_for_the_graph_row(
-    database: Database,
-) -> None:
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ID,
-        name="Lock target",
-        document=SavedGraphDocument(),
-    )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.graphs.add(graph)
-        await unit_of_work.commit()
-
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.graphs.lock_revision(
-            graph.workspace_id, graph.id, graph.revision
-        )
-        locked = await unit_of_work.graphs.get(graph.workspace_id, graph.id)
-        await unit_of_work.commit()
-
-    assert locked is not None
-    assert locked.revision == 1

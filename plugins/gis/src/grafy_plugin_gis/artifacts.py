@@ -7,7 +7,7 @@ from grafy_core.artifacts import (
     JsonObject,
 )
 
-from grafy_plugin_gis.models import (
+from grafy_core.spatial_contracts import (
     GeoMapDocument,
     GeoMapLayer,
 )

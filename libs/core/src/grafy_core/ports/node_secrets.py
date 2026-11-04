@@ -11,7 +11,8 @@ from grafy_core.domain.node_secrets import (
 from grafy_core.ports.transactions import TransactionPort
 
 if TYPE_CHECKING:
-    from grafy_core.ports.saved_graphs import SavedGraphRepositoryPort
+    from grafy_core.ports.projects import ProjectRepositoryPort
+    from grafy_core.ports.collaboration import CollaborationRepositoryPort
 
 
 class NodeSecretUnavailableError(RuntimeError):
@@ -19,12 +20,18 @@ class NodeSecretUnavailableError(RuntimeError):
 
 
 class NodeSecretResolverPort(Protocol):
+    """Resolves one node secret by where the node sits in a Project.
+
+    ``graph_id`` is ``None`` for a node outside any Graph, such as an unsaved
+    preview; ``project_id`` is ``None`` for the same reason.
+    """
+
     async def resolve_secret(
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
@@ -34,8 +41,8 @@ class NodeSecretResolverPort(Protocol):
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
@@ -47,26 +54,26 @@ class UnavailableNodeSecretResolver(NodeSecretResolverPort):
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> SecretStr:
-        del workspace_id, graph_id, graph_revision, node_id, name, dependencies
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
         raise NodeSecretUnavailableError("Node secrets are unavailable in this runtime")
 
     async def cache_revision(
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> str:
-        del workspace_id, graph_id, graph_revision, node_id, name, dependencies
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
         raise NodeSecretUnavailableError("Node secrets are unavailable in this runtime")
 
 
@@ -76,7 +83,8 @@ class NodeSecretRepositoryPort(Protocol):
     async def get(
         self,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
+        graph_id: str,
         node_id: str,
         name: str,
     ) -> EncryptedNodeSecret | None: ...
@@ -84,13 +92,15 @@ class NodeSecretRepositoryPort(Protocol):
     async def list_for_graph(
         self,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
+        graph_id: str,
     ) -> list[EncryptedNodeSecret]: ...
 
     async def remove(
         self,
         workspace_id: UUID,
-        graph_id: UUID,
+        project_id: UUID,
+        graph_id: str,
         node_id: str,
         name: str,
     ) -> None: ...
@@ -98,7 +108,10 @@ class NodeSecretRepositoryPort(Protocol):
 
 class NodeSecretUnitOfWorkPort(TransactionPort, Protocol):
     @property
-    def graphs(self) -> "SavedGraphRepositoryPort": ...
+    def projects(self) -> "ProjectRepositoryPort": ...
+
+    @property
+    def collaboration(self) -> "CollaborationRepositoryPort": ...
 
     @property
     def node_secrets(self) -> NodeSecretRepositoryPort: ...

@@ -1,10 +1,10 @@
-"""Report retired builtin nodes in exported SavedGraphDocument JSON files."""
+"""Report retired builtin nodes in exported GraphDocument JSON files."""
 
 import argparse
 from pathlib import Path
 from typing import Literal
 
-from grafy_core.domain.saved_graphs import SavedGraphDocument
+from grafy_core.domain.graph_documents import GraphDocument
 from pydantic import BaseModel
 
 
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     findings: list[BuiltinCleanupFinding] = []
     for path in args.documents:
-        document = SavedGraphDocument.model_validate_json(path.read_text())
+        document = GraphDocument.model_validate_json(path.read_text())
         for node in document.nodes:
             if node.kind != "builtin":
                 continue
@@ -63,8 +63,12 @@ if __name__ == "__main__":
                     node_id=node.id,
                     operator_id=node.operator_id,
                     action=action,
-                    incoming_edges=sum(edge.to_node == node.id for edge in document.edges),
-                    outgoing_edges=sum(edge.from_node == node.id for edge in document.edges),
+                    incoming_edges=sum(
+                        edge.to_node == node.id for edge in document.edges
+                    ),
+                    outgoing_edges=sum(
+                        edge.from_node == node.id for edge in document.edges
+                    ),
                 )
             )
     print(BuiltinCleanupAudit(findings=findings).model_dump_json(indent=2))

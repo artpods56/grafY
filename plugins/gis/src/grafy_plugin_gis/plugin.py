@@ -12,7 +12,7 @@ from grafy_plugin_gis.artifacts import (
     GEO_RASTER_SCAN,
 )
 from grafy_plugin_gis.declaration import GIS
-from grafy_plugin_gis.models import GeoMapDocument, GeoMapLayer
+from grafy_core.spatial_contracts import GeoMapDocument, GeoMapLayer
 from grafy_plugin_gis.persistence import (
     FeatureCollectionOutputWriter,
     FeatureCollectionResolver,

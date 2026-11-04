@@ -3,12 +3,11 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Tabs } from "@base-ui/react/tabs";
-import useSWR from "swr";
 
-import {
-  getGraphExecution,
-  listGraphExecutions,
-  type RunNodeResult,
+import type {
+  RunExecutionNodeStatus,
+  RunNodeResult,
+  RunPortOutput,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import type {
@@ -167,53 +166,15 @@ const s = stylex.create({
     fontSize: "9px",
     lineHeight: 1.45,
   },
-  historyList: {
+  resultList: {
     maxHeight: "146px",
     overflowX: "hidden",
     overflowY: "auto",
   },
-  historyButton: {
-    width: "100%",
-    minWidth: 0,
-    display: "flex",
-    alignItems: "baseline",
-    gap: "7px",
-    overflow: "hidden",
-    padding: "2px 10px",
-    borderWidth: 0,
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
-    outlineStyle: "solid",
-    outlineColor: tokens.colorAccent,
-    outlineOffset: "-2px",
-    backgroundColor: { default: "transparent", ":hover": tokens.colorHover },
-    color: tokens.colorMuted,
-    cursor: "pointer",
-    fontSize: "9px",
-    lineHeight: 1.45,
-    textAlign: "left",
-  },
-  historyTimestamp: {
-    minWidth: 0,
-    flex: 1,
-    overflow: "hidden",
-    color: tokens.colorMuted,
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  historyMeta: {
+  rowMeta: {
     flexShrink: 0,
     color: tokens.colorSubtle,
     fontFamily: MONO,
-  },
-  temporaryRow: {
-    color: tokens.colorWarning,
-  },
-  temporaryLabel: {
-    minWidth: 0,
-    flex: 1,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
   },
   state: {
     margin: 0,
@@ -225,27 +186,17 @@ const s = stylex.create({
   stateError: { color: tokens.colorDanger },
 });
 
-type AppendixTab = "events" | "history";
+type AppendixTab = "events" | "result";
 
-interface NodeHistoryRow {
-  executionId: string;
-  graphRevision: number;
-  artifactCount: number;
-  timestamp: string;
-}
-
-interface NodeHistoryResult {
-  rows: readonly NodeHistoryRow[];
-  hasMore: boolean;
-}
-
-type NodeHistoryKey = readonly [
-  "node-execution-appendix-history",
-  string,
-  string,
-  string,
-  string,
-];
+/**
+ * The state of this node's instance, as the Project derives it.
+ *
+ * The canvas overlay carries the coarse status the run surface publishes, so a
+ * caller that knows the derived instance state passes it and the card says
+ * "fresh" or "stale" outright. Without one the card reads what the overlay can
+ * still tell it, and never invents a state it was not given.
+ */
+export type NodeInstanceState = RunExecutionNodeStatus;
 
 export interface NodeExecutionAppendixProps {
   nodeId: string;
@@ -256,7 +207,66 @@ export interface NodeExecutionAppendixProps {
   progress: WorkflowNodeProgress | null;
   run: RunNodeResult | null;
   historyContext: WorkflowNodeHistoryContext | null;
+  instanceState?: NodeInstanceState | null;
+  /** @deprecated A Run has no history to open; kept while the canvas catches up. */
   onOpenHistory?: (nodeId: string, executionId?: string) => void;
+}
+
+const STATE_LABELS: Record<NodeInstanceState, string> = {
+  fresh: "Fresh",
+  stale: "Stale",
+  queued: "Queued",
+  running: "Running",
+  failed: "Failed",
+};
+
+const STATE_EXPLANATIONS: Record<NodeInstanceState, string> = {
+  fresh: "Its current fingerprint has a stored result.",
+  stale: "The graph changed since this instance last computed.",
+  queued: "A Run is waiting to compute it.",
+  running: "A computation for it is in flight.",
+  failed: "Its last attempt failed; a Run retries it.",
+};
+
+function nodeArtifactCount(
+  outputs: readonly RunPortOutput[] | undefined,
+): number {
+  return (outputs ?? []).reduce(
+    (total, output) => total + output.artifacts.length,
+    0,
+  );
+}
+
+function deriveInstanceState(
+  execution: NodeExecution,
+  run: RunNodeResult | null,
+  instanceState: NodeInstanceState | null | undefined,
+): NodeInstanceState | null {
+  if (instanceState) return instanceState;
+  switch (execution.status) {
+    case "queued":
+      return "queued";
+    case "running":
+    case "cancelling":
+      return "running";
+    case "failed":
+      return "failed";
+    case "succeeded":
+      return "fresh";
+    default:
+      return run ? "stale" : null;
+  }
+}
+
+function storedResultLabel(run: RunNodeResult | null): string | null {
+  const created_at = run?.created_at;
+  if (!created_at) return null;
+  const storedAt = new Date(created_at);
+  if (Number.isNaN(storedAt.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(storedAt);
 }
 
 function interactionProps(props: ReturnType<typeof stylex.props>) {
@@ -299,50 +309,6 @@ function progressEntryLabel(
   return parts.join(" · ");
 }
 
-function historyTimestamp(row: NodeHistoryRow): string {
-  const date = new Date(row.timestamp);
-  if (Number.isNaN(date.getTime())) return row.timestamp;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
-async function loadNodeHistory([
-  ,
-  workspaceId,
-  graphId,
-  nodeId,
-]: NodeHistoryKey): Promise<NodeHistoryResult> {
-  const executionList = await listGraphExecutions(workspaceId, graphId, {
-    limit: 5,
-    nodeId,
-  });
-  const details = await Promise.all(
-    executionList.items.map((item) =>
-      getGraphExecution(workspaceId, graphId, item.execution_id),
-    ),
-  );
-  const rows: NodeHistoryRow[] = [];
-  for (const detail of details) {
-    let nodeArtifactCount = 0;
-    for (const result of detail.node_results) {
-      if (result.node_id !== nodeId) continue;
-      for (const output of result.outputs) {
-        nodeArtifactCount += output.artifacts.length;
-      }
-    }
-    if (nodeArtifactCount === 0) continue;
-    rows.push({
-      executionId: detail.execution_id,
-      graphRevision: detail.graph_revision,
-      artifactCount: nodeArtifactCount,
-      timestamp: detail.finished_at ?? detail.started_at ?? detail.created_at,
-    });
-  }
-  return { rows, hasMore: executionList.next_cursor !== null };
-}
-
 function ProgressRow({
   entry,
   nodeTitle,
@@ -372,11 +338,13 @@ function CollapsedFootprint({
   execution,
   latestEvent,
   artifactCount,
+  state,
 }: {
   nodeTitle: string;
   execution: NodeExecution;
   latestEvent: WorkflowNodeProgressEntry | undefined;
   artifactCount: number;
+  state: NodeInstanceState | null;
 }) {
   if (execution.error) {
     return (
@@ -411,9 +379,14 @@ function CollapsedFootprint({
   }
 
   if (artifactCount > 0) {
+    const stateLabel = state ? STATE_LABELS[state] : "Stored";
     return (
-      <p {...stylex.props(s.footprint)}>
-        Latest result · {artifactCount} artifact{artifactCount === 1 ? "" : "s"}
+      <p
+        title={state ? STATE_EXPLANATIONS[state] : undefined}
+        {...stylex.props(s.footprint)}
+      >
+        {stateLabel} result · {artifactCount} artifact
+        {artifactCount === 1 ? "" : "s"}
       </p>
     );
   }
@@ -490,110 +463,73 @@ function EventsPanel({
   );
 }
 
-function HistoryPanel({
-  nodeId,
-  graphId,
-  isDirty,
+function ResultPanel({
+  state,
+  run,
   artifactCount,
-  rows,
-  loading,
-  error,
-  onOpenHistory,
 }: {
-  nodeId: string;
-  graphId: string | null;
-  isDirty: boolean;
+  state: NodeInstanceState | null;
+  run: RunNodeResult | null;
   artifactCount: number;
-  rows: readonly NodeHistoryRow[];
-  loading: boolean;
-  error: Error | undefined;
-  onOpenHistory?: (nodeId: string, executionId?: string) => void;
 }) {
-  const showTemporaryResult = artifactCount > 0 && (!graphId || isDirty);
+  const storedAt = storedResultLabel(run);
   return (
-    <div
-      role="list"
-      aria-label="Node execution history"
-      {...stylex.props(s.stack, s.historyList)}
-    >
-      {showTemporaryResult ? (
-        <div
-          role="listitem"
-          aria-label="Temporary current result"
-          {...stylex.props(s.row, s.temporaryRow)}
+    <div role="list" aria-label="Stored result" {...stylex.props(s.stack)}>
+      <div role="listitem" {...stylex.props(s.row)}>
+        <span
+          {...stylex.props(s.rowCopy)}
+          title={STATE_EXPLANATIONS[state ?? "stale"]}
         >
-          <span {...stylex.props(s.temporaryLabel)}>
-            Current result · temporary
-          </span>
-          <span {...stylex.props(s.historyMeta)}>
-            {artifactCount} artifact{artifactCount === 1 ? "" : "s"}
+          {state
+            ? `${STATE_LABELS[state]} · ${STATE_EXPLANATIONS[state]}`
+            : "This node has not been in a Run yet."}
+        </span>
+      </div>
+      {run?.status === "failed" && run.error ? (
+        <div role="alert" {...stylex.props(s.row, s.rowError)}>
+          <span title={run.error} {...stylex.props(s.rowCopy)}>
+            {run.error}
           </span>
         </div>
       ) : null}
-      {!graphId ? (
-        <p {...stylex.props(s.state)}>
-          Save the graph to build durable history.
-        </p>
-      ) : loading ? (
-        <p role="status" {...stylex.props(s.state)}>
-          Loading history…
-        </p>
-      ) : error ? (
-        <p
-          role="alert"
-          title={error.message}
-          {...stylex.props(s.state, s.stateError)}
-        >
-          History unavailable.
-        </p>
-      ) : rows.length === 0 ? (
-        <p {...stylex.props(s.state)}>No materialized results yet.</p>
+      {artifactCount === 0 ? (
+        <p {...stylex.props(s.state)}>No stored result for this instance.</p>
       ) : (
-        rows.map((row) => {
-          const timestamp = historyTimestamp(row);
-          const content = (
-            <>
-              <span title={timestamp} {...stylex.props(s.historyTimestamp)}>
-                {timestamp}
+        <>
+          <div role="listitem" {...stylex.props(s.row)}>
+            <span {...stylex.props(s.rowCopy)}>
+              {storedAt
+                ? `Stored ${storedAt}`
+                : "Stored result of this instance"}
+            </span>
+            <span {...stylex.props(s.rowMeta)}>
+              {artifactCount} artifact{artifactCount === 1 ? "" : "s"}
+            </span>
+          </div>
+          {run?.result_fingerprint ? (
+            <div role="listitem" {...stylex.props(s.row)}>
+              <span
+                title={run.result_fingerprint}
+                {...stylex.props(s.rowCopy, s.rowContext)}
+              >
+                {run.result_fingerprint.slice(0, 12)}
               </span>
-              <span {...stylex.props(s.historyMeta)}>r{row.graphRevision}</span>
-              <span {...stylex.props(s.historyMeta)}>
-                {row.artifactCount} artifact{row.artifactCount === 1 ? "" : "s"}
-              </span>
-            </>
-          );
-          return onOpenHistory ? (
-            <button
-              key={row.executionId}
-              type="button"
-              role="listitem"
-              aria-label={`Open ${timestamp}, revision ${row.graphRevision}, ${row.artifactCount} artifacts`}
-              {...interactionProps(stylex.props(s.historyButton))}
-              onClick={() => onOpenHistory(nodeId, row.executionId)}
-            >
-              {content}
-            </button>
-          ) : (
-            <div key={row.executionId} role="listitem" {...stylex.props(s.row)}>
-              {content}
             </div>
-          );
-        })
+          ) : null}
+        </>
       )}
     </div>
   );
 }
 
 export function NodeExecutionAppendix({
-  nodeId,
   nodeTitle,
   expanded,
   width,
   execution,
   progress,
   run,
-  historyContext,
-  onOpenHistory,
+  instanceState = null,
 }: NodeExecutionAppendixProps) {
   const [activeTab, setActiveTab] = React.useState<AppendixTab>("events");
   const entries = React.useMemo(
@@ -603,44 +539,14 @@ export function NodeExecutionAppendix({
       ),
     [progress],
   );
-  const artifactCount = (run?.outputs ?? []).reduce(
-    (total, output) => total + output.artifacts.length,
-    0,
-  );
-  const workspaceId = historyContext?.workspaceId ?? null;
-  const graphId = historyContext?.graphId ?? null;
-  const isDirty = historyContext?.isDirty ?? true;
-  const runArtifactRevision = JSON.stringify(
-    (run?.outputs ?? []).flatMap((output) =>
-      output.artifacts.map((artifact) => artifact.artifact_id),
-    ),
-  );
-  const historyKey: NodeHistoryKey | null =
-    expanded && workspaceId && graphId
-      ? [
-          "node-execution-appendix-history",
-          workspaceId,
-          graphId,
-          nodeId,
-          runArtifactRevision,
-        ]
-      : null;
-  const {
-    data: historyResult,
-    error: historyError,
-    isLoading: historyLoading,
-  } = useSWR<NodeHistoryResult, Error, NodeHistoryKey | null>(
-    historyKey,
-    loadNodeHistory,
-  );
-  const temporaryHistoryCount =
-    artifactCount > 0 && (!graphId || isDirty) ? 1 : 0;
-  const durableHistoryCount = historyResult?.rows.length ?? 0;
-  const historyCount = `${durableHistoryCount + temporaryHistoryCount}${
-    historyResult?.hasMore ? "+" : ""
-  }`;
+  const artifactCount = nodeArtifactCount(run?.outputs);
+  const state = deriveInstanceState(execution, run, instanceState);
   const eventCount =
     entries.length + (progress?.omittedCount ?? 0) + (execution.error ? 1 : 0);
+  const resultCount =
+    (run && artifactCount > 0 ? 1 : 0) +
+    (run?.status === "failed" ? 1 : 0) +
+    (state ? 1 : 0);
 
   const footprint = (
     <CollapsedFootprint
@@ -648,6 +554,7 @@ export function NodeExecutionAppendix({
       execution={execution}
       latestEvent={entries[0]}
       artifactCount={artifactCount}
+      state={state}
     />
   );
   if (!expanded) {
@@ -663,14 +570,10 @@ export function NodeExecutionAppendix({
     );
   }
 
-  // A node that has never run has nothing to put in either tab, and an empty
-  // Events/History pair is chrome reporting its own emptiness.
-  if (
-    execution.status === "idle" &&
-    eventCount === 0 &&
-    durableHistoryCount + temporaryHistoryCount === 0 &&
-    !historyError
-  ) {
+  // A node that has never been in a Run and never stored a result has nothing
+  // to put in either tab, and an empty pair is chrome reporting its own
+  // emptiness.
+  if (eventCount === 0 && resultCount === 0) {
     return null;
   }
 
@@ -683,7 +586,7 @@ export function NodeExecutionAppendix({
       <Tabs.Root
         value={activeTab}
         onValueChange={(value) => {
-          if (value === "events" || value === "history") {
+          if (value === "events" || value === "result") {
             setActiveTab(value);
           }
         }}
@@ -702,12 +605,12 @@ export function NodeExecutionAppendix({
             Events <span {...stylex.props(s.tabCount)}>{eventCount}</span>
           </Tabs.Tab>
           <Tabs.Tab
-            value="history"
+            value="result"
             {...interactionProps(
-              stylex.props(s.tab, activeTab === "history" ? s.tabActive : null),
+              stylex.props(s.tab, activeTab === "result" ? s.tabActive : null),
             )}
           >
-            History <span {...stylex.props(s.tabCount)}>{historyCount}</span>
+            Result <span {...stylex.props(s.tabCount)}>{resultCount}</span>
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="events" {...stylex.props(s.panel)}>
@@ -718,17 +621,8 @@ export function NodeExecutionAppendix({
             omittedCount={progress?.omittedCount ?? 0}
           />
         </Tabs.Panel>
-        <Tabs.Panel value="history" {...stylex.props(s.panel)}>
-          <HistoryPanel
-            nodeId={nodeId}
-            graphId={graphId}
-            isDirty={isDirty}
-            artifactCount={artifactCount}
-            rows={historyResult?.rows ?? []}
-            loading={historyLoading}
-            error={historyError}
-            onOpenHistory={onOpenHistory}
-          />
+        <Tabs.Panel value="result" {...stylex.props(s.panel)}>
+          <ResultPanel state={state} run={run} artifactCount={artifactCount} />
         </Tabs.Panel>
       </Tabs.Root>
     </aside>

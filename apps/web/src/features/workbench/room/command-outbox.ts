@@ -3,28 +3,28 @@ import { createUuid } from "@/features/workbench/model/uuid";
 import {
   ROOM_COMMAND_QUEUE_CAP,
   ROOM_PROTOCOL_VERSION,
-  type GraphCommandAcceptedMessage,
-  type GraphCommandReceiptMessage,
-  type GraphCommandRejectedMessage,
-  type GraphCommandSubmitMessage,
-  type RoomGraphCommand,
+  type ProjectCommandAcceptedMessage,
+  type ProjectCommandReceiptMessage,
+  type ProjectCommandRejectedMessage,
+  type ProjectCommandSubmitMessage,
+  type RoomProjectCommand,
 } from "./protocol";
 
-export class GraphRoomCommandError extends Error {
+export class ProjectRoomCommandError extends Error {
   readonly errorCode: string;
   readonly commandId: string;
 
   constructor(commandId: string, errorCode: string, detail: string) {
     super(detail);
-    this.name = "GraphRoomCommandError";
+    this.name = "ProjectRoomCommandError";
     this.commandId = commandId;
     this.errorCode = errorCode;
   }
 }
 
-export interface GraphRoomCommandResult {
-  readonly receipt: GraphCommandReceiptMessage;
-  readonly accepted: GraphCommandAcceptedMessage | null;
+export interface ProjectRoomCommandResult {
+  readonly receipt: ProjectCommandReceiptMessage;
+  readonly accepted: ProjectCommandAcceptedMessage | null;
 }
 
 /**
@@ -32,50 +32,51 @@ export interface GraphRoomCommandResult {
  * may be sent and whether a receipt is already reflected locally. The outbox
  * reads it and never owns it.
  */
-export interface GraphRoomHeadPointer {
+export interface ProjectRoomHeadPointer {
   readonly room_epoch: string;
   readonly collaboration_sequence: number;
 }
 
-/** A submit frame the driver must write to its transport. */
-export interface OutgoingGraphCommand {
+/** A submit frame the driver must write to its transport. One frame is one batch. */
+export interface OutgoingProjectCommand {
   readonly commandId: string;
-  readonly message: GraphCommandSubmitMessage;
+  readonly message: ProjectCommandSubmitMessage;
 }
 
-export interface GraphRoomCommandSubmission {
-  readonly promise: Promise<GraphRoomCommandResult>;
-  readonly sends: readonly OutgoingGraphCommand[];
+export interface ProjectRoomCommandSubmission {
+  readonly promise: Promise<ProjectRoomCommandResult>;
+  readonly sends: readonly OutgoingProjectCommand[];
 }
 
 interface QueuedCommand {
   readonly commandId: string;
-  readonly command: RoomGraphCommand;
-  readonly resolve: (result: GraphRoomCommandResult) => void;
+  /** The batch as submitted: a Project command batch is one unit of work. */
+  readonly commands: readonly RoomProjectCommand[];
+  readonly resolve: (result: ProjectRoomCommandResult) => void;
   readonly reject: (error: Error) => void;
   sent: boolean;
   roomEpoch: string | null;
   observedSequence: number | null;
-  accepted: GraphCommandAcceptedMessage | null;
-  receipt: GraphCommandReceiptMessage | null;
+  accepted: ProjectCommandAcceptedMessage | null;
+  receipt: ProjectCommandReceiptMessage | null;
 }
 
-export interface GraphRoomCommandOutboxOptions {
+export interface ProjectRoomCommandOutboxOptions {
   /**
    * Read-only view of the confirmed head. Sending stops while it is null; the
    * driver owns head replacement.
    */
-  readonly headPointer?: () => GraphRoomHeadPointer | null;
+  readonly headPointer?: () => ProjectRoomHeadPointer | null;
   /** Gate consulted before every send: policy plus transport readiness. */
   readonly canSend?: () => boolean;
   readonly createCommandId?: () => string;
   readonly onHeadRefreshRequired?: () => void;
-  readonly onCommandRejected?: (message: GraphCommandRejectedMessage) => void;
+  readonly onCommandRejected?: (message: ProjectCommandRejectedMessage) => void;
 }
 
 /**
- * Correlates outgoing graph commands with the accepted / receipt / rejected
- * messages that come back: the FIFO queue, the single in-flight command, the
+ * Correlates outgoing Project command batches with the accepted / receipt /
+ * rejected messages that come back: the FIFO queue, the single in-flight batch, the
  * ids that mark a message as locally originated, and the drain gate that
  * pauses sending until the driver restores a full head snapshot.
  *
@@ -83,13 +84,13 @@ export interface GraphRoomCommandOutboxOptions {
  * the submit frames the driver should write; the driver reports a write that
  * failed with `sendFailed`.
  */
-export class GraphRoomCommandOutbox {
-  private readonly headPointer: () => GraphRoomHeadPointer | null;
+export class ProjectRoomCommandOutbox {
+  private readonly headPointer: () => ProjectRoomHeadPointer | null;
   private readonly canSend: () => boolean;
   private readonly createCommandId: () => string;
   private readonly onHeadRefreshRequired: (() => void) | undefined;
   private readonly onCommandRejected:
-    ((message: GraphCommandRejectedMessage) => void) | undefined;
+    ((message: ProjectCommandRejectedMessage) => void) | undefined;
 
   private readonly queue: QueuedCommand[] = [];
   private inFlight: QueuedCommand | null = null;
@@ -97,7 +98,7 @@ export class GraphRoomCommandOutbox {
   /** When true, do not send queued commands until a full snapshot lands. */
   private awaitingHeadRehydration = false;
 
-  constructor(options: GraphRoomCommandOutboxOptions = {}) {
+  constructor(options: ProjectRoomCommandOutboxOptions = {}) {
     this.headPointer = options.headPointer ?? (() => null);
     this.canSend = options.canSend ?? (() => true);
     this.createCommandId = options.createCommandId ?? createUuid;
@@ -106,15 +107,17 @@ export class GraphRoomCommandOutbox {
   }
 
   /**
-   * Queue a command, replacing unsent snapshot commands of the same kind.
-   * The returned promise settles with the command's receipt.
+   * Queue one command batch, replacing unsent snapshot batches of the same
+   * kind. The returned promise settles with the batch's receipt.
    */
-  submit(command: RoomGraphCommand): GraphRoomCommandSubmission {
-    this.supersedeQueuedSnapshotCommand(command);
+  submit(
+    commands: readonly RoomProjectCommand[],
+  ): ProjectRoomCommandSubmission {
+    this.supersedeQueuedSnapshotCommand(commands);
     if (this.queue.length + (this.inFlight ? 1 : 0) >= ROOM_COMMAND_QUEUE_CAP) {
       return {
         promise: Promise.reject(
-          new GraphRoomCommandError(
+          new ProjectRoomCommandError(
             "",
             "queue_full",
             "Waiting to synchronize. Durable authoring is paused until the queue drains.",
@@ -126,10 +129,10 @@ export class GraphRoomCommandOutbox {
 
     const commandId = this.createCommandId();
     this.localCommandIds.add(commandId);
-    const promise = new Promise<GraphRoomCommandResult>((resolve, reject) => {
+    const promise = new Promise<ProjectRoomCommandResult>((resolve, reject) => {
       this.queue.push({
         commandId,
-        command,
+        commands,
         resolve,
         reject,
         sent: false,
@@ -147,7 +150,7 @@ export class GraphRoomCommandOutbox {
    * command. The accepted payload is kept for the caller's promise even when
    * the head rejects the sequence, so a later replay receipt still reports it.
    */
-  recordAccepted(message: GraphCommandAcceptedMessage): boolean {
+  recordAccepted(message: ProjectCommandAcceptedMessage): boolean {
     const local = this.localCommandIds.delete(message.command_id);
     if (this.inFlight?.commandId === message.command_id) {
       this.inFlight.accepted = message;
@@ -157,8 +160,8 @@ export class GraphRoomCommandOutbox {
 
   /** Settle the in-flight command once its receipt arrives. */
   applyReceipt(
-    message: GraphCommandReceiptMessage,
-  ): readonly OutgoingGraphCommand[] {
+    message: ProjectCommandReceiptMessage,
+  ): readonly OutgoingProjectCommand[] {
     const pending = this.inFlight;
     if (!pending || pending.commandId !== message.command_id) {
       return [];
@@ -177,7 +180,7 @@ export class GraphRoomCommandOutbox {
    * Re-check a held receipt after the driver applied an accepted command to
    * the head. Only a paused drain with a now-covered receipt is resumed here.
    */
-  afterHeadApplied(): readonly OutgoingGraphCommand[] {
+  afterHeadApplied(): readonly OutgoingProjectCommand[] {
     const pendingReceipt = this.inFlight?.receipt;
     if (
       this.awaitingHeadRehydration &&
@@ -191,7 +194,7 @@ export class GraphRoomCommandOutbox {
   }
 
   /** A full snapshot landed: settle what it covers and resume the drain. */
-  finishHeadRehydration(): readonly OutgoingGraphCommand[] {
+  finishHeadRehydration(): readonly OutgoingProjectCommand[] {
     const pending = this.inFlight;
     if (pending?.receipt !== null && pending?.receipt !== undefined) {
       if (!this.headCoversReceipt(pending.receipt)) {
@@ -206,7 +209,7 @@ export class GraphRoomCommandOutbox {
   }
 
   /** Correlate a rejection and reject the caller's promise for it. */
-  applyRejected(message: GraphCommandRejectedMessage): void {
+  applyRejected(message: ProjectCommandRejectedMessage): void {
     this.localCommandIds.delete(message.command_id);
     const pending = this.inFlight;
     if (!pending || pending.commandId !== message.command_id) {
@@ -221,7 +224,7 @@ export class GraphRoomCommandOutbox {
     this.inFlight = null;
     this.onCommandRejected?.(message);
     pending.reject(
-      new GraphRoomCommandError(
+      new ProjectRoomCommandError(
         message.command_id,
         message.error_code,
         message.detail,
@@ -262,10 +265,10 @@ export class GraphRoomCommandOutbox {
     pending.reject(
       error instanceof Error
         ? error
-        : new GraphRoomCommandError(
+        : new ProjectRoomCommandError(
             commandId,
             "send_failed",
-            "Failed to send graph command.",
+            "Failed to send the command batch.",
           ),
     );
   }
@@ -288,7 +291,7 @@ export class GraphRoomCommandOutbox {
     this.localCommandIds.clear();
   }
 
-  private headCoversReceipt(message: GraphCommandReceiptMessage): boolean {
+  private headCoversReceipt(message: ProjectCommandReceiptMessage): boolean {
     const head = this.headPointer();
     return (
       head !== null &&
@@ -307,20 +310,19 @@ export class GraphRoomCommandOutbox {
     });
   }
 
-  private supersedeQueuedSnapshotCommand(command: RoomGraphCommand): void {
-    if (
-      command.kind !== "replace_presentation" &&
-      command.kind !== "replace_document"
-    ) {
-      return;
-    }
+  private supersedeQueuedSnapshotCommand(
+    commands: readonly RoomProjectCommand[],
+  ): void {
+    const kind = snapshotCommandKind(commands);
+    if (kind === null) return;
     for (let index = this.queue.length - 1; index >= 0; index -= 1) {
       const item = this.queue[index];
-      if (!item || item.sent || item.command.kind !== command.kind) continue;
+      if (!item || item.sent || snapshotCommandKind(item.commands) !== kind)
+        continue;
       this.queue.splice(index, 1);
       this.localCommandIds.delete(item.commandId);
       item.reject(
-        new GraphRoomCommandError(
+        new ProjectRoomCommandError(
           item.commandId,
           "superseded",
           "A newer snapshot command replaced this queued command.",
@@ -329,7 +331,7 @@ export class GraphRoomCommandOutbox {
     }
   }
 
-  private drainQueue(): readonly OutgoingGraphCommand[] {
+  private drainQueue(): readonly OutgoingProjectCommand[] {
     if (this.inFlight || this.awaitingHeadRehydration || !this.canSend()) {
       return [];
     }
@@ -345,14 +347,31 @@ export class GraphRoomCommandOutbox {
     next.sent = true;
     next.roomEpoch = roomEpoch;
     next.observedSequence = observedSequence;
-    const message: GraphCommandSubmitMessage = {
+    const message: ProjectCommandSubmitMessage = {
       protocol_version: ROOM_PROTOCOL_VERSION,
-      type: "graph.command.submit",
+      type: "project.command.submit",
       command_id: next.commandId,
       room_epoch: roomEpoch,
       observed_sequence: observedSequence,
-      command: next.command,
+      commands: next.commands,
     };
     return [{ commandId: next.commandId, message }];
   }
+}
+
+/**
+ * The snapshot commands replace a whole body rather than describe a change, so
+ * an unsent one is worthless once a newer snapshot is queued. Compared by the
+ * inner kind, whether it arrived bare or addressed to one Graph.
+ */
+function snapshotCommandKind(
+  commands: readonly RoomProjectCommand[],
+): "replace_document" | "replace_presentation" | null {
+  if (commands.length !== 1) return null;
+  const [command] = commands;
+  if (!command) return null;
+  const inner = command.kind === "in_graph" ? command.command : command;
+  if (inner.kind === "replace_document") return "replace_document";
+  if (inner.kind === "replace_presentation") return "replace_presentation";
+  return null;
 }

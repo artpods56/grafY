@@ -27,11 +27,13 @@ def _registry_with(*claims: tuple[str, tuple[str, ...]]) -> PluginRegistry:
 
 
 def _snapshot(registry: PluginRegistry | None = None) -> CatalogSnapshot:
-    return CatalogSnapshot.from_registry(registry or PluginRegistry(), [])
+    return CatalogSnapshot.from_registry(registry or PluginRegistry())
 
 
 def _spec_for(snapshot: CatalogSnapshot, artifact_type_id: str) -> ArtifactTypeSpec:
-    return next(spec for spec in snapshot.artifact_types if spec.key.id == artifact_type_id)
+    return next(
+        spec for spec in snapshot.artifact_types if spec.key.id == artifact_type_id
+    )
 
 
 def test_deployment_table_resolves_json_and_declares_document_confirmation() -> None:

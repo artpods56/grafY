@@ -30,7 +30,7 @@ from grafy_core.domain import (
     WorkspaceKind,
     WorkspaceRole,
 )
-from grafy_persistence import SqlAlchemyUnitOfWork
+from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession

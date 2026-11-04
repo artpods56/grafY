@@ -146,17 +146,14 @@ class WorkspaceMemberRoleRequest(BaseModel):
 
 
 class PersonalAccessTokenScope(StrEnum):
-    VIEW_GRAPH = "view_graph"
+    VIEW_PROJECT = "view_project"
     VIEW_ARTIFACTS = "view_artifacts"
-    VIEW_MATERIALIZATIONS = "view_materializations"
-    VIEW_HISTORY = "view_history"
-    VIEW_EXECUTION = "view_execution"
-    CREATE_GRAPH = "create_graph"
-    EDIT_GRAPH = "edit_graph"
-    CHECKPOINT_GRAPH = "checkpoint_graph"
-    EXECUTE_GRAPH = "execute_graph"
-    CANCEL_EXECUTION = "cancel_execution"
-    PUBLISH_MODULE = "publish_module"
+    VIEW_RUNS = "view_runs"
+    CREATE_PROJECT = "create_project"
+    EDIT_PROJECT = "edit_project"
+    CHECKPOINT_PROJECT = "checkpoint_project"
+    START_RUN = "start_run"
+    CANCEL_RUN = "cancel_run"
     MANAGE_SECRETS = "manage_secrets"
 
 

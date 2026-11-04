@@ -4,7 +4,7 @@ import * as React from "react";
 
 import {
   applyNodeSecret,
-  getGraphNodeSecrets,
+  getProjectNodeSecrets,
   removeNodeSecret,
   type NodeSecretStatus,
   type SavedGraphNode,
@@ -19,8 +19,19 @@ import {
 import { workflowNodeIsSupported } from "../canvas/types";
 import type { WorkflowNode } from "../model/execution-plan";
 
+/**
+ * The secrets of one Graph, addressed the way the API addresses them: the Project
+ * whose head holds the Graph document, and the Graph inside that Project whose
+ * nodes declare the secrets. A Node Execution Secret is written into the
+ * Project's document, so a write is guarded by the Project head's
+ * collaboration_sequence — and a Project id is never a Graph id.
+ */
 export interface NodeSecretGraph {
+  /** The Project that holds the Graph. Not a Graph id. */
   id: string;
+  /** The Graph inside that Project, named separately. */
+  graphId: string;
+  /** The Project head's collaboration_sequence this Graph was read at. */
   revision: number;
   nodes: readonly SavedGraphNode[];
 }
@@ -28,6 +39,63 @@ export interface NodeSecretGraph {
 export type NodeSecretStatusesByNode = Readonly<
   Record<string, WorkflowNodeSecretStatuses>
 >;
+
+/**
+ * The head a secret write was read against. Only a listing can establish one:
+ * the Project head's first sequence is 0 and the API accepts 0 as a real
+ * expectation, so no number may be invented for a write that never read.
+ */
+interface NodeSecretHead {
+  readonly projectId: string;
+  readonly graphId: string;
+  readonly sequence: number;
+}
+
+/** A write that passed every guard, with the identity and version it claims. */
+interface SecretWriteTarget {
+  readonly graph: NodeSecretGraph;
+  readonly headSequence: number;
+  readonly writeVersion: number;
+}
+
+function sameNodeSecretGraph(
+  graph: NodeSecretGraph,
+  active: NodeSecretGraph | null,
+): boolean {
+  return (
+    active !== null &&
+    graph.id === active.id &&
+    graph.graphId === active.graphId &&
+    graph.revision === active.revision
+  );
+}
+
+function guardedHeadSequence(
+  head: NodeSecretHead | null,
+  graph: NodeSecretGraph,
+): number | null {
+  if (head === null) return null;
+  if (head.projectId !== graph.id || head.graphId !== graph.graphId) {
+    return null;
+  }
+  return head.sequence;
+}
+
+/**
+ * The server's own word that the head moved out from under a write. Within a
+ * secret write, `expected_head_sequence` is the only assertion that raises 409,
+ * and every other failure — a node whose declaration is gone, an encryption key
+ * that will not load, a dead connection — answers with another status. Read
+ * structurally: the conflict is a fact about the response, and it stays readable
+ * when the error crossed a module boundary to get here.
+ */
+function headMovedUnderTheWrite(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { status?: unknown }).status === 409
+  );
+}
 
 export interface UseNodeSecretsResult {
   nodeSecretStatuses: NodeSecretStatusesByNode;
@@ -179,6 +247,7 @@ export function useNodeSecrets(
   const [nodeSecretStatuses, setNodeSecretStatuses] =
     React.useState<NodeSecretStatusesByNode>({});
   const activeGraphRef = React.useRef<NodeSecretGraph | null>(null);
+  const headRef = React.useRef<NodeSecretHead | null>(null);
   const refreshGenerationRef = React.useRef(0);
   const writeVersionsRef = React.useRef<NodeSecretWriteVersions>(new Map());
   const nodesByIdRef = React.useRef<ReadonlyMap<string, WorkflowNode>>(
@@ -198,11 +267,12 @@ export function useNodeSecrets(
       const refreshGeneration = refreshGenerationRef.current + 1;
       refreshGenerationRef.current = refreshGeneration;
       const previousGraph = activeGraphRef.current;
-      const continuesActiveGraph =
-        previousGraph?.id === graph.id &&
-        previousGraph.revision === graph.revision;
+      // A Graph switch inside the same Project keeps the Project id, so identity
+      // has to read all three: Project, Graph, and the head it was opened at.
+      const continuesActiveGraph = sameNodeSecretGraph(graph, previousGraph);
       if (!continuesActiveGraph) {
         invalidateNodeSecretWrites(writeVersionsRef.current);
+        headRef.current = null;
       }
       activeGraphRef.current = graph;
       nodesByIdRef.current = new Map(graphNodes.map((node) => [node.id, node]));
@@ -235,24 +305,32 @@ export function useNodeSecrets(
         ),
       );
       try {
-        const response = await getGraphNodeSecrets(
+        const response = await getProjectNodeSecrets(
           workspaceId,
           graph.id,
+          graph.graphId,
           signal,
         );
         if (
           refreshGenerationRef.current !== refreshGeneration ||
-          activeGraphRef.current?.id !== graph.id ||
-          activeGraphRef.current.revision !== graph.revision
+          !sameNodeSecretGraph(graph, activeGraphRef.current)
         ) {
           return false;
         }
         if (
-          response.graph_id !== graph.id ||
-          response.graph_revision !== graph.revision
+          response.project_id !== graph.id ||
+          response.graph_id !== graph.graphId
         ) {
-          throw new Error("Node secret status revision mismatch");
+          throw new Error("Node secret status identity mismatch");
         }
+        // The listing names the head it was read at. That is the sequence a later
+        // write must claim: newer than whatever the caller opened the Graph at,
+        // and the only number here that came from the server.
+        headRef.current = {
+          projectId: graph.id,
+          graphId: graph.graphId,
+          sequence: response.head_sequence,
+        };
         const refreshedStatuses = graphNodeSecretStatuses(
           [...nodesByIdRef.current.values()],
           response.secrets,
@@ -271,8 +349,7 @@ export function useNodeSecrets(
         if (
           signal?.aborted ||
           refreshGenerationRef.current !== refreshGeneration ||
-          activeGraphRef.current?.id !== graph.id ||
-          activeGraphRef.current.revision !== graph.revision
+          !sameNodeSecretGraph(graph, activeGraphRef.current)
         ) {
           return false;
         }
@@ -296,10 +373,19 @@ export function useNodeSecrets(
     [workspaceId],
   );
 
-  const applyConfiguredNodeSecret = React.useCallback(
-    async (nodeId: string, name: string, value: string): Promise<boolean> => {
+  /**
+   * What a secret write should claim: the active Graph, the head its listing was
+   * read at, and a fresh write version. Null when there is nothing to write
+   * against — no active Graph, no head this client ever read (a write that
+   * cannot name one would overwrite a newer document, and the API would believe
+   * any number it was handed), or a node whose secret binding no longer holds.
+   */
+  const prepareSecretWrite = React.useCallback(
+    (nodeId: string, name: string): SecretWriteTarget | null => {
       const graph = activeGraphRef.current;
-      if (!graph) return false;
+      if (!graph) return null;
+      const headSequence = guardedHeadSequence(headRef.current, graph);
+      if (headSequence === null) return null;
       const node = nodesByIdRef.current.get(nodeId);
       const input =
         node && workflowNodeIsSupported(node.data)
@@ -324,14 +410,78 @@ export function useNodeSecrets(
           savedNode,
         )
       ) {
-        return false;
+        return null;
       }
+      return {
+        graph,
+        headSequence,
+        writeVersion: advanceNodeSecretWriteVersion(
+          writeVersionsRef.current,
+          nodeId,
+          name,
+        ),
+      };
+    },
+    [],
+  );
 
-      const writeVersion = advanceNodeSecretWriteVersion(
-        writeVersionsRef.current,
-        nodeId,
-        name,
-      );
+  /**
+   * Read the listing again after the head moved: never a number this client made
+   * up, always the sequence the server said its answer was read at. A Graph the
+   * caller has left is not refreshed at all — a late 409 must not pull the active
+   * Graph back to the one this write happened to be addressed at.
+   */
+  const rereadHeadAfterConflict = React.useCallback(
+    async (graph: NodeSecretGraph): Promise<number | null> => {
+      if (!sameNodeSecretGraph(graph, activeGraphRef.current)) return null;
+      const refreshed = await refreshNodeSecretStatuses(graph, [
+        ...nodesByIdRef.current.values(),
+      ]);
+      if (!refreshed || !sameNodeSecretGraph(graph, activeGraphRef.current)) {
+        return null;
+      }
+      return guardedHeadSequence(headRef.current, graph);
+    },
+    [refreshNodeSecretStatuses],
+  );
+
+  /**
+   * Send a write at the token its listing established and, only when the server
+   * says that head is gone, send the same write once more at the sequence a fresh
+   * listing names. The head's `collaboration_sequence` advances on every accepted
+   * command batch, checkpointed or not, while the listing this token came from is only
+   * re-read around a checkpoint, a save, or a Graph open — so a person who drags a node
+   * and then presses Apply is holding a token for a head that no longer exists, and a
+   * peer editing the same Project does the same to them. A second conflict is reported
+   * rather than chased: the listing read in the recovery left this hook holding the
+   * newer token, so the next attempt starts from the head the server is on.
+   */
+  const sendWithOneHeadRetry = React.useCallback(
+    async (
+      graph: NodeSecretGraph,
+      headSequence: number,
+      send: (expectedHeadSequence: number) => Promise<void>,
+    ): Promise<void> => {
+      try {
+        await send(headSequence);
+        return;
+      } catch (error) {
+        if (!headMovedUnderTheWrite(error)) throw error;
+        const retrySequence = await rereadHeadAfterConflict(graph);
+        if (retrySequence === null || retrySequence === headSequence) {
+          throw error;
+        }
+        await send(retrySequence);
+      }
+    },
+    [rereadHeadAfterConflict],
+  );
+
+  const applyConfiguredNodeSecret = React.useCallback(
+    async (nodeId: string, name: string, value: string): Promise<boolean> => {
+      const target = prepareSecretWrite(nodeId, name);
+      if (!target) return false;
+      const { graph, headSequence, writeVersion } = target;
       setNodeSecretStatuses((current) => ({
         ...current,
         [nodeId]: {
@@ -339,15 +489,16 @@ export function useNodeSecrets(
           [name]: { state: "applying" },
         },
       }));
-      try {
+      const send = async (expectedHeadSequence: number): Promise<void> => {
         const response = await applyNodeSecret(
           workspaceId,
           graph.id,
+          graph.graphId,
           nodeId,
           name,
           {
             value,
-            expected_graph_revision: graph.revision,
+            expected_head_sequence: expectedHeadSequence,
           },
         );
         if (
@@ -357,9 +508,11 @@ export function useNodeSecrets(
         ) {
           throw new Error("Node secret response mismatch");
         }
+      };
+      try {
+        await sendWithOneHeadRetry(graph, headSequence, send);
         if (
-          activeGraphRef.current?.id !== graph.id ||
-          activeGraphRef.current.revision !== graph.revision ||
+          !sameNodeSecretGraph(graph, activeGraphRef.current) ||
           nodeSecretWriteVersion(writeVersionsRef.current, nodeId, name) !==
             writeVersion
         ) {
@@ -376,8 +529,7 @@ export function useNodeSecrets(
         return true;
       } catch {
         if (
-          activeGraphRef.current?.id === graph.id &&
-          activeGraphRef.current.revision === graph.revision &&
+          sameNodeSecretGraph(graph, activeGraphRef.current) &&
           nodeSecretWriteVersion(writeVersionsRef.current, nodeId, name) ===
             writeVersion
         ) {
@@ -396,45 +548,14 @@ export function useNodeSecrets(
         return false;
       }
     },
-    [workspaceId],
+    [prepareSecretWrite, sendWithOneHeadRetry, workspaceId],
   );
 
   const removeConfiguredNodeSecret = React.useCallback(
     async (nodeId: string, name: string): Promise<boolean> => {
-      const graph = activeGraphRef.current;
-      if (!graph) return false;
-      const node = nodesByIdRef.current.get(nodeId);
-      const input =
-        node && workflowNodeIsSupported(node.data)
-          ? nodeSecretInputs(node.data.spec).find(
-              (candidate) => candidate.name === name,
-            )
-          : undefined;
-      const savedNode = graph.nodes.find(
-        (candidate) => candidate.id === nodeId,
-      );
-      if (
-        !node ||
-        !input ||
-        !nodeSecretBindingReady(
-          input,
-          {
-            id: node.id,
-            operator_id: node.data.spec.operator_id,
-            operator_version: node.data.spec.operator_version,
-            config: node.data.config,
-          },
-          savedNode,
-        )
-      ) {
-        return false;
-      }
-
-      const writeVersion = advanceNodeSecretWriteVersion(
-        writeVersionsRef.current,
-        nodeId,
-        name,
-      );
+      const target = prepareSecretWrite(nodeId, name);
+      if (!target) return false;
+      const { graph, headSequence, writeVersion } = target;
       setNodeSecretStatuses((current) => ({
         ...current,
         [nodeId]: {
@@ -442,17 +563,20 @@ export function useNodeSecrets(
           [name]: { state: "removing" },
         },
       }));
-      try {
+      const send = async (expectedHeadSequence: number): Promise<void> => {
         await removeNodeSecret(
           workspaceId,
           graph.id,
+          graph.graphId,
           nodeId,
           name,
-          graph.revision,
+          expectedHeadSequence,
         );
+      };
+      try {
+        await sendWithOneHeadRetry(graph, headSequence, send);
         if (
-          activeGraphRef.current?.id !== graph.id ||
-          activeGraphRef.current.revision !== graph.revision ||
+          !sameNodeSecretGraph(graph, activeGraphRef.current) ||
           nodeSecretWriteVersion(writeVersionsRef.current, nodeId, name) !==
             writeVersion
         ) {
@@ -469,8 +593,7 @@ export function useNodeSecrets(
         return true;
       } catch {
         if (
-          activeGraphRef.current?.id === graph.id &&
-          activeGraphRef.current.revision === graph.revision &&
+          sameNodeSecretGraph(graph, activeGraphRef.current) &&
           nodeSecretWriteVersion(writeVersionsRef.current, nodeId, name) ===
             writeVersion
         ) {
@@ -489,12 +612,13 @@ export function useNodeSecrets(
         return false;
       }
     },
-    [workspaceId],
+    [prepareSecretWrite, sendWithOneHeadRetry, workspaceId],
   );
 
   const clearGraphSecretStatuses = React.useCallback(() => {
     refreshGenerationRef.current += 1;
     invalidateNodeSecretWrites(writeVersionsRef.current);
+    headRef.current = null;
     activeGraphRef.current = null;
     setNodeSecretStatuses({});
   }, []);

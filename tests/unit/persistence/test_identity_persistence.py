@@ -1,19 +1,15 @@
+import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
-import json
 import pytest
-from sqlalchemy import text
-
 from grafy_core.domain.identity import (
     AuthSession,
     OidcIdentity,
     OidcLoginTransaction,
     PersonalAccessToken,
-    PlatformAccessToken,
-    PlatformTokenScope,
     User,
     Workspace,
     WorkspaceCapability,
@@ -29,6 +25,7 @@ from grafy_core.domain.security_audit import (
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
+from sqlalchemy import text
 
 
 @pytest.fixture
@@ -102,20 +99,7 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         public_prefix="nrt_test_107",
         secret_digest=b"pat-digest",
         label="automation",
-        scopes=(WorkspaceCapability.VIEW_GRAPH,),
-        expires_at=now + timedelta(days=1),
-        created_at=now,
-    )
-    platform_token = PlatformAccessToken(
-        id=UUID(int=109),
-        principal_reference="release-bot",
-        public_prefix="gpat_test_109",
-        secret_digest=b"platform-token-digest",
-        label="global publication",
-        scopes=(
-            PlatformTokenScope.PUBLISH_GLOBAL,
-            PlatformTokenScope.PROMOTE_GLOBAL,
-        ),
+        scopes=(WorkspaceCapability.VIEW_PROJECT,),
         expires_at=now + timedelta(days=1),
         created_at=now,
     )
@@ -140,7 +124,6 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         await unit_of_work.identity.add_login_transaction(transaction)
         await unit_of_work.identity.add_auth_session(session)
         await unit_of_work.identity.add_personal_access_token(token)
-        await unit_of_work.identity.add_platform_access_token(platform_token)
         await unit_of_work.security_audit.add(audit)
         await unit_of_work.commit()
 
@@ -157,11 +140,6 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         loaded_token = await unit_of_work.identity.get_personal_access_token_by_digest(
             token.secret_digest
         )
-        loaded_platform_token = (
-            await unit_of_work.identity.get_platform_access_token_by_prefix(
-                platform_token.public_prefix
-            )
-        )
         loaded_audit = (
             await unit_of_work.security_audit.list_for_workspace(
                 workspace.id,
@@ -175,10 +153,7 @@ async def test_identity_records_round_trip_without_plain_credential_material(
     assert loaded_session is not None
     assert loaded_session.secret_digest == session.secret_digest
     assert loaded_token is not None
-    assert loaded_token.scopes == (WorkspaceCapability.VIEW_GRAPH,)
-    assert loaded_platform_token is not None
-    assert loaded_platform_token.principal_reference == "release-bot"
-    assert loaded_platform_token.scopes == platform_token.scopes
+    assert loaded_token.scopes == (WorkspaceCapability.VIEW_PROJECT,)
     assert loaded_audit.actor_kind is SecurityAuditActorKind.AUTHENTICATED
     assert loaded_audit.user_id == user.id
 
@@ -236,22 +211,22 @@ async def test_identity_records_round_trip_without_plain_credential_material(
 
 
 @pytest.mark.asyncio
-async def test_stored_token_drops_scopes_that_are_no_longer_capabilities(
+async def test_stored_token_rejects_scopes_that_are_not_capabilities(
     database: Database,
 ) -> None:
-    """A token issued before a capability was removed still loads.
+    """A stored scope this build cannot name is corrupt data, not a silent no-op.
 
-    Retired scopes granted only the retired feature, so they resolve to nothing
-    rather than failing the row. Minting a token still rejects every scope outside
-    `PAT_ALLOWED_CAPABILITIES`.
+    `PersonalAccessToken` validates every scope when a token is minted, and no
+    row is kept for a capability the domain no longer has, so loading one fails
+    rather than quietly granting a narrower token than its holder was issued.
     """
 
     now = datetime(2026, 8, 7, 8, 0, tzinfo=UTC)
     user = User(id=UUID(int=201), created_at=now, updated_at=now)
     workspace = Workspace(
         id=UUID(int=202),
-        slug="retired-scopes",
-        name="Retired scopes",
+        slug="unknown-scopes",
+        name="Unknown scopes",
         kind=WorkspaceKind.SHARED,
         created_at=now,
         updated_at=now,
@@ -268,19 +243,18 @@ async def test_stored_token_drops_scopes_that_are_no_longer_capabilities(
                 "INSERT INTO personal_access_tokens "
                 "(id, user_id, workspace_id, public_prefix, secret_digest, label, "
                 "scopes, expires_at, created_at) VALUES "
-                "(:id, :user_id, :workspace_id, 'nrt_retired', :digest, "
-                "'legacy automation', :scopes, :expires_at, :created_at)"
+                "(:id, :user_id, :workspace_id, 'nrt_unknown', :digest, "
+                "'unknown scope automation', :scopes, :expires_at, :created_at)"
             ),
             {
                 "id": token_id.hex,
                 "user_id": user.id.hex,
                 "workspace_id": workspace.id.hex,
-                "digest": b"retired-scope-digest",
+                "digest": b"unknown-scope-digest",
                 "scopes": json.dumps(
                     [
-                        "create_template",
-                        "manage_module_library",
-                        "view_graph",
+                        "view_project",
+                        "not_a_capability",
                     ]
                 ),
                 "expires_at": now + timedelta(days=1),
@@ -288,10 +262,8 @@ async def test_stored_token_drops_scopes_that_are_no_longer_capabilities(
             },
         )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        loaded = await unit_of_work.identity.get_personal_access_token_by_prefix(
-            "nrt_retired"
-        )
-
-    assert loaded is not None
-    assert loaded.scopes == (WorkspaceCapability.VIEW_GRAPH,)
+    with pytest.raises(ValueError, match="Stored workspace capability is unknown"):
+        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+            await unit_of_work.identity.get_personal_access_token_by_prefix(
+                "nrt_unknown"
+            )

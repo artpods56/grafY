@@ -37,6 +37,7 @@ function documentWith(
     nodes: [],
     edges: [],
     origins: [],
+    agents: [],
     ...overrides,
   };
 }

@@ -19,8 +19,6 @@ from grafy_core.domain.identity import (
     AuthSession,
     OidcDomainWorkspaceGrant,
     PersonalAccessToken,
-    PlatformAccessToken,
-    PlatformTokenScope,
     User,
     WorkspaceCapability,
     WorkspaceInvitation,
@@ -530,7 +528,7 @@ async def test_personal_membership_stays_owner_and_membership_changes_are_audite
         public_prefix="nrt_disable_user_test",
         secret_digest=b"pat-secret-digest",
         label="disable-user-test",
-        scopes=(WorkspaceCapability.VIEW_GRAPH,),
+        scopes=(WorkspaceCapability.VIEW_PROJECT,),
         expires_at=now + timedelta(hours=1),
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
@@ -635,14 +633,14 @@ async def test_membership_and_role_changes_revoke_affected_workspace_pats(
         user_id=member.user.id,
         workspace_id=shared.id,
         label="editor-only",
-        scopes=(WorkspaceCapability.EDIT_GRAPH,),
+        scopes=(WorkspaceCapability.EDIT_PROJECT,),
         secret_digest=b"pat-editor-only-digest",
     )
     viewer_compatible_token = _workspace_pat(
         user_id=member.user.id,
         workspace_id=shared.id,
         label="viewer-compatible",
-        scopes=(WorkspaceCapability.VIEW_GRAPH,),
+        scopes=(WorkspaceCapability.VIEW_PROJECT,),
         secret_digest=b"pat-viewer-compatible-digest",
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
@@ -688,7 +686,7 @@ async def test_membership_and_role_changes_revoke_affected_workspace_pats(
         user_id=member.user.id,
         workspace_id=shared.id,
         label="remove-member",
-        scopes=(WorkspaceCapability.VIEW_GRAPH,),
+        scopes=(WorkspaceCapability.VIEW_PROJECT,),
         secret_digest=b"pat-remove-member-digest",
     )
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
@@ -838,7 +836,7 @@ async def test_concurrent_owner_removals_preserve_one_shared_owner(
 
 
 @pytest.mark.asyncio
-async def test_personal_and_platform_credentials_resolve_typed_principals(
+async def test_personal_credentials_resolve_typed_principal(
     database: Database,
 ) -> None:
     service = _service(database)
@@ -854,32 +852,18 @@ async def test_personal_and_platform_credentials_resolve_typed_principals(
         public_prefix="nrt_publication",
         secret_digest=b"personal-digest",
         label="publication",
-        scopes=(WorkspaceCapability.PUBLISH_MODULE,),
-        expires_at=datetime.now(UTC) + timedelta(hours=1),
-    )
-    platform = PlatformAccessToken(
-        principal_reference="release-bot",
-        public_prefix="gpat_publication",
-        secret_digest=b"platform-digest",
-        label="global publication",
-        scopes=(PlatformTokenScope.PUBLISH_GLOBAL,),
+        scopes=(WorkspaceCapability.START_RUN,),
         expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
     await service.create_personal_access_token(
         actor=ActorContext(provisioned.user.id),
         token=personal,
     )
-    await service.create_platform_access_token(token=platform)
 
     workspace_principal = await service.authenticate_personal_access_token(
         public_prefix=personal.public_prefix,
         secret_digest=personal.secret_digest,
-        required_capability=WorkspaceCapability.PUBLISH_MODULE,
-    )
-    platform_principal = await service.authenticate_platform_access_token(
-        public_prefix=platform.public_prefix,
-        secret_digest=platform.secret_digest,
-        required_scope=PlatformTokenScope.PUBLISH_GLOBAL,
+        required_capability=WorkspaceCapability.START_RUN,
     )
 
     assert workspace_principal.actor.user_id == provisioned.user.id
@@ -888,8 +872,6 @@ async def test_personal_and_platform_credentials_resolve_typed_principals(
         workspace_principal.actor.credential_workspace_id
         == provisioned.personal_workspace.id
     )
-    assert platform_principal.principal_reference == "release-bot"
-    assert platform_principal.credential_reference == f"platform-token:{platform.id}"
 
     with pytest.raises(CredentialAuthenticationError):
         await service.authenticate_personal_access_token(
@@ -906,7 +888,7 @@ async def test_personal_and_platform_credentials_resolve_typed_principals(
         await service.authorize(
             actor=workspace_principal.actor,
             workspace_id=other_workspace.id,
-            capability=WorkspaceCapability.VIEW_GRAPH,
+            capability=WorkspaceCapability.VIEW_PROJECT,
         )
 
 

@@ -43,7 +43,7 @@ async def create_upload(
     request: CreateUploadRequest,
     service: UploadDependency,
     size_validator: CreateUploadSizeDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> UploadTargetResponse:
     try:
         await size_validator.validate(request)
@@ -73,7 +73,7 @@ async def receive_upload_content(
     service: UploadDependency,
     upload_limits: UploadConfigDependency,
     content_length_validator: ContentLengthDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> Response:
     del access
     if not service.accepts_direct_upload:
@@ -132,7 +132,7 @@ async def complete_upload(
     workspace_id: UUID,
     upload_id: UUID,
     service: UploadDependency,
-    access: require_workspace_capability(WorkspaceCapability.EDIT_GRAPH),
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> ImageUploadItemResponse:
     del access
     try:

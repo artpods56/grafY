@@ -58,6 +58,7 @@ function state(): WorkbenchAuthoringState {
         nodes: [source, target],
         edges: [edge],
         origins: [],
+        agents: [],
       }),
     ),
     nodeOverlays: {
@@ -280,6 +281,7 @@ describe("Workbench authored document adapter", () => {
   it("normalizes replacement documents before they enter adapter state", () => {
     const replacement = {
       name: "Replacement",
+      origins: [],
       nodes: [
         {
           ...source,
@@ -296,6 +298,18 @@ describe("Workbench authored document adapter", () => {
           callbackLike: { name: "onEdgeChange" },
         },
       ],
+      agents: [
+        {
+          id: "agent-scribe",
+          name: "Scribe",
+          instructions: "Read the table back",
+          position: { x: 40, y: 60, selected: true },
+          width: 360,
+          height: 480,
+          selected: true,
+          callbackLike: { name: "onCardChange" },
+        },
+      ],
     };
     const result = reduceWorkbenchAuthoringState(state(), {
       kind: "replace_document",
@@ -306,6 +320,19 @@ describe("Workbench authored document adapter", () => {
     expect(result.document.nodes[0]).not.toHaveProperty("selected");
     expect(result.document.nodes[0]).not.toHaveProperty("dimensions");
     expect(result.document.nodes[0]).not.toHaveProperty("callbackLike");
+    // A card is document content like a node, so the same normalization has to catch its
+    // selection and its handlers before the canvas takes them as facts.
+    expect(result.document.agents).toEqual([
+      {
+        id: "agent-scribe",
+        name: "Scribe",
+        instructions: "Read the table back",
+        model: undefined,
+        position: { x: 40, y: 60 },
+        width: 360,
+        height: 480,
+      },
+    ]);
     expect(result.document.edges[0]).not.toHaveProperty("selected");
     expect(result.document.edges[0]).not.toHaveProperty("internals");
     expect(result.document.edges[0]).not.toHaveProperty("callbackLike");
@@ -345,6 +372,7 @@ describe("Workbench authored document adapter", () => {
         },
       ],
       origins: [],
+      agents: [],
     };
     const initial: WorkbenchAuthoringState = {
       document: authoredGraphDocument(createSavedGraphRequest(withDescendant)),
@@ -401,6 +429,7 @@ describe("Workbench authored document adapter", () => {
         },
       ],
       origins: [],
+      agents: [],
     };
     const initial: WorkbenchAuthoringState = {
       document: authoredGraphDocument(

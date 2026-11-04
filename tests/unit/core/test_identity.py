@@ -79,21 +79,19 @@ def test_role_policy_is_explicit_and_owner_is_the_union_of_capabilities() -> Non
         role=WorkspaceRole.OWNER,
     )
 
-    assert viewer.grants(WorkspaceCapability.VIEW_GRAPH)
-    assert not viewer.grants(WorkspaceCapability.EDIT_GRAPH)
-    assert editor.grants(WorkspaceCapability.CHECKPOINT_GRAPH)
-    assert editor.grants(WorkspaceCapability.PUBLISH_MODULE)
+    assert viewer.grants(WorkspaceCapability.VIEW_PROJECT)
+    assert not viewer.grants(WorkspaceCapability.EDIT_PROJECT)
+    assert editor.grants(WorkspaceCapability.CHECKPOINT_PROJECT)
     assert not editor.grants(WorkspaceCapability.MANAGE_SECRETS)
     assert owner.capabilities == frozenset(WorkspaceCapability)
-    assert owner.grants(WorkspaceCapability.PUBLISH_MODULE)
 
     with pytest.raises(CapabilityDeniedError) as denied:
         WorkspaceAccess(
             actor=ActorContext(user_id=viewer.user_id),
             workspace_id=viewer.workspace_id,
             membership=viewer,
-        ).require(WorkspaceCapability.EDIT_GRAPH)
-    assert denied.value.capability == WorkspaceCapability.EDIT_GRAPH.value
+        ).require(WorkspaceCapability.EDIT_PROJECT)
+    assert denied.value.capability == WorkspaceCapability.EDIT_PROJECT.value
     assert denied.value.workspace_id == viewer.workspace_id
 
 
@@ -182,7 +180,7 @@ def test_sensitive_credential_material_is_not_in_default_repr() -> None:
         public_prefix="nrt_test",
         secret_digest=b"pat-secret-digest",
         label="test",
-        scopes=(WorkspaceCapability.VIEW_GRAPH,),
+        scopes=(WorkspaceCapability.VIEW_PROJECT,),
         expires_at=now,
     )
 
@@ -213,7 +211,7 @@ def test_security_audit_requires_explicit_safe_attribution() -> None:
 def test_personal_access_tokens_allow_automation_but_exclude_administration() -> None:
     assert WorkspaceCapability.MANAGE_MEMBERS not in PAT_ALLOWED_CAPABILITIES
     assert WorkspaceCapability.MANAGE_SECRETS in PAT_ALLOWED_CAPABILITIES
-    assert WorkspaceCapability.PUBLISH_MODULE in PAT_ALLOWED_CAPABILITIES
+    assert WorkspaceCapability.START_RUN in PAT_ALLOWED_CAPABILITIES
     with pytest.raises(ValueError, match="scope is not available"):
         PersonalAccessToken(
             user_id=UUID(int=1),

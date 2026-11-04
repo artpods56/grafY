@@ -1,3 +1,4 @@
+import type { AgentNode } from "../agents/AgentCard";
 import type { ArtifactOriginEdge } from "./artifact-origin-edge";
 import type { Edge, Node } from "@xyflow/react";
 
@@ -114,7 +115,7 @@ export type CanvasWorkflowNode = Node<
   typeof WORKFLOW_NODE_TYPE
 >;
 export type CanvasNode =
-  CanvasWorkflowNode | ArtifactViewerNode | AnnotationNode;
+  CanvasWorkflowNode | ArtifactViewerNode | AnnotationNode | AgentNode;
 export type CanvasEdge =
   | ArtifactOriginEdge
   | WorkflowEdge
@@ -292,15 +293,16 @@ export function artifactViewersFromPresentation(
   return { nodes, edges, bindings, annotations };
 }
 
-export function presentationFromCollaborativeHead(
-  head: Pick<CollaborativeHead, "document">,
+/** The canvas furniture of one Graph. Presentation lives per Graph. */
+export function presentationFromGraphDocument(
+  document: SavedGraphDocument,
 ): GraphPresentation {
-  const presentation = head.document.presentation;
+  const presentation = document.presentation;
   if (!presentation) return emptyGraphPresentation();
   return {
-    viewers: [...(presentation.viewers ?? [])],
-    links: [...(presentation.links ?? [])],
-    bindings: [...(presentation.bindings ?? [])],
-    annotations: [...(presentation.annotations ?? [])],
+    viewers: [...presentation.viewers],
+    links: [...presentation.links],
+    bindings: [...presentation.bindings],
+    annotations: [...presentation.annotations],
   };
 }

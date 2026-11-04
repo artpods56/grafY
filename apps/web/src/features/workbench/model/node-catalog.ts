@@ -31,8 +31,7 @@ export type CatalogFilterKind =
   | "sequence"
   | "any-artifact"
   | "source"
-  | "input-nodes"
-  | "workspace-library";
+  | "input-nodes";
 
 export type CatalogFilterId =
   | "all"
@@ -40,7 +39,6 @@ export type CatalogFilterId =
   | "sequence"
   | "any-artifact"
   | "input-nodes"
-  | "workspace-library"
   | `artifact:${string}@${number}`
   | `source:${string}`;
 
@@ -66,8 +64,6 @@ export interface ContextualCandidate {
   spec: NodeSpec;
   choices: readonly ContextualRouteChoice[];
 }
-
-const MODULE_PLUGIN_SLUG = "graph.module";
 
 export function catalogNodeKey(spec: NodeSpec): string {
   return `${spec.operator_id}@${spec.operator_version}`;
@@ -129,12 +125,6 @@ function nodeMatchesAnyArtifact(spec: NodeSpec): boolean {
   return [...spec.inputs, ...spec.outputs].some(portIsAnyArtifact);
 }
 
-function isWorkspaceLibraryNode(spec: NodeSpec): boolean {
-  return Boolean(
-    spec.module_graph_id || spec.plugin_slug === MODULE_PLUGIN_SLUG,
-  );
-}
-
 function artifactTitle(registry: NodeRegistry, key: ArtifactTypeKey): string {
   return (
     registry.artifact_types.find(
@@ -145,7 +135,7 @@ function artifactTitle(registry: NodeRegistry, key: ArtifactTypeKey): string {
   );
 }
 
-/** Build the source categories: every provider plugin that ships nodes, plus the workspace library. */
+/** Build the source categories: every provider plugin that ships nodes. */
 export function buildSourceFilters(
   registry: NodeRegistry,
 ): readonly CatalogFilter[] {
@@ -153,9 +143,7 @@ export function buildSourceFilters(
     registry.nodes.map((spec) => spec.plugin_slug),
   );
   const sources = registry.plugins
-    .filter(
-      (plugin) => plugin.origin !== "module" && slugsWithNodes.has(plugin.slug),
-    )
+    .filter((plugin) => slugsWithNodes.has(plugin.slug))
     .slice()
     .sort(
       (left, right) =>
@@ -171,15 +159,10 @@ export function buildSourceFilters(
       title: plugin.title || "System",
       sourceKey: plugin.slug,
     })),
-    {
-      id: "workspace-library",
-      kind: "workspace-library",
-      title: "Workspace library",
-    },
   ];
 }
 
-/** Build browse filters from registered artifact types plus fixed shape/library filters. */
+/** Build browse filters from registered artifact types plus fixed shape filters. */
 export function buildCatalogFilters(
   registry: NodeRegistry,
 ): readonly CatalogFilter[] {
@@ -215,11 +198,6 @@ export function buildCatalogFilters(
     { id: "single", kind: "single", title: "Single value" },
     { id: "sequence", kind: "sequence", title: "Sequence" },
     { id: "any-artifact", kind: "any-artifact", title: "Any artifact" },
-    {
-      id: "workspace-library",
-      kind: "workspace-library",
-      title: "Workspace library",
-    },
   ];
 }
 
@@ -248,8 +226,6 @@ export function catalogNodesForFilter(
         : [];
     case "input-nodes":
       return nodes.filter((spec) => spec.inputs.length === 0);
-    case "workspace-library":
-      return nodes.filter(isWorkspaceLibraryNode);
   }
 }
 
@@ -371,16 +347,19 @@ export function filterAndSearchCatalogNodes(
     .map(({ spec }) => spec);
 }
 
+/**
+ * The catalog listings a picker may place.
+ *
+ * `activeGraphId` is retained for existing call sites: hiding the graph being
+ * edited was a Module concern, and Modules are gone (ADR 0020).
+ */
 export function catalogNodeSpecs(
   registry: NodeRegistry,
-  activeGraphId: string | null,
+  _activeGraphId?: string | null,
 ): readonly NodeSpec[] {
   return registry.nodes.filter(
-    (spec) =>
-      spec.catalog_visible !== false &&
-      // Collections are made from artifacts on the canvas, not picked here.
-      !isCollectionSpec(spec) &&
-      (activeGraphId === null || spec.module_graph_id !== activeGraphId),
+    // Collections are made from artifacts on the canvas, not picked here.
+    (spec) => spec.catalog_visible !== false && !isCollectionSpec(spec),
   );
 }
 
@@ -417,57 +396,8 @@ export function catalogNodeProviderLabel(
   registry: NodeRegistry,
 ): string {
   const plugin = catalogPlugin(registry, spec.plugin_slug);
-  if (plugin.origin === "module" || plugin.entry_kind === "module") {
-    return `Module · release ${spec.module_graph_revision}`;
-  }
   if (plugin.origin === "builtin") return plugin.title || "Built-in";
   return plugin.title || "Plugin";
-}
-
-/** All published releases for a module (including non-current). */
-export function moduleReleaseSpecs(
-  registry: NodeRegistry,
-  moduleId: string | null | undefined,
-  moduleGraphId: string | null | undefined,
-): readonly NodeSpec[] {
-  return registry.nodes
-    .filter((spec) => {
-      if (moduleId && spec.module_id === moduleId) return true;
-      if (
-        !moduleId &&
-        moduleGraphId &&
-        spec.module_graph_id === moduleGraphId
-      ) {
-        return true;
-      }
-      return false;
-    })
-    .slice()
-    .sort(
-      (left, right) =>
-        (right.module_graph_revision ?? 0) - (left.module_graph_revision ?? 0),
-    );
-}
-
-/** Current library release when the pinned call is behind it; otherwise null. */
-export function moduleCallUpgradeTarget(
-  registry: NodeRegistry,
-  pinned: NodeSpec,
-): NodeSpec | null {
-  if (!pinned.module_graph_id) return null;
-  const current = moduleReleaseSpecs(
-    registry,
-    pinned.module_id,
-    pinned.module_graph_id,
-  ).find((release) => release.is_current_library_release);
-  if (!current) return null;
-  if (
-    current.operator_id === pinned.operator_id &&
-    current.operator_version === pinned.operator_version
-  ) {
-    return null;
-  }
-  return current;
 }
 
 function shapesAreCompatible(source: Port, target: Port): boolean {

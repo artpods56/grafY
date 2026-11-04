@@ -12,7 +12,8 @@ from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
 from grafy_plugin_gis.gdal import GdalCli
-from grafy_plugin_gis.models import GeoRasterScan, RasterProjectionMetadata
+from grafy_core.spatial_contracts import RasterProjectionMetadata
+from grafy_plugin_gis.models import GeoRasterScan
 from grafy_plugin_gis.persistence import RasterScanOutputWriter, RasterScanResolver
 from grafy_storage import LocalFileObjectStore
 

@@ -1,10 +1,6 @@
 import { expect, nodeRegistry, test } from "./workbench.fixture";
 import { libraryStub } from "./library-folders-stub";
-import type {
-  LibraryList,
-  NodeRegistry,
-  RunExecution,
-} from "../src/lib/api/contract";
+import type { LibraryList, NodeRegistry } from "../src/lib/api/contract";
 import type { Locator, Page } from "@playwright/test";
 
 const DOCKED_MIN_WIDTH = 1100;
@@ -56,10 +52,10 @@ const LIBRARY: LibraryList = {
       name: "measurements.csv",
       provenance: {
         source: "upload",
+        call_path: [],
         saved_at: "2026-09-17T12:00:00Z",
         original_filename: "measurements.csv",
       },
-      run: null,
     },
   ],
 };
@@ -1048,50 +1044,38 @@ test.describe("artifact wiring", () => {
     test.skip(viewportWidth(page) < DOCKED_MIN_WIDTH, "Docked panel layout");
 
     const source = await addNode(page, "CSV source");
-    const nodeId = await source.getAttribute("data-id");
-    if (!nodeId) throw new Error("CSV source has no node ID");
-    const artifact = LIBRARY_ITEM.artifact;
-    const completedRun = {
-      execution_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      status: "succeeded",
-      active_node_id: null,
-      error: null,
-      result: {
-        status: "succeeded",
-        node_runs: [
-          {
-            node_id: nodeId,
-            status: "succeeded",
-            error: null,
-            outputs: [
-              {
-                port: "file",
-                kind: "single",
-                value: {
-                  artifact_id: artifact.artifact_id,
-                  artifact_type: artifact.artifact_type,
-                  schema_version: artifact.schema_version,
-                },
-                artifacts: [artifact],
-              },
-            ],
-          },
-        ],
-      },
-    } satisfies RunExecution;
-    await page.route("**/api/v1/workspaces/*/executions", (route) =>
-      route.request().method() === "POST"
-        ? route.fulfill({ json: completedRun })
-        : route.fallback(),
-    );
-    await page.route("**/api/v1/workspaces/*/executions/*/events", (route) =>
-      route.fulfill({ contentType: "text/event-stream", body: "" }),
+
+    // A Run is a demand for freshness inside a Project, so the draft has to
+    // become a Project first: the rail's Save creates one, replaces its Graph
+    // document, and checkpoints it. The address naming the new Project is what
+    // proves that whole chain went through the fixture's Project surface.
+    // An unnamed draft is named through a prompt. `window.prompt` opens while
+    // the Save click is still being dispatched, so the answer cannot live
+    // after `await click()` — the click would wait for the dialog and the
+    // dialog would wait for the answer that never arrives.
+    page.once("dialog", (dialog) => void dialog.accept("Pilot pipeline"));
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page).toHaveURL(
+      /\/workspaces\/mobile-test\/projects\/[0-9a-f-]{36}$/,
     );
 
+    // The Workbench opens the saved Project as a fresh page, so nothing is
+    // held any more: the node is selected, and the toolbar's Run runs it.
+    await source.click();
+
+    // Running answers from the Run surface the fixture keeps: `POST …/runs`
+    // makes the targets fresh and stores each target's result on its node
+    // instance; the surface then reads `GET …/runs/{id}` and the instance
+    // result. The room's `run.finished` and `instances.changed` are WebSocket
+    // pushes this fixture cannot send, and the run surface polls this same
+    // HTTP state when no room carries it, so the assertion below holds either
+    // way — it just cannot prove a room push happened.
     await page.getByRole("button", { name: "Run", exact: true }).click();
-    await expect(page.locator("main > span[role='status']")).toHaveText(
-      "Execution completed successfully.",
-    );
+    // The Run announcement is the live region with `aria-atomic`; on a saved
+    // Project the room's recovery notice shares `main` as a second `role=status`.
+    await expect(
+      page.locator("main > span[role='status'][aria-atomic='true']"),
+    ).toHaveText("Run made its targets fresh.");
 
     const output = source.locator(".react-flow__handle.source");
     await output.click({ trial: true });

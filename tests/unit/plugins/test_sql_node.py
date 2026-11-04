@@ -44,16 +44,16 @@ class FakeSecretResolver:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> SecretStr:
         self.request = {
             "workspace_id": workspace_id,
+            "project_id": project_id,
             "graph_id": graph_id,
-            "graph_revision": graph_revision,
             "node_id": node_id,
             "name": name,
             "dependencies": dict(dependencies),
@@ -66,13 +66,13 @@ class FakeSecretResolver:
         self,
         *,
         workspace_id: UUID,
-        graph_id: UUID | None,
-        graph_revision: int | None,
+        project_id: UUID | None,
+        graph_id: str | None,
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> str:
-        del workspace_id, graph_id, graph_revision, node_id, name, dependencies
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
         return "unused"
 
 
@@ -326,7 +326,7 @@ async def test_query_artifact_tables_chains_isolated_batch_failure() -> None:
 
 
 async def test_execute_sql_resolves_bound_secret_and_preserves_result_order() -> None:
-    graph_id = uuid4()
+    project_id = uuid4()
     statements = [
         SqlStatement(
             sql="insert into jobs(name) values(:name)",
@@ -370,8 +370,8 @@ async def test_execute_sql_resolves_bound_secret_and_preserves_result_order() ->
     output = await node.run(
         NodeExecutionContext(
             workspace_id=WORKSPACE_ID,
-            secret_graph_id=graph_id,
-            secret_graph_revision=3,
+            project_id=project_id,
+            graph_id="warehouse",
             node_id="execute-postgres",
         ),
         config,
@@ -384,8 +384,8 @@ async def test_execute_sql_resolves_bound_secret_and_preserves_result_order() ->
     assert executor.statements == statements
     assert secrets.request == {
         "workspace_id": WORKSPACE_ID,
-        "graph_id": graph_id,
-        "graph_revision": 3,
+        "project_id": project_id,
+        "graph_id": "warehouse",
         "node_id": "execute-postgres",
         "name": "password",
         "dependencies": {

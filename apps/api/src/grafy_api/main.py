@@ -18,24 +18,18 @@ from grafy_api.services.application import (
     run_periodic_cleanup,
 )
 from grafy_api.settings import Settings, get_settings
+from grafy_api.v1.routes.agents.views import router as agents_router
 from grafy_api.v1.routes.artifacts.views import router as artifacts_router
 from grafy_api.v1.routes.auth.views import router as auth_router
 from grafy_api.v1.routes.catalog.views import router as catalog_router
-from grafy_api.v1.routes.collaboration.views import router as collaboration_router
-from grafy_api.v1.routes.executions.views import router as executions_router
 from grafy_api.v1.routes.library.views import folders_router as library_folders_router
 from grafy_api.v1.routes.library.views import router as library_router
-from grafy_api.v1.routes.modules.views import router as modules_router
 from grafy_api.v1.routes.node_secrets.views import router as node_secrets_router
-from grafy_api.v1.routes.saved_graphs.views import (
-    browser_router as graph_browser_router,
-)
-from grafy_api.v1.routes.saved_graphs.views import (
-    folder_router as graph_folders_router,
-)
-from grafy_api.v1.routes.saved_graphs.views import (
-    router as saved_graphs_router,
-)
+from grafy_api.v1.routes.projects.views import browser_router as project_browser_router
+from grafy_api.v1.routes.projects.views import folder_router as project_folders_router
+from grafy_api.v1.routes.projects.views import router as projects_router
+from grafy_api.v1.routes.collaboration.views import router as collaboration_router
+from grafy_api.v1.routes.runs.views import router as runs_router
 from grafy_api.v1.routes.uploads.views import router as uploads_router
 from grafy_api.v1.routes.workspaces.views import me_router
 from grafy_api.v1.routes.workspaces.views import router as workspaces_router
@@ -149,15 +143,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(auth_router, prefix="/v1")
     application.include_router(workspaces_router, prefix="/v1")
     application.include_router(me_router, prefix="/v1")
-    application.include_router(graph_browser_router, prefix="/v1")
-    application.include_router(graph_folders_router, prefix="/v1")
-    application.include_router(saved_graphs_router, prefix="/v1")
+    application.include_router(project_browser_router, prefix="/v1")
+    application.include_router(project_folders_router, prefix="/v1")
+    application.include_router(projects_router, prefix="/v1")
     application.include_router(collaboration_router, prefix="/v1")
+    application.include_router(runs_router, prefix="/v1")
+    application.include_router(agents_router, prefix="/v1")
     application.include_router(node_secrets_router, prefix="/v1")
     application.include_router(catalog_router, prefix="/v1")
-    application.include_router(modules_router, prefix="/v1")
     application.include_router(uploads_router, prefix="/v1")
-    application.include_router(executions_router, prefix="/v1")
     application.include_router(artifacts_router, prefix="/v1")
     application.include_router(library_router, prefix="/v1")
     application.include_router(library_folders_router, prefix="/v1")

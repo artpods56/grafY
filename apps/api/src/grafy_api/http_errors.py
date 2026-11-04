@@ -13,25 +13,28 @@ from fastapi.utils import is_body_allowed_for_status_code
 from starlette.routing import BaseRoute
 
 from grafy_api.app_state import get_identity
+from grafy_api.agents.conversations import AgentConversationForkRangeError
+from grafy_api.agents.keys import (
+    AgentKeyConfigurationError,
+    AgentKeyDeclarationError,
+    AgentKeyValueError,
+)
+from grafy_api.agents.models import AgentModelConfigurationError
+from grafy_api.agents.turns import (
+    AgentTurnConflictError,
+    AgentTurnRequestError,
+    AgentTurnStoppingError,
+)
 from grafy_api.diagnostics import (
     DiagnosticContext,
     diagnostic_scope,
     record_failure,
 )
-from grafy_api.execution.admission import (
-    RunExecutionCapacityError,
-    RunExecutionQueueFullError,
-)
-from grafy_api.execution.manager import RunExecutionIdempotencyConflictError
+from grafy_api.runs.ports import RunNotFoundError, RunRejectedError
 from grafy_api.node_secrets import NodeSecretValueError
 from grafy_api.services.errors import ArtifactContentUnavailableError
 from grafy_api.uploads import UploadTooLargeError
 from grafy_api.v1.routes.auth.services import AuthService
-from grafy_api.v1.routes.executions.models import (
-    RunExecutionCapacityErrorDetail,
-    RunExecutionIdempotencyConflictErrorDetail,
-    RunExecutionQueueFullErrorDetail,
-)
 from grafy_core.domain.errors import (
     CapabilityDeniedError,
     Failure,
@@ -42,6 +45,7 @@ from grafy_core.domain.errors import (
     NotFoundError,
     UserDisabledError,
 )
+from grafy_core.ports.agent_turns import AgentTurnBusyError
 
 
 logger = structlog.get_logger(__name__)
@@ -150,53 +154,53 @@ _WORKSPACE_FAILURE_ROUTES: dict[str, WorkspaceFailureRoute] = {
         resource_type="personal_access_token",
         resource_path_param="token_id",
     ),
-    "list_graph_folders": WorkspaceFailureRoute(
-        operation="graph.folder.list",
-        resource_type="graph_folder",
+    "list_project_folders": WorkspaceFailureRoute(
+        operation="project.folder.list",
+        resource_type="project_folder",
     ),
-    "create_graph_folder": WorkspaceFailureRoute(
-        operation="graph.folder.create",
-        resource_type="graph_folder",
+    "create_project_folder": WorkspaceFailureRoute(
+        operation="project.folder.create",
+        resource_type="project_folder",
     ),
-    "rename_graph_folder": WorkspaceFailureRoute(
-        operation="graph.folder.rename",
-        resource_type="graph_folder",
+    "rename_project_folder": WorkspaceFailureRoute(
+        operation="project.folder.rename",
+        resource_type="project_folder",
         resource_path_param="folder_id",
     ),
-    "delete_graph_folder": WorkspaceFailureRoute(
-        operation="graph.folder.delete",
-        resource_type="graph_folder",
+    "delete_project_folder": WorkspaceFailureRoute(
+        operation="project.folder.delete",
+        resource_type="project_folder",
         resource_path_param="folder_id",
     ),
-    "assign_graph_folder": WorkspaceFailureRoute(
-        operation="graph.folder.assign",
-        resource_type="saved_graph",
-        resource_path_param="graph_id",
+    "assign_project_folder": WorkspaceFailureRoute(
+        operation="project.folder.assign",
+        resource_type="saved_project",
+        resource_path_param="project_id",
     ),
-    "archive_graph": WorkspaceFailureRoute(
-        operation="graph.archive",
-        resource_type="saved_graph",
-        resource_path_param="graph_id",
+    "archive_project": WorkspaceFailureRoute(
+        operation="project.archive",
+        resource_type="saved_project",
+        resource_path_param="project_id",
     ),
-    "restore_graph": WorkspaceFailureRoute(
-        operation="graph.restore",
-        resource_type="saved_graph",
-        resource_path_param="graph_id",
+    "restore_project": WorkspaceFailureRoute(
+        operation="project.restore",
+        resource_type="saved_project",
+        resource_path_param="project_id",
     ),
-    "star_graph": WorkspaceFailureRoute(
-        operation="graph.star",
-        resource_type="saved_graph",
-        resource_path_param="graph_id",
+    "star_project": WorkspaceFailureRoute(
+        operation="project.star",
+        resource_type="saved_project",
+        resource_path_param="project_id",
     ),
-    "unstar_graph": WorkspaceFailureRoute(
-        operation="graph.unstar",
-        resource_type="saved_graph",
-        resource_path_param="graph_id",
+    "unstar_project": WorkspaceFailureRoute(
+        operation="project.unstar",
+        resource_type="saved_project",
+        resource_path_param="project_id",
     ),
-    "record_graph_open": WorkspaceFailureRoute(
-        operation="graph.open.record",
-        resource_type="saved_graph",
-        resource_path_param="graph_id",
+    "record_project_open": WorkspaceFailureRoute(
+        operation="project.open.record",
+        resource_type="saved_project",
+        resource_path_param="project_id",
     ),
 }
 
@@ -455,33 +459,6 @@ async def _http_error_handler(request: Request, exception: Exception) -> Respons
     )
 
 
-def _capacity_detail(exception: RunExecutionCapacityError) -> object:
-    return RunExecutionCapacityErrorDetail(
-        error_code=exception.error_code,
-        message=str(exception),
-        max_active_executions=exception.max_active_executions,
-    ).model_dump(mode="json")
-
-
-def _queue_full_detail(exception: RunExecutionQueueFullError) -> object:
-    return RunExecutionQueueFullErrorDetail(
-        error_code=exception.error_code,
-        message=str(exception),
-        max_pending_graphs=exception.max_pending_graphs,
-    ).model_dump(mode="json")
-
-
-def _idempotency_conflict_detail(
-    exception: RunExecutionIdempotencyConflictError,
-) -> object:
-    return RunExecutionIdempotencyConflictErrorDetail(
-        error_code=exception.error_code,
-        message=str(exception),
-        idempotency_key=exception.idempotency_key,
-        execution_id=exception.execution_id,
-    ).model_dump(mode="json")
-
-
 @dataclass(frozen=True)
 class _HttpMapping:
     status_code: int
@@ -489,21 +466,56 @@ class _HttpMapping:
     headers: Mapping[str, str] | None = None
 
 
-_RETRY_SOON = {"Retry-After": "1"}
+def _agent_conflict(detail: str, *, code: str, **extra: object) -> dict[str, object]:
+    """A refused Agent write, with the machine-readable half the client branches on.
 
-# API-layer errors that answer the same way on every route raising them. Errors routes translate
-# differently stay in the route: WorkbenchOperationError's status varies by endpoint, and run
-# execution also surfaces the two remaining NodeSecret errors as internal failures.
+    The message is for a person and gets reworded; the code is stable, and the ids say which
+    turn the refusal was about so a retried send or a pressed twice does not have to guess.
+    """
+
+    return {"code": code, "message": detail, **extra}
+
+
 _HTTP_MAPPINGS: dict[type[Exception], _HttpMapping] = {
     UploadTooLargeError: _HttpMapping(413),
     ArtifactContentUnavailableError: _HttpMapping(500),
     NodeSecretValueError: _HttpMapping(422),
-    RunExecutionCapacityError: _HttpMapping(429, _capacity_detail, _RETRY_SOON),
-    RunExecutionQueueFullError: _HttpMapping(429, _queue_full_detail, _RETRY_SOON),
-    RunExecutionIdempotencyConflictError: _HttpMapping(
+    RunRejectedError: _HttpMapping(422),
+    RunNotFoundError: _HttpMapping(404),
+    # An Agent send that was not admitted. The distinction each one carries is the client's:
+    # a busy conversation means wait for the turn it names, a conflict means the caller's own
+    # id was reused for different text, and an unprocessable send will fail again if repeated.
+    AgentTurnBusyError: _HttpMapping(
         409,
-        _idempotency_conflict_detail,
+        lambda error: _agent_conflict(
+            str(error),
+            code="agent_conversation_busy",
+            turn_id=(
+                None if error.running_turn_id is None else str(error.running_turn_id)
+            ),
+        ),
     ),
+    AgentTurnConflictError: _HttpMapping(
+        409,
+        lambda error: _agent_conflict(
+            str(error), code="agent_turn_id_reused", turn_id=str(error.turn_id)
+        ),
+    ),
+    AgentTurnRequestError: _HttpMapping(
+        422,
+        lambda error: _agent_conflict(str(error), code="agent_turn_rejected"),
+    ),
+    AgentConversationForkRangeError: _HttpMapping(
+        422,
+        lambda error: _agent_conflict(str(error), code="agent_fork_sequence_unknown"),
+    ),
+    # Nothing can be dialed as configured, which is an operator's answer rather than the
+    # caller's: the same shape a node secret with no deployment key gives.
+    AgentModelConfigurationError: _HttpMapping(503),
+    AgentKeyConfigurationError: _HttpMapping(503),
+    AgentTurnStoppingError: _HttpMapping(503),
+    AgentKeyValueError: _HttpMapping(422),
+    AgentKeyDeclarationError: _HttpMapping(404),
 }
 
 

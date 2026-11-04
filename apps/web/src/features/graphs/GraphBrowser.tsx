@@ -32,12 +32,12 @@ import {
   graphCountLabel,
 } from "@/features/workspaces/WorkspaceGraphPanel";
 import {
-  NEW_GRAPH_ROUTE_ID,
-  workbenchGraphPath,
+  NEW_PROJECT_ROUTE_ID,
+  workbenchProjectPath,
 } from "@/features/workbench/routes";
 import {
-  type LocatedGraph,
-  useAllWorkspacesGraphs,
+  type LocatedProject,
+  useAllWorkspacesProjects,
   useWorkspaces,
 } from "@/hooks/use-api";
 
@@ -45,11 +45,11 @@ type GraphBrowserView = "recent" | "all";
 
 const RECENT_GRAPH_LIMIT = 8;
 
-function GraphRow({ graph }: { graph: LocatedGraph }) {
+function GraphRow({ graph }: { graph: LocatedProject }) {
   return (
     <li>
       <Link
-        href={workbenchGraphPath(graph.location.slug, graph.id)}
+        href={workbenchProjectPath(graph.location.slug, graph.id)}
         className="grafy-graphs__row"
         aria-label={`Open ${graph.name} in ${workspaceDisplayName(graph.location)}`}
       >
@@ -82,7 +82,7 @@ export function GraphBrowser() {
     error: workspacesError,
     mutate: retryWorkspaces,
   } = useWorkspaces(session.user_id);
-  const graphState = useAllWorkspacesGraphs(workspaces);
+  const projectState = useAllWorkspacesProjects(workspaces);
   const [query, setQuery] = React.useState("");
   const [view, setView] = React.useState<GraphBrowserView>("recent");
   const [locationId, setLocationId] = React.useState("all");
@@ -91,7 +91,7 @@ export function GraphBrowser() {
   const createLocations = React.useMemo(
     () =>
       (workspaces ?? []).filter((workspace) =>
-        workspace.capabilities.includes("create_graph"),
+        workspace.capabilities.includes("create_project"),
       ),
     [workspaces],
   );
@@ -102,7 +102,7 @@ export function GraphBrowser() {
       : "all";
   const normalizedQuery = query.trim().toLowerCase();
   const filteredGraphs = React.useMemo(() => {
-    const availableGraphs = graphState.graphs ?? [];
+    const availableGraphs = projectState.projects ?? [];
     return availableGraphs.filter((graph) => {
       if (
         effectiveLocationId !== "all" &&
@@ -115,17 +115,17 @@ export function GraphBrowser() {
         `${graph.name} ${workspaceDisplayName(graph.location)}`.toLowerCase();
       return haystack.includes(normalizedQuery);
     });
-  }, [effectiveLocationId, graphState.graphs, normalizedQuery]);
+  }, [effectiveLocationId, projectState.projects, normalizedQuery]);
   const visibleGraphs =
     view === "recent"
       ? filteredGraphs.slice(0, RECENT_GRAPH_LIMIT)
       : filteredGraphs;
-  const totalGraphCount = graphState.graphs?.length ?? 0;
+  const totalGraphCount = projectState.projects?.length ?? 0;
 
   const startGraph = React.useCallback(() => {
     if (createLocations.length === 1) {
       const location = createLocations[0]!;
-      router.push(workbenchGraphPath(location.slug, NEW_GRAPH_ROUTE_ID));
+      router.push(workbenchProjectPath(location.slug, NEW_PROJECT_ROUTE_ID));
       return;
     }
     if (createLocations.length > 1) setCreateOpen(true);
@@ -220,11 +220,11 @@ export function GraphBrowser() {
               All
             </button>
           </div>
-          {graphState.graphs ? (
+          {projectState.projects ? (
             <span className="grafy-graphs__count">
               {filteredGraphs.length}{" "}
               {filteredGraphs.length === 1 ? "graph" : "graphs"}
-              {graphState.isRefreshing ? " · refreshing…" : ""}
+              {projectState.isRefreshing ? " · refreshing…" : ""}
             </span>
           ) : null}
         </div>
@@ -245,8 +245,8 @@ export function GraphBrowser() {
             </button>
           </section>
         ) : !workspaces ||
-          (graphState.error === null &&
-            (graphState.isLoading || graphState.graphs === null)) ? (
+          (projectState.error === null &&
+            (projectState.isLoading || projectState.projects === null)) ? (
           <div className="grafy-graphs__loading" role="status">
             <BrandLoader size={36} label="Loading graphs" />
             <span>Loading graphs…</span>
@@ -262,7 +262,7 @@ export function GraphBrowser() {
               Teams &amp; access
             </Link>
           </section>
-        ) : graphState.error ? (
+        ) : projectState.error ? (
           <section className="grafy-graphs__state" role="alert">
             <Workflow size={22} aria-hidden="true" />
             <div>
@@ -272,7 +272,7 @@ export function GraphBrowser() {
             <button
               type="button"
               className="grafy-workspace-button"
-              onClick={() => void graphState.retry()}
+              onClick={() => void projectState.retry()}
             >
               <RotateCcw size={14} aria-hidden="true" /> Retry
             </button>
@@ -356,7 +356,7 @@ export function GraphBrowser() {
                   onClick={() => {
                     setCreateOpen(false);
                     router.push(
-                      workbenchGraphPath(location.slug, NEW_GRAPH_ROUTE_ID),
+                      workbenchProjectPath(location.slug, NEW_PROJECT_ROUTE_ID),
                     );
                   }}
                 >

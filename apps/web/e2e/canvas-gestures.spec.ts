@@ -238,7 +238,14 @@ async function connectPortsThroughDrag(page: Page, hasTouch: boolean) {
   else await page.mouse.click(sourceHeader.x, sourceHeader.y);
   const output = source.locator(".react-flow__handle.source");
   const input = target.locator(".react-flow__handle.target");
-  await output.click({ trial: true });
+  await expect(output).toBeVisible();
+  await source.evaluate((element) =>
+    Promise.all(
+      element
+        .getAnimations({ subtree: true })
+        .map((animation) => animation.finished),
+    ),
+  );
   await expect(input).toBeHidden();
   const from = await center(output);
 
@@ -251,7 +258,13 @@ async function connectPortsThroughDrag(page: Page, hasTouch: boolean) {
     // Not a trial click: a drag near the edge of a phone viewport auto-pans,
     // so the ball is visible but never "stable".
     await expect(input).toBeVisible();
-    await page.waitForTimeout(350);
+    await target.evaluate((element) =>
+      Promise.all(
+        element
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished),
+      ),
+    );
     const to = await center(input);
     for (let step = 1; step <= 10; step += 1) {
       await touch(page, client, "touchMove", [
@@ -268,7 +281,13 @@ async function connectPortsThroughDrag(page: Page, hasTouch: boolean) {
     await page.mouse.down();
     await page.mouse.move(from.x + 20, from.y + 20, { steps: 3 });
     await expect(input).toBeVisible();
-    await page.waitForTimeout(350);
+    await target.evaluate((element) =>
+      Promise.all(
+        element
+          .getAnimations({ subtree: true })
+          .map((animation) => animation.finished),
+      ),
+    );
     const to = await center(input);
     await page.mouse.move(to.x, to.y, { steps: 10 });
     await page.mouse.up();
@@ -290,10 +309,15 @@ test("ports still connect with Generated selected in the docked panel", async ({
     "The side panel slides over the canvas below 1100px.",
   );
 
-  await page.getByRole("button", { name: "Generated artifacts" }).click();
-  await expect(
-    page.getByRole("button", { name: "Generated artifacts" }),
-  ).toHaveAttribute("aria-expanded", "true");
+  // The rail control, by its exact name: the opened Generated panel adds
+  // "Refresh…" and "Close…" header buttons, and only the rail item carries
+  // the expansion state this case reads.
+  const generatedToggle = page.getByRole("button", {
+    name: "Generated artifacts",
+    exact: true,
+  });
+  await generatedToggle.click();
+  await expect(generatedToggle).toHaveAttribute("aria-expanded", "true");
 
   await connectPortsThroughDrag(page, hasTouch);
 });

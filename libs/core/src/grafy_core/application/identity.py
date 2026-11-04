@@ -18,9 +18,6 @@ from grafy_core.domain.identity import (
     OidcDomainWorkspaceGrant,
     OidcIdentity,
     PersonalAccessToken,
-    PlatformAccessToken,
-    PlatformTokenPrincipal,
-    PlatformTokenScope,
     User,
     Workspace,
     WorkspaceAccess,
@@ -173,64 +170,6 @@ class IdentityService:
             token.last_used_at = now
             await unit_of_work.commit()
             return principal
-
-    async def authenticate_platform_access_token(
-        self,
-        *,
-        public_prefix: str,
-        secret_digest: bytes,
-        required_scope: PlatformTokenScope | None = None,
-    ) -> PlatformTokenPrincipal:
-        now = _utc_now()
-        async with self._unit_of_work_factory() as unit_of_work:
-            token = await unit_of_work.identity.get_platform_access_token_by_prefix(
-                public_prefix
-            )
-            if (
-                token is None
-                or not hmac.compare_digest(token.secret_digest, secret_digest)
-                or token.is_revoked
-                or token.expires_at <= now
-            ):
-                raise CredentialAuthenticationError()
-            principal = PlatformTokenPrincipal(
-                principal_reference=token.principal_reference,
-                credential_reference=f"platform-token:{token.id}",
-                scopes=frozenset(token.scopes),
-                token_id=token.id,
-            )
-            if required_scope is not None:
-                principal.require(required_scope)
-            token.last_used_at = now
-            await unit_of_work.commit()
-            return principal
-
-    async def create_platform_access_token(
-        self,
-        *,
-        token: PlatformAccessToken,
-    ) -> PlatformAccessToken:
-        async with self._unit_of_work_factory() as unit_of_work:
-            await unit_of_work.identity.add_platform_access_token(token)
-            await unit_of_work.commit()
-            return token
-
-    async def list_platform_access_tokens(self) -> list[PlatformAccessToken]:
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.identity.list_platform_access_tokens()
-
-    async def revoke_platform_access_token(
-        self,
-        *,
-        token_id: UUID,
-    ) -> PlatformAccessToken:
-        async with self._unit_of_work_factory() as unit_of_work:
-            token = await unit_of_work.identity.get_platform_access_token(token_id)
-            if token is None:
-                raise NotFoundError("Platform access token", str(token_id))
-            token.revoke()
-            await unit_of_work.commit()
-            return token
 
     async def list_workspaces(
         self, *, actor: ActorContext
@@ -614,9 +553,9 @@ class IdentityService:
                 workspace_id=workspace_id,
                 user_id=actor.user_id,
             )
-            if not membership.grants(WorkspaceCapability.VIEW_GRAPH):
+            if not membership.grants(WorkspaceCapability.VIEW_PROJECT):
                 raise CapabilityDeniedError(
-                    capability=WorkspaceCapability.VIEW_GRAPH.value,
+                    capability=WorkspaceCapability.VIEW_PROJECT.value,
                     workspace_id=workspace_id,
                     user_id=actor.user_id,
                 )
@@ -639,9 +578,9 @@ class IdentityService:
                 workspace_id=workspace_id,
                 user_id=actor.user_id,
             )
-            if not membership.grants(WorkspaceCapability.VIEW_GRAPH):
+            if not membership.grants(WorkspaceCapability.VIEW_PROJECT):
                 raise CapabilityDeniedError(
-                    capability=WorkspaceCapability.VIEW_GRAPH.value,
+                    capability=WorkspaceCapability.VIEW_PROJECT.value,
                     workspace_id=workspace_id,
                     user_id=actor.user_id,
                 )
@@ -1024,10 +963,8 @@ class IdentityService:
         for grant in self._domain_workspace_grants:
             if not grant.matches_normalized_email(user.normalized_email):
                 continue
-            workspace = (
-                await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
-                    grant.workspace_slug
-                )
+            workspace = await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
+                grant.workspace_slug
             )
             if workspace is None:
                 workspace = Workspace.shared(
@@ -1046,9 +983,7 @@ class IdentityService:
             if membership is not None:
                 continue
             owner_count = await unit_of_work.identity.count_active_owners(workspace.id)
-            role = (
-                WorkspaceRole.OWNER if owner_count == 0 else WorkspaceRole.EDITOR
-            )
+            role = WorkspaceRole.OWNER if owner_count == 0 else WorkspaceRole.EDITOR
             await unit_of_work.identity.add_membership(
                 WorkspaceMembership(
                     workspace_id=workspace.id,

@@ -1,1838 +1,763 @@
-# Realtime Workbench collaboration rework
+# Realtime Workbench collaboration
 
-- **Status:** Accepted; Phase 0–6 implemented; Phase 7 operator release gate open
-- **Date:** 2026-08-05
-- **Audience:** Engineers changing the Workbench, saved-graph persistence, or graph execution
+- **Status:** Accepted; implemented on the Project model
+- **Date:** 2026-11-03
+- **Audience:** Engineers changing the Workbench canvas, Project persistence, the room
+  protocol, or Runs
 - **Document type:** Technical design explanation
-- **Related:** [Workbench feature architecture](../adr/0001-workbench-feature-architecture.md),
-  [collaboration ADR](../adr/0002-server-authoritative-workbench-collaboration.md),
-  [authentication and workspace ADR](../adr/0003-authenticate-users-and-scope-collaboration-to-workspaces.md),
-  [authentication and workspace tenancy design](authentication-and-workspace-tenancy.md),
-  [product vocabulary](../../CONTEXT.md)
+- **Related:** [ADR 0002 — server-authoritative collaboration](../adr/0002-server-authoritative-workbench-collaboration.md),
+  [ADR 0003 — workspace scoping](../adr/0003-authenticate-users-and-scope-collaboration-to-workspaces.md),
+  [ADR 0014 — command batches as validated steps](../adr/0014-apply-graph-command-batches-as-validated-steps.md),
+  [ADR 0020 — Projects hold Graphs, results belong to nodes](../adr/0020-projects-hold-graphs-and-results-belong-to-nodes.md),
+  [authentication and workspace tenancy](authentication-and-workspace-tenancy.md),
+  [Runs ownership](../../apps/api/src/grafy_api/runs/README.md),
+  [product vocabulary](../../CONTEXT.md),
+  [web conventions](../../apps/web/AGENTS.md)
 
-## Summary
+## Superseded
 
-This document defines realtime collaboration for one saved graph across
-multiple browser sessions. Collaborators should see each other's cursors,
-selections, editing activity, and live node movement. Durable graph changes
-should converge without whole-document save conflicts. A graph execution and
-its activity bar should be visible to every session viewing that graph.
+[ADR 0020](../adr/0020-projects-hold-graphs-and-results-belong-to-nodes.md) superseded
+the design this document held before it, in which a room was held around one **Graph**,
+carried one graph-level revision, and pointed clients at an event stream for the one
+active **Execution**. Three moves, restated in the vocabulary of
+[CONTEXT.md](../../CONTEXT.md):
 
-The design makes these decisions:
+1. **The room is held around a Project.** One room per Project, addressed by
+   `(workspace_id, project_id)`, whose document holds all of the Project's Graphs.
+   A Graph is a definition inside the Project, not a room of its own.
+2. **Clients submit ordered command batches, addressed per Graph.** A batch is one unit
+   of acceptance and advances the Project sequence exactly once; a command that acts
+   inside a Graph is wrapped in `in_graph(graph_id, command)`, and the Project-level
+   commands sit beside it rather than inside it.
+3. **Results belong to node instances, not to an Execution.** The room publishes the
+   list of active Runs and derived per-instance state; there is no "the active
+   execution", no execution-scoped event stream, and no revision that a run owns.
 
-1. A saved graph has one server-authoritative collaboration room keyed by
-   stable workspace id and graph id.
-2. Clients submit semantic graph commands over a workspace-and-graph-scoped
-   WebSocket. The server validates, orders, and atomically persists every
-   accepted command as the next collaboration sequence on a durable
-   collaborative graph head.
-3. Cursor position, remote selection, editing activity, and drag previews are
-   ephemeral presence. They never create graph revisions.
-4. React Flow remains the canvas renderer, not the canonical graph document.
-5. One workspace-owned saved graph may have at most one queued, running, or
-   cancelling execution. The room advertises that execution to every authorized
-   session.
-6. Existing per-execution Server-Sent Events remain the source of live node
-   status and progress. The room supplies graph-level execution discovery.
-7. Saved graph revisions remain immutable checkpoints for execution,
-   materializations, modules, and history. Starting a run first checkpoints the
-   exact collaborative graph sequence and then executes that revision. Later
-   edits do not change the running plan or its materialized outputs.
-8. The first delivery continues to assume one owning API process. Horizontal
-   API ownership remains out of scope until execution leases, shared replay,
-   cancellation routing, and shared room publication exist.
+What the old text still got right is rewritten in place below (transport discipline,
+presence rules, backpressure, revocation, failure behavior, the single-owner
+constraint). What is gone is listed under [Gone](#gone). How a Run is scheduled,
+fingerprinted and stored is not repeated here —
+[apps/api/src/grafy_api/runs/README.md](../../apps/api/src/grafy_api/runs/README.md)
+owns that.
 
-This is an accepted design for the collaboration rework; parts of the live
-codebase may still be mid-migration toward this contract.
+## The shape of it
 
-## Motivation
+One Project, one room, one command sequence, many Runs.
 
-The current Workbench is a coherent single-user feature, but its state shape is
-not a safe realtime collaboration seam:
-
-- [`Workbench.tsx`](../../apps/web/src/features/workbench/ui/Workbench.tsx)
-  owns browser-local node and edge arrays and applies React Flow changes
-  directly.
-- [`WorkflowNodeData`](../../apps/web/src/features/workbench/canvas/types.ts)
-  combines serializable node configuration with derived bindings, execution
-  results, progress, secret status, and callback functions.
-- [`useSavedGraphLifecycle.ts`](../../apps/web/src/features/workbench/ui/useSavedGraphLifecycle.ts)
-  saves one complete document with an expected revision. A concurrent save
-  returns `409` and leaves reconciliation to the user.
-- [`execution-plan.ts`](../../apps/web/src/features/workbench/model/execution-plan.ts)
-  derives the submitted execution fragment from React Flow-shaped client state.
-- [`useRunExecution.ts`](../../apps/web/src/features/workbench/ui/useRunExecution.ts)
-  learns the execution id only after its own start request and owns the visible
-  execution state for that browser.
-- [`RunExecutionManager`](../../apps/api/src/grafy_api/execution/manager.py)
-  and its event replay journal live in one API process.
-
-The current optimistic revision rule remains valuable. Collaboration should
-move conflict resolution from a whole-document `PUT` to meaningful graph
-commands rather than remove revision safety.
-
-## Goals
-
-- Two or more sessions opening the same saved graph converge on the same
-  durable document.
-- Collaborators see remote cursors, selections, live node drag previews, and a
-  small indication of what another session is editing.
-- Every durable user gesture is structurally validated before it is accepted.
-  Commands that create or change execution semantics also use the live node
-  registry, while safe edits continue to preserve nodes whose plugins are
-  temporarily unavailable.
-- Reconnection is deterministic and does not duplicate accepted commands.
-- Collaboration heads and checkpoints always preserve the saved-document
-  structural contract: unique identities, existing endpoints, plug ownership,
-  and one edge per plug. Registry-aware authoring commands continue to enforce
-  typed ports, projections, conversion paths, collection modes, generic
-  bindings, and cycle policy when the affected contracts are available. As
-  today, a structurally valid incomplete or dormant draft may remain
-  unexecutable until Run preflight succeeds. Stored unsupported nodes and their
-  incident edges remain lossless until registrations return or a user removes
-  them.
-- All sessions can discover the same active execution and authoritative
-  lifecycle, then reconstruct current node status and observe best-effort live
-  progress, cancellation, and terminal outcome.
-- Execution history and materialized outputs continue to identify one exact
-  saved graph checkpoint revision, not a transient collaboration sequence.
-- Secrets, secret values, artifact payloads, and other sensitive runtime state
-  never enter the graph command journal or presence messages.
-- The migration can be delivered in independently testable phases without
-  maintaining two canonical frontend graph models.
-
-## Non-goals
-
-- Offline-first authoring or indefinite offline command queues.
-- Character-level collaborative text editing inside configuration fields.
-- A general CRDT framework or arbitrary JSON Patch interface.
-- Multiple concurrent executions for one saved graph.
-- Sharing a collaborator's viewport, open drawers, dialogs, or other private
-  interface state.
-- Sharing in-viewer selection/filter/highlight activity in the first delivery.
-  Structural Artifact Viewer documents (viewers, links, bindings) are shared on
-  the collaborative head.
-- Multi-process graph-room or execution ownership in the first delivery.
-- Designing login, account recovery, organization administration, invitations,
-  or workspace billing. Those flows belong to the related authentication and
-  workspace design. This document does define the actor, workspace,
-  capabilities, and revocation contract required by collaboration.
+1. A Project is the collaborative document. Its **head** is the draft everyone edits;
+   its **checkpoints** are the immutable revisions it is periodically made durable
+   as. Both live in one row set owned by
+   [`CollaborationService`](../../libs/core/src/grafy_core/application/collaboration.py),
+   which is the only writer of a head.
+2. Clients submit **semantic command batches** over a workspace-and-project-scoped
+   WebSocket. A batch is accepted or rejected as a whole; the server validates, orders,
+   and persists it as the next collaboration sequence in one transaction, and only then
+   fans it out.
+3. Cursor position, remote selection, editing activity and drag previews are **ephemeral
+   presence**. They never create a checkpoint and are dropped before anything else when
+   a session falls behind.
+4. React Flow remains the canvas renderer, not the canonical document.
+5. **Results belong to node instances.** Any number of Runs are active in a Project at
+   once; the room announces `run.started`, `run.finished` and `instances.changed`, and
+   REST stays the source of truth for what they mean.
+6. **Edits never lock the document.** A computation stores its result under the
+   fingerprint it started with; if the document moved on, the instance reads as stale.
+7. Checkpoints are append-only. Restoring one is the way back from an accepted change,
+   and a restore reopens the room on a fresh epoch rather than rewinding it.
+8. The deployment assumes **one owning API process**. In-flight scheduling and presence
+   live in that process; a second one is refused at startup rather than coordinated
+   with.
 
 ## Vocabulary
 
-These design-specific terms should be added to `CONTEXT.md` when the accepted
-vocabulary pass is scheduled.
+[CONTEXT.md](../../CONTEXT.md) defines Project, Graph, Call node, Node instance,
+Fingerprint, Result store, Instance state, Run and the room frames. This document uses
+those words and adds:
 
-### Graph room
+- **Project room** — the transient, in-process set of sockets viewing one Project,
+  keyed by `(workspace_id, project_id)`
+  ([`realtime/hub.py`](../../apps/api/src/grafy_api/realtime/hub.py)). It publishes; it
+  is never the source of truth.
+- **Project head** — the latest durable draft: the whole Project document plus
+  `room_epoch`, `collaboration_sequence`, `checkpoint_sequence` and
+  `checkpoint_revision`
+  ([`project_contracts.py:271`](../../apps/api/src/grafy_api/project_contracts.py)).
+- **Project room session** — one live socket, with a server-assigned
+  `project_room_session_id`. It is not an actor, an auth session, or an authorization
+  boundary.
+- **Batch** — the ordered list of Project commands in one submission, identified by one
+  `command_id`.
+- **Room epoch** — the uuid4 identity of one run of a Project's collaboration. A
+  checkpoint restore mints a new one so every participant must rehydrate.
 
-The transient server-owned coordination context for sessions currently viewing
-one saved graph in one workspace. It is keyed by stable
-`(workspace_id, graph_id)`, publishes accepted collaboration sequences,
-presence, and active execution discovery, and is not the durable source of
-truth for the graph document.
+Actor, auth session, capability snapshot and presence keep the meanings the
+[authentication and workspace design](authentication-and-workspace-tenancy.md) gives
+them; ADR 0020 changed none of them.
 
-### Collaborative graph head
+## Identity: what a room is addressed to
 
-The latest durable authoring document for one workspace-scoped graph room,
-identified by workspace id, graph id, room epoch, and a monotonic server
-sequence. Accepted commands update this head automatically. The head may be
-newer than the latest immutable saved graph revision.
+The socket is
+`/v1/workspaces/{workspace_id}/projects/{project_id}/room`
+([`collaboration/views.py:138`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py),
+built by
+[`project-room-url.ts`](../../apps/web/src/features/workbench/room/project-room-url.ts)).
+There is no graph id in the address: a participant is in the Project's room, and names a
+Graph in each command or presence frame that needs one.
 
-### Graph command
+**Admission is authorization, in this order.** `Origin` must equal the configured
+public origin; then the handshake authorizes `join_project_room` and requires
+`view_project` on the resolved Workspace; then the head is read. A Project of another
+Workspace, or one with no head, is a `404` — the same answer as one that was never
+opened — and a disabled user is a `401`
+([`views.py:139-200`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
+Capability names are the ones in
+[`domain/identity.py:34`](../../libs/core/src/grafy_core/domain/identity.py):
+`view_project`, `view_artifacts`, `view_runs`, `join_project_room`, `publish_presence`,
+`create_project`, `edit_project`, `checkpoint_project`, `start_run`, `cancel_run`,
+`manage_secrets`, `delete_project`, `manage_members`, `rename_workspace`.
 
-One semantic, atomic authoring gesture submitted by a session. Examples include
-moving nodes, changing one configuration field, connecting two ports, or
-removing a node with its incident edges. An accepted graph command advances the
-collaboration sequence exactly once.
+**Commands carry a Graph id when they act inside one.** The command union is
+[`domain/collaboration.py:306-366`](../../libs/core/src/grafy_core/domain/collaboration.py):
 
-### Graph checkpoint
+| Level | Kinds |
+| --- | --- |
+| Project | `rename_project`, `add_graph`, `rename_graph`, `remove_graph`, `refresh_node`, `add_call_node` |
+| Inside one Graph | `in_graph(graph_id, command)` wrapping `add_node`, `duplicate_node`, `remove_nodes`, `move_nodes`, `update_node_configuration`, `update_node_layout`, `set_node_input_plugs`, `update_node_configuration_and_input_plugs`, `set_node_artifact_type_binding`, `clear_node_artifact_type_binding`, `add_edge`, `update_edge`, `remove_edges`, `add_origin`, `update_origin`, `remove_origins`, `replace_document`, `replace_presentation`, `move_artifact_viewers`, `move_annotations` |
 
-An immutable saved graph revision created from one exact collaborative graph
-head sequence. Checkpoints remain the identity used by execution, graph
-modules, execution history, and revision-scoped materialized outputs.
+`rename_graph` and `rename_project` are Project-level commands, not bodies of a Graph
+document: a Graph's name is not inside its document, so a save that carries a new name
+submits `[rename_graph, in_graph(replace_document)]` as one batch
+([`Workbench.tsx:1346-1362`](../../apps/web/src/features/workbench/ui/Workbench.tsx)).
+`rename_project` and `rename_graph` both carry the name they expect to replace, which is
+where their conflict policy lives.
 
-### Actor
+**Presence names the Graph it is about.** A participant frame carries
+`graph_id: str | None` so a collaborator's cursor and selection are attributed to the
+Graph they are looking at, while every participant of the Project shares one list
+([`realtime/protocol.py:84-101`](../../apps/api/src/grafy_api/realtime/protocol.py)).
 
-The authenticated user on whose behalf a production command, checkpoint,
-execution, or other protected operation is attempted. The server derives the
-actor from the authenticated request and workspace membership; the client
-never supplies authoritative actor identity.
+Deleting a Project closes its room with `4010 / project_deleted`
+([`projects/views.py:283`](../../apps/api/src/grafy_api/v1/routes/projects/views.py),
+[`hub.py:34`](../../apps/api/src/grafy_api/realtime/hub.py)); a membership change or
+revocation closes that user's rooms
+([`workspaces/views.py:204`](../../apps/api/src/grafy_api/v1/routes/workspaces/views.py)).
 
-### Auth session
+## Sequence: two counters on one head
 
-The revocable server-side browser session established after OIDC login. Its
-opaque cookie can outlive several graph-room connections, but its cookie and
-server-side identifiers never enter graph documents, commands, presence, or
-browser-persisted Workbench state. MCP uses a workspace-bound personal access
-token over first-delivery **stateless** Streamable HTTP instead; that per-
-request MCP credential resolution is neither an `AuthSession` nor an identity.
+A head carries one monotonic **`collaboration_sequence`** and the **`checkpoint_sequence`
+/ `checkpoint_revision`** pair marking the last durable save
+([`domain/collaboration.py:1178-1242`](../../libs/core/src/grafy_core/domain/collaboration.py)).
+The head's own invariants are the contract: `checkpoint_sequence ≤
+collaboration_sequence`, `checkpoint_revision ≥ 1`, and fully checkpointed means the two
+sequences are equal. A new Project, a copy, and a restore all open at
+`collaboration_sequence = 0` with the checkpoint pair already set
+([`for_existing_project`, `domain/collaboration.py:1245`](../../libs/core/src/grafy_core/domain/collaboration.py)),
+so a Project's head is born fully checkpointed at revision 1 and its first accepted batch
+lands at sequence 1
+([`stage_project`, `project_creation.py:43-86`](../../libs/core/src/grafy_core/application/project_creation.py)).
 
-### Graph room session
+- **`collaboration_sequence`** advances exactly once per accepted batch and implies no
+  durable save. It orders edits.
+- **`checkpoint_revision`** advances only when `checkpoint` is called and marks an
+  immutable `ProjectCheckpoint`. It is what a durable state is addressed by.
 
-One live WebSocket connection to one workspace-scoped graph room. A
-`GraphRoomSession` has a server-assigned room-session id and bounded
-presentation metadata. It represents one tab or device for presence and
-backpressure; it is not an actor, auth session, workspace membership, or
-authorization boundary.
+**What a caller asserts.** Everything that changes the document asserts the
+`collaboration_sequence` it read plus the `room_epoch` it read — never a checkpoint
+revision:
 
-### Capability snapshot
+| Operation | Asserts | On mismatch | Ref |
+| --- | --- | --- | --- |
+| Submit a batch | `room_epoch`, `observed_sequence` | head conflict, if the epoch differs or the head has already passed what you read | [`application/collaboration.py:360-385`](../../libs/core/src/grafy_core/application/collaboration.py) |
+| Submit a batch containing `in_graph(replace_document)` or `in_graph(replace_presentation)` | the **exact** current sequence | head conflict | [`command_requires_exact_sequence`, `domain/collaboration.py:426`](../../libs/core/src/grafy_core/domain/collaboration.py) |
+| Checkpoint | exact `collaboration_sequence` and epoch | head conflict; already-checkpointed heads replay their revision | [`application/collaboration.py:419-470`](../../libs/core/src/grafy_core/application/collaboration.py) |
+| Configure or remove a node secret | exact `collaboration_sequence` | `409` before secret storage is touched | [`node_secrets.py:206,263`](../../apps/api/src/grafy_api/node_secrets.py) |
+| Delete or copy a Project | exact `collaboration_sequence` and epoch when supplied; without them, an uncheckpointed head is refused | head conflict / uncheckpointed | [`application/collaboration.py:624-741,742-790`](../../libs/core/src/grafy_core/application/collaboration.py) |
+| Start a Run | nothing | — a Run is planned against the live head document as it reads it | [`runs/service.py:174`](../../apps/api/src/grafy_api/runs/service.py) |
 
-The server-derived effective capabilities and authorization version returned
-for an actor in a workspace and graph. The UI uses the snapshot to expose only
-permitted behavior, but every protected operation is authorized again when it
-is handled. The snapshot is therefore presentation input, not a bearer
-capability or continuing authority.
+**Why the number the canvas holds is not automatically the right one.** A batch is
+accepted against the *latest* head, not against the sequence you stamped: ordinary
+commands carry their own compare-and-set (`expected_name`, `expected_generation`,
+plug membership), so a stale-but-lower `observed_sequence` rebases rather than fails.
+That is exactly why a whole-document or whole-presentation replace, which carries no
+prior value to compare, is refused unless it arrives at the exact sequence its author
+read. Two consequences a writer must get right:
 
-### Presence
+1. A caller editing outside the room must read `GET …/projects/{id}/head` first and
+   stamp the submission with *that* sequence, not with whatever the canvas last
+   rendered.
+2. The checkpoint that follows must assert the sequence the batch was **accepted at**
+   (`receipt.accepted_sequence`, or the head returned by the submission), never the one
+   it read before submitting — otherwise a peer's interleaved batch makes your own work
+   uncheckpointable. The save path does exactly this
+   ([`useSavedGraphLifecycle.ts:119-151`](../../apps/web/src/features/workbench/ui/useSavedGraphLifecycle.ts)).
 
-Bounded, expiring information used only to explain a collaborator's current
-interaction: cursor position, selection, editing activity, and drag preview.
-Presence is best effort and is never persisted in a saved graph.
+High-frequency gestures do not touch either counter until the gesture commits: cursor
+updates are presence, positions under a held pointer are drag previews, and pointer
+release submits one `move_nodes`. Configuration edits commit on blur or a bounded
+debounce, not per keystroke. Compound gestures (a generic binding plus the edge that
+needs it) are one batch.
 
-### Active graph execution
+## Transport: the Project room socket
 
-The one queued, running, or cancelling execution currently owned by a saved
-graph. It identifies the exact graph revision, scope, requested nodes, starter,
-and execution id.
+**Ordering at join is deliberate.** The route registers the session with the hub, reads
+the head, writes `room.ready` straight to the socket, and only then activates it
+([`views.py:211-236`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
+Between registration and activation the hub buffers the session's outbound queue, so a
+batch committed while the head was being read arrives *after* the head it moved past,
+never instead of it.
+
+**One writer after activation.** Every frame a session receives goes through one sender
+task fed by one bounded queue of 64
+([`hub.py:27`](../../apps/api/src/grafy_api/realtime/hub.py)). That is what keeps
+fanout, private receipts and heartbeats in one FIFO, and what makes a slow consumer
+bounded: a full queue closes the session with `4009 / slow_consumer` rather than
+buffering. Presence frames are dropped at a queue depth of 48 before that point.
+`room.ready` is the one frame written directly, before activation.
+
+**The message set** is versioned by `protocol_version: 1`, and both sides validate
+strictly — server models are `extra="forbid"`, and the TypeScript parser in
+[`room/protocol.ts`](../../apps/web/src/features/workbench/room/protocol.ts) rejects a
+flat head or a Graph document without its Graphs rather than papering over them.
+
+| Direction | Types |
+| --- | --- |
+| client → server | `project.command.submit`, `presence.update` — and nothing else ([`realtime/protocol.py:294-303`](../../apps/api/src/grafy_api/realtime/protocol.py)) |
+| server → client | `room.ready`, `room.rehydrate`, `room.heartbeat`, `project.command.accepted`, `project.command.receipt`, `project.command.rejected`, `presence.join`, `presence.leave`, `presence.update`, `run.started`, `run.finished`, `instances.changed`, `agent.turn.started`, `agent.event.appended`, `agent.delta`, `agent.turn.finished` |
+
+`room.ready` carries workspace id, project id, room session id, actor presentation, the
+capability snapshot with its authorization version, the complete head, the current
+participants, `active_runs`, `instances`, and a `registry_marker` the client parses but
+does not yet act on. A message type the
+client does not know is ignored. A wrong protocol version stops the session terminally
+(`protocol_incompatible`) and the user must reload; a known type that fails to parse — a
+flat head, a Graph document without its Graphs — is a retryable `protocol_error` that
+reconnects and rehydrates.
+
+**Heartbeats are server-driven.** A per-connection timer fires every
+`realtime.graph_room_heartbeat_seconds` (default 15s) and, before it emits
+`room.heartbeat`, re-authorizes membership: revocation closes with `4004 /
+access_revoked`, a changed authorization version closes with `4003 / permissions_changed`
+([`views.py:365-425`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
+It is a timer rather than a receive timeout because the ASGI receive is an anyio
+checkpoint, and a chatty client cannot starve the revalidation. This is also the safety
+net for a lost post-commit invalidation, which is why permission changes are handled by
+*closing* a session rather than by pushing a new capability snapshot into it.
+
+**Close codes** are shared between hub and client
+([`hub.py:30-34`](../../apps/api/src/grafy_api/realtime/hub.py),
+[`room/protocol.ts:12-16`](../../apps/web/src/features/workbench/room/protocol.ts)):
+`4003` permissions changed, `4004` access revoked, `4008` protocol error, `4009` slow
+consumer, `4010` project deleted.
+
+**The client's states** are `idle`, `connecting`, `ready`, `reconnecting`,
+`unsynchronized`, `stopped`
+([`graph-room-session.ts`](../../apps/web/src/features/workbench/room/graph-room-session.ts)).
+A recovery reason (`connection_lost`, `permissions_changed`, `protocol_error`,
+`slow_consumer`) keeps the session and retries; a terminal reason (`access_revoked`,
+`project_deleted`, `protocol_incompatible`, `reconnect_exhausted`) stops it and drops
+every queued batch. Backoff is `min(750 · 2ⁿ, 10 000)` ms for five attempts, after which
+reconnection stops until the user asks for it.
+
+**Reconnection** resubmits unacknowledged batches with their original command ids after
+the fresh `room.ready` lands. There is no "resolve an unknown command" round trip any
+more: resubmitting an already-committed batch is simply a retry, and the server replies
+with the original receipt marked `idempotent_replay`
+([`views.py:519-536`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
+
+**Head replacement is monotone.** A snapshot or accepted batch is applied only when the
+epoch changed or its sequence is not older, so a late HTTP head read cannot wipe a head
+the socket already moved forward
+([`shouldReplaceCollaborativeHead`, `graph-room-session.ts:88`](../../apps/web/src/features/workbench/room/graph-room-session.ts)).
+An epoch change arrives as `room.rehydrate` — a checkpoint restore reopens the room and
+publishes it
+([`projects/views.py:472`](../../apps/api/src/grafy_api/v1/routes/projects/views.py)).
+Full-snapshot recovery is the correctness path; incremental application is the
+optimization.
+
+## Commands and batches
+
+**A batch is the unit of acceptance.** `commands` is non-empty on both sides;
+`apply_project_commands` folds it over the document and names the index that broke
+("rejected at index 3"), because the client resends from there. An accepted batch calls
+`head.apply_accepted_batch`, which increments `collaboration_sequence` by one and leaves
+the checkpoint pair alone ([`domain/collaboration.py:1015-1060,1208`](../../libs/core/src/grafy_core/domain/collaboration.py)).
+
+**A command id is a promise.** The server stores a keyed HMAC over `(workspace, project,
+actor, room_epoch, observed_sequence, commands in order)`; command order is part of the
+signature, so the same commands in another order are a different batch
+([`command_hmac_digest`, `domain/collaboration.py:390-424`](../../libs/core/src/grafy_core/domain/collaboration.py)).
+The same id with the same signature replays the original receipt and moves nothing; the
+same id with a different signature is `idempotency_mismatch`. The receipt is re-read
+*under the head lock* so two simultaneous submissions of one id cannot both insert a
+receipt ([`application/collaboration.py:340-365`](../../libs/core/src/grafy_core/application/collaboration.py)).
+
+**Receipt and broadcast are separate.** Peers get `project.command.accepted`; the
+submitter additionally gets `project.command.receipt`. A replay of an already-committed
+batch is answered with the private receipt alone and owes no fanout and no instance
+republish, because it moved no document
+([`_handle_command_submit`, `views.py:466-551`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
+They may arrive in either order, so the client correlates by command id and mutates the
+confirmed document only from the ordered broadcast. An accepted frame whose sequence is
+not `head + 1` in the same epoch pauses sending and asks the driver for a full head
+snapshot ([`graph-room-session.ts:726-760`](../../apps/web/src/features/workbench/room/graph-room-session.ts)).
+
+**Conflict behavior belongs to each command**, not to a universal rule. Removing an
+absent node is a no-op; a move is revalidated against the latest document; a rename or a
+refresh carries the value it expects and conflicts without it; a call node is refused
+when the Project has no such Graph; adding a Graph with an id the Project already has is
+`duplicate_graph`
+([`_apply_project_command`, `domain/collaboration.py:1055-1176`](../../libs/core/src/grafy_core/domain/collaboration.py)).
+**Command application is a pure document fold.** Nothing in it consults the plugin
+registry: a batch that names an operator this build does not register is accepted, is
+fanned out, and stays accepted. That document fails later, at Run planning and at
+instance derivation, with the stable codes `unknown_operator` and `invalid_document`
+([`runs/views.py`](../../apps/api/src/grafy_api/v1/routes/runs/views.py)), and the room
+that cannot derive its own instances says so by opening with an empty list
+([`views.py:554-575`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
+Connection-shaped validation therefore belongs to the client that draws the edge and to
+the derivation that computes it, not to the command layer — which is also why a stored
+unsupported node survives until its registration returns or a user removes it.
+
+**The optimistic client keeps one batch in flight.** The outbox holds a FIFO with a cap
+of 32 batches, stamps each frame from the confirmed head, pauses sending while a head
+refresh is outstanding, and replaces a queued snapshot-style batch with a newer one of
+the same kind rather than sending both
+([`command-outbox.ts`](../../apps/web/src/features/workbench/room/command-outbox.ts)).
+Reaching the cap pauses durable authoring and shows a waiting state; offline editing
+beyond it is not supported and the UI must not imply it is. A private field draft stays
+browser-private: a remote accepted value never silently erases an active draft, and a
+conflicted commit keeps the draft for an explicit retry.
+
+## Runs and instances on the room
+
+A Run is a demand for freshness, so the room carries **many** Runs and the state of the
+instances they touch. The frames
+([`realtime/protocol.py:155-232`](../../apps/api/src/grafy_api/realtime/protocol.py),
+published by [`realtime/run_events.py`](../../apps/api/src/grafy_api/realtime/run_events.py)):
+
+- `run.started` — one `ActiveRunSummary`: run id, root Graph, targets, who started it,
+  start time, cancellable.
+- `run.finished` — run id, terminal status (`succeeded`, `failed`, `cancelled`,
+  `interrupted`), and a bounded error.
+- `instances.changed` — `changed` instance states, `removed` instance keys, and the
+  `head_sequence` they were derived against.
+
+`room.ready` carries the same two collections as lists: `active_runs` (the Runs that
+started before you joined, which you cannot see any other way) and `instances` for every
+Graph of the head. If instance derivation fails — the document names an operator this
+deployment does not register — the room opens with **no** instances rather than locking
+a participant out of the only room that could repair the document
+([`views.py:337-363`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
+
+**Frames are events, not answers.** A delta says *read the results again*; REST is the
+source of truth: `GET …/projects/{id}/runs`, `GET …/runs/{run_id}`, `POST …/runs`,
+`POST …/runs/{run_id}/cancel`, `GET …/graphs/{graph_id}/instances`, and
+`GET …/instance-result`
+([`runs/views.py`](../../apps/api/src/grafy_api/v1/routes/runs/views.py)). The surface
+turns each room push into exactly one read
+([`useRunExecution.ts:352-364`](../../apps/web/src/features/workbench/ui/useRunExecution.ts)).
+Because a listener cannot tell "the room pushed" from "the list looks the same as last
+time", a revision counter travels beside each list: `runsRevision` bumps on
+`room.ready`, `run.started` and `run.finished`, `instancesRevision` bumps on
+`instances.changed`
+([`useProjectRoomSession.ts:49-56,124-143`](../../apps/web/src/features/workbench/room/useProjectRoomSession.ts)).
+A push whose list happens to be identical still has to trigger a re-read, which is why
+identity of the array is not stood in for the fact that the room spoke. Without a room,
+the surface polls, and only while something could still move.
+
+**There is no SSE endpoint.** This is a decision, not an oversight: the per-execution
+event journal, its replay window, its heartbeat and its polling fallback all existed to
+follow *one* execution that a client had to discover first. With results owned by
+instances, that stream would have to be one subscription per Run and would still not
+tell you why a node you never ran is stale. What replaced it is the room's three Run and
+instance frames plus re-reads of the Run and instance REST collections; instance state
+is recomputed and diffed per Project after scheduler transitions and accepted batches,
+serialized and coalesced so a slow subscriber cannot block a computation
+([`runs/service.py`](../../apps/api/src/grafy_api/runs/service.py),
+[`runs/state.py`](../../apps/api/src/grafy_api/runs/state.py)).
+The only streaming HTTP response in the API is artifact bytes
+([`artifacts/views.py:47`](../../apps/api/src/grafy_api/v1/routes/artifacts/views.py));
+nothing in the collaboration path streams events.
+
+**Instance identity.** A node instance is
+`(project, graph, call path, node id[, map index])`
+([`kernel/instances.py:13`](../../libs/core/src/grafy_core/kernel/instances.py)):
+`call_path` lists the call-node ids entered to reach the Graph, outermost first, and is
+empty for a Graph run directly; `map_index` is reserved for MAP items and stays `null`
+until that decision is taken. Over the wire the client keys its instance map with
+`instanceKeyText`, which joins `graph_id`, `call_path` joined by `/`, `node_id` and
+`map_index` (empty when `null`) with U+0000
+([`room/protocol.ts:798`](../../apps/web/src/features/workbench/room/protocol.ts)).
+The composed text deliberately omits `project_id`, which every frame still carries: the
+map belongs to one room for one Project, so the Project is already implied.
+
+State is looked up **by instance and never by Run**. The canvas asks for the instance of
+the node it is drawing — `(project, open graph, [], node id, null)` — and paints what
+that instance's fingerprint holds
+([`Workbench.tsx:1425-1441`](../../apps/web/src/features/workbench/ui/Workbench.tsx)).
+A Run is a demand that has come and gone; several Runs may have touched one Graph, one
+Run may span several Graphs through call nodes, and two calls of the same Graph with the
+same inputs share one result. Reading state off a Run would resurrect the behaviour the
+rework removed: a value that only the browser which ran something could see, and a
+reload that forces a full re-run.
+
+Editing while a Run is active changes nothing about locking: an accepted batch moves
+fingerprints, the affected instances go stale in the next `instances.changed`, and a
+computation that lands later still stores under the fingerprint it started with, so no
+participant sees a wrong value as fresh. Cancelling a Run withdraws that Run's demand
+and cancels a computation only when no other active Run needs it
+([`runs/service.py:213-250`](../../apps/api/src/grafy_api/runs/service.py)).
+
+## Agents on the room
+
+A turn answers in the room so a second tab sees the answer arrive, and so a browser that
+sent the request is not the only one holding the text. The frames
+([`realtime/protocol.py`](../../apps/api/src/grafy_api/realtime/protocol.py), published
+by [`realtime/agent_events.py`](../../apps/api/src/grafy_api/realtime/agent_events.py))
+are scoped by the Project room. They identify the Graph, Agent, conversation
+and turn, and carry the relevant receipt, event or text.
+
+- `agent.turn.started` — the turn is running, who started it, and when.
+- `agent.event.appended` — one stored event with its `sequence`: the
+  question, the finished answer, the turn outcome.
+- `agent.delta` — coalesced text with the `offset` it begins at in the stored message,
+  so a reader can detect a gap and recover. Deltas do not declare completion.
+- `agent.turn.finished` — the outcome and optional detail. Read stored events to recover missed messages.
+
+**Authoritative frames queue, deltas drop.** The three factual frames travel the hub's
+queued path, the same one a command receipt does: losing one would leave a participant
+missing a message the room said happened. `agent.delta` goes through
+`hub.publish_transient`, which uses the hub's drop-if-busy offer. The hub closes a
+session whose queue fills ([`hub.py:118-135`](../../apps/api/src/grafy_api/realtime/hub.py)),
+and a model streaming quickly can fill it, so queueing deltas would take every
+participant off the Project each time someone sent an Agent a long question. A dropped
+delta costs one reader one stutter: the stored message is on the conversation route and
+the `agent.event.appended` that carries it replaces the streamed text.
+
+**The order is the contract** ([`agents/publishing.py`](../../apps/api/src/grafy_api/agents/publishing.py)):
+`turn.started`, then the question's `event.appended`, then deltas, then the answer's
+`event.appended`, then any outcome event, then `turn.finished`. Telling a stored event
+*after* its flushed text is deliberate — a reader that saw the whole message and then a
+partial would put a fragment back over an answer it already had. A delta longer than
+`agent_delta_max_text_chars` is discarded rather than truncated: half a message spliced
+to the next is worse than none, and the whole message follows as a stored event anyway.
+
+**Telling is never part of the turn.** The receipt and events are committed before a frame
+is built, and a publisher that raises loses its telling and a log line only
+([`realtime/agent_events.py`](../../apps/api/src/grafy_api/realtime/agent_events.py)).
+A participant that missed frames reads the conversation back
+(`GET …/conversations/{id}/events`) and the active turn
+(`GET …/conversations/{id}/active-turn`); `room.ready` does not carry conversations.
+
+## Presence
+
+Presence explains collaborators without becoming a second document.
+
+- It is keyed by `project_room_session_id`, not actor id, so two tabs of one person are
+  two independently expiring cursors; participant UI may group them and show a count.
+- Publishing requires `publish_presence`, checked per update at handling time. A client
+  that lacks it is dropped silently — presence is best-effort and never an error path
+  ([`views.py:438-463`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
+- A frame may carry: the Graph it is about, cursor position in graph coordinates,
+  selected node and edge ids, an activity kind (`moving_nodes`, `editing_node`,
+  `connecting`) with target ids, live node positions for a drag preview, and a
+  session-local sequence. Server-assigned display name and colour come from the room, and
+  id lists are de-duplicated and capped.
+- A frame must never carry node configuration values, secret names paired with values,
+  artifact payloads, progress text copied from computations, viewport or device data, or
+  caller-provided HTML, CSS, image URLs or colours.
+- Rates: about 20 updates/s server-side (`graph_room_presence_max_updates_per_second`),
+  a 50 ms client floor, TTL 5s to clear cursor and activity fields and 2× TTL to drop the
+  entry
+  ([`grafy_shared/config/realtime.py:16-27`](../../libs/shared/src/grafy_shared/config/realtime.py)).
+  An out-of-order or rate-violating update is dropped, not rejected. TTL clears presence,
+  never room membership.
+- Remote selection is an annotation: it never changes the local React Flow selection or
+  keyboard target. Editing activity is a soft claim, not a lock; the command's own
+  conflict policy decides who wins. Dragging publishes transient positions and submits
+  one durable `move_nodes` on release; a rejected move leaves the confirmed document
+  winner and the preview simply disappears.
+- Only the local session's own cursor is suppressed; another tab of the same actor stays
+  a distinct remote session.
+
+## Where it lives in the web client
+
+The durable document no longer wears React Flow's shape, which is the part of
+[ADR 0001](../adr/0001-workbench-feature-architecture.md)'s recorded debt this rework
+cleared: the renderer types and the document are now on opposite sides of one adapter.
+The `model -> canvas` edge the ADR allows still exists elsewhere (`model/artifact-drop.ts`
+imports canvas helpers), so the ADR's wider extraction stays open.
+
+- [`model/graph-document.ts`](../../apps/web/src/features/workbench/model/graph-document.ts)
+  owns the graph document as a value: pure application of commands
+  (`applyGraphCommandNormalized`), the authored document a save serializes to, and the
+  nodes an execution change invalidates. It imports no renderer type.
+- [`canvas/graph-document-adapter.ts`](../../apps/web/src/features/workbench/canvas/graph-document-adapter.ts)
+  turns React Flow node and edge changes and connection attempts into commands, and adds
+  run, execution and progress overlays at render time. An overlay is never written back
+  to the document except as a user gesture that becomes a command.
+- [`room/`](../../apps/web/src/features/workbench/room) is the collaboration seam:
+  `protocol.ts` (wire types and the strict parser), `graph-room-session.ts` (socket,
+  confirmed head, presence throttle, reconnect and terminal states), `command-outbox.ts`
+  (single in-flight batch, queue cap, head-rehydration gate), `room-command-bridge.ts`
+  (accepted commands folded onto the Project head), `useProjectRoomSession.ts` (the React
+  surface: head, capability gates, participants, Runs with `runsRevision`, instances with
+  `instancesRevision`), `graph-readiness.ts` (one trust policy for every consumer of the
+  displayed document) and `project-room-url.ts`.
+- `ui/Workbench.tsx` composes; [`ui/useRunExecution.ts`](../../apps/web/src/features/workbench/ui/useRunExecution.ts)
+  is the Run surface (a room push is the event, a REST read is the answer, polling only
+  while there is no room); [`ui/useSavedGraphLifecycle.ts`](../../apps/web/src/features/workbench/ui/useSavedGraphLifecycle.ts)
+  is the out-of-room save-and-checkpoint path.
+
+One rule holds these apart: a durable gesture may act only on a confirmed head. A session
+that is not `ready`, or has no confirmed head, is untrusted
+([`graph-readiness.ts:12`](../../apps/web/src/features/workbench/room/graph-readiness.ts)),
+and [`apps/web/src/architecture.test.ts`](../../apps/web/src/architecture.test.ts) fails
+the build on a module cycle or a feature reaching into a route module.
 
 ## State ownership
 
-Collaboration depends on preserving the difference between durable graph state,
-ephemeral observation, runtime state, and private interface state.
-
-| State | Owner | Persistence | Shared between sessions |
+| State | Owner | Durable | Shared |
 | --- | --- | --- | --- |
-| Graph name, nodes, positions, configuration, plugs, artifact-type bindings, edges, projections, conversions, collection modes, routes, node layout | Workspace-scoped collaborative graph head | Durable head snapshot and command log | Yes, to actors with graph view capability |
-| Immutable execution/module document | Saved graph checkpoint | Saved graph revision | Yes |
-| Cursor, remote selection, editing activity, soft claim, drag preview | Workspace-scoped graph room session | No; expires | Yes, to authorized room participants |
-| Execution id, revision, scope, starter, lifecycle | Execution manager and history | Lifecycle summary is durable for saved runs | Yes |
-| Active node, current per-node status, latest bounded progress | Retained execution manager record | Process memory; retained only while the record lives | Yes, through observation snapshot and SSE |
-| Node progress event | Execution event journal | No; bounded replay only | Yes |
-| Materialized node outputs | Materialization store | Exact graph revision | Yes, only on a matching revision |
-| Viewport, zoom, local selection, open library, drawers, dialogs, pending connection route, field draft, in-flight command, pending command queue | Graph room session | No | No |
-| Artifact Viewer structural document (viewers, positions/layout/mode, links, bindings) | Workspace-scoped collaborative graph head | Durable head snapshot and command log (`replace_presentation`, `move_artifact_viewers`) | Yes, to actors with graph view capability |
-| In-viewer selection, filter/highlight/focus activity | Graph room session | No | No |
-| Secret values | Encrypted node-secret store | Protected server storage | Never |
-| Secret configured/unconfigured metadata | Node-secret module | Workspace-scoped server state | Authorized clients refetch after a bounded invalidation; values remain excluded |
-
-The saved graph definition already excludes callbacks, selection, viewport,
-execution results, and progress. The collaboration model retains that contract
-instead of serializing the current React Flow node object.
-
-Personal persistence must never use only a workspace slug and graph id.
-Ephemeral browser state (viewport, local selection, in-viewer interaction) is
-keyed by stable `(user_id, workspace_id, graph_id)` when persisted at all,
-cleared on sign-out, actor change, or view revocation, and re-keyed only after
-an authorized new-graph bootstrap succeeds. Device-wide preferences such as
-theme may remain outside that graph-sensitive key. Artifact Viewer structure is
-not stored in browser localStorage; it lives only on the shared collaborative
-head / saved graph presentation.
-
-## Target architecture
-
-```mermaid
-flowchart LR
-    A["Authenticated browser session A"] --> Room["Workspace + graph room WebSocket"]
-    B["Authenticated browser session B"] --> Room
-    Room --> Commands["Graph command application"]
-    Commands --> Head["Workspace-scoped head and command journal"]
-    Head --> Checkpoint["Saved graph checkpoint"]
-    Checkpoint --> Graphs["Immutable revision store"]
-    Room --> Presence["Expiring presence registry"]
-    Room --> Active["Workspace + graph execution slot"]
-    Active --> Events["Existing execution SSE journal"]
-```
-
-The graph room is a coordination module, not the persistence source of truth.
-It publishes an accepted command only after the collaborative-head transaction
-commits. If publication fails, the durable head still wins and reconnecting
-clients receive its latest complete snapshot.
-
-### Frontend dependency direction
-
-```mermaid
-flowchart LR
-    Workbench["Workbench composition"] --> Session["GraphRoomSession"]
-    Session --> Document["Framework-independent graph document"]
-    Workbench --> Overlay["Local and execution overlays"]
-    Document --> Adapter["React Flow canvas adapter"]
-    Overlay --> Adapter
-    Adapter --> Canvas["React Flow renderer"]
-```
-
-The framework-independent graph document is the only durable frontend graph
-state. The canvas adapter combines it with local selection, callback functions,
-compatibility metadata, presence previews, and execution overlays. React Flow
-change events are translated into graph commands rather than applied directly
-to the durable document.
-
-This would complete the follow-up debt recorded in ADR 0001: the canonical graph
-contract moves inward only by replacing the React Flow-shaped contract, not by
-duplicating it.
-
-## Collaboration sequence and checkpoint model
-
-Collaboration ordering and saved graph revision are different concepts:
-
-- The collaboration sequence orders automatically persisted authoring commands.
-- The saved graph revision identifies an immutable checkpoint used by
-  execution, modules, history, and materialized outputs.
-
-This distinction preserves the existing exact-revision contract. Reusing saved
-graph revision as a pointer-event or configuration-edit clock would create a
-complete immutable graph snapshot for every gesture and would continuously
-make exact materializations ineligible.
-
-Every accepted durable graph command advances the collaboration sequence
-exactly once. The server performs these steps in one transaction:
-
-1. Deduplicate the client command id for this `(workspace_id, graph_id)` across
-   room epochs.
-2. Lock or compare the current collaborative head sequence.
-3. Load the current head and read the command-specific expected prior value or
-   digest when that command uses compare-and-set conflict handling.
-4. Check those preconditions against the latest head.
-5. Apply the semantic command to a copy of the head document.
-6. Validate the resulting saved-graph-shaped document.
-7. Increment the collaboration sequence and persist the new head snapshot.
-8. Record the operational command for idempotency and replay, and write a
-   separate metadata-only security audit event.
-9. Commit.
-10. Publish the accepted command and new sequence to the graph room.
-
-High-frequency interactions do not advance either durable clock until their
-meaningful gesture commits:
-
-- Cursor updates are presence.
-- Node positions while a pointer is down are drag previews.
-- A node drag commits one `move_nodes` command and advances the collaboration
-  sequence once when the gesture ends.
-- Configuration typing is committed on blur or after a bounded debounce, not
-  once per keystroke.
-- Compound gestures such as binding a generic artifact type and creating its
-  edge commit atomically as one command.
-
-The interface distinguishes synchronization from checkpointing:
-
-- **Unsynchronized draft** means a private field draft has not yet become a
-  command.
-- **Synchronizing** means a durable command is awaiting its receipt or ordered
-  broadcast.
-- **Draft saved** means the confirmed collaborative head contains every local
-  command.
-- **Checkpoint rN** identifies the immutable saved graph revision represented
-  by a particular head sequence.
-- **Reconnect to synchronize changes** means the browser has unacknowledged
-  changes and cannot currently reach the graph room.
-
-The current Save action becomes **Create checkpoint** or retains the Save label
-with explicit checkpoint wording. Starting an execution automatically creates
-or reuses a checkpoint for the exact synchronized head sequence before the run
-is accepted.
-
-`beforeunload` and graph-navigation protection remains while a private field
-draft, an in-flight durable command, or the pending durable-command queue is
-non-empty. Run and Checkpoint first flush every field draft to a command and wait
-until the confirmed sequence includes it; they cannot proceed against the older
-confirmed value.
-There is no normal whole-document conflict dialog during a connected session.
-
-### Checkpoint transaction
-
-A checkpoint identifies one exact
-`(workspace_id, graph_id, room_epoch, collaboration_sequence)`.
-The server performs the following work in one application-owned unit of work;
-it must not commit the saved-graph replacement independently from the head and
-checkpoint mapping:
-
-1. locks the saved-graph row and collaborative-head row in a fixed order;
-2. verifies that the requested sequence is still the synchronized head;
-3. validates the complete head through the saved graph aggregate, preserving
-   structurally valid incomplete drafts and dormant plugin nodes; registry-backed
-   validation applies only where the affected installed contract is available;
-4. replaces the saved graph using the head's `checkpoint_revision` as the
-   compare-and-set value;
-5. reconciles node-secret references through the existing saved-graph workflow
-   without treating an editor's graph checkpoint as authority to delete an
-   owner-managed stored secret;
-6. appends the normal immutable saved graph revision;
-7. records the sequence-to-revision checkpoint mapping;
-8. advances `checkpoint_revision` and `checkpoint_sequence` on the collaborative
-   head without changing its collaboration sequence; and
-9. commits once.
-
-This requires restructuring the current independently committing saved-graph
-service path so checkpoint coordination can perform its aggregate and secret
-logic inside the caller-owned unit of work. Any failure rolls back every item
-above.
-
-The checkpoint must be atomic with respect to another checkpoint or external
-complete-document replacement. A second request for an already checkpointed
-unchanged sequence returns the existing saved revision.
-
-Removing or changing a secret-backed node can stop that graph revision from
-referencing a secret, but physical deletion of an owner-managed secret is a
-separate `manage_secrets` operation. An editor who may edit and checkpoint a
-graph cannot acquire that capability indirectly through checkpoint
-reconciliation.
-
-### Persistence additions
-
-The existing `saved_graphs` row and `saved_graph_revisions` snapshots remain the
-checkpoint source of truth. Add a durable collaborative head containing, at
-minimum:
-
-- workspace id;
-- graph id;
-- room epoch;
-- current collaboration sequence;
-- checkpoint saved revision used by the next checkpoint compare-and-set;
-- checkpoint collaboration sequence;
-- current graph name and complete saved-graph-shaped document;
-- updated timestamp.
-
-The collaborative-head row, checkpoint mapping, command journal,
-idempotency tombstone, graph-room registry, and active-execution slot all use
-stable `(workspace_id, graph_id)` scope and verify that the graph belongs to that
-workspace. A globally unique graph id may remain an implementation convenience,
-but no collaboration lookup or uniqueness constraint may silently drop the
-workspace boundary.
-
-The collaboration migration initializes every existing graph head from its
-current saved revision, with a new room epoch, collaboration sequence zero,
-checkpoint sequence zero, and checkpoint revision equal to the current
-revision. The migration is idempotent, and production access fails closed if a
-post-migration graph is missing its required head.
-
-New-graph bootstrap is the only special sequence transition. The server starts
-from the defined empty draft at sequence zero, applies the first semantic command
-as sequence 1, and in one transaction writes the workspace-owned graph,
-immutable revision 1, collaborative head, checkpoint mapping
-`(sequence 1, revision 1)`, command journal entry, and idempotency receipt.
-Failure leaves none of them behind.
-
-Add a command journal containing, at minimum:
-
-- workspace id, graph id, and room epoch;
-- workspace-and-graph-wide unique command id;
-- server-keyed HMAC and key version for the canonical semantic command;
-- accepted collaboration sequence;
-- graph-room session id and authenticated actor id;
-- accepted authorization version;
-- command kind;
-- authorized semantic command payload needed for replay and recovery;
-- acceptance timestamp.
-
-The command id is an idempotency key within one stable
-`(workspace_id, graph_id)` across room epochs. A retry of an accepted command
-returns its original epoch and sequence and never applies the command again; if
-that epoch is no longer current, the response also requires head rehydration.
-An unaccepted command from an obsolete epoch is rejected and must not be
-silently reapplied under the new epoch. The operational journal is protected
-like the complete graph document. It must not contain secret values, decrypted
-credentials, artifact payloads, presigned URLs, or execution progress.
-
-The durable collaborative head is the current authoring source of truth. Saved
-graph revisions are immutable checkpoints. The command journal supports
-idempotency, short reconnect replay, and operational recovery; reconnect may
-always fall back to the complete head snapshot. Security audit records are a
-separate metadata-only store and never copy the semantic payload. Retention or
-compaction may be designed after measuring command volume, but a minimal
-deduplication tombstone containing workspace id, graph id, command id, a
-server-keyed command HMAC and key version, actor id, accepted epoch, sequence,
-and outcome must remain for the workspace-owned graph's lifetime. Payload
-retention may be shorter than tombstone retention. The tombstone key includes
-workspace id, graph id, and command id. Reusing an id with a different command
-returns the stable `idempotency_mismatch` error.
-
-The existing saved-graph read and revision-history endpoints continue to return
-checkpoint documents. They must never pair an uncheckpointed collaborative-head
-document with the latest checkpoint revision. The browser obtains the live head
-from `room.ready`. Authenticated MCP over stateless Streamable HTTP and other
-non-WebSocket automation are real live-head consumers, so expose a distinct
-workspace-scoped HTTP head-snapshot read that returns the room epoch, head
-sequence, checkpoint sequence/revision, and complete head without implying that
-it joined presence.
-
-Graph-list navigation may expose head name, head sequence, and checkpoint
-sequence as explicitly named draft metadata so a durable rename is discoverable
-before checkpointing. It must not overload the checkpoint document's `name` and
-`revision` fields with values from different versions.
-
-### Mutations outside the room
-
-Graph create, complete-document replace, and delete routes cannot bypass
-collaboration coordination. The authenticated MCP deployment uses stateless
-Streamable HTTP as defined by the authentication and workspace design. Its
-delegated actor and workspace context are authorized on every tool call; MCP
-request authentication is not a graph-room session and does not publish
-presence.
-
-MCP and other automation read the explicit live-head HTTP representation before
-authoring and submit semantic commands through the workspace-scoped HTTP
-command application surface with the observed room epoch, head sequence, and an
-idempotency key. Accepted HTTP commands use the same transaction and publish to
-connected graph-room sessions after commit. Full-document MCP replacement
-remains available for compatibility, but it follows the epoch-reset rules below
-rather than overwriting an uncheckpointed live head.
-
-The existing complete-document replacement remains revision checked:
-
-- it still requires the expected saved graph revision;
-- it is rejected when the collaborative head has uncheckpointed commands,
-  because replacing only the checkpoint would silently discard the room's
-  durable draft;
-- when the head is fully checkpointed, a successful replacement stores one
-  normal immutable revision, starts a new room epoch from that revision, and
-  causes connected sessions to rehydrate;
-- a stale replacement remains a `409` rather than attempting a generic merge.
-
-Complete replacement is one workspace-and-graph-scoped epoch-reset transaction,
-not an ordinary command in the old epoch. It locks the saved graph and
-collaborative head in the same order as checkpointing, writes the revision,
-initializes the replacement head, and commits once before publication. The new
-head has collaboration sequence zero, checkpoint sequence zero, and its new
-saved revision as `checkpoint_revision`.
-Delete atomically removes or tombstones the
-head and prevents new commands before the room is closed. A legacy delete is
-rejected while the head is uncheckpointed; a collaboration-aware delete carries
-the expected room epoch and sequence and explicitly confirms discarding the
-durable head. Delete is also rejected while an execution is queued, running, or
-cancelling; the caller must cancel and await terminal state first. Delete and
-execution start lock the graph/active slot in a defined order so a race commits
-only one outcome. The active slot is keyed by stable workspace id and graph id.
-Creation requires `create_graph` in the target workspace, uses the sequence-1
-bootstrap transaction, and does not create an untracked or blank revision.
-
-The existing full-document create request maps to a bootstrap
-`replace_complete_document` command, so current HTTP and MCP creators receive
-the same sequence-1, revision-1 transaction rather than a bypass.
-
-This keeps existing automation valid while ensuring room participants cannot
-silently continue from an obsolete graph.
-
-## Graph command model
-
-Commands describe product gestures, not storage patches. The command module
-owns their preconditions, validation, and conflict behavior.
-
-Initial command families should cover:
-
-- rename graph;
-- add, duplicate, remove, or move nodes;
-- update node configuration or node layout;
-- add, remove, or reorder an instance input plug;
-- bind or reset a node artifact-type variable;
-- add, update, route, enable, disable, or remove an edge;
-- update Schema Builder fields and their owned input plugs atomically;
-- replace the complete document for compatibility with existing HTTP/MCP
-  authoring.
-
-Do not expose a generic property-path mutation command. It would require every
-caller to understand the complete saved-graph shape and would move invariants
-out of the module that owns them.
-
-Commands that can safely manipulate stored unsupported nodes, such as moving or
-removing them, validate structural identity without requiring a live plugin.
-Creating connections, changing typed transport, or modifying registered
-configuration remains registry validated. Registry drift must not silently
-delete preserved graph content.
-
-### Command envelope
-
-A client message has a versioned envelope. The exact generated types may change
-during implementation, but the information and behavior are required.
-
-```json
-{
-  "protocol_version": 1,
-  "type": "graph.command.submit",
-  "command_id": "29cf19aa-1497-4fbf-98a8-9f93855c9178",
-  "room_epoch": "4b0af20d-17c9-4612-a8ce-516881c8c3fc",
-  "observed_sequence": 42,
-  "command": {
-    "kind": "move_nodes",
-    "positions": [
-      { "node_id": "ocr", "x": 320, "y": 160 }
-    ]
-  }
-}
-```
-
-The reliable room broadcast carries the authoritative room epoch, sequence,
-semantic command, and actor presentation metadata:
-
-```json
-{
-  "protocol_version": 1,
-  "type": "graph.command.accepted",
-  "command_id": "29cf19aa-1497-4fbf-98a8-9f93855c9178",
-  "room_epoch": "4b0af20d-17c9-4612-a8ce-516881c8c3fc",
-  "sequence": 43,
-  "actor": {
-    "actor_id": "9f724fff-6687-4d2f-814e-fc05ab102f72",
-    "display_name": "Ada",
-    "color": "indigo"
-  },
-  "graph_room_session_id": "f28bcc1d-1512-46ef-884f-88fe94e182d1",
-  "command": {
-    "kind": "move_nodes",
-    "positions": [
-      { "node_id": "ocr", "x": 320, "y": 160 }
-    ]
-  }
-}
-```
-
-The submitting connection separately receives a command receipt. A receipt is
-also the response to an idempotent retry and is never rebroadcast:
-
-```json
-{
-  "protocol_version": 1,
-  "type": "graph.command.receipt",
-  "command_id": "29cf19aa-1497-4fbf-98a8-9f93855c9178",
-  "outcome": "accepted",
-  "accepted_room_epoch": "4b0af20d-17c9-4612-a8ce-516881c8c3fc",
-  "accepted_sequence": 43,
-  "current_room_epoch": "4b0af20d-17c9-4612-a8ce-516881c8c3fc",
-  "current_sequence": 43,
-  "deduplicated": false,
-  "requires_head_rehydration": false
-}
-```
-
-The route and authenticated graph-room session supply workspace id, graph id,
-actor id, graph-room session id, and effective authorization. Those values are
-not trusted command-envelope fields. Production command handling rejects a
-request without an authenticated actor and reauthorizes `edit_graph` before
-deduplication or application.
-
-The server stores a versioned, server-keyed HMAC of the canonical semantic
-command with the command id. A plain digest of low-entropy configuration would
-be a guessing oracle. The same id and same command return the original receipt;
-the same id with a different command returns `idempotency_mismatch`. Receipt and
-broadcast may arrive in either order, so clients correlate by command id and
-apply only the ordered broadcast to the confirmed document.
-
-The canonical HMAC input covers the server-derived workspace id, graph id, actor
-id, original room epoch, observed sequence, semantic command, and command-
-specific preconditions. `graph.command.resolve` carries the command id plus
-those original submit fields but never applies them; its workspace, graph, and
-actor again come from the authenticated route. It exists only to resolve an
-acknowledgement lost across a room-epoch reset: a matching tombstone owned by the
-same actor returns the original receipt, a mismatched HMAC returns
-`idempotency_mismatch`, and an unknown id returns
-`obsolete_epoch_uncommitted`. Another actor cannot use a guessed command id to
-retrieve that receipt.
-
-Rejected commands carry a stable error code, the operation and target context,
-and the current epoch and sequence. They preserve the original cause in server
-logs without returning sensitive payloads.
-
-### Conflict policy
-
-Conflict behavior belongs to each semantic command. There is no universal
-last-writer-wins rule.
-
-| Command category | Policy against a newer collaborative head |
-| --- | --- |
-| Move nodes | Accept against the latest document when every node still exists; the last accepted move wins. Presence makes simultaneous dragging visible. |
-| Add node or edge | Revalidate against the latest document; reject duplicate ids or invalid current topology. |
-| Remove node or edge | Treat an already absent target as an acknowledged no-op; removing a node still removes incident edges atomically. |
-| Change name, configuration field, layout, or edge transport | Carry the expected prior value or canonical digest in the command. Rebase when it still matches the latest head; reject `field_conflict` when another accepted command changed the same target. |
-| Reorder plugs | Require the expected ordered plug ids; reject when membership or order changed. |
-| Compound structural gesture | Apply all parts or none after validating the latest document. |
-| Replace complete document | Require an exact current revision; never merge automatically. |
-
-On rejection the client replaces its confirmed document with the server
-snapshot, reapplies only still-pending commands that remain valid, and reports
-the affected operation in plain language. It must not silently discard a
-configuration conflict.
-
-### Optimistic client behavior
-
-The browser keeps an authoritative confirmed document and may render that
-document with its own pending commands applied optimistically. Each session
-sends at most one durable command at a time. Later local commands remain in a
-short in-memory queue until the previous command is accepted or rejected. The
-initial client queue cap is 32 commands; reaching it pauses durable authoring and
-shows **Waiting to synchronize** until the queue drains.
-
-Every accepted broadcast is applied exactly once to the confirmed document in
-collaboration-sequence order. Matching a local `command_id` removes that command
-from the pending queue; remote acceptance updates the confirmed document; the
-remaining pending commands are revalidated and their optimistic projection is
-then recalculated. Acknowledgement and broadcast delivery order must not cause a
-local command to be applied twice. A receipt confirms durability but does not
-mutate the confirmed document; if its matching broadcast does not arrive within
-a bounded interval, the browser refreshes the full head snapshot. A snapshot in
-the same epoch whose sequence covers the receipt retires that pending command.
-
-An uncommitted configuration-field draft is browser-private state keyed by node
-and semantic field. A remote accepted value does not silently erase an active
-draft. If commit conflicts, the browser retains the draft for retry or copy,
-shows the confirmed value and conflict, and requires an explicit retry when an
-automatic rebase would be unsafe.
-
-Remote accepted commands are applied strictly in collaboration-sequence order
-within one room epoch. A missing sequence, changed epoch, protocol mismatch,
-or unrecoverable command application error causes a full head snapshot refresh.
-Full snapshot recovery is the correctness path; incremental replay is an
-optimization.
-
-### Capability-derived Workbench behavior
-
-Workspace roles provide defaults, while the protocol and UI consume the
-effective capability snapshot so a future custom grant does not require another
-canvas mode.
-
-| Default role | Collaboration behavior |
-| --- | --- |
-| Owner | View and publish bounded presence; create, copy, edit, checkpoint, execute, and cancel; manage workspace membership and graph sharing; manage stored secrets; delete graphs. |
-| Editor | View and publish bounded presence; edit, checkpoint, execute, and cancel; create or copy a graph only into a workspace where the actor also has `create_graph`. An editor cannot manage sharing, physically delete owner-managed secrets, or delete the graph. |
-| Viewer | View the confirmed head and permitted checkpoints, execution state, history, artifacts, and collaborators; publish bounded presence when `publish_presence` is granted; pan, zoom, select, and inspect locally without submitting durable graph commands. |
-
-`view_graph`, `publish_presence`, `edit_graph`, `checkpoint_graph`,
-`create_graph`, `execute_graph`, `cancel_execution`, `manage_secrets`,
-`delete_graph`, and `manage_sharing` remain independently enforceable. The
-server reauthorizes the specific capability for every operation; the role name
-is never accepted as proof.
-
-Viewer mode is a real read-only canvas mode. It disables React Flow node
-dragging and connection creation, graph and configuration inputs, mutation
-keyboard shortcuts, delete actions, command dispatch, Checkpoint, Run, Cancel,
-secret controls, and sharing controls as dictated by capabilities. It does not
-merely hide Save. Local pan, zoom, selection, and inspection remain available.
-Structural Artifact Viewer edits still require `edit_graph` and mutate the
-collaborative head like other graph commands.
-
-## Graph room protocol
-
-### Connection
-
-The authenticated workspace route resolves the auth session, actor, stable
-workspace id, membership, and graph visibility before the Workbench joins a
-room. A workspace slug is a mutable routing alias, never a room, persistence,
-cache, or authorization key. After the graph has a durable id, the browser
-connects to the workspace-and-graph-scoped WebSocket. The handshake validates
-the auth session and `Origin`, verifies that the graph belongs to the resolved
-workspace, and requires `view_graph` before accepting the connection. The
-server then assigns a new graph-room session id.
-
-The initial `room.ready` message contains:
-
-- protocol version;
-- stable workspace id and graph id;
-- server-derived actor id and bounded actor presentation;
-- server-assigned graph-room session id, distinct from the auth session;
-- effective capability snapshot and monotonic authorization version;
-- current room epoch and collaboration sequence, checkpoint saved revision and
-  checkpoint sequence, graph name, and complete collaborative head document;
-- current participants and presence;
-- active execution summary, if one exists;
-- node registry version or compatibility marker needed by the client.
-
-The client treats `room.ready` as the boundary for mounting that graph's
-confirmed document and keys the Workbench generation by actor id, workspace id,
-graph id, and graph-room session id. A late HTTP, SSE, or WebSocket callback from
-an earlier generation cannot update the new workspace or graph. `401`, `403`,
-and concealed or missing `404` join failures remain distinct from a reconnectable
-network interruption.
-
-The blank `/workspaces/{workspace_slug}/graphs/new` route has no room. Its first
-durable authoring gesture requires `create_graph` in the resolved workspace and
-uses the HTTP bootstrap transaction described above. The response returns the
-stable workspace id, graph id, room epoch, sequence 1, checkpoint sequence 1,
-revision 1, and command receipt; the client changes the canonical URL and then
-joins its room. A later product decision may require naming before creation,
-but collaboration must never use `new` as a shared room identity.
-
-### Delivery and backpressure
-
-- Accepted graph commands are reliable because their state is persisted before
-  broadcast.
-- Presence is best effort and may be dropped under backpressure.
-- Command messages and presence messages have separate size and rate limits.
-- The server sends an application heartbeat; a session that misses the expiry
-  window is removed from presence.
-- Slow sessions are disconnected and recover from a full snapshot rather than
-  retaining an unbounded send queue.
-- Message payloads use a protocol version. An incompatible client receives a
-  specific close reason and must reload.
-
-### Reconnection
-
-After a network interruption:
-
-1. The server expires the old session's presence.
-2. The browser reconnects and receives the latest complete head snapshot,
-   room epoch, sequence, checkpoint revision, checkpoint sequence, actor,
-   capability snapshot, and authorization version.
-3. Only when actor, stable workspace, graph, and room epoch are unchanged and
-   `edit_graph` remains authorized are commands with no receipt resubmitted with
-   the same command ids. The server deduplicates committed ids and evaluates
-   genuinely uncommitted commands against the latest head and sequence.
-4. If the room epoch or authenticated scope changed, or edit capability was
-   removed, the browser sends `graph.command.resolve` for each unknown outcome
-   where still authorized rather than submitting an obsolete command envelope.
-5. An original receipt proves the command committed; the client rehydrates the
-   current head. `obsolete_epoch_uncommitted` proves it did not commit, after
-   which the client revalidates the underlying gesture against the replacement
-   snapshot and asks for user resolution when unsafe.
-6. The browser restores only its local viewport and private interface state.
-7. If an execution is active, the browser subscribes to its existing SSE
-   stream.
-
-Once disconnected, the browser lets the active pointer or input gesture finish
-but accepts no further durable gestures. It preserves already-created in-flight
-and queued commands while the graph view remains mounted, disables Run and
-Checkpoint, and shows **Unsynchronized**. Offline editing beyond that queue is
-not supported; the UI must not imply those changes are durably safe.
-
-### Capability changes and revocation
-
-Membership, graph sharing, or role changes increment the server-owned
-authorization version. After the membership transaction commits, the room hub
-closes every affected connection with `permissions_changed`; it does not update
-authorization in place. A still-authorized browser must rejoin and receive a
-fresh capability snapshot and authorization version before resuming protected
-traffic. Handling-time authorization remains authoritative if the close races
-an in-flight operation.
-
-On a role-change close:
-
-1. The browser stops durable gestures, cancels active drag or connection
-   previews, and stops dispatching its queue.
-2. An in-flight command already committed before the authorization change
-   remains accepted. A command not yet authorized is rejected with a stable
-   permission outcome. An ambiguous command id is resolved after the fresh join
-   without resubmitting the command under obsolete capabilities.
-3. The browser rebuilds from the newly authorized confirmed head without unsent
-   optimistic commands. It may retain a private field draft only as explicitly
-   copyable text while `view_graph` remains, labels it unsent, and never
-   automatically replays it after a later upgrade.
-4. The remounted canvas and controls reflect the newly derived capabilities,
-   including read-only Viewer behavior.
-
-When `view_graph` is revoked, the server removes the graph-room session from
-presence and closes it with the stable `access_revoked` reason. The client does
-not apply the normal network-failure behavior of leaving the confirmed graph
-visible: it aborts related HTTP/SSE work, clears the graph document, execution
-and artifact references, purges actor/workspace/graph-scoped caches and personal
-graph state, and navigates to a safe authorized workspace route without a local
-confirmation that could retain the revoked data.
-
-Auth-session expiry is distinct from permission revocation. It pauses protected
-traffic and locks the workspace behind reauthentication. A renewed session for
-the same actor performs a fresh authorized join and resolves outstanding command
-ids; signing in as a different actor purges the old actor's graph and personal
-state and never replays the old actor's drafts or commands.
-
-### Leaving a graph or switching workspace
-
-A voluntary graph or workspace switch first flushes the active field draft,
-waits for every in-flight receipt and matching accepted sequence or covering
-snapshot, and drains the queued commands. It then leaves the room, clears its
-presence and workspace-scoped request/cache generation, navigates, and mounts
-the destination only after its authenticated `room.ready`.
-
-If synchronization cannot complete, ordinary switching offers **Stay and
-retry** or an explicit **Discard local pending work and switch** action. The
-discard path removes private drafts and optimistic commands; it does not undo an
-already committed server command. A forced access revocation, account change,
-or sign-out cannot be held open indefinitely by pending work and follows the
-security-clearing behavior above.
-
-Field drafts, unsent queued commands, and browser request generations never
-carry across an AuthSession boundary. Durable command ids, receipts, and
-idempotency records are bound to actor id, stable workspace id, graph id, and
-room epoch; after reauthentication the same actor may query them only to resolve
-an in-flight outcome, not to resubmit an obsolete envelope. Nothing carries or
-replays into another workspace, graph, room epoch, or actor.
-
-## Presence and cursors
-
-Presence should explain collaborators without becoming another graph model.
-It is keyed by graph-room session id, not actor id, so two tabs or devices for
-one actor remain independently expiring cursors. Participant UI may group those
-sessions under the server-derived actor presentation and show a session count.
-Publishing presence requires `publish_presence`; viewing a graph does not by
-itself grant another outbound channel.
-
-A presence update may contain:
-
-- cursor position in React Flow graph coordinates;
-- selected node ids and, when useful, selected edge ids;
-- an activity kind such as `moving_nodes`, `editing_node`, or `connecting`;
-- the ids of nodes or edges involved in that activity;
-- live node positions for a drag preview;
-- a monotonically increasing session-local presence sequence.
-
-It must not contain:
-
-- node configuration values;
-- secret names paired with values or any secret input;
-- artifact payloads or complete run inputs;
-- progress messages copied from execution events;
-- viewport dimensions or other unnecessary device data;
-- arbitrary user-provided HTML, CSS, image URLs, or colors.
-
-### Cursor behavior
-
-- Broadcast at most approximately 20 cursor updates per second.
-- Convert pointer coordinates to graph coordinates before sending them. Each
-  recipient uses its own viewport transform when rendering the remote cursor.
-- Stop broadcasting when the pointer leaves the canvas.
-- Expire cursor and activity presence after a short server-owned TTL.
-- Use server-assigned display colors and bounded names.
-- Keep email addresses, role names, arbitrary avatar URLs, and client-provided
-  styles out of presence. Actor profile changes refresh bounded presentation
-  through the server.
-- Hide only the local graph-room session's own remote-cursor rendering; another
-  tab belonging to the same actor remains a distinct remote session.
-
-### Selection and editing activity
-
-Remote selection is an annotation. It never changes the recipient's React Flow
-selection or keyboard-command target.
-
-Editing activity is a soft claim, not a lock. If two sessions edit the same
-field, the graph-command conflict policy decides the result. A future hard lock
-requires evidence that soft claims and field conflicts are insufficient.
-
-### Node dragging
-
-Dragging has two paths:
-
-1. Presence publishes transient node positions so collaborators see smooth
-   movement.
-2. Pointer release submits one durable `move_nodes` command.
-
-If the final command is rejected because a node was deleted, the drag preview
-disappears and the confirmed document wins. Disconnecting mid-drag likewise
-removes the preview without changing the saved graph.
-
-## Shared graph execution
-
-Execution status is server-owned shared state. The browser that presses Run has
-no special ownership of observation.
-
-### Start contract
-
-The collaborative Workbench should start saved-graph execution through a
-workspace-and-graph-scoped request containing:
-
-- stable workspace id resolved by the route;
-- graph id from the route;
-- expected room epoch and synchronized head sequence;
-- execution scope: all, selected, or selected with dependencies;
-- requested node ids for a selected scope;
-- a client request id for idempotency.
-
-The client request id is unique per `(workspace_id, graph_id)` and persists with
-execution history.
-The server stores a versioned, server-keyed HMAC covering the server-derived
-workspace id, graph id, actor id, submitted room epoch, head sequence, scope,
-and canonical requested node ids. Retrying the same id and same request as the
-same actor returns the original execution, including after terminal state or
-process restart. Reusing the id with different request data returns
-`idempotency_mismatch`. The idempotency record remains for the workspace-owned
-graph's lifetime.
-The coordinator resolves this record before current-head and active-slot checks,
-so a true retry cannot turn into a later `head_moved` or active-run conflict.
-
-The client does not submit Run while it has a private field draft, a pending
-durable command, or a confirmed-sequence gap. It flushes drafts and waits until
-the confirmed document includes them. The server requires the submitted epoch
-and sequence to equal the current head. It atomically creates or reuses the
-checkpoint for that head sequence, then loads the exact saved graph revision,
-derives the execution fragment and upstream pins, performs preflight, and starts
-it. The collaborative client must not submit a second copy of the complete graph
-as the source of truth.
-
-A `head_moved` rejection refreshes the room state but does not automatically
-retry Run. In particular, a selected-scope dependency closure may have changed;
-the user confirms the new selection and starts a new request.
-
-Requested node ids are copied into immutable execution scope. They never change
-local or remote React Flow selection in any session.
-
-The existing generic execution request may remain for compatibility and
-diagnostics, but the production Workbench should use the workspace-and-graph-scoped start
-contract. For the first release, synchronous `POST /v1/runs` is changed to
-draft/diagnostic-only and rejects saved graph context. No endpoint may execute a
-saved graph without acquiring its active slot and producing a discoverable
-execution id.
-
-### One active execution
-
-Queued, running, and cancelling are active states. Starting another execution
-for the same `(workspace_id, graph_id)` returns a conflict containing the
-existing active execution summary. The caller attaches to that execution
-instead of creating another.
-Exact idempotent request retries are resolved before this conflict rule and
-return their original execution.
-
-Enforce this in both the execution application module and persistence. A
-database uniqueness rule for active saved-graph executions prevents duplicate
-runs from concurrent requests even before multi-process execution is supported.
-The rule applies to every top-level API path that starts and persists an
-execution attributed to a saved graph, including the existing generic execution
-endpoint; routing around the graph room must not bypass it. Internal immutable
-saved-module invocations remain children of their owning top-level run and do
-not acquire an independent graph-active slot.
-
-Queued history creation, active-slot acquisition, and the unique client request
-id commit together. Durable terminal transition and slot release likewise
-commit together, and the room announces terminal state only after that commit.
-Startup recovery marks an abandoned execution failed and releases its slot in
-one transaction.
-
-Terminal executions release the graph immediately. Execution history remains
-append-only, and repeated runs continue to create distinct execution ids.
-
-### Discovery and observation
-
-The graph room announces:
-
-- execution accepted and queued;
-- lifecycle changes relevant to the activity bar;
-- whether the current collaborative head remains compatible with execution
-  overlays from the checkpoint;
-- terminal state and the revision that completed;
-- removal from the active slot.
-
-It does not duplicate every node progress event. Once a client learns the
-execution id, it subscribes to the existing
-`/v1/executions/{execution_id}/events` SSE stream. The ordinary execution GET is
-authoritative while its in-process manager record is retained, and polling
-remains the active-run fallback when SSE is unavailable. Graph-scoped durable
-execution history is the terminal source after restart or manager eviction
-unless GET is extended to reconstruct saved executions from that history.
-
-SSE connect/reconnect, execution GET, and polling authorize the authenticated
-actor against the execution's stable workspace and graph. Removing
-`view_graph` closes observation and prevents reconnect; removing only execute or
-cancel capability does not hide an execution the actor may still view. Browser
-transport uses the same-origin auth session defined by the authentication
-design, treats `401` and `403` as auth state changes rather than retryable
-network errors, and guards every event with the current actor/workspace/graph
-request generation.
-
-A session joining halfway through a run receives the active execution in
-`room.ready`, fetches its current observation snapshot, and then subscribes to
-SSE after the snapshot's sequence. The retained-manager GET contract must be
-extended to return the current lifecycle, active node, per-node status, latest
-bounded progress, terminal results when available, and the exact observation
-sequence represented by that snapshot.
-
-The bounded journal exposes its earliest and latest retained sequences. When a
-requested SSE cursor predates the window, the server emits an explicit
-`replay_truncated` control event rather than silently beginning with a gap. The
-client then refetches the observation snapshot and resumes after its sequence.
-If enough events are produced between snapshot GET and SSE connection to cause
-another gap, the same loop remains correct. Complete progress history is not
-required; current per-node state is.
-
-The server computes the overlay-compatibility flag by comparing the exact
-submitted execution plan with the plan the current head would derive for the
-same scope. The comparison includes operator identity and version,
-configuration, plugs, artifact-type bindings, and enabled edge transport
-semantics. It excludes graph name, canvas position, node chrome layout,
-selection, presence, and other non-execution state. This server-owned projection
-prevents late joiners and different frontend versions from independently
-guessing whether checkpoint overlays are safe.
-
-### Activity bar
-
-Every session derives the same authoritative execution facts for its activity
-bar:
-
-- starter presentation identity;
-- execution id;
-- exact graph revision;
-- run scope and requested selection;
-- queued, running, cancelling, or terminal state;
-- active top-level node;
-- current overlay-compatibility flag;
-- whether the execution lifecycle is cancellable;
-- bounded, safe terminal error context.
-
-The wording may differ for accessibility or viewport size, but the underlying
-execution state is shared. The cancel action is still authorized for the current
-actor, so viewers may see the same execution without receiving the same control.
-
-The latest progress summary, SSE or polling transport errors, and cancellation
-request errors are best-effort browser-local observations and may differ between
-sessions. They never overwrite the shared lifecycle state.
-
-Only the execution portion of the activity bar is shared. Synchronization,
-reconnection, rejected local commands, in-viewer interaction status, and other
-browser-local status remain local. The Workbench composes those local facts with
-the shared execution summary using an explicit display priority; it does not
-broadcast one browser's incidental UI status to the room.
-
-### Editing while a run is active
-
-The graph remains editable during execution. The execution continues against
-its checkpoint revision.
-
-Execution observation and materialization eligibility use different guards:
-
-- The activity bar follows execution id and remains visible regardless of later
-  graph edits.
-- Node status/progress overlays may follow stable node ids only while the
-  server-provided overlay-compatibility flag is true. Graph name, canvas
-  position, node chrome layout, selection, and presence do not make that flag
-  false.
-- Run outputs become current materialization pins only for the exact saved
-  graph revision recorded by the execution.
-
-If saved revision 42 is running while collaborators advance the collaborative
-head from sequence 80 to sequence 86:
-
-- the activity bar continues to show `running r42`;
-- the newer head does not paint any r42 node status when its derived execution
-  plan differs from the r42 submitted plan;
-- execution history records r42;
-- materialized outputs remain keyed to r42;
-- a user may inspect the execution detail without making it a current output
-  for the newer uncheckpointed head or a later checkpoint;
-- another execution cannot start until r42 becomes terminal.
-
-This would replace the current behavior where a local fingerprint change can
-make the initiating hook stop applying events while other sessions know nothing
-about the run.
-
-### Cancellation
-
-Cancellation is a shared server command. All sessions observe `cancelling` and
-the eventual terminal state while they retain graph view capability. The
-current actor requires `cancel_execution`; Owner and Editor receive it by
-default, while Viewer does not. Execute and cancel remain independent effective
-capabilities and are reauthorized when handled.
-
-## Frontend rework
-
-### Deep graph document module
-
-Create one framework-independent Workbench graph document module under
-`features/workbench/model`. It should own:
-
-- the serializable `GraphDocument` value;
-- pure application of accepted graph commands;
-- command construction for meaningful authoring gestures;
-- command-specific precondition evaluation;
-- durable fingerprinting only where compatibility still requires it;
-- conversion between API saved-graph models and the internal document.
-
-Its test surface is the same surface used by local gestures and remote accepted
-commands. Do not add one helper per constructor or property update; keep the
-semantic command and its invariant in the owning module.
-
-### React Flow adapter
-
-The canvas segment should own conversion from the graph document to renderer
-nodes and edges. It may add:
-
-- registry-derived node specifications and compatibility;
-- React callbacks;
-- local selection;
-- input-plug bindings and mapped-input derivations;
-- presence decoration and drag previews;
-- execution and materialization overlays;
-- renderer styles and handle ids.
-
-None of those values should be written back to the graph document unless a user
-gesture creates a graph command.
-
-The adapter owns browser-local selection and local drag positions. React Flow
-position changes during a drag update only that overlay;
-`onNodeDragStop` submits one `move_nodes` command containing every moved selected
-node. Remote selections remain decorations and never set the local `selected`
-flag. A remote drag preview never replaces a node position currently dragged
-locally; the confirmed or optimistic document position wins after local drag
-completion, rejection, deletion, or preview expiry.
-
-### Graph-room session module
-
-A browser-facing collaboration module should own:
-
-- WebSocket connection, protocol version, heartbeat, and reconnect;
-- current actor id, stable workspace id, graph id, graph-room session id,
-  capability snapshot, authorization version, and request generation;
-- current confirmed room epoch, collaboration sequence, checkpoint revision,
-  checkpoint sequence, and server head snapshot;
-- one in-flight durable command and its pending queue;
-- accepted/rejected command reconciliation;
-- local presence throttling and remote presence expiry;
-- active execution discovery;
-- capability downgrade, view revocation, auth-session expiry, and graceful or
-  explicit-discard graph/workspace switching;
-- synchronization state exposed to the Workbench.
-
-This complexity earns one explicit module. It should not be spread across node,
-edge, header, activity-bar, and persistence hooks.
-
-The graph-room session module owns `confirmedDocument` and derives
-`optimisticDocument` by folding the valid in-flight and pending commands over it.
-The graph model supplies pure operations but owns no socket, sequence, queue, or
-reconnect lifecycle.
-
-### Execution modules
-
-Separate the current execution hook responsibilities:
-
-- execution initiation validates local synchronization and sends a workspace-and-graph-scoped
-  start or cancel request;
-- execution observation attaches to the active execution discovered from the
-  room, manages SSE plus polling reconciliation, and produces revision-scoped
-  overlays;
-- activity-bar rendering consumes observation state and owns no network
-  lifecycle.
-
-### Current module disposition
-
-| Current module | Proposed disposition |
-| --- | --- |
-| `ui/Workbench.tsx` | Retain as feature composition; remove direct durable graph mutation and execution-stream ownership. |
-| `ui/useSavedGraphLifecycle.ts` | Replace normal manual-save lifecycle with collaboration synchronization; retain route/open/delete concerns only where they remain cohesive. Delete the obsolete conflict workflow. |
-| `ui/useRunExecution.ts` | Split initiation from workspace-and-graph-scoped observation; preserve proven SSE parsing, polling, cancellation reconciliation, and progress batching. |
-| `canvas/types.ts` | Keep renderer contracts; move durable graph and runtime overlay state apart. |
-| `canvas/saved-graph.ts` | Move canonical saved-document hydration/serialization inward or reduce it to a real canvas adapter. Do not keep two graph representations. |
-| `model/graph-authoring.ts` | Reuse its deterministic connection policies behind semantic graph commands. Remove React Flow dependencies when the canonical document moves inward. |
-| `model/execution-plan.ts` | Move saved-revision execution planning to the server; retain only local selection UX and preflight hints that improve responsiveness. |
-| `lib/api/workbench.ts` | Retain the concrete same-origin authenticated HTTP/SSE adapter and add a concrete, versioned workspace-and-graph-scoped collaboration WebSocket adapter. Treat auth failures separately from network retries. |
-| `canvas/artifact-viewer.ts` | Keep its document browser-local and key it by stable user, workspace, and graph ids; reconcile personal viewer links after every confirmed command or snapshot replacement. Missing workflow sources leave a disconnected viewer rather than deleting private layout. On first graph creation, re-key local viewer state only after authorized bootstrap under the document-generation guard; clear it on view revocation, sign-out, or actor change. |
-
-## Backend rework
-
-### Graph command application
-
-Add one collaboration application module that owns both the accepted-command
-transaction and checkpoint coordination. The WebSocket route, existing HTTP
-create/replace/delete routes, and MCP callers must coordinate through this
-module rather than mutating an unrelated head.
-
-The command path uses the saved-graph-shaped domain value and registry policies
-to validate the collaborative head without creating a saved revision. The
-checkpoint path uses the existing saved-graph aggregate,
-repository/unit-of-work seam, immutable revision snapshots, and node-secret
-reconciliation. Both paths return typed accepted or rejected results with graph
-and operation context.
-
-### Graph room hub
-
-Add an API-host module for active WebSocket sessions and ephemeral presence.
-This is browser coordination and does not belong in the core domain or saved
-graph aggregate.
-
-The hub owns:
-
-- sessions grouped by stable workspace id and graph id;
-- presence TTL and presentation metadata;
-- bounded per-session outbound queues;
-- publication after graph-command commit;
-- active execution discovery publication;
-- shutdown and graph-deletion close behavior.
-
-One in-process hub is a deliberate first adapter. Do not introduce a broker
-adapter before a second API owner is actually supported.
-
-### Execution ownership
-
-Extend saved-graph execution start with:
-
-- an idempotent client request id;
-- initiator metadata that is safe to show and audit;
-- an atomic one-active-execution invariant per stable workspace id and graph id;
-- graph-room publication after transitions;
-- workspace-and-graph-scoped discovery of the active execution.
-
-Keep the existing sequenced event journal, SSE heartbeat, bounded replay,
-polling fallback, terminal response, durable history, and exact
-materializations. Extend the retained execution record and GET presenter with a
-sequence-consistent current per-node observation snapshot, and make replay-window
-truncation explicit.
-
-### Initial deployment constraint
-
-The current manager, event journal, cancellation routing, and startup recovery
-assume one owning API process. On startup, unfinished durable executions are
-marked failed. Starting a second API owner would therefore be unsafe.
-
-The collaboration rollout must enforce exactly one FastAPI application process:
-one replica and one Uvicorn or Gunicorn worker. Feature enablement requires a
-deployment-level singleton assertion; a second process must fail startup or
-leave graph rooms and saved-graph execution disabled. Horizontal ownership
-requires a separate accepted design covering:
-
-- execution and graph-room owner leases or heartbeats;
-- shared command and room publication;
-- shared event replay or owner-aware routing;
-- cancellation intent routing;
-- recovery scoped to expired owners rather than every active row;
-- connection draining during deployment.
-
-Adding another WebSocket or SSE endpoint alone does not solve those concerns.
-
-## Identity, authorization, and sensitive state
-
-The related authentication and workspace design owns login and membership. In
-production, every collaboration, HTTP, SSE, and MCP operation requires a
-server-derived authenticated actor in one stable workspace. The current `local`
-workspace slug is only a route label. There is no anonymous or hidden local user
-fallback; development uses the same configured OIDC identity contract.
-
-Authorize these capabilities independently even when Owner, Editor, and Viewer
-roles provide their default bundles:
-
-- view graph and participant presence;
-- publish bounded presence;
-- create or copy a graph in a workspace;
-- submit durable graph commands;
-- create a checkpoint;
-- start execution;
-- cancel execution;
-- manage node secrets;
-- delete the graph;
-- manage graph sharing and workspace membership.
-
-Node-secret values continue to use their protected HTTP boundary and never
-become graph commands or WebSocket messages. Configure and remove requests carry
-the expected workspace, graph, room epoch, and synchronized sequence and require
-`manage_secrets`. The server validates the declaration and value, creates or
-reuses a checkpoint for that exact head, and stores or removes the encrypted
-secret against the resulting saved-graph contract in one coordinated workflow.
-A stale head is rejected before touching secret storage. An editor checkpoint
-may remove a graph reference but cannot physically delete an owner-managed
-secret. After a secret commit, the room announces only a bounded invalidation;
-each authorized actor refetches workspace-scoped configured status through
-protected HTTP. The status is bounded metadata; the secret value is never
-disclosed.
-
-The server assigns trusted actor identity to accepted commands and executions.
-A client must not be allowed to claim another actor id or arbitrary display
-style.
-
-Security requirements:
-
-- Authorize each graph command, execution start/cancel, secret mutation,
-  checkpoint, replacement, and delete at handling time; WebSocket admission is
-  not continuing edit authority. Apply capability changes and view revocation
-  using the deterministic room behavior defined above.
-- Validate the WebSocket `Origin` against configured allowed origins; HTTP CORS
-  middleware does not authorize a WebSocket handshake.
-- Validate every WebSocket message with bounded Pydantic models.
-- Cap message bytes, selected ids, dragged nodes, and update frequency.
-- Never log complete command or presence payloads by default.
-- Log workspace id, graph id, command id, actor/graph-room-session id, command
-  kind, accepted collaboration sequence, checkpoint revision when relevant,
-  outcome, and safe error code.
-- Continue storing secret values only through the explicit encrypted
-  node-secret module.
-- Keep secret values, credentials, artifact payloads, presigned URLs, and
-  one-time URLs out of command, presence, exception, trace, and audit data.
-- Treat execution progress as bounded display text under the existing live
-  execution event contract.
-- Maintain an automated sentinel-secret test proving that snapshots, commands,
-  presence, execution announcements, protocol errors, and captured logs never
-  contain the configured value.
+| Project name; each Graph's name, nodes, positions, configuration, plugs, artifact-type bindings, edges, projections, conversions, collection modes, origins, layout; Artifact Viewer structure and annotations | Project head, via accepted batches | On checkpoint | Yes |
+| Cursor, remote selection, editing activity, soft claim, drag preview | room session | No; expires | Yes, to room participants |
+| Active Runs, who started each | `RunService` rows; room frames announce | Run records are durable; in-flight scheduling is not | Yes |
+| Node instance state (fresh, queued, running, failed, stale) | derived from document + result store + in-flight set | Never stored | Yes |
+| Last result and last failure pointer per instance | result store plus the per-instance pointer | Yes (append-only, no GC yet) | Yes |
+| Viewport, zoom, local selection, open drawers, field drafts, outbox, private viewer interaction | browser | No | No |
+| Secret values | encrypted node-secret store | Yes | Never |
+| Secret configured/unconfigured metadata | node-secret module over protected HTTP | Yes | Refetched per Graph by authorized clients |
+
+Nothing Project-scoped is persisted in the browser today: the local keys that exist
+(`grafy-theme`, `grafy-side-panel-*`, the canvas grid setting) are device-wide
+preferences, which is where such a preference belongs. Anything Project-scoped that ever
+is persisted must never be keyed by a workspace slug and a Graph id alone — slug-to-id
+resolution is not atomic, so a reused slug could load someone else's layout. Key it by
+`(user_id, workspace_id, project_id)`, clear it on sign-out, actor change or view
+revocation, and re-key only after an authorized bootstrap. Artifact Viewer structure is
+not browser state at all: it lives on the shared head.
+
+## Node secrets, the head, and four traps
+
+Secret values keep their own protected HTTP boundary and never become room frames.
+Configure and remove require `manage_secrets`, assert the head, and never checkpoint —
+which is what makes an editor with `checkpoint_project` unable to reach an
+owner-managed secret row indirectly
+([`node_secrets.py:194-280`](../../apps/api/src/grafy_api/node_secrets.py)). A secret's
+revision enters the fingerprints of the nodes that declare it, so the next derivation
+re-reads it and an affected instance simply goes stale
+([`runs/facts.py:196-235`](../../apps/api/src/grafy_api/runs/facts.py)).
+
+Four things in this corner are not guessable from the shapes, and are documented here
+so nobody re-derives them:
+
+1. **The listing and the writes address a Graph differently.**
+   `GET …/projects/{id}/node-secrets` takes `graph_id` as a **query parameter that
+   defaults to `MAIN_GRAPH_ID`**
+   ([`node_secrets/views.py:41`](../../apps/api/src/grafy_api/v1/routes/node_secrets/views.py)),
+   while `PUT` and `DELETE` carry it in the **path** as
+   `/graphs/{graph_id}/nodes/{node_id}/secrets/{name}`
+   ([`views.py:57,91`](../../apps/api/src/grafy_api/v1/routes/node_secrets/views.py)).
+   A listing call that omits `graph_id` is therefore not an error — it silently reads
+   the main Graph's secrets and can report a secret as unconfigured for a node that sits
+   in another Graph of the same Project. Always send the Graph you are looking at.
+2. **A secret write's own response cannot refresh the client's head token.**
+   `NodeSecretStatusResponse` is `{node_id, name, configured}` and carries no Project,
+   no Graph, no epoch and no sequence
+   ([`node_secrets/models.py:25`](../../apps/api/src/grafy_api/v1/routes/node_secrets/models.py)).
+   A caller that overwrites its stored head token from that response loses it. This is
+   survivable only because configure and remove **do not advance the collaboration
+   sequence** — they lock the head, compare it, and write a secret row — so the head
+   token read before the write is still the right one afterwards. Any future change that
+   makes a secret write advance the sequence breaks every caller that relied on this.
+3. **A fresh head's sequence really is `0`, and `ge=0` does not mean `0` is a safe
+   guess.** A new Project's head opens at `collaboration_sequence = 0`
+   ([`domain/collaboration.py:1245-1262`](../../libs/core/src/grafy_core/domain/collaboration.py))
+   and the delete route declares `expected_sequence: int | None = Query(ge=0)`
+   ([`projects/views.py:258`](../../apps/api/src/grafy_api/v1/routes/projects/views.py)).
+   A zero therefore validates and then asserts a real precondition, so a client that has
+   not read a listing must send **nothing** rather than a plausible-looking `0`: with no
+   pair supplied, the server refuses an uncheckpointed head instead of deleting what
+   nobody looked at
+   ([`application/collaboration.py:742-790`](../../libs/core/src/grafy_core/application/collaboration.py)).
+   The web client encodes this by omitting both parameters unless it holds both
+   ([`lib/api/projects.ts:84-102`](../../apps/web/src/lib/api/projects.ts)).
+4. **The head a secret write asserts moves without any checkpoint the client can see.**
+   Every accepted command batch advances the head's `collaboration_sequence`, whether or
+   not the Project has checkpointed, while the web client re-reads the secret listing only
+   when a checkpoint lands or a Graph is opened or saved. So the token from that listing
+   can name a head that one dragged node — or one peer's batch — has already retired, and
+   the exact-sequence assert turns
+   an ordinary edit into a 409. The client recovers by re-reading the listing after that
+   409 and sending the same write once more at the sequence the new answer names; a second
+   conflict is reported with the newer token held rather than chased
+   ([`useNodeSecrets.ts`](../../apps/web/src/features/workbench/ui/useNodeSecrets.ts)).
+   The recovery is the reason the token stays the listing's own: a client that re-addressed
+   a write from a locally guessed sequence would be asserting a head it never read, which
+   is what trap 3 forbids.
+
+## Authorization and sensitive state
+
+Login, membership and workspace tenancy belong to the
+[authentication and workspace design](authentication-and-workspace-tenancy.md). For
+collaboration:
+
+- Every room frame, HTTP command, checkpoint, Run, secret and delete operation is
+  authorized at handling time against the effective capability (role ∩ PAT scope ∩
+  capability). Socket admission is not continuing authority: the heartbeat loop is the
+  backstop for an authority change the post-commit invalidation missed.
+- Membership and role changes close affected sessions rather than rewriting their
+  capability snapshot in place. A still-authorized browser rejoins and gets a fresh
+  snapshot and authorization version before resuming protected traffic.
+- `view_project` revocation closes with `4004`; the client must not fall back to its
+  network-failure behavior. It stops HTTP work, clears the Project document, Run and
+  artifact references, purges actor/workspace/Project-scoped caches and personal state,
+  and navigates to a safe authorized route without a local confirmation that could
+  retain the revoked data.
+- Auth-session expiry is not revocation: it pauses protected traffic and requires a fresh
+  join. Renewal for the same actor may resolve in-flight command ids; a different actor
+  purges the previous actor's drafts, batches and personal state, and replays none of it.
+- Identity is server-derived. Workspace id, project id, actor id, room session id and the
+  effective authorization are never trusted from a frame; the HMAC is computed over the
+  server-derived scope.
+- Bounded models everywhere: `extra="forbid"`, capped id lists, capped details, capped
+  error text.
+- Audit records are metadata-only — operation, outcome, resource id, error code — and
+  never copy a command body, a configuration value or a secret
+  ([`application/collaboration.py:_audit`](../../libs/core/src/grafy_core/application/collaboration.py)).
+  Logs carry ids, kind, sequence, outcome and safe error code, never a whole frame.
+- Secret values must never appear in a snapshot, an accepted batch, a presence frame, a
+  protocol error or a captured log. The secret suite covers storage, binding, head
+  gating and key rotation
+  ([`tests/integration/node_secrets/test_node_secrets.py`](../../tests/integration/node_secrets/test_node_secrets.py));
+  no test yet asserts the room's silence about a configured value, so treat that as
+  required coverage before anything secret-shaped is added to a frame.
 
 ## Failure behavior
 
 | Failure | Required behavior |
 | --- | --- |
-| WebSocket interruption | Keep confirmed document visible, mark synchronization unavailable, expire remote presence, and reconnect with a full snapshot. |
-| Auth session expired | Stop commands and observation, lock the workspace behind reauthentication, and perform a fresh join. Resolve pending ids only for the same actor; purge rather than replay after an actor change. |
-| Role or capabilities changed | Close with `permissions_changed`, stop protected traffic, resolve the in-flight outcome under handling-time authorization, and perform a fresh authorized join. Rebuild without unsent optimistic commands and retain at most explicitly copyable private draft text when view access remains. |
-| View capability revoked | Close with `access_revoked`, clear presence and all actor/workspace/graph-sensitive client state, abort HTTP/SSE work, and navigate to a safe authorized workspace route. Do not leave the confirmed graph visible. |
-| Voluntary graph or workspace switch cannot synchronize | Stay and retry by default; switch only after drain or explicit discard of local pending work. Never replay it in the destination scope. |
-| Command acknowledgement lost | In the same epoch, retry the same command id; the server returns the original receipt when already committed. After an epoch change, use dedup-only `graph.command.resolve`, rehydrate, and never submit the obsolete envelope. |
-| Command rejected | Restore confirmed server state, preserve unrelated pending commands, and show operation/target context. |
-| Presence update dropped | No retry is required; a later update supersedes it. |
-| Slow collaborator | Drop presence first, then disconnect and require snapshot recovery before allowing unbounded buffering. |
-| API restart | Durable collaborative heads, commands, and checkpoint revisions survive; all presence disappears; browsers reconnect and receive head snapshots. Existing startup execution recovery remains authoritative. |
-| SSE network interruption | Keep the shared execution visible, poll its snapshot, and reconnect to bounded event replay. A `401` or `403` follows auth-expiry or revocation behavior instead of retrying. |
-| Graph edited during execution | Keep showing the execution's checkpoint revision; retain compatible live observation but never make its materializations current for another revision. |
-| Graph deleted | Close its room with a stable reason, clear presence, stop accepting commands, purge graph-sensitive client state, and navigate clients away. A remote deletion has already committed and cannot wait for local confirmation. |
-| Registry changes | Revalidate on the server; force a snapshot/registry refresh when the protocol compatibility marker changes. |
-
-Errors must retain the attempted operation, workspace id, graph id, actor id,
-relevant node or edge id, expected/current authorization version, epoch and
-sequence, checkpoint revision when relevant, and original server cause where
-safe.
-
-## Migration plan
-
-### Phase 1: Extract the canonical graph document
-
-Keep current HTTP save behavior while replacing React Flow as the canonical
-document.
-
-Deliverables:
-
-- framework-independent graph document under `model`;
-- pure semantic command application;
-- React Flow adapter with explicit drag start/move/stop callbacks and local
-  selection, drag, draft-field, and runtime overlays added at render time;
-- existing saved graph round-trip and authoring behavior preserved;
-- `Workbench.tsx` no longer directly implements every durable mutation.
-
-Exit criteria:
-
-- existing saved graphs round-trip byte-semantically through the new document;
-- local graph commands pass behavioral tests;
-- no callback, selection, execution, progress, or secret value serializes into
-  the document;
-- real pointer drag, connection, deletion, and configuration editing still
-  work in the browser.
-
-### Phase 2: Establish authenticated workspace scope
-
-Implement the related authentication and workspace design before introducing
-durable collaboration state. Resolve every browser, HTTP, SSE, and future MCP
-operation to the same authenticated actor and stable workspace model; add Owner,
-Editor, and Viewer defaults, effective capability checks, workspace-aware
-routing/cache keys, opaque browser sessions, and workspace-bound PATs. Do not
-add an anonymous `local` or hidden-user development fallback.
-
-Exit criteria:
-
-- workspace slugs resolve to stable ids before graph access, and graph ownership
-  is enforced by stable workspace id;
-- production graph reads and mutations require an authenticated actor and
-  enforce effective capabilities at handling time;
-- browser caches and Artifact Viewer persistence are scoped by stable user,
-  workspace, and graph ids and clear on sign-out, actor change, or revocation;
-- Owner, Editor, and Viewer behavior matches the capability matrix, including a
-  real read-only canvas and Owner-only protected secret configuration/removal;
-- workspace-bound PAT issuance and revocation exist for the later Streamable
-  HTTP MCP transition, without adding a second authentication authority;
-- HTTP/SSE auth expiry, role change, membership removal, and workspace switching
-  have deterministic integration coverage before room-specific closure behavior
-  is added in Phase 4.
-
-### Phase 3: Add transactional graph commands
-
-Add backend command models, durable collaborative head, idempotency journal,
-metadata-only security audit writes, atomic collaboration-sequence persistence,
-checkpoint workflow, explicit live-head HTTP read and semantic-command HTTP
-surface, and command-specific conflict policy. Coordinate current complete-
-document replacement with the same module.
-
-The linked implementation plan transitions MCP after these application
-contracts exist. That transition begins with a pinned FastMCP/MCP SDK
-compatibility gate for mounted **stateless** Streamable HTTP, lifespan
-composition, request-header access, concurrent per-request actor isolation
-without a process-global caller token, and proxy behavior; it does not add a
-stdio fallback.
-
-Exit criteria:
-
-- accepted commands increment collaboration sequence exactly once without
-  creating a saved graph revision;
-- retrying a command id is idempotent;
-- invalid topology or stale conflicting fields do not persist;
-- collaborative head and command journal commit atomically;
-- an accepted command's metadata-only security audit event commits with the
-  mutation, while rejected attempts record a bounded outcome without copying
-  the submitted command or configuration;
-- checkpointing one exact head sequence creates or reuses one saved graph
-  revision and reconciles secret bindings;
-- an Editor checkpoint may make a secret binding inactive but cannot physically
-  delete the Owner-managed encrypted row;
-- the migration initializes one head for every pre-existing graph and production
-  access fails closed if one is missing; new graph creation commits revision 1
-  with its head or rolls both back;
-- the first `/new` gesture records one command at sequence 1 and maps that same
-  document to checkpoint revision 1;
-- failure injection and concurrent checkpoint-versus-replace tests leave no
-  partial revision, mapping, head update, or secret reconciliation;
-- the live-head HTTP read and semantic-command surface enforce the same
-  workspace, actor, HMAC, sequence, and checkpoint contracts needed by the later
-  mounted MCP transition.
-
-### Phase 4: Add the graph room and automatic persistence
-
-Add the WebSocket protocol, initial snapshot, reliable accepted-command
-publication, client command queue, reconnect, and synchronization state. Show
-sync state separately from the explicit checkpoint action.
-
-Exit criteria:
-
-- two sessions converge after interleaved edits;
-- a reconnect never duplicates an accepted command;
-- an external complete-document replacement is rejected while the head is
-  uncheckpointed; a safe replacement starts a new epoch and resynchronizes both
-  sessions;
-- a safe HTTP or mounted-MCP epoch reset causes connected sessions to rehydrate
-  once after commit;
-- the browser stops accepting durable gestures while disconnected and warns for
-  every private field draft, in-flight command, or queued command;
-- one slow connection cannot grow an unbounded queue.
-
-### Phase 5: Add presence
-
-Add cursors, remote selections, activity, soft claims, and live drag previews.
-
-Exit criteria:
-
-- cursor rendering uses graph coordinates and remains correct under different
-  local zoom and pan;
-- drag previews are smooth but create only one accepted collaboration command
-  on release and no checkpoint revision by themselves;
-- disconnect and TTL remove presence without changing the graph;
-- remote selection never changes local keyboard targets;
-- presence payload tests reject sensitive or oversized data.
-
-### Phase 6: Share graph execution
-
-Add workspace-and-graph-scoped execution start, active-execution uniqueness,
-graph-room discovery, and execution-compatibility-gated overlays. Split execution
-initiation and observation in the frontend while retaining SSE and polling
-behavior.
-
-Exit criteria:
-
-- a run started in one session appears in every session's activity bar;
-- a new session joining mid-run discovers and observes it;
-- simultaneous start requests create one execution and return the same active
-  summary to the loser;
-- retrying the same client request id returns the original execution;
-- all sessions see cancellation and terminal outcome;
-- a session joining after early events have fallen out of SSE replay still
-  reconstructs current per-node status from the observation snapshot;
-- cosmetic edits during a run retain its overlays, while an execution-plan edit
-  removes node overlays without hiding the shared activity bar;
-- execution history and materializations remain exact.
-
-### Phase 7: Production deployment and scaling gate
-
-This final collaboration phase is only the deployment and scaling gate; identity
-and workspace authorization already exist from Phase 2 and are not reopened
-here. Before enabling collaboration, verify that graph rooms, HTTP/SSE
-execution, and stateless MCP Streamable HTTP all enforce that shared contract
-and the full authenticated acceptance suite passes. Do not add another API
-owner until a separate execution/room ownership design is implemented and
-verified.
-
-Feature enablement also asserts exactly one FastAPI application process: one
-replica and one Uvicorn or Gunicorn worker. A second process must fail startup or
-leave collaboration and saved-graph execution traffic disabled.
-
-## Verification strategy
-
-Tests should cross the same interfaces used by production callers.
-
-### Model tests
-
-- Every semantic command applies to a graph document and preserves invariants.
-- Compound commands are atomic.
-- Per-command stale-sequence policies accept safe rebases and reject real
-  conflicts.
-- Accepted remote commands applied in collaboration-sequence order converge.
-- Execution overlays remain for a cosmetically different head but are ignored
-  when the server marks its derived execution plan incompatible.
-- Presence never mutates the durable document.
-
-### Persistence and application tests
-
-- Head, command-journal, checkpoint mapping, idempotency tombstone, graph-room
-  publication, and active-execution slot keys include the stable workspace id;
-  identical client ids in different workspaces cannot collide or leak results.
-- Production command, checkpoint, execution, secret, replacement, delete, and
-  live-head HTTP paths reject a missing authenticated actor and enforce their
-  specific effective capability at handling time.
-- Command id, sequence increment, collaborative head, and journal entry commit
-  together without creating a checkpoint revision.
-- An accepted command's metadata-only security audit event commits with the
-  mutation; rejected outcomes never copy submitted semantic values into audit.
-- Checkpoint sequence, saved graph row, immutable revision snapshot, and secret
-  reconciliation commit as one coordinated workflow.
-- Failure injection at each checkpoint and epoch-reset write rolls everything
-  back; concurrent checkpoint and complete replacement serialize safely.
-- The migration initializes exactly one head for every existing graph, and
-  production access fails closed rather than lazily inventing a missing head;
-  graph creation never leaves a graph without its initial head or vice versa.
-- New-graph bootstrap produces sequence 1, checkpoint sequence 1, revision 1,
-  one command journal entry, and one receipt in the same commit.
-- Duplicate command ids with the same HMAC return the original result;
-  different commands using the same id return `idempotency_mismatch`.
-- Concurrent commands produce a deterministic accepted order.
-- Complete-document replacement still returns `409` on stale revision.
-- Saved-graph detail never pairs a head document with a checkpoint revision;
-  list draft metadata carries explicit head/checkpoint sequences.
-- Delete rejects an uncheckpointed head unless exact epoch/sequence discard is
-  explicitly confirmed.
-- Delete conflicts with an active execution, and a concurrent start-versus-delete
-  transaction leaves either one live graph execution or one deleted graph,
-  never orphaned execution history or materializations.
-- Secret configure/remove checkpoints the exact synchronized head, rejects a
-  stale head, and publishes no secret value. An Editor checkpoint may remove a
-  graph reference but cannot physically delete an Owner-managed secret.
-- Active-execution uniqueness survives concurrent start transactions.
-- Every top-level saved-graph execution endpoint acquires the same active slot;
-  diagnostic `/runs` rejects saved graph context, while internal module
-  invocations do not acquire another slot.
-- Duplicate execution request ids with the same canonical request return one
-  execution and history row across restart; different request data using the
-  same id returns `idempotency_mismatch`.
-- Startup recovery releases the active execution invariant when it marks stale
-  executions failed.
-- Active execution GET returns a sequence-consistent per-node observation
-  snapshot, and SSE reports a cursor older than its replay window explicitly.
-- Command and execution audit metadata exclude sensitive values.
-- Authenticated MCP over stateless Streamable HTTP reads explicit live-head
-  metadata and uses the same workspace-scoped command/replace coordination; MCP
-  request authentication never appears in presence.
-
-### Protocol tests
-
-- `room.ready` is complete and versioned, including stable workspace and graph
-  ids, actor presentation, graph-room session id, capability snapshot,
-  authorization version, head sequence, and checkpoint sequence.
-- The WebSocket handshake rejects an invalid Origin, expired auth session,
-  cross-workspace graph, or actor without `view_graph` before joining presence.
-- Invalid, oversized, or unsupported messages close or reject with stable error
-  context.
-- Commands are published only after commit.
-- Receipt-before-broadcast and broadcast-before-receipt both apply one command;
-  a missing matching broadcast triggers snapshot recovery.
-- Presence is rate-limited, expiring, and allowed to drop.
-- Reconnect plus command retry does not duplicate commands or sequences.
-- Mid-run join after journal eviction converges by snapshot plus
-  `replay_truncated` recovery without inventing complete progress history.
-- Graph deletion and protocol mismatch close sessions predictably.
-- A role change closes with `permissions_changed`. A fresh join receives the new
-  authorization version and capability snapshot; an Editor-to-Viewer change
-  stops queue dispatch, resolves an in-flight command exactly once, discards
-  unsent optimistic commands, and never auto-replays them after a later upgrade.
-- View revocation closes with `access_revoked`, expires presence, and prevents
-  HTTP, SSE, and WebSocket reattachment.
-- Server and TypeScript protocol fixtures remain compatible.
-- A late join with `head_sequence > checkpoint_sequence` renders a synchronized
-  draft and does not mislabel the checkpoint as current.
-- A changed room epoch rejects obsolete unaccepted envelopes;
-  `graph.command.resolve` distinguishes accepted, unknown, and mismatched old
-  command ids without applying an old command and requires rehydration.
-
-### Browser acceptance tests
-
-Use two independent browser contexts against the real Workbench:
-
-1. Open the same graph in both contexts.
-2. Add and configure a node in the first; verify it appears in the second.
-3. Create a real pointer-drag connection in the second; verify the exact edge
-   contract in the first.
-4. Drag a node while both use different zoom levels; verify live preview and
-   one durable final command sequence.
-5. Show both remote cursors and independent selections.
-6. Disconnect and reconnect one context; verify snapshot convergence and
-   presence expiry.
-7. Start a run in one context; verify the same activity bar and node status in
-   the other.
-8. Edit the graph during the run; verify the status bar keeps the old revision
-   and execution-plan edits suppress node overlays.
-9. Cancel from an authorized second context; verify both reach the same
-   terminal state.
-10. Repeat with only graph-name, position, and node-layout edits; verify the
-    shared execution overlays remain visible.
-11. Open the graph as an Owner, Editor, and Viewer; verify effective controls,
-    a genuinely read-only Viewer canvas, bounded Viewer presence, and
-    handling-time rejection if a forbidden request bypasses the UI.
-12. Downgrade an Editor while it has a field draft, one in-flight command, and
-    queued commands; verify the room closes with `permissions_changed`, the
-    Viewer rejoins with a fresh capability snapshot, only already accepted work
-    survives, private text is copyable but unsent, and no command replays after
-    a later upgrade.
-13. Revoke `view_graph`; verify the room closes, presence expires, graph and
-    Artifact Viewer state are purged, execution observation stops, and the
-    browser navigates to an authorized workspace route without retaining the
-    canvas.
-14. Open two tabs as the same actor; verify distinct graph-room session cursors
-    grouped under one actor and self-suppression by room session rather than
-    actor.
-15. Switch workspace with a field draft, in-flight command, and queued command;
-    verify drain-or-explicit-discard behavior and that late callbacks or command
-    ids cannot affect the destination workspace.
-16. Sign out and sign in as a different actor; verify graph caches, Artifact
-    Viewer state, SSE, pending commands, and personal graph state do not cross
-    actors.
-
-Also cover typing a field and immediately invoking Run, Checkpoint, navigation,
-or browser close: the value must be flushed and confirmed before the action,
-or the user must receive an unsynchronized-change warning.
-
-Remote deletion of a workflow source node prunes shared presentation links to
-that node while leaving the viewer itself in place until a collaborator removes
-it. In-viewer selection/activity stays personal and is not rebroadcast.
-
-The pointer-drag connection test is mandatory because programmatic edge
-insertion does not verify React Flow handle geometry or pointer behavior.
-
-### Existing regression suites
-
-Retain and extend:
-
-- `apps/web/src/features/workbench/model/graph-authoring.test.ts`;
-- `apps/web/src/features/workbench/model/execution-plan.test.ts` until planning
-  moves server-side;
-- `apps/web/src/features/workbench/canvas/saved-graph.test.ts`;
-- `apps/web/src/features/workbench/ui/useSavedGraphLifecycle.test.ts` during its
-  replacement;
-- `apps/web/src/features/workbench/ui/useRunExecution.test.ts` during its split;
-- `apps/web/src/lib/api/execution-events.test.ts`;
-- `tests/unit/application/test_saved_graphs.py`;
-- `tests/unit/api/test_saved_graphs.py`;
-- `tests/unit/api/test_execution_manager.py`;
-- `tests/unit/api/test_execution_history.py`;
-- `tests/unit/architecture/test_import_boundaries.py`.
-
-If collaboration becomes a new API capability slice, update the architecture
-test's explicit route/service inventory in the same change so the dependency
-direction remains enforced.
-
-After changing HTTP signatures or registrations, regenerate and check the
-OpenAPI client, construct the FastAPI app, run focused tests, and then run the
-broader Python and web verification suites.
-
-## Observability
-
-Record metrics without command or presence payloads:
-
-- connected graph rooms and sessions;
-- command accepted, rejected, retried, and deduplicated counts by kind and safe
-  error code;
-- command transaction and acknowledgement latency;
-- WebSocket reconnects, protocol mismatches, slow-session disconnects, and
-  outbound queue depth;
-- auth-session expiry, permission-change closes, view-revocation closes, and
-  forbidden-operation counts by safe capability/error code;
-- presence updates accepted and dropped;
-- active-execution conflicts and idempotent start retries;
-- SSE connections, reconnects, replay gaps, auth closes, and polling fallbacks;
-- MCP Streamable HTTP live-head reads, command submissions, authorization
-  failures, and epoch conflicts;
-- collaboration sequences and checkpoints created per minute, plus head,
-  command-journal, and revision-snapshot storage growth.
-
-Structured logs should carry stable workspace id, graph id, authenticated actor
-id, graph-room session id where applicable, authorization version,
-command/request id, accepted collaboration sequence, checkpoint revision,
-execution id, and outcome. They should not carry auth-session cookies or
-tokens, secret values, complete node configuration, artifact payloads, or
-progress text by default.
-
-## Rollout and rollback
-
-Gate the graph room and collaborative command path behind explicit deployment
-configuration until the authenticated Owner/Editor/Viewer, revocation,
-workspace-switch, and two-session acceptance suites pass.
-
-During rollout:
-
-- allow current read endpoints and generated contracts to remain compatible;
-- migrate saved-graph callers from synchronous `/runs` to discoverable
-  `/executions` before rejecting saved context on `/runs`;
-- reject legacy `PUT` while an uncheckpointed collaborative head exists; when
-  replacement is safe, start a new room epoch and broadcast the reset;
-- prevent an old manual-save client from silently participating in a room
-  without revision-aware replacement behavior;
-- expose protocol version and collaboration capability during bootstrap;
-- deploy authentication/workspace and collaboration database migrations before
-  enabling the room;
-- verify production rejects unauthenticated actors, has no anonymous local
-  adapter, and serves WebSocket, SSE, and MCP Streamable HTTP through the
-  configured authenticated proxy boundary;
-- keep one API owner.
-
-A release check starts a second configured application process and verifies it
-cannot run global execution recovery or accept graph-room and saved-graph
-execution traffic.
-
-Rollback first places collaboration in read-only draining mode, rejects new
-commands and secret writes, and waits for in-flight transactions. It then
-checkpoints every head and verifies
-`collaboration_sequence == checkpoint_sequence`, or blocks rollback with the
-affected graphs listed. Only after that invariant holds does it close rooms,
-disable collaboration, and return clients to the latest complete saved graph
-revision. The collaboration tables may remain unused until the feature is
-re-enabled.
-
-## Alternatives considered
-
-### Continue whole-document optimistic saves
-
-Rejected for realtime editing. It protects data but turns every overlapping
-session into a manual `409` recovery and cannot represent cursor or execution
-presence.
-
-### Use a general CRDT document
-
-Not selected for the first delivery. The graph has semantic operations and
-cross-object invariants that still require server validation. Offline editing
-and character-level concurrent text are non-goals, so a CRDT would add merge,
-persistence, and debugging machinery without removing the authoritative graph
-command module.
-
-Revisit this only if offline authoring or genuinely simultaneous rich-text
-configuration becomes a product requirement.
-
-### Send arbitrary JSON Patch operations
-
-Rejected. Callers would need to know the complete storage shape, and compound
-invariants such as generic binding plus edge creation would be fragile.
-
-### Put all execution progress on the WebSocket
-
-Rejected for the first delivery. The existing execution SSE adapter already
-provides monotonic sequences, bounded replay, heartbeat, validation, and polling
-fallback. The graph room only needs to make the active execution discoverable.
-
-### Keep execution local to the starter
-
-Rejected. Execution changes materializations and history for a shared graph and
-is therefore shared server state.
-
-### Allow concurrent executions
-
-Rejected initially. The current activity bar and node overlays represent one
-run, while concurrent scopes could contend for revision-scoped materialization
-updates and cancellation attention. A future multi-run design would need a
-queue/list interface and explicit output precedence.
-
-### Add a broker abstraction immediately
-
-Rejected for the initial one-owner deployment. Presence and room publication
-have one adapter. A real second API owner would justify a shared coordination
-seam together with execution leases and cancellation routing.
-
-## Open product decisions
-
-These choices do not block the architectural rework but must be resolved before
-production rollout:
-
-- Should immutable revisions receive user-visible checkpoint labels or remain
-  automatic implementation history?
-- How long should command payloads and audit records be retained after their
-  replay value expires, while minimal deduplication tombstones remain for the
-  workspace-owned graph's lifetime?
-- Resolved: Artifact Viewer structural documents are shared presentation on the
-  collaborative head; in-viewer selection/activity remains personal.
-- What participant and graph-size limits define the first supported deployment?
-
-## Acceptance of this proposal
-
-This design and ADR 0002 are Accepted. Remaining follow-up:
-
-1. Add Actor, AuthSession, GraphRoomSession, capability snapshot, graph room,
-   graph command, presence, and active graph execution to `CONTEXT.md` using the
-   definitions above and the related authentication/workspace vocabulary when
-   the accepted vocabulary pass is scheduled.
-2. Update ADR 0001 only if implementation discovers a real dependency conflict;
-   the design would complete its recorded framework-independent graph
-   follow-up rather than contradicting it.
-3. Implement the phases in order and keep the compatibility path passing until
-   the collaborative path has equivalent behavioral coverage.
+| Socket interruption | Keep the confirmed head visible, mark the session `unsynchronized`, expire remote presence, drop the active-Run view, reconnect with a full snapshot, replay unacknowledged batches under their original ids. |
+| Reconnect attempts exhausted | Stop with `reconnect_exhausted`, reject queued batches, and offer an explicit retry rather than an infinite loop. |
+| Auth session expired | Stop commands and observation, re-authenticate, rejoin. Resolve pending ids only for the same actor; purge rather than replay after an actor change. |
+| Role or capabilities changed | Close with `4003`; rebuild from the newly authorized head without unsent optimistic commands; retain at most explicitly copyable draft text while view remains. |
+| View capability revoked | Close with `4004`; clear presence and all actor/workspace/Project-sensitive client state and navigate away. Do not leave the Project visible. |
+| Project deleted (locally or remotely) | Close with `4010`; the remote delete already committed and cannot wait for local confirmation. |
+| Batch acknowledgement lost | Resubmit the same command id; a committed batch returns its original receipt as `idempotent_replay` and moves nothing. |
+| Batch rejected | Restore confirmed server state, keep unrelated pending batches, show the operation and the index that failed. |
+| Head sequence gap | Pause sending, request a full head snapshot, resume once it lands. |
+| Presence update dropped | Nothing to do; a later update supersedes it. |
+| Slow collaborator | Drop presence at depth 48, close at depth 64 with `4009`, recover from a snapshot. |
+| Instance derivation fails for the document | Open the room with no instances and log it; the room is the way to fix the document. |
+| API restart | Heads, receipts and checkpoints survive. Unfinished Runs are marked `interrupted`, stored results stay fresh, so a rerun resumes from the fresh frontier. All presence disappears. |
+| Graph edited while a Run is active | No lock. Affected instances go stale; computations in flight still store under their original fingerprint. |
+
+## Operational hazards
+
+- **One API owner.** In-flight scheduling, per-Project publish coalescing and presence
+  are process state, so startup takes an exclusive file lock and refuses a second owner;
+  `WEB_CONCURRENCY`/`UVICORN_WORKERS` other than 1 fails startup
+  ([`single_owner.py:26-58`](../../apps/api/src/grafy_api/single_owner.py)).
+  Horizontal ownership needs leases, shared publication, shared scheduling and
+  connection draining — none of which is provided by adding another socket.
+- **Do not add a broker abstraction before a second owner exists.** Presence and
+  publication have one adapter on purpose.
+- **The result store grows without bound.** It has no garbage collection; collecting
+  results no instance pointer or checkpoint references is required before production use
+  (ADR 0020 consequence).
+- **The heartbeat is the authority backstop.** With it disabled
+  (`graph_room_heartbeat_seconds = 0`, which tests do), a membership change only reaches
+  a session through the post-commit invalidation path.
+- **Instance state is derived on demand.** Nothing stores it, so a room that cannot read
+  the catalog cannot describe its own document — which is why that failure degrades to an
+  empty instance list instead of a closed room.
+
+## What proves it
+
+Tests cross the same interfaces production uses
+([`tests/unit/architecture/test_import_boundaries.py`](../../tests/unit/architecture/test_import_boundaries.py)
+keeps the route/execution/realtime seams honest):
+
+- [`tests/unit/application/test_collaboration.py`](../../tests/unit/application/test_collaboration.py)
+  — batch acceptance, idempotency, checkpointing, restore, copy, delete.
+- [`tests/unit/api/test_project_head_transport.py`](../../tests/unit/api/test_project_head_transport.py)
+  — head transport and command submission shapes.
+- [`tests/unit/api/test_project_node_secrets.py`](../../tests/unit/api/test_project_node_secrets.py)
+  — secret addressing, head assertion, capability split.
+- [`tests/integration/collaboration/test_project_room.py`](../../tests/integration/collaboration/test_project_room.py)
+  and
+  [`test_collaboration_acceptance.py`](../../tests/integration/collaboration/test_collaboration_acceptance.py)
+  — two sessions, join ordering, presence, revocation, Run frames.
+- [`tests/unit/runs/`](../../tests/unit/runs) — Run service, instance state, results.
+- [`tests/integration/node_secrets/test_node_secrets.py`](../../tests/integration/node_secrets/test_node_secrets.py)
+  — a secret is addressed by Project and Graph, only writes are head-gated, and an
+  unavailable operator leaves a secret dormant rather than dropping it.
+- [`room/graph-room-session.test.ts`](../../apps/web/src/features/workbench/room/graph-room-session.test.ts),
+  [`command-outbox.ts`](../../apps/web/src/features/workbench/room/command-outbox.ts)
+  tests — reconnect, replay, queue caps, head replacement.
+- [`tests/fixtures/project_room_ready.v1.json`](../../tests/fixtures/project_room_ready.v1.json)
+  keeps the Python and TypeScript protocol shapes compatible.
+
+## Open questions
+
+These are places where the code looks wrong rather than merely undocumented. They are
+recorded here rather than written down as intended behavior:
+
+1. **The client's `room.heartbeat` handling is unreachable.** `handleMessage` returns
+   early for any frame whose `type` is `room.heartbeat` before parsing
+   ([`graph-room-session.ts:525-532`](../../apps/web/src/features/workbench/room/graph-room-session.ts)),
+   so the handler that would update `authorizationVersion` and fire
+   `onAuthorizationVersionChange`
+   ([`graph-room-session.ts:628-634`](../../apps/web/src/features/workbench/room/graph-room-session.ts))
+   never runs, and no consumer passes that listener anyway — the hook's options do not
+   offer it. The heartbeat's *server* half is load-bearing (it is what re-authorizes and
+   closes), so the frame is not dead; the client half is. Authorization changes reach the
+   client through the close it triggers, never through the frame. The dead branch, the
+   listener and the `authorizationVersion` field it would be the only writer of after
+   join are removable.
+2. **No order is promised for `activeRuns`.** The `room.ready` snapshot comes from a
+   listing ordered `created_at DESC`
+   ([`repositories/runs.py:213`](../../libs/persistence/src/grafy_persistence/adapters/repositories/runs.py),
+   [`in_memory.py:1042`](../../libs/core/src/grafy_core/runtime/in_memory.py)) while a
+   locally observed `run.started` appends, so a client that joined before a Run began and one
+   that joined after can see the two in the opposite order. Nothing may depend on it: the
+   activity bar filters by Graph and counts, and a Run is addressed by its id. A surface that
+   ever wants "the newest Run" must sort on `created_at` rather than trust the list.
+3. **A secret write publishes nothing.** [CONTEXT.md](../../CONTEXT.md) says instance
+   state is recomputed after scheduler transitions, accepted batches *and secret
+   changes*, and the derivation does re-read secret revisions
+   ([`runs/facts.py:209`](../../apps/api/src/grafy_api/runs/facts.py)), but no room frame
+   is emitted from the secret routes
+   ([`node_secrets/views.py`](../../apps/api/src/grafy_api/v1/routes/node_secrets/views.py)).
+   Peers see a newly-configured secret's effect on freshness only at the next batch or
+   transition. Either the write should call `runs.project_changed`, or the vocabulary
+   should stop claiming secret changes are a recompute trigger.
+
+## Gone
+
+Removed from this document rather than kept beside the new text, because ADR 0020 removed
+the thing itself:
+
+- rooms, heads, revisions, commands, presence and execution slots keyed by
+  `(workspace_id, graph_id)`;
+- `graph.command.submit/accepted/receipt/rejected/resolve` and the epoch-reset
+  `graph.command.resolve` round trip (a resubmitted idempotent batch replaced it);
+- the one-active-execution-per-graph invariant, its active slot, `ActiveExecutionSummary`
+  and the start-race that returned the same summary to the loser;
+- the execution event journal, its SSE endpoint, bounded replay, `replay_truncated`,
+  polling fallback and the per-node "observation snapshot";
+- saved-graph revision as the identity of an execution or of materialized outputs, and
+  the checkpoint-that-a-run-start-creates-or-reuses;
+- the graph-head persistence sketch (tables, room-epoch reset on full-document
+  replacement, sequence-1 bootstrap), superseded by the Project head and its checkpoint
+  pair;
+- Module publication, releases and pins, and the materialized output binding — see ADR
+  0020 and ADR 0016, which it supersedes;
+- the seven-phase migration plan and its per-phase exit criteria, all of which have been
+  executed.
+
+Alternatives that ADR 0020 does not already record, and which still hold: a general CRDT
+document (the graph's invariants still need a server-side command module, and offline
+authoring and character-level text merge are non-goals), arbitrary JSON Patch (callers
+would need the storage shape and compound invariants would be fragile), and a broker
+abstraction before a second API owner exists.

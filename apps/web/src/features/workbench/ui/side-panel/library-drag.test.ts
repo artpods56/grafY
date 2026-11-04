@@ -75,10 +75,13 @@ function item(
     name: `${id}.csv`,
     provenance: {
       source: "upload",
+      // An uploaded item has no instance behind it, but it still names the
+      // absence: provenance is one shape, and "not from a node" is a fact a
+      // reader should not have to infer from a missing key.
+      call_path: [],
       saved_at: "2026-09-11T12:00:00Z",
       original_filename: `${id}.csv`,
     },
-    run: null,
     folder_id: overrides.folder_id ?? null,
   };
 }

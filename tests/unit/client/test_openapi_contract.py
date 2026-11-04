@@ -9,14 +9,15 @@ from grafy_client import (
     CatalogConversionKey,
     CatalogNode,
     CatalogPort,
-    ExecutionArtifact,
-    ExecutionNodeResult,
-    ExecutionOutput,
-    ExecutionResult,
-    ExecutionState,
+    CommandReceipt,
+    InstanceKey,
+    InstanceResult,
+    InstanceState,
     NodeCatalog,
     NodeSecretStatus,
-    SavedGraph,
+    Project,
+    ProjectHead,
+    Run,
     UploadItem,
 )
 
@@ -97,6 +98,8 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
     )
     paths = cast(dict[str, dict[str, object]], schema["paths"])
 
+    base = "/v1/workspaces/{workspace_id}/projects"
+    run_base = base + "/{project_id}/runs"
     operations = (
         (
             "/v1/workspaces/{workspace_id}/nodes",
@@ -113,33 +116,58 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             "UploadTargetResponse",
         ),
         (
-            "/v1/workspaces/{workspace_id}/graphs",
+            base,
             "post",
-            ("application/json", "CreateSavedGraphRequest"),
+            ("application/json", "CreateProjectRequest"),
             "201",
-            "SavedGraphResponse",
+            "ProjectResponse",
+        ),
+        (base + "/{project_id}", "get", None, "200", "ProjectResponse"),
+        (base + "/{project_id}/head", "get", None, "200", "ProjectHeadResponse"),
+        (
+            base + "/{project_id}/commands",
+            "post",
+            ("application/json", "SubmitProjectCommandRequest"),
+            "200",
+            "SubmitProjectCommandResponse",
         ),
         (
-            "/v1/workspaces/{workspace_id}/graphs/{graph_id}/nodes/{node_id}/"
-            "secrets/{name}",
+            base + "/{project_id}/checkpoints",
+            "post",
+            ("application/json", "CheckpointProjectRequest"),
+            "200",
+            "CheckpointProjectResponse",
+        ),
+        (
+            base + "/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
             "put",
             ("application/json", "ConfigureNodeSecretRequest"),
             "200",
             "NodeSecretStatusResponse",
         ),
         (
-            "/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions",
+            run_base,
             "post",
-            ("application/json", "SavedGraphExecutionRequest"),
-            "202",
-            "RunExecutionResponse",
+            ("application/json", "StartRunRequest"),
+            "201",
+            "RunResponse",
         ),
+        (run_base + "/{run_id}", "get", None, "200", "RunResponse"),
+        (run_base + "/{run_id}/cancel", "post", None, "200", "RunResponse"),
+        (run_base, "get", None, "200", "RunListResponse"),
         (
-            "/v1/workspaces/{workspace_id}/executions/{execution_id}",
+            base + "/{project_id}/graphs/{graph_id}/instances",
             "get",
             None,
             "200",
-            "RunExecutionResponse",
+            "InstanceStateListResponse",
+        ),
+        (
+            base + "/{project_id}/instance-result",
+            "get",
+            None,
+            "200",
+            "InstanceResultResponse",
         ),
     )
     for path, method, request_contract, status, response_model in operations:
@@ -175,22 +203,14 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             frozenset({"filename", "byte_size"}),
         ),
         (
-            "CreateSavedGraphRequest",
-            {"name": ("string", None), "document": ("object",)},
-            frozenset({"name", "document"}),
-        ),
-        (
             "ConfigureNodeSecretRequest",
-            {
-                "value": ("string", "password"),
-                "expected_graph_revision": ("integer",),
-            },
-            frozenset({"value", "expected_graph_revision"}),
+            {"value": ("string", "password"), "expected_head_sequence": ("integer",)},
+            frozenset({"value", "expected_head_sequence"}),
         ),
         (
-            "SavedGraphExecutionRequest",
-            {"expected_revision": ("integer",)},
-            frozenset({"expected_revision"}),
+            "StartRunRequest",
+            {"graph_id": ("string", None), "targets": ("array", ("object",))},
+            frozenset({"graph_id"}),
         ),
     )
     for model_name, expected_properties, expected_required in request_models:
@@ -208,32 +228,6 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
                 expected_shape
             ), f"{model_name}.{field_name}"
 
-    execute_operation = cast(
-        dict[str, object],
-        paths["/v1/workspaces/{workspace_id}/graphs/{graph_id}/executions"]["post"],
-    )
-    execute_parameters = cast(
-        list[dict[str, object]],
-        execute_operation["parameters"],
-    )
-    idempotency_parameters = [
-        parameter
-        for parameter in execute_parameters
-        if parameter.get("name") == "Idempotency-Key"
-        and parameter.get("in") == "header"
-    ]
-    assert len(idempotency_parameters) == 1
-    assert idempotency_parameters[0].get("required") is False
-    idempotency_schema = cast(
-        dict[str, object],
-        idempotency_parameters[0]["schema"],
-    )
-    assert _wire_shape(idempotency_schema, schema) == (
-        "union",
-        ("null",),
-        ("string", None),
-    )
-
     wire_models: tuple[
         tuple[type[BaseModel], str, frozenset[str]],
         ...,
@@ -243,14 +237,15 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
         (CatalogPort, "PortResponse", frozenset()),
         (CatalogConversion, "ArtifactConversionSpecResponse", frozenset()),
         (CatalogConversionKey, "ArtifactConversionKeyResponse", frozenset()),
-        (SavedGraph, "SavedGraphResponse", frozenset()),
+        (Project, "ProjectResponse", frozenset()),
+        (ProjectHead, "ProjectHeadResponse", frozenset({"document"})),
+        (CommandReceipt, "ProjectCommandReceiptResponse", frozenset()),
         (UploadItem, "ImageUploadItemResponse", frozenset()),
         (NodeSecretStatus, "NodeSecretStatusResponse", frozenset()),
-        (ExecutionArtifact, "ArtifactSummaryResponse", frozenset()),
-        (ExecutionOutput, "RunPortOutputResponse", frozenset({"value"})),
-        (ExecutionNodeResult, "RunNodeResponse", frozenset()),
-        (ExecutionResult, "RunResponse", frozenset()),
-        (ExecutionState, "RunExecutionResponse", frozenset()),
+        (Run, "RunResponse", frozenset()),
+        (InstanceKey, "InstanceKeyResponse", frozenset()),
+        (InstanceState, "InstanceStateResponse", frozenset()),
+        (InstanceResult, "InstanceResultResponse", frozenset({"outputs"})),
     )
     for client_model, openapi_name, opaque_fields in wire_models:
         client_schema = cast(

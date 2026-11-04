@@ -1,56 +1,15 @@
 from uuid import UUID
 
 import pytest
-from grafy_core.artifacts import ArtifactObject, ArtifactRef, ArtifactTypeKey
+from grafy_core.artifacts import ArtifactObject
 from grafy_core.domain.errors import ObjectAlreadyExistsError
-from grafy_core.domain.invocation_cache import InvocationCacheEntry
 from grafy_core.domain.uploads import Upload
 from grafy_core.runtime.in_memory import (
-    InMemoryDataStore,
-    InMemoryInvocationCacheRepository,
     InMemoryUnitOfWork,
 )
 
 WORKSPACE_ONE = UUID("00000000-0000-0000-0000-000000000101")
 WORKSPACE_TWO = UUID("00000000-0000-0000-0000-000000000102")
-
-
-@pytest.mark.asyncio
-async def test_in_memory_cache_partitions_same_key_by_workspace() -> None:
-    repository = InMemoryInvocationCacheRepository(InMemoryDataStore())
-    first = InvocationCacheEntry(
-        workspace_id=WORKSPACE_ONE,
-        key_sha256="a" * 64,
-        generation=UUID("00000000-0000-0000-0000-000000000111"),
-        outputs={
-            "workspace": ArtifactRef.from_key(
-                artifact_id=UUID("00000000-0000-0000-0000-000000000113"),
-                key=ArtifactTypeKey("test.value", 1),
-            )
-        },
-    )
-    second = InvocationCacheEntry(
-        workspace_id=WORKSPACE_TWO,
-        key_sha256="a" * 64,
-        generation=UUID("00000000-0000-0000-0000-000000000112"),
-        outputs={
-            "workspace": ArtifactRef.from_key(
-                artifact_id=UUID("00000000-0000-0000-0000-000000000114"),
-                key=ArtifactTypeKey("test.value", 1),
-            )
-        },
-    )
-
-    assert await repository.put_if_absent(first)
-    assert await repository.put_if_absent(second)
-    assert await repository.get(WORKSPACE_ONE, first.key_sha256) == first
-    assert await repository.get(WORKSPACE_TWO, second.key_sha256) == second
-    first_result = await repository.get(WORKSPACE_ONE, first.key_sha256)
-    second_result = await repository.get(WORKSPACE_TWO, second.key_sha256)
-    assert first_result is not None
-    assert second_result is not None
-    assert first_result.generation == first.generation
-    assert second_result.outputs == second.outputs
 
 
 @pytest.mark.asyncio

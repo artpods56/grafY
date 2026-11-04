@@ -4,7 +4,7 @@ The composition root is the only reader of the composed :class:`Settings` object
 Everything below takes one configuration section and hands the resulting value to the
 collaborator that owns it, so a service can never reach a knob it does not declare.
 
-Construction order here is the dependency order. In particular ``graph_room_hub`` is
+Construction order here is the dependency order. In particular ``project_room_hub`` is
 built before the workbench components that receive it; it used to be built after
 ``FastAPI(...)`` and only worked because the lifespan runs after ``create_app`` returns.
 """
@@ -13,10 +13,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from grafy_core.application.collaboration import CollaborationService
 from grafy_core.application.identity import IdentityService
-from grafy_core.application.modules import ModuleLibraryService
-from grafy_core.application.saved_graphs import SavedGraphService
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
 from grafy_core.egress import TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE, EgressPolicy
 from grafy_persistence.database import Database
@@ -24,10 +21,20 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_shared.config import EgressConfig
 
 from grafy_api.app_state import AppIdentity, AppResources
+from grafy_api.agents.conversations import AgentConversationService
+from grafy_api.agents.keys import AgentKeyService
+from grafy_api.agents.models import AgentModelResolver
+from grafy_api.agents.turns import AgentService
 from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
-from grafy_api.realtime.hub import GraphRoomHub
-from grafy_api.services.composition import ExecutionLimits, build_workbench_components
+from grafy_api.realtime.agent_events import ProjectAgentEvents
+from grafy_api.realtime.hub import ProjectRoomHub
+from grafy_api.realtime.run_events import ProjectRunEvents
+from grafy_api.runs.service import RunService
+from grafy_api.runs.facts import ApplicationFactsFactory
+from grafy_api.runs.persistence import PersistentResultStore, RepositoryProjectDocuments
+from grafy_core.kernel.implementation_identity import RegistryImplementationDigests
+from grafy_api.services.composition import ComputationLimits, build_workbench_components
 from grafy_api.settings import Settings
 from grafy_api.single_owner import ApiOwnerLease
 from grafy_api.storage import configured_file_storage
@@ -55,7 +62,7 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
     """
 
     def identity_uow_factory() -> SqlAlchemyUnitOfWork:
-        return SqlAlchemyUnitOfWork(database.sessions)
+        return SqlAlchemyUnitOfWork(database.sessions, cleanups=database.cleanups)
 
     identity_service = IdentityService(
         identity_uow_factory,
@@ -112,45 +119,88 @@ async def build_app_resources(
     storage = configured_file_storage(settings.storage, app.workspace)
 
     def new_unit_of_work() -> SqlAlchemyUnitOfWork:
-        return SqlAlchemyUnitOfWork(database.sessions)
+        return SqlAlchemyUnitOfWork(database.sessions, cleanups=database.cleanups)
 
-    saved_graphs = SavedGraphService(new_unit_of_work, registry)
-    module_library = ModuleLibraryService(new_unit_of_work, registry)
-    graph_room_hub = GraphRoomHub.from_settings(settings.realtime)
+    from grafy_core.application.projects import ProjectService
+    from grafy_core.application.collaboration import CollaborationService
+
+    projects = ProjectService(new_unit_of_work)
+    project_room_hub = ProjectRoomHub.from_settings(settings.realtime)
     collaboration = CollaborationService(
         new_unit_of_work,
-        registry,
         command_hmac_key=settings.keys.resolved_command_hmac_key(),
         command_hmac_key_version=settings.keys.command_hmac_key_version,
-        saved_graphs=saved_graphs,
     )
     node_secrets = NodeSecretService(
         unit_of_work_factory=new_unit_of_work,
         plugin_registry=registry,
         encryption_key=settings.keys.credential_encryption_key,
     )
+    # An Agent's own key is sealed with the same deployment key as a node secret, and
+    # its endpoint is dialed against the same egress grants the workbench was built with.
+    agent_keys = AgentKeyService(
+        unit_of_work_factory=new_unit_of_work,
+        encryption_key=settings.keys.credential_encryption_key,
+    )
+    agent_conversations = AgentConversationService(
+        unit_of_work_factory=new_unit_of_work
+    )
+    agent_models = AgentModelResolver(
+        settings=settings.agents,
+        keys=agent_keys,
+        egress_policy=workbench_egress_policy(settings.egress),
+    )
+    # A turn's frames travel on the same hub the Project room reads, so the tab that sent is
+    # served by the same delivery as every other tab watching the Project. The runtime keeps
+    # its own bounded, lossy queue in front of this, so a reader that stops draining loses
+    # frames and never slows a turn or leaves a receipt unwritten.
+    agent_turns = AgentService(
+        unit_of_work_factory=new_unit_of_work,
+        models=agent_models,
+        publisher=ProjectAgentEvents(hub=project_room_hub),
+    )
+    workbench = build_workbench_components(
+        plugin_registry=registry,
+        workspace=app.workspace,
+        limits=ComputationLimits.from_config(settings.execution),
+        unit_of_work=SqlAlchemyUnitOfWork(
+            database.sessions, cleanups=database.cleanups
+        ),
+        storage=storage,
+        storage_backend=settings.storage.storage_backend,
+        bucket=settings.storage.storage_bucket,
+        upload_config=UploadServiceConfig.from_settings(settings.uploads),
+        node_secrets=node_secrets,
+        egress_policy=workbench_egress_policy(settings.egress),
+    )
+    digests = RegistryImplementationDigests.from_registry(
+        registry, uv_lock=Path(__file__).resolve().parents[5] / "uv.lock"
+    )
+    runs = RunService(
+        documents=RepositoryProjectDocuments(uow_factory=new_unit_of_work),
+        uow_factory=new_unit_of_work,
+        result_store_factory=lambda workspace_id: PersistentResultStore(
+            workspace_id=workspace_id, uow_factory=new_unit_of_work
+        ),
+        facts=ApplicationFactsFactory(
+            registry=registry, digests=digests, secrets=node_secrets
+        ),
+        runners=workbench.runner_factory,
+        events=ProjectRunEvents(hub=project_room_hub, uow_factory=new_unit_of_work),
+        concurrency=settings.execution.project_computation_concurrency,
+    )
     resources = AppResources(
         database=database,
-        workbench=build_workbench_components(
-            plugin_registry=registry,
-            workspace=app.workspace,
-            limits=ExecutionLimits.from_config(settings.execution),
-            unit_of_work=SqlAlchemyUnitOfWork(database.sessions),
-            storage=storage,
-            storage_backend=settings.storage.storage_backend,
-            bucket=settings.storage.storage_bucket,
-            upload_config=UploadServiceConfig.from_settings(settings.uploads),
-            saved_graphs=saved_graphs,
-            module_library=module_library,
-            node_secrets=node_secrets,
-            graph_room_hub=graph_room_hub,
-            egress_policy=workbench_egress_policy(settings.egress),
-            build_digest=app.resolved_build_digest,
-        ),
-        saved_graphs=saved_graphs,
+        workbench=workbench,
+        projects=projects,
+        runs=runs,
         collaboration=collaboration,
         node_secrets=node_secrets,
-        graph_room_hub=graph_room_hub,
+        agent_keys=agent_keys,
+        agent_conversations=agent_conversations,
+        agent_models=agent_models,
+        agent_turns=agent_turns,
+        project_room_hub=project_room_hub,
     )
     try:
         await _recover(
@@ -170,25 +220,19 @@ async def _recover(
     owner_lease: ApiOwnerLease | None,
     orphan_cleanup_confirmed: bool = False,
 ) -> None:
-    components = resources.workbench
-    await components.execution_history.recover_transient(
-        exclusive_owner=owner_lease is not None,
-        orphan_cleanup_confirmed=orphan_cleanup_confirmed,
-    )
-    await components.execution_history.interrupt_started()
-    await components.execution_manager.recover_queued()
-    capacity = await resources.capacity_diagnostics()
-    logger.info(
-        "capacity_diagnostics active_executions=%s "
-        "max_active_executions=%s pending_graphs=%s "
-        "max_pending_graphs=%s",
-        capacity.execution_admission.active_executions,
-        capacity.execution_admission.max_active_executions,
-        capacity.execution_queue.pending_graphs,
-        capacity.execution_queue.max_pending_graphs,
-    )
-    # Migration 0009 backfills heads; refuse to serve if any graph still lacks one.
-    await resources.collaboration.verify_every_graph_has_head()
+    del orphan_cleanup_confirmed
+    if owner_lease is None:
+        # Another process may still own those Runs; only the exclusive owner can
+        # tell an orphan from a live computation.
+        logger.warning("unfinished_runs_not_interrupted reason=no_exclusive_owner")
+        return
+    interrupted = await resources.runs.recover_after_restart()
+    logger.info("unfinished_runs_interrupted count=%s", len(interrupted))
+    # A turn's task died with the process that ran it, so its receipt is what says it was
+    # running. Marking it interrupted is what releases the conversation for a new send;
+    # leaving it running would hold the thread busy with nothing left to stop.
+    interrupted_turns = await resources.agent_turns.recover_after_restart()
+    logger.info("unfinished_agent_turns_interrupted count=%s", len(interrupted_turns))
 
 
 async def run_periodic_cleanup(

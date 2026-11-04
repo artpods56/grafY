@@ -32,76 +32,59 @@ class WorkspaceInvitationStatus(StrEnum):
 
 
 class WorkspaceCapability(StrEnum):
-    VIEW_GRAPH = "view_graph"
+    VIEW_PROJECT = "view_project"
     VIEW_ARTIFACTS = "view_artifacts"
-    VIEW_MATERIALIZATIONS = "view_materializations"
-    VIEW_HISTORY = "view_history"
-    VIEW_EXECUTION = "view_execution"
-    JOIN_GRAPH_ROOM = "join_graph_room"
+    VIEW_RUNS = "view_runs"
+    JOIN_PROJECT_ROOM = "join_project_room"
     PUBLISH_PRESENCE = "publish_presence"
-    CREATE_GRAPH = "create_graph"
-    EDIT_GRAPH = "edit_graph"
-    CHECKPOINT_GRAPH = "checkpoint_graph"
-    EXECUTE_GRAPH = "execute_graph"
-    CANCEL_EXECUTION = "cancel_execution"
-    PUBLISH_MODULE = "publish_module"
+    CREATE_PROJECT = "create_project"
+    EDIT_PROJECT = "edit_project"
+    CHECKPOINT_PROJECT = "checkpoint_project"
+    START_RUN = "start_run"
+    CANCEL_RUN = "cancel_run"
     MANAGE_SECRETS = "manage_secrets"
-    DELETE_GRAPH = "delete_graph"
+    DELETE_PROJECT = "delete_project"
     MANAGE_MEMBERS = "manage_members"
     RENAME_WORKSPACE = "rename_workspace"
-
-
-class PlatformTokenScope(StrEnum):
-    PUBLISH_GLOBAL = "plugin.publish_global"
-    PROMOTE_GLOBAL = "plugin.promote_global"
-    REVOKE_GLOBAL = "plugin.revoke_global"
 
 
 _SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?$")
 _ROLE_CAPABILITIES: dict[WorkspaceRole, frozenset[WorkspaceCapability]] = {
     WorkspaceRole.VIEWER: frozenset(
         {
-            WorkspaceCapability.VIEW_GRAPH,
+            WorkspaceCapability.VIEW_PROJECT,
             WorkspaceCapability.VIEW_ARTIFACTS,
-            WorkspaceCapability.VIEW_MATERIALIZATIONS,
-            WorkspaceCapability.VIEW_HISTORY,
-            WorkspaceCapability.VIEW_EXECUTION,
-            WorkspaceCapability.JOIN_GRAPH_ROOM,
+            WorkspaceCapability.VIEW_RUNS,
+            WorkspaceCapability.JOIN_PROJECT_ROOM,
             WorkspaceCapability.PUBLISH_PRESENCE,
         }
     ),
     WorkspaceRole.EDITOR: frozenset(
         {
-            WorkspaceCapability.VIEW_GRAPH,
+            WorkspaceCapability.VIEW_PROJECT,
             WorkspaceCapability.VIEW_ARTIFACTS,
-            WorkspaceCapability.VIEW_MATERIALIZATIONS,
-            WorkspaceCapability.VIEW_HISTORY,
-            WorkspaceCapability.VIEW_EXECUTION,
-            WorkspaceCapability.JOIN_GRAPH_ROOM,
+            WorkspaceCapability.VIEW_RUNS,
+            WorkspaceCapability.JOIN_PROJECT_ROOM,
             WorkspaceCapability.PUBLISH_PRESENCE,
-            WorkspaceCapability.CREATE_GRAPH,
-            WorkspaceCapability.EDIT_GRAPH,
-            WorkspaceCapability.CHECKPOINT_GRAPH,
-            WorkspaceCapability.EXECUTE_GRAPH,
-            WorkspaceCapability.CANCEL_EXECUTION,
-            WorkspaceCapability.PUBLISH_MODULE,
+            WorkspaceCapability.CREATE_PROJECT,
+            WorkspaceCapability.EDIT_PROJECT,
+            WorkspaceCapability.CHECKPOINT_PROJECT,
+            WorkspaceCapability.START_RUN,
+            WorkspaceCapability.CANCEL_RUN,
         }
     ),
     WorkspaceRole.OWNER: frozenset(WorkspaceCapability),
 }
 PAT_ALLOWED_CAPABILITIES = frozenset(
     {
-        WorkspaceCapability.VIEW_GRAPH,
+        WorkspaceCapability.VIEW_PROJECT,
         WorkspaceCapability.VIEW_ARTIFACTS,
-        WorkspaceCapability.VIEW_MATERIALIZATIONS,
-        WorkspaceCapability.VIEW_HISTORY,
-        WorkspaceCapability.VIEW_EXECUTION,
-        WorkspaceCapability.CREATE_GRAPH,
-        WorkspaceCapability.EDIT_GRAPH,
-        WorkspaceCapability.CHECKPOINT_GRAPH,
-        WorkspaceCapability.EXECUTE_GRAPH,
-        WorkspaceCapability.CANCEL_EXECUTION,
-        WorkspaceCapability.PUBLISH_MODULE,
+        WorkspaceCapability.VIEW_RUNS,
+        WorkspaceCapability.CREATE_PROJECT,
+        WorkspaceCapability.EDIT_PROJECT,
+        WorkspaceCapability.CHECKPOINT_PROJECT,
+        WorkspaceCapability.START_RUN,
+        WorkspaceCapability.CANCEL_RUN,
         WorkspaceCapability.MANAGE_SECRETS,
     }
 )
@@ -562,57 +545,6 @@ class PersonalAccessToken:
         self.revoked_at = revoked_at or _utc_now()
 
 
-@dataclass
-class PlatformAccessToken:
-    principal_reference: str
-    public_prefix: str
-    secret_digest: bytes = field(repr=False)
-    label: str
-    scopes: tuple[PlatformTokenScope, ...]
-    expires_at: datetime
-    id: UUID = field(default_factory=uuid4)
-    created_at: datetime = field(default_factory=_utc_now)
-    last_used_at: datetime | None = None
-    revoked_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        self.scopes = tuple(PlatformTokenScope(scope) for scope in self.scopes)
-        self.principal_reference = _require_nonempty(
-            self.principal_reference.strip(), "Platform principal reference", 120
-        )
-        _require_nonempty(self.public_prefix, "Platform access token prefix", 32)
-        if len(self.secret_digest) == 0:
-            raise ValueError("Platform access token digest must not be empty")
-        self.label = _require_nonempty(
-            self.label.strip(), "Platform access token label", 160
-        )
-        if len(self.scopes) == 0:
-            raise ValueError("Platform access token must have at least one scope")
-        if len(set(self.scopes)) != len(self.scopes):
-            raise ValueError("Platform access token scopes must be unique")
-        _require_aware(self.created_at, "Platform access token creation timestamp")
-        _require_aware(self.expires_at, "Platform access token expiry timestamp")
-        if self.expires_at <= self.created_at:
-            raise ValueError(
-                "Platform access token expiry must be after its creation timestamp"
-            )
-        if self.last_used_at is not None:
-            _require_aware(
-                self.last_used_at, "Platform access token last-used timestamp"
-            )
-        if self.revoked_at is not None:
-            _require_aware(
-                self.revoked_at, "Platform access token revocation timestamp"
-            )
-
-    @property
-    def is_revoked(self) -> bool:
-        return self.revoked_at is not None
-
-    def revoke(self, *, revoked_at: datetime | None = None) -> None:
-        self.revoked_at = revoked_at or _utc_now()
-
-
 @dataclass(frozen=True, slots=True)
 class ActorContext:
     user_id: UUID
@@ -633,21 +565,6 @@ class WorkspacePatPrincipal:
                 capability=capability.value,
                 workspace_id=self.workspace_id,
                 user_id=self.actor.user_id,
-            )
-
-
-@dataclass(frozen=True, slots=True)
-class PlatformTokenPrincipal:
-    principal_reference: str
-    credential_reference: str
-    scopes: frozenset[PlatformTokenScope]
-    token_id: UUID
-
-    def require(self, scope: PlatformTokenScope) -> None:
-        if scope not in self.scopes:
-            raise IdentityInvariantError(
-                f"Platform principal {self.principal_reference!r} is not authorized "
-                f"for scope {scope.value!r}"
             )
 
 
@@ -715,9 +632,6 @@ __all__ = [
     "OidcIdentity",
     "OidcLoginTransaction",
     "PAT_ALLOWED_CAPABILITIES",
-    "PlatformAccessToken",
-    "PlatformTokenPrincipal",
-    "PlatformTokenScope",
     "PersonalAccessToken",
     "User",
     "Workspace",

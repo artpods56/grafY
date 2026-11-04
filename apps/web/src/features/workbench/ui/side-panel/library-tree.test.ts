@@ -23,7 +23,8 @@ function item(
     content_type: string;
     byte_size: number | null;
     original_filename: string | null;
-    source: "upload" | "run";
+    source: "upload" | "instance";
+    call_path?: readonly string[];
     saved_at: string;
     folder_id: string | null;
   }> = {},
@@ -44,6 +45,9 @@ function item(
     name: overrides.name ?? id,
     provenance: {
       source: overrides.source ?? "upload",
+      // Every provenance names its call path: an upload has none, and that is
+      // stated rather than left to a missing key.
+      call_path: overrides.call_path ?? [],
       original_filename:
         overrides.original_filename === undefined
           ? `${id}.png`
@@ -342,7 +346,8 @@ describe("the rows keep the Library's file naming", () => {
       libraryFileDisplayName(
         item("run", {
           name: "Scan result",
-          source: "run",
+          source: "instance",
+          call_path: [],
           original_filename: null,
         }),
       ),
@@ -356,30 +361,36 @@ describe("the rows keep the Library's file naming", () => {
     expect(
       libraryFileSubtitle(
         item("run", {
-          source: "run",
+          source: "instance",
+          call_path: [],
           byte_size: null,
           original_filename: null,
         }),
       ),
-    ).toBe("from a run");
+    ).toBe("saved from a node");
   });
 
-  it("reads a run artifact's birth record from its provenance", () => {
+  it("reads a saved artifact's birth record from its provenance", () => {
     const runItem: PlacedLibraryItem = {
-      ...item("run", { source: "run", original_filename: null }),
+      ...item("run", { source: "instance", original_filename: null }),
       provenance: {
-        source: "run",
+        source: "instance",
+        call_path: [],
+        project_id: "p",
+        project_title: "Field ops",
         graph_id: "g",
         graph_title: "Site survey",
-        graph_revision: 4,
         node_id: "n",
         node_title: "GeoTIFF scan",
-        execution_id: "e",
+        result_fingerprint: "fp-1",
         saved_at: "2026-01-01T00:00:00Z",
       },
     };
+    // The row names the node the artifact came from. It does not name a revision
+    // or a Run: the Run retired once the result was stored, and the artifact
+    // outlives both.
     expect(libraryProvenanceLine(runItem)).toBe(
-      "Site survey · GeoTIFF scan · revision 4 · from a run",
+      "Field ops · Site survey · GeoTIFF scan",
     );
   });
 

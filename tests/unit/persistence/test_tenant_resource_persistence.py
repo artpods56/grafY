@@ -1,17 +1,11 @@
 from collections.abc import AsyncIterator
-from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 from grafy_core.artifacts import ArtifactObject
-from grafy_core.domain.errors import NotFoundError
-from grafy_core.domain.execution_history import GraphExecution
-from grafy_core.domain.invocation_cache import InvocationCacheEntry
-from grafy_core.domain.materialized_outputs import MaterializedNodeOutputs
-from grafy_core.domain.node_secrets import EncryptedNodeSecret
-from grafy_core.domain.saved_graphs import SavedGraph, SavedGraphDocument
+from grafy_core.domain.projects import Project
 from grafy_core.domain.uploads import Upload
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
@@ -44,7 +38,7 @@ async def database(tmp_path: Path) -> AsyncIterator[Database]:
 
 
 @pytest.mark.asyncio
-async def test_sql_repositories_require_workspace_for_artifact_cache_and_upload(
+async def test_sql_repositories_require_workspace_for_projects_artifacts_and_uploads(
     database: Database,
 ) -> None:
     artifact = ArtifactObject(
@@ -67,18 +61,6 @@ async def test_sql_repositories_require_workspace_for_artifact_cache_and_upload(
         inline_payload={"value": 2},
         metadata={},
     )
-    cache_one = InvocationCacheEntry(
-        workspace_id=WORKSPACE_ONE,
-        key_sha256="c" * 64,
-        generation=UUID("00000000-0000-0000-0000-000000000208"),
-        outputs={"value": artifact.ref()},
-    )
-    cache_two = InvocationCacheEntry(
-        workspace_id=WORKSPACE_TWO,
-        key_sha256=cache_one.key_sha256,
-        generation=UUID("00000000-0000-0000-0000-000000000209"),
-        outputs={"value": artifact_two.ref()},
-    )
     upload = Upload(
         workspace_id=WORKSPACE_ONE,
         upload_id=UUID("00000000-0000-0000-0000-00000000020a"),
@@ -87,121 +69,20 @@ async def test_sql_repositories_require_workspace_for_artifact_cache_and_upload(
         object_key="objects/source",
         expected_size=4,
     )
-    graph = SavedGraph(
-        workspace_id=WORKSPACE_ONE,
-        id=UUID("00000000-0000-0000-0000-000000000204"),
-        name="Tenant graph",
-        document=SavedGraphDocument(),
-    )
-    revision = graph.snapshot()
-    secret = EncryptedNodeSecret(
-        workspace_id=WORKSPACE_ONE,
-        graph_id=graph.id,
-        node_id="node",
-        name="secret",
-        operator_id="test.operator",
-        operator_version=1,
-        key_id="key",
-        aad_version=2,
-        dependency_sha256="d" * 64,
-        nonce=b"0" * 12,
-        ciphertext=b"ciphertext",
-        created_at=graph.created_at,
-        updated_at=graph.updated_at,
-    )
-    materialized = MaterializedNodeOutputs(
-        workspace_id=WORKSPACE_ONE,
-        graph_id=graph.id,
-        graph_revision=graph.revision,
-        node_id="node",
-        workflow_run_id=UUID("00000000-0000-0000-0000-000000000205"),
-        outputs={},
-    )
-    execution = GraphExecution(
-        workspace_id=WORKSPACE_ONE,
-        execution_id=UUID("00000000-0000-0000-0000-000000000206"),
-        graph_id=graph.id,
-        graph_revision=graph.revision,
-        requested_node_ids=("node",),
-        status="queued",
-    )
+    project = Project(workspace_id=WORKSPACE_ONE, name="Tenant Project")
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.graphs.add(graph)
-        await unit_of_work.graphs.add_revision(revision)
+        await unit_of_work.projects.add(project)
         await unit_of_work.artifacts.add(artifact)
         await unit_of_work.artifacts.add(artifact_two)
-        assert await unit_of_work.invocation_cache.put_if_absent(cache_one)
-        assert await unit_of_work.invocation_cache.put_if_absent(cache_two)
         await unit_of_work.uploads.add(upload)
-        await unit_of_work.node_secrets.upsert(secret)
-        await unit_of_work.materialized_outputs.upsert(materialized)
-        await unit_of_work.execution_history.add(execution)
         await unit_of_work.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         assert await unit_of_work.artifacts.get(WORKSPACE_ONE, artifact.id) is not None
         assert await unit_of_work.artifacts.get(WORKSPACE_TWO, artifact.id) is None
-        assert await unit_of_work.graphs.get(WORKSPACE_TWO, graph.id) is None
-        assert (
-            await unit_of_work.graphs.get_revision(
-                WORKSPACE_TWO,
-                graph.id,
-                graph.revision,
-            )
-            is None
-        )
-        assert (
-            await unit_of_work.node_secrets.get(
-                WORKSPACE_TWO,
-                graph.id,
-                secret.node_id,
-                secret.name,
-            )
-            is None
-        )
-        assert (
-            await unit_of_work.materialized_outputs.get(
-                WORKSPACE_TWO,
-                graph.id,
-                graph.revision,
-                materialized.node_id,
-            )
-            is None
-        )
-        assert (
-            await unit_of_work.execution_history.get(
-                WORKSPACE_TWO,
-                execution.execution_id,
-            )
-            is None
-        )
-        assert (
-            await unit_of_work.execution_history.list_for_graph(
-                WORKSPACE_TWO,
-                graph.id,
-                limit=10,
-            )
-        ).items == ()
-        with pytest.raises(NotFoundError):
-            await unit_of_work.execution_history.update(
-                replace(execution, workspace_id=WORKSPACE_TWO)
-            )
-        stored_cache_one = await unit_of_work.invocation_cache.get(
-            WORKSPACE_ONE,
-            cache_one.key_sha256,
-        )
-        stored_cache_two = await unit_of_work.invocation_cache.get(
-            WORKSPACE_TWO,
-            cache_two.key_sha256,
-        )
-        assert stored_cache_one is not None
-        assert stored_cache_two is not None
-        assert stored_cache_one.generation == cache_one.generation
-        assert stored_cache_one.outputs == cache_one.outputs
-        assert stored_cache_two.generation == cache_two.generation
-        assert stored_cache_two.outputs == cache_two.outputs
-        assert stored_cache_one != stored_cache_two
+        assert await unit_of_work.projects.get(WORKSPACE_ONE, project.id) is not None
+        assert await unit_of_work.projects.get(WORKSPACE_TWO, project.id) is None
         assert (
             await unit_of_work.uploads.get(
                 WORKSPACE_TWO,

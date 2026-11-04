@@ -17,11 +17,11 @@ from grafy_persistence import schema
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-from tests.unit.persistence.test_execution_history_persistence import (
+from tests.support.persistence import (
     WORKSPACE_ONE,
     WORKSPACE_TWO,
 )
-from tests.unit.persistence.test_execution_history_persistence import (
+from tests.support.persistence import (
     database as _database_fixture,
 )
 
@@ -176,7 +176,9 @@ def test_the_stored_sibling_key_is_wide_enough_for_the_widest_casefold() -> None
         for codepoint in range(0x110000)
         if not 0xD800 <= codepoint <= 0xDFFF
     )
-    assert widest_fold == 3, "Unicode's widest casefolding changed; widen name_key with it"
+    assert widest_fold == 3, (
+        "Unicode's widest casefolding changed; widen name_key with it"
+    )
 
     with pytest.raises(ValueError, match="at most 160 characters"):
         LibraryFolder(

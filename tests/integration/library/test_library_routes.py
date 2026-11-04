@@ -41,52 +41,57 @@ def test_saving_an_unknown_artifact_is_not_found(builtin_client: TestClient) -> 
     assert response.status_code == 404
 
 
-def test_saving_from_an_unknown_run_is_not_found(builtin_client: TestClient) -> None:
+def _instance_body(**overrides: object) -> dict[str, object]:
+    body: dict[str, object] = {
+        "project_id": str(uuid4()),
+        "graph_id": "main",
+        "node_id": "resize-1",
+        "result_fingerprint": "a" * 64,
+        "output_port": "image",
+        "name": "Quarterly report",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_saving_from_an_unknown_instance_result_is_not_found(
+    builtin_client: TestClient,
+) -> None:
     response = builtin_client.post(
-        _library_path("/artifacts/from-run"),
-        json={
-            "artifact_id": str(uuid4()),
-            "execution_id": str(uuid4()),
-            "node_id": "resize-1",
-            "node_title": "Resize",
-            "name": "Quarterly report",
-        },
+        _library_path("/artifacts/from-instance"), json=_instance_body()
     )
 
-    assert response.status_code == 404
+    assert response.status_code in {400, 404}, response.text
 
 
-def test_a_save_request_must_name_a_node_and_title(builtin_client: TestClient) -> None:
+def test_an_instance_save_must_name_a_node(builtin_client: TestClient) -> None:
     response = builtin_client.post(
-        _library_path("/artifacts/from-run"),
-        json={
-            "artifact_id": str(uuid4()),
-            "execution_id": str(uuid4()),
-            "node_id": "   ",
-            "node_title": "Resize",
-            "name": "Quarterly report",
-        },
+        _library_path("/artifacts/from-instance"),
+        json=_instance_body(node_id=""),
     )
 
     assert response.status_code == 422
 
 
-def test_a_run_save_name_is_required_and_bounded(builtin_client: TestClient) -> None:
-    body = {
-        "artifact_id": str(uuid4()),
-        "execution_id": str(uuid4()),
-        "node_id": "resize-1",
-        "node_title": "Resize",
-    }
+def test_an_instance_save_needs_a_bounded_name_and_a_fingerprint(
+    builtin_client: TestClient,
+) -> None:
+    body = _instance_body()
+    del body["name"]
 
-    missing = builtin_client.post(_library_path("/artifacts/from-run"), json=body)
+    missing = builtin_client.post(_library_path("/artifacts/from-instance"), json=body)
     too_long = builtin_client.post(
-        _library_path("/artifacts/from-run"),
-        json={**body, "name": "r" * 161},
+        _library_path("/artifacts/from-instance"),
+        json=_instance_body(name="r" * 161),
+    )
+    bad_fingerprint = builtin_client.post(
+        _library_path("/artifacts/from-instance"),
+        json=_instance_body(result_fingerprint="not-a-digest"),
     )
 
     assert missing.status_code == 422
     assert too_long.status_code == 422
+    assert bad_fingerprint.status_code == 422
 
 
 def _library_artifact(client: TestClient, filename: str = "measurements.csv") -> UUID:
@@ -119,44 +124,56 @@ def _library_ids(client: TestClient) -> set[str]:
     return {item["artifact"]["artifact_id"] for item in response.json()["items"]}
 
 
-def _graph_showing_artifact(
+def _project_showing_artifact(
     client: TestClient,
     *,
     name: str,
     artifact_id: UUID,
 ) -> dict:
-    """Save a graph whose only content is a card showing the artifact.
+    """Open a Project whose only content is a card showing the artifact.
 
-    An artifact card is a reference the way a saved run is: it holds the artifact
-    identity so it can present it, and it outlives the moment the artifact was
-    made. Building it as a card keeps the test off the execution path.
+    An artifact card holds the artifact identity so it can present it. Building it
+    as a card keeps the test off the Run path.
     """
 
-    document = {
-        "schema_version": 7,
-        "nodes": [],
-        "edges": [],
-        "origins": [],
-        "presentation": {
-            "viewers": [
+    base = f"/v1/workspaces/{WORKSPACE_ID}/projects"
+    created = client.post(base, json={"name": name})
+    assert created.status_code == 201, created.text
+    project = created.json()
+    head = client.get(f"{base}/{project['id']}/head").json()
+    presentation = {
+        "viewers": [
+            {
+                "id": "artifact-viewer-card",
+                "position": {"x": 0.0, "y": 0.0},
+                "artifact_ref": {
+                    "artifact_id": str(artifact_id),
+                    "artifact_type": "file.csv",
+                    "schema_version": 1,
+                },
+            }
+        ]
+    }
+    submitted = client.post(
+        f"{base}/{project['id']}/commands",
+        json={
+            "command_id": str(uuid4()),
+            "room_epoch": head["room_epoch"],
+            "observed_sequence": head["collaboration_sequence"],
+            "commands": [
                 {
-                    "id": "artifact-viewer-card",
-                    "position": {"x": 0.0, "y": 0.0},
-                    "artifact_ref": {
-                        "artifact_id": str(artifact_id),
-                        "artifact_type": "file.csv",
-                        "schema_version": 1,
+                    "kind": "in_graph",
+                    "graph_id": "main",
+                    "command": {
+                        "kind": "replace_presentation",
+                        "presentation": presentation,
                     },
                 }
-            ]
+            ],
         },
-    }
-    response = client.post(
-        f"/v1/workspaces/{WORKSPACE_ID}/graphs",
-        json={"name": name, "document": document},
     )
-    assert response.status_code == 201, response.text
-    return response.json()
+    assert submitted.status_code == 200, submitted.text
+    return project
 
 
 def test_deleting_a_library_artifact_removes_it(builtin_client: TestClient) -> None:
@@ -217,11 +234,11 @@ def test_deleting_an_artifact_that_was_never_saved_is_not_found(
     assert saved.status_code == 200, saved.text
 
 
-def test_deleting_an_artifact_a_saved_graph_shows_is_refused(
+def test_deleting_an_artifact_a_project_shows_is_refused(
     builtin_client: TestClient,
 ) -> None:
     artifact_id = _library_artifact(builtin_client)
-    _graph_showing_artifact(
+    _project_showing_artifact(
         builtin_client,
         name="Salinity study",
         artifact_id=artifact_id,
@@ -237,13 +254,13 @@ def test_deleting_an_artifact_a_saved_graph_shows_is_refused(
     assert str(artifact_id) in _library_ids(builtin_client)
 
 
-def test_deleting_an_artifact_after_its_graph_is_gone_succeeds(
+def test_deleting_an_artifact_after_its_project_is_gone_succeeds(
     builtin_client: TestClient,
 ) -> None:
     """Unlinking the saved work is the other way to clear the refusal."""
 
     artifact_id = _library_artifact(builtin_client)
-    graph = _graph_showing_artifact(
+    graph = _project_showing_artifact(
         builtin_client,
         name="Salinity study",
         artifact_id=artifact_id,
@@ -251,11 +268,22 @@ def test_deleting_an_artifact_after_its_graph_is_gone_succeeds(
 
     refused = builtin_client.delete(_library_path(f"/artifacts/{artifact_id}"))
     assert refused.status_code == 409, refused.text
-    deleted_graph = builtin_client.delete(
-        f"/v1/workspaces/{WORKSPACE_ID}/graphs/{graph['id']}"
-        f"?expected_revision={graph['revision']}"
+    # A Project with uncheckpointed commands cannot be deleted: checkpoint first.
+    head = builtin_client.get(
+        f"/v1/workspaces/{WORKSPACE_ID}/projects/{graph['id']}/head"
+    ).json()
+    checkpointed = builtin_client.post(
+        f"/v1/workspaces/{WORKSPACE_ID}/projects/{graph['id']}/checkpoints",
+        json={
+            "expected_room_epoch": head["room_epoch"],
+            "expected_sequence": head["collaboration_sequence"],
+        },
     )
-    assert deleted_graph.status_code == 204, deleted_graph.text
+    assert checkpointed.status_code == 200, checkpointed.text
+    deleted_project = builtin_client.delete(
+        f"/v1/workspaces/{WORKSPACE_ID}/projects/{graph['id']}"
+    )
+    assert deleted_project.status_code == 204, deleted_project.text
 
     deleted = builtin_client.delete(_library_path(f"/artifacts/{artifact_id}"))
 

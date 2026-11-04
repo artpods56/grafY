@@ -6,7 +6,6 @@ import {
   Clipboard,
   Clock3,
   KeyRound,
-  Library,
   Trash2,
   Users,
   Workflow,
@@ -26,7 +25,6 @@ import {
   workspaceCanManageMembers,
   workspaceDisplayName,
 } from "./WorkspaceLayout";
-import { WorkspaceLibraryDialog } from "./WorkspaceLibraryDialog";
 import { WorkspaceMembersDialog } from "./WorkspaceMembersDialog";
 
 type ExpiryDays = "1" | "7" | "30";
@@ -45,16 +43,16 @@ const tokenPurposeOptions = [
     label: "Graph automation",
     defaultTokenLabel: "Graph automation",
     scopes: [
-      "view_graph",
+      "view_project",
       "view_artifacts",
-      "view_materializations",
-      "view_history",
-      "view_execution",
-      "create_graph",
-      "edit_graph",
-      "checkpoint_graph",
-      "execute_graph",
-      "cancel_execution",
+      "view_runs",
+      "view_runs",
+      "view_runs",
+      "create_project",
+      "edit_project",
+      "checkpoint_project",
+      "start_run",
+      "cancel_run",
       "manage_secrets",
     ],
   },
@@ -62,7 +60,7 @@ const tokenPurposeOptions = [
     id: "module-publishing",
     label: "Module publishing",
     defaultTokenLabel: "Module publishing",
-    scopes: ["publish_module"],
+    scopes: ["edit_project"],
   },
 ] satisfies readonly TokenPurposeOption[];
 
@@ -427,26 +425,6 @@ export function WorkspaceSettings() {
               No personal access tokens for this workspace.
             </p>
           )}
-        </div>
-      </section>
-
-      <section
-        className="grafy-workspace-settings__section"
-        aria-labelledby="workspace-library-heading"
-      >
-        <div className="grafy-workspace-settings__section-heading">
-          <div>
-            <h2 id="workspace-library-heading">Module library</h2>
-            <p>Review reusable graph modules available in this workspace.</p>
-          </div>
-          <Library size={18} aria-hidden="true" />
-        </div>
-        <div className="grafy-workspace-settings__section-action">
-          <span>Manage modules published for this workspace.</span>
-          <WorkspaceLibraryDialog
-            workspace={workspace}
-            triggerLabel="Open library"
-          />
         </div>
       </section>
     </main>

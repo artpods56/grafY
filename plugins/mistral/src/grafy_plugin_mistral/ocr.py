@@ -1,6 +1,6 @@
 import logging
 from ipaddress import ip_address
-from typing import Annotated, Literal, Protocol, cast, final, override
+from typing import Annotated, Literal, Protocol, final, override
 from uuid import UUID
 
 from pydantic import (
@@ -8,7 +8,6 @@ from pydantic import (
     Field,
     SecretStr,
     TypeAdapter,
-    model_validator,
 )
 
 from mistralai.client.models.ocrresponse import OCRResponse
@@ -54,22 +53,6 @@ _URL = TypeAdapter(AnyHttpUrl)
 logger = logging.getLogger(__name__)
 TableFormat = Literal["markdown", "html"]
 ConfidenceGranularity = Literal["page", "block"]
-_LEGACY_CONFIG_KEYS = frozenset(
-    {
-        "base_url",
-        "model",
-        "document_name",
-        "pages",
-        "include_image_base64",
-        "image_limit",
-        "image_min_size",
-        "include_blocks",
-        "document_annotation_prompt",
-        "document_annotation_schema_name",
-        "bbox_annotation_schema_name",
-        "strict",
-    }
-)
 
 
 class MistralOcrConfig(NodeConfig):
@@ -105,17 +88,6 @@ class MistralOcrConfig(NodeConfig):
             "unacceptable."
         ),
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def drop_legacy_fields(cls, value: object) -> object:
-        if isinstance(value, dict):
-            return {
-                key: item
-                for key, item in cast(dict[str, object], value).items()
-                if key not in _LEGACY_CONFIG_KEYS
-            }
-        return value
 
 
 class MistralOcrInput(NodeInput):
@@ -286,8 +258,8 @@ class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
         try:
             api_key = await self._node_secrets.resolve_secret(
                 workspace_id=context.workspace_id,
-                graph_id=context.secret_graph_id,
-                graph_revision=context.secret_graph_revision,
+                project_id=context.project_id,
+                graph_id=context.graph_id,
                 node_id=context.node_id,
                 name="api_key",
                 dependencies={},

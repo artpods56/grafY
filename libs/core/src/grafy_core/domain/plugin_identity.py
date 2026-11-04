@@ -41,9 +41,7 @@ class PluginReleaseNamespace:
 
     def __post_init__(self) -> None:
         if self.scope is not PluginReleaseScope.SYSTEM:
-            raise ValueError(
-                "Plugin releases are visible only in the System namespace"
-            )
+            raise ValueError("Plugin releases are visible only in the System namespace")
         if self.workspace_id is not None:
             raise ValueError(
                 "System Plugin release namespaces cannot have a Workspace owner"

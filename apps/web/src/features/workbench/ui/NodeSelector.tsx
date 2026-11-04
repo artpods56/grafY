@@ -21,7 +21,6 @@ import {
   catalogNodeSpecs,
   filterAndSearchCatalogNodes,
   INPUT_NODES_FILTER,
-  moduleReleaseSpecs,
   nodesCompatibleWithPort,
   sourceFilterId,
   type CatalogFilter,
@@ -39,7 +38,6 @@ import {
 } from "./node-selector/NodeResultList";
 import { NodeSourceBar } from "./node-selector/NodeSourceBar";
 
-const MODULE_PLUGIN_SLUG = "graph.module";
 /** Below this the picker shows the list or one node's details, not both. */
 const PHONE_LAYOUT_QUERY = "(max-width: 720px)";
 /** How far PageUp and PageDown move through the results. */
@@ -73,8 +71,6 @@ export interface NodeSelectorProps {
   onOpenChange: (open: boolean) => void;
   onAddNode: (spec: NodeSpec) => void;
   onRetry?: () => void;
-  onOpenGraph?: (graphId: string) => void;
-  onOpenWorkspaceLibrary?: () => void;
 }
 
 /**
@@ -124,8 +120,6 @@ function NodeBrowser({
   insertDisabledReason = "You do not have permission to edit this graph.",
   onAddNode,
   onRetry,
-  onOpenGraph,
-  onOpenWorkspaceLibrary,
   searchRef,
   finePointer,
 }: Omit<NodeSelectorProps, "open" | "onOpenChange" | "returnFocusRef"> & {
@@ -140,10 +134,6 @@ function NodeBrowser({
   );
   const [inputNodesOnly, setInputNodesOnly] = React.useState(false);
   const [activeKey, setActiveKey] = React.useState<string | null>(null);
-  const [chosenRelease, setChosenRelease] = React.useState<{
-    moduleKey: string;
-    releaseKey: string;
-  } | null>(null);
   const [nodeDetailsOpen, setNodeDetailsOpen] = React.useState(false);
   const [phoneDetailsOpen, setPhoneDetailsOpen] = React.useState(false);
   const options = React.useRef(new Map<string, HTMLElement>());
@@ -242,41 +232,13 @@ function NodeBrowser({
     [groups],
   );
 
-  // --- The highlighted node, and the release of it a Module call would pin ---
+  // --- The highlighted node ---------------------------------------------------
 
-  const listedSpec =
+  const selectedSpec =
     orderedNodes.find((spec) => catalogNodeKey(spec) === activeKey) ??
     orderedNodes[0] ??
     null;
-  const listedKey = listedSpec ? catalogNodeKey(listedSpec) : null;
-  const moduleKey =
-    listedSpec?.module_id ?? listedSpec?.module_graph_id ?? null;
-  const moduleReleases = React.useMemo(
-    () =>
-      listedSpec?.plugin_slug === MODULE_PLUGIN_SLUG
-        ? moduleReleaseSpecs(
-            registry,
-            listedSpec.module_id,
-            listedSpec.module_graph_id,
-          )
-        : [],
-    [listedSpec, registry],
-  );
-  const selectedSpec = React.useMemo(() => {
-    if (!listedSpec || listedSpec.plugin_slug !== MODULE_PLUGIN_SLUG) {
-      return listedSpec;
-    }
-    const releaseKey =
-      moduleKey && chosenRelease?.moduleKey === moduleKey
-        ? chosenRelease.releaseKey
-        : null;
-    return (
-      moduleReleases.find((spec) => catalogNodeKey(spec) === releaseKey) ??
-      moduleReleases.find((spec) => spec.catalog_visible !== false) ??
-      moduleReleases[0] ??
-      listedSpec
-    );
-  }, [chosenRelease, listedSpec, moduleKey, moduleReleases]);
+  const listedKey = selectedSpec ? catalogNodeKey(selectedSpec) : null;
 
   // --- Moving, choosing, adding ----------------------------------------------
 
@@ -376,23 +338,14 @@ function NodeBrowser({
   /** Shows a node from "Works with": its own source, nothing filtering it out. */
   function inspectCatalogNode(spec: NodeSpec): void {
     resetSearchAndFilters();
-    setActiveSourceId(
-      spec.plugin_slug === MODULE_PLUGIN_SLUG
-        ? "workspace-library"
-        : sourceFilterId(spec.plugin_slug),
-    );
+    setActiveSourceId(sourceFilterId(spec.plugin_slug));
     setActiveKey(catalogNodeKey(spec));
-    setChosenRelease(null);
   }
 
   // --- What the list says -----------------------------------------------------
 
   const listTitle =
-    activeSource.id === "all"
-      ? "All nodes"
-      : activeSource.id === "workspace-library"
-        ? "Workspace library"
-        : `${activeSource.title} nodes`;
+    activeSource.id === "all" ? "All nodes" : `${activeSource.title} nodes`;
   const status = loading
     ? "Loading nodes…"
     : errorMessage
@@ -405,14 +358,6 @@ function NodeBrowser({
     activeSourceId !== "all" ||
     artifactFilterId !== null ||
     inputNodesOnly;
-  const showingModules = activeSourceId === "workspace-library";
-  const editedModule = activeGraphId
-    ? registry.nodes.find(
-        (spec) =>
-          spec.module_graph_id === activeGraphId &&
-          spec.catalog_visible !== false,
-      )
-    : undefined;
 
   return (
     <>
@@ -440,7 +385,7 @@ function NodeBrowser({
             aria-autocomplete="list"
             aria-controls={RESULTS_ID}
             aria-activedescendant={
-              listedSpec ? resultOptionId(listedSpec) : undefined
+              selectedSpec ? resultOptionId(selectedSpec) : undefined
             }
             value={query}
             placeholder="Search nodes, types, settings…"
@@ -505,9 +450,7 @@ function NodeBrowser({
               <span>
                 {compatibility
                   ? "No nodes match this port and the current search or filter."
-                  : showingModules
-                    ? "No published Modules match the current search."
-                    : "No nodes match the current search or filter."}
+                  : "No nodes match the current search or filter."}
               </span>
               {narrowed ? (
                 <button
@@ -520,16 +463,7 @@ function NodeBrowser({
               ) : null}
             </>
           }
-          footer={
-            showingModules && !loading && !errorMessage ? (
-              <ModuleNotes
-                editedModule={editedModule}
-                empty={foundNodes.length === 0 && !searching}
-                forPort={Boolean(compatibility)}
-                onOpenWorkspaceLibrary={onOpenWorkspaceLibrary}
-              />
-            ) : null
-          }
+          footer={null}
           registerOption={registerOption}
           onActivate={setActiveKey}
           onChoose={(key) => {
@@ -562,7 +496,6 @@ function NodeBrowser({
               spec={selectedSpec}
               registry={registry}
               catalogRegistry={catalogRegistry}
-              moduleReleases={moduleReleases}
               detailsOpen={nodeDetailsOpen}
               canInsert={canInsert}
               insertDisabledReason={insertDisabledReason}
@@ -583,12 +516,8 @@ function NodeBrowser({
                 ) : null
               }
               onDetailsOpenChange={setNodeDetailsOpen}
-              onSelectRelease={(releaseKey) => {
-                if (moduleKey) setChosenRelease({ moduleKey, releaseKey });
-              }}
               onInspect={inspectCatalogNode}
               onInsert={() => insertNode(selectedSpec)}
-              onOpenGraph={onOpenGraph}
             />
           ) : (
             <div {...stylex.props(s.empty)}>
@@ -627,49 +556,6 @@ function groupBySource(
   const rest = nodes.filter((spec) => !claimed.has(catalogNodeKey(spec)));
   if (rest.length) groups.push({ key: "other", title: "Other", nodes: rest });
   return groups;
-}
-
-function ModuleNotes({
-  editedModule,
-  empty,
-  forPort,
-  onOpenWorkspaceLibrary,
-}: {
-  editedModule: NodeSpec | undefined;
-  empty: boolean;
-  forPort: boolean;
-  onOpenWorkspaceLibrary?: () => void;
-}) {
-  if (!editedModule && !empty) return null;
-  return (
-    <div aria-label="Workspace library notes" {...stylex.props(s.moduleNotes)}>
-      {editedModule ? (
-        <p {...stylex.props(s.note)}>
-          “{editedModule.title}” is hidden here because it is the graph
-          currently being edited.
-        </p>
-      ) : null}
-      {empty ? (
-        <p {...stylex.props(s.note)}>
-          {forPort
-            ? "No published Modules in this workspace can connect to this port."
-            : "No published Modules in this workspace yet. Open a source graph, declare Module Input/Output boundaries, then Publish release."}
-          {onOpenWorkspaceLibrary ? (
-            <>
-              {" "}
-              <button
-                type="button"
-                onClick={onOpenWorkspaceLibrary}
-                {...stylex.props(s.textButton)}
-              >
-                Open workspace library
-              </button>
-            </>
-          ) : null}
-        </p>
-      ) : null}
-    </div>
-  );
 }
 
 const s = stylex.create({
@@ -791,21 +677,6 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: tokens.fontSizeSm,
     textAlign: "center",
-  },
-  moduleNotes: {
-    display: "grid",
-    gap: "8px",
-    padding: "12px 14px 16px",
-    borderTopWidth: 1,
-    borderTopStyle: "solid",
-    borderTopColor: tokens.colorBorder,
-    backgroundColor: tokens.colorSurfaceMuted,
-  },
-  note: {
-    margin: 0,
-    color: tokens.colorSubtle,
-    fontSize: tokens.fontSizeXs,
-    lineHeight: 1.45,
   },
   textButton: {
     minHeight: "29px",

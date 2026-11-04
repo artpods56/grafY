@@ -22,17 +22,19 @@ import {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const testState = vi.hoisted(() => ({
-  pathname: "/workspaces/operations/graphs/graph-a",
+  pathname: "/workspaces/operations/projects/graph-a",
   push: vi.fn(),
   /** What an open workbench publishes to the rail; null with none open. */
   chrome: null as Record<string, unknown> | null,
-  savedGraphs: [] as Array<{
+  savedProjects: [] as Array<{
     id: string;
     name: string;
     revision: number;
     node_count: number;
     edge_count: number;
+    graph_count: number;
     updated_at: string;
+    draft_pending: boolean;
   }>,
 }));
 
@@ -88,11 +90,11 @@ vi.mock("@/features/workbench/ui/WorkbenchChromeContext", () => ({
 }));
 
 vi.mock("@/hooks/use-api", () => ({
-  useSavedGraphs: () => ({
-    data: { graphs: testState.savedGraphs },
+  useWorkspaceProjects: () => ({
+    data: { projects: testState.savedProjects },
     mutate: vi.fn(),
   }),
-  useGraphSummaryRefresh: () => vi.fn(),
+  useProjectSummaryRefresh: () => vi.fn(),
   useWorkspaces: () => ({ data: [] }),
   useMyWorkspaceInvitations: () => ({ data: [], mutate: vi.fn() }),
 }));
@@ -105,9 +107,9 @@ afterEach(async () => {
   }
   mountedRoots.clear();
   document.body.replaceChildren();
-  testState.pathname = "/workspaces/operations/graphs/graph-a";
+  testState.pathname = "/workspaces/operations/projects/graph-a";
   testState.push.mockReset();
-  testState.savedGraphs = [];
+  testState.savedProjects = [];
   testState.chrome = null;
   vi.unstubAllGlobals();
 });
@@ -204,15 +206,15 @@ describe("workspace route and capability state", () => {
 
   it("resolves the open graph so the rail can highlight it", () => {
     expect(workspaceRouteGraphId("/workspaces/team")).toBeNull();
-    expect(workspaceRouteGraphId("/workspaces/team/graphs/new")).toBeNull();
+    expect(workspaceRouteGraphId("/workspaces/team/projects/new")).toBeNull();
     expect(
       workspaceRouteGraphId(
-        "/workspaces/team/graphs/00000000-0000-0000-0000-000000000001",
+        "/workspaces/team/projects/00000000-0000-0000-0000-000000000001",
       ),
     ).toBe("00000000-0000-0000-0000-000000000001");
     expect(
       workspaceRouteGraphId(
-        "/workspaces/team/graphs/00000000-0000-0000-0000-000000000001/runs",
+        "/workspaces/team/projects/00000000-0000-0000-0000-000000000001/runs",
       ),
     ).toBe("00000000-0000-0000-0000-000000000001");
   });
@@ -255,7 +257,7 @@ describe("workspace route and capability state", () => {
     ).toBe("Settings");
     expect(
       workspaceMobileContextLabel(
-        "/workspaces/operations/graphs/graph-1",
+        "/workspaces/operations/projects/graph-1",
         workspace([], { name: "Operations" }),
       ),
     ).toBe("Operations");
@@ -310,7 +312,7 @@ describe("workspace route and capability state", () => {
 
 describe("workspace rail route lifecycle", () => {
   it("opens the graph list in the selected workspace", async () => {
-    testState.pathname = "/workspaces/operations/graphs";
+    testState.pathname = "/workspaces/operations/projects";
     const { container } = await renderWorkspaceRail();
     const allGraphs = [...container.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "All graphs",
@@ -320,7 +322,7 @@ describe("workspace rail route lifecycle", () => {
     await act(async () => allGraphs?.click());
 
     expect(testState.push).toHaveBeenCalledWith(
-      "/workspaces/operations/graphs",
+      "/workspaces/operations/projects",
     );
   });
 
@@ -349,7 +351,7 @@ describe("workspace rail route lifecycle", () => {
     expect(testState.push).toHaveBeenCalledWith("/workspaces/atlas/settings");
 
     testState.push.mockReset();
-    testState.pathname = "/workspaces/operations/graphs/graph-a";
+    testState.pathname = "/workspaces/operations/projects/graph-a";
     await rerender();
     await act(async () => {
       Object.getOwnPropertyDescriptor(
@@ -358,7 +360,7 @@ describe("workspace rail route lifecycle", () => {
       )?.set?.call(selector, "atlas");
       selector.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(testState.push).toHaveBeenCalledWith("/workspaces/atlas/graphs");
+    expect(testState.push).toHaveBeenCalledWith("/workspaces/atlas/projects");
   });
 
   it("opens settings for the active workspace", async () => {
@@ -428,38 +430,46 @@ describe("workspace rail route lifecycle", () => {
       container.querySelector(".grafy-workspace-rail.is-mobile-open"),
     ).not.toBeNull();
 
-    testState.pathname = "/workspaces/operations/graphs/graph-b";
+    testState.pathname = "/workspaces/operations/projects/graph-b";
     await rerender();
     expect(
       container.querySelector(".grafy-workspace-rail.is-mobile-open"),
     ).toBeNull();
 
-    testState.pathname = "/workspaces/operations/graphs/graph-a";
+    testState.pathname = "/workspaces/operations/projects/graph-a";
     await rerender();
     expect(
       container.querySelector(".grafy-workspace-rail.is-mobile-open"),
     ).toBeNull();
   });
 
-  it("keeps recent graphs without redundant sidebar controls or icons", async () => {
-    testState.savedGraphs = [
+  it("keeps recent projects without redundant sidebar controls or icons", async () => {
+    testState.savedProjects = [
       {
-        id: "graph-a",
+        id: "project-a",
         name: "Monthly extraction",
         revision: 1,
         node_count: 2,
         edge_count: 1,
+        graph_count: 3,
         updated_at: "2026-09-01T12:00:00Z",
+        draft_pending: false,
       },
     ];
     const { container } = await renderWorkspaceRail();
-    const recentGraph = container.querySelector<HTMLButtonElement>(
+    const recentProject = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Monthly extraction"]',
     );
 
     expect(container.textContent).not.toContain("Quick switch");
     expect(container.querySelector('[aria-label="Graph location"]')).toBeNull();
-    expect(recentGraph).not.toBeNull();
-    expect(recentGraph?.querySelector("svg")).toBeNull();
+    expect(recentProject).not.toBeNull();
+    expect(recentProject?.querySelector("svg")).toBeNull();
+
+    // The rail row is a Project, so it opens the Project's own Workbench.
+    await act(async () => recentProject?.click());
+    expect(testState.push).toHaveBeenCalledWith(
+      "/workspaces/operations/projects/project-a",
+    );
   });
 });

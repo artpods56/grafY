@@ -42,7 +42,8 @@ def node_secret_dependency_sha256(
 @dataclass(repr=False)
 class EncryptedNodeSecret:
     workspace_id: UUID
-    graph_id: UUID
+    project_id: UUID
+    graph_id: str
     node_id: str
     name: str
     operator_id: str
@@ -72,15 +73,16 @@ class EncryptedNodeSecret:
             raise ValueError("Node secret ciphertext must not be empty")
         if self.operator_version < 1:
             raise ValueError("Node secret operator version must be positive")
-        if self.aad_version not in (1, 2):
-            raise ValueError("Node secret AAD version must be 1 or 2")
+        if self.aad_version != 3:
+            raise ValueError("Node secret AAD version must be 3")
         if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:
             raise ValueError("Node secret timestamps must be timezone-aware")
 
     def __repr__(self) -> str:
         return (
             "EncryptedNodeSecret("
-            f"workspace_id={self.workspace_id!r}, graph_id={self.graph_id!r}, "
+            f"workspace_id={self.workspace_id!r}, project_id={self.project_id!r}, "
+            f"graph_id={self.graph_id!r}, "
             f"node_id={self.node_id!r}, "
             f"name={self.name!r}, operator_id={self.operator_id!r}, "
             f"operator_version={self.operator_version!r}, key_id={self.key_id!r}, "
@@ -91,20 +93,7 @@ class EncryptedNodeSecret:
     def cache_revision(self) -> str:
         """Return an opaque revision that changes whenever the secret is replaced."""
 
-        digest = sha256()
-        digest.update(b"grafy-node-secret-cache-revision-v2\0")
-        for value in (
-            str(self.graph_id),
-            self.node_id,
-            self.name,
-            self.operator_id,
-            str(self.operator_version),
-            self.key_id,
-            str(self.aad_version),
-            self.dependency_sha256,
-        ):
-            digest.update(value.encode("utf-8"))
-            digest.update(b"\0")
+        digest = sha256(b"grafy-node-secret-state-v3\0")
         digest.update(self.nonce)
         digest.update(self.ciphertext)
         return digest.hexdigest()

@@ -17,7 +17,7 @@ const workspacePageState = vi.hoisted(() => ({
       slug: "hidden-personal-slug",
       kind: "personal" as const,
       role: "owner" as const,
-      capabilities: ["view_graph", "create_graph", "manage_members"],
+      capabilities: ["view_project", "create_project", "manage_members"],
     },
     {
       id: "location-team",
@@ -25,7 +25,7 @@ const workspacePageState = vi.hoisted(() => ({
       slug: "hidden-team-slug",
       kind: "shared" as const,
       role: "editor" as const,
-      capabilities: ["view_graph", "create_graph"],
+      capabilities: ["view_project", "create_project"],
     },
   ],
 }));

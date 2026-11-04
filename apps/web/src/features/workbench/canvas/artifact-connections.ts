@@ -69,7 +69,10 @@ export function resolveArtifactCardSource({
   if (!feed) return { kind: "fixed", value: value ?? null, output: null };
   const output =
     run?.status === "succeeded"
-      ? run.outputs.find((output) => output.port === feed.data?.sourcePortName)
+      ? run.outputs.find(
+          (candidate: RunPortOutput) =>
+            candidate.port === feed.data?.sourcePortName,
+        )
       : undefined;
   if (!output || feed.data?.projection?.path.length) {
     return { kind: "waiting", value: null, output: null };
@@ -197,7 +200,7 @@ export function artifactOriginConnections(
         ),
         data: {
           originId: origin.id,
-          collectionMode: origin.collection_mode ?? "direct",
+          collectionMode: origin.collection_mode,
           allowedCollectionModes: originCollectionModes(
             port,
             artifactDropPayload(origin.value).shape,

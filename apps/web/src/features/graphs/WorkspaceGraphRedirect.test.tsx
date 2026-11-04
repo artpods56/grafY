@@ -115,7 +115,7 @@ describe("legacy graph route redirect", () => {
     await renderRedirect();
 
     expect(redirectState.replace).toHaveBeenCalledWith(
-      "/workspaces/personal/graphs",
+      "/workspaces/personal/projects",
     );
   });
 
@@ -147,14 +147,14 @@ describe("graph entry routes honour the address", () => {
   it("opens the location the address asked for", async () => {
     await renderRedirect("?location=atlas");
 
-    expect(target()).toBe("/workspaces/atlas/graphs");
+    expect(target()).toBe("/workspaces/atlas/projects");
   });
 
   it("carries every filter to the location it chose", async () => {
     await renderRedirect("?location=atlas&q=intake&view=all&utm_source=email");
 
     expect(target()).toBe(
-      "/workspaces/atlas/graphs?q=intake&view=all&utm_source=email",
+      "/workspaces/atlas/projects?q=intake&view=all&utm_source=email",
     );
   });
 
@@ -163,7 +163,7 @@ describe("graph entry routes honour the address", () => {
     // still worth keeping, and the default location is the safe answer.
     await renderRedirect("?location=ghost-team&q=intake");
 
-    expect(target()).toBe("/workspaces/personal/graphs?q=intake");
+    expect(target()).toBe("/workspaces/personal/projects?q=intake");
   });
 
   it("does not read a workspace id as a location", async () => {
@@ -171,13 +171,13 @@ describe("graph entry routes honour the address", () => {
     // claim on it, and must not become a navigation the app cannot justify.
     await renderRedirect(`?location=${LOCATIONS[0]!.id}`);
 
-    expect(target()).toBe("/workspaces/personal/graphs");
+    expect(target()).toBe("/workspaces/personal/projects");
   });
 
   it("keeps an empty location hint out of the way", async () => {
     await renderRedirect("?location=%20&view=all");
 
-    expect(target()).toBe("/workspaces/personal/graphs?view=all");
+    expect(target()).toBe("/workspaces/personal/projects?view=all");
   });
 
   it("sends a person with no locations to Teams and access", async () => {

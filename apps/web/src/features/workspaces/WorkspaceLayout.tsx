@@ -36,13 +36,13 @@ import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 import { useWorkbenchChrome } from "@/features/workbench/ui/WorkbenchChromeContext";
 import { SIDE_PANEL_ELEMENT_ID } from "@/features/workbench/ui/side-panel/workbench-side-panel-state";
 import {
-  NEW_GRAPH_ROUTE_ID,
-  workbenchGraphPath,
+  NEW_PROJECT_ROUTE_ID,
+  workbenchProjectPath,
 } from "@/features/workbench/routes";
 import {
-  useGraphSummaryRefresh,
+  useProjectSummaryRefresh,
   useMyWorkspaceInvitations,
-  useSavedGraphs,
+  useWorkspaceProjects,
   useWorkspaces,
 } from "@/hooks/use-api";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -54,10 +54,7 @@ import {
   type Workspace,
   type WorkspaceRole,
 } from "@/lib/api";
-import {
-  deleteSavedGraphRemote,
-  renameSavedGraphRemote,
-} from "./graph-actions";
+import { deleteProjectRemote, renameProjectRemote } from "./graph-actions";
 import { GraphRowMenu, promptGraphRename } from "./GraphRowMenu";
 import { sortGraphsByRecency } from "./WorkspaceGraphPanel";
 
@@ -146,9 +143,9 @@ export function workspaceCanManageMembers(workspace: Workspace): boolean {
 
 /** Graph currently open in the workbench, or null on non-graph routes. */
 export function workspaceRouteGraphId(pathname: string): string | null {
-  const match = /\/graphs\/([^/?#]+)/.exec(pathname);
+  const match = /\/projects\/([^/?#]+)/.exec(pathname);
   const graphId = match?.[1];
-  if (!graphId || graphId === NEW_GRAPH_ROUTE_ID) return null;
+  if (!graphId || graphId === NEW_PROJECT_ROUTE_ID) return null;
   return decodeURIComponent(graphId);
 }
 
@@ -186,12 +183,13 @@ export function workspaceMobileContextLabel(
   pathname: string,
   workspace: Pick<Workspace, "kind" | "name"> | undefined,
 ): string {
-  if (pathname === "/" || pathname === "/graphs") return "Graphs";
+  if (pathname === "/" || pathname === "/graphs" || pathname === "/projects")
+    return "Graphs";
   if (/^\/workspaces\/[^/]+\/settings\/?$/.test(pathname)) return "Settings";
   if (pathname === "/workspaces" || /^\/workspaces\/[^/]+\/?$/.test(pathname)) {
     return "Teams & access";
   }
-  if (/^\/workspaces\/[^/]+\/graphs(?:\/|$)/.test(pathname)) {
+  if (/^\/workspaces\/[^/]+\/projects(?:\/|$)/.test(pathname)) {
     return workspaceSelectorLabel(workspace);
   }
   return "Graphs";
@@ -367,7 +365,7 @@ export function WorkspaceRail({
       return;
     }
     router.push(
-      `/workspaces/${encodeURIComponent(selectedWorkspace.slug)}/graphs`,
+      `/workspaces/${encodeURIComponent(selectedWorkspace.slug)}/projects`,
     );
   };
 
@@ -386,7 +384,7 @@ export function WorkspaceRail({
     closeMobileNavigation(true);
     const suffix = /^\/workspaces\/[^/]+\/settings\/?$/.test(pathname)
       ? "/settings"
-      : "/graphs";
+      : "/projects";
     router.push(`/workspaces/${encodeURIComponent(slug)}${suffix}`);
   };
 
@@ -587,8 +585,8 @@ export function WorkspaceRail({
   const mobileNavigationHidden = mobileViewport && !mobileOpen;
   const graphBrowserActive = Boolean(
     activeSlug &&
-    (pathname === `/workspaces/${encodeURIComponent(activeSlug)}/graphs` ||
-      pathname === `/workspaces/${encodeURIComponent(activeSlug)}/graphs/`),
+    (pathname === `/workspaces/${encodeURIComponent(activeSlug)}/projects` ||
+      pathname === `/workspaces/${encodeURIComponent(activeSlug)}/projects/`),
   );
   const workspaceSettingsActive = Boolean(
     activeSlug &&
@@ -599,15 +597,15 @@ export function WorkspaceRail({
     selectedWorkspace,
   );
   const activeGraphId = workspaceRouteGraphId(pathname);
-  const { data: savedGraphs } = useSavedGraphs(activeWorkspace?.id);
-  const refreshGraphSummaries = useGraphSummaryRefresh();
+  const { data: savedProjects } = useWorkspaceProjects(activeWorkspace?.id);
+  const refreshGraphSummaries = useProjectSummaryRefresh();
   const recentGraphs = React.useMemo(
     () =>
-      sortGraphsByRecency(savedGraphs?.graphs ?? []).slice(
+      sortGraphsByRecency(savedProjects?.projects ?? []).slice(
         0,
         RAIL_RECENT_GRAPH_LIMIT,
       ),
-    [savedGraphs],
+    [savedProjects],
   );
 
   const renameGraph = React.useCallback(
@@ -620,7 +618,7 @@ export function WorkspaceRail({
         if (chrome) {
           await chrome.renameGraph(graph, next);
         } else {
-          await renameSavedGraphRemote(activeWorkspace.id, graph, next);
+          await renameProjectRemote(activeWorkspace.id, graph, next);
         }
         void refreshGraphSummaries(activeWorkspace.id);
       } catch (error) {
@@ -644,10 +642,7 @@ export function WorkspaceRail({
         if (chrome) {
           await chrome.deleteGraph(graph);
         } else {
-          const deleted = await deleteSavedGraphRemote(
-            activeWorkspace.id,
-            graph,
-          );
+          const deleted = await deleteProjectRemote(activeWorkspace.id, graph);
           if (!deleted) return;
         }
         void refreshGraphSummaries(activeWorkspace.id);
@@ -890,9 +885,9 @@ export function WorkspaceRail({
                 }
                 if (activeWorkspace) {
                   router.push(
-                    workbenchGraphPath(
+                    workbenchProjectPath(
                       activeWorkspace.slug,
-                      NEW_GRAPH_ROUTE_ID,
+                      NEW_PROJECT_ROUTE_ID,
                     ),
                   );
                 }
@@ -1000,7 +995,7 @@ export function WorkspaceRail({
                     onClick={() => {
                       closeMobileNavigation(false);
                       router.push(
-                        workbenchGraphPath(activeWorkspace.slug, graph.id),
+                        workbenchProjectPath(activeWorkspace.slug, graph.id),
                       );
                     }}
                   >

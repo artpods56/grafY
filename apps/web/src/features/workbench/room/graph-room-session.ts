@@ -1,57 +1,88 @@
-import type { CollaborativeHead, WorkspaceCapability } from "@/lib/api";
+import { publishAgentRoom } from "../agents/stream";
+import type {
+  ActiveRunSummary,
+  CollaborativeHead,
+  WorkspaceCapability,
+} from "@/lib/api";
 
 import {
-  GraphRoomCommandError,
-  GraphRoomCommandOutbox,
-  type GraphRoomCommandResult,
-  type OutgoingGraphCommand,
+  ProjectRoomCommandError,
+  ProjectRoomCommandOutbox,
+  type ProjectRoomCommandResult,
+  type OutgoingProjectCommand,
 } from "./command-outbox";
-import { graphRoomWebSocketUrl } from "./graph-room-url";
+import { projectRoomWebSocketUrl } from "./project-room-url";
 import {
   ROOM_COMMAND_QUEUE_CAP,
   ROOM_PROTOCOL_VERSION,
   parseServerRoomMessage,
   terminalReasonFromClose,
-  type ActiveExecutionSummary,
   type ActorPresentation,
-  type ExecutionClearedMessage,
-  type GraphCommandAcceptedMessage,
-  type GraphCommandRejectedMessage,
-  type GraphRoomStatus,
-  type GraphRoomFailure,
-  type GraphRoomRecoveryReason,
-  type GraphRoomTerminalReason,
+  type ProjectCommandAcceptedMessage,
+  type ProjectCommandRejectedMessage,
+  type ProjectRoomStatus,
+  type ProjectRoomFailure,
+  type ProjectRoomRecoveryReason,
+  type ProjectRoomTerminalReason,
+  type InstancesChangedMessage,
   type PresenceParticipant,
   type PresenceUpdateSubmit,
-  type RoomGraphCommand,
+  type RoomInstanceState,
+  type RoomInstanceKey,
+  type RoomProjectCommand,
   type RoomReadyMessage,
+  type RunFinishedMessage,
+  type RunStartedMessage,
 } from "./protocol";
-import { applyRoomCommandToHead } from "./room-command-bridge";
+import { applyRoomCommandsToHead } from "./room-command-bridge";
+import { instanceKeyText } from "./protocol";
 
-export type { GraphRoomStatus, GraphRoomTerminalReason, RoomGraphCommand };
-export type { GraphRoomFailure, GraphRoomRecoveryReason };
-export { GraphRoomCommandError } from "./command-outbox";
-export type { GraphRoomCommandResult } from "./command-outbox";
 export type {
-  ActiveExecutionSummary,
+  ProjectRoomStatus,
+  ProjectRoomTerminalReason,
+  RoomProjectCommand,
+};
+export type { ProjectRoomFailure, ProjectRoomRecoveryReason };
+export { ProjectRoomCommandError } from "./command-outbox";
+export type { ProjectRoomCommandResult } from "./command-outbox";
+export type {
+  ActiveRunSummary,
+  InstancesChangedMessage,
   PresenceParticipant,
   PresenceUpdateSubmit,
+  RoomInstanceState,
+  RoomInstanceKey,
+  RunFinishedMessage,
+  RunStartedMessage,
 };
-export { ROOM_COMMAND_QUEUE_CAP, graphRoomWebSocketUrl };
+export { ROOM_COMMAND_QUEUE_CAP, projectRoomWebSocketUrl };
+
+/** @deprecated the room belongs to a Project, not to a Graph. */
+export type GraphRoomStatus = ProjectRoomStatus;
+/** @deprecated the room belongs to a Project, not to a Graph. */
+export type GraphRoomTerminalReason = ProjectRoomTerminalReason;
+/** @deprecated the room belongs to a Project, not to a Graph. */
+export type GraphRoomFailure = ProjectRoomFailure;
+/** @deprecated the room belongs to a Project, not to a Graph. */
+export type GraphRoomRecoveryReason = ProjectRoomRecoveryReason;
+/** @deprecated the room belongs to a Project, not to a Graph. */
+export type RoomGraphCommand = RoomProjectCommand;
 
 export const PRESENCE_CLIENT_MIN_INTERVAL_MS = 50;
 
 const KNOWN_SERVER_MESSAGE_TYPES = new Set([
   "room.ready",
   "room.rehydrate",
+  "room.heartbeat",
   "presence.join",
   "presence.leave",
   "presence.update",
-  "execution.active",
-  "execution.cleared",
-  "graph.command.accepted",
-  "graph.command.receipt",
-  "graph.command.rejected",
+  "run.started",
+  "run.finished",
+  "instances.changed",
+  "project.command.accepted",
+  "project.command.receipt",
+  "project.command.rejected",
 ]);
 
 /** True when `incoming` should replace the session's confirmed head snapshot. */
@@ -64,57 +95,62 @@ export function shouldReplaceCollaborativeHead(
   return incoming.collaboration_sequence >= current.collaboration_sequence;
 }
 
-export interface GraphRoomAcceptedMeta {
+export interface ProjectRoomAcceptedMeta {
   readonly local: boolean;
 }
 
-export interface GraphRoomSessionListeners {
-  onStatusChange?: (status: GraphRoomStatus) => void;
+export interface ProjectRoomSessionListeners {
+  onStatusChange?: (status: ProjectRoomStatus) => void;
   onReady?: (ready: RoomReadyMessage) => void;
   onRehydrate?: (head: CollaborativeHead) => void;
   /** Session paused command drain until replaceHead supplies a full snapshot. */
   onHeadRefreshRequired?: () => void;
   onCommandAccepted?: (
-    message: GraphCommandAcceptedMessage,
-    meta: GraphRoomAcceptedMeta,
+    message: ProjectCommandAcceptedMessage,
+    meta: ProjectRoomAcceptedMeta,
   ) => void;
-  onCommandRejected?: (message: GraphCommandRejectedMessage) => void;
+  onCommandRejected?: (message: ProjectCommandRejectedMessage) => void;
   onPresenceChange?: (participants: readonly PresenceParticipant[]) => void;
-  onActiveExecution?: (execution: ActiveExecutionSummary | null) => void;
-  onExecutionCleared?: (message: ExecutionClearedMessage) => void;
-  onFailureChange?: (failure: GraphRoomFailure | null) => void;
-  onTerminalClose?: (reason: GraphRoomTerminalReason) => void;
+  /** The Project's active Runs. Many at once: a Run is one demand for freshness. */
+  onActiveRunsChange?: (runs: readonly ActiveRunSummary[]) => void;
+  /** Derived state deltas for node instances, with the keys that disappeared. */
+  onInstancesChange?: (message: InstancesChangedMessage) => void;
+  /** A Run left the active list; its results live on the instances. */
+  onRunFinished?: (message: RunFinishedMessage) => void;
+  onAuthorizationVersionChange?: (authorizationVersion: number) => void;
+  onFailureChange?: (failure: ProjectRoomFailure | null) => void;
+  onTerminalClose?: (reason: ProjectRoomTerminalReason) => void;
 }
 
-export interface GraphRoomSessionOptions extends GraphRoomSessionListeners {
+export interface ProjectRoomSessionOptions extends ProjectRoomSessionListeners {
   workspaceId: string;
-  graphId: string;
+  projectId: string;
   webSocketFactory?: (url: string) => WebSocket;
   reconnectDelayMs?: number;
   maxReconnectAttempts?: number;
   createCommandId?: () => string;
 }
 
-type GraphRoomFailureDetail = Omit<
-  GraphRoomFailure,
-  "workspaceId" | "graphId" | "graphRoomSessionId"
+type ProjectRoomFailureDetail = Omit<
+  ProjectRoomFailure,
+  "workspaceId" | "projectId" | "projectRoomSessionId"
 >;
 
-export class GraphRoomSession {
+export class ProjectRoomSession {
   readonly workspaceId: string;
-  readonly graphId: string;
+  readonly projectId: string;
 
   private readonly webSocketFactory: (url: string) => WebSocket;
   private readonly reconnectDelayMs: number;
   private readonly maxReconnectAttempts: number;
-  private readonly listeners: GraphRoomSessionListeners;
+  private readonly listeners: ProjectRoomSessionListeners;
   /** Correlates submitted commands with the accepted / receipt messages. */
-  private readonly outbox: GraphRoomCommandOutbox;
+  private readonly outbox: ProjectRoomCommandOutbox;
 
   private socket: WebSocket | null = null;
-  private status: GraphRoomStatus = "idle";
-  private terminalReason: GraphRoomTerminalReason | null = null;
-  private lastFailure: GraphRoomFailure | null = null;
+  private status: ProjectRoomStatus = "idle";
+  private terminalReason: ProjectRoomTerminalReason | null = null;
+  private lastFailure: ProjectRoomFailure | null = null;
   private intentionallyClosed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
@@ -127,11 +163,12 @@ export class GraphRoomSession {
   private participants = new Map<string, PresenceParticipant>();
   private presenceSequence = 0;
   private lastPresenceSentAt = 0;
-  private activeExecution: ActiveExecutionSummary | null = null;
+  private activeRuns = new Map<string, ActiveRunSummary>();
+  private instances = new Map<string, RoomInstanceState>();
 
-  constructor(options: GraphRoomSessionOptions) {
+  constructor(options: ProjectRoomSessionOptions) {
     this.workspaceId = options.workspaceId;
-    this.graphId = options.graphId;
+    this.projectId = options.projectId;
     this.webSocketFactory =
       options.webSocketFactory ?? ((url) => new WebSocket(url));
     this.reconnectDelayMs = options.reconnectDelayMs ?? 750;
@@ -142,12 +179,14 @@ export class GraphRoomSession {
       onRehydrate: options.onRehydrate,
       onCommandAccepted: options.onCommandAccepted,
       onPresenceChange: options.onPresenceChange,
-      onActiveExecution: options.onActiveExecution,
-      onExecutionCleared: options.onExecutionCleared,
+      onActiveRunsChange: options.onActiveRunsChange,
+      onInstancesChange: options.onInstancesChange,
+      onRunFinished: options.onRunFinished,
+      onAuthorizationVersionChange: options.onAuthorizationVersionChange,
       onFailureChange: options.onFailureChange,
       onTerminalClose: options.onTerminalClose,
     };
-    this.outbox = new GraphRoomCommandOutbox({
+    this.outbox = new ProjectRoomCommandOutbox({
       createCommandId: options.createCommandId,
       // The outbox reads the confirmed head to stamp and settle commands; the
       // session stays the only owner of head replacement.
@@ -158,7 +197,7 @@ export class GraphRoomSession {
     });
   }
 
-  getStatus(): GraphRoomStatus {
+  getStatus(): ProjectRoomStatus {
     return this.status;
   }
 
@@ -166,7 +205,7 @@ export class GraphRoomSession {
     return this.terminalReason;
   }
 
-  getLastFailure(): GraphRoomFailure | null {
+  getLastFailure(): ProjectRoomFailure | null {
     return this.lastFailure;
   }
 
@@ -186,12 +225,18 @@ export class GraphRoomSession {
     return this.ready?.actor ?? null;
   }
 
-  getGraphRoomSessionId(): string | null {
-    return this.ready?.graph_room_session_id ?? null;
+  getProjectRoomSessionId(): string | null {
+    return this.ready?.project_room_session_id ?? null;
   }
 
-  getActiveExecution(): ActiveExecutionSummary | null {
-    return this.activeExecution;
+  /** The Runs this Project has in flight, in the order the room reported them. */
+  getActiveRuns(): readonly ActiveRunSummary[] {
+    return [...this.activeRuns.values()];
+  }
+
+  /** Derived state for every node instance the room has told us about. */
+  getInstances(): readonly RoomInstanceState[] {
+    return [...this.instances.values()];
   }
 
   getParticipants(): readonly PresenceParticipant[] {
@@ -199,9 +244,9 @@ export class GraphRoomSession {
   }
 
   getRemoteParticipants(): readonly PresenceParticipant[] {
-    const localId = this.getGraphRoomSessionId();
+    const localId = this.getProjectRoomSessionId();
     return this.getParticipants().filter(
-      (participant) => participant.graph_room_session_id !== localId,
+      (participant) => participant.project_room_session_id !== localId,
     );
   }
 
@@ -230,6 +275,7 @@ export class GraphRoomSession {
     const payload = {
       protocol_version: ROOM_PROTOCOL_VERSION,
       type: "presence.update" as const,
+      graph_id: update.graph_id ?? null,
       presence_sequence: this.presenceSequence,
       cursor: update.cursor ?? null,
       selected_node_ids: update.selected_node_ids ?? [],
@@ -251,7 +297,7 @@ export class GraphRoomSession {
     return (
       this.status === "ready" &&
       this.head !== null &&
-      this.capabilities.includes("edit_graph") &&
+      this.capabilities.includes("edit_project") &&
       this.terminalReason === null
     );
   }
@@ -282,10 +328,10 @@ export class GraphRoomSession {
       socket.close(1000, "client_disconnect");
     }
     this.outbox.rejectAll(
-      new GraphRoomCommandError(
+      new ProjectRoomCommandError(
         "",
         "disconnected",
-        "Graph room disconnected before the command completed.",
+        "The Project room disconnected before the command completed.",
       ),
     );
     this.outbox.clearLocalCommands();
@@ -323,7 +369,7 @@ export class GraphRoomSession {
     const currentHead = this.head;
     if (!currentHead) {
       throw new Error(
-        `Graph room head is unavailable while reconciling checkpoint epoch ${expectedRoomEpoch}.`,
+        `The Project room head is unavailable while reconciling checkpoint epoch ${expectedRoomEpoch}.`,
       );
     }
     if (currentHead.room_epoch !== expectedRoomEpoch) {
@@ -339,7 +385,7 @@ export class GraphRoomSession {
     let effectiveHead = this.head;
     if (!effectiveHead) {
       throw new Error(
-        `Graph room head is unavailable after reconciling checkpoint epoch ${expectedRoomEpoch}.`,
+        `The Project room head is unavailable after reconciling checkpoint epoch ${expectedRoomEpoch}.`,
       );
     }
     if (
@@ -357,23 +403,29 @@ export class GraphRoomSession {
     return effectiveHead;
   }
 
-  submitCommand(command: RoomGraphCommand): Promise<GraphRoomCommandResult> {
+  /**
+   * Submit one command batch. A batch is a Project-level command or a
+   * sequence of commands addressed to one Graph of this Project.
+   */
+  submitCommands(
+    commands: readonly RoomProjectCommand[],
+  ): Promise<ProjectRoomCommandResult> {
     if (!this.canSubmitCommands() || this.head === null) {
       return Promise.reject(
-        new GraphRoomCommandError(
+        new ProjectRoomCommandError(
           "",
           "not_ready",
-          "Graph room is not ready to accept durable commands.",
+          "The Project room is not ready to accept durable commands.",
         ),
       );
     }
-    const submission = this.outbox.submit(command);
+    const submission = this.outbox.submit(commands);
     this.writeSends(submission.sends);
     return submission.promise;
   }
 
   /** Write the submit frames the outbox produced, in order. */
-  private writeSends(sends: readonly OutgoingGraphCommand[]): void {
+  private writeSends(sends: readonly OutgoingProjectCommand[]): void {
     for (const send of sends) {
       const socket = this.socket;
       // `canSendCommand` held when the frame was produced. A transport that
@@ -402,7 +454,7 @@ export class GraphRoomSession {
 
     this.generation += 1;
     const generation = this.generation;
-    const url = graphRoomWebSocketUrl(this.workspaceId, this.graphId);
+    const url = projectRoomWebSocketUrl(this.workspaceId, this.projectId);
     this.setStatus(this.head ? "reconnecting" : "connecting");
 
     let socket: WebSocket;
@@ -420,7 +472,7 @@ export class GraphRoomSession {
         detail:
           error instanceof Error
             ? error.message
-            : "The graph-room connection could not be opened.",
+            : "The Project room connection could not be opened.",
       });
       return;
     }
@@ -503,9 +555,17 @@ export class GraphRoomSession {
         messageType,
         protocolVersion,
         closeCode: null,
-        detail: `Expected graph-room protocol ${ROOM_PROTOCOL_VERSION}, received ${protocolVersion ?? "no version"}.`,
+        detail: `Expected Project-room protocol ${ROOM_PROTOCOL_VERSION}, received ${protocolVersion ?? "no version"}.`,
       });
       return;
+    }
+    if (messageType?.startsWith("agent.") || messageType === "room.ready") {
+      publishAgentRoom({
+        workspaceId: this.workspaceId,
+        projectId: this.projectId,
+        raw,
+      });
+      if (messageType.startsWith("agent.")) return;
     }
     if (messageType !== null && !KNOWN_SERVER_MESSAGE_TYPES.has(messageType)) {
       return;
@@ -550,34 +610,46 @@ export class GraphRoomSession {
       return;
     }
     if (message.type === "presence.leave") {
-      this.removeParticipant(message.graph_room_session_id);
+      this.removeParticipant(message.project_room_session_id);
       return;
     }
-    if (message.type === "execution.active") {
-      this.activeExecution = message.execution;
-      this.listeners.onActiveExecution?.(message.execution);
+    if (message.type === "run.started") {
+      this.activeRuns.set(message.run.run_id, message.run);
+      this.emitActiveRunsChange();
       return;
     }
-    if (message.type === "execution.cleared") {
-      if (
-        this.activeExecution?.execution_id === message.execution_id ||
-        this.activeExecution === null
-      ) {
-        this.activeExecution = null;
-        this.listeners.onActiveExecution?.(null);
+    if (message.type === "run.finished") {
+      this.activeRuns.delete(message.run_id);
+      this.emitActiveRunsChange();
+      this.listeners.onRunFinished?.(message);
+      return;
+    }
+    if (message.type === "instances.changed") {
+      for (const key of message.removed) {
+        this.instances.delete(instanceKeyText(key));
       }
-      this.listeners.onExecutionCleared?.(message);
+      for (const instance of message.changed) {
+        this.instances.set(instanceKeyText(instance), instance);
+      }
+      this.listeners.onInstancesChange?.(message);
       return;
     }
-    if (message.type === "graph.command.accepted") {
+    if (message.type === "room.heartbeat") {
+      this.authorizationVersion = message.authorization_version;
+      this.listeners.onAuthorizationVersionChange?.(
+        message.authorization_version,
+      );
+      return;
+    }
+    if (message.type === "project.command.accepted") {
       this.applyAccepted(message);
       return;
     }
-    if (message.type === "graph.command.receipt") {
+    if (message.type === "project.command.receipt") {
       this.writeSends(this.outbox.applyReceipt(message));
       return;
     }
-    if (message.type === "graph.command.rejected") {
+    if (message.type === "project.command.rejected") {
       this.outbox.applyRejected(message);
     }
   }
@@ -585,7 +657,7 @@ export class GraphRoomSession {
   private applyReady(message: RoomReadyMessage): void {
     if (
       message.workspace_id !== this.workspaceId ||
-      message.graph_id !== this.graphId
+      message.project_id !== this.projectId
     ) {
       this.recoverTraffic({
         reason: "protocol_error",
@@ -596,7 +668,7 @@ export class GraphRoomSession {
         protocolVersion: message.protocol_version,
         closeCode: null,
         detail:
-          "The room-ready message identified a different workspace or graph.",
+          "The room-ready message identified a different workspace or Project.",
       });
       return;
     }
@@ -610,24 +682,34 @@ export class GraphRoomSession {
     this.authorizationVersion = message.capabilities.authorization_version;
     this.participants = new Map(
       message.participants.map((participant) => [
-        participant.graph_room_session_id,
+        participant.project_room_session_id,
         participant,
       ]),
     );
     this.presenceSequence = 0;
     this.lastPresenceSentAt = 0;
-    this.activeExecution = message.active_execution;
+    // The room is authoritative for what is running and what is fresh: a
+    // reconnect replaces both lists rather than merging into them.
+    this.activeRuns = new Map(
+      message.active_runs.map((run) => [run.run_id, run]),
+    );
+    this.instances = new Map(
+      message.instances.map((instance) => [
+        instanceKeyText(instance),
+        instance,
+      ]),
+    );
     this.reconnectAttempts = 0;
     this.setFailure(null);
     this.setStatus("ready");
     this.listeners.onReady?.(ready);
-    this.listeners.onActiveExecution?.(message.active_execution);
+    this.emitActiveRunsChange();
     this.emitPresenceChange();
     this.writeSends(this.outbox.finishHeadRehydration());
   }
 
   private upsertParticipant(participant: PresenceParticipant): void {
-    this.participants.set(participant.graph_room_session_id, participant);
+    this.participants.set(participant.project_room_session_id, participant);
     this.emitPresenceChange();
   }
 
@@ -646,7 +728,11 @@ export class GraphRoomSession {
     this.listeners.onPresenceChange?.(this.getParticipants());
   }
 
-  private applyAccepted(message: GraphCommandAcceptedMessage): void {
+  private emitActiveRunsChange(): void {
+    this.listeners.onActiveRunsChange?.(this.getActiveRuns());
+  }
+
+  private applyAccepted(message: ProjectCommandAcceptedMessage): void {
     const local = this.outbox.recordAccepted(message);
 
     const head = this.head;
@@ -663,9 +749,9 @@ export class GraphRoomSession {
     }
 
     try {
-      this.head = applyRoomCommandToHead(
+      this.head = applyRoomCommandsToHead(
         head,
-        message.command,
+        message.commands,
         message.sequence,
       );
     } catch {
@@ -680,7 +766,7 @@ export class GraphRoomSession {
     const classifiedReason = terminalReasonFromClose(code, reason);
     if (
       classifiedReason === "access_revoked" ||
-      classifiedReason === "graph_deleted"
+      classifiedReason === "project_deleted"
     ) {
       this.stopTraffic(classifiedReason, {
         reason: classifiedReason,
@@ -691,7 +777,7 @@ export class GraphRoomSession {
         protocolVersion: ROOM_PROTOCOL_VERSION,
         closeCode: code,
         detail:
-          reason || `The server closed the graph room (${classifiedReason}).`,
+          reason || `The server closed the Project room (${classifiedReason}).`,
       });
       return;
     }
@@ -699,7 +785,7 @@ export class GraphRoomSession {
       this.setStatus("idle");
       return;
     }
-    const recoveryReason: GraphRoomRecoveryReason =
+    const recoveryReason: ProjectRoomRecoveryReason =
       classifiedReason === "permissions_changed" ||
       classifiedReason === "protocol_error" ||
       classifiedReason === "slow_consumer"
@@ -713,17 +799,17 @@ export class GraphRoomSession {
       messageType: null,
       protocolVersion: ROOM_PROTOCOL_VERSION,
       closeCode: code,
-      detail: reason || "The graph-room connection closed unexpectedly.",
+      detail: reason || "The Project room connection closed unexpectedly.",
     });
   }
 
-  private recoverTraffic(failure: GraphRoomFailureDetail): void {
+  private recoverTraffic(failure: ProjectRoomFailureDetail): void {
     this.setFailure(this.failureWithContext(failure));
     this.ready = null;
     this.capabilities = [];
     this.authorizationVersion = null;
-    this.activeExecution = null;
-    this.listeners.onActiveExecution?.(null);
+    this.activeRuns = new Map();
+    this.listeners.onActiveRunsChange?.([]);
     this.clearPresence();
     this.outbox.interruptInFlight();
     this.generation += 1;
@@ -737,8 +823,8 @@ export class GraphRoomSession {
   }
 
   private stopTraffic(
-    reason: GraphRoomTerminalReason,
-    failure?: GraphRoomFailureDetail,
+    reason: ProjectRoomTerminalReason,
+    failure?: ProjectRoomFailureDetail,
   ): void {
     this.intentionallyClosed = true;
     this.clearReconnectTimer();
@@ -755,10 +841,10 @@ export class GraphRoomSession {
       socket.close();
     }
     this.outbox.rejectAll(
-      new GraphRoomCommandError(
+      new ProjectRoomCommandError(
         "",
         reason,
-        `Graph room closed (${reason}). The displayed graph is not trusted for graph operations.`,
+        `The Project room closed (${reason}). The displayed Project is not trusted for durable commands.`,
       ),
     );
     this.setStatus("stopped");
@@ -800,26 +886,26 @@ export class GraphRoomSession {
     this.reconnectTimer = null;
   }
 
-  private setStatus(status: GraphRoomStatus): void {
+  private setStatus(status: ProjectRoomStatus): void {
     if (this.status === status) return;
     this.status = status;
     this.listeners.onStatusChange?.(status);
   }
 
-  private setFailure(failure: GraphRoomFailure | null): void {
+  private setFailure(failure: ProjectRoomFailure | null): void {
     this.lastFailure = failure;
     this.listeners.onFailureChange?.(failure);
   }
 
   private failureWithContext(
-    failure: GraphRoomFailureDetail,
-  ): GraphRoomFailure {
+    failure: ProjectRoomFailureDetail,
+  ): ProjectRoomFailure {
     return {
       workspaceId: this.workspaceId,
-      graphId: this.graphId,
-      graphRoomSessionId:
-        this.getGraphRoomSessionId() ??
-        this.lastFailure?.graphRoomSessionId ??
+      projectId: this.projectId,
+      projectRoomSessionId:
+        this.getProjectRoomSessionId() ??
+        this.lastFailure?.projectRoomSessionId ??
         null,
       ...failure,
     };
