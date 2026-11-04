@@ -279,7 +279,7 @@ export function ArtifactQueryTablesBody({
         </div>
 
         <Button
-          variant="soft"
+          variant="dashed"
           size="sm"
           className="nodrag nowheel"
           disabled={relations.length >= 32}
