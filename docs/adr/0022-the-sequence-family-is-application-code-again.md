@@ -2,6 +2,7 @@
 
 - **Status:** Accepted (restores the four operators ADR 0013 removed from the
   builtin catalog; amends ADR 0013, itself superseded by ADR 0017)
+- **Amends:** ADR 0013
 - **Related:** ADR 0007 (builtin families are application code), ADR 0013, ADR 0017,
   `CONTEXT.md` (Sequence, Artifact sequence, Collect),
   `docs/design/backend-architecture.md` (builtin families)
@@ -66,11 +67,14 @@ which described a composite card group and does not describe a node that live ed
 Grouping needs the cards to exist first, so that filter left no way to place an empty Collect
 and wire producers into it. Both doors now write the same operator.
 
-One correction comes with the port. `sequence.item_at` is registered with
-`cache_policy=NodeCachePolicy.EXACT`. In both the deleted production module and the fixture
-the argument was the enum class rather than the member, and `execution/node_execution.py`
-tests that field with `is`, so Pick item silently never cached. Restoring the family is the
-point at which the intent gets written down.
+A caching decision travels with the family. All four register
+`cache_policy=NodeCachePolicy.EXACT`: each is a pure function of the refs it was handed,
+and the instance identity in `libs/core/src/grafy_core/kernel/fingerprints.py` already
+carries the bound refs and the plug order, so a stored result can never answer a different
+collection. The kernel reads that field with `is` against `NodeCachePolicy.NEVER`, and
+registration accepts any value, so anything other than the member — the enum class
+included — reads as a cacheable node. The member is the only thing that makes a node
+refreshable.
 
 ## Consequences
 

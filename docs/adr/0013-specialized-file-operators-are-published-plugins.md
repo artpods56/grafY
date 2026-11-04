@@ -3,6 +3,9 @@
 - **Status:** Superseded by ADR 0017 (`external.image` and `external.table` stay, but as
   in-process application code: no publication, no isolation, no release pin)
 - **Amends:** ADR 0007
+- **Amended by:** ADR 0022 (Collect, Count, Slice and Pick item were never file operators
+  and are back in the builtin catalog; the text presets and the two table operators stay
+  removed)
 - **Related:** ADR 0008, ADR 0012
 
 Decode images (`image.decode@1`) belongs to `external.image`. Import table
