@@ -29,13 +29,21 @@ interrupted. Making it a node would turn every node rule into an exception.
 - Grafy's own event format is the durable record. The agent library's message format is
   rebuilt from events at the boundary and never stored.
 
-### What an Agent can use is what is wired to it
+### What an Agent can use is what is connected to it
 
-- **Context:** cards, Library items and node outputs connected to the Agent, read as
-  references, never copied.
-- **Tools:** a node or call node connected through its tool handle. Its open inputs are
-  the parameters the model fills or are hidden; inputs wired from upstream stay fixed.
-  Its outputs are returned to the model or not.
+- **Context:** node outputs, cards and Library items connected to the Agent, read as
+  references, never copied. They are read fresh when a turn starts and told to the model
+  after its instructions; a link that cannot be read is said to be unreadable, not dropped.
+  A card or a Library item may vanish without the Agent refusing it; removing a node
+  removes the links to it, as it removes the edges.
+- **Tools:** a node connected as a tool, stored on the Agent as a tool link: a name the
+  model sees, a description, the open inputs the model fills, and the outputs returned
+  (none named means all). Inputs wired from upstream stay fixed. A model can only write
+  text or integers, so only inputs of those types are offered; an input that makes a node
+  fetch whatever address a model writes (Mistral OCR's `document_url`) is hidden unless a
+  person offers it. A link the server cannot honour is reported as unavailable and not
+  offered, rather than failing on its first call. A Library item link does not follow a
+  copy into another Workspace.
 
 ### A tool call is a computation with no instance
 
@@ -43,8 +51,11 @@ A tool call builds a temporary copy of the tool node's instance with the model's
 arguments as origins, fingerprints it, and submits it to the Project's scheduler with
 no instances to record. It is cached and single-flight with canvas Runs and shares the
 Project's concurrency budget, and it never moves an instance pointer, so a node keeps
-showing its own result. Argument artifacts are deduplicated by content so identical
-calls share a fingerprint. The tool call records the fingerprints and Run it used.
+showing its own result. The upstream computations the node's wired inputs need keep
+theirs, because those results are what those nodes currently compute. The values a model
+writes become inline artifacts whose id is derived from the Workspace, the type and the
+content, so identical calls reach the kernel with identical origins and share a
+fingerprint. The result event records the fingerprint it used.
 
 ### A turn runs on the server
 
@@ -57,7 +68,17 @@ calls share a fingerprint. The tool call records the fingerprints and Run it use
 - Cancelling a turn withdraws its scheduler demand like cancelling a Run. On API
   restart running turns are marked interrupted; their events stay.
 - The loop uses pydantic-ai with external tools: the run stops at a tool call, Grafy
-  executes it through the kernel, and the run resumes with the result.
+  executes it through the kernel, and the run resumes with the result. What the model said
+  before calling is stored as its own message ahead of its calls, the calls are stored
+  before they run, and a call that fails or is given bad arguments is answered to the model
+  as a failed result so it can try again. Cancelling withdraws a call in flight.
+- A turn makes at most ten tool calls unprompted. The batch that would pass the limit is
+  neither run nor stored; a `confirmation_requested` event stands in for it and the turn
+  completes. The person's reply is an ordinary next turn that carries on from the results.
+- The model is shown a result as text: the value of a scalar, a page of rows of a table
+  with the total, the first items of a sequence, and for anything else a line saying its
+  content is not shown. Images are described, not shown, until a multimodal view is
+  decided.
 
 ### Models and permissions
 

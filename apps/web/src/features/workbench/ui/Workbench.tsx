@@ -3867,6 +3867,9 @@ function WorkbenchBody({
               : null,
           canEdit: canEditProject,
           canSend: canStartRun,
+          links: registry
+            ? { document: authoredDocument, registry }
+            : undefined,
           configure: (next) => {
             if (canEditProject)
               applyAuthoringCommands([
@@ -3883,7 +3886,8 @@ function WorkbenchBody({
       })),
     [
       nodeMeasurements,
-      authoredDocument.agents,
+      authoredDocument,
+      registry,
       selectedAgentIds,
       canEditProject,
       canStartRun,
