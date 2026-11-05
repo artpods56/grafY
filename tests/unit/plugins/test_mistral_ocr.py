@@ -375,9 +375,9 @@ async def test_node_requires_exactly_one_document_source() -> None:
     )
     context = NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="ocr-1")
 
-    with pytest.raises(MistralOcrExecutionError, match="exactly one"):
+    with pytest.raises(MistralOcrExecutionError, match="received neither"):
         await node.run(context, MistralOcrConfig(), MistralOcrInput())
-    with pytest.raises(MistralOcrExecutionError, match="exactly one"):
+    with pytest.raises(MistralOcrExecutionError, match="received both"):
         await node.run(
             context,
             MistralOcrConfig(),

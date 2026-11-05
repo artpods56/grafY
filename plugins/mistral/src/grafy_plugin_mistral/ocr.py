@@ -252,9 +252,16 @@ class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
         /,
     ) -> MistralOcrOutput:
         if (inputs.document_url is None) == (inputs.image is None):
+            # Say which of the two it was: "exactly one" reads the same for a node that
+            # was given nothing and one that was given a URL beside a connected image.
+            received = (
+                "both a document URL and a raster image"
+                if inputs.document_url is not None
+                else "neither"
+            )
             raise MistralOcrExecutionError(
                 "Mistral OCR requires exactly one of a document URL or a raster "
-                f"image on node {context.node_id!r}"
+                f"image on node {context.node_id!r}; it received {received}"
             )
         try:
             api_key = await self._node_secrets.resolve_secret(
