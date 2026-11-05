@@ -6652,6 +6652,31 @@
         "title": "TableQueryRequest",
         "type": "object"
       },
+      "TableRowTextArtifact": {
+        "properties": {
+          "artifact": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "row_index": {
+            "minimum": 0.0,
+            "title": "Row Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "row_index",
+          "artifact"
+        ],
+        "title": "TableRowTextArtifact",
+        "type": "object"
+      },
       "TableSchemaResponse": {
         "properties": {
           "columns": {
@@ -6672,6 +6697,56 @@
           "total_rows"
         ],
         "title": "TableSchemaResponse",
+        "type": "object"
+      },
+      "TableTextArtifactsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "column_id": {
+            "minLength": 1,
+            "title": "Column Id",
+            "type": "string"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "column_id"
+        ],
+        "title": "TableTextArtifactsRequest",
+        "type": "object"
+      },
+      "TableTextArtifactsResponse": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/TableRowTextArtifact"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "total_rows": {
+            "minimum": 0.0,
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rows",
+          "total_rows"
+        ],
+        "title": "TableTextArtifactsResponse",
         "type": "object"
       },
       "TableValueType": {
@@ -8885,6 +8960,107 @@
           }
         ],
         "summary": "Get Table Artifact Schema",
+        "tags": [
+          "workbench"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/table/text-artifacts": {
+      "post": {
+        "operationId": "create_table_text_artifacts_v1_workspaces__workspace_id__artifacts__artifact_id__table_text_artifacts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Artifact Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TableTextArtifactsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TableTextArtifactsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Artifact not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Artifact content is unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Table Text Artifacts",
         "tags": [
           "workbench"
         ]

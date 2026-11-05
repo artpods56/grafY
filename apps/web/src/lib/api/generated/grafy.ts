@@ -312,6 +312,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/table/text-artifacts": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Create Table Text Artifacts */
+        readonly post: operations["create_table_text_artifacts_v1_workspaces__workspace_id__artifacts__artifact_id__table_text_artifacts_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/features/{feature_index}": {
         readonly parameters: {
             readonly query?: never;
@@ -3935,10 +3952,38 @@ export interface components {
              */
             readonly offset: number;
         };
+        /** TableRowTextArtifact */
+        readonly TableRowTextArtifact: {
+            readonly artifact: components["schemas"]["ArtifactRef"] | null;
+            /** Row Index */
+            readonly row_index: number;
+        };
         /** TableSchemaResponse */
         readonly TableSchemaResponse: {
             /** Columns */
             readonly columns: readonly components["schemas"]["TableColumnResponse"][];
+            /** Total Rows */
+            readonly total_rows: number;
+        };
+        /** TableTextArtifactsRequest */
+        readonly TableTextArtifactsRequest: {
+            /** Column Id */
+            readonly column_id: string;
+            /**
+             * Limit
+             * @default 100
+             */
+            readonly limit: number;
+            /**
+             * Offset
+             * @default 0
+             */
+            readonly offset: number;
+        };
+        /** TableTextArtifactsResponse */
+        readonly TableTextArtifactsResponse: {
+            /** Rows */
+            readonly rows: readonly components["schemas"]["TableRowTextArtifact"][];
             /** Total Rows */
             readonly total_rows: number;
         };
@@ -5067,6 +5112,69 @@ export interface operations {
                 };
             };
             /** @description Invalid table request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Artifact not found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Artifact content is unavailable */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly create_table_text_artifacts_v1_workspaces__workspace_id__artifacts__artifact_id__table_text_artifacts_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly artifact_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["TableTextArtifactsRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TableTextArtifactsResponse"];
+                };
+            };
+            /** @description Invalid request */
             readonly 400: {
                 headers: {
                     readonly [name: string]: unknown;

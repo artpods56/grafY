@@ -3,6 +3,8 @@ import { expect, test } from "./workbench.fixture";
 const NOW = "2026-01-01T00:00:00Z";
 const CONVERSATION = "44444444-4444-4444-8444-444444444444";
 const TEXT_ARTIFACT = "77777777-7777-4777-8777-777777777777";
+const BLOCKS_ARTIFACT = "88888888-8888-4888-8888-888888888888";
+const ROW_ARTIFACT = "99999999-9999-4999-8999-999999999999";
 
 test("connects a node as a tool, shows its calls and results, and drags a result onto the canvas", async ({
   page,
@@ -41,6 +43,36 @@ test("connects a node as a tool, shows its calls and results, and drags a result
         error: null,
       },
     },
+    {
+      payload: {
+        kind: "tool_result",
+        call_id: "call-2",
+        tool_id: "tool-2",
+        tool_name: "read_blocks",
+        ok: true,
+        fingerprint: "e".repeat(64),
+        artifacts: [
+          {
+            port: "blocks",
+            artifact: {
+              artifact_id: BLOCKS_ARTIFACT,
+              artifact_type: "table.data",
+              schema_version: 1,
+            },
+          },
+          {
+            port: "markdown",
+            artifact: {
+              artifact_id: TEXT_ARTIFACT,
+              artifact_type: "scalar.text",
+              schema_version: 1,
+            },
+          },
+        ],
+        model_view: "two blocks",
+        error: null,
+      },
+    },
     { payload: { kind: "assistant_message", text: "It greets a gentleman." } },
     { payload: { kind: "confirmation_requested", tool_calls: 10, limit: 10 } },
   ].map((event, index) => ({
@@ -53,6 +85,67 @@ test("connects a node as a tool, shows its calls and results, and drags a result
   // What the card shows once it holds the result.
   await page.route(`**/artifacts/${TEXT_ARTIFACT}/content`, (route) =>
     route.fulfill({ contentType: "text/plain", body: "dear sir" }),
+  );
+  await page.route(`**/artifacts/${ROW_ARTIFACT}/content`, (route) =>
+    // As the API stores a text value; the card shows the words, not the wrapper.
+    route.fulfill({ json: { value: "the **second** block" } }),
+  );
+  await page.route(`**/artifacts/${BLOCKS_ARTIFACT}/table/schema*`, (route) =>
+    route.fulfill({
+      json: {
+        artifact_id: BLOCKS_ARTIFACT,
+        columns: [
+          { id: "kind", title: "kind", value_type: "text" },
+          { id: "text", title: "text", value_type: "text" },
+        ],
+        total_rows: 2,
+      },
+    }),
+  );
+  await page.route(`**/artifacts/${BLOCKS_ARTIFACT}/table/page*`, (route) =>
+    route.fulfill({
+      json: {
+        columns: [
+          { id: "kind", title: "kind", value_type: "text" },
+          { id: "text", title: "text", value_type: "text" },
+        ],
+        rows: [
+          {
+            kind: { display: "header", truncated: false },
+            text: { display: "- 8 -", truncated: false },
+          },
+          {
+            kind: { display: "table", truncated: false },
+            text: { display: "<table><td>the second block", truncated: true },
+          },
+        ],
+        offset: 0,
+        limit: 100,
+        total_rows: 2,
+        column_offset: 0,
+        total_columns: 2,
+      },
+    }),
+  );
+  await page.route(
+    `**/artifacts/${BLOCKS_ARTIFACT}/table/text-artifacts`,
+    (route) =>
+      route.fulfill({
+        json: {
+          rows: [
+            { row_index: 0, artifact: null },
+            {
+              row_index: 1,
+              artifact: {
+                artifact_id: ROW_ARTIFACT,
+                artifact_type: "scalar.text",
+                schema_version: 1,
+              },
+            },
+          ],
+          total_rows: 2,
+        },
+      }),
   );
   await page.route("**/api/**/agents/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -166,4 +259,29 @@ test("connects a node as a tool, shows its calls and results, and drags a result
   });
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toContainText("dear sir");
+
+  // So can what is inside one: a row of a table result comes out as its own text.
+  await agent.getByRole("button", { name: "2 results" }).click();
+  await page.getByRole("menuitem", { name: /^blocks/ }).click();
+  const row = page.getByRole("menuitem", { name: /table: the second block/ });
+  await expect(row).toBeVisible();
+  // A row with nothing in it cannot be taken.
+  await expect(
+    page.getByRole("menuitem", { name: /header: - 8 -/ }),
+  ).toHaveAttribute("aria-disabled", "true");
+  await row.dragTo(page.locator(".react-flow"), {
+    targetPosition: { x: 520, y: 720 },
+  });
+  await expect(cards).toHaveCount(2);
+  await expect(cards.last()).toContainText("the **second** block");
+  await expect(cards.last()).not.toContainText('"value"');
+  // Its words can be read as Markdown, once the card is selected.
+  await cards.last().click();
+  await cards
+    .last()
+    .getByRole("radiogroup", { name: "Read this text as" })
+    .getByText("Markdown", { exact: true })
+    .click();
+  await expect(cards.last()).toContainText("the second block");
+  await expect(row).toHaveCount(0);
 });

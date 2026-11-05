@@ -144,8 +144,33 @@ it("leaves the separator out when the call took no arguments", async () => {
   expect(group(empty).textContent).not.toContain(" with ");
 });
 
-it("shows one draggable chip per artifact a call returned", async () => {
+it("shows a lone plain result as a draggable chip", async () => {
   const container = await mount(
+    <ToolResultRow
+      artifactTypes={null}
+      payload={okResult([
+        { port: "text", artifact: ref("art-1", "scalar.text") },
+      ])}
+    />,
+  );
+  const row = group(container);
+  expect(row.getAttribute("aria-label")).toBe("Tool result: read_table");
+  // What the model was shown is kept folded beside the chip.
+  expect(row.querySelector("details summary")?.textContent).toBe(
+    "What the model saw",
+  );
+  expect(row.querySelector("details pre")?.textContent).toBe("one row");
+  const chips = Array.from(row.querySelectorAll('[draggable="true"]'));
+  expect(chips.map((item) => item.getAttribute("aria-label"))).toEqual([
+    "text: scalar.text@1",
+  ]);
+  expect(chips[0]?.getAttribute("title")).toBe(
+    "Drag onto the canvas, an input or the Library",
+  );
+});
+
+it("offers several results, or one with parts, through the picker", async () => {
+  const several = await mount(
     <ToolResultRow
       artifactTypes={null}
       payload={okResult([
@@ -154,20 +179,20 @@ it("shows one draggable chip per artifact a call returned", async () => {
       ])}
     />,
   );
-  const row = group(container);
-  expect(row.getAttribute("aria-label")).toBe("Tool result: read_table");
-  // What the model was shown is kept folded beside the chips.
-  expect(row.querySelector("details summary")?.textContent).toBe(
-    "What the model saw",
+  expect(group(several).querySelector("button")?.textContent).toContain(
+    "2 results",
   );
-  expect(row.querySelector("details pre")?.textContent).toBe("one row");
-  const chips = Array.from(row.querySelectorAll('[draggable="true"]'));
-  expect(chips.map((chip) => chip.getAttribute("aria-label"))).toEqual([
-    "text: scalar.text@1",
-    "count: scalar.integer@1",
-  ]);
-  expect(chips[0]?.getAttribute("title")).toBe(
-    "Drag onto the canvas, an input or the Library",
+  expect(group(several).querySelector('[draggable="true"]')).toBeNull();
+  const table = await mount(
+    <ToolResultRow
+      artifactTypes={null}
+      payload={okResult([
+        { port: "blocks", artifact: ref("art-3", "table.data") },
+      ])}
+    />,
+  );
+  expect(group(table).querySelector("button")?.textContent).toContain(
+    "1 result",
   );
 });
 

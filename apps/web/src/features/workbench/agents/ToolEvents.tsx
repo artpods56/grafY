@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import type { components } from "@/lib/api/generated/grafy";
 import { Button } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { ArtifactPicker, hasPickableParts } from "../canvas/ArtifactPicker";
 import { writeArtifactDrop } from "../model/artifact-drop";
 import {
   formatArtifactTypeLabel,
@@ -46,11 +47,16 @@ const s = stylex.create({
     minWidth: 0,
     maxWidth: "100%",
   },
+  // A disclosure beside a sentence takes a line of its own, open or closed.
+  disclosureLine: {
+    flexBasis: "100%",
+  },
   summary: {
     cursor: "pointer",
     color: tokens.colorMuted,
     fontSize: tokens.fontSizeXs,
-    listStylePosition: "outside",
+    // Inside, so the arrow is part of the row and is not clipped at the thread's edge.
+    listStylePosition: "inside",
   },
   detail: {
     margin: "4px 0 0",
@@ -149,6 +155,8 @@ export function ToolResultRow({
       </div>
     );
   }
+  // A lone plain result is simply itself; a menu would only hide it.
+  const only = payload.artifacts.length === 1 ? payload.artifacts[0] : null;
   return (
     <div
       role="group"
@@ -159,24 +167,25 @@ export function ToolResultRow({
         <code>{payload.tool_name}</code>{" "}
         {payload.artifacts.length > 0 ? "returned" : "returned nothing"}
       </span>
+      {only && !hasPickableParts(only.artifact) ? (
+        <ArtifactChip
+          port={only.port}
+          artifact={only.artifact}
+          artifactTypes={artifactTypes}
+        />
+      ) : payload.artifacts.length > 0 ? (
+        <ArtifactPicker
+          artifacts={payload.artifacts}
+          artifactTypes={artifactTypes}
+          label={`${payload.artifacts.length} ${payload.artifacts.length === 1 ? "result" : "results"}`}
+        />
+      ) : null}
       {payload.model_view ? (
-        <details {...stylex.props(s.disclosure)}>
+        <details {...stylex.props(s.disclosure, s.disclosureLine)}>
           <summary {...stylex.props(s.summary)}>What the model saw</summary>
           <pre {...stylex.props(s.detail)}>{payload.model_view}</pre>
         </details>
       ) : null}
-      {payload.artifacts.length > 0 && (
-        <span {...stylex.props(s.row)}>
-          {payload.artifacts.map((entry) => (
-            <ArtifactChip
-              key={entry.port}
-              port={entry.port}
-              artifact={entry.artifact}
-              artifactTypes={artifactTypes}
-            />
-          ))}
-        </span>
-      )}
     </div>
   );
 }
