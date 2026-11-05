@@ -8,10 +8,10 @@ from pydantic import ValidationError
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
-    SystemPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
+    SystemPromptPart,
     UserPromptPart,
 )
 
@@ -163,7 +163,16 @@ def test_a_turn_that_did_not_finish_is_still_labelled_after_its_tool_calls() -> 
         )
     )
 
-    assert isinstance(messages[-1].parts[0], SystemPromptPart)
+    # A system message in the middle of a conversation is rejected by servers that
+    # follow the chat template, so the label is part of a user message.
+    assert isinstance(messages[-1].parts[0], UserPromptPart)
+    assert "cancelled" in str(messages[-1].parts[0].content)
+    assert not any(
+        isinstance(part, SystemPromptPart)
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+    )
 
 
 def test_payloads_round_trip_through_storage() -> None:

@@ -641,13 +641,17 @@ class AgentService:
             detail = redact_agent_turn_error(
                 f"{type(error).__name__}: {error}", entry.secrets
             )
-            # The class is the log line, never the message: an exception a provider SDK
-            # raises can carry the credential this process dialled with.
+            # The log carries the redacted account, the same text stored on the turn: the
+            # credential this process dialled with is already replaced in it. Without the
+            # message a provider's 400 ("System message must be at the beginning") is
+            # invisible to whoever runs the API.
             logger.warning(
-                "agent_turn_model_failed turn_id=%s conversation_id=%s error_class=%s",
+                "agent_turn_model_failed turn_id=%s conversation_id=%s error_class=%s "
+                "detail=%s",
                 entry.turn.id,
                 entry.turn.conversation_id,
                 type(error).__name__,
+                detail,
             )
 
         if status is AgentTurnStatus.COMPLETED and final_text:

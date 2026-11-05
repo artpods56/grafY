@@ -46,7 +46,6 @@ from pydantic_ai.messages import (
     ModelRequestPart,
     ModelResponse,
     ModelResponsePart,
-    SystemPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -139,8 +138,12 @@ def history_messages(
                     continue
                 note = _CUT_SHORT_NOTE.get(AgentTurnStatus(outcome.value))
                 if note is not None:
+                    # Not a system message: a conversation's system message belongs at the
+                    # start, and OpenAI-compatible servers (vLLM, LiteLLM in front of
+                    # Qwen) reject one in the middle with a 400. Adjacent requests are
+                    # merged into one user turn when the model is called.
                     messages.append(
-                        ModelRequest(parts=[SystemPromptPart(content=note)])
+                        ModelRequest(parts=[UserPromptPart(content=f"[{note}]")])
                     )
         # A payload this rebuild does not know yet matches no case above and so adds
         # nothing to the model's view of the past, which is what an unknown part of a
