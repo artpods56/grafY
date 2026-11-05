@@ -53,7 +53,13 @@ from pydantic_ai import (
     RunCancelled,
     ToolDefinition,
 )
-from pydantic_ai.messages import ModelMessage, PartDeltaEvent, PartStartEvent
+from pydantic_ai.messages import (
+    ModelMessage,
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPartDelta,
+    ThinkingPartDelta,
+)
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
 
@@ -75,11 +81,13 @@ from grafy_api.agents.publishing import (
     NullAgentTurnPublisher,
 )
 from grafy_core.domain.agent_conversations import (
+    MAX_AGENT_MESSAGE_CHARS,
     AgentConversation,
     AgentConversationEvent,
     AgentConversationEventPayload,
     AgentConversationTurnOutcome,
     AssistantMessagePayload,
+    AssistantThinkingPayload,
     ConfirmationRequestedPayload,
     ToolCallPayload,
     ToolResultPayload,
@@ -258,6 +266,7 @@ class _RunningTurn:
     done: asyncio.Event = field(default_factory=asyncio.Event)
     stop_requested: AgentTurnStatus | None = None
     text: list[str] = field(default_factory=list)
+    thinking: list[str] = field(default_factory=list)
     published_chars: int = 0
     secrets: tuple[str, ...] = ()
     toolbox: AgentToolbox | None = None
@@ -269,6 +278,10 @@ class _RunningTurn:
     @property
     def received_text(self) -> str:
         return "".join(self.text)
+
+    @property
+    def received_thinking(self) -> str:
+        return "".join(self.thinking)
 
     def snapshot(self) -> AgentTurnSnapshot:
         return AgentTurnSnapshot(
@@ -625,7 +638,11 @@ class AgentService:
             # streamed is still worth keeping, and the turn did not finish.
             status = entry.stop_requested or AgentTurnStatus.INTERRUPTED
             await self._finish(
-                entry, status, text=entry.received_text, detail=INTERRUPTED_DETAIL
+                entry,
+                status,
+                text=entry.received_text,
+                thinking=entry.received_thinking,
+                detail=INTERRUPTED_DETAIL,
             )
             logger.warning("agent_turn_task_cancelled turn_id=%s", entry.turn.id)
             raise
@@ -660,7 +677,13 @@ class AgentService:
             # closing chunk would otherwise store less than the model sent.
             entry.text = [final_text]
 
-        await self._finish(entry, status, text=entry.received_text, detail=detail)
+        await self._finish(
+            entry,
+            status,
+            text=entry.received_text,
+            thinking=entry.received_thinking,
+            detail=detail,
+        )
 
     async def _stream(self, entry: _RunningTurn) -> str:
         """The turn's pydantic-ai runs: the model speaks, may call tools, and speaks again.
@@ -704,15 +727,20 @@ class AgentService:
                         # the rest. A reader that only followed deltas would start every
                         # answer one chunk late, and so would the stored message.
                         part = event.part
-                        if part.part_kind != "text":
-                            continue
-                        await self._accept(
-                            entry, _part_text(getattr(part, "content", ""))
-                        )
+                        content = _part_text(getattr(part, "content", ""))
+                        if part.part_kind == "text":
+                            await self._accept(entry, content)
+                        elif part.part_kind == "thinking":
+                            entry.thinking.append(content)
                     elif isinstance(event, PartDeltaEvent):
-                        await self._accept(
-                            entry, _part_text(getattr(event.delta, "content_delta", ""))
-                        )
+                        # Reasoning is not the reply: it is kept apart, so it can be stored
+                        # and shown collapsed, and never streams into the answer.
+                        if isinstance(event.delta, TextPartDelta):
+                            await self._accept(
+                                entry, _part_text(event.delta.content_delta)
+                            )
+                        elif isinstance(event.delta, ThinkingPartDelta):
+                            entry.thinking.append(_part_text(event.delta.content_delta))
                     elif isinstance(event, AgentRunResultEvent):
                         # The run's own answer, which the SDK says in full: the accumulated
                         # deltas are what the readers saw, this is what the message was.
@@ -828,7 +856,9 @@ class AgentService:
 
         await self._publish_final(entry)
         text = entry.received_text
+        thinking = entry.received_thinking
         entry.text = []
+        entry.thinking = []
         entry.published_chars = 0
         message_id = uuid4()
         entry.message_id = message_id
@@ -838,7 +868,10 @@ class AgentService:
             interval_seconds=self._partial_interval_seconds,
             clock=self._clock,
         )
-        return [AssistantMessagePayload(text=text)] if text else []
+        return [
+            *([_thinking_payload(thinking)] if thinking else []),
+            *([AssistantMessagePayload(text=text)] if text else []),
+        ]
 
     async def _append_events(
         self,
@@ -890,6 +923,7 @@ class AgentService:
         status: AgentTurnStatus,
         *,
         text: str,
+        thinking: str = "",
         detail: str | None,
     ) -> None:
         """Write one turn's ending, once, whoever else is trying to end it.
@@ -905,7 +939,7 @@ class AgentService:
         try:
             await self._publish_final(entry)
             recorded = await self._record_outcome(
-                entry.turn, status, text=text, detail=detail
+                entry.turn, status, text=text, thinking=thinking, detail=detail
             )
         finally:
             with suppress(Exception):
@@ -948,6 +982,7 @@ class AgentService:
         status: AgentTurnStatus,
         *,
         text: str,
+        thinking: str = "",
         detail: str | None,
     ) -> tuple[AgentTurn, list[AgentConversationEvent]] | None:
         """Claim the turn's terminal state and append its events in one transaction.
@@ -972,6 +1007,13 @@ class AgentService:
             store = unit_of_work.agent_conversations
             conversation = await store.lock(turn.workspace_id, turn.conversation_id)
             if conversation is not None:
+                if thinking:
+                    thought = conversation.event(
+                        turn_id=turn.id, payload=_thinking_payload(thinking), at=at
+                    )
+                    await store.append(thought)
+                    appended.append(thought)
+                    conversation = conversation.appended(at=at)
                 if text:
                     event = conversation.event(
                         turn_id=turn.id,
@@ -1471,6 +1513,12 @@ def _part_text(value: object) -> str:
     """
 
     return value if isinstance(value, str) else ""
+
+
+def _thinking_payload(thinking: str) -> AssistantThinkingPayload:
+    """The reasoning as an event, cut to the most one event keeps."""
+
+    return AssistantThinkingPayload(text=thinking[:MAX_AGENT_MESSAGE_CHARS])
 
 
 def _dial_secrets(resolved: ResolvedAgentModel) -> tuple[str, ...]:

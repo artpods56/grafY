@@ -74,6 +74,20 @@ class AssistantMessagePayload(AgentConversationValue):
     ]
 
 
+class AssistantThinkingPayload(AgentConversationValue):
+    """What the model reasoned before it spoke or called a tool.
+
+    Kept so a person can read it later, and shown collapsed: it is not part of the
+    answer. It is never replayed to the model, because a provider's reasoning is its own
+    scratch work and a model told yesterday's is no better for it.
+    """
+
+    kind: Literal["assistant_thinking"] = "assistant_thinking"
+    text: Annotated[
+        str, StringConstraints(min_length=1, max_length=MAX_AGENT_MESSAGE_CHARS)
+    ]
+
+
 MAX_AGENT_TOOL_MODEL_VIEW_CHARS = 100_000
 """The most of one tool result a single event keeps: what the model was shown."""
 
@@ -154,6 +168,7 @@ class TurnOutcomePayload(AgentConversationValue):
 AgentConversationEventPayload = Annotated[
     UserMessagePayload
     | AssistantMessagePayload
+    | AssistantThinkingPayload
     | ToolCallPayload
     | ToolResultPayload
     | ConfirmationRequestedPayload

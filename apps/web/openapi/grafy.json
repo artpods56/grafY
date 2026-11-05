@@ -305,6 +305,7 @@
             "discriminator": {
               "mapping": {
                 "assistant_message": "#/components/schemas/AssistantMessagePayload",
+                "assistant_thinking": "#/components/schemas/AssistantThinkingPayload",
                 "confirmation_requested": "#/components/schemas/ConfirmationRequestedPayload",
                 "tool_call": "#/components/schemas/ToolCallPayload",
                 "tool_result": "#/components/schemas/ToolResultPayload",
@@ -319,6 +320,9 @@
               },
               {
                 "$ref": "#/components/schemas/AssistantMessagePayload"
+              },
+              {
+                "$ref": "#/components/schemas/AssistantThinkingPayload"
               },
               {
                 "$ref": "#/components/schemas/ToolCallPayload"
@@ -1167,6 +1171,29 @@
           "text"
         ],
         "title": "AssistantMessagePayload",
+        "type": "object"
+      },
+      "AssistantThinkingPayload": {
+        "additionalProperties": false,
+        "description": "What the model reasoned before it spoke or called a tool.\n\nKept so a person can read it later, and shown collapsed: it is not part of the\nanswer. It is never replayed to the model, because a provider's reasoning is its own\nscratch work and a model told yesterday's is no better for it.",
+        "properties": {
+          "kind": {
+            "const": "assistant_thinking",
+            "default": "assistant_thinking",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 1000000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "AssistantThinkingPayload",
         "type": "object"
       },
       "CancelAgentTurnRequest": {

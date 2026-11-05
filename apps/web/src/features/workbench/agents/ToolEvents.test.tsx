@@ -11,6 +11,7 @@ import { ARTIFACT_DROP_DATA_TYPE } from "../model/artifact-drop";
 import {
   ArtifactChip,
   ConfirmationRow,
+  ThinkingRow,
   ToolCallRow,
   ToolResultRow,
 } from "./ToolEvents";
@@ -42,6 +43,13 @@ function group(container: HTMLElement): Element {
   const element = container.querySelector('[role="group"]');
   if (!element) throw new Error("expected the row to carry role=group");
   return element;
+}
+
+/** The one line a row reads as when folded: its summary, or the row itself. */
+function line(container: HTMLElement): string {
+  return (
+    (container.querySelector("summary") ?? group(container)).textContent ?? ""
+  );
 }
 
 function chip(container: HTMLElement): Element {
@@ -88,8 +96,20 @@ it("shows the tool the model called and the arguments it gave", async () => {
   expect(row.getAttribute("aria-label")).toBe("Tool call: run_query");
   expect(row.textContent).toContain("Called");
   expect(row.querySelector("code")?.textContent).toBe("run_query");
-  expect(row.textContent).toContain("query: dear sir");
-  expect(row.textContent).toContain("limit: 3");
+  expect(line(container)).toContain("query: dear sir");
+  expect(line(container)).toContain("limit: 3");
+});
+
+it("keeps the whole call one click away, folded", async () => {
+  const container = await mount(
+    <ToolCallRow payload={callRow({ query: "x".repeat(200), limit: 3 })} />,
+  );
+  const details = container.querySelector("details");
+  expect(details).not.toBeNull();
+  expect(details?.open).toBe(false);
+  expect(details?.querySelector("pre")?.textContent).toBe(
+    JSON.stringify({ query: "x".repeat(200), limit: 3 }, null, 2),
+  );
 });
 
 it("cuts a long argument to 60 characters and the whole summary to 160", async () => {
@@ -104,7 +124,7 @@ it("cuts a long argument to 60 characters and the whole summary to 160", async (
       })}
     />,
   );
-  const text = group(container).textContent ?? "";
+  const text = line(container);
   const at = text.indexOf(" with ");
   expect(at).toBeGreaterThan(-1);
   const summary = text.slice(at + " with ".length);
@@ -136,6 +156,11 @@ it("shows one draggable chip per artifact a call returned", async () => {
   );
   const row = group(container);
   expect(row.getAttribute("aria-label")).toBe("Tool result: read_table");
+  // What the model was shown is kept folded beside the chips.
+  expect(row.querySelector("details summary")?.textContent).toBe(
+    "What the model saw",
+  );
+  expect(row.querySelector("details pre")?.textContent).toBe("one row");
   const chips = Array.from(row.querySelectorAll('[draggable="true"]'));
   expect(chips.map((chip) => chip.getAttribute("aria-label"))).toEqual([
     "text: scalar.text@1",
@@ -264,4 +289,17 @@ it("asks a person to carry on, and only an enabled button answers", async () => 
   expect(heldButton?.disabled).toBe(true);
   await act(async () => heldButton?.click());
   expect(onContinue).toHaveBeenCalledTimes(1);
+});
+
+it("shows a thought folded, and says what it is without opening it", async () => {
+  const container = await mount(
+    <ThinkingRow
+      payload={{ kind: "assistant_thinking", text: "  First I check.\n" }}
+    />,
+  );
+  const details = container.querySelector("details");
+  expect(details?.getAttribute("aria-label")).toBe("Thought");
+  expect(details?.open).toBe(false);
+  expect(container.querySelector("summary")?.textContent).toBe("Thought");
+  expect(container.querySelector("pre")?.textContent).toBe("First I check.");
 });

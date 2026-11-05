@@ -14,7 +14,12 @@ from dataclasses import dataclass, field
 from uuid import UUID
 
 from pydantic_ai.messages import ModelMessage, ToolReturnPart
-from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
+from pydantic_ai.models.function import (
+    AgentInfo,
+    DeltaThinkingPart,
+    DeltaToolCall,
+    FunctionModel,
+)
 
 from grafy_api.agents.toolbox import AgentToolbox
 from grafy_api.agents.turns import MAX_AGENT_TURN_TOOL_CALLS
@@ -47,7 +52,13 @@ from tests.unit.kernel.builders import make_node
 
 type Say = str
 type Call = tuple[str, dict[str, object]]
-type Round = Sequence[Say | Call]
+
+
+class Thought(str):
+    """Something the model reasoned, which it does not say."""
+
+
+type Round = Sequence[Say | Thought | Call]
 
 
 @dataclass
@@ -64,7 +75,9 @@ class RoundsModel(ScriptedModel):
             index = len(self.told) - 1
             script = self.rounds[min(index, len(self.rounds) - 1)]
             for number, item in enumerate(script):
-                if isinstance(item, str):
+                if isinstance(item, Thought):
+                    yield {number: DeltaThinkingPart(content=str(item))}
+                elif isinstance(item, str):
                     yield item
                 else:
                     name, arguments = item
@@ -346,3 +359,45 @@ def _access():
 
 
 assert GRAPH_ID  # the Graph the tool's node lives on
+
+
+async def test_thinking_is_stored_apart_from_the_answer_and_not_told_back() -> None:
+    computation = Computation()
+    harness_, _ = harness(
+        [
+            [Thought("The user wants letters. "), "Let me look. ", search(query="x")],
+            [Thought("It found one."), "It says hello."],
+        ],
+        computation,
+    )
+
+    await harness_.send()
+    turn = await harness_.settle()
+
+    assert turn.status is AgentTurnStatus.COMPLETED
+    # Each stretch of reasoning comes ahead of what the model did next with it.
+    assert await harness_.kinds() == [
+        "user_message",
+        "assistant_thinking",
+        "assistant_message",
+        "tool_call",
+        "tool_result",
+        "assistant_thinking",
+        "assistant_message",
+        "turn_outcome",
+    ]
+    events = await harness_.events()
+    thoughts = [
+        event.payload.text
+        for event in events
+        if event.payload.kind == "assistant_thinking"
+    ]
+    messages = [
+        event.payload.text
+        for event in events
+        if event.payload.kind == "assistant_message"
+    ]
+    assert thoughts == ["The user wants letters. ", "It found one."]
+    assert messages == ["Let me look. ", "It says hello."]
+    # Reasoning is not part of what the person is shown streaming as the reply.
+    assert "letters" not in harness_.publisher.streamed_text

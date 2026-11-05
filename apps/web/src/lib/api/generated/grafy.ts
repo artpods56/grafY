@@ -1497,7 +1497,7 @@ export interface components {
              */
             readonly created_at: string;
             /** Payload */
-            readonly payload: components["schemas"]["UserMessagePayload"] | components["schemas"]["AssistantMessagePayload"] | components["schemas"]["ToolCallPayload"] | components["schemas"]["ToolResultPayload"] | components["schemas"]["ConfirmationRequestedPayload"] | components["schemas"]["TurnOutcomePayload"];
+            readonly payload: components["schemas"]["UserMessagePayload"] | components["schemas"]["AssistantMessagePayload"] | components["schemas"]["AssistantThinkingPayload"] | components["schemas"]["ToolCallPayload"] | components["schemas"]["ToolResultPayload"] | components["schemas"]["ConfirmationRequestedPayload"] | components["schemas"]["TurnOutcomePayload"];
             /** Sequence */
             readonly sequence: number;
             /**
@@ -1848,6 +1848,23 @@ export interface components {
              * @enum {string}
              */
             readonly kind: "assistant_message";
+            /** Text */
+            readonly text: string;
+        };
+        /**
+         * AssistantThinkingPayload
+         * @description What the model reasoned before it spoke or called a tool.
+         *
+         *     Kept so a person can read it later, and shown collapsed: it is not part of the
+         *     answer. It is never replayed to the model, because a provider's reasoning is its own
+         *     scratch work and a model told yesterday's is no better for it.
+         */
+        readonly AssistantThinkingPayload: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "assistant_thinking";
             /** Text */
             readonly text: string;
         };

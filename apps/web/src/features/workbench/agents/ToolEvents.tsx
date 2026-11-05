@@ -39,6 +39,33 @@ const s = stylex.create({
     color: tokens.colorDanger,
     fontSize: tokens.fontSizeXs,
   },
+  // A disclosure is native <details>: it opens and closes with no state of ours, and
+  // a keyboard and a screen reader already know what it is. The summary reads like
+  // the quiet line it replaces.
+  disclosure: {
+    minWidth: 0,
+    maxWidth: "100%",
+  },
+  summary: {
+    cursor: "pointer",
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeXs,
+    listStylePosition: "outside",
+  },
+  detail: {
+    margin: "4px 0 0",
+    padding: "6px 8px",
+    maxHeight: "240px",
+    overflow: "auto",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeXs,
+    color: tokens.colorMuted,
+    borderLeftWidth: 2,
+    borderLeftStyle: "solid",
+    borderLeftColor: tokens.colorBorder,
+  },
   chip: {
     display: "inline-flex",
     cursor: "grab",
@@ -68,17 +95,35 @@ export function ToolCallRow({
     ),
   );
   const summary = pairs.length > 0 ? clip(pairs.join(", "), 160) : null;
+  const line = (
+    <>
+      Called <code>{payload.tool_name}</code>
+      {summary === null ? "" : ` with ${summary}`}
+    </>
+  );
+  // What the model gave, in full, is one click away; the line only has room for a clip.
+  if (pairs.length === 0) {
+    return (
+      <div
+        role="group"
+        aria-label={`Tool call: ${payload.tool_name}`}
+        {...stylex.props(s.row)}
+      >
+        <span {...stylex.props(s.text)}>{line}</span>
+      </div>
+    );
+  }
   return (
-    <div
+    <details
       role="group"
       aria-label={`Tool call: ${payload.tool_name}`}
-      {...stylex.props(s.row)}
+      {...stylex.props(s.disclosure)}
     >
-      <span {...stylex.props(s.text)}>
-        Called <code>{payload.tool_name}</code>
-        {summary === null ? "" : ` with ${summary}`}
-      </span>
-    </div>
+      <summary {...stylex.props(s.summary)}>{line}</summary>
+      <pre {...stylex.props(s.detail)}>
+        {JSON.stringify(payload.arguments, null, 2)}
+      </pre>
+    </details>
   );
 }
 
@@ -114,6 +159,12 @@ export function ToolResultRow({
         <code>{payload.tool_name}</code>{" "}
         {payload.artifacts.length > 0 ? "returned" : "returned nothing"}
       </span>
+      {payload.model_view ? (
+        <details {...stylex.props(s.disclosure)}>
+          <summary {...stylex.props(s.summary)}>What the model saw</summary>
+          <pre {...stylex.props(s.detail)}>{payload.model_view}</pre>
+        </details>
+      ) : null}
       {payload.artifacts.length > 0 && (
         <span {...stylex.props(s.row)}>
           {payload.artifacts.map((entry) => (
@@ -185,5 +236,19 @@ export function ConfirmationRow({
         Continue
       </Button>
     </div>
+  );
+}
+
+/** What the model reasoned before it answered: kept, and folded away by default. */
+export function ThinkingRow({
+  payload,
+}: {
+  payload: S["AssistantThinkingPayload"];
+}): React.ReactElement {
+  return (
+    <details aria-label="Thought" {...stylex.props(s.disclosure)}>
+      <summary {...stylex.props(s.summary)}>Thought</summary>
+      <pre {...stylex.props(s.detail)}>{payload.text.trim()}</pre>
+    </details>
   );
 }

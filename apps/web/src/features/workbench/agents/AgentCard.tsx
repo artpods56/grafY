@@ -52,7 +52,12 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { graphAgeLabel } from "@/features/workspaces/WorkspaceGraphPanel";
 import type { AgentNode } from "./agent-node";
 import { AgentLinksPanel } from "./AgentLinksPanel";
-import { ConfirmationRow, ToolCallRow, ToolResultRow } from "./ToolEvents";
+import {
+  ConfirmationRow,
+  ThinkingRow,
+  ToolCallRow,
+  ToolResultRow,
+} from "./ToolEvents";
 import type { ArtifactTypeCatalog } from "../canvas/artifact-type-label";
 import { useAgentChat } from "./useAgentChat";
 
@@ -568,6 +573,11 @@ function Conversation({
                 >
                   {OUTCOME_LABEL[outcome]}
                 </div>
+              );
+            }
+            if (event.payload.kind === "assistant_thinking") {
+              return (
+                <ThinkingRow key={event.sequence} payload={event.payload} />
               );
             }
             if (event.payload.kind === "tool_call") {

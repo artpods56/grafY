@@ -22,6 +22,7 @@ from grafy_core.domain.agent_conversations import (
     AgentConversationEventPayload,
     AgentConversationTurnOutcome,
     AssistantMessagePayload,
+    AssistantThinkingPayload,
     ConfirmationRequestedPayload,
     ToolCallPayload,
     ToolResultArtifact,
@@ -173,6 +174,21 @@ def test_a_turn_that_did_not_finish_is_still_labelled_after_its_tool_calls() -> 
         if isinstance(message, ModelRequest)
         for part in message.parts
     )
+
+
+def test_earlier_thinking_is_not_told_back_to_the_model() -> None:
+    messages = history_messages(
+        events(
+            UserMessagePayload(text="go"),
+            AssistantThinkingPayload(text="private scratch work"),
+            AssistantMessagePayload(text="done"),
+        )
+    )
+
+    assert [[part.part_kind for part in message.parts] for message in messages] == [
+        ["user-prompt"],
+        ["text"],
+    ]
 
 
 def test_payloads_round_trip_through_storage() -> None:
