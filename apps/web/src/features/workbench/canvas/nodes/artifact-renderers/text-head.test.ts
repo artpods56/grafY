@@ -53,6 +53,42 @@ describe("formatTextHead", () => {
     expect(formatTextHead({ text: '{"a":1', truncated: true })).toBe('{"a":1');
   });
 
+  it("shows a text value as its words when asked", () => {
+    const head = {
+      text: '{"value":"<table>\\"x\\"</table>"}',
+      truncated: false,
+    };
+    expect(formatTextHead(head, { unwrapField: "value" })).toBe(
+      '<table>"x"</table>',
+    );
+    expect(formatTextHead(head)).toContain('"value"');
+  });
+
+  it("unwraps the field it is told to, and no other", () => {
+    const head = { text: '{"markdown":"# Hi"}', truncated: false };
+    expect(formatTextHead(head, { unwrapField: "markdown" })).toBe("# Hi");
+    expect(formatTextHead(head, { unwrapField: "value" })).toContain(
+      '"markdown"',
+    );
+  });
+
+  it("unwraps only a lone text value", () => {
+    for (const text of ['{"value":3}', '{"value":"a","other":1}', "[1]"]) {
+      expect(
+        formatTextHead({ text, truncated: false }, { unwrapField: "value" }),
+      ).toBe(JSON.stringify(JSON.parse(text), null, 2));
+    }
+  });
+
+  it("still expands JSON carried in a text value", () => {
+    expect(
+      formatTextHead(
+        { text: '{"value":"{\\"a\\":1}"}', truncated: false },
+        { unwrapField: "value", expandEmbeddedJson: true },
+      ),
+    ).toBe('{\n  "a": 1\n}');
+  });
+
   it("expands JSON carried inside a string only when asked", () => {
     const head = {
       text: JSON.stringify({

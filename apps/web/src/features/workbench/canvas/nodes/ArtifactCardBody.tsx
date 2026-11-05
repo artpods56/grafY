@@ -1,5 +1,6 @@
 "use client";
 
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { useEdges, useNodesData, useUpdateNodeInternals } from "@xyflow/react";
@@ -80,6 +81,14 @@ import {
   readTextHead,
   type TextHead,
 } from "./artifact-renderers/text-head";
+import { CellHtmlTable } from "./artifact-renderers/table/cell-html-table";
+import {
+  CELL_VIEW_LABEL,
+  defaultTextCardView,
+  textCardViews,
+  type CellView,
+} from "./artifact-renderers/table/cell-views";
+import { SafeMarkdown } from "../safe-markdown";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
 import { TableArtifactBody } from "./TableArtifactBody";
 import { usePickupLift } from "./usePickupLift";
@@ -206,7 +215,21 @@ const s = stylex.create({
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
   },
+  // Rendered words take the page's type; the raw view keeps the monospace above.
+  textRendered: {
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeXs,
+    whiteSpace: "normal",
+  },
   textScrollable: { overflow: "auto" },
+  // Hung below the card, so offering it moves neither the card nor its ports.
+  textViewSwitch: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    marginTop: "6px",
+    zIndex: 1,
+  },
   stack: { position: "relative", width: "100%" },
   stackThumb: {
     position: "absolute",
@@ -310,7 +333,8 @@ const CARD_TEXT_BYTES = 4096;
 /** Height a text card opens at before the operator resizes it: twelve lines. */
 const TEXT_BODY_HEIGHT_DEFAULT = 180;
 
-const NO_TEXT_EDGES = { above: false, below: false };
+const NO_TEXT_EDGES = { above: false, below: false, wide: false };
+const NO_TEXT_VIEWS: readonly CellView[] = [];
 /** How far the fade at a clipped edge of a card's text reaches. */
 const TEXT_FADE = "32px";
 
@@ -508,12 +532,35 @@ export function ArtifactCardBody({
       : null;
   const { data: textHead } = useSWR(textKey, fetchArtifactText);
   const shownText = textHead
-    ? formatTextHead(textHead, { expandEmbeddedJson: true })
+    ? formatTextHead(textHead, {
+        expandEmbeddedJson: true,
+        unwrapField:
+          first?.artifact_type === "scalar.text"
+            ? "value"
+            : first?.artifact_type === "text.markdown"
+              ? "markdown"
+              : undefined,
+      })
     : null;
+  // Only a text artifact read whole has words to read another way: a file is its
+  // bytes, and the head of a long text is not a document.
+  const textViews =
+    shownText !== null &&
+    !textHead?.truncated &&
+    (first?.artifact_type === "scalar.text" ||
+      first?.artifact_type === "text.markdown")
+      ? textCardViews(shownText)
+      : NO_TEXT_VIEWS;
+  const [requestedTextView, setRequestedTextView] =
+    React.useState<CellView | null>(null);
+  const textView =
+    requestedTextView && textViews.includes(requestedTextView)
+      ? requestedTextView
+      : defaultTextCardView(textViews, first?.artifact_type);
   const textMaxHeight = layout?.bodyHeight ?? TEXT_BODY_HEIGHT_DEFAULT;
   // Overflow is measured, not counted: a long line wraps, so the number of
   // newlines says little about how tall the text renders.
-  const textRef = React.useRef<HTMLPreElement>(null);
+  const textRef = React.useRef<HTMLElement>(null);
   // Clipped text fades out at each edge that has more beyond it, instead of
   // ending on a half line.
   const [textEdges, setTextEdges] = React.useState(NO_TEXT_EDGES);
@@ -524,10 +571,13 @@ export function ArtifactCardBody({
           above: element.scrollTop > 1,
           below:
             element.scrollTop + element.clientHeight < element.scrollHeight - 1,
+          wide: element.scrollWidth > element.clientWidth + 1,
         }
       : NO_TEXT_EDGES;
     setTextEdges((current) =>
-      current.above === next.above && current.below === next.below
+      current.above === next.above &&
+      current.below === next.below &&
+      current.wide === next.wide
         ? current
         : next,
     );
@@ -539,13 +589,14 @@ export function ArtifactCardBody({
     const observer = new ResizeObserver(measureText);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [measureText, shownText, textMaxHeight]);
-  const textOverflows = textEdges.above || textEdges.below;
+  }, [measureText, shownText, textMaxHeight, textView]);
+  const textOverflows = textEdges.above || textEdges.below || textEdges.wide;
   // Only a card that shows text takes a height: the others have no body to size.
   const textCard = !isSequence && !awaitingFeed && shownText !== null;
   const textHeight = textCard ? textMaxHeight : null;
   const textProps = stylex.props(
     s.textContent,
+    textView !== "text" ? s.textRendered : null,
     textOverflows && selected ? s.textScrollable : null,
   );
   const feedLabel = feed
@@ -852,34 +903,59 @@ export function ArtifactCardBody({
                 {isSequence ? (
                   sequenceStack
                 ) : first && !awaitingFeed && shownText !== null ? (
-                  <div
-                    data-artifact-value="true"
-                    data-artifact-shadow-scope="file"
-                    {...stylex.props(
-                      s.fileBody,
-                      s.textBody,
-                      tier === "active" ? s.fileBodyRaised : null,
-                      tier === "dragged" ? s.fileBodyDragged : null,
-                    )}
-                  >
-                    <pre
-                      {...textProps}
-                      ref={textRef}
-                      onScroll={measureText}
-                      style={{
-                        ...textProps.style,
-                        maxHeight: textMaxHeight,
-                        maskImage: textFadeMask(textEdges),
-                      }}
-                      className={
-                        textOverflows && selected
-                          ? `nodrag nowheel ${textProps.className ?? ""}`
-                          : textProps.className
-                      }
+                  <>
+                    <div
+                      data-artifact-value="true"
+                      data-artifact-shadow-scope="file"
+                      {...stylex.props(
+                        s.fileBody,
+                        s.textBody,
+                        tier === "active" ? s.fileBodyRaised : null,
+                        tier === "dragged" ? s.fileBodyDragged : null,
+                      )}
                     >
-                      {shownText}
-                    </pre>
-                  </div>
+                      {React.createElement(
+                        textView === "text" ? "pre" : "div",
+                        {
+                          ...textProps,
+                          ref: textRef,
+                          onScroll: measureText,
+                          style: {
+                            ...textProps.style,
+                            maxHeight: textMaxHeight,
+                            maskImage: textFadeMask(textEdges),
+                          },
+                          className:
+                            textOverflows && selected
+                              ? `nodrag nowheel ${textProps.className ?? ""}`
+                              : textProps.className,
+                        },
+                        textView === "markdown" ? (
+                          <SafeMarkdown style={{ fontSize: "inherit" }}>
+                            {shownText}
+                          </SafeMarkdown>
+                        ) : textView === "html" ? (
+                          <CellHtmlTable html={shownText} />
+                        ) : (
+                          shownText
+                        ),
+                      )}
+                    </div>
+                    {selected && textViews.length > 1 ? (
+                      <SegmentedControl
+                        aria-label="Read this text as"
+                        size="sm"
+                        className="nodrag nopan nowheel"
+                        xstyle={s.textViewSwitch}
+                        value={textView}
+                        options={textViews.map((view) => ({
+                          value: view,
+                          label: CELL_VIEW_LABEL[view],
+                        }))}
+                        onValueChange={setRequestedTextView}
+                      />
+                    ) : null}
+                  </>
                 ) : first && !awaitingFeed ? (
                   <div
                     data-artifact-file-body="true"
