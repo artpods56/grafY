@@ -28,7 +28,7 @@ registry or a model.
 """
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 from uuid import UUID
@@ -36,8 +36,18 @@ from uuid import UUID
 from pydantic import JsonValue
 
 from grafy_api.runs.ports import RunRejectedError, ToolCallFailedError, ToolCallResult
-from grafy_core.artifact_contracts import TEXT_VALUE
-from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
+from grafy_core.artifact_contracts import (
+    HTML_PAGE,
+    HTML_PAGE_SOURCE_NAME,
+    MAX_HTML_PAGE_SOURCES,
+    TEXT_VALUE,
+)
+from grafy_core.artifacts import (
+    ArtifactObject,
+    ArtifactRef,
+    ArtifactRefSequence,
+    ArtifactTypeKey,
+)
 from grafy_core.domain.agent_conversations import (
     ToolCallPayload,
     ToolResultArtifact,
@@ -56,17 +66,39 @@ type JsonType = Literal["string", "integer"]
 
 CREATE_ARTIFACT_TOOL = "create_artifact"
 CREATE_ARTIFACT_DESCRIPTION = (
-    "Save text you wrote as an artifact the person can drag from this conversation onto "
-    "the canvas. Use it when they ask you to create a document or a page, and do not "
-    "repeat the content in your reply. A complete HTML document is rendered as a page, "
-    "and Markdown can be read as Markdown. Rendered HTML runs no scripts and loads "
-    "nothing from the network, so keep CSS in a style element and embed any image as a "
-    "data: URL."
+    "Save something you wrote as an artifact the person can drag from this conversation "
+    "onto the canvas. Do not repeat that content in your reply. To render artifacts, "
+    "pass content as an HTML document with Mustache placeholders and sources, and never "
+    "retype their values. sources maps a name you choose to an artifact id. Each source "
+    "is available under its name: {{name.field}}, {{#name}}...{{/name}} for a list or a "
+    "condition, and {{.}} for the current item. A text source is a string. A table "
+    "source is a list of its first 100 rows, as objects keyed by column id. You may "
+    "name only artifacts "
+    "connected to you or returned by a tool in this conversation. With no sources, "
+    "content is saved as text: a complete HTML document is rendered as a page, and "
+    "Markdown can be read as Markdown. No scripts run and nothing loads from the "
+    "network, so keep CSS in a style element and embed any image as a data: URL."
 )
 CREATE_ARTIFACT_SCHEMA: dict[str, JsonValue] = {
     "type": "object",
     "properties": {
-        "content": {"type": "string", "description": "The whole text to save."}
+        "content": {
+            "type": "string",
+            "description": (
+                "The whole text to save, or an HTML document with Mustache "
+                "placeholders when sources is set."
+            ),
+        },
+        "sources": {
+            "type": "object",
+            "description": (
+                "Names for artifacts this page reads. Each name is an identifier "
+                "and maps to an artifact id. At most 16. Omit it to save text."
+            ),
+            "additionalProperties": {"type": "string"},
+            "propertyNames": {"pattern": HTML_PAGE_SOURCE_NAME.pattern},
+            "maxProperties": MAX_HTML_PAGE_SOURCES,
+        },
     },
     "required": ["content"],
     "additionalProperties": False,
@@ -111,6 +143,26 @@ class ArgumentArtifacts(Protocol):
         value: str | int,
     ) -> ArtifactRef:
         """The artifact holding ``value``: the same one every time for equal content."""
+        ...
+
+    async def page_for(
+        self,
+        *,
+        workspace_id: UUID,
+        html: str,
+        sources: Mapping[str, ArtifactRef],
+    ) -> ArtifactRef:
+        """The page holding this template and these sources.
+
+        Equal HTML and equal sources are the same artifact. The sources are the
+        stored refs, so the type and version are the database's.
+        """
+        ...
+
+    async def get_artifact(
+        self, *, workspace_id: UUID, artifact_id: UUID
+    ) -> ArtifactObject | None:
+        """The artifact this Workspace holds, or ``None`` when it has none."""
         ...
 
 
@@ -201,6 +253,10 @@ class AgentToolbox:
         self._computation = computation
         self._artifacts = artifacts
         self._views = views
+        # Artifact ids a page this turn writes may name. The turn adds what is
+        # connected and what earlier turns returned. Results of this turn are
+        # added as they come back.
+        self._allowed: set[UUID] = set()
 
     @property
     def tools(self) -> tuple[PreparedTool, ...]:
@@ -208,6 +264,12 @@ class AgentToolbox:
 
     def tool(self, name: str) -> PreparedTool | None:
         return self._tools.get(name)
+
+    def allow(self, refs: Iterable[ArtifactRef]) -> None:
+        """These artifacts may be named as sources of a page this turn writes."""
+
+        for ref in refs:
+            self._allowed.add(ref.artifact_id)
 
     @classmethod
     def build(
@@ -263,7 +325,7 @@ class AgentToolbox:
         except (RunRejectedError, ToolCallFailedError) as error:
             return _failed(call, str(error))
         returned = _returned(tool, result.outputs)
-        return ToolResultPayload(
+        answered = ToolResultPayload(
             call_id=call.call_id,
             tool_id=tool.link.id,
             tool_name=tool.link.name,
@@ -275,11 +337,20 @@ class AgentToolbox:
             ),
             model_view=await self._views.render(outputs=returned),
         )
+        self._allow_result(answered.artifacts)
+        return answered
 
     async def _create_artifact(self, call: ToolCallPayload) -> ToolResultPayload:
         content = call.arguments.get("content")
-        if set(call.arguments) != {"content"} or not isinstance(content, str):
-            return _failed(call, "This tool takes one string argument, 'content'.")
+        if (
+            set(call.arguments) - {"content", "sources"}
+            or "content" not in call.arguments
+            or not isinstance(content, str)
+        ):
+            return _failed(
+                call,
+                "This tool takes a string 'content' and an optional object 'sources'.",
+            )
         if not content.strip():
             return _failed(call, "There is nothing in 'content' to save.")
         if len(content) > MAX_CREATED_ARTIFACT_CHARS:
@@ -288,20 +359,84 @@ class AgentToolbox:
                 f"'content' has {len(content)} characters; an artifact may have "
                 f"{MAX_CREATED_ARTIFACT_CHARS}.",
             )
-        ref = await self._artifacts.ref_for(
-            workspace_id=self._workspace_id, key=TEXT_VALUE.key, value=content
+        if "sources" not in call.arguments:
+            ref = await self._artifacts.ref_for(
+                workspace_id=self._workspace_id, key=TEXT_VALUE.key, value=content
+            )
+            answered = ToolResultPayload(
+                call_id=call.call_id,
+                tool_id=call.tool_id,
+                tool_name=call.tool_name,
+                ok=True,
+                artifacts=(ToolResultArtifact(port="artifact", artifact=ref),),
+                model_view=(
+                    f"Artifact id: {ref.artifact_id} ({ref.artifact_type})\n"
+                    f"Saved {len(content)} characters. The person can drag the "
+                    "artifact from this conversation onto the canvas."
+                ),
+            )
+            self._allow_result(answered.artifacts)
+            return answered
+        sources, reason = await self._page_sources(call.arguments["sources"])
+        if reason is not None:
+            return _failed(call, reason)
+        ref = await self._artifacts.page_for(
+            workspace_id=self._workspace_id, html=content, sources=sources
         )
-        return ToolResultPayload(
+        reading = ", ".join(
+            f"{name} ({source.artifact_type})" for name, source in sources.items()
+        )
+        answered = ToolResultPayload(
             call_id=call.call_id,
             tool_id=call.tool_id,
             tool_name=call.tool_name,
             ok=True,
             artifacts=(ToolResultArtifact(port="artifact", artifact=ref),),
             model_view=(
-                f"Saved {len(content)} characters. The person can drag the artifact "
-                "from this conversation onto the canvas."
+                f"Artifact id: {ref.artifact_id} ({HTML_PAGE.key.id})\n"
+                f"Saved an HTML page reading {reading}. The person can drag the "
+                "artifact from this conversation onto the canvas."
             ),
         )
+        self._allow_result(answered.artifacts)
+        return answered
+
+    async def _page_sources(
+        self, raw: JsonValue
+    ) -> tuple[dict[str, ArtifactRef], str | None]:
+        """The stored refs a page may read, or the reason the call writes nothing.
+
+        Names and shapes are checked before any lookup, and every source is
+        checked before the page is written.
+        """
+
+        named, reason = _named_source_ids(raw)
+        if reason is not None or named is None:
+            return {}, reason
+        resolved: dict[str, ArtifactRef] = {}
+        for name, artifact_id in named.items():
+            artifact = await self._artifacts.get_artifact(
+                workspace_id=self._workspace_id, artifact_id=artifact_id
+            )
+            if artifact is None:
+                return {}, (
+                    f"Source {name!r} names {artifact_id}, which this Workspace "
+                    "does not have."
+                )
+            if artifact.id not in self._allowed:
+                return {}, (
+                    f"Source {name!r} names an artifact that is not connected to you "
+                    "and was not returned by a tool in this conversation."
+                )
+            unreadable = _unreadable_source(name, artifact)
+            if unreadable is not None:
+                return {}, unreadable
+            resolved[name] = artifact.ref()
+        return resolved, None
+
+    def _allow_result(self, artifacts: Sequence[ToolResultArtifact]) -> None:
+        for item in artifacts:
+            self.allow(output_artifact_refs(item.artifact))
 
     async def _origins(
         self,
@@ -417,6 +552,68 @@ def _prepare(
     )
 
 
+def output_artifact_refs(value: ArtifactOutputValue) -> tuple[ArtifactRef, ...]:
+    """The artifacts one output names. A sequence contributes each item."""
+
+    if isinstance(value, ArtifactRefSequence):
+        return tuple(value.item_refs)
+    return (value,)
+
+
+def _named_source_ids(raw: JsonValue) -> tuple[dict[str, UUID] | None, str | None]:
+    """Source names and ids, or the reason they are not a page's sources."""
+
+    if not isinstance(raw, dict):
+        return None, "sources must be an object mapping names to artifact ids."
+    if len(raw) > MAX_HTML_PAGE_SOURCES:
+        return None, (
+            f"A page can name at most {MAX_HTML_PAGE_SOURCES} sources; this one "
+            f"names {len(raw)}."
+        )
+    if not raw:
+        return None, "sources must name at least one artifact."
+    named: dict[str, UUID] = {}
+    for name, value in raw.items():
+        if HTML_PAGE_SOURCE_NAME.fullmatch(name) is None:
+            return None, (
+                f"Source name {name!r} must start with a letter or underscore and "
+                "contain only letters, digits and underscores."
+            )
+        if not isinstance(value, str):
+            return None, f"Source {name!r} must be an artifact id string."
+        try:
+            named[name] = UUID(value)
+        except ValueError:
+            return None, f"Source {name!r} must be an artifact id."
+    return named, None
+
+
+def _unreadable_source(name: str, artifact: ArtifactObject) -> str | None:
+    """Why a page cannot read this artifact, or ``None`` when it can.
+
+    A page reads JSON, inline or stored, and tables. An image, a PDF or any
+    other file is refused here so the call writes nothing.
+    """
+
+    if artifact.artifact_type.startswith("table."):
+        return None
+    if artifact.inline_payload is not None:
+        return None
+    if json_media_type(artifact.content_type):
+        return None
+    media = artifact.content_type or "a file"
+    return (
+        f"Source {name!r} is {artifact.artifact_type}@{artifact.schema_version} "
+        f"({media}). A page can read JSON and tables, not files such as images "
+        "or PDFs."
+    )
+
+
+def json_media_type(content_type: str) -> bool:
+    media = content_type.split(";", 1)[0].strip().lower()
+    return media == "application/json" or media.endswith("+json")
+
+
 def _returned(
     tool: PreparedTool,
     outputs: Mapping[str, ArtifactOutputValue],
@@ -441,4 +638,6 @@ __all__ = [
     "ToolComputation",
     "ToolParameter",
     "UnavailableTool",
+    "json_media_type",
+    "output_artifact_refs",
 ]

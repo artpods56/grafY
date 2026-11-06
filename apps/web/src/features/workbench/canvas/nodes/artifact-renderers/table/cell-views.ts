@@ -20,10 +20,12 @@ export function isWholeHtmlTable(value: string): boolean {
 }
 
 /**
- * A whole document for a sandboxed frame. The frame already runs no scripts; the policy
- * comes first so nothing written after it can load anything from the network either,
- * which would otherwise tell a third party who opened this and when. The rest only
- * lets the words sit on the card in the page's colours, until the HTML says otherwise.
+ * A whole document for a sandboxed frame. The frame runs no scripts, and the policy
+ * comes first so nothing written after it can load anything from the network, which
+ * would otherwise tell a third party who opened this and when. The sandbox does not
+ * stop the frame from navigating itself, so remote links and base elements are
+ * removed before this HTML is placed here. The rest only lets the words sit on the
+ * card in the page's colours, until the HTML says otherwise.
  */
 export function htmlFrameDocument(
   html: string,

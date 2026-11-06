@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 
+import { disarmFrameHtml } from "../frame-html";
 import { CellHtmlTable } from "./cell-html-table";
 import { htmlFrameDocument, isWholeHtmlTable } from "./cell-views";
 
@@ -27,7 +28,8 @@ function themeAt(element: HTMLElement) {
 /**
  * HTML someone wrote. A bare table is drawn as this page's own elements. Anything else
  * goes in an empty sandbox with no network: no scripts, no navigation, no forms, an
- * origin of its own, and nothing fetched, so it can only be looked at.
+ * origin of its own, and nothing fetched, so it can only be looked at. Remote links
+ * are removed first. The sandbox does not stop the frame from navigating itself.
  */
 export function HtmlView({
   html,
@@ -62,14 +64,15 @@ export function HtmlView({
     };
   }, []);
   const awake = interactive && !pressed;
-  if (isWholeHtmlTable(html)) return <CellHtmlTable html={html} />;
+  const safeHtml = React.useMemo(() => disarmFrameHtml(html), [html]);
+  if (isWholeHtmlTable(safeHtml)) return <CellHtmlTable html={safeHtml} />;
   return (
     <div ref={measure} style={{ height }}>
       {theme ? (
         <iframe
           title="Rendered HTML"
           sandbox=""
-          srcDoc={htmlFrameDocument(html, theme)}
+          srcDoc={htmlFrameDocument(safeHtml, theme)}
           className={awake ? "nodrag nowheel" : undefined}
           {...stylex.props(s.frame, awake ? null : s.resting)}
           style={{ height: "100%" }}

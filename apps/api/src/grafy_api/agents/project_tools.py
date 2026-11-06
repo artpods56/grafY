@@ -9,9 +9,9 @@ and the Run service, so the toolbox stays testable without any of them:
 * **Arguments are content-addressed.** A value the model wrote becomes an inline artifact
   whose id is derived from the Workspace, the type and the content, so the same text is the
   same artifact every time and the kernel sees equal origins for equal calls.
-* **Model views** are plain text a model can read: the value of a scalar or markdown, a page
-  of rows of a table, and for anything else a one-line description that says it was not
-  shown. Nothing here fetches a blob a model could not usefully read.
+* **Model views** are plain text a model can read: the value of a scalar or markdown, the
+  compact JSON of a JSON artifact, a page of rows of a table, and for a file that is not
+  JSON a one-line description that says it was not shown. Each artifact is shown with its id.
 * **The computation** is ``RunService.call_tool`` with the Project already chosen.
 """
 
@@ -31,10 +31,13 @@ from grafy_api.agents.toolbox import (
     NodePorts,
     PortFacts,
     ToolComputation,
+    json_media_type,
+    output_artifact_refs,
 )
 from grafy_api.agents.turns import AgentToolboxFactory
 from grafy_api.runs.ports import ToolCallResult
 from grafy_api.runs.service import RunService
+from grafy_core.artifact_contracts import HTML_PAGE, HtmlPage, HtmlPageSource
 from grafy_core.artifacts import (
     ArtifactObject,
     ArtifactRef,
@@ -165,7 +168,47 @@ class ContentAddressedArguments(ArgumentArtifacts):
         key: ArtifactTypeKey,
         value: str | int,
     ) -> ArtifactRef:
-        payload = {"value": value}
+        return await self._addressed(
+            workspace_id=workspace_id, key=key, payload={"value": value}
+        )
+
+    async def page_for(
+        self,
+        *,
+        workspace_id: UUID,
+        html: str,
+        sources: Mapping[str, ArtifactRef],
+    ) -> ArtifactRef:
+        page = HtmlPage(
+            html=html,
+            sources={
+                name: HtmlPageSource(
+                    artifact_id=ref.artifact_id,
+                    artifact_type=ref.artifact_type,
+                    schema_version=ref.schema_version,
+                )
+                for name, ref in sources.items()
+            },
+        )
+        return await self._addressed(
+            workspace_id=workspace_id,
+            key=HTML_PAGE.key,
+            payload=cast(dict[str, object], page.model_dump(mode="json")),
+        )
+
+    async def get_artifact(
+        self, *, workspace_id: UUID, artifact_id: UUID
+    ) -> ArtifactObject | None:
+        async with self._unit_of_work_factory() as unit_of_work:
+            return await unit_of_work.artifacts.get(workspace_id, artifact_id)
+
+    async def _addressed(
+        self,
+        *,
+        workspace_id: UUID,
+        key: ArtifactTypeKey,
+        payload: dict[str, object],
+    ) -> ArtifactRef:
         content = json.dumps(
             payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
@@ -241,7 +284,7 @@ class ArtifactModelViews(ModelViews):
             ]
             more = len(value.item_refs) - len(shown)
             lines = [f"{len(value.item_refs)} items:"]
-            lines += [f"- {text}" for text in shown]
+            lines += ["- " + text.replace("\n", "\n  ") for text in shown]
             if more > 0:
                 lines.append(f"- ... and {more} more not shown")
             return "\n".join(lines)
@@ -250,14 +293,19 @@ class ArtifactModelViews(ModelViews):
     async def render_ref(self, ref: ArtifactRef) -> str:
         return await self._render_ref(ref)
 
-    async def render_library_item(self, artifact_id: UUID) -> str:
-        """One Library artifact by id, as a model reads it."""
+    async def render_library_item(
+        self, artifact_id: UUID
+    ) -> tuple[str, ArtifactRef | None]:
+        """One Library artifact by id, as a model reads it, and the ref when it remains."""
 
         async with self._unit_of_work_factory() as unit_of_work:
             artifact = await unit_of_work.artifacts.get(self._workspace_id, artifact_id)
         if artifact is None:
-            return "[this Library item is no longer available]"
-        return await self._render_artifact(artifact)
+            return (
+                f"Artifact id: {artifact_id}\n[this Library item is no longer available]",
+                None,
+            )
+        return await self._render_artifact(artifact), artifact.ref()
 
     async def _render_ref(self, ref: ArtifactRef) -> str:
         async with self._unit_of_work_factory() as unit_of_work:
@@ -265,18 +313,27 @@ class ArtifactModelViews(ModelViews):
                 self._workspace_id, ref.artifact_id
             )
         if artifact is None:
-            return f"[{ref.artifact_type} artifact that is no longer available]"
+            return (
+                f"Artifact id: {ref.artifact_id} ({ref.artifact_type})\n"
+                f"[{ref.artifact_type} artifact that is no longer available]"
+            )
         return await self._render_artifact(artifact)
 
     async def _render_artifact(self, artifact: ArtifactObject) -> str:
-        payload = artifact.inline_payload
-        if isinstance(payload, dict):
-            for field in ("value", "markdown", "text"):
-                found = payload.get(field)
-                if isinstance(found, (str, int, float, bool)):
-                    return _clip(str(found))
+        body = await self._render_body(artifact)
+        return f"Artifact id: {artifact.id} ({artifact.artifact_type})\n{body}"
+
+    async def _render_body(self, artifact: ArtifactObject) -> str:
         if artifact.artifact_type.startswith("table."):
             return await self._render_table(artifact)
+        payload = artifact.inline_payload
+        if isinstance(payload, dict):
+            scalar = _scalar_text(payload)
+            if scalar is not None:
+                return _clip(scalar)
+            return _clip(_compact_json(payload))
+        if json_media_type(artifact.content_type):
+            return await self._render_stored_json(artifact)
         title = self._titles.get(
             ArtifactTypeKey(artifact.artifact_type, artifact.schema_version),
             artifact.artifact_type,
@@ -284,11 +341,46 @@ class ArtifactModelViews(ModelViews):
         size = f", {artifact.byte_size} bytes" if artifact.byte_size else ""
         return f"[{title}{size}; its content is not shown to you]"
 
+    async def _render_stored_json(self, artifact: ArtifactObject) -> str:
+        """Compact JSON from storage, cut off once it is longer than a model is shown.
+
+        The read itself is bounded. A file past that bound is described as cut off
+        even when the characters that were read still fit the view.
+        """
+
+        if artifact.bucket is None or artifact.object_key is None:
+            return "[JSON with nothing stored]"
+        limit = MAX_VIEW_CHARS * 4
+        stream = await self._storage.load(
+            bucket=artifact.bucket, path=artifact.object_key
+        )
+        try:
+            raw = stream.read(limit + 1)
+        finally:
+            stream.close()
+        truncated = len(raw) > limit
+        text = raw[:limit].decode("utf-8", errors="replace")
+        if not truncated:
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                return "[JSON that could not be read]"
+            text = _compact_json(parsed)
+        shown = _clip(text)
+        if truncated and "more characters" not in shown:
+            shown += "\n... [the stored JSON is longer than what was read]"
+        return shown
+
     async def _render_table(self, artifact: ArtifactObject) -> str:
         page = await load_table_page(
             artifact, self._storage, offset=0, limit=TABLE_VIEW_ROWS
         )
-        header = [column.title or column.id for column in page.columns]
+        header = [
+            column.id
+            if column.title in ("", column.id)
+            else f"{column.id} ({column.title})"
+            for column in page.columns
+        ]
         lines = [" | ".join(header), " | ".join("---" for _ in header)]
         for row in page.rows:
             lines.append(
@@ -298,6 +390,25 @@ class ArtifactModelViews(ModelViews):
         if page.total_rows > shown:
             lines.append(f"(showing {shown} of {page.total_rows} rows)")
         return _clip("\n".join(lines))
+
+
+def _scalar_text(payload: dict[str, object]) -> str | None:
+    """The text of a payload that is only a value, markdown or text field."""
+
+    if len(payload) != 1:
+        return None
+    field, found = next(iter(payload.items()))
+    if field not in {"value", "markdown", "text"}:
+        return None
+    if isinstance(found, (str, int, float, bool)):
+        return str(found)
+    return None
+
+
+def _compact_json(payload: object) -> str:
+    return json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
 
 
 def _clip(text: str) -> str:
@@ -375,35 +486,42 @@ class ProjectContextReader(AgentContextReader):
                 if link.kind == "node_output" and link.node_id and link.port:
                     node = nodes[link.node_id]
                     label = f"{titles.title(node)}, output {link.port}"
-                    blocks.append(
-                        ContextBlock(
-                            label,
-                            await self._node_output(
-                                views,
-                                workspace_id,
-                                project_id,
-                                graph_id,
-                                link.node_id,
-                                link.port,
-                            ),
-                        )
+                    text, refs = await self._node_output(
+                        views,
+                        workspace_id,
+                        project_id,
+                        graph_id,
+                        link.node_id,
+                        link.port,
                     )
+                    blocks.append(ContextBlock(label, text, artifacts=refs))
                 elif link.kind == "card" and link.card_id:
                     viewer = viewers.get(link.card_id)
                     if viewer is None or viewer.artifact_ref is None:
                         blocks.append(ContextBlock("A card", "[this card is gone]"))
                     else:
+                        value = viewer.artifact_ref
+                        rendered = await views.render(outputs={"card": value})
+                        # The view names a port. The heading already says it is a card.
+                        body = (
+                            rendered.split(":\n", 1)[1]
+                            if rendered.startswith("card:\n")
+                            else rendered
+                        )
                         blocks.append(
                             ContextBlock(
                                 "A card on the canvas",
-                                await views.render_ref(viewer.artifact_ref),
+                                body,
+                                artifacts=output_artifact_refs(value),
                             )
                         )
                 elif link.kind == "library_item" and link.library_item_id:
+                    text, ref = await views.render_library_item(link.library_item_id)
                     blocks.append(
                         ContextBlock(
                             "A Library item",
-                            await views.render_library_item(link.library_item_id),
+                            text,
+                            artifacts=() if ref is None else (ref,),
                         )
                     )
             except Exception:  # noqa: BLE001 - one unreadable link must not end the turn
@@ -421,7 +539,7 @@ class ProjectContextReader(AgentContextReader):
         graph_id: str,
         node_id: str,
         port: str,
-    ) -> str:
+    ) -> tuple[str, tuple[ArtifactRef, ...]]:
         snapshot, stored = await self._runs.instance_result(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -434,11 +552,14 @@ class ProjectContextReader(AgentContextReader):
         )
         if stored is None or port not in stored.outputs:
             return (
-                f"[this node has no result to show yet; it is {snapshot.state.value}]"
+                f"[this node has no result to show yet; it is {snapshot.state.value}]",
+                (),
             )
-        text = await views.render(outputs={port: stored.outputs[port]})
+        value = stored.outputs[port]
+        text = await views.render(outputs={port: value})
         # The view names the port again; the heading already did.
-        return text.split(":\n", 1)[1] if text.startswith(f"{port}:\n") else text
+        body = text.split(":\n", 1)[1] if text.startswith(f"{port}:\n") else text
+        return body, output_artifact_refs(value)
 
 
 def build_toolbox_factory(

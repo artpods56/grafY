@@ -63,13 +63,18 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import Model
 from pydantic_ai.run import AgentRunResultEvent
 
-from grafy_api.agents.context import AgentContextReader, instructions_with_context
+from grafy_api.agents.context import (
+    AgentContextReader,
+    ContextBlock,
+    instructions_with_context,
+)
 from grafy_api.agents.history import history_messages
 from grafy_api.agents.toolbox import (
     CREATE_ARTIFACT_DESCRIPTION,
     CREATE_ARTIFACT_SCHEMA,
     CREATE_ARTIFACT_TOOL,
     AgentToolbox,
+    output_artifact_refs,
 )
 from grafy_api.agents.models import (
     AgentModelReader,
@@ -85,6 +90,7 @@ from grafy_api.agents.publishing import (
     AgentTurnSnapshot,
     NullAgentTurnPublisher,
 )
+from grafy_core.artifacts import ArtifactRef
 from grafy_core.domain.agent_conversations import (
     MAX_AGENT_MESSAGE_CHARS,
     AgentConversation,
@@ -564,6 +570,11 @@ class AgentService:
         """Hand an admitted turn to a task this service owns until it ends."""
 
         turn = admission.turn
+        toolbox = self._toolbox_for(turn, admission)
+        if toolbox is not None:
+            # Tool results already stored, from earlier turns. This turn's own
+            # results are allowed as each call returns.
+            toolbox.allow(_history_artifact_refs(admission.history))
         message_id = uuid4()
         partial = AgentTextPartial(
             workspace_id=turn.workspace_id,
@@ -589,7 +600,7 @@ class AgentService:
             ),
             message_id=message_id,
             secrets=_dial_secrets(admission.resolved),
-            toolbox=self._toolbox_for(turn, admission),
+            toolbox=toolbox,
             agent=admission.agent,
             graph_document=admission.graph_document,
         )
@@ -701,14 +712,16 @@ class AgentService:
         """
 
         toolbox = entry.toolbox
+        # What is connected to the Agent is read now, once, so one turn works from one
+        # consistent view of it. A page may name those artifacts.
+        blocks = await self._read_context(entry)
+        if toolbox is not None:
+            toolbox.allow(ref for block in blocks for ref in block.artifacts)
         agent: Agent[None, str | DeferredToolRequests] = Agent(
             entry.model.chat_model,
             # The instructions are the receipt's snapshot, so the canvas can move and this
-            # turn still says what it was told. What is connected to the Agent is read now,
-            # once, so one turn works from one consistent view of it.
-            instructions=instructions_with_context(
-                entry.turn.instructions, await self._read_context(entry)
-            ),
+            # turn still says what it was told.
+            instructions=instructions_with_context(entry.turn.instructions, blocks),
             toolsets=[ExternalToolset(_definitions(toolbox))] if toolbox else None,
             output_type=[str, DeferredToolRequests] if toolbox else str,
         )
@@ -759,7 +772,7 @@ class AgentService:
                 return ""
             prompt, history = None, messages
 
-    async def _read_context(self, entry: _RunningTurn):
+    async def _read_context(self, entry: _RunningTurn) -> Sequence[ContextBlock]:
         """The Agent's connected context as blocks, or none when nothing can say."""
 
         if (
@@ -1490,6 +1503,21 @@ def _agent_on_graph(head: ProjectHead, conversation: AgentConversation) -> Graph
     if agent is None:
         raise NotFoundError("Agent", conversation.agent_id)
     return agent
+
+
+def _history_artifact_refs(
+    history: Sequence[AgentConversationEvent],
+) -> list[ArtifactRef]:
+    """Artifacts tools returned before this turn. A page may name them."""
+
+    refs: list[ArtifactRef] = []
+    for event in history:
+        payload = event.payload
+        if not isinstance(payload, ToolResultPayload):
+            continue
+        for item in payload.artifacts:
+            refs.extend(output_artifact_refs(item.artifact))
+    return refs
 
 
 def _definitions(toolbox: AgentToolbox | None) -> list[ToolDefinition]:

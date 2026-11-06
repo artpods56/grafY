@@ -1,4 +1,9 @@
-from grafy_core.artifact_contracts import INTEGER_VALUE, RASTER_IMAGE, TEXT_VALUE
+from grafy_core.artifact_contracts import (
+    HTML_PAGE,
+    INTEGER_VALUE,
+    RASTER_IMAGE,
+    TEXT_VALUE,
+)
 from grafy_core.plugins import PluginRegistry
 from grafy_core.table_contracts import TABLE_DATA
 from grafy_plugin_image import IMAGES
@@ -24,6 +29,7 @@ def test_builtin_catalog_keeps_artifact_support_without_retired_operators() -> N
     assert {node.key for node in registry.nodes} == EXPECTED_BUILTIN_OPERATORS
     assert {artifact.key for artifact in registry.artifact_types} >= {
         TEXT_VALUE.key,
+        HTML_PAGE.key,
         INTEGER_VALUE.key,
         RASTER_IMAGE.key,
         TABLE_DATA.key,

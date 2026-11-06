@@ -81,6 +81,12 @@ import {
   readTextHead,
   type TextHead,
 } from "./artifact-renderers/text-head";
+import { HtmlPageFill } from "./artifact-renderers/html-page-fill";
+import {
+  isHtmlPageArtifact,
+  useHtmlPage,
+  type HtmlPageLoad,
+} from "./artifact-renderers/html-page";
 import { HtmlView } from "./artifact-renderers/table/html-view";
 import {
   CELL_VIEW_LABEL,
@@ -231,6 +237,21 @@ const s = stylex.create({
     marginTop: "6px",
     zIndex: 1,
   },
+  // The page's switch and the line that names what it reads, in that same spot.
+  pageSwitch: {
+    display: "grid",
+    justifyItems: "start",
+    gap: "4px",
+    maxWidth: "100%",
+  },
+  pageNote: {
+    margin: 0,
+    maxWidth: "100%",
+    color: tokens.colorMuted,
+    fontSize: "10px",
+    lineHeight: 1.4,
+    overflowWrap: "anywhere",
+  },
   stack: { position: "relative", width: "100%" },
   stackThumb: {
     position: "absolute",
@@ -344,6 +365,11 @@ const HTML_PAGE_BODY_HEIGHT = 480;
 
 const NO_TEXT_EDGES = { above: false, below: false, wide: false };
 const NO_TEXT_VIEWS: readonly CellView[] = [];
+const HTML_PAGE_VIEWS: readonly CellView[] = ["html", "text"];
+const HTML_PAGE_UNREADABLE: HtmlPageLoad = {
+  status: "unreadable",
+  message: "This page could not be read",
+};
 /** How far the fade at a clipped edge of a card's text reaches. */
 const TEXT_FADE = "32px";
 
@@ -531,10 +557,18 @@ export function ArtifactCardBody({
     first?.artifact_type === "file.csv" ||
     first?.artifact_type.startsWith("table.") ||
     fileName?.toLowerCase().endsWith(".csv");
+  // An HTML page is not a file to skim: it names other artifacts and is filled
+  // from them. Every other readable artifact still shows its own bytes.
+  const htmlPageArtifact = !isSequence && isHtmlPageArtifact(first);
   // Readable bytes are shown as they are, JSON indented, instead of a file
   // tile. Binary bytes and file containers keep their tile.
   const textKey =
-    first && !isSequence && !imageArtifact && !isPdf && !isTableFile
+    first &&
+    !htmlPageArtifact &&
+    !isSequence &&
+    !imageArtifact &&
+    !isPdf &&
+    !isTableFile
       ? ([
           "artifact-card-text",
           workspace.id,
@@ -546,6 +580,14 @@ export function ArtifactCardBody({
         ] as const)
       : null;
   const { data: textHead } = useSWR(textKey, fetchArtifactText);
+  const {
+    data: htmlPageLoad,
+    error: htmlPageError,
+    mutate: retryHtmlPage,
+  } = useHtmlPage(
+    workspace.id,
+    htmlPageArtifact && first ? first.artifact_id : null,
+  );
   const shownText = textHead
     ? formatTextHead(textHead, {
         expandEmbeddedJson: true,
@@ -559,11 +601,14 @@ export function ArtifactCardBody({
     : null;
   // Only a text artifact read whole has words to read another way: a file is its
   // bytes, and the head of a long text is not a document.
-  const textViews =
-    shownText !== null &&
-    !textHead?.truncated &&
-    (first?.artifact_type === "scalar.text" ||
-      first?.artifact_type === "text.markdown")
+  const textViews = htmlPageArtifact
+    ? htmlPageLoad && htmlPageLoad.status !== "unreadable"
+      ? HTML_PAGE_VIEWS
+      : NO_TEXT_VIEWS
+    : shownText !== null &&
+        !textHead?.truncated &&
+        (first?.artifact_type === "scalar.text" ||
+          first?.artifact_type === "text.markdown")
       ? textCardViews(shownText)
       : NO_TEXT_VIEWS;
   const [requestedTextView, setRequestedTextView] =
@@ -573,7 +618,8 @@ export function ArtifactCardBody({
       ? requestedTextView
       : defaultTextCardView(textViews, first?.artifact_type);
   const htmlPage =
-    textView === "html" && shownText !== null && !isWholeHtmlTable(shownText);
+    htmlPageArtifact ||
+    (textView === "html" && shownText !== null && !isWholeHtmlTable(shownText));
   const textMaxHeight =
     layout?.bodyHeight ??
     (htmlPage ? HTML_PAGE_BODY_HEIGHT : TEXT_BODY_HEIGHT_DEFAULT);
@@ -611,7 +657,8 @@ export function ArtifactCardBody({
   }, [measureText, shownText, textMaxHeight, textView]);
   const textOverflows = textEdges.above || textEdges.below || textEdges.wide;
   // Only a card that shows text takes a height: the others have no body to size.
-  const textCard = !isSequence && !awaitingFeed && shownText !== null;
+  const textCard =
+    !isSequence && !awaitingFeed && (shownText !== null || htmlPageArtifact);
   const textHeight = textCard ? textMaxHeight : null;
   const textProps = stylex.props(
     s.textContent,
@@ -628,11 +675,23 @@ export function ArtifactCardBody({
     : first
       ? (fileName ??
         feedLabel ??
-        (imageArtifact ? "Image" : tableCard ? "Table" : "File"))
+        (imageArtifact
+          ? "Image"
+          : tableCard
+            ? "Table"
+            : htmlPageArtifact
+              ? "Page"
+              : "File"))
       : // Nothing produced yet: name the card by what it follows.
         (feedLabel ?? "Artifact");
   const byteSize = formatLibraryByteSize(librarySummary?.byte_size);
-  const fileKind = isPdf ? "PDF" : isTableFile ? "Table" : "File";
+  const fileKind = isPdf
+    ? "PDF"
+    : isTableFile
+      ? "Table"
+      : htmlPageArtifact
+        ? "Page"
+        : "File";
   const fileLabel = byteSize ? `${fileKind} · ${byteSize}` : fileKind;
   const defaultWidth = htmlPage
     ? HTML_PAGE_CARD_WIDTH
@@ -923,6 +982,47 @@ export function ArtifactCardBody({
                 ) : null}
                 {isSequence ? (
                   sequenceStack
+                ) : htmlPageArtifact && first && !awaitingFeed ? (
+                  <>
+                    <div
+                      data-artifact-value="true"
+                      data-html-page={htmlPageLoad?.status ?? "loading"}
+                      data-artifact-shadow-scope="file"
+                      {...stylex.props(
+                        s.fileBody,
+                        s.textBody,
+                        tier === "active" ? s.fileBodyRaised : null,
+                        tier === "dragged" ? s.fileBodyDragged : null,
+                      )}
+                    >
+                      <HtmlPageFill
+                        load={
+                          htmlPageError ? HTML_PAGE_UNREADABLE : htmlPageLoad
+                        }
+                        height={textMaxHeight}
+                        selected={Boolean(selected)}
+                        view={textView === "text" ? "text" : "html"}
+                        onRetry={() => void retryHtmlPage()}
+                      />
+                    </div>
+                    {selected &&
+                    textViews.length > 1 &&
+                    htmlPageLoad &&
+                    htmlPageLoad.status !== "unreadable" ? (
+                      <HtmlPageSwitch
+                        view={textView}
+                        views={textViews}
+                        names={htmlPageLoad.sourceNames}
+                        shortfalls={
+                          htmlPageLoad.status === "ready" ||
+                          htmlPageLoad.status === "template"
+                            ? htmlPageLoad.shortfalls
+                            : []
+                        }
+                        onView={setRequestedTextView}
+                      />
+                    ) : null}
+                  </>
                 ) : first && !awaitingFeed && shownText !== null ? (
                   <>
                     <div
@@ -1128,5 +1228,44 @@ export function ArtifactCardBody({
         ) : null}
       </div>
     </PortRevealProvider>
+  );
+}
+
+/** The view switch, and the names of the artifacts the page reads, hung under it. */
+function HtmlPageSwitch({
+  view,
+  views,
+  names,
+  shortfalls,
+  onView,
+}: {
+  view: CellView;
+  views: readonly CellView[];
+  names: readonly string[];
+  shortfalls: readonly string[];
+  onView: (view: CellView) => void;
+}) {
+  const props = stylex.props(s.textViewSwitch, s.pageSwitch);
+  return (
+    <div {...props} className={`nodrag nopan nowheel ${props.className ?? ""}`}>
+      <SegmentedControl
+        aria-label="Read this text as"
+        size="sm"
+        value={view}
+        options={views.map((option) => ({
+          value: option,
+          label: CELL_VIEW_LABEL[option],
+        }))}
+        onValueChange={onView}
+      />
+      {names.length > 0 ? (
+        <p {...stylex.props(s.pageNote)}>Reads {names.join(", ")}</p>
+      ) : null}
+      {shortfalls.map((line) => (
+        <p key={line} {...stylex.props(s.pageNote)}>
+          {line}
+        </p>
+      ))}
+    </div>
   );
 }

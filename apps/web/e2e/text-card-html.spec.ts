@@ -4,6 +4,7 @@ const NOW = "2026-01-01T00:00:00Z";
 const HTML_ARTIFACT = "11111111-1111-4111-8111-111111111111";
 const HTML = `<!doctype html><html><head><style>h1 { color: rgb(200, 90, 40); }</style></head><body>
 <h1>Parish register</h1><p id="ran">not run</p>
+<a id="out" href="https://tracker.example/out" target="_blank">Leave</a>
 <!-- ${"A page runs well past what a card reads of other files. ".repeat(200)} -->
 <img src="https://tracker.example/pixel.png" alt="remote">
 <script>document.getElementById("ran").textContent = "script ran"; parent.document.title = "escaped";</script>
@@ -120,6 +121,14 @@ test("renders HTML in a text card without running it or fetching anything", asyn
   // What it says it would do, it did not.
   await expect(frame.locator("#ran")).toHaveText("not run");
   await expect(page).not.toHaveTitle("escaped");
+  expect(remote).toEqual([]);
+
+  // A link must not carry the frame, or this page, off to the address it named.
+  await frame.locator("#out").click();
+  await expect(
+    frame.getByRole("heading", { name: "Parish register" }),
+  ).toBeVisible();
+  await expect(frame.locator("#out")).toHaveText("Leave");
   expect(remote).toEqual([]);
 
   // Selected, as a drop leaves it, the frame takes the pointer: it can be scrolled.

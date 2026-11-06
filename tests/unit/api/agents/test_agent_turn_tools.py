@@ -21,10 +21,11 @@ from pydantic_ai.models.function import (
     FunctionModel,
 )
 
+from grafy_api.agents.context import ContextBlock
 from grafy_api.agents.toolbox import AgentToolbox
 from grafy_api.agents.turns import MAX_AGENT_TURN_TOOL_CALLS
 from grafy_api.runs.ports import ToolCallFailedError, ToolCallResult
-from grafy_core.artifacts import ArtifactRef
+from grafy_core.artifacts import ArtifactObject, ArtifactRef
 from grafy_core.domain.agent_conversations import (
     AgentConversationTurnOutcome,
     ConfirmationRequestedPayload,
@@ -32,7 +33,11 @@ from grafy_core.domain.agent_conversations import (
     ToolResultPayload,
 )
 from grafy_core.domain.agent_turns import AgentTurnStatus
-from grafy_core.domain.graph_documents import AgentToolLink, GraphOrigin
+from grafy_core.domain.graph_documents import (
+    AgentContextLink,
+    AgentToolLink,
+    GraphOrigin,
+)
 from tests.unit.api.agents.test_toolbox import (
     INTEGER,
     TEXT,
@@ -42,6 +47,7 @@ from tests.unit.api.agents.test_toolbox import (
 )
 from tests.unit.api.agents.turn_support import (
     GRAPH_ID,
+    WORKSPACE,
     ScriptedModel,
     TurnHarness,
     agent as agent_with,
@@ -437,3 +443,165 @@ async def test_thinking_is_stored_apart_from_the_answer_and_not_told_back() -> N
     assert messages == ["Let me look. ", "It says hello."]
     # Reasoning is not part of what the person is shown streaming as the reply.
     assert "letters" not in harness_.publisher.streamed_text
+
+
+CONNECTED = UUID(int=70)
+RETURNED = UUID(int=40)
+OUTSIDER = UUID(int=90)
+
+
+def _readable(
+    artifact_id: UUID,
+    *,
+    artifact_type: str,
+    schema_version: int,
+    content_type: str,
+    inline_payload: dict[str, object] | None,
+) -> ArtifactObject:
+    return ArtifactObject(
+        id=artifact_id,
+        workspace_id=WORKSPACE,
+        artifact_type=artifact_type,
+        schema_version=schema_version,
+        content_type=content_type,
+        storage_backend="inline" if inline_payload is not None else "local",
+        inline_payload=inline_payload,
+        bucket=None if inline_payload is not None else "artifacts",
+        object_key=None if inline_payload is not None else artifact_id.hex,
+    )
+
+
+class ConnectedCards:
+    def __init__(self, ref: ArtifactRef) -> None:
+        self.ref = ref
+
+    async def read(self, **_: object) -> tuple[ContextBlock, ...]:
+        return (ContextBlock("A card on the canvas", "risen", artifacts=(self.ref,)),)
+
+
+async def test_a_turn_writes_a_page_from_context_and_tool_results() -> None:
+    written = FakeArtifacts()
+    written.by_id[CONNECTED] = _readable(
+        CONNECTED,
+        artifact_type="scalar.text",
+        schema_version=2,
+        content_type="application/json",
+        inline_payload={"value": "risen"},
+    )
+    written.by_id[RETURNED] = _readable(
+        RETURNED,
+        artifact_type="table.data",
+        schema_version=1,
+        content_type="application/octet-stream",
+        inline_payload=None,
+    )
+    written.by_id[OUTSIDER] = _readable(
+        OUTSIDER,
+        artifact_type="scalar.text",
+        schema_version=1,
+        content_type="application/json",
+        inline_payload={"value": "outside"},
+    )
+    article = "<article>{{baptisms}}{{found}}</article>"
+    section = "<section>{{found}}</section>"
+    outsider_html = "<section>{{nope}}</section>"
+    model = RoundsModel(
+        chunks=[],
+        rounds=[
+            [search(query="x")],
+            [
+                (
+                    "create_artifact",
+                    {
+                        "content": article,
+                        "sources": {
+                            "baptisms": str(CONNECTED),
+                            "found": str(RETURNED),
+                        },
+                    },
+                )
+            ],
+            ["Done."],
+            [
+                (
+                    "create_artifact",
+                    {"content": section, "sources": {"found": str(RETURNED)}},
+                )
+            ],
+            [
+                (
+                    "create_artifact",
+                    {
+                        "content": outsider_html,
+                        "sources": {"nope": str(OUTSIDER)},
+                    },
+                )
+            ],
+            ["Stopped."],
+        ],
+    )
+
+    def toolbox_factory(workspace, project, graph, agent, document):
+        del project
+        return AgentToolbox.build(
+            agent=agent,
+            document=document,
+            graph_id=graph,
+            workspace_id=workspace,
+            node_ports=FakePorts(),
+            computation=Computation(),
+            artifacts=written,
+            views=FakeViews(),
+        )
+
+    configured = agent_with().model_copy(
+        update={
+            "tools": (tool_link(),),
+            "context": (
+                AgentContextLink(
+                    id="c1", kind="card", card_id="artifact-viewer-card-1"
+                ),
+            ),
+        }
+    )
+    harness_ = TurnHarness(
+        model,
+        agents=[configured],
+        nodes=[make_node("search")],
+        toolbox_factory=toolbox_factory,
+        context_reader=ConnectedCards(written.by_id[CONNECTED].ref()),
+    )
+
+    await harness_.send()
+    first = await harness_.settle()
+    await harness_.send("Use the census.", turn_id="client-2")
+    second = await harness_.settle()
+
+    assert first.status is AgentTurnStatus.COMPLETED
+    assert second.status is AgentTurnStatus.COMPLETED
+    assert [html for html, _sources in written.pages] == [article, section]
+    baptisms = written.pages[0][1]["baptisms"]
+    found = written.pages[0][1]["found"]
+    assert (baptisms.artifact_id, baptisms.artifact_type, baptisms.schema_version) == (
+        CONNECTED,
+        "scalar.text",
+        2,
+    )
+    assert (found.artifact_id, found.artifact_type, found.schema_version) == (
+        RETURNED,
+        "table.data",
+        1,
+    )
+    assert written.pages[1][1]["found"].artifact_id == RETURNED
+    created = [
+        event.payload
+        for event in await harness_.events()
+        if isinstance(event.payload, ToolResultPayload)
+        and event.payload.tool_name == "create_artifact"
+    ]
+    assert [item.ok for item in created] == [True, True, False]
+    assert "not connected" in (created[2].error or "")
+    for item in created[:2]:
+        assert article not in item.model_view
+        assert section not in item.model_view
+        assert "html.page" in item.model_view

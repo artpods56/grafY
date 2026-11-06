@@ -44,10 +44,14 @@ interrupted. Making it a node would turn every node rule into an exception.
   person offers it. A link the server cannot honour is reported as unavailable and not
   offered, rather than failing on its first call. A Library item link does not follow a
   copy into another Workspace.
-- **Created artifacts:** every Agent can also call `create_artifact`, which no link names,
-  to save text it wrote (an HTML page, a Markdown note) as a content-addressed text
-  artifact a person can drag out of the conversation. It starts no computation. A tool link
-  with the same name takes its place.
+- **Created artifacts:** every Agent can also call `create_artifact`, which no link names.
+  Without sources it saves text the model wrote, such as an HTML document or a Markdown
+  note, as a content-addressed text artifact a person can drag out of the conversation.
+  With sources it saves an HTML page. The page is a Mustache template plus the artifacts
+  it reads. The model names each source. The server stores the type and version it found.
+  A page may name only artifacts connected to the Agent, or returned by a tool in this
+  conversation. It points at those exact artifacts, so re-running a node does not change
+  the page. The call starts no computation. A tool link with the same name takes its place.
 
 ### A tool call is a computation with no instance
 
@@ -79,10 +83,12 @@ fingerprint. The result event records the fingerprint it used.
 - A turn makes at most ten tool calls unprompted. The batch that would pass the limit is
   neither run nor stored; a `confirmation_requested` event stands in for it and the turn
   completes. The person's reply is an ordinary next turn that carries on from the results.
-- The model is shown a result as text: the value of a scalar, a page of rows of a table
-  with the total, the first items of a sequence, and for anything else a line saying its
-  content is not shown. Images are described, not shown, until a multimodal view is
-  decided.
+- The model is shown a result as text. A scalar shows its value. A JSON artifact shows
+  compact JSON, cut off once it is longer than the view. A table shows a page of rows
+  and the total, with column ids. A sequence shows its first items. A file that is not
+  JSON gets a line saying its content is not shown. Each artifact is shown with its id,
+  so the model can name it as a source. Images are described, not shown, until a
+  multimodal view is decided.
 
 ### Models and permissions
 
@@ -98,6 +104,8 @@ fingerprint. The result event records the fingerprint it used.
 
 - The scheduler and result store need nothing new for tool calls; the runner needs a way
   to accept an instance that is not in the document.
-- When result-store garbage collection arrives, conversations are retention roots.
+- When result-store garbage collection arrives, conversations are retention roots. That
+  keeps a page stored on a tool result. It does not keep an artifact named only inside
+  that page.
 - Agents calling Agents, sharing conversations outside the Workspace, and Agents
   editing the canvas are out of scope.

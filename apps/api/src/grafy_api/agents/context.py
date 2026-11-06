@@ -14,15 +14,21 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
+from grafy_core.artifacts import ArtifactRef
 from grafy_core.domain.graph_documents import GraphAgent, GraphDocument
 
 
 @dataclass(frozen=True, slots=True)
 class ContextBlock:
-    """One connected thing, as a heading and the text a model reads."""
+    """One connected thing, as a heading and the text a model reads.
+
+    ``artifacts`` are the ones that text was read from. A page this turn writes
+    may name them. A sequence is already flattened to its items.
+    """
 
     label: str
     text: str
+    artifacts: tuple[ArtifactRef, ...] = ()
 
 
 class AgentContextReader(Protocol):
