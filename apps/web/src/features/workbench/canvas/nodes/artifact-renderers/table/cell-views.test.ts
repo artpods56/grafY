@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   cellViews,
+  htmlFrameDocument,
+  isWholeHtmlTable,
   defaultTextCardView,
   prettyCellJson,
   textCardViews,
@@ -58,5 +60,36 @@ describe("text cards", () => {
     expect(defaultTextCardView(words, "text.markdown")).toBe("markdown");
     expect(defaultTextCardView(words, "scalar.text")).toBe("text");
     expect(defaultTextCardView([], "text.markdown")).toBe("text");
+  });
+});
+
+describe("HTML", () => {
+  it("offers HTML for a document, and not for prose that mentions a tag", () => {
+    expect(cellViews("<div><p>Hi</p></div>")).toContain("html");
+    expect(cellViews("<!doctype html><html></html>")).toContain("html");
+    expect(cellViews("use a <div> here")).not.toContain("html");
+    expect(cellViews("<not closed")).not.toContain("html");
+    expect(cellViews("a < b and c > d")).not.toContain("html");
+  });
+
+  it("draws only a table and nothing else without a frame", () => {
+    expect(isWholeHtmlTable("<table><tr><td>1</td></tr></table>")).toBe(true);
+    expect(isWholeHtmlTable("<p>x</p><table></table>")).toBe(false);
+    expect(isWholeHtmlTable("<table></table><script>x</script>")).toBe(false);
+    expect(isWholeHtmlTable("<table></table><table></table>")).toBe(false);
+  });
+
+  it("puts the network policy ahead of anything the HTML says", () => {
+    const html = '<img src="https://example.org/a.png">';
+    const document = htmlFrameDocument(html, {
+      color: "rgb(1, 2, 3)",
+      colorScheme: "dark",
+    });
+    expect(document.indexOf("default-src 'none'")).toBeGreaterThan(-1);
+    expect(document.indexOf("default-src 'none'")).toBeLessThan(
+      document.indexOf(html),
+    );
+    expect(document).toContain("color: rgb(1, 2, 3)");
+    expect(document).toContain("color-scheme: dark");
   });
 });

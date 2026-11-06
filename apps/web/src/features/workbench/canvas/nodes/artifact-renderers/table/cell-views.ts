@@ -5,6 +5,35 @@
 export type CellView = "text" | "markdown" | "json" | "html";
 
 const HTML_TABLE = /<table[\s>][\s\S]*<\/table\s*>/i;
+const WHOLE_HTML_TABLE = /^\s*<table[\s>][\s\S]*<\/table\s*>\s*$/i;
+/** Opens on a tag and closes on one: a document, not prose that mentions a tag. */
+const HTML_DOCUMENT =
+  /^\s*<(?:!doctype\s|!--|[a-z][a-z0-9-]*[\s/>])[\s\S]*>\s*$/i;
+
+/** A table and nothing else, which can be drawn without a frame. */
+export function isWholeHtmlTable(value: string): boolean {
+  return (
+    WHOLE_HTML_TABLE.test(value) &&
+    value.search(/<\/table\s*>/i) === value.lastIndexOf("</table") &&
+    (value.match(/<table[\s>]/gi) ?? []).length === 1
+  );
+}
+
+/**
+ * A whole document for a sandboxed frame. The frame already runs no scripts; the policy
+ * comes first so nothing written after it can load anything from the network either,
+ * which would otherwise tell a third party who opened this and when. The rest only
+ * lets the words sit on the card in the page's colours, until the HTML says otherwise.
+ */
+export function htmlFrameDocument(
+  html: string,
+  theme: { color: string; colorScheme: string },
+): string {
+  return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"><style>
+:root { color-scheme: ${theme.colorScheme}; }
+body { margin: 8px; background: transparent; color: ${theme.color}; font: 12px/1.45 system-ui, sans-serif; }
+</style>${html}`;
+}
 
 function parsedJson(value: string): object | null {
   const start = value.trimStart()[0];
@@ -27,7 +56,9 @@ export function cellViews(value: unknown): readonly CellView[] {
     "text",
     "markdown",
     ...(parsedJson(value) ? (["json"] as const) : []),
-    ...(HTML_TABLE.test(value) ? (["html"] as const) : []),
+    ...(HTML_TABLE.test(value) || HTML_DOCUMENT.test(value)
+      ? (["html"] as const)
+      : []),
   ];
 }
 
@@ -44,7 +75,7 @@ export const CELL_VIEW_LABEL: Record<CellView, string> = {
   text: "Text",
   markdown: "Markdown",
   json: "JSON",
-  html: "Table",
+  html: "HTML",
 };
 
 /**
@@ -56,7 +87,7 @@ export function textCardViews(text: string): readonly CellView[] {
   return views.includes("json") ? [] : views;
 }
 
-/** What a card opens on: what the artifact says it is, or a table it plainly holds. */
+/** What a card opens on: HTML it plainly holds, or what the artifact says it is. */
 export function defaultTextCardView(
   views: readonly CellView[],
   artifactType: string | undefined,

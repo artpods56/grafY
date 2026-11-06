@@ -37,8 +37,8 @@ import {
   prettyCellJson,
   type CellView,
 } from "./table/cell-views";
-import { CellHtmlTable } from "./table/cell-html-table";
 import { TableColumnPicker } from "./table/column-picker";
+import { HtmlView } from "./table/html-view";
 import { DEFAULT_VISIBLE_COLUMN_COUNT } from "./table/constants";
 import { TablePageNavigation } from "./table/page-navigation";
 import { s } from "./table/styles";
@@ -539,7 +539,7 @@ function TableArtifactRendererState({
               canvas ? cellValueStyles.renderedCanvas : null,
             )}
           >
-            <CellHtmlTable html={fullCellText} />
+            <HtmlView html={fullCellText} height={canvas ? "100%" : 320} />
           </div>
         ) : fullCell ? (
           <TextArea

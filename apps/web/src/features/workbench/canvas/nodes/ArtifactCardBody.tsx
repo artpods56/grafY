@@ -81,7 +81,7 @@ import {
   readTextHead,
   type TextHead,
 } from "./artifact-renderers/text-head";
-import { CellHtmlTable } from "./artifact-renderers/table/cell-html-table";
+import { HtmlView } from "./artifact-renderers/table/html-view";
 import {
   CELL_VIEW_LABEL,
   defaultTextCardView,
@@ -935,7 +935,11 @@ export function ArtifactCardBody({
                             {shownText}
                           </SafeMarkdown>
                         ) : textView === "html" ? (
-                          <CellHtmlTable html={shownText} />
+                          <HtmlView
+                            html={shownText}
+                            height={textMaxHeight}
+                            interactive={Boolean(selected)}
+                          />
                         ) : (
                           shownText
                         ),
