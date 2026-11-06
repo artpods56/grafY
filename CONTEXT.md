@@ -61,6 +61,8 @@ declared references. It stages the exact referenced artifacts as read-only
 dependencies in the guest artifact store, without turning them into extra node
 ports or granting access to unrelated Workspace artifacts.
 
+`html.page@1` stores the artifacts its template reads under `sources`, keyed by the name the page's author chose. Those names and target types vary, so the type declares no artifact-reference field, and copy, deletion and retention do not follow them.
+
 An artifact type is a payload contract, so two nodes that move the same payload
 share one type. A second type id for an identical contract is a catalog bug, not
 a Plugin namespace: an image Plugin that declares `photos.shot@1` over the

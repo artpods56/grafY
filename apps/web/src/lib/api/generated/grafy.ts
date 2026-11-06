@@ -312,6 +312,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/table/text-artifacts": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Create Table Text Artifacts */
+        readonly post: operations["create_table_text_artifacts_v1_workspaces__workspace_id__artifacts__artifact_id__table_text_artifacts_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/features/{feature_index}": {
         readonly parameters: {
             readonly query?: never;
@@ -1447,6 +1464,34 @@ export interface components {
             readonly origin: components["schemas"]["GraphOrigin"];
         };
         /**
+         * AgentContextLink
+         * @description One thing connected to an Agent as context, read by reference (ADR 0021).
+         *
+         *     The three kinds name what is read, never a copy of it: the output port of a node
+         *     of this Graph, a card on this canvas, or an item of the Library. A card and a
+         *     Library item are loose references on purpose. Removing either must not be
+         *     refused because an Agent still points at it, so a missing one is skipped, and
+         *     said so, when a turn reads its context. A node is different: removing it removes
+         *     the link, as it removes the edges.
+         */
+        readonly AgentContextLink: {
+            /** Card Id */
+            readonly card_id?: string | null;
+            /** Id */
+            readonly id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            readonly kind: "node_output" | "card" | "library_item";
+            /** Library Item Id */
+            readonly library_item_id?: string | null;
+            /** Node Id */
+            readonly node_id?: string | null;
+            /** Port */
+            readonly port?: string | null;
+        };
+        /**
          * AgentConversationEventListResponse
          * @description The events a reader asked for, and the sequence to resume at.
          *
@@ -1469,7 +1514,7 @@ export interface components {
              */
             readonly created_at: string;
             /** Payload */
-            readonly payload: components["schemas"]["UserMessagePayload"] | components["schemas"]["AssistantMessagePayload"] | components["schemas"]["TurnOutcomePayload"];
+            readonly payload: components["schemas"]["UserMessagePayload"] | components["schemas"]["AssistantMessagePayload"] | components["schemas"]["AssistantThinkingPayload"] | components["schemas"]["ToolCallPayload"] | components["schemas"]["ToolResultPayload"] | components["schemas"]["ConfirmationRequestedPayload"] | components["schemas"]["TurnOutcomePayload"];
             /** Sequence */
             readonly sequence: number;
             /**
@@ -1557,6 +1602,38 @@ export interface components {
             readonly model_name: string;
             /** Source */
             readonly source: string;
+        };
+        /**
+         * AgentToolLink
+         * @description A node of this Graph an Agent may call as a tool (ADR 0021).
+         *
+         *     ``filled_ports`` are the node's open inputs the model gives a value; every other
+         *     input keeps what the Graph feeds it, so inputs wired from upstream stay fixed.
+         *     ``returned_ports`` are the outputs handed back to the model; none named means all
+         *     of them. ``name`` is what the model sees and is unique among an Agent's tools.
+         */
+        readonly AgentToolLink: {
+            /**
+             * Description
+             * @default
+             */
+            readonly description: string;
+            /**
+             * Filled Ports
+             * @default []
+             */
+            readonly filled_ports: readonly string[];
+            /** Id */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /** Node Id */
+            readonly node_id: string;
+            /**
+             * Returned Ports
+             * @default []
+             */
+            readonly returned_ports: readonly string[];
         };
         /**
          * AgentTurnResponse
@@ -1792,6 +1869,23 @@ export interface components {
             readonly text: string;
         };
         /**
+         * AssistantThinkingPayload
+         * @description What the model reasoned before it spoke or called a tool.
+         *
+         *     Kept so a person can read it later, and shown collapsed: it is not part of the
+         *     answer. It is never replayed to the model, because a provider's reasoning is its own
+         *     scratch work and a model told yesterday's is no better for it.
+         */
+        readonly AssistantThinkingPayload: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "assistant_thinking";
+            /** Text */
+            readonly text: string;
+        };
+        /**
          * CancelAgentTurnRequest
          * @description Stop the conversation's turn. With no `turn_id`, whatever is running now.
          */
@@ -1851,6 +1945,25 @@ export interface components {
              * Format: password
              */
             readonly value: string;
+        };
+        /**
+         * ConfirmationRequestedPayload
+         * @description The turn stopped before a further tool call, and asks a person to go on.
+         *
+         *     The model wanted more calls than a turn may make unprompted. The call it asked
+         *     for is not stored and not run; a person's reply is a new turn, which carries on
+         *     from the results already in the conversation.
+         */
+        readonly ConfirmationRequestedPayload: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "confirmation_requested";
+            /** Limit */
+            readonly limit: number;
+            /** Tool Calls */
+            readonly tool_calls: number;
         };
         /** ConfirmationRuleResponse */
         readonly ConfirmationRuleResponse: {
@@ -2253,6 +2366,11 @@ export interface components {
         /** GraphAgent */
         readonly GraphAgent: {
             /**
+             * Context
+             * @default []
+             */
+            readonly context: readonly components["schemas"]["AgentContextLink"][];
+            /**
              * Height
              * @default 480
              */
@@ -2269,6 +2387,11 @@ export interface components {
             /** Name */
             readonly name: string;
             readonly position?: components["schemas"]["GraphPoint"];
+            /**
+             * Tools
+             * @default []
+             */
+            readonly tools: readonly components["schemas"]["AgentToolLink"][];
             /**
              * Width
              * @default 360
@@ -2654,6 +2777,7 @@ export interface components {
             readonly last_result_fingerprint: string | null;
             readonly state: components["schemas"]["InstanceState"];
         };
+        readonly JsonValue: unknown;
         /** LibraryFolderListResponse */
         readonly LibraryFolderListResponse: {
             /** Folders */
@@ -3031,6 +3155,11 @@ export interface components {
         readonly PortResponse: {
             /** Accepted Shapes */
             readonly accepted_shapes: readonly components["schemas"]["PortShape"][];
+            /**
+             * Agent Default
+             * @description 'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter.
+             */
+            readonly agent_default?: "hidden" | null;
             /** Also Accepts */
             readonly also_accepts?: readonly components["schemas"]["ArtifactTypeKeyResponse"][];
             readonly artifact_type?: components["schemas"]["ArtifactTypeKeyResponse"] | null;
@@ -3823,10 +3952,38 @@ export interface components {
              */
             readonly offset: number;
         };
+        /** TableRowTextArtifact */
+        readonly TableRowTextArtifact: {
+            readonly artifact: components["schemas"]["ArtifactRef"] | null;
+            /** Row Index */
+            readonly row_index: number;
+        };
         /** TableSchemaResponse */
         readonly TableSchemaResponse: {
             /** Columns */
             readonly columns: readonly components["schemas"]["TableColumnResponse"][];
+            /** Total Rows */
+            readonly total_rows: number;
+        };
+        /** TableTextArtifactsRequest */
+        readonly TableTextArtifactsRequest: {
+            /** Column Id */
+            readonly column_id: string;
+            /**
+             * Limit
+             * @default 100
+             */
+            readonly limit: number;
+            /**
+             * Offset
+             * @default 0
+             */
+            readonly offset: number;
+        };
+        /** TableTextArtifactsResponse */
+        readonly TableTextArtifactsResponse: {
+            /** Rows */
+            readonly rows: readonly components["schemas"]["TableRowTextArtifact"][];
             /** Total Rows */
             readonly total_rows: number;
         };
@@ -3835,6 +3992,78 @@ export interface components {
          * @enum {string}
          */
         readonly TableValueType: "text" | "integer" | "number" | "decimal" | "boolean" | "date" | "datetime" | "json" | "binary" | "unknown" | "mixed";
+        /**
+         * ToolCallPayload
+         * @description The model asked to call one of the Agent's tools (ADR 0021).
+         *
+         *     ``call_id`` is the model's own id for the call, which is what the result answers.
+         *     ``arguments`` are exactly what the model gave; the artifacts built from them are
+         *     named by the result, not copied here.
+         */
+        readonly ToolCallPayload: {
+            /** Arguments */
+            readonly arguments?: {
+                readonly [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Call Id */
+            readonly call_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "tool_call";
+            /** Tool Id */
+            readonly tool_id: string;
+            /** Tool Name */
+            readonly tool_name: string;
+        };
+        /**
+         * ToolResultArtifact
+         * @description One output a tool call produced, which a person can drag out of the thread.
+         */
+        readonly ToolResultArtifact: {
+            readonly artifact: components["schemas"]["ArtifactOutputValue"];
+            /** Port */
+            readonly port: string;
+        };
+        /**
+         * ToolResultPayload
+         * @description How one tool call ended, and what the model was shown of it.
+         *
+         *     ``fingerprint`` is the temporary instance's, so the call is traceable to the
+         *     result store entry it used; ``artifacts`` carry what a person can take away.
+         *     ``model_view`` is stored because it is what the model saw: rebuilding it from the
+         *     artifacts later could differ from what it actually read.
+         */
+        readonly ToolResultPayload: {
+            /**
+             * Artifacts
+             * @default []
+             */
+            readonly artifacts: readonly components["schemas"]["ToolResultArtifact"][];
+            /** Call Id */
+            readonly call_id: string;
+            /** Error */
+            readonly error?: string | null;
+            /** Fingerprint */
+            readonly fingerprint?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "tool_result";
+            /**
+             * Model View
+             * @default
+             */
+            readonly model_view: string;
+            /** Ok */
+            readonly ok: boolean;
+            /** Tool Id */
+            readonly tool_id: string;
+            /** Tool Name */
+            readonly tool_name: string;
+        };
         /** TurnOutcomePayload */
         readonly TurnOutcomePayload: {
             /** Detail */
@@ -4883,6 +5112,69 @@ export interface operations {
                 };
             };
             /** @description Invalid table request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Artifact not found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Artifact content is unavailable */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+        };
+    };
+    readonly create_table_text_artifacts_v1_workspaces__workspace_id__artifacts__artifact_id__table_text_artifacts_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly artifact_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["TableTextArtifactsRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["TableTextArtifactsResponse"];
+                };
+            };
+            /** @description Invalid request */
             readonly 400: {
                 headers: {
                     readonly [name: string]: unknown;

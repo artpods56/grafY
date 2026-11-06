@@ -4,11 +4,12 @@
 wires the real adapters; tests wire fakes.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
+from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.runs import Run
 from grafy_core.kernel.facts import FingerprintFacts
 from grafy_core.kernel.instances import InstanceKey
@@ -28,6 +29,26 @@ class RunRejectedError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+class ToolCallFailedError(RuntimeError):
+    """A tool call computed, and the computation did not succeed.
+
+    The message is the computation's own, so a model that is told it can try
+    again with other arguments.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallResult:
+    """What a tool call produced, and the address it is stored under.
+
+    ``fingerprint`` is the temporary instance's: the same arguments give the same
+    one, which is how a repeated call is recognised as the same computation.
+    """
+
+    fingerprint: str
+    outputs: Mapping[str, ArtifactOutputValue]
 
 
 class RunNotFoundError(LookupError):

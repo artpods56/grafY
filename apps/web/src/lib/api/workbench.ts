@@ -5,6 +5,7 @@ import type {
   TableCell,
   TablePage,
   TableSchema,
+  TableTextArtifacts,
   UploadResponse,
   UploadTarget,
 } from "./contract";
@@ -169,6 +170,21 @@ export function getArtifactTableCell(
     "GET",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/table/cell?${query}`,
     { signal },
+  );
+}
+
+/** Each row's text in one column, made ready to be dragged out as its own artifact. */
+export function createTableTextArtifacts(
+  workspaceId: string,
+  artifactId: string,
+  columnId: string,
+  limit: number,
+  signal?: AbortSignal,
+) {
+  return request<TableTextArtifacts>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/table/text-artifacts`,
+    { body: { column_id: columnId, offset: 0, limit }, signal },
   );
 }
 

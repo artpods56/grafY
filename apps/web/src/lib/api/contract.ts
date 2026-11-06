@@ -47,6 +47,7 @@ export type ArtifactExportFormat = Schemas["ArtifactExportFormatResponse"];
 export type TablePage = Schemas["TablePageResponse"];
 export type TableCell = Schemas["TableCellResponse"];
 export type TableSchema = Schemas["TableSchemaResponse"];
+export type TableTextArtifacts = Schemas["TableTextArtifactsResponse"];
 export type GeoBounds = Schemas["GeoBounds"];
 export type GeoRenderVectorSource = Schemas["GeoVectorRenderSourceResponse"];
 export type GeoRenderRasterSource = Schemas["GeoRasterRenderSourceResponse"];

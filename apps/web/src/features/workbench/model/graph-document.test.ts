@@ -6,6 +6,8 @@ import {
   authoredGraphDocument,
   createSavedGraphRequest,
   executionInvalidatedNodeIds,
+  projectSavedGraphAgent,
+  type AuthoredGraphAgent,
   type AuthoredGraphDocument,
 } from "./graph-document";
 
@@ -152,6 +154,8 @@ describe("authored graph document", () => {
               endpoint: "https://models.example/v1",
               model: "some-model",
             },
+            context: [],
+            tools: [],
             position: { x: 40, y: 60 },
             width: 320,
             height: 240,
@@ -161,6 +165,8 @@ describe("authored graph document", () => {
             name: "Assistant",
             instructions: "",
             model: { kind: "deployment" },
+            context: [],
+            tools: [],
             width: 360,
             height: 480,
           },
@@ -239,6 +245,8 @@ describe("authored graph document", () => {
               endpoint: "https://models.example/v1",
               model: "some-model",
             },
+            context: [],
+            tools: [],
             position: { x: 40, y: 60 },
             width: 320,
             height: 240,
@@ -248,6 +256,8 @@ describe("authored graph document", () => {
             name: "Assistant",
             instructions: "",
             model: { kind: "deployment" },
+            context: [],
+            tools: [],
             width: 360,
             height: 480,
           },
@@ -556,6 +566,8 @@ describe("authored graph document", () => {
             model: "some-model",
             selected: true,
           },
+          context: [],
+          tools: [],
           position: { x: 40, y: 60, selected: true, dragging: true },
           width: 320,
           height: 240,
@@ -597,6 +609,8 @@ describe("authored graph document", () => {
           endpoint: "https://models.example/v1",
           model: "some-model",
         },
+        context: [],
+        tools: [],
         position: { x: 40, y: 60 },
         width: 320,
         height: 240,
@@ -969,6 +983,8 @@ describe("agent commands", () => {
       endpoint: "https://models.example/v1",
       model: "some-model",
     },
+    context: [],
+    tools: [],
     position: { x: 320, y: 40 },
     width: 360,
     height: 480,
@@ -1025,6 +1041,40 @@ describe("agent commands", () => {
       },
       other,
     ]);
+  });
+
+  it("keeps what is connected to an Agent when the card is configured", () => {
+    const agentWithLinks: AuthoredGraphAgent = {
+      ...scribe,
+      context: [
+        { id: "c1", kind: "node_output", node_id: "n1", port: "text" },
+        { id: "c2", kind: "card", card_id: "card-1" },
+      ],
+      tools: [
+        {
+          id: "t1",
+          node_id: "n1",
+          name: "read_text",
+          description: "",
+          filled_ports: ["query"],
+          returned_ports: ["text"],
+        },
+      ],
+    };
+    const renamed: AuthoredGraphAgent = { ...agentWithLinks, name: "Renamed" };
+
+    const result = applyGraphCommand(graphWith([agentWithLinks]), {
+      kind: "configure_agent",
+      agent: renamed,
+    });
+
+    expect(result.agents).toEqual([renamed]);
+
+    // The projection copies, so a card edited after the command left must not rewrite what
+    // the document already holds.
+    const projected = projectSavedGraphAgent(agentWithLinks);
+    expect(projected.context).not.toBe(agentWithLinks.context);
+    expect(projected.context).toEqual(agentWithLinks.context);
   });
 
   it("refuses to configure a card that is not on the canvas", () => {

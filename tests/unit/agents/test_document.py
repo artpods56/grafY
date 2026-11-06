@@ -8,7 +8,12 @@ from grafy_core.domain.collaboration import (
     apply_graph_command,
     sanitize_document_for_cross_workspace_copy,
 )
+from uuid import uuid4
+
+from grafy_core.domain.collaboration import RemoveNodesCommand
 from grafy_core.domain.graph_documents import (
+    AgentContextLink,
+    AgentToolLink,
     CustomAgentModel,
     GraphAgent,
     GraphDocument,
@@ -87,7 +92,9 @@ def test_batch_rejects_duplicate_agent_without_mutating_original():
     from grafy_core.domain.collaboration import InGraphCommand, apply_project_commands
     from grafy_core.domain.errors import CollaborationCommandRejectedError
 
-    original = ProjectDocument(graphs=(GraphDefinition(id="g", name="Main", document=GraphDocument()),))
+    original = ProjectDocument(
+        graphs=(GraphDefinition(id="g", name="Main", document=GraphDocument()),)
+    )
     add = InGraphCommand(
         graph_id="g", command=AddAgentCommand(agent=GraphAgent(id="a", name="Research"))
     )
@@ -108,3 +115,131 @@ def test_missing_agent_is_rejected(command):
 
     with pytest.raises(CollaborationCommandRejectedError):
         apply_graph_command(document=GraphDocument(), command=command)
+
+
+# --- What is connected to an Agent (ADR 0021) --------------------------------
+
+
+def _tool(tool_id="t1", node_id="reader", name="read_text", **fields):
+    return AgentToolLink(id=tool_id, node_id=node_id, name=name, **fields)
+
+
+def test_context_links_name_exactly_the_fields_their_kind_needs():
+    AgentContextLink(id="c1", kind="node_output", node_id="reader", port="text")
+    AgentContextLink(id="c2", kind="card", card_id="card-1")
+    AgentContextLink(id="c3", kind="library_item", library_item_id=uuid4())
+    for incomplete in (
+        {"kind": "node_output", "node_id": "reader"},
+        {"kind": "card"},
+        {"kind": "library_item"},
+    ):
+        with pytest.raises(ValidationError):
+            AgentContextLink(id="c", **incomplete)
+    with pytest.raises(ValidationError):
+        AgentContextLink(id="c", kind="card", card_id="card-1", node_id="reader")
+
+
+@pytest.mark.parametrize("name", ["", "Read Text", "9lives", "a" * 49, "read-text"])
+def test_a_tool_name_is_a_short_lower_case_identifier(name):
+    with pytest.raises(ValidationError):
+        _tool(name=name)
+
+
+def test_a_tool_names_each_port_once():
+    with pytest.raises(ValidationError):
+        _tool(filled_ports=("query", "query"))
+    with pytest.raises(ValidationError):
+        _tool(returned_ports=("text", "text"))
+
+
+def test_an_agents_links_and_tool_names_are_unique():
+    with pytest.raises(ValidationError):
+        GraphAgent(id="a", name="A", tools=(_tool("t1"), _tool("t1", name="other")))
+    with pytest.raises(ValidationError):
+        GraphAgent(id="a", name="A", tools=(_tool("t1"), _tool("t2")))
+    with pytest.raises(ValidationError):
+        GraphAgent(
+            id="a",
+            name="A",
+            tools=(_tool("same"),),
+            context=(AgentContextLink(id="same", kind="card", card_id="x"),),
+        )
+
+
+def test_a_document_refuses_a_link_to_a_node_it_does_not_hold():
+    tooled = GraphAgent(id="a", name="A", tools=(_tool(),))
+    with pytest.raises(ValidationError):
+        GraphDocument(agents=(tooled,), nodes=(make_node("other"),))
+    GraphDocument(agents=(tooled,), nodes=(make_node("reader"),))
+    fed = GraphAgent(
+        id="a",
+        name="A",
+        context=(
+            AgentContextLink(id="c", kind="node_output", node_id="ghost", port="text"),
+        ),
+    )
+    with pytest.raises(ValidationError):
+        GraphDocument(agents=(fed,), nodes=(make_node("reader"),))
+
+
+def test_a_card_or_library_link_may_dangle():
+    dangling = GraphAgent(
+        id="a",
+        name="A",
+        context=(
+            AgentContextLink(id="c1", kind="card", card_id="gone"),
+            AgentContextLink(id="c2", kind="library_item", library_item_id=uuid4()),
+        ),
+    )
+    assert GraphDocument(agents=(dangling,)).agents == (dangling,)
+
+
+def test_removing_a_node_removes_the_links_to_it_and_no_others():
+    agent = GraphAgent(
+        id="a",
+        name="A",
+        tools=(_tool("t1", "reader"), _tool("t2", "writer", name="write_text")),
+        context=(
+            AgentContextLink(
+                id="c1", kind="node_output", node_id="reader", port="text"
+            ),
+            AgentContextLink(id="c2", kind="card", card_id="card-1"),
+        ),
+    )
+    document = GraphDocument(
+        agents=(agent,), nodes=(make_node("reader"), make_node("writer"))
+    )
+
+    after = apply_graph_command(
+        document=document, command=RemoveNodesCommand(node_ids=("reader",))
+    )
+
+    (kept,) = after.agents
+    assert [tool.id for tool in kept.tools] == ["t2"]
+    assert [link.id for link in kept.context] == ["c2"]
+
+
+def test_a_cross_workspace_copy_drops_library_links_and_keeps_the_rest():
+    agent = GraphAgent(
+        id="a",
+        name="A",
+        context=(
+            AgentContextLink(id="c1", kind="library_item", library_item_id=uuid4()),
+            AgentContextLink(id="c2", kind="card", card_id="card-1"),
+        ),
+    )
+
+    copied = sanitize_document_for_cross_workspace_copy(GraphDocument(agents=(agent,)))
+
+    assert [link.id for link in copied.agents[0].context] == ["c2"]
+
+
+def test_links_survive_a_json_round_trip():
+    agent = GraphAgent(
+        id="a",
+        name="A",
+        tools=(_tool(filled_ports=("query",), returned_ports=("text",)),),
+    )
+    document = GraphDocument(agents=(agent,), nodes=(make_node("reader"),))
+
+    assert GraphDocument.model_validate_json(document.model_dump_json()) == document

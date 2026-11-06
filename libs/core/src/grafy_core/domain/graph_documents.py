@@ -6,10 +6,12 @@ revision and no filing: the aggregate that owns them is a Project Graph, in
 ``grafy_core.domain.projects.Project``.
 """
 
-from collections.abc import Mapping
+import re
+from collections.abc import Collection, Mapping
 from math import isfinite
 from types import MappingProxyType
 from typing import Annotated, ClassVar, Literal, Self, cast
+from uuid import UUID
 
 from pydantic import (
     AnyHttpUrl,
@@ -37,6 +39,15 @@ class GraphValue(BaseModel):
         frozen=True,
         allow_inf_nan=False,
     )
+
+    def __deepcopy__(self, memo: dict[int, object] | None = None) -> Self:
+        """A frozen value has nothing to isolate, so a copy is the value itself.
+
+        Its mappings are read-only proxies, which ``deepcopy`` cannot copy, and no holder
+        can change what it shares: that is what lets a store keep a head by copying it.
+        """
+        del memo
+        return self
 
 
 class GraphPoint(GraphValue):
@@ -502,11 +513,122 @@ AgentModel = Annotated[
 ]
 
 
+#: What a model may call a tool: lower-case words, short enough for every provider.
+AGENT_TOOL_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,47}$")
+
+
+class AgentContextLink(GraphValue):
+    """One thing connected to an Agent as context, read by reference (ADR 0021).
+
+    The three kinds name what is read, never a copy of it: the output port of a node
+    of this Graph, a card on this canvas, or an item of the Library. A card and a
+    Library item are loose references on purpose. Removing either must not be
+    refused because an Agent still points at it, so a missing one is skipped, and
+    said so, when a turn reads its context. A node is different: removing it removes
+    the link, as it removes the edges.
+    """
+
+    id: GraphIdentifier
+    kind: Literal["node_output", "card", "library_item"]
+    node_id: GraphIdentifier | None = None
+    port: Annotated[str, StringConstraints(min_length=1, max_length=128)] | None = None
+    card_id: GraphIdentifier | None = None
+    library_item_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_kind(self) -> Self:
+        named = {
+            "node_id": self.node_id,
+            "port": self.port,
+            "card_id": self.card_id,
+            "library_item_id": self.library_item_id,
+        }
+        wanted = {
+            "node_output": {"node_id", "port"},
+            "card": {"card_id"},
+            "library_item": {"library_item_id"},
+        }[self.kind]
+        missing = sorted(name for name in wanted if named[name] is None)
+        if missing:
+            raise ValueError(
+                f"Agent context link {self.id} of kind {self.kind} needs "
+                f"{', '.join(missing)}"
+            )
+        extra = sorted(
+            name for name, value in named.items() if name not in wanted and value
+        )
+        if extra:
+            raise ValueError(
+                f"Agent context link {self.id} of kind {self.kind} must not carry "
+                f"{', '.join(extra)}"
+            )
+        return self
+
+
+class AgentToolLink(GraphValue):
+    """A node of this Graph an Agent may call as a tool (ADR 0021).
+
+    ``filled_ports`` are the node's open inputs the model gives a value; every other
+    input keeps what the Graph feeds it, so inputs wired from upstream stay fixed.
+    ``returned_ports`` are the outputs handed back to the model; none named means all
+    of them. ``name`` is what the model sees and is unique among an Agent's tools.
+    """
+
+    id: GraphIdentifier
+    node_id: GraphIdentifier
+    name: str = Field(pattern=AGENT_TOOL_NAME_PATTERN.pattern)
+    description: str = Field(default="", max_length=2_000)
+    filled_ports: tuple[
+        Annotated[str, StringConstraints(min_length=1, max_length=128)], ...
+    ] = ()
+    returned_ports: tuple[
+        Annotated[str, StringConstraints(min_length=1, max_length=128)], ...
+    ] = ()
+
+    @model_validator(mode="after")
+    def validate_ports(self) -> Self:
+        for label, ports in (
+            ("filled", self.filled_ports),
+            ("returned", self.returned_ports),
+        ):
+            if len(ports) != len(set(ports)):
+                raise ValueError(
+                    f"Agent tool {self.id} names a {label} port more than once"
+                )
+        return self
+
+
 class GraphAgent(GraphValue):
     id: GraphIdentifier
     name: GraphIdentifier
     instructions: str = Field(default="", max_length=100_000)
     model: AgentModel = Field(default_factory=DeploymentAgentModel)
+    context: tuple[AgentContextLink, ...] = ()
+    tools: tuple[AgentToolLink, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_links(self) -> Self:
+        link_ids = [link.id for link in (*self.context, *self.tools)]
+        if len(link_ids) != len(set(link_ids)):
+            raise ValueError(f"Agent {self.id} link ids must be unique")
+        names = [tool.name for tool in self.tools]
+        if len(names) != len(set(names)):
+            raise ValueError(f"Agent {self.id} tool names must be unique")
+        return self
+
+    def without_nodes(self, removed: Collection[str]) -> "GraphAgent":
+        """The Agent with every link to a removed node dropped, as edges are."""
+        return self.model_copy(
+            update={
+                "context": tuple(
+                    link for link in self.context if link.node_id not in removed
+                ),
+                "tools": tuple(
+                    tool for tool in self.tools if tool.node_id not in removed
+                ),
+            }
+        )
+
     position: GraphPoint = Field(default_factory=lambda: GraphPoint(x=0, y=0))
     width: float = Field(default=360, ge=260, le=GRAPH_LAYOUT_DIMENSION_MAX)
     height: float = Field(default=480, ge=96, le=GRAPH_LAYOUT_DIMENSION_MAX)
@@ -538,6 +660,19 @@ class GraphDocument(GraphValue):
             raise ValueError("Saved graph origin ids must be unique")
 
         known_nodes = set(node_ids)
+        for agent in self.agents:
+            for tool in agent.tools:
+                if tool.node_id not in known_nodes:
+                    raise ValueError(
+                        f"Agent {agent.id} tool {tool.id} references missing node "
+                        f"{tool.node_id}"
+                    )
+            for link in agent.context:
+                if link.node_id is not None and link.node_id not in known_nodes:
+                    raise ValueError(
+                        f"Agent {agent.id} context link {link.id} references "
+                        f"missing node {link.node_id}"
+                    )
         plugs_by_node: dict[str, dict[str, GraphInputPlug]] = {}
         for node in self.nodes:
             plug_ids = [plug.id for plug in node.input_plugs]
@@ -637,9 +772,10 @@ class GraphDocument(GraphValue):
         edges: tuple[GraphEdge, ...] | None = None,
         origins: tuple[GraphOrigin, ...] | None = None,
         presentation: GraphPresentationDocument | None = None,
+        agents: tuple[GraphAgent, ...] | None = None,
     ) -> "GraphDocument":
         return GraphDocument(
-            agents=self.agents,
+            agents=self.agents if agents is None else agents,
             nodes=self.nodes if nodes is None else nodes,
             edges=self.edges if edges is None else edges,
             origins=self.origins if origins is None else origins,

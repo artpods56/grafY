@@ -21,15 +21,21 @@ its own history draws conclusions from what is *missing* too:
   "continue from here" rebuilds exactly the history the source had at the cut, and the
   source keeps its own.
 
-Tool calls and results have no member in the stored union yet and no place here: they
-arrive with #203, which will decide their event payloads rather than having them guessed
-from a message shape.
+A tool call and its result are rebuilt the way the model produced and read them: the
+calls of one response are one response, the results that answered them are one request.
+Text the model wrote before calling is part of that same response, so a provider that
+wants a response to end in its calls sees one. A confirmation request adds nothing: the
+call it stopped was never stored, so the results above it are the whole of what
+happened and the person's reply is simply the next message.
 """
 
 from grafy_core.domain.agent_conversations import (
     AgentConversationEvent,
     AgentConversationTurnOutcome,
     AssistantMessagePayload,
+    ConfirmationRequestedPayload,
+    ToolCallPayload,
+    ToolResultPayload,
     TurnOutcomePayload,
     UserMessagePayload,
 )
@@ -37,9 +43,12 @@ from grafy_core.domain.agent_turns import AgentTurn, AgentTurnStatus
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
+    ModelRequestPart,
     ModelResponse,
-    SystemPromptPart,
+    ModelResponsePart,
     TextPart,
+    ToolCallPart,
+    ToolReturnPart,
     UserPromptPart,
 )
 
@@ -70,14 +79,58 @@ def history_messages(
     """
 
     messages: list[ModelMessage] = []
+    # What the model said and what it was told back alternate; each run of one kind
+    # is one message, closed by the first event of the other.
+    said: list[ModelResponsePart] = []
+    told: list[ModelRequestPart] = []
+
+    def close_said() -> None:
+        if said:
+            messages.append(ModelResponse(parts=list(said)))
+            said.clear()
+
+    def close_told() -> None:
+        if told:
+            messages.append(ModelRequest(parts=list(told)))
+            told.clear()
+
     for event in events:
         payload = event.payload
         match payload:
             case UserMessagePayload(text=text):
+                close_said()
+                close_told()
                 messages.append(ModelRequest(parts=[UserPromptPart(content=text)]))
             case AssistantMessagePayload(text=text):
-                messages.append(ModelResponse(parts=[TextPart(content=text)]))
+                close_told()
+                said.append(TextPart(content=text))
+            case ToolCallPayload() as call:
+                close_told()
+                said.append(
+                    ToolCallPart(
+                        tool_name=call.tool_name,
+                        args=call.arguments,
+                        tool_call_id=call.call_id,
+                    )
+                )
+            case ToolResultPayload() as result:
+                close_said()
+                told.append(
+                    ToolReturnPart(
+                        tool_name=result.tool_name,
+                        content=result.model_view
+                        if result.ok
+                        else f"The tool call failed: {result.error or 'no reason given'}",
+                        tool_call_id=result.call_id,
+                        outcome="success" if result.ok else "failed",
+                    )
+                )
+            case ConfirmationRequestedPayload():
+                close_said()
+                close_told()
             case TurnOutcomePayload(outcome=outcome):
+                close_said()
+                close_told()
                 # A completed turn needs no comment beside it. Anything else says so here, at
                 # the boundary, because the stored event cannot: it records what arrived, and
                 # only the outcome knows whether that was all of it.
@@ -85,12 +138,18 @@ def history_messages(
                     continue
                 note = _CUT_SHORT_NOTE.get(AgentTurnStatus(outcome.value))
                 if note is not None:
+                    # Not a system message: a conversation's system message belongs at the
+                    # start, and OpenAI-compatible servers (vLLM, LiteLLM in front of
+                    # Qwen) reject one in the middle with a 400. Adjacent requests are
+                    # merged into one user turn when the model is called.
                     messages.append(
-                        ModelRequest(parts=[SystemPromptPart(content=note)])
+                        ModelRequest(parts=[UserPromptPart(content=f"[{note}]")])
                     )
         # A payload this rebuild does not know yet matches no case above and so adds
         # nothing to the model's view of the past, which is what an unknown part of a
         # conversation deserves: nothing said about it rather than something guessed.
+    close_said()
+    close_told()
     return messages
 
 
