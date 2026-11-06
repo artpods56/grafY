@@ -65,7 +65,12 @@ from pydantic_ai.run import AgentRunResultEvent
 
 from grafy_api.agents.context import AgentContextReader, instructions_with_context
 from grafy_api.agents.history import history_messages
-from grafy_api.agents.toolbox import AgentToolbox
+from grafy_api.agents.toolbox import (
+    CREATE_ARTIFACT_DESCRIPTION,
+    CREATE_ARTIFACT_SCHEMA,
+    CREATE_ARTIFACT_TOOL,
+    AgentToolbox,
+)
 from grafy_api.agents.models import (
     AgentModelReader,
     OwnedAgentChatModel,
@@ -113,8 +118,8 @@ type AgentToolboxFactory = Callable[
 ]
 """``(workspace, project, graph, agent, graph document)`` to the tools the Agent may call.
 
-``None`` or a toolbox with no tools means a turn with no tools, which is every Agent that
-has none connected and every deployment that has not wired tools in."""
+``None`` means a turn with no tools, which is every deployment that has not wired tools in.
+An Agent with nothing connected still gets a toolbox, for ``create_artifact``."""
 
 MAX_AGENT_TURN_ERROR_DETAIL_CHARS = 2_000
 """How much of a failure the durable record and the log line may carry."""
@@ -598,16 +603,15 @@ class AgentService:
     ) -> AgentToolbox | None:
         """The tools this turn may call, fixed when it starts like its instructions are."""
 
-        if self._toolbox_factory is None or not admission.agent.tools:
+        if self._toolbox_factory is None:
             return None
-        toolbox = self._toolbox_factory(
+        return self._toolbox_factory(
             turn.workspace_id,
             turn.project_id,
             turn.graph_id,
             admission.agent,
             admission.graph_document,
         )
-        return toolbox if toolbox is not None and toolbox.tools else None
 
     def _forget(self, turn: AgentTurn, entry: _RunningTurn) -> None:
         """Let go of a finished turn, so its conversation can be sent to again."""
@@ -1493,7 +1497,7 @@ def _definitions(toolbox: AgentToolbox | None) -> list[ToolDefinition]:
 
     if toolbox is None:
         return []
-    return [
+    definitions = [
         ToolDefinition(
             name=tool.link.name,
             description=tool.description,
@@ -1502,6 +1506,17 @@ def _definitions(toolbox: AgentToolbox | None) -> list[ToolDefinition]:
         )
         for tool in toolbox.tools
     ]
+    # A person's own tool of this name is the one they meant.
+    if toolbox.tool(CREATE_ARTIFACT_TOOL) is None:
+        definitions.append(
+            ToolDefinition(
+                name=CREATE_ARTIFACT_TOOL,
+                description=CREATE_ARTIFACT_DESCRIPTION,
+                parameters_json_schema=CREATE_ARTIFACT_SCHEMA,
+                kind="external",
+            )
+        )
+    return definitions
 
 
 def _part_text(value: object) -> str:

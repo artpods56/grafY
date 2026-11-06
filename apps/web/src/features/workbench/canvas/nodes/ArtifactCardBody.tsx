@@ -85,6 +85,7 @@ import { HtmlView } from "./artifact-renderers/table/html-view";
 import {
   CELL_VIEW_LABEL,
   defaultTextCardView,
+  isWholeHtmlTable,
   textCardViews,
   type CellView,
 } from "./artifact-renderers/table/cell-views";
@@ -329,9 +330,17 @@ const s = stylex.create({
 
 /** How much of an artifact's bytes a card reads to show as text. */
 const CARD_TEXT_BYTES = 4096;
+/**
+ * A text value is read whole so it can be rendered: the head of a page is not a page.
+ * Room for the most an Agent may create, each character at its longest once escaped.
+ */
+const CARD_TEXT_VALUE_BYTES = 1_250_000;
 
 /** Height a text card opens at before the operator resizes it: twelve lines. */
 const TEXT_BODY_HEIGHT_DEFAULT = 180;
+/** A page laid out for a screen cannot be read at the size of a note. */
+const HTML_PAGE_CARD_WIDTH = 640;
+const HTML_PAGE_BODY_HEIGHT = 480;
 
 const NO_TEXT_EDGES = { above: false, below: false, wide: false };
 const NO_TEXT_VIEWS: readonly CellView[] = [];
@@ -347,15 +356,13 @@ function textFadeMask({ above, below }: typeof NO_TEXT_EDGES) {
   return `linear-gradient(to bottom, ${top}, ${bottom})`;
 }
 
-async function fetchArtifactText([, workspaceId, artifactId]: readonly [
+async function fetchArtifactText([, workspaceId, artifactId, limit]: readonly [
   string,
   string,
   string,
+  number,
 ]): Promise<TextHead | null> {
-  return readTextHead(
-    artifactInlineContentUrl(workspaceId, artifactId),
-    CARD_TEXT_BYTES,
-  );
+  return readTextHead(artifactInlineContentUrl(workspaceId, artifactId), limit);
 }
 
 /**
@@ -528,7 +535,15 @@ export function ArtifactCardBody({
   // tile. Binary bytes and file containers keep their tile.
   const textKey =
     first && !isSequence && !imageArtifact && !isPdf && !isTableFile
-      ? (["artifact-card-text", workspace.id, first.artifact_id] as const)
+      ? ([
+          "artifact-card-text",
+          workspace.id,
+          first.artifact_id,
+          first.artifact_type === "scalar.text" ||
+          first.artifact_type === "text.markdown"
+            ? CARD_TEXT_VALUE_BYTES
+            : CARD_TEXT_BYTES,
+        ] as const)
       : null;
   const { data: textHead } = useSWR(textKey, fetchArtifactText);
   const shownText = textHead
@@ -557,7 +572,11 @@ export function ArtifactCardBody({
     requestedTextView && textViews.includes(requestedTextView)
       ? requestedTextView
       : defaultTextCardView(textViews, first?.artifact_type);
-  const textMaxHeight = layout?.bodyHeight ?? TEXT_BODY_HEIGHT_DEFAULT;
+  const htmlPage =
+    textView === "html" && shownText !== null && !isWholeHtmlTable(shownText);
+  const textMaxHeight =
+    layout?.bodyHeight ??
+    (htmlPage ? HTML_PAGE_BODY_HEIGHT : TEXT_BODY_HEIGHT_DEFAULT);
   // Overflow is measured, not counted: a long line wraps, so the number of
   // newlines says little about how tall the text renders.
   const textRef = React.useRef<HTMLElement>(null);
@@ -615,13 +634,15 @@ export function ArtifactCardBody({
   const byteSize = formatLibraryByteSize(librarySummary?.byte_size);
   const fileKind = isPdf ? "PDF" : isTableFile ? "Table" : "File";
   const fileLabel = byteSize ? `${fileKind} · ${byteSize}` : fileKind;
-  const defaultWidth = tableCard
-    ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
-    : imageArtifact
-      ? DEFAULT_ARTIFACT_CARD_WIDTH
-      : feed
-        ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
-        : DEFAULT_ARTIFACT_FILE_CARD_WIDTH;
+  const defaultWidth = htmlPage
+    ? HTML_PAGE_CARD_WIDTH
+    : tableCard
+      ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
+      : imageArtifact
+        ? DEFAULT_ARTIFACT_CARD_WIDTH
+        : feed
+          ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
+          : DEFAULT_ARTIFACT_FILE_CARD_WIDTH;
   const minimumWidth = tableCard ? NODE_WIDTH_MIN : ARTIFACT_CARD_WIDTH_MIN;
   const requestedWidth = gridAlignedWidth(
     Math.max(minimumWidth, layout?.width ?? defaultWidth),
@@ -991,7 +1012,7 @@ export function ArtifactCardBody({
                 ) : null}
               </>
             )}
-            {allowCornerResize || (imageArtifact && selected) ? (
+            {allowCornerResize || ((imageArtifact || htmlPage) && selected) ? (
               <LayoutResizeHandle
                 layout={
                   textCard || tableCard

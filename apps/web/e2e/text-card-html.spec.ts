@@ -4,6 +4,7 @@ const NOW = "2026-01-01T00:00:00Z";
 const HTML_ARTIFACT = "11111111-1111-4111-8111-111111111111";
 const HTML = `<!doctype html><html><head><style>h1 { color: rgb(200, 90, 40); }</style></head><body>
 <h1>Parish register</h1><p id="ran">not run</p>
+<!-- ${"A page runs well past what a card reads of other files. ".repeat(200)} -->
 <img src="https://tracker.example/pixel.png" alt="remote">
 <script>document.getElementById("ran").textContent = "script ran"; parent.document.title = "escaped";</script>
 </body></html>`;
@@ -87,7 +88,7 @@ test("renders HTML in a text card without running it or fetching anything", asyn
   if (!bounds) throw new Error("Canvas not visible");
   await agent
     .getByLabel(/^page: /)
-    .dragTo(flow, { targetPosition: { x: bounds.width - 300, y: 120 } });
+    .dragTo(flow, { targetPosition: { x: bounds.width - 640, y: 60 } });
   const card = page.locator("[data-artifact-card-id]");
   await expect(card).toHaveCount(1);
 
@@ -98,7 +99,23 @@ test("renders HTML in a text card without running it or fetching anything", asyn
   await expect(heading).toHaveCSS("color", "rgb(200, 90, 40)");
   // It takes up the room it was given, not the default height of a frame.
   const box = await card.locator("iframe").boundingBox();
-  expect(box?.height).toBeGreaterThan(100);
+  expect(box?.height).toBeGreaterThan(400);
+  expect(box?.width).toBeGreaterThan(500);
+
+  // A selected page can be made bigger, from its corner.
+  const handle = card.getByRole("button", { name: "Resize artifact" });
+  const corner = await handle.boundingBox();
+  if (!box || !corner) throw new Error("Page not visible");
+  await page.mouse.move(
+    corner.x + corner.width / 2,
+    corner.y + corner.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(corner.x - 60, corner.y - 60, { steps: 8 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await card.locator("iframe").boundingBox())?.width ?? 0)
+    .toBeLessThan(box.width - 30);
 
   // What it says it would do, it did not.
   await expect(frame.locator("#ran")).toHaveText("not run");

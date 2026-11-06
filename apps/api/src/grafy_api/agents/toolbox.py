@@ -19,6 +19,10 @@ Four things are the toolbox's rule and not any caller's:
 * **The model is told what the model saw.** ``model_view`` is rendered once, stored in the
   result event, and is what the next turn's history replays.
 
+Every toolbox also offers ``create_artifact``, which no link names: it is how a model hands
+a person something it wrote, such as a Markdown note or an HTML page, as an artifact they can
+drag out of the conversation. It computes nothing and needs no node.
+
 Everything outside the kernel is a seam, so these rules are tested without a database, a
 registry or a model.
 """
@@ -32,6 +36,7 @@ from uuid import UUID
 from pydantic import JsonValue
 
 from grafy_api.runs.ports import RunRejectedError, ToolCallFailedError, ToolCallResult
+from grafy_core.artifact_contracts import TEXT_VALUE
 from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.agent_conversations import (
     ToolCallPayload,
@@ -48,6 +53,26 @@ from grafy_core.domain.graph_documents import (
 )
 
 type JsonType = Literal["string", "integer"]
+
+CREATE_ARTIFACT_TOOL = "create_artifact"
+CREATE_ARTIFACT_DESCRIPTION = (
+    "Save text you wrote as an artifact the person can drag from this conversation onto "
+    "the canvas. Use it when they ask you to create a document or a page, and do not "
+    "repeat the content in your reply. A complete HTML document is rendered as a page, "
+    "and Markdown can be read as Markdown. Rendered HTML runs no scripts and loads "
+    "nothing from the network, so keep CSS in a style element and embed any image as a "
+    "data: URL."
+)
+CREATE_ARTIFACT_SCHEMA: dict[str, JsonValue] = {
+    "type": "object",
+    "properties": {
+        "content": {"type": "string", "description": "The whole text to save."}
+    },
+    "required": ["content"],
+    "additionalProperties": False,
+}
+MAX_CREATED_ARTIFACT_CHARS = 200_000
+"""Stays well inside what a card reads, so a created page is always read whole."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,6 +245,8 @@ class AgentToolbox:
         """Run one call the model made, and say how it went."""
         tool = self._tools.get(call.tool_name)
         if tool is None:
+            if call.tool_name == CREATE_ARTIFACT_TOOL:
+                return await self._create_artifact(call)
             return _failed(call, f"There is no tool named {call.tool_name!r}.")
         try:
             origins = await self._origins(tool, call.arguments)
@@ -247,6 +274,33 @@ class AgentToolbox:
                 for port, value in returned.items()
             ),
             model_view=await self._views.render(outputs=returned),
+        )
+
+    async def _create_artifact(self, call: ToolCallPayload) -> ToolResultPayload:
+        content = call.arguments.get("content")
+        if set(call.arguments) != {"content"} or not isinstance(content, str):
+            return _failed(call, "This tool takes one string argument, 'content'.")
+        if not content.strip():
+            return _failed(call, "There is nothing in 'content' to save.")
+        if len(content) > MAX_CREATED_ARTIFACT_CHARS:
+            return _failed(
+                call,
+                f"'content' has {len(content)} characters; an artifact may have "
+                f"{MAX_CREATED_ARTIFACT_CHARS}.",
+            )
+        ref = await self._artifacts.ref_for(
+            workspace_id=self._workspace_id, key=TEXT_VALUE.key, value=content
+        )
+        return ToolResultPayload(
+            call_id=call.call_id,
+            tool_id=call.tool_id,
+            tool_name=call.tool_name,
+            ok=True,
+            artifacts=(ToolResultArtifact(port="artifact", artifact=ref),),
+            model_view=(
+                f"Saved {len(content)} characters. The person can drag the artifact "
+                "from this conversation onto the canvas."
+            ),
         )
 
     async def _origins(
@@ -375,7 +429,11 @@ def _returned(
 __all__ = [
     "AgentToolbox",
     "ArgumentArtifacts",
+    "CREATE_ARTIFACT_DESCRIPTION",
+    "CREATE_ARTIFACT_SCHEMA",
+    "CREATE_ARTIFACT_TOOL",
     "JsonType",
+    "MAX_CREATED_ARTIFACT_CHARS",
     "ModelViews",
     "NodePorts",
     "PortFacts",

@@ -6,6 +6,8 @@ from uuid import UUID, uuid5
 import pytest
 
 from grafy_api.agents.toolbox import (
+    CREATE_ARTIFACT_TOOL,
+    MAX_CREATED_ARTIFACT_CHARS,
     AgentToolbox,
     JsonType,
     PortFacts,
@@ -276,3 +278,52 @@ async def test_cancellation_is_not_swallowed() -> None:
 
     with pytest.raises(asyncio.CancelledError):
         await toolbox.execute(call(query="x"))
+
+
+def create(**arguments: object) -> ToolCallPayload:
+    return ToolCallPayload(
+        call_id="c1",
+        tool_id=CREATE_ARTIFACT_TOOL,
+        tool_name=CREATE_ARTIFACT_TOOL,
+        arguments=arguments,
+    )
+
+
+async def test_created_text_becomes_a_text_artifact_without_computing() -> None:
+    toolbox, computation, artifacts = build()
+
+    result = await toolbox.execute(create(content="<h1>Hi</h1>"))
+
+    assert result.ok and computation.calls == []
+    assert artifacts.writes == [(TEXT, "<h1>Hi</h1>")]
+    assert [item.port for item in result.artifacts] == ["artifact"]
+    # What was written is already in the call: the model is not told it twice.
+    assert "<h1>" not in result.model_view
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {},
+        {"content": 1},
+        {"content": "x", "title": "y"},
+        {"content": "  "},
+        {"content": "x" * (MAX_CREATED_ARTIFACT_CHARS + 1)},
+    ],
+)
+async def test_created_text_that_cannot_be_saved_is_answered(arguments) -> None:
+    toolbox, _, artifacts = build()
+
+    result = await toolbox.execute(create(**arguments))
+
+    assert not result.ok and result.error
+    assert artifacts.writes == []
+
+
+async def test_a_link_of_the_same_name_is_the_tool_called() -> None:
+    toolbox, computation, artifacts = build(link(name=CREATE_ARTIFACT_TOOL))
+
+    result = await toolbox.execute(create(query="x"))
+
+    assert result.ok and len(computation.calls) == 1
+    assert artifacts.writes == [(TEXT, "x")]

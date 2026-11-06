@@ -44,6 +44,10 @@ interrupted. Making it a node would turn every node rule into an exception.
   person offers it. A link the server cannot honour is reported as unavailable and not
   offered, rather than failing on its first call. A Library item link does not follow a
   copy into another Workspace.
+- **Created artifacts:** every Agent can also call `create_artifact`, which no link names,
+  to save text it wrote (an HTML page, a Markdown note) as a content-addressed text
+  artifact a person can drag out of the conversation. It starts no computation. A tool link
+  with the same name takes its place.
 
 ### A tool call is a computation with no instance
 

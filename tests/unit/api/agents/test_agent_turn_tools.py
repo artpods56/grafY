@@ -334,17 +334,53 @@ async def test_cancelling_during_a_call_withdraws_it_and_stores_no_result() -> N
     assert kinds[-1] == "turn_outcome"
 
 
-async def test_an_agent_with_no_tools_never_asks_for_a_toolbox() -> None:
-    asked: list[object] = []
-    model = RoundsModel(chunks=[], rounds=[["Plain answer."]])
-    harness_ = TurnHarness(
-        model, toolbox_factory=lambda *args: asked.append(args) or None
+async def test_an_agent_with_nothing_connected_can_still_create_an_artifact() -> None:
+    written = FakeArtifacts()
+    model = RoundsModel(
+        chunks=[],
+        rounds=[[("create_artifact", {"content": "<h1>Hi</h1>"})], ["Done."]],
     )
+
+    def toolbox_factory(workspace, project, graph, agent, document):
+        del project
+        return AgentToolbox.build(
+            agent=agent,
+            document=document,
+            graph_id=graph,
+            workspace_id=workspace,
+            node_ports=FakePorts(),
+            computation=Computation(),
+            artifacts=written,
+            views=FakeViews(),
+        )
+
+    harness_ = TurnHarness(model, toolbox_factory=toolbox_factory)
+
+    await harness_.send()
+    turn = await harness_.settle()
+
+    assert turn.status is AgentTurnStatus.COMPLETED
+    assert await harness_.kinds() == [
+        "user_message",
+        "tool_call",
+        "tool_result",
+        "assistant_message",
+        "turn_outcome",
+    ]
+    assert written.writes == [(TEXT, "<h1>Hi</h1>")]
+    result = (await harness_.events())[2].payload
+    assert isinstance(result, ToolResultPayload)
+    assert result.tool_id == "create_artifact"
+    assert [item.port for item in result.artifacts] == ["artifact"]
+
+
+async def test_a_deployment_without_tools_answers_in_plain_text() -> None:
+    model = RoundsModel(chunks=[], rounds=[["Plain answer."]])
+    harness_ = TurnHarness(model)
 
     await harness_.send()
     await harness_.settle()
 
-    assert asked == []
     assert await harness_.kinds() == [
         "user_message",
         "assistant_message",
