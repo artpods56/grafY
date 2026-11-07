@@ -239,6 +239,35 @@ function requireArtifactTypeBindings(
   return bindings;
 }
 
+/** What a call node's saved connections still name that its callee no longer declares. */
+function staleCallPorts(
+  document: SavedGraph["document"],
+  savedNode: SavedGraphNode,
+  spec: NodeSpec,
+): string[] {
+  const inputs = new Set(spec.inputs.map((port) => port.name));
+  const outputs = new Set(spec.outputs.map((port) => port.name));
+  const issues: string[] = [];
+  const note = (direction: "input" | "output", port: string) => {
+    const message = `${direction === "input" ? "Input" : "Output"} “${port}” no longer exists on “${spec.title}”.`;
+    if (!issues.includes(message)) issues.push(message);
+  };
+  for (const edge of document.edges) {
+    if (edge.to_node === savedNode.id && !inputs.has(edge.to_port)) {
+      note("input", edge.to_port);
+    }
+    if (edge.from_node === savedNode.id && !outputs.has(edge.from_port)) {
+      note("output", edge.from_port);
+    }
+  }
+  for (const origin of document.origins ?? []) {
+    if (origin.to_node === savedNode.id && !inputs.has(origin.to_port)) {
+      note("input", origin.to_port);
+    }
+  }
+  return issues;
+}
+
 export function savedGraphFingerprint(graph: GraphDraft): string {
   const presentation = graph.document.presentation ?? {
     viewers: [],
@@ -420,6 +449,20 @@ export function hydrateSavedGraph(
         data = incompatibleNodeData(savedNode, savedEdges, "unsupported", [
           `Operator ${operatorIdentity} is unavailable. This saved node is preserved but cannot run.`,
         ]);
+      } else if (
+        savedNode.kind === "call" &&
+        staleCallPorts(savedGraph.document, savedNode, spec).length > 0
+      ) {
+        // The callee's interface moved under this call site. The connections
+        // stay in the document and show as issues here (ADR 0020), rather than
+        // making the whole Graph impossible to open.
+        data = incompatibleNodeData(
+          savedNode,
+          savedEdges,
+          "invalid",
+          staleCallPorts(savedGraph.document, savedNode, spec),
+          spec,
+        );
       } else {
         try {
           const inputPlugs = requireInputPlugs(savedGraph, savedNode, spec);

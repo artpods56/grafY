@@ -1,15 +1,14 @@
 # ADR 0020: A Project holds graphs, and results belong to nodes
 
-- **Status:** Proposed
+- **Status:** Accepted; implemented (the canvas workflow is described in `docs/design/project-graphs.md`)
 - **Supersedes:** ADR 0016 (the Module half: in-project calls replace published
   Modules until cross-project reuse returns), the materialized-output binding
   model that issue #190 extends
 - **Amends:** ADR 0002 and ADR 0014 (the collaborative document and its command
   batches become Project-scoped)
 - **Related:** `docs/design/workbench-realtime-collaboration.md`,
-  `docs/design/modules-conceptual-model.md`, `apps/api/src/grafy_api/execution/README.md`,
-  `CONTEXT.md` (Saved graph, Module, Upstream output pin, Materialized output binding,
-  Graph execution history, Invocation cache entry)
+  `docs/design/project-graphs.md`, `apps/api/src/grafy_api/runs/README.md`,
+  `CONTEXT.md` (Project, Graph, Call node, Node instance, Fingerprint)
 
 ## Context
 
@@ -131,9 +130,6 @@ anything for the sake of something that already exists:
 - The API, `libs/client`, the MCP operations and the web client change together; no
   route keeps an old shape for an old caller.
 - Vocabulary and capability names change freely to fit the new model.
-
-The work lands on one integration branch and merges to `main` when the Project model
-works end to end. Intermediate steps do not need to keep the current app running.
 
 ### Cross-project reuse waits
 

@@ -7,6 +7,7 @@ import type {
   ProjectCommand,
   SavedGraph,
   SavedGraphDocument,
+  SavedGraphNode,
 } from "@/lib/api";
 
 import {
@@ -25,6 +26,7 @@ import {
   type AuthoredGraphDocument,
   type GraphCommand,
 } from "../model/graph-document";
+import { CALL_NODE_OPERATOR_VERSION } from "../model/project-graphs";
 
 /** One Project command batch entry, as the room carries it. */
 export type RoomProjectCommand = ProjectCommand;
@@ -593,18 +595,25 @@ export function applyRoomCommandToHead(
       head,
       command.graph_id,
       (graph) => {
-        const nodes = graph.document.nodes.map((node) =>
-          node.id === command.node_id
-            ? {
-                ...node,
-                kind: "call" as const,
-                position: command.position,
-              }
-            : node,
-        );
+        // The server appends a node and rejects a duplicate id, so a replay
+        // that sees the id already there has nothing left to do: re-converting
+        // the existing node would move a node the author never placed.
+        if (graph.document.nodes.some((node) => node.id === command.node_id)) {
+          return graph;
+        }
+        const callNode: SavedGraphNode = {
+          id: command.node_id,
+          kind: "call",
+          operator_id: command.callee_graph_id,
+          operator_version: CALL_NODE_OPERATOR_VERSION,
+          position: command.position,
+          config: {},
+          input_plugs: [],
+          artifact_type_bindings: [],
+        };
         return withGraphDocument(graph, {
           ...graph.document,
-          nodes,
+          nodes: [...graph.document.nodes, callNode],
         });
       },
       sequence,

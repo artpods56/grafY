@@ -289,6 +289,9 @@ export interface UseSavedGraphLifecycleResult {
   openSavedGraph: (graphId: string) => Promise<void>;
   removeSavedGraph: (graph: SavedGraphSummary) => Promise<void>;
   syncFromCollaborativeHead: (head: CollaborativeHead) => void;
+  /** The Graph of the Project the canvas shows; null before the first head. */
+  openGraphId: string | null;
+  openGraphInProject: (head: CollaborativeHead, graphId: string) => void;
   purgeLocalGraphState: () => void;
 }
 
@@ -348,6 +351,8 @@ export function useSavedGraphLifecycle({
   // Which Graph of the Project the canvas is showing. The route names the
   // Project, so an open has to carry the choice across a head refresh.
   const openGraphIdRef = React.useRef<string | null>(null);
+  // The same choice as state, so the canvas chrome re-renders when it moves.
+  const [openGraphId, setOpenGraphId] = React.useState<string | null>(null);
   const openRequestRef = React.useRef<AbortController | null>(null);
   const documentGenerationRef = React.useRef(0);
   const mountedRef = React.useRef(true);
@@ -458,6 +463,7 @@ export function useSavedGraphLifecycle({
       const openedGraph = openGraphOf(head, openGraphIdRef.current);
       if (openedGraph === null) return;
       openGraphIdRef.current = openedGraph.id;
+      setOpenGraphId(openedGraph.id);
       const responseDocument = documentOfGraph(openedGraph);
       const responsePresentation = presentationOf(openedGraph);
       const nextActiveGraph = activeGraphFrom(head, openedGraph);
@@ -502,6 +508,18 @@ export function useSavedGraphLifecycle({
       replaceDocument,
       replacePresentation,
     ],
+  );
+
+  /**
+   * Show another Graph of this Project. The Project head already holds every
+   * Graph, so switching is a projection of that head, not a fetch.
+   */
+  const openGraphInProject = React.useCallback(
+    (head: CollaborativeHead, graphId: string): void => {
+      openGraphIdRef.current = graphId;
+      syncFromCollaborativeHead(head);
+    },
+    [syncFromCollaborativeHead],
   );
 
   const saveCurrentGraph = React.useCallback(
@@ -583,6 +601,7 @@ export function useSavedGraphLifecycle({
         const savedGraph = openGraphOf(savedHead, openGraphIdRef.current);
         if (savedGraph === null) return;
         openGraphIdRef.current = savedGraph.id;
+        setOpenGraphId(savedGraph.id);
         const responseDocument = documentOfGraph(savedGraph);
         const responsePresentation = presentationOf(savedGraph);
         const nextActiveGraph = activeGraphFrom(savedHead, savedGraph);
@@ -743,6 +762,7 @@ export function useSavedGraphLifecycle({
           return;
         }
         openGraphIdRef.current = savedGraph.id;
+        setOpenGraphId(savedGraph.id);
         if (
           controller.signal.aborted ||
           !mountedRef.current ||
@@ -1053,6 +1073,8 @@ export function useSavedGraphLifecycle({
     openSavedGraph,
     removeSavedGraph,
     syncFromCollaborativeHead,
+    openGraphId,
+    openGraphInProject,
     purgeLocalGraphState,
   };
 }

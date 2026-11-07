@@ -296,6 +296,7 @@ import {
   artifactDropTargetFitsNode,
   canvasAtPoint,
 } from "./artifact-drop-hit-test";
+import { GraphSwitcher } from "./GraphSwitcher";
 import { useWorkbenchFitViewOptions } from "./useWorkbenchFitViewOptions";
 import { useArtifactViewerCommands } from "./workbench-artifact-viewers";
 import {
@@ -308,11 +309,23 @@ import {
   useArtifactCardCommands,
 } from "./workbench-artifact-cards";
 import {
+  callableGraphs,
+  GRAPH_INPUT_OPERATOR_ID,
+  GRAPH_OUTPUT_OPERATOR_ID,
+  graphInterface,
+  newNodeKind,
+  nextBoundaryName,
+  registryWithProjectGraphs,
+} from "../model/project-graphs";
+import {
   type ArtifactTypeKey,
+  type GraphDefinition,
   type NodeSpec,
   type RunEdgeCollectionMode,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+
+const NO_GRAPHS: readonly GraphDefinition[] = [];
 
 /** What a Project with no Graph in it shows where the canvas would be. */
 const emptyProjectStyles = stylex.create({
@@ -387,10 +400,33 @@ function WorkbenchBody({
   const projectId = initialProjectId;
   const workbenchFitViewOptions = useWorkbenchFitViewOptions();
   const {
-    data: registry,
+    data: apiRegistry,
     error: registryError,
     mutate: refreshNodeRegistry,
   } = useNodeRegistry(workspaceId);
+  /**
+   * What the open Project adds to the node catalog: its boundary operators and
+   * one call node per sibling Graph. Nothing here is a registered operator, so
+   * the registry the canvas hydrates against is the API's plus this. It is held
+   * as state because the Project head is read further down, and it only moves
+   * when the catalog entries move, not on every accepted command.
+   */
+  const [projectCatalog, setProjectCatalog] = React.useState<{
+    key: string;
+    graphs: readonly GraphDefinition[];
+    openGraphId: string | null;
+  }>({ key: "", graphs: [], openGraphId: null });
+  const registry = React.useMemo(
+    () =>
+      apiRegistry
+        ? registryWithProjectGraphs(
+            apiRegistry,
+            projectCatalog.graphs,
+            projectCatalog.openGraphId,
+          )
+        : apiRegistry,
+    [apiRegistry, projectCatalog],
+  );
   const {
     settings: canvasGridSettings,
     bypassSnap,
@@ -968,6 +1004,8 @@ function WorkbenchBody({
     saveCurrentGraph,
     removeSavedGraph,
     syncFromCollaborativeHead,
+    openGraphId: lifecycleOpenGraphId,
+    openGraphInProject,
     purgeLocalGraphState,
   } = useSavedGraphLifecycle({
     workspaceId,
@@ -1192,10 +1230,33 @@ function WorkbenchBody({
    * Graph is the one a person lands on; naming another Graph of the same Project
    * is the picker that #197 will bring.
    */
-  const openGraphId = React.useMemo(
-    () => (projectRoom.head ? defaultGraphId(projectRoom.head) : null),
-    [projectRoom.head],
-  );
+  const openGraphId = React.useMemo(() => {
+    const head = projectRoom.head;
+    if (!head) return null;
+    // The lifecycle hook remembers the choice; a Graph another writer removed
+    // falls back to the Project's first until the next sync repoints it.
+    return lifecycleOpenGraphId !== null &&
+      head.document.graphs.some((graph) => graph.id === lifecycleOpenGraphId)
+      ? lifecycleOpenGraphId
+      : defaultGraphId(head);
+  }, [lifecycleOpenGraphId, projectRoom.head]);
+  // Adjusting state while rendering is React's way to derive it from another
+  // hook's result without a frame that paints the old catalog.
+  const projectGraphs = projectRoom.head?.document.graphs ?? NO_GRAPHS;
+  const projectCatalogKey = JSON.stringify([
+    openGraphId,
+    projectGraphs.map((graph) => [graph.id, graph.name, graphInterface(graph)]),
+    openGraphId === null
+      ? []
+      : callableGraphs(projectGraphs, openGraphId).map((graph) => graph.id),
+  ]);
+  if (projectCatalog.key !== projectCatalogKey) {
+    setProjectCatalog({
+      key: projectCatalogKey,
+      graphs: projectGraphs,
+      openGraphId,
+    });
+  }
   const openGraph = React.useMemo(
     () =>
       projectRoom.head && openGraphId
@@ -1267,28 +1328,137 @@ function WorkbenchBody({
     [],
   );
   /**
+   * One Graph-set change: the room takes the batch, the Project is checkpointed,
+   * and the canvas follows the head that comes back. Adding, renaming and
+   * removing a Graph all travel this way, so a refusal (a duplicate name, a
+   * Graph that still has callers) reaches the person in the room's own words.
+   */
+  const commitProjectBatch = React.useCallback(
+    (
+      commands: readonly RoomProjectCommand[],
+      fallback: string,
+      openAfter: string | null = null,
+    ) => {
+      if (projectId === null) return;
+      void submitRoomBatch(commands)
+        .then(({ head }) =>
+          checkpointProject(workspaceId, projectId, {
+            expected_room_epoch: head.room_epoch,
+            expected_sequence: head.collaboration_sequence,
+          }),
+        )
+        .then(({ head }) => {
+          setUnsyncedRoomEdits(false);
+          if (openAfter === null) applyRoomHead(head);
+          else openGraphInProject(head, openAfter);
+        })
+        .catch((error: unknown) => {
+          setRunError(error instanceof Error ? error.message : fallback);
+        });
+    },
+    [
+      applyRoomHead,
+      openGraphInProject,
+      projectId,
+      setRunError,
+      submitRoomBatch,
+      workspaceId,
+    ],
+  );
+  /**
    * A Project arrives holding Graphs, and one with none has nothing for the
    * canvas to show. The way in is the same command any other writer would send.
+   * Graph names are unique in a Project, so a further Graph gets the next free
+   * "Graph N".
    */
   const addProjectGraph = React.useCallback(() => {
-    if (projectId === null) return;
-    const name = authoredDocumentRef.current.name.trim() || "Untitled workflow";
-    void submitRoomBatch([{ kind: "add_graph", graph_id: createUuid(), name }])
-      .then(({ head }) =>
-        checkpointProject(workspaceId, projectId, {
-          expected_room_epoch: head.room_epoch,
-          expected_sequence: head.collaboration_sequence,
-        }),
-      )
-      .then(({ head }) => applyRoomHead(head))
-      .catch((error: unknown) => {
+    const graphs = projectRoomHeadRef.current?.document.graphs ?? [];
+    const taken = new Set(graphs.map((graph) => graph.name.toLowerCase()));
+    let name = authoredDocumentRef.current.name.trim() || "Untitled workflow";
+    if (graphs.length > 0) {
+      let n = graphs.length + 1;
+      while (taken.has(`graph ${n}`)) n += 1;
+      name = `Graph ${n}`;
+    }
+    const graphId = createUuid();
+    commitProjectBatch(
+      [{ kind: "add_graph", graph_id: graphId, name }],
+      "The Graph could not be added to this Project.",
+      graphId,
+    );
+  }, [commitProjectBatch]);
+  const renameProjectGraph = React.useCallback(
+    (graphId: string, name: string) => {
+      const current = projectRoomHeadRef.current?.document.graphs.find(
+        (graph) => graph.id === graphId,
+      );
+      if (!current) return;
+      commitProjectBatch(
+        [toRoomRenameGraphCommand(graphId, name, current.name)],
+        "The Graph could not be renamed.",
+      );
+    },
+    [commitProjectBatch],
+  );
+  const removeProjectGraph = React.useCallback(
+    (graphId: string) => {
+      commitProjectBatch(
+        [{ kind: "remove_graph", graph_id: graphId }],
+        "The Graph could not be deleted.",
+      );
+    },
+    [commitProjectBatch],
+  );
+  /**
+   * The Graphs this canvas was reached through by opening a call, outermost
+   * first. Empty when a Graph was opened directly. What the canvas shows for a
+   * node is its instance under exactly this call path.
+   */
+  const [callTrail, setCallTrail] = React.useState<
+    readonly { graphId: string; nodeId: string; name: string }[]
+  >([]);
+  /** Switching is a projection of the head the room already holds. */
+  const switchProjectGraph = React.useCallback(
+    (graphId: string, trail: typeof callTrail): boolean => {
+      const head = projectRoomHeadRef.current;
+      if (!head || graphId === openGraphIdRef.current) return false;
+      if (isExecutionRunning() || unsyncedRoomEdits) {
         setRunError(
-          error instanceof Error
-            ? error.message
-            : "The Graph could not be added to this Project.",
+          "Finish or wait for the current run and sync before switching Graphs.",
         );
-      });
-  }, [applyRoomHead, projectId, setRunError, submitRoomBatch, workspaceId]);
+        return false;
+      }
+      setCallTrail(trail);
+      openGraphInProject(head, graphId);
+      return true;
+    },
+    [isExecutionRunning, openGraphInProject, setRunError, unsyncedRoomEdits],
+  );
+  const openProjectGraph = React.useCallback(
+    (graphId: string) => {
+      switchProjectGraph(graphId, []);
+    },
+    [switchProjectGraph],
+  );
+  /** Open the Graph a call node places, remembering where it was called from. */
+  const openCall = React.useCallback(
+    (nodeId: string, calleeGraphId: string) => {
+      const callerId = openGraphIdRef.current;
+      const caller = projectRoomHeadRef.current?.document.graphs.find(
+        (graph) => graph.id === callerId,
+      );
+      if (callerId === null || !caller) return;
+      switchProjectGraph(calleeGraphId, [
+        ...callTrail,
+        { graphId: callerId, nodeId, name: caller.name },
+      ]);
+    },
+    [callTrail, switchProjectGraph],
+  );
+  const backFromCall = React.useCallback(() => {
+    const last = callTrail[callTrail.length - 1];
+    if (last) switchProjectGraph(last.graphId, callTrail.slice(0, -1));
+  }, [callTrail, switchProjectGraph]);
   React.useEffect(() => {
     roomCommandSyncRef.current = {
       submitLocal: (commands, before) => {
@@ -1439,7 +1609,7 @@ function WorkbenchBody({
         instanceKeyText({
           project_id: projectId,
           graph_id: openGraphId,
-          call_path: [],
+          call_path: callTrail.map((entry) => entry.nodeId),
           node_id: node.id,
           map_index: null,
         }),
@@ -1447,7 +1617,20 @@ function WorkbenchBody({
       if (instance) states[node.id] = instance;
     }
     return states;
-  }, [nodes, openGraphId, projectId, projectRoom.instances]);
+  }, [callTrail, nodes, openGraphId, projectId, projectRoom.instances]);
+
+  /** The call node a person could step into: exactly one node is selected and it is a call. */
+  const selectedCall = React.useMemo(() => {
+    const chosen = nodes.filter((node) => node.selected);
+    const [only] = chosen;
+    if (chosen.length !== 1 || !only) return null;
+    if (newNodeKind(only.data.spec) !== "call") return null;
+    return {
+      nodeId: only.id,
+      calleeGraphId: only.data.spec.operator_id,
+      calleeName: only.data.spec.title,
+    };
+  }, [nodes]);
 
   const graphOperationBusy = persistenceOperationBusy || running;
   const localAuthoringEnabled =
@@ -3012,6 +3195,34 @@ function WorkbenchBody({
     [flow],
   );
 
+  /**
+   * The data a freshly placed catalog node starts with. A Graph's boundary node
+   * is addressed by its public name, which must be unique among its siblings, so
+   * a new one takes the next free name instead of one every other would share.
+   */
+  const newCatalogNodeData = React.useCallback(
+    (spec: NodeSpec) => {
+      const data = createWorkflowNodeData(spec);
+      const graph = projectRoomHeadRef.current?.document.graphs.find(
+        (candidate) => candidate.id === openGraphIdRef.current,
+      );
+      if (graph && spec.operator_id === GRAPH_INPUT_OPERATOR_ID) {
+        data.config = {
+          ...data.config,
+          public_name: nextBoundaryName(graph, "input"),
+        };
+      }
+      if (graph && spec.operator_id === GRAPH_OUTPUT_OPERATOR_ID) {
+        data.config = {
+          ...data.config,
+          public_name: nextBoundaryName(graph, "output"),
+        };
+      }
+      return attachNodeCallbacks(data);
+    },
+    [attachNodeCallbacks],
+  );
+
   /** Adds a node with its corner at `at`, else centred on the canvas. */
   const addCatalogNode = React.useCallback(
     (spec: NodeSpec, at?: { x: number; y: number }) => {
@@ -3019,7 +3230,7 @@ function WorkbenchBody({
       const place = at ?? pickerInsertAtRef.current;
       pickerInsertAtRef.current = null;
       const center = canvasCenter({ x: 600, y: 280 });
-      const data = attachNodeCallbacks(createWorkflowNodeData(spec));
+      const data = newCatalogNodeData(spec);
       applyAuthoringCommands([
         addNodeCommand(
           id,
@@ -3031,12 +3242,7 @@ function WorkbenchBody({
       setLibraryOpen(false);
       setContextualDiscovery(null);
     },
-    [
-      applyAuthoringCommands,
-      attachNodeCallbacks,
-      canvasCenter,
-      canvasSelection,
-    ],
+    [applyAuthoringCommands, canvasCenter, canvasSelection, newCatalogNodeData],
   );
 
   const onConnectEnd = React.useCallback<OnConnectEnd>(
@@ -3199,7 +3405,7 @@ function WorkbenchBody({
 
       const upstream = contextualDiscovery.direction === "upstream";
       const id = `node-${createUuid()}`;
-      const data = attachNodeCallbacks(createWorkflowNodeData(candidate.spec));
+      const data = newCatalogNodeData(candidate.spec);
       const binding = choice.route.artifactTypeBinding;
       // Bind the artifact type variable on whichever endpoint lives on the new node.
       if (
@@ -3276,11 +3482,11 @@ function WorkbenchBody({
     },
     [
       applyAuthoringCommands,
-      attachNodeCallbacks,
       canvasSelection,
       canEditProject,
       clearRunError,
       contextualDiscovery,
+      newCatalogNodeData,
       registry,
       running,
     ],
@@ -4526,6 +4732,21 @@ function WorkbenchBody({
               Add a Graph
             </Button>
           </div>
+        ) : null}
+        {projectRoom.head && projectRoom.head.document.graphs.length > 0 ? (
+          <GraphSwitcher
+            graphs={projectRoom.head.document.graphs}
+            openGraphId={openGraphId}
+            canEdit={canSubmitRoomCommands && !running}
+            onOpen={openProjectGraph}
+            onAdd={addProjectGraph}
+            onRename={renameProjectGraph}
+            onDelete={removeProjectGraph}
+            selectedCall={selectedCall}
+            onOpenCall={openCall}
+            callTrail={callTrail}
+            onBackFromCall={backFromCall}
+          />
         ) : null}
         <NodeMenuRegistryContext.Provider value={nodeMenus}>
           <WorkflowCanvas
