@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 
 import { BrandLoader } from "@/components/brand";
 import { Button, ButtonLink } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { GraphViewToggle } from "./GraphViewToggle";
 import type { GraphBrowserView } from "./browser-filters";
 import {
@@ -239,9 +240,11 @@ export function GraphBrowser() {
           </label>
           <label className="grafy-graphs__location-filter">
             <span>Location</span>
-            <select
+            <Select
               value={effectiveLocationId}
               aria-label="Filter by location"
+              size="md"
+              block={false}
               onChange={(event) => setLocationId(event.currentTarget.value)}
             >
               <option value="all">All locations</option>
@@ -250,7 +253,7 @@ export function GraphBrowser() {
                   {workspaceDisplayName(workspace)}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
 

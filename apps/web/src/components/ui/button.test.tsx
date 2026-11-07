@@ -53,15 +53,18 @@ const buttonVariants: ButtonVariant[] = [
   "soft",
   "ghost",
   "danger",
+  "plain",
+  "dashed",
 ];
-const buttonSizes: ButtonSize[] = ["xs", "sm", "md", "lg"];
+const buttonSizes: ButtonSize[] = ["xs", "sm", "md", "lg", "text"];
 const iconButtonVariants: IconButtonVariant[] = [
   "ghost",
   "soft",
   "primary",
   "danger",
+  "accent",
 ];
-const iconButtonSizes: IconButtonSize[] = ["xs", "sm", "md", "lg"];
+const iconButtonSizes: IconButtonSize[] = ["2xs", "xs", "sm", "md", "lg"];
 const iconButtonShapes = ["square", "round"] as const;
 
 describe("Button", () => {
@@ -109,6 +112,35 @@ describe("Button", () => {
     const container = await mount(<Button xstyle={xstyle}>x</Button>);
 
     expect(onlyButton(container).className).toBe("base secondary md override");
+  });
+
+  it("draws a colour chip before the label when the action carries a colour", async () => {
+    const container = await mount(
+      <Button swatch="#c2554a">Annotation colour</Button>,
+    );
+    const button = onlyButton(container);
+    const chip = button.firstElementChild;
+    expect(chip?.tagName).toBe("SPAN");
+    expect(chip?.getAttribute("aria-hidden")).toBe("true");
+    expect((chip as HTMLElement).style.backgroundColor).toBe(
+      "rgb(194, 85, 74)",
+    );
+    expect(button.textContent).toBe("Annotation colour");
+  });
+
+  it("adds no chip when the action carries no colour", async () => {
+    const container = await mount(<Button>Save</Button>);
+    expect(onlyButton(container).querySelector("span")).toBeNull();
+  });
+
+  it("fills the row when the action appends to a list", async () => {
+    const container = await mount(
+      <Button variant="dashed" block>
+        Add field
+      </Button>,
+    );
+
+    expect(onlyButton(container).className).toBe("base dashed md block");
   });
 
   it("is disabled and calls onClick only when enabled", async () => {

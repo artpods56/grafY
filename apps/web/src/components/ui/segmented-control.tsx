@@ -14,6 +14,18 @@ export type SegmentedOption<Value extends string> = {
   value: Value;
   label: React.ReactNode;
   disabled?: boolean;
+  /**
+   * A colour chip before the label: an annotation's colour, a layer's fill.
+   * No kit part took a per-option colour, so an annotation picker had to paint
+   * its own chip inside the label.
+   */
+  swatch?: string;
+  /**
+   * A colour the person chose, applied to the segment itself. StyleX cannot carry
+   * a value that only exists at runtime, so this is the one place a segment takes
+   * an inline style, and it is merged last.
+   */
+  style?: React.CSSProperties;
 };
 
 export type SegmentedControlProps<Value extends string> = {
@@ -100,6 +112,16 @@ const segmented = stylex.create({
       ":hover": tokens.colorTextEmphasis,
     },
   },
+  swatch: {
+    display: "block",
+    width: "8px",
+    height: "8px",
+    flexShrink: 0,
+    borderRadius: "2px",
+    // A colour the person picked can be anything, so it keeps a hairline to stay
+    // visible against a surface of the same colour.
+    boxShadow: `inset 0 0 0 1px ${tokens.colorBorder}`,
+  },
 });
 
 /** A one-of-several choice drawn as joined segments, with radio semantics and arrow-key movement from Base UI. */
@@ -125,18 +147,27 @@ export function SegmentedControl<Value extends string>({
     >
       {options.map((option) => {
         const off = disabled || option.disabled === true;
+        const segment = stylex.props(
+          segmented.segment,
+          segmented[size],
+          off ? segmented.disabled : segmented.enabled,
+          option.value === value ? segmented.on : null,
+        );
         return (
           <Radio.Root
             key={option.value}
             value={option.value}
             disabled={option.disabled}
-            {...stylex.props(
-              segmented.segment,
-              segmented[size],
-              off ? segmented.disabled : segmented.enabled,
-              option.value === value ? segmented.on : null,
-            )}
+            className={segment.className}
+            style={{ ...segment.style, ...option.style }}
           >
+            {option.swatch != null ? (
+              <span
+                aria-hidden="true"
+                {...stylex.props(segmented.swatch)}
+                style={{ backgroundColor: option.swatch }}
+              />
+            ) : null}
             {option.label}
           </Radio.Root>
         );

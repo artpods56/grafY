@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { schemaFields, type SchemaField } from "../../canvas/config-schema";
 import { artifactTypeColor } from "../../canvas/nodes.css";
@@ -205,18 +206,17 @@ export function NodeInspector({
             {disabledReason}
           </span>
         )}
-        <button
+        <Button
           type="button"
+          variant="primary"
+          size="lg"
           disabled={!insertable}
           aria-describedby={insertable ? undefined : INSERT_DISABLED_REASON_ID}
           title={
             insertable ? `Add ${spec.title} to the canvas` : disabledReason
           }
           onClick={onInsert}
-          {...stylex.props(
-            s.addButton,
-            insertable ? null : s.addButtonDisabled,
-          )}
+          xstyle={s.addButton}
         >
           <Plus size={14} aria-hidden="true" />
           Add to canvas
@@ -225,7 +225,7 @@ export function NodeInspector({
               <CornerDownLeft size={11} />
             </kbd>
           ) : null}
-        </button>
+        </Button>
       </footer>
     </>
   );
@@ -884,38 +884,16 @@ const s = stylex.create({
     whiteSpace: "nowrap",
     borderWidth: 0,
   },
+  /**
+   * The kit's `Button lg` is 36px on a desktop and this is the one action a person
+   * aims at in this panel, so its floor stays. It is expressed as `min-height`,
+   * the one property a call site may set beside the kit's `height` without StyleX
+   * throwing the kit's own size away — see `components/ui/touch-target.ts`.
+   */
   addButton: {
     width: "100%",
     minHeight: "44px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "7px",
-    paddingInline: "12px",
     overflow: "hidden",
-    borderWidth: 0,
-    borderRadius: tokens.radiusSm,
-    backgroundColor: {
-      default: tokens.colorAccent,
-      ":hover": tokens.colorAccentHover,
-    },
-    color: tokens.colorOnAccent,
-    cursor: "pointer",
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 720,
-    whiteSpace: "nowrap",
-    outlineColor: tokens.colorAccent,
-    outlineStyle: "solid",
-    outlineOffset: "2px",
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
-  },
-  addButtonDisabled: {
-    backgroundColor: {
-      default: tokens.colorAccentDisabled,
-      ":hover": tokens.colorAccentDisabled,
-    },
-    color: tokens.colorTextDisabled,
-    cursor: "not-allowed",
   },
   kbd: {
     display: "inline-grid",

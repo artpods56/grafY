@@ -142,12 +142,17 @@ describe("VectorLayerStyleBody", () => {
       expect(input?.className.includes("nodrag"), text).toBe(false);
     }
 
-    // A colour well is not a <Field> — the kit draws no swatch — so that control
-    // still carries the classes itself, or React Flow would drag the card.
+    // The kit's ColorField is a labelled group, not a <Field>: it carries
+    // React Flow's classes on its own root <label>, and the well inside it
+    // says nothing. Without those classes React Flow would drag the card.
     const colorWell = container.querySelector<HTMLInputElement>(
       'input[type="color"]',
     );
-    expect(colorWell?.className.includes("nodrag")).toBe(true);
+    expect(colorWell).not.toBeNull();
+    expect(colorWell?.className.includes("nodrag")).toBe(false);
+    const colorRow = colorWell?.closest<HTMLElement>("[class*='nodrag']");
+    expect(colorRow?.tagName).toBe("LABEL");
+    expect(colorRow?.textContent?.trim()).toBe("Point color");
 
     // The kit's control still writes through the node's config writer.
     const radius = named("Point radius");

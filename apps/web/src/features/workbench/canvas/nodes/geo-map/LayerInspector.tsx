@@ -6,8 +6,9 @@ import { ArrowDown, ArrowUp, Eye, EyeOff, RotateCcw } from "lucide-react";
 import type { GeoRenderLayer } from "@/lib/api";
 import { Button, IconButton } from "@/components/ui/button";
 import { Field, TextInput } from "@/components/ui/field";
+import { Slider } from "@/components/ui/slider";
 
-import { RangeControl, clampedNumberChange } from "./control-primitives";
+import { clampedNumberChange } from "./control-primitives";
 import { s } from "./styles";
 import {
   CategorizedPointControls,
@@ -87,13 +88,16 @@ export function LayerInspector({
       {expanded ? (
         <div {...stylex.props(s.controls)}>
           <div {...stylex.props(s.controlGrid)}>
-            <RangeControl
+            <Slider
+              size="dense"
+              className="nodrag nopan nowheel"
+              xstyle={s.controlWide}
               label="Layer opacity"
               value={layer.opacity}
               min={0}
               max={1}
               step={0.05}
-              onChange={(opacity) => onChange({ ...layer, opacity })}
+              onValueChange={(opacity) => onChange({ ...layer, opacity })}
             />
             <Field label="Min zoom" className="nodrag nopan nowheel">
               <TextInput

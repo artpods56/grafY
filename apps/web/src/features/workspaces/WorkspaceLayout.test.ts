@@ -444,6 +444,24 @@ describe("workspace rail route lifecycle", () => {
     ).toBeNull();
   });
 
+  it("keeps the mobile navigation toggle a named button with its expanded state", async () => {
+    const { container } = await renderWorkspaceRail();
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".grafy-mobile-nav__menu",
+    );
+
+    expect(toggle?.getAttribute("aria-label")).toBe("Open navigation");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle?.getAttribute("aria-controls")).toBe(
+      "grafy-primary-navigation",
+    );
+
+    await act(async () => toggle?.click());
+
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.getAttribute("aria-label")).toBe("Close navigation");
+  });
+
   it("keeps recent projects without redundant sidebar controls or icons", async () => {
     testState.savedProjects = [
       {
