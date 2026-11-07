@@ -16,6 +16,7 @@ dependencies = [
     "grafy-plugin-image",
     "grafy-plugin-llm",
     "grafy-plugin-mistral",
+    "grafy-plugin-reducto",
     "grafy-plugin-sql",
     "grafy-plugin-table",
     "grafy-plugin-typesafe",
@@ -37,6 +38,7 @@ members = [
     "plugins/image",
     "plugins/llm",
     "plugins/mistral",
+    "plugins/reducto",
     "plugins/sql",
     "plugins/table",
     "plugins/typesafe",
@@ -56,6 +58,7 @@ grafy-plugin-gis = { workspace = true }
 grafy-plugin-image = { workspace = true }
 grafy-plugin-llm = { workspace = true }
 grafy-plugin-mistral = { workspace = true }
+grafy-plugin-reducto = { workspace = true }
 grafy-plugin-sql = { workspace = true }
 grafy-plugin-table = { workspace = true }
 grafy-plugin-typesafe = { workspace = true }
@@ -90,6 +93,7 @@ include = [
     "plugins/table/*",
     "plugins/llm/*",
     "plugins/mistral/*",
+    "plugins/reducto/*",
     "plugins/gis/*",
     "plugins/sql/*",
     "plugins/typesafe/*",
@@ -116,6 +120,7 @@ executionEnvironments = [
         "plugins/table/src",
         "plugins/llm/src",
         "plugins/mistral/src",
+        "plugins/reducto/src",
         "plugins/gis/src",
         "plugins/sql/src",
         "plugins/typesafe/src",
