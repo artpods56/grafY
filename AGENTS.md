@@ -23,8 +23,7 @@ Single-context: `CONTEXT.md` at the repo root, ADRs in `docs/adr/`. See `docs/ag
    so every `just` recipe reads it; a worktree without one silently falls back
    to built-in defaults. Never print it or commit it. `.env.example` is the
    only shareable copy.
-3. **Production paths from a dev box.** `just prod`, `just deploy`, `just
-   status`, and `just logs` run Docker Compose against `/etc/grafy/grafy.env`
+3. **Production paths from a dev box.** `just prod` and `just deploy` run Docker Compose against `/etc/grafy/grafy.env`
    and the `/etc/grafy/storage.override.yaml` override; `just minio` drives
    `/opt/minio/compose.yaml`. Those are the live host's files, not sandbox
    state.
@@ -49,7 +48,7 @@ elsewhere. Walk this list and say which entries applied:
   committed file lags the schema.
 - **Builtin families vs Plugins.** A node or artifact behavior may live in
   app-owned builtin families under `apps/api` and in one of `plugins/*` (gis,
-  image, llm, mistral, python, sql, table, typesafe). Provider-shaped features
+  image, llm, mistral, table). Provider-shaped features
   need a decision per host, even if the decision is "not here".
 - **Tenancy and capabilities.** Every graph belongs to exactly one Workspace;
   effective permission is role ∩ PAT scope ∩ capability (`CONTEXT.md`). A new

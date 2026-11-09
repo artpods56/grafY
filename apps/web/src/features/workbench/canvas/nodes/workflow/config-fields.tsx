@@ -156,8 +156,6 @@ const s = stylex.create({
     color: tokens.colorText,
     fontSize: tokens.fontSizeSm,
   },
-  /** <TextArea mono> carries the family; the size and the tab stop stay here. */
-  codeTextarea: { fontSize: tokens.fontSizeXs, tabSize: 2 },
   /**
    * The kit has no checkbox. This is the config brick's own treatment: the
    * same silhouette as a text input, with the checked state on the well.
@@ -654,12 +652,8 @@ export function ConfigField({
             value={typeof value === "string" ? value : ""}
             minLength={field.minLength}
             maxLength={field.maxLength}
-            mono={Boolean(field.codeLanguage)}
             className="nodrag nowheel"
-            xstyle={[
-              field.codeLanguage ? s.codeTextarea : null,
-              fillHeight ? s.textareaFill : s.textareaDefault,
-            ]}
+            xstyle={fillHeight ? s.textareaFill : s.textareaDefault}
             onChange={(event) => onChange(event.currentTarget.value)}
           />
           {canResizeBody ? (

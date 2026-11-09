@@ -52,22 +52,6 @@ export interface ExecutionHistoryDrawerProps {
   graphId?: string | null;
   returnFocusRef: React.RefObject<HTMLElement | null>;
   onClose: () => void;
-
-  /**
-   * @deprecated Retired with execution history. Accepted so the un-ported
-   * `Workbench` compiles, and never read.
-   */
-  graphName?: string;
-  /** @deprecated Retired with execution history; never read. */
-  nodeId?: string | null;
-  /** @deprecated Retired with execution history; never read. */
-  initialExecutionId?: string | null;
-  /** @deprecated Retired with execution history; never read. */
-  nodeTitles?: Readonly<Record<string, string>>;
-  /** @deprecated Runs are independent of the author's own run; never read. */
-  executionRunning?: boolean;
-  /** @deprecated Edits never lock a document; never read. */
-  isDirty?: boolean;
 }
 
 export function ExecutionHistoryDrawer({

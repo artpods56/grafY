@@ -25,7 +25,7 @@ def harness(
     service = ArtifactService(
         unit_of_work,
         storage,
-        availability=ArtifactAvailability(unit_of_work, storage),
+        availability=ArtifactAvailability(unit_of_work),
     )
     table = ArtifactObject(
         workspace_id=WORKSPACE,

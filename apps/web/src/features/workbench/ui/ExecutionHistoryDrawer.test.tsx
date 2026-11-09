@@ -443,20 +443,13 @@ describe("ExecutionHistoryDrawer", () => {
     expect(document.activeElement).toBe(returnFocusElement);
   });
 
-  it("ignores the props execution history needed", async () => {
+  it("keeps the retired execution-history vocabulary out of its copy", async () => {
     apiMocks.listRuns.mockResolvedValue(
       runList(run({ id: "run-1", graph_id: OPEN_GRAPH_ID })),
     );
     apiMocks.listWorkspaceMembers.mockResolvedValue([]);
 
-    const { container } = await renderDrawer({
-      graphName: "Invoices",
-      nodeId: "node-1",
-      initialExecutionId: "execution-1",
-      nodeTitles: { "node-1": "Extract invoice" },
-      executionRunning: true,
-      isDirty: true,
-    });
+    const { container } = await renderDrawer();
 
     await vi.waitFor(() => expect(rows(container)).toHaveLength(1));
 

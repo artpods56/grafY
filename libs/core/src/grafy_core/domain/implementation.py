@@ -30,12 +30,7 @@ class BuiltinImplementationIdentity(ImplementationIdentityValue):
 type ImplementationIdentity = BuiltinImplementationIdentity
 
 
-def builtin_identity(build_digest: str) -> BuiltinImplementationIdentity:
-    return BuiltinImplementationIdentity(build_digest=build_digest)
-
-
 __all__ = [
     "BuiltinImplementationIdentity",
     "ImplementationIdentity",
-    "builtin_identity",
 ]

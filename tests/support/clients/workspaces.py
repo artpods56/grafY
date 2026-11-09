@@ -9,17 +9,10 @@ from starlette.testclient import TestClient
 from grafy_api.v1.routes.workspaces.models import (
     PersonalAccessTokenCreateRequest,
     PersonalAccessTokenCreatedResponse,
-    PersonalAccessTokenResponse,
     WorkspaceCreateRequest,
-    WorkspaceInvitationCandidateRequest,
-    WorkspaceInvitationCandidateResponse,
     WorkspaceInvitationCreateRequest,
-    WorkspaceInvitationOwnerResponse,
-    WorkspaceMemberResponse,
-    WorkspaceMemberRoleRequest,
-    WorkspaceResponse,
 )
-from tests.support.clients._http import _expect, _parse, _parse_list, _request
+from tests.support.clients._http import _expect, _parse, _request
 from tests.support.clients.artifacts import ArtifactsApi
 from tests.support.clients.catalog import CatalogApi
 from tests.support.clients.node_secrets import NodeSecretsApi
@@ -69,37 +62,6 @@ class WorkspaceApi:
             f"/v1/workspaces/{self._workspace_id}/members", headers=headers
         )
 
-    def list_members_ok(
-        self, *, headers: Mapping[str, str] | None = None
-    ) -> list[WorkspaceMemberResponse]:
-        response = _expect(self.list_members(headers=headers), 200)
-        return _parse_list(WorkspaceMemberResponse, response)
-
-    def resolve_invitation_candidate(
-        self,
-        payload: WorkspaceInvitationCandidateRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> Response:
-        return _request(
-            self._client,
-            "POST",
-            f"/v1/workspaces/{self._workspace_id}/invitation-candidates/resolve",
-            payload=payload,
-            headers=headers,
-        )
-
-    def resolve_invitation_candidate_ok(
-        self,
-        payload: WorkspaceInvitationCandidateRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> WorkspaceInvitationCandidateResponse:
-        return _parse(
-            WorkspaceInvitationCandidateResponse,
-            _expect(self.resolve_invitation_candidate(payload, headers=headers), 200),
-        )
-
     def create_invitation(
         self,
         payload: WorkspaceInvitationCreateRequest,
@@ -112,44 +74,6 @@ class WorkspaceApi:
             f"/v1/workspaces/{self._workspace_id}/invitations",
             payload=payload,
             headers=headers,
-        )
-
-    def create_invitation_ok(
-        self,
-        payload: WorkspaceInvitationCreateRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> WorkspaceInvitationOwnerResponse:
-        return _parse(
-            WorkspaceInvitationOwnerResponse,
-            _expect(self.create_invitation(payload, headers=headers), 201),
-        )
-
-    def change_member_role(
-        self,
-        user_id: UUID,
-        payload: WorkspaceMemberRoleRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> Response:
-        return _request(
-            self._client,
-            "PATCH",
-            f"/v1/workspaces/{self._workspace_id}/members/{user_id}",
-            payload=payload,
-            headers=headers,
-        )
-
-    def change_member_role_ok(
-        self,
-        user_id: UUID,
-        payload: WorkspaceMemberRoleRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> WorkspaceMemberResponse:
-        return _parse(
-            WorkspaceMemberResponse,
-            _expect(self.change_member_role(user_id, payload, headers=headers), 200),
         )
 
     def remove_member(
@@ -166,12 +90,6 @@ class WorkspaceApi:
             f"/v1/workspaces/{self._workspace_id}/personal-access-tokens",
             headers=headers,
         )
-
-    def list_tokens_ok(
-        self, *, headers: Mapping[str, str] | None = None
-    ) -> list[PersonalAccessTokenResponse]:
-        response = _expect(self.list_tokens(headers=headers), 200)
-        return _parse_list(PersonalAccessTokenResponse, response)
 
     def create_token(
         self,
@@ -220,12 +138,6 @@ class WorkspacesApi:
     def list(self, *, headers: Mapping[str, str] | None = None) -> Response:
         return self._client.get("/v1/workspaces", headers=headers)
 
-    def list_ok(
-        self, *, headers: Mapping[str, str] | None = None
-    ) -> list[WorkspaceResponse]:
-        response = _expect(self.list(headers=headers), 200)
-        return _parse_list(WorkspaceResponse, response)
-
     def create(
         self,
         payload: WorkspaceCreateRequest,
@@ -238,14 +150,4 @@ class WorkspacesApi:
             "/v1/workspaces",
             payload=payload,
             headers=headers,
-        )
-
-    def create_ok(
-        self,
-        payload: WorkspaceCreateRequest,
-        *,
-        headers: Mapping[str, str] | None = None,
-    ) -> WorkspaceResponse:
-        return _parse(
-            WorkspaceResponse, _expect(self.create(payload, headers=headers), 201)
         )

@@ -129,9 +129,7 @@ async def test_complete_feature_reads_preserve_integrity_and_reader_validation(
         error_fragment = "bounds do not match"
     service: ArtifactService | None = None
     if reader == "api":
-        service = ArtifactService(
-            uow, storage, availability=ArtifactAvailability(uow, storage)
-        )
+        service = ArtifactService(uow, storage, availability=ArtifactAvailability(uow))
         operation = service.load_content(artifact)
         error_type = ArtifactContentUnavailableError
     else:

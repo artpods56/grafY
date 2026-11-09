@@ -252,10 +252,6 @@ def request_browser_keys(
     )
 
 
-def request_browser_key(request: object, *, secret: bytes) -> str:
-    return request_browser_keys(request, secret=secret).browser_key
-
-
 def make_browser_abuse_cookie(browser_key: str, *, secret: bytes) -> str:
     payload = browser_key.encode("ascii")
     encoded_payload = _encode(payload)
@@ -335,7 +331,6 @@ __all__ = [
     "BROWSER_ABUSE_COOKIE",
     "BrowserAbuseKeys",
     "make_browser_abuse_cookie",
-    "request_browser_key",
     "request_browser_keys",
     "set_browser_abuse_cookie",
 ]

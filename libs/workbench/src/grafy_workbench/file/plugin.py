@@ -1,8 +1,7 @@
-from grafy_workbench.file import nodes
+from grafy_workbench.file import (  # noqa: F401
+    nodes,  # registers the file.* operators on FILES
+)
 from grafy_workbench.file.declaration import FILES
-
-
-_NODE_MODULES = (nodes,)
 
 
 __all__ = ["FILES"]

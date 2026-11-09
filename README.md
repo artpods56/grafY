@@ -65,16 +65,6 @@ flowchart LR
 - `plugins/mistral` owns Mistral OCR. It wraps `mistralai` and recognizes an
   HTTPS document URL or a raster image, producing Markdown, a blocks table,
   page regions, and cropped figures. The API key stays in node-secret storage.
-- `plugins/typesafe` owns TypeSafe System One judgments. Question nodes build
-  noul, choice, and score questions, and Evaluate sends a collected stack of
-  them with one state through the official `typesafe-sdk` client. Decide and
-  Combine scores apply thresholds and weights locally, so changing them does
-  not call the API again.
-- `plugins/sql` owns engine-neutral parameterized statement artifacts, the
-  existing atomic PostgreSQL batch executor, and an isolated DuckDB executor
-  for joining materialized `table.data@1` artifacts. PostgreSQL connection
-  identity is node configuration, while its password remains in encrypted
-  node-secret storage.
 - `CONTEXT.md` defines the product vocabulary and active scope.
 - `docs/workbench-interaction-plan.md` records the current interaction decisions,
   their rationale, acceptance criteria, and deliberately deferred work.
@@ -261,7 +251,7 @@ upload, save, configure, execute, and inspect a graph.
 ### Install and run commit hooks
 
 `just install` installs the repository dependencies and enables the local commit
-hook. To enable the hook on its own, run `just hooks-install`.
+hook. To enable the hook on its own, run `uv run prek install`.
 
 Git then runs the staged-file checks from `.pre-commit-config.yaml` before each
 commit. To run the checks manually on staged files, use `uv run prek run`. To

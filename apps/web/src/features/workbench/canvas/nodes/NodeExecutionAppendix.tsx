@@ -208,8 +208,6 @@ export interface NodeExecutionAppendixProps {
   run: RunNodeResult | null;
   historyContext: WorkflowNodeHistoryContext | null;
   instanceState?: NodeInstanceState | null;
-  /** @deprecated A Run has no history to open; kept while the canvas catches up. */
-  onOpenHistory?: (nodeId: string, executionId?: string) => void;
 }
 
 const STATE_LABELS: Record<NodeInstanceState, string> = {

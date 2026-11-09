@@ -40,13 +40,5 @@ class InstanceStateTracker:
         self._published = current
         return changed, removed
 
-    def forget(self) -> None:
-        """Drop what was published, so the next diff reports everything again."""
-        self._published = {}
-
-    def current(self) -> list[InstanceStateSnapshot]:
-        """What was last published, in the order it was published in."""
-        return list(self._published.values())
-
 
 __all__ = ["InstanceStateTracker"]

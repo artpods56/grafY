@@ -412,69 +412,6 @@ async def load_json_collections_page(
     )
 
 
-async def json_collections_artifact_is_accessible(
-    artifact: ArtifactObject,
-    storage: FileStoragePort,
-) -> bool:
-    if artifact.bucket is None or artifact.object_key is None:
-        return False
-    if await storage.stat(artifact.bucket, artifact.object_key) is None:
-        return False
-    try:
-        manifest = await load_json_collections_manifest(artifact, storage)
-    except ArtifactContractError:
-        return False
-    except ResolutionError as exc:
-        if isinstance(exc.__cause__, ValueError):
-            return False
-        raise
-    for collection in manifest.collections:
-        for chunk in collection.chunks:
-            if await storage.stat(artifact.bucket, chunk.object_key) is None:
-                return False
-    return True
-
-
-async def json_collections_artifact_is_intact(
-    artifact: ArtifactObject,
-    storage: FileStoragePort,
-) -> bool:
-    if artifact.bucket is None or artifact.object_key is None:
-        return False
-    if await storage.stat(artifact.bucket, artifact.object_key) is None:
-        return False
-    try:
-        manifest = await load_json_collections_manifest(artifact, storage)
-    except ArtifactContractError:
-        return False
-    except ResolutionError as exc:
-        if isinstance(exc.__cause__, ValueError):
-            return False
-        raise
-    for collection in manifest.collections:
-        for descriptor in collection.chunks:
-            if await storage.stat(artifact.bucket, descriptor.object_key) is None:
-                return False
-            try:
-                chunk = await load_stored_model(
-                    storage,
-                    bucket=artifact.bucket,
-                    object_key=descriptor.object_key,
-                    model=JsonCollectionChunk,
-                    expected_byte_size=descriptor.byte_size,
-                    expected_sha256=descriptor.sha256,
-                )
-            except (FileNotFoundError, ValueError):
-                return False
-            if (
-                chunk.collection_id != collection.id
-                or chunk.offset != descriptor.offset
-                or len(chunk.items) != descriptor.item_count
-            ):
-                return False
-    return True
-
-
 __all__ = [
     "JSON_COLLECTIONS_STORAGE_FORMAT",
     "SUPPORTED_JSON_COLLECTIONS_STORAGE_FORMATS",
@@ -488,8 +425,6 @@ __all__ = [
     "JsonCollectionsManifest",
     "JsonCollectionsPage",
     "StoredJsonCollections",
-    "json_collections_artifact_is_accessible",
-    "json_collections_artifact_is_intact",
     "load_json_collections_manifest",
     "load_json_collections_page",
     "save_json_collections",

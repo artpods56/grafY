@@ -116,22 +116,6 @@ body.grafy-side-panel-resizing {
   }
 }
 
-/*
- * Base UI data-attribute cosmetics.
- * Plain (unlayered) CSS so it overrides StyleX's @layer rules, which StyleX
- * uses for specificity. Kept minimal — only the states StyleX can't target.
- */
-.grafy-tabs-trigger[data-active] {
-  background-color: light-dark(#f4f4f4, #222222);
-  color: light-dark(#111111, #f5f5f5);
-  border-bottom: 2px solid light-dark(#111111, #ffffff);
-}
-
-.grafy-select-item[data-highlighted] {
-  background-color: light-dark(#f4f4f4, #222222);
-  color: light-dark(#111111, #f5f5f5);
-}
-
 @keyframes grafy-spin {
   to {
     transform: rotate(360deg);
@@ -281,26 +265,6 @@ body.grafy-side-panel-resizing {
   stroke-width: 3;
 }
 
-.grafy-flow-controls button {
-  width: 30px;
-  height: 30px;
-  border-bottom-color: light-dark(
-    rgba(0, 0, 0, 0.08),
-    rgba(255, 255, 255, 0.08)
-  );
-  background: transparent;
-  color: light-dark(#8b9099, #9da1a8);
-}
-
-.grafy-flow-controls button:hover {
-  background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.07));
-  color: light-dark(#1a1c20, #f0f1f3);
-}
-
-.grafy-flow-controls svg {
-  fill: currentColor;
-}
-
 /* React Flow positions each edge in an overflow-visible SVG whose own width is
  * intentionally zero. The global responsive-SVG reset must not collapse it. */
 .react-flow__edges > svg {
@@ -335,12 +299,6 @@ body.grafy-side-panel-resizing {
 .grafy-brand-icon,
 .grafy-brand-wordmark {
   filter: var(--grafy-brand-filter);
-}
-
-.grafy-brand-lockup {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .grafy-brand-loader {
@@ -411,7 +369,6 @@ body.grafy-side-panel-resizing {
   min-width: 0;
 }
 
-.grafy-auth-threshold__eyebrow,
 .grafy-workspace-overview__eyebrow {
   color: light-dark(#6b6b6b, #a3a3a3);
   font-size: 11px;
@@ -421,8 +378,7 @@ body.grafy-side-panel-resizing {
 }
 
 .grafy-auth-threshold h1,
-.grafy-workspace-directory__header h1,
-.grafy-workspace-overview__header h1 {
+.grafy-workspace-directory__header h1 {
   font-size: clamp(1.7rem, 3vw, 2.45rem);
   font-weight: 500;
   letter-spacing: -0.03em;
@@ -434,8 +390,7 @@ body.grafy-side-panel-resizing {
 }
 
 .grafy-auth-threshold__detail,
-.grafy-workspace-directory__header p,
-.grafy-workspace-overview__copy {
+.grafy-workspace-directory__header p {
   max-width: 520px;
   color: light-dark(#6b6b6b, #a3a3a3);
   font-size: 14px;
@@ -676,7 +631,6 @@ body.grafy-rail-resizing {
 body.grafy-rail-resizing .grafy-workspace-rail,
 body.grafy-rail-resizing .grafy-workspace-directory__main,
 body.grafy-rail-resizing .grafy-graphs__main,
-body.grafy-rail-resizing .grafy-workspace-overview,
 body.grafy-rail-resizing .grafy-workspace-settings {
   transition: none;
 }
@@ -1209,14 +1163,12 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   .grafy-workspace-rail__workspace-select select,
   .grafy-workspace-directory__main,
   .grafy-graphs__main,
-  .grafy-workspace-overview,
   .grafy-workspace-settings {
     transition: none;
   }
 }
 
-.grafy-workspace-directory__main,
-.grafy-workspace-overview {
+.grafy-workspace-directory__main {
   max-width: 1080px;
   min-height: 100svh;
   margin: 0 auto;
@@ -1224,8 +1176,7 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   transition: padding 180ms ease;
 }
 
-.grafy-workspace-directory__header,
-.grafy-workspace-overview__header {
+.grafy-workspace-directory__header {
   display: flex;
   align-items: end;
   justify-content: space-between;
@@ -1233,8 +1184,7 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   padding-bottom: 24px;
 }
 
-.grafy-workspace-directory__header p,
-.grafy-workspace-overview__copy {
+.grafy-workspace-directory__header p {
   margin-top: 8px;
 }
 
@@ -1273,27 +1223,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   color: light-dark(#111111, #f5f5f5);
   font: inherit;
   font-size: 14px;
-}
-
-.grafy-workspace-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: light-dark(#6b6b6b, #a3a3a3);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.grafy-workspace-sort select {
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid light-dark(#d9d9d9, #333333);
-  border-radius: 6px;
-  outline: 0;
-  background: light-dark(#ffffff, #111111);
-  color: light-dark(#111111, #f5f5f5);
-  font: inherit;
-  font-size: 13px;
 }
 
 .grafy-workspace-section {
@@ -1390,7 +1319,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   font-size: 13px;
 }
 
-.grafy-workspace-empty__mark,
 .grafy-workspace-edu__mark {
   width: 42px;
   height: 42px;
@@ -1426,18 +1354,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
       transparent 46%
     );
   opacity: 0.85;
-}
-
-.grafy-workspace-create__hint {
-  display: block;
-  margin-top: 6px;
-  color: light-dark(#6b6b6b, #8a8a8a);
-  font-size: 12px;
-}
-
-.grafy-workspace-create__hint code {
-  font-family:
-    var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .grafy-workspace-create,
@@ -1490,36 +1406,8 @@ body.grafy-rail-resizing .grafy-workspace-settings {
 .grafy-member-form input:focus,
 .grafy-member-form select:focus,
 .grafy-member-row select:focus,
-.grafy-workspace-search:focus-within,
-.grafy-workspace-sort select:focus {
+.grafy-workspace-search:focus-within {
   border-color: light-dark(#111111, #ffffff);
-}
-
-.grafy-workspace-overview__actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: end;
-  gap: 8px;
-}
-
-.grafy-workspace-overview__section {
-  padding: 24px 0;
-  border-bottom: 1px solid light-dark(#d9d9d9, #2a2a2a);
-}
-
-.grafy-workspace-overview__section-heading {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 16px;
-  color: light-dark(#6b6b6b, #a3a3a3);
-}
-
-.grafy-workspace-overview__section-heading h2 {
-  margin-top: 5px;
-  color: light-dark(#111111, #f5f5f5);
-  font-size: 15px;
-  font-weight: 500;
 }
 
 .grafy-workspace-settings {
@@ -1971,31 +1859,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   font-size: 14px;
 }
 
-.grafy-graphs__location-filter {
-  display: grid;
-  gap: 5px;
-  color: light-dark(#6b6b6b, #a3a3a3);
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.grafy-graphs__location-filter select {
-  min-width: 184px;
-  min-height: 40px;
-  padding: 0 32px 0 11px;
-  border: 1px solid light-dark(#d9d9d9, #333333);
-  border-radius: 8px;
-  outline: 0;
-  background: light-dark(#ffffff, #111111);
-  color: light-dark(#111111, #f5f5f5);
-  font: inherit;
-  font-size: 13px;
-}
-
-.grafy-graphs__location-filter select:focus {
-  border-color: light-dark(#111111, #f5f5f5);
-}
-
 .grafy-graphs__view-bar {
   min-height: 38px;
   display: flex;
@@ -2204,10 +2067,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
     grid-template-columns: 1fr;
   }
 
-  .grafy-graphs__location-filter select {
-    width: 100%;
-  }
-
   .grafy-graphs__state {
     grid-template-columns: 28px minmax(0, 1fr);
   }
@@ -2274,7 +2133,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   }
 
   .grafy-workspace-directory__main,
-  .grafy-workspace-overview,
   .grafy-workspace-settings {
     padding: 28px 18px 40px calc(var(--grafy-rail-width, 64px) + 16px);
   }
@@ -2301,8 +2159,7 @@ body.grafy-rail-resizing .grafy-workspace-settings {
     grid-row: 1 / span 2;
   }
 
-  .grafy-workspace-directory__header,
-  .grafy-workspace-overview__header {
+  .grafy-workspace-directory__header {
     align-items: start;
     flex-direction: column;
   }
@@ -2322,7 +2179,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
 
   .grafy-workspace-create,
   .grafy-workspace-join,
-  .grafy-workspace-member-form,
   .grafy-member-form {
     align-items: stretch;
     flex-direction: column;
@@ -2539,7 +2395,6 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   }
 
   .grafy-workspace-directory__main,
-  .grafy-workspace-overview,
   .grafy-workspace-settings,
   .grafy-graphs__main {
     padding: calc(var(--grafy-mobile-page-top) + env(safe-area-inset-top))
@@ -2566,32 +2421,27 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   }
 
   .grafy-workspace-directory__header,
-  .grafy-workspace-overview__header,
   .grafy-graphs__header {
     gap: 18px;
   }
 
-  .grafy-workspace-directory__actions,
-  .grafy-workspace-overview__actions {
+  .grafy-workspace-directory__actions {
     width: 100%;
     justify-content: flex-start;
   }
 
   .grafy-workspace-directory__actions > *,
-  .grafy-workspace-overview__actions > *,
   .grafy-graphs__header > .grafy-graphs__header-action {
     min-width: 0;
     flex: 1 1 100%;
   }
 
-  .grafy-workspace-sort select,
   .grafy-workspace-search,
   .grafy-workspace-create input,
   .grafy-member-form input,
   .grafy-member-form select,
   .grafy-member-row select,
-  .grafy-graphs__search,
-  .grafy-graphs__location-filter select {
+  .grafy-graphs__search {
     min-height: 44px;
   }
 
@@ -2656,44 +2506,4 @@ body.grafy-rail-resizing .grafy-workspace-settings {
 [data-grafy-geo-map]
   .maplibregl-canvas-container.maplibregl-interactive:active {
   cursor: grabbing;
-}
-
-.grafy-agent {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid light-dark(#cbd5e1, #475569);
-  border-radius: 10px;
-  background: light-dark(#fff, #1e293b);
-  color: light-dark(#0f172a, #f1f5f9);
-  overflow: hidden;
-}
-.grafy-agent header {
-  display: flex;
-  justify-content: space-between;
-  cursor: grab;
-}
-.grafy-agent form,
-.grafy-agent label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.grafy-agent__transcript {
-  flex: 1;
-  min-height: 40px;
-  overflow: auto;
-}
-.grafy-agent button,
-.grafy-agent select,
-.grafy-agent textarea,
-.grafy-agent input {
-  font: inherit;
-  max-width: 100%;
-}
-.grafy-agent__configuration {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
 }

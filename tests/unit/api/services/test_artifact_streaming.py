@@ -68,7 +68,7 @@ def test_stored_artifact_content_streams_fixed_chunks_and_closes_source() -> Non
     service = ArtifactService(
         unit_of_work,
         cast(FileStoragePort, storage),
-        availability=ArtifactAvailability(unit_of_work, cast(FileStoragePort, storage)),
+        availability=ArtifactAvailability(unit_of_work),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),
@@ -116,7 +116,7 @@ def test_buffered_reconstruction_is_rejected_before_loading_storage(
     service = ArtifactService(
         unit_of_work,
         cast(FileStoragePort, storage),
-        availability=ArtifactAvailability(unit_of_work, cast(FileStoragePort, storage)),
+        availability=ArtifactAvailability(unit_of_work),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),
@@ -147,9 +147,7 @@ def test_small_inline_content_without_size_metadata_remains_available() -> None:
     service = ArtifactService(
         unit_of_work,
         cast(FileStoragePort, TrackingStorage(b"unused")),
-        availability=ArtifactAvailability(
-            unit_of_work, cast(FileStoragePort, TrackingStorage(b"unused"))
-        ),
+        availability=ArtifactAvailability(unit_of_work),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),

@@ -213,8 +213,8 @@ describe("artifact grouping", () => {
     });
   });
 
-  it("collects TypeSafe question outputs that only exist on producer cards", () => {
-    const question = (id: string, x: number): ArtifactViewerNode => ({
+  it("collects markdown answers that only exist on producer cards", () => {
+    const answer = (id: string, x: number): ArtifactViewerNode => ({
       id,
       type: ARTIFACT_VIEWER_NODE_TYPE,
       selected: true,
@@ -222,14 +222,14 @@ describe("artifact grouping", () => {
       data: { mode: "artifact", layout: null, artifactRef: null },
     });
     const state: ArtifactViewerCanvasState = {
-      nodes: [question("q1", 0), question("q2", 240)],
-      edges: ["q1", "q2"].map((id) => ({
+      nodes: [answer("a1", 0), answer("a2", 240)],
+      edges: ["a1", "a2"].map((id) => ({
         id: `feed-${id}`,
         type: ARTIFACT_VIEWER_EDGE_TYPE,
-        source: `question-${id}`,
+        source: `answer-${id}`,
         target: id,
         targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
-        data: { sourcePortName: "question" },
+        data: { sourcePortName: "answer" },
       })),
       bindings: [],
       annotations: [],
@@ -238,22 +238,22 @@ describe("artifact grouping", () => {
       state,
       origins: [],
       values: {
-        q1: {
-          artifact_id: "question-a",
-          artifact_type: "typesafe.question",
+        a1: {
+          artifact_id: "answer-a",
+          artifact_type: "text.markdown",
           schema_version: 1,
         },
-        q2: {
-          artifact_id: "question-b",
-          artifact_type: "typesafe.question",
+        a2: {
+          artifact_id: "answer-b",
+          artifact_type: "text.markdown",
           schema_version: 1,
         },
       },
     });
     const stack = grouped.nodes.find((node) => node.selected);
     expect(stack?.data.artifactRef).toMatchObject({
-      artifact_type: "typesafe.question",
-      item_refs: [{ artifact_id: "question-a" }, { artifact_id: "question-b" }],
+      artifact_type: "text.markdown",
+      item_refs: [{ artifact_id: "answer-a" }, { artifact_id: "answer-b" }],
     });
     expect(grouped.edges).toEqual([]);
   });

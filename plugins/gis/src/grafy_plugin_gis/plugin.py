@@ -4,7 +4,9 @@ from grafy_core.runtime.persistence import (
 )
 from grafy_core.runtime.resolvers import InlineModelResolver
 
-from grafy_plugin_gis import nodes
+from grafy_plugin_gis import (  # noqa: F401
+    nodes,  # registers the gis.* operators on GIS
+)
 from grafy_plugin_gis.artifacts import (
     GEO_FEATURE_COLLECTION,
     GEO_MAP_DOCUMENT,
@@ -19,9 +21,6 @@ from grafy_plugin_gis.persistence import (
     RasterScanOutputWriter,
     RasterScanResolver,
 )
-
-
-_NODE_MODULES = (nodes,)
 
 
 GIS.register(

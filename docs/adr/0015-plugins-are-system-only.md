@@ -31,14 +31,13 @@ deployment question with a clear answer: publication is a platform operation.
 
 Plugins exist in one namespace: the deployment-owned System namespace.
 
-**One namespace, same durable shapes.** `PluginReleaseNamespace`,
-`PluginInstallation`, `PluginReleaseSelection` and `PluginReleaseRevocation`
-reject any scope other than System, and an installation always names a platform
-actor. The stored columns, the wire shape of a release pin
-(`{scope, slug, revision}`) and `PluginReleaseScope.WORKSPACE` stay in place,
-because graph documents, graph revisions and collaboration heads already store
-pins that way. Replacing the vocabulary would be a data migration for no
-behaviour.
+**One namespace, same durable shapes.** A release pin resolves only in the
+deployment-owned System namespace, and publication is always attributed to a
+platform actor rather than to a Workspace member. The stored columns, the wire
+shape of a release pin (`{scope, slug, revision}`) and the `workspace` scope
+value stay in place, because graph documents, graph revisions and collaboration
+heads already store pins that way. Replacing the vocabulary would be a data
+migration for no behaviour.
 
 **Stored Workspace pins refuse, they do not crash.** A pin whose scope is
 `workspace` resolves to no release: preflight and compilation report

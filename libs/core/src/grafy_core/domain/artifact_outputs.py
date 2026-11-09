@@ -28,22 +28,6 @@ class ArtifactOutputEnvelope(BaseModel):
         return self
 
 
-def normalize_artifact_outputs(
-    outputs: dict[str, ArtifactOutputValue],
-) -> dict[str, ArtifactOutputValue]:
-    normalized: dict[str, ArtifactOutputValue] = {}
-    for raw_port, value in outputs.items():
-        port = raw_port.strip()
-        if port == "":
-            raise ValueError("Artifact output port must not be blank")
-        if len(port) > 255:
-            raise ValueError("Artifact output port must be at most 255 characters")
-        if port in normalized:
-            raise ValueError(f"Duplicate artifact output port {port!r}")
-        normalized[port] = value.model_copy(deep=True)
-    return normalized
-
-
 def artifact_outputs_to_storage(
     outputs: dict[str, ArtifactOutputValue],
 ) -> list[dict[str, object]]:

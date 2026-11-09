@@ -19,8 +19,9 @@ route accepts a real graph UUID **or** the reserved literal `new`.
 
 | URL | Component | Purpose |
 |---|---|---|
-| `/` | `GraphBrowser` (`graphs/GraphBrowser`) | Graph discovery ("My graphs") |
-| `/graphs` | `GraphBrowser` | Same browser, "Your work" entry |
+| `/` | `WorkspaceGraphRedirect` (`graphs/WorkspaceGraphRedirect`) | Entry: choose a location, then hand off to its graph list |
+| `/graphs` | `WorkspaceGraphRedirect` | The same redirect, kept so an old bookmark still lands |
+| `/workspaces/[workspaceSlug]/projects` | `WorkspaceGraphBrowser` (`graphs/WorkspaceGraphBrowser`) | Graph discovery ("My graphs") for one workspace |
 | `/workspaces` | `WorkspacesPage` | Teams & access directory |
 | `/workspaces/[workspaceSlug]` | `WorkspaceOverview` | Team / personal settings |
 | `/workspaces/[workspaceSlug]/graphs/[graphId]` | `Workbench` | The canvas; `graphId` is a UUID or `new` |
@@ -33,18 +34,22 @@ route accepts a real graph UUID **or** the reserved literal `new`.
 ### `/` vs `/graphs`
 
 These are **aliases of one logical route**. `app/page.tsx` and `app/graphs/page.tsx`
-both re-export the same `GraphBrowser` component (`page.test.tsx` asserts this),
-and `WorkspaceLayout.tsx` treats both as the active "graph browser"
-(`pathname === "/" || pathname === "/graphs"`). `/` is the post-login root;
-`/graphs` is the explicit "All graphs" destination the rail pushes to. They are
-interchangeable — the graph below draws an alias edge `ROOT --> GRAPHS` rather
-than treating them as distinct screens.
+both re-export the same `WorkspaceGraphRedirect` component (`page.test.tsx`
+asserts this), and `WorkspaceLayout.tsx` treats both as the active "graph
+browser" (`pathname === "/" || pathname === "/graphs"`). `/` is the post-login
+root; `/graphs` is the explicit "All graphs" destination the rail pushes to.
+Neither renders a list: each picks a location from the address and
+`router.replace`s to `/workspaces/[workspaceSlug]/projects`, where
+`WorkspaceGraphBrowser` draws the rows. They are interchangeable — the graph
+below draws an alias edge `ROOT --> GRAPHS` rather than treating them as distinct
+screens, and both edges land on the same browser screen `BROWSER`.
 
 ## Query strings
 
 Only the graph browser puts state in the address, and only three parameters are
 its own. `apps/web/src/features/graphs/browser-filters.ts` owns reading and
-writing them, so no route parses `q` by hand.
+writing them, so neither `WorkspaceGraphRedirect` nor `WorkspaceGraphBrowser`
+parses `q` by hand.
 
 | Parameter | Values | Omitted when |
 |---|---|---|
@@ -61,7 +66,7 @@ Rules that hold across the family:
 - **Any other parameter belongs to another writer** (an analytics tag, a return
   path) and travels through untouched.
 - **`location` is entry-only.** `/` and `/graphs` read it, then drop it when they
-  hand off to `/workspaces/[slug]/graphs`; on the browser it is someone else's
+  hand off to `/workspaces/[slug]/projects`; on the browser it is someone else's
   parameter.
 - **A slug in the address is a request, not a fact.** The entry route matches it
   against the locations the person can actually reach and falls back to their
@@ -86,7 +91,7 @@ uses matters for back-button / history semantics.
 
 | Mechanism | Where | History semantics |
 |---|---|---|
-| `<Link>` (`next/link`) | GraphBrowser rows, WorkspaceOverview | Normal push; browser back returns |
+| `<Link>` (`next/link`) | `WorkspaceGraphBrowser` rows, WorkspaceOverview | Normal push; browser back returns |
 | `router.push(...)` | Programmatic flows (create workspace, open graph, new graph, switch workspace) | Normal push |
 | `router.replace(...)` | Post-save / post-delete / room-terminal redirects | **Replaces** current history entry (back skips it) |
 | `window.open(...)` | Workbench "open module source graph" | New tab |
@@ -100,20 +105,23 @@ flowchart TD
         A[Signed out / expired] --> LOGIN[OIDC login] --> RET[Return to original URL]
     end
 
-    ROOT["/ — GraphBrowser"]
-    GRAPHS["/graphs — GraphBrowser"]
+    ROOT["/ — redirect to a location's graphs"]
+    GRAPHS["/graphs — same redirect"]
+    BROWSER["/workspaces/[slug]/projects — WorkspaceGraphBrowser"]
     WS["/workspaces — Teams & access"]
     WSS["/workspaces/[workspaceSlug] — WorkspaceOverview"]
     WB_NEW["/workspaces/[slug]/graphs/new — blank canvas"]
     WB_G["/workspaces/[slug]/graphs/[graphId] — canvas"]
 
-    %% Graph discovery → everywhere
+    %% The two entry routes are aliases of one logical route
     ROOT --> GRAPHS
-    ROOT --> WS
-    ROOT --> WSS
-    GRAPHS --> ROOT
-    GRAPHS --> WS
-    GRAPHS --> WSS
+    %% Entry routes → the directory when there is no workspace to open
+    ROOT -. replace .-> WS
+    GRAPHS -. replace .-> WS
+
+    %% The entry routes own no list; they replace onto the workspace browser
+    ROOT -. replace .-> BROWSER
+    GRAPHS -. replace .-> BROWSER
 
     %% Teams & access → workspace settings
     WS --> WSS
@@ -121,17 +129,15 @@ flowchart TD
     %% Workspace settings → out
     WSS --> ROOT
 
-    %% Open / create graph from discovery & settings
-    ROOT --> WB_NEW
-    GRAPHS --> WB_NEW
-    ROOT --> WB_G
-    GRAPHS --> WB_G
+    %% Open / create graph from the browser & settings
+    BROWSER --> WB_NEW
+    BROWSER --> WB_G
     WSS --> WB_G
     WSS --> WB_NEW
 
     %% Rail: switch workspace / brand / settings (router.push)
-    ROOT --> WSS
-    GRAPHS --> WSS
+    BROWSER --> WS
+    BROWSER --> WSS
     WB_NEW --> WSS
     WB_G --> WSS
     WSS --> WS
@@ -160,13 +166,20 @@ tab). Solid edges are normal `<Link>` / `router.push`.*
 Each edge below names the file that owns it, the trigger, and the mechanism.
 Dotted edges replace history; plain edges push.
 
-### From graph discovery (`/`, `/graphs`)
+### From the entry routes (`/`, `/graphs`)
 
 | Trigger | Destination | Mechanism | Owner |
 |---|---|---|---|
-| Click a graph row | `/workspaces/[slug]/graphs/[id]` | `<Link>` | `graphs/GraphBrowser.tsx` (`GraphRow`) |
-| "New graph" (one location) | `/workspaces/[slug]/graphs/new` | `router.push` | `graphs/GraphBrowser.tsx` (`startGraph`) |
-| "New graph" (choose location dialog) | `/workspaces/[slug]/graphs/new` | `router.push` | `graphs/GraphBrowser.tsx` (dialog) |
+| Arrive with a reachable `?location=` slug | `/workspaces/[slug]/projects` (+ carried filters) | `router.replace` | `graphs/WorkspaceGraphRedirect.tsx` |
+| Arrive with no reachable slug — the usual location is chosen | `/workspaces/[slug]/projects` | `router.replace` | `graphs/WorkspaceGraphRedirect.tsx` |
+| No workspace at all | `/workspaces` | `router.replace` | `graphs/WorkspaceGraphRedirect.tsx` |
+
+### From the graph browser (`/workspaces/[slug]/projects`)
+
+| Trigger | Destination | Mechanism | Owner |
+|---|---|---|---|
+| Click a graph row | `/workspaces/[slug]/graphs/[id]` | `<Link>` | `graphs/WorkspaceGraphBrowser.tsx` (`GraphRow`) |
+| "New graph" | `/workspaces/[slug]/graphs/new` | `router.push` | `graphs/WorkspaceGraphBrowser.tsx` (`startGraph`) |
 | Rail brand / "All graphs" | `/graphs` | `router.push` | `workspaces/WorkspaceLayout.tsx` (`goGraphs`) |
 | Rail "Teams & access" | `/workspaces` | `router.push` | `workspaces/WorkspaceLayout.tsx` |
 | Rail workspace switcher | `/workspaces/[slug]` | `router.push` | `workspaces/WorkspaceLayout.tsx` |
@@ -227,9 +240,10 @@ away.
 
 ## Reasoning guide
 
-- **"Where do I go to open a graph?"** → `GraphBrowser` rows `<Link>` into
-  `/workspaces/[slug]/graphs/[id]`; the rail and quick-switch use `router.push`
-  to the same family.
+- **"Where do I go to open a graph?"** → `/` and `/graphs` redirect to
+  `/workspaces/[slug]/projects`; `WorkspaceGraphBrowser` rows `<Link>` from there
+  into `/workspaces/[slug]/graphs/[id]`, and the rail and quick-switch use
+  `router.push` to the same family.
 - **"How does the canvas URL change when I save a new graph?"** → first save
   calls `router.replace` from `…/graphs/new` to `…/graphs/[id]` so the back
   button does not land on a blank-draft URL.

@@ -488,21 +488,16 @@ versioned, published, or executed in another process; the import name is still
 never catalog identity, and the slug is.
 See [ADR 0017](docs/adr/0017-plugins-are-application-code-in-process.md).
 
-The current application registry excludes Python and SQL. Python execution and
-its presets are retired. SQL remains unavailable pending its execution safety
-review. All registered nodes use the deployment build identity.
+Python execution and its presets are retired, and there is no SQL family.
+All registered nodes use the deployment build identity.
 
 ### Egress guard
 
 The single place that decides whether a destination named in node configuration
 may be dialed: it resolves the host, refuses the address set unless every answer
-is a global address, and holds the connection to one of those answers — by
-dialing the validated address for HTTP, and by asserting the kernel-reported peer
-address before any statement runs for PostgreSQL, whose driver cannot separate
-the address it dials from the name a certificate is verified against. Every
-user-supplied destination goes through it
-— LLM, Mistral and Typesafe `base_url`, WFS and WMS, and the SQL node's
-PostgreSQL host — so the deployment's own Postgres, MinIO and Keycloak are
+is a global address, and holds the connection to one of those answers by
+dialing the validated address. Every user-supplied destination goes through it
+— LLM and Mistral `base_url`, WFS and WMS — so the deployment's own Postgres, MinIO and Keycloak are
 unreachable from a graph. A trusted private destination comes from operator
 configuration only; a node, a graph and a Workspace can never widen it.
 _Avoid_: egress broker, network policy, sandbox network
@@ -525,9 +520,8 @@ and the deterministic decode that turns a `file.png@1` or `file.tiff@1` artifact
 into a raster. Table owns
 the producer-neutral `table.data@1` artifact: stable ordered columns with
 duplicate-friendly display titles, declared value types, and rectangular rows
-keyed by column id. SQL results
-embed this table and expose it through an explicit field projection; source-specific
-table interpretation remains with its producer.
+keyed by column id. Source-specific table interpretation remains with its
+producer.
 
 Sequence provides `Collect<T>`, Count, Slice, and Pick item; image- and
 text-specific collectors are not separate builtin nodes. Schema provides one
@@ -537,10 +531,7 @@ prompt-message construction; provider-backed execution stays in the
 OCR table fragments remain Mistral-owned because deciding how Markdown rows become
 headers, columns, and inferred values is a source-specific normalization rather
 than a shape-preserving artifact conversion. Plugin families provide remote and
-domain-specific nodes through the same registry as the builtin families. SQL still
-runs outside the API process — in the DuckDB subprocess worker, or in the author's
-own database behind the egress guard — because user-authored queries are
-executable code and validation is not a sandbox. [R45: Untrusted Query Isolation]
+domain-specific nodes through the same registry as the builtin families.
 
 ### Port
 

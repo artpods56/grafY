@@ -145,7 +145,7 @@ def geo_artifact_client(
     storage = TrackingStorage(LocalFileObjectStore(tmp_path / "objects"))
     application = FastAPI()
     service = ArtifactService(
-        unit_of_work, storage, availability=ArtifactAvailability(unit_of_work, storage)
+        unit_of_work, storage, availability=ArtifactAvailability(unit_of_work)
     )
     application.dependency_overrides[artifact_service] = lambda: service
     application.dependency_overrides[identity_service] = (
@@ -838,7 +838,7 @@ async def test_wms_tile_pins_validated_address_against_dns_rebinding(
     unit_of_work = InMemoryUnitOfWork()
     storage = TrackingStorage(LocalFileObjectStore(tmp_path / "objects"))
     service = ArtifactService(
-        unit_of_work, storage, availability=ArtifactAvailability(unit_of_work, storage)
+        unit_of_work, storage, availability=ArtifactAvailability(unit_of_work)
     )
     production_client = cast(httpx.AsyncClient, getattr(service, "_wms_client"))
     await production_client.aclose()

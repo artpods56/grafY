@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import Field, StrictInt
+from pydantic import Field
 
 from grafy_core.artifact_contracts import INTEGER_VALUE
 from grafy_core.artifacts import (
@@ -9,7 +9,6 @@ from grafy_core.artifacts import (
     ArtifactTypeKey,
     JsonObject,
     NoConfig,
-    NodeConfig,
     NodeInput,
     NodeOutput,
 )
@@ -125,146 +124,3 @@ async def collect(
 
 
 CollectNode = SEQUENCES.nodes[-1].node_class
-
-
-class CountInput(NodeInput):
-    items: Annotated[
-        ArtifactRefSequence,
-        InPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Sequence whose items are counted."),
-    ]
-
-
-class CountOutput(NodeOutput):
-    count: Annotated[
-        StrictInt,
-        OutPort(INTEGER_VALUE),
-        Field(description="Number of items in the sequence."),
-    ]
-
-
-@SEQUENCES.function_node(
-    operator_id="test.sequence.count",
-    version=1,
-    title="Count",
-    cache_policy=NodeCachePolicy.EXACT,
-)
-async def count(_config: NoConfig, inputs: CountInput) -> CountOutput:
-    """Counts the refs in an artifact sequence."""
-    return CountOutput(count=len(inputs.items.item_refs))
-
-
-CountNode = SEQUENCES.nodes[-1].node_class
-
-
-class SliceConfig(NodeConfig):
-    start: StrictInt = Field(
-        default=0,
-        ge=0,
-        description="Zero-based index of the first item to include.",
-    )
-    count: StrictInt | None = Field(
-        default=None,
-        ge=0,
-        description="Maximum number of items to include.",
-    )
-
-
-class SliceInput(NodeInput):
-    items: Annotated[
-        ArtifactRefSequence,
-        InPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Ordered sequence to slice."),
-    ]
-
-
-class SliceOutput(NodeOutput):
-    items: Annotated[
-        ArtifactRefSequence,
-        OutPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Selected contiguous items."),
-    ]
-
-
-@SEQUENCES.function_node(
-    operator_id="test.sequence.slice",
-    version=1,
-    title="Slice",
-    cache_policy=NodeCachePolicy.EXACT,
-)
-async def slice_sequence(config: SliceConfig, inputs: SliceInput) -> SliceOutput:
-    """Selects a contiguous range from an ordered artifact sequence."""
-    source = inputs.items
-    if not source.ordered:
-        raise UserFacingNodeError(
-            f"Cannot slice unordered sequence {source.sequence_id}"
-        )
-
-    stop = None if config.count is None else config.start + config.count
-    return SliceOutput(
-        items=ArtifactRefSequence(
-            artifact_type=source.artifact_type,
-            schema_version=source.schema_version,
-            item_refs=source.item_refs[config.start : stop],
-            ordered=True,
-            index_key=source.index_key,
-            metadata={
-                "source_sequence_id": str(source.sequence_id),
-                "start": config.start,
-                "count": config.count,
-            },
-        )
-    )
-
-
-SliceNode = SEQUENCES.nodes[-1].node_class
-
-
-class ItemAtConfig(NodeConfig):
-    index: StrictInt = Field(
-        default=0,
-        ge=0,
-        description="Zero-based index of the item to pick.",
-    )
-
-
-class ItemAtInput(NodeInput):
-    items: Annotated[
-        ArtifactRefSequence,
-        InPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Ordered sequence containing the item."),
-    ]
-
-
-class ItemAtOutput(NodeOutput):
-    item: Annotated[
-        ArtifactRef,
-        OutPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Artifact ref at the configured index."),
-    ]
-
-
-@SEQUENCES.function_node(
-    operator_id="test.sequence.item_at",
-    version=1,
-    title="Pick item",
-    cache_policy=NodeCachePolicy.EXACT,
-)
-async def item_at(config: ItemAtConfig, inputs: ItemAtInput) -> ItemAtOutput:
-    """Picks one artifact ref from an ordered artifact sequence."""
-    source = inputs.items
-    if not source.ordered:
-        raise UserFacingNodeError(
-            f"Cannot pick an item from unordered sequence {source.sequence_id}"
-        )
-
-    length = len(source.item_refs)
-    if config.index >= length:
-        raise UserFacingNodeError(
-            f"Cannot pick index {config.index} from sequence "
-            f"{source.sequence_id} with length {length}"
-        )
-    return ItemAtOutput(item=source.item_refs[config.index])
-
-
-ItemAtNode = SEQUENCES.nodes[-1].node_class

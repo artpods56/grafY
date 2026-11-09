@@ -75,26 +75,6 @@ async def authorize_workspace(
     return access
 
 
-async def authorize_workspaces(
-    identity: IdentityRepositoryPort,
-    *,
-    actor: ActorContext,
-    requirements: Sequence[tuple[UUID, WorkspaceCapability]],
-) -> None:
-    """Authorize and lock multiple workspaces in deterministic order."""
-
-    for workspace_id, capability in sorted(
-        requirements,
-        key=lambda requirement: str(requirement[0]),
-    ):
-        await authorize_workspace(
-            identity,
-            actor=actor,
-            workspace_id=workspace_id,
-            capability=capability,
-        )
-
-
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -1132,4 +1112,4 @@ class IdentityService:
         return membership
 
 
-__all__ = ["IdentityService", "authorize_workspace", "authorize_workspaces"]
+__all__ = ["IdentityService", "authorize_workspace"]

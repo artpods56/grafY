@@ -3,7 +3,6 @@ import * as React from "react";
 import type { ArtifactTypeKey } from "@/lib/api";
 
 import { appendInputPlug } from "../canvas/input-plugs";
-import type { ArtifactQueryRelation } from "../canvas/query-artifact-tables";
 import type { SchemaBuilderField } from "../canvas/schema-builder";
 import type { WorkflowNodeConfig, WorkflowInputPlug } from "../canvas/types";
 import type { GraphCommand } from "../model/graph-document";
@@ -34,8 +33,7 @@ export type NodeCommandDeps = {
 
 /**
  * Card and node gestures that rewrite one workflow node: delete it, add or reorder an
- * input plug, rewrite a schema builder or artifact-query configuration, or rebind an
- * artifact type.
+ * input plug, rewrite a schema builder configuration, or rebind an artifact type.
  *
  * Each one ends in the same place, an authoring command, and each one clears the pending
  * connection route and the visible run error afterwards, because the thing the user was
@@ -161,20 +159,6 @@ export function useNodeCommands(deps: NodeCommandDeps) {
     [updateConfigurationAndInputPlugs],
   );
 
-  const updateArtifactQueryRelations = React.useCallback(
-    (
-      nodeId: string,
-      relations: readonly ArtifactQueryRelation[],
-      inputPlugs: readonly WorkflowInputPlug[],
-    ) => {
-      updateConfigurationAndInputPlugs(nodeId, inputPlugs, (config) => ({
-        ...config,
-        relations,
-      }));
-    },
-    [updateConfigurationAndInputPlugs],
-  );
-
   const resetNodeArtifactTypeBinding = React.useCallback(
     (nodeId: string, variable: string) => {
       if (hasIncidentEdges(nodeId)) return;
@@ -227,7 +211,6 @@ export function useNodeCommands(deps: NodeCommandDeps) {
     removeNodeInputPlug,
     reorderNodeInputPlug,
     resetNodeArtifactTypeBinding,
-    updateArtifactQueryRelations,
     updateSchemaBuilderFields,
   };
 }
