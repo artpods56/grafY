@@ -85,8 +85,3 @@ export async function deleteProjectRemote(
   await deleteProject(workspaceId, project.id);
   return true;
 }
-
-/** @deprecated use `renameProjectRemote`. */
-export const renameSavedGraphRemote = renameProjectRemote;
-/** @deprecated use `deleteProjectRemote`. */
-export const deleteSavedGraphRemote = deleteProjectRemote;

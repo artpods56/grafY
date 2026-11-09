@@ -3,7 +3,6 @@ import type {
   CollaborativeHead,
   InstanceStateName,
   ProjectCommand,
-  RunStatus,
   WorkspaceCapability,
 } from "@/lib/api";
 
@@ -127,8 +126,6 @@ export interface PresenceUpdateSubmit {
 // active node: many Runs are live in one Project at once, and each node
 // instance has its own state.
 
-export type RunLifecycleStatus = RunStatus;
-export type ActiveRunLifecycleStatus = "running";
 export type TerminalRunStatus =
   "succeeded" | "failed" | "cancelled" | "interrupted";
 
@@ -804,11 +801,7 @@ export function instanceKeyText(key: RoomInstanceKey): string {
   ].join("\u0000");
 }
 
-export type GraphRoomTerminalReason = ProjectRoomTerminalReason;
-export type GraphRoomRecoveryReason = ProjectRoomRecoveryReason;
 export type GraphRoomStatus = ProjectRoomStatus;
-export type GraphRoomFailure = ProjectRoomFailure;
-export const CLOSE_GRAPH_DELETED = CLOSE_PROJECT_DELETED;
 
 export function terminalReasonFromClose(
   code: number,

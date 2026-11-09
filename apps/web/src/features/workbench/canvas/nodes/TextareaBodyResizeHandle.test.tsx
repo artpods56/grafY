@@ -72,7 +72,7 @@ describe("TextareaBodyResizeHandle", () => {
       root.render(
         <TextareaBodyResizeHandle
           layout={{ width: 300, bodyHeight: 100 }}
-          ariaLabel="Resize SQL field"
+          ariaLabel="Resize notes field"
           onDraft={onDraft}
           onCommit={onCommit}
         />,

@@ -4,7 +4,6 @@ interface SchemaFieldBase {
   description?: string;
   enumValues?: readonly (string | number)[];
   format?: "textarea";
-  codeLanguage?: "sql";
   minimum?: number;
   maximum?: number;
   minLength?: number;
@@ -492,8 +491,6 @@ export function schemaFields(rawSchema: unknown): SchemaField[] {
           type: candidateType,
           enumValues,
           format: property.format === "textarea" ? "textarea" : undefined,
-          codeLanguage:
-            property.contentMediaType === "application/sql" ? "sql" : undefined,
           minimum:
             typeof property.minimum === "number" ? property.minimum : undefined,
           maximum:

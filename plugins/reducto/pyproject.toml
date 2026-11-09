@@ -13,9 +13,6 @@ dependencies = [
     "reductoai>=0.26.0,<0.27",
 ]
 
-[tool.grafy.plugin]
-loader-target = "grafy_plugin_reducto.plugin:REDUCTO"
-
 [tool.basedpyright]
 extends = "../../pyproject.toml"
 venvPath = "."

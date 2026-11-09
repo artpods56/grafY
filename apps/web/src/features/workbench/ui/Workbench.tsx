@@ -763,7 +763,6 @@ function WorkbenchBody({
     removeNodeInputPlug,
     reorderNodeInputPlug,
     resetNodeArtifactTypeBinding,
-    updateArtifactQueryRelations,
     updateSchemaBuilderFields,
   } = useNodeCommands({
     applyAuthoringCommands,
@@ -785,17 +784,6 @@ function WorkbenchBody({
     );
   }, [projectId, workspaceSlug]);
 
-  const openNodeExecutionHistory = React.useCallback(
-    (nodeId: string, executionId?: string) => {
-      if (document.activeElement instanceof HTMLElement) {
-        executionHistoryReturnFocusRef.current = document.activeElement;
-      }
-      setLibraryOpen(false);
-      setExecutionHistoryTarget({ nodeId, executionId: executionId ?? null });
-    },
-    [],
-  );
-
   const attachNodeCallbacks = React.useCallback(
     (data: WorkflowNodeData): WorkflowNodeData => {
       if (!workflowNodeIsSupported(data)) {
@@ -808,12 +796,10 @@ function WorkbenchBody({
           onRemoveInputPlug: undefined,
           onReorderInputPlug: undefined,
           onSchemaBuilderFieldsChange: undefined,
-          onArtifactQueryRelationsChange: undefined,
           onResetArtifactTypeBinding: undefined,
           onBindArtifactTypeBinding: undefined,
           bindableArtifactTypes: undefined,
           onHandlesMeasured: undefined,
-          onOpenExecutionHistory: openNodeExecutionHistory,
         };
       }
       return {
@@ -825,21 +811,18 @@ function WorkbenchBody({
         onRemoveInputPlug: removeNodeInputPlug,
         onReorderInputPlug: reorderNodeInputPlug,
         onSchemaBuilderFieldsChange: updateSchemaBuilderFields,
-        onArtifactQueryRelationsChange: updateArtifactQueryRelations,
         onResetArtifactTypeBinding: resetNodeArtifactTypeBinding,
         onBindArtifactTypeBinding: bindNodeArtifactTypeBinding,
         bindableArtifactTypes: registry?.artifact_types.map(
           (artifactType) => artifactType.key,
         ),
         onHandlesMeasured: handleNodeHandlesMeasured,
-        onOpenExecutionHistory: openNodeExecutionHistory,
       };
     },
     [
       addNodeInputPlug,
       bindNodeArtifactTypeBinding,
       handleNodeHandlesMeasured,
-      openNodeExecutionHistory,
       registry,
       removeNode,
       removeNodeInputPlug,
@@ -847,7 +830,6 @@ function WorkbenchBody({
       resetNodeArtifactTypeBinding,
       updateConfig,
       updateLayout,
-      updateArtifactQueryRelations,
       updateSchemaBuilderFields,
     ],
   );
@@ -4921,12 +4903,6 @@ function WorkbenchBody({
           // tests kept passing a projectId the caller never sent.
           projectId={projectId}
           graphId={openGraphId}
-          graphName={graphName}
-          nodeId={executionHistoryTarget.nodeId}
-          initialExecutionId={executionHistoryTarget.executionId}
-          nodeTitles={nodeTitles}
-          executionRunning={runsInProgress}
-          isDirty={isDirty}
           returnFocusRef={executionHistoryReturnFocusRef}
           onClose={() => setExecutionHistoryTarget(null)}
         />

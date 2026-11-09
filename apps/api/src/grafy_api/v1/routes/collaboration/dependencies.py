@@ -25,10 +25,6 @@ from grafy_api.v1.routes.runs.dependencies import (
 )
 
 
-def project_room_hub(request: Request) -> ProjectRoomHub:
-    return get_resources(request.app).project_room_hub
-
-
 def project_room_hub_ws(websocket: WebSocket) -> ProjectRoomHub:
     return get_resources(websocket.app).project_room_hub
 
@@ -55,7 +51,6 @@ def identity_uow_factory_ws(
     return get_identity(websocket.app).identity_uow_factory
 
 
-ProjectRoomHubDependency = Annotated[ProjectRoomHub, Depends(project_room_hub)]
 ProjectRoomHubWsDependency = Annotated[
     ProjectRoomHub,
     Depends(project_room_hub_ws),
@@ -85,7 +80,6 @@ __all__ = [
     "CollaborationWsDependency",
     "IdentityServiceWsDependency",
     "IdentityUnitOfWorkFactoryWsDependency",
-    "ProjectRoomHubDependency",
     "ProjectRoomHubWsDependency",
     "RunServiceWsDependency",
     "auth_service_ws",
@@ -93,7 +87,6 @@ __all__ = [
     "collaboration_service_ws",
     "identity_service_ws",
     "identity_uow_factory_ws",
-    "project_room_hub",
     "project_room_hub_ws",
     "run_service_ws",
 ]

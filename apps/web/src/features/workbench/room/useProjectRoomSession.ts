@@ -436,8 +436,3 @@ function instanceMap(
   }
   return next;
 }
-
-/** @deprecated a room is held around a Project. */
-export const useGraphRoomSession = useProjectRoomSession;
-/** @deprecated a room is held around a Project. */
-export type UseGraphRoomSessionResult = UseProjectRoomSessionResult;

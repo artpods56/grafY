@@ -39,7 +39,7 @@ from grafy_core.domain.agent_conversations import (
     TurnOutcomePayload,
     UserMessagePayload,
 )
-from grafy_core.domain.agent_turns import AgentTurn, AgentTurnStatus
+from grafy_core.domain.agent_turns import AgentTurnStatus
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -153,15 +153,4 @@ def history_messages(
     return messages
 
 
-def instructions_for(turn: AgentTurn) -> str:
-    """What the turn was told it is, taken from the receipt and not from the canvas.
-
-    An empty instruction is passed as nothing rather than as an empty system message: a
-    blank instruction line is what a model is asked to reconcile with its own behaviour,
-    and an Agent with no instructions has none.
-    """
-
-    return turn.instructions
-
-
-__all__ = ["history_messages", "instructions_for"]
+__all__ = ["history_messages"]

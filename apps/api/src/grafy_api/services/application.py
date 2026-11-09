@@ -218,11 +218,7 @@ async def build_app_resources(
         project_room_hub=project_room_hub,
     )
     try:
-        await _recover(
-            resources,
-            owner_lease=owner_lease,
-            orphan_cleanup_confirmed=True,
-        )
+        await _recover(resources, owner_lease=owner_lease)
     except BaseException:
         await resources.cleanup()
         raise
@@ -233,9 +229,7 @@ async def _recover(
     resources: AppResources,
     *,
     owner_lease: ApiOwnerLease | None,
-    orphan_cleanup_confirmed: bool = False,
 ) -> None:
-    del orphan_cleanup_confirmed
     if owner_lease is None:
         # Another process may still own those Runs; only the exclusive owner can
         # tell an orphan from a live computation.

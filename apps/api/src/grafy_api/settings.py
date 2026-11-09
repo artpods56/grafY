@@ -13,11 +13,8 @@ node named. Configuration stays a leaf and never imports the application. See
 """
 
 from functools import lru_cache
-from pathlib import Path
-from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_settings import BaseSettings
 
 from grafy_shared.config import (
     STAGED_UPLOAD_HARD_MAX_BYTES,
@@ -31,7 +28,6 @@ from grafy_shared.config import (
     StorageConfig,
     UploadConfig,
 )
-from grafy_shared.config.base import read_section
 
 __all__ = [
     "STAGED_UPLOAD_HARD_MAX_BYTES",
@@ -64,54 +60,6 @@ class Settings(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     uploads: UploadConfig = Field(default_factory=UploadConfig)
     egress: EgressConfig = Field(default_factory=EgressConfig)
-
-    def model_copy(
-        self, *, update: Mapping[str, Any] | None = None, deep: bool = False
-    ) -> "Settings":
-        """Copy sections only.
-
-        ``BaseModel.model_copy`` writes ``update`` keys straight into ``__dict__``
-        without validation, so ``model_copy(update={"database_url": ...})`` would
-        appear to work while every reader of ``app.database_url`` kept the old value.
-        A section is copied instead: ``model_copy(update={"app": ...})``, and the
-        message says which section owns the name that was passed.
-        """
-
-        unknown = set(update or {}) - set(Settings.model_fields)
-        if unknown:
-            owners: dict[str, str] = {}
-            for section_name, section_field in Settings.model_fields.items():
-                section_type = section_field.annotation
-                if not isinstance(section_type, type) or not issubclass(
-                    section_type, BaseSettings
-                ):
-                    continue
-                for field_name in section_type.model_fields:
-                    owners[field_name] = section_name
-            details = ", ".join(
-                f"{name} (copy the {owners[name]} section instead)"
-                if name in owners
-                else name
-                for name in sorted(unknown)
-            )
-            raise TypeError(f"Settings has no field(s) {details}")
-        return super().model_copy(update=update, deep=deep)
-
-    @classmethod
-    def from_environment(cls, *, env_file: str | Path | None = ".env") -> "Settings":
-        """Read all sections, optionally suppressing the ``.env`` file entirely."""
-
-        return cls(
-            app=read_section(AppConfig, env_file=env_file),
-            agents=read_section(AgentsConfig, env_file=env_file),
-            auth=read_section(AuthConfig, env_file=env_file),
-            keys=read_section(KeysConfig, env_file=env_file),
-            execution=read_section(ExecutionConfig, env_file=env_file),
-            realtime=read_section(RealtimeConfig, env_file=env_file),
-            storage=read_section(StorageConfig, env_file=env_file),
-            uploads=read_section(UploadConfig, env_file=env_file),
-            egress=read_section(EgressConfig, env_file=env_file),
-        )
 
 
 @lru_cache

@@ -307,30 +307,27 @@ function fuzzyMatchSpec(): NodeSpec {
   };
 }
 
-function artifactQuerySpec(): NodeSpec {
+/** Two required, variadic instance-plug inputs, so plug rows own their identity. */
+function instancePlugsSpec(): NodeSpec {
   return {
-    operator_id: "sql.artifacts.query",
+    operator_id: "sequence.interleave",
     operator_version: 1,
-    plugin_slug: "external.sql",
+    plugin_slug: "sequence",
     origin: "builtin",
-    title: "Query artifact tables",
-    description: "Runs read-only queries over table artifacts.",
+    title: "Interleave sequences",
+    description: "Pairs the members of two sequences.",
     catalog_visible: true,
     runnable: true,
-    config_schema: {
-      type: "object",
-      properties: { relations: { type: "array" } },
-      required: ["relations"],
-    },
+    config_schema: {},
     input_schema: {},
     output_schema: {},
     inputs: [
       {
-        name: "statements",
-        title: "Statements",
+        name: "headings",
+        title: "Headings",
         description: null,
         direction: "input",
-        artifact_type: { id: "sql.statement", schema_version: 1 },
+        artifact_type: { id: "text.markdown", schema_version: 1 },
         artifact_type_variable: null,
         shape: "one",
         accepted_shapes: ["one"],
@@ -339,8 +336,8 @@ function artifactQuerySpec(): NodeSpec {
         required: true,
       },
       {
-        name: "relations",
-        title: "Relations",
+        name: "rows",
+        title: "Rows",
         description: null,
         direction: "input",
         artifact_type: { id: "table.data", schema_version: 1 },
@@ -415,29 +412,27 @@ function textPipeSpec(): NodeSpec {
   };
 }
 
-function rawSqlStatementSpec(): NodeSpec {
+function multilineNoteSpec(): NodeSpec {
   return {
-    operator_id: "sql.statement.raw",
+    operator_id: "text.note.write",
     operator_version: 1,
-    plugin_slug: "external.sql",
+    plugin_slug: "text",
     origin: "builtin",
-    title: "Raw SQL statement",
-    description: "Builds a parameterized SQL statement.",
+    title: "Note",
+    description: "Stores one long-form note.",
     catalog_visible: true,
     runnable: true,
     config_schema: {
       type: "object",
       properties: {
-        sql: {
+        body: {
           type: "string",
-          title: "Sql",
-          description:
-            "SQL statement using canonical named :parameter placeholders.",
+          title: "Body",
+          description: "Long-form text edited in the card body.",
           format: "textarea",
-          contentMediaType: "application/sql",
         },
       },
-      required: ["sql"],
+      required: ["body"],
     },
     input_schema: {},
     output_schema: {},
@@ -1133,29 +1128,29 @@ describe("WorkflowNode config lattice", () => {
   });
 
   it("grows the body past a saved height that cannot hold the bricks", () => {
-    const data = createWorkflowNodeData(rawSqlStatementSpec());
-    data.config = { sql: "select *\nfrom parcels" };
+    const data = createWorkflowNodeData(multilineNoteSpec());
+    data.config = { body: "first line\nsecond line" };
     data.layout = { bodyHeight: 50 };
-    const { container, root } = renderNode("sql-statement", data);
+    const { container, root } = renderNode("note", data);
 
     const board = container.querySelector<HTMLElement>(
       '[data-testid="config-board"]',
     );
-    // One requested cell cannot hold a two-cell code brick.
+    // One requested cell cannot hold a two-cell textarea brick.
     expect(board?.style.gridTemplateRows).toBe("repeat(2, minmax(50px, auto))");
     expect(brickAreas(container)).toEqual(["1 / span 6 | 1 / span 2"]);
     expect(container.querySelector("textarea")?.value).toBe(
-      "select *\nfrom parcels",
+      "first line\nsecond line",
     );
 
     React.act(() => root.unmount());
   });
 
   it("hands a taller saved body to the growable brick", () => {
-    const data = createWorkflowNodeData(rawSqlStatementSpec());
+    const data = createWorkflowNodeData(multilineNoteSpec());
     data.config = {};
     data.layout = { bodyHeight: 300 };
-    const { container, root } = renderNode("sql-statement", data);
+    const { container, root } = renderNode("note", data);
 
     const board = container.querySelector<HTMLElement>(
       '[data-testid="config-board"]',
@@ -1270,8 +1265,8 @@ describe("WorkflowNode header", () => {
 describe("WorkflowNode multiline fields", () => {
   it("exposes a textarea field resize grip and hides corner resize by default", () => {
     gridSettingsMocks.allowWorkflowCornerResize = false;
-    const data = createWorkflowNodeData(rawSqlStatementSpec());
-    data.config = { sql: "select 1" };
+    const data = createWorkflowNodeData(multilineNoteSpec());
+    data.config = { body: "Note body" };
 
     const container = document.createElement("div");
     const root = createRoot(container);
@@ -1279,7 +1274,7 @@ describe("WorkflowNode multiline fields", () => {
       root.render(
         <WorkflowNodeCard
           {...({
-            id: "sql-statement",
+            id: "note",
             data,
             selected: false,
           } as React.ComponentProps<typeof WorkflowNodeCard>)}
@@ -1297,8 +1292,8 @@ describe("WorkflowNode multiline fields", () => {
 
   it("shows the workflow corner resize handle when the lab flag is on", () => {
     gridSettingsMocks.allowWorkflowCornerResize = true;
-    const data = createWorkflowNodeData(rawSqlStatementSpec());
-    data.config = { sql: "select 1" };
+    const data = createWorkflowNodeData(multilineNoteSpec());
+    data.config = { body: "Note body" };
 
     const container = document.createElement("div");
     const root = createRoot(container);
@@ -1306,7 +1301,7 @@ describe("WorkflowNode multiline fields", () => {
       root.render(
         <WorkflowNodeCard
           {...({
-            id: "sql-statement",
+            id: "note",
             data,
             selected: false,
           } as React.ComponentProps<typeof WorkflowNodeCard>)}
@@ -1353,64 +1348,6 @@ describe("WorkflowNode port rail", () => {
     expect(rows[0]?.textContent).toMatch(/\*/);
     expect(rows[1]?.textContent).toContain("meta");
 
-    React.act(() => root.unmount());
-  });
-});
-
-describe("WorkflowNode artifact table query relations", () => {
-  it("keeps SQL statements as ordinary plugs and edits named table relations", () => {
-    const onRelationsChange = vi.fn();
-    const data = createWorkflowNodeData(artifactQuerySpec());
-    data.onArtifactQueryRelationsChange = onRelationsChange;
-    const relationPlug = data.inputPlugs.find(
-      (plug) => plug.portName === "relations",
-    );
-
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "artifact-query",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
-
-    expect(container.textContent).toContain("Statements");
-    expect(container.textContent).toContain("Relations");
-    const aliasInput = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Relation 1 SQL alias"]',
-    );
-    expect(aliasInput?.value).toBe("relation_1");
-    expect(
-      container.querySelector<HTMLButtonElement>(
-        'button[aria-label="Remove relation 1"]',
-      )?.disabled,
-    ).toBe(true);
-
-    React.act(() => enterInputValue(aliasInput!, "parcels"));
-    expect(onRelationsChange).toHaveBeenLastCalledWith(
-      "artifact-query",
-      [{ id: relationPlug?.id, alias: "parcels" }],
-      expect.arrayContaining([{ id: relationPlug?.id, portName: "relations" }]),
-    );
-
-    const addRelationButton = [
-      ...container.querySelectorAll<HTMLButtonElement>("button"),
-    ].find((button) => button.textContent?.includes("Add relation"));
-    expect(addRelationButton).toBeDefined();
-    React.act(() => addRelationButton?.click());
-    const addedRelations = onRelationsChange.mock.calls.at(-1)?.[1];
-    expect(addedRelations).toHaveLength(2);
-    expect(addedRelations[0]).toEqual({
-      id: relationPlug?.id,
-      alias: "relation_1",
-    });
-    expect(addedRelations[1].alias).toBe("relation_2");
     React.act(() => root.unmount());
   });
 });
@@ -1640,14 +1577,14 @@ describe("WorkflowNode artifact drop rows", () => {
   });
 
   it("publishes plug identity on plug rows instead of the port header", () => {
-    const data = createWorkflowNodeData(artifactQuerySpec());
+    const data = createWorkflowNodeData(instancePlugsSpec());
     const container = document.createElement("div");
     const root = createRoot(container);
     React.act(() => {
       root.render(
         <WorkflowNodeCard
           {...({
-            id: "artifact-query",
+            id: "interleave",
             data,
             selected: false,
           } as React.ComponentProps<typeof WorkflowNodeCard>)}
@@ -1656,12 +1593,12 @@ describe("WorkflowNode artifact drop rows", () => {
     });
 
     expect(
-      container.querySelector('[data-input-port-name="statements"]'),
+      container.querySelector('[data-input-port-name="headings"]'),
     ).toBeNull();
     const plugRow = container.querySelector<HTMLElement>(
-      '[data-input-plug-id][data-input-node-id="artifact-query"]',
+      '[data-input-plug-id][data-input-node-id="interleave"]',
     );
-    expect(plugRow?.dataset.inputPlugPort).toBe("statements");
+    expect(plugRow?.dataset.inputPlugPort).toBe("headings");
 
     React.act(() => root.unmount());
   });
@@ -2078,12 +2015,12 @@ describe("WorkflowNode shared field wiring", () => {
   });
 
   it("puts the required flag on the label that <Field> draws", () => {
-    const data = createWorkflowNodeData(rawSqlStatementSpec());
-    data.config = { sql: "select 1" };
-    const { container, root } = renderNode("sql-statement", data);
+    const data = createWorkflowNodeData(multilineNoteSpec());
+    data.config = { body: "Note body" };
+    const { container, root } = renderNode("note", data);
 
     const textarea = container.querySelector("textarea");
-    expect(textarea?.labels?.[0]?.textContent).toBe("Sql*");
+    expect(textarea?.labels?.[0]?.textContent).toBe("Body*");
 
     React.act(() => root.unmount());
   });
@@ -2171,12 +2108,12 @@ describe("WorkflowNode secret input brick", () => {
 
 describe("WorkflowNode plug row controls", () => {
   it("keeps every plug control reachable by its accessible name", () => {
-    const data = createWorkflowNodeData(artifactQuerySpec());
-    const { container, root } = renderNode("artifact-query", data);
+    const data = createWorkflowNodeData(instancePlugsSpec());
+    const { container, root } = renderNode("interleave", data);
 
     const names = [
       ...container.querySelectorAll<HTMLButtonElement>(
-        '[data-input-plug-port="statements"] button',
+        '[data-input-plug-port="headings"] button',
       ),
       ...container.querySelectorAll<HTMLButtonElement>("button"),
     ].map(
@@ -2185,18 +2122,18 @@ describe("WorkflowNode plug row controls", () => {
     );
     expect(names).toEqual(
       expect.arrayContaining([
-        "Inspect Statements type",
-        "Drag to reorder Statements input 1",
-        "Move Statements input 1 up",
-        "Move Statements input 1 down",
-        "Remove Statements input 1",
+        "Inspect Headings type",
+        "Drag to reorder Headings input 1",
+        "Move Headings input 1 up",
+        "Move Headings input 1 down",
+        "Remove Headings input 1",
         "Add input",
       ]),
     );
     // The first row cannot move further up, the only row cannot move down.
     expect(
       container.querySelector<HTMLButtonElement>(
-        'button[aria-label="Move Statements input 1 up"]',
+        'button[aria-label="Move Headings input 1 up"]',
       )?.disabled,
     ).toBe(true);
 
@@ -2250,7 +2187,7 @@ describe("WorkflowNode optional connection switch", () => {
 describe("WorkflowNode config validation", () => {
   it("shows a persisted value that is no longer in the enum and an inline error", () => {
     const spec: NodeSpec = {
-      ...rawSqlStatementSpec(),
+      ...multilineNoteSpec(),
       title: "Mode selector",
       config_schema: {
         type: "object",
@@ -2273,9 +2210,9 @@ describe("WorkflowNode config validation", () => {
   });
 
   it("shows requiredness errors for an incomplete autosaved config", () => {
-    const data = createWorkflowNodeData(rawSqlStatementSpec());
+    const data = createWorkflowNodeData(multilineNoteSpec());
     data.config = {};
-    const { container, root } = renderNode("sql", data);
+    const { container, root } = renderNode("note-required", data);
 
     expect(container.textContent).toContain("This field is required.");
     expect(container.querySelector('[role="alert"]')).not.toBeNull();

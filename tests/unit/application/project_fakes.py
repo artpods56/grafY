@@ -296,16 +296,6 @@ class ProjectStore:
         self.folders[folder.id] = folder
         return folder
 
-    def seed_organization(
-        self, organization: ProjectOrganization
-    ) -> ProjectOrganization:
-        key = (organization.workspace_id, organization.project_id)
-        self.organizations[key] = organization
-        return organization
-
-    def audit_for(self, operation: str) -> list[SecurityAuditEvent]:
-        return [event for event in self.audit if event.operation == operation]
-
 
 def _head_version(head: ProjectHead | None) -> tuple[object, ...] | None:
     if head is None:

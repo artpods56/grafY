@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Grafy typed artifact-graph workbench"
 requires-python = "==3.14.*"
 dependencies = [
-    "fastapi[standard]>=0.136.1",
+    "fastapi>=0.136.1",
     "grafy-api",
     "grafy-client",
     "grafy-core",
@@ -17,9 +17,7 @@ dependencies = [
     "grafy-plugin-llm",
     "grafy-plugin-mistral",
     "grafy-plugin-reducto",
-    "grafy-plugin-sql",
     "grafy-plugin-table",
-    "grafy-plugin-typesafe",
 ]
 
 [tool.uv]
@@ -39,9 +37,7 @@ members = [
     "plugins/llm",
     "plugins/mistral",
     "plugins/reducto",
-    "plugins/sql",
     "plugins/table",
-    "plugins/typesafe",
 ]
 exclude = [
 ]
@@ -59,9 +55,7 @@ grafy-plugin-image = { workspace = true }
 grafy-plugin-llm = { workspace = true }
 grafy-plugin-mistral = { workspace = true }
 grafy-plugin-reducto = { workspace = true }
-grafy-plugin-sql = { workspace = true }
 grafy-plugin-table = { workspace = true }
-grafy-plugin-typesafe = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -95,8 +89,6 @@ include = [
     "plugins/mistral/*",
     "plugins/reducto/*",
     "plugins/gis/*",
-    "plugins/sql/*",
-    "plugins/typesafe/*",
     "apps/api/*",
     "tests/*",
 ]
@@ -122,8 +114,6 @@ executionEnvironments = [
         "plugins/mistral/src",
         "plugins/reducto/src",
         "plugins/gis/src",
-        "plugins/sql/src",
-        "plugins/typesafe/src",
         "apps/api/src",
     ] },
 ]

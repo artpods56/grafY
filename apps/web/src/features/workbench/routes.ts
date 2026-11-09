@@ -19,7 +19,4 @@ export function workbenchProjectPath(
 }
 
 /** @deprecated a Workbench address names a Project, not a Graph. */
-export const isSupportedWorkbenchGraphRoute = isSupportedWorkbenchProjectRoute;
-
-/** @deprecated a Workbench address names a Project, not a Graph. */
 export const workbenchGraphPath = workbenchProjectPath;

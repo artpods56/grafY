@@ -9,16 +9,11 @@ from grafy_core.artifacts import (
     ArtifactTypeSpec,
     ConfirmationRule,
 )
-from grafy_core.domain.plugin_releases import (
-    PluginArtifactTypeContract,
-    PluginArtifactTypeKey,
-)
 from grafy_core.file_contracts import (
     BUILTIN_FILE_FORMATS,
     ExtensionClaimCollisionError,
     build_extension_table,
 )
-from pydantic import ValidationError
 
 
 def _spec(artifact_type_id: str) -> ArtifactTypeSpec:
@@ -121,27 +116,6 @@ def test_extension_claim_validation_refuses_invalid_specs() -> None:
             key=ArtifactTypeKey("file.png", 1),
             title="PNG",
             extensions=("PNG",),
-        )
-
-
-def test_release_contract_mirrors_and_round_trips_the_confirmation_rule() -> None:
-    contract = PluginArtifactTypeContract.from_spec(_spec("file.png"))
-
-    assert contract.extensions == ("png",)
-    assert contract.confirmation_rule.rule == "magic"
-    assert [
-        segment.value for segment in contract.confirmation_rule.signatures[0].segments
-    ] == ["89504e470d0a1a0a"]
-    restored = PluginArtifactTypeContract.model_validate_json(
-        contract.model_dump_json()
-    )
-    assert restored == contract
-
-    with pytest.raises(ValidationError, match="only file.* types claim extensions"):
-        PluginArtifactTypeContract(
-            key=PluginArtifactTypeKey(id="scalar.text", schema_version=1),
-            title="Text",
-            extensions=("txt",),
         )
 
 

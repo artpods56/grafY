@@ -80,7 +80,7 @@ ArtifactTypeSpec(
 |---|---|---|
 | `json` | The **whole artifact** as one JSON document (its canonical payload) | every type with a payload |
 | `txt` | A **text scalar** as bare text (no envelope) | `scalar.text@1`, `text.markdown@1`, `llm.completion` content |
-| `csv` | A **table** streamed as delimited rows (full artifact, not a page) | `table.data@1`, `sql.result@1` (projected table) |
+| `csv` | A **table** streamed as delimited rows (full artifact, not a page) | `table.data@1` |
 | `xlsx` | A table as a workbook | `table.data@1` |
 | `png` / `webp` | Raster / image bytes | `image/*`, `geo.raster_scan` tiles |
 | `geojson` | Feature collection as GeoJSON | `geo.feature_collection@1` |
@@ -99,7 +99,7 @@ To make "just download it" work without a picker, each type also declares a
 
 | Artifact kind | Default format | Why |
 |---|---|---|
-| JSON payloads (`llm.*`, `sql.result`) | `json` | whole-document is the faithful representation |
+| JSON payloads (`llm.*`) | `json` | whole-document is the faithful representation |
 | Text scalars (`scalar.text`, `text.markdown`) | `txt` | users want the bare value, not `{"value": ...}` |
 | Tables (`table.data`) | `csv` | spreadsheet-friendly, most common human use |
 | Geo feature collections | `geojson` | interoperable, drop into GIS tools |
@@ -338,7 +338,6 @@ decisions).
   file correctly rather than mojibake.
 - `ArtifactContentRead` accepts a lazy async-iterable body; the `/download`
   route streams CSV without a content-length (chunked transfer).
-- `sql.result@1` projected-table CSV deferred to a later pass.
 
 **Phase 3 — Geo**
 - Declare `geojson` on `geo.feature_collection@1`; `pmtiles` where a vector

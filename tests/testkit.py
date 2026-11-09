@@ -10,16 +10,14 @@ The harness keeps those concerns separate so tests can replace
 either one without confusion.
 """
 
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncGenerator
 from uuid import UUID
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
 
 from grafy_api.main import create_app
 from grafy_api.settings import Settings
@@ -46,37 +44,6 @@ type AppDependency = Callable[..., Any]
 
 type DependencyOverride = Callable[..., Any]
 """A replacement callable registered via ``app.dependency_overrides[dep]``."""
-
-# ---------------------------------------------------------------------------
-# Async API harness
-# ---------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class AsyncApiHarness:
-    """A running FastAPI application with an async HTTP client.
-
-    The harness enters the ASGI lifespan before yielding so
-    ``app.state.resources`` is fully populated.
-    """
-
-    app: FastAPI
-    """The live FastAPI application (lifespan has already run)."""
-
-    client: AsyncClient
-    """An ``httpx.AsyncClient`` backed by ``ASGITransport`` for this app."""
-
-    def override(
-        self,
-        dependency: AppDependency,
-        override: DependencyOverride,
-    ) -> None:
-        """Replace one FastAPI dependency for the lifetime of this harness."""
-        self.app.dependency_overrides[dependency] = override
-
-    def clear_override(self, dependency: AppDependency) -> None:
-        """Remove an earlier override, restoring the original dependency."""
-        self.app.dependency_overrides.pop(dependency, None)
 
 
 # ---------------------------------------------------------------------------
@@ -106,43 +73,6 @@ def app_with_overrides(
         app.dependency_overrides.update(overrides)
 
     return app
-
-
-# ---------------------------------------------------------------------------
-# Async client context manager
-# ---------------------------------------------------------------------------
-
-
-@asynccontextmanager
-async def async_client_with_overrides(
-    *,
-    settings: Settings,
-    overrides: dict[AppDependency, DependencyOverride] | None = None,
-) -> AsyncIterator[AsyncApiHarness]:
-    """Create an app, enter its lifespan, and yield a typed harness.
-
-    Usage::
-
-        async with async_client_with_overrides(settings=test_settings) as api:
-            api.override(run_execution_manager, lambda: execution_manager)
-            response = await api.client.get("/ready")
-    """
-    app = app_with_overrides(
-        settings=settings,
-        overrides=overrides,
-    )
-
-    async with app.router.lifespan_context(app):
-        transport = ASGITransport(app=app)
-
-        async with AsyncClient(
-            transport=transport,
-            base_url="http://test",
-        ) as client:
-            yield AsyncApiHarness(
-                app=app,
-                client=client,
-            )
 
 
 # ---------------------------------------------------------------------------

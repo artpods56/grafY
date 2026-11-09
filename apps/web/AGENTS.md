@@ -118,9 +118,9 @@ cannot resolve, which `tsc` and Vitest both pass.
   `min-height`, and never apply it to a control inside a canvas card, which keeps its
   pixel size at every viewport. Whether the app should have three families is open
   (issue #211); collapsing one into another silently removes a target, so don't.
-- `WorkspaceRail` is used by `GraphBrowser`, the Teams & access page, and the
-  workspace layout (`[workspaceSlug]/layout.tsx`). Any prop added outside the
-  core interface must be optional.
+- `WorkspaceRail` is used by the Teams & access page and the workspace layout
+  (`[workspaceSlug]/layout.tsx`), which every `/workspaces/[slug]` screen mounts.
+  Any prop added outside the core interface must be optional.
 - `graphAgeLabel`, `sortGraphsByRecency`, and `filterGraphsByQuery` live in
   `WorkspaceGraphPanel.tsx` — they are reused outside the panel and should
   remain importable.

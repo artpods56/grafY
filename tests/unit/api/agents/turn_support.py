@@ -315,7 +315,6 @@ class RecordingPublisher:
     block: asyncio.Event | None = None
     _partial_arrived: asyncio.Event = field(default_factory=asyncio.Event)
     _finished_arrived: asyncio.Event = field(default_factory=asyncio.Event)
-    _event_arrived: asyncio.Event = field(default_factory=asyncio.Event)
 
     @property
     def streamed_text(self) -> str:
@@ -336,11 +335,6 @@ class RecordingPublisher:
             self._partial_arrived.clear()
             await self._partial_arrived.wait()
 
-    async def wait_for_events(self, count: int = 1) -> None:
-        while len(self.events) < count:
-            self._event_arrived.clear()
-            await self._event_arrived.wait()
-
     async def wait_for_finished(self) -> None:
         while not self.finished:
             self._finished_arrived.clear()
@@ -355,7 +349,6 @@ class RecordingPublisher:
         await self._gate()
         self.events.append(notice)
         self.order.append(f"event.appended:{notice.event.payload.kind}")
-        self._event_arrived.set()
 
     async def text_partial(self, partial: AgentTextPartial) -> None:
         await self._gate()
@@ -641,19 +634,6 @@ async def no_dangling_turns() -> AsyncIterator[None]:
         for task in asyncio.all_tasks()
         if not task.done()
         and task.get_name().startswith(("agent-turn-", "agent-turn-notification"))
-    ]
-    assert pending == [], [task.get_name() for task in pending]
-
-
-@pytest.fixture
-async def no_dangling_tasks() -> AsyncIterator[None]:
-    """A turn is a task. A test that leaves one running lies about the next one."""
-
-    yield
-    pending = [
-        task
-        for task in asyncio.all_tasks()
-        if task.get_name().startswith("agent-turn-") and not task.done()
     ]
     assert pending == [], [task.get_name() for task in pending]
 

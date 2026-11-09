@@ -268,59 +268,6 @@ export function connectionIsValid(connection: {
   );
 }
 
-/** Artifact identity compatibility without collection-shape handling. */
-export function connectionArtifactContractIsValid(connection: {
-  sourceHandle?: string | null;
-  targetHandle?: string | null;
-}): boolean {
-  const source = decodeHandleId(connection.sourceHandle);
-  const target = decodeHandleId(connection.targetHandle);
-  if (!source || !target) return false;
-  const sourceArtifactType = decodedHandleArtifactType(source);
-  const targetArtifactType = decodedHandleArtifactType(target);
-  if (!sourceArtifactType || !targetArtifactType) return false;
-  return (
-    source.direction === "output" &&
-    target.direction === "input" &&
-    handleAcceptsArtifactType(target, sourceArtifactType)
-  );
-}
-
-/** Declared source-field projections that can satisfy a typed connection. */
-export function projectionCandidatesForConnection(
-  connection: {
-    sourceHandle?: string | null;
-    targetHandle?: string | null;
-  },
-  artifactTypes: readonly ArtifactTypeSpec[],
-): FieldProjection[] {
-  const source = decodeHandleId(connection.sourceHandle);
-  const target = decodeHandleId(connection.targetHandle);
-  const sourceArtifactType = source ? decodedHandleArtifactType(source) : null;
-  const targetArtifactType = target ? decodedHandleArtifactType(target) : null;
-  if (
-    !source ||
-    !target ||
-    !sourceArtifactType ||
-    !targetArtifactType ||
-    source.direction !== "output" ||
-    target.direction !== "input" ||
-    handleAcceptsArtifactType(target, sourceArtifactType)
-  ) {
-    return [];
-  }
-
-  const sourceArtifact = artifactTypes.find(
-    (artifact) =>
-      artifactTypeKey(artifact.key) === artifactTypeKey(sourceArtifactType),
-  );
-  if (!sourceArtifact?.field_projections) return [];
-
-  return sourceArtifact.field_projections.filter((projection) =>
-    handleAcceptsArtifactType(target, projection.target_artifact_type),
-  );
-}
-
 export type ConnectionRoute =
   | ({
       kind: "exact";

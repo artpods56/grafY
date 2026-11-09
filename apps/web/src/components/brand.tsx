@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 
-export const BRAND_NAME = "grafy";
 export const BRAND_NAME_DISPLAY = "grafY";
 export const BRAND_LOGO_SRC = "/assets/grafy_logo.png";
 export const BRAND_ICON_SRC = "/assets/grafy_icon.png";
@@ -55,27 +54,6 @@ export function BrandWordmark({
       }
       draggable={false}
     />
-  );
-}
-
-export function BrandLockup({
-  iconSize = 28,
-  wordmarkHeight = 20,
-  className,
-}: {
-  iconSize?: number;
-  wordmarkHeight?: number;
-  className?: string;
-}) {
-  return (
-    <span
-      className={
-        className ? `grafy-brand-lockup ${className}` : "grafy-brand-lockup"
-      }
-    >
-      <BrandIcon size={iconSize} alt="" />
-      <BrandWordmark height={wordmarkHeight} />
-    </span>
   );
 }
 

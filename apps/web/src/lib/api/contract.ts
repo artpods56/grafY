@@ -31,13 +31,6 @@ export type ArtifactConversionSpec = Schemas["ArtifactConversionSpecResponse"];
 export type FieldProjection = Schemas["FieldProjectionResponse"];
 export type Port = Schemas["PortResponse"];
 export type NodeSpec = Schemas["NodeSpecResponse"];
-export type PluginSpec = Schemas["PluginSpecResponse"];
-export type ImageUploadItem = Schemas["ImageUploadItemResponse"];
-
-/** One plug on a node instance: a caller-supplied input port. */
-export type InputPlug = Schemas["GraphInputPlug"];
-/** A node's configuration is an open JSON object keyed by config variable. */
-export type NodeConfig = NonNullable<Schemas["GraphNode"]["config"]>;
 
 export type ArtifactRef = Schemas["ArtifactRef"];
 export type ArtifactRefSequence = Schemas["ArtifactRefSequence"];
@@ -49,8 +42,6 @@ export type TableCell = Schemas["TableCellResponse"];
 export type TableSchema = Schemas["TableSchemaResponse"];
 export type TableTextArtifacts = Schemas["TableTextArtifactsResponse"];
 export type GeoBounds = Schemas["GeoBounds"];
-export type GeoRenderVectorSource = Schemas["GeoVectorRenderSourceResponse"];
-export type GeoRenderRasterSource = Schemas["GeoRasterRenderSourceResponse"];
 export type GeoRenderFillStyle = Schemas["GeoFillStyle"];
 export type GeoRenderLineStyle = Schemas["GeoLineStyle"];
 export type GeoRenderPointStyle = Schemas["GeoPointStyle"];
@@ -77,12 +68,9 @@ export type SavedGraphNode = Schemas["GraphNode"];
  * record, and this is only what the card says it is.
  */
 export type SavedGraphAgent = Schemas["GraphAgent"];
-export type AgentModelChoice =
-  Schemas["DeploymentAgentModel"] | Schemas["CustomAgentModel"];
 export type SavedGraphEdge = Schemas["GraphEdge"];
 export type SavedGraphOrigin = Schemas["GraphOrigin"];
 export type GraphPresentationDocument = Schemas["GraphPresentationDocument"];
-export type GraphNodeKind = SavedGraphNode["kind"];
 
 /** A Graph inside a Project document: its own id, name and document. */
 export type GraphDefinition = Schemas["GraphDefinition"];
@@ -105,12 +93,10 @@ export interface SavedGraph {
 export type Project = Schemas["ProjectResponse"];
 export type ProjectSummary = Schemas["ProjectSummaryResponse"];
 export type CreateProjectRequest = Schemas["CreateProjectRequest"];
-export type ProjectDocument = Schemas["ProjectDocument"];
 export type ProjectHead = Schemas["ProjectHeadResponse"];
 /** The room's name for the head the author's document is projected from. */
 export type CollaborativeHead = ProjectHead;
 
-export type ProjectCommandReceipt = Schemas["ProjectCommandReceiptResponse"];
 export type SubmitProjectCommandRequest =
   Schemas["SubmitProjectCommandRequest"];
 export type SubmitProjectCommandResponse =
@@ -125,28 +111,13 @@ export type CheckpointProjectRequest = Schemas["CheckpointProjectRequest"];
 export type CheckpointProjectResponse = Schemas["CheckpointProjectResponse"];
 export type ProjectCheckpointList = Schemas["ProjectCheckpointListResponse"];
 export type ProjectCheckpoint = Schemas["ProjectCheckpointResponse"];
-export type ProjectCheckpointSummary =
-  Schemas["ProjectCheckpointSummaryResponse"];
 
 export type CopyExactHeadRequest = Schemas["CopyExactHeadRequest"];
-export type CopyExactHeadResponse = Schemas["ProjectResponse"];
 
-export type ProjectBrowserGraph = Schemas["ProjectBrowserItemResponse"];
 export type ProjectBrowserList = Schemas["ProjectBrowserListResponse"];
-/** @deprecated use ProjectBrowserGraph. */
-export type GraphBrowserGraph = ProjectBrowserGraph;
-/** @deprecated use ProjectBrowserList. */
-export type GraphBrowserList = ProjectBrowserList;
 export type SavedGraphSummary = ProjectSummary;
 /** The `/me/projects` feed: every Project this person can reach, by workspace. */
 export type ProjectList = Schemas["ProjectListResponse"];
-
-export type ProjectFolder = Schemas["ProjectFolderResponse"];
-export type ProjectFolderList = Schemas["ProjectFolderListResponse"];
-export type ProjectFolderWriteRequest = Schemas["ProjectFolderWriteRequest"];
-export type AssignProjectFolderRequest = Schemas["AssignProjectFolderRequest"];
-export type ProjectOrganization = Schemas["ProjectOrganizationResponse"];
-export type UserProjectState = Schemas["UserProjectStateResponse"];
 
 // --- Runs and instances ----------------------------------------------------
 // A Run is a demand for freshness, not an execution history entry. Results
@@ -206,8 +177,6 @@ export type CreateSavedGraphRequest = GraphDraft;
 // API puts Project is not merely untidy: it is what made a hook importing
 // getGraphNodeSecrets look plausible for a whole port cycle while the route had
 // moved under the Project.
-/** @deprecated a browser entry is a Project; the Graph it names is where it opens. */
-export type ProjectBrowserItem = ProjectBrowserGraph;
 
 export type InstanceKey = Schemas["InstanceKeyResponse"];
 export type InstanceStateName = Schemas["InstanceState"];
@@ -249,8 +218,6 @@ export interface RunNodeResult {
   readonly created_at: string | null;
 }
 
-export type NodeRunStatus = RunNodeResult["status"];
-
 /** The state of a node instance the canvas renders on a card. */
 export type RunExecutionNodeStatus = InstanceStateName;
 
@@ -268,15 +235,9 @@ export interface ActiveRunSummary {
   readonly cancellable: boolean;
 }
 
-export type ActiveRunLifecycleStatus = RunStatus;
-export type TerminalRunStatus =
-  "succeeded" | "failed" | "cancelled" | "interrupted";
-
 // --- Secrets ---------------------------------------------------------------
 
-export type NodeSecretInput = Schemas["NodeSecretInputResponse"];
 export type NodeSecretStatus = Schemas["NodeSecretStatusResponse"];
-export type NodeSecretResolution = Schemas["NodeSecretResolutionResponse"];
 export type ProjectNodeSecrets = Schemas["ProjectNodeSecretsResponse"];
 export type ApplyNodeSecretRequest = Schemas["ConfigureNodeSecretRequest"];
 export type AppliedNodeSecret = NodeSecretStatus;
@@ -286,17 +247,11 @@ export type AppliedNodeSecret = NodeSecretStatus;
 export type NodeRegistry =
   paths["/v1/workspaces/{workspace_id}/nodes"]["get"]["responses"][200]["content"]["application/json"];
 
-export type PortDirection = Port["direction"];
-export type PortShape = Port["shape"];
-export type JsonSchema = NodeSpec["config_schema"];
-
 // --- Library ---------------------------------------------------------------
 
-export type LibraryProvenance = Schemas["LibraryProvenanceResponse"];
 export type LibraryItem = Schemas["LibraryItemResponse"];
 export type LibraryList = Schemas["LibraryListResponse"];
 export type LibraryFolder = Schemas["LibraryFolderResponse"];
-export type LibraryFolderList = Schemas["LibraryFolderListResponse"];
 export type SaveInstanceArtifactRequest =
   Schemas["SaveInstanceArtifactRequest"];
 export type SaveUploadedArtifactRequest =

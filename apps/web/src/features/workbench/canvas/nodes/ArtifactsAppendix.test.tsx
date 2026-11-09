@@ -274,21 +274,21 @@ describe("artifact payload loading policy", () => {
 
   it("projects a sequence field by reading every item's content route", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ statement_index: 0 }), {
+      new Response(JSON.stringify({ row_count: 12 }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const artifacts = ["first", "second"].map((id) =>
-      referenceFor(id, "sql.result"),
+      referenceFor(id, "json.object"),
     );
     const artifactTypes: ArtifactTypeSpec[] = [
       {
-        ...jsonType("sql.result"),
+        ...jsonType("json.object"),
         payload_schema: {
           type: "object",
-          properties: { statement_index: { type: "integer" } },
+          properties: { row_count: { type: "integer" } },
         },
       },
     ];
@@ -302,7 +302,7 @@ describe("artifact payload loading policy", () => {
     expect(select).not.toBeNull();
     await act(async () => {
       if (!select) return;
-      select.value = "statement_index";
+      select.value = "row_count";
       select.dispatchEvent(new Event("change", { bubbles: true }));
       await Promise.resolve();
     });

@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 import type { WorkflowInputPlug } from "../canvas/input-plugs";
-import type { ArtifactQueryRelation } from "../canvas/query-artifact-tables";
 import type { SchemaBuilderField } from "../canvas/schema-builder";
 import type { GraphCommand } from "../model/graph-document";
 import { useNodeCommands } from "./workbench-node-commands";
@@ -119,8 +118,6 @@ const FIELD: SchemaBuilderField = {
   description: "",
 };
 
-const RELATION: ArtifactQueryRelation = { id: "relation-1", alias: "parcels" };
-
 describe("useNodeCommands", () => {
   it("refuses to rebind an artifact type on a node that is already wired", async () => {
     const view = await mount({
@@ -197,35 +194,6 @@ describe("useNodeCommands", () => {
     }
     expect(command.config).toMatchObject({ timeout: 30, fields: [FIELD] });
     expect(command.input_plugs).toEqual([{ id: "plug-1", port: "input" }]);
-    view.unmount();
-  });
-
-  it("replaces relations and leaves the fields alone for an artifact query", async () => {
-    const view = await mount({
-      nodes: [
-        node("node-1", {
-          config: { fields: [FIELD], relations: [{ id: "old", alias: "old" }] },
-        }),
-      ],
-    });
-
-    await act(async () => {
-      view
-        .read()
-        .api.updateArtifactQueryRelations(
-          "node-1",
-          [RELATION],
-          [plug("plug-2", "relations")],
-        );
-    });
-
-    const command = lastCommand(view);
-    if (command.kind !== "update_node_configuration_and_input_plugs") {
-      throw new Error(`unexpected command kind: ${command.kind}`);
-    }
-    expect(command.config["relations"]).toEqual([RELATION]);
-    expect(command.config["fields"]).toEqual([FIELD]);
-    expect(command.input_plugs).toEqual([{ id: "plug-2", port: "relations" }]);
     view.unmount();
   });
 

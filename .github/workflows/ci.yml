@@ -328,7 +328,7 @@ jobs:
           import grafy_shared.config.keys
           import grafy_api.v1.routes.library.views
           import grafy_plugin_gis, grafy_plugin_image, grafy_plugin_table
-          import grafy_plugin_llm, grafy_plugin_mistral, grafy_plugin_reducto, grafy_plugin_typesafe
+          import grafy_plugin_llm, grafy_plugin_mistral, grafy_plugin_reducto
           assert importlib.util.find_spec("grafy_plugin_python") is None
           '
       - name: Verify API image GIS tools

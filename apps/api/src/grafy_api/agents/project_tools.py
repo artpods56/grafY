@@ -290,9 +290,6 @@ class ArtifactModelViews(ModelViews):
             return "\n".join(lines)
         return await self._render_ref(value)
 
-    async def render_ref(self, ref: ArtifactRef) -> str:
-        return await self._render_ref(ref)
-
     async def render_library_item(
         self, artifact_id: UUID
     ) -> tuple[str, ArtifactRef | None]:

@@ -1,8 +1,7 @@
-from grafy_plugin_table import nodes
+from grafy_plugin_table import (  # noqa: F401
+    nodes,  # registers the table.* operators on TABLES
+)
 from grafy_plugin_table.declaration import TABLES
-
-
-_NODE_MODULES = (nodes,)
 
 
 __all__ = ["TABLES"]

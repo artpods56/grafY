@@ -22,11 +22,11 @@ from grafy_core.plugins import (
 )
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
-from grafy_core.runtime.object_set_bundle import (
+from grafy_core.runtime.persistence import ArtifactWriteContext
+from grafy_core.runtime.portable_metadata import (
     PORTABLE_BUNDLE_METADATA_KEY,
     PortableArtifactBundleMetadata,
 )
-from grafy_core.runtime.persistence import ArtifactWriteContext
 from grafy_core.table_contracts import (
     TABLE_DATA,
     Table,

@@ -182,10 +182,6 @@ class AgentTextPartialCoalescer:
         self._closed = False
 
     @property
-    def pending_chars(self) -> int:
-        return sum(len(chunk) for chunk in self._buffer)
-
-    @property
     def published_chars(self) -> int:
         return self._published_chars
 

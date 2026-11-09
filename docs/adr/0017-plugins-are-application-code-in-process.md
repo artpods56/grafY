@@ -69,7 +69,7 @@ and its `just sdk-wheel` recipe are removed. Release, installation, selection an
 revocation records and services, the four plugin tables, capability declarations, and
 Platform Access Tokens go with them: the schema is one baseline revision that never
 creates those tables, so no deployment carries lifecycle rows to clean up. The release
-descriptor types in `grafy_core.domain.plugin_releases` stay, and register nothing.
+descriptor types in `grafy_core.domain.plugin_releases` go too.
 
 ### The Python node is removed
 
@@ -91,21 +91,13 @@ destination now carries that check where it is dialed.
   host, refuse the address set unless every answer is a global address, and then hold the
   connection to one of those answers. For HTTP the guard dials the validated address
   directly while the TLS server name and the `Host` header keep the configured hostname.
-  PostgreSQL gives a driver no way to separate the dialled address from the name a
-  certificate is verified against, so there the guard connects by name with verification
-  untouched and asserts the kernel-reported peer address is one of the answers it
-  validated before it lets a statement run: a DNS answer that moved between validation and
-  connect aborts the connection instead of becoming a request. It generalises what WMS and
-  WFS already did, and it applies to the LLM, Mistral and Typesafe `base_url`, to WFS and
-  WMS, and to the SQL node's PostgreSQL `host`. The deployment's own Postgres, MinIO and
+  It generalises what WMS and WFS already did, and it applies to the LLM and Mistral
+  `base_url` and to WFS and WMS. The deployment's own Postgres, MinIO and
   Keycloak are unreachable from node configuration because they are not global addresses.
 - **Operators allowlist, authors never.** Destination policy is one operator-owned
   setting listing exact trusted destinations. Node configuration, a graph and a Workspace
-  can never widen it. This is what replaces the sandbox's network namespace: a self-hosted
-  private PostgreSQL or a local model server is reachable by declaration, not by default.
-- **The DuckDB subprocess worker is unchanged**, with its rlimits and its DuckDB
-  lockdown, because user-authored SQL is still executable code that must not run in the
-  API process.
+  can never widen it. This is what replaces the sandbox's network namespace: a local
+  model server is reachable by declaration, not by default.
 - **Native work stays out of process and gets bounded.** GDAL already ran as
   `gdalinfo` / `gdal_translate` / `gdal2tiles.py` subprocesses. Those invocations move to
   a bounded subprocess pool with an address-space and CPU cap, a wall-clock timeout, a

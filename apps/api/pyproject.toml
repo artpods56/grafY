@@ -11,7 +11,6 @@ dependencies = [
     "cryptography>=45.0.0",
     "fastapi>=0.123.0",
     "httpx>=0.28.0",
-    "keyring>=25.7.0",
     "grafy-core",
     "grafy-persistence",
     "grafy-workbench",
@@ -20,7 +19,6 @@ dependencies = [
     "pillow",
     "pydantic",
     "pydantic-settings>=2.12.0",
-    "python-multipart>=0.0.20",
     "starlette<1.0.0",
     "structlog>=25.5.0",
     "truststore>=0.10.4",
@@ -28,9 +26,6 @@ dependencies = [
     "ijson>=3.5.1",
     "pydantic-ai-slim[openai]==2.65.0",
 ]
-
-[project.scripts]
-grafy = "grafy_api.cli:main"
 
 [tool.uv.sources]
 grafy-core = { workspace = true }

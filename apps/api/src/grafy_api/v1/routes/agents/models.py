@@ -189,18 +189,6 @@ class AgentTurnResponse(AgentApiModel):
         )
 
 
-class SendAgentTurnResponse(AgentApiModel):
-    """The accepted turn, plus whether this call is the one that admitted it.
-
-    A replay is answered with the same receipt and `admitted: false`, so a client that retried
-    can tell "my question is queued" from "someone already asked this" without comparing
-    timestamps — and the send it retried is never a second question to the model.
-    """
-
-    turn: AgentTurnResponse
-    admitted: bool
-
-
 class ActiveAgentTurnResponse(AgentApiModel):
     """The turn running now, and how far its text has got.
 
@@ -265,7 +253,6 @@ __all__ = [
     "CancelAgentTurnRequest",
     "ForkAgentConversationRequest",
     "SendAgentTurnRequest",
-    "SendAgentTurnResponse",
     "SetAgentKeyRequest",
     "StartAgentConversationRequest",
 ]

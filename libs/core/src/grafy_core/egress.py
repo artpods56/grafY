@@ -1,7 +1,7 @@
 """Egress authority for destinations that node configuration names.
 
-A node's configuration is author input, and it names a destination: a PostgreSQL
-host, an OpenAI-compatible base URL, a WFS endpoint. The Plugin sandbox decided
+A node's configuration is author input, and it names a destination: an
+OpenAI-compatible base URL, a WFS endpoint. The Plugin sandbox decided
 what those destinations could reach with a Docker network policy and an egress
 broker; once the families run in-process (ADR 0017) the API dials them itself, so
 the decision lives here. Its job is narrow and absolute: nothing an author can
@@ -12,7 +12,7 @@ configuration.
 Two things belong to this module and nothing else does. The policy primitives —
 the operator's grants and the resolve-and-decide step — are framework-free so
 every caller shares them. Client wiring belongs with the client: an OpenAI or
-TypeSafe SDK builds its own requests and can only be pinned from below, while WFS
+Mistral SDK builds its own requests and can only be pinned from below, while WFS
 and WMS build their own URLs and pin them directly.
 """
 

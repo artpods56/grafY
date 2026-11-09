@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from uuid import UUID
 
-from fastapi import FastAPI
 
 from grafy_core.domain.identity import (
     ActorContext,
@@ -16,7 +15,6 @@ from grafy_persistence.database import create_database
 from grafy_persistence.orm import metadata
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-from grafy_api.v1.routes.auth.dependencies import browser_actor, workspace_actor
 
 from tests.support.identity_constants import (
     TEST_COMMAND_HMAC_KEY as TEST_COMMAND_HMAC_KEY,
@@ -38,13 +36,6 @@ def browser_actor_override() -> ActorContext:
         user_id=TEST_USER_ID,
         credential_reference="test-session",
     )
-
-
-def install_browser_actor_override(application: FastAPI) -> None:
-    """Install the shared actor for browser-only and workspace HTTP routes."""
-
-    application.dependency_overrides[browser_actor] = browser_actor_override
-    application.dependency_overrides[workspace_actor] = browser_actor_override
 
 
 @dataclass
@@ -110,6 +101,5 @@ __all__ = [
     "ActorSwitcher",
     "browser_actor_override",
     "create_schema",
-    "install_browser_actor_override",
     "workspace_api_path",
 ]

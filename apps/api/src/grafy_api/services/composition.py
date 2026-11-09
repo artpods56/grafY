@@ -73,7 +73,6 @@ def build_workbench_components(
     *,
     plugin_registry: PluginRegistry | None = None,
     workspace: Path,
-    dedupe_artifact_handlers: bool = True,
     limits: ComputationLimits | None = None,
     unit_of_work: LibraryUnitOfWorkPort,
     storage: FileStoragePort | None = None,
@@ -133,39 +132,42 @@ def build_workbench_components(
 
     resolvers = list(plugin_registry.build_resolvers(plugin_context))
     writers = list(plugin_registry.build_writers(plugin_context))
-    if dedupe_artifact_handlers:
-        resolver_keys: set[tuple[ArtifactTypeKey, type[object]]] = set()
-        unique_resolvers: list[Resolver[object]] = []
-        for resolver in resolvers:
-            key = (resolver.source, resolver.target)
-            if key in resolver_keys:
-                logger.info(
-                    "shared_artifact_resolver_deduplicated source=%s@%s target=%s",
-                    resolver.source.id,
-                    resolver.source.schema_version,
-                    resolver.target,
-                )
-                continue
-            resolver_keys.add(key)
-            unique_resolvers.append(resolver)
-        resolvers = unique_resolvers
-        writer_keys: set[ArtifactTypeKey] = set()
-        unique_writers: list[ArtifactOutputWriter] = []
-        for writer in writers:
-            if writer.artifact_type in writer_keys:
-                logger.info(
-                    "shared_artifact_writer_deduplicated artifact_type=%s@%s",
-                    writer.artifact_type.id,
-                    writer.artifact_type.schema_version,
-                )
-                continue
-            writer_keys.add(writer.artifact_type)
-            unique_writers.append(writer)
-        writers = unique_writers
+    # Several first-party plugins declare a handler for the same built-in artifact type,
+    # and both registries refuse a duplicate registration outright. The first handler for
+    # an artifact type serves it and the rest are logged, so a shared format does not
+    # make startup fail on the second plugin that can also handle it.
+    resolver_keys: set[tuple[ArtifactTypeKey, type[object]]] = set()
+    unique_resolvers: list[Resolver[object]] = []
+    for resolver in resolvers:
+        key = (resolver.source, resolver.target)
+        if key in resolver_keys:
+            logger.info(
+                "shared_artifact_resolver_deduplicated source=%s@%s target=%s",
+                resolver.source.id,
+                resolver.source.schema_version,
+                resolver.target,
+            )
+            continue
+        resolver_keys.add(key)
+        unique_resolvers.append(resolver)
+    resolvers = unique_resolvers
+    writer_keys: set[ArtifactTypeKey] = set()
+    unique_writers: list[ArtifactOutputWriter] = []
+    for writer in writers:
+        if writer.artifact_type in writer_keys:
+            logger.info(
+                "shared_artifact_writer_deduplicated artifact_type=%s@%s",
+                writer.artifact_type.id,
+                writer.artifact_type.schema_version,
+            )
+            continue
+        writer_keys.add(writer.artifact_type)
+        unique_writers.append(writer)
+    writers = unique_writers
     resolver_registry = ResolverRegistry(resolvers)
     writer_registry = ArtifactWriterRegistry(writers)
 
-    availability = ArtifactAvailability(resolved_unit_of_work, resolved_storage)
+    availability = ArtifactAvailability(resolved_unit_of_work)
     artifacts = ArtifactService(
         resolved_unit_of_work,
         resolved_storage,

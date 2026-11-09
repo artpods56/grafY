@@ -4,7 +4,6 @@ from collections.abc import AsyncIterator, Iterator
 from hashlib import sha256
 from io import StringIO
 
-from pydantic import ValidationError
 
 from grafy_core.stored_models import load_stored_model
 from grafy_core.artifacts import ArtifactObject
@@ -209,34 +208,6 @@ async def load_table_artifact(
     return table
 
 
-async def table_artifact_is_accessible(
-    artifact: ArtifactObject,
-    storage: FileStoragePort,
-) -> bool:
-    if artifact.inline_payload is not None:
-        try:
-            Table.model_validate(artifact.inline_payload)
-        except ValidationError:
-            return False
-        return True
-    if artifact.bucket is None or artifact.object_key is None:
-        return False
-    if await storage.stat(artifact.bucket, artifact.object_key) is None:
-        return False
-    try:
-        manifest = await load_table_manifest(artifact, storage)
-    except ArtifactContractError:
-        return False
-    except ResolutionError as exc:
-        if isinstance(exc.__cause__, ValueError):
-            return False
-        raise
-    for descriptor in manifest.chunks:
-        if await storage.stat(artifact.bucket, descriptor.object_key) is None:
-            return False
-    return True
-
-
 def _csv_cell(value: TableValue) -> str:
     if value is None:
         return ""
@@ -315,5 +286,4 @@ __all__ = [
     "load_table_artifact",
     "load_table_manifest",
     "load_table_page",
-    "table_artifact_is_accessible",
 ]

@@ -17,9 +17,6 @@ class ArtifactTypeKeyResponse(ApiResponse):
     def from_key(cls, key: ArtifactTypeKey) -> "ArtifactTypeKeyResponse":
         return cls(id=key.id, schema_version=key.schema_version)
 
-    def to_key(self) -> ArtifactTypeKey:
-        return ArtifactTypeKey(id=self.id, schema_version=self.schema_version)
-
 
 ArtifactTypeVariableIdentifier = Annotated[
     str,
@@ -27,19 +24,8 @@ ArtifactTypeVariableIdentifier = Annotated[
 ]
 
 
-class ArtifactTypeBindingModel(ApiResponse):
-    model_config: ClassVar[ConfigDict] = ConfigDict(
-        from_attributes=True,
-        extra="forbid",
-    )
-
-    variable: ArtifactTypeVariableIdentifier
-    artifact_type: ArtifactTypeKeyResponse
-
-
 __all__ = [
     "ApiResponse",
-    "ArtifactTypeBindingModel",
     "ArtifactTypeKeyResponse",
     "ArtifactTypeVariableIdentifier",
 ]

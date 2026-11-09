@@ -25,8 +25,7 @@ document migration and no read that rewrites a stored checkpoint. A node whose s
 and no document, command or run request carries a release pin. Missing operators report
 the node id and operator identity; Python operators report that Python execution was
 retired. The four former
-Python text operators stay unavailable. SQL is absent from the application tuple
-until its execution safety review is complete.
+Python text operators stay unavailable.
 
 Node secrets keep their existing encryption and authenticated-data versions.
 The registry supplies declarations and config dependencies, so a historical
@@ -34,8 +33,7 @@ release does not need to exist to resolve a secret for a registered operator.
 Workspace and saved-revision checks still bind each run to its authorized graph.
 
 The release tables are gone: the one baseline revision never creates them, so no stored
-release, installation, selection or revocation row exists to read. The descriptor types in
-`grafy_core.domain.plugin_releases` stay and serve no lifecycle. The
-publication service, the Docker sandbox, the guest protocol and the egress broker are
+release, installation, selection or revocation row exists to read, and the release
+descriptor types are gone with them. The publication service, the Docker sandbox, the guest protocol and the egress broker are
 gone, along with the `grafy plugin` and `network-policy` command groups that drove them.
 Graph Modules retain their separate immutable publication model.

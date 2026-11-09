@@ -57,17 +57,6 @@ export type {
 };
 export { ROOM_COMMAND_QUEUE_CAP, projectRoomWebSocketUrl };
 
-/** @deprecated the room belongs to a Project, not to a Graph. */
-export type GraphRoomStatus = ProjectRoomStatus;
-/** @deprecated the room belongs to a Project, not to a Graph. */
-export type GraphRoomTerminalReason = ProjectRoomTerminalReason;
-/** @deprecated the room belongs to a Project, not to a Graph. */
-export type GraphRoomFailure = ProjectRoomFailure;
-/** @deprecated the room belongs to a Project, not to a Graph. */
-export type GraphRoomRecoveryReason = ProjectRoomRecoveryReason;
-/** @deprecated the room belongs to a Project, not to a Graph. */
-export type RoomGraphCommand = RoomProjectCommand;
-
 export const PRESENCE_CLIENT_MIN_INTERVAL_MS = 50;
 
 const KNOWN_SERVER_MESSAGE_TYPES = new Set([
@@ -201,7 +190,7 @@ export class ProjectRoomSession {
     return this.status;
   }
 
-  getTerminalReason(): GraphRoomTerminalReason | null {
+  getTerminalReason(): ProjectRoomTerminalReason | null {
     return this.terminalReason;
   }
 
