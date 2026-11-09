@@ -46,7 +46,6 @@ class S3ObjectStore(FileStoragePort):
         self._access_key_id = access_key_id
         self._secret_access_key = secret_access_key
         self._force_path_style = force_path_style
-        self._endpoint_url = endpoint_url
         self._signing_endpoint_url, self._signing_path_prefix = _split_signing_endpoint(
             signing_endpoint_url
             if signing_endpoint_url not in (None, "")

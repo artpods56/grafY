@@ -59,13 +59,11 @@ class ComputationLimits:
     """
 
     map_max_concurrency: int = 4
-    project_concurrency: int = 2
 
     @classmethod
     def from_config(cls, execution: ExecutionConfig) -> "ComputationLimits":
         return cls(
             map_max_concurrency=execution.map_max_concurrency,
-            project_concurrency=execution.project_computation_concurrency,
         )
 
 
