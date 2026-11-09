@@ -412,19 +412,15 @@ const s = stylex.create({
     gridTemplateColumns: "minmax(0, 1fr) auto",
     gap: "5px",
   },
+  /** The kit's plain text Button with the aside's quieter type and red intent. */
   linkButton: {
-    flexShrink: 0,
-    padding: 0,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    color: {
-      default: tokens.colorSubtle,
-      ":hover": tokens.colorDanger,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":disabled": "default" },
     fontSize: "10px",
     fontWeight: 500,
+    color: {
+      default: tokens.colorSubtle,
+      ":hover:not(:disabled)": tokens.colorDanger,
+      ":disabled": tokens.colorTextDisabled,
+    },
   },
   actions: {
     flexShrink: 0,
@@ -959,14 +955,15 @@ function AgentSettings({
                 {keyConfigured ? (
                   <>
                     {" · "}
-                    <button
-                      type="button"
+                    <Button
+                      size="text"
+                      variant="plain"
                       disabled={!scope}
                       onClick={() => void changeKey(true)}
-                      {...stylex.props(s.linkButton)}
+                      xstyle={s.linkButton}
                     >
                       Clear key
-                    </button>
+                    </Button>
                   </>
                 ) : null}
               </>

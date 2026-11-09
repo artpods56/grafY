@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, afterEach, it, vi } from "vitest";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const xyflowMocks = vi.hoisted(() => ({
   updateNodeInternals: vi.fn(),
+  edges: [] as unknown[],
 }));
 
 vi.mock("@xyflow/react", () => ({
@@ -30,7 +31,7 @@ vi.mock("@xyflow/react", () => ({
     </span>
   ),
   Position: { Left: "left", Right: "right" },
-  useEdges: () => [],
+  useEdges: () => xyflowMocks.edges as never[],
   useNodeConnections: () => [],
   useConnection: (selector: (state: { inProgress: boolean }) => unknown) =>
     selector({ inProgress: false }),
@@ -193,6 +194,8 @@ vi.mock("./type-inspector", () => ({
 
 import type { NodeSpec } from "@/lib/api";
 import { compatibilityHandleId, createWorkflowNodeData } from "../types";
+import { portMetaForPort } from "../types";
+import { encodeHandleId } from "../handles";
 import WorkflowNodeCard from "./WorkflowNode";
 import {
   configFieldLabelIsRedundant,
@@ -1867,6 +1870,57 @@ describe("WorkflowNode schema builder toggles", () => {
     React.act(() => root.unmount());
   });
 
+  it("changes a field kind in its type select and its items in the item select", () => {
+    const onSchemaBuilderFieldsChange = vi.fn();
+    const data = createWorkflowNodeData(schemaBuilderSpec());
+    const sequenceField = {
+      id: "field-area",
+      name: "area",
+      kind: "sequence",
+      item_kind: "string",
+      required: false,
+      description: "",
+    };
+    data.config = { fields: [PARCELS_FIELD, sequenceField] };
+    data.onSchemaBuilderFieldsChange = onSchemaBuilderFieldsChange;
+    const { container, root } = renderNode("schema-builder", data);
+
+    const kind = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Field 1 type"]',
+    );
+    expect([...(kind?.options ?? [])].map((option) => option.value)).toEqual([
+      "string",
+      "integer",
+      "number",
+      "boolean",
+      "sequence",
+      "schema",
+    ]);
+    React.act(() => {
+      kind!.value = "integer";
+      kind!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onSchemaBuilderFieldsChange.mock.calls.at(-1)?.[1]).toEqual([
+      { ...PARCELS_FIELD, kind: "integer" },
+      sequenceField,
+    ]);
+
+    // The sequence row's own item picker writes the same callback.
+    const itemKind = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Field 2 item type"]',
+    );
+    React.act(() => {
+      itemKind!.value = "number";
+      itemKind!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onSchemaBuilderFieldsChange.mock.calls.at(-1)?.[1]).toEqual([
+      PARCELS_FIELD,
+      { ...sequenceField, item_kind: "number" },
+    ]);
+
+    React.act(() => root.unmount());
+  });
+
   it("wires the schema metadata labels to their inputs", () => {
     const { container, root } = renderBuilder({
       title: "Response",
@@ -1947,8 +2001,8 @@ describe("WorkflowNode shared field wiring", () => {
     const { container, root } = renderNode("chat", data);
 
     const select = container.querySelector<HTMLSelectElement>("select");
-    // The kit has no select, so this control keeps the wrapping label it was
-    // named by before: no aria-label of its own, and `labels` still resolves.
+    // <Select> is a native select inside <Field>'s frame, so the control still
+    // carries no aria-label of its own and `labels` resolves through the field.
     expect(select?.hasAttribute("aria-label")).toBe(false);
     expect(select?.labels?.[0]?.textContent).toContain("Mode");
     expect([...(select?.options ?? [])].map((option) => option.value)).toEqual([
@@ -2082,6 +2136,49 @@ describe("WorkflowNode plug row controls", () => {
         'button[aria-label="Move Headings input 1 up"]',
       )?.disabled,
     ).toBe(true);
+
+    React.act(() => root.unmount());
+  });
+});
+
+describe("WorkflowNode optional connection switch", () => {
+  afterEach(() => {
+    xyflowMocks.edges = [];
+  });
+
+  it("writes a wire's enabled flag through the edge and keeps the row still", () => {
+    const data = createWorkflowNodeData(textPipeSpec());
+    const port = data.spec.inputs.find((input) => input.name === "text");
+    if (!port) throw new Error("expected the text input port");
+    const onUpdate = vi.fn();
+    // A connection left disabled against a required input is the one the row
+    // offers to switch back on.
+    xyflowMocks.edges = [
+      {
+        id: "edge-text",
+        source: "upstream",
+        target: "text-pipe",
+        targetHandle: encodeHandleId(portMetaForPort(port)),
+        data: { enabled: false, collectionMode: "each", onUpdate },
+      },
+    ];
+
+    const { container, root } = renderNode("text-pipe", data);
+
+    const toggle = container.querySelector<HTMLElement>(
+      '[role="switch"][aria-label="text connection enabled"]',
+    );
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    // React Flow walks up from the pointer target, so the kit switch's own root
+    // has to hold the classes.
+    const switchRoot = toggle?.closest("label");
+    expect(switchRoot?.className).toContain("nodrag");
+    expect(switchRoot?.className).toContain("nowheel");
+
+    React.act(() => {
+      toggle?.dispatchEvent(new PointerEvent("click", { bubbles: true }));
+    });
+    expect(onUpdate).toHaveBeenCalledWith("edge-text", { enabled: true });
 
     React.act(() => root.unmount());
   });

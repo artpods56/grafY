@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Select } from "@/components/ui/select";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { artifactTypeFor, declaredArtifactContentType } from "../artifact-card";
 import type { ArtifactViewerInteractionContext } from "../artifact-interactions";
@@ -91,21 +92,6 @@ const s = stylex.create({
   /** The segmented row brings its own track; the card only says where it sits. */
   modeSwitch: {
     marginLeft: "auto",
-  },
-  fieldSelect: {
-    width: "100%",
-    height: "24px",
-    paddingInline: "7px",
-    borderWidth: 0,
-    borderRadius: "7px",
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
-    outlineStyle: "solid",
-    outlineColor: tokens.colorAccent,
-    outlineOffset: "2px",
-    backgroundColor: tokens.colorSurfaceMuted,
-    color: tokens.colorText,
-    fontFamily: MONO,
-    fontSize: "10px",
   },
   pager: {
     display: "flex",
@@ -665,10 +651,12 @@ export function ArtifactPortPreview({
         </span>
       ) : null}
       {!fieldControlledByEdge && fields.length ? (
-        <select
+        <Select
           aria-label="Project artifacts onto a field"
+          size="dense"
+          mono
+          className="nodrag nowheel"
           value={localField}
-          {...nodeInteractionProps(stylex.props(s.fieldSelect))}
           onChange={(event) => setLocalField(event.currentTarget.value)}
         >
           <option value="">whole objects</option>
@@ -677,7 +665,7 @@ export function ArtifactPortPreview({
               map .{option.name} → list[{option.type}]
             </option>
           ))}
-        </select>
+        </Select>
       ) : null}
       {showingFeedProjection ? (
         <>

@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, GripVertical, Plus, Trash2 } from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { Field, TextInput } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Notice } from "@/components/ui/notice";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
@@ -78,23 +79,6 @@ const s = stylex.create({
     borderRadius: "5px",
     cursor: "grab",
     touchAction: "none",
-  },
-  /** The kit has no select, so the kind pickers keep their own native one. */
-  schemaSelect: {
-    width: "100%",
-    minWidth: 0,
-    height: "28px",
-    paddingInline: "7px",
-    borderWidth: 0,
-    borderRadius: "7px",
-    outline: {
-      default: "none",
-      ":focus": `2px solid ${tokens.colorAccentBorder}`,
-    },
-    backgroundColor: tokens.colorSurface,
-    color: tokens.colorTextEmphasis,
-    fontSize: "10px",
-    fontWeight: 500,
   },
   schemaFieldDetail: {
     minWidth: 0,
@@ -390,10 +374,11 @@ export function SchemaBuilderBody({
                         })
                       }
                     />
-                    <select
+                    <Select
+                      size="sm"
                       value={field.kind}
                       aria-label={`Field ${index + 1} type`}
-                      {...nodeInteractionProps(stylex.props(s.schemaSelect))}
+                      className="nodrag nowheel"
                       onChange={(event) =>
                         replaceField(
                           field.id,
@@ -409,7 +394,7 @@ export function SchemaBuilderBody({
                           {SCHEMA_FIELD_KIND_LABELS[kind]}
                         </option>
                       ))}
-                    </select>
+                    </Select>
                   </div>
 
                   <div {...stylex.props(s.schemaFieldDetail)}>
@@ -497,10 +482,11 @@ export function SchemaBuilderBody({
                   {field.kind === "sequence" ? (
                     <div {...stylex.props(s.schemaItemRow)}>
                       <span {...stylex.props(s.schemaItemLabel)}>Items</span>
-                      <select
+                      <Select
+                        size="sm"
                         value={field.item_kind}
                         aria-label={`Field ${index + 1} item type`}
-                        {...nodeInteractionProps(stylex.props(s.schemaSelect))}
+                        className="nodrag nowheel"
                         onChange={(event) =>
                           replaceField(field.id, {
                             ...field,
@@ -514,7 +500,7 @@ export function SchemaBuilderBody({
                             {SCHEMA_ITEM_KIND_LABELS[kind]}
                           </option>
                         ))}
-                      </select>
+                      </Select>
                       {field.item_kind === "schema" ? (
                         <span {...stylex.props(s.schemaConnectionRow)}>
                           <span
@@ -577,7 +563,7 @@ export function SchemaBuilderBody({
         )}
 
         <Button
-          variant="soft"
+          variant="dashed"
           size="sm"
           className="nodrag nowheel"
           onClick={() => {

@@ -35,6 +35,23 @@ import { CanvasGridSettingsPanel } from "./CanvasGridSettingsPanel";
 
 const roots: Root[] = [];
 
+/**
+ * The panel's switches are the kit's `Switch`, whose accessible name comes from
+ * the label through `aria-labelledby` — a `role="switch"` is not a labelable
+ * element, so the label text is not in the control's own subtree. Resolving the
+ * reference is what "named by its label" means here.
+ */
+function switchNamed(container: HTMLElement, name: string) {
+  return (
+    [...container.querySelectorAll('[role="switch"]')].find((control) => {
+      const id = control.getAttribute("aria-labelledby");
+      return (
+        id != null && container.querySelector(`#${id}`)?.textContent === name
+      );
+    }) ?? null
+  );
+}
+
 afterEach(() => {
   React.act(() => {
     for (const root of roots.splice(0)) root.unmount();
@@ -57,20 +74,16 @@ describe("CanvasGridSettingsPanel", () => {
       );
     });
 
-    const toggle = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Render visible elements only"]',
-    );
+    const toggle = switchNamed(container, "Render visible elements only");
     const advanced = toggle?.closest("details");
     expect(container.textContent).toContain("Grid and snapping controls");
-    expect(
-      container.querySelector('button[aria-label="Enable snapping"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('button[aria-label="Show grid lines"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('input[aria-label="Grid cell size"]'),
-    ).not.toBeNull();
+    expect(switchNamed(container, "Enable snapping")).not.toBeNull();
+    expect(switchNamed(container, "Show grid lines")).not.toBeNull();
+    const cellSize = container.querySelector<HTMLInputElement>(
+      'input[type="range"]',
+    );
+    expect(cellSize).not.toBeNull();
+    expect(cellSize?.getAttribute("aria-valuenow")).toBe("50");
     expect(container.querySelector("summary")?.textContent).toContain(
       "Advanced",
     );

@@ -65,6 +65,9 @@ flowchart LR
 - `plugins/mistral` owns Mistral OCR. It wraps `mistralai` and recognizes an
   HTTPS document URL or a raster image, producing Markdown, a blocks table,
   page regions, and cropped figures. The API key stays in node-secret storage.
+- `plugins/reducto` owns Reducto Parse. It wraps `reductoai` and parses an HTTPS
+  document URL or a raster image, producing Markdown and a blocks table. The API
+  key stays in node-secret storage.
 - `CONTEXT.md` defines the product vocabulary and active scope.
 - `docs/workbench-interaction-plan.md` records the current interaction decisions,
   their rationale, acceptance criteria, and deliberately deferred work.

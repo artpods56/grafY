@@ -5,6 +5,8 @@ import * as stylex from "@stylexjs/stylex";
 import { ChevronDown, Grid3x3, RotateCcw, X } from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { phoneTouch } from "@/components/ui/touch-target";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { useCanvasGridSettings } from "../canvas/canvas-grid-settings";
@@ -119,94 +121,22 @@ const s = stylex.create({
     display: "grid",
     gap: "7px",
   },
-  row: {
-    display: "flex",
-    alignItems: "center",
+  /**
+   * A setting row: the name the kit's `Switch` draws, then the track at the far
+   * end, which is how this panel read before the control moved into the kit.
+   */
+  switchRow: {
+    width: "100%",
     justifyContent: "space-between",
-    gap: "10px",
-    minHeight: "28px",
-  },
-  label: {
-    fontSize: tokens.fontSizeSm,
-    color: tokens.colorText,
-    userSelect: "none",
   },
   hint: {
     fontSize: tokens.fontSizeXs,
     color: tokens.colorSubtle,
     lineHeight: 1.35,
   },
-  switch: {
-    width: {
-      default: "36px",
-      "@media (max-width: 620px)": "44px",
-    },
-    height: {
-      default: "20px",
-      "@media (max-width: 620px)": "44px",
-    },
-    display: "grid",
-    placeItems: "center",
-    flexShrink: 0,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    cursor: "pointer",
-    padding: 0,
-  },
-  switchTrack: {
-    position: "relative",
-    width: "100%",
-    height: {
-      default: "20px",
-      "@media (max-width: 620px)": "28px",
-    },
-    display: "block",
-    borderRadius: "999px",
-    backgroundColor: tokens.colorSurfaceSunken,
-  },
-  switchOn: {
-    backgroundColor: tokens.colorAccent,
-  },
-  switchThumb: {
-    position: "absolute",
-    top: "2px",
-    left: "2px",
-    width: {
-      default: "16px",
-      "@media (max-width: 620px)": "24px",
-    },
-    height: {
-      default: "16px",
-      "@media (max-width: 620px)": "24px",
-    },
-    borderRadius: "999px",
-    backgroundColor: tokens.colorOnAccent,
-    transitionProperty: "transform",
-    transitionDuration: "120ms",
-  },
-  switchThumbOn: {
-    transform: "translateX(16px)",
-  },
   sliderRow: {
     display: "grid",
     gap: "6px",
-  },
-  sliderMeta: {
-    display: "flex",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: "8px",
-  },
-  sliderValue: {
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 700,
-    color: tokens.colorAccent,
-    fontVariantNumeric: "tabular-nums",
-  },
-  slider: {
-    width: "100%",
-    accentColor: tokens.colorAccent,
-    cursor: "pointer",
   },
   /** Preset chips take their look from `Button`; the phone target is the kit's. */
   presets: {
@@ -245,24 +175,17 @@ function Toggle({
   disabled?: boolean;
 }) {
   return (
-    <div {...stylex.props(s.row)}>
-      <span {...stylex.props(s.label)}>{label}</span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        disabled={disabled}
-        {...stylex.props(s.switch)}
-        onClick={() => onChange(!checked)}
-      >
-        <span {...stylex.props(s.switchTrack, checked ? s.switchOn : null)}>
-          <span
-            {...stylex.props(s.switchThumb, checked ? s.switchThumbOn : null)}
-          />
-        </span>
-      </button>
-    </div>
+    <Switch
+      // This panel is a page surface, not a canvas card, so its switches take the
+      // phone target the hand-built toggle carried.
+      phoneTouch
+      size="md"
+      label={label}
+      checked={checked}
+      disabled={disabled}
+      onCheckedChange={onChange}
+      xstyle={s.switchRow}
+    />
   );
 }
 
@@ -330,21 +253,14 @@ export function CanvasGridSettingsPanel({
       </div>
 
       <div {...stylex.props(s.sliderRow)}>
-        <div {...stylex.props(s.sliderMeta)}>
-          <span {...stylex.props(s.label)}>Cell size</span>
-          <span {...stylex.props(s.sliderValue)}>{settings.cellSize}px</span>
-        </div>
-        <input
-          type="range"
+        <Slider
+          label="Cell size"
           min={GRID_CELL_SIZE_MIN}
           max={GRID_CELL_SIZE_MAX}
           step={1}
           value={settings.cellSize}
-          aria-label="Grid cell size"
-          {...stylex.props(s.slider)}
-          onChange={(event) =>
-            patchSettings({ cellSize: Number(event.target.value) })
-          }
+          format={(cellSize) => `${cellSize}px`}
+          onValueChange={(cellSize) => patchSettings({ cellSize })}
         />
         <div {...stylex.props(s.presets)}>
           {GRID_CELL_SIZE_PRESETS.map((preset) => (

@@ -16,6 +16,7 @@ dependencies = [
     "grafy-plugin-image",
     "grafy-plugin-llm",
     "grafy-plugin-mistral",
+    "grafy-plugin-reducto",
     "grafy-plugin-table",
 ]
 
@@ -35,6 +36,7 @@ members = [
     "plugins/image",
     "plugins/llm",
     "plugins/mistral",
+    "plugins/reducto",
     "plugins/table",
 ]
 exclude = [
@@ -52,6 +54,7 @@ grafy-plugin-gis = { workspace = true }
 grafy-plugin-image = { workspace = true }
 grafy-plugin-llm = { workspace = true }
 grafy-plugin-mistral = { workspace = true }
+grafy-plugin-reducto = { workspace = true }
 grafy-plugin-table = { workspace = true }
 
 [dependency-groups]
@@ -84,6 +87,7 @@ include = [
     "plugins/table/*",
     "plugins/llm/*",
     "plugins/mistral/*",
+    "plugins/reducto/*",
     "plugins/gis/*",
     "apps/api/*",
     "tests/*",
@@ -108,6 +112,7 @@ executionEnvironments = [
         "plugins/table/src",
         "plugins/llm/src",
         "plugins/mistral/src",
+        "plugins/reducto/src",
         "plugins/gis/src",
         "apps/api/src",
     ] },

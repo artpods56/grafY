@@ -6,6 +6,7 @@ import { Check, LoaderCircle, Plus, Trash2 } from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { Field, TextArea, TextInput } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Notice } from "@/components/ui/notice";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
@@ -138,24 +139,7 @@ const s = stylex.create({
     whiteSpace: "nowrap",
     borderWidth: 0,
   },
-  /**
-   * The kit has no select, so the enum field keeps a native one drawn to the
-   * same silhouette as the shared inputs beside it.
-   */
-  select: {
-    width: "100%",
-    height: "31px",
-    paddingInline: "10px",
-    borderWidth: 0,
-    borderRadius: tokens.radiusMd,
-    outline: {
-      default: "none",
-      ":focus": `2px solid ${tokens.colorAccentBorder}`,
-    },
-    backgroundColor: tokens.colorSurfaceMuted,
-    color: tokens.colorText,
-    fontSize: tokens.fontSizeSm,
-  },
+
   /**
    * The kit has no checkbox. This is the config brick's own treatment: the
    * same silhouette as a text input, with the checked state on the well.
@@ -473,7 +457,7 @@ function StringListConfigField({
           </div>
         ))}
         <Button
-          variant="soft"
+          variant="dashed"
           size="sm"
           aria-label={`Add ${field.title} item`}
           className="nodrag nowheel"
@@ -567,21 +551,38 @@ export function ConfigField({
     <span {...stylex.props(sharedStyles.required, s.requiredGap)}>*</span>
   ) : null;
 
-  if (field.enumValues) {
-    // The kit has no select, and a native one cannot take part in <Field>'s
-    // label wiring, so this field keeps its own label wrapping the control.
-    return (
-      <label {...fieldProps}>
-        <span {...labelProps}>
-          <FieldLabelText title={field.title} description={field.description} />
-          {requiredMark}
-        </span>
-        <select
+  const fieldLabel = (
+    <>
+      <FieldLabelText
+        title={field.title}
+        description={field.description}
+        wrap
+      />
+      {requiredMark}
+    </>
+  );
+
+  return (
+    <Field
+      label={
+        labelHidden ? (
+          <span {...stylex.props(s.srOnly)}>{fieldLabel}</span>
+        ) : (
+          fieldLabel
+        )
+      }
+      xstyle={[
+        s.field,
+        labelHidden ? s.fieldHiddenLabel : null,
+        fillHeight ? s.fieldSized : null,
+      ]}
+    >
+      {field.enumValues ? (
+        <Select
           value={
             typeof value === "string" || typeof value === "number" ? value : ""
           }
           className="nodrag nowheel"
-          {...stylex.props(s.select)}
           onChange={(event) => {
             const selected = event.currentTarget.value;
             onChange(
@@ -610,38 +611,8 @@ export function ConfigField({
               {option}
             </option>
           ))}
-        </select>
-      </label>
-    );
-  }
-
-  const fieldLabel = (
-    <>
-      <FieldLabelText
-        title={field.title}
-        description={field.description}
-        wrap
-      />
-      {requiredMark}
-    </>
-  );
-
-  return (
-    <Field
-      label={
-        labelHidden ? (
-          <span {...stylex.props(s.srOnly)}>{fieldLabel}</span>
-        ) : (
-          fieldLabel
-        )
-      }
-      xstyle={[
-        s.field,
-        labelHidden ? s.fieldHiddenLabel : null,
-        fillHeight ? s.fieldSized : null,
-      ]}
-    >
-      {field.type === "string" && field.format === "textarea" ? (
+        </Select>
+      ) : field.type === "string" && field.format === "textarea" ? (
         <div
           {...stylex.props(
             s.textareaHost,

@@ -10,6 +10,7 @@ import type {
   RunPortOutput,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { Button } from "@/components/ui/button";
 import type {
   NodeExecution,
   WorkflowNodeHistoryContext,
@@ -144,20 +145,15 @@ const s = stylex.create({
     fontFamily: MONO,
   },
   rowError: { color: tokens.colorDanger },
+  /** The row's own type over the kit's text Button. */
   expandButton: {
-    flexShrink: 0,
-    padding: 0,
-    borderWidth: 0,
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
-    outlineStyle: "solid",
-    outlineColor: tokens.colorAccent,
-    outlineOffset: "2px",
-    backgroundColor: "transparent",
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorMuted },
-    cursor: "pointer",
     fontFamily: MONO,
     fontSize: "9px",
     fontWeight: 600,
+    color: {
+      default: tokens.colorSubtle,
+      ":hover:not(:disabled)": tokens.colorMuted,
+    },
   },
   omission: {
     margin: 0,
@@ -424,19 +420,22 @@ function EventsPanel({
         <div aria-live="polite" {...stylex.props(s.row)}>
           <ProgressRow entry={latest} nodeTitle={nodeTitle} />
           {earlier.length ? (
-            <button
+            <Button
               type="button"
+              size="text"
+              variant="ghost"
               aria-expanded={disclosed}
               aria-label={
                 disclosed
                   ? "Hide earlier events"
                   : `Show ${earlier.length} earlier events`
               }
-              {...interactionProps(stylex.props(s.expandButton))}
+              className="nodrag nopan nowheel"
+              xstyle={s.expandButton}
               onClick={() => setDisclosed((current) => !current)}
             >
               {disclosed ? "−" : `+${earlier.length}`}
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}

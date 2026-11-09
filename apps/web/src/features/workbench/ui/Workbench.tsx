@@ -78,7 +78,8 @@ import type {
   ContextualCandidate,
   ContextualRouteChoice,
 } from "../model/node-catalog";
-import { IconButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
+import { phoneTouch } from "@/components/ui/touch-target";
 import { createUuid } from "@/features/workbench/model/uuid";
 import { artifactGroupingDisabledReason } from "../model/artifact-grouping";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
@@ -4494,20 +4495,22 @@ function WorkbenchBody({
               A Graph is the canvas of nodes you compute with. Add one to start
               building here.
             </p>
-            <button
+            <Button
               type="button"
+              variant="primary"
+              size="sm"
               disabled={!canSubmitRoomCommands}
               title={
                 canSubmitRoomCommands
                   ? "Add a Graph to this Project"
                   : "Editing is paused until the Project room is ready."
               }
-              {...stylex.props(s.toolButton, s.primaryButton)}
+              xstyle={phoneTouch.rail}
               onClick={addProjectGraph}
             >
               <Plus size={13} />
               Add a Graph
-            </button>
+            </Button>
           </div>
         ) : null}
         <NodeMenuRegistryContext.Provider value={nodeMenus}>
@@ -4559,8 +4562,10 @@ function WorkbenchBody({
                 <span {...stylex.props(s.selectionDivider)} />
                 {collectSpec ? (
                   selectedCollectionSources.length > 1 ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="primary"
+                      size="sm"
                       disabled={
                         !localAuthoringEnabled ||
                         Boolean(collectionDisabledReason)
@@ -4569,16 +4574,18 @@ function WorkbenchBody({
                         collectionDisabledReason ??
                         `Collect ${selectedCollectionSources.length} selected artifacts into one collection`
                       }
-                      {...stylex.props(s.toolButton, s.primaryButton)}
+                      xstyle={phoneTouch.rail}
                       onClick={collectSelectedArtifacts}
                     >
                       <Layers size={13} />
                       Collect
-                    </button>
+                    </Button>
                   ) : null
                 ) : collectsIntoSequence ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="primary"
+                    size="sm"
                     disabled={
                       !collectedArtifactRefs ||
                       !localAuthoringEnabled ||
@@ -4592,26 +4599,30 @@ function WorkbenchBody({
                           : `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
                         : "Select artifacts of the same type to collect")
                     }
-                    {...stylex.props(s.toolButton, s.primaryButton)}
+                    xstyle={phoneTouch.rail}
                     onClick={collectSelectedArtifacts}
                   >
                     <Layers size={13} />
                     Collect
-                  </button>
+                  </Button>
                 ) : null}
                 {!selectedWorkflowCount && selectedArtifactCards.length > 1 ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     disabled={!localAuthoringEnabled}
-                    {...stylex.props(s.toolButton)}
+                    xstyle={phoneTouch.rail}
                     onClick={tidySelectedArtifacts}
                   >
                     Tidy-up
-                  </button>
+                  </Button>
                 ) : null}
                 {selectedWorkflowCount ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="primary"
+                    size="sm"
                     disabled={runSelectedDisabled}
                     title={
                       !projectEditsTrusted
@@ -4620,7 +4631,7 @@ function WorkbenchBody({
                           ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
                           : "Unavailable or invalid selected nodes cannot run"
                     }
-                    {...stylex.props(s.toolButton, s.primaryButton)}
+                    xstyle={phoneTouch.rail}
                     onClick={() => void runWorkflow("selected")}
                   >
                     {runningScope === "selected" ? (
@@ -4629,11 +4640,13 @@ function WorkbenchBody({
                       <Play size={13} />
                     )}
                     {runningScope === "selected" ? "Running…" : "Run"}
-                  </button>
+                  </Button>
                 ) : null}
                 {selectedWorkflowCount ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     disabled={runSelectedWithDependenciesDisabled}
                     title={
                       !projectEditsTrusted
@@ -4642,7 +4655,7 @@ function WorkbenchBody({
                           ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
                           : "Unavailable or invalid upstream dependencies cannot run"
                     }
-                    {...stylex.props(s.toolButton)}
+                    xstyle={phoneTouch.rail}
                     onClick={() =>
                       void runWorkflow("selected-with-dependencies")
                     }
@@ -4655,7 +4668,7 @@ function WorkbenchBody({
                     {runningScope === "selected-with-dependencies"
                       ? "Running…"
                       : "With dependencies"}
-                  </button>
+                  </Button>
                 ) : null}
               </NodeToolbar>
             ) : null}
@@ -4684,13 +4697,13 @@ function WorkbenchBody({
       />
 
       <aside aria-label="Canvas actions" {...stylex.props(s.toolDock)}>
-        <button
-          type="button"
-          {...firefoxDynamicButtonProps}
-          aria-label="Add node"
+        <IconButton
+          size="lg"
+          variant="accent"
+          label="Add node"
           disabled={!registry || !localAuthoringEnabled}
-          title="Add node"
-          {...stylex.props(s.railButton, s.railPrimary)}
+          xstyle={phoneTouch.rail}
+          {...firefoxDynamicButtonProps}
           onClick={() => {
             closeGraphBrowser();
             setGridPanelOpen(false);
@@ -4699,20 +4712,17 @@ function WorkbenchBody({
           }}
         >
           <Plus size={14} />
-          <span {...stylex.props(s.railLabel)}>Node</span>
-        </button>
+        </IconButton>
         <div {...stylex.props(s.shapesMenuWrap)}>
-          <button
-            type="button"
-            aria-label="Add shape or text"
-            aria-expanded={shapesMenuOpen}
-            aria-haspopup="menu"
+          <IconButton
+            size="lg"
+            variant={shapesMenuOpen ? "accent" : "ghost"}
+            label="Add shape or text"
             title="Add documentation shapes"
             disabled={!localAuthoringEnabled}
-            {...stylex.props(
-              s.railButton,
-              shapesMenuOpen ? s.railPrimary : null,
-            )}
+            aria-expanded={shapesMenuOpen}
+            aria-haspopup="menu"
+            xstyle={phoneTouch.rail}
             onClick={() => {
               closeGraphBrowser();
               setLibraryOpen(false);
@@ -4721,53 +4731,56 @@ function WorkbenchBody({
             }}
           >
             <Type size={14} />
-            <span {...stylex.props(s.railLabel)}>Annotate</span>
-          </button>
+          </IconButton>
           {shapesMenuOpen ? (
             <div role="menu" {...stylex.props(s.shapesMenu)}>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 role="menuitem"
-                {...stylex.props(s.railButton, s.railMenuButton)}
+                className="nodrag nopan"
+                xstyle={s.railMenuButton}
                 onClick={() => addAnnotation("text")}
               >
                 <Type size={14} />
-                <span {...stylex.props(s.railLabel, s.railMenuLabel)}>
-                  Text
-                </span>
-              </button>
-              <button
+                Text
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 role="menuitem"
-                {...stylex.props(s.railButton, s.railMenuButton)}
+                className="nodrag nopan"
+                xstyle={s.railMenuButton}
                 onClick={() => addAnnotation("rectangle")}
               >
                 <Square size={14} />
-                <span {...stylex.props(s.railLabel, s.railMenuLabel)}>
-                  Square
-                </span>
-              </button>
-              <button
+                Square
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 role="menuitem"
-                {...stylex.props(s.railButton, s.railMenuButton)}
+                className="nodrag nopan"
+                xstyle={s.railMenuButton}
                 onClick={() => addAnnotation("ellipse")}
               >
                 <Circle size={14} />
-                <span {...stylex.props(s.railLabel, s.railMenuLabel)}>
-                  Circle
-                </span>
-              </button>
+                Circle
+              </Button>
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          {...firefoxDynamicButtonProps}
-          aria-label="Add Agent"
+        <IconButton
+          size="lg"
+          variant="ghost"
+          label="Add Agent"
           title="Add an Agent to chat with on the canvas"
           disabled={!canEditProject}
-          {...stylex.props(s.railButton)}
+          xstyle={phoneTouch.rail}
+          {...firefoxDynamicButtonProps}
           onClick={() => {
             const id = createUuid();
             applyAuthoringCommands([
@@ -4790,25 +4803,25 @@ function WorkbenchBody({
           }}
         >
           <Bot size={14} />
-          <span {...stylex.props(s.railLabel)}>Agent</span>
-        </button>
-        <button
-          type="button"
-          {...firefoxDynamicButtonProps}
-          disabled={!flow}
+        </IconButton>
+        <IconButton
+          size="lg"
+          label="Fit"
           title="Fit workflow"
-          {...stylex.props(s.railButton)}
+          disabled={!flow}
+          xstyle={phoneTouch.rail}
+          {...firefoxDynamicButtonProps}
           onClick={() => void flow?.fitView(workbenchFitViewOptions)}
         >
           <Maximize2 size={14} />
-          <span {...stylex.props(s.railLabel)}>Fit</span>
-        </button>
+        </IconButton>
         <IconButton
           size="lg"
+          variant="accent"
           label="Canvas lab"
           pressed={gridPanelOpen}
           title="Experiment with canvas behavior"
-          xstyle={[s.railButton, gridPanelOpen ? s.railPrimary : null]}
+          xstyle={phoneTouch.rail}
           onClick={() => {
             closeGraphBrowser();
             setLibraryOpen(false);
@@ -4818,15 +4831,16 @@ function WorkbenchBody({
           <Grid3x3 size={14} />
         </IconButton>
         <span {...stylex.props(s.railDivider)} />
-        <button
-          type="button"
-          disabled={!projectId}
+        <IconButton
+          size="lg"
+          label="Runs"
           title={
             projectId
               ? "Browse this Project's Runs"
               : "Save the Project to browse its Runs"
           }
-          {...stylex.props(s.railButton)}
+          disabled={!projectId}
+          xstyle={phoneTouch.rail}
           onClick={(event) => {
             closeGraphBrowser();
             setLibraryOpen(false);
@@ -4836,40 +4850,40 @@ function WorkbenchBody({
           }}
         >
           <History size={14} />
-          <span {...stylex.props(s.railLabel)}>Runs</span>
-        </button>
+        </IconButton>
         <span {...stylex.props(s.railDivider)} />
-        <button
-          type="button"
-          disabled={
-            (!selectedWorkflowCount && !selectedViewerCount) ||
-            !localAuthoringEnabled
-          }
+        <IconButton
+          size="lg"
+          label="Duplicate"
           title={
             selectedWorkflowCount || selectedViewerCount
               ? `Duplicate ${selectedWorkflowCount + selectedViewerCount} selected node${selectedWorkflowCount + selectedViewerCount === 1 ? "" : "s"}`
               : "Select one or more nodes to duplicate"
           }
-          {...stylex.props(s.railButton)}
+          disabled={
+            (!selectedWorkflowCount && !selectedViewerCount) ||
+            !localAuthoringEnabled
+          }
+          xstyle={phoneTouch.rail}
           onClick={duplicateSelectedNodes}
         >
           <Copy size={14} />
-          <span {...stylex.props(s.railLabel)}>Duplicate</span>
-        </button>
-        <button
-          type="button"
-          disabled={!flow || !selectedNodeCount || !localAuthoringEnabled}
+        </IconButton>
+        <IconButton
+          size="lg"
+          variant="danger"
+          label="Delete"
           title={
             selectedNodeCount
               ? `Delete ${selectedNodeCount} selected node${selectedNodeCount === 1 ? "" : "s"}`
               : "Select one or more nodes to delete"
           }
-          {...stylex.props(s.railButton, s.railDanger)}
+          disabled={!flow || !selectedNodeCount || !localAuthoringEnabled}
+          xstyle={phoneTouch.rail}
           onClick={deleteSelectedNodes}
         >
           <Trash2 size={14} />
-          <span {...stylex.props(s.railLabel)}>Delete</span>
-        </button>
+        </IconButton>
       </aside>
 
       <Toast.Provider timeout={8000} limit={3}>

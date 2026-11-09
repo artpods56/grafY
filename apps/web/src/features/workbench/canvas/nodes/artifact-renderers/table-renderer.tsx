@@ -74,6 +74,17 @@ const cellValueStyles = stylex.create({
     minHeight: "0px",
     maxHeight: "none",
   },
+  /**
+   * The kit's text Button already borrows the cell's type; this only keeps the
+   * preview clipped to the cell, which is what made it read as truncated.
+   */
+  truncatedCellButton: {
+    width: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    textAlign: "inherit",
+  },
 });
 
 function tableCellText(value: unknown): string {
@@ -769,17 +780,18 @@ function TableArtifactRendererState({
                             )}
                           >
                             {cell.truncated ? (
-                              /* A cell's preview is text the reader expands: the
-                                 kit's Button is a fixed-height chip, so this stays
-                                 an inline button that inherits the cell's type. */
-                              <button
+                              /* A cell's preview is text the reader expands:
+                                 kit's text Button borrows the cell's baseline. */
+                              <Button
                                 type="button"
+                                size="text"
+                                variant="plain"
                                 aria-expanded={
                                   selectedCell?.rowIndex === rowIndex &&
                                   selectedCell.columnId === column.id
                                 }
                                 aria-controls={cellDetailId}
-                                {...stylex.props(s.tableTruncatedCellButton)}
+                                xstyle={cellValueStyles.truncatedCellButton}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   cellTriggerRef.current = event.currentTarget;
@@ -792,7 +804,7 @@ function TableArtifactRendererState({
                                 }}
                               >
                                 {text}
-                              </button>
+                              </Button>
                             ) : (
                               text
                             )}

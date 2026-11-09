@@ -13,6 +13,8 @@ import {
 import useSWR from "swr";
 
 import { Button, IconButton } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
 import { Notice } from "@/components/ui/notice";
 import {
   createPersonalAccessToken,
@@ -275,9 +277,8 @@ export function WorkspaceSettings() {
                 onChange={(event) => setTokenLabel(event.currentTarget.value)}
               />
             </label>
-            <label>
-              Purpose
-              <select
+            <Field label="Purpose">
+              <Select
                 value={selectedTokenPurpose.id}
                 onChange={(event) => {
                   const purpose = availableTokenPurposes.find(
@@ -293,11 +294,10 @@ export function WorkspaceSettings() {
                     {purpose.label}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label>
-              Expires in
-              <select
+              </Select>
+            </Field>
+            <Field label="Expires in">
+              <Select
                 value={expiryDays}
                 onChange={(event) => {
                   const value = event.currentTarget.value;
@@ -309,8 +309,8 @@ export function WorkspaceSettings() {
                 <option value="1">1 day</option>
                 <option value="7">7 days</option>
                 <option value="30">30 days</option>
-              </select>
-            </label>
+              </Select>
+            </Field>
             <Button
               type="submit"
               variant="primary"
