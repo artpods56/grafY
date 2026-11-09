@@ -31,8 +31,6 @@ flowchart LR
     API --> Persistence["SQLAlchemy repositories + UoW"]
     Persistence --> SQL["SQLite or PostgreSQL"]
     SQL --> Graphs["Saved graph documents"]
-    SQL --> Bindings["Revision-scoped output bindings"]
-    SQL --> Cache["Content-addressed invocation cache"]
     SQL --> Secrets["Encrypted graph/node secrets"]
     API --> Storage["Local or S3 artifact object storage"]
     Families["Registered node families: builtins + plugins/"] --> API
@@ -64,38 +62,14 @@ flowchart LR
   outside core. Deterministic prompt-message construction lives in this plugin.
 - `plugins/mistral` owns Mistral OCR. It wraps `mistralai` and recognizes an
   HTTPS document URL or a raster image, producing Markdown, a blocks table,
-  page regions, and cropped figures. The API key stays in node-secret storage.
+  page regions. The API key stays in node-secret storage.
 - `plugins/reducto` owns Reducto Parse. It wraps `reductoai` and parses an HTTPS
   document URL or a raster image, producing Markdown and a blocks table. The API
   key stays in node-secret storage.
 - `CONTEXT.md` defines the product vocabulary and active scope.
-- `docs/workbench-interaction-plan.md` records the current interaction decisions,
-  their rationale, acceptance criteria, and deliberately deferred work.
 
 There is intentionally no legacy extraction pipeline, Dagster deployment,
 message broker, worker service, or platform API in this workspace.
-
-Saved graph documents contain workflow structure and canvas layout, not run
-state. Successful outputs are recorded separately as durable materialization
-bindings. A "latest" output is therefore exact: it is the binding for one graph
-id, graph revision, node id, and output port, and it is reusable only while all
-referenced artifacts are accessible to the active runtime. A default selected
-run reuses those bindings without executing unselected sources. If a required
-binding is missing, the workbench blocks the run and offers running the upstream
-node or **Run with dependencies**; that separate action executes the selection's
-full upstream closure.
-
-Execution reuse is a separate concern from those revision-scoped bindings.
-Nodes default to `never` caching; deterministic System nodes opt into the
-`exact` policy explicitly. An exact invocation key covers the operator version,
-validated configuration (including defaults), stable node/module identity,
-invocation mode and mapped item index, resolved artifact-type bindings, exact
-ordered input refs and SHA-256 values, and opaque secret revisions. Mapped nodes
-cache each item independently, so a failed or newly added item does not force
-already completed items to execute again. Provider, upload, and graph-module
-wrapper nodes remain uncached unless their own declaration can supply every
-required stable identity. Cache entries store only the final digest and artifact
-refs; stale or inaccessible refs are evicted lazily.
 
 ## Node families
 
@@ -104,11 +78,7 @@ and `apps/api/src/grafy_api/services/families.py` decides which of them this bui
 registers (ADR 0017). A registered family is application code: it executes in the API
 process, identifies by family slug plus the deployment build digest, and has no release,
 revision, installation or selection. A package that the composition does not list serves
-nothing, so adding a dependency alone does not activate a family. Startup registers the
-workbench builtin families and the Module boundaries alongside them; see
-[Plugin unification](docs/design/plugin-unification.md) and
-[Plugin development](docs/design/plugin-development.md).
-
+nothing, so adding a dependency alone does not activate a family.
 ### Develop against local families
 
 `just api-dev` reloads on edits under `apps`, `libs` and `plugins`, so a family edit is
@@ -242,13 +212,6 @@ and its effective authority remains bounded by current Workspace membership.
 Expose Grafy through HTTPS so browser sessions and bearer credentials are never
 sent over an unprotected network.
 
-### Author graphs with Python
-
-The `grafy-client` package loads the effective Workspace catalog, validates
-local Node classes against it, builds the canonical saved document from each
-node's operator id and version, and uses the public PAT-authenticated HTTP API to
-upload, save, configure, execute, and inspect a graph.
-
 ## Verify
 
 ### Install and run commit hooks
@@ -282,13 +245,6 @@ To exercise the runtime without the browser:
 
 ```bash
 just smoke
-```
-
-To start a disposable deployment and verify a multimodal graph through the
-public HTTP/PAT client against a deterministic HTTPS provider:
-
-```bash
-just e2e-live
 ```
 
 ## Containers

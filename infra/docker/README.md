@@ -19,9 +19,7 @@ Compose gateway.
 
 The commands below build images from this checkout, which suits local runs. A
 production host pulls the SHA-tagged images that CI publishes instead; see
-`docs/how-to-deploy-production.md`. Each service reads its image from
-`GRAFY_API_IMAGE`, `GRAFY_WEB_IMAGE`, `GRAFY_GATEWAY_IMAGE`, or
-`GRAFY_PUBLISHER_IMAGE`, defaulting to a `:local` tag that `--build` produces.
+`docs/how-to-deploy-production.md`.
 
 ## Prepare the VPS
 
@@ -71,9 +69,6 @@ API container needs no Docker-daemon authority, there is no egress broker contai
 build or pin, and there is no publisher job. Outbound access from a node to a destination
 it names is decided by `grafy_core.egress` against
 `GRAFY_EGRESS_TRUSTED_DESTINATIONS`; a node, a graph and a Workspace cannot widen it.
-
-Tune `GRAFY_MAX_ACTIVE_EXECUTIONS` and `GRAFY_MAX_PENDING_GRAPHS` together using
-representative CPU, memory, disk, and artifact workloads.
 
 ## SSH tunnel for plain-HTTP diagnostics
 
@@ -141,12 +136,7 @@ SQLite:
 
 Each staged file is limited to 64 MiB. The gateway allows 65 MiB request bodies
 to leave room for multipart framing, while the API enforces the exact file-byte
-limit. Staged files are durable graph inputs: saved graphs retain their upload
-keys and reread the files on later runs. There is therefore no age-based cleanup
-or workspace quota yet; monitor the data volume until upload promotion/reference
-tracking can make deletion and transactional quota reservation safe.
-
-With `GRAFY_STORAGE_BACKEND=s3`, browsers PUT directly to presigned URLs. Keep
+limit. With `GRAFY_STORAGE_BACKEND=s3`, browsers PUT directly to presigned URLs. Keep
 MinIO private: include `compose.shared-storage.yaml` and set
 `GRAFY_S3_SIGNING_ENDPOINT_URL=${GRAFY_PUBLIC_ORIGIN}/storage` so uploads go
 through the gateway's `/storage/` location. See

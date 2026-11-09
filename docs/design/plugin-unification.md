@@ -19,14 +19,6 @@ and execution records remain readable after deployment, while old outputs must
 be recomputed. Bindings with no producer identity, including empty sequences,
 are conservatively treated as stale.
 
-Saved graph documents carry schema version 7 and only version 7 loads: there is no saved
-document migration and no read that rewrites a stored checkpoint. A node whose stored
-`kind` is not `builtin`, `module` or `call` fails validation rather than being normalised,
-and no document, command or run request carries a release pin. Missing operators report
-the node id and operator identity; Python operators report that Python execution was
-retired. The four former
-Python text operators stay unavailable.
-
 Node secrets keep their existing encryption and authenticated-data versions.
 The registry supplies declarations and config dependencies, so a historical
 release does not need to exist to resolve a secret for a registered operator.

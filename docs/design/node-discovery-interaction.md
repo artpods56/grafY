@@ -5,14 +5,10 @@
 - **Audience:** Designers and engineers implementing Add node and canvas
   connect-to-empty discovery
 - **Document type:** Explanation — interaction decisions for browse and connect
-- **Related:** [modules surface](modules-surface.md),
-  [modules interaction flow](modules-interaction-flow.md)
-
 ## Summary
 
 Node discovery has two surfaces that share one frontend filtering model:
 
-1. **Add node** — global browse/insert for operators and published Modules.
 2. **Continue from {port}** — compact popup when an output drag ends on empty
    canvas, listing only compatible downstream nodes.
 
@@ -34,7 +30,6 @@ Replace goal categories (`Suggested`, `Add data`, `Transform`, `Analyze`,
 | Spatial | Any input or output using a `geo.*` artifact |
 | Prompts | Any input or output using a `prompt.*` artifact |
 | Sequences | Declared output shape `many`, or accepted input shapes include `many` |
-| Workspace library | Module calls (`graph.module` / module graph id) |
 
 These families are a frontend projection over exact registered artifact
 contracts, not backend discovery tags. A node may appear in several families;
@@ -68,10 +63,6 @@ single list; choosing one inspects that node in the catalog. Artifact IDs,
 schema versions, operator identity, cardinality rules, conversions, and full
 port/config schema live behind **Technical details**.
 
-Modules keep the richer Module contract treatment: release picker, publication
-state, full ports, and **Open source graph**, with the same node preview and
-port-scoped Works with list.
-
 ## Continue from {port}
 
 When a connection starts from a supported output handle and ends on the empty
@@ -101,9 +92,3 @@ together through the semantic authoring path.
 
 Cancel without mutation on Escape, outside click, Back, graph change, or
 permission loss. Input-origin producer discovery remains deferred.
-
-## Relationship to Modules surface
-
-Full contract inspection remains appropriate for Modules. It is not the default
-depth for ordinary operators in Add node; those use the concise purpose summary
-plus optional technical details.

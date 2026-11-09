@@ -54,15 +54,11 @@ which matches nothing.
 ## Stored-data compatibility
 
 Family slugs such as `external.gis` remain stable because saved documents and
-secret bindings already contain them. Graph nodes use `kind: builtin`, `module` or `call`
-with operator id and version, without release pins, and a stored node that names any
-other kind fails validation instead of being rewritten. Keep artifact readers compatible
+secret bindings already contain them. Keep artifact readers compatible
 with historical artifact metadata even when the producing operator is unavailable.
 
 Nothing here publishes, freezes, or isolates a family: ADR 0017 removed publication, the
 Docker sandbox, the guest protocol, the egress broker, and the archived notes SDK wheel
 with its `just sdk-wheel` recipe and pinned digest. A family reaches a deployment only
 through the workspace dependency that installs its package and the static registration in
-`apps/api/src/grafy_api/services/families.py`. The release descriptor types stay as
-declaration vocabulary; their repositories and tables are gone, so no release row can be
-read back.
+`apps/api/src/grafy_api/services/families.py`.
