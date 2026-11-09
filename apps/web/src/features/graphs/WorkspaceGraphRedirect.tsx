@@ -93,5 +93,3 @@ function OpeningGraphs() {
     />
   );
 }
-
-export default WorkspaceGraphRedirect;

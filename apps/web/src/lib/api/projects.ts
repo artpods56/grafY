@@ -5,17 +5,12 @@ import type {
   CheckpointProjectRequest,
   CheckpointProjectResponse,
   CollaborativeHead,
-  CopyExactHeadRequest,
   CreateProjectRequest,
   GraphDefinition,
   InstanceKey,
   InstanceResult,
   InstanceStateList,
   Project,
-  ProjectBrowserList,
-  ProjectCheckpoint,
-  ProjectCheckpointList,
-  ProjectList,
   ProjectNodeSecrets,
   Run,
   RunList,
@@ -40,16 +35,6 @@ function projectPath(
   );
 }
 
-/** Every Project this person can reach, across their Workspaces. */
-export function listAccessibleProjects(signal?: AbortSignal) {
-  return request<ProjectBrowserList>("GET", "/v1/me/projects", { signal });
-}
-
-/** The Projects of one Workspace. */
-export function listWorkspaceProjects(workspaceId: string) {
-  return request<ProjectList>("GET", workspacePath(workspaceId, "/projects"));
-}
-
 /**
  * Create a Project with its first Graph. The caller names both: the Project is
  * what a person opens, the Graph is the canvas inside it.
@@ -58,17 +43,6 @@ export function createProject(workspaceId: string, body: CreateProjectRequest) {
   return request<Project>("POST", workspacePath(workspaceId, "/projects"), {
     body,
   });
-}
-
-export function copyExactHead(
-  targetWorkspaceId: string,
-  body: CopyExactHeadRequest,
-) {
-  return request<Project>(
-    "POST",
-    workspacePath(targetWorkspaceId, "/projects/copies"),
-    { body },
-  );
 }
 
 export function deleteProject(
@@ -153,53 +127,6 @@ export function checkpointProject(
     "POST",
     projectPath(workspaceId, projectId, "/checkpoints"),
     { body: requestBody },
-  );
-}
-
-export function listProjectCheckpoints(workspaceId: string, projectId: string) {
-  return request<ProjectCheckpointList>(
-    "GET",
-    projectPath(workspaceId, projectId, "/checkpoints"),
-  );
-}
-
-export function getProjectCheckpoint(
-  workspaceId: string,
-  projectId: string,
-  revision: number,
-) {
-  return request<ProjectCheckpoint>(
-    "GET",
-    projectPath(
-      workspaceId,
-      projectId,
-      `/checkpoints/${encodeURIComponent(String(revision))}`,
-    ),
-  );
-}
-
-/** Bring a retained checkpoint forward as the current state; history is never rewound. */
-export function restoreProjectCheckpoint(
-  workspaceId: string,
-  projectId: string,
-  revision: number,
-  requestBody: CheckpointProjectRequest,
-) {
-  return request<CheckpointProjectResponse>(
-    "POST",
-    projectPath(
-      workspaceId,
-      projectId,
-      `/checkpoints/${encodeURIComponent(String(revision))}/restore`,
-    ),
-    { body: requestBody },
-  );
-}
-
-export function recordProjectOpen(workspaceId: string, projectId: string) {
-  return request<undefined>(
-    "POST",
-    projectPath(workspaceId, projectId, "/opened"),
   );
 }
 

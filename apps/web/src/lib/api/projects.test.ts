@@ -5,22 +5,15 @@ import {
   applyNodeSecret,
   cancelRun,
   checkpointProject,
-  copyExactHead,
   createProject,
   deleteProject,
   getCollaborativeHead,
   getInstanceResult,
-  getProjectCheckpoint,
   getProjectNodeSecrets,
   graphFromProjectHead,
   listGraphInstances,
-  listProjectCheckpoints,
-  listAccessibleProjects,
   listRuns,
-  listWorkspaceProjects,
-  recordProjectOpen,
   removeNodeSecret,
-  restoreProjectCheckpoint,
   startRun,
   submitProjectCommand,
 } from "./projects";
@@ -100,16 +93,6 @@ const head = (overrides: Partial<CollaborativeHead> = {}): CollaborativeHead =>
   }) as unknown as CollaborativeHead;
 
 describe("project HTTP API", () => {
-  it("lists the Projects of one Workspace and the reachable ones across all", async () => {
-    json({ projects: [] });
-    await listWorkspaceProjects(WORKSPACE_ID);
-    expect(lastCall()[0]).toBe("/api/v1/workspaces/workspace%2F1/projects");
-
-    json({ projects: [] });
-    await listAccessibleProjects();
-    expect(lastCall()[0]).toBe("/api/v1/me/projects");
-  });
-
   it("creates a Project with its first Graph, naming both", async () => {
     json({ id: PROJECT_ID });
     await createProject(WORKSPACE_ID, {
@@ -131,22 +114,6 @@ describe("project HTTP API", () => {
     });
   });
 
-  it("copies a head into a Workspace as a new Project", async () => {
-    json({ id: PROJECT_ID });
-    await copyExactHead(WORKSPACE_ID, {
-      command_id: "copy-1",
-      project_id: PROJECT_ID,
-      source_project_id: PROJECT_ID,
-      source_workspace_id: WORKSPACE_ID,
-      expected_room_epoch: "epoch-1",
-      expected_sequence: 7,
-      name: "Copy",
-    });
-    const [url, init] = lastCall();
-    expect(url).toBe("/api/v1/workspaces/workspace%2F1/projects/copies");
-    expect(init.method).toBe("POST");
-  });
-
   it("deletes only with the exact head it was shown, when it was shown one", async () => {
     json({});
     await deleteProject(WORKSPACE_ID, PROJECT_ID);
@@ -164,16 +131,6 @@ describe("project HTTP API", () => {
     expect(url).toBe(
       `/api/v1/workspaces/workspace%2F1/projects/${PROJECT_ID}` +
         `?expected_room_epoch=epoch-1&expected_sequence=7`,
-    );
-  });
-
-  it("records the act of opening a Project without rewriting it", async () => {
-    json({});
-    await recordProjectOpen(WORKSPACE_ID, PROJECT_ID);
-    const [url, init] = lastCall();
-    expect(init.method).toBe("POST");
-    expect(url).toBe(
-      `/api/v1/workspaces/workspace%2F1/projects/${PROJECT_ID}/opened`,
     );
   });
 });
@@ -239,7 +196,7 @@ describe("project head and commands", () => {
     expect(result.receipt.accepted_sequence).toBe(8);
   });
 
-  it("checkpoints, lists, reads one, and restores without rewinding history", async () => {
+  it("checkpoints the current project", async () => {
     json({ checkpoint: { revision: 4 } });
     await checkpointProject(WORKSPACE_ID, PROJECT_ID, {
       expected_name: "Intake",
@@ -249,29 +206,6 @@ describe("project head and commands", () => {
       `/api/v1/workspaces/workspace%2F1/projects/${PROJECT_ID}/checkpoints`,
     );
     expect(writeInit.method).toBe("POST");
-
-    json({ checkpoints: [] });
-    await listProjectCheckpoints(WORKSPACE_ID, PROJECT_ID);
-    expect(lastCall()[0]).toBe(
-      `/api/v1/workspaces/workspace%2F1/projects/${PROJECT_ID}/checkpoints`,
-    );
-
-    json({ revision: 4 });
-    await getProjectCheckpoint(WORKSPACE_ID, PROJECT_ID, 4);
-    expect(lastCall()[0]).toBe(
-      `/api/v1/workspaces/workspace%2F1/projects/${PROJECT_ID}/checkpoints/4`,
-    );
-
-    json({ checkpoint: { revision: 5 } });
-    await restoreProjectCheckpoint(WORKSPACE_ID, PROJECT_ID, 4, {
-      expected_name: "Intake",
-    } as never);
-    const [restored, restoreInit] = lastCall();
-    // Restore is a new write over an old revision, never a delete of the newer ones.
-    expect(restored).toBe(
-      `/api/v1/workspaces/workspace%2F1/projects/${PROJECT_ID}/checkpoints/4/restore`,
-    );
-    expect(restoreInit.method).toBe("POST");
   });
 });
 

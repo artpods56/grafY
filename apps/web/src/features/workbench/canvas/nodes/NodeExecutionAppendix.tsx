@@ -162,11 +162,6 @@ const s = stylex.create({
     fontSize: "9px",
     lineHeight: 1.45,
   },
-  resultList: {
-    maxHeight: "146px",
-    overflowX: "hidden",
-    overflowY: "auto",
-  },
   rowMeta: {
     flexShrink: 0,
     color: tokens.colorSubtle,
@@ -179,7 +174,6 @@ const s = stylex.create({
     fontSize: "9px",
     lineHeight: 1.45,
   },
-  stateError: { color: tokens.colorDanger },
 });
 
 type AppendixTab = "events" | "result";
