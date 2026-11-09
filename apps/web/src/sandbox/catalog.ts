@@ -1,17 +1,5 @@
 export const SPIKES = [
   {
-    id: "port-inspector",
-    title: "Port inspector",
-    summary:
-      "Drill inspector is now shipping. Sandbox keeps the earlier tree variants for comparison.",
-  },
-  {
-    id: "viewer-link",
-    title: "Link viewers",
-    summary:
-      "Table row to map feature without extra ports. Four gestures for the same binding.",
-  },
-  {
     id: "port-types",
     title: "Port types",
     summary:
