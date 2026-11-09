@@ -306,6 +306,13 @@ const TABLE_ARTIFACT: ArtifactSummary = {
   content_url: "./artifacts/table-artifact/content",
 };
 
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   maplibreMock.instances.length = 0;
@@ -325,14 +332,7 @@ describe("Table artifact rendering", () => {
     const renderer = rendererFor(TABLE_ARTIFACT);
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(() =>
-        Promise.resolve(
-          new Response(JSON.stringify(page), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        ),
-      ),
+      vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(page))),
     );
     const container = document.createElement("div");
     const root = createRoot(container);
@@ -503,18 +503,8 @@ describe("Table artifact rendering", () => {
     };
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(page), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(page), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
+      .mockResolvedValueOnce(jsonResponse(page))
+      .mockResolvedValueOnce(jsonResponse(page))
       .mockRejectedValueOnce(new Error("page unavailable"));
     vi.stubGlobal("fetch", fetchMock);
     const renderer = rendererFor(TABLE_ARTIFACT);
@@ -582,12 +572,7 @@ describe("Table artifact rendering", () => {
             encoding: "native",
           }
         : page;
-      return Promise.resolve(
-        new Response(JSON.stringify(body), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+      return Promise.resolve(jsonResponse(body));
     });
     vi.stubGlobal("fetch", fetchMock);
     const renderer = rendererFor(TABLE_ARTIFACT);
@@ -706,12 +691,7 @@ describe("Table artifact rendering", () => {
             },
           ],
         });
-        return Promise.resolve(
-          new Response(JSON.stringify(page), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
+        return Promise.resolve(jsonResponse(page));
       });
     vi.stubGlobal("fetch", fetchMock);
     const onSelectionChange = vi.fn();
@@ -869,12 +849,7 @@ describe("Table artifact rendering", () => {
             ),
           );
         }
-        return Promise.resolve(
-          new Response(JSON.stringify(page), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
+        return Promise.resolve(jsonResponse(page));
       });
     vi.stubGlobal("fetch", fetchMock);
     const onSelectionChange = vi.fn();
@@ -977,12 +952,7 @@ describe("Table artifact rendering", () => {
           ),
         );
       }
-      return Promise.resolve(
-        new Response(JSON.stringify(page), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+      return Promise.resolve(jsonResponse(page));
     });
     vi.stubGlobal("fetch", fetchMock);
     const onSelectionChange = vi.fn();
@@ -1089,12 +1059,7 @@ describe("Table artifact rendering", () => {
               ),
           );
         }
-        return Promise.resolve(
-          new Response(JSON.stringify(page), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
+        return Promise.resolve(jsonResponse(page));
       });
     vi.stubGlobal("fetch", fetchMock);
     const cache = new Map();
@@ -1416,12 +1381,7 @@ describe("GIS map artifact rendering", () => {
           resolveQuery = resolve;
         });
       }
-      return Promise.resolve(
-        new Response(JSON.stringify(GEO_RENDER_DESCRIPTOR), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+      return Promise.resolve(jsonResponse(GEO_RENDER_DESCRIPTOR));
     });
 
     await clickButton(container, "Load interactive map");
