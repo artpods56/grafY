@@ -48,6 +48,13 @@ from pydantic import BaseModel, ConfigDict
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
 
+def installed_registry(*plugins: Plugin) -> PluginRegistry:
+    registry = PluginRegistry()
+    for plugin in plugins:
+        registry.install(plugin)
+    return registry
+
+
 def _stringify_integer(value: int) -> str:
     return str(value)
 
@@ -276,8 +283,7 @@ async def test_function_node_registers_an_ordinary_runtime_node(tmp_path: Path) 
         title="Function example",
         cache_policy=NodeCachePolicy.EXACT,
     )(empty_function_node)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
     registry.freeze()
 
     registration = registry.node_registration("example.function", 1)
@@ -306,8 +312,7 @@ async def test_function_node_can_opt_into_execution_context(tmp_path: Path) -> N
         version=1,
         title="Context function",
     )(context_function_node)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
     registry.freeze()
     context = NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="context-node")
 
@@ -547,8 +552,7 @@ def test_registry_reports_operator_and_artifact_collisions() -> None:
         title="Second node",
     )(ContextNode)
 
-    registry = PluginRegistry()
-    registry.install(first)
+    registry = installed_registry(first)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -583,9 +587,7 @@ def test_registry_freeze_requires_concrete_node_port_artifact_registration() -> 
         version=1,
         title="Concrete port",
     )(ConcretePortNode)
-    registry = PluginRegistry()
-    registry.install(owner)
-    registry.install(plugin)
+    registry = installed_registry(owner, plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -676,9 +678,7 @@ def test_registry_freeze_accepts_exact_foreign_artifact_contract() -> None:
     owner.register_artifact_type(artifact)
     consumer = Plugin(slug="example.consumer", title="Consumer")
     consumer.register_artifact_type_dependency(artifact)
-    registry = PluginRegistry()
-    registry.install(owner)
-    registry.install(consumer)
+    registry = installed_registry(owner, consumer)
 
     registry.freeze()
 
@@ -696,9 +696,7 @@ def test_registry_freeze_rejects_same_key_with_different_dependency_contracts() 
     first.register_artifact_type_dependency(artifact)
     second = Plugin(slug="example.second", title="Second")
     second.register_artifact_type_dependency(replace(artifact, title="Changed"))
-    registry = PluginRegistry()
-    registry.install(first)
-    registry.install(second)
+    registry = installed_registry(first, second)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -727,8 +725,7 @@ def test_registry_builds_default_and_context_factory_nodes(tmp_path: Path) -> No
         title="Context",
         factory=lambda context: ContextNode(context.workspace),
     )(ContextNode)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
     context = runtime_context(tmp_path)
 
     default_node = registry.build_node("example.default", 1, context)
@@ -747,8 +744,7 @@ def test_registry_looks_up_exact_node_registration() -> None:
         title="Lookup",
         cache_policy=NodeCachePolicy.EXACT,
     )(DefaultNode)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     registration = registry.node_registration("example.lookup", 3)
 
@@ -766,8 +762,7 @@ def test_missing_factory_error_preserves_plugin_and_operator_context(
 ) -> None:
     plugin = Plugin(slug="example.builders", title="Builders")
     plugin.node(operator_id="example.context", version=1, title="Context")(ContextNode)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -802,8 +797,7 @@ def test_registry_freeze_derives_nested_scalar_projections_from_pydantic_refs() 
     plugin = Plugin(slug="example.projections", title="Projections")
     for artifact_type in (text, integer, payload):
         plugin.register_artifact_type(artifact_type)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     registry.freeze()
 
@@ -860,8 +854,7 @@ def test_registry_freeze_keeps_explicit_projection_for_derived_path() -> None:
     plugin = Plugin(slug="example.override", title="Override")
     for artifact_type in (text, integer, payload):
         plugin.register_artifact_type(artifact_type)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     registry.freeze()
 
@@ -893,8 +886,7 @@ def test_registry_freeze_allows_explicit_plugin_owned_object_semantics() -> None
     plugin = Plugin(slug="example.plugin-owned", title="Plugin-owned")
     plugin.register_artifact_type(plugin_owned_target)
     plugin.register_artifact_type(payload)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     registry.freeze()
 
@@ -934,8 +926,7 @@ def test_registry_freeze_allows_canonical_target_for_unknown_schema_node(
     plugin = Plugin(slug="example.unknown-projection", title="Unknown projection")
     plugin.register_artifact_type(text)
     plugin.register_artifact_type(payload)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     registry.freeze()
 
@@ -962,8 +953,7 @@ def test_registry_freeze_rejects_empty_explicit_projection_path() -> None:
     plugin = Plugin(slug="example.empty-projection", title="Empty projection")
     plugin.register_artifact_type(target)
     plugin.register_artifact_type(payload)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -1002,8 +992,7 @@ def test_registry_freeze_rejects_duplicate_explicit_projection_path() -> None:
     )
     plugin.register_artifact_type(target)
     plugin.register_artifact_type(payload)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -1032,8 +1021,7 @@ def test_registry_freeze_rejects_explicit_projection_to_missing_target() -> None
         title="Missing projection target",
     )
     plugin.register_artifact_type(payload)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -1075,8 +1063,7 @@ def test_registry_freeze_rejects_explicit_canonical_scalar_type_mismatch() -> No
     )
     for artifact_type in (text, integer, payload):
         plugin.register_artifact_type(artifact_type)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -1122,8 +1109,7 @@ def test_registry_freeze_rejects_canonical_scalar_for_known_schema_node(
     )
     plugin.register_artifact_type(text)
     plugin.register_artifact_type(payload)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -1150,8 +1136,7 @@ def test_registry_freeze_rejects_duplicate_canonical_scalar_targets() -> None:
     plugin = Plugin(slug="example.duplicate-scalars", title="Duplicate scalars")
     plugin.register_artifact_type(first)
     plugin.register_artifact_type(second)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -1190,8 +1175,7 @@ def test_registry_freeze_rejects_cyclic_local_schema_ref() -> None:
     plugin = Plugin(slug="example.recursive", title="Recursive")
     plugin.register_artifact_type(text)
     plugin.register_artifact_type(recursive)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -1222,8 +1206,7 @@ def test_registry_freeze_bounds_derived_projection_count() -> None:
     plugin = Plugin(slug="example.too-many-fields", title="Too many fields")
     plugin.register_artifact_type(text)
     plugin.register_artifact_type(payload)
-    registry = PluginRegistry()
-    registry.install(plugin)
+    registry = installed_registry(plugin)
 
     with pytest.raises(
         PluginRegistrationError,
@@ -1271,9 +1254,7 @@ def test_registry_retains_family_snapshots_and_factory_order(tmp_path: Path) -> 
     first.register_writer(lambda _: first_writer)
     second.register_resolver(lambda _: second_resolver)
     second.register_writer(lambda _: second_writer)
-    registry = PluginRegistry()
-    registry.install(first)
-    registry.install(second)
+    registry = installed_registry(first, second)
 
     first.title = "Changed after install"
     first.register_resolver(lambda _: second_resolver)
@@ -1324,8 +1305,7 @@ def test_registry_rejected_install_leaves_no_partial_family_state() -> None:
     rejected.function_node(
         operator_id="snapshot.rejected.node", version=1, title="Node"
     )(empty_function_node)
-    registry = PluginRegistry()
-    registry.install(first)
+    registry = installed_registry(first)
     with pytest.raises(
         PluginRegistrationError, match="snapshot.shared@1 is already installed"
     ):
