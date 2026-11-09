@@ -747,19 +747,7 @@ describe("WorkflowNode compatibility rendering", () => {
     };
     data.onRemoveNode = removeNode;
 
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "legacy-node",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
+    const { container, root } = renderNode("legacy-node", data);
 
     expect(
       container.querySelector(
@@ -834,19 +822,7 @@ function renderBoundsField(
   data.config = { ...data.config, ...config };
   data.onConfigChange = onConfigChange;
 
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  React.act(() => {
-    root.render(
-      <WorkflowNodeCard
-        {...({
-          id: "wms-layer",
-          data,
-          selected: false,
-        } as React.ComponentProps<typeof WorkflowNodeCard>)}
-      />,
-    );
-  });
+  const { container, root } = renderNode("wms-layer", data);
 
   const inputs = BOUNDS_INPUT_LABELS.map((label) => {
     const input = container.querySelector<HTMLInputElement>(
@@ -988,19 +964,7 @@ describe("WorkflowNode string-list fields", () => {
     };
     data.onConfigChange = onConfigChange;
 
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "fuzzy-match",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
+    const { container, root } = renderNode("fuzzy-match", data);
 
     const input = container.querySelector<HTMLInputElement>(
       'input[aria-label="Right Alias Columns item 1"]',
@@ -1268,19 +1232,7 @@ describe("WorkflowNode multiline fields", () => {
     const data = createWorkflowNodeData(multilineNoteSpec());
     data.config = { body: "Note body" };
 
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "note",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
+    const { container, root } = renderNode("note", data);
 
     expect(
       container.querySelector('[data-testid="textarea-body-resize"]'),
@@ -1295,19 +1247,7 @@ describe("WorkflowNode multiline fields", () => {
     const data = createWorkflowNodeData(multilineNoteSpec());
     data.config = { body: "Note body" };
 
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "note",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
+    const { container, root } = renderNode("note", data);
 
     expect(
       container.querySelector('[data-testid="corner-resize"]'),
@@ -1321,19 +1261,7 @@ describe("WorkflowNode multiline fields", () => {
 describe("WorkflowNode port rail", () => {
   it("pairs inputs and outputs on shared lattice-tall rows before the body", () => {
     const data = createWorkflowNodeData(textPipeSpec());
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "text-pipe",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
+    const { container, root } = renderNode("text-pipe", data);
 
     const rail = container.querySelector('[data-testid="port-rail"]');
     expect(rail).not.toBeNull();
@@ -1355,19 +1283,7 @@ describe("WorkflowNode port rail", () => {
 describe("WorkflowNode execution progress", () => {
   it("integrates the selected execution appendix without remeasuring every event", () => {
     const data = createWorkflowNodeData(boundsSpec());
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "module-1",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
+    const { container, root } = renderNode("module-1", data);
     xyflowMocks.updateNodeInternals.mockClear();
 
     const materializedRun: NonNullable<typeof data.run> = {
@@ -1554,19 +1470,7 @@ describe("WorkflowNode execution progress", () => {
 describe("WorkflowNode artifact drop rows", () => {
   it("publishes the live identity of a plain input port row", () => {
     const data = createWorkflowNodeData(textPipeSpec());
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "text-pipe",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
+    const { container, root } = renderNode("text-pipe", data);
 
     const row = container.querySelector<HTMLElement>(
       '[data-input-port-name="text"]',
@@ -1578,19 +1482,7 @@ describe("WorkflowNode artifact drop rows", () => {
 
   it("publishes plug identity on plug rows instead of the port header", () => {
     const data = createWorkflowNodeData(instancePlugsSpec());
-    const container = document.createElement("div");
-    const root = createRoot(container);
-    React.act(() => {
-      root.render(
-        <WorkflowNodeCard
-          {...({
-            id: "interleave",
-            data,
-            selected: false,
-          } as React.ComponentProps<typeof WorkflowNodeCard>)}
-        />,
-      );
-    });
+    const { container, root } = renderNode("interleave", data);
 
     expect(
       container.querySelector('[data-input-port-name="headings"]'),
