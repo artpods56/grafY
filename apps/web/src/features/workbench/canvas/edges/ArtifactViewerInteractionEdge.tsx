@@ -12,6 +12,7 @@ import { Plus, Trash2 } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { IconButton } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import type {
   ArtifactViewerInteractionEdge,
   CanvasEdge,
@@ -45,20 +46,6 @@ const s = stylex.create({
     gridTemplateColumns: "minmax(0, 1fr) 16px minmax(0, 1fr) 28px",
     alignItems: "center",
     gap: "7px",
-  },
-  select: {
-    minWidth: 0,
-    width: "100%",
-    height: "30px",
-    paddingInline: "7px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: "6px",
-    backgroundColor: tokens.colorSurface,
-    color: tokens.colorText,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: "10px",
   },
   arrow: {
     color: tokens.colorSubtle,
@@ -116,12 +103,14 @@ function FieldSelect({
   const known = fields.some((field) => field.id === value);
   const empty = fields.length === 0;
   return (
-    <select
+    <Select
       aria-label={ariaLabel}
       title={value || ariaLabel}
       value={value}
       disabled={empty && !value}
-      {...stylex.props(s.select)}
+      size="dense"
+      mono
+      block={false}
       onChange={(event) => onChange(event.currentTarget.value)}
     >
       <option value="">{empty ? "No fields yet" : "Choose field"}</option>
@@ -131,7 +120,7 @@ function FieldSelect({
           {fieldOptionLabel(field)}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }
 

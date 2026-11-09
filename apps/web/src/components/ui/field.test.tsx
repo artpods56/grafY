@@ -284,6 +284,43 @@ describe("TextArea", () => {
     expect(spy).toHaveBeenCalledWith("be brief");
   });
 
+  it("shrinks itself and the control it is given at the dense step", async () => {
+    const container = await mount(
+      <Field label="Stroke width" size="dense">
+        <TextInput value="" onChange={() => {}} />
+      </Field>,
+    );
+
+    expect(container.querySelector("label")?.className).toBe(
+      "label labelDense",
+    );
+    expect(container.querySelector("input")?.className).toBe(
+      "control controlDense",
+    );
+  });
+
+  it("leaves a control that chose its own size alone", async () => {
+    const container = await mount(
+      <Field label="Stroke width" size="dense">
+        <TextInput size="md" value="" onChange={() => {}} />
+      </Field>,
+    );
+
+    expect(container.querySelector("input")?.className).toBe("control");
+  });
+
+  it("keeps a dense textarea multiline", async () => {
+    const container = await mount(
+      <Field label="Notes" size="dense">
+        <TextArea value="" onChange={() => {}} />
+      </Field>,
+    );
+
+    expect(container.querySelector("textarea")?.className).toBe(
+      "control textarea controlDense textareaDense",
+    );
+  });
+
   it("forwards its ref to the textarea", async () => {
     const ref = React.createRef<HTMLTextAreaElement>();
 

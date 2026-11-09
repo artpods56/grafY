@@ -255,7 +255,6 @@ function InstancePlugRow({
           <OptionalConnectionToggle
             connection={connection}
             label={`${visibleName} input ${index + 1}`}
-            compact
           />
         ) : null}
         <IconButton
@@ -389,7 +388,7 @@ export function InstancePlugPort({
         ))}
       </div>
       <Button
-        variant="soft"
+        variant="dashed"
         size="sm"
         className="nodrag nowheel"
         xstyle={s.addPlug}

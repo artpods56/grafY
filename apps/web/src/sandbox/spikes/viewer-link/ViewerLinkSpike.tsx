@@ -14,7 +14,7 @@ import {
 
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { IconButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { portMarkStyle } from "@/features/workbench/canvas/handle-style";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import {
@@ -1073,27 +1073,22 @@ export function ViewerLinkSpike() {
                 2 selected
               </span>
               <span {...stylex.props(workbenchStyles.selectionDivider)} />
-              <button
+              <Button
                 type="button"
+                variant="primary"
+                size="sm"
                 disabled={!pair}
-                {...stylex.props(
-                  workbenchStyles.toolButton,
-                  workbenchStyles.primaryButton,
-                )}
                 onClick={() => {
                   if (pair) setPhase("mapping");
                 }}
               >
                 <Link2 size={13} />
                 Link views
-              </button>
-              <button
-                type="button"
-                {...stylex.props(workbenchStyles.toolButton)}
-              >
+              </Button>
+              <Button type="button" variant="ghost" size="sm">
                 <Copy size={13} />
                 Duplicate
-              </button>
+              </Button>
             </div>
           ) : carrying || aiming ? (
             <span {...stylex.props(s.hint)}>

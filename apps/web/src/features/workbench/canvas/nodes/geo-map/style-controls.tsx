@@ -13,14 +13,13 @@ import type {
   GeoRenderVectorStyle,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ColorField, ColorWell } from "@/components/ui/color-field";
 import { Field, TextInput } from "@/components/ui/field";
+import { Select } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 
-import {
-  ColorControl,
-  EnabledControl,
-  RangeControl,
-  clampedNumberChange,
-} from "./control-primitives";
+import { clampedNumberChange } from "./control-primitives";
 import { s } from "./styles";
 import { DEFAULT_LABEL_STYLE } from "./style-constants";
 
@@ -36,24 +35,31 @@ export function FillControls({
   return (
     <div {...stylex.props(s.section)}>
       <span {...stylex.props(s.sectionTitle)}>{title}</span>
-      <EnabledControl
+      <Switch
+        size="dense"
+        className="nodrag nopan nowheel"
         label="Enabled"
         checked={value.enabled}
-        onChange={(enabled) => onChange({ ...value, enabled })}
+        onCheckedChange={(enabled) => onChange({ ...value, enabled })}
       />
       <div {...stylex.props(s.controlGrid)}>
-        <ColorControl
+        <ColorField
+          size="dense"
+          className="nodrag nopan nowheel"
           label="Color"
           value={value.color}
           onChange={(color) => onChange({ ...value, color })}
         />
-        <RangeControl
+        <Slider
+          size="dense"
+          className="nodrag nopan nowheel"
+          xstyle={s.controlWide}
           label="Opacity"
           value={value.opacity}
           min={0}
           max={1}
           step={0.05}
-          onChange={(opacity) => onChange({ ...value, opacity })}
+          onValueChange={(opacity) => onChange({ ...value, opacity })}
         />
       </div>
     </div>
@@ -72,13 +78,17 @@ export function LineControls({
   return (
     <div {...stylex.props(s.section)}>
       <span {...stylex.props(s.sectionTitle)}>{title}</span>
-      <EnabledControl
+      <Switch
+        size="dense"
+        className="nodrag nopan nowheel"
         label="Enabled"
         checked={value.enabled}
-        onChange={(enabled) => onChange({ ...value, enabled })}
+        onCheckedChange={(enabled) => onChange({ ...value, enabled })}
       />
       <div {...stylex.props(s.controlGrid)}>
-        <ColorControl
+        <ColorField
+          size="dense"
+          className="nodrag nopan nowheel"
           label="Color"
           value={value.color}
           onChange={(color) => onChange({ ...value, color })}
@@ -95,13 +105,16 @@ export function LineControls({
             )}
           />
         </Field>
-        <RangeControl
+        <Slider
+          size="dense"
+          className="nodrag nopan nowheel"
+          xstyle={s.controlWide}
           label="Opacity"
           value={value.opacity}
           min={0}
           max={1}
           step={0.05}
-          onChange={(opacity) => onChange({ ...value, opacity })}
+          onValueChange={(opacity) => onChange({ ...value, opacity })}
         />
       </div>
     </div>
@@ -118,18 +131,24 @@ export function PointControls({
   return (
     <div {...stylex.props(s.section)}>
       <span {...stylex.props(s.sectionTitle)}>Point</span>
-      <EnabledControl
+      <Switch
+        size="dense"
+        className="nodrag nopan nowheel"
         label="Enabled"
         checked={value.enabled}
-        onChange={(enabled) => onChange({ ...value, enabled })}
+        onCheckedChange={(enabled) => onChange({ ...value, enabled })}
       />
       <div {...stylex.props(s.controlGrid)}>
-        <ColorControl
+        <ColorField
+          size="dense"
+          className="nodrag nopan nowheel"
           label="Color"
           value={value.color}
           onChange={(color) => onChange({ ...value, color })}
         />
-        <ColorControl
+        <ColorField
+          size="dense"
+          className="nodrag nopan nowheel"
           label="Stroke"
           value={value.stroke_color}
           onChange={(stroke_color) => onChange({ ...value, stroke_color })}
@@ -158,13 +177,16 @@ export function PointControls({
             )}
           />
         </Field>
-        <RangeControl
+        <Slider
+          size="dense"
+          className="nodrag nopan nowheel"
+          xstyle={s.controlWide}
           label="Opacity"
           value={value.opacity}
           min={0}
           max={1}
           step={0.05}
-          onChange={(opacity) => onChange({ ...value, opacity })}
+          onValueChange={(opacity) => onChange({ ...value, opacity })}
         />
       </div>
     </div>
@@ -194,12 +216,16 @@ export function LabelControls({
             }
           />
         </Field>
-        <ColorControl
+        <ColorField
+          size="dense"
+          className="nodrag nopan nowheel"
           label="Color"
           value={value.color}
           onChange={(color) => onChange({ ...value, color })}
         />
-        <ColorControl
+        <ColorField
+          size="dense"
+          className="nodrag nopan nowheel"
           label="Halo"
           value={value.halo_color}
           onChange={(halo_color) => onChange({ ...value, halo_color })}
@@ -335,17 +361,18 @@ export function CategorizedPointControls({
                   }))
                 }
               />
-              <input
-                type="color"
+              <ColorWell
+                size="dense"
+                block={false}
+                xstyle={s.categoryColor}
                 value={category.point.color}
-                aria-label={`${category.title} color`}
-                {...stylex.props(s.categoryColor)}
-                onChange={(event) =>
+                label={`${category.title} color`}
+                onChange={(color) =>
                   updateCategory(category.id, (current) => ({
                     ...current,
                     point: {
                       ...current.point,
-                      color: event.currentTarget.value,
+                      color,
                     },
                   }))
                 }
@@ -430,60 +457,84 @@ export function RasterControls({
     <div {...stylex.props(s.section)}>
       <span {...stylex.props(s.sectionTitle)}>Raster</span>
       <div {...stylex.props(s.controlGrid)}>
-        <RangeControl
+        <Slider
+          size="dense"
+          className="nodrag nopan nowheel"
+          xstyle={s.controlWide}
           label="Opacity"
           value={value.opacity}
           min={0}
           max={1}
           step={0.05}
-          onChange={(opacity) => onChange({ ...value, opacity })}
+          onValueChange={(opacity) => onChange({ ...value, opacity })}
         />
-        <RangeControl
+        <Slider
+          size="dense"
+          className="nodrag nopan nowheel"
+          xstyle={s.controlWide}
           label="Brightness min"
           value={value.brightness_min}
           min={0}
           max={value.brightness_max}
           step={0.05}
-          onChange={(brightness_min) => onChange({ ...value, brightness_min })}
+          onValueChange={(brightness_min) =>
+            onChange({ ...value, brightness_min })
+          }
         />
-        <RangeControl
+        <Slider
+          size="dense"
+          className="nodrag nopan nowheel"
+          xstyle={s.controlWide}
           label="Brightness max"
           value={value.brightness_max}
           min={value.brightness_min}
           max={1}
           step={0.05}
-          onChange={(brightness_max) => onChange({ ...value, brightness_max })}
+          onValueChange={(brightness_max) =>
+            onChange({ ...value, brightness_max })
+          }
         />
-        <RangeControl
+        <Slider
+          size="dense"
+          className="nodrag nopan nowheel"
+          xstyle={s.controlWide}
           label="Contrast"
           value={value.contrast}
           min={-1}
           max={1}
           step={0.05}
-          onChange={(contrast) => onChange({ ...value, contrast })}
+          onValueChange={(contrast) => onChange({ ...value, contrast })}
         />
-        <RangeControl
+        <Slider
+          size="dense"
+          className="nodrag nopan nowheel"
+          xstyle={s.controlWide}
           label="Saturation"
           value={value.saturation}
           min={-1}
           max={1}
           step={0.05}
-          onChange={(saturation) => onChange({ ...value, saturation })}
+          onValueChange={(saturation) => onChange({ ...value, saturation })}
         />
-        <RangeControl
+        <Slider
+          size="dense"
+          className="nodrag nopan nowheel"
+          xstyle={s.controlWide}
           label="Hue"
           value={value.hue}
           min={0}
           max={359}
           step={1}
-          onChange={(hue) => onChange({ ...value, hue })}
+          onValueChange={(hue) => onChange({ ...value, hue })}
         />
-        {/* The kit has no select: the resampling choice keeps its native one. */}
-        <label {...stylex.props(s.control, s.controlWide)}>
-          <span>Resampling</span>
-          <select
+        <Field
+          label="Resampling"
+          size="dense"
+          xstyle={s.controlWide}
+          className="nodrag nopan nowheel"
+        >
+          <Select
             value={value.resampling}
-            {...stylex.props(s.controlInput)}
             onChange={(event) =>
               onChange({
                 ...value,
@@ -493,8 +544,8 @@ export function RasterControls({
           >
             <option value="linear">linear</option>
             <option value="nearest">nearest</option>
-          </select>
-        </label>
+          </Select>
+        </Field>
       </div>
     </div>
   );

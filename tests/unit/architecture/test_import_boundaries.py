@@ -14,6 +14,7 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "gis",
     "llm",
     "mistral",
+    "reducto",
     "sql",
     "typesafe",
 )

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grafy-plugin-reducto"
+version = "0.1.0"
+requires-python = "==3.14.*"
+dependencies = [
+    "grafy-core==0.1.0",
+    "httpx>=0.28.1",
+    "pydantic",
+    "reductoai>=0.26.0,<0.27",
+]
+
+[tool.grafy.plugin]
+loader-target = "grafy_plugin_reducto.plugin:REDUCTO"
+
+[tool.basedpyright]
+extends = "../../pyproject.toml"
+venvPath = "."
+venv = ".venv"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv.sources]
+grafy-core = { workspace = true }

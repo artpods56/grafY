@@ -258,6 +258,25 @@ describe("WorkspaceSettings", () => {
     });
   });
 
+  it("names the purpose and expiry selects by their own labels", async () => {
+    const container = await renderSettings();
+    const selects = [
+      ...container.querySelectorAll<HTMLSelectElement>(
+        ".grafy-workspace-settings__token-form select",
+      ),
+    ];
+    expect(selects).toHaveLength(2);
+    for (const select of selects) {
+      // A `Field` ties its label to the control with an id, which is what the
+      // hand-written `<label>` row used to do by nesting.
+      const label = container.querySelector(`label[for="${select.id}"]`);
+      expect(label?.textContent?.trim()).toContain(
+        select === selects[0] ? "Purpose" : "Expires in",
+      );
+    }
+    expect(selects[1]?.value).toBe("7");
+  });
+
   it("does not offer token creation without a supported purpose", async () => {
     mocks.workspace = workspace({
       role: "viewer",

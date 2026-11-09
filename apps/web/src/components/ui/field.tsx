@@ -7,6 +7,16 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
+/**
+ * `dense` is the canvas-card step. `Field` and its controls bottomed out at 32px,
+ * which is right for a form and wrong for a layer inspector whose rows were 25px:
+ * the card's own scroll area then holds fewer controls per screenful, and the
+ * person scrolls instead of seeing the layer.
+ *
+ * A `Field` hands its size to the control it is given, so a call site says it once.
+ */
+export type FieldSize = "dense" | "md";
+
 function joinClassNames(...names: Array<string | undefined>) {
   return names.filter(Boolean).join(" ") || undefined;
 }
@@ -17,6 +27,9 @@ const field = stylex.create({
     gap: "5px",
     minWidth: 0,
     margin: 0,
+  },
+  rootDense: {
+    gap: "3px",
   },
   labelRow: {
     display: "flex",
@@ -30,6 +43,9 @@ const field = stylex.create({
     fontSize: tokens.fontSizeXs,
     fontWeight: 500,
   },
+  labelDense: {
+    fontSize: "9px",
+  },
   aside: {
     flexShrink: 0,
     color: tokens.colorSubtle,
@@ -42,11 +58,17 @@ const field = stylex.create({
     fontSize: "10px",
     lineHeight: 1.4,
   },
+  descriptionDense: {
+    fontSize: "9px",
+  },
   error: {
     margin: 0,
     color: tokens.colorDanger,
     fontSize: tokens.fontSizeXs,
     lineHeight: 1.4,
+  },
+  errorDense: {
+    fontSize: "9px",
   },
   control: {
     width: "100%",
@@ -72,12 +94,24 @@ const field = stylex.create({
     outlineOffset: "-2px",
     "::placeholder": { color: tokens.colorSubtle },
   },
+  /** The canvas-card step: the row a control sits in is 25px and its type is 9px. */
+  controlDense: {
+    height: "25px",
+    paddingInline: "6px",
+    borderRadius: tokens.radiusSm,
+    fontSize: "9px",
+  },
   textarea: {
     height: "auto",
     minHeight: "64px",
     paddingBlock: "8px",
     lineHeight: 1.45,
     resize: "none",
+  },
+  textareaDense: {
+    minHeight: "46px",
+    paddingBlock: "5px",
+    lineHeight: 1.4,
   },
   mono: {
     fontFamily: MONO,
@@ -102,6 +136,12 @@ export type FieldProps = {
   disabled?: boolean;
   name?: string;
   /**
+   * `dense` shrinks the label, the messages, and the control inside this field, so
+   * a canvas card keeps the row height it had before the kit. A control given its
+   * own `size` keeps it.
+   */
+  size?: FieldSize;
+  /**
    * Plain class names added after the StyleX ones. On a canvas card this is how
    * a field keeps React Flow's `nodrag nopan nowheel`: the root carries them, and
    * React Flow walks up from the event target, so the label row is covered too.
@@ -111,7 +151,11 @@ export type FieldProps = {
   xstyle?: stylex.StyleXStyles;
 };
 
-/** A labelled form row: the label, the control and an optional hint or error, wired together. */
+/**
+ * A labelled form row: the label, the control and an optional hint or error, wired
+ * together. `TextInput`, `TextArea` and `Select` take part in the wiring, and take
+ * this field's `size` unless they were given one of their own.
+ */
 export function Field({
   label,
   description,
@@ -120,25 +164,33 @@ export function Field({
   children,
   disabled,
   name,
+  size = "md",
   className,
   xstyle,
 }: FieldProps) {
-  const styled = stylex.props(field.root, xstyle);
+  const dense = size === "dense";
+  const styled = stylex.props(
+    field.root,
+    dense ? field.rootDense : null,
+    xstyle,
+  );
   // Base UI composes `aria-describedby` from the field's own message parts and
   // ties the label to the control, but it derives `aria-invalid` from browser
   // validity. A rejected name or a server "already exists" is not a validity
   // state, so the invalid flag is the field's to say.
-  const control =
-    error == null
-      ? children
-      : React.Children.map(children, (child) =>
-          React.isValidElement(child)
-            ? React.cloneElement(
-                child as React.ReactElement<Record<string, unknown>>,
-                { "aria-invalid": true },
-              )
-            : child,
-        );
+  //
+  // The same pass hands the control this field's size, because a row drawn at
+  // 9px type with a 32px input in it is neither.
+  const control = React.Children.map(children, (child) => {
+    if (!React.isValidElement(child)) return child;
+    const element = child as React.ReactElement<Record<string, unknown>>;
+    const extra: Record<string, unknown> = {};
+    if (dense && element.props.size == null) extra.size = size;
+    if (error != null) extra["aria-invalid"] = true;
+    return Object.keys(extra).length === 0
+      ? child
+      : React.cloneElement(element, extra);
+  });
   return (
     <BaseField.Root
       disabled={disabled}
@@ -147,7 +199,9 @@ export function Field({
       style={styled.style}
     >
       <div {...stylex.props(field.labelRow)}>
-        <BaseField.Label {...stylex.props(field.label)}>
+        <BaseField.Label
+          {...stylex.props(field.label, dense ? field.labelDense : null)}
+        >
           {label}
         </BaseField.Label>
         {aside != null ? (
@@ -156,11 +210,20 @@ export function Field({
       </div>
       {control}
       {error != null ? (
-        <BaseField.Error match role="alert" {...stylex.props(field.error)}>
+        <BaseField.Error
+          match
+          role="alert"
+          {...stylex.props(field.error, dense ? field.errorDense : null)}
+        >
           {error}
         </BaseField.Error>
       ) : description != null ? (
-        <BaseField.Description {...stylex.props(field.description)}>
+        <BaseField.Description
+          {...stylex.props(
+            field.description,
+            dense ? field.descriptionDense : null,
+          )}
+        >
           {description}
         </BaseField.Description>
       ) : null}
@@ -170,10 +233,12 @@ export function Field({
 
 export type TextInputProps = Omit<
   React.ComponentPropsWithoutRef<typeof BaseField.Control>,
-  "className" | "style"
+  "className" | "style" | "size"
 > & {
   /** Monospace text, for endpoints, model names and keys. */
   mono?: boolean;
+  /** The canvas-card step. Inside a <Field size="dense"> it comes from the field. */
+  size?: FieldSize;
   /** Plain class names added after the StyleX ones, e.g. React Flow's "nodrag". */
   className?: string;
   xstyle?: stylex.StyleXStyles;
@@ -181,9 +246,13 @@ export type TextInputProps = Omit<
 
 /** A text input that takes part in the surrounding Field's label and description wiring. */
 export const TextInput = React.forwardRef<HTMLInputElement, TextInputProps>(
-  function TextInput({ mono = false, className, xstyle, ...props }, ref) {
+  function TextInput(
+    { mono = false, size = "md", className, xstyle, ...props },
+    ref,
+  ) {
     const styled = stylex.props(
       field.control,
+      size === "dense" ? field.controlDense : null,
       mono ? field.mono : null,
       xstyle,
     );
@@ -203,6 +272,8 @@ export type TextAreaProps = Omit<
   "className" | "style"
 > & {
   mono?: boolean;
+  /** The canvas-card step. Inside a <Field size="dense"> it comes from the field. */
+  size?: FieldSize;
   className?: string;
   xstyle?: stylex.StyleXStyles;
 };
@@ -210,12 +281,14 @@ export type TextAreaProps = Omit<
 /** A multiline text control that keeps the same Field wiring as <TextInput>. */
 export const TextArea = React.forwardRef<HTMLTextAreaElement, TextAreaProps>(
   function TextArea(
-    { mono = false, rows = 4, className, xstyle, ...props },
+    { mono = false, rows = 4, size = "md", className, xstyle, ...props },
     ref,
   ) {
     const styled = stylex.props(
       field.control,
       field.textarea,
+      size === "dense" ? field.controlDense : null,
+      size === "dense" ? field.textareaDense : null,
       mono ? field.mono : null,
       xstyle,
     );

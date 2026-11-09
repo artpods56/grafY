@@ -6,6 +6,7 @@ import { RotateCcw } from "lucide-react";
 import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { IconButton } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Notice } from "@/components/ui/notice";
 
 import { nodeSecretDependencyRevision } from "../../node-secrets";
@@ -31,7 +32,7 @@ import {
   configBricks,
   configFieldLabelIsRedundant,
 } from "./config-fields";
-import { ANY_TYPE_LABEL, nodeInteractionProps } from "./ports";
+import { ANY_TYPE_LABEL } from "./ports";
 
 const s = stylex.create({
   // The type a generic node works with, as one quiet line at the top of the
@@ -44,7 +45,7 @@ const s = stylex.create({
   },
   genericTypeRow: {
     minWidth: 0,
-    height: "24px",
+    minHeight: "24px",
     display: "flex",
     alignItems: "center",
     gap: "6px",
@@ -68,22 +69,6 @@ const s = stylex.create({
     color: tokens.colorText,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: "10.5px",
-  },
-  bindType: {
-    minWidth: 0,
-    flex: 1,
-    height: "22px",
-    paddingInline: "4px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: { default: "transparent", ":hover": tokens.colorBorder },
-    borderRadius: tokens.radiusSm,
-    backgroundColor: { default: "transparent", ":hover": tokens.colorSurface },
-    color: tokens.colorText,
-    cursor: { default: "pointer", ":disabled": "default" },
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: "10.5px",
-    textOverflow: "ellipsis",
   },
   body: {
     display: "grid",
@@ -153,7 +138,9 @@ export function GenericArtifactTypeState({
               {variables.length > 1 ? `Type ${variable}` : "Type"}
             </span>
             {picksType ? (
-              <select
+              <Select
+                size="dense"
+                mono
                 disabled={!resettable}
                 aria-label={`Bind artifact type ${variable}`}
                 title={
@@ -161,7 +148,7 @@ export function GenericArtifactTypeState({
                     ? `Bind ${variable} to an artifact type`
                     : "Disconnect this node before changing its type"
                 }
-                {...nodeInteractionProps(stylex.props(s.bindType))}
+                className="nodrag nowheel"
                 value={artifactType ? artifactTypeKey(artifactType) : ""}
                 onChange={(event) => {
                   const choice = event.currentTarget.value;
@@ -183,7 +170,7 @@ export function GenericArtifactTypeState({
                     {formatArtifactTypeLabel(type, artifactTypes)}
                   </option>
                 ))}
-              </select>
+              </Select>
             ) : (
               <span
                 title={`${variable}: ${label}`}

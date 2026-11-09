@@ -1741,9 +1741,18 @@ describe("GIS map artifact rendering", () => {
     await clickButton(container, "2 layers");
     await clickButton(container, "1. Parcels");
 
-    const layerOpacity = [...container.querySelectorAll("label")]
-      .find((label) => label.textContent?.includes("Layer opacity"))
-      ?.querySelector<HTMLInputElement>('input[type="range"]');
+    // The kit Slider is a labelled group, not a `<label>` element: Base UI
+    // names its range input through `aria-labelledby`, so the honest lookup
+    // follows that reference from the "Layer opacity" label to the input.
+    const opacityLabel = [...container.querySelectorAll("div")].find(
+      (element) => element.textContent?.trim() === "Layer opacity",
+    );
+    expect(opacityLabel?.id, "Layer opacity label").toBeTruthy();
+    const layerOpacity = opacityLabel
+      ? container.querySelector<HTMLInputElement>(
+          `input[type="range"][aria-labelledby="${opacityLabel.id}"]`,
+        )
+      : null;
     expect(layerOpacity).not.toBeNull();
     await act(async () => {
       if (layerOpacity) {
@@ -1786,9 +1795,17 @@ describe("GIS map artifact rendering", () => {
     );
 
     await clickButton(container, "2. Elevation");
-    const resampling = [...container.querySelectorAll("label")]
-      .find((label) => label.textContent?.includes("Resampling"))
-      ?.querySelector<HTMLSelectElement>("select");
+    // The kit Select is `Field`'s control: the `<label>` names it through
+    // `htmlFor` instead of wrapping it, so the lookup resolves the id.
+    const resamplingLabel = [...container.querySelectorAll("label")].find(
+      (label) => label.textContent?.trim() === "Resampling",
+    );
+    expect(resamplingLabel?.htmlFor, "Resampling label").toBeTruthy();
+    const resampling = resamplingLabel?.htmlFor
+      ? container.querySelector<HTMLSelectElement>(
+          `select[id="${resamplingLabel.htmlFor}"]`,
+        )
+      : null;
     expect(resampling).not.toBeNull();
     await act(async () => {
       if (resampling) {
