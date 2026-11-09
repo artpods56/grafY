@@ -18,7 +18,6 @@ dependencies = [
     "grafy-shared",
     "pillow",
     "pydantic",
-    "pydantic-settings>=2.12.0",
     "starlette<1.0.0",
     "structlog>=25.5.0",
     "truststore>=0.10.4",
