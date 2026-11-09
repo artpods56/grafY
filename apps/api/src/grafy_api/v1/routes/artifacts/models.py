@@ -15,7 +15,12 @@ from pydantic import (
     model_validator,
 )
 
-from grafy_core.artifacts import ArtifactExportFormat, JsonObject, ArtifactObject
+from grafy_core.artifacts import (
+    ArtifactExportFormat,
+    ArtifactObject,
+    ArtifactRef,
+    JsonObject,
+)
 from grafy_core.spatial_contracts import (
     GeoPropertyValueType,
     GeoVectorStyle as StoredGeoVectorStyle,
@@ -274,6 +279,25 @@ class TableQueryRequest(BaseModel):
         Field(default=None, min_length=1, max_length=100)
     )
     max_cell_characters: StrictInt = Field(default=256, ge=32, le=2_000)
+
+
+class TableTextArtifactsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    column_id: str = Field(min_length=1)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=100)
+
+
+class TableRowTextArtifact(ApiResponse):
+    row_index: int = Field(ge=0)
+    artifact: ArtifactRef | None
+    """``None`` when this row's cell holds no text to take out."""
+
+
+class TableTextArtifactsResponse(ApiResponse):
+    rows: list[TableRowTextArtifact]
+    total_rows: int = Field(ge=0)
 
 
 class TableCellResponse(ApiResponse):
@@ -653,6 +677,9 @@ __all__ = [
     "GeoWmsSourcePayload",
     "TableCellPreviewResponse",
     "TableCellResponse",
+    "TableRowTextArtifact",
+    "TableTextArtifactsRequest",
+    "TableTextArtifactsResponse",
     "TableColumnResponse",
     "TableExactMatchGroup",
     "TablePageResponse",

@@ -44,6 +44,18 @@ flowchart LR
    transition and after every accepted command batch, serialized and coalesced per
    Project.
 
+## Tool calls
+
+`call_tool` is how an Agent runs a node (ADR 0021). It is `start` with three
+differences: the node's instance is copied with the model's arguments as origins on
+the argument ports (`kernel/tool_calls.py`), no Run row is written or announced, and
+the planned computation for the copy records no instance, so no pointer moves and the
+node keeps showing its own result. Everything else is the same path: the copy is
+fingerprinted, so equal arguments find the stored result or join the computation in
+flight, and it takes a slot of the Project's one concurrency budget. Cancelling the
+awaiting task withdraws the demand. The upstream computations the node's wired inputs
+need keep their pointers, because those results are what those nodes currently compute.
+
 ## Decisions that bind this package
 
 - Fingerprints exclude node ids, the instance key and layout; identical content with

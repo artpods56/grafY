@@ -24,6 +24,7 @@ from grafy_api.app_state import AppIdentity, AppResources
 from grafy_api.agents.conversations import AgentConversationService
 from grafy_api.agents.keys import AgentKeyService
 from grafy_api.agents.models import AgentModelResolver
+from grafy_api.agents.project_tools import ProjectContextReader, build_toolbox_factory
 from grafy_api.agents.turns import AgentService
 from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
@@ -154,11 +155,6 @@ async def build_app_resources(
     # served by the same delivery as every other tab watching the Project. The runtime keeps
     # its own bounded, lossy queue in front of this, so a reader that stops draining loses
     # frames and never slows a turn or leaves a receipt unwritten.
-    agent_turns = AgentService(
-        unit_of_work_factory=new_unit_of_work,
-        models=agent_models,
-        publisher=ProjectAgentEvents(hub=project_room_hub),
-    )
     workbench = build_workbench_components(
         plugin_registry=registry,
         workspace=app.workspace,
@@ -188,6 +184,25 @@ async def build_app_resources(
         runners=workbench.runner_factory,
         events=ProjectRunEvents(hub=project_room_hub, uow_factory=new_unit_of_work),
         concurrency=settings.execution.project_computation_concurrency,
+    )
+    # An Agent calls a node as a tool through the Run service, so the turn runtime is built
+    # once Runs exist: it shares the Project's scheduler and its concurrency budget.
+    agent_turns = AgentService(
+        unit_of_work_factory=new_unit_of_work,
+        models=agent_models,
+        publisher=ProjectAgentEvents(hub=project_room_hub),
+        toolbox_factory=build_toolbox_factory(
+            registry=registry,
+            runs=runs,
+            unit_of_work_factory=new_unit_of_work,
+            storage=storage,
+        ),
+        context_reader=ProjectContextReader(
+            runs=runs,
+            registry=registry,
+            unit_of_work_factory=new_unit_of_work,
+            storage=storage,
+        ),
     )
     resources = AppResources(
         database=database,

@@ -4,7 +4,10 @@ from uuid import UUID
 
 import pytest
 from grafy_core.artifact_contracts import (
+    HTML_PAGE,
     TEXT_VALUE,
+    HtmlPage,
+    HtmlPageSource,
     TextValue,
     TextValuePayload,
 )
@@ -180,4 +183,111 @@ async def test_text_value_adapters_preserve_inline_payload_and_metadata() -> Non
         },
         "conversion_id": "builtin.scalar.integer_to_text",
         "conversion_version": 1,
+    }
+
+
+def test_html_page_artifact_is_registered_without_reference_fields() -> None:
+    registry = PluginRegistry()
+    registry.install(TEXT)
+    registry.freeze()
+
+    spec = next(
+        artifact_type
+        for artifact_type in registry.artifact_types
+        if artifact_type.key == HTML_PAGE.key
+    )
+
+    assert HTML_PAGE.key.id == "html.page"
+    assert HTML_PAGE.key.schema_version == 1
+    assert spec.title == "HTML page"
+    assert spec.bundle.format == "inline-json"
+    assert spec.bundle.version == 1
+    assert spec.references == ()
+    assert spec.payload_schema["additionalProperties"] is False
+    assert [projection.path for projection in spec.field_projections] == [("html",)]
+    assert [projection.target for projection in spec.field_projections] == [
+        TEXT_VALUE.key
+    ]
+
+
+def test_html_page_rejects_a_payload_that_is_not_one_page() -> None:
+    source = {
+        "artifact_id": "00000000-0000-0000-0000-000000000043",
+        "artifact_type": "scalar.text",
+        "schema_version": 1,
+    }
+    too_many = {f"s{index}": source for index in range(17)}
+    with pytest.raises(ValidationError):
+        HtmlPage.model_validate({"html": "<p></p>", "sources": {}})
+    with pytest.raises(ValidationError):
+        HtmlPage.model_validate({"html": "<p></p>", "sources": {"1bad": source}})
+    with pytest.raises(ValidationError):
+        HtmlPage.model_validate({"html": "<p></p>", "sources": {"has-dash": source}})
+    with pytest.raises(ValidationError):
+        HtmlPage.model_validate(
+            {"html": "<p></p>", "sources": {"baptisms": source}, "title": "no"}
+        )
+    with pytest.raises(ValidationError):
+        HtmlPage.model_validate({"html": "<p></p>", "sources": too_many})
+    with pytest.raises(ValidationError):
+        HtmlPageSource.model_validate({**source, "content_hash": "no"})
+
+
+@pytest.mark.asyncio
+async def test_html_page_inline_factories_round_trip_typed_payload(
+    tmp_path: Path,
+) -> None:
+    uow = InMemoryUnitOfWork()
+    context = PluginRuntimeContext(
+        workspace=tmp_path,
+        storage=cast(FileStoragePort, object()),
+        uow=uow,
+        bucket="artifacts",
+    )
+    registry = PluginRegistry()
+    registry.install(TEXT)
+    registry.freeze()
+    writers = {
+        writer.artifact_type: writer for writer in registry.build_writers(context)
+    }
+    resolvers = {
+        resolver.source: resolver for resolver in registry.build_resolvers(context)
+    }
+    payload = HtmlPage(
+        html="<p>{{baptisms}}</p>",
+        sources={
+            "baptisms": HtmlPageSource(
+                artifact_id=UUID("00000000-0000-0000-0000-000000000043"),
+                artifact_type="scalar.text",
+                schema_version=1,
+            )
+        },
+    )
+
+    ref = await writers[HTML_PAGE.key].write(
+        payload,
+        ArtifactWriteContext(
+            node_context=NodeExecutionContext(
+                workspace_id=TEST_WORKSPACE_ID,
+                node_id="page",
+            ),
+            provenance=MaterializationProvenance(refs_by_input={}),
+        ),
+    )
+
+    assert await resolvers[HTML_PAGE.key].resolve(ref, TEST_WORKSPACE_ID) == payload
+    async with uow as entered:
+        artifact = await entered.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
+    assert artifact is not None
+    assert artifact.content_type == "application/json"
+    assert artifact.storage_backend == "inline"
+    assert artifact.inline_payload == {
+        "html": "<p>{{baptisms}}</p>",
+        "sources": {
+            "baptisms": {
+                "artifact_id": "00000000-0000-0000-0000-000000000043",
+                "artifact_type": "scalar.text",
+                "schema_version": 1,
+            }
+        },
     }

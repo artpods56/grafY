@@ -1,4 +1,6 @@
+import re
 from typing import Literal, Self, cast
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -170,10 +172,66 @@ MARKDOWN = ArtifactTypeSpec(
 )
 
 
+# A name the model picks for one source. The page's template uses it as a
+# Mustache key, so it has to be an identifier.
+HTML_PAGE_SOURCE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+MAX_HTML_PAGE_SOURCES = 16
+
+
+class HtmlPageSource(BaseModel):
+    """One artifact a page reads, stored as the server looked it up."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_id: UUID
+    artifact_type: StrictStr = Field(min_length=1)
+    schema_version: StrictInt = Field(ge=1)
+
+
+class HtmlPage(BaseModel):
+    """An HTML Mustache template and the artifacts it reads.
+
+    ``sources`` is never empty. A template with nothing to read is text.
+    The names are chosen per page and the targets are whatever those artifacts
+    are, so this type declares no artifact-reference field.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    html: StrictStr
+    sources: dict[str, HtmlPageSource] = Field(
+        min_length=1, max_length=MAX_HTML_PAGE_SOURCES
+    )
+
+    @model_validator(mode="after")
+    def validate_source_names(self) -> Self:
+        for name in self.sources:
+            if HTML_PAGE_SOURCE_NAME.fullmatch(name) is None:
+                raise ValueError(
+                    f"HTML page source name {name!r} must start with a letter or "
+                    "underscore and contain only letters, digits and underscores"
+                )
+        return self
+
+
+# Owned by the Text family, next to Markdown. A page is a template plus the
+# exact artifacts it reads. Re-running a node does not move those ids.
+HTML_PAGE = ArtifactTypeSpec(
+    key=ArtifactTypeKey("html.page", 1),
+    title="HTML page",
+    payload_schema=cast(JsonObject, HtmlPage.model_json_schema()),
+)
+
+
 __all__ = [
+    "HTML_PAGE",
+    "HTML_PAGE_SOURCE_NAME",
     "IMAGE_REGIONS",
     "INTEGER_VALUE",
     "MARKDOWN",
+    "MAX_HTML_PAGE_SOURCES",
+    "HtmlPage",
+    "HtmlPageSource",
     "MarkdownValue",
     "RASTER_IMAGE",
     "TEXT_VALUE",

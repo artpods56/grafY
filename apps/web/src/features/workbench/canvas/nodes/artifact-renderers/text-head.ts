@@ -62,15 +62,28 @@ function decodeText(bytes: Uint8Array, limit: number): TextHead | null {
  * Indents a JSON document; any other text comes back unchanged. With
  * `expandEmbeddedJson`, a string value that is itself a JSON object or array
  * (a text artifact carrying serialized JSON) is shown as that JSON, not as one
- * escaped line.
+ * escaped line. With `unwrapField`, the one-field object a text artifact is
+ * stored in (`{ "value": … }`, `{ "markdown": … }`) gives way to the words.
  */
 export function formatTextHead(
   head: TextHead,
-  { expandEmbeddedJson = false }: { expandEmbeddedJson?: boolean } = {},
+  {
+    expandEmbeddedJson = false,
+    unwrapField,
+  }: { expandEmbeddedJson?: boolean; unwrapField?: string } = {},
 ): string {
   if (head.truncated) return head.text;
   try {
     const value: unknown = JSON.parse(head.text);
+    if (unwrapField) {
+      const text = loneTextField(value, unwrapField);
+      if (text !== null) {
+        const embedded = expandEmbeddedJson ? expandJsonStrings(text) : text;
+        return typeof embedded === "string"
+          ? embedded
+          : JSON.stringify(embedded, null, 2);
+      }
+    }
     return JSON.stringify(
       expandEmbeddedJson ? expandJsonStrings(value) : value,
       null,
@@ -79,6 +92,17 @@ export function formatTextHead(
   } catch {
     return head.text;
   }
+}
+
+function loneTextField(value: unknown, field: string): string | null {
+  if (value === null || typeof value !== "object") return null;
+  const entries = Object.entries(value);
+  const [entry] = entries;
+  return entries.length === 1 &&
+    entry?.[0] === field &&
+    typeof entry[1] === "string"
+    ? entry[1]
+    : null;
 }
 
 function expandJsonStrings(value: unknown): unknown {

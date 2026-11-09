@@ -429,6 +429,13 @@ export function projectSavedGraphAgent(
     name: agent.name,
     instructions: agent.instructions,
     model: projectAgentModelChoice(agent.model),
+    // What is connected to the Agent is part of its setup, so it travels with it.
+    context: agent.context.map((link) => ({ ...link })),
+    tools: agent.tools.map((tool) => ({
+      ...tool,
+      filled_ports: [...tool.filled_ports],
+      returned_ports: [...tool.returned_ports],
+    })),
     position:
       agent.position === undefined || agent.position === null
         ? undefined

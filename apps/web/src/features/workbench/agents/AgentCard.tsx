@@ -51,6 +51,14 @@ import { Field, TextArea, TextInput } from "@/components/ui/field";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { graphAgeLabel } from "@/features/workspaces/WorkspaceGraphPanel";
 import type { AgentNode } from "./agent-node";
+import { AgentLinksPanel } from "./AgentLinksPanel";
+import {
+  ConfirmationRow,
+  ThinkingRow,
+  ToolCallRow,
+  ToolResultRow,
+} from "./ToolEvents";
+import type { ArtifactTypeCatalog } from "../canvas/artifact-type-label";
 import { useAgentChat } from "./useAgentChat";
 
 type AgentModel = components["schemas"]["AgentModelResponse"];
@@ -453,9 +461,11 @@ function Conversation({
   rail,
   notice,
   plate,
+  artifactTypes,
 }: {
   scope: AgentScope;
   agentName: string;
+  artifactTypes: ArtifactTypeCatalog;
   canSend: boolean;
   head: React.ReactNode;
   rail: React.ReactNode;
@@ -559,6 +569,39 @@ function Conversation({
                 >
                   {OUTCOME_LABEL[outcome]}
                 </div>
+              );
+            }
+            if (event.payload.kind === "assistant_thinking") {
+              return (
+                <ThinkingRow key={event.sequence} payload={event.payload} />
+              );
+            }
+            if (event.payload.kind === "tool_call") {
+              return (
+                <ToolCallRow key={event.sequence} payload={event.payload} />
+              );
+            }
+            if (event.payload.kind === "tool_result") {
+              return (
+                <ToolResultRow
+                  key={event.sequence}
+                  payload={event.payload}
+                  artifactTypes={artifactTypes}
+                />
+              );
+            }
+            if (event.payload.kind === "confirmation_requested") {
+              // Only the last thing said can be answered; an older request is history.
+              const answerable =
+                event.sequence ===
+                chat.events[chat.events.length - 1]?.sequence;
+              return (
+                <ConfirmationRow
+                  key={event.sequence}
+                  payload={event.payload}
+                  disabled={!answerable || composerLocked}
+                  onContinue={() => void chat.send("Yes, carry on.")}
+                />
               );
             }
             const fromUser = event.payload.kind === "user_message";
@@ -783,6 +826,7 @@ function AgentSettings({
   scope,
   keyConfigured,
   onKeyConfigured,
+  links,
   onSave,
   onCancel,
 }: {
@@ -790,6 +834,7 @@ function AgentSettings({
   scope: AgentScope | null;
   keyConfigured: boolean;
   onKeyConfigured: (configured: boolean) => void;
+  links: AgentNode["data"]["links"];
   onSave: (agent: SavedGraphAgent) => void;
   onCancel: () => void;
 }) {
@@ -953,6 +998,14 @@ function AgentSettings({
               </Button>
             </div>
           </Field>
+        ) : null}
+        {links ? (
+          <AgentLinksPanel
+            agent={draft}
+            document={links.document}
+            registry={links.registry}
+            onChange={setDraft}
+          />
         ) : null}
         {error && <Notice tone="danger">{error}</Notice>}
       </div>
@@ -1130,6 +1183,7 @@ export default function AgentCard({
       scope={scope}
       keyConfigured={keyConfigured}
       onKeyConfigured={setKeyConfigured}
+      links={data.links}
       onSave={(next) => {
         data.configure(next);
         setEditing(null);
@@ -1145,6 +1199,7 @@ export default function AgentCard({
           key={`${scope.graphId}/${agent.id}`}
           scope={scope}
           agentName={agent.name}
+          artifactTypes={data.links?.registry.artifact_types ?? null}
           canSend={data.canSend}
           head={head}
           rail={rail}
