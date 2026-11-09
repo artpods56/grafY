@@ -438,8 +438,6 @@ describe("ProjectRoomSession", () => {
     const onReady = vi.fn();
     const onStatusChange = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       onReady,
       onStatusChange,
     });
@@ -505,8 +503,6 @@ describe("ProjectRoomSession", () => {
     const onInstancesChange = vi.fn();
     const onRunFinished = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       onActiveRunsChange,
       onInstancesChange,
       onRunFinished,
@@ -636,10 +632,7 @@ describe("ProjectRoomSession", () => {
   });
 
   it("restores open Runs and instance state from the server snapshot on resync", () => {
-    const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
-    });
+    const { session, socket } = connectReadySession();
 
     // The client's own idea of what is running, from live traffic.
     socket.emitMessage({
@@ -717,8 +710,6 @@ describe("ProjectRoomSession", () => {
   it("submits a command batch and resolves on receipt after accepted", async () => {
     const commandIds = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"];
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => commandIds.shift() ?? crypto.randomUUID(),
     });
 
@@ -761,8 +752,6 @@ describe("ProjectRoomSession", () => {
       "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     ];
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => commandIds.shift() ?? crypto.randomUUID(),
     });
 
@@ -856,8 +845,6 @@ describe("ProjectRoomSession", () => {
     const onHeadRefreshRequired = vi.fn();
     const onCommandAccepted = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => commandIds.shift() ?? crypto.randomUUID(),
       onHeadRefreshRequired,
       onCommandAccepted,
@@ -952,8 +939,6 @@ describe("ProjectRoomSession", () => {
     const onCommandAccepted = vi.fn();
     const onHeadRefreshRequired = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       onCommandAccepted,
       onHeadRefreshRequired,
@@ -982,8 +967,6 @@ describe("ProjectRoomSession", () => {
     const commandId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     const onCommandAccepted = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => commandId,
       onCommandAccepted,
     });
@@ -1018,8 +1001,6 @@ describe("ProjectRoomSession", () => {
   it("keeps an accepted head when a stale room.ready arrives during reconnect", () => {
     const onReady = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       onReady,
     });
 
@@ -1042,8 +1023,6 @@ describe("ProjectRoomSession", () => {
 
   it("rejects a command when the server rejects it", async () => {
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     });
 
@@ -1065,10 +1044,7 @@ describe("ProjectRoomSession", () => {
   });
 
   it("ignores stale replaceHead snapshots after a newer WebSocket accept", () => {
-    const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
-    });
+    const { session, socket } = connectReadySession();
     const otherGraphBefore = headGraph(session.getHead(), OTHER_GRAPH_ID);
 
     socket.emitMessage(
@@ -1096,8 +1072,6 @@ describe("ProjectRoomSession", () => {
   it("applies a peer's accepted command to the Graph it addresses, not the open one", () => {
     const onCommandAccepted = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       onCommandAccepted,
     });
     const openDocumentBefore = openGraphDocument(session.getHead());
@@ -1121,10 +1095,7 @@ describe("ProjectRoomSession", () => {
   });
 
   it("leaves every Graph untouched by a command for a Graph this head lacks", () => {
-    const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
-    });
+    const { session, socket } = connectReadySession();
     const graphsBefore = session.getHead()?.document.graphs;
     const openDocumentBefore = openGraphDocument(session.getHead());
 
@@ -1159,8 +1130,6 @@ describe("ProjectRoomSession", () => {
   it("keeps a rehydrated epoch when an old-epoch checkpoint response arrives late", async () => {
     const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => commandId,
     });
     const commands = [
@@ -1231,8 +1200,6 @@ describe("ProjectRoomSession", () => {
     ];
     const onHeadRefreshRequired = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => commandIds.shift() ?? crypto.randomUUID(),
       onHeadRefreshRequired,
     });
@@ -1302,8 +1269,6 @@ describe("ProjectRoomSession", () => {
       "22222222-2222-4222-8222-222222222222",
     ];
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => commandIds.shift() ?? crypto.randomUUID(),
     });
 
@@ -1340,8 +1305,6 @@ describe("ProjectRoomSession", () => {
   it("does not let a stale same-epoch rehydrate rewind an accepted head", () => {
     const onRehydrate = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       onRehydrate,
     });
 
@@ -1370,8 +1333,6 @@ describe("ProjectRoomSession", () => {
   it("replaces collaborative head state on room.rehydrate", () => {
     const onRehydrate = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       onRehydrate,
     });
     const head = projectHead({
@@ -1412,8 +1373,6 @@ describe("ProjectRoomSession", () => {
       vi.useFakeTimers();
       const onTerminalClose = vi.fn();
       const { session, socket } = connectReadySession({
-        workspaceId: WORKSPACE_ID,
-        projectId: PROJECT_ID,
         onTerminalClose,
         createCommandId: () => "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       });
@@ -1445,8 +1404,6 @@ describe("ProjectRoomSession", () => {
     async (code, reason) => {
       vi.useFakeTimers();
       const { session, socket } = connectReadySession({
-        workspaceId: WORKSPACE_ID,
-        projectId: PROJECT_ID,
         reconnectDelayMs: 10,
       });
 
@@ -1545,8 +1502,6 @@ describe("ProjectRoomSession", () => {
   it("bounds reconnect attempts and allows a manual retry", async () => {
     vi.useFakeTimers();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       reconnectDelayMs: 10,
       maxReconnectAttempts: 2,
     });
@@ -1569,8 +1524,6 @@ describe("ProjectRoomSession", () => {
 
   it("caps the in-memory command queue", async () => {
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       createCommandId: () => crypto.randomUUID(),
     });
 
@@ -1604,8 +1557,6 @@ describe("ProjectRoomSession", () => {
   it("tracks remote presence join/update/leave and publishes throttled updates", () => {
     const onPresenceChange = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       onPresenceChange,
     });
 
@@ -1674,8 +1625,6 @@ describe("ProjectRoomSession", () => {
   it("clears presence on terminal close and keeps the server keepalive inert", () => {
     const onPresenceChange = vi.fn();
     const { session, socket } = connectReadySession({
-      workspaceId: WORKSPACE_ID,
-      projectId: PROJECT_ID,
       onPresenceChange,
     });
     expect(session.getParticipants()).toHaveLength(1);
