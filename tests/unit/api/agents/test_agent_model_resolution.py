@@ -280,21 +280,3 @@ async def test_the_resolved_model_dials_the_pinned_transport_with_the_deployment
     assert dialled.headers["host"] == "models.internal"
     assert dialled.extensions["sni_hostname"] == "models.internal"
     await transport.aclose()
-
-
-def test_the_chat_model_carries_the_resolved_endpoint_and_name() -> None:
-    """The turn loop's entry point: one call, and the pin is inside it."""
-
-    resolved = ResolvedAgentModel(
-        source="deployment",
-        model_name="llama-4",
-        base_url="https://models.internal:11434/v1",
-        api_key=SecretStr(DEPLOYMENT_KEY),
-        egress_policy=EgressPolicy.from_destinations(["models.internal:11434"]),
-    )
-
-    model = resolved.build_chat_model()
-
-    assert model.model_name == "llama-4"
-    assert str(model.provider.client.base_url) == "https://models.internal:11434/v1/"
-    assert DEPLOYMENT_KEY not in repr(model)

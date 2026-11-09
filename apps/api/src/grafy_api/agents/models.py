@@ -85,20 +85,6 @@ class ResolvedAgentModel:
             http_client=httpx.AsyncClient(transport=self.build_transport()),
         )
 
-    def build_chat_model(self) -> OpenAIChatModel:
-        """The pydantic-ai model the turn loop runs on.
-
-        The client is handed in rather than built by the provider so the pin survives:
-        a provider given only a `base_url` would dial whatever DNS says. Whoever calls
-        this cannot close what it made, so it is the answer for a caller that owns the
-        process; a turn dials through `build_owned_chat_model`.
-        """
-
-        return OpenAIChatModel(
-            self.model_name,
-            provider=OpenAIProvider(openai_client=self.build_openai_client()),
-        )
-
     def build_owned_chat_model(self) -> "OwnedAgentChatModel":
         """A model, and the only way to hand its connection back.
 
