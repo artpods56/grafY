@@ -40,8 +40,7 @@ call a port implemented by persistence without importing persistence.
 `grafy_api.main.create_app` registers transport and configures lifespan. Lifespan
 builds the frozen application node registry through
 `grafy_api.services.families.build_application_registry`, selects storage
-through `grafy_api.storage.configured_file_storage`, constructs domain services,
-and optionally starts the Docker Plugin runtime.
+through `grafy_api.storage.configured_file_storage`, constructs domain services.
 
 `services/composition.py` builds `WorkbenchComponents`, including compilation,
 execution, artifact reads, catalog, and runtime dependencies. `AppResources`
@@ -50,7 +49,7 @@ identity and authentication services. Request dependencies retrieve these typed
 resources; domain services receive their dependencies directly.
 
 Shutdown stops the Agent turn runtime first, so its turns write their own endings,
-then closes the Project room hub, Run service, optional Plugin runtime,
+then closes the Project room hub, Run service,
 and artifact HTTP client in that order. The API's owner lease and database
 lifecycle remain in `main.py`. In-memory room coordination requires the configured
 single API owner; multiple workers are not an interchangeable deployment mode.
@@ -175,9 +174,8 @@ closes the session; it does not implicitly commit success. Core in-memory runtim
 adapters preserve task isolation, cloning, and rollback for supported local use.
 
 Docker definitions under `infra/docker` compose the gateway, API, web, and optional
-PostgreSQL, Keycloak, and Plugin runtime services. Local and S3 object stores are
-alternative adapters. Plugin egress has its own executable and Docker definition;
-it does not require importing the API application.
+PostgreSQL and Keycloak services. Local and S3 object stores are
+alternative adapters.
 
 ## Enforcement and verification
 
@@ -200,9 +198,7 @@ Agents are Graph document values alongside nodes and presentation. Their add,
 configure and remove commands use the same validated Project command batches as
 other canvas edits. Agent setup survives checkpoints and Project copies; keys
 are excluded from the document contract. Expansion and fingerprints read nodes,
-edges and origins and ignore Agents. ADR 0021 defines the conversation runtime and room
-protocol above this document boundary; the turn loop and the room frames are still to be
-built on the parts described below.
+edges and origins and ignore Agents.
 
 ### What a conversation stores, and where the sequence is decided
 

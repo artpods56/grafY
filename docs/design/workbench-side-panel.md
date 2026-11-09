@@ -161,10 +161,6 @@ libraryFoldersApi.listTree(workspaceId)
 `moveItems`, plus `LibraryFolderNotEmptyError`, `LibraryFolderCycleError` and
 `LibraryFolderNameTakenError` for the rules a type cannot express.
 
-**The server holds the tree.** Six routes under the workspace answer for it, on
-the capability split the Library already used — `VIEW_ARTIFACTS` reads,
-`EDIT_GRAPH` changes:
-
 | Path under `/v1/workspaces/{workspace_id}` | Method | Says |
 | --- | --- | --- |
 | `/library/folders` | `GET` | every folder in this workspace |
@@ -303,11 +299,6 @@ graph LR
 - **Collapse is total.** Closed means the contents are unmounted and the column
   is parked behind the rail, hidden and inert. A 40px sliver that is neither
   open nor closed is the worst of both.
-- **It opens from the rail.** The rail's Graphs section carries an Artifacts
-  item while a workbench is open (the workbench publishes `sidePanelOpen` and
-  `toggleSidePanel` through `WorkbenchChromeContext`, the way it publishes
-  Save). The canvas toolbar no longer has a panel button. On a phone the item
-  sits in the navigation drawer, which closes as the panel's drawer opens.
 - **It moves; it never blinks.** Docked, the column slides out from behind the
   rail while the canvas edge eases over on the same clock
   (`--grafy-side-panel-duration`, 200ms, and `--grafy-side-panel-ease`), and
@@ -317,15 +308,6 @@ graph LR
   rail's clock, and the canvas follows too. The drawer slides in over a fading
   backdrop and follows a swipe. Motion is off on first paint, during a resize
   drag, and under `prefers-reduced-motion`.
-
-- **A failed read keeps what it read.** When refreshing the Generated view
-  fails, the runs and run rows already on screen stay there. A warning line
-  names the read they came from and offers `Try again`, which asks for the
-  failed read and nothing else; only a first read that never returned replaces
-  the body. Throwing away the panel on a transient failure loses the one thing
-  the user opened it for. The run detail reads with `keepPreviousData` so the
-  groups of the run being shown survive the read of the run that just became
-  the newest one.
 
 ## 6. Verification
 
