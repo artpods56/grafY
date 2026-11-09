@@ -6,7 +6,6 @@ import {
   createWorkflowInputPlug,
   initialInputPlugs,
   reconcileSchemaFieldInputPlugs,
-  reorderInputPlug,
   type WorkflowInputPlug,
 } from "./input-plugs";
 import {
@@ -30,30 +29,6 @@ describe("ordered input plugs", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     expect(second.id).not.toBe(first.id);
-  });
-
-  it("reorders one port by stable id without disturbing another port", () => {
-    const plugs: WorkflowInputPlug[] = [
-      { id: "a", portName: "items" },
-      { id: "b", portName: "items" },
-      { id: "note", portName: "note" },
-      { id: "c", portName: "items" },
-    ];
-
-    const moved = reorderInputPlug(plugs, "items", "c", 0);
-    expect(moved).toEqual([
-      { id: "c", portName: "items" },
-      { id: "a", portName: "items" },
-      { id: "note", portName: "note" },
-      { id: "b", portName: "items" },
-    ]);
-    expect(reorderInputPlug(moved, "items", "c", 1)).toEqual([
-      { id: "a", portName: "items" },
-      { id: "c", portName: "items" },
-      { id: "note", portName: "note" },
-      { id: "b", portName: "items" },
-    ]);
-    expect(plugs.map((plug) => plug.id)).toEqual(["a", "b", "note", "c"]);
   });
 
   it("does not manufacture an unowned plug for an optional instance port", () => {

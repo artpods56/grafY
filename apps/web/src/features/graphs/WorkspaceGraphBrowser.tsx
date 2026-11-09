@@ -268,5 +268,3 @@ function GraphBrowserLoadingShell() {
     </div>
   );
 }
-
-export default WorkspaceGraphBrowser;

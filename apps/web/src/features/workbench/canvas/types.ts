@@ -436,48 +436,6 @@ export function declaredArtifactTypeVariables(
   ];
 }
 
-export function resetArtifactTypeBinding(
-  data: WorkflowNodeData,
-  variable: string,
-  hasIncidentEdges: boolean,
-): WorkflowNodeData {
-  if (hasIncidentEdges || !(variable in data.artifactTypeBindings)) {
-    return data;
-  }
-
-  const bindings = { ...data.artifactTypeBindings };
-  delete bindings[variable];
-  return {
-    ...data,
-    artifactTypeBindings: bindings,
-    run: null,
-    execution: { status: "idle" },
-    progress: null,
-  };
-}
-
-export function bindArtifactTypeVariable(
-  data: WorkflowNodeData,
-  variable: string,
-  artifactType: ArtifactTypeKey,
-): WorkflowNodeData {
-  if (!declaredArtifactTypeVariables(data.spec).includes(variable)) {
-    throw new Error(
-      `Cannot bind artifact type variable ${variable}: it is not declared by ${data.spec.operator_id}@${data.spec.operator_version}`,
-    );
-  }
-  return {
-    ...data,
-    artifactTypeBindings: {
-      ...data.artifactTypeBindings,
-      [variable]: {
-        id: artifactType.id,
-        schema_version: artifactType.schema_version,
-      },
-    },
-  };
-}
-
 export function effectivePortShape(
   data: WorkflowNodeData,
   port: Port,
