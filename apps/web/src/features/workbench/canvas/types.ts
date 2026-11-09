@@ -18,18 +18,7 @@ import {
   type WorkflowInputPlug,
   type WorkflowInputPlugBinding,
 } from "./input-plugs";
-import {
-  formatArtifactTypeLabel,
-  type ArtifactTypeCatalog,
-} from "./artifact-type-label";
 import type { WorkflowNodeLayout } from "./node-layout";
-import {
-  ARTIFACT_QUERY_OPERATOR_ID,
-  ARTIFACT_QUERY_RELATIONS_PORT,
-  createArtifactQueryRelation,
-  reconcileArtifactQueryRelationInputPlugs,
-  type ArtifactQueryRelation,
-} from "./query-artifact-tables";
 import type { SchemaBuilderField } from "./schema-builder";
 import type { WorkflowNodeSecretStatuses } from "./node-secrets";
 import type { CollectionMember } from "./collection-member";
@@ -250,11 +239,6 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     fields: readonly SchemaBuilderField[],
     inputPlugs: readonly WorkflowInputPlug[],
   ) => void;
-  onArtifactQueryRelationsChange?: (
-    nodeId: string,
-    relations: readonly ArtifactQueryRelation[],
-    inputPlugs: readonly WorkflowInputPlug[],
-  ) => void;
   onApplyNodeSecret?: (
     nodeId: string,
     name: string,
@@ -272,7 +256,6 @@ export interface WorkflowNodeData extends Record<string, unknown> {
     nodeId: string,
     artifactTypeBindings: WorkflowArtifactTypeBindings,
   ) => void;
-  onOpenExecutionHistory?: (nodeId: string, executionId?: string) => void;
   /** A collection's members in plug order; derived, never persisted. */
   collectionMembers?: readonly CollectionMember[];
   /** Turns a collection back into one card per member. */
@@ -356,25 +339,13 @@ export function createWorkflowNodeData(
   spec: NodeSpec,
   savedInputPlugs?: readonly InputPlugInput[],
 ): WorkflowNodeData {
-  let inputPlugs = savedInputPlugs
+  const inputPlugs = savedInputPlugs
     ? savedInputPlugs.map((plug) => ({
         id: plug.id,
         portName: plug.port,
       }))
     : initialInputPlugs(spec);
   const config = defaultNodeConfig(spec);
-  if (!savedInputPlugs && spec.operator_id === ARTIFACT_QUERY_OPERATOR_ID) {
-    const relationPlug = inputPlugs.find(
-      (plug) => plug.portName === ARTIFACT_QUERY_RELATIONS_PORT,
-    );
-    const relation = relationPlug
-      ? createArtifactQueryRelation(0, relationPlug.id)
-      : createArtifactQueryRelation(0);
-    config.relations = [relation];
-    inputPlugs = reconcileArtifactQueryRelationInputPlugs(inputPlugs, [
-      relation,
-    ]);
-  }
   return {
     spec,
     compatibility: { status: "supported" },
@@ -463,61 +434,6 @@ export function declaredArtifactTypeVariables(
       }),
     ),
   ];
-}
-
-export function resetArtifactTypeBinding(
-  data: WorkflowNodeData,
-  variable: string,
-  hasIncidentEdges: boolean,
-): WorkflowNodeData {
-  if (hasIncidentEdges || !(variable in data.artifactTypeBindings)) {
-    return data;
-  }
-
-  const bindings = { ...data.artifactTypeBindings };
-  delete bindings[variable];
-  return {
-    ...data,
-    artifactTypeBindings: bindings,
-    run: null,
-    execution: { status: "idle" },
-    progress: null,
-  };
-}
-
-export function bindArtifactTypeVariable(
-  data: WorkflowNodeData,
-  variable: string,
-  artifactType: ArtifactTypeKey,
-): WorkflowNodeData {
-  if (!declaredArtifactTypeVariables(data.spec).includes(variable)) {
-    throw new Error(
-      `Cannot bind artifact type variable ${variable}: it is not declared by ${data.spec.operator_id}@${data.spec.operator_version}`,
-    );
-  }
-  return {
-    ...data,
-    artifactTypeBindings: {
-      ...data.artifactTypeBindings,
-      [variable]: {
-        id: artifactType.id,
-        schema_version: artifactType.schema_version,
-      },
-    },
-  };
-}
-
-export function updateNodeRun(
-  data: WorkflowNodeData,
-  run: RunNodeResult | null,
-): WorkflowNodeData {
-  return {
-    ...data,
-    run,
-    execution: run
-      ? { status: run.status, error: run.error ?? undefined }
-      : data.execution,
-  };
 }
 
 export function effectivePortShape(
@@ -620,37 +536,4 @@ export function collectionModesForShapes(
     modes.push("map");
   }
   return modes;
-}
-
-export function portTypeLabel(
-  port: Port,
-  artifactTypeBindings: WorkflowArtifactTypeBindings,
-  artifactTypes: ArtifactTypeCatalog,
-): string {
-  const artifactType = resolvedPortArtifactType(port, artifactTypeBindings);
-  return artifactType
-    ? formatArtifactTypeLabel(artifactType, artifactTypes)
-    : "Any artifact";
-}
-
-export function portSummary(
-  port: Port,
-  artifactTypeBindings: WorkflowArtifactTypeBindings,
-  artifactTypes: ArtifactTypeCatalog,
-): string {
-  const extras = [port.shape, port.variadic ? "variadic" : null].filter(
-    Boolean,
-  );
-
-  return `${portTypeLabel(port, artifactTypeBindings, artifactTypes)}${
-    extras.length ? ` · ${extras.join(" · ")}` : ""
-  }`;
-}
-
-export function portCountLabel(spec: NodeSpec): string {
-  return `${spec.inputs.length} in · ${spec.outputs.length} out`;
-}
-
-export function groupLabel(group: string): string {
-  return group.charAt(0).toUpperCase() + group.slice(1);
 }

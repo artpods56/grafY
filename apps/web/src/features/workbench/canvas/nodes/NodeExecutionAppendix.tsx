@@ -10,6 +10,7 @@ import type {
   RunPortOutput,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { Button } from "@/components/ui/button";
 import type {
   NodeExecution,
   WorkflowNodeHistoryContext,
@@ -144,20 +145,15 @@ const s = stylex.create({
     fontFamily: MONO,
   },
   rowError: { color: tokens.colorDanger },
+  /** The row's own type over the kit's text Button. */
   expandButton: {
-    flexShrink: 0,
-    padding: 0,
-    borderWidth: 0,
-    outlineWidth: { default: 0, ":focus-visible": "2px" },
-    outlineStyle: "solid",
-    outlineColor: tokens.colorAccent,
-    outlineOffset: "2px",
-    backgroundColor: "transparent",
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorMuted },
-    cursor: "pointer",
     fontFamily: MONO,
     fontSize: "9px",
     fontWeight: 600,
+    color: {
+      default: tokens.colorSubtle,
+      ":hover:not(:disabled)": tokens.colorMuted,
+    },
   },
   omission: {
     margin: 0,
@@ -165,11 +161,6 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: "9px",
     lineHeight: 1.45,
-  },
-  resultList: {
-    maxHeight: "146px",
-    overflowX: "hidden",
-    overflowY: "auto",
   },
   rowMeta: {
     flexShrink: 0,
@@ -183,7 +174,6 @@ const s = stylex.create({
     fontSize: "9px",
     lineHeight: 1.45,
   },
-  stateError: { color: tokens.colorDanger },
 });
 
 type AppendixTab = "events" | "result";
@@ -208,8 +198,6 @@ export interface NodeExecutionAppendixProps {
   run: RunNodeResult | null;
   historyContext: WorkflowNodeHistoryContext | null;
   instanceState?: NodeInstanceState | null;
-  /** @deprecated A Run has no history to open; kept while the canvas catches up. */
-  onOpenHistory?: (nodeId: string, executionId?: string) => void;
 }
 
 const STATE_LABELS: Record<NodeInstanceState, string> = {
@@ -426,19 +414,22 @@ function EventsPanel({
         <div aria-live="polite" {...stylex.props(s.row)}>
           <ProgressRow entry={latest} nodeTitle={nodeTitle} />
           {earlier.length ? (
-            <button
+            <Button
               type="button"
+              size="text"
+              variant="ghost"
               aria-expanded={disclosed}
               aria-label={
                 disclosed
                   ? "Hide earlier events"
                   : `Show ${earlier.length} earlier events`
               }
-              {...interactionProps(stylex.props(s.expandButton))}
+              className="nodrag nopan nowheel"
+              xstyle={s.expandButton}
               onClick={() => setDisclosed((current) => !current)}
             >
               {disclosed ? "−" : `+${earlier.length}`}
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}

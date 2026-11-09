@@ -25,11 +25,14 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    JsonValue,
     StringConstraints,
     TypeAdapter,
     field_validator,
     model_validator,
 )
+
+from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 
 MAX_AGENT_MESSAGE_CHARS = 1_000_000
 """The longest single message text one event may carry."""
@@ -71,6 +74,91 @@ class AssistantMessagePayload(AgentConversationValue):
     ]
 
 
+class AssistantThinkingPayload(AgentConversationValue):
+    """What the model reasoned before it spoke or called a tool.
+
+    Kept so a person can read it later, and shown collapsed: it is not part of the
+    answer. It is never replayed to the model, because a provider's reasoning is its own
+    scratch work and a model told yesterday's is no better for it.
+    """
+
+    kind: Literal["assistant_thinking"] = "assistant_thinking"
+    text: Annotated[
+        str, StringConstraints(min_length=1, max_length=MAX_AGENT_MESSAGE_CHARS)
+    ]
+
+
+MAX_AGENT_TOOL_MODEL_VIEW_CHARS = 100_000
+"""The most of one tool result a single event keeps: what the model was shown."""
+
+_CallId = Annotated[str, StringConstraints(min_length=1, max_length=255)]
+
+
+class ToolCallPayload(AgentConversationValue):
+    """The model asked to call one of the Agent's tools (ADR 0021).
+
+    ``call_id`` is the model's own id for the call, which is what the result answers.
+    ``arguments`` are exactly what the model gave; the artifacts built from them are
+    named by the result, not copied here.
+    """
+
+    kind: Literal["tool_call"] = "tool_call"
+    call_id: _CallId
+    tool_id: _CallId
+    tool_name: _CallId
+    arguments: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class ToolResultArtifact(AgentConversationValue):
+    """One output a tool call produced, which a person can drag out of the thread."""
+
+    port: Annotated[str, StringConstraints(min_length=1, max_length=255)]
+    artifact: ArtifactOutputValue
+
+
+class ToolResultPayload(AgentConversationValue):
+    """How one tool call ended, and what the model was shown of it.
+
+    ``fingerprint`` is the temporary instance's, so the call is traceable to the
+    result store entry it used; ``artifacts`` carry what a person can take away.
+    ``model_view`` is stored because it is what the model saw: rebuilding it from the
+    artifacts later could differ from what it actually read.
+    """
+
+    kind: Literal["tool_result"] = "tool_result"
+    call_id: _CallId
+    tool_id: _CallId
+    tool_name: _CallId
+    ok: bool
+    fingerprint: str | None = None
+    artifacts: tuple[ToolResultArtifact, ...] = ()
+    model_view: Annotated[
+        str, StringConstraints(max_length=MAX_AGENT_TOOL_MODEL_VIEW_CHARS)
+    ] = ""
+    error: Annotated[str | None, StringConstraints(max_length=2_000)] = None
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> Self:
+        if self.ok and self.error is not None:
+            raise ValueError("A successful tool result carries no error")
+        if not self.ok and self.artifacts:
+            raise ValueError("A failed tool result carries no artifacts")
+        return self
+
+
+class ConfirmationRequestedPayload(AgentConversationValue):
+    """The turn stopped before a further tool call, and asks a person to go on.
+
+    The model wanted more calls than a turn may make unprompted. The call it asked
+    for is not stored and not run; a person's reply is a new turn, which carries on
+    from the results already in the conversation.
+    """
+
+    kind: Literal["confirmation_requested"] = "confirmation_requested"
+    tool_calls: Annotated[int, Field(ge=1)]
+    limit: Annotated[int, Field(ge=1)]
+
+
 class TurnOutcomePayload(AgentConversationValue):
     kind: Literal["turn_outcome"] = "turn_outcome"
     outcome: AgentConversationTurnOutcome
@@ -78,7 +166,13 @@ class TurnOutcomePayload(AgentConversationValue):
 
 
 AgentConversationEventPayload = Annotated[
-    UserMessagePayload | AssistantMessagePayload | TurnOutcomePayload,
+    UserMessagePayload
+    | AssistantMessagePayload
+    | AssistantThinkingPayload
+    | ToolCallPayload
+    | ToolResultPayload
+    | ConfirmationRequestedPayload
+    | TurnOutcomePayload,
     Field(discriminator="kind"),
 ]
 
@@ -268,6 +362,11 @@ __all__ = [
     "AgentConversationTurnOutcome",
     "AgentConversationValue",
     "AssistantMessagePayload",
+    "ConfirmationRequestedPayload",
+    "MAX_AGENT_TOOL_MODEL_VIEW_CHARS",
+    "ToolCallPayload",
+    "ToolResultArtifact",
+    "ToolResultPayload",
     "TurnOutcomePayload",
     "UserMessagePayload",
     "event_payload_from_storage",

@@ -97,15 +97,30 @@ cannot resolve, which `tsc` and Vitest both pass.
 
 - `src/components/ui` holds the shared controls, Base UI underneath and StyleX
   on top: `Button` and `ButtonLink`, `IconButton`, `Field` with
-  `TextInput`/`TextArea`, `SegmentedControl`, `Dialog`, `Menu`, and `Notice`.
-  Use them before hand-styling a button, a menu, or an alert. Local overrides
-  go through `xstyle` (applied last), React Flow's `nodrag`/`nopan` through
-  `className`. A Base UI trigger draws one with
+  `TextInput`/`TextArea`/`Select`, `Switch`, `Checkbox`, `Slider`,
+  `ColorWell`/`ColorField`, `SegmentedControl`, `Surface`, `Dialog`, `Menu`, and
+  `Notice`. Use them before hand-styling a button, a menu, a toggle, a colour
+  well, or an alert. Local overrides go through `xstyle` (applied last), React
+  Flow's `nodrag`/`nopan` through `className`. A Base UI trigger draws one with
   `render={<IconButton label="…" />}` and passes its children in.
   `MenuContent` already carries `nodrag nopan nowheel`.
-- `WorkspaceRail` is used by `GraphBrowser`, the Teams & access page, and the
-  workspace layout (`[workspaceSlug]/layout.tsx`). Any prop added outside the
-  core interface must be optional.
+- Take the kit's size rather than overriding it, and say so in the change when you
+  do. Controls inside a canvas card use the `dense` step (`Field`, `TextInput`,
+  `Select`, `Switch`, `Checkbox`, `Slider`, `ColorWell`): a card's rows are 25px and
+  its type is 9px, and a 32px control there costs the card half its visible controls.
+- A `role="switch"` or `role="checkbox"` is not a labelable element: a `<label>`
+  wrapped around one gives its text to the hidden input, not the control. The kit's
+  `Switch` and `Checkbox` point at the label with `aria-labelledby`; if you draw such
+  a control yourself, do the same or it has no accessible name.
+- `phoneTouch` names the three breakpoints that promise a 44px target — `on` at the
+  shell's 620px, `rail` at the workbench's 720px, and `@media (pointer: coarse)` which
+  two surfaces still carry locally. Never compose it with a recipe that sets
+  `min-height`, and never apply it to a control inside a canvas card, which keeps its
+  pixel size at every viewport. Whether the app should have three families is open
+  (issue #211); collapsing one into another silently removes a target, so don't.
+- `WorkspaceRail` is used by the Teams & access page and the workspace layout
+  (`[workspaceSlug]/layout.tsx`), which every `/workspaces/[slug]` screen mounts.
+  Any prop added outside the core interface must be optional.
 - `graphAgeLabel`, `sortGraphsByRecency`, and `filterGraphsByQuery` live in
   `WorkspaceGraphPanel.tsx` — they are reused outside the panel and should
   remain importable.
@@ -122,6 +137,14 @@ cannot resolve, which `tsc` and Vitest both pass.
 
 ## CSS
 
+- **A `.grafy-*` rule always beats the kit.** The StyleX PostCSS plugin compiles with
+  `useCSSLayers: true` and `globals.css` is unlayered, and an unlayered declaration wins
+  over a layered one whatever the specificity or the order — so an `xstyle` cannot beat
+  a global rule either. Converting a control that `globals.css` styles therefore changes
+  nothing a reader can see until the global rule is deleted: the Teams & access selects
+  and the member rows still draw the global border, background, radius, and 44px phone
+  floor. When you move such a surface onto the kit, name the global selectors that have
+  to go with it, and leave the phone target on the control before you remove theirs.
 - Global classes use the `.grafy-` prefix with BEM-ish structure:
   `.grafy-workspace-rail__item`, `.grafy-home__section-header`, etc.
 - Shared shell and route styles live in `src/app/globals.css`; complex feature

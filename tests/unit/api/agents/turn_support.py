@@ -54,7 +54,9 @@ from grafy_core.domain.identity import (
     WorkspaceMembership,
     WorkspaceRole,
 )
-from grafy_core.domain.graph_documents import GraphDocument
+from grafy_core.domain.graph_documents import GraphDocument, GraphNode
+from grafy_api.agents.context import AgentContextReader
+from grafy_api.agents.turns import AgentToolboxFactory
 from grafy_core.kernel.project import GraphDefinition, ProjectDocument
 from grafy_core.runtime.in_memory import InMemoryDataStore, InMemoryUnitOfWork
 
@@ -115,7 +117,11 @@ def custom_agent_model() -> CustomAgentModel:
     return CustomAgentModel(endpoint=CUSTOM_ENDPOINT, model="gpt-5-mini")
 
 
-def head(*, agents: Sequence[GraphAgent] | None = None) -> ProjectHead:
+def head(
+    *,
+    agents: Sequence[GraphAgent] | None = None,
+    nodes: Sequence[GraphNode] = (),
+) -> ProjectHead:
     return ProjectHead(
         workspace_id=WORKSPACE,
         project_id=PROJECT,
@@ -130,7 +136,8 @@ def head(*, agents: Sequence[GraphAgent] | None = None) -> ProjectHead:
                     id=GRAPH_ID,
                     name="Main",
                     document=GraphDocument(
-                        agents=tuple(agents if agents is not None else (agent(),))
+                        agents=tuple(agents if agents is not None else (agent(),)),
+                        nodes=tuple(nodes),
                     ),
                 ),
             )
@@ -308,7 +315,6 @@ class RecordingPublisher:
     block: asyncio.Event | None = None
     _partial_arrived: asyncio.Event = field(default_factory=asyncio.Event)
     _finished_arrived: asyncio.Event = field(default_factory=asyncio.Event)
-    _event_arrived: asyncio.Event = field(default_factory=asyncio.Event)
 
     @property
     def streamed_text(self) -> str:
@@ -329,11 +335,6 @@ class RecordingPublisher:
             self._partial_arrived.clear()
             await self._partial_arrived.wait()
 
-    async def wait_for_events(self, count: int = 1) -> None:
-        while len(self.events) < count:
-            self._event_arrived.clear()
-            await self._event_arrived.wait()
-
     async def wait_for_finished(self) -> None:
         while not self.finished:
             self._finished_arrived.clear()
@@ -348,7 +349,6 @@ class RecordingPublisher:
         await self._gate()
         self.events.append(notice)
         self.order.append(f"event.appended:{notice.event.payload.kind}")
-        self._event_arrived.set()
 
     async def text_partial(self, partial: AgentTextPartial) -> None:
         await self._gate()
@@ -418,8 +418,13 @@ class TurnHarness:
         interval: float = DEFAULT_INTERVAL,
         clock: FakeClock | None = None,
         store: InMemoryDataStore | None = None,
+        nodes: Sequence[GraphNode] = (),
+        toolbox_factory: AgentToolboxFactory | None = None,
+        context_reader: AgentContextReader | None = None,
     ) -> None:
-        self.head = head(agents=agents)
+        self.toolbox_factory = toolbox_factory
+        self.context_reader = context_reader
+        self.head = head(agents=agents, nodes=nodes)
         self.store = store if store is not None else InMemoryDataStore()
         self.clock = clock if clock is not None else FakeClock()
         self.publisher = publisher if publisher is not None else RecordingPublisher()
@@ -488,6 +493,8 @@ class TurnHarness:
                 DEFAULT_INTERVAL if interval is None else interval
             ),
             clock=self.clock,
+            toolbox_factory=self.toolbox_factory,
+            context_reader=self.context_reader,
         )
         self.services.append(service)
         self.service = service
@@ -627,19 +634,6 @@ async def no_dangling_turns() -> AsyncIterator[None]:
         for task in asyncio.all_tasks()
         if not task.done()
         and task.get_name().startswith(("agent-turn-", "agent-turn-notification"))
-    ]
-    assert pending == [], [task.get_name() for task in pending]
-
-
-@pytest.fixture
-async def no_dangling_tasks() -> AsyncIterator[None]:
-    """A turn is a task. A test that leaves one running lies about the next one."""
-
-    yield
-    pending = [
-        task
-        for task in asyncio.all_tasks()
-        if task.get_name().startswith("agent-turn-") and not task.done()
     ]
     assert pending == [], [task.get_name() for task in pending]
 

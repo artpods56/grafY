@@ -6,9 +6,6 @@ from uuid import UUID
 from httpx import Response
 from starlette.testclient import TestClient
 
-from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
-from tests.support.clients._http import _expect, _parse
-
 
 class CatalogApi:
     """The ``/v1/workspaces/{workspace_id}/nodes`` workbench node catalog."""
@@ -22,11 +19,4 @@ class CatalogApi:
     def list_nodes(self, *, headers: Mapping[str, str] | None = None) -> Response:
         return self._client.get(
             f"/v1/workspaces/{self._workspace_id}/nodes", headers=headers
-        )
-
-    def list_nodes_ok(
-        self, *, headers: Mapping[str, str] | None = None
-    ) -> NodeRegistryResponse:
-        return _parse(
-            NodeRegistryResponse, _expect(self.list_nodes(headers=headers), 200)
         )

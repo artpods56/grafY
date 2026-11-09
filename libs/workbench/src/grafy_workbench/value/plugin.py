@@ -1,8 +1,7 @@
-from grafy_workbench.value import nodes
+from grafy_workbench.value import (  # noqa: F401
+    nodes,  # registers the value.* operators on VALUE
+)
 from grafy_workbench.value.declaration import VALUE
-
-
-_NODE_MODULES = (nodes,)
 
 
 __all__ = ["VALUE"]

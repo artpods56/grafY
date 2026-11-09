@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PresenceParticipant } from "./protocol";
-import {
-  actorColor,
-  remoteSelectedNodeIds,
-  remoteSelectionColor,
-} from "./remote-selection";
+import { actorColor, remoteSelectionColor } from "./remote-selection";
 
 function participant(
   sessionId: string,
@@ -34,20 +30,6 @@ describe("remote selection helpers", () => {
   it("maps actor palette keys and falls back for unknown colors", () => {
     expect(actorColor("sky")).toBe("#0284c7");
     expect(actorColor("not-a-color")).toBe("#4f46e5");
-  });
-
-  it("collects remote selected node ids and ignores the local session", () => {
-    const participants = [
-      participant("local", ["mine"]),
-      participant("remote-a", ["n1", "n2"], "emerald"),
-      participant("remote-b", ["n2", "n3"], "amber"),
-    ];
-
-    expect([...remoteSelectedNodeIds(participants, "local")].sort()).toEqual([
-      "n1",
-      "n2",
-      "n3",
-    ]);
   });
 
   it("returns the first remote collaborator color for a node", () => {

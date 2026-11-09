@@ -210,6 +210,13 @@ class PortResponse(ApiResponse):
             "Its value, 'one' or 'many', replaces shape and accepted_shapes."
         ),
     )
+    agent_default: Literal["hidden"] | None = Field(
+        default=None,
+        description=(
+            "'hidden' when an Agent tool link leaves this input to the Graph unless told "
+            "otherwise. Absent means the input is offered to the model as a parameter."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_artifact_type_contract(self) -> Self:
@@ -250,6 +257,7 @@ class PortResponse(ApiResponse):
             variadic=port.variadic,
             required=port.required,
             shape_field=port.shape_field,
+            agent_default=None if port.agent_default == "fill" else port.agent_default,
         )
 
     @classmethod

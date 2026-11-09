@@ -27,15 +27,18 @@ Its principal reference is the operation actor, and its scopes are limited to
 this decision until ADR 0015 removed Workspace Plugins: a personal access token
 no longer grants any Plugin publication capability.
 
-Interactive credentials are stored in the operating-system keychain after
-`grafy auth login`. Non-interactive callers provide a protected file path in
-`GRAFY_TOKEN_FILE`. The CLI does not accept a raw token argument or token-value
-environment variable. Raw bearer values are parsed and hashed in the CLI
-credential adapter; domain and persistence objects contain only digests and
-safe references.
+Interactive credentials were stored in the operating-system keychain after
+`grafy auth login`, and non-interactive callers provided a protected file path in
+`GRAFY_TOKEN_FILE`. That operator CLI did not accept a raw token argument or
+token-value environment variable. Raw bearer values were parsed and hashed in its
+credential adapter; domain and persistence objects contained only digests and
+safe references. Operator commands lived in a `grafy admin` command group rather
+than a separate `grafy-admin` executable.
 
-All operator commands use the `grafy admin` command group. There is no separate
-`grafy-admin` executable.
+That CLI has since been deleted, so the keychain and `GRAFY_TOKEN_FILE` mechanics
+above describe how the decision was carried, not a live surface. What stands is the
+credential shape: a bearer token the server only ever sees hashed, and domain and
+persistence objects that hold digests and safe references rather than raw values.
 
 ## Consequences
 

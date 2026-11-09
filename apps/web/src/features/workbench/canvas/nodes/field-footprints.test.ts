@@ -37,11 +37,6 @@ describe("config field footprints", () => {
     expect(configControlKind(scalarField({ format: "textarea" }))).toBe(
       "textarea",
     );
-    expect(
-      configControlKind(
-        scalarField({ format: "textarea", codeLanguage: "sql" }),
-      ),
-    ).toBe("code");
   });
 
   it("gives short controls half the standard node and long controls all of it", () => {

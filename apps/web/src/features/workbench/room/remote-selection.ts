@@ -15,20 +15,6 @@ export function actorColor(color: string): string {
   return ACTOR_COLOR[color] ?? ACTOR_COLOR.indigo ?? "#4f46e5";
 }
 
-export function remoteSelectedNodeIds(
-  participants: readonly PresenceParticipant[],
-  localSessionId: string | null,
-): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const participant of participants) {
-    if (participant.project_room_session_id === localSessionId) continue;
-    for (const nodeId of participant.selected_node_ids) {
-      ids.add(nodeId);
-    }
-  }
-  return ids;
-}
-
 /** First remote collaborator color for a node, if any. */
 export function remoteSelectionColor(
   participants: readonly PresenceParticipant[],

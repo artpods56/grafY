@@ -11,7 +11,6 @@ describe("artifactTypeColor", () => {
     expect(artifactTypeColor("prompt.message", fallback)).not.toBe(fallback);
     expect(artifactTypeColor("llm.completion", fallback)).not.toBe(fallback);
     expect(artifactTypeColor("geo.map_document", fallback)).not.toBe(fallback);
-    expect(artifactTypeColor("sql.result", fallback)).not.toBe(fallback);
   });
 
   it("uses the artifact namespace for unlisted plugin types", () => {

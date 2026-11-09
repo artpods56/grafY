@@ -19,8 +19,10 @@ import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { Button, ButtonLink, IconButton } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 import { isTableArtifact } from "../../artifact-card";
+import { SafeMarkdown } from "../../safe-markdown";
 import {
   interactionScalarFromIntegerEncoding,
   interactionScalarFromTableCell,
@@ -29,7 +31,14 @@ import {
 
 import type { ArtifactRendererSpec } from "./spec";
 import { sharedStyles } from "./styles";
+import {
+  CELL_VIEW_LABEL,
+  cellViews,
+  prettyCellJson,
+  type CellView,
+} from "./table/cell-views";
 import { TableColumnPicker } from "./table/column-picker";
+import { HtmlView } from "./table/html-view";
 import { DEFAULT_VISIBLE_COLUMN_COUNT } from "./table/constants";
 import { TablePageNavigation } from "./table/page-navigation";
 import { s } from "./table/styles";
@@ -53,6 +62,28 @@ const cellValueStyles = stylex.create({
     height: "100%",
     minHeight: "0px",
     resize: "none",
+  },
+  rendered: {
+    minHeight: "100px",
+    maxHeight: "420px",
+    overflow: "auto",
+    padding: "8px",
+  },
+  renderedCanvas: {
+    height: "100%",
+    minHeight: "0px",
+    maxHeight: "none",
+  },
+  /**
+   * The kit's text Button already borrows the cell's type; this only keeps the
+   * preview clipped to the cell, which is what made it read as truncated.
+   */
+  truncatedCellButton: {
+    width: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    textAlign: "inherit",
   },
 });
 
@@ -105,6 +136,8 @@ function TableArtifactRendererState({
   >(null);
   const [selectedCell, setSelectedCell] =
     React.useState<TableCellSelection | null>(null);
+  const [requestedCellView, setRequestedCellView] =
+    React.useState<CellView>("text");
   const [selectingRowIndex, setSelectingRowIndex] = React.useState<
     number | null
   >(null);
@@ -300,6 +333,10 @@ function TableArtifactRendererState({
     : undefined;
   const contentUrl = artifactContentUrl(workspace.id, artifact.content_url);
   const fullCellText = fullCell ? tableCellText(fullCell.value) : "";
+  const availableCellViews = fullCell ? cellViews(fullCell.value) : [];
+  const cellView = availableCellViews.includes(requestedCellView)
+    ? requestedCellView
+    : "text";
   const selectedSourceIndices = new Set(
     interaction?.selection.items.flatMap((item) =>
       item.sourceIndex === undefined ? [] : [item.sourceIndex],
@@ -464,6 +501,19 @@ function TableArtifactRendererState({
               </span>
             ) : null}
           </span>
+          {availableCellViews.length > 1 ? (
+            <SegmentedControl
+              aria-label="Read this cell as"
+              size="sm"
+              className="nodrag nowheel"
+              value={cellView}
+              options={availableCellViews.map((view) => ({
+                value: view,
+                label: CELL_VIEW_LABEL[view],
+              }))}
+              onValueChange={setRequestedCellView}
+            />
+          ) : null}
           <IconButton
             label="Close full cell value"
             title="Close (Esc)"
@@ -478,13 +528,41 @@ function TableArtifactRendererState({
           <Notice tone="neutral">Loading full cell…</Notice>
         ) : fullCellError ? (
           <Notice tone="danger">Could not load the full cell value.</Notice>
+        ) : fullCell && cellView === "markdown" ? (
+          <div
+            aria-label="Full cell value, rendered"
+            tabIndex={0}
+            className="nodrag nowheel"
+            {...stylex.props(
+              cellValueStyles.rendered,
+              canvas ? cellValueStyles.renderedCanvas : null,
+            )}
+          >
+            <SafeMarkdown>{fullCellText}</SafeMarkdown>
+          </div>
+        ) : fullCell && cellView === "html" ? (
+          <div
+            aria-label="Full cell value, rendered"
+            tabIndex={0}
+            className="nodrag nowheel"
+            {...stylex.props(
+              cellValueStyles.rendered,
+              canvas ? cellValueStyles.renderedCanvas : null,
+            )}
+          >
+            <HtmlView html={fullCellText} height={canvas ? "100%" : 320} />
+          </div>
         ) : fullCell ? (
           <TextArea
             ref={focusCellValue}
             readOnly
             mono
             aria-label="Full cell value"
-            value={fullCellText}
+            value={
+              cellView === "json"
+                ? (prettyCellJson(fullCell.value) ?? fullCellText)
+                : fullCellText
+            }
             className="nodrag nowheel"
             xstyle={canvas ? cellValueStyles.canvas : cellValueStyles.inspector}
           />
@@ -702,20 +780,22 @@ function TableArtifactRendererState({
                             )}
                           >
                             {cell.truncated ? (
-                              /* A cell's preview is text the reader expands: the
-                                 kit's Button is a fixed-height chip, so this stays
-                                 an inline button that inherits the cell's type. */
-                              <button
+                              /* A cell's preview is text the reader expands:
+                                 kit's text Button borrows the cell's baseline. */
+                              <Button
                                 type="button"
+                                size="text"
+                                variant="plain"
                                 aria-expanded={
                                   selectedCell?.rowIndex === rowIndex &&
                                   selectedCell.columnId === column.id
                                 }
                                 aria-controls={cellDetailId}
-                                {...stylex.props(s.tableTruncatedCellButton)}
+                                xstyle={cellValueStyles.truncatedCellButton}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   cellTriggerRef.current = event.currentTarget;
+                                  setRequestedCellView("text");
                                   setSelectedCell({
                                     rowIndex,
                                     columnId: column.id,
@@ -724,7 +804,7 @@ function TableArtifactRendererState({
                                 }}
                               >
                                 {text}
-                              </button>
+                              </Button>
                             ) : (
                               text
                             )}

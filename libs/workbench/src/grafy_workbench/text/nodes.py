@@ -3,8 +3,10 @@ from typing import Annotated, final
 from pydantic import Field, StrictStr
 
 from grafy_core.artifact_contracts import (
+    HTML_PAGE,
     MARKDOWN,
     TEXT_VALUE,
+    HtmlPage,
     MarkdownValue,
     TextValuePayload,
 )
@@ -95,6 +97,21 @@ TEXT.register(
         writer=lambda context: InlineModelOutputWriter(
             artifact_type=MARKDOWN.key,
             model=MarkdownValue,
+            uow=context.uow,
+        ),
+    )
+)
+TEXT.register(
+    Artifact(
+        spec=HTML_PAGE,
+        resolver=lambda context: InlineModelResolver(
+            source=HTML_PAGE.key,
+            target=HtmlPage,
+            uow=context.uow,
+        ),
+        writer=lambda context: InlineModelOutputWriter(
+            artifact_type=HTML_PAGE.key,
+            model=HtmlPage,
             uow=context.uow,
         ),
     )

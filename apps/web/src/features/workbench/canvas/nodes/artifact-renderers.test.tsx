@@ -306,6 +306,13 @@ const TABLE_ARTIFACT: ArtifactSummary = {
   content_url: "./artifacts/table-artifact/content",
 };
 
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   maplibreMock.instances.length = 0;
@@ -325,14 +332,7 @@ describe("Table artifact rendering", () => {
     const renderer = rendererFor(TABLE_ARTIFACT);
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(() =>
-        Promise.resolve(
-          new Response(JSON.stringify(page), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        ),
-      ),
+      vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(page))),
     );
     const container = document.createElement("div");
     const root = createRoot(container);
@@ -503,18 +503,8 @@ describe("Table artifact rendering", () => {
     };
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(page), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(page), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
+      .mockResolvedValueOnce(jsonResponse(page))
+      .mockResolvedValueOnce(jsonResponse(page))
       .mockRejectedValueOnce(new Error("page unavailable"));
     vi.stubGlobal("fetch", fetchMock);
     const renderer = rendererFor(TABLE_ARTIFACT);
@@ -582,12 +572,7 @@ describe("Table artifact rendering", () => {
             encoding: "native",
           }
         : page;
-      return Promise.resolve(
-        new Response(JSON.stringify(body), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+      return Promise.resolve(jsonResponse(body));
     });
     vi.stubGlobal("fetch", fetchMock);
     const renderer = rendererFor(TABLE_ARTIFACT);
@@ -706,12 +691,7 @@ describe("Table artifact rendering", () => {
             },
           ],
         });
-        return Promise.resolve(
-          new Response(JSON.stringify(page), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
+        return Promise.resolve(jsonResponse(page));
       });
     vi.stubGlobal("fetch", fetchMock);
     const onSelectionChange = vi.fn();
@@ -869,12 +849,7 @@ describe("Table artifact rendering", () => {
             ),
           );
         }
-        return Promise.resolve(
-          new Response(JSON.stringify(page), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
+        return Promise.resolve(jsonResponse(page));
       });
     vi.stubGlobal("fetch", fetchMock);
     const onSelectionChange = vi.fn();
@@ -977,12 +952,7 @@ describe("Table artifact rendering", () => {
           ),
         );
       }
-      return Promise.resolve(
-        new Response(JSON.stringify(page), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+      return Promise.resolve(jsonResponse(page));
     });
     vi.stubGlobal("fetch", fetchMock);
     const onSelectionChange = vi.fn();
@@ -1089,12 +1059,7 @@ describe("Table artifact rendering", () => {
               ),
           );
         }
-        return Promise.resolve(
-          new Response(JSON.stringify(page), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-        );
+        return Promise.resolve(jsonResponse(page));
       });
     vi.stubGlobal("fetch", fetchMock);
     const cache = new Map();
@@ -1416,12 +1381,7 @@ describe("GIS map artifact rendering", () => {
           resolveQuery = resolve;
         });
       }
-      return Promise.resolve(
-        new Response(JSON.stringify(GEO_RENDER_DESCRIPTOR), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
+      return Promise.resolve(jsonResponse(GEO_RENDER_DESCRIPTOR));
     });
 
     await clickButton(container, "Load interactive map");
@@ -1741,9 +1701,18 @@ describe("GIS map artifact rendering", () => {
     await clickButton(container, "2 layers");
     await clickButton(container, "1. Parcels");
 
-    const layerOpacity = [...container.querySelectorAll("label")]
-      .find((label) => label.textContent?.includes("Layer opacity"))
-      ?.querySelector<HTMLInputElement>('input[type="range"]');
+    // The kit Slider is a labelled group, not a `<label>` element: Base UI
+    // names its range input through `aria-labelledby`, so the honest lookup
+    // follows that reference from the "Layer opacity" label to the input.
+    const opacityLabel = [...container.querySelectorAll("div")].find(
+      (element) => element.textContent?.trim() === "Layer opacity",
+    );
+    expect(opacityLabel?.id, "Layer opacity label").toBeTruthy();
+    const layerOpacity = opacityLabel
+      ? container.querySelector<HTMLInputElement>(
+          `input[type="range"][aria-labelledby="${opacityLabel.id}"]`,
+        )
+      : null;
     expect(layerOpacity).not.toBeNull();
     await act(async () => {
       if (layerOpacity) {
@@ -1786,9 +1755,17 @@ describe("GIS map artifact rendering", () => {
     );
 
     await clickButton(container, "2. Elevation");
-    const resampling = [...container.querySelectorAll("label")]
-      .find((label) => label.textContent?.includes("Resampling"))
-      ?.querySelector<HTMLSelectElement>("select");
+    // The kit Select is `Field`'s control: the `<label>` names it through
+    // `htmlFor` instead of wrapping it, so the lookup resolves the id.
+    const resamplingLabel = [...container.querySelectorAll("label")].find(
+      (label) => label.textContent?.trim() === "Resampling",
+    );
+    expect(resamplingLabel?.htmlFor, "Resampling label").toBeTruthy();
+    const resampling = resamplingLabel?.htmlFor
+      ? container.querySelector<HTMLSelectElement>(
+          `select[id="${resamplingLabel.htmlFor}"]`,
+        )
+      : null;
     expect(resampling).not.toBeNull();
     await act(async () => {
       if (resampling) {

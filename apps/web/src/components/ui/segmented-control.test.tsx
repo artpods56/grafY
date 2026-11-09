@@ -177,4 +177,34 @@ describe("SegmentedControl", () => {
     );
     expect(groupIn(overridden).className).toBe("root override");
   });
+
+  it("carries a per-option colour, which is the case no kit part covered", async () => {
+    const container = await mount(
+      <SegmentedControl
+        aria-label="Annotation colour"
+        value="rose"
+        options={[
+          { value: "rose", label: "Rose", swatch: "#c2554a" },
+          {
+            value: "ink",
+            label: "Ink",
+            style: { backgroundColor: "rgb(17, 17, 17)" },
+          },
+        ]}
+        onValueChange={() => {}}
+      />,
+    );
+    const radios = Array.from(radiosIn(container));
+    const chip = radios[0]?.querySelector("span");
+    expect(chip?.getAttribute("aria-hidden")).toBe("true");
+    expect((chip as HTMLElement).style.backgroundColor).toBe(
+      "rgb(194, 85, 74)",
+    );
+    expect((radios[1] as HTMLElement).style.backgroundColor).toBe(
+      "rgb(17, 17, 17)",
+    );
+    // The colour never replaces the name.
+    expect(radios[0]?.textContent).toBe("Rose");
+    expect(radios[1]?.textContent).toBe("Ink");
+  });
 });

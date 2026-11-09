@@ -26,7 +26,6 @@ export type ConfigControlKind =
   | "select"
   | "checkbox"
   | "textarea"
-  | "code"
   | "number-tuple"
   | "string-list"
   | "secret";
@@ -65,12 +64,6 @@ const FOOTPRINTS: Record<ConfigControlKind, FieldFootprint> = {
     growX: true,
     growY: true,
   },
-  code: {
-    columns: STANDARD_NODE_WIDTH_CELLS,
-    rows: 2,
-    growX: true,
-    growY: true,
-  },
   // Base brick holds one row of tuple inputs; extra pairs are added per field.
   "number-tuple": { columns: STANDARD_NODE_WIDTH_CELLS, rows: 1, growX: true },
   "string-list": { columns: STANDARD_NODE_WIDTH_CELLS, rows: 2, growX: true },
@@ -82,8 +75,7 @@ export function configControlKind(field: SchemaField): ConfigControlKind {
   if (field.type === "string-list") return "string-list";
   if (field.type === "boolean") return "checkbox";
   if (field.enumValues?.length) return "select";
-  if (field.format === "textarea")
-    return field.codeLanguage ? "code" : "textarea";
+  if (field.format === "textarea") return "textarea";
   return field.type === "string" ? "text" : "number";
 }
 

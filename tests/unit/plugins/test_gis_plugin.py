@@ -22,11 +22,11 @@ from grafy_core.plugins import (
 )
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
-from grafy_core.runtime.object_set_bundle import (
+from grafy_core.runtime.persistence import ArtifactWriteContext
+from grafy_core.runtime.portable_metadata import (
     PORTABLE_BUNDLE_METADATA_KEY,
     PortableArtifactBundleMetadata,
 )
-from grafy_core.runtime.persistence import ArtifactWriteContext
 from grafy_core.table_contracts import (
     TABLE_DATA,
     Table,
@@ -100,6 +100,23 @@ from tests.support.egress import (
 from tests.support.file_artifacts import seed_file_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
+
+
+def resolve_public_host(
+    _host: str,
+    port: int,
+    *_args: object,
+    **_kwargs: object,
+) -> list[tuple[object, object, object, str, tuple[str, int]]]:
+    return [
+        (
+            socket.AF_INET,
+            socket.SOCK_STREAM,
+            socket.IPPROTO_TCP,
+            "",
+            ("93.184.216.34", port),
+        )
+    ]
 
 
 def feature_collection(*coordinates: tuple[float, float]) -> bytes:
@@ -752,22 +769,6 @@ async def test_wfs_import_default_page_limit_rejects_oversized_response(
     assert config.max_page_bytes == default_page_limit
     assert validated_config.max_page_bytes == default_page_limit
 
-    def resolve_public_host(
-        _host: str,
-        port: int,
-        *_args: object,
-        **_kwargs: object,
-    ) -> list[tuple[object, object, object, str, tuple[str, int]]]:
-        return [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                socket.IPPROTO_TCP,
-                "",
-                ("93.184.216.34", port),
-            )
-        ]
-
     def respond(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"x" * (default_page_limit + 1))
 
@@ -812,22 +813,6 @@ async def test_wfs_import_fetches_bounded_epsg4326_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     starts: list[int] = []
-
-    def resolve_public_host(
-        _host: str,
-        port: int,
-        *_args: object,
-        **_kwargs: object,
-    ) -> list[tuple[object, object, object, str, tuple[str, int]]]:
-        return [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                socket.IPPROTO_TCP,
-                "",
-                ("93.184.216.34", port),
-            )
-        ]
 
     monkeypatch.setattr(socket, "getaddrinfo", resolve_public_host)
 
@@ -968,22 +953,6 @@ async def test_wfs_import_rejects_cumulative_page_bytes_before_appending_next_pa
         pages[start_index] = json.dumps(payload).encode("utf-8")
     cumulative_limit = len(pages[0]) + len(pages[1]) - 1
 
-    def resolve_public_host(
-        _host: str,
-        port: int,
-        *_args: object,
-        **_kwargs: object,
-    ) -> list[tuple[object, object, object, str, tuple[str, int]]]:
-        return [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                socket.IPPROTO_TCP,
-                "",
-                ("93.184.216.34", port),
-            )
-        ]
-
     def respond(request: httpx.Request) -> httpx.Response:
         params = request.url.params
         start_index = int(params["startIndex"])
@@ -1084,22 +1053,6 @@ async def test_wfs_import_rejects_oversized_page_with_context(
 
     def respond(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=payload)
-
-    def resolve_public_host(
-        _host: str,
-        port: int,
-        *_args: object,
-        **_kwargs: object,
-    ) -> list[tuple[object, object, object, str, tuple[str, int]]]:
-        return [
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                socket.IPPROTO_TCP,
-                "",
-                ("93.184.216.34", port),
-            )
-        ]
 
     monkeypatch.setattr(socket, "getaddrinfo", resolve_public_host)
 

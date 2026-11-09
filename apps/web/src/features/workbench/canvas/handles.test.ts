@@ -676,10 +676,10 @@ describe("delivered artifact type", () => {
     "scalar.text",
     "text.markdown",
   );
-  const markdownToSql = conversion(
-    "builtin.markdown_to_sql",
+  const markdownToTable = conversion(
+    "builtin.markdown_to_table",
     "text.markdown",
-    "sql.statement",
+    "table.data",
   );
 
   it("is null when the route feeds the output unchanged", () => {
@@ -707,21 +707,21 @@ describe("delivered artifact type", () => {
 
   it("is the last conversion's target, after any projection", () => {
     const route = connectionRouteForSelection(
-      connection("ocr.page_result", "sql.statement"),
+      connection("ocr.page_result", "table.data"),
       [artifactType("ocr.page_result", [text])],
-      [textToMarkdown, markdownToSql],
+      [textToMarkdown, markdownToTable],
       {
         projection: { path: ["text"] },
         conversionPath: [
           { id: "builtin.text_to_markdown", version: 1 },
-          { id: "builtin.markdown_to_sql", version: 1 },
+          { id: "builtin.markdown_to_table", version: 1 },
         ],
       },
     );
 
     expect(route?.kind).toBe("projection-conversion");
     expect(connectionRouteDeliveredArtifactType(route!)).toEqual({
-      id: "sql.statement",
+      id: "table.data",
       schema_version: 1,
     });
   });

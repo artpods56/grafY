@@ -3,8 +3,6 @@
 import * as React from "react";
 import useSWR, { useSWRConfig, type ScopedMutator } from "swr";
 import {
-  type ProjectBrowserItem,
-  type ProjectBrowserList,
   listWorkspaceMembers,
   listWorkspaces,
   type NodeRegistry,
@@ -16,7 +14,6 @@ import {
   listMyWorkspaceInvitations,
   listWorkspaceInvitations,
 } from "@/lib/api";
-import { request } from "@/lib/api/client";
 
 /**
  * Keyed SWR hooks over the Grafy API (global fetcher is `apiFetcher`).
@@ -79,41 +76,6 @@ export function useWorkspaces(userId: string | undefined) {
     userId ? ["workspaces", userId] : null,
     () => listWorkspaces(),
   );
-}
-
-export type LocatedProject = ProjectBrowserItem;
-
-export interface AllWorkspacesProjectsResult {
-  projects: readonly LocatedProject[] | null;
-  error: Error | null;
-  isLoading: boolean;
-  /** True while a revalidation is in flight over cached summaries. */
-  isRefreshing: boolean;
-  retry: () => Promise<void>;
-}
-
-export function useAllWorkspacesProjects(
-  workspaces: readonly Workspace[] | undefined,
-): AllWorkspacesProjectsResult {
-  const load = useSWR<ProjectBrowserList>(
-    workspaces && workspaces.length > 0 ? ALL_PROJECTS_KEY : null,
-    (path: string) => request<ProjectBrowserList>("GET", path),
-    { shouldRetryOnError: false },
-  );
-  const projects =
-    !workspaces || (workspaces.length > 0 && !load.data)
-      ? null
-      : (load.data?.projects ?? []);
-
-  return {
-    projects,
-    error: load.error instanceof Error ? load.error : null,
-    isLoading: Boolean(workspaces?.length) && load.isLoading,
-    isRefreshing: load.isValidating && !load.isLoading,
-    retry: async () => {
-      if (workspaces?.length) await load.mutate();
-    },
-  };
 }
 
 export function useWorkspaceMembers(

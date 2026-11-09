@@ -53,7 +53,7 @@ CHECK_CALLS = frozenset(
 # `view_project` on `CopyExactHeadRequest.source_workspace_id`
 # (`grafy_api/project_contracts.py:383`) and `create_project` on the path Workspace, and
 # `require_workspace_capability` only ever binds the path `workspace_id`.
-MULTI_WORKSPACE_CHECKS = frozenset({"_authorize_pair", "authorize_workspaces"})
+MULTI_WORKSPACE_CHECKS = frozenset({"_authorize_pair"})
 KNOWN_MULTI_WORKSPACE_SITES = frozenset({"CollaborationService.copy_project"})
 ROUTE_DECORATORS = frozenset(
     {"get", "post", "put", "delete", "patch", "websocket", "api_route"}

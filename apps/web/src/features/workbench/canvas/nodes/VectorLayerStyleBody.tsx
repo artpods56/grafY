@@ -7,9 +7,11 @@ import { Plus, Trash2 } from "lucide-react";
 import { createUuid } from "@/features/workbench/model/uuid";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { Button, IconButton } from "@/components/ui/button";
+import { ColorField } from "@/components/ui/color-field";
 import { Field, TextInput } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Select } from "@/components/ui/select";
 import type { WorkflowNodeData } from "../types";
 
 type CategoryValue = string | number | boolean;
@@ -163,27 +165,6 @@ const s = stylex.create({
   select: {
     width: "100%",
     minWidth: 0,
-    height: "28px",
-    paddingInline: "7px",
-    borderWidth: 0,
-    borderRadius: "7px",
-    outline: {
-      default: "none",
-      ":focus": `2px solid ${tokens.colorAccentBorder}`,
-    },
-    backgroundColor: tokens.colorSurface,
-    color: tokens.colorTextEmphasis,
-    fontSize: "10px",
-    fontWeight: 650,
-  },
-  color: {
-    width: "100%",
-    height: "28px",
-    padding: "3px",
-    borderWidth: 0,
-    borderRadius: "7px",
-    backgroundColor: tokens.colorSurfaceMuted,
-    cursor: "pointer",
   },
   categories: {
     display: "grid",
@@ -205,11 +186,11 @@ const s = stylex.create({
 });
 
 /**
- * The controls the kit cannot draw — a colour well, the value-type `select`, a
- * category title with no label of its own — sit outside a `<Field>`, so React
- * Flow still needs the classes on the control itself. A `<Field>` carries them
- * on its root and React Flow resolves the class by walking up from the event
- * target, so a control inside one does not repeat them.
+ * The category-title input sits outside a `<Field>` with no label of its own,
+ * so React Flow still needs the classes on the control itself. A `<Field>`
+ * carries them on its root and React Flow resolves the class by walking up from
+ * the event target, so a control inside one does not repeat them; the kit's
+ * `ColorField` and `Select` take them through `className` for the same reason.
  */
 function interactionProps(props: ReturnType<typeof stylex.props>) {
   return {
@@ -266,33 +247,6 @@ function parseValues(value: string, kind: CategoryValueKind): CategoryValue[] {
   return parts;
 }
 
-/**
- * A colour well. The kit draws no swatch, and `<Field>`'s label only wires a
- * `<Field.Control>`, so this one keeps the native input inside the `<label>`
- * that names it.
- */
-function ColorField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label {...stylex.props(s.field)}>
-      <span {...stylex.props(s.label)}>{label}</span>
-      <input
-        type="color"
-        value={value}
-        {...interactionProps(stylex.props(s.color))}
-        onChange={(event) => onChange(event.currentTarget.value)}
-      />
-    </label>
-  );
-}
-
 function LabelPropertyField({
   label,
   onChange,
@@ -339,12 +293,13 @@ function CategoryValuesField({
 
   return (
     <>
-      {/* The kit draws no select, so the value type keeps its native one. */}
       <label {...stylex.props(s.field)}>
         <span {...stylex.props(s.label)}>Value type</span>
-        <select
+        <Select
+          size="sm"
+          xstyle={s.select}
           value={kind}
-          {...interactionProps(stylex.props(s.select))}
+          className="nodrag nopan nowheel"
           onChange={(event) => {
             const nextKind = event.currentTarget.value as CategoryValueKind;
             const values = parseValues(draft, nextKind);
@@ -359,7 +314,7 @@ function CategoryValuesField({
           <option value="number">Numbers</option>
           <option value="text">Text</option>
           <option value="boolean">Booleans</option>
-        </select>
+        </Select>
       </label>
       <Field label="Values" className="nodrag nopan nowheel">
         <TextInput
@@ -427,6 +382,8 @@ export function VectorLayerStyleBody({
       {style.kind === "vector" ? (
         <div {...stylex.props(s.grid)}>
           <ColorField
+            size="sm"
+            className="nodrag nopan nowheel"
             label="Point color"
             value={style.point.color}
             onChange={(color) =>
@@ -451,6 +408,8 @@ export function VectorLayerStyleBody({
             />
           </Field>
           <ColorField
+            size="sm"
+            className="nodrag nopan nowheel"
             label="Line color"
             value={style.line.color}
             onChange={(color) =>
@@ -476,6 +435,8 @@ export function VectorLayerStyleBody({
             />
           </Field>
           <ColorField
+            size="sm"
+            className="nodrag nopan nowheel"
             label="Fill color"
             value={style.fill.color}
             onChange={(color) =>
@@ -578,6 +539,8 @@ export function VectorLayerStyleBody({
                       onChange={replaceCategory}
                     />
                     <ColorField
+                      size="sm"
+                      className="nodrag nopan nowheel"
                       label="Color"
                       value={category.point.color}
                       onChange={(color) =>

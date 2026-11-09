@@ -24,7 +24,9 @@ import { useSWRConfig } from "swr";
 import { BrandIcon, BrandWordmark } from "@/components/brand";
 import { useTheme } from "@/components/theme";
 import { ThresholdStatus } from "@/components/threshold-status";
-import { Button } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
+import { phoneTouch } from "@/components/ui/touch-target";
 import { Notice, type NoticeTone } from "@/components/ui/notice";
 import {
   Dialog,
@@ -668,11 +670,14 @@ export function WorkspaceRail({
   return (
     <>
       <header className="grafy-mobile-nav">
-        <button
+        <IconButton
           ref={mobileMenuButtonRef}
           type="button"
           className="grafy-mobile-nav__menu"
-          aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+          label={mobileOpen ? "Close navigation" : "Open navigation"}
+          variant="ghost"
+          size="lg"
+          xstyle={phoneTouch.square}
           aria-controls="grafy-primary-navigation"
           aria-expanded={mobileOpen}
           onClick={() => {
@@ -689,7 +694,7 @@ export function WorkspaceRail({
           ) : (
             <Menu size={20} aria-hidden="true" />
           )}
-        </button>
+        </IconButton>
         <button
           type="button"
           className="grafy-mobile-nav__brand"
@@ -755,7 +760,7 @@ export function WorkspaceRail({
                 <Users size={15} />
               )}
             </span>
-            <select
+            <Select
               value={selectedWorkspace?.slug ?? ""}
               aria-label="Switch workspace"
               title={workspaceSelectorLabel(selectedWorkspace)}
@@ -766,7 +771,7 @@ export function WorkspaceRail({
                   {workspaceSelectorLabel(workspace)}
                 </option>
               ))}
-            </select>
+            </Select>
             <span
               className="grafy-workspace-rail__workspace-select-chevron"
               aria-hidden="true"

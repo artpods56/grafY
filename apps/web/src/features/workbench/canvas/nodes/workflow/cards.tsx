@@ -27,10 +27,6 @@ import {
   type WorkflowNodeLayout,
 } from "../../node-layout";
 import {
-  ARTIFACT_QUERY_OPERATOR_ID,
-  ARTIFACT_QUERY_RELATIONS_PORT,
-} from "../../query-artifact-tables";
-import {
   GIS_VECTOR_LAYER_OPERATOR_ID,
   portHasInstancePlugs,
   type WorkflowNodeData,
@@ -41,7 +37,6 @@ import { LayoutResizeHandle } from "../LayoutResizeHandle";
 import { NodeExecutionAppendix } from "../NodeExecutionAppendix";
 import { VectorLayerStyleBody } from "../VectorLayerStyleBody";
 
-import { ArtifactQueryTablesBody } from "./artifact-query-tables";
 import { GenericArtifactTypeState, GenericBody } from "./generic-body";
 import { InstancePlugPort } from "./instance-plug";
 import { NodeHeader } from "./node-header";
@@ -253,7 +248,6 @@ export function IncompatibleWorkflowNodeCard({
           progress={data.progress}
           run={data.run}
           historyContext={data.historyContext}
-          onOpenHistory={data.onOpenExecutionHistory}
         />
       }
     >
@@ -291,13 +285,9 @@ export function SupportedWorkflowNodeCard({
   const configIssues = validateConfig(data.spec.config_schema, data.config);
   const secretInputs = nodeSecretInputs(data.spec);
   const isSchemaBuilder = data.spec.operator_id === SCHEMA_BUILDER_OPERATOR_ID;
-  const isArtifactQuery = data.spec.operator_id === ARTIFACT_QUERY_OPERATOR_ID;
   const isVectorLayer = data.spec.operator_id === GIS_VECTOR_LAYER_OPERATOR_ID;
   const visibleInputPorts = data.spec.inputs.filter((port) => {
     if (isSchemaBuilder && port.name === SCHEMA_BUILDER_INPUT_PORT) {
-      return false;
-    }
-    if (isArtifactQuery && port.name === ARTIFACT_QUERY_RELATIONS_PORT) {
       return false;
     }
     return true;
@@ -425,7 +415,6 @@ export function SupportedWorkflowNodeCard({
           progress={data.progress}
           run={data.run}
           historyContext={data.historyContext}
-          onOpenHistory={data.onOpenExecutionHistory}
         />
       }
     >
@@ -461,8 +450,6 @@ export function SupportedWorkflowNodeCard({
       ) : null}
       {isSchemaBuilder ? (
         <SchemaBuilderBody id={id} data={data} />
-      ) : isArtifactQuery ? (
-        <ArtifactQueryTablesBody id={id} data={data} />
       ) : isVectorLayer ? (
         <>
           <GenericBody
@@ -488,7 +475,6 @@ export function SupportedWorkflowNodeCard({
         <div {...stylex.props(s.spacer)} aria-hidden />
       )}
       {!isSchemaBuilder &&
-      !isArtifactQuery &&
       !hasConfig &&
       !hasExecutionError &&
       !data.spec.inputs.length &&

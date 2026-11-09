@@ -723,16 +723,6 @@ recorded here rather than written down as intended behavior:
    that joined after can see the two in the opposite order. Nothing may depend on it: the
    activity bar filters by Graph and counts, and a Run is addressed by its id. A surface that
    ever wants "the newest Run" must sort on `created_at` rather than trust the list.
-3. **A secret write publishes nothing.** [CONTEXT.md](../../CONTEXT.md) says instance
-   state is recomputed after scheduler transitions, accepted batches *and secret
-   changes*, and the derivation does re-read secret revisions
-   ([`runs/facts.py:209`](../../apps/api/src/grafy_api/runs/facts.py)), but no room frame
-   is emitted from the secret routes
-   ([`node_secrets/views.py`](../../apps/api/src/grafy_api/v1/routes/node_secrets/views.py)).
-   Peers see a newly-configured secret's effect on freshness only at the next batch or
-   transition. Either the write should call `runs.project_changed`, or the vocabulary
-   should stop claiming secret changes are a recompute trigger.
-
 ## Gone
 
 Removed from this document rather than kept beside the new text, because ADR 0020 removed

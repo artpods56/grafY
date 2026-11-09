@@ -33,7 +33,7 @@ from grafy_core.ports.storage import (
     SaveFileCommand,
 )
 from grafy_core.runtime.persistence import ArtifactOutputWriter, ArtifactWriteContext
-from grafy_core.runtime.object_set_bundle import (
+from grafy_core.runtime.portable_metadata import (
     PORTABLE_BUNDLE_METADATA_KEY,
     PortableArtifactBundleMetadata,
     PortableArtifactFile,

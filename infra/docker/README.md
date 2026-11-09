@@ -3,10 +3,8 @@
 This Compose project runs four processes:
 
 1. `migrate` applies Alembic migrations and exits.
-2. `api` runs one FastAPI process. It imports no System Plugin package unless
-   an exact deployment manifest binds the installed bytes to a selected
-   release. Isolated-only GIS, LLM, Mistral, and SQL implementations live in their
-   retained Plugin images rather than the online API image.
+2. `api` runs one FastAPI process with the GIS, image, LLM, Mistral, and table
+   families installed in-process (ADR 0017).
 3. `web` runs the minimal Next.js standalone server.
 4. `gateway` is the only Grafy application listener (`127.0.0.1:8080` by
    default). It serves plain HTTP and does not terminate TLS.
@@ -21,9 +19,7 @@ Compose gateway.
 
 The commands below build images from this checkout, which suits local runs. A
 production host pulls the SHA-tagged images that CI publishes instead; see
-`docs/how-to-deploy-production.md`. Each service reads its image from
-`GRAFY_API_IMAGE`, `GRAFY_WEB_IMAGE`, `GRAFY_GATEWAY_IMAGE`, or
-`GRAFY_PUBLISHER_IMAGE`, defaulting to a `:local` tag that `--build` produces.
+`docs/how-to-deploy-production.md`.
 
 ## Prepare the VPS
 
@@ -74,9 +70,6 @@ build or pin, and there is no publisher job. Outbound access from a node to a de
 it names is decided by `grafy_core.egress` against
 `GRAFY_EGRESS_TRUSTED_DESTINATIONS`; a node, a graph and a Workspace cannot widen it.
 
-Tune `GRAFY_MAX_ACTIVE_EXECUTIONS` and `GRAFY_MAX_PENDING_GRAPHS` together using
-representative CPU, memory, disk, and artifact workloads.
-
 ## SSH tunnel for plain-HTTP diagnostics
 
 On a host such as `ai-test-ihpan`, forward the loopback gateway locally for
@@ -91,23 +84,6 @@ transport, but it does not turn the gateway into an HTTPS server. Do not point
 an HTTPS client at this port. OIDC login, Secure cookies, and an authenticated
 production smoke must go through a separately configured TLS endpoint for the
 registered public origin.
-
-## Prefect
-
-The Prefect image is pinned to the same `3.6.21` version used by the Grafy
-API. Grafy submits local flows to `http://prefect:4200/api`; execution still
-happens inside the API container, so this topology does not require a Prefect
-worker.
-
-Prefect stores its SQLite database in the separate `prefect-data` volume.
-Its dashboard port is bound to `127.0.0.1:4200`. Access it without adding a
-public gateway route:
-
-```bash
-ssh -L 4200:127.0.0.1:4200 deploy@your-vps
-```
-
-Then open `http://127.0.0.1:4200`.
 
 ## Same-origin routing contract
 
@@ -154,24 +130,19 @@ accepted.
 
 ## Persistence, backup, and rollback
 
-The `grafy-data` volume contains the Grafy SQLite database, staged
-uploads, and local artifact objects. The `prefect-data` volume contains Prefect
-orchestration state. Treat migrations as a maintenance window for SQLite:
+The `grafy-data` volume contains the Grafy SQLite database, staged uploads,
+and local artifact objects. Treat migrations as a maintenance window for
+SQLite:
 
 Each staged file is limited to 64 MiB. The gateway allows 65 MiB request bodies
 to leave room for multipart framing, while the API enforces the exact file-byte
-limit. Staged files are durable graph inputs: saved graphs retain their upload
-keys and reread the files on later runs. There is therefore no age-based cleanup
-or workspace quota yet; monitor the data volume until upload promotion/reference
-tracking can make deletion and transactional quota reservation safe.
-
-With `GRAFY_STORAGE_BACKEND=s3`, browsers PUT directly to presigned URLs. Keep
+limit. With `GRAFY_STORAGE_BACKEND=s3`, browsers PUT directly to presigned URLs. Keep
 MinIO private: include `compose.shared-storage.yaml` and set
 `GRAFY_S3_SIGNING_ENDPOINT_URL=${GRAFY_PUBLIC_ORIGIN}/storage` so uploads go
 through the gateway's `/storage/` location. See
 [`docs/deploy/upload-storage.md`](../../docs/deploy/upload-storage.md).
 
-1. stop gateway and API traffic (and Prefect if it might touch shared state);
+1. stop gateway and API traffic;
 2. confirm one API owner and no active execution;
 3. checkpoint/truncate the SQLite WAL and create a consistent backup with the
    SQLite backup API or a stopped-volume snapshot;
@@ -188,12 +159,6 @@ docker run --rm \
   --volume "$PWD/backups:/backup" \
   alpine \
   tar -czf /backup/grafy-data.tgz -C /source .
-
-docker run --rm \
-  --volume grafy_prefect-data:/source:ro \
-  --volume "$PWD/backups:/backup" \
-  alpine \
-  tar -czf /backup/prefect-data.tgz -C /source .
 ```
 
 Restore only while the Compose project is stopped. Roll back by restoring the
@@ -207,7 +172,7 @@ is out of scope for the current release gate.
 
 Automatable pieces already covered in CI/unit tests: one-owner fence, Compose
 gateway/proxy contract, and two-session API/WS collaboration acceptance
-(`tests/unit/api/test_collaboration_acceptance.py`). The items below still need
+(`tests/integration/collaboration/test_collaboration_acceptance.py`). The items below still need
 a human on a real host/IdP/data copy.
 
 - [ ] Exact `GRAFY_PUBLIC_ORIGIN` and OIDC callback registered

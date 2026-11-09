@@ -55,10 +55,6 @@ format:
 format-check:
     cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e*/**/*.{ts,tsx}" "playwright*.config.ts"
 
-# Install the repository-owned Git commit hook for this clone.
-hooks-install:
-    uv run prek install
-
 # Validate the hook configuration and run every hook against tracked files.
 hooks-check:
     uv run prek validate-config .pre-commit-config.yaml
@@ -133,22 +129,6 @@ prod *args:
 deploy sha:
     GRAFY_ENV_FILE="{{ grafy_env }}" GRAFY_STORAGE_COMPOSE_OVERRIDE="{{ grafy_override }}" scripts/deploy-production.sh {{ sha }}
 
-# Show production Grafy service status.
-status:
-    just prod ps
-
-# Follow production Grafy logs, optionally narrowed to services.
-logs *services:
-    just prod logs --tail=200 --follow {{ services }}
-
 # Run Docker Compose against the separately managed MinIO service.
 minio *args:
     docker compose -f /opt/minio/compose.yaml {{ args }}
-
-# Show MinIO service status.
-minio-status:
-    just minio ps
-
-# Follow MinIO logs.
-minio-logs:
-    just minio logs --tail=200 --follow

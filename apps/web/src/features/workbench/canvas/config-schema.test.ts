@@ -133,7 +133,6 @@ describe("schemaFields", () => {
         type: "string",
         enumValues: undefined,
         format: undefined,
-        codeLanguage: undefined,
         minimum: undefined,
         maximum: undefined,
         minLength: 1,
@@ -149,7 +148,6 @@ describe("schemaFields", () => {
         type: "number",
         enumValues: undefined,
         format: undefined,
-        codeLanguage: undefined,
         minimum: 0,
         maximum: 1,
         minLength: undefined,
@@ -174,32 +172,28 @@ describe("schemaFields", () => {
     ]);
   });
 
-  it("marks SQL textarea fields as code without changing prose textareas", () => {
+  it("keeps a declared textarea format on a string field", () => {
     expect(
       schemaFields({
         type: "object",
         properties: {
-          sql: {
-            type: "string",
-            format: "textarea",
-            contentMediaType: "application/sql",
-          },
           notes: {
             type: "string",
             format: "textarea",
+          },
+          title: {
+            type: "string",
           },
         },
       }),
     ).toEqual([
       expect.objectContaining({
-        name: "sql",
-        format: "textarea",
-        codeLanguage: "sql",
-      }),
-      expect.objectContaining({
         name: "notes",
         format: "textarea",
-        codeLanguage: undefined,
+      }),
+      expect.objectContaining({
+        name: "title",
+        format: undefined,
       }),
     ]);
   });

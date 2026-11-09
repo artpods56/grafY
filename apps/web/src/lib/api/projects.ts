@@ -2,26 +2,16 @@ import { request } from "./client";
 import type {
   AppliedNodeSecret,
   ApplyNodeSecretRequest,
-  AssignProjectFolderRequest,
   CheckpointProjectRequest,
   CheckpointProjectResponse,
   CollaborativeHead,
-  CopyExactHeadRequest,
   CreateProjectRequest,
   GraphDefinition,
   InstanceKey,
   InstanceResult,
   InstanceStateList,
   Project,
-  ProjectBrowserList,
-  ProjectCheckpoint,
-  ProjectCheckpointList,
-  ProjectFolder,
-  ProjectFolderList,
-  ProjectFolderWriteRequest,
-  ProjectList,
   ProjectNodeSecrets,
-  ProjectOrganization,
   Run,
   RunList,
   StartRunRequest,
@@ -45,16 +35,6 @@ function projectPath(
   );
 }
 
-/** Every Project this person can reach, across their Workspaces. */
-export function listAccessibleProjects(signal?: AbortSignal) {
-  return request<ProjectBrowserList>("GET", "/v1/me/projects", { signal });
-}
-
-/** The Projects of one Workspace. */
-export function listWorkspaceProjects(workspaceId: string) {
-  return request<ProjectList>("GET", workspacePath(workspaceId, "/projects"));
-}
-
 /**
  * Create a Project with its first Graph. The caller names both: the Project is
  * what a person opens, the Graph is the canvas inside it.
@@ -63,21 +43,6 @@ export function createProject(workspaceId: string, body: CreateProjectRequest) {
   return request<Project>("POST", workspacePath(workspaceId, "/projects"), {
     body,
   });
-}
-
-export function getProject(workspaceId: string, projectId: string) {
-  return request<Project>("GET", projectPath(workspaceId, projectId));
-}
-
-export function copyExactHead(
-  targetWorkspaceId: string,
-  body: CopyExactHeadRequest,
-) {
-  return request<Project>(
-    "POST",
-    workspacePath(targetWorkspaceId, "/projects/copies"),
-    { body },
-  );
 }
 
 export function deleteProject(
@@ -162,136 +127,6 @@ export function checkpointProject(
     "POST",
     projectPath(workspaceId, projectId, "/checkpoints"),
     { body: requestBody },
-  );
-}
-
-export function listProjectCheckpoints(workspaceId: string, projectId: string) {
-  return request<ProjectCheckpointList>(
-    "GET",
-    projectPath(workspaceId, projectId, "/checkpoints"),
-  );
-}
-
-export function getProjectCheckpoint(
-  workspaceId: string,
-  projectId: string,
-  revision: number,
-) {
-  return request<ProjectCheckpoint>(
-    "GET",
-    projectPath(
-      workspaceId,
-      projectId,
-      `/checkpoints/${encodeURIComponent(String(revision))}`,
-    ),
-  );
-}
-
-/** Bring a retained checkpoint forward as the current state; history is never rewound. */
-export function restoreProjectCheckpoint(
-  workspaceId: string,
-  projectId: string,
-  revision: number,
-  requestBody: CheckpointProjectRequest,
-) {
-  return request<CheckpointProjectResponse>(
-    "POST",
-    projectPath(
-      workspaceId,
-      projectId,
-      `/checkpoints/${encodeURIComponent(String(revision))}/restore`,
-    ),
-    { body: requestBody },
-  );
-}
-
-export function recordProjectOpen(workspaceId: string, projectId: string) {
-  return request<undefined>(
-    "POST",
-    projectPath(workspaceId, projectId, "/opened"),
-  );
-}
-
-export function starProject(workspaceId: string, projectId: string) {
-  return request<undefined>(
-    "PUT",
-    projectPath(workspaceId, projectId, "/star"),
-  );
-}
-
-export function unstarProject(workspaceId: string, projectId: string) {
-  return request<undefined>(
-    "DELETE",
-    projectPath(workspaceId, projectId, "/star"),
-  );
-}
-
-export function assignProjectFolder(
-  workspaceId: string,
-  projectId: string,
-  body: AssignProjectFolderRequest,
-) {
-  return request<ProjectOrganization>(
-    "PUT",
-    projectPath(workspaceId, projectId, "/folder"),
-    { body },
-  );
-}
-
-export function archiveProject(workspaceId: string, projectId: string) {
-  return request<ProjectOrganization>(
-    "PUT",
-    projectPath(workspaceId, projectId, "/archive"),
-  );
-}
-
-export function restoreProject(workspaceId: string, projectId: string) {
-  return request<ProjectOrganization>(
-    "DELETE",
-    projectPath(workspaceId, projectId, "/archive"),
-  );
-}
-
-export function listProjectFolders(workspaceId: string) {
-  return request<ProjectFolderList>(
-    "GET",
-    workspacePath(workspaceId, "/project-folders"),
-  );
-}
-
-export function createProjectFolder(
-  workspaceId: string,
-  body: ProjectFolderWriteRequest,
-) {
-  return request<ProjectFolder>(
-    "POST",
-    workspacePath(workspaceId, "/project-folders"),
-    { body },
-  );
-}
-
-export function renameProjectFolder(
-  workspaceId: string,
-  folderId: string,
-  body: ProjectFolderWriteRequest,
-) {
-  return request<ProjectFolder>(
-    "PATCH",
-    workspacePath(
-      workspaceId,
-      `/project-folders/${encodeURIComponent(folderId)}`,
-    ),
-    { body },
-  );
-}
-
-export function deleteProjectFolder(workspaceId: string, folderId: string) {
-  return request<undefined>(
-    "DELETE",
-    workspacePath(
-      workspaceId,
-      `/project-folders/${encodeURIComponent(folderId)}`,
-    ),
   );
 }
 

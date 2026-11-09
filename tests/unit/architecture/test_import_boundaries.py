@@ -14,8 +14,7 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "gis",
     "llm",
     "mistral",
-    "sql",
-    "typesafe",
+    "reducto",
 )
 INSTALLED_PLUGIN_FAMILIES = PUBLISHED_PLUGIN_FAMILIES
 WORKBENCH_FAMILIES = (

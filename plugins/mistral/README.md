@@ -55,10 +55,6 @@ connect the source raster to its `image` input. Set `page` for a document page;
 boxes scale from that page's dimensions to the raster. No node produces PDF
 page rasters yet.
 
-For a batch, put Mistral OCR → Draw regions inside a Module and map the image
-sequence into the Module. A target node has only one map driver, so a top-level
-Draw regions cannot pair each image with its own regions.
-
 For figures, connect the source raster and OCR `regions` to Image → Crop regions
 with `kinds=image`. Crop regions returns a sequence and cannot itself be mapped.
 

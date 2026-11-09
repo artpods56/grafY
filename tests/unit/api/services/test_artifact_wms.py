@@ -44,7 +44,7 @@ async def test_stored_wms_layer_rejects_unsafe_endpoint_before_dns(
     service = ArtifactService(
         unit_of_work,
         storage,
-        availability=ArtifactAvailability(unit_of_work, storage),
+        availability=ArtifactAvailability(unit_of_work),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),
@@ -153,7 +153,7 @@ async def test_wms_tile_is_dialed_from_a_trusted_destination_only(
         service = ArtifactService(
             unit_of_work,
             storage,
-            availability=ArtifactAvailability(unit_of_work, storage),
+            availability=ArtifactAvailability(unit_of_work),
             egress_policy=egress_policy,  # pyright: ignore[reportArgumentType]
         )
         try:

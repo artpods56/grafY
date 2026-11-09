@@ -30,6 +30,7 @@ class CatalogPort(ClientModel):
     variadic: bool = False
     required: bool = True
     shape_field: str | None = None
+    agent_default: Literal["hidden"] | None = None
 
     @model_validator(mode="after")
     def require_one_artifact_contract(self) -> Self:

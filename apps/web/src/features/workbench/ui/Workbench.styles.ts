@@ -25,42 +25,6 @@ export const workbenchStyles = stylex.create({
     color: tokens.colorText,
   },
   canvas: { position: "absolute", inset: 0 },
-  toolButton: {
-    height: {
-      default: "31px",
-      "@media (max-width: 720px)": "44px",
-    },
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "6px",
-    paddingInline: "9px",
-    borderWidth: 0,
-    borderRadius: "5px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-      ":disabled": "transparent",
-    },
-    color: {
-      default: tokens.colorMuted,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
-    fontSize: tokens.fontSizeSm,
-  },
-  primaryButton: {
-    backgroundColor: {
-      default: tokens.colorAccent,
-      ":hover": tokens.colorAccentHover,
-      ":disabled": tokens.colorAccentDisabled,
-    },
-    color: {
-      default: tokens.colorOnAccent,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    fontWeight: 700,
-  },
   /* Canvas tools dock over the canvas; the left edge belongs to app navigation. */
   toolDock: {
     position: "absolute",
@@ -100,37 +64,6 @@ export const workbenchStyles = stylex.create({
       "@media (max-width: 720px)": "none",
     },
   },
-  railButton: {
-    position: "relative",
-    flexShrink: 0,
-    width: {
-      default: "34px",
-      "@media (max-width: 720px)": "44px",
-    },
-    height: {
-      default: "34px",
-      "@media (max-width: 720px)": "44px",
-    },
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingInline: 0,
-    borderWidth: 0,
-    borderRadius: "6px",
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorHover,
-      ":disabled": "transparent",
-    },
-    color: {
-      default: tokens.colorMuted,
-      ":hover": tokens.colorTextEmphasis,
-      ":disabled": tokens.colorTextDisabled,
-    },
-    cursor: { default: "pointer", ":disabled": "not-allowed" },
-    transitionDuration: "120ms",
-    transitionProperty: "background-color, color",
-  },
   railMenuButton: {
     width: "100%",
     justifyContent: "flex-start",
@@ -140,44 +73,7 @@ export const workbenchStyles = stylex.create({
     fontWeight: 650,
     textAlign: "left",
   },
-  railPrimary: {
-    backgroundColor: {
-      default: tokens.colorAccentSoft,
-      ":hover": tokens.colorAccentSoft,
-    },
-    color: { default: tokens.colorAccent, ":hover": tokens.colorAccent },
-  },
-  railDanger: {
-    backgroundColor: {
-      default: "transparent",
-      ":hover": tokens.colorDangerHover,
-      ":disabled": "transparent",
-    },
-    color: {
-      default: tokens.colorMuted,
-      ":hover": tokens.colorDanger,
-      ":disabled": tokens.colorTextDisabled,
-    },
-  },
   /* Kept in the DOM so each icon button still has an accessible name. */
-  railLabel: {
-    position: "absolute",
-    width: "1px",
-    height: "1px",
-    margin: "-1px",
-    padding: 0,
-    overflow: "hidden",
-    clipPath: "inset(50%)",
-    whiteSpace: "nowrap",
-  },
-  railMenuLabel: {
-    position: "static",
-    width: "auto",
-    height: "auto",
-    margin: 0,
-    overflow: "visible",
-    clipPath: "none",
-  },
   railDivider: {
     width: "1px",
     height: {

@@ -9,8 +9,8 @@ workspace `grafy-core` dependency and deployment build identity with families in
 
 The family exports one `Plugin` containing node declarations, artifact contracts,
 and resolver/writer factories. The API composition owns the finite registration
-tuple. An absent family has no catalog entry or execution route. SQL remains
-absent pending safety review; Python execution and its presets are retired.
+tuple. An absent family has no catalog entry or execution route. Python
+execution and its presets are retired, and there is no SQL family.
 
 Families import core contracts and ports. They never import `grafy_api`, HTTP
 routers, or concrete storage implementations. Factories receive the active
@@ -34,8 +34,7 @@ private destination. Graph authors and Workspaces cannot widen that grant.
 Native parsers and converters run through bounded subprocess helpers. They must
 have concurrency, wall-time, CPU and address-space limits, and a scrubbed
 environment. Cancellation must finish native work before its temporary directory
-is removed. SQL stays unavailable until its worker and connection paths have
-been reviewed for in-process hosting.
+is removed.
 
 Deterministic nodes may declare `NodeCachePolicy.EXACT`. The runtime combines
 config, input references, artifact bindings, opaque secret revisions and the
@@ -55,15 +54,11 @@ which matches nothing.
 ## Stored-data compatibility
 
 Family slugs such as `external.gis` remain stable because saved documents and
-secret bindings already contain them. Graph nodes use `kind: builtin`, `module` or `call`
-with operator id and version, without release pins, and a stored node that names any
-other kind fails validation instead of being rewritten. Keep artifact readers compatible
+secret bindings already contain them. Keep artifact readers compatible
 with historical artifact metadata even when the producing operator is unavailable.
 
 Nothing here publishes, freezes, or isolates a family: ADR 0017 removed publication, the
 Docker sandbox, the guest protocol, the egress broker, and the archived notes SDK wheel
 with its `just sdk-wheel` recipe and pinned digest. A family reaches a deployment only
 through the workspace dependency that installs its package and the static registration in
-`apps/api/src/grafy_api/services/families.py`. The release descriptor types stay as
-declaration vocabulary; their repositories and tables are gone, so no release row can be
-read back.
+`apps/api/src/grafy_api/services/families.py`.

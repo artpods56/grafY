@@ -11,6 +11,9 @@ from .models import (
     GeoRasterTileJsonResponse,
     GeoRenderResponse,
     TableCellResponse,
+    TableRowTextArtifact,
+    TableTextArtifactsRequest,
+    TableTextArtifactsResponse,
     TablePageResponse,
     TableQueryRequest,
     TableSchemaResponse,
@@ -487,6 +490,47 @@ async def get_table_artifact_cell(
     )
 
 
+@router.post(
+    "/artifacts/{artifact_id}/table/text-artifacts",
+    response_model=TableTextArtifactsResponse,
+    responses={
+        400: {"model": WorkbenchErrorResponse, "description": "Invalid request"},
+        404: {"model": WorkbenchErrorResponse, "description": "Artifact not found"},
+        500: {
+            "model": WorkbenchErrorResponse,
+            "description": "Artifact content is unavailable",
+        },
+    },
+)
+async def create_table_text_artifacts(
+    artifact_id: UUID,
+    body: TableTextArtifactsRequest,
+    service: ArtifactDependency,
+    # It writes artifacts, and what it is for is placing one on a canvas.
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
+) -> TableTextArtifactsResponse:
+    artifact = await service.get(access.workspace_id, artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    try:
+        rows, total_rows = await service.text_artifacts_for_column(
+            artifact,
+            column_id=body.column_id,
+            offset=body.offset,
+            limit=body.limit,
+        )
+    except ArtifactContentUnavailableError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except WorkbenchOperationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return TableTextArtifactsResponse(
+        rows=[
+            TableRowTextArtifact(row_index=index, artifact=ref) for index, ref in rows
+        ],
+        total_rows=total_rows,
+    )
+
+
 @router.get(
     "/artifacts/{artifact_id}/content",
     responses={
@@ -577,6 +621,7 @@ async def get_artifact_download(
 
 
 __all__ = [
+    "create_table_text_artifacts",
     "get_artifact_content",
     "get_artifact_download",
     "get_geo_exact_feature",

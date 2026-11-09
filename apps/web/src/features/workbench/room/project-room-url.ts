@@ -14,6 +14,3 @@ export function projectRoomWebSocketUrl(
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}${path}`;
 }
-
-/** @deprecated a room is held around a Project. */
-export const graphRoomWebSocketUrl = projectRoomWebSocketUrl;

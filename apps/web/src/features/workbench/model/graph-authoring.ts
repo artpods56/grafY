@@ -73,28 +73,6 @@ export function connectionRouteTitle(
     : title;
 }
 
-export function connectionRouteDescription(
-  sourcePortName: string,
-  route: ConnectionRoute,
-): string {
-  const conversionDescription = route.conversionPath
-    .map(
-      (conversion) =>
-        `${conversion.title} · ${conversion.key.id}@${conversion.key.version}`,
-    )
-    .join(" → ");
-  if (route.kind === "projection") {
-    return `${sourcePortName}.${route.projection.path.join(".")}`;
-  }
-  if (route.kind === "conversion") {
-    return `${sourcePortName} → ${conversionDescription}`;
-  }
-  if (route.kind === "projection-conversion") {
-    return `${sourcePortName}.${route.projection.path.join(".")} → ${conversionDescription}`;
-  }
-  return sourcePortName;
-}
-
 export function workflowEdgeRouteOption(
   route: ConnectionRoute,
 ): WorkflowEdgeRouteOption {
@@ -380,31 +358,4 @@ export function inputPlugBindingsForNode(
     });
   }
   return bindings;
-}
-
-export function nodeAndDescendantIds(
-  nodeId: string,
-  edges: readonly WorkflowEdge[],
-): Set<string> {
-  const descendantIds = new Set([nodeId]);
-  const pendingNodeIds = [nodeId];
-
-  while (pendingNodeIds.length) {
-    const sourceNodeId = pendingNodeIds.shift();
-    if (sourceNodeId === undefined) continue;
-
-    for (const edge of edges) {
-      if (
-        edge.data?.enabled === false ||
-        edge.source !== sourceNodeId ||
-        descendantIds.has(edge.target)
-      ) {
-        continue;
-      }
-      descendantIds.add(edge.target);
-      pendingNodeIds.push(edge.target);
-    }
-  }
-
-  return descendantIds;
 }

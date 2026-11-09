@@ -10,6 +10,8 @@ it("shows configuration only to editors and explains unsaved conversations", () 
       id: "a",
       name: "Historian",
       instructions: "",
+      context: [],
+      tools: [],
       width: 360,
       height: 480,
     },

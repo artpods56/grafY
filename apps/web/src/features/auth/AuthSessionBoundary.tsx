@@ -3,6 +3,7 @@
 import * as React from "react";
 import { SWRConfig, type Cache, type State } from "swr";
 
+import { Button } from "@/components/ui/button";
 import { ThresholdStatus } from "@/components/threshold-status";
 import {
   deleteSession,
@@ -82,9 +83,9 @@ function AuthFrame({
         title="Sign in"
         detail="Your graphs and Team locations are available after authentication."
         action={
-          <button type="button" onClick={openLogin}>
+          <Button variant="primary" size="lg" onClick={openLogin}>
             Continue with SSO
-          </button>
+          </Button>
         }
       />
     );
@@ -95,9 +96,9 @@ function AuthFrame({
         title="Your session has expired"
         detail="Sign in again to return to the same surface."
         action={
-          <button type="button" onClick={openLogin}>
+          <Button variant="primary" size="lg" onClick={openLogin}>
             Sign in again
-          </button>
+          </Button>
         }
       />
     );
@@ -108,9 +109,9 @@ function AuthFrame({
         title="Session service unavailable"
         detail="Could not confirm your session. Check the connection and try again."
         action={
-          <button type="button" onClick={onRetry}>
+          <Button variant="primary" size="lg" onClick={onRetry}>
             Try again
-          </button>
+          </Button>
         }
       />
     );
@@ -130,9 +131,9 @@ function AuthFrame({
         title="Sign out could not be completed"
         detail="The server could not revoke this session. Try again before leaving."
         action={
-          <button type="button" onClick={onLogout}>
+          <Button variant="primary" size="lg" onClick={onLogout}>
             Try sign out again
-          </button>
+          </Button>
         }
       />
     );

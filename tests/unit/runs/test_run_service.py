@@ -18,7 +18,11 @@ from pathlib import Path
 
 import pytest
 
-from grafy_api.runs.ports import RunNotFoundError, RunRejectedError
+from grafy_api.runs.ports import (
+    RunNotFoundError,
+    RunRejectedError,
+    ToolCallFailedError,
+)
 from grafy_api.runs.service import RunService
 from grafy_core.domain.runs import RunStatus, RunTarget
 from grafy_core.kernel.instances import InstanceKey
@@ -52,6 +56,7 @@ from tests.unit.runs.fakes import (
     main_graph,
     never_node,
     node_ids,
+    origin,
     output_node,
     run_row,
     side_graph,
@@ -755,6 +760,141 @@ async def test_two_calls_of_one_graph_with_one_value_compute_once(
     assert {snapshot.state for snapshot in callees} == {InstanceState.FRESH}
     assert len({snapshot.fingerprint for snapshot in callees}) == 1
     assert run.graph_id == GRAPH
+    await service.close()
+
+
+# --- Tool calls: a computation with no instance to record ---------------------
+
+
+async def call_sink(service, mark: str, *, node_id: str = "sink"):
+    """Call ``sink`` as a tool with its ``value`` input given the artifact ``mark``."""
+    return await service.service.call_tool(
+        workspace_id=WORKSPACE_ID,
+        project_id=PROJECT_ID,
+        graph_id=GRAPH,
+        call_path=(),
+        node_id=node_id,
+        arguments=(origin(node_id, to_port="value", mark=mark),),
+    )
+
+
+async def test_a_tool_call_never_moves_the_instance_pointer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = harness(tmp_path, monkeypatch, project=document(main_graph()))
+    run = await service.start()
+    await service.started()
+    await service.running("value")
+    service.release("value")
+    await service.running("sink")
+    await service.complete("sink", run_id=run.id)
+    sink = key_of("sink")
+    pointer_before = await service.store.get_pointer(sink)
+    state_before = service.state_of(await service.states(), "sink")
+    assert pointer_before is not None
+    assert pointer_before.last_result_fingerprint is not None
+
+    service.reset_runner()
+    call = asyncio.create_task(call_sink(service, "the-model-said-this"))
+    await service.running("sink")
+    service.release("sink")
+    result = await call
+
+    # The model's result is stored under its own fingerprint, ...
+    assert result.fingerprint != pointer_before.last_result_fingerprint
+    assert await service.store.get_result(result.fingerprint) is not None
+    # ... and the node is exactly as it was: same pointer, same state, no Run.
+    assert await service.store.get_pointer(sink) == pointer_before
+    assert service.state_of(await service.states(), "sink") == state_before
+    assert [
+        row.id
+        for row in await service.service.list_runs(
+            workspace_id=WORKSPACE_ID, project_id=PROJECT_ID
+        )
+    ] == [run.id]
+    await service.close()
+
+
+async def test_two_identical_tool_calls_compute_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = harness(tmp_path, monkeypatch, project=document(main_graph()))
+
+    # In flight together: the second joins the first rather than computing again.
+    first = asyncio.create_task(call_sink(service, "same-arguments"))
+    await service.running("sink")
+    second = asyncio.create_task(call_sink(service, "same-arguments"))
+    await asyncio.sleep(0)
+    service.release("sink")
+    joined = await asyncio.gather(first, second)
+    # One after the other: the stored result answers.
+    later = await call_sink(service, "same-arguments")
+
+    assert service.runner.calls == ["sink"]
+    assert {result.fingerprint for result in (*joined, later)} == {
+        joined[0].fingerprint
+    }
+    assert later.outputs == joined[0].outputs
+    await service.close()
+
+
+async def test_a_tool_call_with_other_arguments_is_another_computation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = harness(tmp_path, monkeypatch, project=document(main_graph()))
+    service.release("sink")
+
+    one = await call_sink(service, "argument-one")
+    two = await call_sink(service, "argument-two")
+
+    assert service.runner.calls == ["sink", "sink"]
+    assert one.fingerprint != two.fingerprint
+    await service.close()
+
+
+async def test_a_failing_tool_call_reports_the_computations_own_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = harness(tmp_path, monkeypatch, project=document(main_graph()))
+    service.runner.fail_with("sink", "the table has no such column")
+    service.release("sink")
+
+    with pytest.raises(ToolCallFailedError, match="no such column"):
+        await call_sink(service, "argument")
+
+    # A failure is not stored, so asking again is a fresh attempt.
+    service.runner.failures.clear()
+    assert (await call_sink(service, "argument")).outputs
+    assert service.runner.calls == ["sink", "sink"]
+    await service.close()
+
+
+async def test_cancelling_the_awaiting_task_withdraws_a_tool_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = harness(tmp_path, monkeypatch, project=document(main_graph()))
+
+    call = asyncio.create_task(call_sink(service, "argument"))
+    await service.running("sink")
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+
+    async with asyncio.timeout(10):
+        while "sink" not in service.runner.cancelled:
+            await asyncio.sleep(0)
+    await service.close()
+
+
+async def test_a_tool_call_for_a_node_the_project_does_not_hold_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = harness(tmp_path, monkeypatch, project=document(main_graph()))
+
+    with pytest.raises(RunRejectedError) as raised:
+        await call_sink(service, "argument", node_id="ghost")
+
+    assert raised.value.code == "unknown_target"
     await service.close()
 
 

@@ -880,6 +880,8 @@ describe("room-command-bridge agents", () => {
       endpoint: "https://models.example/v1",
       model: "some-model",
     },
+    context: [],
+    tools: [],
     position: { x: 320, y: 40 },
     width: 360,
     height: 480,

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { Button } from "@/components/ui/button";
 import { ThresholdStatus } from "@/components/threshold-status";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 import { resolveSelectedWorkspace } from "@/features/workspaces/WorkspaceLayout";
@@ -72,9 +73,9 @@ function GraphEntryRedirect() {
         title="Workspaces couldn't be loaded"
         detail="Grafy could not determine which workspace to open."
         action={
-          <button type="button" onClick={() => void mutate()}>
+          <Button variant="primary" size="lg" onClick={() => void mutate()}>
             Try again
-          </button>
+          </Button>
         }
       />
     );
@@ -92,5 +93,3 @@ function OpeningGraphs() {
     />
   );
 }
-
-export default WorkspaceGraphRedirect;

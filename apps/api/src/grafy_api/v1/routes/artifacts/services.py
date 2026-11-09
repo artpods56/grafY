@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import httpx
 import truststore
@@ -29,6 +29,8 @@ from grafy_core.artifacts import (
     ArtifactRef,
     ArtifactTypeSpec,
 )
+from grafy_core.artifact_contracts import TEXT_VALUE
+from grafy_core.domain.errors import ObjectAlreadyExistsError
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.table_contracts import (
     TABLE_DATA,
@@ -328,6 +330,39 @@ def _web_mercator_tile_bounds(
     north = extent - y * span
     south = north - span
     return west, south, east, north
+
+
+_TABLE_CELL_ARTIFACT_NAMESPACE = UUID("3f0c1d7e-9a64-4b52-8c1e-7d2a6e5f4b10")
+
+
+def _cell_text_artifact(
+    source: ArtifactObject, column_id: str, row_index: int, text: str
+) -> ArtifactObject:
+    payload = {"value": text}
+    content = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    digest = sha256(content).hexdigest()
+    return ArtifactObject(
+        id=uuid5(
+            _TABLE_CELL_ARTIFACT_NAMESPACE,
+            f"{source.id}:{row_index}:{column_id}:{digest}",
+        ),
+        workspace_id=source.workspace_id,
+        artifact_type=TEXT_VALUE.key.id,
+        schema_version=TEXT_VALUE.key.schema_version,
+        content_type="application/json",
+        storage_backend="inline",
+        inline_payload=payload,
+        byte_size=len(content),
+        sha256=digest,
+        metadata={
+            "written_by": "table_cell",
+            "source_artifact_id": str(source.id),
+            "row_index": row_index,
+            "column_id": column_id,
+        },
+    )
 
 
 class ArtifactService:
@@ -1462,6 +1497,60 @@ class ArtifactService:
                 f"Table artifact {artifact.id} has no column {column_id!r}"
             )
         return page.rows[0][column_id]
+
+    async def text_artifacts_for_column(
+        self,
+        artifact: ArtifactObject,
+        *,
+        column_id: str,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[tuple[int, ArtifactRef | None]], int]:
+        """Each row's text in one column as an artifact of its own, for dragging out.
+
+        A row of a table is not an artifact, and a drag has to carry one from its very
+        first moment, so the rows a person is about to choose from are made ready as a
+        page. The id comes from the source, the cell and its content: asking again makes
+        nothing new, and the artifact can say truthfully which table it was taken from.
+        """
+        page = await self.load_table_page(artifact, offset=offset, limit=limit)
+        if column_id not in {column.id for column in page.columns}:
+            raise WorkbenchOperationError(
+                f"Table artifact {artifact.id} has no column {column_id!r}"
+            )
+        cells: list[tuple[int, ArtifactObject | None]] = []
+        for index, row in enumerate(page.rows):
+            value = row.get(column_id)
+            cells.append(
+                (
+                    offset + index,
+                    _cell_text_artifact(artifact, column_id, offset + index, value)
+                    if isinstance(value, str) and value
+                    else None,
+                )
+            )
+        wanted = {cell.id: cell for _, cell in cells if cell is not None}
+        # Two people opening the same list race to write the same rows. The loser's
+        # rows are already there, identical, so one look again settles it.
+        for last_attempt in (False, True):
+            async with self._unit_of_work as unit_of_work:
+                existing = await unit_of_work.artifacts.get_many(
+                    artifact.workspace_id, list(wanted)
+                )
+                try:
+                    for cell_id, cell in wanted.items():
+                        if cell_id not in existing:
+                            await unit_of_work.artifacts.add(cell)
+                    await unit_of_work.commit()
+                    break
+                except ObjectAlreadyExistsError:
+                    await unit_of_work.rollback()
+                    if last_attempt:
+                        raise
+        return (
+            [(index, None if cell is None else cell.ref()) for index, cell in cells],
+            page.total_rows,
+        )
 
     async def load_table_query_page(
         self,

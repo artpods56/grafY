@@ -3,10 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { NodeSpec } from "@/lib/api";
 import { decodeHandleId, encodeHandleId } from "./handles";
 import {
-  bindArtifactTypeVariable,
   createWorkflowNodeData,
   portMetaForPort,
-  resetArtifactTypeBinding,
   serializeRunNode,
 } from "./types";
 
@@ -54,121 +52,12 @@ const genericNodeSpec: NodeSpec = {
   ],
 };
 
-const artifactQueryNodeSpec: NodeSpec = {
-  operator_id: "sql.artifacts.query",
-  operator_version: 1,
-  plugin_slug: "external.sql",
-  origin: "builtin",
-  title: "Query artifact tables",
-  description: "Runs read-only queries over table artifacts.",
-  catalog_visible: true,
-  runnable: true,
-  config_schema: {
-    type: "object",
-    properties: { relations: { type: "array" } },
-    required: ["relations"],
-  },
-  input_schema: {},
-  output_schema: {},
-  inputs: [
-    {
-      name: "statements",
-      title: "Statements",
-      description: null,
-      direction: "input",
-      artifact_type: { id: "sql.statement", schema_version: 1 },
-      artifact_type_variable: null,
-      shape: "one",
-      accepted_shapes: ["one"],
-      instance_plugs: true,
-      variadic: true,
-      required: true,
-    },
-    {
-      name: "relations",
-      title: "Relations",
-      description: null,
-      direction: "input",
-      artifact_type: { id: "table.data", schema_version: 1 },
-      artifact_type_variable: null,
-      shape: "one",
-      accepted_shapes: ["one"],
-      instance_plugs: true,
-      variadic: true,
-      required: true,
-    },
-  ],
-  outputs: [
-    {
-      name: "tables",
-      title: "Tables",
-      description: null,
-      direction: "output",
-      artifact_type: { id: "table.data", schema_version: 1 },
-      artifact_type_variable: null,
-      shape: "many",
-      accepted_shapes: ["many"],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-    },
-  ],
-};
-
-describe("artifact query initialization", () => {
-  it("seeds one statement plug and one named relation with shared identity", () => {
-    const data = createWorkflowNodeData(artifactQueryNodeSpec);
-    const relationPlug = data.inputPlugs.find(
-      (plug) => plug.portName === "relations",
-    );
-
-    expect(data.inputPlugs.map((plug) => plug.portName)).toEqual([
-      "statements",
-      "relations",
-    ]);
-    expect(data.config.relations).toEqual([
-      { id: relationPlug?.id, alias: "relation_1" },
-    ]);
-  });
-});
-
-describe("generic artifact type reset", () => {
-  it("keeps an incident binding and clears a disconnected binding", () => {
+describe("generic artifact type bindings", () => {
+  it("resolves every port sharing T after the first binding", () => {
     const data = createWorkflowNodeData(genericNodeSpec);
     data.artifactTypeBindings = {
       T: { id: "scalar.text", schema_version: 1 },
     };
-    data.execution = { status: "failed", error: "stale" };
-    data.progress = {
-      omittedCount: 0,
-      entries: [
-        {
-          sequence: 1,
-          message: "stale",
-          current: null,
-          total: null,
-          sourceNodePath: [],
-          invocationIndex: null,
-          invocationPath: [],
-        },
-      ],
-    };
-
-    expect(resetArtifactTypeBinding(data, "T", true)).toBe(data);
-
-    const reset = resetArtifactTypeBinding(data, "T", false);
-    expect(reset).not.toBe(data);
-    expect(reset.artifactTypeBindings).toEqual({});
-    expect(reset.execution).toEqual({ status: "idle" });
-    expect(reset.progress).toBeNull();
-  });
-
-  it("resolves every port sharing T after the first binding", () => {
-    const data = bindArtifactTypeVariable(
-      createWorkflowNodeData(genericNodeSpec),
-      "T",
-      { id: "scalar.text", schema_version: 1 },
-    );
 
     const handles = [...data.spec.inputs, ...data.spec.outputs].map((port) =>
       decodeHandleId(
@@ -208,11 +97,10 @@ describe("generic artifact type reset", () => {
     const genericHandle = decodeHandleId(
       encodeHandleId(portMetaForPort(input, input.shape, plugId)),
     );
-    const data = bindArtifactTypeVariable(
-      createWorkflowNodeData(genericNodeSpec),
-      "T",
-      { id: "image.raster", schema_version: 1 },
-    );
+    const data = createWorkflowNodeData(genericNodeSpec);
+    data.artifactTypeBindings = {
+      T: { id: "image.raster", schema_version: 1 },
+    };
     const concreteHandle = decodeHandleId(
       encodeHandleId(
         portMetaForPort(input, input.shape, plugId, data.artifactTypeBindings),

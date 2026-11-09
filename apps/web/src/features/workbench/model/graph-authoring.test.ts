@@ -6,12 +6,10 @@ import type { NodeSpec, Port, SavedGraphOrigin } from "@/lib/api";
 import {
   collectionModeForConnection,
   collectionModesForConnection,
-  connectionRouteDescription,
   connectionRouteTitle,
   inputPlugBindingsForNode,
   isConnectionAccepted,
   mappedInputPortsForNode,
-  nodeAndDescendantIds,
   workflowEdgeRouteOption,
   type GraphAuthoringNode,
 } from "./graph-authoring";
@@ -158,9 +156,6 @@ describe("connection route presentation", () => {
         },
       ]),
     ).toBe("Age → Integer to text · Text value");
-    expect(connectionRouteDescription("payload", route)).toBe(
-      "payload.profile.age → Integer to text · builtin.scalar.integer_to_text@1",
-    );
     expect(workflowEdgeRouteOption(route)).toEqual({
       projection: { path: ["profile", "age"] },
       conversionPath: [{ id: "builtin.scalar.integer_to_text", version: 1 }],
@@ -775,27 +770,5 @@ describe("input-plug binding presentation", () => {
         contributionLabel: "output 1–2",
       },
     });
-  });
-});
-
-describe("authoring invalidation traversal", () => {
-  it("follows active descendants, ignores disabled branches, and tolerates cycles", () => {
-    const edges = [
-      edge({ id: "root-active", source: "root", target: "active" }),
-      edge({
-        id: "root-disabled",
-        source: "root",
-        target: "disabled",
-        enabled: false,
-      }),
-      edge({ id: "active-leaf", source: "active", target: "leaf" }),
-      edge({ id: "cycle", source: "leaf", target: "root" }),
-    ];
-
-    expect([...nodeAndDescendantIds("root", edges)]).toEqual([
-      "root",
-      "active",
-      "leaf",
-    ]);
   });
 });

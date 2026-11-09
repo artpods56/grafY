@@ -65,40 +65,6 @@ export function appendInputPlug(
   ];
 }
 
-export function removeInputPlug(
-  inputPlugs: readonly WorkflowInputPlug[],
-  plugId: string,
-): WorkflowInputPlug[] {
-  return inputPlugs.filter((plug) => plug.id !== plugId);
-}
-
-export function reorderInputPlug(
-  inputPlugs: readonly WorkflowInputPlug[],
-  portName: string,
-  plugId: string,
-  toIndex: number,
-): WorkflowInputPlug[] {
-  const portPlugs = inputPlugsForPort(inputPlugs, portName);
-  const fromIndex = portPlugs.findIndex((plug) => plug.id === plugId);
-  if (fromIndex === -1 || portPlugs.length < 2) return [...inputPlugs];
-
-  const boundedIndex = Math.max(0, Math.min(toIndex, portPlugs.length - 1));
-  if (fromIndex === boundedIndex) return [...inputPlugs];
-  const reorderedPortPlugs = [...portPlugs];
-  const [movedPlug] = reorderedPortPlugs.splice(fromIndex, 1);
-  if (!movedPlug) return [...inputPlugs];
-  reorderedPortPlugs.splice(boundedIndex, 0, movedPlug);
-
-  let nextPortIndex = 0;
-  return inputPlugs.map((plug) => {
-    if (plug.portName !== portName) return plug;
-    const placed = reorderedPortPlugs[nextPortIndex];
-    nextPortIndex += 1;
-    // Every plug for this port has a slot, so `placed` is always present.
-    return placed ?? plug;
-  });
-}
-
 /**
  * Aligns nested-schema plugs with their owning field ids and field order.
  * Plugs for unrelated ports retain their relative order.
