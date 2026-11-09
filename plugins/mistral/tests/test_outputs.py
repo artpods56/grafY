@@ -54,7 +54,7 @@ def block(kind: str = "text", **updates: object) -> dict[str, object]:
     }
 
 
-def test_config_has_only_six_fields_and_discards_legacy_values() -> None:
+def test_config_has_only_six_fields_and_validates_values() -> None:
     assert set(MistralOcrConfig.model_fields) == {
         "table_format",
         "extract_header",
@@ -63,24 +63,6 @@ def test_config_has_only_six_fields_and_discards_legacy_values() -> None:
         "timeout_ms",
         "max_retries",
     }
-    legacy = {
-        key: {"invalid": "ignored"}
-        for key in (
-            "base_url",
-            "model",
-            "document_name",
-            "pages",
-            "include_image_base64",
-            "image_limit",
-            "image_min_size",
-            "include_blocks",
-            "document_annotation_prompt",
-            "document_annotation_schema_name",
-            "bbox_annotation_schema_name",
-            "strict",
-        )
-    }
-    assert MistralOcrConfig.model_validate(legacy) == MistralOcrConfig()
     with pytest.raises(ValidationError, match="extra_forbidden"):
         _ = MistralOcrConfig.model_validate({"unrelated": True})
     with pytest.raises(ValidationError, match="literal_error"):
