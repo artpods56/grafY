@@ -432,21 +432,33 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
     paths = [
         *(api_root / "realtime").glob("*.py"),
         *(api_root / "agents").rglob("*.py"),
+        *(api_root / "auth").rglob("*.py"),
+        *(api_root / "artifacts").rglob("*.py"),
+        *(api_root / "library").rglob("*.py"),
         api_root / "project_contracts.py",
         api_root / "artifact_availability.py",
         api_root / "node_secrets.py",
         api_root / "uploads.py",
+        api_root / "services" / "composition.py",
+    ]
+    # Composition and the HTTP error boundary read app state on purpose. They
+    # still must not reach into a route package to obtain a service.
+    composition_paths = [
+        api_root / "services" / "application.py",
+        api_root / "http_errors.py",
+        api_root / "app_state.py",
     ]
     offenders: list[str] = []
-    for path in paths:
+    for path in (*paths, *composition_paths):
         package = ".".join(path.parent.relative_to(api_root.parent).parts)
         for module in _imported_modules(path.read_text(), package):
             if module == "grafy_api.v1.routes" or module.startswith(
                 "grafy_api.v1.routes."
             ):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
-            if module == "grafy_api.app_state" or module.startswith(
-                "grafy_api.app_state."
+            if path in paths and (
+                module == "grafy_api.app_state"
+                or module.startswith("grafy_api.app_state.")
             ):
                 offenders.append(
                     f"{path.relative_to(REPO_ROOT)}: request resource lookup"

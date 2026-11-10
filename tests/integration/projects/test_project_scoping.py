@@ -41,7 +41,7 @@ from grafy_api.project_contracts import (
     SubmitProjectCommandRequest,
 )
 from grafy_api.settings import Settings
-from grafy_api.v1.routes.auth.services import AuthService, IssuedSession
+from grafy_api.auth import AuthService, IssuedSession
 from grafy_api.v1.routes.node_secrets.models import ConfigureNodeSecretRequest
 from grafy_api.v1.routes.workspaces.models import (
     PersonalAccessTokenCreateRequest,

@@ -6,7 +6,7 @@ import pytest
 
 from grafy_api.services.errors import ArtifactContentUnavailableError
 from grafy_api.services.composition import build_workbench_components
-from grafy_api.v1.routes.artifacts.models import GeoRasterStyle
+from grafy_api.artifacts.models import GeoRasterStyle
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.plugins import PluginRuntimeContext
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork

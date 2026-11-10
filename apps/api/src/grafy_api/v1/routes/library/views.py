@@ -7,7 +7,7 @@ from grafy_api.services.errors import WorkbenchOperationError
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 
 from .dependencies import LibraryDependency, LibraryFoldersDependency
-from .models import (
+from grafy_api.library.models import (
     CreateLibraryFolderRequest,
     LibraryFolderListResponse,
     LibraryFolderResponse,

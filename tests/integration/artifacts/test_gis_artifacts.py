@@ -39,13 +39,13 @@ from grafy_core.domain.identity import (
 )
 
 from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.v1.routes.artifacts import services as artifact_services
+from grafy_api.artifacts import service as artifact_services
 from grafy_api.v1.routes.artifacts.dependencies import artifact_service
-from grafy_api.v1.routes.artifacts.models import (
+from grafy_api.artifacts.models import (
     ArtifactExactMatchRow,
     GeoFeatureQueryRequest,
 )
-from grafy_api.v1.routes.artifacts.services import ArtifactService
+from grafy_api.artifacts.service import ArtifactService
 from grafy_api.v1.routes.artifacts.views import router as artifacts_router
 from grafy_api.v1.routes.auth.dependencies import (
     browser_actor,

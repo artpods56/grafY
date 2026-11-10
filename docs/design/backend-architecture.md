@@ -60,9 +60,11 @@ single API owner; multiple workers are not an interchangeable deployment mode.
 Route-local models describe transport. Route files need not contain application
 services merely to satisfy a directory pattern.
 
-Authentication's cookie, OIDC, PAT, and abuse-handling code remains under
-`v1/routes/auth`. Workspace transport models belong to `v1/routes/workspaces`. Core
-identity policy and transaction-local workspace authorization live in
+`grafy_api.auth` owns OIDC discovery and token validation, login transactions,
+browser sessions, personal access tokens, abuse control, and security-audit
+writes. `v1/routes/auth` owns the login routes and the FastAPI dependencies that
+read that service. Workspace transport models belong to `v1/routes/workspaces`.
+Core identity policy and transaction-local workspace authorization live in
 `grafy_core.application.identity`.
 Graph workflows authorize through that shared policy, including ordered checks
 for cross-workspace copies.
@@ -136,13 +138,24 @@ flowchart LR
 Edge projection reads artifact rows through the core artifact unit-of-work port, then
 preserves exact-reference checks, projection, conversion order and provenance.
 
+## Artifacts
+
+`grafy_api.artifacts` owns artifact reads (content, tiles, tables, geo queries)
+and the pydantic models those reads return. HTTP routes stay under
+`v1/routes/artifacts`.
+
+## Library
+
+`grafy_api.library` owns library saves and the folder tree, and the pydantic
+models those operations return. HTTP routes stay under `v1/routes/library`.
+
 ## Artifact contracts, reads, and infrastructure
 
 `grafy_api.artifact_availability` resolves exact references and batches storage
 presence checks for application workflows. Each operation loads fresh state.
 Availability is weaker than cache content-integrity validation; do not substitute
 one for the other. HTTP summaries, content responses, GIS tile/render handling,
-and the WMS client remain in the artifact transport service.
+and the WMS client stay in `grafy_api.artifacts`.
 
 Core owns producer-neutral stored contracts, including spatial payloads, styles,
 map references, and feature metadata. GIS public aliases reuse those contracts.

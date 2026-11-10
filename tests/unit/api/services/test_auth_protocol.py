@@ -19,8 +19,8 @@ from pydantic import SecretStr
 from grafy_shared.config import AppConfig, AuthConfig
 
 from grafy_api.settings import Settings
-from grafy_api.v1.routes.auth import services as auth_services
-from grafy_api.v1.routes.auth.services import (
+from grafy_api.auth import audit as auth_audit
+from grafy_api.auth import (
     AuthService,
     OidcCallbackInternalError,
     OidcProtocolError,
@@ -226,7 +226,7 @@ async def test_secondary_failure_audit_write_is_fail_open(
     def record_failure(exc: Exception, *, operation: str) -> None:
         recorded.append((exc, operation))
 
-    monkeypatch.setattr(auth_services, "record_failure", record_failure)
+    monkeypatch.setattr(auth_audit, "record_failure", record_failure)
     operation = "workspace.authorize"
     workspace_id = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -291,8 +291,8 @@ async def test_id_token_rejects_nonce_and_required_time_claim_failures(
 ) -> None:
     auth = _auth_service()
     private_key, public_keys = _keys()
-    auth._jwks = public_keys
-    auth._jwks_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    auth.provider._jwks = public_keys
+    auth.provider._jwks_expires_at = datetime.now(UTC) + timedelta(minutes=5)
     resolved_overrides = {
         claim: (
             int((datetime.now(UTC) + value).timestamp())
@@ -304,7 +304,7 @@ async def test_id_token_rejects_nonce_and_required_time_claim_failures(
     token = _signed_token(private_key, _claims(**resolved_overrides))
 
     with pytest.raises(OidcProtocolError):
-        await auth._validate_id_token(
+        await auth.provider.validate_id_token(
             token,
             nonce_digest=auth.digest_secret("expected-nonce"),
         )
@@ -314,16 +314,16 @@ async def test_id_token_rejects_nonce_and_required_time_claim_failures(
 async def test_id_token_rejects_disallowed_algorithm_and_invalid_signature() -> None:
     auth = _auth_service()
     private_key, public_keys = _keys()
-    auth._jwks = public_keys
-    auth._jwks_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+    auth.provider._jwks = public_keys
+    auth.provider._jwks_expires_at = datetime.now(UTC) + timedelta(minutes=5)
     with pytest.raises(OidcProtocolError):
-        await auth._validate_id_token(
+        await auth.provider.validate_id_token(
             _signed_token(private_key, _claims(), algorithm="PS256"),
             nonce_digest=auth.digest_secret("expected-nonce"),
         )
     other_private_key, _ = _keys()
     with pytest.raises(OidcProtocolError):
-        await auth._validate_id_token(
+        await auth.provider.validate_id_token(
             _signed_token(other_private_key, _claims()),
             nonce_digest=auth.digest_secret("expected-nonce"),
         )
@@ -343,8 +343,8 @@ async def test_unknown_signing_key_gets_one_forced_refresh_then_fails_closed(
         calls.append(force_refresh)
         return new_public_keys if force_refresh else old_public_keys
 
-    monkeypatch.setattr(auth, "_keys", keys)
-    claims = await auth._validate_id_token(
+    monkeypatch.setattr(auth.provider, "keys", keys)
+    claims = await auth.provider.validate_id_token(
         token,
         nonce_digest=auth.digest_secret("expected-nonce"),
     )
@@ -356,9 +356,9 @@ async def test_unknown_signing_key_gets_one_forced_refresh_then_fails_closed(
         del force_refresh
         raise OidcProtocolError("provider_keys_unavailable")
 
-    monkeypatch.setattr(auth, "_keys", unavailable)
+    monkeypatch.setattr(auth.provider, "keys", unavailable)
     with pytest.raises(OidcProtocolError):
-        await auth._validate_id_token(
+        await auth.provider.validate_id_token(
             token,
             nonce_digest=auth.digest_secret("expected-nonce"),
         )
@@ -386,27 +386,27 @@ async def test_provider_and_jwks_caches_fail_closed_only_after_expiry(
     auth = _auth_service()
     monkeypatch.setattr(httpx, "AsyncClient", _UnavailableProviderClient)
 
-    auth._provider_metadata = ProviderMetadata(
+    auth.provider._metadata = ProviderMetadata(
         issuer="https://issuer.example.test",
         authorization_endpoint="https://issuer.example.test/authorize",
         token_endpoint="https://issuer.example.test/token",
         jwks_uri="https://issuer.example.test/keys",
     )
-    auth._provider_metadata_expires_at = datetime.now(UTC) + timedelta(minutes=1)
-    assert await auth._provider() == auth._provider_metadata
+    auth.provider._metadata_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+    assert await auth.provider.discover() == auth.provider._metadata
 
-    auth._provider_metadata_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    auth.provider._metadata_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     with pytest.raises(OidcProtocolError) as discovery_error:
-        await auth._provider()
+        await auth.provider.discover()
     assert discovery_error.value.code == "provider_discovery_unavailable"
 
-    auth._provider_metadata_expires_at = datetime.now(UTC) + timedelta(minutes=1)
-    auth._jwks = [{"kty": "RSA", "kid": "test"}]
-    auth._jwks_expires_at = datetime.now(UTC) + timedelta(minutes=1)
-    assert await auth._keys() == auth._jwks
-    auth._jwks_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    auth.provider._metadata_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+    auth.provider._jwks = [{"kty": "RSA", "kid": "test"}]
+    auth.provider._jwks_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+    assert await auth.provider.keys() == auth.provider._jwks
+    auth.provider._jwks_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     with pytest.raises(OidcProtocolError) as keys_error:
-        await auth._keys()
+        await auth.provider.keys()
     assert keys_error.value.code == "provider_keys_unavailable"
 
 
@@ -416,13 +416,13 @@ async def test_malformed_token_endpoint_response_is_bounded(
 ) -> None:
     auth = _auth_service()
 
-    auth._provider_metadata = ProviderMetadata(
+    auth.provider._metadata = ProviderMetadata(
         issuer="https://issuer.example.test",
         authorization_endpoint="https://issuer.example.test/authorize",
         token_endpoint="https://issuer.example.test/token",
         jwks_uri="https://issuer.example.test/keys",
     )
-    auth._provider_metadata_expires_at = datetime.now(UTC) + timedelta(minutes=1)
+    auth.provider._metadata_expires_at = datetime.now(UTC) + timedelta(minutes=1)
 
     class MalformedTokenClient(_UnavailableProviderClient):
         async def post(self, url: str, data: dict[str, str]) -> httpx.Response:
@@ -435,7 +435,7 @@ async def test_malformed_token_endpoint_response_is_bounded(
 
     monkeypatch.setattr(httpx, "AsyncClient", MalformedTokenClient)
     with pytest.raises(OidcProtocolError) as error:
-        await auth._exchange_code(
+        await auth.provider.exchange_code(
             code="provider-code",
             verifier="verifier",
             nonce_digest=auth.digest_secret("expected-nonce"),

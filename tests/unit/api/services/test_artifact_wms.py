@@ -9,8 +9,8 @@ import pytest
 
 from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.services.errors import ArtifactContentUnavailableError
-from grafy_api.v1.routes.artifacts.models import GeoRasterStyle
-from grafy_api.v1.routes.artifacts.services import ArtifactService
+from grafy_api.artifacts.models import GeoRasterStyle
+from grafy_api.artifacts.service import ArtifactService
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_storage import LocalFileObjectStore
@@ -201,7 +201,7 @@ def test_wms_tile_fetch_has_no_resolver_of_its_own() -> None:
 
     source = Path(ArtifactService.__module__.replace(".", "/")).name
     del source
-    text = Path("apps/api/src/grafy_api/v1/routes/artifacts/services.py").read_text(
+    text = Path("apps/api/src/grafy_api/artifacts/service.py").read_text(
         encoding="utf-8"
     )
     assert "getaddrinfo" not in text

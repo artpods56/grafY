@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from grafy_api.http_errors import register_http_error_handlers
 from grafy_api.v1.routes.auth.dependencies import identity_service, workspace_actor
 from grafy_api.v1.routes.library.dependencies import library_service
-from grafy_api.v1.routes.library.services import LibraryService
+from grafy_api.library.service import LibraryService
 from grafy_api.v1.routes.library.views import router
 from grafy_core.artifacts import ArtifactObject, ArtifactRefSequence
 from grafy_core.domain.collaboration import ProjectHead

@@ -6,7 +6,7 @@ from uuid import UUID
 from httpx import Response
 from starlette.testclient import TestClient
 
-from grafy_api.v1.routes.artifacts.models import GeoFeatureQueryRequest
+from grafy_api.artifacts.models import GeoFeatureQueryRequest
 from tests.support.clients._http import _request
 
 

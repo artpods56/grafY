@@ -10,7 +10,7 @@ from grafy_api.main import create_app
 from grafy_api.realtime.hub import ProjectRoomHub
 from grafy_api.settings import Settings
 from grafy_api.single_owner import ApiOwnerLease, assert_single_http_worker
-from grafy_api.v1.routes.artifacts.services import ArtifactService
+from grafy_api.artifacts.service import ArtifactService
 from grafy_core.application.collaboration import CollaborationService
 from grafy_core.domain.identity import ActorContext, WorkspaceRole
 from grafy_core.domain.runs import Run, RunStatus

@@ -7,12 +7,12 @@ from grafy_core.domain.library import LibraryFolder
 from pydantic import Field, StringConstraints
 
 from grafy_api.v1.models import ApiResponse
-from grafy_api.v1.routes.artifacts.models import (
+from grafy_api.artifacts.models import (
     ArtifactExportFormatResponse,
     ArtifactSummaryResponse,
 )
 
-from .items import LibraryItem
+from grafy_api.library.items import LibraryItem
 
 BoundedNodeId = Annotated[
     str,

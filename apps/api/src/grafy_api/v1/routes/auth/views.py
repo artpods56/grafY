@@ -13,7 +13,7 @@ from grafy_api.v1.routes.auth.dependencies import (
     browser_actor,
 )
 from grafy_api.v1.routes.auth.models import SessionResponse
-from grafy_api.v1.routes.auth.services import (
+from grafy_api.auth import (
     OIDC_TRANSACTION_COOKIE,
     SESSION_COOKIE,
     OidcCallbackInternalError,
@@ -32,7 +32,7 @@ async def oidc_login(
     return_path: Annotated[str, Query(max_length=2048)] = "/",
 ) -> Response:
     abuse_keys = auth.browser_abuse_keys(request)
-    if not await auth.allow_login_start(
+    if not await auth.abuse.allow_login_start(
         abuse_keys.browser_key,
         abuse_keys.network_key,
     ):
@@ -47,7 +47,7 @@ async def oidc_login(
     if replaced_transaction_id is not None:
         await auth.release_login(str(replaced_transaction_id))
     transaction_id = uuid4()
-    if not await auth.reserve_login(
+    if not await auth.abuse.reserve_login(
         abuse_keys.browser_key,
         transaction_id,
         abuse_keys.network_key,
@@ -87,7 +87,7 @@ async def oidc_callback(
 ) -> Response:
     abuse_keys = auth.browser_abuse_keys(request)
     transaction_id_value = request.cookies.get(OIDC_TRANSACTION_COOKIE)
-    if not await auth.allow_callback(
+    if not await auth.abuse.allow_callback(
         abuse_keys.browser_key,
         abuse_keys.network_key,
     ):

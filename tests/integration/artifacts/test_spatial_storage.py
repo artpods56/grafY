@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.v1.routes.artifacts.services import (
+from grafy_api.artifacts.service import (
     ArtifactService,
     ArtifactContentUnavailableError,
 )

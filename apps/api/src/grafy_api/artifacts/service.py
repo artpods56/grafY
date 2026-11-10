@@ -55,7 +55,7 @@ from grafy_api.services.errors import (
     WorkbenchOperationError,
 )
 
-from .models import (
+from grafy_api.artifacts.models import (
     ArtifactExactMatchRow,
     GeoArtifactRefPayload,
     GeoBounds,

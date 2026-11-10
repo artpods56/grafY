@@ -6,7 +6,7 @@ from uuid import UUID
 
 from starlette.testclient import TestClient
 
-from grafy_api.v1.routes.auth.services import IssuedSession
+from grafy_api.auth import IssuedSession
 from tests.support.clients.auth import AuthApi
 from tests.support.clients.projects import ProjectBrowserApi
 from tests.support.clients.workspaces import WorkspaceApi, WorkspacesApi

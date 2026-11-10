@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException, Path, Query
 from fastapi.responses import Response, StreamingResponse
 
-from .models import (
+from grafy_api.artifacts.models import (
     GeoExactFeatureResponse,
     GeoFeatureQueryRequest,
     GeoFeatureQueryResponse,
@@ -25,7 +25,7 @@ from grafy_api.services.errors import (
 )
 
 from .dependencies import ArtifactDependency
-from .services import (
+from grafy_api.artifacts.service import (
     ArtifactContentRead,
     ArtifactResponseTooLargeError,
     GeoRangeNotSatisfiableError,

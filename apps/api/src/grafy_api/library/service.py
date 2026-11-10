@@ -17,9 +17,9 @@ from grafy_core.ports.library import LibraryUnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
 
 from grafy_api.services.errors import WorkbenchOperationError
-from grafy_api.v1.routes.artifacts.services import ArtifactService
-from .items import LibraryItem
-from .models import LibraryItemResponse
+from grafy_api.artifacts.service import ArtifactService
+from grafy_api.library.items import LibraryItem
+from grafy_api.library.models import LibraryItemResponse
 
 
 class LibraryService:

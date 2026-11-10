@@ -6,7 +6,7 @@ from uuid import UUID
 import pytest
 
 from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.v1.routes.artifacts.services import (
+from grafy_api.artifacts.service import (
     ARTIFACT_RESPONSE_CHUNK_SIZE,
     BUFFERED_ARTIFACT_RESPONSE_MAX_BYTES,
     ArtifactResponseTooLargeError,
