@@ -12,7 +12,7 @@ from starlette.types import ASGIApp
 from uvicorn._types import ASGI3Application
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from grafy_api.v1.routes.auth.abuse import (
+from grafy_api.auth.abuse import (
     AuthAbuseControl,
     make_browser_abuse_cookie,
     request_browser_keys,

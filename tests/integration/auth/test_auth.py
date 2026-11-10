@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from grafy_api.settings import Settings
-from grafy_api.v1.routes.auth.abuse import (
+from grafy_api.auth.abuse import (
     BROWSER_ABUSE_COOKIE,
     make_browser_abuse_cookie,
 )
@@ -20,7 +20,7 @@ from grafy_api.v1.routes.workspaces.models import (
     WorkspaceCreateRequest,
     WorkspaceInvitationCreateRequest,
 )
-from grafy_api.v1.routes.auth.services import (
+from grafy_api.auth import (
     OIDC_TRANSACTION_COOKIE,
     AuthService,
     IssuedSession,
@@ -83,7 +83,7 @@ async def _seed_oidc_transaction(
         nonce_digest=auth.digest_secret("callback-nonce"),
         # Pre-seeding a transaction with a known verifier requires the
         # private wrapper; start_login would need a live provider round-trip.
-        encrypted_pkce_verifier=auth._encrypt_verifier(  # pyright: ignore[reportPrivateUsage]
+        encrypted_pkce_verifier=auth.transactions.encrypt_verifier(
             "verifier",
             transaction_id,
         ),
@@ -355,7 +355,7 @@ async def test_expired_callback_consumes_transaction_and_releases_reservation(
             state="expired-state",
             expires_at=datetime.now(UTC) - timedelta(seconds=1),
         )
-        await auth.reserve_login("expired-browser", transaction_id)
+        await auth.abuse.reserve_login("expired-browser", transaction_id)
 
         with TestClient(application) as client:
             configured_key = app_settings.auth.oidc_auth_wrapping_key
@@ -382,7 +382,7 @@ async def test_expired_callback_consumes_transaction_and_releases_reservation(
 
         assert transaction is not None
         assert transaction.is_consumed
-        assert await auth.reserve_login("expired-browser", UUID(int=702))
+        assert await auth.abuse.reserve_login("expired-browser", UUID(int=702))
 
 
 async def test_callback_failure_before_consumption_preserves_transaction_and_slot(
@@ -415,12 +415,14 @@ async def test_callback_failure_before_consumption_preserves_transaction_and_slo
             state="before-state",
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
-        await auth.reserve_login("before-browser", transaction_id)
+        await auth.abuse.reserve_login("before-browser", transaction_id)
 
         async def fail_before_consumption(**_kwargs: object) -> tuple[object, str, str]:
             raise RuntimeError("before-consumption sentinel")
 
-        monkeypatch.setattr(auth, "_consume_transaction", fail_before_consumption)
+        monkeypatch.setattr(
+            auth.transactions, "consume_for_callback", fail_before_consumption
+        )
 
         with TestClient(application, raise_server_exceptions=False) as client:
             configured_key = app_settings.auth.oidc_auth_wrapping_key
@@ -440,7 +442,7 @@ async def test_callback_failure_before_consumption_preserves_transaction_and_slo
             assert response.status_code == 500
             assert OIDC_TRANSACTION_COOKIE not in response.headers.get("set-cookie", "")
 
-        assert not await auth.reserve_login("before-browser", UUID(int=704))
+        assert not await auth.abuse.reserve_login("before-browser", UUID(int=704))
 
         async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
             transaction = await unit_of_work.identity.get_login_transaction(
@@ -481,12 +483,12 @@ async def test_callback_failure_after_consumption_clears_transaction_and_release
             state="after-state",
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
-        await auth.reserve_login("after-browser", transaction_id)
+        await auth.abuse.reserve_login("after-browser", transaction_id)
 
         async def fail_after_consumption(**_kwargs: object) -> dict[str, object]:
             raise RuntimeError("after-consumption sentinel")
 
-        monkeypatch.setattr(auth, "_exchange_code", fail_after_consumption)
+        monkeypatch.setattr(auth.provider, "exchange_code", fail_after_consumption)
 
         with TestClient(application, raise_server_exceptions=False) as client:
             configured_key = app_settings.auth.oidc_auth_wrapping_key
@@ -507,7 +509,7 @@ async def test_callback_failure_after_consumption_clears_transaction_and_release
             assert OIDC_TRANSACTION_COOKIE in response.headers.get("set-cookie", "")
             assert "Max-Age=0" in response.headers.get("set-cookie", "")
 
-        assert await auth.reserve_login("after-browser", UUID(int=706))
+        assert await auth.abuse.reserve_login("after-browser", UUID(int=706))
 
         async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
             transaction = await unit_of_work.identity.get_login_transaction(
@@ -856,7 +858,7 @@ async def test_callback_validation_is_bounded_and_consumes_transaction(
             state="valid-state",
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
-        await auth.reserve_login("testclient", transaction_id)
+        await auth.abuse.reserve_login("testclient", transaction_id)
         state_sentinel = "S" * 513
 
         with TestClient(application) as client:
@@ -904,7 +906,7 @@ async def test_callback_validation_is_bounded_and_consumes_transaction(
             ("oidc.login.callback", "rate_limited"),
             ("oidc.login.callback", "validation_failed"),
         }
-        assert await auth.reserve_login("testclient", UUID(int=43))
+        assert await auth.abuse.reserve_login("testclient", UUID(int=43))
 
 
 async def test_login_validation_is_bounded_and_audited(
@@ -975,7 +977,7 @@ async def test_oidc_query_sentinels_are_absent_from_request_logs(
         async def unavailable_provider(**_kwargs: object) -> dict[str, object]:
             raise OidcProtocolError("provider_discovery_unavailable")
 
-        monkeypatch.setattr(auth, "_provider", unavailable_provider)
+        monkeypatch.setattr(auth.provider, "discover", unavailable_provider)
 
         with TestClient(application) as client:
             client.get("/v1/auth/oidc/login", params={"return_path": return_path})

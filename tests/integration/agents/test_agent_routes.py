@@ -50,7 +50,7 @@ from grafy_api.realtime.agent_events import ProjectAgentEvents
 from grafy_api.agents.turns import AgentService, AgentTurnModel
 from grafy_api.settings import Settings
 from grafy_api.v1.routes.agents.dependencies import agent_turn_service
-from grafy_api.v1.routes.auth.services import AuthService, IssuedSession
+from grafy_api.auth import AuthService, IssuedSession
 from grafy_api.v1.routes.workspaces.models import (
     PersonalAccessTokenCreateRequest,
     PersonalAccessTokenScope,

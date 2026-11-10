@@ -25,7 +25,7 @@ from grafy_core.domain.identity import (
 from grafy_core.ports.identity import IdentityUnitOfWorkPort
 
 from grafy_api.app_state import get_identity
-from grafy_api.v1.routes.auth.services import AuthService, SESSION_COOKIE
+from grafy_api.auth import SESSION_COOKIE, AuthService
 
 
 session_cookie_scheme = APIKeyCookie(

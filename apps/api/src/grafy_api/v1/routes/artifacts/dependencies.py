@@ -4,7 +4,7 @@ from fastapi import Depends, Request
 
 from grafy_api.app_state import get_resources
 
-from .services import ArtifactService
+from grafy_api.artifacts.service import ArtifactService
 
 
 def artifact_service(request: Request) -> ArtifactService:

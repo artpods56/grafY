@@ -78,7 +78,7 @@ from grafy_api.realtime.run_events import instance_state_entry, run_summary
 from grafy_api.runs.ports import RunRejectedError
 from grafy_api.runs.service import RunService
 from grafy_api.v1.routes.auth.dependencies import browser_actor
-from grafy_api.v1.routes.auth.services import SESSION_COOKIE
+from grafy_api.auth import SESSION_COOKIE
 from grafy_api.v1.routes.collaboration.dependencies import (
     AuthServiceWsDependency,
     CollaborationWsDependency,

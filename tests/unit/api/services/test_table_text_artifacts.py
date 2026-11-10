@@ -8,7 +8,7 @@ import pytest
 
 from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.services.errors import WorkbenchOperationError
-from grafy_api.v1.routes.artifacts.services import ArtifactService
+from grafy_api.artifacts.service import ArtifactService
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork

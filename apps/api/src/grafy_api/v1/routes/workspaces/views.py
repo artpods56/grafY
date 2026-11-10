@@ -333,7 +333,7 @@ async def create_personal_access_token(
             status_code=422,
             detail="Personal access token scope is not available",
         )
-    if not await auth.allow_pat_creation(str(actor.user_id)):
+    if not await auth.abuse.allow_pat_creation(str(actor.user_id)):
         raise HTTPException(status_code=429, detail="Too many token creation attempts")
     token, raw_token = auth.issue_personal_access_token(
         user_id=actor.user_id,

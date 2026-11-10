@@ -4,8 +4,8 @@ from fastapi import Depends, Request
 
 from grafy_api.app_state import get_resources
 
-from .folders import LibraryFoldersService
-from .services import LibraryService
+from grafy_api.library.folders import LibraryFoldersService
+from grafy_api.library.service import LibraryService
 
 
 def library_service(request: Request) -> LibraryService:

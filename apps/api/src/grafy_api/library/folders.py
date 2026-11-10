@@ -9,7 +9,7 @@ from grafy_core.domain.errors import (
 from grafy_core.domain.library import LibraryFolder, is_descendant_folder
 from grafy_core.ports.workbench import WorkbenchUnitOfWorkPort
 
-from .models import LibraryFolderResponse
+from grafy_api.library.models import LibraryFolderResponse
 
 
 class LibraryFoldersService:

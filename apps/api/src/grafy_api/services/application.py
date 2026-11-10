@@ -21,6 +21,7 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 from grafy_shared.config import EgressConfig
 
 from grafy_api.app_state import AppIdentity, AppResources
+from grafy_api.auth import AuthService
 from grafy_api.agents.conversations import AgentConversationService
 from grafy_api.agents.keys import AgentKeyService
 from grafy_api.agents.models import AgentModelResolver
@@ -40,7 +41,6 @@ from grafy_api.settings import Settings
 from grafy_api.single_owner import ApiOwnerLease
 from grafy_api.storage import configured_file_storage
 from grafy_api.uploads import UploadServiceConfig
-from grafy_api.v1.routes.auth.services import AuthService
 
 logger = logging.getLogger(__name__)
 

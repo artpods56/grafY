@@ -18,7 +18,7 @@ from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
 from grafy_api.app_state import get_identity, get_resources
 from grafy_api.realtime.hub import ProjectRoomHub
-from grafy_api.v1.routes.auth.services import AuthService
+from grafy_api.auth import AuthService
 from grafy_api.v1.routes.runs.dependencies import (
     RunServiceWsDependency,
     run_service_ws,

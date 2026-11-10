@@ -34,7 +34,7 @@ from grafy_api.runs.ports import RunNotFoundError, RunRejectedError
 from grafy_api.node_secrets import NodeSecretValueError
 from grafy_api.services.errors import ArtifactContentUnavailableError
 from grafy_api.uploads import UploadTooLargeError
-from grafy_api.v1.routes.auth.services import AuthService
+from grafy_api.auth import AuthService
 from grafy_core.domain.errors import (
     CapabilityDeniedError,
     Failure,
@@ -287,7 +287,7 @@ async def _request_validation_error_handler(
     if is_oidc_login:
         login_auth: AuthService = get_identity(request.app).auth_service
         abuse_keys = login_auth.browser_abuse_keys(request)
-        allowed = await login_auth.allow_login_start(
+        allowed = await login_auth.abuse.allow_login_start(
             abuse_keys.browser_key,
             abuse_keys.network_key,
         )

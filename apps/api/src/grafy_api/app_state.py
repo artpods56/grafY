@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from grafy_api.realtime.hub import ProjectRoomHub
     from grafy_api.runs.service import RunService
     from grafy_api.services.composition import WorkbenchComponents
-    from grafy_api.v1.routes.auth.services import AuthService
+    from grafy_api.auth import AuthService
 
 
 @dataclass(slots=True)

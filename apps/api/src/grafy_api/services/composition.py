@@ -29,9 +29,9 @@ from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.runs.node_runner import NodeComputationRunnerFactory
 from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_core.ports.storage import PresigningStorage
-from grafy_api.v1.routes.artifacts.services import ArtifactService
-from grafy_api.v1.routes.library.folders import LibraryFoldersService
-from grafy_api.v1.routes.library.services import LibraryService
+from grafy_api.artifacts.service import ArtifactService
+from grafy_api.library.folders import LibraryFoldersService
+from grafy_api.library.service import LibraryService
 
 logger = logging.getLogger(__name__)
 
