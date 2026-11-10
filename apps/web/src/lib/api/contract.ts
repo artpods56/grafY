@@ -31,6 +31,7 @@ export type ArtifactConversionSpec = Schemas["ArtifactConversionSpecResponse"];
 export type FieldProjection = Schemas["FieldProjectionResponse"];
 export type Port = Schemas["PortResponse"];
 export type NodeSpec = Schemas["NodeSpecResponse"];
+export type PluginSpec = Schemas["PluginSpecResponse"];
 
 export type ArtifactRef = Schemas["ArtifactRef"];
 export type ArtifactRefSequence = Schemas["ArtifactRefSequence"];
