@@ -29,11 +29,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - During a connection drag, wait for target-port reveal animations before
   measuring the handle. Playwright trial clicks can scroll clipped ancestors
   and give stale target coordinates.
-- After changing canvas pointer/touch handlers or React Flow interaction options,
-  run the Playwright gesture suite (`e2e/canvas-gestures.spec.ts`) described in
-  `README.md`. Cover touch pan, pinch, cancellation, blank-pane tap deselection,
-  node dragging, port wiring, and desktop mouse selection. A resized viewport
-  alone does not test touch.
+- After changing canvas pointer/touch handlers, manually verify touch pan, pinch,
+  cancellation, deselection, node dragging, port wiring, and mouse selection.
 
 <!-- END:grafy-workbench-rules -->
 
@@ -62,11 +59,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - `src/app/page.tsx` (`/`) renders the cross-location browser; `/workspaces` is
   the secondary **Teams & access** administration surface. Do not expose slugs,
   roles, capabilities, or user UUIDs on authoring surfaces.
-- Renaming a route segment is a change to three places at once: the pages under
-  `src/app`, `features/workbench/routes.ts`, and **the `webServer.url` readiness
-  probe in `playwright.config.ts`**. That probe polls for a 2xx; a retired segment
-  answers 404, Playwright waits out its timeout and reports "Next never became
-  ready" on a healthy server.
+- Route changes must update the pages and `features/workbench/routes.ts` together.
 
 ## A green typecheck does not prove the app builds
 
@@ -86,7 +79,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:<port>/workspaces/<slu
 kill <that pid>                    # never a pattern match: several servers run here
 ```
 
-and read the **browser console** of a failing Playwright test, which names the
+and read the **browser console** of a failing browser test, which names the
 missing export in one line.
 
 StyleX has the same blind spot: `npm run check:stylex` compiles every module
@@ -129,11 +122,8 @@ cannot resolve, which `tsc` and Vitest both pass.
   height, or responsive frame constraints inline.
 - Use `useMediaQuery` for reactive JavaScript breakpoint state. Keep ARIA and
   behavior breakpoints aligned with the corresponding CSS media query.
-- After changing popup geometry, run the Playwright popup suite
-  (`e2e/workbench-popups.spec.ts`) at phone, tablet, desktop, and short
-  landscape sizes. Verify the popup stays inside the viewport and its primary
-  action remains visible. A width cap alone does not prevent an anchored popover
-  from being positioned offscreen.
+- After changing popup geometry, manually verify phone, tablet, desktop, and short
+  landscape sizes. Keep the primary action visible inside the viewport.
 
 ## CSS
 
@@ -185,28 +175,10 @@ cannot resolve, which `tsc` and Vitest both pass.
   takes its accessible name from that element, so a double that ignores
   `render` drops the name.
 - `npm test` runs the Vitest suite (`vitest run`).
-- When verifying a worktree, use `GRAFY_E2E_PORT` to give its dev server a free
-  port. Do not reuse a server from another checkout; its compiled code does not
-  verify this worktree.
-- The **Web browser acceptance** job in `.github/workflows/ci.yml` runs every
-  spec in `e2e/` on desktop, phone, and tablet only for pushes to `main`, where
-  `publish-images` waits for it. Pull requests do not run it, so run the specs
-  you touched before pushing. The real-backend smoke job (`e2e-real/`) runs on
-  every pull request.
-- Run Playwright invocations serially with the default configuration. Separate
-  invocations share the output and report directories; a new run can delete
-  another run's active traces and cause teardown failures. Parallel invocations
-  require distinct output and reporter directories.
-- `e2e/` answers the API boundary with fixtures; `e2e-real/` talks to a real
-  FastAPI process and a real Keycloak (`npm run test:e2e:real`, its own config
-  and output directories). Do not move a step from one suite into the other: the
-  mocked suite fails on an unexpected API request on purpose, and the real suite
-  is where the two applications are proven to still speak to each other.
-- The real-backend suite needs the checkout to itself. Next runs one dev server
-  per directory, so stop `just web` for this worktree and run one invocation at a
-  time. `scripts/real-smoke.mjs` owns only the provider container, addressed by the
-  project name it generated; the API and dev server belong to Playwright's
-  `webServer`, which holds their pids. Do not add pattern-based cleanup for either.
+- The single real-backend e2e pilot uses a disposable API, Keycloak, and Next
+  server. Run `npm run test:e2e`; see `docs/how-to-run-e2e.md` at the repo root.
+- Run it serially and stop this checkout's `just web` first. Never reuse another
+  checkout's server or kill processes by pattern.
 
 ## API hooks
 

@@ -76,8 +76,6 @@ from the address can be written back to a value the person already typed past,
 which is how keystrokes get lost. `use-graph-browser-filters.ts` writes the
 field only when the *address* moved (reload, Back, Forward, a control such as
 Clear search), never while a keystroke of the person's own is still in flight.
-Playwright covers this in `e2e/graph-browser-filters.spec.ts`, and it fails when
-the field is made controlled again.
 
 ## Navigation mechanisms
 

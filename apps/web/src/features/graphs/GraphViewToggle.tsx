@@ -10,8 +10,7 @@ import { GRAPH_BROWSER_VIEWS, type GraphBrowserView } from "./browser-filters";
 
 /**
  * Names the group for assistive tech. The graph browsers are addressed through
- * this name in their tests and in `e2e/graph-browser-filters.spec.ts`, so it
- * lives here rather than at each call site.
+ * this name, so it lives here rather than at each call site.
  */
 export const GRAPH_VIEW_ARIA_LABEL = "Graph views";
 
