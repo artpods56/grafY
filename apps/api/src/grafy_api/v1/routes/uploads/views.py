@@ -2,7 +2,6 @@ from tempfile import SpooledTemporaryFile
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from grafy_core.domain.errors import ValidationError
 from grafy_core.domain.identity import WorkspaceCapability
 
 from grafy_api.services.errors import WorkbenchOperationError
@@ -15,12 +14,7 @@ from grafy_api.uploads import (
 )
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 
-from .dependencies import (
-    ContentLengthDependency,
-    CreateUploadSizeDependency,
-    UploadConfigDependency,
-    UploadDependency,
-)
+from .dependencies import UploadConfigDependency, UploadDependency
 from .models import (
     CreateUploadRequest,
     ImageUploadItemResponse,
@@ -42,11 +36,14 @@ async def create_upload(
     workspace_id: UUID,
     request: CreateUploadRequest,
     service: UploadDependency,
-    size_validator: CreateUploadSizeDependency,
     access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> UploadTargetResponse:
     try:
-        await size_validator.validate(request)
+        if request.byte_size > service.max_upload_bytes:
+            raise UploadTooLargeError(
+                f"Upload {request.filename!r} exceeds the upload limit of "
+                f"{service.max_upload_bytes} bytes"
+            )
         target = await service.create_upload(
             workspace_id=workspace_id,
             created_by_user_id=access.actor.user_id,
@@ -72,7 +69,6 @@ async def receive_upload_content(
     request: Request,
     service: UploadDependency,
     upload_limits: UploadConfigDependency,
-    content_length_validator: ContentLengthDependency,
     access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> Response:
     del access
@@ -82,10 +78,18 @@ async def receive_upload_content(
             detail="Upload content is accepted only through signed URLs",
         )
 
-    try:
-        await content_length_validator.validate(request)
-    except ValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared = int(content_length)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="Content-Length must be an integer"
+            ) from exc
+        if declared > upload_limits.max_upload_bytes:
+            raise UploadTooLargeError(
+                f"Upload exceeds the upload limit of {upload_limits.max_upload_bytes} bytes"
+            )
 
     buffer = SpooledTemporaryFile(max_size=_STREAM_BUFFER_BYTES)
     byte_count = 0
