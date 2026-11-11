@@ -96,6 +96,3 @@ and does not depend on the canvas.
 - Boundary names must be unique per direction, or the whole command is rejected.
 - Floating chrome on a phone sits under the app's mobile header; the switcher
   offsets itself by `--grafy-mobile-overlay-top`.
-- `e2e/project-graphs.spec.ts` drives the switcher against the mocked room. The
-  fixture answers instance reads for every Graph of the Project, not only the
-  first.

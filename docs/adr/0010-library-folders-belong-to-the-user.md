@@ -51,7 +51,4 @@ Consequences:
 - Reading the tree costs two requests — every folder at once, then the artifact
   list with placements stamped on it — however deep it gets, because the client
   assembles the shape (`library-tree.ts`) and the server keeps the rows.
-- The rules are held in two places on purpose: `vitest` drives the code-to-error
-  mapping and the panel's phrasing of it, and `e2e/library-folders-stub.ts`
-  answers these routes inside Node with the same three refusals, so a refusal
-  reaches the panel in a browser test the way it reaches the panel in the app.
+- Vitest drives the code-to-error mapping and the panel's refusal messages.

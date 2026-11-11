@@ -22,11 +22,11 @@ repos:
         entry: npm --prefix apps/web exec -- eslint
         args: [--config, apps/web/eslint.config.mjs]
         language: system
-        files: ^apps/web/(src|e2e)/.*\.(js|jsx|ts|tsx)$
+        files: ^apps/web/(src|tests)/.*\.(js|jsx|ts|tsx)$
 
       - id: web-prettier
         name: Web Prettier
         entry: npm --prefix apps/web exec -- prettier --check
         args: [--config, apps/web/.prettierrc, --ignore-path, apps/web/.prettierignore]
         language: system
-        files: ^apps/web/(src/.*\.(ts|tsx|css|md|json)|e2e/.*\.(ts|tsx))$
+        files: ^apps/web/(src/.*\.(ts|tsx|css|md|json)|tests/.*\.e2e\.ts|e2e\.config\.ts)$

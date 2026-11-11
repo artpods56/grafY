@@ -316,12 +316,6 @@ graph LR
   preview, and a delete the server refuses), the shell, and the Generated view
   keeping its last good read through a refresh that fails.
 - `npm --prefix apps/web run typecheck`, `npm --prefix apps/web run lint`.
-- `npm --prefix apps/web test:e2e` — the panel opens docked, takes width, folds
-  and unfolds; a folder is created, nested, filled by drag, emptied and deleted;
-  and a Library artifact drag still lands on an input port. The folder routes are
-  answered inside Node by `e2e/library-folders-stub.ts`, which keeps the same
-  three rules and belongs to one page, so no folder outlives the test that made
-  it.
 - Visual check at 1600px, 1280px, and 720px: the two columns must read as one
   surface at a glance; the canvas must not sit under the panel. StyleX errors and
   popup stacking only ever show up in a browser, so the browser is part of the
