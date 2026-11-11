@@ -5,7 +5,12 @@ import type {
   TableSchema,
 } from "../src/lib/api/contract";
 import { libraryStub } from "./library-folders-stub";
-import { expect, nodeRegistry, test } from "./workbench.fixture";
+import {
+  animationsSettled,
+  expect,
+  nodeRegistry,
+  test,
+} from "./workbench.fixture";
 
 const artifact = {
   artifact_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -286,13 +291,7 @@ test("a resized canvas table connects to a node through a real pointer drag", as
   // coordinates the drag on where the handle *was*, and a mouse.down a
   // gesture-width away from the handle starts no connection. Wait for the
   // rail's own animations rather than guessing its duration.
-  await card.evaluate((element) =>
-    Promise.all(
-      element
-        .getAnimations({ subtree: true })
-        .map((animation) => animation.finished),
-    ),
-  );
+  await animationsSettled(card);
   const from = await center(output);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
@@ -300,13 +299,7 @@ test("a resized canvas table connects to a node through a real pointer drag", as
   await expect(page.locator(".react-flow__connection-path")).toBeVisible();
   const input = target.locator(".react-flow__handle.target");
   await expect(input).toBeVisible();
-  await target.evaluate((element) =>
-    Promise.all(
-      element
-        .getAnimations({ subtree: true })
-        .map((animation) => animation.finished),
-    ),
-  );
+  await animationsSettled(target);
   const to = await center(input);
   await page.mouse.move(to.x, to.y, { steps: 12 });
   await expect(input).toHaveClass(/valid/);

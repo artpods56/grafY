@@ -1,5 +1,5 @@
 import { expect, test as base } from "@playwright/test";
-import type { Page, WebSocketRoute } from "@playwright/test";
+import type { Locator, Page, WebSocketRoute } from "@playwright/test";
 
 import { applyRoomCommandsToHead } from "../src/features/workbench/room/room-command-bridge";
 import type { RoomProjectCommand } from "../src/features/workbench/room/protocol";
@@ -1053,5 +1053,30 @@ export const test = base.extend<{
     expect(unhandled(), "Unhandled Playwright API requests").toEqual([]);
   },
 });
+
+/**
+ * Resolves once nothing under `locator` is still animating.
+ *
+ * `Animation.finished` rejects with an AbortError when an animation is
+ * cancelled, and an interrupted CSS transition is cancelled and replaced by a
+ * new one. Waiting on a snapshot of `finished` promises therefore throws, or
+ * returns while the replacement still runs. Wait on settled promises and
+ * re-read until no finite animation is running.
+ */
+export async function animationsSettled(locator: Locator): Promise<void> {
+  await locator.evaluate(async (element) => {
+    for (;;) {
+      const running = element
+        .getAnimations({ subtree: true })
+        .filter(
+          (animation) =>
+            animation.playState === "running" &&
+            animation.effect?.getComputedTiming().endTime !== Infinity,
+        );
+      if (running.length === 0) return;
+      await Promise.allSettled(running.map((animation) => animation.finished));
+    }
+  });
+}
 
 export { expect };

@@ -1,4 +1,9 @@
-import { expect, nodeRegistry, test } from "./workbench.fixture";
+import {
+  animationsSettled,
+  expect,
+  nodeRegistry,
+  test,
+} from "./workbench.fixture";
 import { libraryStub } from "./library-folders-stub";
 import type { LibraryList, NodeRegistry } from "../src/lib/api/contract";
 import type { Locator, Page } from "@playwright/test";
@@ -10,12 +15,7 @@ const FILE_CARD_PLACED_WIDTH = 150;
 const AUTO_OPEN_MIN_WIDTH = 1280;
 
 /** Let the rails finish sliding before measuring where their marks sit. */
-const railsSettled = (card: Locator) =>
-  card.evaluate((element) =>
-    Promise.all(
-      element.getAnimations({ subtree: true }).map((motion) => motion.finished),
-    ),
-  );
+const railsSettled = (card: Locator) => animationsSettled(card);
 
 const panel = (page: Page) =>
   page.getByRole("complementary", { name: "Workbench side panel" });
