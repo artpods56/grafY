@@ -1,30 +1,4 @@
 #!/usr/bin/env node
-/**
- * Entry point for `npm run test:e2e:real`: it builds the disposable environment
- * the real-backend browser smoke test needs, hands it to Playwright, and removes
- * it again.
- *
- * The environment is three free ports from the operating system, so the suite
- * neither expects nor competes with `just web` (3000) or `just api` (8000); a
- * temporary runtime root holding a fresh SQLite database, which is also the API's
- * cwd and therefore where its workspace and its single-owner lock live, so the
- * repository's `.env` and development workspace are never read; and a disposable
- * Keycloak (infra/docker/compose.keycloak.smoke.yaml) under a project name of this
- * run's own, configured by posting a realm derived from the repository's committed
- * one so its client accepts this run's callback instead of the fixed `:3000`.
- * Playwright starts the API and the dev server as its own `webServer` children.
- *
- * Teardown is this process's and happens once: it signals the Playwright run, then
- * either removes the container this run named and the runtime root, or keeps both
- * when `REAL_SMOKE_KEEP=1` asked to inspect them. Nothing here looks a process up
- * by name.
- *
- * `REAL_SMOKE_*` variables carry the run's coordinates to the Playwright config
- * and the spec. They are deliberately not `GRAFY_*`: every `GRAFY_*` variable is
- * product configuration, is generated here, and is dropped from the inherited
- * environment so that neither `.env` nor a developer's shell can supply keys or
- * bypass the login.
- */
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
@@ -60,7 +34,6 @@ function requirePath(label, path) {
   if (!existsSync(path)) throw new Error(`Missing ${label} at ${path}`);
 }
 
-/** A port the operating system just gave us and immediately released. */
 async function freePort() {
   const server = createServer();
   await new Promise((resolveListen, rejectListen) => {
@@ -72,13 +45,6 @@ async function freePort() {
   return port;
 }
 
-/**
- * This process's environment with every product variable dropped, so a developer's
- * shell cannot reach the stack and the stack's configuration has exactly one
- * author: this file. `NEXT_PUBLIC_GRAFY_*` is included because one of those flags
- * (`NEXT_PUBLIC_GRAFY_DEV_SESSION=1`) hands the dev server a stand-in session with
- * no login at all, which would make this suite green without ever signing in.
- */
 function stackEnvironment(overrides) {
   const environment = { ...process.env };
   for (const name of Object.keys(environment)) {
@@ -89,7 +55,6 @@ function stackEnvironment(overrides) {
   return { ...environment, ...overrides };
 }
 
-/** True once `child` is gone; false if it ignored us for `ms`. */
 function exitedWithin(child, ms) {
   return new Promise((resolved) => {
     const timer = setTimeout(() => resolved(false), ms);
@@ -111,19 +76,6 @@ function run(label, command, args, options) {
   return result.stdout ?? "";
 }
 
-/**
- * The committed realm, retargeted at this run. Everything a real provider would
- * decide for itself stays as the repository ships it. Two changes are structural
- * and two are there so a single run cannot shoot itself in the foot:
- *
- *   - the client accepts exactly this run's callback and origin, never the
- *     committed `:3000` and never a wildcard, so a redirect to a port nobody owns
- *     is a failure rather than a surprise;
- *   - brute force is off: the journey signs in with a wrong password on purpose,
- *     and the lockout would outlive the run that caused it;
- *   - self-service and password recovery are off: no step needs them and both
- *     render pages this suite would rather not have to ignore.
- */
 function deriveRealm(callbackUrl, origin) {
   const realm = JSON.parse(readFileSync(COMMITTED_REALM, "utf8"));
   realm.bruteForceProtected = false;
@@ -155,11 +107,6 @@ async function postForm(url, fields) {
   return body;
 }
 
-/**
- * Creates the run's realm through the provider's own admin API. The alternative, a
- * bind mount of the generated file, only works for a daemon that can see this
- * host path, which Colima and Docker Desktop disagree about.
- */
 async function importRealm(issuer, adminUser, adminPassword, realm) {
   const token = await postForm(
     `${issuer}/realms/master/protocol/openid-connect/token`,
@@ -181,7 +128,7 @@ async function importRealm(issuer, adminUser, adminPassword, realm) {
   if (response.status !== 201) {
     const detail = await response.text();
     throw new Error(
-      `Importing the smoke realm responded ${response.status}: ${detail}`,
+      `Importing the e2e realm responded ${response.status}: ${detail}`,
     );
   }
 }
@@ -189,16 +136,38 @@ async function importRealm(issuer, adminUser, adminPassword, realm) {
 async function main() {
   const python = join(REPO_ROOT, ".venv", "bin", "python");
   const alembicIni = join(REPO_ROOT, "alembic.ini");
-  const playwrightCli = join(
-    WEB_ROOT,
-    "node_modules",
-    "@playwright",
-    "test",
-    "cli.js",
-  );
-  requirePath("API interpreter (run `uv sync` at the repository root)", python);
+  const e2eCli = join(WEB_ROOT, "node_modules", "e2e", "dist", "cli", "bin.js");
+  requirePath("API interpreter (run uv sync --locked)", python);
   requirePath("Alembic config", alembicIni);
-  requirePath("Playwright CLI (run `npm ci` in apps/web)", playwrightCli);
+  requirePath("e2e CLI (run npm ci in apps/web)", e2eCli);
+  const services = [];
+  const startService = (command, args, options) => {
+    const child = spawn(command, args, {
+      ...options,
+      stdio: "inherit",
+      detached: true,
+    });
+    services.push(child);
+    return child;
+  };
+  const ready = async (url, child, timeout) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(`Service exited before ${url} was ready`);
+      }
+      try {
+        const response = await fetch(url, {
+          signal: AbortSignal.timeout(2_000),
+        });
+        if (response.ok) return;
+      } catch {
+        /* Retry the readiness condition until its deadline. */
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(`Service readiness timed out: ${url}`);
+  };
 
   const docker = spawnSync(
     "docker",
@@ -215,7 +184,7 @@ async function main() {
       ""
     ).trim();
     throw new Error(
-      `The real-backend suite serves OIDC from a container and could not reach a Docker daemon: ${detail || "docker version exited without output"}`,
+      `The e2e pilot serves OIDC from a container and could not reach a Docker daemon: ${detail || "docker version exited without output"}`,
     );
   }
 
@@ -228,15 +197,11 @@ async function main() {
   const apiOrigin = `http://127.0.0.1:${apiPort}`;
   const issuer = `http://127.0.0.1:${issuerPort}`;
   const callbackUrl = `${origin}/api/v1/auth/oidc/callback`;
-  const project = `grafy-real-smoke-${process.pid}`;
-  const adminUser = "real-smoke-admin";
-  // Test-only, for this process, never printed: the provider it signs in to dies
-  // with the container.
+  const project = `grafy-e2e-pilot-${process.pid}`;
+  const adminUser = "e2e-pilot-admin";
   const adminPassword = randomBytes(18).toString("base64url");
 
-  // Deliberately outside the repository: the database, artifact workspace,
-  // API-owner lock, and generated realm are never a build output or an artifact.
-  const runtimeRoot = mkdtempSync(join(tmpdir(), "grafy-real-backend-smoke-"));
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "grafy-e2e-pilot-"));
 
   const stackEnv = stackEnvironment({
     GRAFY_COMMAND_HMAC_KEY: randomBytes(32).toString("hex"),
@@ -248,18 +213,12 @@ async function main() {
     GRAFY_CORS_ORIGINS: origin,
     GRAFY_AUTH_COOKIE_SECURE: "false",
     GRAFY_LOG_LEVEL: "INFO",
-    // Kept on purpose: the isolated runtime root gives this API its own
-    // single-owner lock instead of relaxing the guarantee.
     GRAFY_REQUIRE_SINGLE_API_OWNER: "true",
     PYTHONDONTWRITEBYTECODE: "1",
-    // Read by playwright.real.config.ts to build the two webServer commands.
-    REAL_SMOKE_ORIGIN: origin,
-    REAL_SMOKE_API_ORIGIN: apiOrigin,
-    REAL_SMOKE_PYTHON: python,
-    REAL_SMOKE_RUNTIME_ROOT: runtimeRoot,
+    E2E_TELEMETRY_DISABLED: "1",
+    E2E_STACK_ORIGIN: origin,
   });
 
-  /** Only this run's container, addressed by the project name this run chose. */
   const compose = (args) =>
     run(
       `docker compose ${args.join(" ")}`,
@@ -278,76 +237,56 @@ async function main() {
       },
     );
 
-  const keep = process.env.REAL_SMOKE_KEEP === "1";
-  /** Only teardown failures, so a red test and a leaked stack do not look alike. */
+  const keep = process.env.E2E_STACK_KEEP === "1";
   const problems = [];
   let testRun = null;
-  // The signal's exit code, remembered before teardown starts so an interrupted run
-  // reports it whichever path reaches the end first.
   let stoppedBy = null;
   let cleaning = null;
 
-  /** True while the cli is alive: a reaped child has one code set and the other null. */
   const testRunRunning = () =>
     testRun !== null &&
     testRun.exitCode === null &&
     testRun.signalCode === null;
 
-  /**
-   * Stops the Playwright run this process spawned. The API and the dev server belong
-   * to that cli, are started in process groups of their own, and are only reachable
-   * through it, so this starts with the one signal the cli answers: SIGINT, which is
-   * also what a terminal sends. Escalating to the cli's own group is the last resort,
-   * and the reason it is last: a cli killed before it answers SIGINT takes the two
-   * services down with nothing to stop them.
-   *
-   * The bounds exist because a run that never answers would otherwise hold teardown
-   * open forever. Past them the survivors are named rather than chased; nothing here
-   * looks a process up by name.
-   */
   const stopTestRun = async () => {
     if (!testRunRunning()) {
       return;
     }
-    // Listened for before signalling: a child that dies in the same tick is not
-    // mistaken for one that ignored the signal. Playwright stops its two services in
-    // a couple of seconds; the bound is for the run that does not answer, including
-    // one finalising its report, which ignores SIGINT on purpose.
     const interrupted = exitedWithin(testRun, 10_000);
     testRun.kill("SIGINT");
     if (await interrupted) return;
     console.error(
-      `[real-backend smoke] playwright pid ${testRun.pid} did not answer SIGINT; killing its group`,
+      `[e2e pilot] e2e pid ${testRun.pid} did not answer SIGINT; killing its group`,
     );
     const killed = exitedWithin(testRun, 10_000);
     signalSpawnedGroup("SIGKILL");
     if (!(await killed) && testRunRunning()) {
-      problems.push(`playwright pid ${testRun.pid} outlived SIGKILL`);
+      problems.push(`e2e pid ${testRun.pid} outlived SIGKILL`);
     }
   };
 
-  /** Signals the group `detached` gave the cli, so its own children go with it. */
   const signalSpawnedGroup = (signal) => {
     if (!testRun?.pid) return;
     try {
       process.kill(-testRun.pid, signal);
     } catch {
-      // Already gone, or no group was made for it; the cli itself is the fallback.
       testRun.kill(signal);
     }
   };
 
-  /**
-   * Removes what this run created: the container addressed by the project name this
-   * run chose, and the runtime root. `keep` leaves both in place, which is the only
-   * reason to ask for them, and prints what a person then has to remove.
-   *
-   * The compose calls are synchronous, so a signal arriving during one is handled
-   * once it returns; that is why the signal handler exits the process itself instead
-   * of waiting for the normal path to notice.
-   */
   const removeStack = async () => {
     await stopTestRun();
+    for (const child of services.reverse()) {
+      if (child.exitCode !== null || child.signalCode !== null) continue;
+      const stopped = exitedWithin(child, 10_000);
+      process.kill(-child.pid, "SIGTERM");
+      if (!(await stopped)) {
+        const killed = exitedWithin(child, 10_000);
+        process.kill(-child.pid, "SIGKILL");
+        if (!(await killed))
+          problems.push(`Service pid ${child.pid} outlived SIGKILL`);
+      }
+    }
     if (keep) {
       let provider = `project ${project}`;
       try {
@@ -357,9 +296,9 @@ async function main() {
         provider = `${provider} (${error.message})`;
       }
       console.log(
-        `[real-backend smoke] kept ${provider}\n` +
-          `[real-backend smoke] kept ${runtimeRoot}\n` +
-          `[real-backend smoke] remove both with: docker compose --project-name ${project} ` +
+        `[e2e pilot] kept ${provider}\n` +
+          `[e2e pilot] kept ${runtimeRoot}\n` +
+          `[e2e pilot] remove both with: docker compose --project-name ${project} ` +
           `--file ${COMPOSE_FILE} down --volumes --remove-orphans && rm -rf ${runtimeRoot}`,
       );
       return;
@@ -367,12 +306,11 @@ async function main() {
     try {
       compose(["down", "--volumes", "--remove-orphans"]);
     } catch (error) {
-      problems.push(`the smoke Keycloak was not removed: ${error.message}`);
+      problems.push(`the e2e Keycloak was not removed: ${error.message}`);
     }
     rmSync(runtimeRoot, { recursive: true, force: true });
   };
 
-  /** Teardown runs at most once, however many callers ask for it. */
   const cleanup = () => (cleaning ??= removeStack());
 
   for (const [signal, code] of [
@@ -382,24 +320,18 @@ async function main() {
     process.on(signal, () => {
       stoppedBy ??= code;
       cleanup()
-        .catch((error) =>
-          console.error(`[real-backend smoke] ${String(error)}`),
-        )
+        .catch((error) => console.error(`[e2e pilot] ${String(error)}`))
         .finally(() => process.exit(stoppedBy));
     });
   }
 
   try {
     const realm = deriveRealm(callbackUrl, origin);
-    // Written only so a kept run can answer "which callback did the provider
-    // accept?"; the provider itself is configured through its admin API.
     writeFileSync(
       join(runtimeRoot, "realm.json"),
       `${JSON.stringify(realm, null, 2)}\n`,
     );
 
-    // The database and the owner lock live under GRAFY_WORKSPACE, which defaults
-    // to a path relative to the process cwd: the temp runtime root, not the repo.
     run(
       "alembic upgrade head",
       python,
@@ -413,16 +345,50 @@ async function main() {
     compose(["up", "--detach", "--wait"]);
     await importRealm(issuer, adminUser, adminPassword, realm);
 
+    const api = startService(
+      python,
+      [
+        "-m",
+        "uvicorn",
+        "grafy_api.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(apiPort),
+      ],
+      { cwd: runtimeRoot, env: stackEnv },
+    );
+    await ready(`${apiOrigin}/ready`, api, 120_000);
+    const web = startService(
+      process.execPath,
+      [
+        join(WEB_ROOT, "node_modules", "next", "dist", "bin", "next"),
+        "dev",
+        "--webpack",
+        "--hostname",
+        "127.0.0.1",
+        "--port",
+        String(webPort),
+      ],
+      {
+        cwd: WEB_ROOT,
+        env: {
+          ...stackEnv,
+          GRAFY_API_UPSTREAM: apiOrigin,
+          NEXT_TELEMETRY_DISABLED: "1",
+          NEXT_PUBLIC_GRAFY_DEV_SESSION: "",
+        },
+      },
+    );
+    await ready(`${origin}/`, web, 240_000);
+
     testRun = spawn(
       process.execPath,
-      [playwrightCli, "test", "--config", "playwright.real.config.ts"],
+      [e2eCli, "run", ...process.argv.slice(2)],
       {
         cwd: WEB_ROOT,
         env: stackEnv,
         stdio: "inherit",
-        // Its own process group: a terminal's Ctrl-C reaches this process alone, so
-        // the decision to stop the run stays here, and the last-resort kill can take
-        // the cli's own children with it.
         detached: true,
       },
     );
@@ -435,9 +401,8 @@ async function main() {
 
     await cleanup();
     if (problems.length > 0) {
-      console.error(`[real-backend smoke] cleanup: ${problems.join("; ")}`);
+      console.error(`[e2e pilot] cleanup: ${problems.join("; ")}`);
     }
-    // An interrupted run has no test result worth reporting, whatever the cli said.
     if (stoppedBy !== null) return stoppedBy;
     if (problems.length > 0) return 1;
     return typeof status === "number" ? status : 1;
@@ -446,7 +411,7 @@ async function main() {
       problems.push(`teardown could not finish: ${cleanupError.message}`),
     );
     console.error(
-      `[real-backend smoke] ${error.message}${problems.length ? `\nCleanup: ${problems.join("; ")}` : ""}`,
+      `[e2e pilot] ${error.message}${problems.length ? `\nCleanup: ${problems.join("; ")}` : ""}`,
     );
     return stoppedBy ?? 1;
   }

@@ -49,11 +49,11 @@ lint:
 
 # Format the web app with Prettier. See apps/web/.prettierrc.
 format:
-    cd apps/web && npm exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}" "e2e*/**/*.{ts,tsx}" "playwright*.config.ts"
+    cd apps/web && npm exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
 
 # Fail when the web app is not formatted. CI runs this.
 format-check:
-    cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e*/**/*.{ts,tsx}" "playwright*.config.ts"
+    cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
 
 # Validate the hook configuration and run every hook against tracked files.
 hooks-check:

@@ -8,9 +8,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "test": "vitest run",
-    "test:e2e": "playwright test",
-    "test:e2e:real": "node scripts/real-smoke.mjs",
-    "test:e2e:headed": "playwright test --headed",
+    "test:e2e": "node scripts/run-e2e.mjs",
     "lint": "eslint",
     "check:stylex": "node scripts/check-stylex.mjs",
     "typecheck": "tsc --noEmit --incremental false",
@@ -33,7 +31,7 @@
     "swr": "^2.4.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@e2e-dev/web": "^0.15.5",
     "@stylexjs/babel-plugin": "^0.19.0",
     "@stylexjs/postcss-plugin": "^0.19.0",
     "@types/mustache": "^4.2.6",
@@ -41,6 +39,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.5.2",
+    "e2e": "^0.23.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "jsdom": "^26.1.0",

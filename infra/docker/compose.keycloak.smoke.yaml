@@ -1,5 +1,5 @@
-# Disposable Keycloak for the real-backend browser smoke test
-# (`npm run test:e2e:real` in apps/web). Not for human use.
+# Disposable Keycloak for the real-backend e2e pilot
+# (`npm run test:e2e` in apps/web). Not for human use.
 #
 # Same provider image and realm shape the repository develops against; see
 # infra/docker/compose.keycloak.yaml and infra/keycloak/README.md. Three things
@@ -12,7 +12,7 @@
 #   3. the caller passes its own `--project-name`, so a run cannot collide with,
 #      recycle, or reuse the developer's `just keycloak-up`.
 #
-# The realm is not imported from a bind mount: `apps/web/scripts/real-smoke.mjs`
+# The realm is not imported from a bind mount: `apps/web/scripts/run-e2e.mjs`
 # derives a per-run realm from infra/keycloak/realm-import/grafy-realm.json — the
 # run's own loopback callback replaces the committed :3000 one — and posts it to
 # the admin API. That keeps the provider's configuration in one place and avoids
@@ -33,7 +33,7 @@ services:
       KC_HTTP_MANAGEMENT_HEALTH_ENABLED: "false"
       # Only the launcher authenticates here, to import the run's realm, and it
       # generates this password per run. The console is never opened.
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-real-smoke-admin}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-e2e-pilot-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set by the launcher}
     ports:
       - "127.0.0.1:${KEYCLOAK_PORT:-55555}:8080"

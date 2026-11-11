@@ -165,7 +165,7 @@ jobs:
       - name: Web format
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
         working-directory: apps/web
-        run: npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "e2e*/**/*.{ts,tsx}" "playwright*.config.ts"
+        run: npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
       - name: Web typecheck
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
         run: npm --prefix apps/web run typecheck
@@ -194,82 +194,8 @@ jobs:
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
         run: npm --prefix apps/web run build
 
-  web-browser:
-    name: Web browser acceptance
-    # The mocked-API suite takes ~20 minutes on one worker, so it gates image
-    # publication on main instead of running on every pull request commit.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    env:
-      FORCE_COLOR: "0"
-    runs-on: ubuntu-24.04
-    # Install, the falsification run, then the whole mocked-API suite on one
-    # worker. The suite alone measured 8 minutes on a developer machine; the
-    # publication gate must not fail on a tight clock.
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - name: Install locked web workspace and Chromium
-        working-directory: apps/web
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-      - name: Falsify browser geometry and connection assertions
-        working-directory: apps/web
-        run: |
-          backup="$(mktemp -d)"
-          cp e2e/generated-drawer.spec.ts "$backup/geometry.ts"
-          cp e2e/canvas-gestures.spec.ts "$backup/ports.ts"
-          trap 'cp "$backup/geometry.ts" e2e/generated-drawer.spec.ts; cp "$backup/ports.ts" e2e/canvas-gestures.spec.ts; rm -rf "$backup"' EXIT
-          python - <<'PY'
-          from pathlib import Path
-          p = Path("e2e/generated-drawer.spec.ts")
-          s = p.read_text()
-          old = "toBeLessThan(canvasBefore.width)"
-          assert old in s
-          p.write_text(s.replace(old, "toBeLessThan(0)"))
-          p = Path("e2e/canvas-gestures.spec.ts")
-          s = p.read_text()
-          old = 'page.locator(".react-flow__edge")).toHaveCount(1)'
-          assert old in s
-          p.write_text(s.replace(old, 'page.locator(".react-flow__edge")).toHaveCount(2)'))
-          PY
-          if npx playwright test generated-drawer.spec.ts --project=desktop-chromium --retries=0 > "$backup/geometry.log" 2>&1; then
-            cat "$backup/geometry.log"
-            exit 1
-          fi
-          cat "$backup/geometry.log"
-          grep -q "Expected: < 0" "$backup/geometry.log"
-          if npx playwright test canvas-gestures.spec.ts --project=desktop-chromium --grep "ports still connect with Generated" --retries=0 > "$backup/ports.log" 2>&1; then
-            cat "$backup/ports.log"
-            exit 1
-          fi
-          cat "$backup/ports.log"
-          grep -q "Expected: 2" "$backup/ports.log"
-      # Every mocked-API browser spec, in every viewport project: desktop, phone
-      # and tablet. One run per spec and project, with the retries and the single
-      # worker the config already picks for CI.
-      - name: Verify the workbench in a real browser
-        working-directory: apps/web
-        run: npx playwright test
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: web-browser-failure
-          path: output/playwright/
-
-  # The mocked-API suite above never talks to FastAPI. This one does: it migrates a
-  # throwaway SQLite database, starts the API, this app's dev proxy, and a disposable
-  # Keycloak running the repository's realm, and lets the browser sign in and save a
-  # graph for real.
-  web-browser-real:
-    name: Web browser smoke (real backend)
-    env:
-      FORCE_COLOR: "0"
+  web-e2e:
+    name: Web e2e pilot (real backend)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -285,30 +211,15 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
-      # The suite needs no Plugin extras: the journey uses a builtin family, and the
-      # API must start from the same minimal image set the published image ships.
-      - name: Install locked Python workspace
-        run: uv sync --locked
-      - name: Install locked web workspace and Chromium
+      - run: uv sync --locked
+      - name: Install web workspace and Chromium
         working-directory: apps/web
         run: |
           npm ci
-          npx playwright install --with-deps chromium
-      # The launcher owns the database, ports, keys, and provider container, and removes
-      # them again; Playwright owns the two service processes. `--locked` and the absent
-      # `.env` keep the run off host state, and the caller's `GRAFY_*` is dropped.
-      - name: Sign in and save a graph against a real API
+          npx e2e-web install chromium --with-deps
+      - name: Sign in, create a Graph, and run a builtin node
         working-directory: apps/web
-        run: npm run test:e2e:real
-      # Deliberately only the Playwright output: the run's database, keys, and service
-      # logs live in the OS temp directory and are never a workspace file. Traces are
-      # off in CI (see playwright.real.config.ts) so this artifact cannot carry the
-      # run's session cookie.
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: web-browser-real-failure
-          path: output/playwright-real/
+        run: npm run test:e2e
 
   deployment-images:
     name: API deployment images
@@ -339,7 +250,7 @@ jobs:
           print(c.model_dump_json())'
   publish-images:
     name: Publish ${{ matrix.image }} image
-    # Images exist only for commits that passed every job above on main, so a
+    # Images exist only for commits that passed the required jobs on main, so a
     # deployable SHA is by construction a reviewed, CI-green commit.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
@@ -347,8 +258,6 @@ jobs:
       - native-runtime
       - quality-contracts
       - web
-      - web-browser
-      - web-browser-real
       - deployment-images
     runs-on: ubuntu-24.04
     timeout-minutes: 30
