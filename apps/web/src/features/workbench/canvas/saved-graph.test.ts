@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   ArtifactConversionSpec,
+  GraphDefinition,
   NodeRegistry,
   NodeSpec,
   SavedGraph,
@@ -9,6 +10,7 @@ import type {
   SavedGraphEdge,
   SavedGraphNode,
 } from "@/lib/api";
+import { registryWithProjectGraphs } from "../model/project-graphs";
 import { decodeHandleId } from "./handles";
 import {
   hydrateSavedGraph,
@@ -1088,5 +1090,66 @@ describe("saved Module nodes", () => {
       "issues.0",
       `Operator ${moduleOperatorId}@1 is unavailable. This saved node is preserved but cannot run.`,
     );
+  });
+});
+
+describe("call nodes whose callee interface moved", () => {
+  it("keeps the connection and marks the call node invalid instead of refusing the Graph", () => {
+    const base = graphWithEdge({ conversion_path: conversionPath });
+    const liveRegistry = registry();
+    // The callee now declares `fresh`; the saved edge still targets `input`.
+    const callee: GraphDefinition = {
+      id: "callee",
+      name: "Callee",
+      document: {
+        schema_version: 7,
+        origins: [],
+        agents: [],
+        edges: [],
+        presentation: { viewers: [], links: [], bindings: [], annotations: [] },
+        nodes: [
+          {
+            id: "in",
+            kind: "builtin",
+            operator_id: "graph.input",
+            operator_version: 1,
+            config: { public_name: "fresh" },
+            input_plugs: [],
+            artifact_type_bindings: [
+              { variable: "T", artifact_type: { id: "z", schema_version: 1 } },
+            ],
+            position: { x: 0, y: 0 },
+          },
+        ],
+      },
+    };
+    const graph: SavedGraph = {
+      ...base,
+      document: {
+        ...base.document,
+        nodes: base.document.nodes.map((node: SavedGraphNode) =>
+          node.id === "target-node"
+            ? { ...node, kind: "call", operator_id: "callee" }
+            : node,
+        ),
+        edges: base.document.edges.map((edge: SavedGraphEdge) => ({
+          ...edge,
+          conversion_path: [],
+        })),
+      },
+    };
+
+    const hydrated = hydrateSavedGraph(
+      graph,
+      registryWithProjectGraphs(liveRegistry, [callee], "other"),
+    );
+
+    const callNode = hydrated.nodes.find((node) => node.id === "target-node");
+    expect(callNode?.data.compatibility).toMatchObject({
+      status: "invalid",
+      issues: ["Input “input” no longer exists on “Callee”."],
+    });
+    expect(hydrated.edges).toHaveLength(1);
+    expect(hydrated.edges[0]?.data?.compatibilityIssues).toHaveLength(1);
   });
 });

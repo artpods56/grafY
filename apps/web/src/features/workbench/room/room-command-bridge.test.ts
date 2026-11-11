@@ -757,7 +757,7 @@ describe("room-command-bridge", () => {
     expect(removed.collaboration_sequence).toBe(7);
   });
 
-  it("converts a node into a call node without wiping the Graph's presentation", () => {
+  it("appends a call node without wiping the Graph's presentation", () => {
     const withViewer = applyRoomCommandToHead(
       head,
       toInGraphCommand(GRAPH_ID, {
@@ -784,6 +784,44 @@ describe("room-command-bridge", () => {
       {
         kind: "add_call_node",
         graph_id: GRAPH_ID,
+        node_id: "call-1",
+        callee_graph_id: OTHER_GRAPH_ID,
+        position: { x: 30, y: 40 },
+      },
+      5,
+    );
+
+    // The server appends a node; it never converts the one already there.
+    const callNode = nodesOf(next, GRAPH_ID).find(
+      (candidate) => candidate.id === "call-1",
+    );
+    expect(callNode).toEqual({
+      id: "call-1",
+      kind: "call",
+      operator_id: OTHER_GRAPH_ID,
+      operator_version: 1,
+      position: { x: 30, y: 40 },
+      config: {},
+      input_plugs: [],
+      artifact_type_bindings: [],
+    });
+    expect(
+      nodesOf(next, GRAPH_ID).find((candidate) => candidate.id === "a"),
+    ).toEqual(document.nodes[0]);
+    // The Graph keeps the viewers it already had: placing a call is not a
+    // reason to drop the rest of the Graph's presentation.
+    expect(viewersOf(next, GRAPH_ID)).toHaveLength(1);
+    expect(next.collaboration_sequence).toBe(5);
+  });
+
+  it("leaves the Graph alone when an added call node repeats a node id", () => {
+    const nodesBefore = nodesOf(head, GRAPH_ID);
+
+    const next = applyRoomCommandToHead(
+      head,
+      {
+        kind: "add_call_node",
+        graph_id: GRAPH_ID,
         node_id: "a",
         callee_graph_id: OTHER_GRAPH_ID,
         position: { x: 30, y: 40 },
@@ -791,16 +829,11 @@ describe("room-command-bridge", () => {
       5,
     );
 
-    const callNode = nodesOf(next, GRAPH_ID).find(
-      (candidate) => candidate.id === "a",
-    );
-    expect(callNode).toMatchObject({
-      kind: "call",
-      position: { x: 30, y: 40 },
-    });
-    // The Graph keeps the viewers it already had: converting a node is not a
-    // reason to drop the rest of the Graph's presentation.
-    expect(viewersOf(next, GRAPH_ID)).toHaveLength(1);
+    // The server rejects a duplicate id, so the accepted batch this client
+    // heard cannot have rewritten the node it already held: the nodes stay.
+    expect(nodesOf(next, GRAPH_ID)).toBe(nodesBefore);
+    expect(graphOf(next, GRAPH_ID)).toBe(graphOf(head, GRAPH_ID));
+    // ...and the sequence still moves, which is what lets the next command apply.
     expect(next.collaboration_sequence).toBe(5);
   });
 

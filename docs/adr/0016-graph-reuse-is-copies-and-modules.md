@@ -3,7 +3,7 @@
 - **Status:** Accepted; the Module half is superseded by ADR 0020 (in-project calls
   replace published Modules until cross-project reuse returns); the copy half stands
   (withdraws the Template aggregate and the Module deprecate/withdraw/import lifecycle)
-- **Related:** ADR 0010 (Library folders), `docs/design/modules-conceptual-model.md`,
+- **Related:** ADR 0010 (Library folders),
   `docs/design/graph-browser-organization.md`, `CONTEXT.md` (Module)
 
 Grafy had three ways to reuse a graph. **Duplicate** copied a saved graph into a new

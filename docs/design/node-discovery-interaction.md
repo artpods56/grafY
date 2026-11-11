@@ -5,10 +5,13 @@
 - **Audience:** Designers and engineers implementing Add node and canvas
   connect-to-empty discovery
 - **Document type:** Explanation — interaction decisions for browse and connect
+- **Related:** [Project Graphs on the canvas](project-graphs.md)
+
 ## Summary
 
 Node discovery has two surfaces that share one frontend filtering model:
 
+1. **Add node** — global browse/insert for operators, the Graph boundary operators, and the sibling Graphs of the open Project as call nodes.
 2. **Continue from {port}** — compact popup when an output drag ends on empty
    canvas, listing only compatible downstream nodes.
 
@@ -23,13 +26,14 @@ Replace goal categories (`Suggested`, `Add data`, `Transform`, `Analyze`,
 
 | Filter | Match rule |
 | --- | --- |
-| All | Every catalog-visible node (excluding the graph being edited) |
+| All | Every catalog-visible node |
 | Text | Any input or output using `scalar.text` or a `text.*` artifact |
 | Images | Any input or output using an `image.*` artifact |
 | Tables | Any input or output using a `table.*` artifact |
 | Spatial | Any input or output using a `geo.*` artifact |
 | Prompts | Any input or output using a `prompt.*` artifact |
 | Sequences | Declared output shape `many`, or accepted input shapes include `many` |
+| Project Graphs | Call nodes for the sibling Graphs the open Graph may call without making a cycle |
 
 These families are a frontend projection over exact registered artifact
 contracts, not backend discovery tags. A node may appear in several families;
@@ -62,6 +66,9 @@ or a port chosen from the preview or the Works with menu. Suggested nodes are a
 single list; choosing one inspects that node in the catalog. Artifact IDs,
 schema versions, operator identity, cardinality rules, conversions, and full
 port/config schema live behind **Technical details**.
+
+A call node uses the same preview and port-scoped Works with list; its ports are
+the callee's interface.
 
 ## Continue from {port}
 

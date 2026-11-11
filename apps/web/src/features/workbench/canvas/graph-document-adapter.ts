@@ -9,6 +9,7 @@ import {
   type GraphCommand,
 } from "../model/graph-document";
 import type { WorkflowNode } from "../model/execution-plan";
+import { newNodeKind } from "../model/project-graphs";
 import type { WorkflowEdge, WorkflowNodeData } from "./types";
 import { decodeHandleId } from "./handles";
 import { serializeNodeLayout } from "./node-layout";
@@ -157,7 +158,7 @@ export function addNodeCommand(
       ),
       config: structuredClone(data.config),
       id: nodeId,
-      kind: "builtin",
+      kind: newNodeKind(data.spec),
       input_plugs: data.inputPlugs.map((plug) => ({
         id: plug.id,
         port: plug.portName,

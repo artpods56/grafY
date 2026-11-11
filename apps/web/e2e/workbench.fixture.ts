@@ -354,12 +354,13 @@ function summaryOf(project: MockProject): ProjectSummary {
 function instanceStateOf(
   project: MockProject,
   node: DocumentNode,
+  graphId: string = graphIdOf(project),
 ): InstanceState {
   const stored = project.results.get(node.id);
   return {
     key: {
       project_id: project.id,
-      graph_id: graphIdOf(project),
+      graph_id: graphId,
       node_id: node.id,
       call_path: [],
     },
@@ -553,10 +554,17 @@ function projectWorld(fixtures: GrafyApiFixtures) {
       return run ? ok(run) : undefined;
     }
     const instances = route.match(/^\/graphs\/([^/]+)\/instances$/);
-    if (instances?.[1] === graphIdOf(project.record)) {
+    // Any Graph of the Project answers, not only the first: a Project opens on
+    // whichever Graph the person switched to.
+    const instanceGraph = project.record.head.document.graphs.find(
+      (candidate) => candidate.id === instances?.[1],
+    );
+    if (instanceGraph !== undefined) {
       return ok({
-        instances: nodesOf(project.record).map((node) =>
-          instanceStateOf(project.record, node),
+        instances: documentNodes(
+          instanceGraph.document as unknown as JsonObject,
+        ).map((node) =>
+          instanceStateOf(project.record, node, instanceGraph.id),
         ),
       });
     }
