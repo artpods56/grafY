@@ -24,6 +24,9 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     schema = app_with_overrides(settings=settings).openapi()
 
     assert set(schema["paths"]) == {
+        "/v1/admin/users/{user_id}",
+        "/v1/admin/users/{user_id}/disable",
+        "/v1/admin/users/{user_id}/enable",
         "/v1/auth/oidc/callback",
         "/v1/auth/oidc/login",
         "/v1/auth/session",

@@ -74,6 +74,13 @@ login in one shared Workspace, add:
 GRAFY_OIDC_DOMAIN_WORKSPACES=ihpan.edu.pl:ihpan:IHPAN
 ```
 
+To let an account disable and re-enable other users through
+`POST /api/v1/admin/users/{id}/disable` and `/enable`, list its verified email:
+
+```dotenv
+GRAFY_OPERATOR_EMAILS=you@example.org
+```
+
 Add these PostgreSQL values:
 
 ```dotenv
