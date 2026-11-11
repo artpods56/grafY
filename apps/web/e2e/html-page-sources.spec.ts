@@ -136,10 +136,19 @@ async function dropPage(page: Page): Promise<Locator> {
   const flow = page.locator(".react-flow");
   const bounds = await flow.boundingBox();
   if (!bounds) throw new Error("Canvas not visible");
+  const graphTabs = await page
+    .getByRole("tablist", { name: "Graphs in this Project" })
+    .boundingBox();
+  if (!graphTabs) throw new Error("Graph tabs not visible");
+  // At tablet width this x sits under the Graph switcher, so drop below it.
+  const targetPosition = {
+    x: bounds.width - 640,
+    y: graphTabs.y + graphTabs.height - bounds.y + 24,
+  };
   await page
     .locator(".react-flow__node-grafyAgent")
     .getByLabel(/^page: /)
-    .dragTo(flow, { targetPosition: { x: bounds.width - 640, y: 40 } });
+    .dragTo(flow, { targetPosition });
   const card = page.locator("[data-artifact-card-id]");
   await expect(card).toHaveCount(1);
   return card;
