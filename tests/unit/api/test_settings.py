@@ -185,6 +185,29 @@ def test_oidc_domain_workspaces_parse_from_environment(
     assert grants[0].workspace_slug == "ihpan"
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            "ops@example.org, second@example.org",
+            ("ops@example.org", "second@example.org"),
+        ),
+        ("", ()),
+    ],
+    ids=["comma-separated", "empty-means-nobody"],
+)
+def test_operator_emails_parse_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    raw: str,
+    expected: tuple[str, ...],
+) -> None:
+    monkeypatch.setenv("GRAFY_OPERATOR_EMAILS", raw)
+
+    config = AuthConfig(_env_file=None)  # pyright: ignore[reportCallIssue]
+
+    assert config.operator_emails == expected
+
+
 def test_oidc_domain_workspaces_treat_empty_environment_as_unset(
     monkeypatch: pytest.MonkeyPatch,  # pyright: ignore[reportCallIssue]
 ) -> None:

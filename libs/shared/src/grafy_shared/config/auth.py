@@ -48,6 +48,9 @@ class AuthConfig(BaseSettings):
     # leaf package, so the grants stay raw strings here and the API parses them
     # with grafy_core.domain.identity.parse_oidc_domain_workspace_grants.
     oidc_domain_workspaces: Annotated[tuple[str, ...], NoDecode] = ()
+    # Verified, issuer-asserted emails of deployment operators: the accounts that
+    # may disable and re-enable any user. Empty means nobody can.
+    operator_emails: Annotated[tuple[str, ...], NoDecode] = ()
     auth_rate_window_seconds: int = Field(default=60, ge=1, le=3600)
     auth_login_start_rate_limit: int = Field(default=10, ge=1)
     auth_callback_rate_limit: int = Field(default=20, ge=1)
@@ -57,9 +60,9 @@ class AuthConfig(BaseSettings):
     auth_outstanding_login_network_limit: int = Field(default=8, ge=1, le=40)
     auth_cleanup_interval_seconds: int = Field(default=60, ge=1, le=3600)
 
-    @field_validator("oidc_domain_workspaces", mode="before")
+    @field_validator("oidc_domain_workspaces", "operator_emails", mode="before")
     @classmethod
-    def _parse_oidc_domain_workspaces(cls, value: object) -> object:
+    def _parse_comma_separated(cls, value: object) -> object:
         if value is None or value == "":
             return ()
         if isinstance(value, str):

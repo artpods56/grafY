@@ -19,6 +19,7 @@ boundary.
 | Term | Meaning |
 | --- | --- |
 | `User` | Internal account provisioned only after a valid OIDC callback. Profile email/display name are not authorization keys and never link identities. An issuer-asserted email domain may grant membership in a configured shared Workspace. |
+| `Operator` | Deployment-level account named in `GRAFY_OPERATOR_EMAILS` by its verified, issuer-asserted email (the same trust as domain Workspace grants). Only an operator may disable or re-enable a `User`, through `/v1/admin/users/{id}`; it is not a Workspace role, carries no Workspace access, and is never conferred by a PAT. An operator cannot disable their own account. |
 | `OidcIdentity` | Exact `(issuer, subject)` link from the configured OpenID Connect provider to one `User`. |
 | `Workspace` | Sole collaboration and tenancy boundary. `personal` has one owner and no other members; `shared` holds `viewer` / `editor` / `owner` memberships. |
 | `WorkspaceMembership` | Active or revoked role of one user in one workspace, with a monotonic authorization version. |

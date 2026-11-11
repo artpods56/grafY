@@ -9,6 +9,8 @@ from grafy_core.domain.errors import (
     CredentialAuthenticationError,
     IdentityInvariantError,
     NotFoundError,
+    OperatorRequiredError,
+    OperatorSelfDisableError,
     UserDisabledError,
 )
 from grafy_core.domain.identity import (
@@ -99,9 +101,15 @@ class IdentityService:
         self,
         unit_of_work_factory: Callable[[], IdentityUnitOfWorkPort],
         domain_workspace_grants: Sequence[OidcDomainWorkspaceGrant] = (),
+        operator_emails: Sequence[str] = (),
     ) -> None:
         self._unit_of_work_factory = unit_of_work_factory
         self._domain_workspace_grants = tuple(domain_workspace_grants)
+        # Deployment operators may disable and re-enable any user. An operator is
+        # recognised by a verified, issuer-asserted email on an active account.
+        self._operator_emails = frozenset(
+            normalize_user_email(email) for email in operator_emails
+        )
 
     async def authenticate_personal_access_token(
         self,
@@ -840,8 +848,41 @@ class IdentityService:
             await unit_of_work.commit()
         return membership
 
-    async def disable_user(self, *, user_id: UUID) -> User:
+    async def get_user_for_operator(
+        self,
+        *,
+        actor: ActorContext,
+        user_id: UUID,
+    ) -> User:
         async with self._unit_of_work_factory() as unit_of_work:
+            await self._require_operator(unit_of_work, actor)
+            return await self._require_user(unit_of_work, user_id)
+
+    async def disable_user(
+        self,
+        *,
+        user_id: UUID,
+        actor: ActorContext | None = None,
+    ) -> User:
+        """Deactivate a user and revoke every session and token they hold.
+
+        Without an `actor` this is a system action. With one, the actor must be a
+        deployment operator other than the user being disabled, and the audit
+        trail names them.
+        """
+
+        actor_kind = (
+            SecurityAuditActorKind.SYSTEM
+            if actor is None
+            else SecurityAuditActorKind.AUTHENTICATED
+        )
+        async with self._unit_of_work_factory() as unit_of_work:
+            if actor is not None:
+                await self._require_operator(unit_of_work, actor)
+                if actor.user_id == user_id:
+                    raise OperatorSelfDisableError(
+                        f"Operator {user_id} cannot disable their own account"
+                    )
             user = await self._require_user(unit_of_work, user_id)
             user.active = False
             user.updated_at = _utc_now()
@@ -853,7 +894,11 @@ class IdentityService:
                 session.revoke()
                 await unit_of_work.security_audit.add(
                     SecurityAuditEvent(
-                        actor_kind=SecurityAuditActorKind.SYSTEM,
+                        actor_kind=actor_kind,
+                        user_id=None if actor is None else actor.user_id,
+                        credential_reference=(
+                            None if actor is None else actor.credential_reference
+                        ),
                         operation="credential.session.revoke",
                         outcome=SecurityAuditOutcome.SUCCESS,
                         resource_type="auth_session",
@@ -868,11 +913,16 @@ class IdentityService:
                 await self._revoke_personal_access_token(
                     unit_of_work,
                     token,
-                    actor_kind=SecurityAuditActorKind.SYSTEM,
+                    actor_kind=actor_kind,
+                    actor=actor,
                 )
             await unit_of_work.security_audit.add(
                 SecurityAuditEvent(
-                    actor_kind=SecurityAuditActorKind.SYSTEM,
+                    actor_kind=actor_kind,
+                    user_id=None if actor is None else actor.user_id,
+                    credential_reference=(
+                        None if actor is None else actor.credential_reference
+                    ),
                     operation="user.disable",
                     outcome=SecurityAuditOutcome.SUCCESS,
                     resource_type="user",
@@ -881,6 +931,53 @@ class IdentityService:
             )
             await unit_of_work.commit()
         return user
+
+    async def enable_user(self, *, actor: ActorContext, user_id: UUID) -> User:
+        """Re-activate a disabled user; the way back from `disable_user`.
+
+        Sessions and tokens revoked by the disable stay revoked, so the user signs
+        in again and issues new tokens.
+        """
+
+        async with self._unit_of_work_factory() as unit_of_work:
+            await self._require_operator(unit_of_work, actor)
+            user = await self._require_user(unit_of_work, user_id)
+            if not user.active:
+                user.active = True
+                user.updated_at = _utc_now()
+            await unit_of_work.security_audit.add(
+                SecurityAuditEvent(
+                    actor_kind=SecurityAuditActorKind.AUTHENTICATED,
+                    user_id=actor.user_id,
+                    credential_reference=actor.credential_reference,
+                    operation="user.enable",
+                    outcome=SecurityAuditOutcome.SUCCESS,
+                    resource_type="user",
+                    resource_id=str(user_id),
+                )
+            )
+            await unit_of_work.commit()
+        return user
+
+    async def _require_operator(
+        self,
+        unit_of_work: IdentityUnitOfWorkPort,
+        actor: ActorContext,
+    ) -> None:
+        # A workspace-bound PAT never carries operator authority.
+        user = (
+            None
+            if actor.credential_workspace_id is not None
+            else await unit_of_work.identity.get_user(actor.user_id)
+        )
+        if (
+            user is None
+            or not user.active
+            or not user.email_verified
+            or user.normalized_email is None
+            or user.normalized_email not in self._operator_emails
+        ):
+            raise OperatorRequiredError(f"User {actor.user_id} is not an operator")
 
     async def _revoke_personal_access_token(
         self,

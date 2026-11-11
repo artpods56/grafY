@@ -188,6 +188,26 @@ class CapabilityDeniedError(IdentityInvariantError):
         }
 
 
+class OperatorRequiredError(IdentityInvariantError):
+    """Raised when someone who is not a deployment operator calls an operator route."""
+
+    failure_spec = FailureSpec(
+        code="identity.operator_required",
+        kind=FailureKind.FORBIDDEN,
+        public_message="Forbidden",
+    )
+
+
+class OperatorSelfDisableError(IdentityInvariantError):
+    """Raised when an operator tries to disable their own account."""
+
+    failure_spec = FailureSpec(
+        code="identity.operator_self_disable",
+        kind=FailureKind.CONFLICT,
+        public_message="Operators cannot disable their own account",
+    )
+
+
 class ProjectCheckpointConflictError(GrafyCoreError):
     """Raised when a checkpoint was written against a stale Project revision."""
 

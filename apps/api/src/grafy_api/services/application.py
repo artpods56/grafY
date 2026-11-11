@@ -72,6 +72,7 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
         domain_workspace_grants=parse_oidc_domain_workspace_grants(
             settings.auth.oidc_domain_workspaces
         ),
+        operator_emails=settings.auth.operator_emails,
     )
     auth_service = AuthService(
         auth=settings.auth,
