@@ -13,7 +13,9 @@ OVERVIEW_EDGE = 2048
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="TILER_", extra="ignore", frozen=True)
+    model_config = SettingsConfigDict(
+        env_prefix="TILER_", extra="ignore", frozen=True, env_ignore_empty=True
+    )
 
     # Comma-separated HMAC keys that may have signed a grant. The API signs with
     # one of them; listing two lets an operator rotate without downtime.

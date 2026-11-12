@@ -40,6 +40,8 @@ members = [
     "plugins/table",
 ]
 exclude = [
+    # Own lock: titiler.core needs starlette>=1, the API pins starlette<1.
+    "apps/tiler",
 ]
 
 [tool.uv.sources]

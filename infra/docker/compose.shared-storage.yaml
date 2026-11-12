@@ -1,7 +1,7 @@
 # Opt-in override for S3 storage on an operator-managed MinIO that lives on an
 # external Docker network (alias `minio`, port 9000). The API reads and writes
 # objects directly; the gateway serves browser presigned uploads under
-# `/storage/`. MinIO publishes no host port of its own.
+# `/storage/`; the tiler reads them with a read-only account. MinIO publishes no host port of its own.
 services:
   api:
     networks:
@@ -9,6 +9,12 @@ services:
       shared-storage:
 
   gateway:
+    networks:
+      default:
+      shared-storage:
+
+  # Reads artifacts straight from MinIO with its own read-only account.
+  tiler:
     networks:
       default:
       shared-storage:

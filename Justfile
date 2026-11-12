@@ -22,6 +22,10 @@ api: db-upgrade
 api-dev: db-upgrade
     uv run --no-dev uvicorn grafy_api.main:app --reload --reload-dir apps --reload-dir libs --reload-dir plugins --host 0.0.0.0 --port 8000
 
+# Start the internal TIFF tile service natively (reads TILER_* from .env).
+tiler:
+    cd apps/tiler && uv run --locked --no-dev python -m grafy_tiler
+
 # Start the web development server.
 web port="":
     npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}

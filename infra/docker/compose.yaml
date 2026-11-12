@@ -165,9 +165,71 @@ services:
       retries: 12
       start_period: 10s
 
+  # Internal tile service for TIFF artifacts (apps/tiler, docs/design/
+  # tiff-on-demand-tiles.md). No host port and no route from the gateway: only
+  # the API reaches it, with an HMAC grant it signs per request. It cannot
+  # fetch arbitrary URLs and reads only the artifact bucket, read-only.
+  tiler:
+    image: ${GRAFY_TILER_IMAGE:-grafy-tiler:local}
+    build:
+      context: ../..
+      dockerfile: infra/docker/tiler.Dockerfile
+      target: tiler
+    environment:
+      # Shared with the API's signer. Comma-separate two keys to rotate.
+      TILER_SIGNING_KEYS: ${GRAFY_TILER_SHARED_KEY:?GRAFY_TILER_SHARED_KEY must be set and non-empty}
+      TILER_BUCKET: ${GRAFY_STORAGE_BUCKET:-workbench-artifacts}
+      # `local` reads the API's file store from the read-only /data mount;
+      # `s3` reads the bucket through GDAL with the read-only account below.
+      TILER_STORAGE: ${GRAFY_STORAGE_BACKEND:-local}
+      TILER_LOCAL_ROOT: /data/workbench/objects
+      TILER_S3_ENDPOINT_URL: ${GRAFY_S3_ENDPOINT_URL:-}
+      TILER_S3_REGION: ${GRAFY_S3_REGION:-us-east-1}
+      TILER_S3_FORCE_PATH_STYLE: ${GRAFY_S3_FORCE_PATH_STYLE:-false}
+      # A read-only MinIO account of its own: never the API's read-write key.
+      TILER_S3_ACCESS_KEY_ID: ${GRAFY_TILER_S3_ACCESS_KEY_ID:-}
+      TILER_S3_SECRET_ACCESS_KEY: ${GRAFY_TILER_S3_SECRET_ACCESS_KEY:-}
+      TILER_CACHE_MAX_BYTES: ${GRAFY_TILER_CACHE_MAX_BYTES:-2147483648}
+      TILER_WORKERS: ${GRAFY_TILER_WORKERS:-1}
+      TILER_RENDER_CONCURRENCY: ${GRAFY_TILER_RENDER_CONCURRENCY:-2}
+      TILER_QUEUE_DEPTH: ${GRAFY_TILER_QUEUE_DEPTH:-32}
+    cpus: ${GRAFY_TILER_CPUS:-2}
+    mem_limit: ${GRAFY_TILER_MEMORY:-1536m}
+    pids_limit: 256
+    init: true
+    logging: *default-logging
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 20s
+    volumes:
+      - grafy-tiler-cache:/cache
+      - grafy-data:/data:ro
+    expose:
+      - "8100"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
 volumes:
   grafy-data:
     name: ${GRAFY_DATA_VOLUME:-grafy-data}
+  grafy-tiler-cache:
+    name: ${GRAFY_TILER_CACHE_VOLUME:-grafy-tiler-cache}
 
 networks:
   default:
