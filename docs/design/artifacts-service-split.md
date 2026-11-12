@@ -675,3 +675,18 @@ Every command below must succeed before finishing:
 ## Blockers
 
 None recorded during specification authoring. If the implementation agent encounters a blocker, record the exact command, file:line, and mismatch here and stop.
+
+### Commit 3 stopped: `geo.py` exceeds the 450-line cap
+
+Commits 1 and 2 are on `refactor/artifacts-split`. Commit 3 was not committed. `apps/api/src/grafy_api/artifacts/service.py` is unchanged.
+
+A line-faithful draft of `apps/api/src/grafy_api/artifacts/geo.py` (the sections listed for that module, with `_geo_feature_matches`, `_feature_fields`, and `_raster_render_layer` inlined and `GeoVectorStyle.default()` replaced by `GeoVectorStyle.model_validate(StoredGeoVectorStyle())`) was formatted and counted:
+
+```bash
+uv run ruff format apps/api/src/grafy_api/artifacts/geo.py
+wc -l apps/api/src/grafy_api/artifacts/geo.py
+```
+
+Result: `534` lines (`27` blank, `507` code). The hard cap is `450`. Deleting every blank line would still leave `507`. The same draft's other new modules were under the cap after `ruff format`: `__init__.py` 30, `errors.py` 42, `wms.py` 162, `content.py` 319, `tables.py` 267, `geo_tiles.py` 406.
+
+The "~420 lines" estimate in this document does not match that move. The draft was removed rather than shortened by dropping a listed helper or moving code into another module.
