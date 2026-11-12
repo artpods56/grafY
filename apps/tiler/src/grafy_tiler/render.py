@@ -16,7 +16,7 @@ from rasterio.windows import Window
 from rio_tiler.models import ImageData
 from rio_tiler.reader import read as read_region
 
-from .raster import ImageInfo, TileFormat, is_bilevel
+from grafy_tiler.raster import ImageInfo, TileFormat, is_bilevel
 
 type Pixels = NDArray[np.uint8]
 

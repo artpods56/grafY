@@ -22,9 +22,9 @@ from typing import Any, Final
 from rasterio.errors import RasterioError
 from rasterio.io import DatasetReader, MemoryFile
 
-from .cache import DiskCache
-from .grant import Grant
-from .raster import (
+from grafy_tiler.cache import DiskCache
+from grafy_tiler.grant import Grant
+from grafy_tiler.raster import (
     RENDERER_VERSION,
     ImageInfo,
     SourceError,
@@ -37,8 +37,8 @@ from .raster import (
     thumbnail_size,
     tile_window,
 )
-from .render import render_region
-from .settings import Settings
+from grafy_tiler.render import render_region
+from grafy_tiler.settings import Settings
 
 THUMBNAIL_EDGES: Final = (128, 256, 512, 1024)
 _INFO_MEMORY_ENTRIES: Final = 256

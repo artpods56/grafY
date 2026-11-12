@@ -17,8 +17,7 @@ from grafy_tiler.render import (
     render_region,
 )
 from grafy_tiler.settings import Settings
-
-from .conftest import Writer
+from tests.conftest import Writer
 
 
 def px(image: Image.Image, at: tuple[int, int]) -> tuple[int, ...]:

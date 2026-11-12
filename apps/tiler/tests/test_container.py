@@ -32,8 +32,7 @@ import pytest
 from PIL import Image
 
 from grafy_tiler.grant import Grant, sign_grant
-
-from .conftest import Writer
+from tests.conftest import Writer
 
 IMAGE = os.environ.get("GRAFY_TEST_TILER_IMAGE")
 # The same pinned MinIO the storage-gateway test uses (infra/docker/

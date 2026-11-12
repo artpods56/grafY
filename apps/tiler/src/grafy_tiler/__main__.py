@@ -2,7 +2,7 @@
 
 import uvicorn
 
-from .settings import Settings
+from grafy_tiler.settings import Settings
 
 
 def main() -> None:

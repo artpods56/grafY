@@ -20,8 +20,7 @@ from grafy_tiler.raster import (
     tile_window,
 )
 from grafy_tiler.settings import Settings
-
-from .conftest import BUCKET, SHA, Writer
+from tests.conftest import BUCKET, SHA, Writer
 
 
 @pytest.mark.parametrize(

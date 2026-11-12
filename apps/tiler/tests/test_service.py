@@ -17,8 +17,7 @@ from grafy_tiler.service import (
     TileService,
 )
 from grafy_tiler.settings import Settings
-
-from .conftest import Writer
+from tests.conftest import Writer
 
 
 @pytest.fixture

@@ -29,9 +29,9 @@ from rio_tiler.errors import TileOutsideBounds
 from titiler.core.errors import add_exception_handlers
 from titiler.core.middleware import TotalTimeMiddleware
 
-from .cache import DiskCache
-from .grant import Grant, GrantError, verify_grant
-from .raster import (
+from grafy_tiler.cache import DiskCache
+from grafy_tiler.grant import Grant, GrantError, verify_grant
+from grafy_tiler.raster import (
     RENDERER_VERSION,
     PageNotFound,
     SourceError,
@@ -39,14 +39,14 @@ from .raster import (
     SourceTooLarge,
     TileFormat,
 )
-from .service import (
+from grafy_tiler.service import (
     THUMBNAIL_EDGES,
     Overloaded,
     RenderTimeout,
     TileNotFound,
     TileService,
 )
-from .settings import Settings
+from grafy_tiler.settings import Settings
 
 logger = logging.getLogger("grafy_tiler")
 

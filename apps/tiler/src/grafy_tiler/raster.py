@@ -16,8 +16,8 @@ from rasterio.warp import transform_bounds
 from rasterio.windows import Window
 from rio_tiler.reader import read as read_region
 
-from .grant import Grant
-from .settings import OVERVIEW_EDGE, Settings
+from grafy_tiler.grant import Grant
+from grafy_tiler.settings import OVERVIEW_EDGE, Settings
 
 # Bump when rendering output changes for the same source. It is part of every
 # cache key and of the ETag the API derives, so old tiles simply stop matching.
