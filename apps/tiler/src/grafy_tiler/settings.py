@@ -89,11 +89,12 @@ class Settings(BaseSettings):
         GDAL reads these natively on every thread. rasterio's own `Env` is
         thread-local and would have to be re-entered in each render thread.
         """
+        # Do not set GDAL_DISABLE_READDIR_ON_OPEN: with it, opening a later page
+        # of a multipage TIFF (`GTIFF_DIR:n:/vsis3/...`) hangs inside GDAL.
         options = {
             "GDAL_CACHEMAX": str(self.gdal_cache_mb),
             "GDAL_NUM_THREADS": "1",
             "GDAL_PAM_ENABLED": "NO",
-            "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
             "GDAL_HTTP_TIMEOUT": "20",
             "GDAL_HTTP_CONNECTTIMEOUT": "5",
             "GDAL_HTTP_MAX_RETRY": "2",
