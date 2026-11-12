@@ -47,8 +47,10 @@ HMAC-SHA256 signature.
 - The tiler builds `/vsis3/{bucket}/{key}` itself. The S3 endpoint is fixed by
   environment and uses path-style addressing, so GDAL cannot be pointed at
   another host.
-- The object size must equal `n`, otherwise 409. The digest-addressed key plus
-  the size is what makes cached output immutable.
+- `n` is bounded by `TILER_MAX_SOURCE_BYTES`. In `local` mode the stored size
+  must also equal `n` (409). In `s3` mode GDAL's `/vsis3/` offers no stat, so
+  the SHA-256 in the grant, which is part of every cache key, is what ties
+  cached output to the bytes.
 - Credentials are a dedicated MinIO account allowed `s3:GetObject` on the one
   bucket, nothing else.
 - `TILER_STORAGE=local` reads `<TILER_LOCAL_ROOT>/<bucket>/<key>` for native
@@ -80,6 +82,8 @@ tiles) is a later feature. It will live next to `render.py`, behind a reserved
 | CMYK | Naive CMYK to RGB; no ICC in v1. |
 | Multipage | Page `n` via `GTIFF_DIR`; `info` reports `page_count`. |
 | Limits | Source at most 1 GiB, at most 2e9 pixels, at most 1024 pages. |
+| GDAL trap | `GDAL_DISABLE_READDIR_ON_OPEN` must stay unset: with it, opening a later page of a multipage TIFF over `/vsis3/` hangs inside GDAL. |
+| Read-only account | `s3:GetObject` alone is enough; GDAL's listing probes are denied and ignored. |
 
 Stock TiTiler does not work for non-georeferenced images (`ImageReader.info()`
 fails without a CRS), so the tiler is a thin FastAPI app on rio-tiler.
