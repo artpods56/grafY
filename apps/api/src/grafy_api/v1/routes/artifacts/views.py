@@ -25,12 +25,16 @@ from grafy_api.services.errors import (
     WorkbenchOperationError,
 )
 
-from .dependencies import ArtifactDependency
-from grafy_api.artifacts.service import (
-    ArtifactContentRead,
+from grafy_api.artifacts.errors import (
     ArtifactResponseTooLargeError,
     GeoRangeNotSatisfiableError,
-    IMMUTABLE_CACHE_CONTROL,
+)
+from grafy_api.artifacts.geo_tiles import IMMUTABLE_CACHE_CONTROL
+from .dependencies import (
+    ArtifactContentDependency,
+    ArtifactGeoDependency,
+    ArtifactGeoTileDependency,
+    ArtifactTableDependency,
 )
 from grafy_core.domain.identity import WorkspaceCapability
 
@@ -38,21 +42,6 @@ from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workbench"])
-
-
-def _artifact_streaming_response(
-    content: ArtifactContentRead,
-    *,
-    media_type: str,
-    headers: dict[str, str],
-) -> StreamingResponse:
-    if content.content_length is not None:
-        headers["Content-Length"] = str(content.content_length)
-    return StreamingResponse(
-        content=content.chunks(),
-        media_type=media_type,
-        headers=headers,
-    )
 
 
 @router.get(
@@ -69,7 +58,7 @@ def _artifact_streaming_response(
 )
 async def get_geo_render_descriptor(
     artifact_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactGeoDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
 ) -> GeoRenderResponse:
     artifact = await service.get(access.workspace_id, artifact_id)
@@ -98,7 +87,7 @@ async def get_geo_render_descriptor(
 async def query_geo_features(
     artifact_id: UUID,
     query: GeoFeatureQueryRequest,
-    service: ArtifactDependency,
+    service: ArtifactGeoDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
 ) -> GeoFeatureQueryResponse:
     artifact = await service.get(access.workspace_id, artifact_id)
@@ -131,7 +120,7 @@ async def query_geo_features(
 )
 async def get_geo_vector_pmtiles(
     source_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactGeoTileDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
     range_header: Annotated[str | None, Header(alias="Range")] = None,
 ) -> Response:
@@ -189,7 +178,7 @@ async def get_geo_vector_pmtiles(
 )
 async def get_geo_exact_feature(
     source_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactGeoTileDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
     feature_index: Annotated[int, Path(ge=0)],
 ) -> GeoExactFeatureResponse:
@@ -221,7 +210,7 @@ async def get_geo_exact_feature(
 )
 async def get_geo_raster_tilejson(
     source_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactGeoTileDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
 ) -> GeoRasterTileJsonResponse:
     artifact = await service.get(access.workspace_id, source_id)
@@ -266,7 +255,7 @@ async def get_geo_raster_tilejson(
 )
 async def get_geo_raster_tile(
     source_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactGeoTileDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
     z: Annotated[int, Path(ge=0, le=24)],
     x: Annotated[int, Path(ge=0)],
@@ -317,7 +306,7 @@ async def get_geo_raster_tile(
 )
 async def get_table_artifact_page(
     artifact_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactTableDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
@@ -378,7 +367,7 @@ async def get_table_artifact_page(
 )
 async def get_table_artifact_schema(
     artifact_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactTableDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
 ) -> TableSchemaResponse:
     artifact = await service.get(access.workspace_id, artifact_id)
@@ -414,7 +403,7 @@ async def get_table_artifact_schema(
 async def query_table_artifact_page(
     artifact_id: UUID,
     query: TableQueryRequest,
-    service: ArtifactDependency,
+    service: ArtifactTableDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
 ) -> TablePageResponse:
     requested_column_count = (
@@ -472,7 +461,7 @@ async def query_table_artifact_page(
 )
 async def get_table_artifact_cell(
     artifact_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactTableDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
     row_index: Annotated[int, Query(ge=0)],
     column_id: Annotated[str, Query(min_length=1)],
@@ -512,7 +501,7 @@ async def get_table_artifact_cell(
 async def create_table_text_artifacts(
     artifact_id: UUID,
     body: TableTextArtifactsRequest,
-    service: ArtifactDependency,
+    service: ArtifactTableDependency,
     # It writes artifacts, and what it is for is placing one on a canvas.
     access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> TableTextArtifactsResponse:
@@ -551,7 +540,7 @@ async def create_table_text_artifacts(
 )
 async def get_artifact_content(
     artifact_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactContentDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
 ) -> StreamingResponse:
     artifact = await service.get(access.workspace_id, artifact_id)
@@ -565,8 +554,10 @@ async def get_artifact_content(
     download_name = artifact.metadata.get("download_name")
     if isinstance(download_name, str) and download_name != "":
         headers["Content-Disposition"] = f'attachment; filename="{download_name}"'
-    return _artifact_streaming_response(
-        content,
+    if content.content_length is not None:
+        headers["Content-Length"] = str(content.content_length)
+    return StreamingResponse(
+        content=content.chunks(),
         media_type=artifact.content_type,
         headers=headers,
     )
@@ -586,7 +577,7 @@ async def get_artifact_content(
 )
 async def get_artifact_download(
     artifact_id: UUID,
-    service: ArtifactDependency,
+    service: ArtifactContentDependency,
     access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
     format: Annotated[
         str,
@@ -620,8 +611,10 @@ async def get_artifact_download(
     if declared and "." in declared:
         filename = f"{filename}.{declared.rsplit('.', 1)[1]}"
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
-    return _artifact_streaming_response(
-        content,
+    if content.content_length is not None:
+        headers["Content-Length"] = str(content.content_length)
+    return StreamingResponse(
+        content=content.chunks(),
         media_type=content_type,
         headers=headers,
     )

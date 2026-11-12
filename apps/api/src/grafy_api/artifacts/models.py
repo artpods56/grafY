@@ -22,7 +22,6 @@ from grafy_core.artifacts import (
 )
 from grafy_core.spatial_contracts import (
     GeoPropertyValueType,
-    GeoVectorStyle as StoredGeoVectorStyle,
     GeoRasterStyle as StoredGeoRasterStyle,
     GeoBounds,
     GeoFeatureCollectionPayload,
@@ -444,10 +443,6 @@ class GeoVectorStyle(ApiResponse):
     outline: GeoLineStyle
     point: GeoPointStyle
     label: GeoLabelStyle | None
-
-    @classmethod
-    def default(cls) -> "GeoVectorStyle":
-        return cls.model_validate(StoredGeoVectorStyle())
 
 
 class GeoCategorizedPointStyle(ApiResponse):

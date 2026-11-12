@@ -6,9 +6,8 @@ from uuid import UUID
 
 import pytest
 
-from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.services.errors import WorkbenchOperationError
-from grafy_api.artifacts.service import ArtifactService
+from grafy_api.artifacts.tables import ArtifactTableService
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
@@ -19,14 +18,10 @@ OTHER_TABLE = UUID(int=9)
 
 def harness(
     rows: list[dict[str, object]],
-) -> tuple[ArtifactService, InMemoryUnitOfWork, ArtifactObject]:
+) -> tuple[ArtifactTableService, InMemoryUnitOfWork, ArtifactObject]:
     unit_of_work = InMemoryUnitOfWork()
     storage = cast(FileStoragePort, object())
-    service = ArtifactService(
-        unit_of_work,
-        storage,
-        availability=ArtifactAvailability(unit_of_work),
-    )
+    service = ArtifactTableService(unit_of_work, storage)
     table = ArtifactObject(
         workspace_id=WORKSPACE,
         artifact_type="table.data",

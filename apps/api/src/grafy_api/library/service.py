@@ -19,7 +19,7 @@ from grafy_api.artifacts.models import (
     ArtifactExportFormatResponse,
     ArtifactSummaryResponse,
 )
-from grafy_api.artifacts.service import ArtifactService
+from grafy_api.artifacts.content import ArtifactContentService
 from grafy_api.services.errors import WorkbenchOperationError
 from grafy_api.library.items import LibraryItem
 from grafy_api.library.models import LibraryItemResponse, LibraryProvenanceResponse
@@ -31,7 +31,7 @@ class LibraryService:
     def __init__(
         self,
         uow: LibraryUnitOfWorkPort,
-        artifacts: ArtifactService,
+        artifacts: ArtifactContentService,
         artifact_types: Mapping[tuple[str, int], ArtifactTypeSpec],
         storage: FileStoragePort | None = None,
     ) -> None:

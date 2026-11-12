@@ -39,13 +39,18 @@ from grafy_core.domain.identity import (
 )
 
 from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.artifacts import service as artifact_services
-from grafy_api.v1.routes.artifacts.dependencies import artifact_service
+from grafy_api.artifacts import geo_tiles
+from grafy_api.artifacts.geo import ArtifactGeoService
+from grafy_api.artifacts.geo_tiles import ArtifactGeoTileService
 from grafy_api.artifacts.models import (
     ArtifactExactMatchRow,
     GeoFeatureQueryRequest,
 )
-from grafy_api.artifacts.service import ArtifactService
+from grafy_api.artifacts.wms import WmsTileClient
+from grafy_api.v1.routes.artifacts.dependencies import (
+    artifact_geo_service,
+    artifact_geo_tile_service,
+)
 from grafy_api.v1.routes.artifacts.views import router as artifacts_router
 from grafy_api.v1.routes.auth.dependencies import (
     browser_actor,
@@ -144,10 +149,17 @@ def geo_artifact_client(
     unit_of_work = InMemoryUnitOfWork()
     storage = TrackingStorage(LocalFileObjectStore(tmp_path / "objects"))
     application = FastAPI()
-    service = ArtifactService(
-        unit_of_work, storage, availability=ArtifactAvailability(unit_of_work)
+    availability = ArtifactAvailability(unit_of_work)
+    wms = WmsTileClient()
+    geo = ArtifactGeoService(unit_of_work, storage, availability=availability)
+    tiles = ArtifactGeoTileService(
+        unit_of_work,
+        storage,
+        availability=availability,
+        wms=wms,
     )
-    application.dependency_overrides[artifact_service] = lambda: service
+    application.dependency_overrides[artifact_geo_service] = lambda: geo
+    application.dependency_overrides[artifact_geo_tile_service] = lambda: tiles
     application.dependency_overrides[identity_service] = (
         lambda: _AllowAllIdentityService()
     )
@@ -162,7 +174,7 @@ def geo_artifact_client(
     application.include_router(artifacts_router, prefix="/v1")
     with TestClient(application) as client:
         yield client, unit_of_work, storage
-    asyncio.run(service.close())
+    asyncio.run(wms.close())
 
 
 def _point_feature(index: int, x: float, y: float) -> JsonObject:
@@ -593,7 +605,7 @@ def test_vector_archive_rejects_oversized_buffered_responses_before_loading(
             bounds=(0.0, 0.0, 0.0, 0.0),
         )
     )
-    monkeypatch.setattr(artifact_services, "PMTILES_RESPONSE_MAX_BYTES", 8)
+    monkeypatch.setattr(geo_tiles, "PMTILES_RESPONSE_MAX_BYTES", 8)
 
     full = artifacts.geo_vector_pmtiles(artifact.id)
     oversized_range = artifacts.geo_vector_pmtiles(
@@ -837,15 +849,13 @@ async def test_wms_tile_pins_validated_address_against_dns_rebinding(
     monkeypatch.setattr(socket, "getaddrinfo", rebind_host)
     unit_of_work = InMemoryUnitOfWork()
     storage = TrackingStorage(LocalFileObjectStore(tmp_path / "objects"))
-    service = ArtifactService(
-        unit_of_work, storage, availability=ArtifactAvailability(unit_of_work)
-    )
-    production_client = cast(httpx.AsyncClient, getattr(service, "_wms_client"))
-    await production_client.aclose()
-    monkeypatch.setattr(
-        service,
-        "_wms_client",
-        httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    wms = WmsTileClient(client=mock_client)
+    tiles = ArtifactGeoTileService(
+        unit_of_work,
+        storage,
+        availability=ArtifactAvailability(unit_of_work),
+        wms=wms,
     )
     try:
         wms_layer = await _inline_artifact(
@@ -871,7 +881,7 @@ async def test_wms_tile_pins_validated_address_against_dns_rebinding(
             },
         )
 
-        tile = await service.load_raster_tile(
+        tile = await tiles.load_raster_tile(
             wms_layer,
             workspace_id=WORKSPACE_ID,
             z=0,
@@ -879,7 +889,7 @@ async def test_wms_tile_pins_validated_address_against_dns_rebinding(
             y=0,
         )
     finally:
-        await service.close()
+        await wms.close()
 
     assert tile is not None
     assert tile.content == b"png-tile"

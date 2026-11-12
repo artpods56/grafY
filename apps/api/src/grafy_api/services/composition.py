@@ -29,7 +29,11 @@ from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.runs.node_runner import NodeComputationRunnerFactory
 from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_core.ports.storage import PresigningStorage
-from grafy_api.artifacts.service import ArtifactService
+from grafy_api.artifacts.content import ArtifactContentService
+from grafy_api.artifacts.geo import ArtifactGeoService
+from grafy_api.artifacts.geo_tiles import ArtifactGeoTileService
+from grafy_api.artifacts.tables import ArtifactTableService
+from grafy_api.artifacts.wms import WmsTileClient
 from grafy_api.library.folders import LibraryFoldersService
 from grafy_api.library.service import LibraryService
 
@@ -44,7 +48,11 @@ class WorkbenchComponents:
     upload_config: UploadServiceConfig
     uploads: UploadService
     runner_factory: NodeComputationRunnerFactory
-    artifacts: ArtifactService
+    artifact_content: ArtifactContentService
+    artifact_tables: ArtifactTableService
+    artifact_geo: ArtifactGeoService
+    artifact_geo_tiles: ArtifactGeoTileService
+    wms: WmsTileClient
     library: LibraryService
     library_folders: LibraryFoldersService
 
@@ -86,7 +94,7 @@ def build_workbench_components(
         plugin_registry = build_application_registry()
     resolved_limits = limits or ComputationLimits()
     resolved_workspace = workspace.expanduser().resolve()
-    resolved_unit_of_work = unit_of_work
+    uow = unit_of_work
     resolved_storage = storage or LocalFileObjectStore(resolved_workspace / "objects")
     # A workbench dials what node configuration names, so the deployment policy
     # is composed here rather than read where the request is made. `None` takes
@@ -106,7 +114,7 @@ def build_workbench_components(
     uploads = UploadService.from_config(
         resolved_upload_config,
         storage=resolved_storage,
-        unit_of_work_factory=lambda: resolved_unit_of_work,
+        unit_of_work_factory=lambda: uow,
         presigning=(
             resolved_storage
             if isinstance(resolved_storage, PresigningStorage)
@@ -121,7 +129,7 @@ def build_workbench_components(
     plugin_context = PluginRuntimeContext(
         workspace=resolved_workspace,
         storage=resolved_storage,
-        uow=resolved_unit_of_work,
+        uow=uow,
         bucket=bucket,
         storage_backend=storage_backend,
         artifact_types=tuple(artifact_types.values()),
@@ -165,21 +173,32 @@ def build_workbench_components(
     resolver_registry = ResolverRegistry(resolvers)
     writer_registry = ArtifactWriterRegistry(writers)
 
-    availability = ArtifactAvailability(resolved_unit_of_work)
-    artifacts = ArtifactService(
-        resolved_unit_of_work,
+    availability = ArtifactAvailability(uow)
+    wms = WmsTileClient(egress_policy=resolved_egress_policy)
+    artifact_content = ArtifactContentService(
+        uow,
+        resolved_storage,
+        artifact_types=artifact_types,
+    )
+    artifact_tables = ArtifactTableService(uow, resolved_storage)
+    artifact_geo = ArtifactGeoService(
+        uow,
         resolved_storage,
         availability=availability,
-        artifact_types=artifact_types,
-        egress_policy=resolved_egress_policy,
+    )
+    artifact_geo_tiles = ArtifactGeoTileService(
+        uow,
+        resolved_storage,
+        availability=availability,
+        wms=wms,
     )
     library = LibraryService(
-        resolved_unit_of_work,
-        artifacts,
+        uow,
+        artifact_content,
         artifact_types=artifact_types,
         storage=resolved_storage,
     )
-    library_folders = LibraryFoldersService(resolved_unit_of_work)
+    library_folders = LibraryFoldersService(uow)
     runtime = NodeRuntime(
         materializer=InputMaterializer(resolver_registry),
         persister=OutputPersister(writer_registry),
@@ -189,7 +208,7 @@ def build_workbench_components(
         runtime=runtime,
         resolvers=resolver_registry,
         writers=writer_registry,
-        unit_of_work=resolved_unit_of_work,
+        unit_of_work=uow,
         node_secrets=resolved_node_secrets,
         plugin_context=plugin_context,
         max_map_concurrency=resolved_limits.map_max_concurrency,
@@ -199,7 +218,11 @@ def build_workbench_components(
         upload_config=resolved_upload_config,
         uploads=uploads,
         runner_factory=runners,
-        artifacts=artifacts,
+        artifact_content=artifact_content,
+        artifact_tables=artifact_tables,
+        artifact_geo=artifact_geo,
+        artifact_geo_tiles=artifact_geo_tiles,
+        wms=wms,
         library=library,
         library_folders=library_folders,
     )

@@ -63,7 +63,7 @@ class AppResources:
         await self.agent_turns.close()
         await self.project_room_hub.shutdown()
         await self.runs.close()
-        await self.workbench.artifacts.close()
+        await self.workbench.wms.close()
 
 
 def get_identity(app: FastAPI) -> AppIdentity:

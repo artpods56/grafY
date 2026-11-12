@@ -8,11 +8,8 @@ from uuid import uuid4
 
 import pytest
 
-from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.artifacts.service import (
-    ArtifactService,
-    ArtifactContentUnavailableError,
-)
+from grafy_api.artifacts.content import ArtifactContentService
+from grafy_api.services.errors import ArtifactContentUnavailableError
 from grafy_core.artifact_collections import (
     JSON_COLLECTIONS_STORAGE_FORMAT,
     JsonCollection,
@@ -127,9 +124,8 @@ async def test_complete_feature_reads_preserve_integrity_and_reader_validation(
         error_fragment = "kind"
     if case == "invalid_bounds" and reader == "gis":
         error_fragment = "bounds do not match"
-    service: ArtifactService | None = None
     if reader == "api":
-        service = ArtifactService(uow, storage, availability=ArtifactAvailability(uow))
+        service = ArtifactContentService(uow, storage)
         operation = service.load_content(artifact)
         error_type = ArtifactContentUnavailableError
     else:
@@ -137,19 +133,15 @@ async def test_complete_feature_reads_preserve_integrity_and_reader_validation(
             artifact.ref(), workspace_id
         )
         error_type = ResolutionError
-    try:
-        if error_fragment is not None:
-            with pytest.raises(error_type) as error:
-                await operation
-            assert str(artifact.id) in str(error.value)
-            assert error.value.__cause__ is not None
-            assert error_fragment in str(error.value.__cause__)
+    if error_fragment is not None:
+        with pytest.raises(error_type) as error:
+            await operation
+        assert str(artifact.id) in str(error.value)
+        assert error.value.__cause__ is not None
+        assert error_fragment in str(error.value.__cause__)
+    else:
+        result = await operation
+        if isinstance(result, bytes):
+            assert result == expected
         else:
-            result = await operation
-            if isinstance(result, bytes):
-                assert result == expected
-            else:
-                assert result.model_dump(mode="json") == json.loads(expected)
-    finally:
-        if service is not None:
-            await service.close()
+            assert result.model_dump(mode="json") == json.loads(expected)
