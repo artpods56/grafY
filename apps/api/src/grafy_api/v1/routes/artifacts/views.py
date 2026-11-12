@@ -11,6 +11,7 @@ from grafy_api.artifacts.models import (
     GeoRasterTileJsonResponse,
     GeoRenderResponse,
     TableCellResponse,
+    TableColumnResponse,
     TableRowTextArtifact,
     TableTextArtifactsRequest,
     TableTextArtifactsResponse,
@@ -389,7 +390,13 @@ async def get_table_artifact_schema(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except WorkbenchOperationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return TableSchemaResponse.from_page(page)
+    return TableSchemaResponse(
+        columns=[
+            TableColumnResponse(id=col.id, title=col.title, value_type=col.value_type)
+            for col in page.columns
+        ],
+        total_rows=page.total_rows,
+    )
 
 
 @router.post(

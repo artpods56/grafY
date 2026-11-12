@@ -2,17 +2,12 @@ from datetime import datetime
 from typing import Annotated, Self
 from uuid import UUID
 
-from grafy_core.artifacts import ArtifactExportFormat, LibraryProvenance
+from grafy_core.artifacts import LibraryProvenance
 from grafy_core.domain.library import LibraryFolder
 from pydantic import Field, StringConstraints
 
 from grafy_api.v1.models import ApiResponse
-from grafy_api.artifacts.models import (
-    ArtifactExportFormatResponse,
-    ArtifactSummaryResponse,
-)
-
-from grafy_api.library.items import LibraryItem
+from grafy_api.artifacts.models import ArtifactSummaryResponse
 
 BoundedNodeId = Annotated[
     str,
@@ -43,30 +38,6 @@ class LibraryItemResponse(ApiResponse):
     name: str
     provenance: LibraryProvenanceResponse
     folder_id: UUID | None = None
-
-    @classmethod
-    def from_item(
-        cls,
-        item: LibraryItem,
-        *,
-        name: str,
-        download_formats: list[ArtifactExportFormat],
-        folder_id: UUID | None = None,
-    ) -> Self:
-        return cls(
-            artifact=ArtifactSummaryResponse.from_artifact(
-                item.artifact,
-                download_formats=[
-                    ArtifactExportFormatResponse.from_export_format(export_format)
-                    for export_format in download_formats
-                ],
-            ),
-            name=name,
-            provenance=LibraryProvenanceResponse.model_validate(
-                item.provenance.model_dump()
-            ),
-            folder_id=folder_id,
-        )
 
 
 class LibraryListResponse(ApiResponse):

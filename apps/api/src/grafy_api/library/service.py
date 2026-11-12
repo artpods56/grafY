@@ -3,7 +3,6 @@ from collections.abc import Mapping
 from uuid import UUID
 
 from grafy_core.artifacts import (
-    ArtifactObject,
     ArtifactRef,
     ArtifactRefSequence,
     ArtifactTypeSpec,
@@ -16,10 +15,14 @@ from grafy_core.kernel.project import ProjectDocumentError
 from grafy_core.ports.library import LibraryUnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
 
-from grafy_api.services.errors import WorkbenchOperationError
+from grafy_api.artifacts.models import (
+    ArtifactExportFormatResponse,
+    ArtifactSummaryResponse,
+)
 from grafy_api.artifacts.service import ArtifactService
+from grafy_api.services.errors import WorkbenchOperationError
 from grafy_api.library.items import LibraryItem
-from grafy_api.library.models import LibraryItemResponse
+from grafy_api.library.models import LibraryItemResponse, LibraryProvenanceResponse
 
 
 class LibraryService:
@@ -36,20 +39,6 @@ class LibraryService:
         self._artifacts = artifacts
         self._artifact_types = artifact_types
         self._storage = storage
-
-    def _artifact_name(self, artifact: ArtifactObject) -> str:
-        for key in ("download_name", "source_name"):
-            value = artifact.metadata.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        spec = self._artifact_types.get(
-            (artifact.artifact_type, artifact.schema_version)
-        )
-        return (
-            spec.title
-            if spec
-            else f"{artifact.artifact_type}@{artifact.schema_version}"
-        )
 
     async def list_items(self, workspace_id: UUID) -> list[LibraryItemResponse]:
         async with self._uow as uow:
@@ -194,27 +183,58 @@ class LibraryService:
             await uow.library_folders.place(workspace_id, [artifact_id], None)
             await uow.artifacts.remove(workspace_id, artifact)
             await uow.commit()
-        if shared == 0:
-            await self._delete_stored_object(artifact)
-
-    async def _delete_stored_object(self, artifact: ArtifactObject) -> None:
-        if (
-            self._storage is None
-            or artifact.bucket is None
-            or artifact.object_key is None
+        if shared == 0 and (
+            self._storage is not None
+            and artifact.bucket is not None
+            and artifact.object_key is not None
         ):
-            return
-        try:
-            await self._storage.delete(artifact.bucket, artifact.object_key)
-        except FileNotFoundError:
-            pass
+            try:
+                await self._storage.delete(artifact.bucket, artifact.object_key)
+            except FileNotFoundError:
+                pass
 
     def _present(
         self, item: LibraryItem, *, folder_id: UUID | None = None
     ) -> LibraryItemResponse:
-        return LibraryItemResponse.from_item(
-            item,
-            name=item.provenance.name or self._artifact_name(item.artifact),
-            download_formats=self._artifacts.export_formats(item.artifact),
+        artifact = item.artifact
+        name = item.provenance.name
+        if not name:
+            for key in ("download_name", "source_name"):
+                value = artifact.metadata.get(key)
+                if isinstance(value, str) and value.strip():
+                    name = value.strip()
+                    break
+            else:
+                spec = self._artifact_types.get(
+                    (artifact.artifact_type, artifact.schema_version)
+                )
+                name = (
+                    spec.title
+                    if spec
+                    else f"{artifact.artifact_type}@{artifact.schema_version}"
+                )
+        return LibraryItemResponse(
+            artifact=ArtifactSummaryResponse(
+                artifact_id=artifact.id,
+                artifact_type=artifact.artifact_type,
+                schema_version=artifact.schema_version,
+                content_type=artifact.content_type,
+                byte_size=artifact.byte_size,
+                sha256=artifact.sha256,
+                content_url=f"./artifacts/{artifact.id}/content",
+                download_formats=[
+                    ArtifactExportFormatResponse(
+                        format=export_format.format,
+                        content_type=export_format.content_type,
+                        filename=export_format.filename,
+                    )
+                    for export_format in self._artifacts.export_formats(artifact)
+                ],
+                metadata=artifact.metadata,
+            ),
+            name=name,
+            provenance=LibraryProvenanceResponse.model_validate(
+                item.provenance.model_dump()
+            ),
             folder_id=folder_id,
         )
