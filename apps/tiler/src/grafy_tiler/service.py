@@ -370,7 +370,11 @@ class TileService:
                 yield ds, info, info.max_level
             return
         assert info.overview_level is not None
-        with MemoryFile(overview) as memory, memory.open() as ds:
+        with MemoryFile(overview) as memory, memory.open() as opened:
+            # types-rasterio types `open()` as reader-or-writer; without
+            # width/height/count it always opens an existing file for reading.
+            assert isinstance(opened, DatasetReader)
+            ds = opened
             # The overview is already display-ready 8-bit; only its shape,
             # band layout and transparency matter to the renderer.
             yield (

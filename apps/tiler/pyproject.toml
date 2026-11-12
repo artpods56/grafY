@@ -8,6 +8,7 @@ dependencies = [
     "rio-tiler==9.4.13",
     "pydantic-settings>=2.10",
     "uvicorn>=0.38.0",
+    "rasterio>=1.5.2",
 ]
 
 # This project has its own lock on purpose: titiler.core needs starlette>=1,
@@ -26,6 +27,7 @@ dev = [
     "pyright>=1.1.411",
     "pillow>=11",
     "moto[s3,server]>=5.1",
+    "types-rasterio>=1.5.2.20261029",
 ]
 
 [build-system]
@@ -56,8 +58,9 @@ markers = [
 pythonVersion = "3.13"
 venvPath = "."
 venv = ".venv"
-# rasterio ships no type stubs, so strict mode would flag every GDAL call as
-# partially unknown. Standard mode still checks everything we can see.
+# rasterio's stubs come from types-rasterio (dev group). Strict mode still
+# reports ~50 partially-unknown values from numpy and rio-tiler, so the project
+# stays on standard mode.
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
 include = ["src", "tests"]
