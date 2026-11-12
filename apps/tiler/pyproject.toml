@@ -1,0 +1,64 @@
+[project]
+name = "grafy-tiler"
+version = "0.1.0"
+description = "Internal raster tile service for Grafy (TiTiler building blocks, GDAL)"
+requires-python = "==3.13.*"
+dependencies = [
+    "titiler.core==2.4.0",
+    "rio-tiler==9.4.13",
+    "pydantic-settings>=2.10",
+    "uvicorn>=0.38.0",
+]
+
+# This project has its own lock on purpose: titiler.core needs starlette>=1,
+# while the API workspace pins starlette<1. It is not a member of the root
+# uv workspace.
+[tool.uv]
+package = true
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.0",
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.14.6",
+    "pyright>=1.1.411",
+    "pillow>=11",
+    "moto[s3,server]>=5.1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--import-mode=importlib"
+timeout = 120
+filterwarnings = [
+    "ignore::rasterio.errors.NotGeoreferencedWarning",
+    "ignore::rio_tiler.errors.NoOverviewWarning",
+]
+markers = [
+    "container: needs a Docker daemon and GRAFY_TEST_TILER_IMAGE",
+]
+
+[tool.pyright]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+# rasterio ships no type stubs, so strict mode would flag every GDAL call as
+# partially unknown. Standard mode still checks everything we can see.
+typeCheckingMode = "standard"
+reportMissingTypeStubs = false
+include = ["src", "tests"]
+extraPaths = ["src"]
