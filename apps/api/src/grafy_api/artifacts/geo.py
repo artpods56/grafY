@@ -300,12 +300,13 @@ class ArtifactGeoService:
                     layers=layers,
                 )
             if artifact.artifact_type == GEO_RASTER_SCAN_ARTIFACT_TYPE:
+                title = source_name(artifact)
                 projection = GeoRasterProjectionMetadata.model_validate(
                     artifact.metadata.get("raster_projection")
                 )
                 raster_layer = GeoRenderLayerResponse(
                     id=str(artifact.id),
-                    title=source_name(artifact),
+                    title=title,
                     visible=True,
                     opacity=1.0,
                     min_zoom=0,

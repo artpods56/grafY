@@ -933,6 +933,33 @@ def test_raster_tilejson_and_tiles_read_only_precomputed_xyz_objects(
     ]
 
 
+def test_raster_render_validates_source_name_before_projection(
+    geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
+) -> None:
+    client, unit_of_work, _ = geo_artifact_client
+    artifact = asyncio.run(
+        _add_artifact(
+            unit_of_work,
+            ArtifactObject(
+                workspace_id=WORKSPACE_ID,
+                artifact_type=RASTER_KEY.id,
+                schema_version=1,
+                content_type="image/tiff",
+                metadata={},
+            ),
+        )
+    )
+
+    response = (
+        GrafyApi(client).workspace(WORKSPACE_ID).artifacts.geo_render(artifact.id)
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == (
+        f"Geo source artifact {artifact.id} has invalid source_name metadata"
+    )
+
+
 def test_render_rejects_stale_refs_and_private_wms_hosts(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
