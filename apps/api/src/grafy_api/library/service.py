@@ -27,12 +27,12 @@ class LibraryService:
 
     def __init__(
         self,
-        unit_of_work: LibraryUnitOfWorkPort,
+        uow: LibraryUnitOfWorkPort,
         artifacts: ArtifactService,
         artifact_types: Mapping[tuple[str, int], ArtifactTypeSpec],
         storage: FileStoragePort | None = None,
     ) -> None:
-        self._unit_of_work = unit_of_work
+        self._uow = uow
         self._artifacts = artifacts
         self._artifact_types = artifact_types
         self._storage = storage
@@ -52,7 +52,7 @@ class LibraryService:
         )
 
     async def list_items(self, workspace_id: UUID) -> list[LibraryItemResponse]:
-        async with self._unit_of_work as uow:
+        async with self._uow as uow:
             artifacts = await uow.artifacts.list_library(workspace_id)
             placements = await uow.library_folders.placements(workspace_id)
         items = [
@@ -84,7 +84,7 @@ class LibraryService:
         item_index: int | None = None,
     ) -> LibraryItemResponse:
         key = InstanceKey(str(project_id), graph_id, call_path, node_id, map_index)
-        async with self._unit_of_work as uow:
+        async with self._uow as uow:
             head = await uow.collaboration.get_head(workspace_id, project_id)
             if head is None:
                 raise NotFoundError("Project", str(project_id))
@@ -154,7 +154,7 @@ class LibraryService:
     async def _record(
         self, workspace_id: UUID, artifact_id: UUID, provenance: LibraryProvenance
     ) -> LibraryItemResponse:
-        async with self._unit_of_work as uow:
+        async with self._uow as uow:
             artifact = await uow.artifacts.get(workspace_id, artifact_id)
             if artifact is None:
                 raise NotFoundError("Artifact", str(artifact_id))
@@ -168,7 +168,7 @@ class LibraryService:
             )
 
     async def delete_artifact(self, *, workspace_id: UUID, artifact_id: UUID) -> None:
-        async with self._unit_of_work as uow:
+        async with self._uow as uow:
             artifact = await uow.artifacts.get(workspace_id, artifact_id)
             if artifact is None or artifact.library_provenance is None:
                 raise NotFoundError("Library artifact", str(artifact_id))

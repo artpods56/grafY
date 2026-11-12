@@ -43,8 +43,8 @@ class ArtifactReferenceError(WorkbenchOperationError):
 class ArtifactAvailability:
     """Resolve exact references, without cache-integrity hashing."""
 
-    def __init__(self, unit_of_work: UnitOfWorkPort) -> None:
-        self._unit_of_work = unit_of_work
+    def __init__(self, uow: UnitOfWorkPort) -> None:
+        self._uow = uow
 
     async def load(
         self,
@@ -59,10 +59,8 @@ class ArtifactAvailability:
             artifact_ids.update(ref.artifact_id for ref in refs)
         artifacts: dict[UUID, ArtifactObject] = {}
         if artifact_ids:
-            async with self._unit_of_work as unit_of_work:
-                artifacts = await unit_of_work.artifacts.get_many(
-                    workspace_id, artifact_ids
-                )
+            async with self._uow as uow:
+                artifacts = await uow.artifacts.get_many(workspace_id, artifact_ids)
         return ArtifactAvailabilityBatch(artifacts)
 
 

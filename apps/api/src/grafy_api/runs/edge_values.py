@@ -41,7 +41,7 @@ class EdgeValueResolver:
     ) -> None:
         self._resolvers = resolvers
         self._writers = writers
-        self._unit_of_work = unit_of_work
+        self._uow = unit_of_work
 
     async def assemble_inputs(
         self,
@@ -63,10 +63,22 @@ class EdgeValueResolver:
                     f"Input {name!r} of node {context.node_id!r} has connections "
                     "but is not an input port of its operator"
                 )
-            resolved = [
-                await self.resolve(slot, context)
-                for slot in _in_port_order(plan, port_slots)
-            ]
+            if not plan.instance_plugs:
+                ordered_slots = port_slots
+            else:
+                by_plug = {
+                    slot.to_plug: slot
+                    for slot in port_slots
+                    if slot.to_plug is not None
+                }
+                missing = [plug for plug in plan.plugs if plug not in by_plug]
+                if missing:
+                    raise NodeComputationError(
+                        f"Input {plan.name!r} declares plugs that carry no value: "
+                        + ", ".join(repr(plug) for plug in missing)
+                    )
+                ordered_slots = [by_plug[plug] for plug in plan.plugs]
+            resolved = [await self.resolve(slot, context) for slot in ordered_slots]
             if plan.variadic or plan.instance_plugs:
                 values[name] = resolved
             elif len(resolved) == 1:
@@ -85,43 +97,56 @@ class EdgeValueResolver:
     ) -> ArtifactOutputValue:
         value = slot.value
         if slot.projection is not None:
-            value = await self._project_value(value, slot, context)
+            projection = slot.projection
+            if isinstance(value, ArtifactRef):
+                value = await self._project_ref(value, slot, context, item_index=None)
+            else:
+                projected_refs = [
+                    await self._project_ref(ref, slot, context, item_index=index)
+                    for index, ref in enumerate(value.item_refs)
+                ]
+                sequence_metadata = dict(value.metadata)
+                sequence_metadata.update(
+                    {
+                        "source_sequence_id": str(value.sequence_id),
+                        "projection_path": list(projection.path),
+                        "projection_title": projection.title,
+                    }
+                )
+                value = ArtifactRefSequence(
+                    artifact_type=projection.target.id,
+                    schema_version=projection.target.schema_version,
+                    item_refs=projected_refs,
+                    ordered=value.ordered,
+                    index_key=value.index_key,
+                    metadata=sequence_metadata,
+                )
         if slot.conversion_path:
-            value = await self._convert_value(value, slot, context)
+            conversions = slot.conversion_path
+            final_conversion = conversions[-1]
+            if isinstance(value, ArtifactRef):
+                value = await self._convert_ref(value, slot, context, item_index=None)
+            else:
+                converted_refs = [
+                    await self._convert_ref(ref, slot, context, item_index=index)
+                    for index, ref in enumerate(value.item_refs)
+                ]
+                sequence_metadata = dict(value.metadata)
+                sequence_metadata.update(
+                    {
+                        "source_sequence_id": str(value.sequence_id),
+                        **_conversion_path_metadata(conversions),
+                    }
+                )
+                value = ArtifactRefSequence(
+                    artifact_type=final_conversion.target.id,
+                    schema_version=final_conversion.target.schema_version,
+                    item_refs=converted_refs,
+                    ordered=value.ordered,
+                    index_key=value.index_key,
+                    metadata=sequence_metadata,
+                )
         return value
-
-    async def _project_value(
-        self,
-        value: ArtifactOutputValue,
-        slot: InputSlot,
-        context: NodeExecutionContext,
-    ) -> ArtifactOutputValue:
-        projection = slot.projection
-        if projection is None:
-            return value
-        if isinstance(value, ArtifactRef):
-            return await self._project_ref(value, slot, context, item_index=None)
-
-        projected_refs = [
-            await self._project_ref(ref, slot, context, item_index=index)
-            for index, ref in enumerate(value.item_refs)
-        ]
-        sequence_metadata = dict(value.metadata)
-        sequence_metadata.update(
-            {
-                "source_sequence_id": str(value.sequence_id),
-                "projection_path": list(projection.path),
-                "projection_title": projection.title,
-            }
-        )
-        return ArtifactRefSequence(
-            artifact_type=projection.target.id,
-            schema_version=projection.target.schema_version,
-            item_refs=projected_refs,
-            ordered=value.ordered,
-            index_key=value.index_key,
-            metadata=sequence_metadata,
-        )
 
     async def _project_ref(
         self,
@@ -134,10 +159,8 @@ class EdgeValueResolver:
         projection = slot.projection
         if projection is None:
             raise NodeComputationError("A resolved projection is required")
-        async with self._unit_of_work as unit_of_work:
-            artifact = await unit_of_work.artifacts.get(
-                context.workspace_id, ref.artifact_id
-            )
+        async with self._uow as uow:
+            artifact = await uow.artifacts.get(context.workspace_id, ref.artifact_id)
         if artifact is None:
             raise NodeComputationError(
                 f"Cannot project missing source artifact {ref.artifact_id} for "
@@ -194,39 +217,6 @@ class EdgeValueResolver:
                     "target_port": slot.to_port,
                 },
             ),
-        )
-
-    async def _convert_value(
-        self,
-        value: ArtifactOutputValue,
-        slot: InputSlot,
-        context: NodeExecutionContext,
-    ) -> ArtifactOutputValue:
-        conversions = slot.conversion_path
-        if not conversions:
-            return value
-        final_conversion = conversions[-1]
-        if isinstance(value, ArtifactRef):
-            return await self._convert_ref(value, slot, context, item_index=None)
-
-        converted_refs = [
-            await self._convert_ref(ref, slot, context, item_index=index)
-            for index, ref in enumerate(value.item_refs)
-        ]
-        sequence_metadata = dict(value.metadata)
-        sequence_metadata.update(
-            {
-                "source_sequence_id": str(value.sequence_id),
-                **_conversion_path_metadata(conversions),
-            }
-        )
-        return ArtifactRefSequence(
-            artifact_type=final_conversion.target.id,
-            schema_version=final_conversion.target.schema_version,
-            item_refs=converted_refs,
-            ordered=value.ordered,
-            index_key=value.index_key,
-            metadata=sequence_metadata,
         )
 
     async def _convert_ref(
@@ -321,24 +311,6 @@ class EdgeValueResolver:
                 f"{final_conversion.target.schema_version} for the conversion path "
                 f"from artifact {ref.artifact_id}{item_context} on {slot.label}"
             ) from exc
-
-
-def _in_port_order(
-    plan: InputPortPlan,
-    slots: Sequence[InputSlot],
-) -> Sequence[InputSlot]:
-    """Order a plug port's values by the node's own plug order."""
-
-    if not plan.instance_plugs:
-        return slots
-    by_plug = {slot.to_plug: slot for slot in slots if slot.to_plug is not None}
-    missing = [plug for plug in plan.plugs if plug not in by_plug]
-    if missing:
-        raise NodeComputationError(
-            f"Input {plan.name!r} declares plugs that carry no value: "
-            + ", ".join(repr(plug) for plug in missing)
-        )
-    return [by_plug[plug] for plug in plan.plugs]
 
 
 def _conversion_path_metadata(
