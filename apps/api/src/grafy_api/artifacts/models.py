@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
@@ -184,6 +185,27 @@ class TablePageResponse(ApiResponse):
 
 
 type ArtifactInteractionScalar = StrictStr | StrictInt | StrictFloat | StrictBool | None
+
+
+_CANONICAL_INTEGER = re.compile(r"^-?(0|[1-9]\d*)$")
+
+
+def _interaction_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and _CANONICAL_INTEGER.fullmatch(value):
+        return int(value)
+    return None
+
+
+def interaction_values_equal(left: object, right: object) -> bool:
+    if type(left) is type(right):
+        return left == right
+    left_int = _interaction_int(left)
+    right_int = _interaction_int(right)
+    return left_int is not None and left_int == right_int
 
 
 class ArtifactExactMatchRow(BaseModel):
@@ -634,6 +656,7 @@ __all__ = [
     "GeoVectorRenderSourceResponse",
     "GeoVectorStyle",
     "GeoWmsSourcePayload",
+    "interaction_values_equal",
     "TableCellPreviewResponse",
     "TableCellResponse",
     "TableRowTextArtifact",
