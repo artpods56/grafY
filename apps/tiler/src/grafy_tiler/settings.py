@@ -17,6 +17,8 @@ class Settings(BaseSettings):
         env_prefix="TILER_", extra="ignore", frozen=True, env_ignore_empty=True
     )
 
+    docs_enabled: bool = False
+
     # Comma-separated HMAC keys that may have signed a grant. The API signs with
     # one of them; listing two lets an operator rotate without downtime.
     signing_keys: SecretStr

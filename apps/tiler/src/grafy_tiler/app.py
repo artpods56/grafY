@@ -154,9 +154,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title="Grafy tiler",
         lifespan=lifespan,
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
+        docs_url="/docs" if resolved.docs_enabled else None,
+        redoc_url="/redoc" if resolved.docs_enabled else None,
+        openapi_url="/openapi.json" if resolved.docs_enabled else None,
     )
     app.add_middleware(TotalTimeMiddleware)
     add_exception_handlers(
