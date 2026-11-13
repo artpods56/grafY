@@ -7,10 +7,10 @@
   Issue #202 adds a ninth section, `AgentsConfig`, for the deployment default Agent
   model; the split below is unchanged by it.
 
-`grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of nine
+`grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of ten
 responsibility-owned `BaseSettings` sections: `AgentsConfig`, `AppConfig`, `AuthConfig`,
 `KeysConfig`, `ExecutionConfig`, `RealtimeConfig`, `StorageConfig`, `UploadConfig`, and
-`EgressConfig`.
+`EgressConfig`, and `TilerConfig`.
 `apps/api` composes them into one plain-`BaseModel` `Settings`, and only
 the composition root reads that object.
 
