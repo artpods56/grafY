@@ -152,8 +152,8 @@ class Harness:
         _ = await self.store.put_result(fingerprint, dict(outputs))
 
     async def text_of(self, ref: ArtifactRef) -> str:
-        async with self.unit_of_work as unit_of_work:
-            artifact = await unit_of_work.artifacts.get(WORKSPACE_ID, ref.artifact_id)
+        async with self.unit_of_work as uow:
+            artifact = await uow.artifacts.get(WORKSPACE_ID, ref.artifact_id)
         assert artifact is not None
         payload = artifact.inline_payload
         assert isinstance(payload, dict)
@@ -162,8 +162,8 @@ class Harness:
         return value
 
     async def artifacts_of(self, key: ArtifactTypeKey) -> list[ArtifactObject]:
-        async with self.unit_of_work as unit_of_work:
-            return await unit_of_work.artifacts.list_by_type(WORKSPACE_ID, key)
+        async with self.unit_of_work as uow:
+            return await uow.artifacts.list_by_type(WORKSPACE_ID, key)
 
     async def compute_node(
         self,

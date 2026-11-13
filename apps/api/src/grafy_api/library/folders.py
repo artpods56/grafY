@@ -21,12 +21,12 @@ class LibraryFoldersService:
     sits at the root, so "unfile" is a delete rather than a sentinel folder.
     """
 
-    def __init__(self, unit_of_work: WorkbenchUnitOfWorkPort) -> None:
-        self._unit_of_work = unit_of_work
+    def __init__(self, uow: WorkbenchUnitOfWorkPort) -> None:
+        self._uow = uow
 
     async def list_folders(self, workspace_id: UUID) -> list[LibraryFolderResponse]:
-        async with self._unit_of_work as unit_of_work:
-            folders = await unit_of_work.library_folders.list(workspace_id)
+        async with self._uow as uow:
+            folders = await uow.library_folders.list(workspace_id)
         return [LibraryFolderResponse.from_folder(folder) for folder in folders]
 
     async def create_folder(
@@ -39,16 +39,16 @@ class LibraryFoldersService:
         folder = LibraryFolder(
             workspace_id=workspace_id, name=name, parent_id=parent_id
         )
-        async with self._unit_of_work as unit_of_work:
-            await self._require_folder_when_set(unit_of_work, workspace_id, parent_id)
+        async with self._uow as uow:
+            await self._require_folder_when_set(uow, workspace_id, parent_id)
             await self._require_name_free(
-                unit_of_work,
+                uow,
                 workspace_id=workspace_id,
                 parent_id=parent_id,
                 name_key=folder.name_key,
             )
-            await unit_of_work.library_folders.add(folder)
-            await unit_of_work.commit()
+            await uow.library_folders.add(folder)
+            await uow.commit()
         return LibraryFolderResponse.from_folder(folder)
 
     async def rename_folder(
@@ -58,34 +58,34 @@ class LibraryFoldersService:
         folder_id: UUID,
         name: str,
     ) -> LibraryFolderResponse:
-        async with self._unit_of_work as unit_of_work:
-            folder = await self._require_folder(unit_of_work, workspace_id, folder_id)
+        async with self._uow as uow:
+            folder = await self._require_folder(uow, workspace_id, folder_id)
             candidate = LibraryFolder(
                 workspace_id=workspace_id,
                 name=name,
                 parent_id=folder.parent_id,
             )
             await self._require_name_free(
-                unit_of_work,
+                uow,
                 workspace_id=workspace_id,
                 parent_id=folder.parent_id,
                 name_key=candidate.name_key,
                 except_folder_id=folder_id,
             )
             folder.rename(candidate.name)
-            await unit_of_work.library_folders.save(folder)
-            await unit_of_work.commit()
+            await uow.library_folders.save(folder)
+            await uow.commit()
         return LibraryFolderResponse.from_folder(folder)
 
     async def delete_folder(self, *, workspace_id: UUID, folder_id: UUID) -> None:
         """Delete one empty folder. Contents are the caller's problem first."""
-        async with self._unit_of_work as unit_of_work:
-            folder = await self._require_folder(unit_of_work, workspace_id, folder_id)
-            artifact_count = await unit_of_work.library_folders.count_placements(
+        async with self._uow as uow:
+            folder = await self._require_folder(uow, workspace_id, folder_id)
+            artifact_count = await uow.library_folders.count_placements(
                 workspace_id,
                 folder_id,
             )
-            child_count = await unit_of_work.library_folders.count_children(
+            child_count = await uow.library_folders.count_children(
                 workspace_id,
                 folder_id,
             )
@@ -95,8 +95,8 @@ class LibraryFoldersService:
                     artifact_count=artifact_count,
                     child_count=child_count,
                 )
-            await unit_of_work.library_folders.remove(folder)
-            await unit_of_work.commit()
+            await uow.library_folders.remove(folder)
+            await uow.commit()
 
     async def move_folder(
         self,
@@ -105,11 +105,11 @@ class LibraryFoldersService:
         folder_id: UUID,
         parent_id: UUID | None,
     ) -> LibraryFolderResponse:
-        async with self._unit_of_work as unit_of_work:
-            folder = await self._require_folder(unit_of_work, workspace_id, folder_id)
-            await self._require_folder_when_set(unit_of_work, workspace_id, parent_id)
+        async with self._uow as uow:
+            folder = await self._require_folder(uow, workspace_id, folder_id)
+            await self._require_folder_when_set(uow, workspace_id, parent_id)
             if parent_id is not None:
-                folders = await unit_of_work.library_folders.list(workspace_id)
+                folders = await uow.library_folders.list(workspace_id)
                 if is_descendant_folder(
                     folders,
                     candidate_id=parent_id,
@@ -120,15 +120,15 @@ class LibraryFoldersService:
                         parent_id=parent_id,
                     )
             await self._require_name_free(
-                unit_of_work,
+                uow,
                 workspace_id=workspace_id,
                 parent_id=parent_id,
                 name_key=folder.name_key,
                 except_folder_id=folder_id,
             )
             folder.move_to(parent_id)
-            await unit_of_work.library_folders.save(folder)
-            await unit_of_work.commit()
+            await uow.library_folders.save(folder)
+            await uow.commit()
         return LibraryFolderResponse.from_folder(folder)
 
     async def place_artifacts(
@@ -145,9 +145,9 @@ class LibraryFoldersService:
         never happened.
         """
         unique_ids = list(dict.fromkeys(artifact_ids))
-        async with self._unit_of_work as unit_of_work:
-            await self._require_folder_when_set(unit_of_work, workspace_id, folder_id)
-            found = await unit_of_work.artifacts.get_many(workspace_id, unique_ids)
+        async with self._uow as uow:
+            await self._require_folder_when_set(uow, workspace_id, folder_id)
+            found = await uow.artifacts.get_many(workspace_id, unique_ids)
             for artifact_id in unique_ids:
                 artifact = found.get(artifact_id)
                 if artifact is None:
@@ -158,38 +158,38 @@ class LibraryFoldersService:
                     # no listing ever shows, and an artifact that lands in the
                     # Library later would arrive already filed somewhere.
                     raise NotFoundError("Library artifact", str(artifact_id))
-            await unit_of_work.library_folders.place(
+            await uow.library_folders.place(
                 workspace_id,
                 unique_ids,
                 folder_id,
             )
-            await unit_of_work.commit()
+            await uow.commit()
 
     async def _require_folder(
         self,
-        unit_of_work: WorkbenchUnitOfWorkPort,
+        uow: WorkbenchUnitOfWorkPort,
         workspace_id: UUID,
         folder_id: UUID,
     ) -> LibraryFolder:
-        folder = await unit_of_work.library_folders.get(workspace_id, folder_id)
+        folder = await uow.library_folders.get(workspace_id, folder_id)
         if folder is None:
             raise NotFoundError("Library folder", str(folder_id))
         return folder
 
     async def _require_folder_when_set(
         self,
-        unit_of_work: WorkbenchUnitOfWorkPort,
+        uow: WorkbenchUnitOfWorkPort,
         workspace_id: UUID,
         folder_id: UUID | None,
     ) -> None:
         """Require a folder only when one was named; ``None`` is the root."""
         if folder_id is None:
             return
-        await self._require_folder(unit_of_work, workspace_id, folder_id)
+        await self._require_folder(uow, workspace_id, folder_id)
 
     async def _require_name_free(
         self,
-        unit_of_work: WorkbenchUnitOfWorkPort,
+        uow: WorkbenchUnitOfWorkPort,
         *,
         workspace_id: UUID,
         parent_id: UUID | None,
@@ -202,7 +202,7 @@ class LibraryFoldersService:
         is what turns their violation into a name the panel can repeat to the
         user.
         """
-        taken = await unit_of_work.library_folders.get_by_name(
+        taken = await uow.library_folders.get_by_name(
             workspace_id,
             parent_id,
             name_key,

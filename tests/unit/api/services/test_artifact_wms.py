@@ -9,8 +9,10 @@ import pytest
 
 from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.services.errors import ArtifactContentUnavailableError
+from grafy_api.artifacts.geo import ArtifactGeoService
+from grafy_api.artifacts.geo_tiles import ArtifactGeoTileService
 from grafy_api.artifacts.models import GeoRasterStyle
-from grafy_api.artifacts.service import ArtifactService
+from grafy_api.artifacts.wms import WmsTileClient
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_storage import LocalFileObjectStore
@@ -41,10 +43,14 @@ async def test_stored_wms_layer_rejects_unsafe_endpoint_before_dns(
 ) -> None:
     unit_of_work = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path)
-    service = ArtifactService(
+    availability = ArtifactAvailability(unit_of_work)
+    wms = WmsTileClient()
+    geo = ArtifactGeoService(unit_of_work, storage, availability=availability)
+    tiles = ArtifactGeoTileService(
         unit_of_work,
         storage,
-        availability=ArtifactAvailability(unit_of_work),
+        availability=availability,
+        wms=wms,
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),
@@ -76,7 +82,7 @@ async def test_stored_wms_layer_rejects_unsafe_endpoint_before_dns(
         async with unit_of_work:
             await unit_of_work.artifacts.add(artifact)
             await unit_of_work.commit()
-        stored = await service.get(artifact.workspace_id, artifact.id)
+        stored = await geo.get(artifact.workspace_id, artifact.id)
         assert stored is not None
 
         expected_error = (
@@ -84,15 +90,13 @@ async def test_stored_wms_layer_rejects_unsafe_endpoint_before_dns(
         )
         with pytest.raises(expected_error) as error:
             if view == "render":
-                _ = await service.load_geo_render(
-                    stored, workspace_id=stored.workspace_id
-                )
+                _ = await geo.load_geo_render(stored, workspace_id=stored.workspace_id)
             elif view == "tilejson":
-                _ = await service.load_raster_tilejson(
+                _ = await tiles.load_raster_tilejson(
                     stored, workspace_id=stored.workspace_id
                 )
             else:
-                _ = await service.load_raster_tile(
+                _ = await tiles.load_raster_tile(
                     stored, workspace_id=stored.workspace_id, z=0, x=0, y=0
                 )
 
@@ -103,7 +107,7 @@ async def test_stored_wms_layer_rejects_unsafe_endpoint_before_dns(
         if view != "tilejson":
             assert str(stored.id) in str(error.value)
     finally:
-        await service.close()
+        await wms.close()
 
 
 def _wms_layer_artifact(url: str) -> ArtifactObject:
@@ -150,28 +154,32 @@ async def test_wms_tile_is_dialed_from_a_trusted_destination_only(
     async def fetch_tile(egress_policy: object) -> bytes:
         unit_of_work = InMemoryUnitOfWork()
         storage = LocalFileObjectStore(tmp_path / str(id(egress_policy)))
-        service = ArtifactService(
+        wms = WmsTileClient(
+            egress_policy=egress_policy,  # pyright: ignore[reportArgumentType]
+        )
+        tiles = ArtifactGeoTileService(
             unit_of_work,
             storage,
             availability=ArtifactAvailability(unit_of_work),
-            egress_policy=egress_policy,  # pyright: ignore[reportArgumentType]
+            wms=wms,
         )
         try:
             async with unit_of_work:
                 await unit_of_work.artifacts.add(artifact)
                 await unit_of_work.commit()
-            stored = await service.get(artifact.workspace_id, artifact.id)
+            stored = await tiles.get(artifact.workspace_id, artifact.id)
             assert stored is not None
-            read = await service.load_raster_tile(
+            read = await tiles.load_raster_tile(
                 stored,
                 workspace_id=stored.workspace_id,
                 z=0,
                 x=0,
                 y=0,
             )
+            assert read is not None
             return read.content
         finally:
-            await service.close()
+            await wms.close()
 
     async with loopback_http_listener(
         body=b"png-tile",
@@ -199,9 +207,5 @@ def test_wms_tile_fetch_has_no_resolver_of_its_own() -> None:
     duplication cannot come back quietly with the next tile parameter.
     """
 
-    source = Path(ArtifactService.__module__.replace(".", "/")).name
-    del source
-    text = Path("apps/api/src/grafy_api/artifacts/service.py").read_text(
-        encoding="utf-8"
-    )
-    assert "getaddrinfo" not in text
+    for path in Path("apps/api/src/grafy_api/artifacts").glob("*.py"):
+        assert "getaddrinfo" not in path.read_text(encoding="utf-8")

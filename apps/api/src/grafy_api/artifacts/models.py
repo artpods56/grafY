@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
@@ -16,14 +17,11 @@ from pydantic import (
 )
 
 from grafy_core.artifacts import (
-    ArtifactExportFormat,
-    ArtifactObject,
     ArtifactRef,
     JsonObject,
 )
 from grafy_core.spatial_contracts import (
     GeoPropertyValueType,
-    GeoVectorStyle as StoredGeoVectorStyle,
     GeoRasterStyle as StoredGeoRasterStyle,
     GeoBounds,
     GeoFeatureCollectionPayload,
@@ -31,7 +29,7 @@ from grafy_core.spatial_contracts import (
     GeoVectorProjectionMetadata,
     GeoRasterProjectionMetadata,
 )
-from grafy_core.table_contracts import TableColumn, TablePage, TableValueType
+from grafy_core.table_contracts import TablePage, TableValueType
 
 from grafy_api.v1.models import ApiResponse
 
@@ -49,14 +47,6 @@ class ArtifactExportFormatResponse(ApiResponse):
     content_type: str
     filename: str
 
-    @classmethod
-    def from_export_format(cls, export_format: "ArtifactExportFormat") -> "Self":
-        return cls(
-            format=export_format.format,
-            content_type=export_format.content_type,
-            filename=export_format.filename,
-        )
-
 
 class ArtifactSummaryResponse(ApiResponse):
     artifact_id: UUID
@@ -72,25 +62,6 @@ class ArtifactSummaryResponse(ApiResponse):
     )
     metadata: dict[str, object] = Field(default_factory=dict)
 
-    @classmethod
-    def from_artifact(
-        cls,
-        artifact: ArtifactObject,
-        *,
-        download_formats: list[ArtifactExportFormatResponse],
-    ) -> Self:
-        return cls(
-            artifact_id=artifact.id,
-            artifact_type=artifact.artifact_type,
-            schema_version=artifact.schema_version,
-            content_type=artifact.content_type,
-            byte_size=artifact.byte_size,
-            sha256=artifact.sha256,
-            content_url=f"./artifacts/{artifact.id}/content",
-            download_formats=download_formats,
-            metadata=artifact.metadata,
-        )
-
 
 class WorkbenchErrorResponse(ApiResponse):
     detail: str
@@ -101,27 +72,10 @@ class TableColumnResponse(ApiResponse):
     title: str
     value_type: TableValueType
 
-    @classmethod
-    def from_column(cls, column: TableColumn) -> "TableColumnResponse":
-        return cls(
-            id=column.id,
-            title=column.title,
-            value_type=column.value_type,
-        )
-
 
 class TableSchemaResponse(ApiResponse):
     columns: list[TableColumnResponse]
     total_rows: int = Field(ge=0)
-
-    @classmethod
-    def from_page(cls, page: TablePage) -> "TableSchemaResponse":
-        return cls(
-            columns=[
-                TableColumnResponse.from_column(column) for column in page.columns
-            ],
-            total_rows=page.total_rows,
-        )
 
 
 class TableCellPreviewResponse(ApiResponse):
@@ -197,7 +151,12 @@ class TablePageResponse(ApiResponse):
             visible_columns = [columns_by_id[column_id] for column_id in column_ids]
         return cls(
             columns=[
-                TableColumnResponse.from_column(column) for column in visible_columns
+                TableColumnResponse(
+                    id=column.id,
+                    title=column.title,
+                    value_type=column.value_type,
+                )
+                for column in visible_columns
             ],
             rows=[
                 {
@@ -225,6 +184,27 @@ class TablePageResponse(ApiResponse):
 
 
 type ArtifactInteractionScalar = StrictStr | StrictInt | StrictFloat | StrictBool | None
+
+
+_CANONICAL_INTEGER = re.compile(r"^-?(0|[1-9]\d*)$")
+
+
+def _interaction_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and _CANONICAL_INTEGER.fullmatch(value):
+        return int(value)
+    return None
+
+
+def interaction_values_equal(left: object, right: object) -> bool:
+    if type(left) is type(right):
+        return left == right
+    left_int = _interaction_int(left)
+    right_int = _interaction_int(right)
+    return left_int is not None and left_int == right_int
 
 
 class ArtifactExactMatchRow(BaseModel):
@@ -464,10 +444,6 @@ class GeoVectorStyle(ApiResponse):
     point: GeoPointStyle
     label: GeoLabelStyle | None
 
-    @classmethod
-    def default(cls) -> "GeoVectorStyle":
-        return cls.model_validate(StoredGeoVectorStyle())
-
 
 class GeoCategorizedPointStyle(ApiResponse):
     model_config = ConfigDict(extra="forbid")
@@ -675,6 +651,7 @@ __all__ = [
     "GeoVectorRenderSourceResponse",
     "GeoVectorStyle",
     "GeoWmsSourcePayload",
+    "interaction_values_equal",
     "TableCellPreviewResponse",
     "TableCellResponse",
     "TableRowTextArtifact",

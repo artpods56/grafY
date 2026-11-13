@@ -10,7 +10,7 @@ from grafy_api.main import create_app
 from grafy_api.realtime.hub import ProjectRoomHub
 from grafy_api.settings import Settings
 from grafy_api.single_owner import ApiOwnerLease, assert_single_http_worker
-from grafy_api.artifacts.service import ArtifactService
+from grafy_api.artifacts.wms import WmsTileClient
 from grafy_core.application.collaboration import CollaborationService
 from grafy_core.domain.identity import ActorContext, WorkspaceRole
 from grafy_core.domain.runs import Run, RunStatus
@@ -80,18 +80,18 @@ async def test_create_app_startup_acquires_owner_lease(
 
     shutdown_order: list[str] = []
     original_hub_shutdown = ProjectRoomHub.shutdown
-    original_artifact_close = ArtifactService.close
+    original_artifact_close = WmsTileClient.close
 
     async def close_rooms(hub: ProjectRoomHub) -> None:
         shutdown_order.append("rooms")
         await original_hub_shutdown(hub)
 
-    async def close_artifacts(artifacts: ArtifactService) -> None:
+    async def close_artifacts(artifacts: WmsTileClient) -> None:
         shutdown_order.append("artifacts")
         await original_artifact_close(artifacts)
 
     monkeypatch.setattr(ProjectRoomHub, "shutdown", close_rooms)
-    monkeypatch.setattr(ArtifactService, "close", close_artifacts)
+    monkeypatch.setattr(WmsTileClient, "close", close_artifacts)
     app = create_app(_settings(tmp_path, database_url, single_owner=True))
     async with LifespanManager(app):
         lock_path = tmp_path / "workbench" / ".grafy-api-owner.lock"

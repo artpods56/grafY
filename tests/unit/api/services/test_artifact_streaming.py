@@ -1,18 +1,16 @@
-import asyncio
 from io import BytesIO
 from typing import cast
 from uuid import UUID
 
 import pytest
 
-from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.artifacts.service import (
+from grafy_api.artifacts.content import (
     ARTIFACT_RESPONSE_CHUNK_SIZE,
     BUFFERED_ARTIFACT_RESPONSE_MAX_BYTES,
-    ArtifactResponseTooLargeError,
     ArtifactContentRead,
-    ArtifactService,
+    ArtifactContentService,
 )
+from grafy_api.artifacts.errors import ArtifactResponseTooLargeError
 from grafy_core.artifact_collections import JSON_COLLECTIONS_STORAGE_FORMAT
 from grafy_core.artifacts import ArtifactObject
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
@@ -61,14 +59,13 @@ async def _consume(content: ArtifactContentRead) -> bytes:
     return b"".join([chunk async for chunk in content.chunks()])
 
 
-def test_stored_artifact_content_streams_fixed_chunks_and_closes_source() -> None:
+async def test_stored_artifact_content_streams_fixed_chunks_and_closes_source() -> None:
     expected = b"x" * (ARTIFACT_RESPONSE_CHUNK_SIZE + 17)
     storage = TrackingStorage(expected)
     unit_of_work = InMemoryUnitOfWork()
-    service = ArtifactService(
+    service = ArtifactContentService(
         unit_of_work,
         cast(FileStoragePort, storage),
-        availability=ArtifactAvailability(unit_of_work),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),
@@ -80,15 +77,9 @@ def test_stored_artifact_content_streams_fixed_chunks_and_closes_source() -> Non
         byte_size=len(expected),
     )
 
-    async def read_and_close() -> bytes:
-        content = await service.open_content(artifact)
-        try:
-            assert content.content_length == len(expected)
-            return await _consume(content)
-        finally:
-            await service.close()
-
-    assert asyncio.run(read_and_close()) == expected
+    content = await service.open_content(artifact)
+    assert content.content_length == len(expected)
+    assert await _consume(content) == expected
     assert storage.load_calls == 1
     assert storage.stream.read_sizes
     assert set(storage.stream.read_sizes) == {ARTIFACT_RESPONSE_CHUNK_SIZE}
@@ -106,17 +97,16 @@ def test_stored_artifact_content_streams_fixed_chunks_and_closes_source() -> Non
         ),
     ],
 )
-def test_buffered_reconstruction_is_rejected_before_loading_storage(
+async def test_buffered_reconstruction_is_rejected_before_loading_storage(
     artifact_type: str,
     schema_version: int,
     metadata: dict[str, object],
 ) -> None:
     storage = TrackingStorage(b"manifest must not be loaded")
     unit_of_work = InMemoryUnitOfWork()
-    service = ArtifactService(
+    service = ArtifactContentService(
         unit_of_work,
         cast(FileStoragePort, storage),
-        availability=ArtifactAvailability(unit_of_work),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),
@@ -129,25 +119,18 @@ def test_buffered_reconstruction_is_rejected_before_loading_storage(
         metadata=metadata,
     )
 
-    async def open_and_close() -> None:
-        try:
-            with pytest.raises(ArtifactResponseTooLargeError) as error:
-                await service.open_content(artifact)
-            assert str(artifact.id) in str(error.value)
-            assert str(BUFFERED_ARTIFACT_RESPONSE_MAX_BYTES) in str(error.value)
-        finally:
-            await service.close()
-
-    asyncio.run(open_and_close())
+    with pytest.raises(ArtifactResponseTooLargeError) as error:
+        await service.open_content(artifact)
+    assert str(artifact.id) in str(error.value)
+    assert str(BUFFERED_ARTIFACT_RESPONSE_MAX_BYTES) in str(error.value)
     assert storage.load_calls == 0
 
 
-def test_small_inline_content_without_size_metadata_remains_available() -> None:
+async def test_small_inline_content_without_size_metadata_remains_available() -> None:
     unit_of_work = InMemoryUnitOfWork()
-    service = ArtifactService(
+    service = ArtifactContentService(
         unit_of_work,
         cast(FileStoragePort, TrackingStorage(b"unused")),
-        availability=ArtifactAvailability(unit_of_work),
     )
     artifact = ArtifactObject(
         workspace_id=UUID("00000000-0000-0000-0000-000000000007"),
@@ -159,10 +142,6 @@ def test_small_inline_content_without_size_metadata_remains_available() -> None:
         byte_size=None,
     )
 
-    async def open_and_close() -> bytes:
-        try:
-            return await _consume(await service.open_content(artifact))
-        finally:
-            await service.close()
-
-    assert asyncio.run(open_and_close()) == b'{\n  "value": "legacy"\n}\n'
+    assert await _consume(await service.open_content(artifact)) == (
+        b'{\n  "value": "legacy"\n}\n'
+    )

@@ -112,18 +112,21 @@ async def test_composition_hands_the_egress_policy_to_the_component_that_dials(
             async with unit_of_work:
                 await unit_of_work.artifacts.add(artifact)
                 await unit_of_work.commit()
-            stored = await components.artifacts.get(artifact.workspace_id, artifact.id)
+            stored = await components.artifact_geo_tiles.get(
+                artifact.workspace_id, artifact.id
+            )
             assert stored is not None
-            read = await components.artifacts.load_raster_tile(
+            read = await components.artifact_geo_tiles.load_raster_tile(
                 stored,
                 workspace_id=stored.workspace_id,
                 z=0,
                 x=0,
                 y=0,
             )
+            assert read is not None
             return read.content
         finally:
-            await components.artifacts.close()
+            await components.wms.close()
 
     async with loopback_http_listener(
         body=b"png-tile",
