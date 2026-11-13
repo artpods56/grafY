@@ -166,6 +166,7 @@ async def build_app_resources(
         storage=storage,
         storage_backend=settings.storage.storage_backend,
         bucket=settings.storage.storage_bucket,
+        tiler_config=settings.tiler,
         upload_config=UploadServiceConfig.from_settings(settings.uploads),
         node_secrets=node_secrets,
         egress_policy=workbench_egress_policy(settings.egress),

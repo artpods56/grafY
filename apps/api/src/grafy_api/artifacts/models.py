@@ -664,3 +664,27 @@ __all__ = [
     "TableSchemaResponse",
     "WorkbenchErrorResponse",
 ]
+
+
+class ImageInfoResponse(BaseModel):
+    width: int
+    height: int
+    page: int
+    page_count: int
+    band_count: int
+    dtype: str
+    bit_depth: int
+    kind: Literal["gray", "rgb", "palette", "cmyk"]
+    has_alpha: bool
+    tile_size: Literal[256, 512]
+    min_level: int
+    max_level: int
+    tile_format: Literal["jpg", "png"]
+    resampling: Literal["nearest", "average"]
+    overview_count: int
+    overview_level: int | None
+    value_range: tuple[float, float] | None
+    palette: tuple[tuple[int, int, int, int], ...] | None
+    georeferenced: bool
+    crs: str | None
+    bounds_wgs84: tuple[float, float, float, float] | None
