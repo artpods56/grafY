@@ -1,7 +1,7 @@
 """HTTP surface of the tiler. Internal only: the API is the public entry.
 
 Every data route takes exactly one input about what to read, the signed
-``X-Grafy-Grant`` header (see :mod:`grafy_tiler.grant`). There is no URL, path
+``X-Grafy-Grant`` header (see :mod:`grafy_crypto.grants`). There is no URL, path
 or bucket parameter anywhere, so there is nothing to point at another host.
 """
 
@@ -24,13 +24,13 @@ from fastapi import (
     Response,
 )
 from fastapi.responses import JSONResponse
+from grafy_crypto.grants import Grant, GrantError, verify_grant
 from rasterio.errors import NotGeoreferencedWarning
 from rio_tiler.errors import TileOutsideBounds
 from titiler.core.errors import add_exception_handlers
 from titiler.core.middleware import TotalTimeMiddleware
 
 from grafy_tiler.cache import DiskCache
-from grafy_tiler.grant import Grant, GrantError, verify_grant
 from grafy_tiler.raster import (
     RENDERER_VERSION,
     PageNotFound,

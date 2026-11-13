@@ -9,6 +9,7 @@ from typing import Final, Literal
 
 import numpy as np
 import rasterio
+from grafy_crypto.grants import Grant
 from rasterio.enums import ColorInterp, MaskFlags
 from rasterio.errors import RasterioError
 from rasterio.io import DatasetReader
@@ -16,7 +17,6 @@ from rasterio.warp import transform_bounds
 from rasterio.windows import Window
 from rio_tiler.reader import read as read_region
 
-from grafy_tiler.grant import Grant
 from grafy_tiler.settings import OVERVIEW_EDGE, Settings
 
 # Bump when rendering output changes for the same source. It is part of every

@@ -48,7 +48,7 @@ test-storage-gateway:
 
 # Run Python and web linters.
 lint:
-    uv run ruff check apps/api/src libs/client/src libs/core/src libs/persistence/src libs/shared/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
+    uv run ruff check apps/api/src libs/client/src libs/crypto/src libs/core/src libs/persistence/src libs/shared/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
     npm --prefix apps/web run lint
 
 # Format the web app with Prettier. See apps/web/.prettierrc.

@@ -3,10 +3,10 @@ import threading
 from collections.abc import AsyncIterator, Callable
 
 import pytest
+from grafy_crypto.grants import Grant
 
 from grafy_tiler import service as service_module
 from grafy_tiler.cache import DiskCache
-from grafy_tiler.grant import Grant
 from grafy_tiler.raster import SourceError
 from grafy_tiler.service import (
     Overloaded,

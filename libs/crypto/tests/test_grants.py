@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from grafy_tiler.grant import Grant, GrantError, is_safe_key, sign_grant, verify_grant
+from grafy_crypto.grants import Grant, GrantError, is_safe_key, sign_grant, verify_grant
 
 KEY = b"k" * 40
 NOW = 1_000_000
@@ -38,7 +38,7 @@ def _verify(token: str, **changes: object) -> Grant:
 
 def _forge(payload: dict[str, object], key: bytes = KEY) -> str:
     """A correctly signed token around an arbitrary payload."""
-    from grafy_tiler.grant import _b64encode, _mac  # pyright: ignore[reportPrivateUsage]
+    from grafy_crypto.grants import _b64encode, _mac  # pyright: ignore[reportPrivateUsage]
 
     encoded = _b64encode(json.dumps(payload).encode())
     return f"{encoded}.{_b64encode(_mac(key, encoded))}"
@@ -150,7 +150,7 @@ def test_out_of_bounds_fields_are_refused(changes: dict[str, object]) -> None:
 
 
 def test_payload_that_is_not_an_object_is_refused() -> None:
-    from grafy_tiler.grant import _b64encode, _mac  # pyright: ignore[reportPrivateUsage]
+    from grafy_crypto.grants import _b64encode, _mac  # pyright: ignore[reportPrivateUsage]
 
     encoded = _b64encode(b"[1, 2]")
     with pytest.raises(GrantError, match="object"):

@@ -379,10 +379,16 @@ wheels = [
 ]
 
 [[package]]
+name = "grafy-crypto"
+version = "0.1.0"
+source = { directory = "../../libs/crypto" }
+
+[[package]]
 name = "grafy-tiler"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "grafy-crypto" },
     { name = "pydantic-settings" },
     { name = "rasterio" },
     { name = "rio-tiler" },
@@ -405,6 +411,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "grafy-crypto", directory = "../../libs/crypto" },
     { name = "pydantic-settings", specifier = ">=2.10" },
     { name = "rasterio", specifier = ">=1.5.2" },
     { name = "rio-tiler", specifier = "==9.4.13" },

@@ -29,9 +29,9 @@ from pathlib import Path
 
 import boto3
 import pytest
+from grafy_crypto.grants import Grant, sign_grant
 from PIL import Image
 
-from grafy_tiler.grant import Grant, sign_grant
 from tests.conftest import Writer
 
 IMAGE = os.environ.get("GRAFY_TEST_TILER_IMAGE")

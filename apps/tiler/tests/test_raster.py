@@ -4,8 +4,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from grafy_crypto.grants import Grant
 
-from grafy_tiler.grant import Grant
 from grafy_tiler.raster import (
     PageNotFound,
     SourceError,

@@ -15,12 +15,12 @@ from pathlib import Path
 import boto3
 import httpx
 import pytest
+from grafy_crypto.grants import Grant, sign_grant
 from moto.server import ThreadedMotoServer
 from PIL import Image
 from pydantic import SecretStr
 
 from grafy_tiler.app import create_app
-from grafy_tiler.grant import Grant, sign_grant
 from grafy_tiler.settings import Settings
 from tests.conftest import BUCKET, SIGNING_KEY, Writer
 

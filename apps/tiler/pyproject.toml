@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Internal raster tile service for Grafy (TiTiler building blocks, GDAL)"
 requires-python = "==3.13.*"
 dependencies = [
+    "grafy-crypto",
     "titiler.core==2.4.0",
     "rio-tiler==9.4.13",
     "pydantic-settings>=2.10",
@@ -16,6 +17,9 @@ dependencies = [
 # uv workspace.
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+grafy-crypto = { path = "../../libs/crypto" }
 
 [dependency-groups]
 dev = [
@@ -41,7 +45,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "../../libs/crypto/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--import-mode=importlib"
@@ -63,5 +67,5 @@ venv = ".venv"
 # stays on standard mode.
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
-include = ["src", "tests"]
-extraPaths = ["src"]
+include = ["src", "tests", "../../libs/crypto"]
+extraPaths = ["src", "../../libs/crypto/src"]

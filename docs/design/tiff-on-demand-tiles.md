@@ -57,9 +57,12 @@ HMAC-SHA256 signature.
   development against the local file store, with the resolved path required to
   stay inside the root. Deployments use `s3`.
 
-The API signer and the tiler verifier are separate code in separate lock files.
-A golden-vector file read by both test suites keeps the wire format in
-agreement.
+The API signer and tiler verifier share `grafy_crypto.grants` from `libs/crypto`.
+This dependency-free package supports both Python 3.13 and 3.14 while the services
+keep separate lock files. It owns the wire format, signing and verification;
+the API owns authorization and each service supplies its keys and limits.
+Golden vectors in `libs/crypto/tests/golden` pin compatibility across deployments.
+The protocol tests run in both Python environments.
 
 ## Rendering
 

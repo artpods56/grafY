@@ -10,7 +10,7 @@ FROM python:3.13-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d981
 
 COPY --from=uv /uv /usr/local/bin/uv
 
-WORKDIR /app
+WORKDIR /app/apps/tiler
 ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -18,6 +18,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/app/.venv
 
 # Dependencies first so source edits do not rebuild the wheel layer.
+COPY libs/crypto /app/libs/crypto
 COPY apps/tiler/pyproject.toml apps/tiler/uv.lock ./
 RUN uv sync --locked --no-dev --no-editable --no-install-project
 

@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.123.0",
     "httpx>=0.28.0",
     "grafy-core",
+    "grafy-crypto",
     "grafy-persistence",
     "grafy-workbench",
     "grafy-storage",
@@ -28,6 +29,7 @@ dependencies = [
 
 [tool.uv.sources]
 grafy-core = { workspace = true }
+grafy-crypto = { workspace = true }
 grafy-persistence = { workspace = true }
 grafy-workbench = { workspace = true }
 grafy-storage = { workspace = true }

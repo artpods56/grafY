@@ -7,6 +7,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "grafy-api",
     "grafy-client",
+    "grafy-crypto",
     "grafy-core",
     "grafy-persistence",
     "grafy-workbench",
@@ -26,6 +27,7 @@ package = false
 [tool.uv.workspace]
 members = [
     "libs/client",
+    "libs/crypto",
     "libs/core",
     "libs/persistence",
     "libs/storage",
@@ -47,6 +49,7 @@ exclude = [
 [tool.uv.sources]
 grafy-api = { workspace = true }
 grafy-client = { workspace = true }
+grafy-crypto = { workspace = true }
 grafy-core = { workspace = true }
 grafy-persistence = { workspace = true }
 grafy-storage = { workspace = true }
@@ -80,6 +83,7 @@ venv = ".venv"
 typeCheckingMode = "strict"
 include = [
     "libs/client/*",
+    "libs/crypto/*",
     "libs/core/*",
     "libs/persistence/*",
     "libs/storage/*",
@@ -105,6 +109,7 @@ exclude = [
 executionEnvironments = [
     { root = ".", extraPaths = [
         "libs/client/src",
+        "libs/crypto/src",
         "libs/core/src",
         "libs/persistence/src",
         "libs/storage/src",

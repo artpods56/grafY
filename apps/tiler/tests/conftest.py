@@ -13,12 +13,12 @@ from typing import Any
 import numpy as np
 import pytest
 import rasterio
+from grafy_crypto.grants import Grant, sign_grant
 from PIL import Image
 from rasterio.enums import ColorInterp, Resampling
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.transform import from_origin
 
-from grafy_tiler.grant import Grant, sign_grant
 from grafy_tiler.settings import Settings
 
 BUCKET = "workbench-artifacts"

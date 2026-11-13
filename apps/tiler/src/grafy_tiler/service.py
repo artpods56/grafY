@@ -19,11 +19,11 @@ from dataclasses import replace
 from functools import partial
 from typing import Any, Final
 
+from grafy_crypto.grants import Grant
 from rasterio.errors import RasterioError
 from rasterio.io import DatasetReader, MemoryFile
 
 from grafy_tiler.cache import DiskCache
-from grafy_tiler.grant import Grant
 from grafy_tiler.raster import (
     RENDERER_VERSION,
     ImageInfo,

@@ -63,8 +63,7 @@ def _mac(key: bytes, encoded_payload: str) -> bytes:
 
 
 def sign_grant(grant: Grant, key: bytes) -> str:
-    """Produce a token. The API owns the production signer; this is the
-    reference implementation the golden vectors pin."""
+    """Sign a read grant after the caller has authorized access to its source."""
     payload = json.dumps(
         {
             "v": GRANT_VERSION,

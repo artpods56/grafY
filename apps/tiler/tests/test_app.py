@@ -6,10 +6,10 @@ from dataclasses import replace
 import httpx
 import pytest
 from fastapi.routing import APIRoute
+from grafy_crypto.grants import Grant, sign_grant
 from PIL import Image
 
 from grafy_tiler.app import create_app
-from grafy_tiler.grant import Grant, sign_grant
 from grafy_tiler.service import Overloaded, TileService
 from grafy_tiler.settings import Settings
 from tests.conftest import BUCKET, SIGNING_KEY, Writer

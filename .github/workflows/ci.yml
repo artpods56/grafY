@@ -155,7 +155,7 @@ jobs:
         run: uv run prek run --all-files
       - name: Python lint
         if: ${{ !cancelled() && steps.python_install.outcome == 'success' }}
-        run: uv run ruff check apps/api/src libs/client/src libs/core/src libs/persistence/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
+        run: uv run ruff check apps/api/src libs/client/src libs/crypto/src libs/core/src libs/persistence/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
       - name: Client typecheck
         if: ${{ !cancelled() && steps.python_install.outcome == 'success' }}
         run: uv run pyright libs/client
@@ -267,7 +267,7 @@ jobs:
       - name: Tiler lint and types
         working-directory: apps/tiler
         run: |
-          uv run ruff check src tests
+          uv run ruff check src tests ../../libs/crypto
           uv run pyright
       - name: Tiler tests
         working-directory: apps/tiler
