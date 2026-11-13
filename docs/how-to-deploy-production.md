@@ -280,6 +280,13 @@ The tiler reuses `GRAFY_S3_ENDPOINT_URL`, `GRAFY_S3_REGION` and
 `GRAFY_S3_FORCE_PATH_STYLE` from the API, so set path-style addressing for
 MinIO there (`GRAFY_S3_FORCE_PATH_STYLE=true`).
 
+Enable the API proxy with `GRAFY_TILER_URL=http://tiler:8100`. The API uses
+`GRAFY_TILER_SHARED_KEY` to sign reads after checking Workspace access. Unset
+`GRAFY_TILER_URL` to disable the proxy without stopping the API.
+`GRAFY_TILER_RENDERER_VERSION` defaults to `1` and must match the tiler renderer
+version; update it whenever renderer settings change output. The API timeout
+is `GRAFY_TILER_TIMEOUT_SECONDS=35`, longer than the tiler's default 30-second render timeout.
+
 **Sizing and limits.** The defaults suit `ai-ihpan`: 2 CPUs
 (`GRAFY_TILER_CPUS`), 1.5 GiB RAM (`GRAFY_TILER_MEMORY`), an image of about
 550 MB, and a 2 GiB tile cache on the `grafy-tiler-cache` volume

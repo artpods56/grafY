@@ -7,8 +7,8 @@ container produces deep-zoom tiles and thumbnails; the API stays the only public
 entry and decides who may see what.
 
 This document records the decisions behind the tiler (`apps/tiler`) and the
-constraints the API proxy and the web viewer must keep. The tiler ships first and
-is invisible until the API proxy lands.
+constraints the API proxy and the web viewer must keep. The API exposes the
+Workspace-scoped proxy; browser tile-viewer integration is a separate step.
 
 ## Shape
 
@@ -29,7 +29,10 @@ flowchart LR
    and the tiler's renderer version.
 4. Otherwise the API signs a short-lived **grant** and proxies to the tiler over
    the internal network. It proxies and never redirects.
-5. With `GRAFY_TILER_URL` unset the tile routes answer 501 and the web shows
+5. `GRAFY_TILER_RENDERER_VERSION` must match the tiler renderer version, and
+   must change when rendering configuration changes the output. It participates
+   in ETags. The proxy rejects a mismatched renderer header on image responses.
+6. With `GRAFY_TILER_URL` unset the tile routes answer 501 and the web shows
    "Preview unavailable". The API does not `depends_on` the tiler.
 
 ## The tiler never takes a URL
@@ -105,8 +108,10 @@ bumping the renderer version retires old tiles.
 It is in the tiler, not the API or a reverse proxy, because the tiler owns the
 render parameters and the version, the API stays stateless about rasters, disk is
 bounded in one place, and `proxy_cache` or `X-Accel-Redirect` would not exist in
-development and cannot see through a header grant. Browser immutable caching and
-the API's 304 absorb warm traffic. `X-Accel-Redirect` is out of scope for v1.
+development and cannot see through a header grant. API responses use
+`Cache-Control: private, no-cache`: browsers may retain bytes but must revalidate,
+so revoked Workspace access is checked even for a warm tile. Authorized matching
+ETags return 304 without contacting the tiler. `X-Accel-Redirect` is out of scope for v1.
 
 ## Resource bounds
 
