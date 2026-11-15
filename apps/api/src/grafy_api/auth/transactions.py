@@ -117,7 +117,9 @@ class LoginTransactions:
             if transaction is None:
                 raise OidcProtocolError("invalid_login_transaction")
             if transaction.expires_at <= datetime.now(UTC):
-                await self._reject(unit_of_work, transaction, "expired_login_transaction")
+                await self._reject(
+                    unit_of_work, transaction, "expired_login_transaction"
+                )
             if not hmac.compare_digest(transaction.state_digest, digest_secret(state)):
                 await self._reject(unit_of_work, transaction, "invalid_state")
             try:

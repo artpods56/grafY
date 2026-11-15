@@ -11,6 +11,7 @@ from grafy_api.artifacts.images import (
     TiffSource,
     TileExtension,
     TilerImage,
+    TilerPort,
 )
 from grafy_api.artifacts.models import ImageInfoResponse
 from grafy_core.artifacts import ArtifactObject
@@ -50,7 +51,7 @@ INFO = ImageInfoResponse(
 )
 
 
-class FakeTiler:
+class FakeTiler(TilerPort):
     def __init__(self) -> None:
         self.calls: list[tuple[object, ...]] = []
         self.closed = False

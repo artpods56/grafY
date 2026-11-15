@@ -13,13 +13,14 @@ from grafy_api.artifacts.images import (
     TiffSource,
     TileExtension,
     TilerImage,
+    TilerPort,
 )
 from grafy_api.artifacts.models import ImageInfoResponse
 
 IMAGE_RESPONSE_MAX_BYTES = 8 * 1024 * 1024
 
 
-class HttpTiler:
+class HttpTiler(TilerPort):
     def __init__(
         self, config: TilerConfig, *, client: httpx.AsyncClient | None = None
     ) -> None:

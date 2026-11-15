@@ -168,9 +168,9 @@ class InMemoryDataStore:
     )
     # (workspace_id, conversation_id, sequence). An event is never edited in place and
     # never evicted: the sequence is the address of history.
-    agent_conversation_events: dict[
-        tuple[UUID, UUID, int], AgentConversationEvent
-    ] = field(default_factory=dict[tuple[UUID, UUID, int], AgentConversationEvent])
+    agent_conversation_events: dict[tuple[UUID, UUID, int], AgentConversationEvent] = (
+        field(default_factory=dict[tuple[UUID, UUID, int], AgentConversationEvent])
+    )
     # (turn.id). A send's receipt: keyed for a client turn id by the repository, which is
     # where "one turn at a time per conversation" and "this send was already admitted" are
     # decided, exactly as the partial unique index decides them in SQL.

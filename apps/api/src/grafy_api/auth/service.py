@@ -196,12 +196,14 @@ class AuthService:
                 "provider_callback_failed",
                 transaction_consumed=consumed,
             )
-        _transaction, verifier, return_path = (
-            await self.transactions.consume_for_callback(
-                unit_of_work_factory=self._unit_of_work_factory,
-                transaction_id=transaction_id,
-                state=state,
-            )
+        (
+            _transaction,
+            verifier,
+            return_path,
+        ) = await self.transactions.consume_for_callback(
+            unit_of_work_factory=self._unit_of_work_factory,
+            transaction_id=transaction_id,
+            state=state,
         )
         try:
             try:

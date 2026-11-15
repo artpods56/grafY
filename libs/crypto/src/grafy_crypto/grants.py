@@ -18,9 +18,12 @@ import hashlib
 import hmac
 import json
 import re
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Final, cast
+from typing import Final, Self, TypedDict, cast
+
+from pydantic import TypeAdapter, ValidationError
 
 GRANT_VERSION: Final = 1
 
@@ -36,6 +39,11 @@ class GrantError(Exception):
     """The grant is malformed, forged, expired, or names something not allowed."""
 
 
+GrantPayload = TypedDict(
+    "GrantPayload", {"v": Final[int], "b": str, "k": str, "s": str, "n": int, "p": int, "exp": int}
+)
+
+
 @dataclass(frozen=True, slots=True)
 class Grant:
     bucket: str
@@ -44,6 +52,98 @@ class Grant:
     byte_size: int
     page: int
     expires_at: int
+
+    PAYLOAD_ADAPTER = TypeAdapter(GrantPayload)
+
+    def sign_grant(self, key: bytes) -> str:
+        """Sign a read grant after the caller has authorized access to its source."""
+        payload = json.dumps(
+            {
+                "v": GRANT_VERSION,
+                "b": self.bucket,
+                "k": self.key,
+                "s": self.sha256,
+                "n": self.byte_size,
+                "p": self.page,
+                "exp": self.expires_at,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        encoded = _b64encode(payload.encode("utf-8"))
+        return f"{encoded}.{_b64encode(_mac(key, encoded))}"
+
+    @classmethod
+    def verify_grant(
+        cls,
+        token: str,
+        *,
+        keys: Iterable[bytes],
+        bucket: str,
+        skew_seconds: int,
+        max_source_bytes: int,
+        now: int = int(time.time()),
+    ) -> Self:
+        """Return the grant the token carries, or raise :class:`GrantError`.
+
+        Checks, in order: shape, signature against any configured key (constant
+        time), version, expiry, bucket, object key, digest, size and page. A
+        failure never says which key or which byte was wrong.
+        """
+        encoded, separator, signature = token.partition(".")
+        if separator == "" or encoded == "" or signature == "":
+            raise GrantError("malformed grant")
+
+        presented = _b64decode(signature)
+
+        mac = lambda key: hmac.new(key,encoded.encode("ascii"), hashlib.sha256).digest()
+        
+        verified = False
+        for key in keys:
+            verified |= hmac.compare_digest(mac(key), presented)
+
+        if not verified:
+            raise GrantError("Grant signature is invalid")
+
+        try:
+            payload = cls.PAYLOAD_ADAPTER.validate_python(
+                json.loads(_b64decode(encoded))        )
+        except ValidationError as exc:
+            raise GrantError("Could not parse the grant payload", str(exc))        
+
+        bucket, key = payload["b"], payload["k"]
+        sha256, byte_size = payload["s"], payload["n"]
+        page, expires_at = payload["p"], payload["exp"]
+
+        if payload["v"] != GRANT_VERSION:
+            raise GrantError("Unsupported grant version")
+
+        if now > payload["exp"] + skew_seconds:
+            raise GrantError("Grant has expired")
+
+        if payload["b"] != bucket:
+            raise GrantError("Grant names a bucket this tiler does not serve")
+
+        if not is_safe_key(payload["k"]):
+            raise GrantError("Grant object key is not allowed")
+
+        if _SHA256_PATTERN.fullmatch(payload["s"]) is None:
+            raise GrantError("grant digest is not a SHA-256")
+
+        byte_size = _integer(payload, "n")
+        if byte_size < 1 or byte_size > max_source_bytes:
+            raise GrantError("grant object size is out of bounds")
+
+        if not 0 <= payload["p"]<= MAX_PAGE:
+            raise GrantError("grant page is out of bounds")
+        return Grant(
+            bucket=bucket,
+            key=object_key,
+            sha256=sha256,
+            byte_size=byte_size,
+            page=page,
+            expires_at=expires_at,
+        )
 
 
 def _b64encode(raw: bytes) -> str:

@@ -35,6 +35,13 @@ test:
     uv run pytest
     npm --prefix apps/web test
 
+# Each line keeps which tests ran it (--cov-context=test), so editor tooling can
+# show the tests covering a function. ctrace: Python 3.14's default sysmon core
+# records a line only once per run, which leaves per-test contexts incomplete.
+# Record per-test Python coverage into .coverage (args: pytest paths; default: all).
+coverage *args:
+    COVERAGE_CORE=ctrace uv run --with pytest-cov pytest --cov --cov-context=test --cov-report= {{args}}
+
 # Prove presigned S3 uploads through the gateway's /storage/ location.
 test-storage-gateway:
     #!/usr/bin/env bash

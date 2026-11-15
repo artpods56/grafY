@@ -134,10 +134,14 @@ async def test_keys_of_one_graph_are_listed_by_agent_and_scoped_to_the_workspace
         )
         # Reading another Workspace's coordinates, or our own coordinates through them.
         assert (
-            await unit_of_work.agent_keys.get(WORKSPACE_TWO, project.id, GRAPH_ID, AGENT_ID)
+            await unit_of_work.agent_keys.get(
+                WORKSPACE_TWO, project.id, GRAPH_ID, AGENT_ID
+            )
         ) is None
         assert (
-            await unit_of_work.agent_keys.list_for_graph(WORKSPACE_TWO, project.id, GRAPH_ID)
+            await unit_of_work.agent_keys.list_for_graph(
+                WORKSPACE_TWO, project.id, GRAPH_ID
+            )
             == []
         )
 
@@ -155,21 +159,29 @@ async def test_clearing_a_key_needs_nothing_it_could_only_have_read(
         await unit_of_work.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_keys.remove(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
+        await unit_of_work.agent_keys.remove(
+            WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID
+        )
         await unit_of_work.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         assert (
-            await unit_of_work.agent_keys.get(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
+            await unit_of_work.agent_keys.get(
+                WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID
+            )
         ) is None
         assert (
-            await unit_of_work.agent_keys.list_for_graph(WORKSPACE_ONE, project.id, GRAPH_ID)
+            await unit_of_work.agent_keys.list_for_graph(
+                WORKSPACE_ONE, project.id, GRAPH_ID
+            )
             == []
         )
 
     # Clearing what was never there is not an error: the state the caller wanted holds.
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_keys.remove(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
+        await unit_of_work.agent_keys.remove(
+            WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID
+        )
         await unit_of_work.commit()
 
 
@@ -190,6 +202,8 @@ async def test_deleting_the_project_takes_the_sealed_key_with_it(
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
         assert (
-            await unit_of_work.agent_keys.list_for_graph(WORKSPACE_ONE, project.id, GRAPH_ID)
+            await unit_of_work.agent_keys.list_for_graph(
+                WORKSPACE_ONE, project.id, GRAPH_ID
+            )
             == []
         )
