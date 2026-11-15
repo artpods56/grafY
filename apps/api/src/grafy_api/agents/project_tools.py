@@ -43,7 +43,6 @@ from grafy_core.artifacts import (
     ArtifactRef,
     ArtifactRefSequence,
     ArtifactTypeKey,
-    ArtifactTypeSpec,
 )
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.errors import ObjectAlreadyExistsError
@@ -81,20 +80,6 @@ class RegistryNodePorts(NodePorts):
         self._registry = registry
 
     def input_ports(self, node: GraphNode) -> Sequence[PortFacts] | None:
-        return self._ports(node, inputs=True)
-
-    def output_ports(self, node: GraphNode) -> Sequence[PortFacts] | None:
-        return self._ports(node, inputs=False)
-
-    def title(self, node: GraphNode) -> str:
-        try:
-            return self._registry.node_registration(
-                node.operator_id, node.operator_version
-            ).title
-        except UnknownOperatorError:
-            return node.operator_id
-
-    def _ports(self, node: GraphNode, *, inputs: bool) -> Sequence[PortFacts] | None:
         try:
             registration = self._registry.node_registration(
                 node.operator_id, node.operator_version
@@ -110,36 +95,57 @@ class RegistryNodePorts(NodePorts):
             node.config_dict(),
         )
         facts: list[PortFacts] = []
-        if inputs:
-            for name, port in resolved.input_contract.ports.items():
-                facts.append(
-                    PortFacts(
-                        name=name,
-                        artifact_type=_concrete(port.accepts),
-                        required=port.required,
-                        title=port.title,
-                        description=port.description,
-                    )
+        for name, port in resolved.input_contract.ports.items():
+            facts.append(
+                PortFacts(
+                    name=name,
+                    artifact_type=None
+                    if isinstance(port.accepts, ArtifactTypeVariable)
+                    else port.accepts,
+                    required=port.required,
+                    title=port.title,
+                    description=port.description,
                 )
-        else:
-            for name, out in resolved.output_contract.ports.items():
-                facts.append(
-                    PortFacts(
-                        name=name,
-                        artifact_type=_concrete(out.produces),
-                        required=out.required,
-                        title=out.title,
-                        description=out.description,
-                    )
-                )
+            )
         return facts
 
+    def output_ports(self, node: GraphNode) -> Sequence[PortFacts] | None:
+        try:
+            registration = self._registry.node_registration(
+                node.operator_id, node.operator_version
+            )
+        except UnknownOperatorError:
+            return None
+        # A node's own bindings decide what a generic port is. The class carries the
+        # contract; resolving never builds the node, so one that needs runtime services is
+        # described like any other.
+        resolved = resolve_node_contracts(
+            cast(Any, registration.node_class),
+            node.artifact_type_binding_map(),
+            node.config_dict(),
+        )
+        facts: list[PortFacts] = []
+        for name, out in resolved.output_contract.ports.items():
+            facts.append(
+                PortFacts(
+                    name=name,
+                    artifact_type=None
+                    if isinstance(out.produces, ArtifactTypeVariable)
+                    else out.produces,
+                    required=out.required,
+                    title=out.title,
+                    description=out.description,
+                )
+            )
+        return facts
 
-def _concrete(
-    contract: ArtifactTypeKey | ArtifactTypeVariable,
-) -> ArtifactTypeKey | None:
-    """The type a port is, or ``None`` while it is a variable nothing has bound."""
-    return None if isinstance(contract, ArtifactTypeVariable) else contract
+    def title(self, node: GraphNode) -> str:
+        try:
+            return self._registry.node_registration(
+                node.operator_id, node.operator_version
+            ).title
+        except UnknownOperatorError:
+            return node.operator_id
 
 
 class ContentAddressedArguments(ArgumentArtifacts):
@@ -154,9 +160,14 @@ class ContentAddressedArguments(ArgumentArtifacts):
         self._unit_of_work_factory = unit_of_work_factory
         self._json_types: dict[ArtifactTypeKey, JsonType] = {}
         for spec in registry.artifact_types:
-            json_type = _writable_json_type(spec)
-            if json_type is not None:
-                self._json_types[spec.key] = json_type
+            if spec.materialized_json_type not in ("string", "integer"):
+                continue
+            properties = spec.payload_schema.get("properties")
+            if not isinstance(properties, dict) or set(properties) != {"value"}:
+                continue
+            self._json_types[spec.key] = (
+                "string" if spec.materialized_json_type == "string" else "integer"
+            )
 
     def json_type(self, key: ArtifactTypeKey) -> JsonType | None:
         return self._json_types.get(key)
@@ -168,47 +179,7 @@ class ContentAddressedArguments(ArgumentArtifacts):
         key: ArtifactTypeKey,
         value: str | int,
     ) -> ArtifactRef:
-        return await self._addressed(
-            workspace_id=workspace_id, key=key, payload={"value": value}
-        )
-
-    async def page_for(
-        self,
-        *,
-        workspace_id: UUID,
-        html: str,
-        sources: Mapping[str, ArtifactRef],
-    ) -> ArtifactRef:
-        page = HtmlPage(
-            html=html,
-            sources={
-                name: HtmlPageSource(
-                    artifact_id=ref.artifact_id,
-                    artifact_type=ref.artifact_type,
-                    schema_version=ref.schema_version,
-                )
-                for name, ref in sources.items()
-            },
-        )
-        return await self._addressed(
-            workspace_id=workspace_id,
-            key=HTML_PAGE.key,
-            payload=cast(dict[str, object], page.model_dump(mode="json")),
-        )
-
-    async def get_artifact(
-        self, *, workspace_id: UUID, artifact_id: UUID
-    ) -> ArtifactObject | None:
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.artifacts.get(workspace_id, artifact_id)
-
-    async def _addressed(
-        self,
-        *,
-        workspace_id: UUID,
-        key: ArtifactTypeKey,
-        payload: dict[str, object],
-    ) -> ArtifactRef:
+        payload: dict[str, object] = {"value": value}
         content = json.dumps(
             payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
@@ -242,16 +213,64 @@ class ContentAddressedArguments(ArgumentArtifacts):
                 await unit_of_work.rollback()
         return artifact.ref()
 
+    async def page_for(
+        self,
+        *,
+        workspace_id: UUID,
+        html: str,
+        sources: Mapping[str, ArtifactRef],
+    ) -> ArtifactRef:
+        page = HtmlPage(
+            html=html,
+            sources={
+                name: HtmlPageSource(
+                    artifact_id=ref.artifact_id,
+                    artifact_type=ref.artifact_type,
+                    schema_version=ref.schema_version,
+                )
+                for name, ref in sources.items()
+            },
+        )
+        key = HTML_PAGE.key
+        payload = cast(dict[str, object], page.model_dump(mode="json"))
+        content = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        digest = sha256(content).hexdigest()
+        artifact_id = uuid5(
+            ARGUMENT_ARTIFACT_NAMESPACE,
+            f"{workspace_id}:{key.id}@{key.schema_version}:{digest}",
+        )
+        async with self._unit_of_work_factory() as unit_of_work:
+            existing = await unit_of_work.artifacts.get(workspace_id, artifact_id)
+            if existing is not None:
+                return existing.ref()
+            artifact = ArtifactObject(
+                id=artifact_id,
+                workspace_id=workspace_id,
+                artifact_type=key.id,
+                schema_version=key.schema_version,
+                content_type="application/json",
+                storage_backend="inline",
+                inline_payload=payload,
+                byte_size=len(content),
+                sha256=digest,
+                metadata={"written_by": "agent_tool_call"},
+            )
+            try:
+                await unit_of_work.artifacts.add(artifact)
+                await unit_of_work.commit()
+            except ObjectAlreadyExistsError:
+                # Two identical calls wrote at once. The id is the content's, so the one
+                # that lost the race holds exactly what the winner stored.
+                await unit_of_work.rollback()
+        return artifact.ref()
 
-def _writable_json_type(spec: ArtifactTypeSpec) -> JsonType | None:
-    """``string`` or ``integer`` when a bare ``{"value": ...}`` payload is the whole type."""
-
-    if spec.materialized_json_type not in ("string", "integer"):
-        return None
-    properties = spec.payload_schema.get("properties")
-    if not isinstance(properties, dict) or set(properties) != {"value"}:
-        return None
-    return "string" if spec.materialized_json_type == "string" else "integer"
+    async def get_artifact(
+        self, *, workspace_id: UUID, artifact_id: UUID
+    ) -> ArtifactObject | None:
+        async with self._unit_of_work_factory() as unit_of_work:
+            return await unit_of_work.artifacts.get(workspace_id, artifact_id)
 
 
 class ArtifactModelViews(ModelViews):
