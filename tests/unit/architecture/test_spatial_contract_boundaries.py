@@ -9,6 +9,8 @@ import ast
 import importlib
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CORE_DIR = REPO_ROOT / "libs" / "core" / "src" / "grafy_core"
 
@@ -43,28 +45,33 @@ def _source(module: str) -> str:
     return (CORE_DIR / f"{module}.py").read_text(encoding="utf-8")
 
 
-def _referenced_split_module(node: ast.AST) -> str | None:
+def _referenced_split_modules(node: ast.AST) -> set[str]:
+    candidates: list[str] = []
     if isinstance(node, ast.Import):
-        candidates = (alias.name for alias in node.names)
+        candidates = [alias.name for alias in node.names]
     elif isinstance(node, ast.ImportFrom):
-        candidates = (node.module or "",)
-    else:
-        return None
-    for candidate in candidates:
-        if not candidate.startswith(GRAFY_CORE_PREFIX):
-            continue
-        referenced = candidate[len(GRAFY_CORE_PREFIX) :]
-        if referenced in SPLIT_MODULES or referenced == FACADE:
-            return referenced
-    return None
+        if node.level == 1:
+            module = f"{GRAFY_CORE_PREFIX}{node.module or ''}".rstrip(".")
+        elif node.level == 0:
+            module = node.module or ""
+        else:
+            return set()
+        if module == "grafy_core":
+            candidates = [f"{module}.{alias.name}" for alias in node.names]
+        else:
+            candidates = [module]
+    return {
+        candidate.removeprefix(GRAFY_CORE_PREFIX)
+        for candidate in candidates
+        if candidate.startswith(GRAFY_CORE_PREFIX)
+        and candidate.removeprefix(GRAFY_CORE_PREFIX) in (*SPLIT_MODULES, FACADE)
+    }
 
 
 def _imported_split_modules(tree: ast.Module) -> set[str]:
     modules: set[str] = set()
     for node in ast.walk(tree):
-        referenced = _referenced_split_module(node)
-        if referenced is not None:
-            modules.add(referenced)
+        modules.update(_referenced_split_modules(node))
     return modules
 
 
@@ -118,13 +125,13 @@ def test_no_split_module_imports_a_private_name() -> None:
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
-            referenced = _referenced_split_module(node)
-            if referenced is None:
+            referenced = _referenced_split_modules(node)
+            if not referenced:
                 continue
             for alias in node.names:
                 assert not alias.name.startswith("_"), (
                     f"{module_name} imports private {alias.name!r} from "
-                    f"grafy_core.{referenced}"
+                    f"{sorted(referenced)}"
                 )
 
 
@@ -168,8 +175,8 @@ def test_facade_contains_only_the_docstring_and_same_name_reexports() -> None:
         assert isinstance(node, ast.ImportFrom), (
             f"facade statement {type(node).__name__} is not a re-export import"
         )
-        referenced = _referenced_split_module(node)
-        assert referenced in SPLIT_MODULES
+        referenced = _referenced_split_modules(node)
+        assert len(referenced) == 1 and referenced <= set(SPLIT_MODULES)
         for alias in node.names:
             assert alias.asname == alias.name, f"{alias.name} is not same-name"
             assert not alias.name.startswith("_")
@@ -220,3 +227,25 @@ def test_facade_reexports_the_shared_aliases_as_the_same_objects() -> None:
     for name, module_name in alias_owners.items():
         leaf = importlib.import_module(f"{GRAFY_CORE_PREFIX}{module_name}")
         assert getattr(facade, name) is getattr(leaf, name), name
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("from .spatial_contracts import GeoBounds", {"spatial_contracts"}),
+        ("from . import spatial_maps as maps", {"spatial_maps"}),
+        ("from grafy_core import spatial_maps as maps", {"spatial_maps"}),
+        (
+            "import grafy_core.spatial_bounds, grafy_core.spatial_maps",
+            {"spatial_bounds", "spatial_maps"},
+        ),
+        ("from grafy_core.spatial_bounds import Bounds", {"spatial_bounds"}),
+        ("from .spatial_features import _validate_geometry", {"spatial_features"}),
+        ("from other_package import spatial_maps", set[str]()),
+        ("from ..spatial_maps import GeoMapLayer", set[str]()),
+    ],
+)
+def test_import_detection_covers_python_import_forms(
+    source: str, expected: set[str]
+) -> None:
+    assert _imported_split_modules(ast.parse(source)) == expected
