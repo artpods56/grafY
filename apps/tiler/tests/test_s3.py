@@ -15,7 +15,7 @@ from pathlib import Path
 import boto3
 import httpx
 import pytest
-from grafy_crypto.grants import Grant, sign_grant
+from grafy_crypto.grants import Grant
 from moto.server import ThreadedMotoServer
 from PIL import Image
 from pydantic import SecretStr
@@ -91,7 +91,7 @@ async def s3_client(
 
 
 def _headers(grant: Grant) -> dict[str, str]:
-    return {"X-Grafy-Grant": sign_grant(grant, SIGNING_KEY.encode())}
+    return {"X-Grafy-Grant": grant.sign_grant(SIGNING_KEY.encode())}
 
 
 async def test_tiles_and_thumbnails_are_read_through_vsis3(

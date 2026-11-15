@@ -5,7 +5,7 @@ import time
 import httpx
 from pydantic import ValidationError
 
-from grafy_crypto.grants import Grant, sign_grant
+from grafy_crypto.grants import Grant
 from grafy_shared.config.tiler import TilerConfig
 
 from grafy_api.artifacts.images import (
@@ -80,7 +80,7 @@ class HttpTiler(TilerPort):
             page=source.page,
             expires_at=int(time.time()) + 60,
         )
-        token = sign_grant(grant, config.tiler_shared_key.get_secret_value().encode())
+        token = grant.sign_grant(config.tiler_shared_key.get_secret_value().encode())
         url = str(config.tiler_url).rstrip("/") + "/" + path
         try:
             async with self._client.stream(

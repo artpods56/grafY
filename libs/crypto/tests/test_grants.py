@@ -3,8 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
-
-from grafy_crypto.grants import Grant, GrantError, is_safe_key, sign_grant, verify_grant
+from grafy_crypto.grants import Grant, GrantError, is_safe_key
 
 KEY = b"k" * 40
 NOW = 1_000_000
@@ -33,7 +32,7 @@ def _verify(token: str, **changes: object) -> Grant:
         "max_source_bytes": MAX_BYTES,
     }
     options.update(changes)
-    return verify_grant(token, **options)  # pyright: ignore[reportArgumentType]
+    return Grant.verify_grant(token, **options)  # pyright: ignore[reportArgumentType]
 
 
 def _forge(payload: dict[str, object], key: bytes = KEY) -> str:
@@ -60,32 +59,32 @@ def _payload(**changes: object) -> dict[str, object]:
 
 def test_round_trip() -> None:
     grant = _grant()
-    assert _verify(sign_grant(grant, KEY)) == grant
+    assert _verify(grant.sign_grant(KEY)) == grant
 
 
 def test_either_key_verifies_so_an_operator_can_rotate() -> None:
     old, new = b"o" * 40, b"n" * 40
-    token = sign_grant(_grant(), old)
+    token = _grant().sign_grant(old)
     assert _verify(token, keys=[new, old]) == _grant()
     with pytest.raises(GrantError):
         _verify(token, keys=[new])
 
 
 def test_expiry_allows_clock_skew_but_not_more() -> None:
-    token = sign_grant(_grant(expires_at=NOW), KEY)
+    token = _grant(expires_at=NOW).sign_grant(KEY)
     assert _verify(token, now=NOW + 5).expires_at == NOW
     with pytest.raises(GrantError, match="expired"):
         _verify(token, now=NOW + 6)
 
 
 def test_wrong_signature_is_refused() -> None:
-    token = sign_grant(_grant(), b"x" * 40)
+    token = _grant().sign_grant(b"x" * 40)
     with pytest.raises(GrantError, match="signature"):
         _verify(token)
 
 
 def test_tampered_payload_is_refused() -> None:
-    encoded, _, signature = sign_grant(_grant(), KEY).partition(".")
+    encoded, _, signature = _grant().sign_grant(KEY).partition(".")
     tampered = base64.urlsafe_b64encode(
         json.dumps(_payload(k="other/key.tif"), sort_keys=True).encode()
     ).rstrip(b"=")
@@ -102,7 +101,7 @@ def test_malformed_tokens_are_refused(token: str) -> None:
 
 def test_other_bucket_is_refused() -> None:
     with pytest.raises(GrantError, match="bucket"):
-        _verify(sign_grant(_grant(bucket="elsewhere"), KEY))
+        _verify(_grant(bucket="elsewhere").sign_grant(KEY))
 
 
 @pytest.mark.parametrize(
@@ -172,9 +171,9 @@ def test_golden_vectors_pin_the_wire_format() -> None:
             page=fields["page"],
             expires_at=fields["expires_at"],
         )
-        assert sign_grant(grant, key) == vector["token"], vector["name"]
+        assert grant.sign_grant(key) == vector["token"], vector["name"]
         assert (
-            verify_grant(
+            Grant.verify_grant(
                 vector["token"],
                 keys=[key],
                 bucket=grant.bucket,

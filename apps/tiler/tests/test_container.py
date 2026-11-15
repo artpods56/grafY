@@ -29,7 +29,7 @@ from pathlib import Path
 
 import boto3
 import pytest
-from grafy_crypto.grants import Grant, sign_grant
+from grafy_crypto.grants import Grant
 from PIL import Image
 
 from tests.conftest import Writer
@@ -212,9 +212,7 @@ def _get(
 ) -> tuple[int, bytes, str]:
     headers = {}
     if grant is not None:
-        headers["X-Grafy-Grant"] = sign_grant(
-            grant, (key or stack.signing_key).encode()
-        )
+        headers["X-Grafy-Grant"] = grant.sign_grant((key or stack.signing_key).encode())
     request = urllib.request.Request(
         f"http://127.0.0.1:{stack.tiler_port}{path}", headers=headers
     )

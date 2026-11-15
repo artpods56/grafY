@@ -6,7 +6,7 @@ from dataclasses import replace
 import httpx
 import pytest
 from fastapi.routing import APIRoute
-from grafy_crypto.grants import Grant, sign_grant
+from grafy_crypto.grants import Grant
 from PIL import Image
 
 from grafy_tiler.app import create_app
@@ -141,12 +141,12 @@ async def test_forged_expired_and_foreign_grants_are_refused(
     def get(token: str) -> "object":
         return client.get("/info", headers={GRANT_HEADER: token})
 
-    forged = sign_grant(good, b"x" * 40)
-    expired = sign_grant(
-        replace(good, expires_at=int(time.time()) - 600), SIGNING_KEY.encode()
+    forged = good.sign_grant(b"x" * 40)
+    expired = replace(good, expires_at=int(time.time()) - 600).sign_grant(
+        SIGNING_KEY.encode()
     )
-    other_bucket = sign_grant(replace(good, bucket="other"), SIGNING_KEY.encode())
-    traversal = sign_grant(replace(good, key="../../etc/passwd"), SIGNING_KEY.encode())
+    other_bucket = replace(good, bucket="other").sign_grant(SIGNING_KEY.encode())
+    traversal = replace(good, key="../../etc/passwd").sign_grant(SIGNING_KEY.encode())
     for token in (forged, expired, other_bucket, traversal, "junk"):
         response = await get(token)  # pyright: ignore[reportGeneralTypeIssues]
         assert response.status_code == 403, token  # pyright: ignore[reportAttributeAccessIssue]
@@ -168,7 +168,7 @@ async def test_missing_unreadable_and_oversize_sources(
 ) -> None:
     assert (await client.get("/info", headers=auth(garbage().name))).status_code == 422
     missing = Grant(BUCKET, "nope.tif", "a" * 64, 10, 0, int(time.time()) + 60)
-    token = sign_grant(missing, SIGNING_KEY.encode())
+    token = missing.sign_grant(SIGNING_KEY.encode())
     assert (await client.get("/info", headers={GRANT_HEADER: token})).status_code == 422
     huge = auth(gray8().name, byte_size=2 * 1024**3)
     assert (

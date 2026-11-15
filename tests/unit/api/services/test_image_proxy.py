@@ -26,7 +26,7 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
 )
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_crypto.grants import verify_grant
+from grafy_crypto.grants import Grant
 from grafy_shared.config.tiler import TilerConfig
 
 WS = UUID(int=1)
@@ -159,7 +159,7 @@ async def test_tile_signs_source_and_returns_only_image_and_cache_headers(
     assert "x-grafy-grant" not in response.headers
     request = proxy.requests[0]
     assert str(request.url) == "http://tiler:8100/tiles/11/2/1.jpg"
-    grant = verify_grant(
+    grant = Grant.verify_grant(
         request.headers["X-Grafy-Grant"],
         keys=[KEY.encode()],
         bucket="bucket",

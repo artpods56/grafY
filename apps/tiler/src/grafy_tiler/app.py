@@ -24,7 +24,7 @@ from fastapi import (
     Response,
 )
 from fastapi.responses import JSONResponse
-from grafy_crypto.grants import Grant, GrantError, verify_grant
+from grafy_crypto.grants import Grant, GrantError
 from rasterio.errors import NotGeoreferencedWarning
 from rio_tiler.errors import TileOutsideBounds
 from titiler.core.errors import add_exception_handlers
@@ -66,7 +66,7 @@ def _grant_of(
     if token is None:
         raise HTTPException(status_code=403, detail="grant required")
     try:
-        return verify_grant(
+        return Grant.verify_grant(
             token,
             keys=config.signing_key_values,
             bucket=config.bucket,

@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 import pytest
 import rasterio
-from grafy_crypto.grants import Grant, sign_grant
+from grafy_crypto.grants import Grant
 from PIL import Image
 from rasterio.enums import ColorInterp, Resampling
 from rasterio.errors import NotGeoreferencedWarning
@@ -76,7 +76,7 @@ def grant_for(storage_root: Path) -> Callable[..., Grant]:
 
 @pytest.fixture
 def token_for() -> Callable[[Grant], str]:
-    return lambda grant: sign_grant(grant, SIGNING_KEY.encode())
+    return lambda grant: grant.sign_grant(SIGNING_KEY.encode())
 
 
 def _profile(
