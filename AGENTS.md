@@ -98,6 +98,13 @@ elsewhere. Walk this list and say which entries applied:
   immutable checkpoints and a Plugin release is a digest-addressed freeze.
   Do not mutate them in place.
 
+## Naming
+
+- Unit-of-work context variables are named `uow`
+  (`async with self._uow_factory() as uow:`). Private attributes are
+  `self._uow` / `self._uow_factory`. Public keyword parameters may stay
+  `unit_of_work` for compatibility.
+
 ## Docs and work artifacts
 
 - `docs/design/` and `docs/adr/` hold decisions, cross-component constraints,
