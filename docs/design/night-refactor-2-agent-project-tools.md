@@ -152,4 +152,4 @@ Both diffs must be empty. Authoring verified that the generated schema matches t
 
 ## Blockers
 
-None requiring a design decision at authoring time. Known baseline limitations are recorded above. When blocked, replace this paragraph with the exact command, exit status, file:line, expected result, actual result, and the smallest owner decision needed. Stop the affected implementation. Never widen the allowlist, weaken a test, add a type suppression, or invent a new abstraction to get past a blocker.
+None. The missing imports and the inlined table row-count variable collision are resolved. The known baseline pyright limitation remains as documented above.
