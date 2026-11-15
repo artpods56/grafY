@@ -33,11 +33,11 @@ from grafy_core.kernel.instances import InstanceKey
 from grafy_core.kernel.results import InstancePointer, StoredResult
 
 
-def _clone[T](value: T) -> T:
+def clone[T](value: T) -> T:
     return deepcopy(value)
 
 
-def _newest_first[T](
+def newest_first[T](
     rows: Collection[T], *, stamp: Callable[[T], datetime], ident: Callable[[T], UUID]
 ) -> list[T]:
     """Order like ``ORDER BY <stamp> DESC, id ASC``.
@@ -129,27 +129,27 @@ class InMemoryDataStore:
     user_display_names: dict[UUID, str] = field(default_factory=dict[UUID, str])
 
     def clone(self) -> Self:
-        return _clone(self)
+        return clone(self)
 
     def replace_with(self, other: Self) -> None:
-        self.artifacts = _clone(other.artifacts)
-        self.uploads = _clone(other.uploads)
-        self.library_folders = _clone(other.library_folders)
-        self.library_placements = _clone(other.library_placements)
-        self.projects = _clone(other.projects)
-        self.project_checkpoints = _clone(other.project_checkpoints)
-        self.project_folders = _clone(other.project_folders)
-        self.project_organizations = _clone(other.project_organizations)
-        self.user_project_states = _clone(other.user_project_states)
-        self.project_heads = _clone(other.project_heads)
-        self.project_command_receipts = _clone(other.project_command_receipts)
-        self.project_checkpoint_mappings = _clone(other.project_checkpoint_mappings)
-        self.runs = _clone(other.runs)
-        self.agent_conversations = _clone(other.agent_conversations)
-        self.agent_conversation_events = _clone(other.agent_conversation_events)
-        self.agent_turns = _clone(other.agent_turns)
-        self.node_results = _clone(other.node_results)
-        self.pointers = _clone(other.pointers)
-        self.workspace_locations = _clone(other.workspace_locations)
-        self.workspace_members = _clone(other.workspace_members)
-        self.user_display_names = _clone(other.user_display_names)
+        self.artifacts = clone(other.artifacts)
+        self.uploads = clone(other.uploads)
+        self.library_folders = clone(other.library_folders)
+        self.library_placements = clone(other.library_placements)
+        self.projects = clone(other.projects)
+        self.project_checkpoints = clone(other.project_checkpoints)
+        self.project_folders = clone(other.project_folders)
+        self.project_organizations = clone(other.project_organizations)
+        self.user_project_states = clone(other.user_project_states)
+        self.project_heads = clone(other.project_heads)
+        self.project_command_receipts = clone(other.project_command_receipts)
+        self.project_checkpoint_mappings = clone(other.project_checkpoint_mappings)
+        self.runs = clone(other.runs)
+        self.agent_conversations = clone(other.agent_conversations)
+        self.agent_conversation_events = clone(other.agent_conversation_events)
+        self.agent_turns = clone(other.agent_turns)
+        self.node_results = clone(other.node_results)
+        self.pointers = clone(other.pointers)
+        self.workspace_locations = clone(other.workspace_locations)
+        self.workspace_members = clone(other.workspace_members)
+        self.user_display_names = clone(other.user_display_names)

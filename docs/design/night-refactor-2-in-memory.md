@@ -153,57 +153,33 @@ Both diffs must be empty. Authoring verified that the generated schema matches t
 
 Nothing blocked the three planned commits. One Finish line gate cannot be satisfied as written.
 
-### 1. The two shared private helpers cannot cross the module boundary under strict pyright
+### 1. Shared helper visibility (resolved by supervisor instruction)
 
-Hit by Commit 2 (`refactor: split in-memory adapters by repository`), and still open after
-Commit 3.
+The review reproduced six new strict pyright diagnostics caused by sharing private
+helpers across modules. The supervisor explicitly authorized public helper names
+when more than two call sites remain, and prohibited ignores and blanket `__all__`
+workarounds. Both helpers exceed that threshold. They are now `clone` and
+`newest_first` in `store.py`, with their bodies unchanged and callers renamed.
+This instruction supersedes the original requirement to preserve their private names.
+The five baseline diagnostics remain accepted; no new diagnostics are accepted.
 
-- Command: `uv run pyright "${files[@]}"` from the repository root, with the Finish line
-  `files` list.
-- Exit status: 1 — `11 errors, 0 warnings, 0 informations`.
-- Expected: the five named baseline diagnostics and nothing else.
-- Actual: those five, in their new homes (`runs.py:119` `reportUnnecessaryIsInstance` for
-  the preserved scalar guard, `uow.py:76`, `:81`, `:86`, `:91` `reportGeneralTypeIssues`
-  for the preserved `@override` decorators), plus six new errors:
-  - `libs/core/src/grafy_core/runtime/in_memory/store.py:40:5` — `reportUnusedFunction`:
-    `_newest_first` is not accessed inside `store.py`;
-  - `uploads.py:11:67` and `collaboration.py:12:67` — `reportPrivateUsage`: `_clone` is
-    imported from `store`;
-  - `projects.py:24:67`, `runs.py:18:67`, `agents.py:21:67` — `reportPrivateUsage`:
-    `_newest_first` is imported from `store`.
-- Cause: `typeCheckingMode = "strict"` (`pyproject.toml:78`) treats a leading underscore as
-  module-private, reports a module-level private function its own module never calls, and
-  reports every use of a private name from another module. Module split requires `_clone`
-  and `_newest_first` to stay in `store.py` unchanged, under those names, consumed by
-  siblings. These five imports are the only cross-module private imports in `libs/` and
-  `apps/api/src/`, so there is no existing precedent to follow.
-- Measured, not applied: adding `__all__ = ["InMemoryDataStore", "_clone",
-  "_newest_first"]` to `store.py` clears all six new errors (0 errors on `store.py` and
-  `uploads.py`) without touching either helper's name, body, or location. Module split does
-  not authorise an `__all__` in a child module — it assigns `__all__` to `__init__.py` — so
-  it was left out rather than applied.
-- Not chosen: a `# type: ignore` or `# pyright: ignore` comment, and any `pyproject.toml`
-  change. Finish line accepts no new diagnostic or suppression, and the allowlist has no
-  configuration file.
-- Everything else in the affected commit verifies: the Finish line pytest command gives
-  225 passed / 14 skipped, identical to the recorded baseline; `ruff check` and
-  `ruff format --check` are clean on all ten files; both OpenAPI diffs are empty; every
-  moved chunk is byte-identical to its source range; no caller was edited.
-- Smallest owner decision, one of:
-  1. authorise a static `__all__` listing the three store names in `store.py`;
-  2. authorise public names for the two shared helpers in `store.py`;
-  3. add these six diagnostics to the accepted exception list beside the existing five.
+### Review question: private state class export
 
-Commits 2 and 3 are on the branch so the decision lands on a complete split; the branch does
-not pass the Finish line pyright gate until this is decided.
+The literal instruction to preserve every existing class through the facade includes
+`_InMemoryUnitOfWorkState`, but exporting it produces a new `reportPrivateUsage`.
+The implementation preserves all public class imports and leaves this private class
+in `uow.py`. Artur must decide whether to exempt this private class from the facade
+requirement or authorize a public state-class name with a compatibility alias.
 
-### 2. Destination of the monolith's module docstring (resolved, no decision needed)
+### 2. Destination of the monolith's module docstring (owner decision pending)
 
 Module split says `__init__.py` contains imports and `__all__` only, and no new file in the
 list is a home for the 22-line module docstring at `in_memory.py:1-22`, which documents the
 contracts the whole package keeps. It moved verbatim into `__init__.py`, above the imports,
 which is what `grafy_api/artifacts/__init__.py` does after its own split; the child modules
-carry no module docstring, also matching that precedent. No wording was added or changed.
+carry no module docstring, also matching that precedent. No wording was added or changed. Review notes that precedent does not override the
+literal imports-and-`__all__`-only requirement; Artur must approve retaining this
+docstring or choose its destination.
 
 Known baseline limitations are recorded above: eight skips need `GRAFY_TEST_POSTGRES_URL`
 and six need S3 gateway or endpoint configuration, so the relational and remote S3 paths

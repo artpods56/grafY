@@ -15,7 +15,7 @@ from grafy_core.kernel.instances import InstanceKey
 from grafy_core.kernel.results import FailureRecord, InstancePointer, StoredResult
 from grafy_core.ports.runs import ResultStoreRepositoryPort, RunRepositoryPort
 
-from grafy_core.runtime.in_memory.store import InMemoryDataStore, _newest_first
+from grafy_core.runtime.in_memory.store import InMemoryDataStore, newest_first
 
 
 @final
@@ -74,7 +74,7 @@ class InMemoryRunRepository(RunRepositoryPort):
             and run.project_id == project_id
             and (not active_only or run.status is RunStatus.RUNNING)
         ]
-        return _newest_first(
+        return newest_first(
             runs, stamp=lambda run: run.created_at, ident=lambda run: run.id
         )[:limit]
 

@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 from grafy_core.domain.errors import ObjectAlreadyExistsError
 from grafy_core.domain.uploads import UploadStatus
 
-from grafy_core.runtime.in_memory.store import InMemoryDataStore, _clone
+from grafy_core.runtime.in_memory.store import InMemoryDataStore, clone
 
 
 @final
@@ -22,15 +22,15 @@ class InMemoryUploadRepository:
             raise ObjectAlreadyExistsError(
                 f"Upload already exists: {upload.workspace_id}/{upload.upload_id}"
             )
-        self._store.uploads[key] = _clone(upload)
+        self._store.uploads[key] = clone(upload)
 
     async def get(self, workspace_id: UUID, upload_id: UUID) -> "Upload | None":
         upload = self._store.uploads.get((workspace_id, upload_id))
-        return None if upload is None else _clone(upload)
+        return None if upload is None else clone(upload)
 
     async def list_for_workspace(self, workspace_id: UUID) -> list["Upload"]:
         uploads = [
-            _clone(upload)
+            clone(upload)
             for (stored_workspace_id, _), upload in self._store.uploads.items()
             if stored_workspace_id == workspace_id
         ]
@@ -64,7 +64,7 @@ class InMemoryUploadRepository:
         upload.artifact_schema_version = artifact_schema_version
         upload.artifact_id = artifact_id
         upload.completed_at = completed_at
-        return _clone(upload)
+        return clone(upload)
 
     async def mark_terminal_if_pending(
         self,
@@ -81,7 +81,7 @@ class InMemoryUploadRepository:
         if upload is None or upload.status is not UploadStatus.PENDING:
             return None
         upload.status = status
-        return _clone(upload)
+        return clone(upload)
 
     async def list_cleanup_candidates(
         self,
@@ -96,12 +96,12 @@ class InMemoryUploadRepository:
                 upload.status is UploadStatus.PENDING
                 and upload.created_at < pending_before
             ):
-                candidates.append(_clone(upload))
+                candidates.append(clone(upload))
             elif (
                 upload.status in {UploadStatus.FAILED, UploadStatus.EXPIRED}
                 and upload.created_at < terminal_before
             ):
-                candidates.append(_clone(upload))
+                candidates.append(clone(upload))
         candidates.sort(key=lambda item: (item.created_at, str(item.upload_id)))
         return candidates[:limit]
 

@@ -18,7 +18,7 @@ from grafy_core.ports.agent_turns import (
     AgentTurnRepositoryPort,
 )
 
-from grafy_core.runtime.in_memory.store import InMemoryDataStore, _newest_first
+from grafy_core.runtime.in_memory.store import InMemoryDataStore, newest_first
 
 
 class InMemoryAgentConversationRepository(AgentConversationRepositoryPort):
@@ -70,7 +70,7 @@ class InMemoryAgentConversationRepository(AgentConversationRepositoryPort):
             and conversation.graph_id == graph_id
             and conversation.agent_id == agent_id
         ]
-        return _newest_first(
+        return newest_first(
             rows,
             stamp=lambda conversation: conversation.created_at,
             ident=lambda conversation: conversation.id,
@@ -186,7 +186,7 @@ class InMemoryAgentTurnRepository(AgentTurnRepositoryPort):
             if turn.workspace_id == workspace_id
             and turn.conversation_id == conversation_id
         ]
-        ordered = _newest_first(
+        ordered = newest_first(
             rows, stamp=lambda turn: turn.created_at, ident=lambda turn: turn.id
         )
         return next((turn for turn in ordered if turn.is_running), None)
@@ -201,7 +201,7 @@ class InMemoryAgentTurnRepository(AgentTurnRepositoryPort):
             if turn.workspace_id == workspace_id
             and turn.conversation_id == conversation_id
         ]
-        ordered = _newest_first(
+        ordered = newest_first(
             rows, stamp=lambda turn: turn.created_at, ident=lambda turn: turn.id
         )
         return ordered if limit is None else ordered[:limit]

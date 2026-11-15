@@ -21,7 +21,7 @@ from grafy_core.domain.projects import (
 )
 from grafy_core.ports.projects import ProjectRepositoryPort
 
-from grafy_core.runtime.in_memory.store import InMemoryDataStore, _newest_first
+from grafy_core.runtime.in_memory.store import InMemoryDataStore, newest_first
 
 
 @final
@@ -72,7 +72,7 @@ class InMemoryProjectRepository(ProjectRepositoryPort):
 
     @override
     async def list(self, workspace_id: UUID) -> list[Project]:
-        return _newest_first(
+        return newest_first(
             [
                 replace(project)
                 for project in self._store.projects.values()
@@ -108,7 +108,7 @@ class InMemoryProjectRepository(ProjectRepositoryPort):
             and (workspace_id is None or head_workspace == workspace_id)
         ]
         items: list[ProjectBrowserItem] = []
-        for head in _newest_first(
+        for head in newest_first(
             listed,
             stamp=lambda head: head.updated_at,
             ident=lambda head: head.project_id,

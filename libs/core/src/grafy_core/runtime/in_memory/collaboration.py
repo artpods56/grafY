@@ -9,7 +9,7 @@ from grafy_core.domain.collaboration import (
 from grafy_core.domain.errors import ConcurrentWriteError, ObjectAlreadyExistsError
 from grafy_core.ports.collaboration import CollaborationRepositoryPort
 
-from grafy_core.runtime.in_memory.store import InMemoryDataStore, _clone
+from grafy_core.runtime.in_memory.store import InMemoryDataStore, clone
 
 
 @final
@@ -31,14 +31,14 @@ class InMemoryCollaborationRepository(CollaborationRepositoryPort):
         key = (head.workspace_id, head.project_id)
         if key in self._store.project_heads:
             raise ObjectAlreadyExistsError(f"Project head already exists: {key[1]}")
-        self._store.project_heads[key] = _clone(head)
+        self._store.project_heads[key] = clone(head)
 
     @override
     async def get_head(
         self, workspace_id: UUID, project_id: UUID
     ) -> ProjectHead | None:
         head = self._store.project_heads.get((workspace_id, project_id))
-        return None if head is None else _clone(head)
+        return None if head is None else clone(head)
 
     @override
     async def lock_head(
@@ -53,7 +53,7 @@ class InMemoryCollaborationRepository(CollaborationRepositoryPort):
         key = (head.workspace_id, head.project_id)
         if key not in self._store.project_heads:
             return
-        self._store.project_heads[key] = _clone(head)
+        self._store.project_heads[key] = clone(head)
 
     @override
     async def remove_head(self, workspace_id: UUID, project_id: UUID) -> None:
