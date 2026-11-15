@@ -222,44 +222,6 @@ class InMemoryDataStore:
         self.user_display_names = _clone(other.user_display_names)
 
 
-def _stored_outputs(
-    outputs: Mapping[str, ArtifactOutputValue],
-) -> dict[str, ArtifactOutputValue]:
-    return {port: value.model_copy(deep=True) for port, value in outputs.items()}
-
-
-def _result_view(result: StoredResult) -> StoredResult:
-    """Hand out a result that cannot be edited in place.
-
-    The stored row keeps a plain dict because a mapping proxy cannot be
-    deep-copied, and the store clones itself at every transaction boundary.
-    """
-
-    return StoredResult(
-        fingerprint=result.fingerprint,
-        outputs=MappingProxyType(dict(result.outputs)),
-        created_at=result.created_at,
-    )
-
-
-def _outputs_reference(
-    outputs: Mapping[str, ArtifactOutputValue], artifact_id: UUID
-) -> bool:
-    """Whether a stored output names ``artifact_id`` as content.
-
-    Only the typed refs count: an id that appears in free metadata text is not a
-    reference, exactly as the SQL adapter decides.
-    """
-
-    for value in outputs.values():
-        if isinstance(value, ArtifactRefSequence):
-            if any(ref.artifact_id == artifact_id for ref in value.item_refs):
-                return True
-        elif isinstance(value, ArtifactRef) and value.artifact_id == artifact_id:
-            return True
-    return False
-
-
 @final
 class InMemoryArtifactRepository(ArtifactRepositoryPort):
     def __init__(self, store: InMemoryDataStore) -> None:
@@ -1021,16 +983,6 @@ class InMemoryRunRepository(RunRepositoryPort):
     def __init__(self, store: InMemoryDataStore) -> None:
         self._store = store
 
-    def _owned(self, workspace_id: UUID, project_id: UUID, run_id: UUID) -> Run | None:
-        run = self._store.runs.get(run_id)
-        if (
-            run is None
-            or run.workspace_id != workspace_id
-            or run.project_id != project_id
-        ):
-            return None
-        return run
-
     @override
     async def add(self, run: Run) -> None:
         if run.id in self._store.runs:
@@ -1041,14 +993,24 @@ class InMemoryRunRepository(RunRepositoryPort):
     async def get(
         self, workspace_id: UUID, project_id: UUID, run_id: UUID
     ) -> Run | None:
-        run = self._owned(workspace_id, project_id, run_id)
-        return None if run is None else replace(run)
+        run = self._store.runs.get(run_id)
+        if (
+            run is None
+            or run.workspace_id != workspace_id
+            or run.project_id != project_id
+        ):
+            return None
+        return replace(run)
 
     @override
     async def save(self, run: Run) -> None:
         # A transition writes status, finish stamp and error, and nothing else.
-        stored = self._owned(run.workspace_id, run.project_id, run.id)
-        if stored is None:
+        stored = self._store.runs.get(run.id)
+        if (
+            stored is None
+            or stored.workspace_id != run.workspace_id
+            or stored.project_id != run.project_id
+        ):
             return
         stored.status = run.status
         stored.finished_at = run.finished_at
@@ -1102,11 +1064,20 @@ class InMemoryResultStoreRepository(ResultStoreRepositoryPort):
     async def artifact_is_referenced(
         self, workspace_id: UUID, artifact_id: UUID
     ) -> bool:
-        return any(
-            _outputs_reference(row.outputs, artifact_id)
-            for (result_workspace, _), row in self._store.node_results.items()
-            if result_workspace == workspace_id
-        )
+        # Only the typed refs count: an id that appears in free metadata text is
+        # not a reference, exactly as the SQL adapter decides.
+        for (result_workspace, _), row in self._store.node_results.items():
+            if result_workspace != workspace_id:
+                continue
+            for value in row.outputs.values():
+                if isinstance(value, ArtifactRefSequence):
+                    if any(ref.artifact_id == artifact_id for ref in value.item_refs):
+                        return True
+                elif (
+                    isinstance(value, ArtifactRef) and value.artifact_id == artifact_id
+                ):
+                    return True
+        return False
 
     @override
     async def get_result(
@@ -1115,7 +1086,11 @@ class InMemoryResultStoreRepository(ResultStoreRepositoryPort):
         row = self._store.node_results.get((workspace_id, fingerprint))
         if row is None:
             return None
-        return _result_view(row)
+        return StoredResult(
+            fingerprint=row.fingerprint,
+            outputs=MappingProxyType(dict(row.outputs)),
+            created_at=row.created_at,
+        )
 
     @override
     async def put_result_if_absent(
@@ -1131,13 +1106,21 @@ class InMemoryResultStoreRepository(ResultStoreRepositoryPort):
         if row is None:
             row = StoredResult(
                 fingerprint=fingerprint,
-                outputs=_stored_outputs(outputs),
+                outputs={
+                    port: value.model_copy(deep=True) for port, value in outputs.items()
+                },
                 created_at=created_at,
             )
             self._store.node_results[key] = row
         # Whatever happened, the row that is there is the answer: a fingerprint
-        # that already had a result keeps it unchanged.
-        return _result_view(row)
+        # that already had a result keeps it unchanged. The stored row keeps a
+        # plain dict because a mapping proxy cannot be deep-copied, and the store
+        # clones itself at every transaction boundary.
+        return StoredResult(
+            fingerprint=row.fingerprint,
+            outputs=MappingProxyType(dict(row.outputs)),
+            created_at=row.created_at,
+        )
 
     @override
     async def get_pointer(
@@ -1300,7 +1283,10 @@ class InMemoryAgentTurnRepository(AgentTurnRepositoryPort):
             turn.workspace_id,
             turn.conversation_id,
             turn.client_turn_id,
-        ) in self._client_turn_keys():
+        ) in {
+            (other.workspace_id, other.conversation_id, other.client_turn_id)
+            for other in self._store.agent_turns.values()
+        }:
             raise AgentTurnAlreadyAdmittedError(
                 f"Client turn {turn.client_turn_id} was already admitted for "
                 f"conversation {turn.conversation_id}"
@@ -1311,12 +1297,6 @@ class InMemoryAgentTurnRepository(AgentTurnRepositoryPort):
         if running is not None:
             raise AgentTurnBusyError(turn.conversation_id, running.id)
         self._store.agent_turns[turn.id] = turn
-
-    def _client_turn_keys(self) -> set[tuple[UUID, UUID, str]]:
-        return {
-            (turn.workspace_id, turn.conversation_id, turn.client_turn_id)
-            for turn in self._store.agent_turns.values()
-        }
 
     @override
     async def get(self, workspace_id: UUID, turn_id: UUID) -> AgentTurn | None:
@@ -1344,18 +1324,20 @@ class InMemoryAgentTurnRepository(AgentTurnRepositoryPort):
     async def running_for_conversation(
         self, workspace_id: UUID, conversation_id: UUID
     ) -> AgentTurn | None:
-        rows = await self._for_conversation(workspace_id, conversation_id)
-        return next((turn for turn in rows if turn.is_running), None)
+        rows = [
+            turn
+            for turn in self._store.agent_turns.values()
+            if turn.workspace_id == workspace_id
+            and turn.conversation_id == conversation_id
+        ]
+        ordered = _newest_first(
+            rows, stamp=lambda turn: turn.created_at, ident=lambda turn: turn.id
+        )
+        return next((turn for turn in ordered if turn.is_running), None)
 
     @override
     async def list_for_conversation(
         self, workspace_id: UUID, conversation_id: UUID, *, limit: int | None = None
-    ) -> list[AgentTurn]:
-        rows = await self._for_conversation(workspace_id, conversation_id)
-        return rows if limit is None else rows[:limit]
-
-    async def _for_conversation(
-        self, workspace_id: UUID, conversation_id: UUID
     ) -> list[AgentTurn]:
         rows = [
             turn
@@ -1363,9 +1345,10 @@ class InMemoryAgentTurnRepository(AgentTurnRepositoryPort):
             if turn.workspace_id == workspace_id
             and turn.conversation_id == conversation_id
         ]
-        return _newest_first(
+        ordered = _newest_first(
             rows, stamp=lambda turn: turn.created_at, ident=lambda turn: turn.id
         )
+        return ordered if limit is None else ordered[:limit]
 
     @override
     async def finish(
