@@ -1,4 +1,5 @@
 import ast
+import sys
 from importlib.util import resolve_name
 from pathlib import Path
 from typing import cast
@@ -532,3 +533,17 @@ def test_project_kernel_imports_no_adapter_http_or_family_code() -> None:
                 offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
 
     assert offenders == []
+
+
+def test_crypto_protocols_depend_only_on_the_standard_library() -> None:
+    crypto_root = REPO_ROOT / "libs/crypto/src/grafy_crypto"
+    offenders: list[str] = []
+    for path in crypto_root.rglob("*.py"):
+        package = ".".join(path.parent.relative_to(crypto_root.parent).parts)
+        for module in _imported_modules(path.read_text(), package):
+            top_level = module.split(".")[0]
+            if top_level not in sys.stdlib_module_names and top_level != "grafy_crypto":
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+    assert offenders == []
+    project = tomllib.loads((REPO_ROOT / "libs/crypto/pyproject.toml").read_text())
+    assert project["project"]["dependencies"] == []

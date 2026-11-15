@@ -51,9 +51,7 @@ def has_inline_image(document: dict[object, object]) -> bool:
                 continue
             part = cast(dict[object, object], part_value)
             image_url_value = part.get("image_url")
-            if part.get("type") != "image_url" or not isinstance(
-                image_url_value, dict
-            ):
+            if part.get("type") != "image_url" or not isinstance(image_url_value, dict):
                 continue
             image_url = cast(dict[object, object], image_url_value)
             url = image_url.get("url")

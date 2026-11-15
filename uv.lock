@@ -7,6 +7,7 @@ members = [
     "grafy-api",
     "grafy-client",
     "grafy-core",
+    "grafy-crypto",
     "grafy-persistence",
     "grafy-plugin-gis",
     "grafy-plugin-image",
@@ -400,6 +401,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "grafy-core" },
+    { name = "grafy-crypto" },
     { name = "grafy-persistence" },
     { name = "grafy-shared" },
     { name = "grafy-storage" },
@@ -421,6 +423,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=45.0.0" },
     { name = "fastapi", specifier = ">=0.123.0" },
     { name = "grafy-core", editable = "libs/core" },
+    { name = "grafy-crypto", editable = "libs/crypto" },
     { name = "grafy-persistence", editable = "libs/persistence" },
     { name = "grafy-shared", editable = "libs/shared" },
     { name = "grafy-storage", editable = "libs/storage" },
@@ -471,6 +474,11 @@ requires-dist = [
     { name = "pydantic" },
     { name = "referencing", specifier = ">=0.36.2" },
 ]
+
+[[package]]
+name = "grafy-crypto"
+version = "0.1.0"
+source = { editable = "libs/crypto" }
 
 [[package]]
 name = "grafy-persistence"
@@ -705,6 +713,7 @@ dependencies = [
     { name = "grafy-api" },
     { name = "grafy-client" },
     { name = "grafy-core" },
+    { name = "grafy-crypto" },
     { name = "grafy-persistence" },
     { name = "grafy-plugin-gis" },
     { name = "grafy-plugin-image" },
@@ -737,6 +746,7 @@ requires-dist = [
     { name = "grafy-api", editable = "apps/api" },
     { name = "grafy-client", editable = "libs/client" },
     { name = "grafy-core", editable = "libs/core" },
+    { name = "grafy-crypto", editable = "libs/crypto" },
     { name = "grafy-persistence", editable = "libs/persistence" },
     { name = "grafy-plugin-gis", editable = "plugins/gis" },
     { name = "grafy-plugin-image", editable = "plugins/image" },

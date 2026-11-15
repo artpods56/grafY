@@ -223,7 +223,9 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
         try:
             async with httpx.AsyncClient(
                 timeout=config.timeout_ms / 1_000,
-                limits=httpx.Limits(max_connections=1000, max_keepalive_connections=100),
+                limits=httpx.Limits(
+                    max_connections=1000, max_keepalive_connections=100
+                ),
                 follow_redirects=False,
                 transport=PinnedPublicAddressTransport(policy=self._egress_policy),
             ) as http_client:

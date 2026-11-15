@@ -22,6 +22,10 @@ api: db-upgrade
 api-dev: db-upgrade
     uv run --no-dev uvicorn grafy_api.main:app --reload --reload-dir apps --reload-dir libs --reload-dir plugins --host 0.0.0.0 --port 8000
 
+# Start the internal TIFF tile service natively (reads TILER_* from .env).
+tiler:
+    cd apps/tiler && uv run --locked --no-dev python -m grafy_tiler
+
 # Start the web development server.
 web port="":
     npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
@@ -30,6 +34,13 @@ web port="":
 test:
     uv run pytest
     npm --prefix apps/web test
+
+# Each line keeps which tests ran it (--cov-context=test), so editor tooling can
+# show the tests covering a function. ctrace: Python 3.14's default sysmon core
+# records a line only once per run, which leaves per-test contexts incomplete.
+# Record per-test Python coverage into .coverage (args: pytest paths; default: all).
+coverage *args:
+    COVERAGE_CORE=ctrace uv run --with pytest-cov pytest --cov --cov-context=test --cov-report= {{args}}
 
 # Prove presigned S3 uploads through the gateway's /storage/ location.
 test-storage-gateway:
@@ -44,7 +55,7 @@ test-storage-gateway:
 
 # Run Python and web linters.
 lint:
-    uv run ruff check apps/api/src libs/client/src libs/core/src libs/persistence/src libs/shared/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
+    uv run ruff check apps/api/src libs/client/src libs/crypto/src libs/core/src libs/persistence/src libs/shared/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
     npm --prefix apps/web run lint
 
 # Format the web app with Prettier. See apps/web/.prettierrc.

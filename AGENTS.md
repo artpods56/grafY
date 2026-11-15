@@ -97,6 +97,13 @@ elsewhere. Walk this list and say which entries applied:
 - Durable things are append-only and digest-addressed: graph documents carry
   immutable checkpoints and a Plugin release is a digest-addressed freeze.
   Do not mutate them in place.
+- Small helpers should read top to bottom. When one expression stacks a
+  `None` check, a generator and string handling
+  (`x is not None and any(... for ...)`), prefer a guard clause, a plain loop
+  and a name that says what is compared (`_matches_current_etag`, not
+  `_matches`). This is a tiebreak for new code, not a ban: a comprehension or
+  `any()` that reads at a glance is fine, and working code is not rewritten
+  just to apply it.
 
 ## Naming
 

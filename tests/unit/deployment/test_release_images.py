@@ -9,6 +9,7 @@ PUBLISHED_SERVICES = {
     "api": "GRAFY_API_IMAGE",
     "web": "GRAFY_WEB_IMAGE",
     "gateway": "GRAFY_GATEWAY_IMAGE",
+    "tiler": "GRAFY_TILER_IMAGE",
 }
 
 
@@ -60,7 +61,9 @@ def test_ci_publishes_every_release_image_only_from_green_main() -> None:
         "grafy-api",
         "grafy-web",
         "grafy-gateway",
+        "grafy-tiler",
     }
     assert next(e for e in matrix if e["image"] == "grafy-api")["target"] == (
         "api-release"
     )
+    assert next(e for e in matrix if e["image"] == "grafy-tiler")["target"] == "tiler"

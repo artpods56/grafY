@@ -156,7 +156,9 @@ async def test_reads_are_scoped_to_the_workspace_that_wrote_them() -> None:
 
 
 @pytest.mark.asyncio
-async def test_threads_of_one_agent_are_listed_newest_first_and_keep_their_authors() -> None:
+async def test_threads_of_one_agent_are_listed_newest_first_and_keep_their_authors() -> (
+    None
+):
     store = InMemoryDataStore()
     older = conversation(at=BASE_TIME)
     newer = conversation(at=BASE_TIME.replace(hour=9))
@@ -243,7 +245,10 @@ def test_a_fork_that_names_a_source_but_no_sequence_is_not_a_fork() -> None:
 def test_event_payloads_are_a_closed_vocabulary_with_a_bound_on_length() -> None:
     assert UserMessagePayload(text="x").kind == "user_message"
     assert AgentConversationTurnOutcome.INTERRUPTED == "interrupted"
-    assert TurnOutcomePayload(outcome=AgentConversationTurnOutcome.CANCELLED).detail is None
+    assert (
+        TurnOutcomePayload(outcome=AgentConversationTurnOutcome.CANCELLED).detail
+        is None
+    )
     with pytest.raises(ValidationError):
         UserMessagePayload(text="")
     with pytest.raises(ValidationError):

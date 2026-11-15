@@ -3,6 +3,7 @@
 from grafy_api.services.composition import WorkbenchComponents
 from grafy_api.v1.routes.artifacts.dependencies import (
     artifact_content_service,
+    artifact_image_service,
     artifact_geo_service,
     artifact_geo_tile_service,
     artifact_table_service,
@@ -29,6 +30,7 @@ def workbench_dependency_overrides(
         upload_service: lambda: components.uploads,
         upload_config: lambda: components.upload_config,
         artifact_content_service: lambda: components.artifact_content,
+        artifact_image_service: lambda: components.artifact_images,
         artifact_table_service: lambda: components.artifact_tables,
         artifact_geo_service: lambda: components.artifact_geo,
         artifact_geo_tile_service: lambda: components.artifact_geo_tiles,

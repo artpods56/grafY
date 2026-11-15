@@ -26,6 +26,7 @@ from grafy_shared.config import (
     KeysConfig,
     RealtimeConfig,
     StorageConfig,
+    TilerConfig,
     UploadConfig,
 )
 
@@ -58,6 +59,7 @@ class Settings(BaseModel):
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     realtime: RealtimeConfig = Field(default_factory=RealtimeConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
+    tiler: TilerConfig = Field(default_factory=TilerConfig)
     uploads: UploadConfig = Field(default_factory=UploadConfig)
     egress: EgressConfig = Field(default_factory=EgressConfig)
 

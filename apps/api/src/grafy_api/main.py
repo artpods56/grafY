@@ -21,6 +21,7 @@ from grafy_api.settings import Settings, get_settings
 from grafy_api.v1.routes.admin.views import router as admin_router
 from grafy_api.v1.routes.agents.views import router as agents_router
 from grafy_api.v1.routes.artifacts.views import router as artifacts_router
+from grafy_api.v1.routes.artifacts.images import router as images_router
 from grafy_api.v1.routes.auth.views import router as auth_router
 from grafy_api.v1.routes.catalog.views import router as catalog_router
 from grafy_api.v1.routes.library.views import folders_router as library_folders_router
@@ -155,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(catalog_router, prefix="/v1")
     application.include_router(uploads_router, prefix="/v1")
     application.include_router(artifacts_router, prefix="/v1")
+    application.include_router(images_router, prefix="/v1")
     application.include_router(library_router, prefix="/v1")
     application.include_router(library_folders_router, prefix="/v1")
     return application

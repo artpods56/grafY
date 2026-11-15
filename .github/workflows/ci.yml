@@ -155,7 +155,7 @@ jobs:
         run: uv run prek run --all-files
       - name: Python lint
         if: ${{ !cancelled() && steps.python_install.outcome == 'success' }}
-        run: uv run ruff check apps/api/src libs/client/src libs/core/src libs/persistence/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
+        run: uv run ruff check apps/api/src libs/client/src libs/crypto/src libs/core/src libs/persistence/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
       - name: Client typecheck
         if: ${{ !cancelled() && steps.python_install.outcome == 'success' }}
         run: uv run pyright libs/client
@@ -248,6 +248,38 @@ jobs:
           -c 'from grafy_plugin_gis.gdal import GdalCli; c = GdalCli().capabilities();
           assert c.pmtiles_write and c.cog_write and c.png_write, c;
           print(c.model_dump_json())'
+  tiler:
+    name: Tiler tests and image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/tiler/uv.lock
+      - name: Install locked tiler environment
+        working-directory: apps/tiler
+        run: uv sync --locked
+      - name: Tiler lint and types
+        working-directory: apps/tiler
+        run: |
+          uv run ruff check src tests ../../libs/crypto
+          uv run pyright
+      - name: Tiler tests
+        working-directory: apps/tiler
+        run: uv run pytest -q -o log_cli=false
+      - name: Build the tiler image
+        run: docker build --file infra/docker/tiler.Dockerfile --target tiler --tag grafy-tiler-ci .
+      - name: Run the tiler image against MinIO
+        working-directory: apps/tiler
+        env:
+          GRAFY_TEST_TILER_IMAGE: grafy-tiler-ci
+        run: uv run pytest -q -o log_cli=false -m container
+
   publish-images:
     name: Publish ${{ matrix.image }} image
     # Images exist only for commits that passed the required jobs on main, so a
@@ -260,6 +292,7 @@ jobs:
       - web
       - web-e2e
       - deployment-images
+      - tiler
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -278,6 +311,9 @@ jobs:
           - image: grafy-gateway
             dockerfile: infra/docker/gateway.Dockerfile
             target: ""
+          - image: grafy-tiler
+            dockerfile: infra/docker/tiler.Dockerfile
+            target: tiler
     steps:
       - uses: actions/checkout@v4
       - name: Compute source archive digest

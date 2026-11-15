@@ -30,6 +30,9 @@ from grafy_api.runs.node_runner import NodeComputationRunnerFactory
 from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_core.ports.storage import PresigningStorage
 from grafy_api.artifacts.content import ArtifactContentService
+from grafy_api.artifacts.images import ArtifactImageService
+from grafy_api.artifacts.tiler_client import HttpTiler
+from grafy_shared.config.tiler import TilerConfig
 from grafy_api.artifacts.geo import ArtifactGeoService
 from grafy_api.artifacts.geo_tiles import ArtifactGeoTileService
 from grafy_api.artifacts.tables import ArtifactTableService
@@ -49,6 +52,7 @@ class WorkbenchComponents:
     uploads: UploadService
     runner_factory: NodeComputationRunnerFactory
     artifact_content: ArtifactContentService
+    artifact_images: ArtifactImageService
     artifact_tables: ArtifactTableService
     artifact_geo: ArtifactGeoService
     artifact_geo_tiles: ArtifactGeoTileService
@@ -83,6 +87,7 @@ def build_workbench_components(
     unit_of_work: LibraryUnitOfWorkPort,
     storage: FileStoragePort | None = None,
     storage_backend: str = "local",
+    tiler_config: TilerConfig | None = None,
     bucket: str = _WORKBENCH_BUCKET,
     upload_config: UploadServiceConfig | None = None,
     node_secrets: NodeSecretResolverPort | None = None,
@@ -213,12 +218,18 @@ def build_workbench_components(
         plugin_context=plugin_context,
         max_map_concurrency=resolved_limits.map_max_concurrency,
     )
+    resolved_tiler_config = (
+        tiler_config if tiler_config is not None else TilerConfig.model_construct()
+    )
     return WorkbenchComponents(
         plugin_registry=plugin_registry,
         upload_config=resolved_upload_config,
         uploads=uploads,
         runner_factory=runners,
         artifact_content=artifact_content,
+        artifact_images=ArtifactImageService(
+            uow, resolved_tiler_config, HttpTiler(resolved_tiler_config)
+        ),
         artifact_tables=artifact_tables,
         artifact_geo=artifact_geo,
         artifact_geo_tiles=artifact_geo_tiles,

@@ -33,13 +33,14 @@ images and pushes them to GitHub Container Registry, tagged with the full
 | `ghcr.io/artpods56/grafy-api` | `api.Dockerfile`, `api-release` target | `migrate`, `api` |
 | `ghcr.io/artpods56/grafy-web` | `web.Dockerfile` | `web` |
 | `ghcr.io/artpods56/grafy-gateway` | `gateway.Dockerfile` (nginx config baked in) | `gateway` |
+| `ghcr.io/artpods56/grafy-tiler` | `tiler.Dockerfile`, `tiler` target | `tiler` |
 
 Because images are pushed only after green CI on `main`, a SHA that has images
 is an approved commit. `GRAFY_BUILD_DIGEST` is the SHA-256 digest of
 `git archive <sha>`, computed by CI and baked into the API image. Do not set it
 on the host: Compose would override or remove the baked value.
 
-The first publish creates each package as private. Either make the three
+The first publish creates each package as private. Either make the four
 packages public in the GitHub package settings, or run `docker login ghcr.io`
 on the host with a token that has `read:packages`.
 
@@ -149,7 +150,7 @@ gh run list --branch main --workflow CI --limit 10
 gh run view <run-id>
 ```
 
-For the newest published image, select the newest `main` run whose three
+For the newest published image, select the newest `main` run whose four
 `Publish grafy-* image` jobs succeeded. A newer merge can still be queued or
 building. If the request names the newest `main` commit, wait for that commit's
 images instead. Record the full SHA and keep the target fixed during deployment.
@@ -208,6 +209,99 @@ The default endpoint may be a private model server listed in
 same pinned public-address guard as an LLM node's `base_url`. Agents do not fall back to
 the deployment key: an Agent that names its own endpoint needs its own key set, and
 configuring it costs the person setting it `edit_project`, not `manage_secrets`.
+
+## Add the tiler
+
+The `tiler` service renders TIFF artifacts into tiles and thumbnails on demand
+(`docs/design/tiff-on-demand-tiles.md`). It is internal: no host port, no
+gateway route, and it takes no URL, only an HMAC grant the API signs. The
+release that introduces it fails `compose config` until the two operator inputs
+below exist, so prepare them before deploying that SHA.
+
+Nothing here touches the running host until you run it yourself. These steps
+create secrets; keep them in the environment file and the MinIO account, never
+in a commit, a ticket, or a chat.
+
+**1. Generate the shared signing key** and put it in the environment file next
+to the other keys. The API and the tiler read the same value; to rotate,
+temporarily list two comma-separated keys on the tiler.
+
+```bash
+openssl rand -base64 32   # -> GRAFY_TILER_SHARED_KEY in grafy.env
+```
+
+**2. Create a read-only MinIO account.** The tiler reads objects through GDAL
+and must not be able to write or list. With an `mc` alias for the operator's
+MinIO (`mc alias set minio http://minio:9000 <admin-user> <admin-password>`):
+
+```bash
+cat > /tmp/grafy-tiler-read.json <<'JSON'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": ["arn:aws:s3:::workbench-artifacts/*"]
+    }
+  ]
+}
+JSON
+mc admin policy create minio grafy-tiler-read /tmp/grafy-tiler-read.json
+secret="$(openssl rand -hex 24)"
+mc admin user add minio grafy-tiler "$secret"
+mc admin policy attach minio grafy-tiler-read --user grafy-tiler
+rm /tmp/grafy-tiler-read.json
+printf 'GRAFY_TILER_S3_SECRET_ACCESS_KEY=%s\n' "$secret"   # copy into grafy.env
+unset secret
+```
+
+Use the bucket in `GRAFY_STORAGE_BUCKET` if it is not `workbench-artifacts`.
+Put the account's access key and secret in the environment file as
+`GRAFY_TILER_S3_ACCESS_KEY_ID` and `GRAFY_TILER_S3_SECRET_ACCESS_KEY`. Do not
+reuse the API's `GRAFY_S3_*` read-write key. The CI container test creates the
+same account with these commands and proves that it can read an object but
+cannot write or list.
+
+**3. Attach the tiler to the MinIO network.** Add the `tiler` service to the
+site storage override (`/etc/grafy/storage.override.yaml` on `ai-ihpan`), next
+to `api` and `gateway`, the same way
+`infra/docker/compose.shared-storage.yaml` does:
+
+```yaml
+services:
+  tiler:
+    networks:
+      default:
+      shared-storage:
+```
+
+The tiler reuses `GRAFY_S3_ENDPOINT_URL`, `GRAFY_S3_REGION` and
+`GRAFY_S3_FORCE_PATH_STYLE` from the API, so set path-style addressing for
+MinIO there (`GRAFY_S3_FORCE_PATH_STYLE=true`).
+
+Enable the API proxy with `GRAFY_TILER_URL=http://tiler:8100`. The API uses
+`GRAFY_TILER_SHARED_KEY` to sign reads after checking Workspace access. Unset
+`GRAFY_TILER_URL` to disable the proxy without stopping the API.
+`GRAFY_TILER_RENDERER_VERSION` defaults to `1` and must match the tiler renderer
+version; update it whenever renderer settings change output. The API timeout
+is `GRAFY_TILER_TIMEOUT_SECONDS=35`, longer than the tiler's default 30-second render timeout.
+
+**Sizing and limits.** The defaults suit `ai-ihpan`: 2 CPUs
+(`GRAFY_TILER_CPUS`), 1.5 GiB RAM (`GRAFY_TILER_MEMORY`), an image of about
+550 MB, and a 2 GiB tile cache on the `grafy-tiler-cache` volume
+(`GRAFY_TILER_CACHE_MAX_BYTES`). The cache is derived data, evicted
+least-recently-used, and safe to delete. `GRAFY_TILER_WORKERS` stays at 1;
+concurrency is a bounded render pool (`GRAFY_TILER_RENDER_CONCURRENCY`, with
+`GRAFY_TILER_QUEUE_DEPTH` waiting requests before it answers 503).
+
+**Verify.** `docker compose ... ps tiler` should show `healthy`. The health
+check opens `/health`, which also proves the cache volume is writable. The
+tiler has no public URL; the API proxy that uses it ships separately.
+
+**Roll back.** A release without a tiler needs nothing special:
+`--remove-orphans` in the deploy script stops it. To retire the account,
+`mc admin user remove minio grafy-tiler`.
 
 ## Verify and record the deployment
 

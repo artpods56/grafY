@@ -48,9 +48,7 @@ class EncryptedAgentKey:
         if self.ciphertext == b"":
             raise ValueError("Agent key ciphertext must not be empty")
         if self.aad_version != AGENT_KEY_AAD_VERSION:
-            raise ValueError(
-                f"Agent key AAD version must be {AGENT_KEY_AAD_VERSION}"
-            )
+            raise ValueError(f"Agent key AAD version must be {AGENT_KEY_AAD_VERSION}")
         if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:
             raise ValueError("Agent key timestamps must be timezone-aware")
 

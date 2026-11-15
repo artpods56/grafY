@@ -2,7 +2,7 @@
 .idea
 .vscode
 .env*
-.venv
+**/.venv
 .pytest_cache
 .ruff_cache
 .grafy-artifacts

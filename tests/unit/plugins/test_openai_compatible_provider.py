@@ -912,7 +912,10 @@ async def test_sdk_requests_are_pinned_and_private_dns_answers_are_refused(
         assert request.headers["host"] == "gateway.example"
         assert request.extensions["sni_hostname"] == "gateway.example"
         assert request.extensions["timeout"] == {
-            "connect": 120.0, "read": 120.0, "write": 120.0, "pool": 120.0
+            "connect": 120.0,
+            "read": 120.0,
+            "write": 120.0,
+            "pool": 120.0,
         }
 
 
