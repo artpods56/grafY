@@ -292,22 +292,230 @@ class ArtifactModelViews(ModelViews):
     async def render(self, *, outputs: Mapping[str, ArtifactOutputValue]) -> str:
         sections: list[str] = []
         for port, value in outputs.items():
-            sections.append(f"{port}:\n{await self._render_value(value)}")
+            if isinstance(value, ArtifactRefSequence):
+                shown: list[str] = []
+                for ref in value.item_refs[:SEQUENCE_VIEW_ITEMS]:
+                    async with self._unit_of_work_factory() as unit_of_work:
+                        artifact = await unit_of_work.artifacts.get(
+                            self._workspace_id, ref.artifact_id
+                        )
+                    if artifact is None:
+                        rendered = (
+                            f"Artifact id: {ref.artifact_id} ({ref.artifact_type})\n"
+                            f"[{ref.artifact_type} artifact that is no longer available]"
+                        )
+                    else:
+                        if artifact.artifact_type.startswith("table."):
+                            page = await load_table_page(
+                                artifact, self._storage, offset=0, limit=TABLE_VIEW_ROWS
+                            )
+                            header = [
+                                column.id
+                                if column.title in ("", column.id)
+                                else f"{column.id} ({column.title})"
+                                for column in page.columns
+                            ]
+                            lines = [
+                                " | ".join(header),
+                                " | ".join("---" for _ in header),
+                            ]
+                            for row in page.rows:
+                                lines.append(
+                                    " | ".join(
+                                        str(row.get(column.id, ""))
+                                        for column in page.columns
+                                    )
+                                )
+                            shown = len(page.rows)
+                            if page.total_rows > shown:
+                                lines.append(
+                                    f"(showing {shown} of {page.total_rows} rows)"
+                                )
+                            body = _clip("\n".join(lines))
+                        else:
+                            payload = artifact.inline_payload
+                            if isinstance(payload, dict):
+                                scalar = None
+                                if len(payload) == 1:
+                                    field, found = next(iter(payload.items()))
+                                    if field in {"value", "markdown", "text"}:
+                                        if isinstance(found, (str, int, float, bool)):
+                                            scalar = str(found)
+                                if scalar is not None:
+                                    body = _clip(scalar)
+                                else:
+                                    body = _clip(
+                                        json.dumps(
+                                            payload,
+                                            ensure_ascii=False,
+                                            sort_keys=True,
+                                            separators=(",", ":"),
+                                        )
+                                    )
+                            elif json_media_type(artifact.content_type):
+                                if (
+                                    artifact.bucket is None
+                                    or artifact.object_key is None
+                                ):
+                                    body = "[JSON with nothing stored]"
+                                else:
+                                    limit = MAX_VIEW_CHARS * 4
+                                    stream = await self._storage.load(
+                                        bucket=artifact.bucket, path=artifact.object_key
+                                    )
+                                    try:
+                                        raw = stream.read(limit + 1)
+                                    finally:
+                                        stream.close()
+                                    truncated = len(raw) > limit
+                                    text = raw[:limit].decode("utf-8", errors="replace")
+                                    readable = True
+                                    if not truncated:
+                                        try:
+                                            parsed = json.loads(text)
+                                        except json.JSONDecodeError:
+                                            readable = False
+                                        else:
+                                            text = json.dumps(
+                                                parsed,
+                                                ensure_ascii=False,
+                                                sort_keys=True,
+                                                separators=(",", ":"),
+                                            )
+                                    if readable:
+                                        body = _clip(text)
+                                        if truncated and "more characters" not in body:
+                                            body += "\n... [the stored JSON is longer than what was read]"
+                                    else:
+                                        body = "[JSON that could not be read]"
+                            else:
+                                title = self._titles.get(
+                                    ArtifactTypeKey(
+                                        artifact.artifact_type, artifact.schema_version
+                                    ),
+                                    artifact.artifact_type,
+                                )
+                                size = (
+                                    f", {artifact.byte_size} bytes"
+                                    if artifact.byte_size
+                                    else ""
+                                )
+                                body = (
+                                    f"[{title}{size}; its content is not shown to you]"
+                                )
+                        rendered = f"Artifact id: {artifact.id} ({artifact.artifact_type})\n{body}"
+                    shown.append(rendered)
+                more = len(value.item_refs) - len(shown)
+                lines = [f"{len(value.item_refs)} items:"]
+                lines += ["- " + text.replace("\n", "\n  ") for text in shown]
+                if more > 0:
+                    lines.append(f"- ... and {more} more not shown")
+                rendered = "\n".join(lines)
+            else:
+                ref = value
+                async with self._unit_of_work_factory() as unit_of_work:
+                    artifact = await unit_of_work.artifacts.get(
+                        self._workspace_id, ref.artifact_id
+                    )
+                if artifact is None:
+                    rendered = (
+                        f"Artifact id: {ref.artifact_id} ({ref.artifact_type})\n"
+                        f"[{ref.artifact_type} artifact that is no longer available]"
+                    )
+                else:
+                    if artifact.artifact_type.startswith("table."):
+                        page = await load_table_page(
+                            artifact, self._storage, offset=0, limit=TABLE_VIEW_ROWS
+                        )
+                        header = [
+                            column.id
+                            if column.title in ("", column.id)
+                            else f"{column.id} ({column.title})"
+                            for column in page.columns
+                        ]
+                        lines = [" | ".join(header), " | ".join("---" for _ in header)]
+                        for row in page.rows:
+                            lines.append(
+                                " | ".join(
+                                    str(row.get(column.id, ""))
+                                    for column in page.columns
+                                )
+                            )
+                        shown = len(page.rows)
+                        if page.total_rows > shown:
+                            lines.append(f"(showing {shown} of {page.total_rows} rows)")
+                        body = _clip("\n".join(lines))
+                    else:
+                        payload = artifact.inline_payload
+                        if isinstance(payload, dict):
+                            scalar = None
+                            if len(payload) == 1:
+                                field, found = next(iter(payload.items()))
+                                if field in {"value", "markdown", "text"}:
+                                    if isinstance(found, (str, int, float, bool)):
+                                        scalar = str(found)
+                            if scalar is not None:
+                                body = _clip(scalar)
+                            else:
+                                body = _clip(
+                                    json.dumps(
+                                        payload,
+                                        ensure_ascii=False,
+                                        sort_keys=True,
+                                        separators=(",", ":"),
+                                    )
+                                )
+                        elif json_media_type(artifact.content_type):
+                            if artifact.bucket is None or artifact.object_key is None:
+                                body = "[JSON with nothing stored]"
+                            else:
+                                limit = MAX_VIEW_CHARS * 4
+                                stream = await self._storage.load(
+                                    bucket=artifact.bucket, path=artifact.object_key
+                                )
+                                try:
+                                    raw = stream.read(limit + 1)
+                                finally:
+                                    stream.close()
+                                truncated = len(raw) > limit
+                                text = raw[:limit].decode("utf-8", errors="replace")
+                                readable = True
+                                if not truncated:
+                                    try:
+                                        parsed = json.loads(text)
+                                    except json.JSONDecodeError:
+                                        readable = False
+                                    else:
+                                        text = json.dumps(
+                                            parsed,
+                                            ensure_ascii=False,
+                                            sort_keys=True,
+                                            separators=(",", ":"),
+                                        )
+                                if readable:
+                                    body = _clip(text)
+                                    if truncated and "more characters" not in body:
+                                        body += "\n... [the stored JSON is longer than what was read]"
+                                else:
+                                    body = "[JSON that could not be read]"
+                        else:
+                            title = self._titles.get(
+                                ArtifactTypeKey(
+                                    artifact.artifact_type, artifact.schema_version
+                                ),
+                                artifact.artifact_type,
+                            )
+                            size = (
+                                f", {artifact.byte_size} bytes"
+                                if artifact.byte_size
+                                else ""
+                            )
+                            body = f"[{title}{size}; its content is not shown to you]"
+                    rendered = (
+                        f"Artifact id: {artifact.id} ({artifact.artifact_type})\n{body}"
+                    )
+            sections.append(f"{port}:\n{rendered}")
         return "\n\n".join(sections) if sections else "The tool returned nothing."
-
-    async def _render_value(self, value: ArtifactOutputValue) -> str:
-        if isinstance(value, ArtifactRefSequence):
-            shown = [
-                await self._render_ref(ref)
-                for ref in value.item_refs[:SEQUENCE_VIEW_ITEMS]
-            ]
-            more = len(value.item_refs) - len(shown)
-            lines = [f"{len(value.item_refs)} items:"]
-            lines += ["- " + text.replace("\n", "\n  ") for text in shown]
-            if more > 0:
-                lines.append(f"- ... and {more} more not shown")
-            return "\n".join(lines)
-        return await self._render_ref(value)
 
     async def render_library_item(
         self, artifact_id: UUID
@@ -321,110 +529,89 @@ class ArtifactModelViews(ModelViews):
                 f"Artifact id: {artifact_id}\n[this Library item is no longer available]",
                 None,
             )
-        return await self._render_artifact(artifact), artifact.ref()
-
-    async def _render_ref(self, ref: ArtifactRef) -> str:
-        async with self._unit_of_work_factory() as unit_of_work:
-            artifact = await unit_of_work.artifacts.get(
-                self._workspace_id, ref.artifact_id
-            )
-        if artifact is None:
-            return (
-                f"Artifact id: {ref.artifact_id} ({ref.artifact_type})\n"
-                f"[{ref.artifact_type} artifact that is no longer available]"
-            )
-        return await self._render_artifact(artifact)
-
-    async def _render_artifact(self, artifact: ArtifactObject) -> str:
-        body = await self._render_body(artifact)
-        return f"Artifact id: {artifact.id} ({artifact.artifact_type})\n{body}"
-
-    async def _render_body(self, artifact: ArtifactObject) -> str:
         if artifact.artifact_type.startswith("table."):
-            return await self._render_table(artifact)
-        payload = artifact.inline_payload
-        if isinstance(payload, dict):
-            scalar = _scalar_text(payload)
-            if scalar is not None:
-                return _clip(scalar)
-            return _clip(_compact_json(payload))
-        if json_media_type(artifact.content_type):
-            return await self._render_stored_json(artifact)
-        title = self._titles.get(
-            ArtifactTypeKey(artifact.artifact_type, artifact.schema_version),
-            artifact.artifact_type,
-        )
-        size = f", {artifact.byte_size} bytes" if artifact.byte_size else ""
-        return f"[{title}{size}; its content is not shown to you]"
-
-    async def _render_stored_json(self, artifact: ArtifactObject) -> str:
-        """Compact JSON from storage, cut off once it is longer than a model is shown.
-
-        The read itself is bounded. A file past that bound is described as cut off
-        even when the characters that were read still fit the view.
-        """
-
-        if artifact.bucket is None or artifact.object_key is None:
-            return "[JSON with nothing stored]"
-        limit = MAX_VIEW_CHARS * 4
-        stream = await self._storage.load(
-            bucket=artifact.bucket, path=artifact.object_key
-        )
-        try:
-            raw = stream.read(limit + 1)
-        finally:
-            stream.close()
-        truncated = len(raw) > limit
-        text = raw[:limit].decode("utf-8", errors="replace")
-        if not truncated:
-            try:
-                parsed = json.loads(text)
-            except json.JSONDecodeError:
-                return "[JSON that could not be read]"
-            text = _compact_json(parsed)
-        shown = _clip(text)
-        if truncated and "more characters" not in shown:
-            shown += "\n... [the stored JSON is longer than what was read]"
-        return shown
-
-    async def _render_table(self, artifact: ArtifactObject) -> str:
-        page = await load_table_page(
-            artifact, self._storage, offset=0, limit=TABLE_VIEW_ROWS
-        )
-        header = [
-            column.id
-            if column.title in ("", column.id)
-            else f"{column.id} ({column.title})"
-            for column in page.columns
-        ]
-        lines = [" | ".join(header), " | ".join("---" for _ in header)]
-        for row in page.rows:
-            lines.append(
-                " | ".join(str(row.get(column.id, "")) for column in page.columns)
+            page = await load_table_page(
+                artifact, self._storage, offset=0, limit=TABLE_VIEW_ROWS
             )
-        shown = len(page.rows)
-        if page.total_rows > shown:
-            lines.append(f"(showing {shown} of {page.total_rows} rows)")
-        return _clip("\n".join(lines))
-
-
-def _scalar_text(payload: dict[str, object]) -> str | None:
-    """The text of a payload that is only a value, markdown or text field."""
-
-    if len(payload) != 1:
-        return None
-    field, found = next(iter(payload.items()))
-    if field not in {"value", "markdown", "text"}:
-        return None
-    if isinstance(found, (str, int, float, bool)):
-        return str(found)
-    return None
-
-
-def _compact_json(payload: object) -> str:
-    return json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    )
+            header = [
+                column.id
+                if column.title in ("", column.id)
+                else f"{column.id} ({column.title})"
+                for column in page.columns
+            ]
+            lines = [" | ".join(header), " | ".join("---" for _ in header)]
+            for row in page.rows:
+                lines.append(
+                    " | ".join(str(row.get(column.id, "")) for column in page.columns)
+                )
+            shown = len(page.rows)
+            if page.total_rows > shown:
+                lines.append(f"(showing {shown} of {page.total_rows} rows)")
+            body = _clip("\n".join(lines))
+        else:
+            payload = artifact.inline_payload
+            if isinstance(payload, dict):
+                scalar = None
+                if len(payload) == 1:
+                    field, found = next(iter(payload.items()))
+                    if field in {"value", "markdown", "text"}:
+                        if isinstance(found, (str, int, float, bool)):
+                            scalar = str(found)
+                if scalar is not None:
+                    body = _clip(scalar)
+                else:
+                    body = _clip(
+                        json.dumps(
+                            payload,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                    )
+            elif json_media_type(artifact.content_type):
+                if artifact.bucket is None or artifact.object_key is None:
+                    body = "[JSON with nothing stored]"
+                else:
+                    limit = MAX_VIEW_CHARS * 4
+                    stream = await self._storage.load(
+                        bucket=artifact.bucket, path=artifact.object_key
+                    )
+                    try:
+                        raw = stream.read(limit + 1)
+                    finally:
+                        stream.close()
+                    truncated = len(raw) > limit
+                    text = raw[:limit].decode("utf-8", errors="replace")
+                    readable = True
+                    if not truncated:
+                        try:
+                            parsed = json.loads(text)
+                        except json.JSONDecodeError:
+                            readable = False
+                        else:
+                            text = json.dumps(
+                                parsed,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            )
+                    if readable:
+                        body = _clip(text)
+                        if truncated and "more characters" not in body:
+                            body += (
+                                "\n... [the stored JSON is longer than what was read]"
+                            )
+                    else:
+                        body = "[JSON that could not be read]"
+            else:
+                title = self._titles.get(
+                    ArtifactTypeKey(artifact.artifact_type, artifact.schema_version),
+                    artifact.artifact_type,
+                )
+                size = f", {artifact.byte_size} bytes" if artifact.byte_size else ""
+                body = f"[{title}{size}; its content is not shown to you]"
+        rendered = f"Artifact id: {artifact.id} ({artifact.artifact_type})\n{body}"
+        return rendered, artifact.ref()
 
 
 def _clip(text: str) -> str:
@@ -502,14 +689,28 @@ class ProjectContextReader(AgentContextReader):
                 if link.kind == "node_output" and link.node_id and link.port:
                     node = nodes[link.node_id]
                     label = f"{titles.title(node)}, output {link.port}"
-                    text, refs = await self._node_output(
-                        views,
-                        workspace_id,
-                        project_id,
-                        graph_id,
-                        link.node_id,
-                        link.port,
+                    snapshot, stored = await self._runs.instance_result(
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        key=InstanceKey(
+                            project_id=str(project_id),
+                            graph_id=graph_id,
+                            call_path=(),
+                            node_id=link.node_id,
+                        ),
                     )
+                    if stored is None or link.port not in stored.outputs:
+                        text = f"[this node has no result to show yet; it is {snapshot.state.value}]"
+                        refs = ()
+                    else:
+                        value = stored.outputs[link.port]
+                        rendered = await views.render(outputs={link.port: value})
+                        text = (
+                            rendered.split(":\n", 1)[1]
+                            if rendered.startswith(f"{link.port}:\n")
+                            else rendered
+                        )
+                        refs = output_artifact_refs(value)
                     blocks.append(ContextBlock(label, text, artifacts=refs))
                 elif link.kind == "card" and link.card_id:
                     viewer = viewers.get(link.card_id)
@@ -546,36 +747,6 @@ class ProjectContextReader(AgentContextReader):
                 )
                 blocks.append(ContextBlock(f"Context {link.id}", "[could not be read]"))
         return blocks
-
-    async def _node_output(
-        self,
-        views: "ArtifactModelViews",
-        workspace_id: UUID,
-        project_id: UUID,
-        graph_id: str,
-        node_id: str,
-        port: str,
-    ) -> tuple[str, tuple[ArtifactRef, ...]]:
-        snapshot, stored = await self._runs.instance_result(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            key=InstanceKey(
-                project_id=str(project_id),
-                graph_id=graph_id,
-                call_path=(),
-                node_id=node_id,
-            ),
-        )
-        if stored is None or port not in stored.outputs:
-            return (
-                f"[this node has no result to show yet; it is {snapshot.state.value}]",
-                (),
-            )
-        value = stored.outputs[port]
-        text = await views.render(outputs={port: value})
-        # The view names the port again; the heading already did.
-        body = text.split(":\n", 1)[1] if text.startswith(f"{port}:\n") else text
-        return body, output_artifact_refs(value)
 
 
 def build_toolbox_factory(
