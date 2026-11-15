@@ -101,9 +101,9 @@ elsewhere. Walk this list and say which entries applied:
 ## Naming
 
 - Unit-of-work context variables are named `uow`
-  (`async with self._uow_factory() as uow:`). Private attributes are
-  `self._uow` / `self._uow_factory`. Public keyword parameters may stay
-  `unit_of_work` for compatibility.
+  (`async with self._unit_of_work_factory() as uow:`). Use `uow` for other
+  local unit-of-work variables too. Preserve parameter names for keyword-call
+  compatibility; attribute, class, module, and type names are outside this rule.
 
 ## Docs and work artifacts
 

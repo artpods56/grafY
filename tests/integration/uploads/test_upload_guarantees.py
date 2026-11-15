@@ -37,20 +37,20 @@ UPLOAD_EXTENSION_CLAIMS = build_extension_table(
 def _service(
     tmp_path: Path, **kwargs
 ) -> tuple[UploadService, InMemoryUnitOfWork, LocalFileObjectStore]:
-    unit_of_work = kwargs.pop("unit_of_work", None) or InMemoryUnitOfWork()
+    uow = kwargs.pop("unit_of_work", None) or InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
     max_upload_bytes = kwargs.pop("max_upload_bytes", 1024 * 1024)
     service = UploadService.from_config(
         UploadServiceConfig(max_upload_bytes=max_upload_bytes),
         storage=storage,
-        unit_of_work_factory=lambda: unit_of_work,
+        unit_of_work_factory=lambda: uow,
         artifact_types=UPLOAD_FORMAT_TYPES,
         extension_claims=UPLOAD_EXTENSION_CLAIMS,
         bucket=BUCKET,
         storage_backend="local",
         **kwargs,
     )
-    return service, unit_of_work, storage
+    return service, uow, storage
 
 
 async def test_local_create_only_writes_cannot_replace_each_other(
@@ -107,7 +107,7 @@ async def test_local_overflow_leaves_no_ordinary_temporary_file(tmp_path: Path) 
 async def test_concurrent_completions_create_exactly_one_artifact(
     tmp_path: Path,
 ) -> None:
-    service, unit_of_work, _ = _service(tmp_path)
+    service, uow, _ = _service(tmp_path)
     target = await service.create_upload(
         workspace_id=WORKSPACE_ID,
         created_by_user_id=TEST_USER_ID,
@@ -127,7 +127,7 @@ async def test_concurrent_completions_create_exactly_one_artifact(
 
     assert first.upload.artifact_id == second.upload.artifact_id
     assert first.upload.sha256 == second.upload.sha256
-    async with unit_of_work as entered:
+    async with uow as entered:
         artifacts = await entered.artifacts.list_by_type(
             WORKSPACE_ID,
             ArtifactTypeKey("file.png", 1),
@@ -136,7 +136,7 @@ async def test_concurrent_completions_create_exactly_one_artifact(
 
 
 async def test_failure_marking_cannot_downgrade_ready(tmp_path: Path) -> None:
-    service, unit_of_work, _ = _service(tmp_path)
+    service, uow, _ = _service(tmp_path)
     target = await service.create_upload(
         workspace_id=WORKSPACE_ID,
         created_by_user_id=TEST_USER_ID,
@@ -152,7 +152,7 @@ async def test_failure_marking_cannot_downgrade_ready(tmp_path: Path) -> None:
         workspace_id=WORKSPACE_ID,
         upload_id=target.upload_id,
     )
-    async with unit_of_work as entered:
+    async with uow as entered:
         marked = await entered.uploads.mark_terminal_if_pending(
             WORKSPACE_ID,
             target.upload_id,
@@ -160,7 +160,7 @@ async def test_failure_marking_cannot_downgrade_ready(tmp_path: Path) -> None:
         )
         await entered.commit()
     assert marked is None
-    async with unit_of_work as entered:
+    async with uow as entered:
         current = await entered.uploads.get(WORKSPACE_ID, target.upload_id)
     assert current is not None
     assert current.status is UploadStatus.READY
@@ -168,7 +168,7 @@ async def test_failure_marking_cannot_downgrade_ready(tmp_path: Path) -> None:
 
 
 async def test_cleanup_keeps_tracking_when_storage_delete_fails(tmp_path: Path) -> None:
-    service, unit_of_work, storage = _service(tmp_path)
+    service, uow, storage = _service(tmp_path)
     target = await service.create_upload(
         workspace_id=WORKSPACE_ID,
         created_by_user_id=TEST_USER_ID,
@@ -186,7 +186,7 @@ async def test_cleanup_keeps_tracking_when_storage_delete_fails(tmp_path: Path) 
 
     storage.delete = boom  # type: ignore[method-assign]
     assert await service.cleanup_abandoned(older_than=timedelta(0)) == 0
-    async with unit_of_work as entered:
+    async with uow as entered:
         row = await entered.uploads.get(WORKSPACE_ID, target.upload_id)
     assert row is not None
     assert row.status is UploadStatus.EXPIRED
@@ -198,7 +198,7 @@ async def test_cleanup_keeps_tracking_when_storage_delete_fails(tmp_path: Path) 
 
     storage.delete = ok_delete  # type: ignore[method-assign]
     assert await service.cleanup_abandoned(older_than=timedelta(0)) == 1
-    async with unit_of_work as entered:
+    async with uow as entered:
         assert await entered.uploads.get(WORKSPACE_ID, target.upload_id) is None
 
 

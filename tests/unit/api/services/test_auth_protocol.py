@@ -218,9 +218,9 @@ async def test_secondary_failure_audit_write_is_fail_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repository = _FailureOnlyAuditRepository()
-    unit_of_work = _FailureOnlyAuditUnitOfWork(repository)
+    uow = _FailureOnlyAuditUnitOfWork(repository)
     auth = _auth_service()
-    monkeypatch.setattr(auth, "_uow_factory", lambda: unit_of_work)
+    monkeypatch.setattr(auth, "_unit_of_work_factory", lambda: uow)
     recorded: list[tuple[Exception, str]] = []
 
     def record_failure(exc: Exception, *, operation: str) -> None:
@@ -246,7 +246,7 @@ async def test_secondary_failure_audit_write_is_fail_open(
         )
 
     assert len(repository.attempts) == 1
-    assert unit_of_work.commit_attempts == 0
+    assert uow.commit_attempts == 0
     assert len(recorded) == 1
     assert isinstance(recorded[0][0], RuntimeError)
     assert recorded[0][1] == "security.audit.write.workspace.authorize"
@@ -555,7 +555,9 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
         )
     assert tampered_error.value.code == "invalid_pkce_verifier"
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-        consumed_tampered = await uow.identity.lock_login_transaction(tampered_id)
+        consumed_tampered = await uow.identity.lock_login_transaction(
+            tampered_id
+        )
         assert consumed_tampered is not None and consumed_tampered.is_consumed
 
     callback_failures: list[tuple[UUID, str | None, str]] = []
@@ -610,8 +612,12 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
     assert return_path == "/after-login"
     assert replacement.cookie_value != old_session.cookie_value
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-        old_stored = await uow.identity.get_auth_session(old_session.session.id)
-        replacement_stored = await uow.identity.get_auth_session(replacement.session.id)
+        old_stored = await uow.identity.get_auth_session(
+            old_session.session.id
+        )
+        replacement_stored = await uow.identity.get_auth_session(
+            replacement.session.id
+        )
         assert old_stored is not None and old_stored.is_revoked
         assert replacement_stored is not None and not replacement_stored.is_revoked
     async with database.engine.connect() as connection:
@@ -628,8 +634,8 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
     failure_params = parse_qs(urlsplit(failure_url).query)
     protocol_state["url"] = failure_url
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-        sessions_before_failure = await uow.identity.list_auth_sessions_for_user(
-            provisioned.user.id
+        sessions_before_failure = (
+            await uow.identity.list_auth_sessions_for_user(provisioned.user.id)
         )
 
     real_uow_factory = cast(
@@ -638,7 +644,7 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
     )
     monkeypatch.setattr(
         auth,
-        "_uow_factory",
+        "_unit_of_work_factory",
         lambda: _FailingCallbackAuditUnitOfWork(real_uow_factory),
     )
     with pytest.raises(OidcCallbackInternalError) as internal_failure:
@@ -650,10 +656,12 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
         )
     assert isinstance(internal_failure.value.__cause__, RuntimeError)
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-        failed_transaction = await uow.identity.get_login_transaction(failure_id)
+        failed_transaction = await uow.identity.get_login_transaction(
+            failure_id
+        )
         assert failed_transaction is not None and failed_transaction.is_consumed
-        sessions_after_failure = await uow.identity.list_auth_sessions_for_user(
-            provisioned.user.id
+        sessions_after_failure = (
+            await uow.identity.list_auth_sessions_for_user(provisioned.user.id)
         )
     assert [session.id for session in sessions_after_failure] == [
         session.id for session in sessions_before_failure

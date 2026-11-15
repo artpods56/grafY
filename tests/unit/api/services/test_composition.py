@@ -99,19 +99,19 @@ async def test_composition_hands_the_egress_policy_to_the_component_that_dials(
     monkeypatch.setattr(socket, "getaddrinfo", resolve_loopback_host)
 
     async def fetch_tile(egress_policy: object) -> bytes:
-        unit_of_work = InMemoryUnitOfWork()
+        uow = InMemoryUnitOfWork()
         storage = LocalFileObjectStore(tmp_path / f"objects-{id(egress_policy)}")
         components = build_workbench_components(
             plugin_registry=build_explicit_plugin_registry(),
             workspace=tmp_path,
-            unit_of_work=unit_of_work,
+            unit_of_work=uow,
             storage=storage,
             egress_policy=egress_policy,  # pyright: ignore[reportArgumentType]
         )
         try:
-            async with unit_of_work:
-                await unit_of_work.artifacts.add(artifact)
-                await unit_of_work.commit()
+            async with uow:
+                await uow.artifacts.add(artifact)
+                await uow.commit()
             stored = await components.artifact_geo_tiles.get(
                 artifact.workspace_id, artifact.id
             )

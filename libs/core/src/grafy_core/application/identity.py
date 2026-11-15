@@ -103,7 +103,7 @@ class IdentityService:
         domain_workspace_grants: Sequence[OidcDomainWorkspaceGrant] = (),
         operator_emails: Sequence[str] = (),
     ) -> None:
-        self._uow_factory = unit_of_work_factory
+        self._unit_of_work_factory = unit_of_work_factory
         self._domain_workspace_grants = tuple(domain_workspace_grants)
         # Deployment operators may disable and re-enable any user. An operator is
         # recognised by a verified, issuer-asserted email on an active account.
@@ -119,7 +119,7 @@ class IdentityService:
         required_capability: WorkspaceCapability | None = None,
     ) -> WorkspacePatPrincipal:
         now = _utc_now()
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             token = await uow.identity.get_personal_access_token_by_prefix(
                 public_prefix
             )
@@ -162,14 +162,18 @@ class IdentityService:
     async def list_workspaces(
         self, *, actor: ActorContext
     ) -> list[tuple[Workspace, WorkspaceMembership]]:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_active_user(uow, actor.user_id)
-            memberships = await uow.identity.list_memberships_for_user(actor.user_id)
+            memberships = await uow.identity.list_memberships_for_user(
+                actor.user_id
+            )
             workspaces: list[tuple[Workspace, WorkspaceMembership]] = []
             for membership in memberships:
                 if not membership.is_active:
                     continue
-                workspace = await uow.identity.get_workspace(membership.workspace_id)
+                workspace = await uow.identity.get_workspace(
+                    membership.workspace_id
+                )
                 if workspace is not None:
                     workspaces.append((workspace, membership))
             return workspaces
@@ -180,14 +184,16 @@ class IdentityService:
         actor: ActorContext,
         workspace_id: UUID,
     ) -> list[tuple[User, WorkspaceMembership]]:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_workspace_owner(
                 uow,
                 actor=actor,
                 workspace_id=workspace_id,
             )
             members: list[tuple[User, WorkspaceMembership]] = []
-            for membership in await uow.identity.list_memberships(workspace_id):
+            for membership in await uow.identity.list_memberships(
+                workspace_id
+            ):
                 user = await uow.identity.get_user(membership.user_id)
                 if user is not None:
                     members.append((user, membership))
@@ -200,7 +206,7 @@ class IdentityService:
         workspace_id: UUID,
         email: str,
     ) -> User:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             workspace = await self._require_shared_workspace_for_invitation(
                 uow,
                 actor=actor,
@@ -222,7 +228,7 @@ class IdentityService:
         role: WorkspaceRole,
     ) -> tuple[WorkspaceInvitation, User]:
         now = _utc_now()
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             workspace = await self._require_shared_workspace_for_invitation(
                 uow,
                 actor=actor,
@@ -239,7 +245,9 @@ class IdentityService:
                 workspace_id=workspace_id,
                 email=email,
             )
-            invitations = await uow.identity.list_workspace_invitations(workspace_id)
+            invitations = await uow.identity.list_workspace_invitations(
+                workspace_id
+            )
             if any(
                 invitation.invitee_user_id == invitee.id
                 and invitation.status is WorkspaceInvitationStatus.PENDING
@@ -280,13 +288,15 @@ class IdentityService:
         workspace_id: UUID,
     ) -> list[tuple[WorkspaceInvitation, User]]:
         now = _utc_now()
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_workspace_owner(
                 uow,
                 actor=actor,
                 workspace_id=workspace_id,
             )
-            invitations = await uow.identity.list_workspace_invitations(workspace_id)
+            invitations = await uow.identity.list_workspace_invitations(
+                workspace_id
+            )
             expired = await self._expire_due_invitations(
                 uow,
                 invitations,
@@ -298,7 +308,9 @@ class IdentityService:
             for invitation in invitations:
                 if invitation.status is not WorkspaceInvitationStatus.PENDING:
                     continue
-                invitee = await uow.identity.get_user(invitation.invitee_user_id)
+                invitee = await uow.identity.get_user(
+                    invitation.invitee_user_id
+                )
                 if invitee is not None:
                     rows.append((invitation, invitee))
             return rows
@@ -309,10 +321,12 @@ class IdentityService:
         actor: ActorContext,
     ) -> list[tuple[WorkspaceInvitation, Workspace, User]]:
         now = _utc_now()
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_active_user(uow, actor.user_id)
-            invitations = await uow.identity.list_workspace_invitations_for_user(
-                actor.user_id
+            invitations = (
+                await uow.identity.list_workspace_invitations_for_user(
+                    actor.user_id
+                )
             )
             expired = await self._expire_due_invitations(
                 uow,
@@ -325,8 +339,12 @@ class IdentityService:
             for invitation in invitations:
                 if invitation.status is not WorkspaceInvitationStatus.PENDING:
                     continue
-                workspace = await uow.identity.get_workspace(invitation.workspace_id)
-                inviter = await uow.identity.get_user(invitation.invited_by_user_id)
+                workspace = await uow.identity.get_workspace(
+                    invitation.workspace_id
+                )
+                inviter = await uow.identity.get_user(
+                    invitation.invited_by_user_id
+                )
                 if workspace is not None and inviter is not None:
                     rows.append((invitation, workspace, inviter))
             return rows
@@ -338,13 +356,17 @@ class IdentityService:
         invitation_id: UUID,
     ) -> WorkspaceInvitationAcceptance:
         now = _utc_now()
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_active_user(uow, actor.user_id)
-            invitation = await uow.identity.get_workspace_invitation(invitation_id)
+            invitation = await uow.identity.get_workspace_invitation(
+                invitation_id
+            )
             if invitation is None or invitation.invitee_user_id != actor.user_id:
                 raise NotFoundError("Workspace invitation", str(invitation_id))
-            workspace = await uow.identity.lock_workspace_for_membership_mutation(
-                invitation.workspace_id
+            workspace = (
+                await uow.identity.lock_workspace_for_membership_mutation(
+                    invitation.workspace_id
+                )
             )
             if workspace is None:
                 raise NotFoundError("Workspace", str(invitation.workspace_id))
@@ -394,9 +416,11 @@ class IdentityService:
         invitation_id: UUID,
     ) -> WorkspaceInvitation:
         now = _utc_now()
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_active_user(uow, actor.user_id)
-            invitation = await uow.identity.get_workspace_invitation(invitation_id)
+            invitation = await uow.identity.get_workspace_invitation(
+                invitation_id
+            )
             if invitation is None or invitation.invitee_user_id != actor.user_id:
                 raise NotFoundError("Workspace invitation", str(invitation_id))
             await uow.identity.lock_workspace_for_membership_mutation(
@@ -430,13 +454,15 @@ class IdentityService:
         invitation_id: UUID,
     ) -> WorkspaceInvitation:
         now = _utc_now()
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_workspace_owner(
                 uow,
                 actor=actor,
                 workspace_id=workspace_id,
             )
-            invitation = await uow.identity.get_workspace_invitation(invitation_id)
+            invitation = await uow.identity.get_workspace_invitation(
+                invitation_id
+            )
             if invitation is None or invitation.workspace_id != workspace_id:
                 raise NotFoundError("Workspace invitation", str(invitation_id))
             if invitation.expire_if_due(now=now):
@@ -465,7 +491,7 @@ class IdentityService:
         actor: ActorContext,
         token: PersonalAccessToken,
     ) -> PersonalAccessToken:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_active_user(uow, actor.user_id)
             if token.user_id != actor.user_id:
                 raise IdentityInvariantError(
@@ -508,7 +534,7 @@ class IdentityService:
         actor: ActorContext,
         workspace_id: UUID,
     ) -> list[PersonalAccessToken]:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_active_user(uow, actor.user_id)
             membership = await self._require_membership(
                 uow,
@@ -533,7 +559,7 @@ class IdentityService:
         workspace_id: UUID,
         token_id: UUID,
     ) -> PersonalAccessToken:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_active_user(uow, actor.user_id)
             membership = await self._require_membership(
                 uow,
@@ -579,7 +605,7 @@ class IdentityService:
         email_verified: bool = False,
     ) -> IdentityProvisioningResult:
         """Provision or refresh one validated OIDC identity atomically."""
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             identity = await uow.identity.get_oidc_identity(
                 issuer=issuer,
                 subject=subject,
@@ -597,7 +623,9 @@ class IdentityService:
                     email_verified=email_verified,
                     display_name=display_name,
                 )
-                personal_workspace = await uow.identity.get_personal_workspace(user.id)
+                personal_workspace = await uow.identity.get_personal_workspace(
+                    user.id
+                )
                 if personal_workspace is None:
                     personal_workspace = Workspace.personal(owner_user_id=user.id)
                     await uow.identity.add_workspace(personal_workspace)
@@ -661,11 +689,9 @@ class IdentityService:
         name: str,
     ) -> Workspace:
         normalized_slug = normalize_workspace_slug(slug)
-        async with self._uow_factory() as uow:
-            existing = (
-                await uow.identity.lock_workspace_by_slug_for_membership_mutation(
-                    normalized_slug
-                )
+        async with self._unit_of_work_factory() as uow:
+            existing = await uow.identity.lock_workspace_by_slug_for_membership_mutation(
+                normalized_slug
             )
             if existing is not None:
                 raise IdentityInvariantError("Workspace slug is already in use")
@@ -699,7 +725,7 @@ class IdentityService:
         workspace_id: UUID,
         capability: WorkspaceCapability,
     ) -> WorkspaceAccess:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             return await authorize_workspace(
                 uow.identity,
                 actor=actor,
@@ -716,9 +742,11 @@ class IdentityService:
         role: WorkspaceRole,
     ) -> WorkspaceMemberResult:
         role = WorkspaceRole(role)
-        async with self._uow_factory() as uow:
-            workspace = await uow.identity.lock_workspace_for_membership_mutation(
-                workspace_id
+        async with self._unit_of_work_factory() as uow:
+            workspace = (
+                await uow.identity.lock_workspace_for_membership_mutation(
+                    workspace_id
+                )
             )
             if workspace is None:
                 raise NotFoundError("Workspace", str(workspace_id))
@@ -772,9 +800,11 @@ class IdentityService:
         workspace_id: UUID,
         user_id: UUID,
     ) -> WorkspaceMembership:
-        async with self._uow_factory() as uow:
-            workspace = await uow.identity.lock_workspace_for_membership_mutation(
-                workspace_id
+        async with self._unit_of_work_factory() as uow:
+            workspace = (
+                await uow.identity.lock_workspace_for_membership_mutation(
+                    workspace_id
+                )
             )
             if workspace is None:
                 raise NotFoundError("Workspace", str(workspace_id))
@@ -824,7 +854,7 @@ class IdentityService:
         actor: ActorContext,
         user_id: UUID,
     ) -> User:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_operator(uow, actor)
             return await self._require_user(uow, user_id)
 
@@ -846,7 +876,7 @@ class IdentityService:
             if actor is None
             else SecurityAuditActorKind.AUTHENTICATED
         )
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             if actor is not None:
                 await self._require_operator(uow, actor)
                 if actor.user_id == user_id:
@@ -856,7 +886,9 @@ class IdentityService:
             user = await self._require_user(uow, user_id)
             user.active = False
             user.updated_at = _utc_now()
-            for session in await uow.identity.list_auth_sessions_for_user(user_id):
+            for session in await uow.identity.list_auth_sessions_for_user(
+                user_id
+            ):
                 if session.is_revoked:
                     continue
                 session.revoke()
@@ -873,7 +905,9 @@ class IdentityService:
                         resource_id=str(session.id),
                     )
                 )
-            for token in await uow.identity.list_personal_access_tokens_for_user(
+            for (
+                token
+            ) in await uow.identity.list_personal_access_tokens_for_user(
                 user_id
             ):
                 await self._revoke_personal_access_token(
@@ -905,7 +939,7 @@ class IdentityService:
         in again and issues new tokens.
         """
 
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             await self._require_operator(uow, actor)
             user = await self._require_user(uow, user_id)
             if not user.active:

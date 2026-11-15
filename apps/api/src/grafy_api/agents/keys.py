@@ -81,7 +81,7 @@ class AgentKeyService:
         unit_of_work_factory: Callable[[], AgentKeyUnitOfWorkPort],
         encryption_key: SecretStr | None,
     ) -> None:
-        self._uow_factory = unit_of_work_factory
+        self._unit_of_work_factory = unit_of_work_factory
         self._encryption_key = encryption_key
 
     async def state(
@@ -95,7 +95,7 @@ class AgentKeyService:
         """Whether this Agent has a key this server can use. Never the key itself."""
 
         access.require(WorkspaceCapability.VIEW_PROJECT)
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             head = await self._head(uow, access.workspace_id, project_id)
             self._agent(head, graph_id, agent_id)
             stored = await uow.agent_keys.get(
@@ -125,7 +125,7 @@ class AgentKeyService:
         access.require(WorkspaceCapability.EDIT_PROJECT)
         plaintext = self._validated_plaintext(value)
         key, key_id = self._resolved_encryption_key()
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             head = await self._head(uow, access.workspace_id, project_id)
             self._agent(head, graph_id, agent_id)
             nonce = os.urandom(12)
@@ -171,7 +171,7 @@ class AgentKeyService:
         """Drop this Agent's own key. Clearing does not read what it held."""
 
         access.require(WorkspaceCapability.EDIT_PROJECT)
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             head = await self._head(uow, access.workspace_id, project_id)
             self._agent(head, graph_id, agent_id)
             await uow.agent_keys.remove(
@@ -202,7 +202,7 @@ class AgentKeyService:
         asked for it over HTTP.
         """
 
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             head = await self._head(uow, workspace_id, project_id)
             self._agent(head, graph_id, agent_id)
             stored = await uow.agent_keys.get(

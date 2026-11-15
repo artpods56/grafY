@@ -162,6 +162,8 @@ async def test_node_secret_can_be_removed_without_reading_ciphertext(
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         assert (
-            await uow.node_secrets.list_for_graph(graph.workspace_id, graph.id, "main")
+            await uow.node_secrets.list_for_graph(
+                graph.workspace_id, graph.id, "main"
+            )
             == []
         )

@@ -65,7 +65,10 @@ async def conversation(
             )
         await uow.commit()
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-        if await uow.agent_conversations.get(workspace_id, conversation_id) is None:
+        if (
+            await uow.agent_conversations.get(workspace_id, conversation_id)
+            is None
+        ):
             await uow.agent_conversations.add(
                 AgentConversation.new(
                     workspace_id=workspace_id,

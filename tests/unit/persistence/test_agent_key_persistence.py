@@ -91,7 +91,9 @@ async def test_a_sealed_key_round_trips_and_a_replacement_keeps_its_origin(
         await uow.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-        loaded = await uow.agent_keys.get(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
+        loaded = await uow.agent_keys.get(
+            WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID
+        )
         listed = await uow.agent_keys.list_for_graph(
             WORKSPACE_ONE, project.id, GRAPH_ID
         )
@@ -124,8 +126,12 @@ async def test_keys_of_one_graph_are_listed_by_agent_and_scoped_to_the_workspace
         await uow.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-        mine = await uow.agent_keys.list_for_graph(WORKSPACE_ONE, project.id, GRAPH_ID)
-        others = await uow.agent_keys.list_for_graph(WORKSPACE_TWO, theirs.id, GRAPH_ID)
+        mine = await uow.agent_keys.list_for_graph(
+            WORKSPACE_ONE, project.id, GRAPH_ID
+        )
+        others = await uow.agent_keys.list_for_graph(
+            WORKSPACE_TWO, theirs.id, GRAPH_ID
+        )
         # Reading another Workspace's coordinates, or our own coordinates through them.
         assert (
             await uow.agent_keys.get(WORKSPACE_TWO, project.id, GRAPH_ID, AGENT_ID)

@@ -19,9 +19,9 @@ OTHER_TABLE = UUID(int=9)
 def harness(
     rows: list[dict[str, object]],
 ) -> tuple[ArtifactTableService, InMemoryUnitOfWork, ArtifactObject]:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = cast(FileStoragePort, object())
-    service = ArtifactTableService(unit_of_work, storage)
+    service = ArtifactTableService(uow, storage)
     table = ArtifactObject(
         workspace_id=WORKSPACE,
         artifact_type="table.data",
@@ -37,11 +37,11 @@ def harness(
         )
 
     service.load_table_page = page  # type: ignore[method-assign]
-    return service, unit_of_work, table
+    return service, uow, table
 
 
 async def test_each_row_with_text_gets_an_artifact_holding_that_text() -> None:
-    service, unit_of_work, table = harness(
+    service, uow, table = harness(
         [{"text": "<table>x</table>", "page": 0}, {"text": "", "page": 1}]
     )
 
@@ -55,7 +55,7 @@ async def test_each_row_with_text_gets_an_artifact_holding_that_text() -> None:
     # An empty cell has nothing to take out.
     assert ref is not None and rows[1][1] is None
     assert (ref.artifact_type, ref.schema_version) == ("scalar.text", 1)
-    async with unit_of_work as uow:
+    async with uow as uow:
         stored = await uow.artifacts.get(WORKSPACE, ref.artifact_id)
     assert stored is not None
     assert stored.inline_payload == {"value": "<table>x</table>"}

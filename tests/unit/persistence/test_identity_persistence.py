@@ -176,7 +176,9 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         assert stored["encrypted_pkce_verifier"] == transaction.encrypted_pkce_verifier
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-        stored_transaction = await uow.identity.get_login_transaction(transaction.id)
+        stored_transaction = await uow.identity.get_login_transaction(
+            transaction.id
+        )
         stored_session = await uow.identity.get_auth_session(session.id)
         stored_token = await uow.identity.get_personal_access_token_by_digest(
             token.secret_digest
@@ -192,14 +194,18 @@ async def test_identity_records_round_trip_without_plain_credential_material(
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         assert await uow.identity.delete_expired_login_transactions(now) == 1
         assert await uow.identity.delete_expired_sessions(now) == 1
-        assert await uow.identity.delete_expired_personal_access_tokens(now) == 1
+        assert (
+            await uow.identity.delete_expired_personal_access_tokens(now) == 1
+        )
         await uow.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         assert await uow.identity.get_login_transaction(transaction.id) is None
         assert await uow.identity.get_auth_session(session.id) is None
         assert (
-            await uow.identity.get_personal_access_token_by_digest(token.secret_digest)
+            await uow.identity.get_personal_access_token_by_digest(
+                token.secret_digest
+            )
             is None
         )
 
@@ -258,4 +264,6 @@ async def test_stored_token_rejects_scopes_that_are_not_capabilities(
 
     with pytest.raises(ValueError, match="Stored workspace capability is unknown"):
         async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-            await uow.identity.get_personal_access_token_by_prefix("nrt_unknown")
+            await uow.identity.get_personal_access_token_by_prefix(
+                "nrt_unknown"
+            )

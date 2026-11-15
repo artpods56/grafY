@@ -133,10 +133,12 @@ async def test_an_operator_disables_and_re_enables_a_user(database: Database) ->
     assert not await _is_active(database, target)
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         stored_session = await uow.identity.get_auth_session(session.id)
-        stored_token = await uow.identity.get_personal_access_token_for_user_workspace(
-            token_id=token.id,
-            user_id=target.user.id,
-            workspace_id=target.personal_workspace.id,
+        stored_token = (
+            await uow.identity.get_personal_access_token_for_user_workspace(
+                token_id=token.id,
+                user_id=target.user.id,
+                workspace_id=target.personal_workspace.id,
+            )
         )
     assert stored_session is not None and stored_session.is_revoked
     assert stored_token is not None and stored_token.is_revoked

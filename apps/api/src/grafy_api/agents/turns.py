@@ -339,7 +339,7 @@ class AgentService:
     ) -> None:
         self._toolbox_factory = toolbox_factory
         self._context_reader = context_reader
-        self._uow_factory = unit_of_work_factory
+        self._unit_of_work_factory = unit_of_work_factory
         self._models = models
         self._publisher: AgentTurnPublisher = (
             publisher if publisher is not None else NullAgentTurnPublisher()
@@ -435,7 +435,7 @@ class AgentService:
         one decision instead of two reads with a window between them.
         """
 
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             store = uow.agent_conversations
             turns = uow.agent_turns
             conversation = await store.lock(access.workspace_id, conversation_id)
@@ -907,7 +907,7 @@ class AgentService:
         turn = entry.turn
         at = datetime.now(UTC)
         appended: list[AgentConversationEvent] = []
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             current = await uow.agent_turns.get(turn.workspace_id, turn.id)
             if current is None or current.status is not AgentTurnStatus.RUNNING:
                 await uow.rollback()
@@ -1014,7 +1014,7 @@ class AgentService:
 
         at = datetime.now(UTC)
         appended: list[AgentConversationEvent] = []
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             claimed = await uow.agent_turns.finish(
                 turn.workspace_id, turn.id, status=status, at=at, detail=detail
             )
@@ -1138,7 +1138,7 @@ class AgentService:
         """End a receipt no task in this process is behind."""
 
         at = datetime.now(UTC)
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             claimed = await uow.agent_turns.finish(
                 turn.workspace_id, turn.id, status=status, at=at, detail=detail
             )
@@ -1189,7 +1189,7 @@ class AgentService:
         """This conversation's sends, newest first — the receipts behind the events."""
 
         access.require(WorkspaceCapability.VIEW_PROJECT)
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             store = uow.agent_conversations
             if await store.get(access.workspace_id, conversation_id) is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
@@ -1215,7 +1215,7 @@ class AgentService:
         still_running = await self._running(access.workspace_id, conversation_id)
         if still_running is not None:
             return still_running
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             store = uow.agent_conversations
             if await store.get(access.workspace_id, conversation_id) is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
@@ -1242,9 +1242,11 @@ class AgentService:
         entry = self._active.get(conversation_id)
         if entry is not None:
             return entry.snapshot()
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             if (
-                await uow.agent_conversations.get(access.workspace_id, conversation_id)
+                await uow.agent_conversations.get(
+                    access.workspace_id, conversation_id
+                )
             ) is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
             running = await uow.agent_turns.running_for_conversation(
@@ -1266,7 +1268,7 @@ class AgentService:
         conversation permanently stuck busy.
         """
 
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             running = await uow.agent_turns.list_running()
             # Read only. Each turn's ending is its own transaction below, so one turn that
             # fails to be written does not take the others' interruptions back with it.
@@ -1351,13 +1353,13 @@ class AgentService:
     # Internals -------------------------------------------------------------
 
     async def _receipt(self, workspace_id: UUID, turn_id: UUID) -> AgentTurn | None:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             return await uow.agent_turns.get(workspace_id, turn_id)
 
     async def _receipt_by_client_turn_id(
         self, workspace_id: UUID, conversation_id: UUID, client_turn_id: str
     ) -> AgentTurn | None:
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             return await uow.agent_turns.get_by_client_turn_id(
                 workspace_id, conversation_id, client_turn_id
             )
@@ -1368,7 +1370,7 @@ class AgentService:
         entry = self._active.get(conversation_id)
         if entry is not None:
             return entry.turn
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             return await uow.agent_turns.running_for_conversation(
                 workspace_id, conversation_id
             )
@@ -1378,7 +1380,7 @@ class AgentService:
     ) -> AgentTurn | None:
         """The conversation's most recent turn, running or finished, if it has one."""
 
-        async with self._uow_factory() as uow:
+        async with self._unit_of_work_factory() as uow:
             turns = await uow.agent_turns.list_for_conversation(
                 workspace_id, conversation_id, limit=1
             )

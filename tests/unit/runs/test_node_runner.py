@@ -311,11 +311,11 @@ def build_factory(
 
 @pytest.fixture
 def harness(tmp_path: Path) -> Harness:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     runtime_context = PluginRuntimeContext(
         workspace=tmp_path,
         storage=LocalFileObjectStore(tmp_path / "objects"),
-        uow=unit_of_work,
+        uow=uow,
         bucket="artifacts",
     )
     registry = PluginRegistry()
@@ -333,12 +333,12 @@ def harness(tmp_path: Path) -> Harness:
         runtime=runtime,
         resolvers=resolvers,
         writers=writers,
-        unit_of_work=unit_of_work,
+        unit_of_work=uow,
         plugin_context=runtime_context,
     )
     store = InMemoryResultStore()
     return Harness(
-        unit_of_work=unit_of_work,
+        unit_of_work=uow,
         store=store,
         writers=writers,
         resolvers=resolvers,
@@ -609,11 +609,11 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
     resolvers, the writers and the unit of work gets a working computation.
     """
 
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     runtime_context = PluginRuntimeContext(
         workspace=tmp_path,
         storage=LocalFileObjectStore(tmp_path / "objects"),
-        uow=unit_of_work,
+        uow=uow,
         bucket="artifacts",
     )
     registry = PluginRegistry()
@@ -630,12 +630,12 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
         ),
         resolvers=resolvers,
         writers=writers,
-        unit_of_work=unit_of_work,
+        unit_of_work=uow,
         plugin_context=None,
     )
     store = InMemoryResultStore()
     harness = Harness(
-        unit_of_work=unit_of_work,
+        unit_of_work=uow,
         store=store,
         writers=writers,
         resolvers=resolvers,

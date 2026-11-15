@@ -376,7 +376,9 @@ async def test_expired_callback_consumes_transaction_and_releases_reservation(
             assert OIDC_TRANSACTION_COOKIE in response.headers.get("set-cookie", "")
 
         async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-            transaction = await uow.identity.get_login_transaction(transaction_id)
+            transaction = await uow.identity.get_login_transaction(
+                transaction_id
+            )
 
         assert transaction is not None
         assert transaction.is_consumed
@@ -443,7 +445,9 @@ async def test_callback_failure_before_consumption_preserves_transaction_and_slo
         assert not await auth.abuse.reserve_login("before-browser", UUID(int=704))
 
         async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-            transaction = await uow.identity.get_login_transaction(transaction_id)
+            transaction = await uow.identity.get_login_transaction(
+                transaction_id
+            )
 
         assert transaction is not None
         assert not transaction.is_consumed
@@ -508,7 +512,9 @@ async def test_callback_failure_after_consumption_clears_transaction_and_release
         assert await auth.abuse.reserve_login("after-browser", UUID(int=706))
 
         async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-            transaction = await uow.identity.get_login_transaction(transaction_id)
+            transaction = await uow.identity.get_login_transaction(
+                transaction_id
+            )
 
         assert transaction is not None
         assert transaction.is_consumed

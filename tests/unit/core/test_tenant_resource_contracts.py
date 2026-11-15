@@ -14,7 +14,7 @@ WORKSPACE_TWO = UUID("00000000-0000-0000-0000-000000000102")
 
 @pytest.mark.asyncio
 async def test_in_memory_artifacts_require_matching_workspace_identity() -> None:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     artifact_id = UUID("00000000-0000-0000-0000-000000000115")
     first = ArtifactObject(
         workspace_id=WORKSPACE_ONE,
@@ -35,19 +35,19 @@ async def test_in_memory_artifacts_require_matching_workspace_identity() -> None
         inline_payload={"workspace": "duplicate"},
     )
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.artifacts.add(first)
         with pytest.raises(ObjectAlreadyExistsError, match="Artifact already exists"):
             await entered.artifacts.add(duplicate_id)
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         assert await entered.artifacts.get(WORKSPACE_ONE, artifact_id) == first
         assert await entered.artifacts.get(WORKSPACE_TWO, artifact_id) is None
         await entered.artifacts.remove(WORKSPACE_TWO, first)
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         assert await entered.artifacts.get(WORKSPACE_ONE, artifact_id) == first
 
 

@@ -41,13 +41,13 @@ async def test_stored_wms_layer_rejects_unsafe_endpoint_before_dns(
     url: str,
     message: str,
 ) -> None:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path)
-    availability = ArtifactAvailability(unit_of_work)
+    availability = ArtifactAvailability(uow)
     wms = WmsTileClient()
-    geo = ArtifactGeoService(unit_of_work, storage, availability=availability)
+    geo = ArtifactGeoService(uow, storage, availability=availability)
     tiles = ArtifactGeoTileService(
-        unit_of_work,
+        uow,
         storage,
         availability=availability,
         wms=wms,
@@ -79,9 +79,9 @@ async def test_stored_wms_layer_rejects_unsafe_endpoint_before_dns(
     dns = AsyncMock(side_effect=AssertionError("Rejected WMS must not resolve DNS"))
     monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", dns)
     try:
-        async with unit_of_work:
-            await unit_of_work.artifacts.add(artifact)
-            await unit_of_work.commit()
+        async with uow:
+            await uow.artifacts.add(artifact)
+            await uow.commit()
         stored = await geo.get(artifact.workspace_id, artifact.id)
         assert stored is not None
 
@@ -152,21 +152,21 @@ async def test_wms_tile_is_dialed_from_a_trusted_destination_only(
     monkeypatch.setattr(socket, "getaddrinfo", resolve_loopback_host)
 
     async def fetch_tile(egress_policy: object) -> bytes:
-        unit_of_work = InMemoryUnitOfWork()
+        uow = InMemoryUnitOfWork()
         storage = LocalFileObjectStore(tmp_path / str(id(egress_policy)))
         wms = WmsTileClient(
             egress_policy=egress_policy,  # pyright: ignore[reportArgumentType]
         )
         tiles = ArtifactGeoTileService(
-            unit_of_work,
+            uow,
             storage,
-            availability=ArtifactAvailability(unit_of_work),
+            availability=ArtifactAvailability(uow),
             wms=wms,
         )
         try:
-            async with unit_of_work:
-                await unit_of_work.artifacts.add(artifact)
-                await unit_of_work.commit()
+            async with uow:
+                await uow.artifacts.add(artifact)
+                await uow.commit()
             stored = await tiles.get(artifact.workspace_id, artifact.id)
             assert stored is not None
             read = await tiles.load_raster_tile(

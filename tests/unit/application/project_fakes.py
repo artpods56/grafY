@@ -872,9 +872,9 @@ class ProjectUnitOfWorkFactory:
         self.opened: list[ProjectTestUnitOfWork] = []
 
     def __call__(self) -> ProjectTestUnitOfWork:
-        unit_of_work = ProjectTestUnitOfWork(self.store)
-        self.opened.append(unit_of_work)
-        return unit_of_work
+        uow = ProjectTestUnitOfWork(self.store)
+        self.opened.append(uow)
+        return uow
 
     @property
     def last(self) -> ProjectTestUnitOfWork:
@@ -882,7 +882,7 @@ class ProjectUnitOfWorkFactory:
 
     @property
     def secrets_touched(self) -> bool:
-        return any(unit_of_work.secret_calls for unit_of_work in self.opened)
+        return any(uow.secret_calls for uow in self.opened)
 
 
 def new_member(

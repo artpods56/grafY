@@ -1057,7 +1057,7 @@ def harness(
     """A Run service over fakes, with a real catalog and a real in-memory store."""
     catalog = build_catalog(tmp_path, monkeypatch, registers=registers)
     documents = FakeProjectDocumentSource(project, other_project=other_project)
-    unit_of_work = FakeUnitOfWorkFactory()
+    uow = FakeUnitOfWorkFactory()
     store_factory = FakeResultStoreFactory()
     runner = FakeRunner()
     builder = FakeComputationRunnerFactory(runner)
@@ -1065,7 +1065,7 @@ def harness(
     resolver = secrets if secrets is not None else FakeSecretRevisionResolver()
     service = RunService(
         documents=documents,
-        uow_factory=unit_of_work,
+        uow_factory=uow,
         result_store_factory=store_factory,
         facts=facts_factory(catalog, resolver),
         runners=builder,
@@ -1074,7 +1074,7 @@ def harness(
     )
     return RunServiceHarness(
         documents=documents,
-        unit_of_work=unit_of_work,
+        unit_of_work=uow,
         store_factory=store_factory,
         builder=builder,
         runner=runner,

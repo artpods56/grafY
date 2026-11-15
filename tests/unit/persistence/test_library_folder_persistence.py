@@ -48,18 +48,18 @@ def _folder(
 async def test_a_nested_folder_comes_back_with_its_place_in_the_tree(
     database: Database,
 ) -> None:
-    unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
+    uow = SqlAlchemyUnitOfWork(database.sessions)
     fieldwork = _folder("Fieldwork")
     september = _folder("September", parent_id=fieldwork.id)
     reports = _folder("Reports", workspace_id=WORKSPACE_TWO)
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.library_folders.add(fieldwork)
         await entered.library_folders.add(september)
         await entered.library_folders.add(reports)
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         listed = await entered.library_folders.list(WORKSPACE_ONE)
         by_id = await entered.library_folders.get(WORKSPACE_ONE, september.id)
         by_sibling_name = await entered.library_folders.get_by_name(
@@ -86,18 +86,18 @@ async def test_a_nested_folder_comes_back_with_its_place_in_the_tree(
 async def test_a_rename_and_a_move_are_both_read_back(
     database: Database,
 ) -> None:
-    unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
+    uow = SqlAlchemyUnitOfWork(database.sessions)
     fieldwork = _folder("Fieldwork")
     reports = _folder("Reports")
     september = _folder("September", parent_id=fieldwork.id)
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.library_folders.add(fieldwork)
         await entered.library_folders.add(reports)
         await entered.library_folders.add(september)
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         moved = await entered.library_folders.get(WORKSPACE_ONE, september.id)
         assert moved is not None
         moved.rename("Raw photos", updated_at=NOW)
@@ -105,7 +105,7 @@ async def test_a_rename_and_a_move_are_both_read_back(
         await entered.library_folders.save(moved)
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         listed = await entered.library_folders.list(WORKSPACE_ONE)
         under_reports = await entered.library_folders.get_by_name(
             WORKSPACE_ONE,
@@ -128,25 +128,25 @@ async def test_a_rename_and_a_move_are_both_read_back(
 async def test_the_unique_sibling_index_is_what_refuses_a_repeated_name(
     database: Database,
 ) -> None:
-    unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
+    uow = SqlAlchemyUnitOfWork(database.sessions)
     fieldwork = _folder("Fieldwork")
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.library_folders.add(fieldwork)
         await entered.commit()
 
     with pytest.raises(LibraryFolderNameConflictError):
-        async with unit_of_work as entered:
+        async with uow as entered:
             await entered.library_folders.add(_folder("  FIELDWORK  "))
             await entered.commit()
 
     # The same name under a different parent is a different folder, and the
     # index that refused the sibling must still let it through.
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.library_folders.add(_folder("FIELDWORK", parent_id=fieldwork.id))
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         listed = await entered.library_folders.list(WORKSPACE_ONE)
 
     # Both rows casefold to the same key, so `list` breaks the tie by id and the
@@ -210,15 +210,15 @@ async def test_a_name_that_casefold_lengthens_is_stored_and_keyed_in_full(
     here that enforces a VARCHAR width, so a `name_key` column narrower than the
     folded key raises before the second insert ever reaches the unique index.
     """
-    unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
+    uow = SqlAlchemyUnitOfWork(database.sessions)
     widest_valid_name = _WIDEST_CASEFOLD_CHARACTER * 160
     fieldwork = _folder(widest_valid_name)
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.library_folders.add(fieldwork)
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         stored = await entered.library_folders.get(WORKSPACE_ONE, fieldwork.id)
         by_key = await entered.library_folders.get_by_name(
             WORKSPACE_ONE,
@@ -234,7 +234,7 @@ async def test_a_name_that_casefold_lengthens_is_stored_and_keyed_in_full(
     # The full key is what the unique index compares, so the twin is refused
     # rather than quietly filed beside it.
     with pytest.raises(LibraryFolderNameConflictError):
-        async with unit_of_work as entered:
+        async with uow as entered:
             await entered.library_folders.add(_folder(widest_valid_name))
             await entered.commit()
 
@@ -243,7 +243,7 @@ async def test_a_name_that_casefold_lengthens_is_stored_and_keyed_in_full(
 async def test_a_placement_follows_the_artifact_it_files(
     database: Database,
 ) -> None:
-    unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
+    uow = SqlAlchemyUnitOfWork(database.sessions)
     fieldwork = _folder("Fieldwork")
     reports = _folder("Reports")
     artifact = ArtifactObject(
@@ -254,14 +254,14 @@ async def test_a_placement_follows_the_artifact_it_files(
         inline_payload={"text": "station,salinity\nA,34.2\n"},
     )
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.library_folders.add(fieldwork)
         await entered.library_folders.add(reports)
         await entered.artifacts.add(artifact)
         await entered.commit()
 
     # The artifact is a row the placement points at, so it exists first.
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.library_folders.place(
             WORKSPACE_ONE,
             [artifact.id],
@@ -269,7 +269,7 @@ async def test_a_placement_follows_the_artifact_it_files(
         )
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         assert await entered.library_folders.placements(WORKSPACE_ONE) == {
             artifact.id: fieldwork.id,
         }
@@ -290,7 +290,7 @@ async def test_a_placement_follows_the_artifact_it_files(
         assert await entered.library_folders.placements(WORKSPACE_ONE) == {}
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         assert await entered.library_folders.placements(WORKSPACE_ONE) == {}
         assert (
             await entered.library_folders.count_placements(WORKSPACE_ONE, reports.id)

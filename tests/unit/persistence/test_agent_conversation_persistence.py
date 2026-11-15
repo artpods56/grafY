@@ -100,7 +100,9 @@ async def test_a_thread_and_every_kind_of_event_round_trip(database: Database) -
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         read = await uow.agent_conversations.get(WORKSPACE_ONE, stored.id)
-        events = await uow.agent_conversations.list_events(WORKSPACE_ONE, stored.id)
+        events = await uow.agent_conversations.list_events(
+            WORKSPACE_ONE, stored.id
+        )
 
     assert read is not None
     assert read.title == "Sources on the 1667 flood"
@@ -183,7 +185,9 @@ async def test_an_append_after_the_stored_sequence_is_refused_and_leaves_nothing
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         read = await uow.agent_conversations.get(WORKSPACE_ONE, stored.id)
-        events = await uow.agent_conversations.list_events(WORKSPACE_ONE, stored.id)
+        events = await uow.agent_conversations.list_events(
+            WORKSPACE_ONE, stored.id
+        )
 
     assert read is not None and read.next_sequence == 2
     assert [event.sequence for event in events] == [1]
@@ -244,7 +248,10 @@ async def test_a_thread_is_scoped_to_its_workspace_and_project(
             )
             == []
         )
-        assert await uow.agent_conversations.list_events(WORKSPACE_TWO, stored.id) == []
+        assert (
+            await uow.agent_conversations.list_events(WORKSPACE_TWO, stored.id)
+            == []
+        )
 
 
 @pytest.mark.asyncio
@@ -267,7 +274,10 @@ async def test_deleting_the_project_takes_threads_and_events_with_it(
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         assert await uow.agent_conversations.get(WORKSPACE_ONE, stored.id) is None
-        assert await uow.agent_conversations.list_events(WORKSPACE_ONE, stored.id) == []
+        assert (
+            await uow.agent_conversations.list_events(WORKSPACE_ONE, stored.id)
+            == []
+        )
 
 
 @pytest.mark.asyncio
@@ -298,8 +308,12 @@ async def test_forking_copies_the_range_in_order_through_sql(
     )
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
-        copied = await uow.agent_conversations.list_events(WORKSPACE_ONE, fork.id)
-        untouched = await uow.agent_conversations.list_events(WORKSPACE_ONE, source.id)
+        copied = await uow.agent_conversations.list_events(
+            WORKSPACE_ONE, fork.id
+        )
+        untouched = await uow.agent_conversations.list_events(
+            WORKSPACE_ONE, source.id
+        )
         listed = await uow.agent_conversations.list_for_agent(
             WORKSPACE_ONE, row.id, GRAPH_ID, AGENT_ID
         )
@@ -353,7 +367,10 @@ async def test_a_thread_still_has_the_agent_it_began_with_until_its_project_goes
 
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         assert await uow.agent_conversations.get(WORKSPACE_ONE, fork.id) is None
-        assert await uow.agent_conversations.list_events(WORKSPACE_ONE, fork.id) == []
+        assert (
+            await uow.agent_conversations.list_events(WORKSPACE_ONE, fork.id)
+            == []
+        )
 
 
 @pytest.mark.asyncio
