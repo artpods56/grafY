@@ -151,7 +151,7 @@ class ContentAddressedArguments(ArgumentArtifacts):
         registry: PluginRegistry,
         unit_of_work_factory: Callable[[], UnitOfWorkPort],
     ) -> None:
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._json_types: dict[ArtifactTypeKey, JsonType] = {}
         for spec in registry.artifact_types:
             json_type = _writable_json_type(spec)
@@ -199,7 +199,7 @@ class ContentAddressedArguments(ArgumentArtifacts):
     async def get_artifact(
         self, *, workspace_id: UUID, artifact_id: UUID
     ) -> ArtifactObject | None:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             return await uow.artifacts.get(workspace_id, artifact_id)
 
     async def _addressed(
@@ -217,7 +217,7 @@ class ContentAddressedArguments(ArgumentArtifacts):
             ARGUMENT_ARTIFACT_NAMESPACE,
             f"{workspace_id}:{key.id}@{key.schema_version}:{digest}",
         )
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             existing = await uow.artifacts.get(workspace_id, artifact_id)
             if existing is not None:
                 return existing.ref()
@@ -266,7 +266,7 @@ class ArtifactModelViews(ModelViews):
         workspace_id: UUID,
     ) -> None:
         self._titles = {spec.key: spec.title for spec in registry.artifact_types}
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._storage = storage
         self._workspace_id = workspace_id
 
@@ -295,7 +295,7 @@ class ArtifactModelViews(ModelViews):
     ) -> tuple[str, ArtifactRef | None]:
         """One Library artifact by id, as a model reads it, and the ref when it remains."""
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             artifact = await uow.artifacts.get(self._workspace_id, artifact_id)
         if artifact is None:
             return (
@@ -305,7 +305,7 @@ class ArtifactModelViews(ModelViews):
         return await self._render_artifact(artifact), artifact.ref()
 
     async def _render_ref(self, ref: ArtifactRef) -> str:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             artifact = await uow.artifacts.get(
                 self._workspace_id, ref.artifact_id
             )
@@ -456,7 +456,7 @@ class ProjectContextReader(AgentContextReader):
     ) -> None:
         self._runs = runs
         self._registry = registry
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._storage = storage
 
     async def read(
@@ -470,7 +470,7 @@ class ProjectContextReader(AgentContextReader):
     ) -> Sequence[ContextBlock]:
         views = ArtifactModelViews(
             registry=self._registry,
-            unit_of_work_factory=self._unit_of_work_factory,
+            unit_of_work_factory=self._uow_factory,
             storage=self._storage,
             workspace_id=workspace_id,
         )

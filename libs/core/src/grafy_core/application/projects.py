@@ -50,21 +50,21 @@ class ProjectService:
 
     def __init__(
         self,
-        unit_of_work_factory: Callable[[], ProjectUnitOfWorkPort],
+        uow_factory: Callable[[], ProjectUnitOfWorkPort],
     ) -> None:
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = uow_factory
 
     async def get(self, *, workspace_id: UUID, project_id: UUID) -> Project:
         """The Project identity row, or ``NotFoundError`` outside its Workspace."""
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             project = await uow.projects.get(workspace_id, project_id)
         if project is None:
             raise NotFoundError("Project", str(project_id))
         return project
 
     async def list(self, *, workspace_id: UUID) -> list[Project]:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             return await uow.projects.list(workspace_id)
 
     async def list_accessible(
@@ -79,7 +79,7 @@ class ProjectService:
         Workspaces the user can see, and each item carries its own location.
         """
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             return await uow.projects.list_accessible(
                 actor.user_id,
                 workspace_id=workspace_id,
@@ -92,7 +92,7 @@ class ProjectService:
         project_id: UUID,
         revision: int,
     ) -> ProjectCheckpoint:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             if await uow.projects.get(workspace_id, project_id) is None:
                 raise NotFoundError("Project", str(project_id))
             checkpoint = await uow.projects.get_checkpoint(
@@ -110,7 +110,7 @@ class ProjectService:
         workspace_id: UUID,
         project_id: UUID,
     ) -> list[ProjectCheckpoint]:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             if await uow.projects.get(workspace_id, project_id) is None:
                 raise NotFoundError("Project", str(project_id))
             return await uow.projects.list_checkpoints(
@@ -130,7 +130,7 @@ class ProjectService:
         an old checkpoint cannot bring back a reference to deleted content.
         """
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             return await uow.projects.titles_referencing_artifact(
                 workspace_id,
                 artifact_id,
@@ -144,7 +144,7 @@ class ProjectService:
         name: str,
     ) -> ProjectFolder:
         folder = ProjectFolder(workspace_id=workspace_id, name=name)
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
                 uow.identity,
                 actor=actor,
@@ -177,7 +177,7 @@ class ProjectService:
         actor: ActorContext,
         workspace_id: UUID,
     ) -> list[ProjectFolder]:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
                 uow.identity,
                 actor=actor,
@@ -194,7 +194,7 @@ class ProjectService:
         folder_id: UUID,
         name: str,
     ) -> ProjectFolder:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
                 uow.identity,
                 actor=actor,
@@ -238,7 +238,7 @@ class ProjectService:
     ) -> None:
         """Remove a folder. The Projects it held stay, and become Unfiled."""
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
                 uow.identity,
                 actor=actor,
@@ -272,7 +272,7 @@ class ProjectService:
     ) -> ProjectOrganization:
         """File a Project, or unfile it by passing ``folder_id=None``."""
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
                 uow.identity,
                 actor=actor,
@@ -311,7 +311,7 @@ class ProjectService:
         workspace_id: UUID,
         project_id: UUID,
     ) -> ProjectOrganization:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
                 uow.identity,
                 actor=actor,
@@ -343,7 +343,7 @@ class ProjectService:
         workspace_id: UUID,
         project_id: UUID,
     ) -> ProjectOrganization:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
                 uow.identity,
                 actor=actor,
@@ -378,7 +378,7 @@ class ProjectService:
     ) -> UserProjectState:
         """Star or unstar a Project for the acting user only. Never grants access."""
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
                 uow.identity,
                 actor=actor,
@@ -406,7 +406,7 @@ class ProjectService:
     ) -> UserProjectState:
         """Note that the acting user opened this Project, keeping the newest stamp."""
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
                 uow.identity,
                 actor=actor,

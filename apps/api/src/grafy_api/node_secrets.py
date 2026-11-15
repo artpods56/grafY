@@ -108,7 +108,7 @@ class NodeSecretService(NodeSecretResolverPort):
         plugin_registry: PluginRegistry,
         encryption_key: SecretStr | None,
     ) -> None:
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._plugin_registry = plugin_registry
         self._encryption_key = encryption_key
 
@@ -118,7 +118,7 @@ class NodeSecretService(NodeSecretResolverPort):
         project_id: UUID,
         graph_id: str,
     ) -> GraphNodeSecretState:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             head = await self._head(uow, workspace_id, project_id)
             graph = self._graph(head, graph_id)
             stored = await uow.node_secrets.list_for_graph(
@@ -203,7 +203,7 @@ class NodeSecretService(NodeSecretResolverPort):
         value: SecretStr,
         expected_head_sequence: int,
     ) -> NodeSecretState:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             head = await self._head(uow, workspace_id, project_id, lock=True)
             if head.collaboration_sequence != expected_head_sequence:
                 raise CollaborationHeadConflictError(
@@ -259,7 +259,7 @@ class NodeSecretService(NodeSecretResolverPort):
         name: str,
         expected_head_sequence: int,
     ) -> None:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             head = await self._head(uow, workspace_id, project_id, lock=True)
             if head.collaboration_sequence != expected_head_sequence:
                 raise CollaborationHeadConflictError(
@@ -361,7 +361,7 @@ class NodeSecretService(NodeSecretResolverPort):
             raise NodeSecretUnavailableError(
                 "A Project and Graph context is required to resolve a node secret"
             )
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             head = await self._head(uow, workspace_id, project_id)
             binding = await self._binding(head, graph_id, node_id, name)
             submitted_dependencies = dict(dependencies)

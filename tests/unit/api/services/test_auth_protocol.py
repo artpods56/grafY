@@ -220,7 +220,7 @@ async def test_secondary_failure_audit_write_is_fail_open(
     repository = _FailureOnlyAuditRepository()
     uow = _FailureOnlyAuditUnitOfWork(repository)
     auth = _auth_service()
-    monkeypatch.setattr(auth, "_unit_of_work_factory", lambda: uow)
+    monkeypatch.setattr(auth, "_uow_factory", lambda: uow)
     recorded: list[tuple[Exception, str]] = []
 
     def record_failure(exc: Exception, *, operation: str) -> None:
@@ -644,7 +644,7 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
     )
     monkeypatch.setattr(
         auth,
-        "_unit_of_work_factory",
+        "_uow_factory",
         lambda: _FailingCallbackAuditUnitOfWork(real_uow_factory),
     )
     with pytest.raises(OidcCallbackInternalError) as internal_failure:

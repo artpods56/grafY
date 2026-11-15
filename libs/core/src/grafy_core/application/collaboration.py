@@ -125,7 +125,7 @@ class CollaborationService:
 
     def __init__(
         self,
-        unit_of_work_factory: Callable[[], CollaborationUnitOfWorkPort],
+        uow_factory: Callable[[], CollaborationUnitOfWorkPort],
         *,
         command_hmac_key: bytes,
         command_hmac_key_version: int,
@@ -134,7 +134,7 @@ class CollaborationService:
             raise ValueError("Command HMAC key must not be empty")
         if command_hmac_key_version < 1:
             raise ValueError("Command HMAC key version must be at least 1")
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = uow_factory
         self._command_hmac_key = command_hmac_key
         self._command_hmac_key_version = command_hmac_key_version
 
@@ -167,7 +167,7 @@ class CollaborationService:
         opening_batch: tuple[ProjectCommand, ...] = (
             AddGraphCommand(graph_id=graph_id, name=graph_name),
         )
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             access = await self._authorize(
                 uow,
                 actor=actor,
@@ -244,7 +244,7 @@ class CollaborationService:
         there but has no head is an integrity failure, not an empty room.
         """
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await self._authorize(
                 uow,
                 actor=actor,
@@ -286,7 +286,7 @@ class CollaborationService:
                 message="Project command batch must not be empty",
             )
         batch = tuple(commands)
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await self._authorize(
                 uow,
                 actor=actor,
@@ -432,7 +432,7 @@ class CollaborationService:
         appending a second copy of the same document.
         """
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await self._authorize(
                 uow,
                 actor=actor,
@@ -531,7 +531,7 @@ class CollaborationService:
         uncheckpointed draft work is refused rather than silently discarded.
         """
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await self._authorize(
                 uow,
                 actor=actor,
@@ -644,7 +644,7 @@ class CollaborationService:
         """
 
         self._require_id_pair(project_id=project_id, command_id=command_id)
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await self._authorize_pair(
                 uow,
                 actor=actor,
@@ -755,7 +755,7 @@ class CollaborationService:
         is refused instead of discarded.
         """
 
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             await self._authorize(
                 uow,
                 actor=actor,
