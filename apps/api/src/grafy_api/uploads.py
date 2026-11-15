@@ -173,7 +173,7 @@ class UploadService:
     ) -> None:
         self._config = config
         self._storage = storage
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._artifact_types = artifact_types
         self._extension_claims = extension_claims
         self._bucket = bucket
@@ -236,9 +236,9 @@ class UploadService:
             or "application/octet-stream",
             created_by_user_id=created_by_user_id,
         )
-        async with self._unit_of_work_factory() as unit_of_work:
-            await unit_of_work.uploads.add(record)
-            await unit_of_work.commit()
+        async with self._uow_factory() as uow:
+            await uow.uploads.add(record)
+            await uow.commit()
 
         expires_at = record.created_at + self._config.upload_target_ttl
         if self._presigning is None:
@@ -371,11 +371,11 @@ class UploadService:
         )
         completed_at = datetime.now(UTC)
         not_older_than = datetime.now(UTC) - self._config.upload_lifetime
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             # Insert the artifact first so the upload row's foreign key is valid
             # in the same transaction. A losing finalize rolls both writes back.
-            await unit_of_work.artifacts.add(artifact)
-            finalized = await unit_of_work.uploads.finalize_if_pending(
+            await uow.artifacts.add(artifact)
+            finalized = await uow.uploads.finalize_if_pending(
                 workspace_id,
                 upload_id,
                 actual_size=inspection.byte_size,
@@ -387,11 +387,11 @@ class UploadService:
                 not_older_than=not_older_than,
             )
             if finalized is not None:
-                await unit_of_work.commit()
+                await uow.commit()
                 return UploadResult(upload=finalized, artifact_type=key)
 
-            current = await unit_of_work.uploads.get(workspace_id, upload_id)
-            await unit_of_work.rollback()
+            current = await uow.uploads.get(workspace_id, upload_id)
+            await uow.rollback()
 
         if current is not None and current.status is UploadStatus.READY:
             return self._result_from_ready(current)
@@ -431,8 +431,8 @@ class UploadService:
         if older_than is not None and older_than < deletion_grace:
             deletion_grace = older_than
         terminal_before = now - deletion_grace
-        async with self._unit_of_work_factory() as unit_of_work:
-            candidates = await unit_of_work.uploads.list_cleanup_candidates(
+        async with self._uow_factory() as uow:
+            candidates = await uow.uploads.list_cleanup_candidates(
                 pending_before=pending_before,
                 terminal_before=terminal_before,
                 limit=limit,
@@ -452,12 +452,12 @@ class UploadService:
                 if terminal.created_at >= terminal_before:
                     continue
                 await self._delete_stored_object(terminal)
-                async with self._unit_of_work_factory() as unit_of_work:
-                    removed = await unit_of_work.uploads.delete_terminal(
+                async with self._uow_factory() as uow:
+                    removed = await uow.uploads.delete_terminal(
                         terminal.workspace_id,
                         terminal.upload_id,
                     )
-                    await unit_of_work.commit()
+                    await uow.commit()
                 if removed:
                     discarded += 1
             except Exception as error:
@@ -478,8 +478,8 @@ class UploadService:
         return discarded
 
     async def _load_upload(self, workspace_id: UUID, upload_id: UUID) -> Upload:
-        async with self._unit_of_work_factory() as unit_of_work:
-            record = await unit_of_work.uploads.get(workspace_id, upload_id)
+        async with self._uow_factory() as uow:
+            record = await uow.uploads.get(workspace_id, upload_id)
         if record is None:
             raise UploadNotFoundError(
                 f"Upload {upload_id} was not found in workspace {workspace_id}"
@@ -513,16 +513,16 @@ class UploadService:
         record: Upload,
         status: UploadStatus,
     ) -> Upload | None:
-        async with self._unit_of_work_factory() as unit_of_work:
-            updated = await unit_of_work.uploads.mark_terminal_if_pending(
+        async with self._uow_factory() as uow:
+            updated = await uow.uploads.mark_terminal_if_pending(
                 record.workspace_id,
                 record.upload_id,
                 status=status,
             )
             if updated is not None:
-                await unit_of_work.commit()
+                await uow.commit()
             else:
-                await unit_of_work.rollback()
+                await uow.rollback()
             return updated
 
     async def _delete_stored_object(self, record: Upload) -> None:

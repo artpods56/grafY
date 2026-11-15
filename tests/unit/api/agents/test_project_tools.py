@@ -88,8 +88,8 @@ async def test_equal_content_is_one_artifact_and_stored_once(registry) -> None:
 
     assert first == again
     assert first.artifact_id != other.artifact_id
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        stored = await unit_of_work.artifacts.get(WORKSPACE, first.artifact_id)
+    async with InMemoryUnitOfWork(store) as uow:
+        stored = await uow.artifacts.get(WORKSPACE, first.artifact_id)
     assert stored is not None
     assert stored.inline_payload == {"value": "dear sir"}
     assert stored.storage_backend == "inline"
@@ -111,9 +111,9 @@ async def test_the_type_and_the_workspace_are_part_of_the_address(registry) -> N
 
 
 async def put(store: InMemoryDataStore, artifact: ArtifactObject) -> ArtifactRef:
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.artifacts.add(artifact)
-        await unit_of_work.commit()
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.artifacts.add(artifact)
+        await uow.commit()
     return artifact.ref()
 
 

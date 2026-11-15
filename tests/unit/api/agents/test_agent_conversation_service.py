@@ -67,9 +67,9 @@ def head_with_agents(*agent_ids: str) -> ProjectHead:
 
 async def store_with(head: ProjectHead) -> InMemoryDataStore:
     store = InMemoryDataStore()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.collaboration.add_head(head)
-        await unit_of_work.commit()
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.collaboration.add_head(head)
+        await uow.commit()
     return store
 
 
@@ -207,8 +207,8 @@ async def test_history_outlives_the_agent_it_began_with() -> None:
         document=graph.document, command=RemoveAgentCommand(agent_id=AGENT_ID)
     )
     assert without_agent.agents == ()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.collaboration.save_head(
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.collaboration.save_head(
             replace(
                 head,
                 collaboration_sequence=head.collaboration_sequence + 1,
@@ -217,7 +217,7 @@ async def test_history_outlives_the_agent_it_began_with() -> None:
                 ),
             )
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
     turn = uuid4()
     await run_one_turn(owner, thread.id, turn, "ask")

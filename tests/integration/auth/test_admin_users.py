@@ -117,6 +117,6 @@ async def test_admin_routes_refuse_non_operators_and_anonymous_callers(
                 client.post(f"{user_path}/enable", headers=headers).status_code == 403
             )
 
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            stored = await unit_of_work.identity.get_user(target.id)
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            stored = await uow.identity.get_user(target.id)
         assert stored is not None and stored.active

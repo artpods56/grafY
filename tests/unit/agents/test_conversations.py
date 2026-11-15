@@ -50,23 +50,23 @@ def conversation(**overrides: object) -> AgentConversation:
 async def test_append_takes_the_sequence_the_conversation_is_waiting_for() -> None:
     store = InMemoryDataStore()
     thread = conversation()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.agent_conversations.add(thread)
-        first = await unit_of_work.agent_conversations.append(
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.agent_conversations.add(thread)
+        first = await uow.agent_conversations.append(
             thread.event(turn_id=TURN, payload=UserMessagePayload(text="ask"))
         )
         assert first is None
-        stored = await unit_of_work.agent_conversations.get(WORKSPACE, thread.id)
+        stored = await uow.agent_conversations.get(WORKSPACE, thread.id)
         assert stored is not None
         second = stored.event(
             turn_id=TURN, payload=AssistantMessagePayload(text="answer")
         )
-        await unit_of_work.agent_conversations.append(second)
-        await unit_of_work.commit()
+        await uow.agent_conversations.append(second)
+        await uow.commit()
 
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        stored = await unit_of_work.agent_conversations.get(WORKSPACE, thread.id)
-        events = await unit_of_work.agent_conversations.list_events(WORKSPACE, thread.id)
+    async with InMemoryUnitOfWork(store) as uow:
+        stored = await uow.agent_conversations.get(WORKSPACE, thread.id)
+        events = await uow.agent_conversations.list_events(WORKSPACE, thread.id)
 
     assert stored is not None
     assert stored.next_sequence == 3
@@ -82,26 +82,26 @@ async def test_an_append_at_a_sequence_that_has_been_taken_is_refused() -> None:
 
     store = InMemoryDataStore()
     thread = conversation()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.agent_conversations.add(thread)
-        await unit_of_work.commit()
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.agent_conversations.add(thread)
+        await uow.commit()
 
     stale = thread
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.agent_conversations.append(
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.agent_conversations.append(
             stale.event(turn_id=TURN, payload=UserMessagePayload(text="winner"))
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with InMemoryUnitOfWork(store) as unit_of_work:
+    async with InMemoryUnitOfWork(store) as uow:
         with pytest.raises(AgentConversationAppendError):
-            await unit_of_work.agent_conversations.append(
+            await uow.agent_conversations.append(
                 stale.event(turn_id=uuid4(), payload=UserMessagePayload(text="loser"))
             )
 
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        events = await unit_of_work.agent_conversations.list_events(WORKSPACE, thread.id)
-        stored = await unit_of_work.agent_conversations.get(WORKSPACE, thread.id)
+    async with InMemoryUnitOfWork(store) as uow:
+        events = await uow.agent_conversations.list_events(WORKSPACE, thread.id)
+        stored = await uow.agent_conversations.get(WORKSPACE, thread.id)
 
     assert [event.payload.text for event in events] == ["winner"]  # type: ignore[attr-defined]
     assert stored is not None and stored.next_sequence == 2
@@ -117,17 +117,17 @@ async def test_an_event_written_once_is_never_rewritten() -> None:
 
     store = InMemoryDataStore()
     thread = conversation()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.agent_conversations.add(thread)
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.agent_conversations.add(thread)
         event = thread.event(turn_id=TURN, payload=UserMessagePayload(text="original"))
-        await unit_of_work.agent_conversations.append(event)
-        await unit_of_work.commit()
+        await uow.agent_conversations.append(event)
+        await uow.commit()
 
     with pytest.raises(ValidationError):
         event.payload = AssistantMessagePayload(text="edited")  # type: ignore[misc]
 
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        stored = await unit_of_work.agent_conversations.list_events(WORKSPACE, thread.id)
+    async with InMemoryUnitOfWork(store) as uow:
+        stored = await uow.agent_conversations.list_events(WORKSPACE, thread.id)
     assert stored[0].payload == UserMessagePayload(text="original")
 
 
@@ -135,39 +135,38 @@ async def test_an_event_written_once_is_never_rewritten() -> None:
 async def test_reads_are_scoped_to_the_workspace_that_wrote_them() -> None:
     store = InMemoryDataStore()
     thread = conversation()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.agent_conversations.add(thread)
-        await unit_of_work.commit()
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.agent_conversations.add(thread)
+        await uow.commit()
 
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        assert await unit_of_work.agent_conversations.get(OTHER_WORKSPACE, thread.id) is None
+    async with InMemoryUnitOfWork(store) as uow:
+        assert await uow.agent_conversations.get(OTHER_WORKSPACE, thread.id) is None
         assert (
-            await unit_of_work.agent_conversations.list_for_agent(
+            await uow.agent_conversations.list_for_agent(
                 OTHER_WORKSPACE, PROJECT, "main", "research"
             )
             == []
         )
         assert (
-            await unit_of_work.agent_conversations.list_events(
-                OTHER_WORKSPACE, thread.id
-            )
-            == []
+            await uow.agent_conversations.list_events(OTHER_WORKSPACE, thread.id) == []
         )
 
 
 @pytest.mark.asyncio
-async def test_threads_of_one_agent_are_listed_newest_first_and_keep_their_authors() -> None:
+async def test_threads_of_one_agent_are_listed_newest_first_and_keep_their_authors() -> (
+    None
+):
     store = InMemoryDataStore()
     older = conversation(at=BASE_TIME)
     newer = conversation(at=BASE_TIME.replace(hour=9))
     other_agent = conversation(agent_id="other", at=BASE_TIME)
-    async with InMemoryUnitOfWork(store) as unit_of_work:
+    async with InMemoryUnitOfWork(store) as uow:
         for thread in (older, newer, other_agent):
-            await unit_of_work.agent_conversations.add(thread)
-        await unit_of_work.commit()
+            await uow.agent_conversations.add(thread)
+        await uow.commit()
 
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        listed = await unit_of_work.agent_conversations.list_for_agent(
+    async with InMemoryUnitOfWork(store) as uow:
+        listed = await uow.agent_conversations.list_for_agent(
             WORKSPACE, PROJECT, "main", "research"
         )
         assert listed is not None
@@ -180,21 +179,21 @@ async def test_threads_of_one_agent_are_listed_newest_first_and_keep_their_autho
 async def test_events_are_read_in_order_after_a_sequence_and_up_to_a_limit() -> None:
     store = InMemoryDataStore()
     thread = conversation()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.agent_conversations.add(thread)
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.agent_conversations.add(thread)
         current = thread
         for text in ("one", "two", "three"):
-            await unit_of_work.agent_conversations.append(
+            await uow.agent_conversations.append(
                 current.event(turn_id=TURN, payload=UserMessagePayload(text=text))
             )
             current = current.appended(at=current.updated_at)
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        tail = await unit_of_work.agent_conversations.list_events(
+    async with InMemoryUnitOfWork(store) as uow:
+        tail = await uow.agent_conversations.list_events(
             WORKSPACE, thread.id, after_sequence=1
         )
-        one = await unit_of_work.agent_conversations.list_events(
+        one = await uow.agent_conversations.list_events(
             WORKSPACE, thread.id, after_sequence=1, limit=1
         )
         assert tail is not None
@@ -243,7 +242,10 @@ def test_a_fork_that_names_a_source_but_no_sequence_is_not_a_fork() -> None:
 def test_event_payloads_are_a_closed_vocabulary_with_a_bound_on_length() -> None:
     assert UserMessagePayload(text="x").kind == "user_message"
     assert AgentConversationTurnOutcome.INTERRUPTED == "interrupted"
-    assert TurnOutcomePayload(outcome=AgentConversationTurnOutcome.CANCELLED).detail is None
+    assert (
+        TurnOutcomePayload(outcome=AgentConversationTurnOutcome.CANCELLED).detail
+        is None
+    )
     with pytest.raises(ValidationError):
         UserMessagePayload(text="")
     with pytest.raises(ValidationError):
@@ -265,20 +267,20 @@ def test_event_payloads_are_a_closed_vocabulary_with_a_bound_on_length() -> None
 async def test_a_rolled_back_append_leaves_no_event_and_no_moved_sequence() -> None:
     store = InMemoryDataStore()
     thread = conversation()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        await unit_of_work.agent_conversations.add(thread)
-        await unit_of_work.commit()
+    async with InMemoryUnitOfWork(store) as uow:
+        await uow.agent_conversations.add(thread)
+        await uow.commit()
 
     with pytest.raises(RuntimeError, match="failed after it appended"):
-        async with InMemoryUnitOfWork(store) as unit_of_work:
-            await unit_of_work.agent_conversations.append(
+        async with InMemoryUnitOfWork(store) as uow:
+            await uow.agent_conversations.append(
                 thread.event(turn_id=TURN, payload=UserMessagePayload(text="aborted"))
             )
             raise RuntimeError("the turn failed after it appended")
 
-    async with InMemoryUnitOfWork(store) as unit_of_work:
-        events = await unit_of_work.agent_conversations.list_events(WORKSPACE, thread.id)
-        stored = await unit_of_work.agent_conversations.get(WORKSPACE, thread.id)
+    async with InMemoryUnitOfWork(store) as uow:
+        events = await uow.agent_conversations.list_events(WORKSPACE, thread.id)
+        stored = await uow.agent_conversations.get(WORKSPACE, thread.id)
 
     assert events == []
     assert stored is not None and stored.next_sequence == 1

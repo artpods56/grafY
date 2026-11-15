@@ -108,7 +108,7 @@ class NodeSecretService(NodeSecretResolverPort):
         plugin_registry: PluginRegistry,
         encryption_key: SecretStr | None,
     ) -> None:
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._plugin_registry = plugin_registry
         self._encryption_key = encryption_key
 
@@ -118,10 +118,10 @@ class NodeSecretService(NodeSecretResolverPort):
         project_id: UUID,
         graph_id: str,
     ) -> GraphNodeSecretState:
-        async with self._unit_of_work_factory() as unit_of_work:
-            head = await self._head(unit_of_work, workspace_id, project_id)
+        async with self._uow_factory() as uow:
+            head = await self._head(uow, workspace_id, project_id)
             graph = self._graph(head, graph_id)
-            stored = await unit_of_work.node_secrets.list_for_graph(
+            stored = await uow.node_secrets.list_for_graph(
                 workspace_id,
                 project_id,
                 graph_id,
@@ -203,8 +203,8 @@ class NodeSecretService(NodeSecretResolverPort):
         value: SecretStr,
         expected_head_sequence: int,
     ) -> NodeSecretState:
-        async with self._unit_of_work_factory() as unit_of_work:
-            head = await self._head(unit_of_work, workspace_id, project_id, lock=True)
+        async with self._uow_factory() as uow:
+            head = await self._head(uow, workspace_id, project_id, lock=True)
             if head.collaboration_sequence != expected_head_sequence:
                 raise CollaborationHeadConflictError(
                     workspace_id=workspace_id,
@@ -245,8 +245,8 @@ class NodeSecretService(NodeSecretResolverPort):
                 created_at=now,
                 updated_at=now,
             )
-            await unit_of_work.node_secrets.upsert(encrypted)
-            await unit_of_work.commit()
+            await uow.node_secrets.upsert(encrypted)
+            await uow.commit()
         return NodeSecretState(node_id=node_id, name=name, configured=True)
 
     async def remove(
@@ -259,8 +259,8 @@ class NodeSecretService(NodeSecretResolverPort):
         name: str,
         expected_head_sequence: int,
     ) -> None:
-        async with self._unit_of_work_factory() as unit_of_work:
-            head = await self._head(unit_of_work, workspace_id, project_id, lock=True)
+        async with self._uow_factory() as uow:
+            head = await self._head(uow, workspace_id, project_id, lock=True)
             if head.collaboration_sequence != expected_head_sequence:
                 raise CollaborationHeadConflictError(
                     workspace_id=workspace_id,
@@ -270,14 +270,14 @@ class NodeSecretService(NodeSecretResolverPort):
                     room_epoch=head.room_epoch,
                 )
             await self._binding(head, graph_id, node_id, name)
-            await unit_of_work.node_secrets.remove(
+            await uow.node_secrets.remove(
                 workspace_id,
                 project_id,
                 graph_id,
                 node_id,
                 name,
             )
-            await unit_of_work.commit()
+            await uow.commit()
 
     async def resolve_secret(
         self,
@@ -361,8 +361,8 @@ class NodeSecretService(NodeSecretResolverPort):
             raise NodeSecretUnavailableError(
                 "A Project and Graph context is required to resolve a node secret"
             )
-        async with self._unit_of_work_factory() as unit_of_work:
-            head = await self._head(unit_of_work, workspace_id, project_id)
+        async with self._uow_factory() as uow:
+            head = await self._head(uow, workspace_id, project_id)
             binding = await self._binding(head, graph_id, node_id, name)
             submitted_dependencies = dict(dependencies)
             try:
@@ -377,7 +377,7 @@ class NodeSecretService(NodeSecretResolverPort):
                 raise NodeSecretUnavailableError(
                     "Configured node secret does not match the saved node configuration"
                 )
-            encrypted = await unit_of_work.node_secrets.get(
+            encrypted = await uow.node_secrets.get(
                 workspace_id,
                 project_id,
                 graph_id,

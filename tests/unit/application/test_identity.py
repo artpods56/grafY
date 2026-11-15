@@ -154,9 +154,9 @@ async def test_verified_email_invitation_grants_access_only_after_acceptance(
         email="unverified@example.test",
         display_name="Unverified user",
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_user(unverified_user)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_user(unverified_user)
+        await uow.commit()
     with pytest.raises(NotFoundError):
         await service.resolve_workspace_invitation_candidate(
             actor=ActorContext(user_id=owner.user.id),
@@ -177,9 +177,9 @@ async def test_verified_email_invitation_grants_access_only_after_acceptance(
         email_verified=True,
         display_name="Declining user",
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_user(declining_user)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_user(declining_user)
+        await uow.commit()
     declining_invitation, _ = await service.create_workspace_invitation(
         actor=ActorContext(user_id=owner.user.id),
         workspace_id=workspace.id,
@@ -224,8 +224,8 @@ async def test_oidc_provisioning_creates_only_a_personal_workspace(
             actor=ActorContext(user_id=provisioned.user.id)
         )
     ]
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        provisioning_events = await unit_of_work.security_audit.list_for_workspace(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        provisioning_events = await uow.security_audit.list_for_workspace(
             provisioned.personal_workspace.id,
             limit=10,
         )
@@ -257,10 +257,8 @@ async def test_ihpan_login_joins_the_shared_workspace_even_when_email_is_unverif
             actor=ActorContext(user_id=provisioned.user.id)
         )
     ]
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        memberships = await unit_of_work.identity.list_memberships_for_user(
-            provisioned.user.id
-        )
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        memberships = await uow.identity.list_memberships_for_user(provisioned.user.id)
     shared = next(
         workspace for workspace in workspaces if workspace.kind is WorkspaceKind.SHARED
     )
@@ -310,11 +308,9 @@ async def test_foreign_email_does_not_join_the_shared_workspace(
             actor=ActorContext(user_id=lookalike.user.id)
         )
     ]
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        shared = (
-            await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
-                "ihpan"
-            )
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        shared = await uow.identity.lock_workspace_by_slug_for_membership_mutation(
+            "ihpan"
         )
 
     assert outsider_workspaces == [outsider.personal_workspace]
@@ -356,28 +352,26 @@ async def test_later_ihpan_logins_join_as_editors_and_revoked_members_stay_out(
         email_verified=True,
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        shared = (
-            await unit_of_work.identity.lock_workspace_by_slug_for_membership_mutation(
-                "ihpan"
-            )
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        shared = await uow.identity.lock_workspace_by_slug_for_membership_mutation(
+            "ihpan"
         )
         assert shared is not None
-        owner_membership = await unit_of_work.identity.get_membership(
+        owner_membership = await uow.identity.get_membership(
             workspace_id=shared.id,
             user_id=owner.user.id,
         )
-        editor_membership = await unit_of_work.identity.get_membership(
+        editor_membership = await uow.identity.get_membership(
             workspace_id=shared.id,
             user_id=editor.user.id,
         )
-        returning_membership = await unit_of_work.identity.get_membership(
+        returning_membership = await uow.identity.get_membership(
             workspace_id=shared.id,
             user_id=returning.user.id,
         )
         assert editor_membership is not None
         editor_membership.revoke()
-        await unit_of_work.commit()
+        await uow.commit()
 
     await service.provision_oidc_identity(
         issuer="https://issuer.example.test",
@@ -387,8 +381,8 @@ async def test_later_ihpan_logins_join_as_editors_and_revoked_members_stay_out(
         email_verified=True,
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        still_revoked = await unit_of_work.identity.get_membership(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        still_revoked = await uow.identity.get_membership(
             workspace_id=shared.id,
             user_id=editor.user.id,
         )
@@ -495,8 +489,8 @@ async def test_personal_membership_stays_owner_and_membership_changes_are_audite
         user_id=member.user.id,
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        events = await unit_of_work.security_audit.list_for_workspace(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        events = await uow.security_audit.list_for_workspace(
             shared.id,
             limit=10,
         )
@@ -531,20 +525,18 @@ async def test_personal_membership_stays_owner_and_membership_changes_are_audite
         scopes=(WorkspaceCapability.VIEW_PROJECT,),
         expires_at=now + timedelta(hours=1),
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_auth_session(active_session)
-        await unit_of_work.identity.add_personal_access_token(active_token)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_auth_session(active_session)
+        await uow.identity.add_personal_access_token(active_token)
+        await uow.commit()
 
     await service.disable_user(user_id=member.user.id)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        stored_session = await unit_of_work.identity.get_auth_session(active_session.id)
-        stored_token = (
-            await unit_of_work.identity.get_personal_access_token_for_user_workspace(
-                token_id=active_token.id,
-                user_id=member.user.id,
-                workspace_id=shared.id,
-            )
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        stored_session = await uow.identity.get_auth_session(active_session.id)
+        stored_token = await uow.identity.get_personal_access_token_for_user_workspace(
+            token_id=active_token.id,
+            user_id=member.user.id,
+            workspace_id=shared.id,
         )
     assert stored_session is not None and stored_session.is_revoked
     assert stored_token is not None and stored_token.is_revoked
@@ -643,10 +635,10 @@ async def test_membership_and_role_changes_revoke_affected_workspace_pats(
         scopes=(WorkspaceCapability.VIEW_PROJECT,),
         secret_digest=b"pat-viewer-compatible-digest",
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_personal_access_token(editor_only_token)
-        await unit_of_work.identity.add_personal_access_token(viewer_compatible_token)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_personal_access_token(editor_only_token)
+        await uow.identity.add_personal_access_token(viewer_compatible_token)
+        await uow.commit()
 
     await service.change_member_role(
         actor=owner_actor,
@@ -654,22 +646,22 @@ async def test_membership_and_role_changes_revoke_affected_workspace_pats(
         user_id=member.user.id,
         role=WorkspaceRole.VIEWER,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         demoted_editor_token = (
-            await unit_of_work.identity.get_personal_access_token_for_user_workspace(
+            await uow.identity.get_personal_access_token_for_user_workspace(
                 token_id=editor_only_token.id,
                 user_id=member.user.id,
                 workspace_id=shared.id,
             )
         )
         demoted_viewer_token = (
-            await unit_of_work.identity.get_personal_access_token_for_user_workspace(
+            await uow.identity.get_personal_access_token_for_user_workspace(
                 token_id=viewer_compatible_token.id,
                 user_id=member.user.id,
                 workspace_id=shared.id,
             )
         )
-        demotion_events = await unit_of_work.security_audit.list_for_workspace(
+        demotion_events = await uow.security_audit.list_for_workspace(
             shared.id,
             limit=20,
         )
@@ -689,31 +681,29 @@ async def test_membership_and_role_changes_revoke_affected_workspace_pats(
         scopes=(WorkspaceCapability.VIEW_PROJECT,),
         secret_digest=b"pat-remove-member-digest",
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_personal_access_token(removal_token)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_personal_access_token(removal_token)
+        await uow.commit()
 
     await service.remove_member(
         actor=owner_actor,
         workspace_id=shared.id,
         user_id=member.user.id,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        removed_token = (
-            await unit_of_work.identity.get_personal_access_token_for_user_workspace(
-                token_id=removal_token.id,
-                user_id=member.user.id,
-                workspace_id=shared.id,
-            )
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        removed_token = await uow.identity.get_personal_access_token_for_user_workspace(
+            token_id=removal_token.id,
+            user_id=member.user.id,
+            workspace_id=shared.id,
         )
         still_revoked_editor_token = (
-            await unit_of_work.identity.get_personal_access_token_for_user_workspace(
+            await uow.identity.get_personal_access_token_for_user_workspace(
                 token_id=editor_only_token.id,
                 user_id=member.user.id,
                 workspace_id=shared.id,
             )
         )
-        removal_events = await unit_of_work.security_audit.list_for_workspace(
+        removal_events = await uow.security_audit.list_for_workspace(
             shared.id,
             limit=30,
         )
@@ -745,22 +735,22 @@ async def test_membership_and_role_changes_revoke_affected_workspace_pats(
         ),
         invitation_id=invitation.id,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         restored_editor_token = (
-            await unit_of_work.identity.get_personal_access_token_for_user_workspace(
+            await uow.identity.get_personal_access_token_for_user_workspace(
                 token_id=editor_only_token.id,
                 user_id=member.user.id,
                 workspace_id=shared.id,
             )
         )
         restored_removal_token = (
-            await unit_of_work.identity.get_personal_access_token_for_user_workspace(
+            await uow.identity.get_personal_access_token_for_user_workspace(
                 token_id=removal_token.id,
                 user_id=member.user.id,
                 workspace_id=shared.id,
             )
         )
-        membership = await unit_of_work.identity.get_membership(
+        membership = await uow.identity.get_membership(
             workspace_id=shared.id,
             user_id=member.user.id,
         )
@@ -830,8 +820,8 @@ async def test_concurrent_owner_removals_preserve_one_shared_owner(
 
     assert sum(isinstance(result, WorkspaceMembership) for result in results) == 1
     assert sum(isinstance(result, LastWorkspaceOwnerError) for result in results) == 1
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        owner_count = await unit_of_work.identity.count_active_owners(shared.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        owner_count = await uow.identity.count_active_owners(shared.id)
     assert owner_count == 1
 
 
@@ -917,10 +907,10 @@ async def test_role_change_returns_complete_member_after_commit(
         user_id=member.id,
         role=WorkspaceRole.EDITOR,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_user(member)
-        await unit_of_work.identity.add_membership(membership)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_user(member)
+        await uow.identity.add_membership(membership)
+        await uow.commit()
 
     result = await service.change_member_role(
         actor=actor,
@@ -934,8 +924,8 @@ async def test_role_change_returns_complete_member_after_commit(
     assert (
         result.membership.authorization_version == membership.authorization_version + 1
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        persisted = await unit_of_work.identity.get_membership(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        persisted = await uow.identity.get_membership(
             workspace_id=workspace.id, user_id=member.id
         )
     assert persisted == result.membership

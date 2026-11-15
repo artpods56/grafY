@@ -64,9 +64,9 @@ async def add_project(
     database: Database, name: str = "Agents", workspace_id: UUID = WORKSPACE_ONE
 ) -> Project:
     row = Project(workspace_id=workspace_id, name=name)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.projects.add(row)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.projects.add(row)
+        await uow.commit()
     return row
 
 
@@ -76,9 +76,9 @@ async def test_a_sealed_key_round_trips_and_a_replacement_keeps_its_origin(
 ) -> None:
     project = await add_project(database)
     original = sealed(project.id)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_keys.upsert(original)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_keys.upsert(original)
+        await uow.commit()
 
     replacement = sealed(
         project.id,
@@ -86,15 +86,13 @@ async def test_a_sealed_key_round_trips_and_a_replacement_keeps_its_origin(
         key_id="fedcba9876543210",
         at=T1 + timedelta(hours=1),
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_keys.upsert(replacement)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_keys.upsert(replacement)
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        loaded = await unit_of_work.agent_keys.get(
-            WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID
-        )
-        listed = await unit_of_work.agent_keys.list_for_graph(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        loaded = await uow.agent_keys.get(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
+        listed = await uow.agent_keys.list_for_graph(
             WORKSPACE_ONE, project.id, GRAPH_ID
         )
 
@@ -117,27 +115,23 @@ async def test_keys_of_one_graph_are_listed_by_agent_and_scoped_to_the_workspace
     # Project of another Workspace a miss rather than a row to filter out, so the other
     # Workspace gets its own Project here and its key must stay on that side.
     theirs = await add_project(database, name="Theirs", workspace_id=WORKSPACE_TWO)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         for agent_id in ("zeta", "alpha"):
-            await unit_of_work.agent_keys.upsert(sealed(project.id, agent_id=agent_id))
-        await unit_of_work.agent_keys.upsert(
+            await uow.agent_keys.upsert(sealed(project.id, agent_id=agent_id))
+        await uow.agent_keys.upsert(
             sealed(theirs.id, workspace_id=WORKSPACE_TWO, agent_id="other")
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        mine = await unit_of_work.agent_keys.list_for_graph(
-            WORKSPACE_ONE, project.id, GRAPH_ID
-        )
-        others = await unit_of_work.agent_keys.list_for_graph(
-            WORKSPACE_TWO, theirs.id, GRAPH_ID
-        )
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        mine = await uow.agent_keys.list_for_graph(WORKSPACE_ONE, project.id, GRAPH_ID)
+        others = await uow.agent_keys.list_for_graph(WORKSPACE_TWO, theirs.id, GRAPH_ID)
         # Reading another Workspace's coordinates, or our own coordinates through them.
         assert (
-            await unit_of_work.agent_keys.get(WORKSPACE_TWO, project.id, GRAPH_ID, AGENT_ID)
+            await uow.agent_keys.get(WORKSPACE_TWO, project.id, GRAPH_ID, AGENT_ID)
         ) is None
         assert (
-            await unit_of_work.agent_keys.list_for_graph(WORKSPACE_TWO, project.id, GRAPH_ID)
+            await uow.agent_keys.list_for_graph(WORKSPACE_TWO, project.id, GRAPH_ID)
             == []
         )
 
@@ -150,27 +144,27 @@ async def test_clearing_a_key_needs_nothing_it_could_only_have_read(
     database: Database,
 ) -> None:
     project = await add_project(database)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_keys.upsert(sealed(project.id))
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_keys.upsert(sealed(project.id))
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_keys.remove(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_keys.remove(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         assert (
-            await unit_of_work.agent_keys.get(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
+            await uow.agent_keys.get(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
         ) is None
         assert (
-            await unit_of_work.agent_keys.list_for_graph(WORKSPACE_ONE, project.id, GRAPH_ID)
+            await uow.agent_keys.list_for_graph(WORKSPACE_ONE, project.id, GRAPH_ID)
             == []
         )
 
     # Clearing what was never there is not an error: the state the caller wanted holds.
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_keys.remove(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_keys.remove(WORKSPACE_ONE, project.id, GRAPH_ID, AGENT_ID)
+        await uow.commit()
 
 
 @pytest.mark.asyncio
@@ -178,18 +172,18 @@ async def test_deleting_the_project_takes_the_sealed_key_with_it(
     database: Database,
 ) -> None:
     project = await add_project(database, name="Disposable key")
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_keys.upsert(sealed(project.id))
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_keys.upsert(sealed(project.id))
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        loaded = await unit_of_work.projects.get(WORKSPACE_ONE, project.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        loaded = await uow.projects.get(WORKSPACE_ONE, project.id)
         assert loaded is not None
-        await unit_of_work.projects.remove(WORKSPACE_ONE, loaded)
-        await unit_of_work.commit()
+        await uow.projects.remove(WORKSPACE_ONE, loaded)
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         assert (
-            await unit_of_work.agent_keys.list_for_graph(WORKSPACE_ONE, project.id, GRAPH_ID)
+            await uow.agent_keys.list_for_graph(WORKSPACE_ONE, project.id, GRAPH_ID)
             == []
         )

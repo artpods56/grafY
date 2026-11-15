@@ -81,7 +81,7 @@ class AgentKeyService:
         unit_of_work_factory: Callable[[], AgentKeyUnitOfWorkPort],
         encryption_key: SecretStr | None,
     ) -> None:
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._encryption_key = encryption_key
 
     async def state(
@@ -95,10 +95,10 @@ class AgentKeyService:
         """Whether this Agent has a key this server can use. Never the key itself."""
 
         access.require(WorkspaceCapability.VIEW_PROJECT)
-        async with self._unit_of_work_factory() as unit_of_work:
-            head = await self._head(unit_of_work, access.workspace_id, project_id)
+        async with self._uow_factory() as uow:
+            head = await self._head(uow, access.workspace_id, project_id)
             self._agent(head, graph_id, agent_id)
-            stored = await unit_of_work.agent_keys.get(
+            stored = await uow.agent_keys.get(
                 access.workspace_id, project_id, graph_id, agent_id
             )
         active_key_id = self._active_key_id()
@@ -125,8 +125,8 @@ class AgentKeyService:
         access.require(WorkspaceCapability.EDIT_PROJECT)
         plaintext = self._validated_plaintext(value)
         key, key_id = self._resolved_encryption_key()
-        async with self._unit_of_work_factory() as unit_of_work:
-            head = await self._head(unit_of_work, access.workspace_id, project_id)
+        async with self._uow_factory() as uow:
+            head = await self._head(uow, access.workspace_id, project_id)
             self._agent(head, graph_id, agent_id)
             nonce = os.urandom(12)
             aad = self._additional_authenticated_data(
@@ -149,8 +149,8 @@ class AgentKeyService:
                 created_at=now,
                 updated_at=now,
             )
-            await unit_of_work.agent_keys.upsert(sealed)
-            await unit_of_work.commit()
+            await uow.agent_keys.upsert(sealed)
+            await uow.commit()
         logger.info(
             "agent_key_configured workspace_id=%s project_id=%s graph_id=%s agent_id=%s",
             access.workspace_id,
@@ -171,13 +171,13 @@ class AgentKeyService:
         """Drop this Agent's own key. Clearing does not read what it held."""
 
         access.require(WorkspaceCapability.EDIT_PROJECT)
-        async with self._unit_of_work_factory() as unit_of_work:
-            head = await self._head(unit_of_work, access.workspace_id, project_id)
+        async with self._uow_factory() as uow:
+            head = await self._head(uow, access.workspace_id, project_id)
             self._agent(head, graph_id, agent_id)
-            await unit_of_work.agent_keys.remove(
+            await uow.agent_keys.remove(
                 access.workspace_id, project_id, graph_id, agent_id
             )
-            await unit_of_work.commit()
+            await uow.commit()
         logger.info(
             "agent_key_cleared workspace_id=%s project_id=%s graph_id=%s agent_id=%s",
             access.workspace_id,
@@ -202,10 +202,10 @@ class AgentKeyService:
         asked for it over HTTP.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            head = await self._head(unit_of_work, workspace_id, project_id)
+        async with self._uow_factory() as uow:
+            head = await self._head(uow, workspace_id, project_id)
             self._agent(head, graph_id, agent_id)
-            stored = await unit_of_work.agent_keys.get(
+            stored = await uow.agent_keys.get(
                 workspace_id, project_id, graph_id, agent_id
             )
         if stored is None:

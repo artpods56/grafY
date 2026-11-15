@@ -100,10 +100,10 @@ async def _seed_matrix(database: Database) -> Matrix:
     workspace_b = Workspace(
         slug="workspace-b", name="Workspace B", kind=WorkspaceKind.SHARED
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_workspace(workspace_a)
-        await unit_of_work.identity.add_workspace(workspace_b)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_workspace(workspace_a)
+        await uow.identity.add_workspace(workspace_b)
+        await uow.commit()
     for user, workspace, role in (
         (owner_a, workspace_a, WorkspaceRole.OWNER),
         (viewer_a, workspace_a, WorkspaceRole.VIEWER),

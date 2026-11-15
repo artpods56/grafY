@@ -89,18 +89,18 @@ async def _give_credentials(
         scopes=(WorkspaceCapability.VIEW_PROJECT,),
         expires_at=expires_at,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_auth_session(session)
-        await unit_of_work.identity.add_personal_access_token(token)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_auth_session(session)
+        await uow.identity.add_personal_access_token(token)
+        await uow.commit()
     return session, token
 
 
 async def _is_active(
     database: Database, provisioned: IdentityProvisioningResult
 ) -> bool:
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        user = await unit_of_work.identity.get_user(provisioned.user.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        user = await uow.identity.get_user(provisioned.user.id)
     assert user is not None
     return user.active
 
@@ -131,14 +131,12 @@ async def test_an_operator_disables_and_re_enables_a_user(database: Database) ->
 
     assert not disabled.active
     assert not await _is_active(database, target)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        stored_session = await unit_of_work.identity.get_auth_session(session.id)
-        stored_token = (
-            await unit_of_work.identity.get_personal_access_token_for_user_workspace(
-                token_id=token.id,
-                user_id=target.user.id,
-                workspace_id=target.personal_workspace.id,
-            )
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        stored_session = await uow.identity.get_auth_session(session.id)
+        stored_token = await uow.identity.get_personal_access_token_for_user_workspace(
+            token_id=token.id,
+            user_id=target.user.id,
+            workspace_id=target.personal_workspace.id,
         )
     assert stored_session is not None and stored_session.is_revoked
     assert stored_token is not None and stored_token.is_revoked
@@ -164,8 +162,8 @@ async def test_an_operator_disables_and_re_enables_a_user(database: Database) ->
     assert enable_event["actor_kind"] == "authenticated"
     assert enable_event["resource_id"] == str(target.user.id)
     # Re-enabling restores the account, not the credentials the disable revoked.
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        stored_session = await unit_of_work.identity.get_auth_session(session.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        stored_session = await uow.identity.get_auth_session(session.id)
     assert stored_session is not None and stored_session.is_revoked
 
 

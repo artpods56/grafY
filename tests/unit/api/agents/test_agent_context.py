@@ -130,13 +130,13 @@ async def reader_over(store: InMemoryDataStore, runs: FakeRuns) -> ProjectContex
 async def test_the_reader_tells_each_kind_what_it_holds_now() -> None:
     store = InMemoryDataStore()
     runs = FakeRuns()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
+    async with InMemoryUnitOfWork(store) as uow:
         node_text = text_object("from the node")
         card_text = text_object("from the card")
         library_text = text_object("from the Library")
         for artifact in (node_text, card_text, library_text):
-            await unit_of_work.artifacts.add(artifact)
-        await unit_of_work.commit()
+            await uow.artifacts.add(artifact)
+        await uow.commit()
     from datetime import UTC, datetime
 
     runs.results["reader"] = StoredResult(
@@ -261,12 +261,12 @@ async def test_a_node_output_sequence_is_flattened_onto_the_block() -> None:
 
     store = InMemoryDataStore()
     runs = FakeRuns()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
+    async with InMemoryUnitOfWork(store) as uow:
         first = text_object("letter a")
         second = text_object("letter b")
         for artifact in (first, second):
-            await unit_of_work.artifacts.add(artifact)
-        await unit_of_work.commit()
+            await uow.artifacts.add(artifact)
+        await uow.commit()
     sequence = ArtifactRefSequence(
         artifact_type="scalar.text",
         schema_version=1,
@@ -304,12 +304,12 @@ async def test_a_node_output_sequence_is_flattened_onto_the_block() -> None:
 
 async def test_a_card_sequence_is_flattened_onto_the_block() -> None:
     store = InMemoryDataStore()
-    async with InMemoryUnitOfWork(store) as unit_of_work:
+    async with InMemoryUnitOfWork(store) as uow:
         first = text_object("one")
         second = text_object("two")
         for artifact in (first, second):
-            await unit_of_work.artifacts.add(artifact)
-        await unit_of_work.commit()
+            await uow.artifacts.add(artifact)
+        await uow.commit()
     sequence = ArtifactRefSequence(
         artifact_type="scalar.text",
         schema_version=1,

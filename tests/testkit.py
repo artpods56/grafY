@@ -146,11 +146,11 @@ async def seed_shared_workspace(
         user_id=user_id,
         role=WorkspaceRole.OWNER,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_user(user)
-        await unit_of_work.identity.add_workspace(workspace)
-        await unit_of_work.identity.add_membership(membership)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_user(user)
+        await uow.identity.add_workspace(workspace)
+        await uow.identity.add_membership(membership)
+        await uow.commit()
     return user, workspace, membership
 
 

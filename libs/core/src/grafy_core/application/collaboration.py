@@ -134,7 +134,7 @@ class CollaborationService:
             raise ValueError("Command HMAC key must not be empty")
         if command_hmac_key_version < 1:
             raise ValueError("Command HMAC key version must be at least 1")
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._command_hmac_key = command_hmac_key
         self._command_hmac_key_version = command_hmac_key_version
 
@@ -167,9 +167,9 @@ class CollaborationService:
         opening_batch: tuple[ProjectCommand, ...] = (
             AddGraphCommand(graph_id=graph_id, name=graph_name),
         )
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             access = await self._authorize(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.CREATE_PROJECT,
@@ -180,7 +180,7 @@ class CollaborationService:
                 access.require(WorkspaceCapability.CHECKPOINT_PROJECT)
             except CapabilityDeniedError:
                 await self._reject(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     operation="collaboration.project.create",
@@ -190,7 +190,7 @@ class CollaborationService:
                 raise
 
             replay = await self._opening_replay(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 project_id=project.id,
@@ -205,11 +205,11 @@ class CollaborationService:
             staged = await stage_project(
                 project,
                 document,
-                projects=unit_of_work.projects,
-                collaboration=unit_of_work.collaboration,
+                projects=uow.projects,
+                collaboration=uow.collaboration,
             )
             receipt = await self._stage_opening_receipt(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 project_id=project.id,
@@ -218,13 +218,13 @@ class CollaborationService:
                 command_id=command_id,
             )
             await self._success(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 operation="collaboration.project.create",
                 resource_id=str(project.id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return ProjectCreation(
             project=staged.project,
             head=staged.head,
@@ -244,17 +244,17 @@ class CollaborationService:
         there but has no head is an integrity failure, not an empty room.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await self._authorize(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.VIEW_PROJECT,
                 operation="collaboration.head.read",
                 resource_id=str(project_id),
             )
-            await self._project_or_raise(unit_of_work, workspace_id, project_id)
-            head = await unit_of_work.collaboration.get_head(workspace_id, project_id)
+            await self._project_or_raise(uow, workspace_id, project_id)
+            head = await uow.collaboration.get_head(workspace_id, project_id)
         if head is None:
             raise MissingProjectHeadError(
                 workspace_id=workspace_id, project_id=project_id
@@ -286,16 +286,16 @@ class CollaborationService:
                 message="Project command batch must not be empty",
             )
         batch = tuple(commands)
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await self._authorize(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_PROJECT,
                 operation="collaboration.command.submit",
                 resource_id=str(project_id),
             )
-            await self._project_or_raise(unit_of_work, workspace_id, project_id)
+            await self._project_or_raise(uow, workspace_id, project_id)
             digest = self._digest(
                 workspace_id=workspace_id,
                 project_id=project_id,
@@ -304,7 +304,7 @@ class CollaborationService:
                 observed_sequence=observed_sequence,
                 commands=batch,
             )
-            existing = await unit_of_work.collaboration.get_receipt(
+            existing = await uow.collaboration.get_receipt(
                 workspace_id,
                 project_id,
                 command_id,
@@ -314,7 +314,7 @@ class CollaborationService:
                 # differs is a client bug, whatever the head says. An identical
                 # payload still has to be read again under the head lock below.
                 await self._reject(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     operation="collaboration.command.submit",
@@ -327,7 +327,7 @@ class CollaborationService:
                     command_id=command_id,
                 )
 
-            head = await unit_of_work.collaboration.lock_head(workspace_id, project_id)
+            head = await uow.collaboration.lock_head(workspace_id, project_id)
             if head is None:
                 raise MissingProjectHeadError(
                     workspace_id=workspace_id, project_id=project_id
@@ -337,7 +337,7 @@ class CollaborationService:
             # one that waits would otherwise insert a second receipt and be refused by
             # the primary key. Holding the head makes the first acceptance visible to
             # the second, so a concurrent retry replays instead of failing.
-            accepted_already = await unit_of_work.collaboration.get_receipt(
+            accepted_already = await uow.collaboration.get_receipt(
                 workspace_id,
                 project_id,
                 command_id,
@@ -345,7 +345,7 @@ class CollaborationService:
             if accepted_already is not None:
                 if not hmac.compare_digest(accepted_already.command_hmac, digest):
                     await self._reject(
-                        unit_of_work,
+                        uow,
                         actor=actor,
                         workspace_id=workspace_id,
                         operation="collaboration.command.submit",
@@ -367,7 +367,7 @@ class CollaborationService:
                 head.collaboration_sequence < observed_sequence
             ):
                 raise await self._head_moved(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     project_id=project_id,
@@ -378,7 +378,7 @@ class CollaborationService:
                 command_requires_exact_sequence(batch)
             ):
                 raise await self._head_moved(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     project_id=project_id,
@@ -404,16 +404,16 @@ class CollaborationService:
                 accepted_sequence=head.collaboration_sequence,
                 outcome=CommandReceiptOutcome.ACCEPTED,
             )
-            await unit_of_work.collaboration.save_head(head)
-            await unit_of_work.collaboration.add_receipt(receipt)
+            await uow.collaboration.save_head(head)
+            await uow.collaboration.add_receipt(receipt)
             await self._success(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 operation="collaboration.command.submit",
                 resource_id=str(project_id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return CommandSubmission(head=head, receipt=receipt)
 
     async def checkpoint(
@@ -432,17 +432,17 @@ class CollaborationService:
         appending a second copy of the same document.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await self._authorize(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.CHECKPOINT_PROJECT,
                 operation="collaboration.checkpoint",
                 resource_id=str(project_id),
             )
-            await self._project_or_raise(unit_of_work, workspace_id, project_id)
-            head = await unit_of_work.collaboration.lock_head(workspace_id, project_id)
+            await self._project_or_raise(uow, workspace_id, project_id)
+            head = await uow.collaboration.lock_head(workspace_id, project_id)
             if head is None:
                 raise MissingProjectHeadError(
                     workspace_id=workspace_id, project_id=project_id
@@ -452,7 +452,7 @@ class CollaborationService:
                 or head.collaboration_sequence != expected_sequence
             ):
                 raise await self._head_moved(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     project_id=project_id,
@@ -460,7 +460,7 @@ class CollaborationService:
                     expected_sequence=expected_sequence,
                 )
             if head.is_fully_checkpointed:
-                mapping = await unit_of_work.collaboration.get_checkpoint_mapping(
+                mapping = await uow.collaboration.get_checkpoint_mapping(
                     workspace_id,
                     project_id,
                     room_epoch=head.room_epoch,
@@ -494,17 +494,17 @@ class CollaborationService:
                 revision=revision,
             )
             try:
-                await unit_of_work.projects.add_checkpoint(checkpoint)
-                await unit_of_work.collaboration.add_checkpoint_mapping(mapping)
-                await unit_of_work.collaboration.save_head(head)
+                await uow.projects.add_checkpoint(checkpoint)
+                await uow.collaboration.add_checkpoint_mapping(mapping)
+                await uow.collaboration.save_head(head)
                 await self._success(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     operation="collaboration.checkpoint",
                     resource_id=str(project_id),
                 )
-                await unit_of_work.commit()
+                await uow.commit()
             except ConcurrentWriteError as exc:
                 raise ProjectCheckpointConflictError(
                     project_id=project_id,
@@ -531,24 +531,24 @@ class CollaborationService:
         uncheckpointed draft work is refused rather than silently discarded.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await self._authorize(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.CHECKPOINT_PROJECT,
                 operation="collaboration.checkpoint.restore",
                 resource_id=str(project_id),
             )
-            await self._project_or_raise(unit_of_work, workspace_id, project_id)
-            checkpoint = await unit_of_work.projects.get_checkpoint(
+            await self._project_or_raise(uow, workspace_id, project_id)
+            checkpoint = await uow.projects.get_checkpoint(
                 workspace_id,
                 project_id,
                 revision,
             )
             if checkpoint is None:
                 raise NotFoundError("Project checkpoint", f"{project_id}@{revision}")
-            head = await unit_of_work.collaboration.lock_head(workspace_id, project_id)
+            head = await uow.collaboration.lock_head(workspace_id, project_id)
             if head is None:
                 raise MissingProjectHeadError(
                     workspace_id=workspace_id, project_id=project_id
@@ -558,7 +558,7 @@ class CollaborationService:
                 or head.collaboration_sequence != expected_sequence
             ):
                 raise await self._head_moved(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     project_id=project_id,
@@ -567,7 +567,7 @@ class CollaborationService:
                 )
             if not head.is_fully_checkpointed:
                 raise await self._uncheckpointed(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     project_id=project_id,
@@ -602,17 +602,17 @@ class CollaborationService:
                 checkpoint_revision=restored.revision,
             )
             try:
-                await unit_of_work.projects.add_checkpoint(restored)
-                await unit_of_work.collaboration.add_checkpoint_mapping(mapping)
-                await unit_of_work.collaboration.save_head(reopened)
+                await uow.projects.add_checkpoint(restored)
+                await uow.collaboration.add_checkpoint_mapping(mapping)
+                await uow.collaboration.save_head(reopened)
                 await self._success(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     operation="collaboration.checkpoint.restore",
                     resource_id=str(project_id),
                 )
-                await unit_of_work.commit()
+                await uow.commit()
             except ConcurrentWriteError as exc:
                 raise ProjectCheckpointConflictError(
                     project_id=project_id,
@@ -644,9 +644,9 @@ class CollaborationService:
         """
 
         self._require_id_pair(project_id=project_id, command_id=command_id)
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await self._authorize_pair(
-                unit_of_work,
+                uow,
                 actor=actor,
                 requirements=(
                     (source_workspace_id, WorkspaceCapability.VIEW_PROJECT),
@@ -655,10 +655,8 @@ class CollaborationService:
                 operation="collaboration.project.copy",
                 resource_id=str(source_project_id),
             )
-            await self._project_or_raise(
-                unit_of_work, source_workspace_id, source_project_id
-            )
-            source_head = await unit_of_work.collaboration.lock_head(
+            await self._project_or_raise(uow, source_workspace_id, source_project_id)
+            source_head = await uow.collaboration.lock_head(
                 source_workspace_id,
                 source_project_id,
             )
@@ -671,7 +669,7 @@ class CollaborationService:
                 or source_head.collaboration_sequence != expected_sequence
             ):
                 raise await self._head_moved(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=source_workspace_id,
                     project_id=source_project_id,
@@ -695,7 +693,7 @@ class CollaborationService:
                 for graph in copied_document.graphs
             )
             replay = await self._opening_replay(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=target_workspace_id,
                 project_id=resolved_project_id,
@@ -717,11 +715,11 @@ class CollaborationService:
             staged = await stage_project(
                 project,
                 copied_document,
-                projects=unit_of_work.projects,
-                collaboration=unit_of_work.collaboration,
+                projects=uow.projects,
+                collaboration=uow.collaboration,
             )
             receipt = await self._stage_opening_receipt(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=target_workspace_id,
                 project_id=project.id,
@@ -730,13 +728,13 @@ class CollaborationService:
                 command_id=command_id,
             )
             await self._success(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=target_workspace_id,
                 operation="collaboration.project.copy",
                 resource_id=str(project.id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return ProjectCopy(project=staged.project, head=staged.head, receipt=receipt)
 
     async def delete_project(
@@ -755,19 +753,19 @@ class CollaborationService:
         is refused instead of discarded.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await self._authorize(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.DELETE_PROJECT,
                 operation="collaboration.project.delete",
                 resource_id=str(project_id),
             )
-            project = await unit_of_work.projects.get(workspace_id, project_id)
+            project = await uow.projects.get(workspace_id, project_id)
             if project is None:
                 raise NotFoundError("Project", str(project_id))
-            head = await unit_of_work.collaboration.lock_head(workspace_id, project_id)
+            head = await uow.collaboration.lock_head(workspace_id, project_id)
             if head is None:
                 raise MissingProjectHeadError(
                     workspace_id=workspace_id, project_id=project_id
@@ -778,7 +776,7 @@ class CollaborationService:
                     or head.collaboration_sequence != expected_sequence
                 ):
                     raise await self._head_moved(
-                        unit_of_work,
+                        uow,
                         actor=actor,
                         workspace_id=workspace_id,
                         project_id=project_id,
@@ -787,22 +785,22 @@ class CollaborationService:
                     )
             elif not head.is_fully_checkpointed:
                 raise await self._uncheckpointed(
-                    unit_of_work,
+                    uow,
                     actor=actor,
                     workspace_id=workspace_id,
                     project_id=project_id,
                     head=head,
                 )
-            await unit_of_work.collaboration.remove_head(workspace_id, project_id)
-            await unit_of_work.projects.remove(workspace_id, project)
+            await uow.collaboration.remove_head(workspace_id, project_id)
+            await uow.projects.remove(workspace_id, project)
             await self._success(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 operation="collaboration.project.delete",
                 resource_id=str(project_id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
 
     async def _project_or_raise(
         self,

@@ -98,11 +98,11 @@ class LoginTransactions:
             transaction_id = UUID(value)
         except ValueError:
             return None
-        async with unit_of_work_factory() as unit_of_work:
-            transaction = await self._lock_live(unit_of_work, transaction_id)
+        async with unit_of_work_factory() as uow:
+            transaction = await self._lock_live(uow, transaction_id)
             if transaction is None:
                 return None
-            await self._consume(unit_of_work, transaction)
+            await self._consume(uow, transaction)
             return transaction_id
 
     async def consume_for_callback(
@@ -112,19 +112,19 @@ class LoginTransactions:
         transaction_id: UUID,
         state: str,
     ) -> tuple[OidcLoginTransaction, str, str]:
-        async with unit_of_work_factory() as unit_of_work:
-            transaction = await self._lock_live(unit_of_work, transaction_id)
+        async with unit_of_work_factory() as uow:
+            transaction = await self._lock_live(uow, transaction_id)
             if transaction is None:
                 raise OidcProtocolError("invalid_login_transaction")
             if transaction.expires_at <= datetime.now(UTC):
-                await self._reject(unit_of_work, transaction, "expired_login_transaction")
+                await self._reject(uow, transaction, "expired_login_transaction")
             if not hmac.compare_digest(transaction.state_digest, digest_secret(state)):
-                await self._reject(unit_of_work, transaction, "invalid_state")
+                await self._reject(uow, transaction, "invalid_state")
             try:
                 verifier = self.decrypt_verifier(transaction)
             except OidcProtocolError:
-                await self._reject(unit_of_work, transaction, "invalid_pkce_verifier")
-            await self._consume(unit_of_work, transaction)
+                await self._reject(uow, transaction, "invalid_pkce_verifier")
+            await self._consume(uow, transaction)
             return transaction, verifier, transaction.return_path
 
     async def consume_for_failure(
@@ -134,15 +134,15 @@ class LoginTransactions:
         *,
         state: str | None,
     ) -> bool:
-        async with unit_of_work_factory() as unit_of_work:
-            transaction = await self._lock_live(unit_of_work, transaction_id)
+        async with unit_of_work_factory() as uow:
+            transaction = await self._lock_live(uow, transaction_id)
             if transaction is None:
                 return False
             state_rejected = state is not None and not hmac.compare_digest(
                 transaction.state_digest,
                 digest_secret(state),
             )
-            await self._consume(unit_of_work, transaction)
+            await self._consume(uow, transaction)
             if state_rejected:
                 raise OidcProtocolError("invalid_state", transaction_consumed=True)
             return True
