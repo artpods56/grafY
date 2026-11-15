@@ -9,6 +9,8 @@ import ast
 import importlib
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CORE_DIR = REPO_ROOT / "libs" / "core" / "src" / "grafy_core"
 
@@ -42,29 +44,63 @@ def _source(module: str) -> str:
     return (CORE_DIR / f"{module}.py").read_text(encoding="utf-8")
 
 
-def _referenced_split_module(node: ast.AST) -> str | None:
+def _referenced_split_modules(node: ast.AST) -> set[str]:
+    candidates: list[str] = []
     if isinstance(node, ast.Import):
-        candidates = (alias.name for alias in node.names)
+        candidates = [alias.name for alias in node.names]
     elif isinstance(node, ast.ImportFrom):
-        candidates = (node.module or "",)
-    else:
-        return None
-    for candidate in candidates:
-        if not candidate.startswith(GRAFY_CORE_PREFIX):
-            continue
-        referenced = candidate[len(GRAFY_CORE_PREFIX) :]
-        if referenced in SPLIT_MODULES or referenced == FACADE:
-            return referenced
-    return None
+        if node.level == 1:
+            module = f"grafy_core.{node.module}" if node.module else "grafy_core"
+        elif node.level == 0:
+            module = node.module or ""
+        else:
+            return set()
+        candidates = (
+            [f"{module}.{alias.name}" for alias in node.names]
+            if module == "grafy_core"
+            else [module]
+        )
+    return {
+        candidate[len(GRAFY_CORE_PREFIX) :]
+        for candidate in candidates
+        if candidate.startswith(GRAFY_CORE_PREFIX)
+        and candidate[len(GRAFY_CORE_PREFIX) :] in (FACADE, *SPLIT_MODULES)
+    }
 
 
 def _imported_split_modules(tree: ast.Module) -> set[str]:
-    modules: set[str] = set()
-    for node in ast.walk(tree):
-        referenced = _referenced_split_module(node)
-        if referenced is not None:
-            modules.add(referenced)
-    return modules
+    return {
+        referenced
+        for node in ast.walk(tree)
+        for referenced in _referenced_split_modules(node)
+    }
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("from .nodes import Node", {"nodes"}),
+        ("from . import nodes as facade", {"nodes"}),
+        ("from grafy_core import nodes as facade", {"nodes"}),
+        ("from .node_derivation import _concrete_type", {"node_derivation"}),
+        ("from grafy_core.node_derivation import _concrete_type", {"node_derivation"}),
+        (
+            "import grafy_core.node_ports, grafy_core.nodes as facade",
+            {"node_ports", "nodes"},
+        ),
+        (
+            "from grafy_core import node_ports, nodes",
+            {"node_ports", "nodes"},
+        ),
+        ("from grafy_core.artifacts import ArtifactRef", set[str]()),
+        ("from unrelated import nodes", set[str]()),
+        ("from ..nodes import Node", set[str]()),
+    ],
+)
+def test_import_detection_covers_equivalent_spellings(
+    source: str, expected: set[str]
+) -> None:
+    assert _imported_split_modules(ast.parse(source)) == expected
 
 
 def _top_level_definitions(tree: ast.Module) -> list[str]:
@@ -117,8 +153,8 @@ def test_no_split_module_imports_a_private_name() -> None:
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
-            referenced = _referenced_split_module(node)
-            if referenced is None:
+            referenced = _referenced_split_modules(node)
+            if not referenced:
                 continue
             for alias in node.names:
                 assert not alias.name.startswith("_"), (
@@ -160,10 +196,10 @@ def test_facade_reexports_use_the_same_public_names() -> None:
     for node in ast.walk(tree):
         if not isinstance(node, ast.ImportFrom):
             continue
-        referenced = _referenced_split_module(node)
-        if referenced is None:
+        referenced = _referenced_split_modules(node)
+        if not referenced:
             continue
-        assert referenced in SPLIT_MODULES
+        assert referenced <= set(SPLIT_MODULES)
         for alias in node.names:
             assert alias.asname == alias.name, f"{alias.name} is not same-name"
             assert not alias.name.startswith("_")
