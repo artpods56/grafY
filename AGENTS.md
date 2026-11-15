@@ -105,6 +105,14 @@ elsewhere. Walk this list and say which entries applied:
   `any()` that reads at a glance is fine, and working code is not rewritten
   just to apply it.
 
+## Naming
+
+- Unit-of-work context variables are named `uow`
+  (`async with self._uow_factory() as uow:`). Use `uow` for other
+  local unit-of-work variables too. Attributes are `self._uow` for an instance
+  and `self._uow_factory` for a factory. Preserve parameter names for keyword-call
+  compatibility; class, module, and type names are outside this rule.
+
 ## Docs and work artifacts
 
 - `docs/design/` and `docs/adr/` hold decisions, cross-component constraints,

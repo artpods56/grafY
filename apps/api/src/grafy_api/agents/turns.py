@@ -339,7 +339,7 @@ class AgentService:
     ) -> None:
         self._toolbox_factory = toolbox_factory
         self._context_reader = context_reader
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._models = models
         self._publisher: AgentTurnPublisher = (
             publisher if publisher is not None else NullAgentTurnPublisher()
@@ -435,9 +435,9 @@ class AgentService:
         one decision instead of two reads with a window between them.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            store = unit_of_work.agent_conversations
-            turns = unit_of_work.agent_turns
+        async with self._uow_factory() as uow:
+            store = uow.agent_conversations
+            turns = uow.agent_turns
             conversation = await store.lock(access.workspace_id, conversation_id)
             if conversation is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
@@ -456,7 +456,7 @@ class AgentService:
             if active is not None:
                 raise AgentTurnBusyError(conversation_id, active.turn.id)
 
-            head = await unit_of_work.collaboration.get_head(
+            head = await uow.collaboration.get_head(
                 access.workspace_id, conversation.project_id
             )
             if head is None:
@@ -499,14 +499,14 @@ class AgentService:
                 # Another send committed inside the window above. This transaction wrote
                 # neither receipt nor message, so the loser's answer comes from a fresh
                 # read of the winner's, not from a guess here.
-                await unit_of_work.rollback()
+                await uow.rollback()
                 return await self._lose_admission_race(
                     access=access,
                     conversation_id=conversation_id,
                     client_turn_id=client_turn_id,
                     text=text,
                 )
-            await unit_of_work.commit()
+            await uow.commit()
             return _Admission(
                 turn=turn,
                 resolved=resolved,
@@ -907,22 +907,22 @@ class AgentService:
         turn = entry.turn
         at = datetime.now(UTC)
         appended: list[AgentConversationEvent] = []
-        async with self._unit_of_work_factory() as unit_of_work:
-            current = await unit_of_work.agent_turns.get(turn.workspace_id, turn.id)
+        async with self._uow_factory() as uow:
+            current = await uow.agent_turns.get(turn.workspace_id, turn.id)
             if current is None or current.status is not AgentTurnStatus.RUNNING:
-                await unit_of_work.rollback()
+                await uow.rollback()
                 return
-            store = unit_of_work.agent_conversations
+            store = uow.agent_conversations
             conversation = await store.lock(turn.workspace_id, turn.conversation_id)
             if conversation is None:
-                await unit_of_work.rollback()
+                await uow.rollback()
                 return
             for payload in payloads:
                 event = conversation.event(turn_id=turn.id, payload=payload, at=at)
                 await store.append(event)
                 appended.append(event)
                 conversation = conversation.appended(at=at)
-            await unit_of_work.commit()
+            await uow.commit()
         for event in appended:
             self._publish(_announce(turn, event))
 
@@ -1014,14 +1014,14 @@ class AgentService:
 
         at = datetime.now(UTC)
         appended: list[AgentConversationEvent] = []
-        async with self._unit_of_work_factory() as unit_of_work:
-            claimed = await unit_of_work.agent_turns.finish(
+        async with self._uow_factory() as uow:
+            claimed = await uow.agent_turns.finish(
                 turn.workspace_id, turn.id, status=status, at=at, detail=detail
             )
             if claimed is None:
-                await unit_of_work.rollback()
+                await uow.rollback()
                 return None
-            store = unit_of_work.agent_conversations
+            store = uow.agent_conversations
             conversation = await store.lock(turn.workspace_id, turn.conversation_id)
             if conversation is not None:
                 if thinking:
@@ -1049,7 +1049,7 @@ class AgentService:
                 )
                 await store.append(outcome_event)
                 appended.append(outcome_event)
-            await unit_of_work.commit()
+            await uow.commit()
         return claimed, appended
 
     # Cancel ----------------------------------------------------------------
@@ -1138,12 +1138,12 @@ class AgentService:
         """End a receipt no task in this process is behind."""
 
         at = datetime.now(UTC)
-        async with self._unit_of_work_factory() as unit_of_work:
-            claimed = await unit_of_work.agent_turns.finish(
+        async with self._uow_factory() as uow:
+            claimed = await uow.agent_turns.finish(
                 turn.workspace_id, turn.id, status=status, at=at, detail=detail
             )
             if claimed is not None:
-                store = unit_of_work.agent_conversations
+                store = uow.agent_conversations
                 conversation = await store.lock(turn.workspace_id, turn.conversation_id)
                 if conversation is not None:
                     await store.append(
@@ -1155,7 +1155,7 @@ class AgentService:
                             at=at,
                         )
                     )
-            await unit_of_work.commit()
+            await uow.commit()
         if claimed is None:
             raced = await self._receipt(turn.workspace_id, turn.id)
             return raced or turn
@@ -1189,11 +1189,11 @@ class AgentService:
         """This conversation's sends, newest first — the receipts behind the events."""
 
         access.require(WorkspaceCapability.VIEW_PROJECT)
-        async with self._unit_of_work_factory() as unit_of_work:
-            store = unit_of_work.agent_conversations
+        async with self._uow_factory() as uow:
+            store = uow.agent_conversations
             if await store.get(access.workspace_id, conversation_id) is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
-            return await unit_of_work.agent_turns.list_for_conversation(
+            return await uow.agent_turns.list_for_conversation(
                 access.workspace_id, conversation_id, limit=limit
             )
 
@@ -1215,11 +1215,11 @@ class AgentService:
         still_running = await self._running(access.workspace_id, conversation_id)
         if still_running is not None:
             return still_running
-        async with self._unit_of_work_factory() as unit_of_work:
-            store = unit_of_work.agent_conversations
+        async with self._uow_factory() as uow:
+            store = uow.agent_conversations
             if await store.get(access.workspace_id, conversation_id) is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
-            turns = await unit_of_work.agent_turns.list_for_conversation(
+            turns = await uow.agent_turns.list_for_conversation(
                 access.workspace_id, conversation_id, limit=1
             )
         if not turns:
@@ -1242,14 +1242,14 @@ class AgentService:
         entry = self._active.get(conversation_id)
         if entry is not None:
             return entry.snapshot()
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             if (
-                await unit_of_work.agent_conversations.get(
+                await uow.agent_conversations.get(
                     access.workspace_id, conversation_id
                 )
             ) is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
-            running = await unit_of_work.agent_turns.running_for_conversation(
+            running = await uow.agent_turns.running_for_conversation(
                 access.workspace_id, conversation_id
             )
         return None if running is None else AgentTurnSnapshot(turn=running)
@@ -1268,11 +1268,11 @@ class AgentService:
         conversation permanently stuck busy.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            running = await unit_of_work.agent_turns.list_running()
+        async with self._uow_factory() as uow:
+            running = await uow.agent_turns.list_running()
             # Read only. Each turn's ending is its own transaction below, so one turn that
             # fails to be written does not take the others' interruptions back with it.
-            await unit_of_work.rollback()
+            await uow.rollback()
         interrupted: list[AgentTurn] = []
         for turn in running:
             claimed = await self._close_orphan(
@@ -1353,14 +1353,14 @@ class AgentService:
     # Internals -------------------------------------------------------------
 
     async def _receipt(self, workspace_id: UUID, turn_id: UUID) -> AgentTurn | None:
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.agent_turns.get(workspace_id, turn_id)
+        async with self._uow_factory() as uow:
+            return await uow.agent_turns.get(workspace_id, turn_id)
 
     async def _receipt_by_client_turn_id(
         self, workspace_id: UUID, conversation_id: UUID, client_turn_id: str
     ) -> AgentTurn | None:
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.agent_turns.get_by_client_turn_id(
+        async with self._uow_factory() as uow:
+            return await uow.agent_turns.get_by_client_turn_id(
                 workspace_id, conversation_id, client_turn_id
             )
 
@@ -1370,8 +1370,8 @@ class AgentService:
         entry = self._active.get(conversation_id)
         if entry is not None:
             return entry.turn
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.agent_turns.running_for_conversation(
+        async with self._uow_factory() as uow:
+            return await uow.agent_turns.running_for_conversation(
                 workspace_id, conversation_id
             )
 
@@ -1380,8 +1380,8 @@ class AgentService:
     ) -> AgentTurn | None:
         """The conversation's most recent turn, running or finished, if it has one."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            turns = await unit_of_work.agent_turns.list_for_conversation(
+        async with self._uow_factory() as uow:
+            turns = await uow.agent_turns.list_for_conversation(
                 workspace_id, conversation_id, limit=1
             )
         return turns[0] if turns else None

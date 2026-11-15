@@ -44,14 +44,14 @@ def test_a_unit_of_work_cancelled_by_its_task_group_returns_its_connection(
 
     async def main() -> None:
         scopes: list[anyio.CancelScope] = []
-        unit_of_work = SqlAlchemyUnitOfWork(database.sessions, cleanups=held_cleanups)
-        owed = held_cleanups or unit_of_work.session_cleanups
+        uow = SqlAlchemyUnitOfWork(database.sessions, cleanups=held_cleanups)
+        owed = held_cleanups or uow.session_cleanups
 
         async def worker() -> None:
             with anyio.CancelScope() as scope:
                 scopes.append(scope)
-                async with unit_of_work:
-                    state = unit_of_work._entered_state()  # noqa: SLF001
+                async with uow:
+                    state = uow._entered_state()  # noqa: SLF001
                     await state.session.execute(text("select 1"))
                     in_the_transaction.set()
                     await never_released.wait()
@@ -85,9 +85,9 @@ def test_a_finished_unit_of_work_leaves_nothing_to_settle(tmp_path: Path) -> Non
     cleanups = database.cleanups
 
     async def main() -> None:
-        unit_of_work = SqlAlchemyUnitOfWork(database.sessions, cleanups=cleanups)
-        async with unit_of_work:
-            state = unit_of_work._entered_state()  # noqa: SLF001
+        uow = SqlAlchemyUnitOfWork(database.sessions, cleanups=cleanups)
+        async with uow:
+            state = uow._entered_state()  # noqa: SLF001
             assert (await state.session.execute(text("select 1"))).scalar() == 1
         assert pool.checkedout() == 0, pool.status()
         assert cleanups.pending == 0

@@ -218,9 +218,9 @@ async def test_secondary_failure_audit_write_is_fail_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repository = _FailureOnlyAuditRepository()
-    unit_of_work = _FailureOnlyAuditUnitOfWork(repository)
+    uow = _FailureOnlyAuditUnitOfWork(repository)
     auth = _auth_service()
-    monkeypatch.setattr(auth, "_unit_of_work_factory", lambda: unit_of_work)
+    monkeypatch.setattr(auth, "_uow_factory", lambda: uow)
     recorded: list[tuple[Exception, str]] = []
 
     def record_failure(exc: Exception, *, operation: str) -> None:
@@ -246,7 +246,7 @@ async def test_secondary_failure_audit_write_is_fail_open(
         )
 
     assert len(repository.attempts) == 1
-    assert unit_of_work.commit_attempts == 0
+    assert uow.commit_attempts == 0
     assert len(recorded) == 1
     assert isinstance(recorded[0][0], RuntimeError)
     assert recorded[0][1] == "security.audit.write.workspace.authorize"
@@ -456,9 +456,9 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
         await connection.run_sync(metadata.create_all)
     identity_service = IdentityService(lambda: SqlAlchemyUnitOfWork(database.sessions))
     old_user = User(id=UUID(int=99), email="old@example.test", display_name="Old")
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_user(old_user)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_user(old_user)
+        await uow.commit()
 
     settings = Settings(
         app=AppConfig(
@@ -539,13 +539,13 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
     old_session = await auth.issue_session(old_user.id)
     tampered_url, tampered_id = await auth.start_login(return_path="/")
     tampered_params = parse_qs(urlsplit(tampered_url).query)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        tampered = await unit_of_work.identity.lock_login_transaction(tampered_id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        tampered = await uow.identity.lock_login_transaction(tampered_id)
         assert tampered is not None
         tampered.encrypted_pkce_verifier = bytes(
             byte ^ 0xFF for byte in tampered.encrypted_pkce_verifier
         )
-        await unit_of_work.commit()
+        await uow.commit()
     with pytest.raises(OidcProtocolError) as tampered_error:
         await auth.callback(
             transaction_id_value=str(tampered_id),
@@ -554,8 +554,8 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
             error=None,
         )
     assert tampered_error.value.code == "invalid_pkce_verifier"
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        consumed_tampered = await unit_of_work.identity.lock_login_transaction(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        consumed_tampered = await uow.identity.lock_login_transaction(
             tampered_id
         )
         assert consumed_tampered is not None and consumed_tampered.is_consumed
@@ -582,8 +582,8 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
             if callback_state == "mismatched"
             else "provider_callback_failed"
         )
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            consumed = await unit_of_work.identity.lock_login_transaction(failure_id)
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            consumed = await uow.identity.lock_login_transaction(failure_id)
             assert consumed is not None and consumed.is_consumed
     for failure_id, failure_state, _ in callback_failures:
         with pytest.raises(OidcProtocolError):
@@ -611,11 +611,11 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
     assert provisioned.user.normalized_email == "provider@example.test"
     assert return_path == "/after-login"
     assert replacement.cookie_value != old_session.cookie_value
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        old_stored = await unit_of_work.identity.get_auth_session(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        old_stored = await uow.identity.get_auth_session(
             old_session.session.id
         )
-        replacement_stored = await unit_of_work.identity.get_auth_session(
+        replacement_stored = await uow.identity.get_auth_session(
             replacement.session.id
         )
         assert old_stored is not None and old_stored.is_revoked
@@ -633,9 +633,9 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
     failure_url, failure_id = await auth.start_login(return_path="/after-failure")
     failure_params = parse_qs(urlsplit(failure_url).query)
     protocol_state["url"] = failure_url
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         sessions_before_failure = (
-            await unit_of_work.identity.list_auth_sessions_for_user(provisioned.user.id)
+            await uow.identity.list_auth_sessions_for_user(provisioned.user.id)
         )
 
     real_uow_factory = cast(
@@ -644,7 +644,7 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
     )
     monkeypatch.setattr(
         auth,
-        "_unit_of_work_factory",
+        "_uow_factory",
         lambda: _FailingCallbackAuditUnitOfWork(real_uow_factory),
     )
     with pytest.raises(OidcCallbackInternalError) as internal_failure:
@@ -655,13 +655,13 @@ async def test_protocol_issuer_successfully_provisions_identity_and_rotates_sess
             error=None,
         )
     assert isinstance(internal_failure.value.__cause__, RuntimeError)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        failed_transaction = await unit_of_work.identity.get_login_transaction(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        failed_transaction = await uow.identity.get_login_transaction(
             failure_id
         )
         assert failed_transaction is not None and failed_transaction.is_consumed
         sessions_after_failure = (
-            await unit_of_work.identity.list_auth_sessions_for_user(provisioned.user.id)
+            await uow.identity.list_auth_sessions_for_user(provisioned.user.id)
         )
     assert [session.id for session in sessions_after_failure] == [
         session.id for session in sessions_before_failure

@@ -146,14 +146,14 @@ class TrackingStorage(FileStoragePort):
 def geo_artifact_client(
     tmp_path: Path,
 ) -> Iterator[tuple[TestClient, InMemoryUnitOfWork, TrackingStorage]]:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = TrackingStorage(LocalFileObjectStore(tmp_path / "objects"))
     application = FastAPI()
-    availability = ArtifactAvailability(unit_of_work)
+    availability = ArtifactAvailability(uow)
     wms = WmsTileClient()
-    geo = ArtifactGeoService(unit_of_work, storage, availability=availability)
+    geo = ArtifactGeoService(uow, storage, availability=availability)
     tiles = ArtifactGeoTileService(
-        unit_of_work,
+        uow,
         storage,
         availability=availability,
         wms=wms,
@@ -173,7 +173,7 @@ def geo_artifact_client(
     )
     application.include_router(artifacts_router, prefix="/v1")
     with TestClient(application) as client:
-        yield client, unit_of_work, storage
+        yield client, uow, storage
     asyncio.run(wms.close())
 
 
@@ -488,7 +488,7 @@ def _ref(artifact: ArtifactObject) -> JsonObject:
 def test_vector_render_archive_ranges_and_exact_feature_are_bounded(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
-    client, unit_of_work, storage = geo_artifact_client
+    client, uow, storage = geo_artifact_client
     api = GrafyApi(client)
     artifacts = api.workspace(WORKSPACE_ID).artifacts
     features = [
@@ -496,7 +496,7 @@ def test_vector_render_archive_ranges_and_exact_feature_are_bounded(
     ]
     artifact = asyncio.run(
         _feature_artifact(
-            unit_of_work,
+            uow,
             storage,
             source_name="Observation points",
             features=features,
@@ -593,12 +593,12 @@ def test_vector_archive_rejects_oversized_buffered_responses_before_loading(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client, unit_of_work, storage = geo_artifact_client
+    client, uow, storage = geo_artifact_client
     api = GrafyApi(client)
     artifacts = api.workspace(WORKSPACE_ID).artifacts
     artifact = asyncio.run(
         _feature_artifact(
-            unit_of_work,
+            uow,
             storage,
             source_name="Observation points",
             features=[_point_feature(0, 0.0, 0.0)],
@@ -626,12 +626,12 @@ def test_vector_archive_rejects_oversized_buffered_responses_before_loading(
 def test_empty_feature_collection_has_clear_non_renderable_descriptor(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
-    client, unit_of_work, storage = geo_artifact_client
+    client, uow, storage = geo_artifact_client
     api = GrafyApi(client)
     artifacts = api.workspace(WORKSPACE_ID).artifacts
     artifact = asyncio.run(
         _feature_artifact(
-            unit_of_work,
+            uow,
             storage,
             source_name="Empty source",
             features=[],
@@ -653,12 +653,12 @@ def test_empty_feature_collection_has_clear_non_renderable_descriptor(
 def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
-    client, unit_of_work, storage = geo_artifact_client
+    client, uow, storage = geo_artifact_client
     api = GrafyApi(client)
     artifacts = api.workspace(WORKSPACE_ID).artifacts
     first_source = asyncio.run(
         _feature_artifact(
-            unit_of_work,
+            uow,
             storage,
             source_name="First points",
             features=[_point_feature(1, -5.0, -4.0)],
@@ -667,17 +667,17 @@ def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
     )
     second_source = asyncio.run(
         _feature_artifact(
-            unit_of_work,
+            uow,
             storage,
             source_name="Second points",
             features=[_point_feature(2, 5.0, 6.0)],
             bounds=(5.0, 6.0, 5.0, 6.0),
         )
     )
-    raster_source = asyncio.run(_raster_artifact(unit_of_work, storage))
+    raster_source = asyncio.run(_raster_artifact(uow, storage))
     first_layer = asyncio.run(
         _inline_artifact(
-            unit_of_work,
+            uow,
             LAYER_KEY,
             {
                 "title": "First observations",
@@ -695,7 +695,7 @@ def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
     )
     raster_layer = asyncio.run(
         _inline_artifact(
-            unit_of_work,
+            uow,
             LAYER_KEY,
             {
                 "title": "Historical scan",
@@ -713,7 +713,7 @@ def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
     )
     second_layer = asyncio.run(
         _inline_artifact(
-            unit_of_work,
+            uow,
             LAYER_KEY,
             {
                 "title": "Second observations",
@@ -731,7 +731,7 @@ def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
     )
     wms_layer = asyncio.run(
         _inline_artifact(
-            unit_of_work,
+            uow,
             LAYER_KEY,
             {
                 "title": "Atlas Fontium",
@@ -755,7 +755,7 @@ def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
     )
     document = asyncio.run(
         _inline_artifact(
-            unit_of_work,
+            uow,
             DOCUMENT_KEY,
             {
                 "layers": [
@@ -847,19 +847,19 @@ async def test_wms_tile_pins_validated_address_against_dns_rebinding(
         )
 
     monkeypatch.setattr(socket, "getaddrinfo", rebind_host)
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = TrackingStorage(LocalFileObjectStore(tmp_path / "objects"))
     mock_client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
     wms = WmsTileClient(client=mock_client)
     tiles = ArtifactGeoTileService(
-        unit_of_work,
+        uow,
         storage,
-        availability=ArtifactAvailability(unit_of_work),
+        availability=ArtifactAvailability(uow),
         wms=wms,
     )
     try:
         wms_layer = await _inline_artifact(
-            unit_of_work,
+            uow,
             LAYER_KEY,
             {
                 "title": "Public WMS",
@@ -904,10 +904,10 @@ async def test_wms_tile_pins_validated_address_against_dns_rebinding(
 def test_raster_tilejson_and_tiles_read_only_precomputed_xyz_objects(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
-    client, unit_of_work, storage = geo_artifact_client
+    client, uow, storage = geo_artifact_client
     api = GrafyApi(client)
     artifacts = api.workspace(WORKSPACE_ID).artifacts
-    raster = asyncio.run(_raster_artifact(unit_of_work, storage))
+    raster = asyncio.run(_raster_artifact(uow, storage))
     storage.loaded_paths.clear()
     storage.range_requests.clear()
 
@@ -936,10 +936,10 @@ def test_raster_tilejson_and_tiles_read_only_precomputed_xyz_objects(
 def test_raster_render_validates_source_name_before_projection(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
-    client, unit_of_work, _ = geo_artifact_client
+    client, uow, _ = geo_artifact_client
     artifact = asyncio.run(
         _add_artifact(
-            unit_of_work,
+            uow,
             ArtifactObject(
                 workspace_id=WORKSPACE_ID,
                 artifact_type=RASTER_KEY.id,
@@ -963,12 +963,12 @@ def test_raster_render_validates_source_name_before_projection(
 def test_render_rejects_stale_refs_and_private_wms_hosts(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
-    client, unit_of_work, storage = geo_artifact_client
+    client, uow, storage = geo_artifact_client
     api = GrafyApi(client)
     artifacts = api.workspace(WORKSPACE_ID).artifacts
     source = asyncio.run(
         _feature_artifact(
-            unit_of_work,
+            uow,
             storage,
             source_name="Points",
             features=[_point_feature(1, 1.0, 1.0)],
@@ -979,7 +979,7 @@ def test_render_rejects_stale_refs_and_private_wms_hosts(
     stale_ref["content_hash"] = "0" * 64
     stale_layer = asyncio.run(
         _inline_artifact(
-            unit_of_work,
+            uow,
             LAYER_KEY,
             {
                 "title": "Stale",
@@ -997,7 +997,7 @@ def test_render_rejects_stale_refs_and_private_wms_hosts(
     )
     private_wms = asyncio.run(
         _inline_artifact(
-            unit_of_work,
+            uow,
             LAYER_KEY,
             {
                 "title": "Private WMS",

@@ -210,14 +210,14 @@ async def _secret_project(
         name=name,
         created_by_user_id=TEST_USER_ID,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         await stage_project(
             project,
             _project_document(document if document is not None else _secret_document()),
-            projects=unit_of_work.projects,
-            collaboration=unit_of_work.collaboration,
+            projects=uow.projects,
+            collaboration=uow.collaboration,
         )
-        await unit_of_work.commit()
+        await uow.commit()
     return project.id
 
 

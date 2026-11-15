@@ -30,7 +30,7 @@ class ContentAddressedArguments(ArgumentArtifacts):
         registry: PluginRegistry,
         unit_of_work_factory: Callable[[], UnitOfWorkPort],
     ) -> None:
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._json_types: dict[ArtifactTypeKey, JsonType] = {}
         for spec in registry.artifact_types:
             if spec.materialized_json_type not in ("string", "integer"):
@@ -61,7 +61,7 @@ class ContentAddressedArguments(ArgumentArtifacts):
             ARGUMENT_ARTIFACT_NAMESPACE,
             f"{workspace_id}:{key.id}@{key.schema_version}:{digest}",
         )
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             existing = await uow.artifacts.get(workspace_id, artifact_id)
             if existing is not None:
                 return existing.ref()
@@ -114,7 +114,7 @@ class ContentAddressedArguments(ArgumentArtifacts):
             ARGUMENT_ARTIFACT_NAMESPACE,
             f"{workspace_id}:{key.id}@{key.schema_version}:{digest}",
         )
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             existing = await uow.artifacts.get(workspace_id, artifact_id)
             if existing is not None:
                 return existing.ref()
@@ -142,5 +142,5 @@ class ContentAddressedArguments(ArgumentArtifacts):
     async def get_artifact(
         self, *, workspace_id: UUID, artifact_id: UUID
     ) -> ArtifactObject | None:
-        async with self._unit_of_work_factory() as uow:
+        async with self._uow_factory() as uow:
             return await uow.artifacts.get(workspace_id, artifact_id)

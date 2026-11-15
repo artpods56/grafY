@@ -23,8 +23,8 @@ async def database(tmp_path: Path) -> AsyncIterator[Database]:
     created = create_database(f"sqlite+aiosqlite:///{database_path}")
     async with created.engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
-    async with SqlAlchemyUnitOfWork(created.sessions) as unit_of_work:
-        await unit_of_work.identity.add_workspace(
+    async with SqlAlchemyUnitOfWork(created.sessions) as uow:
+        await uow.identity.add_workspace(
             Workspace(
                 id=WORKSPACE_ID,
                 slug="team",
@@ -32,7 +32,7 @@ async def database(tmp_path: Path) -> AsyncIterator[Database]:
                 kind="shared",
             )
         )
-        await unit_of_work.commit()
+        await uow.commit()
     try:
         yield created
     finally:
@@ -74,10 +74,10 @@ async def test_node_secret_round_trips_and_upserts_without_replacing_created_at(
         name="Encrypted graph",
     )
     original = _encrypted_secret(graph.id, workspace_id=graph.workspace_id)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.projects.add(graph)
-        await unit_of_work.node_secrets.upsert(original)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.projects.add(graph)
+        await uow.node_secrets.upsert(original)
+        await uow.commit()
 
     replacement_time = original.updated_at + timedelta(hours=1)
     replacement = _encrypted_secret(
@@ -86,19 +86,19 @@ async def test_node_secret_round_trips_and_upserts_without_replacing_created_at(
         ciphertext=b"replacement-ciphertext-with-tag",
         at=replacement_time,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.node_secrets.upsert(replacement)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.node_secrets.upsert(replacement)
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        loaded = await unit_of_work.node_secrets.get(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        loaded = await uow.node_secrets.get(
             graph.workspace_id,
             graph.id,
             "main",
             "llm-node",
             "api_key",
         )
-        listed = await unit_of_work.node_secrets.list_for_graph(
+        listed = await uow.node_secrets.list_for_graph(
             graph.workspace_id, graph.id, "main"
         )
 
@@ -117,22 +117,22 @@ async def test_deleting_project_cascades_to_node_secrets(
         workspace_id=WORKSPACE_ID,
         name="Disposable secret",
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.projects.add(graph)
-        await unit_of_work.node_secrets.upsert(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.projects.add(graph)
+        await uow.node_secrets.upsert(
             _encrypted_secret(graph.id, workspace_id=graph.workspace_id)
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        loaded_graph = await unit_of_work.projects.get(graph.workspace_id, graph.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        loaded_graph = await uow.projects.get(graph.workspace_id, graph.id)
         assert loaded_graph is not None
-        await unit_of_work.projects.remove(graph.workspace_id, loaded_graph)
-        await unit_of_work.commit()
+        await uow.projects.remove(graph.workspace_id, loaded_graph)
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         assert (
-            await unit_of_work.node_secrets.get(
+            await uow.node_secrets.get(
                 graph.workspace_id, graph.id, "main", "llm-node", "api_key"
             )
             is None
@@ -147,22 +147,22 @@ async def test_node_secret_can_be_removed_without_reading_ciphertext(
         workspace_id=WORKSPACE_ID,
         name="Clear secret",
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.projects.add(graph)
-        await unit_of_work.node_secrets.upsert(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.projects.add(graph)
+        await uow.node_secrets.upsert(
             _encrypted_secret(graph.id, workspace_id=graph.workspace_id)
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.node_secrets.remove(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.node_secrets.remove(
             graph.workspace_id, graph.id, "main", "llm-node", "api_key"
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         assert (
-            await unit_of_work.node_secrets.list_for_graph(
+            await uow.node_secrets.list_for_graph(
                 graph.workspace_id, graph.id, "main"
             )
             == []

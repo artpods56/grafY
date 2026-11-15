@@ -70,8 +70,8 @@ async def actor_presentation_for(
     uow_factory: Callable[[], IdentityUnitOfWorkPort],
     actor: ActorContext,
 ) -> ActorPresentation:
-    async with uow_factory() as unit_of_work:
-        user = await unit_of_work.identity.get_user(actor.user_id)
+    async with uow_factory() as uow:
+        user = await uow.identity.get_user(actor.user_id)
     display_name = "collaborator"
     if user is not None:
         display_name = bounded_display_name(user.display_name, user.email)

@@ -35,7 +35,7 @@ def _artifact(workspace_id: object, **metadata: object) -> ArtifactObject:
 async def test_library_provenance_round_trips_on_the_artifact_row(
     database: Database,
 ) -> None:
-    unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
+    uow = SqlAlchemyUnitOfWork(database.sessions)
     artifact = _artifact(WORKSPACE_ONE, download_name="report.json")
     provenance = LibraryProvenance.from_instance(
         saved_at=NOW,
@@ -49,18 +49,18 @@ async def test_library_provenance_round_trips_on_the_artifact_row(
         output_port="value",
         name="Quarterly report",
     )
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.artifacts.add(artifact)
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         loaded = await entered.artifacts.get(WORKSPACE_ONE, artifact.id)
         assert loaded is not None
         assert loaded.library_provenance is None
         loaded.library_provenance = provenance
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         reloaded = await entered.artifacts.get(WORKSPACE_ONE, artifact.id)
         listed = await entered.artifacts.list_library(WORKSPACE_ONE)
 
@@ -72,22 +72,22 @@ async def test_library_provenance_round_trips_on_the_artifact_row(
 
 @pytest.mark.asyncio
 async def test_an_uploaded_provenance_round_trips(database: Database) -> None:
-    unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
+    uow = SqlAlchemyUnitOfWork(database.sessions)
     artifact = _artifact(WORKSPACE_ONE, download_name="measurements.csv")
     provenance = LibraryProvenance.from_upload(
         saved_at=NOW,
         original_filename="measurements.csv",
     )
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.artifacts.add(artifact)
         await entered.commit()
-    async with unit_of_work as entered:
+    async with uow as entered:
         loaded = await entered.artifacts.get(WORKSPACE_ONE, artifact.id)
         assert loaded is not None
         loaded.library_provenance = provenance
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         reloaded = await entered.artifacts.get(WORKSPACE_ONE, artifact.id)
 
     assert reloaded is not None
@@ -98,16 +98,16 @@ async def test_an_uploaded_provenance_round_trips(database: Database) -> None:
 async def test_library_listing_stays_scoped_to_its_workspace_and_membership(
     database: Database,
 ) -> None:
-    unit_of_work = SqlAlchemyUnitOfWork(database.sessions)
+    uow = SqlAlchemyUnitOfWork(database.sessions)
     library_artifact = _artifact(WORKSPACE_ONE)
     plain_artifact = _artifact(WORKSPACE_ONE)
     other_workspace_artifact = _artifact(WORKSPACE_TWO)
-    async with unit_of_work as entered:
+    async with uow as entered:
         await entered.artifacts.add(library_artifact)
         await entered.artifacts.add(plain_artifact)
         await entered.artifacts.add(other_workspace_artifact)
         await entered.commit()
-    async with unit_of_work as entered:
+    async with uow as entered:
         for artifact, workspace_id in (
             (library_artifact, WORKSPACE_ONE),
             (other_workspace_artifact, WORKSPACE_TWO),
@@ -120,7 +120,7 @@ async def test_library_listing_stays_scoped_to_its_workspace_and_membership(
             )
         await entered.commit()
 
-    async with unit_of_work as entered:
+    async with uow as entered:
         listed = await entered.artifacts.list_library(WORKSPACE_ONE)
 
     assert [candidate.id for candidate in listed] == [library_artifact.id]

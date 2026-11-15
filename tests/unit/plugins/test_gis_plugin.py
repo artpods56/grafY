@@ -1082,12 +1082,12 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
     tmp_path: Path,
 ) -> None:
     source_content = write_geotiff(tmp_path / "source.tif")
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     object_root = tmp_path / "objects"
     storage = LocalFileObjectStore(object_root)
     file_ref = await seed_file_artifact(
         storage,
-        unit_of_work,
+        uow,
         workspace_id=TEST_WORKSPACE_ID,
         spec=TIFF_FILE,
         content=source_content,
@@ -1096,7 +1096,7 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
     )
     raster = await ImportRasterScanNode(
         storage=storage,
-        uow=unit_of_work,
+        uow=uow,
     ).run(
         NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="raster_scan"),
         GeoRasterScanImportConfig(source_name="Historical map"),
@@ -1104,7 +1104,7 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
     )
     writer = RasterScanOutputWriter(
         storage=storage,
-        uow=unit_of_work,
+        uow=uow,
         bucket="test",
         storage_backend="local",
     )
@@ -1118,7 +1118,7 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
             provenance=MaterializationProvenance(refs_by_input={}),
         ),
     )
-    async with unit_of_work as uow:
+    async with uow as uow:
         artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
     assert artifact.content_type == (
@@ -1157,7 +1157,7 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
     )
     assert json.loads(info.stdout)["metadata"]["IMAGE_STRUCTURE"]["LAYOUT"] == "COG"
     resolved = await RasterScanResolver(
-        uow=unit_of_work,
+        uow=uow,
         storage=storage,
     ).resolve(ref, TEST_WORKSPACE_ID)
     assert resolved.filename == "historical-map.tif"
@@ -1172,11 +1172,11 @@ async def test_feature_collection_storage_keeps_exact_source_and_pmtiles_sidecar
         feature_collection((13.405, 52.52)),
         "cities.geojson",
     )
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
     writer = FeatureCollectionOutputWriter(
         storage=storage,
-        uow=unit_of_work,
+        uow=uow,
         bucket="test",
         storage_backend="local",
     )
@@ -1191,12 +1191,12 @@ async def test_feature_collection_storage_keeps_exact_source_and_pmtiles_sidecar
         ),
     )
     resolver = FeatureCollectionResolver(
-        uow=unit_of_work,
+        uow=uow,
         storage=storage,
     )
 
     assert await resolver.resolve(ref, TEST_WORKSPACE_ID) == collection
-    async with unit_of_work as uow:
+    async with uow as uow:
         artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
     assert artifact.inline_payload is None
@@ -1241,11 +1241,11 @@ async def test_empty_feature_source_is_exact_without_invalid_pmtiles(
         source_name="Empty",
         bounds=None,
     )
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
     ref = await FeatureCollectionOutputWriter(
         storage=storage,
-        uow=unit_of_work,
+        uow=uow,
         bucket="test",
         storage_backend="local",
     ).write(
@@ -1259,7 +1259,7 @@ async def test_empty_feature_source_is_exact_without_invalid_pmtiles(
         ),
     )
 
-    async with unit_of_work as uow:
+    async with uow as uow:
         artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
     assert artifact.metadata["feature_count"] == 0

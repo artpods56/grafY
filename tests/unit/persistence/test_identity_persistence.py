@@ -116,32 +116,32 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         outcome=SecurityAuditOutcome.SUCCESS,
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_user(user)
-        await unit_of_work.identity.add_oidc_identity(identity)
-        await unit_of_work.identity.add_workspace(workspace)
-        await unit_of_work.identity.add_membership(membership)
-        await unit_of_work.identity.add_login_transaction(transaction)
-        await unit_of_work.identity.add_auth_session(session)
-        await unit_of_work.identity.add_personal_access_token(token)
-        await unit_of_work.security_audit.add(audit)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_user(user)
+        await uow.identity.add_oidc_identity(identity)
+        await uow.identity.add_workspace(workspace)
+        await uow.identity.add_membership(membership)
+        await uow.identity.add_login_transaction(transaction)
+        await uow.identity.add_auth_session(session)
+        await uow.identity.add_personal_access_token(token)
+        await uow.security_audit.add(audit)
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        loaded_identity = await unit_of_work.identity.get_oidc_identity(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        loaded_identity = await uow.identity.get_oidc_identity(
             issuer=identity.issuer,
             subject=identity.subject,
         )
-        loaded_membership = await unit_of_work.identity.get_membership(
+        loaded_membership = await uow.identity.get_membership(
             workspace_id=workspace.id,
             user_id=user.id,
         )
-        loaded_session = await unit_of_work.identity.get_auth_session(session.id)
-        loaded_token = await unit_of_work.identity.get_personal_access_token_by_digest(
+        loaded_session = await uow.identity.get_auth_session(session.id)
+        loaded_token = await uow.identity.get_personal_access_token_by_digest(
             token.secret_digest
         )
         loaded_audit = (
-            await unit_of_work.security_audit.list_for_workspace(
+            await uow.security_audit.list_for_workspace(
                 workspace.id,
                 limit=10,
             )
@@ -175,12 +175,12 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         assert stored["nonce_digest"] == transaction.nonce_digest
         assert stored["encrypted_pkce_verifier"] == transaction.encrypted_pkce_verifier
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        stored_transaction = await unit_of_work.identity.get_login_transaction(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        stored_transaction = await uow.identity.get_login_transaction(
             transaction.id
         )
-        stored_session = await unit_of_work.identity.get_auth_session(session.id)
-        stored_token = await unit_of_work.identity.get_personal_access_token_by_digest(
+        stored_session = await uow.identity.get_auth_session(session.id)
+        stored_token = await uow.identity.get_personal_access_token_by_digest(
             token.secret_digest
         )
         assert stored_transaction is not None
@@ -189,21 +189,21 @@ async def test_identity_records_round_trip_without_plain_credential_material(
         stored_transaction.consume(consumed_at=now)
         stored_session.expires_at = now - timedelta(seconds=1)
         stored_token.expires_at = now - timedelta(seconds=1)
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        assert await unit_of_work.identity.delete_expired_login_transactions(now) == 1
-        assert await unit_of_work.identity.delete_expired_sessions(now) == 1
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        assert await uow.identity.delete_expired_login_transactions(now) == 1
+        assert await uow.identity.delete_expired_sessions(now) == 1
         assert (
-            await unit_of_work.identity.delete_expired_personal_access_tokens(now) == 1
+            await uow.identity.delete_expired_personal_access_tokens(now) == 1
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        assert await unit_of_work.identity.get_login_transaction(transaction.id) is None
-        assert await unit_of_work.identity.get_auth_session(session.id) is None
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        assert await uow.identity.get_login_transaction(transaction.id) is None
+        assert await uow.identity.get_auth_session(session.id) is None
         assert (
-            await unit_of_work.identity.get_personal_access_token_by_digest(
+            await uow.identity.get_personal_access_token_by_digest(
                 token.secret_digest
             )
             is None
@@ -231,10 +231,10 @@ async def test_stored_token_rejects_scopes_that_are_not_capabilities(
         created_at=now,
         updated_at=now,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_user(user)
-        await unit_of_work.identity.add_workspace(workspace)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_user(user)
+        await uow.identity.add_workspace(workspace)
+        await uow.commit()
 
     token_id = UUID(int=203)
     async with database.engine.begin() as connection:
@@ -263,7 +263,7 @@ async def test_stored_token_rejects_scopes_that_are_not_capabilities(
         )
 
     with pytest.raises(ValueError, match="Stored workspace capability is unknown"):
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            await unit_of_work.identity.get_personal_access_token_by_prefix(
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            await uow.identity.get_personal_access_token_by_prefix(
                 "nrt_unknown"
             )

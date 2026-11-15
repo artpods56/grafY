@@ -46,9 +46,9 @@ async def write_failure_audit_event(
     event: SecurityAuditEvent,
 ) -> None:
     try:
-        async with unit_of_work_factory() as unit_of_work:
-            await unit_of_work.security_audit.add(event)
-            await unit_of_work.commit()
+        async with unit_of_work_factory() as uow:
+            await uow.security_audit.add(event)
+            await uow.commit()
     except Exception as exc:
         context = DiagnosticContext(
             actor_id=event.user_id,

@@ -91,9 +91,9 @@ async def _seed_oidc_transaction(
         return_path="/",
         expires_at=expires_at,
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.identity.add_login_transaction(transaction)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.identity.add_login_transaction(transaction)
+        await uow.commit()
 
 
 async def test_v1_routes_fail_closed_but_health_is_public(
@@ -264,13 +264,13 @@ async def test_session_idle_expiry_is_enforced_at_boundary(
         )
         user, _, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            stored = await unit_of_work.identity.get_auth_session(issued.session.id)
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            stored = await uow.identity.get_auth_session(issued.session.id)
             assert stored is not None
             stored.last_used_at = datetime.now(UTC) - timedelta(
                 seconds=app_settings.auth.auth_session_idle_seconds
             )
-            await unit_of_work.commit()
+            await uow.commit()
 
         with client_with_overrides(settings=app_settings) as client:
             api = GrafyApi(client)
@@ -289,11 +289,11 @@ async def test_session_absolute_expiry_is_enforced(
         )
         user, _, _ = await seed(database.sessions)
         issued = await _auth_service(app_settings, database).issue_session(user.id)
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            stored = await unit_of_work.identity.get_auth_session(issued.session.id)
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            stored = await uow.identity.get_auth_session(issued.session.id)
             assert stored is not None
             stored.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-            await unit_of_work.commit()
+            await uow.commit()
 
         with client_with_overrides(settings=app_settings) as client:
             api = GrafyApi(client)
@@ -320,8 +320,8 @@ async def test_logout_revokes_the_current_session(
             assert api.auth.logout(headers=_csrf_headers(issued)).status_code == 204
             assert api.auth.get_session().status_code == 401
 
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            session = await unit_of_work.identity.get_auth_session(issued.session.id)
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            session = await uow.identity.get_auth_session(issued.session.id)
 
         assert session is not None
         assert session.is_revoked
@@ -375,8 +375,8 @@ async def test_expired_callback_consumes_transaction_and_releases_reservation(
             assert response.status_code == 400
             assert OIDC_TRANSACTION_COOKIE in response.headers.get("set-cookie", "")
 
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            transaction = await unit_of_work.identity.get_login_transaction(
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            transaction = await uow.identity.get_login_transaction(
                 transaction_id
             )
 
@@ -444,8 +444,8 @@ async def test_callback_failure_before_consumption_preserves_transaction_and_slo
 
         assert not await auth.abuse.reserve_login("before-browser", UUID(int=704))
 
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            transaction = await unit_of_work.identity.get_login_transaction(
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            transaction = await uow.identity.get_login_transaction(
                 transaction_id
             )
 
@@ -511,8 +511,8 @@ async def test_callback_failure_after_consumption_clears_transaction_and_release
 
         assert await auth.abuse.reserve_login("after-browser", UUID(int=706))
 
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            transaction = await unit_of_work.identity.get_login_transaction(
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            transaction = await uow.identity.get_login_transaction(
                 transaction_id
             )
 
@@ -589,8 +589,8 @@ async def test_pat_create_shows_secret_once_and_revoke_is_audited(
             assert rejected_revoked_token.headers["www-authenticate"] == "Bearer"
             assert raw_token not in rejected_revoked_token.text
 
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            events = await unit_of_work.security_audit.list_for_workspace(
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            events = await uow.security_audit.list_for_workspace(
                 workspace.id,
                 limit=100,
             )
@@ -812,8 +812,8 @@ async def test_workspace_pat_capability_failure_audit_uses_token_actor(
 
             assert denied.status_code == 403
 
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            events = await unit_of_work.security_audit.list_for_workspace(
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            events = await uow.security_audit.list_for_workspace(
                 workspace.id,
                 limit=100,
             )
@@ -887,8 +887,8 @@ async def test_callback_validation_is_bounded_and_consumes_transaction(
             assert "Too many callback attempts" in second.text
             assert second.json()["code"] == "http.capacity_exceeded"
 
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            stored = await unit_of_work.identity.lock_login_transaction(transaction_id)
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            stored = await uow.identity.lock_login_transaction(transaction_id)
         assert stored is not None
         assert stored.is_consumed
 

@@ -50,22 +50,22 @@ class ProjectService:
 
     def __init__(
         self,
-        unit_of_work_factory: Callable[[], ProjectUnitOfWorkPort],
+        uow_factory: Callable[[], ProjectUnitOfWorkPort],
     ) -> None:
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = uow_factory
 
     async def get(self, *, workspace_id: UUID, project_id: UUID) -> Project:
         """The Project identity row, or ``NotFoundError`` outside its Workspace."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            project = await unit_of_work.projects.get(workspace_id, project_id)
+        async with self._uow_factory() as uow:
+            project = await uow.projects.get(workspace_id, project_id)
         if project is None:
             raise NotFoundError("Project", str(project_id))
         return project
 
     async def list(self, *, workspace_id: UUID) -> list[Project]:
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.projects.list(workspace_id)
+        async with self._uow_factory() as uow:
+            return await uow.projects.list(workspace_id)
 
     async def list_accessible(
         self,
@@ -79,8 +79,8 @@ class ProjectService:
         Workspaces the user can see, and each item carries its own location.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.projects.list_accessible(
+        async with self._uow_factory() as uow:
+            return await uow.projects.list_accessible(
                 actor.user_id,
                 workspace_id=workspace_id,
             )
@@ -92,10 +92,10 @@ class ProjectService:
         project_id: UUID,
         revision: int,
     ) -> ProjectCheckpoint:
-        async with self._unit_of_work_factory() as unit_of_work:
-            if await unit_of_work.projects.get(workspace_id, project_id) is None:
+        async with self._uow_factory() as uow:
+            if await uow.projects.get(workspace_id, project_id) is None:
                 raise NotFoundError("Project", str(project_id))
-            checkpoint = await unit_of_work.projects.get_checkpoint(
+            checkpoint = await uow.projects.get_checkpoint(
                 workspace_id,
                 project_id,
                 revision,
@@ -110,10 +110,10 @@ class ProjectService:
         workspace_id: UUID,
         project_id: UUID,
     ) -> list[ProjectCheckpoint]:
-        async with self._unit_of_work_factory() as unit_of_work:
-            if await unit_of_work.projects.get(workspace_id, project_id) is None:
+        async with self._uow_factory() as uow:
+            if await uow.projects.get(workspace_id, project_id) is None:
                 raise NotFoundError("Project", str(project_id))
-            return await unit_of_work.projects.list_checkpoints(
+            return await uow.projects.list_checkpoints(
                 workspace_id,
                 project_id,
             )
@@ -130,8 +130,8 @@ class ProjectService:
         an old checkpoint cannot bring back a reference to deleted content.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.projects.titles_referencing_artifact(
+        async with self._uow_factory() as uow:
+            return await uow.projects.titles_referencing_artifact(
                 workspace_id,
                 artifact_id,
             )
@@ -144,14 +144,14 @@ class ProjectService:
         name: str,
     ) -> ProjectFolder:
         folder = ProjectFolder(workspace_id=workspace_id, name=name)
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
-                unit_of_work.identity,
+                uow.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_PROJECT,
             )
-            existing = await unit_of_work.projects.get_folder_by_name(
+            existing = await uow.projects.get_folder_by_name(
                 workspace_id,
                 folder.name,
             )
@@ -160,15 +160,15 @@ class ProjectService:
                     workspace_id=workspace_id,
                     name=folder.name,
                 )
-            await unit_of_work.projects.add_folder(folder)
+            await uow.projects.add_folder(folder)
             await self._audit(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 operation="project.folder.create",
                 resource_id=str(folder.id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return folder
 
     async def list_folders(
@@ -177,14 +177,14 @@ class ProjectService:
         actor: ActorContext,
         workspace_id: UUID,
     ) -> list[ProjectFolder]:
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
-                unit_of_work.identity,
+                uow.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.VIEW_PROJECT,
             )
-            return await unit_of_work.projects.list_folders(workspace_id)
+            return await uow.projects.list_folders(workspace_id)
 
     async def rename_folder(
         self,
@@ -194,21 +194,21 @@ class ProjectService:
         folder_id: UUID,
         name: str,
     ) -> ProjectFolder:
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
-                unit_of_work.identity,
+                uow.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_PROJECT,
             )
-            folder = await unit_of_work.projects.get_folder(workspace_id, folder_id)
+            folder = await uow.projects.get_folder(workspace_id, folder_id)
             if folder is None:
                 raise NotFoundError("Project folder", str(folder_id))
             normalized_name = ProjectFolder(
                 workspace_id=workspace_id,
                 name=name,
             ).name
-            existing = await unit_of_work.projects.get_folder_by_name(
+            existing = await uow.projects.get_folder_by_name(
                 workspace_id,
                 normalized_name,
             )
@@ -218,15 +218,15 @@ class ProjectService:
                     name=normalized_name,
                 )
             folder.rename(normalized_name)
-            await unit_of_work.projects.save_folder(folder)
+            await uow.projects.save_folder(folder)
             await self._audit(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 operation="project.folder.rename",
                 resource_id=str(folder.id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return folder
 
     async def delete_folder(
@@ -238,29 +238,29 @@ class ProjectService:
     ) -> None:
         """Remove a folder. The Projects it held stay, and become Unfiled."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
-                unit_of_work.identity,
+                uow.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_PROJECT,
             )
-            folder = await unit_of_work.projects.get_folder(workspace_id, folder_id)
+            folder = await uow.projects.get_folder(workspace_id, folder_id)
             if folder is None:
                 raise NotFoundError("Project folder", str(folder_id))
-            await unit_of_work.projects.unfile_projects_in_folder(
+            await uow.projects.unfile_projects_in_folder(
                 workspace_id,
                 folder_id,
             )
-            await unit_of_work.projects.remove_folder(folder)
+            await uow.projects.remove_folder(folder)
             await self._audit(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 operation="project.folder.delete",
                 resource_id=str(folder.id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
 
     async def assign_folder(
         self,
@@ -272,36 +272,36 @@ class ProjectService:
     ) -> ProjectOrganization:
         """File a Project, or unfile it by passing ``folder_id=None``."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
-                unit_of_work.identity,
+                uow.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_PROJECT,
             )
-            await self._project_or_raise(unit_of_work, workspace_id, project_id)
+            await self._project_or_raise(uow, workspace_id, project_id)
             if folder_id is not None:
-                folder = await unit_of_work.projects.get_folder(
+                folder = await uow.projects.get_folder(
                     workspace_id,
                     folder_id,
                 )
                 if folder is None:
                     raise NotFoundError("Project folder", str(folder_id))
             organization = await self._organization_or_new(
-                unit_of_work,
+                uow,
                 workspace_id=workspace_id,
                 project_id=project_id,
             )
             organization.assign_folder(folder_id)
-            await unit_of_work.projects.save_organization(organization)
+            await uow.projects.save_organization(organization)
             await self._audit(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 operation="project.folder.assign",
                 resource_id=str(project_id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return organization
 
     async def archive(
@@ -311,29 +311,29 @@ class ProjectService:
         workspace_id: UUID,
         project_id: UUID,
     ) -> ProjectOrganization:
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
-                unit_of_work.identity,
+                uow.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_PROJECT,
             )
-            await self._project_or_raise(unit_of_work, workspace_id, project_id)
+            await self._project_or_raise(uow, workspace_id, project_id)
             organization = await self._organization_or_new(
-                unit_of_work,
+                uow,
                 workspace_id=workspace_id,
                 project_id=project_id,
             )
             organization.archive()
-            await unit_of_work.projects.save_organization(organization)
+            await uow.projects.save_organization(organization)
             await self._audit(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 operation="project.archive",
                 resource_id=str(project_id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return organization
 
     async def restore(
@@ -343,29 +343,29 @@ class ProjectService:
         workspace_id: UUID,
         project_id: UUID,
     ) -> ProjectOrganization:
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
-                unit_of_work.identity,
+                uow.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.EDIT_PROJECT,
             )
-            await self._project_or_raise(unit_of_work, workspace_id, project_id)
+            await self._project_or_raise(uow, workspace_id, project_id)
             organization = await self._organization_or_new(
-                unit_of_work,
+                uow,
                 workspace_id=workspace_id,
                 project_id=project_id,
             )
             organization.restore()
-            await unit_of_work.projects.save_organization(organization)
+            await uow.projects.save_organization(organization)
             await self._audit(
-                unit_of_work,
+                uow,
                 actor=actor,
                 workspace_id=workspace_id,
                 operation="project.restore",
                 resource_id=str(project_id),
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return organization
 
     async def set_starred(
@@ -378,23 +378,23 @@ class ProjectService:
     ) -> UserProjectState:
         """Star or unstar a Project for the acting user only. Never grants access."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
-                unit_of_work.identity,
+                uow.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.VIEW_PROJECT,
             )
-            await self._project_or_raise(unit_of_work, workspace_id, project_id)
+            await self._project_or_raise(uow, workspace_id, project_id)
             state = await self._user_state_or_new(
-                unit_of_work,
+                uow,
                 workspace_id=workspace_id,
                 project_id=project_id,
                 user_id=actor.user_id,
             )
             state.set_starred(starred)
-            await unit_of_work.projects.save_user_state(state)
-            await unit_of_work.commit()
+            await uow.projects.save_user_state(state)
+            await uow.commit()
         return state
 
     async def record_open(
@@ -406,23 +406,23 @@ class ProjectService:
     ) -> UserProjectState:
         """Note that the acting user opened this Project, keeping the newest stamp."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             await authorize_workspace(
-                unit_of_work.identity,
+                uow.identity,
                 actor=actor,
                 workspace_id=workspace_id,
                 capability=WorkspaceCapability.VIEW_PROJECT,
             )
-            await self._project_or_raise(unit_of_work, workspace_id, project_id)
+            await self._project_or_raise(uow, workspace_id, project_id)
             state = await self._user_state_or_new(
-                unit_of_work,
+                uow,
                 workspace_id=workspace_id,
                 project_id=project_id,
                 user_id=actor.user_id,
             )
             state.record_open()
-            await unit_of_work.projects.save_user_state(state)
-            await unit_of_work.commit()
+            await uow.projects.save_user_state(state)
+            await uow.commit()
         return state
 
     async def _project_or_raise(

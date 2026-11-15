@@ -164,8 +164,8 @@ async def get_session(
     uow_factory: IdentityUnitOfWorkFactoryDependency,
 ) -> SessionResponse:
     session = await auth.current_session(request)
-    async with uow_factory() as unit_of_work:
-        user = await unit_of_work.identity.get_user(session.user_id)
+    async with uow_factory() as uow:
+        user = await uow.identity.get_user(session.user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
     return SessionResponse(
@@ -202,8 +202,8 @@ async def list_sessions(
 ) -> list[SessionResponse]:
     sessions = await auth.list_sessions(actor=actor)
     current = await auth.current_session(request)
-    async with uow_factory() as unit_of_work:
-        user = await unit_of_work.identity.get_user(actor.user_id)
+    async with uow_factory() as uow:
+        user = await uow.identity.get_user(actor.user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
     return [

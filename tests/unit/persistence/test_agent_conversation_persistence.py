@@ -52,18 +52,18 @@ def project(workspace_id: UUID = WORKSPACE_ONE) -> Project:
 
 
 async def add_project(database: Database, row: Project) -> Project:
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.projects.add(row)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.projects.add(row)
+        await uow.commit()
     return row
 
 
 async def add_conversation(
     database: Database, row: AgentConversation
 ) -> AgentConversation:
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_conversations.add(row)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_conversations.add(row)
+        await uow.commit()
     return row
 
 
@@ -86,8 +86,8 @@ async def test_a_thread_and_every_kind_of_event_round_trip(database: Database) -
     row = await add_project(database, project())
     stored = await add_conversation(database, thread(row))
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        store = unit_of_work.agent_conversations
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        store = uow.agent_conversations
         current = stored
         for payload in (
             UserMessagePayload(text="what did the ledger say?"),
@@ -96,11 +96,11 @@ async def test_a_thread_and_every_kind_of_event_round_trip(database: Database) -
         ):
             await store.append(current.event(turn_id=TURN, payload=payload))
             current = current.appended(at=T1 + timedelta(minutes=1))
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        read = await unit_of_work.agent_conversations.get(WORKSPACE_ONE, stored.id)
-        events = await unit_of_work.agent_conversations.list_events(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        read = await uow.agent_conversations.get(WORKSPACE_ONE, stored.id)
+        events = await uow.agent_conversations.list_events(
             WORKSPACE_ONE, stored.id
         )
 
@@ -128,11 +128,11 @@ async def test_a_fork_is_recorded_as_a_fork_and_survives_reread(
 ) -> None:
     row = await add_project(database, project())
     source = await add_conversation(database, thread(row))
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_conversations.append(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_conversations.append(
             source.event(turn_id=TURN, payload=UserMessagePayload(text="first"))
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
     forked = AgentConversation.new(
         workspace_id=WORKSPACE_ONE,
@@ -150,9 +150,9 @@ async def test_a_fork_is_recorded_as_a_fork_and_survives_reread(
     )
     await add_conversation(database, forked)
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        read = await unit_of_work.agent_conversations.get(WORKSPACE_ONE, forked.id)
-        listed = await unit_of_work.agent_conversations.list_for_agent(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        read = await uow.agent_conversations.get(WORKSPACE_ONE, forked.id)
+        listed = await uow.agent_conversations.list_for_agent(
             WORKSPACE_ONE, row.id, GRAPH_ID, AGENT_ID
         )
 
@@ -170,22 +170,22 @@ async def test_an_append_after_the_stored_sequence_is_refused_and_leaves_nothing
     stored = await add_conversation(database, thread(row))
     stale = stored
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_conversations.append(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_conversations.append(
             stale.event(turn_id=TURN, payload=UserMessagePayload(text="first"))
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         with pytest.raises(AgentConversationAppendError, match="at sequence 2, not 1"):
-            await unit_of_work.agent_conversations.append(
+            await uow.agent_conversations.append(
                 stale.event(turn_id=uuid4(), payload=UserMessagePayload(text="dupe"))
             )
-        await unit_of_work.rollback()
+        await uow.rollback()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        read = await unit_of_work.agent_conversations.get(WORKSPACE_ONE, stored.id)
-        events = await unit_of_work.agent_conversations.list_events(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        read = await uow.agent_conversations.get(WORKSPACE_ONE, stored.id)
+        events = await uow.agent_conversations.list_events(
             WORKSPACE_ONE, stored.id
         )
 
@@ -199,9 +199,9 @@ async def test_an_append_to_a_conversation_that_is_not_there_is_refused(
 ) -> None:
     stored = thread(await add_project(database, project()))
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         with pytest.raises(AgentConversationAppendError, match="does not exist"):
-            await unit_of_work.agent_conversations.append(
+            await uow.agent_conversations.append(
                 stored.event(turn_id=TURN, payload=UserMessagePayload(text="orphan"))
             )
 
@@ -212,20 +212,20 @@ async def test_events_are_read_after_a_sequence_and_up_to_a_limit(
 ) -> None:
     row = await add_project(database, project())
     stored = await add_conversation(database, thread(row))
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         current = stored
         for text in ("one", "two", "three"):
-            await unit_of_work.agent_conversations.append(
+            await uow.agent_conversations.append(
                 current.event(turn_id=TURN, payload=UserMessagePayload(text=text))
             )
             current = current.appended(at=T1)
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        tail = await unit_of_work.agent_conversations.list_events(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        tail = await uow.agent_conversations.list_events(
             WORKSPACE_ONE, stored.id, after_sequence=1
         )
-        page = await unit_of_work.agent_conversations.list_events(
+        page = await uow.agent_conversations.list_events(
             WORKSPACE_ONE, stored.id, limit=2
         )
 
@@ -240,18 +240,16 @@ async def test_a_thread_is_scoped_to_its_workspace_and_project(
     row = await add_project(database, project())
     stored = await add_conversation(database, thread(row))
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        assert await uow.agent_conversations.get(WORKSPACE_TWO, stored.id) is None
         assert (
-            await unit_of_work.agent_conversations.get(WORKSPACE_TWO, stored.id) is None
-        )
-        assert (
-            await unit_of_work.agent_conversations.list_for_agent(
+            await uow.agent_conversations.list_for_agent(
                 WORKSPACE_TWO, row.id, GRAPH_ID, AGENT_ID
             )
             == []
         )
         assert (
-            await unit_of_work.agent_conversations.list_events(WORKSPACE_TWO, stored.id)
+            await uow.agent_conversations.list_events(WORKSPACE_TWO, stored.id)
             == []
         )
 
@@ -262,24 +260,22 @@ async def test_deleting_the_project_takes_threads_and_events_with_it(
 ) -> None:
     row = await add_project(database, project())
     stored = await add_conversation(database, thread(row))
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_conversations.append(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_conversations.append(
             stored.event(turn_id=TURN, payload=UserMessagePayload(text="one"))
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        loaded = await unit_of_work.projects.get(row.workspace_id, row.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        loaded = await uow.projects.get(row.workspace_id, row.id)
         assert loaded is not None
-        await unit_of_work.projects.remove(row.workspace_id, loaded)
-        await unit_of_work.commit()
+        await uow.projects.remove(row.workspace_id, loaded)
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        assert await uow.agent_conversations.get(WORKSPACE_ONE, stored.id) is None
         assert (
-            await unit_of_work.agent_conversations.get(WORKSPACE_ONE, stored.id) is None
-        )
-        assert (
-            await unit_of_work.agent_conversations.list_events(WORKSPACE_ONE, stored.id)
+            await uow.agent_conversations.list_events(WORKSPACE_ONE, stored.id)
             == []
         )
 
@@ -295,14 +291,14 @@ async def test_forking_copies_the_range_in_order_through_sql(
     service = AgentConversationService(
         unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions)
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         current = source
         for text in ("one", "two", "three"):
-            await unit_of_work.agent_conversations.append(
+            await uow.agent_conversations.append(
                 current.event(turn_id=TURN, payload=UserMessagePayload(text=text))
             )
             current = current.appended(at=T1)
-        await unit_of_work.commit()
+        await uow.commit()
 
     fork = await service.fork(
         workspace_id=WORKSPACE_ONE,
@@ -311,14 +307,14 @@ async def test_forking_copies_the_range_in_order_through_sql(
         author_user_id=AUTHOR,
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        copied = await unit_of_work.agent_conversations.list_events(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        copied = await uow.agent_conversations.list_events(
             WORKSPACE_ONE, fork.id
         )
-        untouched = await unit_of_work.agent_conversations.list_events(
+        untouched = await uow.agent_conversations.list_events(
             WORKSPACE_ONE, source.id
         )
-        listed = await unit_of_work.agent_conversations.list_for_agent(
+        listed = await uow.agent_conversations.list_for_agent(
             WORKSPACE_ONE, row.id, GRAPH_ID, AGENT_ID
         )
 
@@ -349,11 +345,11 @@ async def test_a_thread_still_has_the_agent_it_began_with_until_its_project_goes
     service = AgentConversationService(
         unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions)
     )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.agent_conversations.append(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.agent_conversations.append(
             source.event(turn_id=TURN, payload=UserMessagePayload(text="one"))
         )
-        await unit_of_work.commit()
+        await uow.commit()
     fork = await service.fork(
         workspace_id=WORKSPACE_ONE,
         conversation_id=source.id,
@@ -369,12 +365,10 @@ async def test_a_thread_still_has_the_agent_it_began_with_until_its_project_goes
         )
         await session.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        assert await uow.agent_conversations.get(WORKSPACE_ONE, fork.id) is None
         assert (
-            await unit_of_work.agent_conversations.get(WORKSPACE_ONE, fork.id) is None
-        )
-        assert (
-            await unit_of_work.agent_conversations.list_events(WORKSPACE_ONE, fork.id)
+            await uow.agent_conversations.list_events(WORKSPACE_ONE, fork.id)
             == []
         )
 

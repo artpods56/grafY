@@ -91,7 +91,7 @@ class AuthService:
         # once here rather than giving either section a copy of the other's value.
         self._public_origin = public_origin
         self._oidc_callback_url = auth.resolved_callback_url(public_origin)
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._identity_service = identity_service
         configured_browser_cookie_secret = auth.oidc_auth_wrapping_key
         self._browser_cookie_secret = (
@@ -150,16 +150,16 @@ class AuthService:
             expires_at=now
             + timedelta(seconds=self._auth.oidc_login_transaction_ttl_seconds),
         )
-        async with self._unit_of_work_factory() as unit_of_work:
-            await unit_of_work.identity.add_login_transaction(transaction)
-            await unit_of_work.security_audit.add(
+        async with self._uow_factory() as uow:
+            await uow.identity.add_login_transaction(transaction)
+            await uow.security_audit.add(
                 SecurityAuditEvent(
                     actor_kind=SecurityAuditActorKind.UNAUTHENTICATED,
                     operation="oidc.login.start",
                     outcome=SecurityAuditOutcome.SUCCESS,
                 )
             )
-            await unit_of_work.commit()
+            await uow.commit()
         authorization_params = {
             "response_type": "code",
             "client_id": self.transactions.client_id(),
@@ -188,7 +188,7 @@ class AuthService:
         transaction_id = self.transactions.parse_transaction_id(transaction_id_value)
         if error is not None or code is None or state is None:
             consumed = await self.transactions.consume_for_failure(
-                self._unit_of_work_factory,
+                self._uow_factory,
                 transaction_id,
                 state=state,
             )
@@ -196,14 +196,12 @@ class AuthService:
                 "provider_callback_failed",
                 transaction_consumed=consumed,
             )
-        (
-            _transaction,
-            verifier,
-            return_path,
-        ) = await self.transactions.consume_for_callback(
-            unit_of_work_factory=self._unit_of_work_factory,
-            transaction_id=transaction_id,
-            state=state,
+        _transaction, verifier, return_path = (
+            await self.transactions.consume_for_callback(
+                unit_of_work_factory=self._uow_factory,
+                transaction_id=transaction_id,
+                state=state,
+            )
         )
         try:
             try:
@@ -241,15 +239,15 @@ class AuthService:
                     "identity_not_eligible",
                     transaction_consumed=True,
                 ) from exc
-            async with self._unit_of_work_factory() as unit_of_work:
+            async with self._uow_factory() as uow:
                 issued = await issue_session_in_unit_of_work(
-                    unit_of_work,
+                    uow,
                     provisioned.user.id,
                     replacing_cookie=current_session_cookie,
                     absolute_seconds=self._auth.auth_session_absolute_seconds,
                     idle_seconds=self._auth.auth_session_idle_seconds,
                 )
-                await unit_of_work.security_audit.add(
+                await uow.security_audit.add(
                     SecurityAuditEvent(
                         actor_kind=SecurityAuditActorKind.AUTHENTICATED,
                         user_id=provisioned.user.id,
@@ -260,7 +258,7 @@ class AuthService:
                         resource_id=str(issued.session.id),
                     )
                 )
-                await unit_of_work.commit()
+                await uow.commit()
             return provisioned, issued, return_path
         except OidcProtocolError:
             raise
@@ -273,15 +271,15 @@ class AuthService:
         *,
         replacing_cookie: str | None = None,
     ) -> IssuedSession:
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             issued = await issue_session_in_unit_of_work(
-                unit_of_work,
+                uow,
                 user_id,
                 replacing_cookie=replacing_cookie,
                 absolute_seconds=self._auth.auth_session_absolute_seconds,
                 idle_seconds=self._auth.auth_session_idle_seconds,
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return issued
 
     def issue_personal_access_token(
@@ -317,8 +315,8 @@ class AuthService:
             raise HTTPException(
                 status_code=401, detail="Authentication required"
             ) from exc
-        async with self._unit_of_work_factory() as unit_of_work:
-            session = await unit_of_work.identity.get_auth_session(session_id)
+        async with self._uow_factory() as uow:
+            session = await uow.identity.get_auth_session(session_id)
             if session is None or not credential_matches(session, secret):
                 await self._raise_authentication_required(request)
             now = datetime.now(UTC)
@@ -328,19 +326,19 @@ class AuthService:
                 idle_seconds=self._auth.auth_session_idle_seconds,
             ):
                 session.revoke(revoked_at=now)
-                await unit_of_work.commit()
+                await uow.commit()
                 await self._raise_authentication_required(request)
-            user = await unit_of_work.identity.get_user(session.user_id)
+            user = await uow.identity.get_user(session.user_id)
             if user is None or not user.active:
                 session.revoke(revoked_at=now)
-                await unit_of_work.commit()
+                await uow.commit()
                 await self._raise_authentication_required(request)
             request.state.auth_session = session
             request.state.auth_actor_user_id = session.user_id
             request.state.auth_credential_reference = f"session:{session.id}"
             check_cookie_request(request, public_origin=self._public_origin)
             session.last_used_at = now
-            await unit_of_work.commit()
+            await uow.commit()
         return ActorContext(
             user_id=session.user_id,
             credential_reference=f"session:{session.id}",
@@ -388,11 +386,11 @@ class AuthService:
 
     async def logout(self, request: Request) -> None:
         session = await self.current_session(request)
-        async with self._unit_of_work_factory() as unit_of_work:
-            stored = await unit_of_work.identity.get_auth_session(session.id)
+        async with self._uow_factory() as uow:
+            stored = await uow.identity.get_auth_session(session.id)
             if stored is not None:
                 stored.revoke()
-                await unit_of_work.security_audit.add(
+                await uow.security_audit.add(
                     session_audit_event(
                         user_id=session.user_id,
                         credential_reference=f"session:{session.id}",
@@ -400,7 +398,7 @@ class AuthService:
                         session_id=session.id,
                     )
                 )
-                await unit_of_work.commit()
+                await uow.commit()
 
     async def audit_unauthenticated_failure(
         self,
@@ -412,7 +410,7 @@ class AuthService:
         resource_id: str | None = None,
     ) -> None:
         await write_failure_audit_event(
-            self._unit_of_work_factory,
+            self._uow_factory,
             failure_audit_event(
                 actor_kind=SecurityAuditActorKind.UNAUTHENTICATED,
                 operation=operation,
@@ -435,7 +433,7 @@ class AuthService:
         resource_id: str | None = None,
     ) -> None:
         await write_failure_audit_event(
-            self._unit_of_work_factory,
+            self._uow_factory,
             failure_audit_event(
                 actor_kind=SecurityAuditActorKind.AUTHENTICATED,
                 operation=operation,
@@ -480,8 +478,8 @@ class AuthService:
         )
 
     async def list_sessions(self, *, actor: ActorContext) -> list[AuthSession]:
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.identity.list_auth_sessions_for_user(
+        async with self._uow_factory() as uow:
+            return await uow.identity.list_auth_sessions_for_user(
                 actor.user_id
             )
 
@@ -491,15 +489,15 @@ class AuthService:
         actor: ActorContext,
         session_id: UUID,
     ) -> AuthSession:
-        async with self._unit_of_work_factory() as unit_of_work:
-            session = await unit_of_work.identity.get_auth_session_for_user(
+        async with self._uow_factory() as uow:
+            session = await uow.identity.get_auth_session_for_user(
                 session_id=session_id,
                 user_id=actor.user_id,
             )
             if session is None:
                 raise NotFoundError("Auth session", str(session_id))
             session.revoke()
-            await unit_of_work.security_audit.add(
+            await uow.security_audit.add(
                 session_audit_event(
                     user_id=actor.user_id,
                     credential_reference=actor.credential_reference,
@@ -507,7 +505,7 @@ class AuthService:
                     session_id=session.id,
                 )
             )
-            await unit_of_work.commit()
+            await uow.commit()
             return session
 
     def set_session_cookies(self, response: Response, issued: IssuedSession) -> None:
@@ -536,15 +534,15 @@ class AuthService:
         self, *, now: datetime | None = None
     ) -> tuple[int, int, int]:
         cutoff = now or datetime.now(UTC)
-        async with self._unit_of_work_factory() as unit_of_work:
+        async with self._uow_factory() as uow:
             transactions = (
-                await unit_of_work.identity.delete_expired_login_transactions(cutoff)
+                await uow.identity.delete_expired_login_transactions(cutoff)
             )
-            sessions = await unit_of_work.identity.delete_expired_sessions(cutoff)
-            tokens = await unit_of_work.identity.delete_expired_personal_access_tokens(
+            sessions = await uow.identity.delete_expired_sessions(cutoff)
+            tokens = await uow.identity.delete_expired_personal_access_tokens(
                 cutoff
             )
-            await unit_of_work.commit()
+            await uow.commit()
         return transactions, sessions, tokens
 
     def browser_abuse_keys(self, request: Request) -> BrowserAbuseKeys:
@@ -559,7 +557,7 @@ class AuthService:
         )
 
     async def replace_login_transaction(self, value: str | None) -> UUID | None:
-        return await self.transactions.replace(self._unit_of_work_factory, value)
+        return await self.transactions.replace(self._uow_factory, value)
 
     async def release_login(self, transaction_id_value: str | None) -> None:
         if transaction_id_value is None:

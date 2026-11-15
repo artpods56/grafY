@@ -71,20 +71,20 @@ async def test_sql_repositories_require_workspace_for_projects_artifacts_and_upl
     )
     project = Project(workspace_id=WORKSPACE_ONE, name="Tenant Project")
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        await unit_of_work.projects.add(project)
-        await unit_of_work.artifacts.add(artifact)
-        await unit_of_work.artifacts.add(artifact_two)
-        await unit_of_work.uploads.add(upload)
-        await unit_of_work.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        await uow.projects.add(project)
+        await uow.artifacts.add(artifact)
+        await uow.artifacts.add(artifact_two)
+        await uow.uploads.add(upload)
+        await uow.commit()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        assert await unit_of_work.artifacts.get(WORKSPACE_ONE, artifact.id) is not None
-        assert await unit_of_work.artifacts.get(WORKSPACE_TWO, artifact.id) is None
-        assert await unit_of_work.projects.get(WORKSPACE_ONE, project.id) is not None
-        assert await unit_of_work.projects.get(WORKSPACE_TWO, project.id) is None
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        assert await uow.artifacts.get(WORKSPACE_ONE, artifact.id) is not None
+        assert await uow.artifacts.get(WORKSPACE_TWO, artifact.id) is None
+        assert await uow.projects.get(WORKSPACE_ONE, project.id) is not None
+        assert await uow.projects.get(WORKSPACE_TWO, project.id) is None
         assert (
-            await unit_of_work.uploads.get(
+            await uow.uploads.get(
                 WORKSPACE_TWO,
                 upload.upload_id,
             )

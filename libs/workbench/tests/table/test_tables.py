@@ -200,11 +200,11 @@ def test_table_plugin_registers_chunked_persistence(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_chunked_table_round_trip_and_cross_chunk_page(tmp_path: Path) -> None:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
     writer = TableArtifactWriter(
         storage=storage,
-        uow=unit_of_work,
+        uow=uow,
         bucket="artifacts",
         storage_backend="local",
     )
@@ -226,7 +226,7 @@ async def test_chunked_table_round_trip_and_cross_chunk_page(tmp_path: Path) -> 
             provenance=MaterializationProvenance(refs_by_input={}),
         ),
     )
-    async with unit_of_work as uow:
+    async with uow as uow:
         artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
         assert artifact is not None
         assert artifact.workspace_id == TEST_WORKSPACE_ID
@@ -241,7 +241,7 @@ async def test_chunked_table_round_trip_and_cross_chunk_page(tmp_path: Path) -> 
     assert artifact.metadata["chunk_count"] == 3
 
     page = await load_table_page(artifact, storage, offset=95, limit=10)
-    resolver = TableArtifactResolver(uow=unit_of_work, storage=storage)
+    resolver = TableArtifactResolver(uow=uow, storage=storage)
 
     assert page.offset == 95
     assert page.total_rows == 205
@@ -254,11 +254,11 @@ async def test_chunked_table_round_trip_and_cross_chunk_page(tmp_path: Path) -> 
 
 @pytest.mark.asyncio
 async def test_empty_and_legacy_inline_tables_remain_resolvable(tmp_path: Path) -> None:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
     writer = TableArtifactWriter(
         storage=storage,
-        uow=unit_of_work,
+        uow=uow,
         bucket="artifacts",
         storage_backend="local",
     )
@@ -287,11 +287,11 @@ async def test_empty_and_legacy_inline_tables_remain_resolvable(tmp_path: Path) 
         storage_backend="inline",
         inline_payload=cast(JsonObject, legacy.model_dump(mode="json")),
     )
-    async with unit_of_work as uow:
+    async with uow as uow:
         await uow.artifacts.add(legacy_artifact)
         await uow.commit()
 
-    resolver = TableArtifactResolver(uow=unit_of_work, storage=storage)
+    resolver = TableArtifactResolver(uow=uow, storage=storage)
     legacy_page = await load_table_page(
         legacy_artifact,
         storage,
@@ -307,11 +307,11 @@ async def test_empty_and_legacy_inline_tables_remain_resolvable(tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_corrupt_table_chunk_reports_artifact_and_offset(tmp_path: Path) -> None:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
     writer = TableArtifactWriter(
         storage=storage,
-        uow=unit_of_work,
+        uow=uow,
         bucket="artifacts",
         storage_backend="local",
     )
@@ -325,7 +325,7 @@ async def test_corrupt_table_chunk_reports_artifact_and_offset(tmp_path: Path) -
             provenance=MaterializationProvenance(refs_by_input={}),
         ),
     )
-    async with unit_of_work as uow:
+    async with uow as uow:
         artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
     assert artifact.bucket is not None
@@ -351,11 +351,11 @@ async def test_corrupt_table_chunk_reports_artifact_and_offset(tmp_path: Path) -
 
 @pytest.mark.asyncio
 async def test_large_rows_are_split_by_chunk_byte_budget(tmp_path: Path) -> None:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
     writer = TableArtifactWriter(
         storage=storage,
-        uow=unit_of_work,
+        uow=uow,
         bucket="artifacts",
         storage_backend="local",
     )
@@ -379,7 +379,7 @@ async def test_large_rows_are_split_by_chunk_byte_budget(tmp_path: Path) -> None
             provenance=MaterializationProvenance(refs_by_input={}),
         ),
     )
-    async with unit_of_work as uow:
+    async with uow as uow:
         artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
     manifest = await load_table_manifest(artifact, storage)
@@ -393,11 +393,11 @@ async def test_large_rows_are_split_by_chunk_byte_budget(tmp_path: Path) -> None
 async def test_table_manifest_and_logical_content_are_authenticated(
     tmp_path: Path,
 ) -> None:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
     writer = TableArtifactWriter(
         storage=storage,
-        uow=unit_of_work,
+        uow=uow,
         bucket="artifacts",
         storage_backend="local",
     )
@@ -411,7 +411,7 @@ async def test_table_manifest_and_logical_content_are_authenticated(
             provenance=MaterializationProvenance(refs_by_input={}),
         ),
     )
-    async with unit_of_work as uow:
+    async with uow as uow:
         artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
     assert artifact.bucket is not None

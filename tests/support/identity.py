@@ -66,15 +66,15 @@ async def create_schema(database_url: str) -> None:
     try:
         async with database.engine.begin() as connection:
             await connection.run_sync(metadata.create_all)
-        async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-            await unit_of_work.identity.add_user(
+        async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+            await uow.identity.add_user(
                 User(
                     id=TEST_USER_ID,
                     email="owner@example.test",
                     display_name="Owner",
                 )
             )
-            await unit_of_work.identity.add_workspace(
+            await uow.identity.add_workspace(
                 Workspace(
                     id=WORKSPACE_ID,
                     slug="team",
@@ -82,14 +82,14 @@ async def create_schema(database_url: str) -> None:
                     kind="shared",
                 )
             )
-            await unit_of_work.identity.add_membership(
+            await uow.identity.add_membership(
                 WorkspaceMembership(
                     workspace_id=WORKSPACE_ID,
                     user_id=TEST_USER_ID,
                     role=WorkspaceRole.OWNER,
                 )
             )
-            await unit_of_work.commit()
+            await uow.commit()
     finally:
         await database.dispose()
 

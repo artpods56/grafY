@@ -62,9 +62,9 @@ async def _consume(content: ArtifactContentRead) -> bytes:
 async def test_stored_artifact_content_streams_fixed_chunks_and_closes_source() -> None:
     expected = b"x" * (ARTIFACT_RESPONSE_CHUNK_SIZE + 17)
     storage = TrackingStorage(expected)
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     service = ArtifactContentService(
-        unit_of_work,
+        uow,
         cast(FileStoragePort, storage),
     )
     artifact = ArtifactObject(
@@ -103,9 +103,9 @@ async def test_buffered_reconstruction_is_rejected_before_loading_storage(
     metadata: dict[str, object],
 ) -> None:
     storage = TrackingStorage(b"manifest must not be loaded")
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     service = ArtifactContentService(
-        unit_of_work,
+        uow,
         cast(FileStoragePort, storage),
     )
     artifact = ArtifactObject(
@@ -127,9 +127,9 @@ async def test_buffered_reconstruction_is_rejected_before_loading_storage(
 
 
 async def test_small_inline_content_without_size_metadata_remains_available() -> None:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     service = ArtifactContentService(
-        unit_of_work,
+        uow,
         cast(FileStoragePort, TrackingStorage(b"unused")),
     )
     artifact = ArtifactObject(

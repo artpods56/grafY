@@ -50,7 +50,7 @@ class AgentConversationService:
         *,
         unit_of_work_factory: Callable[[], AgentConversationUnitOfWorkPort],
     ) -> None:
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
 
     async def start(
         self,
@@ -65,8 +65,8 @@ class AgentConversationService:
     ) -> AgentConversation:
         """Open a new thread with one Agent that is on the canvas right now."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            head = await self._head(unit_of_work, workspace_id, project_id)
+        async with self._uow_factory() as uow:
+            head = await self._head(uow, workspace_id, project_id)
             _agent_on_graph(head, graph_id, agent_id)
             conversation = AgentConversation.new(
                 workspace_id=workspace_id,
@@ -77,8 +77,8 @@ class AgentConversationService:
                 title=title,
                 conversation_id=conversation_id,
             )
-            await unit_of_work.agent_conversations.add(conversation)
-            await unit_of_work.commit()
+            await uow.agent_conversations.add(conversation)
+            await uow.commit()
         return conversation
 
     async def fork(
@@ -100,8 +100,8 @@ class AgentConversationService:
         thread came from asks the fork, which recorded it.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            store = unit_of_work.agent_conversations
+        async with self._uow_factory() as uow:
+            store = uow.agent_conversations
             source = await store.lock(workspace_id, conversation_id)
             if source is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
@@ -130,7 +130,7 @@ class AgentConversationService:
                     )
                 )
                 fork = fork.appended(at=event.created_at)
-            await unit_of_work.commit()
+            await uow.commit()
         return fork
 
     async def require_scoped(
@@ -178,8 +178,8 @@ class AgentConversationService:
     ) -> AgentConversationEvent:
         """Extend one conversation by one event, at the sequence it is waiting for."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            store = unit_of_work.agent_conversations
+        async with self._uow_factory() as uow:
+            store = uow.agent_conversations
             conversation = await store.lock(workspace_id, conversation_id)
             if conversation is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
@@ -187,14 +187,14 @@ class AgentConversationService:
                 turn_id=turn_id, payload=payload, at=at or datetime.now(UTC)
             )
             await store.append(event)
-            await unit_of_work.commit()
+            await uow.commit()
         return event
 
     async def get(
         self, *, workspace_id: UUID, conversation_id: UUID
     ) -> AgentConversation:
-        async with self._unit_of_work_factory() as unit_of_work:
-            conversation = await unit_of_work.agent_conversations.get(
+        async with self._uow_factory() as uow:
+            conversation = await uow.agent_conversations.get(
                 workspace_id, conversation_id
             )
         if conversation is None:
@@ -211,8 +211,8 @@ class AgentConversationService:
     ) -> list[AgentConversation]:
         """Every thread with one Agent, newest first — whoever started them."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.agent_conversations.list_for_agent(
+        async with self._uow_factory() as uow:
+            return await uow.agent_conversations.list_for_agent(
                 workspace_id, project_id, graph_id, agent_id
             )
 
@@ -232,8 +232,8 @@ class AgentConversationService:
         is wrong.
         """
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            store = unit_of_work.agent_conversations
+        async with self._uow_factory() as uow:
+            store = uow.agent_conversations
             if await store.get(workspace_id, conversation_id) is None:
                 raise NotFoundError("Agent conversation", str(conversation_id))
             return await store.list_events(

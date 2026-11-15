@@ -504,9 +504,9 @@ class TurnHarness:
         """The one conversation these tests send into, started once per test."""
 
         if self.conversation_id is None:
-            async with InMemoryUnitOfWork(self.store) as unit_of_work:
-                await unit_of_work.collaboration.add_head(self.head)
-                await unit_of_work.commit()
+            async with InMemoryUnitOfWork(self.store) as uow:
+                await uow.collaboration.add_head(self.head)
+                await uow.commit()
             started = await self.conversations.start(
                 workspace_id=WORKSPACE,
                 project_id=PROJECT,
@@ -595,14 +595,14 @@ class TurnHarness:
         """Replace the Graph's Agents, the way an accepted command would."""
 
         await self.thread()
-        async with InMemoryUnitOfWork(self.store) as unit_of_work:
-            stored = await unit_of_work.collaboration.get_head(WORKSPACE, PROJECT)
+        async with InMemoryUnitOfWork(self.store) as uow:
+            stored = await uow.collaboration.get_head(WORKSPACE, PROJECT)
             assert stored is not None
             document = stored.document.get_graph(GRAPH_ID).document.model_copy(
                 update={"agents": agents}
             )
-            await unit_of_work.collaboration.save_head(with_document(stored, document))
-            await unit_of_work.commit()
+            await uow.collaboration.save_head(with_document(stored, document))
+            await uow.commit()
 
     async def drain(self) -> None:
         """Stop every task every service this test made ever started.

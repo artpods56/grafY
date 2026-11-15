@@ -58,18 +58,18 @@ async def conversation(
     """Make one conversation exist, and answer with the project row it belongs to."""
 
     scope = project_id or uuid4()
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        if await unit_of_work.projects.get(workspace_id, scope) is None:
-            await unit_of_work.projects.add(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        if await uow.projects.get(workspace_id, scope) is None:
+            await uow.projects.add(
                 Project(id=scope, workspace_id=workspace_id, name="Agents")
             )
-        await unit_of_work.commit()
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+        await uow.commit()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         if (
-            await unit_of_work.agent_conversations.get(workspace_id, conversation_id)
+            await uow.agent_conversations.get(workspace_id, conversation_id)
             is None
         ):
-            await unit_of_work.agent_conversations.add(
+            await uow.agent_conversations.add(
                 AgentConversation.new(
                     workspace_id=workspace_id,
                     project_id=scope,
@@ -80,7 +80,7 @@ async def conversation(
                     at=T1,
                 ).model_copy(update={"id": conversation_id})
             )
-        await unit_of_work.commit()
+        await uow.commit()
     return scope
 
 
@@ -113,10 +113,10 @@ def receipt(
 
 
 async def add(database: Database, *turns: AgentTurn) -> None:
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         for turn in turns:
-            await unit_of_work.agent_turns.add(turn)
-        await unit_of_work.commit()
+            await uow.agent_turns.add(turn)
+        await uow.commit()
 
 
 async def finish(
@@ -127,11 +127,11 @@ async def finish(
     at: datetime,
     detail: str | None = None,
 ) -> AgentTurn | None:
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        claimed = await unit_of_work.agent_turns.finish(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        claimed = await uow.agent_turns.finish(
             turn.workspace_id, turn.id, status=status, at=at, detail=detail
         )
-        await unit_of_work.commit()
+        await uow.commit()
     return claimed
 
 
@@ -142,8 +142,8 @@ async def test_a_receipt_round_trips_with_the_snapshot_it_was_accepted_with(
     turn = receipt(scope, client_turn_id="client-9")
     await add(database, turn)
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        stored = await unit_of_work.agent_turns.get(WORKSPACE_ONE, turn.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        stored = await uow.agent_turns.get(WORKSPACE_ONE, turn.id)
 
     assert stored == turn
     assert stored is not None
@@ -176,8 +176,8 @@ async def test_a_finished_receipt_keeps_the_text_of_its_own_ending(
     assert finished.status is AgentTurnStatus.FAILED
     assert finished.finished_at == T1 + timedelta(minutes=1)
     assert finished.outcome_detail == "APITimeout: the gateway gave up"
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        stored = await unit_of_work.agent_turns.get(WORKSPACE_ONE, turn.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        stored = await uow.agent_turns.get(WORKSPACE_ONE, turn.id)
     assert stored == finished
 
 
@@ -205,8 +205,8 @@ async def test_the_busy_rule_holds_in_a_transaction_that_never_saw_the_first_tur
     # The refused admission left no row behind, which is what the service needs: a receipt
     # and its user message are one transaction, so a refused send cannot leave a question in
     # the thread with no turn ever answering it.
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        receipts = await unit_of_work.agent_turns.list_for_conversation(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        receipts = await uow.agent_turns.list_for_conversation(
             WORKSPACE_ONE, CONVERSATION
         )
     assert [item.id for item in receipts] == [first.id]
@@ -235,8 +235,8 @@ async def test_finishing_a_turn_frees_the_conversation_for_the_next_one(
     )
     await add(database, next_turn)
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        store = unit_of_work.agent_turns
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        store = uow.agent_turns
         assert (
             await store.running_for_conversation(WORKSPACE_ONE, CONVERSATION)
         ) == next_turn
@@ -274,8 +274,8 @@ async def test_the_same_client_turn_id_is_admitted_once_even_after_the_turn_ends
         at=T1 + timedelta(minutes=2),
     )
     await add(database, elsewhere)
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        store = unit_of_work.agent_turns
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        store = uow.agent_turns
         assert (
             await store.get_by_client_turn_id(
                 WORKSPACE_ONE, OTHER_CONVERSATION, "client-1"
@@ -293,8 +293,8 @@ async def test_a_receipt_is_not_readable_through_another_workspace(
     turn = receipt(scope)
     await add(database, turn)
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        store = unit_of_work.agent_turns
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        store = uow.agent_turns
         assert await store.get(WORKSPACE_TWO, turn.id) is None
         assert (
             await store.get_by_client_turn_id(WORKSPACE_TWO, CONVERSATION, "client-1")
@@ -312,8 +312,8 @@ async def test_the_terminal_state_is_claimed_once_and_the_first_account_stands(
     turn = receipt(scope)
     await add(database, turn)
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        claimed = await unit_of_work.agent_turns.finish(
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        claimed = await uow.agent_turns.finish(
             WORKSPACE_ONE,
             turn.id,
             status=AgentTurnStatus.CANCELLED,
@@ -321,19 +321,19 @@ async def test_the_terminal_state_is_claimed_once_and_the_first_account_stands(
         )
         # Second attempt, same transaction: whoever else believed this turn was theirs to
         # end is told it already was, and the first account of how it ended is what stays.
-        again = await unit_of_work.agent_turns.finish(
+        again = await uow.agent_turns.finish(
             WORKSPACE_ONE,
             turn.id,
             status=AgentTurnStatus.INTERRUPTED,
             at=T1 + timedelta(minutes=2),
             detail="the API owner restarted while this turn was running",
         )
-        await unit_of_work.commit()
+        await uow.commit()
 
     assert claimed is not None and claimed.status is AgentTurnStatus.CANCELLED
     assert again is None
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        stored = await unit_of_work.agent_turns.get(WORKSPACE_ONE, turn.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        stored = await uow.agent_turns.get(WORKSPACE_ONE, turn.id)
     assert stored is not None
     assert stored.status is AgentTurnStatus.CANCELLED
     assert stored.outcome_detail is None
@@ -344,18 +344,18 @@ async def test_only_a_terminal_status_ends_a_turn(database: Database) -> None:
     turn = receipt(scope)
     await add(database, turn)
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         with pytest.raises(ValueError, match="not a terminal"):
-            await unit_of_work.agent_turns.finish(
+            await uow.agent_turns.finish(
                 WORKSPACE_ONE,
                 turn.id,
                 status=AgentTurnStatus.RUNNING,
                 at=T1 + timedelta(minutes=1),
             )
-        await unit_of_work.rollback()
+        await uow.rollback()
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        stored = await unit_of_work.agent_turns.get(WORKSPACE_ONE, turn.id)
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        stored = await uow.agent_turns.get(WORKSPACE_ONE, turn.id)
     assert stored is not None and stored.status is AgentTurnStatus.RUNNING
 
 
@@ -391,8 +391,8 @@ async def test_recovery_reads_running_turns_whatever_workspace_they_belong_to(
         at=T1 + timedelta(minutes=1),
     )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        running = await unit_of_work.agent_turns.list_running()
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        running = await uow.agent_turns.list_running()
     assert [turn.id for turn in running] == [one.id, two.id]
     assert all(turn.status is AgentTurnStatus.RUNNING for turn in running)
 
@@ -404,8 +404,8 @@ async def test_recovery_reads_running_turns_whatever_workspace_they_belong_to(
             status=AgentTurnStatus.INTERRUPTED,
             at=T1 + timedelta(minutes=2),
         )
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        assert await unit_of_work.agent_turns.list_running() == []
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        assert await uow.agent_turns.list_running() == []
 
 
 async def test_a_conversation_lists_its_turns_newest_first_and_a_limit_takes_the_first(
@@ -428,8 +428,8 @@ async def test_a_conversation_lists_its_turns_newest_first_and_a_limit_takes_the
             at=turn.created_at + timedelta(seconds=1),
         )
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        store = unit_of_work.agent_turns
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        store = uow.agent_turns
         assert [
             item.id
             for item in await store.list_for_conversation(WORKSPACE_ONE, CONVERSATION)
@@ -458,8 +458,8 @@ async def test_two_conversations_of_one_agent_each_run_their_own_turn(
     )
     await add(database, first, second)
 
-    async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        store = unit_of_work.agent_turns
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        store = uow.agent_turns
         assert (
             await store.running_for_conversation(WORKSPACE_ONE, CONVERSATION)
         ) == first

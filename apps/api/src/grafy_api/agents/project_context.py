@@ -34,7 +34,7 @@ class ProjectContextReader(AgentContextReader):
     ) -> None:
         self._runs = runs
         self._registry = registry
-        self._unit_of_work_factory = unit_of_work_factory
+        self._uow_factory = unit_of_work_factory
         self._storage = storage
 
     async def read(
@@ -48,7 +48,7 @@ class ProjectContextReader(AgentContextReader):
     ) -> Sequence[ContextBlock]:
         views = ArtifactModelViews(
             registry=self._registry,
-            unit_of_work_factory=self._unit_of_work_factory,
+            unit_of_work_factory=self._uow_factory,
             storage=self._storage,
             workspace_id=workspace_id,
         )

@@ -154,7 +154,7 @@ def test_upload_service_config_rejects_limit_above_release_hard_max() -> None:
 
 
 async def test_upload_at_exact_byte_limit_is_promoted(tmp_path: Path) -> None:
-    service, unit_of_work, _ = _upload_service(tmp_path, max_upload_bytes=4)
+    service, uow, _ = _upload_service(tmp_path, max_upload_bytes=4)
 
     upload = await _complete_upload(service, "exact.bin", b"1234")
 
@@ -163,13 +163,13 @@ async def test_upload_at_exact_byte_limit_is_promoted(tmp_path: Path) -> None:
     assert upload.workspace_id == WORKSPACE_ID
     assert upload.created_by_user_id == TEST_USER_ID
     assert upload.original_filename == "exact.bin"
-    assert await _uploads(unit_of_work, WORKSPACE_ID) == [upload]
+    assert await _uploads(uow, WORKSPACE_ID) == [upload]
 
 
 async def test_upload_rejects_bytes_that_outgrow_the_declared_size(
     tmp_path: Path,
 ) -> None:
-    service, unit_of_work, _ = _upload_service(tmp_path)
+    service, uow, _ = _upload_service(tmp_path)
 
     target = await service.create_upload(
         workspace_id=WORKSPACE_ID,
@@ -189,21 +189,21 @@ async def test_upload_rejects_bytes_that_outgrow_the_declared_size(
             upload_id=target.upload_id,
         )
 
-    row = await _upload_row(unit_of_work, target.upload_id)
+    row = await _upload_row(uow, target.upload_id)
     assert row is not None
     assert row.status is UploadStatus.FAILED
-    assert await _artifacts(unit_of_work, BLOB_FILE.key) == []
+    assert await _artifacts(uow, BLOB_FILE.key) == []
 
 
 async def test_upload_resolves_a_known_extension_case_insensitively(
     tmp_path: Path,
 ) -> None:
-    service, unit_of_work, storage = _upload_service(tmp_path)
+    service, uow, storage = _upload_service(tmp_path)
 
     upload = await _complete_upload(service, "Scan.PNG", PNG_BYTES)
 
     assert upload.artifact_type == "file.png"
-    artifacts = await _artifacts(unit_of_work, ArtifactTypeKey("file.png", 1))
+    artifacts = await _artifacts(uow, ArtifactTypeKey("file.png", 1))
     assert len(artifacts) == 1
     artifact = artifacts[0]
     assert artifact.content_type == "image/png"
@@ -222,19 +222,19 @@ async def test_upload_resolves_a_known_extension_case_insensitively(
 async def test_object_key_is_server_chosen_and_ignores_the_filename(
     tmp_path: Path,
 ) -> None:
-    service, unit_of_work, _ = _upload_service(tmp_path)
+    service, uow, _ = _upload_service(tmp_path)
 
     upload = await _complete_upload(service, "../../etc/passwd.png", PNG_BYTES)
 
     assert upload.object_key == f"objects/{upload.upload_id}"
     assert "passwd" not in upload.object_key
-    assert await _uploads(unit_of_work, WORKSPACE_ID) == [upload]
+    assert await _uploads(uow, WORKSPACE_ID) == [upload]
 
 
 async def test_upload_rejects_a_known_extension_whose_bytes_disagree(
     tmp_path: Path,
 ) -> None:
-    service, unit_of_work, _ = _upload_service(tmp_path)
+    service, uow, _ = _upload_service(tmp_path)
 
     target = await service.create_upload(
         workspace_id=WORKSPACE_ID,
@@ -257,8 +257,8 @@ async def test_upload_rejects_a_known_extension_whose_bytes_disagree(
         "'scan.png' does not look like a PNG file. "
         "Rename it or convert it, then try again."
     )
-    assert await _artifacts(unit_of_work, ArtifactTypeKey("file.png", 1)) == []
-    row = await _upload_row(unit_of_work, target.upload_id)
+    assert await _artifacts(uow, ArtifactTypeKey("file.png", 1)) == []
+    row = await _upload_row(uow, target.upload_id)
     assert row is not None
     assert row.status is UploadStatus.FAILED
 
@@ -268,12 +268,12 @@ async def test_upload_stores_an_unclaimed_or_missing_extension_as_a_blob(
     tmp_path: Path,
     filename: str,
 ) -> None:
-    service, unit_of_work, _ = _upload_service(tmp_path)
+    service, uow, _ = _upload_service(tmp_path)
 
     upload = await _complete_upload(service, filename, b"opaque bytes")
 
     assert upload.artifact_type == BLOB_FILE.key.id
-    artifacts = await _artifacts(unit_of_work, BLOB_FILE.key)
+    artifacts = await _artifacts(uow, BLOB_FILE.key)
     assert [artifact.metadata for artifact in artifacts] == [
         {"original_filename": filename}
     ]
@@ -282,7 +282,7 @@ async def test_upload_stores_an_unclaimed_or_missing_extension_as_a_blob(
 async def test_upload_confirms_a_json_extension_with_its_declared_rule(
     tmp_path: Path,
 ) -> None:
-    service, unit_of_work, _ = _upload_service(tmp_path)
+    service, uow, _ = _upload_service(tmp_path)
     key = ArtifactTypeKey("file.json", 1)
 
     accepted = await _complete_upload(service, "rows.json", b'[{"a": 1}]')
@@ -290,11 +290,11 @@ async def test_upload_confirms_a_json_extension_with_its_declared_rule(
 
     with pytest.raises(FileFormatMismatchError, match="does not look like a JSON"):
         await _complete_upload(service, "value.json", b"17")
-    assert len(await _artifacts(unit_of_work, key)) == 1
+    assert len(await _artifacts(uow, key)) == 1
 
 
 async def test_complete_requires_the_bytes_to_have_arrived(tmp_path: Path) -> None:
-    service, unit_of_work, _ = _upload_service(tmp_path)
+    service, uow, _ = _upload_service(tmp_path)
 
     target = await service.create_upload(
         workspace_id=WORKSPACE_ID,
@@ -309,7 +309,7 @@ async def test_complete_requires_the_bytes_to_have_arrived(tmp_path: Path) -> No
             upload_id=target.upload_id,
         )
 
-    row = await _upload_row(unit_of_work, target.upload_id)
+    row = await _upload_row(uow, target.upload_id)
     assert row is not None
     assert row.status is UploadStatus.FAILED
 
@@ -353,7 +353,7 @@ async def test_uploads_are_confined_to_their_workspace(tmp_path: Path) -> None:
 async def test_cleanup_reclaims_abandoned_uploads_and_spares_promoted_ones(
     tmp_path: Path,
 ) -> None:
-    service, unit_of_work, storage = _upload_service(tmp_path)
+    service, uow, storage = _upload_service(tmp_path)
 
     promoted = await _complete_upload(service, "page.png", PNG_BYTES)
     abandon = await service.create_upload(
@@ -371,12 +371,12 @@ async def test_cleanup_reclaims_abandoned_uploads_and_spares_promoted_ones(
     discarded = await service.cleanup_abandoned(older_than=timedelta(0))
 
     assert discarded == 1
-    assert await _upload_row(unit_of_work, abandon.upload_id) is None
+    assert await _upload_row(uow, abandon.upload_id) is None
     assert await storage.stat(BUCKET, f"objects/{abandon.upload_id}") is None
     remaining = await _stored_files(tmp_path / "objects")
     assert len(remaining) == 1
     assert promoted.object_key in str(remaining[0])
-    surviving = await _upload_row(unit_of_work, promoted.upload_id)
+    surviving = await _upload_row(uow, promoted.upload_id)
     assert surviving is not None
     assert surviving.status is UploadStatus.READY
 
@@ -399,8 +399,8 @@ class FailingCompletionUnitOfWork(InMemoryUnitOfWork):
 async def test_a_failed_completion_leaves_the_upload_for_the_cleanup_sweep(
     tmp_path: Path,
 ) -> None:
-    unit_of_work = FailingCompletionUnitOfWork()
-    service, _, storage = _upload_service(tmp_path, unit_of_work=unit_of_work)
+    uow = FailingCompletionUnitOfWork()
+    service, _, storage = _upload_service(tmp_path, unit_of_work=uow)
 
     target = await service.create_upload(
         workspace_id=WORKSPACE_ID,
@@ -419,13 +419,13 @@ async def test_a_failed_completion_leaves_the_upload_for_the_cleanup_sweep(
             upload_id=target.upload_id,
         )
 
-    row = await _upload_row(unit_of_work, target.upload_id)
+    row = await _upload_row(uow, target.upload_id)
     assert row is not None
     assert row.status is UploadStatus.PENDING
-    assert await _artifacts(unit_of_work, ArtifactTypeKey("file.png", 1)) == []
+    assert await _artifacts(uow, ArtifactTypeKey("file.png", 1)) == []
 
     assert await service.cleanup_abandoned(older_than=timedelta(0)) == 1
-    assert await _upload_row(unit_of_work, target.upload_id) is None
+    assert await _upload_row(uow, target.upload_id) is None
     assert await storage.stat(BUCKET, f"objects/{target.upload_id}") is None
 
 
@@ -456,12 +456,12 @@ def test_upload_endpoint_rejects_an_oversize_reservation(
     builtin_client: TestClient,
     tmp_path: Path,
 ) -> None:
-    unit_of_work = InMemoryUnitOfWork()
+    uow = InMemoryUnitOfWork()
     config = UploadServiceConfig(max_upload_bytes=1024 * 1024)
     service, _, _ = _upload_service(
         tmp_path,
         max_upload_bytes=config.max_upload_bytes,
-        unit_of_work=unit_of_work,
+        unit_of_work=uow,
     )
     application = cast(FastAPI, builtin_client.app)
     application.dependency_overrides[upload_service] = lambda: service
@@ -477,7 +477,7 @@ def test_upload_endpoint_rejects_an_oversize_reservation(
     assert response.json() == {
         "detail": ("Upload 'large.bin' exceeds the upload limit of 1048576 bytes")
     }
-    assert asyncio.run(_uploads(unit_of_work, WORKSPACE_ID)) == []
+    assert asyncio.run(_uploads(uow, WORKSPACE_ID)) == []
     assert asyncio.run(_stored_files(tmp_path / "objects")) == []
 
 

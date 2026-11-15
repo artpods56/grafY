@@ -216,11 +216,11 @@ async def test_an_editor_without_manage_secrets_can_give_an_agent_its_key() -> N
     assert editor.membership.grants(WorkspaceCapability.EDIT_PROJECT)
     assert not editor.membership.grants(WorkspaceCapability.MANAGE_SECRETS)
 
-    unit_of_work = KeyUnitOfWork()
-    await set_and_read(unit_of_work)
-    assert unit_of_work.commits == 1
+    uow = KeyUnitOfWork()
+    await set_and_read(uow)
+    assert uow.commits == 1
 
-    resolved = await service(unit_of_work).resolve_key(
+    resolved = await service(uow).resolve_key(
         workspace_id=WORKSPACE,
         project_id=PROJECT,
         graph_id=GRAPH_ID,
@@ -231,16 +231,16 @@ async def test_an_editor_without_manage_secrets_can_give_an_agent_its_key() -> N
 
 @pytest.mark.asyncio
 async def test_a_viewer_cannot_set_or_clear_an_agents_key() -> None:
-    unit_of_work = KeyUnitOfWork()
+    uow = KeyUnitOfWork()
 
     with pytest.raises(CapabilityDeniedError) as denied:
-        await set_and_read(unit_of_work, role=WorkspaceRole.VIEWER)
+        await set_and_read(uow, role=WorkspaceRole.VIEWER)
     assert denied.value.capability == "edit_project"
-    assert unit_of_work.records == {}
-    assert unit_of_work.commits == 0
+    assert uow.records == {}
+    assert uow.commits == 0
 
     with pytest.raises(CapabilityDeniedError):
-        await service(unit_of_work).clear_key(
+        await service(uow).clear_key(
             access=access(WorkspaceRole.VIEWER),
             project_id=PROJECT,
             graph_id=GRAPH_ID,
@@ -254,8 +254,8 @@ async def test_the_configuration_surface_never_shows_the_key(
 ) -> None:
     """State, repr, the stored record and the log all say a key exists, none says what it is."""
 
-    unit_of_work = KeyUnitOfWork()
-    owner = service(unit_of_work)
+    uow = KeyUnitOfWork()
+    owner = service(uow)
     state = await owner.set_key(
         access=access(WorkspaceRole.OWNER),
         project_id=PROJECT,
@@ -263,24 +263,24 @@ async def test_the_configuration_surface_never_shows_the_key(
         agent_id=AGENT_ID,
         value=SecretStr(SECRET),
     )
-    stored = next(iter(unit_of_work.records.values()))
+    stored = next(iter(uow.records.values()))
 
     assert state.configured is True
     for surface in (repr(state), str(state), repr(stored), str(stored)):
         assert SECRET not in surface
     assert SECRET not in caplog.text
     assert "nonce=<redacted>" in repr(stored)
-    assert unit_of_work.commits == 1
+    assert uow.commits == 1
 
 
 @pytest.mark.asyncio
 async def test_state_reports_what_this_server_can_actually_use() -> None:
     """A row sealed under another deployment key is not a configured Agent."""
 
-    unit_of_work = KeyUnitOfWork()
-    await set_and_read(unit_of_work)
+    uow = KeyUnitOfWork()
+    await set_and_read(uow)
     assert (
-        await service(unit_of_work).state(
+        await service(uow).state(
             access=access(WorkspaceRole.VIEWER),
             project_id=PROJECT,
             graph_id=GRAPH_ID,
@@ -288,7 +288,7 @@ async def test_state_reports_what_this_server_can_actually_use() -> None:
         )
     ).configured is True
 
-    rotated = service(unit_of_work, encryption_key=OTHER_ENCRYPTION_KEY)
+    rotated = service(uow, encryption_key=OTHER_ENCRYPTION_KEY)
     state = await rotated.state(
         access=access(WorkspaceRole.VIEWER),
         project_id=PROJECT,
@@ -309,9 +309,9 @@ async def test_state_reports_what_this_server_can_actually_use() -> None:
 async def test_clearing_an_agents_key_leaves_the_deployment_default_as_the_only_way_to_answer() -> (
     None
 ):
-    unit_of_work = KeyUnitOfWork()
-    owner = service(unit_of_work)
-    await set_and_read(unit_of_work)
+    uow = KeyUnitOfWork()
+    owner = service(uow)
+    await set_and_read(uow)
 
     cleared = await owner.clear_key(
         access=access(WorkspaceRole.EDITOR),
@@ -320,7 +320,7 @@ async def test_clearing_an_agents_key_leaves_the_deployment_default_as_the_only_
         agent_id=AGENT_ID,
     )
     assert cleared.configured is False
-    assert unit_of_work.records == {}
+    assert uow.records == {}
     with pytest.raises(AgentKeyUnavailableError, match="no configured model key"):
         await owner.resolve_key(
             workspace_id=WORKSPACE,
@@ -334,15 +334,15 @@ async def test_clearing_an_agents_key_leaves_the_deployment_default_as_the_only_
 async def test_a_seal_copied_beside_another_agent_does_not_open() -> None:
     """The binding is the Agent's coordinates, so a copied row is a foreign row."""
 
-    unit_of_work = KeyUnitOfWork()
-    await set_and_read(unit_of_work)
-    ((key, record),) = unit_of_work.records.items()
-    unit_of_work.records[(*key[:3], OTHER_AGENT_ID)] = replace(
+    uow = KeyUnitOfWork()
+    await set_and_read(uow)
+    ((key, record),) = uow.records.items()
+    uow.records[(*key[:3], OTHER_AGENT_ID)] = replace(
         record, agent_id=OTHER_AGENT_ID
     )
 
     with pytest.raises(AgentKeyUnavailableError, match="cannot be decrypted"):
-        await service(unit_of_work).resolve_key(
+        await service(uow).resolve_key(
             workspace_id=WORKSPACE,
             project_id=PROJECT,
             graph_id=GRAPH_ID,
@@ -352,8 +352,8 @@ async def test_a_seal_copied_beside_another_agent_does_not_open() -> None:
 
 @pytest.mark.asyncio
 async def test_a_key_belongs_to_an_agent_that_is_on_the_canvas() -> None:
-    unit_of_work = KeyUnitOfWork()
-    owner = service(unit_of_work)
+    uow = KeyUnitOfWork()
+    owner = service(uow)
 
     with pytest.raises(AgentKeyDeclarationError, match="is not on graph"):
         await owner.set_key(
@@ -363,8 +363,8 @@ async def test_a_key_belongs_to_an_agent_that_is_on_the_canvas() -> None:
             agent_id="removed-agent",
             value=SecretStr(SECRET),
         )
-    assert unit_of_work.records == {}
-    assert unit_of_work.commits == 0
+    assert uow.records == {}
+    assert uow.commits == 0
 
     with pytest.raises(NotFoundError, match="Graph not found"):
         await owner.set_key(
@@ -392,25 +392,25 @@ async def test_a_key_belongs_to_an_agent_that_is_on_the_canvas() -> None:
 async def test_only_a_credential_worth_sealing_is_sealed(
     value: str, message: str
 ) -> None:
-    unit_of_work = KeyUnitOfWork()
+    uow = KeyUnitOfWork()
 
     with pytest.raises(AgentKeyValueError, match=message):
-        await service(unit_of_work).set_key(
+        await service(uow).set_key(
             access=access(WorkspaceRole.OWNER),
             project_id=PROJECT,
             graph_id=GRAPH_ID,
             agent_id=AGENT_ID,
             value=SecretStr(value),
         )
-    assert unit_of_work.records == {}
+    assert uow.records == {}
 
 
 @pytest.mark.asyncio
 async def test_without_a_deployment_key_the_owner_says_so_instead_of_failing_later() -> (
     None
 ):
-    unit_of_work = KeyUnitOfWork()
-    unconfigured = service(unit_of_work, encryption_key=None)
+    uow = KeyUnitOfWork()
+    unconfigured = service(uow, encryption_key=None)
 
     with pytest.raises(
         AgentKeyConfigurationError, match="GRAFY_CREDENTIAL_ENCRYPTION_KEY"
