@@ -64,6 +64,7 @@ class AppResources:
         await self.project_room_hub.shutdown()
         await self.runs.close()
         await self.workbench.wms.close()
+        await self.workbench.artifact_images.close()
 
 
 def get_identity(app: FastAPI) -> AppIdentity:

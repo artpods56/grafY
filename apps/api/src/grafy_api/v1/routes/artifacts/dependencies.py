@@ -4,6 +4,7 @@ from fastapi import Depends, Request
 
 from grafy_api.app_state import get_resources
 from grafy_api.artifacts.content import ArtifactContentService
+from grafy_api.artifacts.images import ArtifactImageService
 from grafy_api.artifacts.geo import ArtifactGeoService
 from grafy_api.artifacts.geo_tiles import ArtifactGeoTileService
 from grafy_api.artifacts.tables import ArtifactTableService
@@ -25,6 +26,14 @@ def artifact_geo_tile_service(request: Request) -> ArtifactGeoTileService:
     return get_resources(request.app).workbench.artifact_geo_tiles
 
 
+def artifact_image_service(request: Request) -> ArtifactImageService:
+    return get_resources(request.app).workbench.artifact_images
+
+
+ArtifactImageDependency = Annotated[
+    ArtifactImageService, Depends(artifact_image_service)
+]
+
 ArtifactContentDependency = Annotated[
     ArtifactContentService,
     Depends(artifact_content_service),
@@ -44,6 +53,8 @@ ArtifactGeoTileDependency = Annotated[
 
 __all__ = [
     "ArtifactContentDependency",
+    "ArtifactImageDependency",
+    "artifact_image_service",
     "ArtifactGeoDependency",
     "ArtifactGeoTileDependency",
     "ArtifactTableDependency",

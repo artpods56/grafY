@@ -18,6 +18,7 @@ from grafy_shared.config import (
     KeysConfig,
     RealtimeConfig,
     StorageConfig,
+    TilerConfig,
     UploadConfig,
 )
 from grafy_shared.config.app import (
@@ -40,6 +41,7 @@ CONFIG_SECTIONS: tuple[type, ...] = (
     ExecutionConfig,
     RealtimeConfig,
     StorageConfig,
+    TilerConfig,
     UploadConfig,
     EgressConfig,
 )

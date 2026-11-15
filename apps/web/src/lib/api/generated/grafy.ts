@@ -295,6 +295,57 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/image/info": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Image Info */
+        readonly get: operations["image_info_v1_workspaces__workspace_id__artifacts__artifact_id__image_info_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/image/thumbnail": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Image Thumbnail */
+        readonly get: operations["image_thumbnail_v1_workspaces__workspace_id__artifacts__artifact_id__image_thumbnail_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/image/tiles/{z}/{x}/{y}.{extension}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Image Tile */
+        readonly get: operations["image_tile_v1_workspaces__workspace_id__artifacts__artifact_id__image_tiles__z___x___y___extension__get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/table/cell": {
         readonly parameters: {
             readonly query?: never;
@@ -2768,6 +2819,76 @@ export interface components {
             /** Detail */
             readonly detail?: readonly components["schemas"]["ValidationError"][];
         };
+        /** ImageInfoResponse */
+        readonly ImageInfoResponse: {
+            /** Band Count */
+            readonly band_count: number;
+            /** Bit Depth */
+            readonly bit_depth: number;
+            /** Bounds Wgs84 */
+            readonly bounds_wgs84: readonly [
+                number,
+                number,
+                number,
+                number
+            ] | null;
+            /** Crs */
+            readonly crs: string | null;
+            /** Dtype */
+            readonly dtype: string;
+            /** Georeferenced */
+            readonly georeferenced: boolean;
+            /** Has Alpha */
+            readonly has_alpha: boolean;
+            /** Height */
+            readonly height: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            readonly kind: "gray" | "rgb" | "palette" | "cmyk";
+            /** Max Level */
+            readonly max_level: number;
+            /** Min Level */
+            readonly min_level: number;
+            /** Overview Count */
+            readonly overview_count: number;
+            /** Overview Level */
+            readonly overview_level: number | null;
+            /** Page */
+            readonly page: number;
+            /** Page Count */
+            readonly page_count: number;
+            /** Palette */
+            readonly palette: readonly (readonly [
+                number,
+                number,
+                number,
+                number
+            ])[] | null;
+            /**
+             * Resampling
+             * @enum {string}
+             */
+            readonly resampling: "nearest" | "average";
+            /**
+             * Tile Format
+             * @enum {string}
+             */
+            readonly tile_format: "jpg" | "png";
+            /**
+             * Tile Size
+             * @enum {integer}
+             */
+            readonly tile_size: 256 | 512;
+            /** Value Range */
+            readonly value_range: readonly [
+                number,
+                number
+            ] | null;
+            /** Width */
+            readonly width: number;
+        };
         /** ImageUploadItemResponse */
         readonly ImageUploadItemResponse: {
             /** Artifact Id */
@@ -5062,6 +5183,325 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
                 };
+            };
+        };
+    };
+    readonly image_info_v1_workspaces__workspace_id__artifacts__artifact_id__image_info_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+            };
+            readonly header?: {
+                readonly "If-None-Match"?: string | null;
+            };
+            readonly path: {
+                readonly artifact_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ImageInfoResponse"];
+                };
+            };
+            /** @description Image has not changed */
+            readonly 304: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description View artifacts capability required */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Artifact, page or tile not found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stored source does not match the artifact */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source exceeds rendering limits */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Artifact is not a TIFF */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid parameters or unreadable TIFF */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TIFF rendering is disabled */
+            readonly 501: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid response from the tiler */
+            readonly 502: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Tiler unavailable or busy; retry later */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly image_thumbnail_v1_workspaces__workspace_id__artifacts__artifact_id__image_thumbnail_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly edge?: 128 | 256 | 512 | 1024;
+                readonly page?: number;
+            };
+            readonly header?: {
+                readonly "If-None-Match"?: string | null;
+            };
+            readonly path: {
+                readonly artifact_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "image/jpeg": unknown;
+                    readonly "image/png": unknown;
+                };
+            };
+            /** @description Image has not changed */
+            readonly 304: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description View artifacts capability required */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Artifact, page or tile not found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stored source does not match the artifact */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source exceeds rendering limits */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Artifact is not a TIFF */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid parameters or unreadable TIFF */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TIFF rendering is disabled */
+            readonly 501: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid response from the tiler */
+            readonly 502: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Tiler unavailable or busy; retry later */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    readonly image_tile_v1_workspaces__workspace_id__artifacts__artifact_id__image_tiles__z___x___y___extension__get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly page?: number;
+            };
+            readonly header?: {
+                readonly "If-None-Match"?: string | null;
+            };
+            readonly path: {
+                readonly artifact_id: string;
+                readonly extension: "png" | "jpg";
+                readonly workspace_id: string;
+                readonly x: number;
+                readonly y: number;
+                readonly z: number;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "image/jpeg": unknown;
+                    readonly "image/png": unknown;
+                };
+            };
+            /** @description Image has not changed */
+            readonly 304: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            readonly 401: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description View artifacts capability required */
+            readonly 403: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Artifact, page or tile not found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stored source does not match the artifact */
+            readonly 409: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Source exceeds rendering limits */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Artifact is not a TIFF */
+            readonly 415: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid parameters or unreadable TIFF */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TIFF rendering is disabled */
+            readonly 501: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid response from the tiler */
+            readonly 502: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Tiler unavailable or busy; retry later */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

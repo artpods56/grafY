@@ -119,17 +119,21 @@ class SqlAgentConversationRepository(AgentConversationRepositoryPort):
     ) -> list[AgentConversation]:
         table = schema.agent_conversations
         rows = (
-            await self._session.execute(
-                select(table)
-                .where(
-                    table.c.workspace_id == workspace_id,
-                    table.c.project_id == project_id,
-                    table.c.graph_id == graph_id,
-                    table.c.agent_id == agent_id,
+            (
+                await self._session.execute(
+                    select(table)
+                    .where(
+                        table.c.workspace_id == workspace_id,
+                        table.c.project_id == project_id,
+                        table.c.graph_id == graph_id,
+                        table.c.agent_id == agent_id,
+                    )
+                    .order_by(table.c.created_at.desc(), table.c.id.asc())
                 )
-                .order_by(table.c.created_at.desc(), table.c.id.asc())
             )
-        ).mappings().all()
+            .mappings()
+            .all()
+        )
         return [_conversation_from_row(row) for row in rows]
 
     @override
@@ -142,9 +146,7 @@ class SqlAgentConversationRepository(AgentConversationRepositoryPort):
                 conversations.c.id == event.conversation_id,
                 conversations.c.next_sequence == event.sequence,
             )
-            .values(
-                next_sequence=event.sequence + 1, updated_at=event.created_at
-            )
+            .values(next_sequence=event.sequence + 1, updated_at=event.created_at)
         )
         if claimed.rowcount != 1:
             stored = await self.get(event.workspace_id, event.conversation_id)

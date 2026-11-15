@@ -815,9 +815,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["workspace_id", "conversation_id"],
             ["agent_conversations.workspace_id", "agent_conversations.id"],
-            name=op.f(
-                "fk_agent_conversation_events_workspace_id_agent_conversations"
-            ),
+            name=op.f("fk_agent_conversation_events_workspace_id_agent_conversations"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint(
@@ -894,23 +892,18 @@ def upgrade() -> None:
         sa.Column("finished_at", UTCDateTime(), nullable=True),
         sa.CheckConstraint(
             "length(request_digest) = 64",
-            name=op.f(
-                "ck_agent_turns_ck_agent_turns_request_digest_is_a_digest"
-            ),
+            name=op.f("ck_agent_turns_ck_agent_turns_request_digest_is_a_digest"),
         ),
         sa.CheckConstraint(
             "user_message_sequence >= 1",
-            name=op.f(
-                "ck_agent_turns_ck_agent_turns_user_message_sequence_positive"
-            ),
+            name=op.f("ck_agent_turns_ck_agent_turns_user_message_sequence_positive"),
         ),
         sa.CheckConstraint(
             "model_source IN ('deployment', 'agent')",
             name=op.f("ck_agent_turns_ck_agent_turns_model_source_known"),
         ),
         sa.CheckConstraint(
-            "status IN ('running', 'completed', 'cancelled', 'failed', "
-            "'interrupted')",
+            "status IN ('running', 'completed', 'cancelled', 'failed', 'interrupted')",
             name=op.f("ck_agent_turns_ck_agent_turns_status_known"),
         ),
         # A turn is running exactly while it has no finish stamp.
@@ -1221,9 +1214,7 @@ def downgrade() -> None:
         table_name="agent_conversations",
     )
     op.drop_table("agent_conversations")
-    op.drop_index(
-        "ix_agent_keys_workspace_project_graph", table_name="agent_keys"
-    )
+    op.drop_index("ix_agent_keys_workspace_project_graph", table_name="agent_keys")
     op.drop_table("agent_keys")
     op.drop_table("project_command_receipts")
     op.drop_table("project_checkpoint_mappings")

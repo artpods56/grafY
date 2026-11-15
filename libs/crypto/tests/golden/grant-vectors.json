@@ -1,0 +1,30 @@
+{
+  "description": "Wire-format vectors shared by the tiler verifier and the API signer. Regenerate only on a deliberate format change (bump GRANT_VERSION).",
+  "signing_key": "golden-signing-key-0123456789abcdef-xyz",
+  "vectors": [
+    {
+      "name": "plain",
+      "grant": {
+        "bucket": "workbench-artifacts",
+        "key": "workspaces/ws-1/artifacts/ab/scan.tif",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "byte_size": 33600000,
+        "page": 0,
+        "expires_at": 1900000000
+      },
+      "token": "eyJiIjoid29ya2JlbmNoLWFydGlmYWN0cyIsImV4cCI6MTkwMDAwMDAwMCwiayI6IndvcmtzcGFjZXMvd3MtMS9hcnRpZmFjdHMvYWIvc2Nhbi50aWYiLCJuIjozMzYwMDAwMCwicCI6MCwicyI6ImJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmIiLCJ2IjoxfQ.zkae-_cG8vJ2qoLNkxhf5-Kn0YvlRGg4evmIVlrTyyE"
+    },
+    {
+      "name": "second-page",
+      "grant": {
+        "bucket": "workbench-artifacts",
+        "key": "workspaces/ws-1/artifacts/cd/book.tif",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "byte_size": 1234,
+        "page": 7,
+        "expires_at": 1900000060
+      },
+      "token": "eyJiIjoid29ya2JlbmNoLWFydGlmYWN0cyIsImV4cCI6MTkwMDAwMDA2MCwiayI6IndvcmtzcGFjZXMvd3MtMS9hcnRpZmFjdHMvY2QvYm9vay50aWYiLCJuIjoxMjM0LCJwIjo3LCJzIjoiY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyIsInYiOjF9.s2TRXvFHPUz9Uk937cjMUdm1TMI-tETOMaNw74q8h9g"
+    }
+  ]
+}

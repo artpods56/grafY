@@ -241,7 +241,9 @@ async def test_a_thread_is_scoped_to_its_workspace_and_project(
     stored = await add_conversation(database, thread(row))
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        assert await unit_of_work.agent_conversations.get(WORKSPACE_TWO, stored.id) is None
+        assert (
+            await unit_of_work.agent_conversations.get(WORKSPACE_TWO, stored.id) is None
+        )
         assert (
             await unit_of_work.agent_conversations.list_for_agent(
                 WORKSPACE_TWO, row.id, GRAPH_ID, AGENT_ID
@@ -273,7 +275,9 @@ async def test_deleting_the_project_takes_threads_and_events_with_it(
         await unit_of_work.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        assert await unit_of_work.agent_conversations.get(WORKSPACE_ONE, stored.id) is None
+        assert (
+            await unit_of_work.agent_conversations.get(WORKSPACE_ONE, stored.id) is None
+        )
         assert (
             await unit_of_work.agent_conversations.list_events(WORKSPACE_ONE, stored.id)
             == []
@@ -366,7 +370,9 @@ async def test_a_thread_still_has_the_agent_it_began_with_until_its_project_goes
         await session.commit()
 
     async with SqlAlchemyUnitOfWork(database.sessions) as unit_of_work:
-        assert await unit_of_work.agent_conversations.get(WORKSPACE_ONE, fork.id) is None
+        assert (
+            await unit_of_work.agent_conversations.get(WORKSPACE_ONE, fork.id) is None
+        )
         assert (
             await unit_of_work.agent_conversations.list_events(WORKSPACE_ONE, fork.id)
             == []

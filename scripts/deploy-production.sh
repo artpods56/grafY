@@ -40,6 +40,7 @@ done
 export GRAFY_API_IMAGE="${image_registry}/grafy-api:${revision}"
 export GRAFY_WEB_IMAGE="${image_registry}/grafy-web:${revision}"
 export GRAFY_GATEWAY_IMAGE="${image_registry}/grafy-gateway:${revision}"
+export GRAFY_TILER_IMAGE="${image_registry}/grafy-tiler:${revision}"
 
 compose=(
 	docker compose
