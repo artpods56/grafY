@@ -356,7 +356,16 @@ class GeoFeatureCollection(GeoFeatureCollectionPayload):
                 )
             _validate_geometry(cast(JsonObject, geometry), feature_index, observed)
 
-        calculated = _bounds(observed)
+        calculated: Bounds | None = None
+        if observed:
+            longitudes = [position[0] for position in observed]
+            latitudes = [position[1] for position in observed]
+            calculated = (
+                min(longitudes),
+                min(latitudes),
+                max(longitudes),
+                max(latitudes),
+            )
         if self.bounds != calculated:
             raise ValueError("GeoJSON bounds do not match its feature coordinates")
         return self
@@ -393,10 +402,20 @@ class GeoFeatureCollection(GeoFeatureCollectionPayload):
                 _validate_geometry(
                     cast(JsonObject, geometry), feature_index, coordinates
                 )
+        calculated: Bounds | None = None
+        if coordinates:
+            longitudes = [position[0] for position in coordinates]
+            latitudes = [position[1] for position in coordinates]
+            calculated = (
+                min(longitudes),
+                min(latitudes),
+                max(longitudes),
+                max(latitudes),
+            )
         return cls(
             features=features,
             source_name=source_name,
-            bounds=_bounds(coordinates),
+            bounds=calculated,
         )
 
 
@@ -650,14 +669,6 @@ def _collect_positions(
         if not isinstance(child, list):
             raise ValueError(f"Feature {feature_index} has malformed coordinates")
         _collect_positions(cast(list[object], child), feature_index, observed)
-
-
-def _bounds(coordinates: list[tuple[float, float]]) -> Bounds | None:
-    if not coordinates:
-        return None
-    longitudes = [position[0] for position in coordinates]
-    latitudes = [position[1] for position in coordinates]
-    return min(longitudes), min(latitudes), max(longitudes), max(latitudes)
 
 
 type GeoPropertyValueType = Literal[
