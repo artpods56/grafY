@@ -48,8 +48,8 @@ class ArtifactModelViews(ModelViews):
             if isinstance(value, ArtifactRefSequence):
                 shown: list[str] = []
                 for ref in value.item_refs[:SEQUENCE_VIEW_ITEMS]:
-                    async with self._unit_of_work_factory() as unit_of_work:
-                        artifact = await unit_of_work.artifacts.get(
+                    async with self._unit_of_work_factory() as uow:
+                        artifact = await uow.artifacts.get(
                             self._workspace_id, ref.artifact_id
                         )
                     if artifact is None:
@@ -166,8 +166,8 @@ class ArtifactModelViews(ModelViews):
                 rendered = "\n".join(lines)
             else:
                 ref = value
-                async with self._unit_of_work_factory() as unit_of_work:
-                    artifact = await unit_of_work.artifacts.get(
+                async with self._unit_of_work_factory() as uow:
+                    artifact = await uow.artifacts.get(
                         self._workspace_id, ref.artifact_id
                     )
                 if artifact is None:
@@ -277,8 +277,8 @@ class ArtifactModelViews(ModelViews):
     ) -> tuple[str, ArtifactRef | None]:
         """One Library artifact by id, as a model reads it, and the ref when it remains."""
 
-        async with self._unit_of_work_factory() as unit_of_work:
-            artifact = await unit_of_work.artifacts.get(self._workspace_id, artifact_id)
+        async with self._unit_of_work_factory() as uow:
+            artifact = await uow.artifacts.get(self._workspace_id, artifact_id)
         if artifact is None:
             return (
                 f"Artifact id: {artifact_id}\n[this Library item is no longer available]",

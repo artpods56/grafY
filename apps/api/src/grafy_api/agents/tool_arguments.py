@@ -61,8 +61,8 @@ class ContentAddressedArguments(ArgumentArtifacts):
             ARGUMENT_ARTIFACT_NAMESPACE,
             f"{workspace_id}:{key.id}@{key.schema_version}:{digest}",
         )
-        async with self._unit_of_work_factory() as unit_of_work:
-            existing = await unit_of_work.artifacts.get(workspace_id, artifact_id)
+        async with self._unit_of_work_factory() as uow:
+            existing = await uow.artifacts.get(workspace_id, artifact_id)
             if existing is not None:
                 return existing.ref()
             artifact = ArtifactObject(
@@ -78,12 +78,12 @@ class ContentAddressedArguments(ArgumentArtifacts):
                 metadata={"written_by": "agent_tool_call"},
             )
             try:
-                await unit_of_work.artifacts.add(artifact)
-                await unit_of_work.commit()
+                await uow.artifacts.add(artifact)
+                await uow.commit()
             except ObjectAlreadyExistsError:
                 # Two identical calls wrote at once. The id is the content's, so the one
                 # that lost the race holds exactly what the winner stored.
-                await unit_of_work.rollback()
+                await uow.rollback()
         return artifact.ref()
 
     async def page_for(
@@ -114,8 +114,8 @@ class ContentAddressedArguments(ArgumentArtifacts):
             ARGUMENT_ARTIFACT_NAMESPACE,
             f"{workspace_id}:{key.id}@{key.schema_version}:{digest}",
         )
-        async with self._unit_of_work_factory() as unit_of_work:
-            existing = await unit_of_work.artifacts.get(workspace_id, artifact_id)
+        async with self._unit_of_work_factory() as uow:
+            existing = await uow.artifacts.get(workspace_id, artifact_id)
             if existing is not None:
                 return existing.ref()
             artifact = ArtifactObject(
@@ -131,16 +131,16 @@ class ContentAddressedArguments(ArgumentArtifacts):
                 metadata={"written_by": "agent_tool_call"},
             )
             try:
-                await unit_of_work.artifacts.add(artifact)
-                await unit_of_work.commit()
+                await uow.artifacts.add(artifact)
+                await uow.commit()
             except ObjectAlreadyExistsError:
                 # Two identical calls wrote at once. The id is the content's, so the one
                 # that lost the race holds exactly what the winner stored.
-                await unit_of_work.rollback()
+                await uow.rollback()
         return artifact.ref()
 
     async def get_artifact(
         self, *, workspace_id: UUID, artifact_id: UUID
     ) -> ArtifactObject | None:
-        async with self._unit_of_work_factory() as unit_of_work:
-            return await unit_of_work.artifacts.get(workspace_id, artifact_id)
+        async with self._unit_of_work_factory() as uow:
+            return await uow.artifacts.get(workspace_id, artifact_id)
