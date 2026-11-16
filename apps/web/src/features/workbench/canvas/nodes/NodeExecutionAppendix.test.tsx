@@ -156,12 +156,12 @@ describe("NodeExecutionAppendix", () => {
     await React.act(async () => {
       buttonWithText(container, "Result").click();
     });
-    expect(container.textContent).toContain("Stale");
+    expect(container.textContent).toContain("Out of date");
     expect(container.textContent).toContain(
-      "The graph changed since this instance last computed.",
+      "Something changed after this result. Run it again.",
     );
-    expect(container.textContent).toContain("2 artifacts");
-    expect(container.textContent).toContain("9f2b61c0d4a7");
+    expect(container.textContent).toContain("2 results");
+    expect(container.textContent).not.toContain("9f2b61c0d4a7");
   });
 
   it("names a fresh instance by its stored result, not by a run", async () => {
@@ -170,7 +170,7 @@ describe("NodeExecutionAppendix", () => {
       run: storedResult(),
     });
 
-    expect(container.textContent).toContain("Fresh result · 1 artifact");
+    expect(container.textContent).toContain("Up to date · 1 result");
   });
 
   it("keeps a failed instance's own error visible", async () => {
@@ -198,9 +198,9 @@ describe("NodeExecutionAppendix", () => {
     await React.act(async () => {
       buttonWithText(container, "Result").click();
     });
-    expect(container.textContent).toContain("Queued");
+    expect(container.textContent).toContain("Waiting");
     expect(container.textContent).toContain(
-      "No stored result for this instance.",
+      "No result saved for this step yet.",
     );
   });
 
@@ -217,10 +217,8 @@ describe("NodeExecutionAppendix", () => {
     await React.act(async () => {
       buttonWithText(container, "Result").click();
     });
-    expect(container.textContent).toContain("Running");
-    expect(container.textContent).toContain(
-      "A computation for it is in flight.",
-    );
+    expect(container.textContent).toContain("Working");
+    expect(container.textContent).toContain("This step is running.");
   });
 
   it("reads the stored result of an idle node as stale, never as a history entry", async () => {
@@ -234,7 +232,7 @@ describe("NodeExecutionAppendix", () => {
     await React.act(async () => {
       buttonWithText(container, "Result").click();
     });
-    expect(container.textContent).toContain("Stale");
+    expect(container.textContent).toContain("Out of date");
     expect(container.textContent).not.toContain("History");
   });
 

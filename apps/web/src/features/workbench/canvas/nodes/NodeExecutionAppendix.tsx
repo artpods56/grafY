@@ -201,19 +201,19 @@ export interface NodeExecutionAppendixProps {
 }
 
 const STATE_LABELS: Record<NodeInstanceState, string> = {
-  fresh: "Fresh",
-  stale: "Stale",
-  queued: "Queued",
-  running: "Running",
+  fresh: "Up to date",
+  stale: "Out of date",
+  queued: "Waiting",
+  running: "Working",
   failed: "Failed",
 };
 
 const STATE_EXPLANATIONS: Record<NodeInstanceState, string> = {
-  fresh: "Its current fingerprint has a stored result.",
-  stale: "The graph changed since this instance last computed.",
-  queued: "A Run is waiting to compute it.",
-  running: "A computation for it is in flight.",
-  failed: "Its last attempt failed; a Run retries it.",
+  fresh: "This is the result for the documents and settings connected now.",
+  stale: "Something changed after this result. Run it again.",
+  queued: "It will start when the current run reaches it.",
+  running: "This step is running.",
+  failed: "The last run stopped. The message below says why.",
 };
 
 function nodeArtifactCount(
@@ -373,8 +373,7 @@ function CollapsedFootprint({
         title={state ? STATE_EXPLANATIONS[state] : undefined}
         {...stylex.props(s.footprint)}
       >
-        {stateLabel} result · {artifactCount} artifact
-        {artifactCount === 1 ? "" : "s"}
+        {stateLabel} · {artifactCount} result{artifactCount === 1 ? "" : "s"}
       </p>
     );
   }
@@ -473,7 +472,7 @@ function ResultPanel({
         >
           {state
             ? `${STATE_LABELS[state]} · ${STATE_EXPLANATIONS[state]}`
-            : "This node has not been in a Run yet."}
+            : "Not run yet."}
         </span>
       </div>
       {run?.status === "failed" && run.error ? (
@@ -484,7 +483,7 @@ function ResultPanel({
         </div>
       ) : null}
       {artifactCount === 0 ? (
-        <p {...stylex.props(s.state)}>No stored result for this instance.</p>
+        <p {...stylex.props(s.state)}>No result saved for this step yet.</p>
       ) : (
         <>
           <div role="listitem" {...stylex.props(s.row)}>
@@ -494,19 +493,9 @@ function ResultPanel({
                 : "Stored result of this instance"}
             </span>
             <span {...stylex.props(s.rowMeta)}>
-              {artifactCount} artifact{artifactCount === 1 ? "" : "s"}
+              {artifactCount} result{artifactCount === 1 ? "" : "s"}
             </span>
           </div>
-          {run?.result_fingerprint ? (
-            <div role="listitem" {...stylex.props(s.row)}>
-              <span
-                title={run.result_fingerprint}
-                {...stylex.props(s.rowCopy, s.rowContext)}
-              >
-                {run.result_fingerprint.slice(0, 12)}
-              </span>
-            </div>
-          ) : null}
         </>
       )}
     </div>

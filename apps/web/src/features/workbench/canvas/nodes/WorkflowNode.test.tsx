@@ -1218,9 +1218,11 @@ describe("WorkflowNode header", () => {
     };
     const { container, root } = renderNode("chat", data);
 
-    const status = container.querySelector('[aria-label="Execution failed"]');
+    const status = container.querySelector(
+      '[aria-label="OpenAI-compatible Chat Completion failed"]',
+    );
     expect(status).not.toBeNull();
-    expect(status?.textContent).toBe("");
+    expect(status?.textContent).toBe("Failed");
 
     React.act(() => root.unmount());
   });
