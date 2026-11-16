@@ -1130,7 +1130,7 @@ describe("artifact on the canvas", () => {
       true,
     );
     expect(container.querySelectorAll("img")).toHaveLength(0);
-    expect(container.textContent).toContain("File sequence");
+    expect(container.textContent).toContain("List");
     expect(container.textContent).toContain("List of file.csv@1");
     const reorder = [...container.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Reorder items"),

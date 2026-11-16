@@ -475,13 +475,6 @@ export function ArtifactCardBody({
     : declaredType
       ? formatArtifactTypeTooltip(declaredType)
       : undefined;
-  // A card belongs to the group of documents it holds: one document, or the
-  // list it is. A contract already named as a list is not wrapped twice.
-  const groupLabel = !isSequence
-    ? `Document ${contract}`
-    : contract.startsWith("List of ")
-      ? contract
-      : `List of ${contract}`;
   const producerBusy =
     producer?.data.execution?.status === "queued" ||
     producer?.data.execution?.status === "running" ||
@@ -542,6 +535,13 @@ export function ArtifactCardBody({
     librarySummary?.content_type ?? declaredArtifactContentType(firstType);
   const imageArtifact = first !== null && isImageArtifact(first, contentType);
   const isSequence = shownValue !== null && "item_refs" in shownValue;
+  // A card belongs to the group of documents it holds: one document, or the
+  // list it is. A contract already named as a list is not wrapped twice.
+  const groupLabel = !isSequence
+    ? `Document ${contract}`
+    : contract.startsWith("List of ")
+      ? contract
+      : `List of ${contract}`;
   const tableCard = !isSequence && first !== null && isTableArtifact(first);
   const tableHeight = Math.max(
     160,
