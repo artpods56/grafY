@@ -525,6 +525,27 @@ async def test_a_map_connection_must_carry_a_sequence(harness: Harness) -> None:
         await harness.compute_node(graph, "echo")
 
 
+async def test_a_slot_with_no_connection_raises_without_naming_an_id(
+    harness: Harness,
+) -> None:
+    graph = _expand(
+        _node(
+            "parent",
+            "schema.builder",
+            config={"fields": [_field("line", "Line", "schema")]},
+            plugs=(("line", "schemas"),),
+        ),
+    )
+
+    with pytest.raises(
+        NodeComputationError,
+        match="Each slot needs exactly one connection",
+    ) as failure:
+        await harness.compute_node(graph, "parent")
+
+    assert "line" not in str(failure.value)
+
+
 async def test_an_operator_this_build_does_not_register_raises(
     harness: Harness,
 ) -> None:
