@@ -1,4 +1,6 @@
 "use client";
+
+import { duplicateArtifactViewers } from "../canvas/artifact-viewer-edits";
 import { changeOriginCardReferences } from "../model/origin-card-commands";
 import type { AgentNode } from "../agents/agent-node";
 
@@ -3574,29 +3576,13 @@ function WorkbenchBody({
       ]),
     );
     if (selectedViewers.length) {
-      commitArtifactViewers((current) => {
-        const cleared = withoutPresentationSelection(current);
-        return {
-          ...cleared,
-          nodes: [
-            ...cleared.nodes,
-            ...selectedViewers.map((node) => ({
-              ...node,
-              id: duplicatedViewerIds.get(node.id) ?? node.id,
-              position: {
-                x: node.position.x + 36,
-                y: node.position.y + 36,
-              },
-              selected: true,
-              data: {
-                layout: node.data.layout,
-                mode: node.data.mode,
-                artifactRef: node.data.artifactRef,
-              },
-            })),
-          ],
-        };
-      });
+      commitArtifactViewers((current) =>
+        duplicateArtifactViewers(
+          withoutPresentationSelection(current),
+          duplicatedViewerIds,
+          duplicatedNodeIds,
+        ),
+      );
     }
     // The copies are what a person holds after duplicating, in whichever layer
     // they were copied from.
