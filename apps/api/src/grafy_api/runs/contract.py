@@ -486,18 +486,18 @@ class NodeContractBinder:
         for plug in graph_node.input_plugs:
             if plug.id in plugs:
                 raise NodeComputationError(
-                    f"Node {graph_node.id!r} has duplicate input plug id {plug.id!r}"
+                    "This step has two slots with the same identity. "
+                    "Remove the extra slot and add it again."
                 )
             target_port = node.input_contract.ports.get(plug.port)
             if target_port is None:
                 raise NodeComputationError(
-                    f"Node {graph_node.id!r} input plug {plug.id!r} references "
-                    f"unknown input port {plug.port!r}"
+                    "A slot on this step points at an input that no longer "
+                    "exists. Remove the step and add it again."
                 )
             if not target_port.instance_plugs:
                 raise NodeComputationError(
-                    f"Node {graph_node.id!r} input port {plug.port!r} does not "
-                    "accept instance plugs"
+                    "This input cannot take more than one connection."
                 )
             plugs[plug.id] = plug.port
 
@@ -506,11 +506,8 @@ class NodeContractBinder:
                 continue
             if any(plug.port == port_name for plug in graph_node.input_plugs):
                 continue
-            raise NodeComputationError(
-                f"Node {graph_node.id!r} ({node.operator_id}@"
-                f"{node.operator_version}) required instance-plug input "
-                f"{port_name!r} has no submitted plugs"
-            )
+            label = (port.title or "").strip() or port_name.replace("_", " ")
+            raise NodeComputationError(f"Add at least one slot on “{label}”.")
 
         connections_by_plug: dict[str, int] = {}
         for item in incoming:
@@ -520,26 +517,23 @@ class NodeContractBinder:
             if not target_port.instance_plugs:
                 if item.to_plug is not None:
                     raise NodeComputationError(
-                        f"{item.label} declares input plug {item.to_plug!r}, but "
-                        "the target port does not accept instance plugs"
+                        "That connection was aimed at a slot this input does not have."
                     )
                 continue
             if item.map_driven:
                 raise NodeComputationError(
-                    f"{item.label} cannot use collection mode 'map' with an "
-                    "instance-plug input"
+                    "This input takes slots one by one. It cannot take a mapped list."
                 )
             if item.to_plug is None:
-                raise NodeComputationError(f"{item.label} must target an input plug")
+                raise NodeComputationError("This connection is not aimed at a slot.")
             plug_port = plugs.get(item.to_plug)
             if plug_port is None:
                 raise NodeComputationError(
-                    f"{item.label} targets unknown input plug {item.to_plug!r}"
+                    "This connection points at a slot that was removed."
                 )
             if plug_port != item.to_port:
                 raise NodeComputationError(
-                    f"{item.label} targets input plug {item.to_plug!r}, which "
-                    f"belongs to port {plug_port!r}"
+                    "This connection is aimed at a slot on a different input."
                 )
             connections_by_plug[item.to_plug] = (
                 connections_by_plug.get(item.to_plug, 0) + 1
@@ -549,8 +543,8 @@ class NodeContractBinder:
             if connections_by_plug.get(plug_id) == 1:
                 continue
             raise NodeComputationError(
-                f"Node {graph_node.id!r} input plug {plug_id!r} requires exactly "
-                "one incoming connection"
+                "Each slot needs exactly one connection. An empty extra slot, "
+                "or two connections into one slot, blocks the run."
             )
 
 

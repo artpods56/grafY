@@ -646,8 +646,8 @@ export function ContextualNodeDiscovery({
             <div {...stylex.props(s.subtitle)}>
               {pendingCandidate
                 ? session.direction === "upstream"
-                  ? "Choose which output feeds this input"
-                  : "Choose how this output arrives"
+                  ? "Choose which result fills this input"
+                  : "Choose how this result arrives"
                 : `${candidates.length} compatible ${candidates.length === 1 ? "node" : "nodes"}`}
             </div>
           </div>
@@ -746,8 +746,7 @@ export function ContextualNodeDiscovery({
                     {candidate.spec.title}
                   </span>
                   <span {...stylex.props(s.itemDescription)}>
-                    {candidate.spec.description ||
-                      "No description is available."}
+                    {candidate.spec.description || "No description yet."}
                     {candidate.choices.length > 1
                       ? ` · ${candidate.choices.length} ways to connect`
                       : ""}

@@ -45,6 +45,6 @@ test("sign in, create a Graph, and run a Text input", async ({
   await node.click();
   await screen.getByRole("button", { name: "Run", exact: true }).click();
   await expect(
-    node.getByRole("status", { name: "Execution succeeded", exact: true }),
+    node.getByRole("status", { name: "Text input done", exact: true }),
   ).toBeVisible();
 });

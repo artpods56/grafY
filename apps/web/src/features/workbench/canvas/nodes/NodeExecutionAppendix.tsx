@@ -36,7 +36,7 @@ const s = stylex.create({
     paddingInline: "10px",
     color: tokens.colorSubtle,
     fontFamily: MONO,
-    fontSize: "9px",
+    fontSize: "12px",
     lineHeight: 1.45,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -66,7 +66,7 @@ const s = stylex.create({
     backgroundColor: tokens.colorSurfaceSunken,
   },
   tab: {
-    minHeight: "22px",
+    minHeight: "28px",
     display: "inline-flex",
     alignItems: "center",
     paddingInline: "9px",
@@ -82,10 +82,8 @@ const s = stylex.create({
     },
     color: tokens.colorMuted,
     cursor: "pointer",
-    fontSize: "9px",
+    fontSize: "12px",
     fontWeight: 600,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
   },
   tabActive: {
     backgroundColor: tokens.colorSurface,
@@ -95,7 +93,7 @@ const s = stylex.create({
     marginLeft: "5px",
     color: tokens.colorSubtle,
     fontFamily: MONO,
-    fontSize: "9px",
+    fontSize: "12px",
     fontWeight: 600,
   },
   panel: {
@@ -126,7 +124,7 @@ const s = stylex.create({
     overflow: "hidden",
     paddingInline: "10px",
     color: tokens.colorMuted,
-    fontSize: "9px",
+    fontSize: "12px",
     lineHeight: 1.45,
   },
   rowCopy: {
@@ -159,7 +157,7 @@ const s = stylex.create({
     margin: 0,
     paddingInline: "10px",
     color: tokens.colorSubtle,
-    fontSize: "9px",
+    fontSize: "12px",
     lineHeight: 1.45,
   },
   rowMeta: {
@@ -171,7 +169,7 @@ const s = stylex.create({
     margin: 0,
     paddingInline: "10px",
     color: tokens.colorSubtle,
-    fontSize: "9px",
+    fontSize: "12px",
     lineHeight: 1.45,
   },
 });
@@ -182,9 +180,9 @@ type AppendixTab = "events" | "result";
  * The state of this node's instance, as the Project derives it.
  *
  * The canvas overlay carries the coarse status the run surface publishes, so a
- * caller that knows the derived instance state passes it and the card says
- * "fresh" or "stale" outright. Without one the card reads what the overlay can
- * still tell it, and never invents a state it was not given.
+ * caller that knows the derived instance state passes it and the card names
+ * that state. Without one the card reads what the overlay can still tell it,
+ * and never invents a state it was not given.
  */
 export type NodeInstanceState = RunExecutionNodeStatus;
 
@@ -201,19 +199,19 @@ export interface NodeExecutionAppendixProps {
 }
 
 const STATE_LABELS: Record<NodeInstanceState, string> = {
-  fresh: "Fresh",
-  stale: "Stale",
-  queued: "Queued",
-  running: "Running",
+  fresh: "Up to date",
+  stale: "Out of date",
+  queued: "Waiting",
+  running: "Working",
   failed: "Failed",
 };
 
 const STATE_EXPLANATIONS: Record<NodeInstanceState, string> = {
-  fresh: "Its current fingerprint has a stored result.",
-  stale: "The graph changed since this instance last computed.",
-  queued: "A Run is waiting to compute it.",
-  running: "A computation for it is in flight.",
-  failed: "Its last attempt failed; a Run retries it.",
+  fresh: "This is the result for the documents and settings connected now.",
+  stale: "Something changed after this result. Run it again.",
+  queued: "It will start when the current run reaches it.",
+  running: "This step is running.",
+  failed: "The last run stopped. The message below says why.",
 };
 
 function nodeArtifactCount(
@@ -373,8 +371,7 @@ function CollapsedFootprint({
         title={state ? STATE_EXPLANATIONS[state] : undefined}
         {...stylex.props(s.footprint)}
       >
-        {stateLabel} result · {artifactCount} artifact
-        {artifactCount === 1 ? "" : "s"}
+        {stateLabel} · {artifactCount} result{artifactCount === 1 ? "" : "s"}
       </p>
     );
   }
@@ -473,7 +470,7 @@ function ResultPanel({
         >
           {state
             ? `${STATE_LABELS[state]} · ${STATE_EXPLANATIONS[state]}`
-            : "This node has not been in a Run yet."}
+            : "Not run yet."}
         </span>
       </div>
       {run?.status === "failed" && run.error ? (
@@ -484,7 +481,7 @@ function ResultPanel({
         </div>
       ) : null}
       {artifactCount === 0 ? (
-        <p {...stylex.props(s.state)}>No stored result for this instance.</p>
+        <p {...stylex.props(s.state)}>No result saved for this step yet.</p>
       ) : (
         <>
           <div role="listitem" {...stylex.props(s.row)}>
@@ -494,19 +491,9 @@ function ResultPanel({
                 : "Stored result of this instance"}
             </span>
             <span {...stylex.props(s.rowMeta)}>
-              {artifactCount} artifact{artifactCount === 1 ? "" : "s"}
+              {artifactCount} result{artifactCount === 1 ? "" : "s"}
             </span>
           </div>
-          {run?.result_fingerprint ? (
-            <div role="listitem" {...stylex.props(s.row)}>
-              <span
-                title={run.result_fingerprint}
-                {...stylex.props(s.rowCopy, s.rowContext)}
-              >
-                {run.result_fingerprint.slice(0, 12)}
-              </span>
-            </div>
-          ) : null}
         </>
       )}
     </div>
@@ -561,11 +548,18 @@ export function NodeExecutionAppendix({
     );
   }
 
-  // A node that has never been in a Run and never stored a result has nothing
-  // to put in either tab, and an empty pair is chrome reporting its own
-  // emptiness.
+  // A selected step that has never run has nothing to put in either tab.
+  // Say so, instead of an empty pair that only reports its own emptiness.
   if (eventCount === 0 && resultCount === 0) {
-    return null;
+    return (
+      <aside
+        aria-label={`${nodeTitle} execution appendix`}
+        {...interactionProps(stylex.props(s.root))}
+        style={{ width }}
+      >
+        <p {...stylex.props(s.state)}>Not run yet.</p>
+      </aside>
+    );
   }
 
   return (

@@ -19,6 +19,7 @@ import {
 } from "../types";
 import {
   formatArtifactTypeLabel,
+  formatArtifactTypeSequence,
   formatArtifactTypeTooltip,
 } from "../artifact-type-label";
 import {
@@ -336,6 +337,8 @@ export function PortTypePopover({
   const contract = artifactType
     ? formatArtifactTypeLabel(artifactType, registry?.artifact_types ?? null)
     : "Any artifact";
+  const contractHeading =
+    shape === "many" ? formatArtifactTypeSequence(contract) : contract;
   // The header names the type the way the catalog does; the identity it carries
   // (id and schema version) stays readable underneath.
   const contractKey = artifactType
@@ -364,9 +367,7 @@ export function PortTypePopover({
             {...canvasOverlayProps(stylex.props(overlay.popup, s.popup))}
           >
             <header {...stylex.props(s.header)}>
-              <span {...stylex.props(s.typeTitle)}>
-                {shape === "many" ? `list[${contract}]` : contract}
-              </span>
+              <span {...stylex.props(s.typeTitle)}>{contractHeading}</span>
               {contractKey ? (
                 <span {...stylex.props(s.contract)}>{contractKey}</span>
               ) : null}

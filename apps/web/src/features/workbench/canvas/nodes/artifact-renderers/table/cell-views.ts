@@ -74,10 +74,10 @@ export function prettyCellJson(value: unknown): string | null {
 
 /** What a person calls each view. */
 export const CELL_VIEW_LABEL: Record<CellView, string> = {
-  text: "Text",
-  markdown: "Markdown",
-  json: "JSON",
-  html: "HTML",
+  text: "Plain text",
+  markdown: "Formatted text",
+  json: "Data",
+  html: "Web page",
 };
 
 /**

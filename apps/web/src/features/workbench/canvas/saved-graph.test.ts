@@ -462,7 +462,7 @@ describe("saved collection modes", () => {
         testRegistry,
       ),
     ).toThrow(
-      "node target-node has more than one map edge into input left: map-left targets input left and map-right targets input left; only one edge per input may drive mapped execution",
+      "Cannot open “Conversion path”. A connection uses a list mode this input does not accept.",
     );
   });
 
@@ -561,24 +561,13 @@ describe("saved collection modes", () => {
     },
   ])(
     "rejects $collectionMode for $sourceShape → $targetShape when new connections require $expectedMode",
-    ({
-      collectionMode,
-      sourceShape,
-      targetShape,
-      targetAcceptedShapes,
-      expectedMode,
-    }) => {
-      const expected = expectedMode
-        ? `'${expectedMode}'`
-        : "no supported collection mode";
+    ({ collectionMode, sourceShape, targetShape, targetAcceptedShapes }) => {
       expect(() =>
         hydrateSavedGraph(
           graphWithCollectionMode(collectionMode),
           registry(sourceShape, targetShape, targetAcceptedShapes),
         ),
-      ).toThrow(
-        `uses collection mode '${collectionMode}' for source shape '${sourceShape}' and target shape '${targetShape}', expected ${expected}`,
-      );
+      ).toThrow("A connection uses a list mode this input does not accept.");
     },
   );
 });
@@ -708,6 +697,37 @@ describe("saved instance plugs", () => {
     expect(decodeHandleId(edge?.targetHandle)?.plugId).toBe("plug-second");
   });
 
+  it("rejects a node with two plugs of one id without naming either", () => {
+    const graph = graphWithCollectPlugs();
+    const nodes = graph.document.nodes.map((node: SavedGraphNode) =>
+      node.id === "collect-node"
+        ? {
+            ...node,
+            input_plugs: node.input_plugs.map((plug, index) =>
+              index === 1 ? { ...plug, id: "plug-first" } : plug,
+            ),
+          }
+        : node,
+    );
+    const invalidGraph: SavedGraph = {
+      ...graph,
+      document: { ...graph.document, nodes },
+    };
+
+    const hydrated = hydrateSavedGraph(invalidGraph, collectRegistry());
+    const compatibility = hydrated.nodes.find(
+      (node) => node.id === "collect-node",
+    )?.data.compatibility;
+    if (compatibility?.status !== "invalid") {
+      throw new Error("a duplicated plug id must mark the step invalid");
+    }
+
+    expect(compatibility.issues).toEqual([
+      "A step has two slots with the same identity.",
+    ]);
+    expect(compatibility.issues.join(" ")).not.toContain("plug-first");
+  });
+
   it("rejects an edge that targets a missing plug", () => {
     const graph = graphWithCollectPlugs();
     const edge = graph.document.edges[0];
@@ -720,7 +740,7 @@ describe("saved instance plugs", () => {
     };
 
     expect(() => hydrateSavedGraph(invalidGraph, collectRegistry())).toThrow(
-      "references missing input plug plug-missing",
+      "A connection points at a slot that was removed.",
     );
   });
 });
@@ -900,9 +920,7 @@ describe("saved generic artifact type bindings", () => {
     );
     expect(collectNode?.data.compatibility).toMatchObject({
       status: "invalid",
-      issues: [
-        "node collect-node binds undeclared artifact type variable Missing",
-      ],
+      issues: ["A step’s type is not available."],
     });
   });
 
@@ -938,9 +956,7 @@ describe("saved generic artifact type bindings", () => {
     const hydrated = hydrateSavedGraph(invalid, genericCollectRegistry());
     expect(hydrated.nodes[0]?.data.compatibility).toMatchObject({
       status: "invalid",
-      issues: [
-        "node collect-node binds unavailable artifact type artifact.missing@9",
-      ],
+      issues: ["A step’s type is not available."],
     });
   });
 });

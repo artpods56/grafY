@@ -600,9 +600,7 @@ describe("asking for a Run", () => {
       await hook.result.current.runWorkflow("selected");
     });
 
-    expect(setRunError).toHaveBeenCalledWith(
-      "Select at least one node before running a selection.",
-    );
+    expect(setRunError).toHaveBeenCalledWith("Select a step to run.");
     expect(api.startRun).not.toHaveBeenCalled();
     await hook.unmount();
   });
@@ -809,7 +807,7 @@ describe("asking for a Run", () => {
     });
 
     expect(setRunError).toHaveBeenCalledWith(
-      "A node this Run was asked for is no longer on the canvas. Select the nodes again.",
+      "A step in this run is no longer on the canvas. Select the steps again.",
     );
     // The tab holds no demand: the refusal was the answer.
     expect(hook.result.current.running).toBe(false);
@@ -825,13 +823,13 @@ describe("the words for a Run that was refused", () => {
   it("names the code's own problem, because the code is the stable half", () => {
     expect(
       runRejectionMessage(rejection("the graph is gone", "unknown_graph")),
-    ).toBe("This Graph is no longer in the Project. Reload it before running.");
+    ).toBe("This canvas is no longer in the project. Reload before running.");
     expect(
       runRejectionMessage(
         rejection("node c is not on the canvas", "unknown_target"),
       ),
     ).toBe(
-      "A node this Run was asked for is no longer on the canvas. Select the nodes again.",
+      "A step in this run is no longer on the canvas. Select the steps again.",
     );
     expect(
       runRejectionMessage(

@@ -714,7 +714,7 @@ describe("artifact on the canvas", () => {
     const stack = container.querySelector('[aria-label="3 items in sequence"]');
     const thumbs = stack?.querySelectorAll("img");
     expect(container.textContent).toContain("3 items");
-    expect(container.textContent).toContain("Sequence<file.jpeg@1>");
+    expect(container.textContent).toContain("List of file.jpeg@1");
     expect(thumbs).toHaveLength(3);
     expect(thumbs![0]?.parentElement?.style.left).toBe("0px");
     expect(thumbs![2]?.parentElement?.style.left).toBe("24px");
@@ -1130,8 +1130,8 @@ describe("artifact on the canvas", () => {
       true,
     );
     expect(container.querySelectorAll("img")).toHaveLength(0);
-    expect(container.textContent).toContain("File sequence");
-    expect(container.textContent).toContain("Sequence<file.csv@1>");
+    expect(container.textContent).toContain("List");
+    expect(container.textContent).toContain("List of file.csv@1");
     const reorder = [...container.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Reorder items"),
     );

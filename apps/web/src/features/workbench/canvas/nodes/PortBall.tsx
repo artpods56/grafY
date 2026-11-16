@@ -321,7 +321,7 @@ export interface PortBallProps {
 
 export interface PortTip {
   name: string;
-  /** "Sequence<Text value>", or "Any type" while open. */
+  /** "List of Text value", or "Any type" while open. */
   type: string;
   /** What the person can do with the ball. */
   hint?: string;

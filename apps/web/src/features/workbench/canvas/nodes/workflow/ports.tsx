@@ -17,6 +17,7 @@ import { artifactTypeColor } from "../../nodes.css";
 import {
   formatArtifactTypeContract,
   formatArtifactTypeLabel,
+  formatArtifactTypeSequence,
   formatArtifactTypeTooltip,
 } from "../../artifact-type-label";
 import { useArtifactTypeCatalog } from "../../use-artifact-type-catalog";
@@ -135,8 +136,12 @@ export function OptionalConnectionToggle({
     <Switch
       checked={connection.enabled}
       onCheckedChange={() => connection.toggle()}
-      aria-label={`${label} connection enabled`}
-      title={connection.enabled ? "Disable connection" : "Enable connection"}
+      aria-label={`${label} ${connection.enabled ? "is used" : "is not used"}`}
+      title={
+        connection.enabled
+          ? "Stop using this connection"
+          : "Use this connection"
+      }
       onClick={(event) => event.stopPropagation()}
       size="dense"
       className="nodrag nowheel"
@@ -239,16 +244,16 @@ function PortTab({
     ? artifactTypeColor(artifactType.id, tokens.colorAccent)
     : tokens.colorAccent;
   const artifactContract = artifactType
-    ? formatArtifactTypeContract(artifactType, artifactTypes)
-    : "Any artifact";
+    ? formatArtifactTypeContract(artifactType, artifactTypes, shape === "many")
+    : shape === "many"
+      ? formatArtifactTypeSequence("Any artifact")
+      : "Any artifact";
   const contractTooltip = artifactType
     ? ` (${formatArtifactTypeTooltip(artifactType)})`
     : "";
-  const effectiveContract =
-    shape === "many" ? `list[${artifactContract}]` : artifactContract;
   const accessibleLabel = input
-    ? `Input port ${visibleName}, accepts ${effectiveContract}${port.required ? ", required" : ""}`
-    : `Output port ${visibleName}, provides ${effectiveContract}`;
+    ? `Input port ${visibleName}, accepts ${artifactContract}${port.required ? ", required" : ""}`
+    : `Output port ${visibleName}, provides ${artifactContract}`;
   const connectionDisabled = Boolean(connection && !connection.enabled);
   const handleId = encodeHandleId(
     portMetaForPort(
@@ -303,7 +308,10 @@ function PortTab({
               </span>
             ) : null}
             {shape === "many" ? (
-              <span {...stylex.props(nodeChrome.tabShape)}>· many</span>
+              <span {...stylex.props(nodeChrome.tabShape)}>· list</span>
+            ) : null}
+            {connectionDisabled ? (
+              <span {...stylex.props(nodeChrome.tabShape)}>· not used</span>
             ) : null}
           </Popover.Trigger>
         </PortTypePopover>
@@ -374,13 +382,11 @@ export function usePortBallTypeProps({
   const open = Boolean(variable) && !artifactType;
   const inner = artifactType
     ? formatArtifactTypeLabel(artifactType, artifactTypes)
-    : "any";
+    : null;
   const type =
     shape === "many"
-      ? `Sequence<${inner}>`
-      : artifactType
-        ? inner
-        : ANY_TYPE_LABEL;
+      ? formatArtifactTypeSequence(inner ?? "any type")
+      : (inner ?? ANY_TYPE_LABEL);
   const options = variable
     ? artifactTypeVariableOptions(
         data.spec.operator_id,
@@ -453,9 +459,7 @@ function CompatibilityPort({
   endpoint: IncompatibleWorkflowNodeCompatibility["inputs"][number];
 }) {
   const input = direction === "input";
-  const label = endpoint.plugId
-    ? `${endpoint.portName} · ${endpoint.plugId}`
-    : endpoint.portName;
+  const label = endpoint.portName.replaceAll("_", " ");
   return (
     <div
       {...stylex.props(nodeChrome.tabRow, input ? null : nodeChrome.tabRowOut)}
@@ -466,7 +470,7 @@ function CompatibilityPort({
           input ? nodeChrome.tabIn : nodeChrome.tabOut,
           s.compatibilityPort,
         )}
-        title={`Historical ${direction} ${label}`}
+        title={`Saved ${direction}`}
       >
         <span {...stylex.props(nodeChrome.tabLabel)}>{label}</span>
       </div>
@@ -477,7 +481,7 @@ function CompatibilityPort({
         color={tokens.colorMuted}
         locked
         ariaLabel={`Unavailable ${direction} port ${label}`}
-        title={`This historical ${direction} cannot accept new connections.`}
+        title={`This saved ${direction} cannot take new connections.`}
       />
     </div>
   );

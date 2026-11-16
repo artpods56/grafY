@@ -165,7 +165,8 @@ export function NodeInspector({
                 </section>
               ) : null}
               <section {...stylex.props(s.section)}>
-                <SectionTitle icon={Workflow}>Ports</SectionTitle>
+                <SectionTitle icon={Workflow}>Inputs and outputs</SectionTitle>
+                <h4 {...stylex.props(s.columnHeading)}>Technical id</h4>
                 <p {...stylex.props(s.mono)}>
                   {spec.operator_id}@{spec.operator_version}
                 </p>
@@ -273,13 +274,13 @@ function PortChips({
         label="Takes"
         ports={spec.inputs}
         registry={registry}
-        none="Nothing — it starts a workflow"
+        none="Nothing. This step starts the work."
       />
       <PortChipGroup
         label="Makes"
         ports={spec.outputs}
         registry={registry}
-        none="Nothing — it ends a branch"
+        none="Nothing. This step ends the work."
       />
     </div>
   );

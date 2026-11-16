@@ -68,9 +68,9 @@ const s = stylex.create({
   plugRow: {
     position: "relative",
     minWidth: 0,
-    minHeight: "38px",
+    minHeight: "44px",
     display: "grid",
-    gridTemplateColumns: "20px 20px minmax(0, 1fr) auto",
+    gridTemplateColumns: "24px 20px minmax(0, 1fr) auto",
     alignItems: "center",
     gap: "4px",
     padding: "3px 4px 3px 6px",
@@ -81,10 +81,10 @@ const s = stylex.create({
     backgroundColor: tokens.colorAccentSoft,
     boxShadow: `inset 0 0 0 1px ${tokens.colorAccentBorder}`,
   },
-  /** The handle keeps the 20px column the plug row budgets it, and its grab cursor. */
+  /** The handle keeps the 24px column the plug row budgets it, and its grab cursor. */
   plugGrip: {
-    width: "20px",
-    height: "26px",
+    width: "24px",
+    height: "32px",
     borderRadius: "5px",
     cursor: "grab",
     touchAction: "none",
@@ -108,10 +108,10 @@ const s = stylex.create({
     whiteSpace: "nowrap",
   },
   plugActions: { display: "flex", alignItems: "center", gap: "1px" },
-  /** Row actions keep the 18px the plug row budgets them. */
+  /** Row actions keep the 24px the plug row budgets them. */
   plugAction: {
-    width: "18px",
-    height: "20px",
+    width: "24px",
+    height: "24px",
     borderRadius: "5px",
   },
   addPlug: {
@@ -156,13 +156,13 @@ function InstancePlugRow({
   const binding = data.inputPlugBindings[plug.id];
   const connectionMeta = binding
     ? [
-        binding.sourceShape === "many" ? "sequence" : "single",
-        binding.conversionLabel ? `feed ${binding.conversionLabel}` : null,
+        binding.sourceShape === "many" ? "a list" : "one item",
+        binding.conversionLabel,
         binding.contributionLabel,
       ]
         .filter((label): label is string => Boolean(label))
         .join(" · ")
-    : `Accepts ${acceptedShapeLabel}`;
+    : "Nothing connected yet";
   const accessibleLabel = `${visibleName} input ${index + 1}, accepts ${acceptedShapeLabel}`;
 
   return (
@@ -323,7 +323,7 @@ export function InstancePlugPort({
     ? artifactTypeColor(artifactType.id, tokens.colorAccent)
     : tokens.colorAccent;
   const acceptedShapeLabel = acceptedPortShapes(port)
-    .map((shape) => (shape === "many" ? "sequence" : "single"))
+    .map((shape) => (shape === "many" ? "a list" : "one item"))
     .join(" or ");
 
   const finishPointerDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -360,9 +360,7 @@ export function InstancePlugPort({
             ) : null}
           </Button>
         </PortTypePopover>
-        <span {...stylex.props(s.plugPortRule)}>
-          {acceptedShapeLabel} · plug order
-        </span>
+        <span {...stylex.props(s.plugPortRule)}>In this order</span>
       </div>
 
       <div {...stylex.props(s.plugList)}>
@@ -395,7 +393,7 @@ export function InstancePlugPort({
         onClick={() => data.onAddInputPlug?.(id, port.name)}
       >
         <Plus size={11} />
-        Add input
+        Add another
       </Button>
     </section>
   );

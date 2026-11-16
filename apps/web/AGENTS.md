@@ -151,7 +151,7 @@ cannot resolve, which `tsc` and Vitest both pass.
 
 - `features/workbench/canvas/artifact-type-label.ts` is the single place that
   names an artifact type for a person: the catalog title (`Text value`,
-  `Sequence<Text value>`), with the schema version inline as `Text value · v2`
+  `List of Text value`), with the schema version inline as `Text value · v2`
   — the node catalog's separator — only once it is past `@1`. Keep the full
   `id@version` reachable in a tooltip or the port type inspector.
 - Every label helper takes its catalog as a required argument. A call site with

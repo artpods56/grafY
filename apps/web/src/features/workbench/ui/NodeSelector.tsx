@@ -352,7 +352,7 @@ function NodeBrowser({
     : errorMessage
       ? "Nodes could not be loaded."
       : foundNodes.length === 0
-        ? "No nodes found."
+        ? "No steps found."
         : `${foundNodes.length} ${foundNodes.length === 1 ? "node" : "nodes"}.`;
   const narrowed =
     searching ||
@@ -389,7 +389,7 @@ function NodeBrowser({
               selectedSpec ? resultOptionId(selectedSpec) : undefined
             }
             value={query}
-            placeholder="Search nodes, types, settings…"
+            placeholder="Search steps"
             autoComplete="off"
             spellCheck={false}
             onChange={(event) => changeQuery(event.currentTarget.value)}
@@ -451,7 +451,7 @@ function NodeBrowser({
               <span>
                 {compatibility
                   ? "No nodes match this port and the current search or filter."
-                  : "No nodes match the current search or filter."}
+                  : "No steps match this search."}
               </span>
               {narrowed ? (
                 <Button
@@ -527,7 +527,7 @@ function NodeBrowser({
                 ? "Loading node details…"
                 : errorMessage
                   ? "Node details are unavailable until the list loads."
-                  : "Select a node to inspect its contract."}
+                  : "Select a step to see what it needs and what it produces."}
             </div>
           )}
         </aside>
