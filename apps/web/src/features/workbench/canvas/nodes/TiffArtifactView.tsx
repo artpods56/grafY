@@ -29,18 +29,27 @@ const s = stylex.create({
     height: "100%",
     backgroundColor: tokens.colorSurface,
   },
-  viewport: { position: "absolute", inset: 0 },
+  // The tile surface is its own layer. The controls are a later sibling, so
+  // they stay above the canvas OpenSeadragon appends into this element.
+  viewport: {
+    position: "absolute",
+    inset: 0,
+    zIndex: 0,
+    overflow: "hidden",
+  },
   thumbnail: {
     position: "absolute",
     width: "100%",
     height: "100%",
     objectFit: "contain",
+    zIndex: 0,
   },
   controls: {
     position: "absolute",
     bottom: 4,
     left: 4,
     right: 4,
+    zIndex: 1,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -54,6 +63,7 @@ const s = stylex.create({
     top: 4,
     left: 4,
     right: 4,
+    zIndex: 1,
     backgroundColor: tokens.colorSurface,
     color: tokens.colorMuted,
     fontSize: tokens.fontSizeXs,
@@ -178,11 +188,15 @@ function TiffPage({
     };
   }, [info, thumbnailReady, path, page]);
 
+  const root = stylex.props(s.root);
+  const viewport = stylex.props(s.viewport);
+  const status = stylex.props(s.status);
+  const controls = stylex.props(s.controls);
   return (
     <section
       aria-label={`${name} scan`}
-      className="nodrag nopan nowheel"
-      {...stylex.props(s.root)}
+      className={`nodrag nopan nowheel ${root.className ?? ""}`}
+      style={root.style}
     >
       {!loaded && (
         <img /* eslint-disable-line @next/next/no-img-element -- authenticated thumbnail */
@@ -197,14 +211,22 @@ function TiffPage({
         ref={host}
         data-tiff-viewport
         data-page={page}
-        {...stylex.props(s.viewport)}
+        className={viewport.className}
+        style={{ ...viewport.style, zIndex: 0 }}
       />
       {error || !loaded ? (
-        <div role="status" {...stylex.props(s.status)}>
+        <div
+          role="status"
+          className={status.className}
+          style={{ ...status.style, zIndex: 2 }}
+        >
           {error ?? "Loading image…"}
         </div>
       ) : null}
-      <div {...stylex.props(s.controls)}>
+      <div
+        className={controls.className}
+        style={{ ...controls.style, zIndex: 2 }}
+      >
         <IconButton
           size="2xs"
           label="Zoom out"
