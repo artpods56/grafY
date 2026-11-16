@@ -23,7 +23,7 @@ class JsonSchemaPayload(BaseModel):
 
 JSON_SCHEMA = ArtifactTypeSpec(
     key=ArtifactTypeKey("json.schema", 1),
-    title="JSON Schema",
+    title="Answer format",
     payload_schema=cast(JsonObject, JsonSchemaPayload.model_json_schema()),
 )
 

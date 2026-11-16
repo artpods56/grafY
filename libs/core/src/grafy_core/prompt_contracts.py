@@ -41,7 +41,7 @@ class PromptMessage(BaseModel):
 
 PROMPT_MESSAGE = ArtifactTypeSpec(
     key=ArtifactTypeKey("prompt.message", 2),
-    title="Prompt message",
+    title="Instruction",
     payload_schema=cast(JsonObject, PromptMessage.model_json_schema()),
     references=(
         ArtifactReferenceContract(
