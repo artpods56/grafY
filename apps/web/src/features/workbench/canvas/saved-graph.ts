@@ -217,18 +217,18 @@ function requireArtifactTypeBindings(
   for (const binding of savedNode.artifact_type_bindings) {
     if (!declaredVariables.has(binding.variable)) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: node ${savedNode.id} binds undeclared artifact type variable ${binding.variable}`,
+        `Cannot open “${savedGraph.name}”. A step’s type is not available.`,
       );
     }
     if (binding.variable in bindings) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: node ${savedNode.id} binds artifact type variable ${binding.variable} more than once`,
+        `Cannot open “${savedGraph.name}”. A step’s type is not available.`,
       );
     }
     const bindingKey = artifactTypeKey(binding.artifact_type);
     if (!registryArtifactTypes.has(bindingKey)) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: node ${savedNode.id} binds unavailable artifact type ${bindingKey}`,
+        `Cannot open “${savedGraph.name}”. A step’s type is not available.`,
       );
     }
     bindings[binding.variable] = {
@@ -331,12 +331,12 @@ function requireInputPlugs(
     const port = spec.inputs.find((candidate) => candidate.name === plug.port);
     if (!port || !portHasInstancePlugs(port)) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: node ${savedNode.id} input plug ${plug.id} references non-instance input ${plug.port}`,
+        `Cannot open “${savedGraph.name}”. A step has a slot the input does not allow.`,
       );
     }
     if (plugIds.has(plug.id)) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: node ${savedNode.id} has duplicate input plug id ${plug.id}`,
+        `Cannot open “${savedGraph.name}”. A step has two slots with the same identity.`,
       );
     }
     plugIds.add(plug.id);
@@ -355,13 +355,13 @@ function requireEdgeEndpoint(
   const sourceNode = nodeById.get(edge.from_node);
   if (!sourceNode) {
     throw new SavedGraphHydrationError(
-      `Cannot open “${savedGraph.name}”: edge ${edge.id} references missing source node ${edge.from_node}`,
+      `Cannot open “${savedGraph.name}”. A connection points at a step that is not on the canvas.`,
     );
   }
   const targetNode = nodeById.get(edge.to_node);
   if (!targetNode) {
     throw new SavedGraphHydrationError(
-      `Cannot open “${savedGraph.name}”: edge ${edge.id} references missing target node ${edge.to_node}`,
+      `Cannot open “${savedGraph.name}”. A connection points at a step that is not on the canvas.`,
     );
   }
   return { sourceNode, targetNode };
@@ -429,7 +429,7 @@ export function hydrateSavedGraph(
     (savedNode: SavedGraphNode) => {
       if (nodeIds.has(savedNode.id)) {
         throw new SavedGraphHydrationError(
-          `Cannot open “${savedGraph.name}”: duplicate node id ${savedNode.id}`,
+          `Cannot open “${savedGraph.name}”. This file has two steps with the same identity.`,
         );
       }
       nodeIds.add(savedNode.id);
@@ -479,7 +479,7 @@ export function hydrateSavedGraph(
             hydrateNodeLayout(savedNode.layout) ?? defaultNodeLayout(spec);
         } catch (error) {
           if (!(error instanceof SavedGraphHydrationError)) throw error;
-          const graphPrefix = `Cannot open “${savedGraph.name}”: `;
+          const graphPrefix = `Cannot open “${savedGraph.name}”. `;
           const issue = error.message.startsWith(graphPrefix)
             ? error.message.slice(graphPrefix.length)
             : error.message;
@@ -528,9 +528,7 @@ export function hydrateSavedGraph(
           savedNode,
           savedEdges,
           "invalid",
-          [
-            `Saved connection ${savedEdge.id} references removed output ${savedEdge.from_port}.`,
-          ],
+          [`A saved connection points at an output this step no longer has.`],
           sourceNode.data.spec,
         );
       }
@@ -547,9 +545,7 @@ export function hydrateSavedGraph(
           savedNode,
           savedEdges,
           "invalid",
-          [
-            `Saved connection ${savedEdge.id} references removed input ${savedEdge.to_port}.`,
-          ],
+          [`A saved connection points at an input this step no longer has.`],
           targetNode.data.spec,
         );
       }
@@ -563,7 +559,7 @@ export function hydrateSavedGraph(
     const existing = mapEdgeByTargetInput.get(targetKey);
     if (existing) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: node ${edge.to_node} has more than one map edge into input ${edge.to_port}: ${existing.id} targets input ${existing.to_port} and ${edge.id} targets input ${edge.to_port}; only one edge per input may drive mapped execution`,
+        `Cannot open “${savedGraph.name}”. A connection uses a list mode this input does not accept.`,
       );
     }
     mapEdgeByTargetInput.set(targetKey, edge);
@@ -578,7 +574,7 @@ export function hydrateSavedGraph(
   const edges = savedEdges.map((savedEdge: SavedGraphEdge) => {
     if (edgeIds.has(savedEdge.id)) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: duplicate edge id ${savedEdge.id}`,
+        `Cannot open “${savedGraph.name}”. This file has two connections with the same identity.`,
       );
     }
     edgeIds.add(savedEdge.id);
@@ -601,12 +597,12 @@ export function hydrateSavedGraph(
       : undefined;
     if (sourceSupported && !sourcePort) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: edge ${savedEdge.id} references missing output ${sourceNode.data.spec.operator_id}.${savedEdge.from_port}`,
+        `Cannot open “${savedGraph.name}”. A connection points at an input that is not on that step.`,
       );
     }
     if (targetSupported && !targetPort) {
       throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”: edge ${savedEdge.id} references missing input ${targetNode.data.spec.operator_id}.${savedEdge.to_port}`,
+        `Cannot open “${savedGraph.name}”. A connection points at an input that is not on that step.`,
       );
     }
 
@@ -671,7 +667,7 @@ export function hydrateSavedGraph(
     } else {
       if (!sourcePort || !targetPort) {
         throw new SavedGraphHydrationError(
-          `Cannot open “${savedGraph.name}”: edge ${savedEdge.id} has unavailable ports`,
+          `Cannot open “${savedGraph.name}”. A connection points at an input that is not on that step.`,
         );
       }
       if (portHasInstancePlugs(targetPort)) {
@@ -681,13 +677,13 @@ export function hydrateSavedGraph(
         );
         if (!targetPlug) {
           throw new SavedGraphHydrationError(
-            `Cannot open “${savedGraph.name}”: edge ${savedEdge.id} references missing input plug ${savedEdge.to_plug ?? "null"}`,
+            `Cannot open “${savedGraph.name}”. A connection points at a slot that was removed.`,
           );
         }
         const targetPlugKey = `${targetNode.id}::${targetPlug.id}`;
         if (occupiedTargetPlugIds.has(targetPlugKey)) {
           throw new SavedGraphHydrationError(
-            `Cannot open “${savedGraph.name}”: multiple edges target input plug ${targetPlug.id} on node ${targetNode.id}`,
+            `Cannot open “${savedGraph.name}”. Two connections land on the same slot.`,
           );
         }
         occupiedTargetPlugIds.add(targetPlugKey);
@@ -696,7 +692,7 @@ export function hydrateSavedGraph(
         savedEdge.to_plug !== undefined
       ) {
         throw new SavedGraphHydrationError(
-          `Cannot open “${savedGraph.name}”: edge ${savedEdge.id} assigns input plug ${savedEdge.to_plug} to non-instance input ${targetPort.name}`,
+          `Cannot open “${savedGraph.name}”. A step has a slot the input does not allow.`,
         );
       }
 
@@ -720,7 +716,7 @@ export function hydrateSavedGraph(
           ? expectedCollectionModes.map((mode) => `'${mode}'`).join(" or ")
           : "no supported collection mode";
         throw new SavedGraphHydrationError(
-          `Cannot open “${savedGraph.name}”: edge ${savedEdge.id} uses collection mode '${savedEdge.collection_mode}' for source shape '${sourceShape}' and target shape '${targetShape}', expected ${expectedMode}`,
+          `Cannot open “${savedGraph.name}”. A connection uses a list mode this input does not accept.`,
         );
       }
 
@@ -728,7 +724,7 @@ export function hydrateSavedGraph(
         !connectionRouteIsValid(savedEdge, sourceNode, targetNode, registry)
       ) {
         throw new SavedGraphHydrationError(
-          `Cannot open “${savedGraph.name}”: edge ${savedEdge.id} has an incompatible artifact route`,
+          `Cannot open “${savedGraph.name}”. A connection joins two kinds of document that do not fit.`,
         );
       }
 
