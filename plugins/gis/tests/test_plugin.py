@@ -11,6 +11,7 @@ def test_manifest_loader_target_preserves_system_identity_and_freezes() -> None:
 
     assert isinstance(GIS, Plugin)
     assert GIS.slug == "external.gis"
+    assert GIS.title == "Maps"
     assert {registration.key for registration in GIS.nodes} == {
         ("gis.features.to_table", 1),
         ("gis.table.to_features", 1),

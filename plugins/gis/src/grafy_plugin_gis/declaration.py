@@ -6,7 +6,7 @@ from grafy_core.table_contracts import TABLE_DATA
 
 GIS = Plugin(
     slug="external.gis",
-    title="GIS",
+    title="Maps",
     capabilities=(
         PluginRuntimeCapability.NATIVE_GDAL,
         PluginRuntimeCapability.NETWORK_EGRESS,

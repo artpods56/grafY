@@ -97,7 +97,7 @@ def test_sequence_plugin_registers_all_nodes_without_artifact_types() -> None:
     registry.freeze()
 
     assert SEQUENCES.slug == "sequence"
-    assert SEQUENCES.title == "Sequence"
+    assert SEQUENCES.title == "Lists"
     assert SEQUENCES.artifact_types == ()
     sequence_registrations = [
         registration
