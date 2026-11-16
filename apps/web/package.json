@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit --incremental false",
     "generate:api:schema": "uv run --directory ../.. --package grafy-api python -m grafy_api.openapi apps/web/openapi/grafy.json",
     "generate:api": "npm run generate:api:schema && openapi-typescript openapi/grafy.json --immutable --alphabetize --empty-objects-unknown -o src/lib/api/generated/grafy.ts",
-    "check:api": "npm run generate:api:schema && openapi-typescript openapi/grafy.json --immutable --alphabetize --empty-objects-unknown -o src/lib/api/generated/grafy.ts --check"
+    "check:api": "npm run generate:api:schema && openapi-typescript openapi/grafy.json --immutable --alphabetize --empty-objects-unknown -o src/lib/api/generated/grafy.ts --check",
+    "test:e2e:tiff": "playwright test --config tiff.playwright.config.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -25,6 +26,7 @@
     "markdown-to-jsx": "8.0.0",
     "mustache": "^4.2.0",
     "next": "16.2.9",
+    "openseadragon": "^6.1.1",
     "pmtiles": "^4.4.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "@e2e-dev/web": "^0.15.5",
+    "@playwright/test": "^1.65.1",
     "@stylexjs/babel-plugin": "^0.19.0",
     "@stylexjs/postcss-plugin": "^0.19.0",
     "@types/mustache": "^4.2.6",

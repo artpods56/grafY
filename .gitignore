@@ -47,3 +47,6 @@ system-plugin-deployment.json
 
 # Host-only deployment releases, backups, logs, and secrets.
 .deployment/
+
+# Generated TIFF browser evidence and fixtures.
+artifacts/e2e-tiff/
