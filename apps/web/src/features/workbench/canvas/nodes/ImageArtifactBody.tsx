@@ -1,4 +1,5 @@
 import * as stylex from "@stylexjs/stylex";
+import { TiffArtifactView } from "./TiffArtifactView";
 import { ImageOff } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
@@ -107,6 +108,7 @@ export function ArtifactLabel({
 
 export function ImageArtifactBody({
   images,
+  workspaceId,
   sequence,
   mediaHeight,
   selected,
@@ -115,7 +117,14 @@ export function ImageArtifactBody({
   onSize,
   onError,
 }: {
-  images: readonly { id: string; url: string; name: string; failed: boolean }[];
+  workspaceId: string;
+  images: readonly {
+    id: string;
+    url: string;
+    name: string;
+    failed: boolean;
+    tiff: boolean;
+  }[];
   sequence: boolean;
   mediaHeight: number;
   selected: boolean;
@@ -162,7 +171,13 @@ export function ImageArtifactBody({
           {!selected && remoteSelectionColor && index === 0 ? (
             <RemoteSelectionRing color={remoteSelectionColor} radius={5} />
           ) : null}
-          {image.failed ? (
+          {image.tiff ? (
+            <TiffArtifactView
+              workspaceId={workspaceId}
+              artifactId={image.id}
+              name={image.name}
+            />
+          ) : image.failed ? (
             <div {...stylex.props(s.unavailable)}>
               <ImageOff size={18} /> Preview unavailable
             </div>

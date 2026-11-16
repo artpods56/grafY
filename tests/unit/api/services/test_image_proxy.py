@@ -153,7 +153,7 @@ async def test_tile_signs_source_and_returns_only_image_and_cache_headers(
     assert response.status_code == 200
     assert response.content == b"tile bytes"
     assert response.headers["content-type"] == "image/jpeg"
-    assert response.headers["cache-control"] == "private, no-cache"
+    assert response.headers["cache-control"] == "private, max-age=300"
     assert "set-cookie" not in response.headers
     assert "location" not in response.headers
     assert "x-grafy-grant" not in response.headers
@@ -243,6 +243,7 @@ async def test_invalid_parameters_never_call_tiler(proxy: Harness, suffix: str) 
         (404, 404),
         (409, 409),
         (413, 413),
+        (415, 415),
         (422, 422),
         (503, 503),
     ],
@@ -347,7 +348,19 @@ async def test_info_returns_a_typed_descriptor(proxy: Harness) -> None:
     proxy.content_type = "application/json"
     response = await proxy.client.get(proxy.path + "/info")
     assert response.status_code == 200
-    assert response.json() == info
+    assert response.json() == {
+        key: info[key]
+        for key in (
+            "width",
+            "height",
+            "page_count",
+            "has_alpha",
+            "tile_size",
+            "min_level",
+            "max_level",
+            "tile_format",
+        )
+    }
 
 
 async def test_etags_distinguish_page_coordinates_edge_and_renderer(
@@ -371,3 +384,66 @@ async def test_etags_distinguish_page_coordinates_edge_and_renderer(
     assert response.status_code == 200
     tags.add(response.headers["etag"])
     assert len(tags) == len(urls) + 1
+
+
+async def test_rotation_signs_with_current_key(proxy: Harness) -> None:
+    previous = "previous-key-" * 4
+    proxy.config.tiler_shared_key = SecretStr(f" {KEY} , {previous} ")
+    response = await proxy.client.get(proxy.path + "/tiles/10/0/0.jpg")
+    assert response.status_code == 200
+    grant = Grant.verify_grant(
+        proxy.requests[0].headers["X-Grafy-Grant"],
+        keys=[KEY.encode()],
+        bucket="bucket",
+        now=int(time.time()),
+        skew_seconds=0,
+        max_source_bytes=1024,
+    )
+    assert grant.sha256 == proxy.artifact.sha256
+
+
+@pytest.mark.parametrize(
+    "keys", ["x" * 32 + ",short", "," + "x" * 32, ",".join(["x" * 32] * 3)]
+)
+def test_rotation_rejects_invalid_key_lists(keys: str) -> None:
+    with pytest.raises(ValidationError):
+        TilerConfig(
+            _env_file=None,  # pyright: ignore[reportCallIssue]
+            tiler_url=HttpUrl("http://tiler:8100"),
+            tiler_shared_key=SecretStr(keys),
+        )
+
+
+async def test_operation_timeouts(proxy: Harness) -> None:
+    await proxy.client.get(proxy.path + "/thumbnail")
+    assert proxy.requests[-1].extensions["timeout"]["read"] == 10
+    await proxy.client.get(proxy.path + "/info")
+    assert proxy.requests[-1].extensions["timeout"]["read"] == 30
+
+
+async def test_whole_request_deadline_releases_stalled_upstream(proxy: Harness) -> None:
+    import asyncio
+    from grafy_api.artifacts.images import ImageProxyError, TiffSource
+
+    entered = asyncio.Event()
+    never_finishes = asyncio.Event()
+
+    async def stalled(request: httpx.Request) -> httpx.Response:
+        entered.set()
+        await never_finishes.wait()
+        return httpx.Response(200)
+
+    proxy.config.tiler_timeout_seconds = 0.01
+    tiler = HttpTiler(
+        proxy.config, client=httpx.AsyncClient(transport=httpx.MockTransport(stalled))
+    )
+    try:
+        with pytest.raises(ImageProxyError) as failure:
+            await tiler.thumbnail(
+                TiffSource("bucket", "scan.tif", "a" * 64, 100, 0), edge=256
+            )
+        assert entered.is_set()
+        assert failure.value.status == 503
+        assert failure.value.retry_after == "2"
+    finally:
+        await tiler.close()

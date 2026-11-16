@@ -2823,56 +2823,16 @@ export interface components {
         };
         /** ImageInfoResponse */
         readonly ImageInfoResponse: {
-            /** Band Count */
-            readonly band_count: number;
-            /** Bit Depth */
-            readonly bit_depth: number;
-            /** Bounds Wgs84 */
-            readonly bounds_wgs84: readonly [
-                number,
-                number,
-                number,
-                number
-            ] | null;
-            /** Crs */
-            readonly crs: string | null;
-            /** Dtype */
-            readonly dtype: string;
-            /** Georeferenced */
-            readonly georeferenced: boolean;
             /** Has Alpha */
             readonly has_alpha: boolean;
             /** Height */
             readonly height: number;
-            /**
-             * Kind
-             * @enum {string}
-             */
-            readonly kind: "gray" | "rgb" | "palette" | "cmyk";
             /** Max Level */
             readonly max_level: number;
             /** Min Level */
             readonly min_level: number;
-            /** Overview Count */
-            readonly overview_count: number;
-            /** Overview Level */
-            readonly overview_level: number | null;
-            /** Page */
-            readonly page: number;
             /** Page Count */
             readonly page_count: number;
-            /** Palette */
-            readonly palette: readonly (readonly [
-                number,
-                number,
-                number,
-                number
-            ])[] | null;
-            /**
-             * Resampling
-             * @enum {string}
-             */
-            readonly resampling: "nearest" | "average";
             /**
              * Tile Format
              * @enum {string}
@@ -2883,11 +2843,6 @@ export interface components {
              * @enum {integer}
              */
             readonly tile_size: 256 | 512;
-            /** Value Range */
-            readonly value_range: readonly [
-                number,
-                number
-            ] | null;
             /** Width */
             readonly width: number;
         };

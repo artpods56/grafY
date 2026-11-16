@@ -10,7 +10,7 @@ from grafy_shared.config.tiler import TilerConfig
 
 from grafy_api.artifacts.models import ImageInfoResponse
 
-IMAGE_CACHE_CONTROL = "private, no-cache"
+IMAGE_CACHE_CONTROL = "private, max-age=300"
 
 TileExtension = Literal["png", "jpg"]
 

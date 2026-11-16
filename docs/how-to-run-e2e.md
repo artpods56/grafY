@@ -40,3 +40,34 @@ manual checks. Unit, backend, lint, type, and API contract checks remain separat
 
 Framework docs ship in `apps/web/node_modules/e2e/docs`. Run
 `cd apps/web && npx e2e guide` for the installed version's guide.
+
+## TIFF canvas verification
+
+The TIFF test uses a running **local test** stack with the repository Keycloak
+realm (`owner` / `owner`), the API, Next, MinIO and the internal tiler. Do not
+point it at production: it uploads four artifacts and leaves a saved
+`TIFF archive demonstration` Project for inspection. Configure the API and
+read-only tiler account using the deployment guide's “Add the tiler” procedure,
+with local ports and a separate bucket/account. Keep generated keys in ignored
+local files. The test does not stop the stack.
+
+Generate synthetic archival scans with the tiler's GDAL environment:
+
+```sh
+cd apps/tiler
+uv run python scripts/create_canvas_fixtures.py ../../artifacts/e2e-tiff/fixtures
+cd ../..
+E2E_STACK_ORIGIN=http://127.0.0.1:3000 \
+TIFF_FIXTURE_DIR="$PWD/artifacts/e2e-tiff/fixtures" \
+npm --prefix apps/web run test:e2e:tiff
+```
+
+The fixtures are a 12032 × 8192 RGB register, 16-bit grayscale, three pages,
+and alpha. They contain invented records, not historical personal data.
+The browser defaults to installed Chrome; set `TIFF_BROWSER_CHANNEL=chromium`
+and install Playwright Chromium if needed. Tests sign in through SSO, upload
+through the public upload API, save direct canvas cards and a checkpoint, then
+exercise zoom, pointer pan and page navigation. Network URLs and phase counts
+are retained in `artifacts/e2e-tiff/requests.json`, with canvas and zoom PNGs.
+Wrong-Workspace reads must return 403/404. Recording is off so session cookies
+are not included. A passing source/type check does not substitute for this run.

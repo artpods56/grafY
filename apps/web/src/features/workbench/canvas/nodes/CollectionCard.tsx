@@ -542,8 +542,13 @@ export function CollectionCard({
             ) : null}
             {pictures ? (
               <ImageArtifactBody
+                workspaceId={workspace.id}
                 images={refs.map((ref, index) => ({
                   id: ref.artifact_id,
+                  tiff:
+                    ref.artifact_type === "file.tiff" ||
+                    itemsById.get(ref.artifact_id)?.artifact.content_type ===
+                      "image/tiff",
                   url: artifactInlineContentUrl(workspace.id, ref.artifact_id),
                   name: nameOf(ref) ?? `Item ${index + 1}`,
                   failed: imagesFailed[ref.artifact_id] ?? false,

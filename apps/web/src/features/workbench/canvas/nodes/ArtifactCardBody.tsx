@@ -917,8 +917,13 @@ export function ArtifactCardBody({
             />
             {imageArtifact ? (
               <ImageArtifactBody
+                workspaceId={workspace.id}
                 images={refs.map((ref, index) => ({
                   id: ref.artifact_id,
+                  tiff:
+                    ref.artifact_type === "file.tiff" ||
+                    (itemsById.get(ref.artifact_id)?.artifact.content_type ??
+                      contentType) === "image/tiff",
                   url: artifactInlineContentUrl(workspace.id, ref.artifact_id),
                   name:
                     nameOf(ref.artifact_id) ??
