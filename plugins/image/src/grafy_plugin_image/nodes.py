@@ -220,7 +220,10 @@ class DrawRegionsOutput(NodeOutput):
     image: Annotated[
         RasterImageContent,
         OutPort(RASTER_IMAGE),
-        Field(description="PNG copy of the input image with regions drawn on top."),
+        Field(
+            title="Image",
+            description="PNG copy of the input image with regions drawn on top.",
+        ),
     ]
 
 

@@ -124,6 +124,10 @@ def test_sequence_plugin_registers_all_nodes_without_artifact_types() -> None:
         "Take a range",
         "Pick one",
     ]
+    assert sequence_registrations[0].description == (
+        "Keeps pages or files together, in the order you add them. Every "
+        "item has to be the same kind of thing."
+    )
 
 
 @pytest.mark.asyncio

@@ -66,8 +66,7 @@ async def collect(
     _config: NoConfig,
     inputs: CollectInput,
 ) -> CollectOutput:
-    """Keeps pages or files together, in the order you add them. Every
-    item has to be the same kind of thing."""
+    """Keeps pages or files together, in the order you add them. Every item has to be the same kind of thing."""
     first = inputs.items[0]
     if isinstance(first, ArtifactRef):
         artifact_type = first.key()

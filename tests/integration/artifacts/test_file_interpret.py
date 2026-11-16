@@ -265,6 +265,10 @@ def test_interpret_declares_an_explicit_format_output_and_a_blob_input() -> None
     registration = registry.node_registration("file.interpret", 1)
     node_class = registration.node_class
     assert registration.title == "Set file type"
+    assert registration.description == (
+        "Tells Grafy what kind of file this is, when the upload was not "
+        "recognized. Pick the type that matches the file."
+    )
     file_input = node_class.input_contract.ports["file"]
     assert file_input.accepts == BLOB_FILE.key
     assert file_input.also_accepts == ()

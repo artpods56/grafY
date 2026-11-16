@@ -108,8 +108,7 @@ def _chosen_file_format(
 )
 @final
 class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput]):
-    """Tells Grafy what kind of file this is, when the upload was not
-    recognized. Pick the type that matches the file."""
+    """Tells Grafy what kind of file this is, when the upload was not recognized. Pick the type that matches the file."""
 
     def __init__(
         self,
