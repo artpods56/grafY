@@ -754,7 +754,7 @@ describe("WorkflowNode compatibility rendering", () => {
         '[aria-label="legacy.operator unsupported node"]',
       ),
     ).not.toBeNull();
-    expect(container.textContent).toContain("unsupported");
+    expect(container.textContent).toContain("Unavailable");
     expect(container.textContent).toContain(
       "Operator python.transform@4 is unavailable.",
     );
@@ -1203,10 +1203,8 @@ describe("WorkflowNode header", () => {
     expect(deleteItem).toBeDefined();
     React.act(() => deleteItem?.click());
     expect(removeNode).toHaveBeenCalledWith("chat");
-    // Provenance now lives in the about popover instead of the card chrome.
-    expect(selected.container.textContent).toContain(
-      "llm.openai_compatible.chat_completion@1",
-    );
+    // The card menu names the step, not the operator build behind it.
+    expect(selected.container.textContent).not.toContain("@1");
     React.act(() => selected.root.unmount());
   });
 
@@ -2060,9 +2058,10 @@ describe("WorkflowNode optional connection switch", () => {
     const { container, root } = renderNode("text-pipe", data);
 
     const toggle = container.querySelector<HTMLElement>(
-      '[role="switch"][aria-label="text connection enabled"]',
+      '[role="switch"][aria-label="text is not used"]',
     );
     expect(toggle?.getAttribute("aria-checked")).toBe("false");
+    expect(toggle?.closest("div")?.textContent).toContain("· not used");
     // React Flow walks up from the pointer target, so the kit switch's own root
     // has to hold the classes.
     const switchRoot = toggle?.closest("label");

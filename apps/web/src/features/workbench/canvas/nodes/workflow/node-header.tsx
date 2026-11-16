@@ -71,11 +71,6 @@ export function NodeHeader({
       aboutDescription={
         data.spec.description || "No description is available for this node."
       }
-      aboutFooter={
-        <span {...stylex.props(sharedStyles.operatorCopy)}>
-          {data.spec.operator_id}@{data.spec.operator_version}
-        </span>
-      }
       onRemove={() => data.onRemoveNode?.(id)}
       onMenuOpenChange={onMenuOpenChange}
       status={

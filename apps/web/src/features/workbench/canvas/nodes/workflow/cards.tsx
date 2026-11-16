@@ -44,7 +44,6 @@ import type { WorkflowNode } from "./node-type";
 import { CompatibilityPortRail, PortRail, nodeInteractionProps } from "./ports";
 import type { IncompatibleWorkflowNodeCompatibility } from "./ports";
 import { SchemaBuilderBody } from "./schema-builder";
-import { sharedStyles } from "./styles";
 
 const s = stylex.create({
   compatibilityIcon: {
@@ -192,17 +191,12 @@ export function IncompatibleWorkflowNodeCard({
           title={data.spec.title}
           selected={selected}
           aboutTitle={data.spec.title}
-          aboutDescription={`This node is ${compatibility.status}. Remove it, or restore the plugin release it was saved with.`}
-          aboutFooter={
-            <span {...stylex.props(sharedStyles.operatorCopy)}>
-              {data.spec.operator_id}@{data.spec.operator_version}
-            </span>
-          }
+          aboutDescription="This step cannot run. Remove it, or restore the plugin it was saved with."
           onMenuOpenChange={setMenuOpen}
           status={
             <span
               role="status"
-              title={`${data.spec.title} is ${compatibility.status}`}
+              title={`${data.spec.title} cannot run`}
               {...stylex.props(s.compatibilityBadge)}
             >
               <TriangleAlert
@@ -210,7 +204,7 @@ export function IncompatibleWorkflowNodeCard({
                 aria-hidden="true"
                 {...stylex.props(s.compatibilityIcon)}
               />
-              {compatibility.status}
+              Unavailable
             </span>
           }
         >
@@ -264,7 +258,7 @@ export function IncompatibleWorkflowNodeCard({
         ))}
         <details {...nodeInteractionProps(stylex.props(s.compatibilityConfig))}>
           <summary {...stylex.props(s.compatibilityConfigSummary)}>
-            Saved configuration
+            Saved settings
           </summary>
           <pre {...stylex.props(s.compatibilityConfigValue)}>
             {JSON.stringify(data.config, null, 2)}

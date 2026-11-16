@@ -136,8 +136,12 @@ export function OptionalConnectionToggle({
     <Switch
       checked={connection.enabled}
       onCheckedChange={() => connection.toggle()}
-      aria-label={`${label} connection enabled`}
-      title={connection.enabled ? "Disable connection" : "Enable connection"}
+      aria-label={`${label} ${connection.enabled ? "is used" : "is not used"}`}
+      title={
+        connection.enabled
+          ? "Stop using this connection"
+          : "Use this connection"
+      }
       onClick={(event) => event.stopPropagation()}
       size="dense"
       className="nodrag nowheel"
@@ -306,6 +310,9 @@ function PortTab({
             {shape === "many" ? (
               <span {...stylex.props(nodeChrome.tabShape)}>· list</span>
             ) : null}
+            {connectionDisabled ? (
+              <span {...stylex.props(nodeChrome.tabShape)}>· not used</span>
+            ) : null}
           </Popover.Trigger>
         </PortTypePopover>
         {connection ? (
@@ -452,9 +459,7 @@ function CompatibilityPort({
   endpoint: IncompatibleWorkflowNodeCompatibility["inputs"][number];
 }) {
   const input = direction === "input";
-  const label = endpoint.plugId
-    ? `${endpoint.portName} · ${endpoint.plugId}`
-    : endpoint.portName;
+  const label = endpoint.portName.replaceAll("_", " ");
   return (
     <div
       {...stylex.props(nodeChrome.tabRow, input ? null : nodeChrome.tabRowOut)}
@@ -465,7 +470,7 @@ function CompatibilityPort({
           input ? nodeChrome.tabIn : nodeChrome.tabOut,
           s.compatibilityPort,
         )}
-        title={`Historical ${direction} ${label}`}
+        title={`Saved ${direction} ${label}`}
       >
         <span {...stylex.props(nodeChrome.tabLabel)}>{label}</span>
       </div>
@@ -476,7 +481,7 @@ function CompatibilityPort({
         color={tokens.colorMuted}
         locked
         ariaLabel={`Unavailable ${direction} port ${label}`}
-        title={`This historical ${direction} cannot accept new connections.`}
+        title={`This saved ${direction} cannot take new connections.`}
       />
     </div>
   );

@@ -4,15 +4,6 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 
 /** Style keys used by more than one workflow node module. */
 export const sharedStyles = stylex.create({
-  operatorCopy: {
-    minWidth: 0,
-    overflow: "hidden",
-    color: tokens.colorSubtle,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: tokens.fontSizeXs,
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
   /** Structural schema metadata, so it stays out of the port/type colour range. */
   required: { color: tokens.colorSubtle, fontSize: tokens.fontSizeSm },
   schemaBody: {
