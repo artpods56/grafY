@@ -16,6 +16,10 @@ def test_plugin_declares_image_operators() -> None:
         ("image.crop_regions", 1),
         ("image.draw_regions", 1),
     }
+    draw = next(
+        node for node in registry.nodes if node.key == ("image.draw_regions", 1)
+    )
+    assert draw.node_class.output_contract.ports["image"].title == "Image"
     assert {
         (spec.key.id, spec.key.schema_version) for spec in IMAGES.artifact_types
     } == {(IMAGE_REGIONS.key.id, IMAGE_REGIONS.key.schema_version)}

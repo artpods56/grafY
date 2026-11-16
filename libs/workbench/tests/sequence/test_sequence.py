@@ -61,6 +61,8 @@ def test_collect_declares_one_homogeneous_generic_contract() -> None:
     assert isinstance(input_port.accepts, ArtifactTypeVariable)
     assert input_port.accepts.name == "T"
     assert output_port.produces is input_port.accepts
+    assert input_port.title == "Documents"
+    assert output_port.title == "List"
     assert input_port.accepted_shapes == (PortShape.ONE, PortShape.MANY)
     assert input_port.variadic is True
     assert input_port.instance_plugs is True
@@ -76,6 +78,12 @@ def test_sequence_nodes_declare_generic_ref_container_contracts() -> None:
     item_at_input = ItemAtNode.input_contract.ports["items"]
     item_at_output = ItemAtNode.output_contract.ports["item"]
 
+    assert count_input.title == "List"
+    assert count_output.title == "How many"
+    assert slice_input.title == "List"
+    assert slice_output.title == "List"
+    assert item_at_input.title == "List"
+    assert item_at_output.title == "Item"
     assert count_input.accepts is collected_type
     assert count_input.shape is PortShape.MANY
     assert count_output.produces == INTEGER_VALUE.key
@@ -97,7 +105,7 @@ def test_sequence_plugin_registers_all_nodes_without_artifact_types() -> None:
     registry.freeze()
 
     assert SEQUENCES.slug == "sequence"
-    assert SEQUENCES.title == "Sequence"
+    assert SEQUENCES.title == "Lists"
     assert SEQUENCES.artifact_types == ()
     sequence_registrations = [
         registration
@@ -111,11 +119,15 @@ def test_sequence_plugin_registers_all_nodes_without_artifact_types() -> None:
         ("sequence.item_at", 1),
     ]
     assert [registration.title for registration in sequence_registrations] == [
-        "Collect",
-        "Count",
-        "Slice",
-        "Pick item",
+        "Group into a list",
+        "Count items",
+        "Take a range",
+        "Pick one",
     ]
+    assert sequence_registrations[0].description == (
+        "Keeps pages or files together, in the order you add them. Every "
+        "item has to be the same kind of thing."
+    )
 
 
 @pytest.mark.asyncio
@@ -331,7 +343,7 @@ async def test_slice_handles_open_ended_empty_and_beyond_end_ranges(
 
 
 @pytest.mark.asyncio
-async def test_slice_rejects_unordered_sequence_with_its_id() -> None:
+async def test_slice_rejects_an_unordered_sequence() -> None:
     source = ArtifactRefSequence(
         artifact_type=VALUE_TYPE.id,
         schema_version=VALUE_TYPE.schema_version,
@@ -339,7 +351,7 @@ async def test_slice_rejects_unordered_sequence_with_its_id() -> None:
         ordered=False,
     )
 
-    with pytest.raises(NodeRunError, match=str(source.sequence_id)):
+    with pytest.raises(NodeRunError, match="no order, so a range"):
         await _runtime().run_node(
             SliceNode(),
             NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="slice"),
@@ -366,7 +378,7 @@ async def test_item_at_returns_the_existing_ref() -> None:
 
 
 @pytest.mark.asyncio
-async def test_item_at_rejects_unordered_sequence_with_its_id() -> None:
+async def test_item_at_rejects_an_unordered_sequence() -> None:
     source = ArtifactRefSequence(
         artifact_type=VALUE_TYPE.id,
         schema_version=VALUE_TYPE.schema_version,
@@ -374,7 +386,7 @@ async def test_item_at_rejects_unordered_sequence_with_its_id() -> None:
         ordered=False,
     )
 
-    with pytest.raises(NodeRunError, match=str(source.sequence_id)):
+    with pytest.raises(NodeRunError, match="no order, so one item"):
         await _runtime().run_node(
             ItemAtNode(),
             NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="pick"),
@@ -384,7 +396,7 @@ async def test_item_at_rejects_unordered_sequence_with_its_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_item_at_out_of_range_error_has_sequence_context() -> None:
+async def test_item_at_out_of_range_error_counts_the_items() -> None:
     ref = ArtifactRef.from_key(artifact_id=uuid4(), key=VALUE_TYPE)
     source = ArtifactRefSequence.from_key(key=VALUE_TYPE, item_refs=[ref])
 
@@ -398,9 +410,9 @@ async def test_item_at_out_of_range_error_has_sequence_context() -> None:
         )
 
     message = str(error.value)
-    assert str(source.sequence_id) in message
-    assert "index 3" in message
-    assert "length 1" in message
+    assert str(source.sequence_id) not in message
+    assert "no item at position 3" in message
+    assert "This list has 1 items, and 0 is the first." in message
 
 
 @pytest.mark.parametrize(

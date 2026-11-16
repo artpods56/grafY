@@ -34,12 +34,15 @@ class PromptMessageInput(NodeInput):
     text: Annotated[
         StrictStr,
         InPort(TEXT_VALUE),
-        Field(description="Text content of the prompt message."),
+        Field(title="Words", description="Text content of the prompt message."),
     ]
     images: Annotated[
         ArtifactRefSequence | None,
         InPort(RASTER_IMAGE),
-        Field(description="Optional ordered image artifacts for a user message."),
+        Field(
+            title="Pictures",
+            description="Optional ordered image artifacts for a user message.",
+        ),
     ] = None
 
 
@@ -47,21 +50,21 @@ class PromptMessageOutput(NodeOutput):
     message: Annotated[
         PromptMessage,
         OutPort(PROMPT_MESSAGE),
-        Field(description="The composed prompt message."),
+        Field(title="Instruction", description="The composed prompt message."),
     ]
 
 
 @LLM.function_node(
     operator_id="prompt.message.create",
     version=2,
-    title="Create prompt message",
+    title="Write an instruction",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def create_prompt_message(
     config: PromptMessageConfig,
     inputs: PromptMessageInput,
 ) -> PromptMessageOutput:
-    """Composes prompt text and optional image references into one message."""
+    """The words, and any pictures, you want the model to read."""
     if inputs.images is not None and not inputs.images.ordered:
         raise ValueError(
             "Cannot create a prompt message from unordered image sequence "

@@ -6,7 +6,7 @@ from grafy_core.schema_contracts import JSON_SCHEMA
 
 LLM = Plugin(
     slug="external.llm",
-    title="LLM",
+    title="Language model",
     capabilities=(
         PluginRuntimeCapability.NETWORK_EGRESS,
         PluginRuntimeCapability.NODE_SECRETS,

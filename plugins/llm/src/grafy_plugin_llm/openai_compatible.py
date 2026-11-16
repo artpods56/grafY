@@ -122,13 +122,15 @@ class OpenAICompatibleInput(NodeInput):
     messages: Annotated[
         list[PromptMessage],
         InPort(PROMPT_MESSAGE),
-        Field(min_length=1, description="Ordered prompt messages."),
+        Field(
+            min_length=1, title="Instructions", description="Ordered prompt messages."
+        ),
     ]
     json_schema: Annotated[
         str | None,
         InPort(JSON_SCHEMA),
         Field(
-            title="JSON Schema",
+            title="Answer format",
             description="Optional schema for a structured completion.",
         ),
     ] = None
@@ -138,7 +140,9 @@ class OpenAICompatibleOutput(NodeOutput):
     completion: Annotated[
         CompletionPayload,
         OutPort(COMPLETION),
-        Field(description="Completion content and safe provider metadata."),
+        Field(
+            title="Answer", description="Completion content and safe provider metadata."
+        ),
     ]
 
 
@@ -193,7 +197,7 @@ def build_openai_compatible_node(
 @LLM.node(
     operator_id="llm.openai_compatible.chat_completion",
     version=1,
-    title="OpenAI-compatible Chat Completion",
+    title="Ask a model",
     factory=build_openai_compatible_node,
     required_capabilities=(
         PluginRuntimeCapability.NETWORK_EGRESS,
@@ -221,7 +225,7 @@ class OpenAICompatibleNode(
         OpenAICompatibleOutput,
     ]
 ):
-    """Calls a saved graph's OpenAI-compatible Chat Completions endpoint."""
+    """Sends the instructions to a chat model and keeps the answer."""
 
     def __init__(
         self,

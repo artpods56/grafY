@@ -212,7 +212,7 @@ class TableImportInput(NodeInput):
     file: Annotated[
         ArtifactRef,
         InPort(CSV_FILE, also_accepts=(XLSX_FILE,)),
-        Field(description="CSV or XLSX file artifact to import."),
+        Field(title="Spreadsheet", description="A CSV or Excel file."),
     ]
 
 
@@ -220,14 +220,17 @@ class TableImportOutput(NodeOutput):
     table: Annotated[
         Table,
         OutPort(TABLE_DATA),
-        Field(description="Table imported from the selected worksheet or CSV file."),
+        Field(
+            title="Table",
+            description="The rows and columns from that file.",
+        ),
     ]
 
 
 @TABLES.node(
     operator_id="table.import",
     version=1,
-    title="Import table",
+    title="Read a spreadsheet",
     factory=lambda context: ImportTableNode(
         storage=context.storage,
         uow=context.uow,
@@ -236,7 +239,7 @@ class TableImportOutput(NodeOutput):
 )
 @final
 class ImportTableNode(Node[TableImportConfig, TableImportInput, TableImportOutput]):
-    """Import one persisted CSV or XLSX file artifact as a table."""
+    """Reads a CSV or Excel file into a table."""
 
     def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
         self._storage = storage

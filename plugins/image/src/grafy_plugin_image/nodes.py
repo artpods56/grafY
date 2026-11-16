@@ -62,7 +62,9 @@ class ImageDecodeInput(NodeInput):
             PNG_FILE,
             also_accepts=(JPEG_FILE, WEBP_FILE, TIFF_FILE, BMP_FILE),
         ),
-        Field(description="Ordered image file artifacts to decode."),
+        Field(
+            title="Image files", description="Ordered image file artifacts to decode."
+        ),
     ]
 
 
@@ -70,14 +72,14 @@ class ImageDecodeOutput(NodeOutput):
     images: Annotated[
         list[RasterImageContent],
         OutPort(RASTER_IMAGE),
-        Field(description="Decoded raster images in input order."),
+        Field(title="Images", description="Decoded raster images in input order."),
     ]
 
 
 @IMAGES.node(
     operator_id="image.decode",
     version=1,
-    title="Decode images",
+    title="Read images",
     factory=lambda context: DecodeImagesNode(
         storage=context.storage,
         uow=context.uow,
@@ -85,7 +87,7 @@ class ImageDecodeOutput(NodeOutput):
 )
 @final
 class DecodeImagesNode(Node[NodeConfig, ImageDecodeInput, ImageDecodeOutput]):
-    """Decode one ordered batch of persisted image file artifacts."""
+    """Turns image files into pictures on the canvas."""
 
     def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
         self._storage = storage
@@ -202,13 +204,14 @@ class DrawRegionsInput(NodeInput):
     image: Annotated[
         ArtifactRef,
         InPort(RASTER_IMAGE),
-        Field(description="Raster image to draw on."),
+        Field(title="Image", description="Raster image to draw on."),
     ]
     regions: Annotated[
         ImageRegionSet,
         InPort(IMAGE_REGIONS),
         Field(
-            description="Boxes to draw, scaled from their coordinate space to the image size."
+            title="Boxes",
+            description="Boxes to draw, scaled from their coordinate space to the image size.",
         ),
     ]
 
@@ -217,7 +220,10 @@ class DrawRegionsOutput(NodeOutput):
     image: Annotated[
         RasterImageContent,
         OutPort(RASTER_IMAGE),
-        Field(description="PNG copy of the input image with regions drawn on top."),
+        Field(
+            title="Image",
+            description="PNG copy of the input image with regions drawn on top.",
+        ),
     ]
 
 
@@ -334,12 +340,12 @@ async def _load_image(
 @IMAGES.node(
     operator_id="image.draw_regions",
     version=1,
-    title="Draw regions",
+    title="Draw boxes",
     factory=lambda context: DrawRegionsNode(storage=context.storage, uow=context.uow),
 )
 @final
 class DrawRegionsNode(Node[DrawRegionsConfig, DrawRegionsInput, DrawRegionsOutput]):
-    """Draw bounding boxes from a region set onto a raster image."""
+    """Draws the boxes from a reading onto the page."""
 
     def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
         self._storage = storage
@@ -392,8 +398,8 @@ class CropRegionsConfig(NodeConfig):
 
 
 class CropRegionsInput(NodeInput):
-    image: Annotated[ArtifactRef, InPort(RASTER_IMAGE)]
-    regions: Annotated[ImageRegionSet, InPort(IMAGE_REGIONS)]
+    image: Annotated[ArtifactRef, InPort(RASTER_IMAGE), Field(title="Image")]
+    regions: Annotated[ImageRegionSet, InPort(IMAGE_REGIONS), Field(title="Boxes")]
 
 
 class CropRegionsOutput(NodeOutput):
@@ -407,12 +413,12 @@ class CropRegionsOutput(NodeOutput):
 @IMAGES.node(
     operator_id="image.crop_regions",
     version=1,
-    title="Crop regions",
+    title="Crop boxes",
     factory=lambda context: CropRegionsNode(storage=context.storage, uow=context.uow),
 )
 @final
 class CropRegionsNode(Node[CropRegionsConfig, CropRegionsInput, CropRegionsOutput]):
-    """Crop matching boxes into PNGs. Its MANY output prevents use as a map target."""
+    """Cuts out each box as its own picture."""
 
     def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
         self._storage = storage

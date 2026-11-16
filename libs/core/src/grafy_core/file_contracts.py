@@ -123,7 +123,7 @@ TXT_FILE = ArtifactTypeSpec(
 BLOB_FILE = ArtifactTypeSpec(
     bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.blob", 1),
-    title="Binary blob",
+    title="Unrecognized file",
 )
 
 

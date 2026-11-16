@@ -4,6 +4,6 @@ from grafy_core.plugins import Plugin
 
 SEQUENCES = Plugin(
     slug="sequence",
-    title="Sequence",
+    title="Lists",
 )
 SEQUENCES.register_artifact_type_dependency(INTEGER_VALUE)

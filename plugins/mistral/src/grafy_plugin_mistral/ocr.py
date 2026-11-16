@@ -96,9 +96,10 @@ class MistralOcrInput(NodeInput):
         # A model that could write any address here would be choosing what Mistral fetches.
         InPort(TEXT_VALUE, agent_default="hidden"),
         Field(
+            title="Document link",
             description=(
-                "HTTPS URL of a PDF, presentation, or other document Mistral "
-                "OCR can fetch. Leave empty when a raster image is connected."
+                "Web address of the PDF or scan. Leave empty when a page image "
+                "is connected."
             ),
         ),
     ] = None
@@ -106,10 +107,8 @@ class MistralOcrInput(NodeInput):
         ArtifactRef | None,
         InPort(RASTER_IMAGE),
         Field(
-            description=(
-                "Raster image to recognize. Leave empty when a document URL "
-                "is connected."
-            ),
+            title="Page image",
+            description="One scanned page. Leave empty when a document link is connected.",
         ),
     ] = None
 
@@ -118,20 +117,28 @@ class MistralOcrOutput(NodeOutput):
     markdown: Annotated[
         MarkdownValue,
         OutPort(MARKDOWN),
-        Field(description="Recognized document as Markdown, pages joined in order."),
+        Field(
+            title="Transcription",
+            description="The reading, with pages kept in order.",
+        ),
     ]
     blocks: Annotated[
         Table,
         OutPort(TABLE_DATA),
         Field(
-            description="One row per recognized block with its page, kind, box, text, and confidence."
+            title="Text blocks",
+            description=(
+                "One row per piece the reader found: page, kind of "
+                "region, text, and box."
+            ),
         ),
     ]
     regions: Annotated[
         ImageRegionSet,
         OutPort(IMAGE_REGIONS),
         Field(
-            description="Boxes for every page, each tagged with its page, in page pixel coordinates."
+            title="Boxes on the page",
+            description="Where each region sits on the page, in pixels.",
         ),
     ]
 
@@ -212,7 +219,7 @@ def build_mistral_ocr_node(context: PluginRuntimeContext) -> "MistralOcrNode":
 @MISTRAL.node(
     operator_id="mistral.ocr.process",
     version=1,
-    title="Mistral OCR",
+    title="Read with Mistral",
     factory=build_mistral_ocr_node,
     required_capabilities=(
         PluginRuntimeCapability.NETWORK_EGRESS,
@@ -232,7 +239,7 @@ def build_mistral_ocr_node(context: PluginRuntimeContext) -> "MistralOcrNode":
 )
 @final
 class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
-    """Recognizes a document URL or raster image with Mistral OCR."""
+    """Reads a PDF or a scanned page into text. You need a Mistral key."""
 
     def __init__(
         self,
@@ -252,16 +259,9 @@ class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
         /,
     ) -> MistralOcrOutput:
         if (inputs.document_url is None) == (inputs.image is None):
-            # Say which of the two it was: "exactly one" reads the same for a node that
-            # was given nothing and one that was given a URL beside a connected image.
-            received = (
-                "both a document URL and a raster image"
-                if inputs.document_url is not None
-                else "neither"
-            )
             raise MistralOcrExecutionError(
-                "Mistral OCR requires exactly one of a document URL or a raster "
-                f"image on node {context.node_id!r}; it received {received}"
+                "Connect either a document link or a page image, not both, and "
+                "not neither."
             )
         try:
             api_key = await self._node_secrets.resolve_secret(

@@ -54,7 +54,10 @@ class InterpretFileInput(NodeInput):
     file: Annotated[
         ArtifactRef,
         InPort(BLOB_FILE),
-        Field(description="Blob file artifact whose bytes should be interpreted."),
+        Field(
+            title="File",
+            description="The file whose type is still unrecognized.",
+        ),
     ]
 
 
@@ -62,7 +65,10 @@ class InterpretFileOutput(NodeOutput):
     file: Annotated[
         ArtifactRef,
         OutPort(ArtifactTypeVariable(FORMAT_ARTIFACT_TYPE_VARIABLE)),
-        Field(description="New file artifact of the chosen format."),
+        Field(
+            title="File",
+            description="The same bytes, labeled as the type you chose.",
+        ),
     ]
 
 
@@ -73,18 +79,17 @@ def _chosen_file_format(
     key = bindings.get(FORMAT_ARTIFACT_TYPE_VARIABLE)
     if key is None:
         raise UserFacingNodeError(
-            "Interpret file needs an explicit format: bind its file output to one "
-            "claimed file.* artifact type."
+            "Choose the file type on this step before running it."
         )
     spec = artifact_types.get(key)
     if spec is None:
         raise UserFacingNodeError(
-            f"Interpret file does not know artifact type {key.id}@{key.schema_version}"
+            "This file type is not available. Choose another type."
         )
     if not _is_claimed_format(key) or not spec.extensions:
         raise UserFacingNodeError(
-            f"{key.id}@{key.schema_version} is not a claimed file format; choose a "
-            "file.* type the deployment recognizes."
+            "That choice is not a file type this copy of Grafy knows. "
+            "Choose another type."
         )
     return spec
 
@@ -92,7 +97,7 @@ def _chosen_file_format(
 @FILES.node(
     operator_id="file.interpret",
     version=1,
-    title="Interpret file",
+    title="Set file type",
     factory=lambda context: InterpretFileNode(
         storage=context.storage,
         uow=context.uow,
@@ -103,7 +108,7 @@ def _chosen_file_format(
 )
 @final
 class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput]):
-    """Confirm blob bytes against one claimed file.* format and claim them."""
+    """Tells Grafy what kind of file this is, when the upload was not recognized. Pick the type that matches the file."""
 
     def __init__(
         self,
@@ -158,9 +163,8 @@ class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput
             label = file.original_filename or f"artifact {source.artifact_id}"
             expected = spec.key.id.removeprefix("file.").upper()
             raise UserFacingNodeError(
-                f"file_format_mismatch: {label} does not look like a {expected} "
-                "file. Bind the file output to another format or convert the "
-                "file, then try again."
+                f"{label} does not look like a {expected} file. Choose another "
+                "type, or replace the file, then run again."
             )
 
         key = spec.key

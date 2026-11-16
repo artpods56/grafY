@@ -40,7 +40,7 @@ class RasterImageContent(BaseModel):
 
 RASTER_IMAGE = ArtifactTypeSpec(
     key=ArtifactTypeKey("image.raster", 1),
-    title="Raster image",
+    title="Image",
     bundle=ArtifactBundleContract(format="binary-file", version=1),
 )
 
@@ -107,7 +107,7 @@ class ImageRegionSet(BaseModel):
 # carries the same exact contract as the Image Plugin that draws them.
 IMAGE_REGIONS = ArtifactTypeSpec(
     key=ArtifactTypeKey("image.regions", 1),
-    title="Image regions",
+    title="Boxes on the page",
     payload_schema=cast(JsonObject, ImageRegionSet.model_json_schema()),
 )
 
@@ -120,7 +120,7 @@ class IntegerValuePayload(BaseModel):
 
 INTEGER_VALUE = ArtifactTypeSpec(
     key=ArtifactTypeKey("scalar.integer", 1),
-    title="Integer value",
+    title="Number",
     payload_schema=cast(JsonObject, IntegerValuePayload.model_json_schema()),
     materialized_json_type="integer",
 )
@@ -137,7 +137,7 @@ TextValuePayload = TextValue
 
 TEXT_VALUE = ArtifactTypeSpec(
     key=ArtifactTypeKey("scalar.text", 1),
-    title="Text value",
+    title="Text",
     payload_schema=cast(JsonObject, TextValuePayload.model_json_schema()),
     materialized_json_type="string",
     export_formats=(
@@ -160,7 +160,7 @@ class MarkdownValue(BaseModel):
 # Markdown carries the same exact contract as a release dependency.
 MARKDOWN = ArtifactTypeSpec(
     key=ArtifactTypeKey("text.markdown", 1),
-    title="Markdown",
+    title="Transcribed text",
     payload_schema=cast(JsonObject, MarkdownValue.model_json_schema()),
     export_formats=(
         ArtifactExportFormat(
@@ -218,7 +218,7 @@ class HtmlPage(BaseModel):
 # exact artifacts it reads. Re-running a node does not move those ids.
 HTML_PAGE = ArtifactTypeSpec(
     key=ArtifactTypeKey("html.page", 1),
-    title="HTML page",
+    title="Web page",
     payload_schema=cast(JsonObject, HtmlPage.model_json_schema()),
 )
 

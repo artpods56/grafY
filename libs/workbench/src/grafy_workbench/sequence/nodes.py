@@ -39,7 +39,8 @@ class CollectInput(NodeInput):
         ),
         Field(
             min_length=1,
-            description="Artifacts and sequences in connection order.",
+            title="Documents",
+            description="Pages or files, in the order you add them.",
         ),
     ]
 
@@ -48,21 +49,24 @@ class CollectOutput(NodeOutput):
     items: Annotated[
         ArtifactRefSequence,
         OutPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="One sequence containing every input artifact."),
+        Field(
+            title="List",
+            description="Everything above, as one list.",
+        ),
     ]
 
 
 @SEQUENCES.function_node(
     operator_id="sequence.collect",
     version=1,
-    title="Collect",
+    title="Group into a list",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def collect(
     _config: NoConfig,
     inputs: CollectInput,
 ) -> CollectOutput:
-    """Collects homogeneous artifact refs without rewriting their payloads."""
+    """Keeps pages or files together, in the order you add them. Every item has to be the same kind of thing."""
     first = inputs.items[0]
     if isinstance(first, ArtifactRef):
         artifact_type = first.key()
@@ -85,10 +89,8 @@ async def collect(
             )
         if source_type != artifact_type:
             raise UserFacingNodeError(
-                "Collect inputs must share one artifact type; expected "
-                f"{artifact_type.id}@{artifact_type.schema_version}, got "
-                f"{source_type.id}@{source_type.schema_version} at input "
-                f"{input_index}"
+                "Every item in the group has to be the same kind. Item "
+                f"{input_index + 1} does not match the first item."
             )
 
         start_index = len(item_refs)
@@ -129,7 +131,7 @@ class CountInput(NodeInput):
     items: Annotated[
         ArtifactRefSequence,
         InPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Sequence whose items are counted."),
+        Field(title="List", description="The list to count."),
     ]
 
 
@@ -137,18 +139,21 @@ class CountOutput(NodeOutput):
     count: Annotated[
         StrictInt,
         OutPort(INTEGER_VALUE),
-        Field(description="Number of items in the sequence."),
+        Field(
+            title="How many",
+            description="How many items are in the list.",
+        ),
     ]
 
 
 @SEQUENCES.function_node(
     operator_id="sequence.count",
     version=1,
-    title="Count",
+    title="Count items",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def count(_config: NoConfig, inputs: CountInput) -> CountOutput:
-    """Counts the refs in an artifact sequence."""
+    """Counts how many items are in a list."""
     return CountOutput(count=len(inputs.items.item_refs))
 
 
@@ -172,7 +177,7 @@ class SliceInput(NodeInput):
     items: Annotated[
         ArtifactRefSequence,
         InPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Ordered sequence to slice."),
+        Field(title="List", description="The list to take a range from."),
     ]
 
 
@@ -180,22 +185,22 @@ class SliceOutput(NodeOutput):
     items: Annotated[
         ArtifactRefSequence,
         OutPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Selected contiguous items."),
+        Field(title="List", description="The items you kept."),
     ]
 
 
 @SEQUENCES.function_node(
     operator_id="sequence.slice",
     version=1,
-    title="Slice",
+    title="Take a range",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def slice_sequence(config: SliceConfig, inputs: SliceInput) -> SliceOutput:
-    """Selects a contiguous range from an ordered artifact sequence."""
+    """Keeps a stretch of items from a list. The first item is number 0."""
     source = inputs.items
     if not source.ordered:
         raise UserFacingNodeError(
-            f"Cannot slice unordered sequence {source.sequence_id}"
+            "This list has no order, so a range cannot be taken from it."
         )
 
     stop = None if config.count is None else config.start + config.count
@@ -230,7 +235,7 @@ class ItemAtInput(NodeInput):
     items: Annotated[
         ArtifactRefSequence,
         InPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Ordered sequence containing the item."),
+        Field(title="List", description="The list to pick from."),
     ]
 
 
@@ -238,29 +243,32 @@ class ItemAtOutput(NodeOutput):
     item: Annotated[
         ArtifactRef,
         OutPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Artifact ref at the configured index."),
+        Field(
+            title="Item",
+            description="The one item at that position.",
+        ),
     ]
 
 
 @SEQUENCES.function_node(
     operator_id="sequence.item_at",
     version=1,
-    title="Pick item",
+    title="Pick one",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def item_at(config: ItemAtConfig, inputs: ItemAtInput) -> ItemAtOutput:
-    """Picks one artifact ref from an ordered artifact sequence."""
+    """Picks one item from a list. The first item is number 0."""
     source = inputs.items
     if not source.ordered:
         raise UserFacingNodeError(
-            f"Cannot pick an item from unordered sequence {source.sequence_id}"
+            "This list has no order, so one item cannot be picked by position."
         )
 
     length = len(source.item_refs)
     if config.index >= length:
         raise UserFacingNodeError(
-            f"Cannot pick index {config.index} from sequence "
-            f"{source.sequence_id} with length {length}"
+            f"There is no item at position {config.index}. This list has "
+            f"{length} items, and 0 is the first."
         )
     return ItemAtOutput(item=source.item_refs[config.index])
 

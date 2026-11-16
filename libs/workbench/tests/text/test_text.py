@@ -88,6 +88,7 @@ def test_markdown_artifact_is_nominally_registered() -> None:
 
     assert MARKDOWN.key.id == "text.markdown"
     assert MARKDOWN.key.schema_version == 1
+    assert MARKDOWN.title == "Transcribed text"
     assert MARKDOWN.payload_schema == MarkdownValue.model_json_schema()
     assert [projection.path for projection in markdown_spec.field_projections] == [
         ("markdown",)
@@ -199,7 +200,7 @@ def test_html_page_artifact_is_registered_without_reference_fields() -> None:
 
     assert HTML_PAGE.key.id == "html.page"
     assert HTML_PAGE.key.schema_version == 1
-    assert spec.title == "HTML page"
+    assert spec.title == "Web page"
     assert spec.bundle.format == "inline-json"
     assert spec.bundle.version == 1
     assert spec.references == ()
