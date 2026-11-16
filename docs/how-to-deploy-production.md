@@ -230,6 +230,15 @@ temporarily list two comma-separated keys on the tiler.
 openssl rand -base64 32   # -> GRAFY_TILER_SHARED_KEY in grafy.env
 ```
 
+**Manual signing-key rotation.** Keep at most current and previous keys. First
+set `TILER_SIGNING_KEYS` on the tiler to `old,new` and recreate only the tiler.
+Then set `GRAFY_TILER_SHARED_KEY=new,old` and recreate the API and tiler; the
+API signs with the first trimmed key, while the tiler accepts both. After at
+least 65 seconds (grant lifetime plus clock skew), set the shared value to
+`new` and recreate both. Never print keys in logs. With Compose's common
+variable mapping, override the tiler environment for the first stage. Rollback
+within the overlap window is the same procedure with the order reversed.
+
 **2. Create a read-only MinIO account.** The tiler reads objects through GDAL
 and must not be able to write or list. With an `mc` alias for the operator's
 MinIO (`mc alias set minio http://minio:9000 <admin-user> <admin-password>`):
@@ -285,7 +294,9 @@ Enable the API proxy with `GRAFY_TILER_URL=http://tiler:8100`. The API uses
 `GRAFY_TILER_URL` to disable the proxy without stopping the API.
 `GRAFY_TILER_RENDERER_VERSION` defaults to `1` and must match the tiler renderer
 version; update it whenever renderer settings change output. The API timeout
-is `GRAFY_TILER_TIMEOUT_SECONDS=35`, longer than the tiler's default 30-second render timeout.
+is `GRAFY_TILER_TIMEOUT_SECONDS=10` for tiles and thumbnails, and
+`GRAFY_TILER_INFO_TIMEOUT_SECONDS=30` for info. These are whole-request
+deadlines; the API does not retry. Rendering concurrency is bounded in the tiler.
 
 **Sizing and limits.** The defaults suit `ai-ihpan`: 2 CPUs
 (`GRAFY_TILER_CPUS`), 1.5 GiB RAM (`GRAFY_TILER_MEMORY`), an image of about

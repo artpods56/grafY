@@ -667,24 +667,11 @@ __all__ = [
 
 
 class ImageInfoResponse(BaseModel):
-    width: int
-    height: int
-    page: int
-    page_count: int
-    band_count: int
-    dtype: str
-    bit_depth: int
-    kind: Literal["gray", "rgb", "palette", "cmyk"]
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    page_count: int = Field(ge=1, le=1024)
     has_alpha: bool
     tile_size: Literal[256, 512]
-    min_level: int
-    max_level: int
+    min_level: int = Field(ge=0)
+    max_level: int = Field(ge=0, le=31)
     tile_format: Literal["jpg", "png"]
-    resampling: Literal["nearest", "average"]
-    overview_count: int
-    overview_level: int | None
-    value_range: tuple[float, float] | None
-    palette: tuple[tuple[int, int, int, int], ...] | None
-    georeferenced: bool
-    crs: str | None
-    bounds_wgs84: tuple[float, float, float, float] | None

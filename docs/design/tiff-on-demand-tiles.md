@@ -109,8 +109,8 @@ It is in the tiler, not the API or a reverse proxy, because the tiler owns the
 render parameters and the version, the API stays stateless about rasters, disk is
 bounded in one place, and `proxy_cache` or `X-Accel-Redirect` would not exist in
 development and cannot see through a header grant. API responses use
-`Cache-Control: private, no-cache`: browsers may retain bytes but must revalidate,
-so revoked Workspace access is checked even for a warm tile. Authorized matching
+`Cache-Control: private, max-age=300`: revocation may lag by up to five minutes
+in a browser cache. Every network read rechecks Workspace access. Authorized matching
 ETags return 304 without contacting the tiler. `X-Accel-Redirect` is out of scope for v1.
 
 ## Resource bounds

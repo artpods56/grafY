@@ -3461,146 +3461,31 @@
       },
       "ImageInfoResponse": {
         "properties": {
-          "band_count": {
-            "title": "Band Count",
-            "type": "integer"
-          },
-          "bit_depth": {
-            "title": "Bit Depth",
-            "type": "integer"
-          },
-          "bounds_wgs84": {
-            "anyOf": [
-              {
-                "maxItems": 4,
-                "minItems": 4,
-                "prefixItems": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "number"
-                  }
-                ],
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bounds Wgs84"
-          },
-          "crs": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Crs"
-          },
-          "dtype": {
-            "title": "Dtype",
-            "type": "string"
-          },
-          "georeferenced": {
-            "title": "Georeferenced",
-            "type": "boolean"
-          },
           "has_alpha": {
             "title": "Has Alpha",
             "type": "boolean"
           },
           "height": {
+            "exclusiveMinimum": 0.0,
             "title": "Height",
             "type": "integer"
           },
-          "kind": {
-            "enum": [
-              "gray",
-              "rgb",
-              "palette",
-              "cmyk"
-            ],
-            "title": "Kind",
-            "type": "string"
-          },
           "max_level": {
+            "maximum": 31.0,
+            "minimum": 0.0,
             "title": "Max Level",
             "type": "integer"
           },
           "min_level": {
+            "minimum": 0.0,
             "title": "Min Level",
             "type": "integer"
           },
-          "overview_count": {
-            "title": "Overview Count",
-            "type": "integer"
-          },
-          "overview_level": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Overview Level"
-          },
-          "page": {
-            "title": "Page",
-            "type": "integer"
-          },
           "page_count": {
+            "maximum": 1024.0,
+            "minimum": 1.0,
             "title": "Page Count",
             "type": "integer"
-          },
-          "palette": {
-            "anyOf": [
-              {
-                "items": {
-                  "maxItems": 4,
-                  "minItems": 4,
-                  "prefixItems": [
-                    {
-                      "type": "integer"
-                    },
-                    {
-                      "type": "integer"
-                    },
-                    {
-                      "type": "integer"
-                    },
-                    {
-                      "type": "integer"
-                    }
-                  ],
-                  "type": "array"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Palette"
-          },
-          "resampling": {
-            "enum": [
-              "nearest",
-              "average"
-            ],
-            "title": "Resampling",
-            "type": "string"
           },
           "tile_format": {
             "enum": [
@@ -3618,28 +3503,8 @@
             "title": "Tile Size",
             "type": "integer"
           },
-          "value_range": {
-            "anyOf": [
-              {
-                "maxItems": 2,
-                "minItems": 2,
-                "prefixItems": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "number"
-                  }
-                ],
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Value Range"
-          },
           "width": {
+            "exclusiveMinimum": 0.0,
             "title": "Width",
             "type": "integer"
           }
@@ -3647,25 +3512,12 @@
         "required": [
           "width",
           "height",
-          "page",
           "page_count",
-          "band_count",
-          "dtype",
-          "bit_depth",
-          "kind",
           "has_alpha",
           "tile_size",
           "min_level",
           "max_level",
-          "tile_format",
-          "resampling",
-          "overview_count",
-          "overview_level",
-          "value_range",
-          "palette",
-          "georeferenced",
-          "crs",
-          "bounds_wgs84"
+          "tile_format"
         ],
         "title": "ImageInfoResponse",
         "type": "object"

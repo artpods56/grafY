@@ -17,7 +17,9 @@ class TilerConfig(BaseSettings):
     tiler_url: HttpUrl | None = None
     tiler_shared_key: SecretStr | None = None
     tiler_renderer_version: str = Field(default="1", min_length=1)
-    tiler_timeout_seconds: float = Field(default=35, gt=0)
+    tiler_timeout_seconds: float = Field(default=10, gt=0)
+
+    tiler_info_timeout_seconds: float = Field(default=30, gt=0)
 
     @model_validator(mode="after")
     def validate_connection(self) -> Self:
@@ -33,7 +35,13 @@ class TilerConfig(BaseSettings):
                 )
             if (
                 self.tiler_shared_key is None
-                or len(self.tiler_shared_key.get_secret_value()) < 32
+                or not 1
+                <= len(self.tiler_shared_key.get_secret_value().split(","))
+                <= 2
+                or any(
+                    len(key.strip()) < 32
+                    for key in self.tiler_shared_key.get_secret_value().split(",")
+                )
             ):
                 raise ValueError(
                     "An enabled tiler requires a shared key of at least 32 characters"

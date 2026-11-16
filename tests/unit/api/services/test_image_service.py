@@ -29,25 +29,12 @@ SOURCE = TiffSource(
 INFO = ImageInfoResponse(
     width=1024,
     height=512,
-    page=0,
     page_count=1,
-    band_count=1,
-    dtype="uint8",
-    bit_depth=8,
-    kind="gray",
     has_alpha=False,
     tile_size=512,
     min_level=1,
     max_level=10,
     tile_format="jpg",
-    resampling="average",
-    overview_count=0,
-    overview_level=None,
-    value_range=None,
-    palette=None,
-    georeferenced=False,
-    crs=None,
-    bounds_wgs84=None,
 )
 
 

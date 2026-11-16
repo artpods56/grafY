@@ -1,5 +1,6 @@
 """HTTP adapter for the internal tiler: the only code that knows its wire protocol."""
 
+import asyncio
 import time
 
 import httpx
@@ -80,26 +81,41 @@ class HttpTiler(TilerPort):
             page=source.page,
             expires_at=int(time.time()) + 60,
         )
-        token = grant.sign_grant(config.tiler_shared_key.get_secret_value().encode())
+        token = grant.sign_grant(
+            config.tiler_shared_key.get_secret_value().split(",")[0].strip().encode()
+        )
         url = str(config.tiler_url).rstrip("/") + "/" + path
+        deadline = (
+            config.tiler_timeout_seconds
+            if rendered
+            else config.tiler_info_timeout_seconds
+        )
         try:
-            async with self._client.stream(
-                "GET",
-                url,
-                headers={"X-Grafy-Grant": token},
-                params={} if edge is None else {"edge": edge},
-                follow_redirects=False,
-            ) as response:
+            async with (
+                asyncio.timeout(deadline),
+                self._client.stream(
+                    "GET",
+                    url,
+                    headers={"X-Grafy-Grant": token},
+                    params={} if edge is None else {"edge": edge},
+                    follow_redirects=False,
+                    timeout=deadline,
+                ) as response,
+            ):
                 if response.status_code != 200:
                     status = response.status_code
-                    if status in {404, 409, 413, 422}:
+                    if status in {404, 409, 413, 415, 422}:
                         raise ImageProxyError(
                             status, "Tiler could not render this image"
                         )
                     if status == 503:
                         retry = response.headers.get("Retry-After", "2")
                         raise ImageProxyError(
-                            503, "Tiler is busy", retry if retry.isdigit() else "2"
+                            503,
+                            "Tiler is busy",
+                            str(min(30, max(1, int(retry))))
+                            if retry.isdigit() and len(retry) <= 8
+                            else "2",
                         )
                     raise ImageProxyError(502, "Tiler returned an invalid response")
                 received = response.headers.get("Content-Type", "").split(";")[0]
@@ -125,6 +141,6 @@ class HttpTiler(TilerPort):
                         raise ImageProxyError(
                             502, "Tiler response exceeds the size limit"
                         )
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, TimeoutError) as exc:
             raise ImageProxyError(503, "Tiler is unavailable", "2") from exc
         return TilerImage(bytes(body), received)
