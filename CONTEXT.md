@@ -643,7 +643,10 @@ Artifacts render directly on the canvas as node-less artifact cards, either
 carrying artifact references or following a node output. The standalone Artifact
 Viewer is deprecated and cannot be added from the toolbar or canvas menu. Saved
 viewers retain their rendering, links, modes, and interaction bindings during
-the transition. Cards present artifacts and execute nothing. One reference
+the transition. Cards present artifacts and execute nothing. Separate cards may reference the same
+artifact. New input connections record one source card identity per artifact reference, with cardless Library contributions marked separately, so editing
+or removing one copy does not change another copy’s connections. Older saved
+connections without source card identities retain value-based matching. One reference
 presents one artifact; a sequence presents them in the order the card passes them
 on, and two artifact types never share one card. Passing a card into a node writes an origin on that input, and
 the origin stays the executable truth: the card owns the order, so reordering a

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { changeOriginCardReferences } from "../model/origin-card-commands";
 
 import { createUuid } from "@/features/workbench/model/uuid";
 
@@ -7,9 +8,7 @@ import type { NodeSpec } from "@/lib/api";
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
   artifactCardMediaHeight,
-  artifactCardValue,
-  cardArtifactRefs,
-  originCarriesCardArtifacts,
+  originBelongsToCard,
   type ArtifactCardValue,
 } from "../canvas/artifact-card";
 import {
@@ -301,7 +300,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
       const card = artifactViewers.nodes.find((node) => node.id === nodeId);
       if (!card) return;
       const carried = authoredDocumentRef.current.origins.filter((origin) =>
-        originCarriesCardArtifacts(origin.value, card.data.artifactRef),
+        originBelongsToCard(origin, card.id, card.data.artifactRef),
       );
       commitArtifactViewers((current) => ({
         ...current,
@@ -313,20 +312,11 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
             )
           : current.nodes.filter((node) => node.id !== nodeId),
       }));
-      if (!value || !carried.length) return;
+      if (!carried.length) return;
       applyAuthoringCommands(
-        carried.flatMap((origin) => {
-          const next = artifactCardValue(cardArtifactRefs(value), origin.value);
-          return next
-            ? [
-                {
-                  kind: "update_origin" as const,
-                  origin_id: origin.id,
-                  update: { value: next },
-                },
-              ]
-            : [];
-        }),
+        carried.flatMap((origin) =>
+          changeOriginCardReferences(origin, new Set([nodeId]), value),
+        ),
       );
     },
     [

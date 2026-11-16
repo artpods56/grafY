@@ -1601,3 +1601,15 @@ def test_sanitize_project_strips_every_graph_of_a_project() -> None:
         {"keep": 2},
     ]
     assert copied.get_graph("main").name == filled.get_graph("main").name
+
+
+def test_origin_card_ownership_round_trip_and_alignment() -> None:
+    payload = _origin().model_dump(mode="json")
+    payload["source_card_ids"] = ["copy-b"]
+    origin = GraphOrigin.model_validate(payload)
+    assert GraphOrigin.model_validate_json(
+        origin.model_dump_json()
+    ).source_card_ids == ("copy-b",)
+    payload["source_card_ids"] = ["copy-a", "copy-b"]
+    with pytest.raises(ValueError, match="one owner per artifact reference"):
+        GraphOrigin.model_validate(payload)

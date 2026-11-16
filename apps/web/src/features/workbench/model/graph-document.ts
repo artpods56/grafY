@@ -52,6 +52,7 @@ type SavedGraphOriginUpdate = Partial<
     | "to_port"
     | "to_plug"
     | "value"
+    | "source_card_ids"
     | "collection_mode"
     | "conversion_path"
   >
@@ -370,6 +371,9 @@ export function projectSavedGraphOrigin(
       version: conversion.version,
     })),
     id: origin.id,
+    ...(origin.source_card_ids != null
+      ? { source_card_ids: [...origin.source_card_ids] }
+      : {}),
     to_node: origin.to_node,
     to_plug: origin.to_plug ?? null,
     to_port: origin.to_port,
@@ -394,6 +398,9 @@ function projectSavedGraphOriginUpdate(
   }
   if (Object.prototype.hasOwnProperty.call(update, "to_plug")) {
     projected.to_plug = update.to_plug ?? null;
+  }
+  if (Object.prototype.hasOwnProperty.call(update, "source_card_ids")) {
+    projected.source_card_ids = update.source_card_ids;
   }
   if (Object.prototype.hasOwnProperty.call(update, "value")) {
     projected.value =

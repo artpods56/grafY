@@ -314,3 +314,14 @@ export function artifactCardContractTooltip(
     ? formatArtifactTypeSequenceTooltip(type)
     : formatArtifactTypeTooltip(type);
 }
+
+/** Explicit instance ownership, with value matching for documents saved before it existed. */
+export function originBelongsToCard(
+  origin: Pick<SavedGraphOrigin, "value" | "source_card_ids">,
+  cardId: string,
+  cardValue: ArtifactCardValue | null | undefined,
+): boolean {
+  if (origin.source_card_ids != null)
+    return origin.source_card_ids.includes(cardId);
+  return originCarriesCardArtifacts(origin.value, cardValue);
+}

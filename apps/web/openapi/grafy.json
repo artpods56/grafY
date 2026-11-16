@@ -3056,6 +3056,29 @@
             "title": "Id",
             "type": "string"
           },
+          "source_card_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Card Ids"
+          },
           "to_node": {
             "maxLength": 255,
             "minLength": 1,

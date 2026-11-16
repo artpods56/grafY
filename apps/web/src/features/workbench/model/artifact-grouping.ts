@@ -67,9 +67,11 @@ export function artifactGroupingDisabledReason({
         ids.has(binding.sourceViewerId) || ids.has(binding.targetViewerId),
     ) ||
     origins.some((origin) =>
-      cardArtifactRefs(origin.value).some((ref) =>
-        artifactIds.has(ref.artifact_id),
-      ),
+      origin.source_card_ids != null
+        ? origin.source_card_ids.some((id) => id !== null && ids.has(id))
+        : cardArtifactRefs(origin.value).some((ref) =>
+            artifactIds.has(ref.artifact_id),
+          ),
     )
   )
     return "Disconnect these artifacts before grouping or ungrouping.";

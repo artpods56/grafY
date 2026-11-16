@@ -401,6 +401,7 @@ export function toLocalGraphCommand(
           to_port: body.origin.to_port,
           to_plug: body.origin.to_plug,
           value: body.origin.value,
+          source_card_ids: body.origin.source_card_ids ?? null,
           collection_mode: body.origin.collection_mode,
           conversion_path: body.origin.conversion_path,
         },

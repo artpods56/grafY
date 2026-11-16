@@ -259,11 +259,28 @@ class GraphOrigin(GraphValue):
     to_port: GraphIdentifier
     to_plug: GraphIdentifier | None = None
     value: ArtifactRef | ArtifactRefSequence
+    # One owner per reference; None marks a cardless Library contribution.
+    source_card_ids: tuple[GraphIdentifier | None, ...] | None = None
     collection_mode: Literal["direct", "map"] = "direct"
     conversion_path: tuple[GraphConversion, ...] = Field(
         default=(),
         max_length=MAX_ARTIFACT_CONVERSION_HOPS,
     )
+
+    @model_validator(mode="after")
+    def validate_source_card_ids(self) -> Self:
+        if self.source_card_ids is None:
+            return self
+        count = (
+            len(self.value.item_refs)
+            if isinstance(self.value, ArtifactRefSequence)
+            else 1
+        )
+        if len(self.source_card_ids) != count:
+            raise ValueError(
+                "source_card_ids must have one owner per artifact reference"
+            )
+        return self
 
 
 def graph_input_slot(

@@ -1,4 +1,5 @@
 "use client";
+import { changeOriginCardReferences } from "../model/origin-card-commands";
 import type { AgentNode } from "../agents/agent-node";
 
 import * as React from "react";
@@ -192,7 +193,7 @@ import {
   artifactCardMediaHeight,
   cardArtifactRefs,
   collectArtifactCardRefs,
-  originCarriesCardArtifacts,
+  originBelongsToCard,
   selectionCollectsIntoSequence,
   isTableArtifact,
 } from "../canvas/artifact-card";
@@ -1865,7 +1866,7 @@ function WorkbenchBody({
       selectedCollectionSources.some(
         (source) =>
           source.kind === "library" &&
-          originCarriesCardArtifacts(origin.value, source.value),
+          originBelongsToCard(origin, source.cardId, source.value),
       ),
     );
     if (
@@ -2336,9 +2337,13 @@ function WorkbenchBody({
         data: {
           ...edge.data,
           onDisconnect: (originId: string) =>
-            applyAuthoringCommands([
-              { kind: "remove_origins", origin_ids: [originId] },
-            ]),
+            applyAuthoringCommands(
+              authoredDocument.origins
+                .filter((origin) => origin.id === originId)
+                .flatMap((origin) =>
+                  changeOriginCardReferences(origin, new Set([edge.source])),
+                ),
+            ),
           onCollectionModeChange: (
             originId: string,
             collectionMode: RunEdgeCollectionMode,
@@ -2402,16 +2407,23 @@ function WorkbenchBody({
       const originEdgesById = new Map(
         artifactOriginCanvasEdges.map((edge) => [edge.id, edge]),
       );
-      const removedOrigins = changes.flatMap((change) => {
-        if (change.type !== "remove") return [];
+      const removedSources = new Map<string, Set<string>>();
+      for (const change of changes) {
+        if (change.type !== "remove") continue;
         const edge = originEdgesById.get(change.id);
-        return edge ? [edge.data.originId] : [];
-      });
-      if (removedOrigins.length) {
-        applyAuthoringCommands([
-          { kind: "remove_origins", origin_ids: [...new Set(removedOrigins)] },
-        ]);
+        if (!edge) continue;
+        const sources =
+          removedSources.get(edge.data.originId) ?? new Set<string>();
+        sources.add(edge.source);
+        removedSources.set(edge.data.originId, sources);
       }
+      const originCommands = authoredDocumentRef.current.origins.flatMap(
+        (origin) => {
+          const sources = removedSources.get(origin.id);
+          return sources ? changeOriginCardReferences(origin, sources) : [];
+        },
+      );
+      if (originCommands.length) applyAuthoringCommands(originCommands);
       const selectedOrigins = changes.filter(
         (change) => change.type === "select" && originEdgesById.has(change.id),
       );
@@ -3011,6 +3023,7 @@ function WorkbenchBody({
             origins: authoredDocumentRef.current.origins,
             conversions: registry?.artifact_conversions ?? [],
           },
+          connection.source,
         );
         if (!commands) return;
         if (resolved.binding) {

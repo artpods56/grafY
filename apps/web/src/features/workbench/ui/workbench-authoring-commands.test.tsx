@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { changeOriginCardReferences } from "../model/origin-card-commands";
 import { act } from "react";
 import * as React from "react";
 import { createRoot } from "react-dom/client";
@@ -95,6 +96,7 @@ type Harness = {
     commands: readonly GraphCommand[],
     options?: { syncRoom?: boolean },
   ) => void;
+  liveDocument: () => AuthoredGraphDocument;
   document: AuthoredGraphDocument;
   error: string | null;
   submitted: GraphCommand[][];
@@ -161,6 +163,7 @@ async function mount(options: { localAuthoringEnabled?: boolean } = {}) {
 
     latest = {
       apply: applyAuthoringCommands,
+      liveDocument: () => authoredDocumentRef.current,
       document: authoring.document,
       error: authoring.error ?? refused.message,
       submitted,
@@ -196,6 +199,57 @@ function savedPresentation(harness: Harness) {
 }
 
 describe("workbench authoring commands", () => {
+  it("uses live ownership across node and edge removal callbacks before a render", async () => {
+    const view = await mount();
+    const ref = {
+      artifact_id: "same",
+      artifact_type: "file.png",
+      schema_version: 1,
+    };
+    await view.run([
+      {
+        kind: "add_origin",
+        origin: {
+          id: "origin-copies",
+          to_node: "other",
+          to_port: "input",
+          to_plug: null,
+          value: {
+            artifact_type: "file.png",
+            schema_version: 1,
+            item_refs: [ref, ref],
+            sequence_id: "sequence",
+            ordered: true,
+            index_key: "order_index",
+          },
+          source_card_ids: ["A", "B"],
+          collection_mode: "direct",
+          conversion_path: [],
+        },
+      },
+    ]);
+    const beforeCount = view.read().submitted.length;
+    await act(async () => {
+      const harness = view.read();
+      const removeCard = (id: string) => {
+        harness.apply(
+          harness
+            .liveDocument()
+            .origins.flatMap((origin) =>
+              changeOriginCardReferences(origin, new Set([id])),
+            ),
+        );
+      };
+      removeCard("A"); // Node callback.
+      removeCard("A"); // Incident-edge callback must do nothing.
+      expect(harness.liveDocument().origins[0]?.source_card_ids).toEqual(["B"]);
+      removeCard("B"); // A separately selected edge uses the updated origin.
+    });
+    expect(view.read().document.origins).toEqual([]);
+    expect(view.read().submitted.length - beforeCount).toBe(2);
+    view.unmount();
+  });
+
   it("retires card links when a React Flow node removal deletes their source", async () => {
     const view = await mount();
 
