@@ -111,10 +111,10 @@ def test_sequence_plugin_registers_all_nodes_without_artifact_types() -> None:
         ("sequence.item_at", 1),
     ]
     assert [registration.title for registration in sequence_registrations] == [
-        "Collect",
-        "Count",
-        "Slice",
-        "Pick item",
+        "Group into a list",
+        "Count items",
+        "Take a range",
+        "Pick one",
     ]
 
 

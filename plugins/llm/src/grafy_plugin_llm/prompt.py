@@ -54,14 +54,14 @@ class PromptMessageOutput(NodeOutput):
 @LLM.function_node(
     operator_id="prompt.message.create",
     version=2,
-    title="Create prompt message",
+    title="Write an instruction",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def create_prompt_message(
     config: PromptMessageConfig,
     inputs: PromptMessageInput,
 ) -> PromptMessageOutput:
-    """Composes prompt text and optional image references into one message."""
+    """The words, and any pictures, you want the model to read."""
     if inputs.images is not None and not inputs.images.ordered:
         raise ValueError(
             "Cannot create a prompt message from unordered image sequence "

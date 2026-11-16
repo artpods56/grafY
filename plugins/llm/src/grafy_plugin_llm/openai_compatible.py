@@ -193,7 +193,7 @@ def build_openai_compatible_node(
 @LLM.node(
     operator_id="llm.openai_compatible.chat_completion",
     version=1,
-    title="OpenAI-compatible Chat Completion",
+    title="Ask a model",
     factory=build_openai_compatible_node,
     required_capabilities=(
         PluginRuntimeCapability.NETWORK_EGRESS,
@@ -221,7 +221,7 @@ class OpenAICompatibleNode(
         OpenAICompatibleOutput,
     ]
 ):
-    """Calls a saved graph's OpenAI-compatible Chat Completions endpoint."""
+    """Sends the instructions to a chat model and keeps the answer."""
 
     def __init__(
         self,

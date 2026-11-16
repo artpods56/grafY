@@ -212,7 +212,7 @@ def build_mistral_ocr_node(context: PluginRuntimeContext) -> "MistralOcrNode":
 @MISTRAL.node(
     operator_id="mistral.ocr.process",
     version=1,
-    title="Mistral OCR",
+    title="Read with Mistral",
     factory=build_mistral_ocr_node,
     required_capabilities=(
         PluginRuntimeCapability.NETWORK_EGRESS,
@@ -232,7 +232,7 @@ def build_mistral_ocr_node(context: PluginRuntimeContext) -> "MistralOcrNode":
 )
 @final
 class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
-    """Recognizes a document URL or raster image with Mistral OCR."""
+    """Reads a PDF or a scanned page into text. You need a Mistral key."""
 
     def __init__(
         self,

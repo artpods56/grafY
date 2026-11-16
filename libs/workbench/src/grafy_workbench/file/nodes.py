@@ -92,7 +92,7 @@ def _chosen_file_format(
 @FILES.node(
     operator_id="file.interpret",
     version=1,
-    title="Interpret file",
+    title="Set file type",
     factory=lambda context: InterpretFileNode(
         storage=context.storage,
         uow=context.uow,
@@ -103,7 +103,8 @@ def _chosen_file_format(
 )
 @final
 class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput]):
-    """Confirm blob bytes against one claimed file.* format and claim them."""
+    """Tells Grafy what kind of file this is, when the upload was not
+    recognized. Pick the type that matches the file."""
 
     def __init__(
         self,

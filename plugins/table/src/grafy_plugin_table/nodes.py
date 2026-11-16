@@ -227,7 +227,7 @@ class TableImportOutput(NodeOutput):
 @TABLES.node(
     operator_id="table.import",
     version=1,
-    title="Import table",
+    title="Read a spreadsheet",
     factory=lambda context: ImportTableNode(
         storage=context.storage,
         uow=context.uow,
@@ -236,7 +236,7 @@ class TableImportOutput(NodeOutput):
 )
 @final
 class ImportTableNode(Node[TableImportConfig, TableImportInput, TableImportOutput]):
-    """Import one persisted CSV or XLSX file artifact as a table."""
+    """Reads a CSV or Excel file into a table."""
 
     def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
         self._storage = storage

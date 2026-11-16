@@ -214,7 +214,7 @@ def build_reducto_ocr_node(context: PluginRuntimeContext) -> "ReductoOcrNode":
 @REDUCTO.node(
     operator_id="reducto.ocr.process",
     version=1,
-    title="Reducto OCR",
+    title="Read with Reducto",
     factory=build_reducto_ocr_node,
     required_capabilities=(
         PluginRuntimeCapability.NETWORK_EGRESS,
@@ -236,7 +236,7 @@ def build_reducto_ocr_node(context: PluginRuntimeContext) -> "ReductoOcrNode":
 )
 @final
 class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
-    """Parses a document URL or raster image with the Reducto Parse API."""
+    """Reads a PDF or a scanned page into text. You need a Reducto key."""
 
     def __init__(
         self,

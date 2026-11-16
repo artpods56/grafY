@@ -55,14 +55,15 @@ class CollectOutput(NodeOutput):
 @SEQUENCES.function_node(
     operator_id="sequence.collect",
     version=1,
-    title="Collect",
+    title="Group into a list",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def collect(
     _config: NoConfig,
     inputs: CollectInput,
 ) -> CollectOutput:
-    """Collects homogeneous artifact refs without rewriting their payloads."""
+    """Keeps pages or files together, in the order you add them. Every
+    item has to be the same kind of thing."""
     first = inputs.items[0]
     if isinstance(first, ArtifactRef):
         artifact_type = first.key()
@@ -144,11 +145,11 @@ class CountOutput(NodeOutput):
 @SEQUENCES.function_node(
     operator_id="sequence.count",
     version=1,
-    title="Count",
+    title="Count items",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def count(_config: NoConfig, inputs: CountInput) -> CountOutput:
-    """Counts the refs in an artifact sequence."""
+    """Counts how many items are in a list."""
     return CountOutput(count=len(inputs.items.item_refs))
 
 
@@ -187,11 +188,11 @@ class SliceOutput(NodeOutput):
 @SEQUENCES.function_node(
     operator_id="sequence.slice",
     version=1,
-    title="Slice",
+    title="Take a range",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def slice_sequence(config: SliceConfig, inputs: SliceInput) -> SliceOutput:
-    """Selects a contiguous range from an ordered artifact sequence."""
+    """Keeps a stretch of items from a list. The first item is number 0."""
     source = inputs.items
     if not source.ordered:
         raise UserFacingNodeError(
@@ -245,11 +246,11 @@ class ItemAtOutput(NodeOutput):
 @SEQUENCES.function_node(
     operator_id="sequence.item_at",
     version=1,
-    title="Pick item",
+    title="Pick one",
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def item_at(config: ItemAtConfig, inputs: ItemAtInput) -> ItemAtOutput:
-    """Picks one artifact ref from an ordered artifact sequence."""
+    """Picks one item from a list. The first item is number 0."""
     source = inputs.items
     if not source.ordered:
         raise UserFacingNodeError(
