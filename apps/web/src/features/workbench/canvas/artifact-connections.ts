@@ -4,6 +4,7 @@ import type {
   SavedGraphOrigin,
   RunPortOutput,
   RunNodeResult,
+  Port,
 } from "@/lib/api";
 import {
   artifactDropPayload,
@@ -30,25 +31,25 @@ import {
 
 export const ARTIFACT_CARD_OUTPUT_HANDLE = "artifact-card-output";
 
-/**
- * Releasing an output wire on empty canvas.
- *
- * A sequence always becomes a card that follows the output: that card is how
- * the sequence is passed on, including before the node has produced items.
- * A single output becomes a card once it has an artifact. Anything else
- * offers nodes that can take the output.
- */
-export function outputReleasePlacesArtifactCard({
-  onCanvas,
-  portShape,
-  hasMaterializedArtifacts,
-}: {
-  onCanvas: boolean;
-  portShape: "one" | "many";
-  hasMaterializedArtifacts: boolean;
-}): boolean {
-  if (!onCanvas) return false;
-  return portShape === "many" || hasMaterializedArtifacts;
+/** Describe the card value as an output for catalog compatibility checks. */
+export function artifactCardOutputPort(
+  value: ArtifactCardValue,
+): Port & { direction: "output" } {
+  const shape = "item_refs" in value ? "many" : "one";
+  return {
+    name: "artifact",
+    title: "Artifact",
+    direction: "output",
+    artifact_type: {
+      id: value.artifact_type,
+      schema_version: value.schema_version,
+    },
+    shape,
+    accepted_shapes: [shape],
+    required: true,
+    variadic: false,
+    instance_plugs: false,
+  };
 }
 
 type ArtifactCardSource =

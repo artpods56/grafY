@@ -1,11 +1,13 @@
 "use client";
 
+import * as React from "react";
+import { useUpdateNodeInternals } from "@xyflow/react";
 import * as stylex from "@stylexjs/stylex";
 import { RotateCcw } from "lucide-react";
 
 import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { IconButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Notice } from "@/components/ui/notice";
 
@@ -229,9 +231,24 @@ export function GenericBody({
   onLayoutCommit: (layout: WorkflowNodeLayout | null) => void;
 }) {
   const grid = useOptionalCanvasGridSettings();
-  const bricks = configBricks(data);
+  const [optionsOpen, setOptionsOpen] = React.useState(false);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const allBricks = configBricks(data);
   const issues = validateConfig(data.spec.config_schema, data.config);
-  if (!bricks.length && !issues.length) return null;
+  const hiddenAdvanced = allBricks.filter((brick) => {
+    if (brick.kind !== "field" || !brick.field.advanced) return false;
+    if (issues.some((issue) => issue.fieldName === brick.field.name))
+      return false;
+    const value = data.config[brick.field.name];
+    return (
+      value === undefined ||
+      JSON.stringify(value) === JSON.stringify(brick.field.defaultValue)
+    );
+  });
+  const bricks = optionsOpen
+    ? allBricks
+    : allBricks.filter((brick) => !hiddenAdvanced.includes(brick));
+  if (!allBricks.length && !issues.length) return null;
   const displayedFields = new Set(
     bricks.flatMap((brick) =>
       brick.kind === "field" ? [brick.field.name] : [],
@@ -318,6 +335,20 @@ export function GenericBody({
             );
           })}
         </div>
+      ) : null}
+      {hiddenAdvanced.length || optionsOpen ? (
+        <Button
+          size="xs"
+          variant="ghost"
+          className="nodrag nowheel"
+          onClick={() => {
+            setOptionsOpen((open) => !open);
+            requestAnimationFrame(() => updateNodeInternals(id));
+          }}
+          aria-expanded={optionsOpen}
+        >
+          {optionsOpen ? "Hide options" : `Options (${hiddenAdvanced.length})`}
+        </Button>
       ) : null}
       {summaryIssues.length ? (
         <Notice tone="danger">

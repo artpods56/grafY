@@ -1948,7 +1948,17 @@ describe("WorkflowNode secret input brick", () => {
   }
 
   it("applies a typed secret through the form's submit button", async () => {
-    const { container, root, brick, onApplyNodeSecret } = renderSecretBrick();
+    const { container, root, onApplyNodeSecret } = renderSecretBrick();
+    expect(container.textContent).toContain("Configured");
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    React.act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Change")
+        ?.click(),
+    );
+    const brick = container.querySelector<HTMLInputElement>(
+      'input[aria-label="API key"]',
+    );
     // jsdom only runs a form's submit while the form is attached to a document.
     document.body.append(container);
     const form = brick?.closest("form");
@@ -1981,6 +1991,11 @@ describe("WorkflowNode secret input brick", () => {
 
   it("keeps the status line and the remove action named as they were", async () => {
     const { container, root, onRemoveNodeSecret } = renderSecretBrick();
+    React.act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Change")
+        ?.click(),
+    );
     const form = container.querySelector("form");
 
     expect(form?.textContent).toContain("Configured");
@@ -2109,6 +2124,64 @@ describe("WorkflowNode config validation", () => {
 
     expect(container.textContent).toContain("This field is required.");
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    React.act(() => root.unmount());
+  });
+});
+
+describe("workflow node execution actions", () => {
+  it("runs the node and reveals materialized output", () => {
+    const data = createWorkflowNodeData(textPipeSpec());
+    data.onRunNode = vi.fn();
+    data.onRevealNodeOutput = vi.fn();
+    const artifact = {
+      artifact_id: "out",
+      artifact_type: "text.plain",
+      schema_version: 1,
+      content_hash: null,
+    };
+    data.run = {
+      node_id: "pipe",
+      status: "succeeded",
+      error: null,
+      result_fingerprint: "fp",
+      created_at: null,
+      outputs: [
+        {
+          port: "text",
+          kind: "single",
+          value: artifact,
+          artifacts: [artifact],
+        },
+      ],
+    };
+    const { container, root } = renderNode("pipe", data, true);
+    const run = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Run Text pipe"]',
+    );
+    const reveal = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Show output of Text pipe"]',
+    );
+    expect(run).not.toBeNull();
+    expect(reveal).not.toBeNull();
+    React.act(() => {
+      run?.click();
+      reveal?.click();
+    });
+    expect(data.onRunNode).toHaveBeenCalledWith("pipe");
+    expect(data.onRevealNodeOutput).toHaveBeenCalledWith("pipe");
+    React.act(() => root.unmount());
+  });
+  it("hides reveal when a following card exists and run while busy", () => {
+    const data = createWorkflowNodeData(textPipeSpec());
+    data.onRunNode = vi.fn();
+    data.onRevealNodeOutput = vi.fn();
+    data.hasFollowingOutputCard = true;
+    data.execution = { status: "running" };
+    const { container, root } = renderNode("pipe", data, true);
+    expect(container.querySelector('[aria-label="Run Text pipe"]')).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Show output of Text pipe"]'),
+    ).toBeNull();
     React.act(() => root.unmount());
   });
 });

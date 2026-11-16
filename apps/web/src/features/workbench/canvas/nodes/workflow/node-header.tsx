@@ -1,8 +1,9 @@
 "use client";
 
 import * as stylex from "@stylexjs/stylex";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Play, Eye } from "lucide-react";
 
+import { IconButton } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CanvasNodeHeader } from "../CanvasNodeChrome";
@@ -61,6 +62,7 @@ export function NodeHeader({
   onMenuOpenChange?: (open: boolean) => void;
 }) {
   const executionIsBusy =
+    data.execution.status === "queued" ||
     data.execution.status === "running" ||
     data.execution.status === "cancelling";
   const executionWord = EXECUTION_WORDS[data.execution.status] ?? null;
@@ -114,6 +116,34 @@ export function NodeHeader({
           </span>
         )
       }
-    />
+    >
+      {data.onRevealNodeOutput &&
+      !data.hasFollowingOutputCard &&
+      (data.run?.outputs ?? []).some(
+        (output) => output.artifacts.length > 0,
+      ) ? (
+        <IconButton
+          label={`Show output of ${data.spec.title}`}
+          title="Show output"
+          size="xs"
+          shape="round"
+          className="nodrag nowheel"
+          onClick={() => data.onRevealNodeOutput?.(id)}
+        >
+          <Eye size={11} />
+        </IconButton>
+      ) : null}
+      {data.onRunNode && !executionIsBusy ? (
+        <IconButton
+          label={`Run ${data.spec.title}`}
+          size="xs"
+          shape="round"
+          className="nodrag nowheel"
+          onClick={() => data.onRunNode?.(id)}
+        >
+          <Play size={11} />
+        </IconButton>
+      ) : null}
+    </CanvasNodeHeader>
   );
 }

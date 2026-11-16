@@ -225,6 +225,9 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   remoteSelectionColor?: string | null;
   onConfigChange?: (nodeId: string, name: string, value: unknown) => void;
   onLayoutChange?: (nodeId: string, layout: WorkflowNodeLayout | null) => void;
+  onRunNode?: (nodeId: string) => void;
+  onRevealNodeOutput?: (nodeId: string) => void;
+  hasFollowingOutputCard?: boolean;
   onRemoveNode?: (nodeId: string) => void;
   onAddInputPlug?: (nodeId: string, portName: string) => void;
   onRemoveInputPlug?: (nodeId: string, plugId: string) => void;
