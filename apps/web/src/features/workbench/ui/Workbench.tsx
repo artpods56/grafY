@@ -3528,7 +3528,6 @@ function WorkbenchBody({
         y: connectionState.to?.y ?? fromNode.position.y,
       };
 
-<<<<<<< HEAD
       const materializedOutput =
         !upstream && fromNode.data.run?.status === "succeeded"
           ? fromNode.data.run.outputs.find(
@@ -3581,8 +3580,6 @@ function WorkbenchBody({
         return;
       }
 
-=======
->>>>>>> a55b078c (feat(web): add canvas file drops, card wire discovery, and compact node controls)
       const catalogNodes = catalogNodeSpecs(registry, openGraphId);
       const candidates = upstream
         ? upstreamCandidatesFromInput({
