@@ -120,7 +120,7 @@ class ReductoOcrConfig(NodeConfig):
             and self.page_end is not None
             and self.page_end < self.page_start
         ):
-            raise ValueError("page_end must not precede page_start")
+            raise ValueError("The last page cannot come before the first page.")
         return self
 
 
@@ -266,15 +266,15 @@ class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
     ) -> ReductoOcrOutput:
         if (inputs.document_url is None) == (inputs.image is None):
             raise ReductoOcrError(
-                "Reducto OCR requires exactly one of a document URL or a raster "
-                f"image on node {context.node_id!r}"
+                "Connect either a document link or a page image, not both, and "
+                "not neither."
             )
         # Also keeps the provider's own reducto:// and jobid:// inputs out of graphs.
         # The URL is never quoted: a presigned one carries its signature.
         if inputs.document_url is not None and not inputs.document_url.startswith(
             "https://"
         ):
-            raise ReductoOcrError("document_url must use HTTPS")
+            raise ReductoOcrError("The document link has to start with https://.")
         try:
             api_key = await self._node_secrets.resolve_secret(
                 workspace_id=context.workspace_id,

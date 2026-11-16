@@ -324,7 +324,9 @@ def test_config_refuses_timeouts_outside_its_bounds(timeout_s: int) -> None:
 
 
 def test_config_pages_are_positive_and_ordered() -> None:
-    with pytest.raises(ValidationError, match="page_end"):
+    with pytest.raises(
+        ValidationError, match="The last page cannot come before the first page."
+    ):
         ReductoOcrConfig(page_start=4, page_end=3)
     with pytest.raises(ValidationError):
         ReductoOcrConfig(page_start=0)
@@ -335,7 +337,7 @@ def test_config_pages_are_positive_and_ordered() -> None:
 async def test_no_inputs_and_both_inputs_are_answered_locally(env: Env) -> None:
     both = ReductoOcrInput(document_url=DOCUMENT_URL, image=env.artifact.ref())
     for inputs in (ReductoOcrInput(), both):
-        with pytest.raises(ReductoOcrError, match="exactly one"):
+        with pytest.raises(ReductoOcrError, match="not both, and not neither"):
             await env.node.run(env.context, ReductoOcrConfig(), inputs)
     assert env.secrets.lookups == []
     assert env.fake.requests == []
@@ -347,7 +349,7 @@ async def test_no_inputs_and_both_inputs_are_answered_locally(env: Env) -> None:
 async def test_a_document_url_that_is_not_https_is_refused_unquoted(
     env: Env, url: str
 ) -> None:
-    with pytest.raises(ReductoOcrError, match="must use HTTPS") as recorded:
+    with pytest.raises(ReductoOcrError, match="has to start with https://") as recorded:
         await env.run(url=url)
     assert url == "" or url not in str(recorded.value)
     assert env.secrets.lookups == []

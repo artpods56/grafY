@@ -79,18 +79,17 @@ def _chosen_file_format(
     key = bindings.get(FORMAT_ARTIFACT_TYPE_VARIABLE)
     if key is None:
         raise UserFacingNodeError(
-            "Interpret file needs an explicit format: bind its file output to one "
-            "claimed file.* artifact type."
+            "Choose the file type on this step before running it."
         )
     spec = artifact_types.get(key)
     if spec is None:
         raise UserFacingNodeError(
-            f"Interpret file does not know artifact type {key.id}@{key.schema_version}"
+            "This file type is not available. Choose another type."
         )
     if not _is_claimed_format(key) or not spec.extensions:
         raise UserFacingNodeError(
-            f"{key.id}@{key.schema_version} is not a claimed file format; choose a "
-            "file.* type the deployment recognizes."
+            "That choice is not a file type this copy of Grafy knows. "
+            "Choose another type."
         )
     return spec
 
@@ -165,9 +164,8 @@ class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput
             label = file.original_filename or f"artifact {source.artifact_id}"
             expected = spec.key.id.removeprefix("file.").upper()
             raise UserFacingNodeError(
-                f"file_format_mismatch: {label} does not look like a {expected} "
-                "file. Bind the file output to another format or convert the "
-                "file, then try again."
+                f"{label} does not look like a {expected} file. Choose another "
+                "type, or replace the file, then run again."
             )
 
         key = spec.key

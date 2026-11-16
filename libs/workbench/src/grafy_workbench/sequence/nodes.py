@@ -90,10 +90,8 @@ async def collect(
             )
         if source_type != artifact_type:
             raise UserFacingNodeError(
-                "Collect inputs must share one artifact type; expected "
-                f"{artifact_type.id}@{artifact_type.schema_version}, got "
-                f"{source_type.id}@{source_type.schema_version} at input "
-                f"{input_index}"
+                "Every item in the group has to be the same kind. Item "
+                f"{input_index + 1} does not match the first item."
             )
 
         start_index = len(item_refs)
@@ -203,7 +201,7 @@ async def slice_sequence(config: SliceConfig, inputs: SliceInput) -> SliceOutput
     source = inputs.items
     if not source.ordered:
         raise UserFacingNodeError(
-            f"Cannot slice unordered sequence {source.sequence_id}"
+            "This list has no order, so a range cannot be taken from it."
         )
 
     stop = None if config.count is None else config.start + config.count
@@ -264,14 +262,14 @@ async def item_at(config: ItemAtConfig, inputs: ItemAtInput) -> ItemAtOutput:
     source = inputs.items
     if not source.ordered:
         raise UserFacingNodeError(
-            f"Cannot pick an item from unordered sequence {source.sequence_id}"
+            "This list has no order, so one item cannot be picked by position."
         )
 
     length = len(source.item_refs)
     if config.index >= length:
         raise UserFacingNodeError(
-            f"Cannot pick index {config.index} from sequence "
-            f"{source.sequence_id} with length {length}"
+            f"There is no item at position {config.index}. This list has "
+            f"{length} items, and 0 is the first."
         )
     return ItemAtOutput(item=source.item_refs[config.index])
 

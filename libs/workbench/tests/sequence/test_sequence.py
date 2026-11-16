@@ -339,7 +339,7 @@ async def test_slice_handles_open_ended_empty_and_beyond_end_ranges(
 
 
 @pytest.mark.asyncio
-async def test_slice_rejects_unordered_sequence_with_its_id() -> None:
+async def test_slice_rejects_an_unordered_sequence() -> None:
     source = ArtifactRefSequence(
         artifact_type=VALUE_TYPE.id,
         schema_version=VALUE_TYPE.schema_version,
@@ -347,7 +347,7 @@ async def test_slice_rejects_unordered_sequence_with_its_id() -> None:
         ordered=False,
     )
 
-    with pytest.raises(NodeRunError, match=str(source.sequence_id)):
+    with pytest.raises(NodeRunError, match="no order, so a range"):
         await _runtime().run_node(
             SliceNode(),
             NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="slice"),
@@ -374,7 +374,7 @@ async def test_item_at_returns_the_existing_ref() -> None:
 
 
 @pytest.mark.asyncio
-async def test_item_at_rejects_unordered_sequence_with_its_id() -> None:
+async def test_item_at_rejects_an_unordered_sequence() -> None:
     source = ArtifactRefSequence(
         artifact_type=VALUE_TYPE.id,
         schema_version=VALUE_TYPE.schema_version,
@@ -382,7 +382,7 @@ async def test_item_at_rejects_unordered_sequence_with_its_id() -> None:
         ordered=False,
     )
 
-    with pytest.raises(NodeRunError, match=str(source.sequence_id)):
+    with pytest.raises(NodeRunError, match="no order, so one item"):
         await _runtime().run_node(
             ItemAtNode(),
             NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="pick"),
@@ -392,7 +392,7 @@ async def test_item_at_rejects_unordered_sequence_with_its_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_item_at_out_of_range_error_has_sequence_context() -> None:
+async def test_item_at_out_of_range_error_counts_the_items() -> None:
     ref = ArtifactRef.from_key(artifact_id=uuid4(), key=VALUE_TYPE)
     source = ArtifactRefSequence.from_key(key=VALUE_TYPE, item_refs=[ref])
 
@@ -406,9 +406,9 @@ async def test_item_at_out_of_range_error_has_sequence_context() -> None:
         )
 
     message = str(error.value)
-    assert str(source.sequence_id) in message
-    assert "index 3" in message
-    assert "length 1" in message
+    assert str(source.sequence_id) not in message
+    assert "no item at position 3" in message
+    assert "This list has 1 items, and 0 is the first." in message
 
 
 @pytest.mark.parametrize(

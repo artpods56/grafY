@@ -74,7 +74,8 @@ class MistralOcrSdkProvider(MistralOcrProvider):
     ) -> MistralOcrOutput:
         if (document_url is None) == (image is None):
             raise MistralOcrProviderError(
-                "Mistral OCR requires exactly one of a document URL or a raster image"
+                "Connect either a document link or a page image, not both, and "
+                "not neither."
             )
         document: DocumentURLChunkTypedDict | ImageURLChunkTypedDict
         if document_url is not None:
@@ -97,7 +98,8 @@ class MistralOcrSdkProvider(MistralOcrProvider):
             document = {"type": "image_url", "image_url": data_url}
         else:
             raise MistralOcrProviderError(
-                "Mistral OCR requires exactly one of a document URL or a raster image"
+                "Connect either a document link or a page image, not both, and "
+                "not neither."
             )
 
         endpoint = f"{MISTRAL_API_BASE_URL}/v1/ocr"
