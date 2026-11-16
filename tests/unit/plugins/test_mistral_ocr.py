@@ -472,6 +472,43 @@ async def test_provider_sends_a_raster_image_as_a_data_url(
     assert document.regions.pages[0].index == 0
 
 
+async def test_provider_sends_pdf_as_document_data_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = RequestRecorder(ocr_response())
+    recorder.install(monkeypatch)
+    uow = InMemoryUnitOfWork()
+    storage = FakeStorage()
+    content = b"%PDF-example"
+    pdf = ArtifactObject(
+        workspace_id=WORKSPACE_ID,
+        id=uuid4(),
+        artifact_type="file.pdf",
+        schema_version=1,
+        content_type="application/pdf",
+        bucket="artifacts",
+        object_key="page.pdf",
+        byte_size=len(content),
+    )
+    storage.files[("artifacts", "page.pdf")] = content
+    async with uow as transaction:
+        await transaction.artifacts.add(pdf)
+        await transaction.commit()
+    provider = MistralOcrSdkProvider(uow=uow, storage=storage)
+    await provider.process(
+        document_url=None,
+        image=pdf.ref(),
+        config=MistralOcrConfig(),
+        api_key=SecretStr("key"),
+        workspace_id=WORKSPACE_ID,
+    )
+    body = cast(dict[str, object], json.loads(recorder.requests[0].content))
+    assert body["document"] == {
+        "type": "document_url",
+        "document_url": "data:application/pdf;base64,JVBERi1leGFtcGxl",
+    }
+
+
 async def test_provider_hides_rejected_response_bodies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

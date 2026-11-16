@@ -30,6 +30,7 @@ from grafy_core.table_contracts import (
     TableValueType,
 )
 from grafy_core.artifacts import ArtifactRef, NodeConfig, NodeInput, NodeOutput
+from grafy_core.file_contracts import PDF_FILE
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     InPort,
@@ -57,28 +58,40 @@ ConfidenceGranularity = Literal["page", "block"]
 
 class MistralOcrConfig(NodeConfig):
     table_format: TableFormat | None = Field(
+        title="Table format",
+        json_schema_extra={"x-grafy-advanced": True},
         default=None,
         description="Render extracted tables as Markdown or HTML.",
     )
     extract_header: bool = Field(
+        title="Separate headers",
+        json_schema_extra={"x-grafy-advanced": True},
         default=False,
         description="Move page headers out of the markdown into the header field.",
     )
     extract_footer: bool = Field(
+        title="Separate footers",
+        json_schema_extra={"x-grafy-advanced": True},
         default=False,
         description="Move page footers out of the markdown into the footer field.",
     )
     confidence_scores_granularity: ConfidenceGranularity | None = Field(
+        title="Confidence detail",
+        json_schema_extra={"x-grafy-advanced": True},
         default=None,
         description="Attach page or block confidence scores.",
     )
     timeout_ms: int = Field(
+        title="Time limit (ms)",
+        json_schema_extra={"x-grafy-advanced": True},
         default=120_000,
         ge=1_000,
         le=900_000,
         description="Maximum provider request time in milliseconds.",
     )
     max_retries: int = Field(
+        title="Max retries",
+        json_schema_extra={"x-grafy-advanced": True},
         default=0,
         ge=0,
         le=5,
@@ -98,17 +111,20 @@ class MistralOcrInput(NodeInput):
         Field(
             title="Document link",
             description=(
-                "Web address of the PDF or scan. Leave empty when a page image "
-                "is connected."
+                "Web address of a PDF or other document Mistral can fetch. "
+                "Leave empty when a scan or PDF is connected."
             ),
         ),
     ] = None
     image: Annotated[
         ArtifactRef | None,
-        InPort(RASTER_IMAGE),
+        InPort(RASTER_IMAGE, also_accepts=(PDF_FILE,)),
         Field(
-            title="Page image",
-            description="One scanned page. Leave empty when a document link is connected.",
+            title="Scan or PDF",
+            description=(
+                "One scanned page or a PDF. Leave empty when a document link "
+                "is connected."
+            ),
         ),
     ] = None
 

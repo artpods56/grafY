@@ -82,6 +82,14 @@ BMP_FILE = ArtifactTypeSpec(
     confirmation_rule=_magic(((0, b"BM"),)),
 )
 
+PDF_FILE = ArtifactTypeSpec(
+    bundle=ArtifactBundleContract(format="binary-file", version=1),
+    key=ArtifactTypeKey("file.pdf", 1),
+    title="PDF document",
+    extensions=("pdf",),
+    confirmation_rule=_magic(((0, b"%PDF-"),)),
+)
+
 XLSX_FILE = ArtifactTypeSpec(
     bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.xlsx", 1),
@@ -133,6 +141,7 @@ BUILTIN_FILE_FORMATS: tuple[ArtifactTypeSpec, ...] = (
     TIFF_FILE,
     WEBP_FILE,
     BMP_FILE,
+    PDF_FILE,
     XLSX_FILE,
     GEOJSON_FILE,
     JSON_FILE,
@@ -170,6 +179,7 @@ __all__ = [
     "GEOJSON_FILE",
     "JPEG_FILE",
     "JSON_FILE",
+    "PDF_FILE",
     "PNG_FILE",
     "TIFF_FILE",
     "TXT_FILE",

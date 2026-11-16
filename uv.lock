@@ -463,6 +463,7 @@ source = { editable = "libs/core" }
 dependencies = [
     { name = "httpx" },
     { name = "jsonschema" },
+    { name = "pillow" },
     { name = "pydantic" },
     { name = "referencing" },
 ]
@@ -471,6 +472,7 @@ dependencies = [
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jsonschema", specifier = ">=4.23.0" },
+    { name = "pillow" },
     { name = "pydantic" },
     { name = "referencing", specifier = ">=0.36.2" },
 ]

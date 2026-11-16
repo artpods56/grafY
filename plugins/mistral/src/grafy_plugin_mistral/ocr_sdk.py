@@ -14,6 +14,7 @@ from pydantic import SecretStr
 
 from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_core.artifacts import ArtifactRef
+from grafy_core.file_contracts import PDF_FILE
 from grafy_core.egress import EgressPolicy, EgressRejectedError
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
@@ -95,7 +96,10 @@ class MistralOcrSdkProvider(MistralOcrProvider):
             document = url_document
         elif image is not None:
             data_url = await self._image_data_url(image, workspace_id=workspace_id)
-            document = {"type": "image_url", "image_url": data_url}
+            if image.key() == PDF_FILE.key:
+                document = {"type": "document_url", "document_url": data_url}
+            else:
+                document = {"type": "image_url", "image_url": data_url}
         else:
             raise MistralOcrProviderError(
                 "Connect either a document link or a page image, not both, and "
@@ -166,7 +170,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         *,
         workspace_id: UUID,
     ) -> str:
-        if ref.key() != RASTER_IMAGE.key:
+        if ref.key() not in (RASTER_IMAGE.key, PDF_FILE.key):
             raise MistralOcrProviderError(
                 f"Raster image {ref.artifact_id} must reference "
                 f"{RASTER_IMAGE.key.id}@{RASTER_IMAGE.key.schema_version}, "
@@ -192,7 +196,10 @@ class MistralOcrSdkProvider(MistralOcrProvider):
             raise MistralOcrProviderError(
                 f"Raster image {ref.artifact_id} does not have a storage object"
             )
-        if artifact.content_type not in _SUPPORTED_IMAGE_CONTENT_TYPES:
+        if (
+            ref.key() == RASTER_IMAGE.key
+            and artifact.content_type not in _SUPPORTED_IMAGE_CONTENT_TYPES
+        ) or (ref.key() == PDF_FILE.key and artifact.content_type != "application/pdf"):
             raise MistralOcrProviderError(
                 f"Raster image {ref.artifact_id} has unsupported content type "
                 f"{artifact.content_type!r}"

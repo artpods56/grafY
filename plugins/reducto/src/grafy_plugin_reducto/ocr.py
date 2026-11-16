@@ -18,6 +18,7 @@ from grafy_core.artifact_contracts import (
     MarkdownValue,
 )
 from grafy_core.artifacts import ArtifactRef, NodeConfig, NodeInput, NodeOutput
+from grafy_core.file_contracts import PDF_FILE
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressRejectedError, PinnedPublicAddressTransport
 from grafy_core.nodes import (
@@ -83,6 +84,7 @@ BLOCK_COLUMNS: Final = (
 
 class ReductoOcrConfig(NodeConfig):
     model: Literal["r-1", "r-1-mini"] = Field(
+        title="Model",
         default="r-1",
         description=(
             "Reducto Parse model. Always sent, so a change to the provider's default "
@@ -90,20 +92,28 @@ class ReductoOcrConfig(NodeConfig):
         ),
     )
     page_start: int | None = Field(
+        title="First page",
+        json_schema_extra={"x-grafy-advanced": True},
         default=None,
         ge=1,
         description="First page to process, 1-indexed. Empty processes from page 1.",
     )
     page_end: int | None = Field(
+        title="Last page",
+        json_schema_extra={"x-grafy-advanced": True},
         default=None,
         ge=1,
         description="Last page to process, 1-indexed. Empty processes to the end.",
     )
     table_format: Literal["md", "html"] = Field(
+        title="Table format",
+        json_schema_extra={"x-grafy-advanced": True},
         default="md",
         description="Render tables as Markdown, or HTML for tables with merged cells.",
     )
     timeout_s: int = Field(
+        title="Time limit (seconds)",
+        json_schema_extra={"x-grafy-advanced": True},
         default=300,
         ge=10,
         le=900,
@@ -131,17 +141,20 @@ class ReductoOcrInput(NodeInput):
         Field(
             title="Document link",
             description=(
-                "Web address of the PDF or scan. Leave empty when a page image "
-                "is connected."
+                "Web address of a document Reducto can fetch, including a signed "
+                "link. Leave empty when a scan or PDF is connected."
             ),
         ),
     ] = None
     image: Annotated[
         ArtifactRef | None,
-        InPort(RASTER_IMAGE),
+        InPort(RASTER_IMAGE, also_accepts=(PDF_FILE,)),
         Field(
-            title="Page image",
-            description="One scanned page. Leave empty when a document link is connected.",
+            title="Scan or PDF",
+            description=(
+                "One scanned page or a PDF. Leave empty when a document link "
+                "is connected."
+            ),
         ),
     ] = None
 
@@ -376,6 +389,10 @@ class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
     async def _upload_image(
         self, client: AsyncReducto, ref: ArtifactRef, workspace_id: UUID
     ) -> str:
+        if ref.key() not in (RASTER_IMAGE.key, PDF_FILE.key):
+            raise ReductoOcrError(
+                f"Unsupported source artifact type {ref.artifact_type}"
+            )
         try:
             async with self._uow as uow:
                 artifact = await uow.artifacts.get(workspace_id, ref.artifact_id)
@@ -386,7 +403,14 @@ class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
                 or artifact.object_key is None
             ):
                 raise ReductoOcrError(f"Raster image {ref.artifact_id} was not found")
-            extension = IMAGE_EXTENSIONS.get(artifact.content_type)
+            extension = (
+                ".pdf"
+                if ref.key() == PDF_FILE.key
+                and artifact.content_type == "application/pdf"
+                else IMAGE_EXTENSIONS.get(artifact.content_type)
+                if ref.key() == RASTER_IMAGE.key
+                else None
+            )
             if extension is None:
                 raise ReductoOcrError(
                     f"Raster image {ref.artifact_id} has unsupported content type "

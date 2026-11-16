@@ -276,7 +276,7 @@ def test_the_node_declares_exactly_its_ports(env: Env) -> None:
         ("image", RASTER_IMAGE.key),
     ]
     assert [port.title for port in made.values()] == ["Transcription", "Text blocks"]
-    assert [port.title for port in took.values()] == ["Document link", "Page image"]
+    assert [port.title for port in took.values()] == ["Document link", "Scan or PDF"]
 
 
 def test_the_family_needs_egress_and_secrets_and_owns_the_markdown_writer() -> None:
@@ -424,6 +424,19 @@ async def test_a_refusal_is_said_once_without_the_providers_own_words(
     assert "could not fetch" not in message
     assert "invalid_document_url" not in message
     assert "report.pdf" not in message
+
+
+async def test_pdf_is_uploaded_as_a_document(env: Env) -> None:
+    content = b"%PDF-example"
+    env.artifact.artifact_type = "file.pdf"
+    env.artifact.content_type = "application/pdf"
+    env.artifact.sha256 = sha256(content).hexdigest()
+    env.storage.content = content
+    await env.run(url=None, image=env.artifact.ref())
+    body = env.fake.upload_bodies[0]
+    assert b"document.pdf" in body
+    assert b"application/pdf" in body
+    assert content in body
 
 
 async def test_an_uploaded_image_goes_as_its_own_bytes(env: Env) -> None:

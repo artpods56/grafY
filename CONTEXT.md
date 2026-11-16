@@ -92,10 +92,11 @@ extension decides. One format can answer to several extension strings, so `.jpg`
 and `.jpeg` both produce `file.jpeg@1`, and `.tif` and `.tiff` both produce
 `file.tiff@1`. A plugin claims `.las` by declaring that mapping rather than by
 shipping an upload node.
-Interpretation is always a visible node, so `file.png@1` becomes
-`image.raster@1` through a decode node and `file.csv@1` becomes `table.data@1`
-through an import node whose delimiter and header choices the user can see and
-change.
+Configurable interpretation is a visible node, so `file.csv@1` becomes
+`table.data@1` through an import node whose delimiter and header choices the
+user can see and change; parameterless container conversions such as
+`file.txt@1` to `scalar.text@1` and `file.{png,jpeg,webp,tiff,bmp}@1` to
+`image.raster@1` run as canonical artifact conversions on the edge.
 _Avoid_: upload artifact, source node
 
 ### File JSON artifact
@@ -360,11 +361,14 @@ requires a version bump. A conversion changes the artifact representation;
 unlike a field projection, it does not select a nested value. Configurable,
 lossy, or domain-significant transformations remain visible nodes.
 
-`file.txt@1` to `scalar.text@1` is the one conversion that starts at a File
-format artifact. It reads the stored bytes and decodes them as UTF-8, dropping a
-leading byte-order mark, with no choices to make, so it needs no node; bytes that
-are not UTF-8 fail the conversion step. Other formats still go through a visible
-decode or import node.
+`file.txt@1` to `scalar.text@1` and `file.{png,jpeg,webp,tiff,bmp}@1` to
+`image.raster@1` are the conversions that start at a File format artifact.
+`file.txt@1` reads the stored bytes and decodes them as UTF-8, dropping a
+leading byte-order mark, and the raster image conversions verify that the image
+container parses cleanly as its declared format, with no choices to make, so
+they need no node; corrupt or mismatched bytes fail the conversion step.
+Formats with parsing options, such as CSV or Excel tables, still go through a
+visible import node.
 
 ### Artifact conversion path
 
