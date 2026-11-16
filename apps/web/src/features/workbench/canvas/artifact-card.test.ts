@@ -56,7 +56,7 @@ describe("artifact card value", () => {
     const sequence = artifactCardValue([ref("aaaa"), ref("bbbb")]);
 
     expect(artifactCardContractTooltip(single)).toBe("file.jpg@1");
-    expect(artifactCardContractTooltip(sequence)).toBe("Sequence<file.jpg@1>");
+    expect(artifactCardContractTooltip(sequence)).toBe("List of file.jpg@1");
     expect(artifactCardContractTooltip(null)).toBe("");
   });
 
@@ -68,14 +68,14 @@ describe("artifact card value", () => {
       "aaaa",
       "bbbb",
     ]);
-    expect(artifactCardContract(value, null)).toBe("Sequence<file.jpg@1>");
+    expect(artifactCardContract(value, null)).toBe("List of file.jpg@1");
   });
 
   it("preserves a sequence with one remaining item", () => {
     const original = artifactCardValue([ref("first"), ref("second")]);
     const next = artifactCardValue([ref("first")], original);
     expect(next).toMatchObject({ item_refs: [ref("first")] });
-    expect(artifactCardContract(next, null)).toBe("Sequence<file.jpg@1>");
+    expect(artifactCardContract(next, null)).toBe("List of file.jpg@1");
   });
 
   it("refuses one card for two artifact types", () => {

@@ -57,14 +57,14 @@ export function formatArtifactTypeLabel(
     : title;
 }
 
-/** A label wrapped in the sequence shape: `Sequence<Text value>`. */
+/** A label wrapped in the list shape: `List of Text value`. */
 export function formatArtifactTypeSequence(label: string): string {
-  return `Sequence<${label}>`;
+  return `List of ${label}`;
 }
 
 /**
- * One type, or a sequence of it, in the shape a card or port reads its contract
- * in: `Text value` / `Sequence<Text value>`.
+ * One type, or a list of it, in the shape a card or port reads its contract
+ * in: `Text value` / `List of Text value`.
  */
 export function formatArtifactTypeContract(
   artifactType: ArtifactTypeIdentity,
@@ -85,7 +85,7 @@ export function formatArtifactTypeTooltip(
   return artifactTypeKey(artifactType);
 }
 
-/** The full identity of a sequence: `Sequence<scalar.text@1>`. */
+/** The full identity of a list: `List of scalar.text@1`. */
 export function formatArtifactTypeSequenceTooltip(
   artifactType: ArtifactTypeIdentity,
 ): string {

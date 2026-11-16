@@ -300,7 +300,7 @@ export function artifactCardContract(
 
 /**
  * The contract as identity, for the tooltip behind {@link artifactCardContract}:
- * `Sequence<file.jpg@1>`.
+ * `List of file.jpg@1`.
  */
 export function artifactCardContractTooltip(
   value: ArtifactCardValue | null,

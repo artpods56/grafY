@@ -212,9 +212,9 @@ it("names a sequence artifact with the sequence form", async () => {
     />,
   );
   const chipRow = chip(container);
-  expect(chipRow.textContent).toContain("Sequence<scalar.text@2>");
+  expect(chipRow.textContent).toContain("List of scalar.text@2");
   expect(chipRow.getAttribute("aria-label")).toBe(
-    "rows: Sequence<scalar.text@2>",
+    "rows: List of scalar.text@2",
   );
 });
 

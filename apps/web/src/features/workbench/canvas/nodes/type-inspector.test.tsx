@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-import { SchemaDrill } from "./type-inspector";
+import type { Port } from "@/lib/api";
+import { PortTypePopover, SchemaDrill } from "./type-inspector";
 
 const SCHEMA = {
   title: "GeoMapLayer",
@@ -117,6 +118,29 @@ describe("SchemaDrill", () => {
   it("explains opaque artifacts", async () => {
     const { container, unmount } = await render(<SchemaDrill schema={{}} />);
     expect(container.textContent).toContain("No declared payload schema");
+    await unmount();
+  });
+});
+
+const LIST_PORT = {
+  name: "markdown",
+  direction: "input",
+  shape: "many",
+  artifact_type: { id: "text.markdown", schema_version: 1 },
+} as unknown as Port;
+
+describe("PortTypePopover", () => {
+  it("names a list port's type with List of, never list[", async () => {
+    const { unmount } = await render(
+      <PortTypePopover port={LIST_PORT} shape="many" open>
+        <button type="button">markdown</button>
+      </PortTypePopover>,
+    );
+    const heading = Array.from(document.querySelectorAll("span")).find((span) =>
+      span.textContent?.startsWith("List of"),
+    );
+    expect(heading?.textContent).toBe("List of text.markdown@1");
+    expect(document.body.textContent).not.toContain("list[");
     await unmount();
   });
 });

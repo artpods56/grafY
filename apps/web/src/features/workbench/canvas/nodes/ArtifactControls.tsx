@@ -8,6 +8,7 @@ import { ARTIFACT_VIEWER_INPUT_HANDLE } from "../artifact-viewer";
 import { canvasCardRail } from "./CanvasCardLayout";
 import { NodeMenu, type NodeMenuItem } from "./NodeMenu";
 import { PortBall, revealDelay, revealStyles } from "./PortBall";
+import { formatArtifactTypeSequence } from "../artifact-type-label";
 
 /** @deprecated Prefer `canvasCardRail` from `CanvasCardLayout`. */
 export const artifactRail = canvasCardRail;
@@ -176,7 +177,7 @@ export function ArtifactRightRail({
           title="Connect to a compatible input"
           tip={{
             name: contract,
-            type: sequence ? `Sequence<${contract}>` : contract,
+            type: sequence ? formatArtifactTypeSequence(contract) : contract,
             hint: "Connect to a compatible input",
           }}
           slotProps={{ "data-artifact-port-side": "output" }}

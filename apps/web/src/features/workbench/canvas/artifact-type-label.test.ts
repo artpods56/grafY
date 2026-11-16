@@ -89,17 +89,15 @@ describe("artifact type labels", () => {
     ).toBe("scalar.text@1");
   });
 
-  it("wraps the title in the sequence shape", () => {
+  it("wraps the title in the list shape", () => {
     expect(
       formatArtifactTypeContract(
         { id: "scalar.text", schema_version: 1 },
         CATALOG,
         true,
       ),
-    ).toBe("Sequence<Text value>");
-    expect(formatArtifactTypeSequence("Text value")).toBe(
-      "Sequence<Text value>",
-    );
+    ).toBe("List of Text value");
+    expect(formatArtifactTypeSequence("Text value")).toBe("List of Text value");
     expect(
       formatArtifactTypeContract(
         { id: "scalar.text", schema_version: 1 },
@@ -112,7 +110,7 @@ describe("artifact type labels", () => {
         CATALOG,
         true,
       ),
-    ).toBe("Sequence<Table · v2>");
+    ).toBe("List of Table · v2");
   });
 
   it("keeps the full identity available for the tooltip", () => {
@@ -127,6 +125,6 @@ describe("artifact type labels", () => {
         id: "scalar.text",
         schema_version: 1,
       }),
-    ).toBe("Sequence<scalar.text@1>");
+    ).toBe("List of scalar.text@1");
   });
 });

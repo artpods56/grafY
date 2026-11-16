@@ -98,7 +98,7 @@ describe("ArtifactFolderDropDialog", () => {
     await act(async () => button("Create 2 sequences").click());
     expect(handlers.onPlaceAll).toHaveBeenCalledTimes(1);
 
-    await act(async () => button("Place Sequence<file.csv@1>").click());
+    await act(async () => button("Place List of file.csv@1").click());
     expect(handlers.onPlaceGroup).toHaveBeenCalledWith(csvSequence);
 
     await act(async () => button("Cancel").click());

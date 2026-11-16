@@ -17,6 +17,7 @@ import { artifactTypeColor } from "../../nodes.css";
 import {
   formatArtifactTypeContract,
   formatArtifactTypeLabel,
+  formatArtifactTypeSequence,
   formatArtifactTypeTooltip,
 } from "../../artifact-type-label";
 import { useArtifactTypeCatalog } from "../../use-artifact-type-catalog";
@@ -239,16 +240,16 @@ function PortTab({
     ? artifactTypeColor(artifactType.id, tokens.colorAccent)
     : tokens.colorAccent;
   const artifactContract = artifactType
-    ? formatArtifactTypeContract(artifactType, artifactTypes)
-    : "Any artifact";
+    ? formatArtifactTypeContract(artifactType, artifactTypes, shape === "many")
+    : shape === "many"
+      ? formatArtifactTypeSequence("any artifact")
+      : "Any artifact";
   const contractTooltip = artifactType
     ? ` (${formatArtifactTypeTooltip(artifactType)})`
     : "";
-  const effectiveContract =
-    shape === "many" ? `list[${artifactContract}]` : artifactContract;
   const accessibleLabel = input
-    ? `Input port ${visibleName}, accepts ${effectiveContract}${port.required ? ", required" : ""}`
-    : `Output port ${visibleName}, provides ${effectiveContract}`;
+    ? `Input port ${visibleName}, accepts ${artifactContract}${port.required ? ", required" : ""}`
+    : `Output port ${visibleName}, provides ${artifactContract}`;
   const connectionDisabled = Boolean(connection && !connection.enabled);
   const handleId = encodeHandleId(
     portMetaForPort(
@@ -303,7 +304,7 @@ function PortTab({
               </span>
             ) : null}
             {shape === "many" ? (
-              <span {...stylex.props(nodeChrome.tabShape)}>· many</span>
+              <span {...stylex.props(nodeChrome.tabShape)}>· list</span>
             ) : null}
           </Popover.Trigger>
         </PortTypePopover>
@@ -374,13 +375,11 @@ export function usePortBallTypeProps({
   const open = Boolean(variable) && !artifactType;
   const inner = artifactType
     ? formatArtifactTypeLabel(artifactType, artifactTypes)
-    : "any";
+    : null;
   const type =
     shape === "many"
-      ? `Sequence<${inner}>`
-      : artifactType
-        ? inner
-        : ANY_TYPE_LABEL;
+      ? formatArtifactTypeSequence(inner ?? "any type")
+      : (inner ?? ANY_TYPE_LABEL);
   const options = variable
     ? artifactTypeVariableOptions(
         data.spec.operator_id,
