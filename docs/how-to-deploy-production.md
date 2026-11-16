@@ -248,7 +248,7 @@ cat > /tmp/grafy-tiler-read.json <<'JSON'
 }
 JSON
 mc admin policy create minio grafy-tiler-read /tmp/grafy-tiler-read.json
-secret="$(openssl rand -hex 24)"
+secret="$(openssl rand -hex 24)"  # a leading "-" is an mc flag
 mc admin user add minio grafy-tiler "$secret"
 mc admin policy attach minio grafy-tiler-read --user grafy-tiler
 rm /tmp/grafy-tiler-read.json

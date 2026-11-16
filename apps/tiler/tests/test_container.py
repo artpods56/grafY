@@ -104,7 +104,9 @@ def stack() -> Iterator[Stack]:
     )
     cache = f"grafy-tiler-it-cache-{suffix}"
     admin_secret = secrets.token_urlsafe(24)
-    read_only_secret = secrets.token_urlsafe(24)
+    # Hex, same as `openssl rand -hex` in the deploy guide. mc treats a
+    # positional secret that starts with "-" as a flag and prints usage.
+    read_only_secret = secrets.token_hex(24)
     signing_key = secrets.token_urlsafe(32)
 
     def mc(*args: str, stdin: bytes | None = None) -> str:
