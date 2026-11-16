@@ -174,6 +174,11 @@ export function artifactOriginConnections(
       cardArtifactRefs(origin.value).map((ref) => ref.artifact_id),
     );
     for (const card of cards) {
+      if (
+        origin.source_card_ids != null &&
+        !origin.source_card_ids.includes(card.id)
+      )
+        continue;
       const value = artifactCardConnectionValue(card, feeds, nodes);
       const refs = cardArtifactRefs(value);
       if (
@@ -207,8 +212,10 @@ export function artifactOriginConnections(
           ),
         },
       });
-      for (const ref of refs) remaining.delete(ref.artifact_id);
-      if (remaining.size === 0) break;
+      if (origin.source_card_ids == null) {
+        for (const ref of refs) remaining.delete(ref.artifact_id);
+        if (remaining.size === 0) break;
+      }
     }
   }
   return edges;

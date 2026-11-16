@@ -459,7 +459,7 @@ describe("room-command-bridge", () => {
         toInGraphCommand(GRAPH_ID, {
           kind: "update_origin",
           expected_origin: origin,
-          origin: { ...origin, to_port: "other" },
+          origin: { ...origin, to_port: "other", source_card_ids: ["copy-b"] },
         }),
         document,
         GRAPH_ID,
@@ -472,6 +472,7 @@ describe("room-command-bridge", () => {
         to_port: "other",
         to_plug: null,
         value: origin.value,
+        source_card_ids: ["copy-b"],
         collection_mode: "direct" as const,
         conversion_path: [],
       },

@@ -1,3 +1,5 @@
+import { cardArtifactRefs } from "../canvas/artifact-card";
+import { changeOriginCardReferences } from "./origin-card-commands";
 // @vitest-environment jsdom
 
 import { describe, expect, it } from "vitest";
@@ -346,6 +348,21 @@ describe("artifact drop acceptance", () => {
 });
 
 describe("artifact drop commands", () => {
+  it("records the canvas copy that was connected", () => {
+    const commands = artifactDropCommands(
+      { value: ref("table"), shape: "one" },
+      TARGET,
+      port(),
+      {},
+      state(),
+      "copy-b",
+    );
+    expect(commands?.[0]).toMatchObject({
+      kind: "add_origin",
+      origin: { source_card_ids: ["copy-b"] },
+    });
+  });
+
   it("writes one origin through the collaboration vocabulary", () => {
     const commands = artifactDropCommands(
       { value: ref("table"), shape: "one" },
@@ -498,6 +515,7 @@ describe("artifact drop commands", () => {
         origin_id: "origin-1",
         update: {
           value: ref("csv"),
+          source_card_ids: [null],
           collection_mode: "direct",
           conversion_path: [],
         },
@@ -547,6 +565,7 @@ describe("artifact drop commands", () => {
         origin_id: "origin-1",
         update: {
           value: sequence("c"),
+          source_card_ids: [null],
           collection_mode: "map",
           conversion_path: [],
         },
@@ -590,6 +609,112 @@ describe("artifact drop collection on a many input", () => {
   const manyPort = port({
     shape: "many",
     accepted_shapes: ["one", "many"],
+  });
+
+  it("keeps identical copies on one many-input independent when edited or removed", () => {
+    const first = artifactDropCommands(
+      { value: item("same"), shape: "one" },
+      TARGET,
+      manyPort,
+      {},
+      state(),
+      "A",
+    )?.[0];
+    expect(first?.kind).toBe("add_origin");
+    if (first?.kind !== "add_origin") throw new Error("Expected first origin");
+    const second = artifactDropCommands(
+      { value: item("same"), shape: "one" },
+      TARGET,
+      manyPort,
+      {},
+      state({ origins: [first.origin] }),
+      "B",
+    )?.[0];
+    expect(second?.kind).toBe("update_origin");
+    if (second?.kind !== "update_origin") throw new Error("Expected append");
+    const combined = { ...first.origin, ...second.update };
+    expect(combined.source_card_ids).toEqual(["A", "B"]);
+    expect(
+      cardArtifactRefs(combined.value).map((ref) => ref.artifact_id),
+    ).toEqual(["same", "same"]);
+    expect(changeOriginCardReferences(combined, new Set(["A"]))).toEqual([
+      {
+        kind: "update_origin",
+        origin_id: combined.id,
+        update: {
+          value: { ...combined.value, item_refs: [item("same")] },
+          source_card_ids: ["B"],
+        },
+      },
+    ]);
+    const edited = changeOriginCardReferences(
+      combined,
+      new Set(["A"]),
+      item("changed"),
+    )[0];
+    expect(edited).toMatchObject({
+      kind: "update_origin",
+      update: {
+        value: { item_refs: [item("changed"), item("same")] },
+        source_card_ids: ["A", "B"],
+      },
+    });
+    expect(changeOriginCardReferences(combined, new Set(["A", "B"]))).toEqual([
+      { kind: "remove_origins", origin_ids: [combined.id] },
+    ]);
+  });
+
+  it("preserves card owners when a cardless Library item is appended", () => {
+    const prior = origin({ value: item("same"), source_card_ids: ["A"] });
+    const command = artifactDropCommands(
+      { value: item("same"), shape: "one" },
+      TARGET,
+      manyPort,
+      {},
+      state({ origins: [prior] }),
+    )?.[0];
+    if (command?.kind !== "update_origin") throw new Error("Expected append");
+    const combined = { ...prior, ...command.update };
+    expect(combined.source_card_ids).toEqual(["A", null]);
+    expect(changeOriginCardReferences(combined, new Set(["B"]))).toEqual([]);
+    expect(changeOriginCardReferences(combined, new Set(["A"]))).toMatchObject([
+      {
+        kind: "update_origin",
+        update: {
+          source_card_ids: [null],
+          value: { item_refs: [item("same")] },
+        },
+      },
+    ]);
+  });
+
+  it("keeps repeated wiring from one card idempotent", () => {
+    const command = artifactDropCommands(
+      { value: item("same"), shape: "one" },
+      TARGET,
+      manyPort,
+      {},
+      state({
+        origins: [origin({ value: item("same"), source_card_ids: ["A"] })],
+      }),
+      "A",
+    )?.[0];
+    expect(command).toBeUndefined();
+  });
+
+  it("keeps a legacy append value-matched instead of hiding its old cards", () => {
+    const command = artifactDropCommands(
+      { value: item("new"), shape: "one" },
+      TARGET,
+      manyPort,
+      {},
+      state({ origins: [origin({ value: item("old") })] }),
+      "B",
+    )?.[0];
+    expect(command).toMatchObject({
+      kind: "update_origin",
+      update: { source_card_ids: null },
+    });
   });
 
   it("groups same-type drops into one ordered sequence", () => {

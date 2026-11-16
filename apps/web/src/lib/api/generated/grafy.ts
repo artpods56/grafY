@@ -2695,6 +2695,8 @@ export interface components {
             readonly conversion_path: readonly components["schemas"]["GraphConversion"][];
             /** Id */
             readonly id: string;
+            /** Source Card Ids */
+            readonly source_card_ids?: readonly (string | null)[] | null;
             /** To Node */
             readonly to_node: string;
             /** To Plug */

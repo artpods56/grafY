@@ -13,6 +13,7 @@ import {
   mergedArtifactCardValue,
   moveArtifactCardRef,
   originCarriesCardArtifacts,
+  originBelongsToCard,
   presentsArtifacts,
   type ArtifactCardValue,
 } from "./artifact-card";
@@ -212,6 +213,20 @@ describe("artifact card value", () => {
     ).toBe(false);
     expect(
       canMergeIntoCard(artifactCardValue([ref("aaaa")]), ref("zzzz")),
+    ).toBe(true);
+  });
+});
+
+describe("card instance ownership", () => {
+  it("keeps identical artifact copies independent", () => {
+    const origin = { source_card_ids: ["copy-b"], value: ref("same") };
+    expect(originBelongsToCard(origin, "copy-a", ref("same"))).toBe(false);
+    expect(originBelongsToCard(origin, "copy-b", ref("same"))).toBe(true);
+  });
+
+  it("still resolves legacy origins by value", () => {
+    expect(
+      originBelongsToCard({ value: ref("same") }, "old-card", ref("same")),
     ).toBe(true);
   });
 });

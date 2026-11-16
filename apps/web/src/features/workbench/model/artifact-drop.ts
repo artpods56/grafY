@@ -4,7 +4,7 @@ import type {
   Port,
   SavedGraphOrigin,
 } from "@/lib/api";
-import { artifactCardValue } from "../canvas/artifact-card";
+import { artifactCardValue, cardArtifactRefs } from "../canvas/artifact-card";
 import { artifactTypeKey } from "../canvas/artifact-type-key";
 import {
   decodeHandleId,
@@ -351,6 +351,7 @@ export function artifactDropCommands(
   port: Port,
   bindings: Readonly<Record<string, ArtifactTypeKey>>,
   state: ArtifactDropGraphState,
+  sourceCardId?: string,
 ): GraphCommand[] | null {
   const resolution = resolveArtifactDrop(
     payload,
@@ -372,6 +373,27 @@ export function artifactDropCommands(
     existing,
     resolution.conversionPath,
   );
+  const appendsToExisting =
+    existing !== undefined &&
+    payload.shape === "one" &&
+    acceptedPortShapes(port).includes("many") &&
+    resolution.conversionPath.length === 0 &&
+    existing.value.artifact_type === payload.value.artifact_type &&
+    existing.value.schema_version === payload.value.schema_version;
+  const priorCardIds = appendsToExisting
+    ? (existing.source_card_ids ?? [])
+    : [];
+  // One visible wire from this card to this slot represents one contribution.
+  if (appendsToExisting && sourceCardId && priorCardIds.includes(sourceCardId))
+    return [];
+  // Legacy appends stay value-matched until their existing owners are known.
+  const sourceCardIds =
+    appendsToExisting && existing.source_card_ids == null
+      ? null
+      : [
+          ...priorCardIds,
+          ...cardArtifactRefs(payload.value).map(() => sourceCardId ?? null),
+        ];
   // A sequence replacing a mapped sequence keeps being mapped.
   const collectionMode =
     resolution.collectionMode === "map" ||
@@ -403,6 +425,7 @@ export function artifactDropCommands(
       origin_id: existing.id,
       update: {
         value,
+        source_card_ids: sourceCardIds,
         collection_mode: collectionMode,
         conversion_path: resolution.conversionPath,
       },
@@ -417,6 +440,7 @@ export function artifactDropCommands(
       to_port: target.portName,
       to_plug: target.plugId,
       value,
+      source_card_ids: sourceCardIds,
       collection_mode: collectionMode,
       conversion_path: resolution.conversionPath,
     },

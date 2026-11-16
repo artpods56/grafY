@@ -1,6 +1,7 @@
 import * as React from "react";
+import { changeOriginCardReferences } from "../model/origin-card-commands";
 
-import { originCarriesCardArtifacts } from "../canvas/artifact-card";
+import { originBelongsToCard } from "../canvas/artifact-card";
 import type { AnnotationColor, AnnotationLayout } from "../canvas/annotations";
 import {
   withAnnotationColor,
@@ -223,20 +224,17 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
    */
   const dropOriginsCarriedByCards = React.useCallback(
     (cards: readonly (ArtifactViewerNode | undefined)[]) => {
-      const originIds = authoredDocumentRef.current.origins
+      const cardIds = new Set(cards.flatMap((card) => (card ? [card.id] : [])));
+      const commands = authoredDocumentRef.current.origins
         .filter((origin) =>
           cards.some((card) =>
             card
-              ? originCarriesCardArtifacts(origin.value, card.data.artifactRef)
+              ? originBelongsToCard(origin, card.id, card.data.artifactRef)
               : false,
           ),
         )
-        .map((origin) => origin.id);
-      if (originIds.length) {
-        applyAuthoringCommands([
-          { kind: "remove_origins", origin_ids: originIds },
-        ]);
-      }
+        .flatMap((origin) => changeOriginCardReferences(origin, cardIds));
+      if (commands.length) applyAuthoringCommands(commands);
     },
     [applyAuthoringCommands, authoredDocumentRef],
   );

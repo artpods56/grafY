@@ -6,7 +6,10 @@ import type {
   AuthoredGraphDocument,
   GraphCommand,
 } from "../model/graph-document";
-import type { WorkbenchAuthoringAction } from "../canvas/graph-document-adapter";
+import {
+  reduceWorkbenchAuthoringState,
+  type WorkbenchAuthoringAction,
+} from "../canvas/graph-document-adapter";
 import type { PendingConnectionRoute } from "./ConnectionRouteDialog";
 import {
   shouldBlockAuthoringCommand,
@@ -89,6 +92,12 @@ export function useWorkbenchAuthoringCommands(
         return;
       }
       const before = authoredDocumentRef.current;
+      // React Flow emits node and edge removals before React renders again.
+      // Later handlers must read the result of the preceding batch.
+      authoredDocumentRef.current = reduceWorkbenchAuthoringState(
+        { document: before, nodeOverlays: {}, error: null },
+        { kind: "apply_commands", commands },
+      ).document;
       dispatchAuthoringState({ kind: "apply_commands", commands });
       setPositionOverrides({});
       setSelectedNodeIdSet(
