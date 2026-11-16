@@ -15,7 +15,10 @@ async function post(
   const csrf = cookies.find((cookie) => cookie.name === "grafy_csrf")?.value;
   const response = await page.request.post(`/api/v1${path}`, {
     data,
-    headers: csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {},
+    headers: {
+      Origin: process.env.E2E_STACK_ORIGIN ?? "",
+      ...(csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {}),
+    },
   });
   expect(
     response.ok(),
@@ -76,6 +79,7 @@ test("real TIFF artifacts on a saved canvas", async ({ page }) => {
         headers: {
           ...target.headers,
           "Content-Type": "image/tiff",
+          Origin: process.env.E2E_STACK_ORIGIN ?? "",
           ...(target.kind === "api" && csrf
             ? { "X-CSRF-Token": decodeURIComponent(csrf) }
             : {}),
@@ -107,15 +111,17 @@ test("real TIFF artifacts on a saved canvas", async ({ page }) => {
           kind: "replace_presentation",
           presentation: {
             viewers: artifacts.map((artifact, index) => ({
-              id: randomUUID(),
+              id: `artifact-viewer-${randomUUID()}`,
               artifact_ref: {
                 artifact_id: artifact.id,
                 artifact_type: "file.tiff",
                 schema_version: 1,
               },
+              // Height follows the scan aspect (about 440px with the label), so
+              // a tighter row step lets the next card cover this card's zoom bar.
               position: {
-                x: (index % 2) * 600,
-                y: Math.floor(index / 2) * 420,
+                x: (index % 2) * 720,
+                y: Math.floor(index / 2) * 640,
               },
               layout: { width: 550, body_height: 360 },
             })),
@@ -145,26 +151,39 @@ test("real TIFF artifacts on a saved canvas", async ({ page }) => {
   await expect(
     page.getByText("This file cannot be displayed.", { exact: true }),
   ).toHaveCount(0);
+  await page.getByRole("button", { name: "Fit", exact: true }).click();
+  const tileUrls = () => requests.filter((url) => url.includes("/tiles/"));
   const initial = requests.slice();
   const first = page.getByRole("region", { name: "register-rgb.tif scan" });
-  await first.getByRole("button", { name: "Zoom in", exact: true }).click();
-  await first.getByRole("button", { name: "Zoom in", exact: true }).click();
+  const zoomIn = first.getByRole("button", { name: "Zoom in", exact: true });
+  // One step still shows tiles from the fitted view. Three steps reach a
+  // level where a drag across the card has to fetch new tiles.
+  for (let step = 0; step < 3; step += 1) {
+    const before = tileUrls().length;
+    await zoomIn.click();
+    await expect.poll(() => tileUrls().length).toBeGreaterThan(before);
+  }
   await expect
-    .poll(() => requests.filter((url) => url.includes("/tiles/")).length)
-    .toBeGreaterThan(initial.filter((url) => url.includes("/tiles/")).length);
+    .poll(async () => {
+      const mark = tileUrls().length;
+      await new Promise((resolveQuiet) => setTimeout(resolveQuiet, 500));
+      return tileUrls().length === mark;
+    })
+    .toBe(true);
   await page.screenshot({ path: resolve(evidence, "zoom.png") });
   const zoom = requests.slice(initial.length);
   const box = await first.locator("[data-tiff-viewport]").boundingBox();
   if (!box) throw new Error("No image viewport");
-  const beforePan = requests.length;
-  await page.mouse.move(box.x + box.width * 0.8, box.y + box.height / 2);
+  const tilesBeforePan = tileUrls().length;
+  const requestsBeforePan = requests.length;
+  await page.mouse.move(box.x + box.width * 0.85, box.y + box.height * 0.35);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2, {
-    steps: 12,
+  await page.mouse.move(box.x + box.width * 0.15, box.y + box.height * 0.7, {
+    steps: 24,
   });
   await page.mouse.up();
-  await expect.poll(() => requests.length).toBeGreaterThan(beforePan);
-  const pan = requests.slice(beforePan);
+  await expect.poll(() => tileUrls().length).toBeGreaterThan(tilesBeforePan);
+  const pan = requests.slice(requestsBeforePan);
   await page.getByRole("button", { name: "Next page", exact: true }).click();
   await expect(page.getByText("Page 2 of 3", { exact: true })).toBeVisible();
   await expect
