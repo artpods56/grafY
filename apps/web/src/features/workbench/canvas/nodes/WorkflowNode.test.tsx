@@ -2019,7 +2019,7 @@ describe("WorkflowNode plug row controls", () => {
         "Move Headings input 1 up",
         "Move Headings input 1 down",
         "Remove Headings input 1",
-        "Add input",
+        "Add another",
       ]),
     );
     // The first row cannot move further up, the only row cannot move down.

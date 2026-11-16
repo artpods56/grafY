@@ -156,13 +156,13 @@ function InstancePlugRow({
   const binding = data.inputPlugBindings[plug.id];
   const connectionMeta = binding
     ? [
-        binding.sourceShape === "many" ? "sequence" : "single",
-        binding.conversionLabel ? `feed ${binding.conversionLabel}` : null,
+        binding.sourceShape === "many" ? "a list" : "one item",
+        binding.conversionLabel,
         binding.contributionLabel,
       ]
         .filter((label): label is string => Boolean(label))
         .join(" · ")
-    : `Accepts ${acceptedShapeLabel}`;
+    : "Nothing connected yet";
   const accessibleLabel = `${visibleName} input ${index + 1}, accepts ${acceptedShapeLabel}`;
 
   return (
@@ -323,7 +323,7 @@ export function InstancePlugPort({
     ? artifactTypeColor(artifactType.id, tokens.colorAccent)
     : tokens.colorAccent;
   const acceptedShapeLabel = acceptedPortShapes(port)
-    .map((shape) => (shape === "many" ? "sequence" : "single"))
+    .map((shape) => (shape === "many" ? "a list" : "one item"))
     .join(" or ");
 
   const finishPointerDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -360,9 +360,7 @@ export function InstancePlugPort({
             ) : null}
           </Button>
         </PortTypePopover>
-        <span {...stylex.props(s.plugPortRule)}>
-          {acceptedShapeLabel} · plug order
-        </span>
+        <span {...stylex.props(s.plugPortRule)}>In this order</span>
       </div>
 
       <div {...stylex.props(s.plugList)}>
@@ -395,7 +393,7 @@ export function InstancePlugPort({
         onClick={() => data.onAddInputPlug?.(id, port.name)}
       >
         <Plus size={11} />
-        Add input
+        Add another
       </Button>
     </section>
   );

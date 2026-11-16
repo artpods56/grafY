@@ -475,6 +475,13 @@ export function ArtifactCardBody({
     : declaredType
       ? formatArtifactTypeTooltip(declaredType)
       : undefined;
+  // A card belongs to the group of documents it holds: one document, or the
+  // list it is. A contract already named as a list is not wrapped twice.
+  const groupLabel = !isSequence
+    ? `Document ${contract}`
+    : contract.startsWith("List of ")
+      ? contract
+      : `List of ${contract}`;
   const producerBusy =
     producer?.data.execution?.status === "queued" ||
     producer?.data.execution?.status === "running" ||
@@ -668,7 +675,7 @@ export function ArtifactCardBody({
   const titleLabel = isSequence
     ? imageArtifact
       ? `${refs.length} ${refs.length === 1 ? "item" : "items"}`
-      : "File sequence"
+      : "List"
     : first
       ? (fileName ??
         feedLabel ??
@@ -868,7 +875,7 @@ export function ArtifactCardBody({
         )}
         style={{ width: cardWidth }}
         role="group"
-        aria-label={`Artifact ${contract}`}
+        aria-label={groupLabel}
       >
         <CanvasCardFrame data-artifact-content="true">
           {headless ? null : (
@@ -895,7 +902,7 @@ export function ArtifactCardBody({
               nodeId={id}
               contract={contract}
               title={titleLabel}
-              detail={awaitingFeed ? "Waiting for output" : subtitle}
+              detail={awaitingFeed ? "Waiting for a result" : subtitle}
               artifactId={isSequence ? undefined : first?.artifact_id}
               originalUrl={first ? firstUrl : undefined}
               color={portColor}
@@ -964,14 +971,14 @@ export function ArtifactCardBody({
                     <span {...stylex.props(s.waitingCopy)}>
                       <span>
                         {producer
-                          ? `Waiting for ${feedPort?.title ?? feedPortName ?? "output"}`
-                          : "Waiting for this graph to run"}
+                          ? `Waiting for ${feedPort?.title ?? feedPortName ?? "result"}`
+                          : "Waiting for a run"}
                       </span>
                       {producer ? (
                         <span {...stylex.props(s.waitingHint)}>
                           {producerBusy
-                            ? `${producer.data.spec.title} is running`
-                            : `Run ${producer.data.spec.title} to fill it`}
+                            ? `${producer.data.spec.title} is working`
+                            : `Run ${producer.data.spec.title} to fill this card`}
                         </span>
                       ) : null}
                     </span>
