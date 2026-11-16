@@ -36,7 +36,7 @@ const s = stylex.create({
     paddingInline: "10px",
     color: tokens.colorSubtle,
     fontFamily: MONO,
-    fontSize: "9px",
+    fontSize: "12px",
     lineHeight: 1.45,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -66,7 +66,7 @@ const s = stylex.create({
     backgroundColor: tokens.colorSurfaceSunken,
   },
   tab: {
-    minHeight: "22px",
+    minHeight: "28px",
     display: "inline-flex",
     alignItems: "center",
     paddingInline: "9px",
@@ -82,10 +82,8 @@ const s = stylex.create({
     },
     color: tokens.colorMuted,
     cursor: "pointer",
-    fontSize: "9px",
+    fontSize: "12px",
     fontWeight: 600,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
   },
   tabActive: {
     backgroundColor: tokens.colorSurface,
@@ -95,7 +93,7 @@ const s = stylex.create({
     marginLeft: "5px",
     color: tokens.colorSubtle,
     fontFamily: MONO,
-    fontSize: "9px",
+    fontSize: "12px",
     fontWeight: 600,
   },
   panel: {
@@ -126,7 +124,7 @@ const s = stylex.create({
     overflow: "hidden",
     paddingInline: "10px",
     color: tokens.colorMuted,
-    fontSize: "9px",
+    fontSize: "12px",
     lineHeight: 1.45,
   },
   rowCopy: {
@@ -159,7 +157,7 @@ const s = stylex.create({
     margin: 0,
     paddingInline: "10px",
     color: tokens.colorSubtle,
-    fontSize: "9px",
+    fontSize: "12px",
     lineHeight: 1.45,
   },
   rowMeta: {
@@ -171,7 +169,7 @@ const s = stylex.create({
     margin: 0,
     paddingInline: "10px",
     color: tokens.colorSubtle,
-    fontSize: "9px",
+    fontSize: "12px",
     lineHeight: 1.45,
   },
 });

@@ -68,9 +68,9 @@ const s = stylex.create({
   plugRow: {
     position: "relative",
     minWidth: 0,
-    minHeight: "38px",
+    minHeight: "44px",
     display: "grid",
-    gridTemplateColumns: "20px 20px minmax(0, 1fr) auto",
+    gridTemplateColumns: "24px 20px minmax(0, 1fr) auto",
     alignItems: "center",
     gap: "4px",
     padding: "3px 4px 3px 6px",
@@ -81,10 +81,10 @@ const s = stylex.create({
     backgroundColor: tokens.colorAccentSoft,
     boxShadow: `inset 0 0 0 1px ${tokens.colorAccentBorder}`,
   },
-  /** The handle keeps the 20px column the plug row budgets it, and its grab cursor. */
+  /** The handle keeps the 24px column the plug row budgets it, and its grab cursor. */
   plugGrip: {
-    width: "20px",
-    height: "26px",
+    width: "24px",
+    height: "32px",
     borderRadius: "5px",
     cursor: "grab",
     touchAction: "none",
@@ -108,10 +108,10 @@ const s = stylex.create({
     whiteSpace: "nowrap",
   },
   plugActions: { display: "flex", alignItems: "center", gap: "1px" },
-  /** Row actions keep the 18px the plug row budgets them. */
+  /** Row actions keep the 24px the plug row budgets them. */
   plugAction: {
-    width: "18px",
-    height: "20px",
+    width: "24px",
+    height: "24px",
     borderRadius: "5px",
   },
   addPlug: {
