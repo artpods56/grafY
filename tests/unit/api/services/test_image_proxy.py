@@ -261,6 +261,13 @@ async def test_upstream_errors_are_sanitized(
         assert response.headers["retry-after"] == "3"
 
 
+async def test_unexpected_upstream_status_is_visible(proxy: Harness) -> None:
+    proxy.status = 500
+    response = await proxy.client.get(proxy.path + "/info")
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Tiler returned HTTP 500"}
+
+
 async def test_connection_failure_is_retryable(proxy: Harness) -> None:
     proxy.fail = True
     response = await proxy.client.get(proxy.path + "/info")

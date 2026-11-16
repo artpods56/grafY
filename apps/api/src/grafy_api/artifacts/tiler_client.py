@@ -117,7 +117,7 @@ class HttpTiler(TilerPort):
                             if retry.isdigit() and len(retry) <= 8
                             else "2",
                         )
-                    raise ImageProxyError(502, "Tiler returned an invalid response")
+                    raise ImageProxyError(502, f"Tiler returned HTTP {status}")
                 received = response.headers.get("Content-Type", "").split(";")[0]
                 allowed = (
                     {"image/png", "image/jpeg"}
