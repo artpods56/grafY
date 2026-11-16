@@ -506,9 +506,8 @@ class NodeContractBinder:
                 continue
             if any(plug.port == port_name for plug in graph_node.input_plugs):
                 continue
-            raise NodeComputationError(
-                f"Add at least one slot on “{_port_words(port, port_name)}”."
-            )
+            label = (port.title or "").strip() or port_name.replace("_", " ")
+            raise NodeComputationError(f"Add at least one slot on “{label}”.")
 
         connections_by_plug: dict[str, int] = {}
         for item in incoming:
@@ -547,13 +546,6 @@ class NodeContractBinder:
                 "Each slot needs exactly one connection. An empty extra slot, "
                 "or two connections into one slot, blocks the run."
             )
-
-
-def _port_words(port: InputPortSpec, port_name: str) -> str:
-    """Name one input port the way a person reading a failure can act on it."""
-
-    title = (port.title or "").strip()
-    return title if title else port_name.replace("_", " ")
 
 
 def _check_target(

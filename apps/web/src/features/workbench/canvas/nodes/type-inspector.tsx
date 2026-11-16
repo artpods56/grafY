@@ -336,9 +336,7 @@ export function PortTypePopover({
     : undefined;
   const contract = artifactType
     ? formatArtifactTypeLabel(artifactType, registry?.artifact_types ?? null)
-    : shape === "many"
-      ? "any artifact"
-      : "Any artifact";
+    : "Any artifact";
   const contractHeading =
     shape === "many" ? formatArtifactTypeSequence(contract) : contract;
   // The header names the type the way the catalog does; the identity it carries

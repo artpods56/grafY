@@ -137,8 +137,14 @@ function buttonWithText(
 }
 
 describe("NodeExecutionAppendix", () => {
-  it("stays off the canvas when a node has never run and never stored a result", async () => {
+  it("says a selected step has not run yet", async () => {
     const { container } = await renderAppendix({ expanded: true });
+
+    expect(container.textContent).toContain("Not run yet.");
+  });
+
+  it("stays off the canvas when that step is not selected", async () => {
+    const { container } = await renderAppendix({ expanded: false });
 
     expect(container.querySelector("aside")).toBeNull();
     expect(container.textContent).toBe("");

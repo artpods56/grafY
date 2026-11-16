@@ -23,9 +23,12 @@ const s = stylex.create({
   executionDotDanger: { backgroundColor: tokens.colorDanger },
   executionSpinner: { flexShrink: 0, color: tokens.colorInfo },
   executionSpinnerWarning: { color: tokens.colorWarning },
-  /** The word that says what the dot or spinner means. */
+  /** The dot or spinner, then the word that says what it means. */
   executionWord: {
     flexShrink: 0,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
     color: tokens.colorMuted,
     fontSize: tokens.fontSizeXs,
     whiteSpace: "nowrap",

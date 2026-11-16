@@ -246,7 +246,7 @@ function PortTab({
   const artifactContract = artifactType
     ? formatArtifactTypeContract(artifactType, artifactTypes, shape === "many")
     : shape === "many"
-      ? formatArtifactTypeSequence("any artifact")
+      ? formatArtifactTypeSequence("Any artifact")
       : "Any artifact";
   const contractTooltip = artifactType
     ? ` (${formatArtifactTypeTooltip(artifactType)})`
@@ -470,7 +470,7 @@ function CompatibilityPort({
           input ? nodeChrome.tabIn : nodeChrome.tabOut,
           s.compatibilityPort,
         )}
-        title={`Saved ${direction} ${label}`}
+        title={`Saved ${direction}`}
       >
         <span {...stylex.props(nodeChrome.tabLabel)}>{label}</span>
       </div>

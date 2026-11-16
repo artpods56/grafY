@@ -180,9 +180,9 @@ type AppendixTab = "events" | "result";
  * The state of this node's instance, as the Project derives it.
  *
  * The canvas overlay carries the coarse status the run surface publishes, so a
- * caller that knows the derived instance state passes it and the card says
- * "fresh" or "stale" outright. Without one the card reads what the overlay can
- * still tell it, and never invents a state it was not given.
+ * caller that knows the derived instance state passes it and the card names
+ * that state. Without one the card reads what the overlay can still tell it,
+ * and never invents a state it was not given.
  */
 export type NodeInstanceState = RunExecutionNodeStatus;
 
@@ -548,11 +548,18 @@ export function NodeExecutionAppendix({
     );
   }
 
-  // A node that has never been in a Run and never stored a result has nothing
-  // to put in either tab, and an empty pair is chrome reporting its own
-  // emptiness.
+  // A selected step that has never run has nothing to put in either tab.
+  // Say so, instead of an empty pair that only reports its own emptiness.
   if (eventCount === 0 && resultCount === 0) {
-    return null;
+    return (
+      <aside
+        aria-label={`${nodeTitle} execution appendix`}
+        {...interactionProps(stylex.props(s.root))}
+        style={{ width }}
+      >
+        <p {...stylex.props(s.state)}>Not run yet.</p>
+      </aside>
+    );
   }
 
   return (
