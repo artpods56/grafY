@@ -244,7 +244,6 @@ import {
   WORKFLOW_EDGE_TYPE,
   WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
-  effectivePortShape,
   resolvedPortArtifactType,
   type WorkflowEdge,
   type WorkflowEdgeRouteOffset,
@@ -276,6 +275,7 @@ import {
   inputPlugBindingsForNode,
   isConnectionAccepted,
   mappedInputPortsForNode,
+  renderedOutputHandleId,
   workflowEdgeRouteOption,
 } from "../model/graph-authoring";
 import {
@@ -3311,7 +3311,9 @@ function WorkbenchBody({
         !upstream &&
         outputReleasePlacesArtifactCard({
           onCanvas: canvasAtPoint(clientPoint.x, clientPoint.y),
-          portShape: effectivePortShape(fromNode.data, port),
+          // The released handle is the ball on screen. A mapped output is a
+          // sequence ball even when the stored port shape is still one.
+          portShape: decoded.shape,
           hasMaterializedArtifacts: Boolean(materializedOutput),
         })
       ) {
@@ -3953,14 +3955,12 @@ function WorkbenchBody({
         )?.projectionTitle;
         const sourceHandle =
           sourceNode && sourcePort && workflowNodeIsSupported(sourceNode.data)
-            ? encodeHandleId(
-                portMetaForPort(
-                  sourcePort,
-                  effectivePortShape(sourceNode.data, sourcePort),
-                  undefined,
-                  sourceNode.data.artifactTypeBindings,
-                ),
-              )
+            ? renderedOutputHandleId({
+                node: sourceNode,
+                port: sourcePort,
+                edges,
+                origins: authoredDocument.origins,
+              })
             : null;
         return {
           ...edge,
@@ -3986,6 +3986,8 @@ function WorkbenchBody({
       }),
     [
       activeArtifactViewers.edges,
+      authoredDocument.origins,
+      edges,
       nodes,
       registry?.artifact_types,
       updateArtifactViewerEdge,

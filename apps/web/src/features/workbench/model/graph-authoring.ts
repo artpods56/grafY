@@ -10,6 +10,7 @@ import {
   connectionRouteSelection,
   decodeHandleId,
   decodedHandleArtifactType,
+  encodeHandleId,
   type ConnectionRoute,
 } from "../canvas/handles";
 import {
@@ -25,6 +26,7 @@ import {
   collectionModesForShapes,
   effectivePortShape,
   portHasInstancePlugs,
+  portMetaForPort,
   type WorkflowEdge,
   type WorkflowEdgeRouteOption,
   type WorkflowNodeData,
@@ -113,6 +115,34 @@ export function mappedInputPortsForNode(
       )
       .map((origin) => origin.to_port),
   ];
+}
+
+/**
+ * Output handle id as the canvas draws that port.
+ *
+ * Callers pass the stored node. Its `mappedInputPorts` stays empty; the
+ * canvas fills that list from map edges and map origins before it draws the
+ * ball. Encoding the stored shape names a handle that is not on the node.
+ */
+export function renderedOutputHandleId({
+  node,
+  port,
+  edges,
+  origins = [],
+}: {
+  node: GraphAuthoringNode;
+  port: WorkflowPort;
+  edges: readonly WorkflowEdge[];
+  origins?: readonly SavedGraphOrigin[];
+}): string {
+  return encodeHandleId(
+    portMetaForPort(
+      port,
+      effectiveShapeForPort(node, port, edges, false, origins),
+      undefined,
+      node.data.artifactTypeBindings,
+    ),
+  );
 }
 
 function effectiveShapeForPort(

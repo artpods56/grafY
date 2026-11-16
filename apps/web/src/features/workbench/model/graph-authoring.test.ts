@@ -10,6 +10,7 @@ import {
   inputPlugBindingsForNode,
   isConnectionAccepted,
   mappedInputPortsForNode,
+  renderedOutputHandleId,
   workflowEdgeRouteOption,
   type GraphAuthoringNode,
 } from "./graph-authoring";
@@ -112,6 +113,61 @@ function edge({
     },
   };
 }
+
+describe("rendered output handles", () => {
+  it("keeps a one-shape handle when the node is not mapped", () => {
+    const producer = node("producer", [], [port("image", "output", "one")]);
+    const output = producer.data.spec.outputs[0];
+    if (!output) throw new Error("fixture has no output");
+    expect(
+      renderedOutputHandleId({ node: producer, port: output, edges: [] }),
+    ).toBe(handle("image", "output", "one"));
+  });
+
+  it("uses the sequence handle a map edge draws, and ignores a disabled one", () => {
+    const producer = node(
+      "producer",
+      [port("input", "input", "one")],
+      [port("image", "output", "one")],
+    );
+    const output = producer.data.spec.outputs[0];
+    if (!output) throw new Error("fixture has no output");
+    const mapEdge = edge({
+      id: "map",
+      source: "driver",
+      target: producer.id,
+      sourcePort: "items",
+      sourceShape: "many",
+      targetPort: "input",
+      collectionMode: "map",
+    });
+    const disabledMap = edge({
+      id: "disabled-map",
+      source: "driver",
+      target: producer.id,
+      sourcePort: "items",
+      sourceShape: "many",
+      targetPort: "input",
+      collectionMode: "map",
+      enabled: false,
+    });
+    expect(producer.data.mappedInputPorts).toEqual([]);
+    expect(
+      renderedOutputHandleId({
+        node: producer,
+        port: output,
+        edges: [mapEdge],
+      }),
+    ).toBe(handle("image", "output", "many"));
+    expect(
+      renderedOutputHandleId({
+        node: producer,
+        port: output,
+        edges: [disabledMap],
+      }),
+    ).toBe(handle("image", "output", "one"));
+  });
+});
 
 describe("connection route presentation", () => {
   it("keeps projection, conversion, and generic binding details together", () => {
@@ -284,6 +340,19 @@ describe("connection collection policy", () => {
     expect(mappedInputPortsForNode(mapped.id, [], false, [origin])).toEqual([
       "input",
     ]);
+    const output = mapped.data.spec.outputs[0];
+    if (!output) throw new Error("fixture has no output");
+    // Stored node data keeps mappedInputPorts empty. The handle still has to
+    // name the sequence ball the canvas draws, or the wire to a pulled card
+    // has nowhere to attach.
+    expect(
+      renderedOutputHandleId({
+        node: mapped,
+        port: output,
+        edges: [],
+        origins: [origin],
+      }),
+    ).toBe(handle("output", "output", "many"));
     expect(
       collectionModeForConnection(
         {
