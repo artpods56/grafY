@@ -8,6 +8,8 @@ import useSWR from "swr";
 import {
   ArrowDown,
   ArrowUp,
+  ChevronLeft,
+  ChevronRight,
   File as FileIcon,
   FileSpreadsheet,
   FileText,
@@ -274,6 +276,19 @@ const s = stylex.create({
   stackThumbSelected: { boxShadow: tokens.shadowNodeActive },
   stackThumbDragged: { boxShadow: tokens.shadowNodeDragged },
   stackFile: { backgroundColor: tokens.colorSurfaceRaised },
+  pager: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+    color: "light-dark(#555, #bbb)",
+    fontSize: tokens.fontSizeXs,
+    minWidth: 0,
+  },
+  pagerName: {
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   reorder: {
     display: "flex",
     flexDirection: "column",
@@ -419,6 +434,7 @@ export function ArtifactCardBody({
   );
   const artifactTypes = useArtifactTypeCatalog();
   const [reordering, setReordering] = React.useState(false);
+  const [activeIndex, setActiveIndex] = React.useState(0);
   const [overlayOpen, setOverlayOpen] = React.useState(false);
   const [imageSizes, setImageSizes] = React.useState<
     Record<string, { width: number; height: number }>
@@ -517,7 +533,9 @@ export function ArtifactCardBody({
     data.onRefsChange?.(id, artifactCardValue(moved, shownValue));
   };
 
-  const first = refs[0] ?? null;
+  const isSequence = shownValue !== null && "item_refs" in shownValue;
+  const clampedIndex = Math.min(activeIndex, Math.max(0, refs.length - 1));
+  const first = refs[isSequence ? clampedIndex : 0] ?? null;
   const firstItem = first ? itemsById.get(first.artifact_id) : undefined;
   const firstUrl = first
     ? artifactInlineContentUrl(workspace.id, first.artifact_id)
@@ -534,7 +552,6 @@ export function ArtifactCardBody({
   const contentType =
     librarySummary?.content_type ?? declaredArtifactContentType(firstType);
   const imageArtifact = first !== null && isImageArtifact(first, contentType);
-  const isSequence = shownValue !== null && "item_refs" in shownValue;
   // A card belongs to the group of documents it holds: one document, or the
   // list it is. A contract already named as a list is not wrapped twice.
   const groupLabel = !isSequence
@@ -563,16 +580,11 @@ export function ArtifactCardBody({
     fileName?.toLowerCase().endsWith(".csv");
   // An HTML page is not a file to skim: it names other artifacts and is filled
   // from them. Every other readable artifact still shows its own bytes.
-  const htmlPageArtifact = !isSequence && isHtmlPageArtifact(first);
+  const htmlPageArtifact = isHtmlPageArtifact(first);
   // Readable bytes are shown as they are, JSON indented, instead of a file
   // tile. Binary bytes and file containers keep their tile.
   const textKey =
-    first &&
-    !htmlPageArtifact &&
-    !isSequence &&
-    !imageArtifact &&
-    !isPdf &&
-    !isTableFile
+    first && !htmlPageArtifact && !imageArtifact && !isPdf && !isTableFile
       ? ([
           "artifact-card-text",
           workspace.id,
@@ -661,8 +673,7 @@ export function ArtifactCardBody({
   }, [measureText, shownText, textMaxHeight, textView]);
   const textOverflows = textEdges.above || textEdges.below || textEdges.wide;
   // Only a card that shows text takes a height: the others have no body to size.
-  const textCard =
-    !isSequence && !awaitingFeed && (shownText !== null || htmlPageArtifact);
+  const textCard = !awaitingFeed && (shownText !== null || htmlPageArtifact);
   const textHeight = textCard ? textMaxHeight : null;
   const textProps = stylex.props(
     s.textContent,
@@ -675,7 +686,12 @@ export function ArtifactCardBody({
   const titleLabel = isSequence
     ? imageArtifact
       ? `${refs.length} ${refs.length === 1 ? "item" : "items"}`
-      : "List"
+      : tableCard || htmlPageArtifact || shownText !== null || textKey
+        ? (fileName ??
+          (refs.length === 1
+            ? "1 item"
+            : `${clampedIndex + 1} of ${refs.length}`))
+        : "File sequence"
     : first
       ? (fileName ??
         feedLabel ??
@@ -889,6 +905,37 @@ export function ArtifactCardBody({
               />
             </CanvasCardHead>
           )}
+          {isSequence && refs.length > 1 ? (
+            <div
+              className={`nodrag nopan nowheel ${stylex.props(s.pager).className ?? ""}`}
+              aria-label="Sequence pages"
+            >
+              <IconButton
+                label="Previous item"
+                size="2xs"
+                xstyle={s.step}
+                disabled={clampedIndex === 0}
+                onClick={() => setActiveIndex(clampedIndex - 1)}
+              >
+                <ChevronLeft size={12} />
+              </IconButton>
+              <span>
+                {clampedIndex + 1} / {refs.length}
+              </span>
+              <IconButton
+                label="Next item"
+                size="2xs"
+                xstyle={s.step}
+                disabled={clampedIndex === refs.length - 1}
+                onClick={() => setActiveIndex(clampedIndex + 1)}
+              >
+                <ChevronRight size={12} />
+              </IconButton>
+              {fileName ? (
+                <span {...stylex.props(s.pagerName)}>{fileName}</span>
+              ) : null}
+            </div>
+          ) : null}
           <CanvasCardBody>
             {followsOutput ? (
               <ArtifactLeftRail
@@ -918,7 +965,13 @@ export function ArtifactCardBody({
             {imageArtifact ? (
               <ImageArtifactBody
                 workspaceId={workspace.id}
-                images={refs.map((ref, index) => ({
+                images={(isSequence
+                  ? [
+                      refs[clampedIndex],
+                      ...refs.filter((_, index) => index !== clampedIndex),
+                    ].filter((ref) => ref !== undefined)
+                  : refs
+                ).map((ref, index) => ({
                   id: ref.artifact_id,
                   tiff:
                     ref.artifact_type === "file.tiff" ||
@@ -989,9 +1042,7 @@ export function ArtifactCardBody({
                     </span>
                   </div>
                 ) : null}
-                {isSequence ? (
-                  sequenceStack
-                ) : htmlPageArtifact && first && !awaitingFeed ? (
+                {htmlPageArtifact && first && !awaitingFeed ? (
                   <>
                     <div
                       data-artifact-value="true"
@@ -1090,6 +1141,8 @@ export function ArtifactCardBody({
                       />
                     ) : null}
                   </>
+                ) : isSequence ? (
+                  sequenceStack
                 ) : first && !awaitingFeed ? (
                   <div
                     data-artifact-file-body="true"
@@ -1121,7 +1174,9 @@ export function ArtifactCardBody({
                 ) : null}
               </>
             )}
-            {allowCornerResize || ((imageArtifact || htmlPage) && selected) ? (
+            {allowCornerResize ||
+            ((imageArtifact || htmlPage || textCard || tableCard) &&
+              selected) ? (
               <LayoutResizeHandle
                 layout={
                   textCard || tableCard

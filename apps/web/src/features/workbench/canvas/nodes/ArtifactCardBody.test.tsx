@@ -23,6 +23,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const libraryMocks = vi.hoisted(() => ({
   items: [] as PlacedLibraryItem[],
   value: undefined as { text: string; truncated: boolean } | undefined,
+  values: {} as Record<string, { text: string; truncated: boolean }>,
 }));
 const flowMocks = vi.hoisted(() => ({
   edges: [] as unknown[],
@@ -34,11 +35,13 @@ const tableMocks = vi.hoisted(
     schema: TableSchema | undefined;
     error: Error | undefined;
     retry: ReturnType<typeof vi.fn>;
+    requested: string[];
   } => ({
     page: undefined,
     schema: undefined,
     error: undefined,
     retry: vi.fn(),
+    requested: [],
   }),
 );
 
@@ -92,6 +95,7 @@ vi.mock("swr", () => ({
       return { data: { artifact_types: registryMocks.artifactTypes } };
     }
     if (key[0] === "table-artifact-schema") {
+      tableMocks.requested.push(String(key[2]));
       return {
         data: tableMocks.schema,
         error: tableMocks.error,
@@ -100,7 +104,7 @@ vi.mock("swr", () => ({
     }
     if (key[0] === "table-artifact-page") return { data: tableMocks.page };
     return key[0] === "artifact-card-text"
-      ? { data: libraryMocks.value }
+      ? { data: libraryMocks.values[String(key[2])] ?? libraryMocks.value }
       : { data: { folders: [], items: libraryMocks.items } };
   },
 }));
@@ -261,6 +265,8 @@ afterEach(() => {
   document.body.replaceChildren();
   libraryMocks.items = [];
   libraryMocks.value = undefined;
+  libraryMocks.values = {};
+  tableMocks.requested = [];
   tableMocks.page = undefined;
   tableMocks.schema = undefined;
   tableMocks.error = undefined;
@@ -706,6 +712,119 @@ describe("artifact on the canvas", () => {
     expect(port?.getAttribute("data-handle-id")).toBe("artifact-card-output");
     expect(port?.getAttribute("data-handle-type")).toBe("source");
     expect(port?.getAttribute("aria-disabled")).toBe("false");
+  });
+
+  it("reads a single markdown sequence without a pager or file stack", () => {
+    libraryMocks.values = {
+      m1: {
+        text: JSON.stringify({ markdown: "# First page" }),
+        truncated: false,
+      },
+    };
+    const value = {
+      ...sequence(["m1"]),
+      artifact_type: "text.markdown",
+      item_refs: [
+        {
+          artifact_id: "m1",
+          artifact_type: "text.markdown",
+          schema_version: 1,
+        },
+      ],
+    };
+    const { container } = mount(value, {}, true);
+    expect(
+      container.querySelector("[data-artifact-value]")?.textContent,
+    ).toContain("First page");
+    expect(container.querySelector('[aria-label="Next item"]')).toBeNull();
+    expect(
+      container.querySelector('[aria-label="1 items in sequence"]'),
+    ).toBeNull();
+  });
+
+  it("pages through markdown and keeps navigation bounded", () => {
+    libraryMocks.values = {
+      m1: {
+        text: JSON.stringify({ markdown: "# First page" }),
+        truncated: false,
+      },
+      m2: {
+        text: JSON.stringify({ markdown: "# Second page" }),
+        truncated: false,
+      },
+    };
+    const value = {
+      ...sequence(["m1", "m2"]),
+      artifact_type: "text.markdown",
+      item_refs: ["m1", "m2"].map((artifact_id) => ({
+        artifact_id,
+        artifact_type: "text.markdown",
+        schema_version: 1,
+      })),
+    };
+    const { container } = mount(value, {}, true);
+    expect(container.textContent).toContain("First page");
+    expect(
+      container.querySelector<HTMLButtonElement>('[aria-label="Previous item"]')
+        ?.disabled,
+    ).toBe(true);
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(container.textContent).toContain("Second page");
+    expect(container.textContent).not.toContain("First page");
+    expect(container.textContent).toContain("2 / 2");
+    expect(
+      container.querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.disabled,
+    ).toBe(true);
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Previous item"]')
+        ?.click(),
+    );
+    expect(container.textContent).toContain("First page");
+  });
+
+  it("pages table sequence references through the table reader", () => {
+    const value = {
+      ...sequence(["t1", "t2"]),
+      artifact_type: "table.data",
+      item_refs: ["t1", "t2"].map((artifact_id) => ({
+        artifact_id,
+        artifact_type: "table.data",
+        schema_version: 1,
+      })),
+    };
+    const { container } = mount(value, {}, true);
+    expect(
+      container.querySelector("[data-artifact-table-body]"),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("1 / 2");
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(
+      container.querySelector("[data-artifact-table-body]"),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("2 / 2");
+    expect(tableMocks.requested).toContain("t1");
+    expect(tableMocks.requested.at(-1)).toBe("t2");
+  });
+
+  it("moves the selected image to the front of its stack", () => {
+    const { container } = mount(sequence(["a1", "a2"]), {}, true);
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("a1");
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("a2");
   });
 
   it("shows a run of artifacts as a stack counted by item", () => {
