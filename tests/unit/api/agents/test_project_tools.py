@@ -57,7 +57,7 @@ def test_ports_come_from_the_registered_operator(registry) -> None:
     assert inputs["document_url"].artifact_type == TEXT
     assert inputs["image"].artifact_type == ArtifactTypeKey("image.raster", 1)
     assert {"markdown", "blocks", "regions"} <= set(outputs)
-    assert ports.title(node) == "Mistral OCR"
+    assert ports.title(node) == "Read with Mistral"
 
 
 def test_a_node_this_deployment_does_not_have_has_no_ports(registry) -> None:

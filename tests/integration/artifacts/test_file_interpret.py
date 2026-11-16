@@ -178,7 +178,7 @@ async def test_interpret_refuses_bytes_that_disagree_with_the_format(
     uow = InMemoryUnitOfWork()
     blob = await seed_blob_artifact(storage, uow, content=PNG_BYTES)
 
-    with pytest.raises(NodeRunError, match="file_format_mismatch"):
+    with pytest.raises(NodeRunError, match="does not look like a"):
         _ = await run_interpret(storage, uow, blob, (JPEG_FILE,))
 
 
@@ -264,7 +264,7 @@ def test_interpret_declares_an_explicit_format_output_and_a_blob_input() -> None
 
     registration = registry.node_registration("file.interpret", 1)
     node_class = registration.node_class
-    assert registration.title == "Interpret file"
+    assert registration.title == "Set file type"
     file_input = node_class.input_contract.ports["file"]
     assert file_input.accepts == BLOB_FILE.key
     assert file_input.also_accepts == ()
