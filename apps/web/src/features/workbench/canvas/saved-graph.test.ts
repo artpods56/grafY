@@ -561,16 +561,7 @@ describe("saved collection modes", () => {
     },
   ])(
     "rejects $collectionMode for $sourceShape → $targetShape when new connections require $expectedMode",
-    ({
-      collectionMode,
-      sourceShape,
-      targetShape,
-      targetAcceptedShapes,
-      expectedMode,
-    }) => {
-      const expected = expectedMode
-        ? `'${expectedMode}'`
-        : "no supported collection mode";
+    ({ collectionMode, sourceShape, targetShape, targetAcceptedShapes }) => {
       expect(() =>
         hydrateSavedGraph(
           graphWithCollectionMode(collectionMode),

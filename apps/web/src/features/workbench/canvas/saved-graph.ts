@@ -712,9 +712,6 @@ export function hydrateSavedGraph(
         targetShape,
       );
       if (!expectedCollectionModes.includes(savedEdge.collection_mode)) {
-        const expectedMode = expectedCollectionModes.length
-          ? expectedCollectionModes.map((mode) => `'${mode}'`).join(" or ")
-          : "no supported collection mode";
         throw new SavedGraphHydrationError(
           `Cannot open “${savedGraph.name}”. A connection uses a list mode this input does not accept.`,
         );
