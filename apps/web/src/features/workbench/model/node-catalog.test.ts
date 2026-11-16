@@ -231,13 +231,13 @@ describe("artifact catalog filters", () => {
   it("builds artifact filters with version labels only for duplicate titles", () => {
     const filters = buildCatalogFilters(registry());
     expect(filters.map((filter) => filter.title)).toEqual([
-      "All nodes",
+      "All steps",
       "Table",
       "Text · v1",
       "Text · v2",
-      "Single value",
-      "Sequence",
-      "Any artifact",
+      "One item",
+      "Lists",
+      "Any kind",
     ]);
   });
 

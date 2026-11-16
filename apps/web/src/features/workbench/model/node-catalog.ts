@@ -192,11 +192,11 @@ export function buildCatalogFilters(
     });
 
   return [
-    { id: "all", kind: "all", title: "All nodes" },
+    { id: "all", kind: "all", title: "All steps" },
     ...artifactFilters,
-    { id: "single", kind: "single", title: "Single value" },
-    { id: "sequence", kind: "sequence", title: "Sequence" },
-    { id: "any-artifact", kind: "any-artifact", title: "Any artifact" },
+    { id: "single", kind: "single", title: "One item" },
+    { id: "sequence", kind: "sequence", title: "Lists" },
+    { id: "any-artifact", kind: "any-artifact", title: "Any kind" },
   ];
 }
 

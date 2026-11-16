@@ -406,7 +406,7 @@ describe("NodeSelector", () => {
     expect(enterPreview?.textContent).toContain("Text");
     expect(enterPreview?.textContent).toContain("string");
     expect(dialog().querySelector("aside")?.textContent).toContain(
-      "it starts a workflow",
+      "Nothing. This step starts the work.",
     );
 
     await enterSearch("Fuzzy match tables");
@@ -586,11 +586,9 @@ describe("NodeSelector", () => {
     await enterSearch("not a real node");
     expect(options()).toHaveLength(0);
     expect(dialog().querySelector('[role="status"]')?.textContent).toBe(
-      "No nodes found.",
+      "No steps found.",
     );
-    expect(dialog().textContent).toContain(
-      "No nodes match the current search or filter.",
-    );
+    expect(dialog().textContent).toContain("No steps match this search.");
     await React.act(async () => buttonNamed("Reset search and filter").click());
 
     expect(searchInput().value).toBe("");
