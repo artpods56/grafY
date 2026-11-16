@@ -137,6 +137,7 @@ async def build_app_resources(
         unit_of_work_factory=new_unit_of_work,
         plugin_registry=registry,
         encryption_key=settings.keys.credential_encryption_key,
+        provider_secrets=settings.providers,
     )
     # An Agent's own key is sealed with the same deployment key as a node secret, and
     # its endpoint is dialed against the same egress grants the workbench was built with.

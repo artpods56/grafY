@@ -5,12 +5,15 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from hashlib import sha256
 from typing import cast
 from uuid import UUID
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from pydantic import SecretStr, ValidationError
+from pydantic import AnyHttpUrl, SecretStr, TypeAdapter, ValidationError
+
+from grafy_shared.config import ProviderSecretsConfig
 
 from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.node_secrets import (
@@ -107,10 +110,12 @@ class NodeSecretService(NodeSecretResolverPort):
         unit_of_work_factory: Callable[[], NodeSecretUnitOfWorkPort],
         plugin_registry: PluginRegistry,
         encryption_key: SecretStr | None,
+        provider_secrets: ProviderSecretsConfig | None = None,
     ) -> None:
         self._uow_factory = unit_of_work_factory
         self._plugin_registry = plugin_registry
         self._encryption_key = encryption_key
+        self._provider_secrets = provider_secrets or ProviderSecretsConfig()
 
     async def status(
         self,
@@ -176,6 +181,13 @@ class NodeSecretService(NodeSecretResolverPort):
                     and record.key_id == active_key_id
                     and record.dependency_sha256
                     == node_secret_dependency_sha256(dependencies)
+                )
+                configured = (
+                    configured
+                    or self._deployment_default(
+                        node.operator_id, declaration.name, dependencies
+                    )
+                    is not None
                 )
                 states.append(
                     NodeSecretState(
@@ -298,6 +310,16 @@ class NodeSecretService(NodeSecretResolverPort):
             dependencies=dependencies,
         )
 
+        if encrypted is None:
+            default = self._deployment_default(
+                binding.operator_id, name, binding.dependencies
+            )
+            if default is None:
+                raise NodeSecretUnavailableError(
+                    "Required node secret is not configured"
+                )
+            return default
+
         key, key_id = self._resolved_encryption_key()
         if encrypted.key_id != key_id:
             raise NodeSecretUnavailableError(
@@ -332,7 +354,7 @@ class NodeSecretService(NodeSecretResolverPort):
         name: str,
         dependencies: Mapping[str, JsonValue],
     ) -> str:
-        _, encrypted = await self._validated_secret_record(
+        binding, encrypted = await self._validated_secret_record(
             project_id=project_id,
             graph_id=graph_id,
             workspace_id=workspace_id,
@@ -340,6 +362,27 @@ class NodeSecretService(NodeSecretResolverPort):
             name=name,
             dependencies=dependencies,
         )
+        if encrypted is None:
+            default = self._deployment_default(
+                binding.operator_id, name, binding.dependencies
+            )
+            if default is None:
+                raise NodeSecretUnavailableError(
+                    "Required node secret is not configured"
+                )
+            identity = json.dumps(
+                [
+                    binding.operator_id,
+                    name,
+                    binding.dependencies,
+                    default.get_secret_value(),
+                ],
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            return f"default:{sha256(identity).hexdigest()}"
         _, active_key_id = self._resolved_encryption_key()
         if encrypted.key_id != active_key_id:
             raise NodeSecretUnavailableError(
@@ -356,7 +399,7 @@ class NodeSecretService(NodeSecretResolverPort):
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
-    ) -> tuple[_NodeSecretBinding, EncryptedNodeSecret]:
+    ) -> tuple[_NodeSecretBinding, EncryptedNodeSecret | None]:
         if project_id is None or graph_id is None or node_id is None:
             raise NodeSecretUnavailableError(
                 "A Project and Graph context is required to resolve a node secret"
@@ -385,17 +428,62 @@ class NodeSecretService(NodeSecretResolverPort):
                 name,
             )
         if encrypted is None:
-            raise NodeSecretUnavailableError("Required node secret is not configured")
+            return binding, None
         expected_dependency_sha256 = node_secret_dependency_sha256(binding.dependencies)
         if (
             encrypted.operator_id != binding.operator_id
             or encrypted.operator_version != binding.operator_version
             or encrypted.dependency_sha256 != expected_dependency_sha256
         ):
-            raise NodeSecretUnavailableError(
-                "Configured node secret does not match the saved node configuration"
-            )
+            if (
+                self._deployment_default(
+                    binding.operator_id, name, binding.dependencies
+                )
+                is None
+            ):
+                raise NodeSecretUnavailableError(
+                    "Configured node secret does not match the saved node configuration"
+                )
+            return binding, None
+        if encrypted.key_id != self._active_key_id():
+            if (
+                self._deployment_default(
+                    binding.operator_id, name, binding.dependencies
+                )
+                is None
+            ):
+                raise NodeSecretUnavailableError(
+                    "Configured node secret cannot be decrypted by this server"
+                )
+            return binding, None
         return binding, encrypted
+
+    def _deployment_default(
+        self, operator_id: str, name: str, dependencies: Mapping[str, JsonValue]
+    ) -> SecretStr | None:
+        if name != "api_key":
+            return None
+        config = self._provider_secrets
+        if operator_id == "reducto.ocr.process":
+            key = config.reducto_api_key
+        elif operator_id == "mistral.ocr.process":
+            key = config.mistral_api_key
+        elif operator_id == "llm.openai_compatible.chat_completion":
+            endpoint = dependencies.get("base_url")
+            if config.openai_base_url is None or not isinstance(endpoint, str):
+                return None
+            try:
+                parsed = TypeAdapter(AnyHttpUrl).validate_python(endpoint)
+            except ValidationError:
+                return None
+            if str(parsed).rstrip("/") != str(config.openai_base_url).rstrip("/"):
+                return None
+            key = config.openai_api_key
+        else:
+            return None
+        if key is None or not key.get_secret_value().strip():
+            return None
+        return key
 
     @staticmethod
     async def _head(

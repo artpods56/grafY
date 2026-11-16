@@ -2,7 +2,7 @@ import asyncio
 import base64
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import ClassVar, override
+from typing import ClassVar, TypedDict, override
 from uuid import UUID, uuid4
 
 import pytest
@@ -24,14 +24,14 @@ from grafy_core.domain.projects import Project
 from grafy_core.kernel.project import GraphDefinition, ProjectDocument
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import Plugin, PluginRegistry, NodeSecretInput
-from grafy_core.ports.node_secrets import NodeSecretUnavailableError
+from grafy_core.ports.node_secrets import JsonValue, NodeSecretUnavailableError
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 
 from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
 
-from grafy_shared.config import AppConfig
+from grafy_shared.config import AppConfig, ProviderSecretsConfig
 from grafy_workbench.text import TEXT
 
 from grafy_api.services.composition import build_workbench_components
@@ -957,3 +957,82 @@ def test_empty_secret_value_response_keeps_its_plain_detail(
 
     assert response.status_code == 422
     assert response.json() == {"detail": "Node secret value must not be empty"}
+
+
+class _ResolutionArgs(TypedDict):
+    workspace_id: UUID
+    project_id: UUID
+    graph_id: str
+    node_id: str
+    name: str
+    dependencies: dict[str, JsonValue]
+
+
+async def test_deployment_default_resolves_and_node_override_wins(
+    node_secret_setup: tuple[Database, NodeSecretService, PluginRegistry],
+) -> None:
+    database, _, _ = node_secret_setup
+    from grafy_plugin_llm import LLM
+
+    registry = PluginRegistry()
+    registry.install(LLM)
+    registry.freeze()
+    project_id = await _secret_project(
+        database,
+        document=_secret_document(operator_id="llm.openai_compatible.chat_completion"),
+    )
+
+    def service(
+        key: str, endpoint: str = "https://llm.example/v1/"
+    ) -> NodeSecretService:
+        return NodeSecretService(
+            unit_of_work_factory=lambda: SqlAlchemyUnitOfWork(database.sessions),
+            plugin_registry=registry,
+            encryption_key=_encryption_key(),
+            provider_secrets=ProviderSecretsConfig(
+                _env_file=None,  # pyright: ignore[reportCallIssue]
+                openai_api_key=SecretStr(key),
+                openai_base_url=endpoint,  # pyright: ignore[reportCallIssue]
+            ),
+        )
+
+    current = service("default-key")
+    args = _ResolutionArgs(
+        workspace_id=WORKSPACE_ID,
+        project_id=project_id,
+        graph_id=MAIN_GRAPH_ID,
+        node_id="llm",
+        name="api_key",
+        dependencies={"base_url": "https://llm.example/v1"},
+    )
+    assert (
+        (await current.status(WORKSPACE_ID, project_id, MAIN_GRAPH_ID))
+        .secrets[0]
+        .configured
+    )
+    assert (await current.resolve_secret(**args)).get_secret_value() == "default-key"
+    revision = await current.cache_revision(**args)
+    assert revision.startswith("default:")
+    assert revision == await current.cache_revision(**args)
+    assert revision != await service("changed").cache_revision(**args)
+    with pytest.raises(NodeSecretUnavailableError):
+        await service("default-key", "https://other.example/v1").resolve_secret(**args)
+    await current.configure(
+        workspace_id=WORKSPACE_ID,
+        project_id=project_id,
+        graph_id=MAIN_GRAPH_ID,
+        node_id="llm",
+        name="api_key",
+        value=SecretStr("override"),
+        expected_head_sequence=0,
+    )
+    assert (await current.resolve_secret(**args)).get_secret_value() == "override"
+    await current.remove(
+        workspace_id=WORKSPACE_ID,
+        project_id=project_id,
+        graph_id=MAIN_GRAPH_ID,
+        node_id="llm",
+        name="api_key",
+        expected_head_sequence=0,
+    )
+    assert (await current.resolve_secret(**args)).get_secret_value() == "default-key"
