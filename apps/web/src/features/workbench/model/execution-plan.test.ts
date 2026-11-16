@@ -22,6 +22,7 @@ interface PortOptions {
   required?: boolean;
   instancePlugs?: boolean;
   shape?: Port["shape"];
+  title?: string | null;
 }
 
 function port(
@@ -32,7 +33,7 @@ function port(
   const shape = options.shape ?? "one";
   return {
     name,
-    title: name,
+    title: "title" in options ? options.title : name,
     description: null,
     direction,
     artifact_type: { id: "test.artifact", schema_version: 1 },
@@ -325,7 +326,8 @@ describe("required execution inputs", () => {
       {
         nodeId: "target",
         nodeTitle: "target",
-        portName: "required",
+        portLabel: "required",
+        slot: null,
       },
     ]);
     expect(
@@ -356,7 +358,8 @@ describe("required execution inputs", () => {
       {
         nodeId: "without-plugs",
         nodeTitle: "collect",
-        portName: "items",
+        portLabel: "items",
+        slot: null,
       },
     ]);
     expect(
@@ -365,7 +368,8 @@ describe("required execution inputs", () => {
       {
         nodeId: "with-plugs",
         nodeTitle: "collect",
-        portName: "items input 1",
+        portLabel: "items",
+        slot: 1,
       },
     ]);
   });
@@ -373,15 +377,9 @@ describe("required execution inputs", () => {
 
 describe("execution validation", () => {
   it.each([
-    ["all" as const, "Add at least one node before running the workflow."],
-    [
-      "selected" as const,
-      "Select at least one node before running a selection.",
-    ],
-    [
-      "selected-with-dependencies" as const,
-      "Select at least one node before running a selection.",
-    ],
+    ["all" as const, "Add a step before running."],
+    ["selected" as const, "Select a step to run."],
+    ["selected-with-dependencies" as const, "Select a step to run."],
   ])("reports the empty %s scope", (scope, message) => {
     expect(executionValidationIssue(scope, [], [])).toEqual({
       nodeId: null,
@@ -446,7 +444,57 @@ describe("execution validation", () => {
 
     expect(executionValidationIssue("all", [target], [])).toEqual({
       nodeId: "target",
-      message: "Summarize.document is required but unconnected in this run.",
+      message: "Summarize needs “document” connected before it can run.",
+    });
+  });
+
+  it("names a titled port and says which empty slot of a list is short", () => {
+    const collect = workflowNode(
+      "collect",
+      nodeSpec(
+        "collect",
+        [
+          port("items", "input", {
+            instancePlugs: true,
+            title: "Documents",
+          }),
+        ],
+        [],
+        "Group into a list",
+      ),
+      {
+        inputPlugs: [
+          { id: "plug-one", portName: "items" },
+          { id: "plug-two", portName: "items" },
+        ],
+      },
+    );
+    const firstFilled = workflowEdge("source", "collect", {
+      targetPort: "items",
+      targetPlug: "plug-one",
+    });
+
+    expect(executionValidationIssue("all", [collect], [firstFilled])).toEqual({
+      nodeId: "collect",
+      message:
+        "Group into a list needs item 2 of “Documents” connected before it can run.",
+    });
+  });
+
+  it("says a port name in words when it has no title", () => {
+    const target = workflowNode(
+      "target",
+      nodeSpec(
+        "target",
+        [port("document_url", "input", { title: null })],
+        [],
+        "Group",
+      ),
+    );
+
+    expect(executionValidationIssue("all", [target], [])).toEqual({
+      nodeId: "target",
+      message: "Group needs “document url” connected before it can run.",
     });
   });
 });
@@ -520,7 +568,7 @@ describe("run targets", () => {
     expect(runTargetsFor(execution)).toEqual([]);
     expect(executionValidationIssue("selected", [], [], [])).toEqual({
       nodeId: null,
-      message: "Select at least one node before running a selection.",
+      message: "Select a step to run.",
     });
   });
 });

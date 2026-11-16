@@ -615,13 +615,16 @@ export function runRejectionMessage(error: ApiError): string {
   const message = error.detail ? error.detail : null;
   switch (code) {
     case "unknown_graph":
-      return "This Graph is no longer in the Project. Reload it before running.";
+      return "This canvas is no longer in the project. Reload before running.";
     case "unknown_target":
-      return "A node this Run was asked for is no longer on the canvas. Select the nodes again.";
+      return "A step in this run is no longer on the canvas. Select the steps again.";
     case "unknown_operator":
-      return message ?? "A node in this Run is not in the live node registry.";
+      return (
+        message ??
+        "A step in this run is not available. Remove it, or restore the plugin it came from."
+      );
     case "invalid_document":
-      return message ?? "The Graph cannot be run as it is saved.";
+      return message ?? "This canvas cannot be run as it is saved.";
     default:
       return message ?? error.message;
   }

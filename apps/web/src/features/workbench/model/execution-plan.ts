@@ -11,7 +11,7 @@ import {
   type WorkflowNodeData,
   workflowNodeIsSupported,
 } from "../canvas/types";
-import type { RunTargetInput, SavedGraphOrigin } from "@/lib/api";
+import type { Port, RunTargetInput, SavedGraphOrigin } from "@/lib/api";
 
 export type WorkflowNode = Node<WorkflowNodeData, typeof WORKFLOW_NODE_TYPE>;
 
@@ -28,10 +28,18 @@ export interface ExecutionSubgraph {
   edges: readonly WorkflowEdge[];
 }
 
+/** The words a person reads for one port: its title, or its name in words. */
+function portWords(port: Port): string {
+  const title = port.title?.trim();
+  return title ? title : port.name.replaceAll("_", " ");
+}
+
 export interface MissingRequiredInput {
   nodeId: string;
   nodeTitle: string;
-  portName: string;
+  portLabel: string;
+  /** A slot in a multi-input port, counted from 1; null for the port itself. */
+  slot: number | null;
 }
 
 export interface ExecutionValidationIssue {
@@ -127,7 +135,7 @@ export function missingRequiredInputsFor(
   origins: readonly SavedGraphOrigin[] = [],
 ): MissingRequiredInput[] {
   return nodes.flatMap((node) =>
-    node.data.spec.inputs.flatMap((port) => {
+    node.data.spec.inputs.flatMap((port): MissingRequiredInput[] => {
       if (portHasInstancePlugs(port)) {
         if (!port.required) return [];
         const plugs = inputPlugsForPort(node.data.inputPlugs, port.name);
@@ -136,7 +144,8 @@ export function missingRequiredInputsFor(
             {
               nodeId: node.id,
               nodeTitle: node.data.spec.title,
-              portName: port.name,
+              portLabel: portWords(port),
+              slot: null,
             },
           ];
         }
@@ -161,7 +170,8 @@ export function missingRequiredInputsFor(
                 {
                   nodeId: node.id,
                   nodeTitle: node.data.spec.title,
-                  portName: port.name,
+                  portLabel: portWords(port),
+                  slot: null,
                 },
               ];
         }
@@ -172,7 +182,8 @@ export function missingRequiredInputsFor(
                 {
                   nodeId: node.id,
                   nodeTitle: node.data.spec.title,
-                  portName: `${port.name} input ${index + 1}`,
+                  portLabel: portWords(port),
+                  slot: index + 1,
                 },
               ],
         );
@@ -192,7 +203,8 @@ export function missingRequiredInputsFor(
             {
               nodeId: node.id,
               nodeTitle: node.data.spec.title,
-              portName: port.name,
+              portLabel: portWords(port),
+              slot: null,
             },
           ];
     }),
@@ -210,8 +222,8 @@ export function executionValidationIssue(
       nodeId: null,
       message:
         scope !== "all"
-          ? "Select at least one node before running a selection."
-          : "Add at least one node before running the workflow.",
+          ? "Select a step to run."
+          : "Add a step before running.",
     };
   }
 
@@ -250,9 +262,12 @@ export function executionValidationIssue(
       executionNodeIds.has(edge.target),
   );
   if (incompatibleEdge) {
+    const targetTitle =
+      executionNodes.find((node) => node.id === incompatibleEdge.target)?.data
+        .spec.title ?? "a step";
     return {
       nodeId: incompatibleEdge.target,
-      message: `Cannot run connection ${incompatibleEdge.id}: ${incompatibleEdge.data?.compatibilityIssues?.join(" ")}`,
+      message: `A connection on ${targetTitle} cannot be run. ${incompatibleEdge.data?.compatibilityIssues?.join(" ")}`,
     };
   }
 
@@ -265,9 +280,10 @@ export function executionValidationIssue(
 
   const [first] = missingInputs;
   if (!first) return null;
+  const slot = first.slot === null ? "" : `item ${first.slot} of `;
   return {
     nodeId: first.nodeId,
-    message: `${first.nodeTitle}.${first.portName} is required but unconnected in this run.`,
+    message: `${first.nodeTitle} needs ${slot}“${first.portLabel}” connected before it can run.`,
   };
 }
 

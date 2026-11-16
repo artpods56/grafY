@@ -724,12 +724,17 @@ describe("saved instance plugs", () => {
     };
 
     const hydrated = hydrateSavedGraph(invalidGraph, collectRegistry());
-    const collectNode = hydrated.nodes.find(
+    const compatibility = hydrated.nodes.find(
       (node) => node.id === "collect-node",
-    );
-    const issue = (collectNode?.data.compatibility?.issues ?? []).join(" ");
-    expect(issue).toContain("A step has two slots with the same identity.");
-    expect(issue).not.toContain("plug-first");
+    )?.data.compatibility;
+    if (compatibility?.status !== "invalid") {
+      throw new Error("a duplicated plug id must mark the step invalid");
+    }
+
+    expect(compatibility.issues).toEqual([
+      "A step has two slots with the same identity.",
+    ]);
+    expect(compatibility.issues.join(" ")).not.toContain("plug-first");
   });
 
   it("rejects an edge that targets a missing plug", () => {
