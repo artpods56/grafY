@@ -64,6 +64,7 @@ from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_core.schema_contracts import JSON_SCHEMA
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.schema import SCHEMAS
+from grafy_workbench.sequence import SEQUENCES
 from grafy_workbench.text import TEXT
 from grafy_workbench.value import VALUE
 from pydantic import Field, StrictStr
@@ -319,7 +320,7 @@ def harness(tmp_path: Path) -> Harness:
         bucket="artifacts",
     )
     registry = PluginRegistry()
-    for family in (VALUE, TEXT, SCHEMAS, ECHO):
+    for family in (VALUE, TEXT, SCHEMAS, SEQUENCES, ECHO):
         registry.install(family)
     registry.freeze()
     resolvers = ResolverRegistry(list(registry.build_resolvers(runtime_context)))
@@ -386,6 +387,73 @@ async def test_computes_a_node_from_the_result_its_upstream_stored(
     )
     # The child ran once: the parent read its stored output rather than re-running it.
     assert len([item for item in await harness.artifacts_of(JSON_SCHEMA.key)]) == 2
+
+
+async def test_collect_ignores_the_spare_plug_nothing_feeds(harness: Harness) -> None:
+    """The canvas keeps an empty plug on a collection for its next member."""
+
+    first = await harness.write(JSON_SCHEMA.key, '{"type":"object"}')
+    second = await harness.write(JSON_SCHEMA.key, '{"type":"object","properties":{}}')
+    graph = _expand(
+        _node("first", "schema.builder", config={"fields": []}),
+        _node("second", "schema.builder", config={"fields": []}),
+        _node(
+            "collect",
+            "sequence.collect",
+            plugs=(("one", "items"), ("two", "items"), ("spare", "items")),
+            bindings=(("T", JSON_SCHEMA.key),),
+        ),
+        edges=(
+            _edge("first", "json_schema", "collect", "items", to_plug="one"),
+            _edge("second", "json_schema", "collect", "items", to_plug="two"),
+        ),
+    )
+    await harness.store_result("first", {"json_schema": first})
+    await harness.store_result("second", {"json_schema": second})
+
+    outputs = await harness.compute_node(
+        graph, "collect", {"first": "first", "second": "second"}
+    )
+
+    sequence = outputs["items"]
+    assert isinstance(sequence, ArtifactRefSequence)
+    assert [ref.artifact_id for ref in sequence.item_refs] == [
+        first.artifact_id,
+        second.artifact_id,
+    ]
+
+
+async def test_collect_with_only_a_spare_plug_has_no_input(harness: Harness) -> None:
+    graph = _expand(
+        _node(
+            "collect",
+            "sequence.collect",
+            plugs=(("spare", "items"),),
+            bindings=(("T", JSON_SCHEMA.key),),
+        ),
+    )
+
+    with pytest.raises(NodeComputationError, match=r"required input 'items' has no"):
+        await harness.compute_node(graph, "collect")
+
+
+async def test_a_plug_that_keeps_no_spares_must_be_fed(harness: Harness) -> None:
+    """A schema field's plug is not a spare: leaving it empty is an error."""
+
+    graph = _expand(
+        _node(
+            "parent",
+            "schema.builder",
+            config={"fields": [_field("line", "Line", "schema")]},
+            plugs=(("line", "schemas"),),
+        ),
+    )
+
+    with pytest.raises(
+        NodeComputationError,
+        match=r"input plug 'line' requires exactly one incoming connection",
+    ):
+        await harness.compute_node(graph, "parent")
 
 
 async def test_applies_the_projection_an_edge_declares(harness: Harness) -> None:

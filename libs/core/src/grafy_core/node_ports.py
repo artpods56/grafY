@@ -51,11 +51,15 @@ class InPort:
     accepts, so one port can take several artifact types without a type variable.
     ``shape_field`` names the node config field that chooses this port's shape
     for one node instance; the field holds ``one`` or ``many``.
+    ``spare_plugs`` lets a saved node keep input plugs nothing feeds, the spare an
+    editor holds ready for the port's next member; a Run ignores them. Without it
+    every plug must carry exactly one connection.
     """
 
     accepts: ArtifactTypeSpec | ArtifactTypeContract
     variadic: bool = False
     instance_plugs: bool = False
+    spare_plugs: bool = False
     also_accepts: tuple[ArtifactTypeSpec | ArtifactTypeKey, ...] = ()
     shape_field: str | None = None
     agent_default: Literal["fill", "hidden"] = "fill"
@@ -74,6 +78,8 @@ class InPort:
             raise NodeContractError(
                 "A config-chosen port shape cannot be variadic or use instance plugs"
             )
+        if self.spare_plugs and not self.instance_plugs:
+            raise NodeContractError("Spare plugs require instance plugs")
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +103,7 @@ class InputPortSpec:
     shape: PortShape = PortShape.ONE
     variadic: bool = False
     instance_plugs: bool = False
+    spare_plugs: bool = False
     accepted_shapes: tuple[PortShape, ...] = (PortShape.ONE,)
     target_type: type[object] | None = None
     preserves_ref_container: bool = False

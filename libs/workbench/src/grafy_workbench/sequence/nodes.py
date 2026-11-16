@@ -36,6 +36,7 @@ class CollectInput(NodeInput):
             SEQUENCE_ARTIFACT_TYPE,
             variadic=True,
             instance_plugs=True,
+            spare_plugs=True,
         ),
         Field(
             min_length=1,

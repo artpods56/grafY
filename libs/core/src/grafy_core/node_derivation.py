@@ -165,6 +165,7 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
             shape=shape,
             variadic=port.variadic,
             instance_plugs=port.instance_plugs,
+            spare_plugs=port.spare_plugs,
             accepted_shapes=accepted_shapes,
             target_type=target_type,
             preserves_ref_container=preserves_ref_container,

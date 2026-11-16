@@ -280,6 +280,14 @@ def test_input_contract_rejects_invalid_instance_plug_declarations(
         derive_input_contract(model)
 
 
+def test_spare_plugs_belong_to_instance_plugs_only() -> None:
+    with pytest.raises(NodeContractError, match="Spare plugs require instance plugs"):
+        InPort(RASTER_IMAGE, variadic=True, spare_plugs=True)
+
+    spare = InPort(RASTER_IMAGE, variadic=True, instance_plugs=True, spare_plugs=True)
+    assert spare.spare_plugs is True
+
+
 def test_generic_node_contract_resolves_shared_variable_without_mutation() -> None:
     node = GenericNode()
     artifact_type = ArtifactTypeKey("example.value", 2)

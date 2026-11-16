@@ -463,7 +463,9 @@ A stable, ordered input position owned by one node instance for a port that
 explicitly supports instance plugs. Each plug accepts exactly one incoming edge
 and keeps its identity when reordered, so the saved plug order—not canvas
 coordinates or edge creation order—defines execution order. The edge continues
-to own its projection and artifact conversion path.
+to own its projection and artifact conversion path. A port may declare spare
+plugs (Collect does): the canvas keeps one empty plug there for the next member,
+and a Run ignores any plug no edge feeds. Every other plug must be fed.
 
 ### Builtin family
 

@@ -97,7 +97,8 @@ class InputPortPlan:
     name: str
     variadic: bool = False
     instance_plugs: bool = False
-    #: The ids of this port's input plugs, in the order the node declares them.
+    #: The ids of this port's input plugs, in the order the node declares them. A
+    #: port that keeps spare plugs lists only the ones a connection feeds.
     plugs: tuple[str, ...] = ()
 
 
@@ -251,6 +252,7 @@ class NodeContractBinder:
                     "incoming connection"
                 )
 
+        fed_plugs = {item.to_plug for item in incoming if item.to_plug is not None}
         return BoundNode(
             node=node,
             registration=registration,
@@ -264,7 +266,10 @@ class NodeContractBinder:
                     variadic=port.variadic,
                     instance_plugs=port.instance_plugs,
                     plugs=tuple(
-                        plug.id for plug in graph_node.input_plugs if plug.port == name
+                        plug.id
+                        for plug in graph_node.input_plugs
+                        if plug.port == name
+                        and (not port.spare_plugs or plug.id in fed_plugs)
                     ),
                 )
                 for name, port in resolved_contracts.input_contract.ports.items()
@@ -539,8 +544,11 @@ class NodeContractBinder:
                 connections_by_plug.get(item.to_plug, 0) + 1
             )
 
-        for plug_id in plugs:
-            if connections_by_plug.get(plug_id) == 1:
+        for plug_id, port_name in plugs.items():
+            connections = connections_by_plug.get(plug_id, 0)
+            if connections == 1:
+                continue
+            if connections == 0 and node.input_contract.ports[port_name].spare_plugs:
                 continue
             raise NodeComputationError(
                 "Each slot needs exactly one connection. An empty extra slot, "
