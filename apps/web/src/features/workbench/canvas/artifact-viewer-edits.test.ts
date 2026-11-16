@@ -6,6 +6,8 @@ import {
   type AnnotationNode,
 } from "./annotations";
 import {
+  artifactViewersFromPresentation,
+  presentationFromArtifactViewers,
   ARTIFACT_VIEWER_EDGE_TYPE,
   ARTIFACT_VIEWER_NODE_TYPE,
   type ArtifactViewerCanvasState,
@@ -13,6 +15,7 @@ import {
   type ArtifactViewerNode,
 } from "./artifact-viewer";
 import {
+  duplicateArtifactViewers,
   withAnnotationColor,
   withAnnotationLayout,
   withAnnotationText,
@@ -241,4 +244,80 @@ describe("artifact viewer presentation edits", () => {
     });
     expect(current.annotations[0]?.data?.text).toBe("note");
   });
+});
+
+describe("duplicateArtifactViewers", () => {
+  it.each([false, true])(
+    "preserves the exact producer port when copying its card (copy producer: %s)",
+    (copyProducer) => {
+      const state: ArtifactViewerCanvasState = {
+        nodes: [viewer("card", { mode: "artifact", artifactRef: null })],
+        edges: [
+          viewerEdge("feed", "producer", "card", {
+            sourcePortName: "second-output",
+            projection: { path: ["image"] },
+          }),
+        ],
+        bindings: [],
+        annotations: [],
+      };
+      const copied = duplicateArtifactViewers(
+        state,
+        new Map([["card", "card-copy"]]),
+        new Map(copyProducer ? [["producer", "producer-copy"]] : []),
+      );
+      const reloaded = artifactViewersFromPresentation(
+        presentationFromArtifactViewers(copied),
+      );
+      expect(reloaded.edges).toHaveLength(2);
+      expect(
+        reloaded.edges.find((edge) => edge.target === "card-copy"),
+      ).toMatchObject({
+        source: copyProducer ? "producer-copy" : "producer",
+        data: {
+          sourcePortName: "second-output",
+          projection: { path: ["image"] },
+        },
+      });
+      expect(state.edges).toHaveLength(1);
+    },
+  );
+});
+
+it("duplicates interaction bindings only between copied cards", () => {
+  const binding: ArtifactViewerBinding = {
+    id: "binding",
+    sourceViewerId: "a",
+    targetViewerId: "b",
+    mappings: [{ sourceField: "id", targetField: "id" }],
+    effects: ["highlight"],
+    emptySelection: "show_all",
+  };
+  const state: ArtifactViewerCanvasState = {
+    nodes: [viewer("a"), viewer("b")],
+    edges: [],
+    bindings: [binding],
+    annotations: [],
+  };
+  const copied = duplicateArtifactViewers(
+    state,
+    new Map([
+      ["a", "a-copy"],
+      ["b", "b-copy"],
+    ]),
+    new Map(),
+  );
+  const reloaded = artifactViewersFromPresentation(
+    presentationFromArtifactViewers(copied),
+  );
+  expect(reloaded.bindings).toHaveLength(2);
+  expect(reloaded.bindings[1]).toMatchObject({
+    sourceViewerId: "a-copy",
+    targetViewerId: "b-copy",
+    mappings: binding.mappings,
+  });
+  expect(
+    duplicateArtifactViewers(state, new Map([["a", "a-copy"]]), new Map())
+      .bindings,
+  ).toEqual([binding]);
 });

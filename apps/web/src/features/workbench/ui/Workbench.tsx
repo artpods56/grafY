@@ -1,4 +1,6 @@
 "use client";
+
+import { duplicateArtifactViewers } from "../canvas/artifact-viewer-edits";
 import { changeOriginCardReferences } from "../model/origin-card-commands";
 import type { AgentNode } from "../agents/agent-node";
 
@@ -242,7 +244,6 @@ import {
   WORKFLOW_EDGE_TYPE,
   WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
-  effectivePortShape,
   resolvedPortArtifactType,
   type WorkflowEdge,
   type WorkflowEdgeRouteOffset,
@@ -274,6 +275,7 @@ import {
   inputPlugBindingsForNode,
   isConnectionAccepted,
   mappedInputPortsForNode,
+  renderedOutputHandleId,
   workflowEdgeRouteOption,
 } from "../model/graph-authoring";
 import {
@@ -3309,7 +3311,9 @@ function WorkbenchBody({
         !upstream &&
         outputReleasePlacesArtifactCard({
           onCanvas: canvasAtPoint(clientPoint.x, clientPoint.y),
-          portShape: effectivePortShape(fromNode.data, port),
+          // The released handle is the ball on screen. A mapped output is a
+          // sequence ball even when the stored port shape is still one.
+          portShape: decoded.shape,
           hasMaterializedArtifacts: Boolean(materializedOutput),
         })
       ) {
@@ -3574,29 +3578,13 @@ function WorkbenchBody({
       ]),
     );
     if (selectedViewers.length) {
-      commitArtifactViewers((current) => {
-        const cleared = withoutPresentationSelection(current);
-        return {
-          ...cleared,
-          nodes: [
-            ...cleared.nodes,
-            ...selectedViewers.map((node) => ({
-              ...node,
-              id: duplicatedViewerIds.get(node.id) ?? node.id,
-              position: {
-                x: node.position.x + 36,
-                y: node.position.y + 36,
-              },
-              selected: true,
-              data: {
-                layout: node.data.layout,
-                mode: node.data.mode,
-                artifactRef: node.data.artifactRef,
-              },
-            })),
-          ],
-        };
-      });
+      commitArtifactViewers((current) =>
+        duplicateArtifactViewers(
+          withoutPresentationSelection(current),
+          duplicatedViewerIds,
+          duplicatedNodeIds,
+        ),
+      );
     }
     // The copies are what a person holds after duplicating, in whichever layer
     // they were copied from.
@@ -3967,14 +3955,12 @@ function WorkbenchBody({
         )?.projectionTitle;
         const sourceHandle =
           sourceNode && sourcePort && workflowNodeIsSupported(sourceNode.data)
-            ? encodeHandleId(
-                portMetaForPort(
-                  sourcePort,
-                  effectivePortShape(sourceNode.data, sourcePort),
-                  undefined,
-                  sourceNode.data.artifactTypeBindings,
-                ),
-              )
+            ? renderedOutputHandleId({
+                node: sourceNode,
+                port: sourcePort,
+                edges,
+                origins: authoredDocument.origins,
+              })
             : null;
         return {
           ...edge,
@@ -4000,6 +3986,8 @@ function WorkbenchBody({
       }),
     [
       activeArtifactViewers.edges,
+      authoredDocument.origins,
+      edges,
       nodes,
       registry?.artifact_types,
       updateArtifactViewerEdge,

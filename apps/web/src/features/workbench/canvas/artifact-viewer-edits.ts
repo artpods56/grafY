@@ -1,3 +1,4 @@
+import { createUuid } from "../model/uuid";
 import type { AnnotationColor, AnnotationLayout } from "./annotations";
 import type {
   ArtifactViewerCanvasState,
@@ -182,5 +183,67 @@ export function withoutAnnotation(
   return {
     ...state,
     annotations: state.annotations.filter((node) => node.id !== nodeId),
+  };
+}
+
+export function duplicateArtifactViewers(
+  state: ArtifactViewerCanvasState,
+  viewerIds: ReadonlyMap<string, string>,
+  nodeIds: ReadonlyMap<string, string>,
+): ArtifactViewerCanvasState {
+  return {
+    ...state,
+    bindings: [
+      ...state.bindings,
+      ...state.bindings.flatMap((binding) => {
+        const sourceViewerId = viewerIds.get(binding.sourceViewerId);
+        const targetViewerId = viewerIds.get(binding.targetViewerId);
+        if (!sourceViewerId || !targetViewerId) return [];
+        return [
+          {
+            ...binding,
+            id: `artifact-viewer-binding-${createUuid()}`,
+            sourceViewerId,
+            targetViewerId,
+          },
+        ];
+      }),
+    ],
+    edges: [
+      ...state.edges,
+      ...state.edges.flatMap((edge) => {
+        const target = viewerIds.get(edge.target);
+        if (!target) return [];
+        return [
+          {
+            ...edge,
+            id: `artifact-viewer-edge-${createUuid()}`,
+            source: nodeIds.get(edge.source) ?? edge.source,
+            target,
+            selected: false,
+          },
+        ];
+      }),
+    ],
+    nodes: [
+      ...state.nodes.map((node) => ({ ...node, selected: false })),
+      ...state.nodes.flatMap((node) => {
+        const id = viewerIds.get(node.id);
+        if (!id) return [];
+        return [
+          {
+            ...node,
+            id,
+            position: { x: node.position.x + 36, y: node.position.y + 36 },
+            selected: true,
+            data: {
+              layout: node.data.layout,
+              mode: node.data.mode,
+              artifactRef: node.data.artifactRef,
+            },
+          },
+        ];
+      }),
+    ],
   };
 }
