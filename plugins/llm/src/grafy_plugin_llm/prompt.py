@@ -34,12 +34,15 @@ class PromptMessageInput(NodeInput):
     text: Annotated[
         StrictStr,
         InPort(TEXT_VALUE),
-        Field(description="Text content of the prompt message."),
+        Field(title="Words", description="Text content of the prompt message."),
     ]
     images: Annotated[
         ArtifactRefSequence | None,
         InPort(RASTER_IMAGE),
-        Field(description="Optional ordered image artifacts for a user message."),
+        Field(
+            title="Pictures",
+            description="Optional ordered image artifacts for a user message.",
+        ),
     ] = None
 
 
@@ -47,7 +50,7 @@ class PromptMessageOutput(NodeOutput):
     message: Annotated[
         PromptMessage,
         OutPort(PROMPT_MESSAGE),
-        Field(description="The composed prompt message."),
+        Field(title="Instruction", description="The composed prompt message."),
     ]
 
 

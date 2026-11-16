@@ -61,6 +61,8 @@ def test_collect_declares_one_homogeneous_generic_contract() -> None:
     assert isinstance(input_port.accepts, ArtifactTypeVariable)
     assert input_port.accepts.name == "T"
     assert output_port.produces is input_port.accepts
+    assert input_port.title == "Documents"
+    assert output_port.title == "List"
     assert input_port.accepted_shapes == (PortShape.ONE, PortShape.MANY)
     assert input_port.variadic is True
     assert input_port.instance_plugs is True
@@ -76,6 +78,12 @@ def test_sequence_nodes_declare_generic_ref_container_contracts() -> None:
     item_at_input = ItemAtNode.input_contract.ports["items"]
     item_at_output = ItemAtNode.output_contract.ports["item"]
 
+    assert count_input.title == "List"
+    assert count_output.title == "How many"
+    assert slice_input.title == "List"
+    assert slice_output.title == "List"
+    assert item_at_input.title == "List"
+    assert item_at_output.title == "Item"
     assert count_input.accepts is collected_type
     assert count_input.shape is PortShape.MANY
     assert count_output.produces == INTEGER_VALUE.key

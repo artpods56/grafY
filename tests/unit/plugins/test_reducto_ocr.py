@@ -275,6 +275,8 @@ def test_the_node_declares_exactly_its_ports(env: Env) -> None:
         ("document_url", TEXT_VALUE.key),
         ("image", RASTER_IMAGE.key),
     ]
+    assert [port.title for port in made.values()] == ["Transcription", "Text blocks"]
+    assert [port.title for port in took.values()] == ["Document link", "Page image"]
 
 
 def test_the_family_needs_egress_and_secrets_and_owns_the_markdown_writer() -> None:

@@ -39,7 +39,8 @@ class CollectInput(NodeInput):
         ),
         Field(
             min_length=1,
-            description="Artifacts and sequences in connection order.",
+            title="Documents",
+            description="Pages or files, in the order you add them.",
         ),
     ]
 
@@ -48,7 +49,10 @@ class CollectOutput(NodeOutput):
     items: Annotated[
         ArtifactRefSequence,
         OutPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="One sequence containing every input artifact."),
+        Field(
+            title="List",
+            description="Everything above, as one list.",
+        ),
     ]
 
 
@@ -130,7 +134,7 @@ class CountInput(NodeInput):
     items: Annotated[
         ArtifactRefSequence,
         InPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Sequence whose items are counted."),
+        Field(title="List", description="The list to count."),
     ]
 
 
@@ -138,7 +142,10 @@ class CountOutput(NodeOutput):
     count: Annotated[
         StrictInt,
         OutPort(INTEGER_VALUE),
-        Field(description="Number of items in the sequence."),
+        Field(
+            title="How many",
+            description="How many items are in the list.",
+        ),
     ]
 
 
@@ -173,7 +180,7 @@ class SliceInput(NodeInput):
     items: Annotated[
         ArtifactRefSequence,
         InPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Ordered sequence to slice."),
+        Field(title="List", description="The list to take a range from."),
     ]
 
 
@@ -181,7 +188,7 @@ class SliceOutput(NodeOutput):
     items: Annotated[
         ArtifactRefSequence,
         OutPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Selected contiguous items."),
+        Field(title="List", description="The items you kept."),
     ]
 
 
@@ -231,7 +238,7 @@ class ItemAtInput(NodeInput):
     items: Annotated[
         ArtifactRefSequence,
         InPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Ordered sequence containing the item."),
+        Field(title="List", description="The list to pick from."),
     ]
 
 
@@ -239,7 +246,10 @@ class ItemAtOutput(NodeOutput):
     item: Annotated[
         ArtifactRef,
         OutPort(SEQUENCE_ARTIFACT_TYPE),
-        Field(description="Artifact ref at the configured index."),
+        Field(
+            title="Item",
+            description="The one item at that position.",
+        ),
     ]
 
 

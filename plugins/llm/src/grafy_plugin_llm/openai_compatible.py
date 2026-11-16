@@ -122,13 +122,15 @@ class OpenAICompatibleInput(NodeInput):
     messages: Annotated[
         list[PromptMessage],
         InPort(PROMPT_MESSAGE),
-        Field(min_length=1, description="Ordered prompt messages."),
+        Field(
+            min_length=1, title="Instructions", description="Ordered prompt messages."
+        ),
     ]
     json_schema: Annotated[
         str | None,
         InPort(JSON_SCHEMA),
         Field(
-            title="JSON Schema",
+            title="Answer format",
             description="Optional schema for a structured completion.",
         ),
     ] = None
@@ -138,7 +140,9 @@ class OpenAICompatibleOutput(NodeOutput):
     completion: Annotated[
         CompletionPayload,
         OutPort(COMPLETION),
-        Field(description="Completion content and safe provider metadata."),
+        Field(
+            title="Answer", description="Completion content and safe provider metadata."
+        ),
     ]
 
 

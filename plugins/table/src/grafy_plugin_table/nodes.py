@@ -212,7 +212,7 @@ class TableImportInput(NodeInput):
     file: Annotated[
         ArtifactRef,
         InPort(CSV_FILE, also_accepts=(XLSX_FILE,)),
-        Field(description="CSV or XLSX file artifact to import."),
+        Field(title="Spreadsheet", description="A CSV or Excel file."),
     ]
 
 
@@ -220,7 +220,10 @@ class TableImportOutput(NodeOutput):
     table: Annotated[
         Table,
         OutPort(TABLE_DATA),
-        Field(description="Table imported from the selected worksheet or CSV file."),
+        Field(
+            title="Table",
+            description="The rows and columns from that file.",
+        ),
     ]
 
 

@@ -62,7 +62,9 @@ class ImageDecodeInput(NodeInput):
             PNG_FILE,
             also_accepts=(JPEG_FILE, WEBP_FILE, TIFF_FILE, BMP_FILE),
         ),
-        Field(description="Ordered image file artifacts to decode."),
+        Field(
+            title="Image files", description="Ordered image file artifacts to decode."
+        ),
     ]
 
 
@@ -70,7 +72,7 @@ class ImageDecodeOutput(NodeOutput):
     images: Annotated[
         list[RasterImageContent],
         OutPort(RASTER_IMAGE),
-        Field(description="Decoded raster images in input order."),
+        Field(title="Images", description="Decoded raster images in input order."),
     ]
 
 
@@ -202,13 +204,14 @@ class DrawRegionsInput(NodeInput):
     image: Annotated[
         ArtifactRef,
         InPort(RASTER_IMAGE),
-        Field(description="Raster image to draw on."),
+        Field(title="Image", description="Raster image to draw on."),
     ]
     regions: Annotated[
         ImageRegionSet,
         InPort(IMAGE_REGIONS),
         Field(
-            description="Boxes to draw, scaled from their coordinate space to the image size."
+            title="Boxes",
+            description="Boxes to draw, scaled from their coordinate space to the image size.",
         ),
     ]
 
@@ -392,8 +395,8 @@ class CropRegionsConfig(NodeConfig):
 
 
 class CropRegionsInput(NodeInput):
-    image: Annotated[ArtifactRef, InPort(RASTER_IMAGE)]
-    regions: Annotated[ImageRegionSet, InPort(IMAGE_REGIONS)]
+    image: Annotated[ArtifactRef, InPort(RASTER_IMAGE), Field(title="Image")]
+    regions: Annotated[ImageRegionSet, InPort(IMAGE_REGIONS), Field(title="Boxes")]
 
 
 class CropRegionsOutput(NodeOutput):

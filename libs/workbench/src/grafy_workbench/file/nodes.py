@@ -54,7 +54,10 @@ class InterpretFileInput(NodeInput):
     file: Annotated[
         ArtifactRef,
         InPort(BLOB_FILE),
-        Field(description="Blob file artifact whose bytes should be interpreted."),
+        Field(
+            title="File",
+            description="The file whose type is still unrecognized.",
+        ),
     ]
 
 
@@ -62,7 +65,10 @@ class InterpretFileOutput(NodeOutput):
     file: Annotated[
         ArtifactRef,
         OutPort(ArtifactTypeVariable(FORMAT_ARTIFACT_TYPE_VARIABLE)),
-        Field(description="New file artifact of the chosen format."),
+        Field(
+            title="File",
+            description="The same bytes, labeled as the type you chose.",
+        ),
     ]
 
 

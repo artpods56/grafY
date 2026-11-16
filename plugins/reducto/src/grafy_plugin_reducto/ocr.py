@@ -129,9 +129,10 @@ class ReductoOcrInput(NodeInput):
         str | None,
         InPort(TEXT_VALUE),
         Field(
+            title="Document link",
             description=(
-                "HTTPS URL of a document Reducto can fetch, including a presigned "
-                "URL. Leave empty when a raster image is connected."
+                "Web address of the PDF or scan. Leave empty when a page image "
+                "is connected."
             ),
         ),
     ] = None
@@ -139,10 +140,8 @@ class ReductoOcrInput(NodeInput):
         ArtifactRef | None,
         InPort(RASTER_IMAGE),
         Field(
-            description=(
-                "Raster image to parse, uploaded to Reducto. Leave empty when a "
-                "document URL is connected."
-            ),
+            title="Page image",
+            description="One scanned page. Leave empty when a document link is connected.",
         ),
     ] = None
 
@@ -151,15 +150,19 @@ class ReductoOcrOutput(NodeOutput):
     markdown: Annotated[
         MarkdownValue,
         OutPort(MARKDOWN),
-        Field(description="Parsed document as Markdown."),
+        Field(
+            title="Transcription",
+            description="The reading, with pages kept in order.",
+        ),
     ]
     blocks: Annotated[
         Table,
         OutPort(TABLE_DATA),
         Field(
+            title="Text blocks",
             description=(
-                "One row per returned block: order, page, original page, provider "
-                "block kind, content, confidence, and the page-normalized box."
+                "One row per piece the reader found: page, kind of region, text, "
+                "and box."
             ),
         ),
     ]
