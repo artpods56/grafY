@@ -3,11 +3,9 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from grafy_core.artifact_contracts import (
-    IMAGE_REGIONS,
-    RASTER_IMAGE,
-    RasterImageContent,
-)
+from grafy_core.artifact_contracts import IMAGE_REGIONS, RASTER_IMAGE
+from grafy_core.documents import RasterImage, raster_image_artifact
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.artifacts import ArtifactRefSequence
 from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
@@ -29,7 +27,6 @@ from grafy_storage import LocalFileObjectStore
 from grafy_workbench.image import IMAGES
 from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
 from grafy_plugin_image.nodes import DecodeImagesNode
-from grafy_plugin_image.persistence import RasterImageOutputWriter
 from tests.support.scenarios.sequences import CollectNode
 from PIL import Image
 
@@ -76,15 +73,14 @@ async def test_runtime_chains_image_collect_and_raster_writers(tmp_path: Path) -
     runtime = NodeRuntime(
         materializer=InputMaterializer(ResolverRegistry()),
         persister=OutputPersister(
-            ArtifactWriterRegistry(
-                [
-                    RasterImageOutputWriter(
-                        storage=storage,
-                        uow=uow,
-                        bucket="artifacts",
-                    )
-                ]
-            )
+            ArtifactWriterRegistry(),
+            ArtifactValues(
+                (raster_image_artifact(),),
+                uow=uow,
+                storage=storage,
+                bucket="artifacts",
+                storage_backend="local",
+            ),
         ),
     )
 
@@ -161,16 +157,20 @@ async def test_raster_writer_persists_content_without_upload_metadata(
     write_png(image_path, (2, 2))
     uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
-    writer = RasterImageOutputWriter(
-        storage=storage,
+    values = ArtifactValues(
+        (raster_image_artifact(),),
         uow=uow,
+        storage=storage,
         bucket="artifacts",
+        storage_backend="local",
     )
 
-    ref = await writer.write(
-        RasterImageContent(
-            content=image_path.read_bytes(),
+    ref = await values.write(
+        RASTER_IMAGE.key,
+        RasterImage.from_content(
+            image_path.read_bytes(),
             content_type="image/png",
+            filename=None,
         ),
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -186,7 +186,7 @@ async def test_raster_writer_persists_content_without_upload_metadata(
         artifact = await entered.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
     assert artifact.metadata["producer_node_id"] == "generated_image"
-    assert artifact.metadata["original_filename"] is None
+    assert "original_filename" not in artifact.metadata
     assert artifact.object_key is not None
     assert artifact.object_key.startswith(
         f"workspaces/{TEST_WORKSPACE_ID}/image.raster/v1/"
@@ -210,8 +210,8 @@ def test_image_plugin_uses_builtin_raster_type_and_registers_writer(
         RASTER_IMAGE.key,
         IMAGE_REGIONS.key,
     }
-    writers = registry.build_writers(context)
-    assert {writer.artifact_type for writer in writers} == {
+    assert registry.build_writers(context) == ()
+    assert {artifact.spec.key for artifact in registry.artifacts} == {
         RASTER_IMAGE.key,
         IMAGE_REGIONS.key,
     }

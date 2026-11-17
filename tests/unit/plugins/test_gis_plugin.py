@@ -20,6 +20,7 @@ from grafy_core.plugins import (
     NodeHttpEgressInput,
     PluginRegistry,
 )
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
@@ -80,10 +81,8 @@ from grafy_plugin_gis.nodes import (
     table_to_geo_features,
 )
 from grafy_plugin_gis.persistence import (
-    FeatureCollectionOutputWriter,
-    FeatureCollectionResolver,
-    RasterScanOutputWriter,
-    RasterScanResolver,
+    feature_collection_artifact,
+    raster_scan_artifact,
 )
 from grafy_plugin_gis.plugin import GIS
 from grafy_plugin_gis.wfs import WfsClient, WfsImportError
@@ -1102,13 +1101,15 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
         GeoRasterScanImportConfig(source_name="Historical map"),
         GeoRasterScanImportInput(file=file_ref),
     )
-    writer = RasterScanOutputWriter(
-        storage=storage,
+    values = ArtifactValues(
+        (raster_scan_artifact(),),
         uow=uow,
+        storage=storage,
         bucket="test",
         storage_backend="local",
     )
-    ref = await writer.write(
+    ref = await values.write(
+        GEO_RASTER_SCAN.key,
         raster.raster,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -1156,10 +1157,7 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
         text=True,
     )
     assert json.loads(info.stdout)["metadata"]["IMAGE_STRUCTURE"]["LAYOUT"] == "COG"
-    resolved = await RasterScanResolver(
-        uow=uow,
-        storage=storage,
-    ).resolve(ref, TEST_WORKSPACE_ID)
+    resolved = await values.resolve(ref, TEST_WORKSPACE_ID)
     assert resolved.filename == "historical-map.tif"
     assert sha256(resolved.content).hexdigest() == artifact.sha256
 
@@ -1174,13 +1172,15 @@ async def test_feature_collection_storage_keeps_exact_source_and_pmtiles_sidecar
     )
     uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
-    writer = FeatureCollectionOutputWriter(
-        storage=storage,
+    values = ArtifactValues(
+        (feature_collection_artifact(),),
         uow=uow,
+        storage=storage,
         bucket="test",
         storage_backend="local",
     )
-    ref = await writer.write(
+    ref = await values.write(
+        GEO_FEATURE_COLLECTION.key,
         collection,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -1190,12 +1190,7 @@ async def test_feature_collection_storage_keeps_exact_source_and_pmtiles_sidecar
             provenance=MaterializationProvenance(refs_by_input={}),
         ),
     )
-    resolver = FeatureCollectionResolver(
-        uow=uow,
-        storage=storage,
-    )
-
-    assert await resolver.resolve(ref, TEST_WORKSPACE_ID) == collection
+    assert await values.resolve(ref, TEST_WORKSPACE_ID) == collection
     async with uow as uow:
         artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
@@ -1243,12 +1238,14 @@ async def test_empty_feature_source_is_exact_without_invalid_pmtiles(
     )
     uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
-    ref = await FeatureCollectionOutputWriter(
-        storage=storage,
+    ref = await ArtifactValues(
+        (feature_collection_artifact(),),
         uow=uow,
+        storage=storage,
         bucket="test",
         storage_backend="local",
     ).write(
+        GEO_FEATURE_COLLECTION.key,
         collection,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -1279,19 +1276,24 @@ async def test_missing_gdal_driver_error_preserves_source_and_node_context(
         feature_collection((13.405, 52.52)),
         "cities.geojson",
     )
-    writer = FeatureCollectionOutputWriter(
-        storage=LocalFileObjectStore(tmp_path / "objects"),
+    values = ArtifactValues(
+        (
+            feature_collection_artifact(
+                gdal=GdalCli(ogr2ogr="missing-grafy-ogr2ogr"),
+            ),
+        ),
         uow=InMemoryUnitOfWork(),
+        storage=LocalFileObjectStore(tmp_path / "objects"),
         bucket="test",
         storage_backend="local",
-        gdal=GdalCli(ogr2ogr="missing-grafy-ogr2ogr"),
     )
 
     with pytest.raises(
         RuntimeError,
         match=r"PMTiles.*cities.geojson.*node 'feature-node'",
     ) as error:
-        await writer.write(
+        await values.write(
+            GEO_FEATURE_COLLECTION.key,
             collection,
             ArtifactWriteContext(
                 node_context=NodeExecutionContext(

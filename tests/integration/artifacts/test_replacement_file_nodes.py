@@ -12,6 +12,8 @@ from uuid import UUID
 
 import pytest
 from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent
+from grafy_core.documents import raster_image_artifact
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.artifacts import (
     ArtifactObject,
     ArtifactRefSequence,
@@ -59,7 +61,6 @@ from grafy_storage import LocalFileObjectStore
 from grafy_plugin_image import IMAGES
 from grafy_workbench.image import IMAGES as IMAGE_ARTIFACTS
 from grafy_plugin_image.nodes import DecodeImagesNode, ImageDecodeInput
-from grafy_plugin_image.persistence import RasterImageOutputWriter
 from grafy_plugin_table import TABLES
 from grafy_workbench.table import TABLES as TABLE_ARTIFACTS
 from grafy_plugin_table.nodes import (
@@ -144,9 +145,14 @@ async def test_image_decode_decodes_the_whole_ordered_batch_through_the_runtime(
     runtime = NodeRuntime(
         materializer=InputMaterializer(ResolverRegistry()),
         persister=OutputPersister(
-            ArtifactWriterRegistry(
-                [RasterImageOutputWriter(storage=storage, uow=uow, bucket="artifacts")]
-            )
+            ArtifactWriterRegistry(),
+            ArtifactValues(
+                (raster_image_artifact(),),
+                uow=uow,
+                storage=storage,
+                bucket="artifacts",
+                storage_backend="local",
+            ),
         ),
     )
 

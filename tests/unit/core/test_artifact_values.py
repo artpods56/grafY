@@ -1,5 +1,6 @@
 """Declarations load and store one Python class per artifact type."""
 
+from io import BytesIO
 from typing import cast
 from uuid import UUID, uuid4
 
@@ -21,20 +22,24 @@ from grafy_core.artifact_contracts import (
     TextValuePayload,
 )
 from grafy_core.artifacts import (
+    ArtifactObject,
     ArtifactRef,
     ArtifactTypeKey,
     ArtifactTypeSpec,
 )
-from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import Plugin, PluginRegistry
-from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.ports.storage import FileStoragePort
-from grafy_core.prompt_contracts import PROMPT_MESSAGE, PromptMessage, PromptMessageRole
+from grafy_core.documents import FILE_ARTIFACTS, PngFile
+from grafy_core.file_contracts import PNG_FILE
 from grafy_core.runtime.artifact_values import (
     ArtifactValues,
+    StoredArtifact,
     inline_model_artifact,
     scalar_artifact,
 )
+from grafy_core.nodes import NodeExecutionContext
+from grafy_core.plugins import Plugin, PluginRegistry
+from grafy_core.ports.artifacts import UnitOfWorkPort
+from grafy_core.ports.storage import FileStoragePort, SaveFileCommand, StoredFile
+from grafy_core.prompt_contracts import PROMPT_MESSAGE, PromptMessage, PromptMessageRole
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
@@ -180,14 +185,10 @@ async def test_inline_and_scalar_declarations_round_trip() -> None:
         registry.install(family)
     registry.freeze()
     assert {artifact.spec.key for artifact in GIS.artifacts} == {
+        GEO_FEATURE_COLLECTION.key,
+        GEO_RASTER_SCAN.key,
         GEO_MAP_LAYER.key,
         GEO_MAP_DOCUMENT.key,
-    }
-    assert GEO_FEATURE_COLLECTION.key not in {
-        artifact.spec.key for artifact in registry.artifacts
-    }
-    assert GEO_RASTER_SCAN.key not in {
-        artifact.spec.key for artifact in registry.artifacts
     }
 
     uow = InMemoryUnitOfWork()
@@ -264,6 +265,78 @@ async def test_inline_and_scalar_declarations_round_trip() -> None:
             stored = await entered.artifacts.get(WORKSPACE_ID, ref.artifact_id)
         assert stored is not None
         assert stored.storage_backend == "inline"
+
+
+class _MemoryStorage:
+    def __init__(self) -> None:
+        self.objects: dict[tuple[str, str], bytes] = {}
+        self.loads = 0
+
+    async def save(self, command: SaveFileCommand) -> StoredFile:
+        content = command.stream.read()
+        self.objects[(command.bucket, command.path)] = content
+        return StoredFile(
+            bucket=command.bucket,
+            path=command.path,
+            etag=None,
+            version_id=None,
+            byte_size=len(content),
+            sha256="a" * 64,
+        )
+
+    async def load(self, bucket: str, path: str) -> BytesIO:
+        self.loads += 1
+        return BytesIO(self.objects[(bucket, path)])
+
+
+class _UnreadStorage:
+    async def load(self, bucket: str, path: str) -> BytesIO:
+        raise AssertionError(f"storage read {bucket}/{path}")
+
+
+@pytest.mark.asyncio
+async def test_read_refuses_a_known_size_before_storage() -> None:
+    row = ArtifactObject(
+        workspace_id=WORKSPACE_ID,
+        artifact_type="file.png",
+        schema_version=1,
+        content_type="image/png",
+        bucket="artifacts",
+        object_key="objects/page.png",
+        byte_size=10,
+    )
+    handle = PngFile.from_stored(
+        StoredArtifact(row=row, storage=cast(FileStoragePort, _UnreadStorage()))
+    )
+
+    with pytest.raises(ValueError, match="over the limit of 9"):
+        await handle.read(max_bytes=9)
+
+
+@pytest.mark.asyncio
+async def test_png_file_round_trip_keeps_bytes_and_filename() -> None:
+    storage = _MemoryStorage()
+    values = ArtifactValues(
+        FILE_ARTIFACTS,
+        uow=InMemoryUnitOfWork(),
+        storage=cast(FileStoragePort, storage),
+        bucket="artifacts",
+        storage_backend="local",
+    )
+    ref = await values.write(
+        PNG_FILE.key,
+        PngFile.from_content(
+            b"png-bytes", content_type="image/png", filename="scan.png"
+        ),
+        _context("file"),
+    )
+    resolved = await values.resolve(ref, WORKSPACE_ID)
+
+    assert isinstance(resolved, PngFile)
+    assert resolved.filename == "scan.png"
+    assert resolved.content_type == "image/png"
+    assert await resolved.read(max_bytes=1024) == b"png-bytes"
+    assert storage.loads == 1
 
 
 def test_scalar_helpers_are_not_the_schema_declaration() -> None:

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.egress import EgressPolicy, default_egress_policy
+from grafy_core.documents import FILE_ARTIFACTS
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.library import LibraryUnitOfWorkPort
@@ -133,7 +134,7 @@ def build_workbench_components(
     )
     resolved_node_secrets = node_secrets or UnavailableNodeSecretResolver()
     values = ArtifactValues(
-        plugin_registry.artifacts,
+        (*FILE_ARTIFACTS, *plugin_registry.artifacts),
         uow=uow,
         storage=resolved_storage,
         bucket=bucket,

@@ -40,6 +40,7 @@ class ArtifactFiles:
     storage: FileStoragePort
     bucket: str
     workspace_id: UUID
+    node_id: str | None = None
 
     async def save(
         self,
@@ -276,6 +277,7 @@ class ArtifactValues:
             storage=self._storage,
             bucket=self._bucket,
             workspace_id=context.node_context.workspace_id,
+            node_id=context.node_context.node_id,
         )
         encoded = await declaration.write(cast(Any, value), files)
         metadata: JsonObject = dict(context.metadata)
