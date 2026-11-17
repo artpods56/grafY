@@ -20,7 +20,6 @@ import {
   COLLECTION_PORT,
   collectCardsCommands,
   collectDisabledReason,
-  collectionHoldsArtifacts,
   collectionMembers,
   collectionSparePlugId,
   collectionsWithoutSpare,
@@ -288,7 +287,7 @@ describe("collecting cards", () => {
     );
   });
 
-  it("never repeats a member", () => {
+  it("keeps separate cards referencing the same artifact or output", () => {
     const producer = node("resize", resizeSpec);
     const plan = collectCardsCommands({
       sources: [
@@ -306,29 +305,36 @@ describe("collecting cards", () => {
     const [addNode, ...members] = plan.commands;
     if (!addNode || addNode.kind !== "add_node")
       throw new Error("expected add_node");
-    // One Library member, one output member, and the spare.
-    expect(addNode.node.input_plugs).toHaveLength(3);
+    // Each selected card contributes its own member, plus the spare.
+    expect(addNode.node.input_plugs).toHaveLength(5);
     expect(members.map((command) => command.kind)).toEqual([
       "add_origin",
+      "add_origin",
+      "add_edge",
       "add_edge",
     ]);
+    const origins = members.flatMap((command) =>
+      command.kind === "add_origin" ? [command.origin] : [],
+    );
+    expect(origins.map((origin) => origin.value)).toEqual([
+      ref("lib-1"),
+      ref("lib-1"),
+    ]);
+    expect(new Set(origins.map((origin) => origin.to_plug)).size).toBe(2);
+    const restored = ungroupedCollectionCards(
+      { x: 0, y: 0 },
+      origins.map((origin) => ({
+        kind: "library",
+        plugId: origin.to_plug ?? "",
+        originId: origin.id,
+        refs: [ref("lib-1")],
+      })),
+      250,
+      300,
+    );
+    expect(restored).toHaveLength(2);
     // Every selected card is replaced, repeats included.
     expect(plan.removedCardIds).toHaveLength(4);
-  });
-
-  it("knows which artifacts a collection already holds", () => {
-    const members = [
-      {
-        plugId: "a",
-        kind: "library" as const,
-        originId: "o",
-        refs: [ref("x")],
-      },
-      { plugId: "b", kind: "empty" as const },
-    ];
-    expect(collectionHoldsArtifacts(members, [ref("x")])).toBe(true);
-    expect(collectionHoldsArtifacts(members, [ref("x"), ref("y")])).toBe(false);
-    expect(collectionHoldsArtifacts(members, [])).toBe(false);
   });
 
   it("refuses mixed types and a single card", () => {

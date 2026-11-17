@@ -658,7 +658,9 @@ the user removes the card deliberately.
 
 Collect replaces selected, unconnected artifact cards with one sequence card.
 It requires the same artifact type and schema version, orders cards top to
-bottom then left to right, and keeps each artifact reference once. Ungroup
+bottom then left to right, and preserves each contribution in its own input plug,
+including separate cards referencing the same artifact or producer output.
+Adding an artifact already present in a collection adds another member. Ungroup
 replaces that sequence with individual cards in its current order. Neither
 operation deletes artifacts. Cards with producer links, viewer bindings, or
 input origins must be disconnected before grouping or ungrouping. Tidy-up
