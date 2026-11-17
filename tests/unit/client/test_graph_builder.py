@@ -1,4 +1,4 @@
-from typing import Annotated, ClassVar, override
+from typing import Annotated, Any, ClassVar, override
 
 import pytest
 from grafy_client import (
@@ -10,9 +10,8 @@ from grafy_client import (
     GraphBuilderError,
     NodeCatalog,
 )
+from grafy_core.artifact_contracts import MarkdownValue
 from grafy_core.artifacts import (
-    ArtifactRef,
-    ArtifactRefSequence,
     ArtifactTypeKey,
     NoConfig,
     NodeConfig,
@@ -25,12 +24,18 @@ from grafy_core.domain.graph_documents import (
 )
 from grafy_core.nodes import (
     ArtifactTypeVariable,
-    InPort,
+    Binds,
     Node,
     NodeExecutionContext,
-    OutPort,
+    Plugs,
     PortShape,
+    Ref,
+    RefSequence,
 )
+
+import grafy_workbench.text.nodes as _text_nodes
+
+_ = _text_nodes.__name__  # notes str before these ports
 
 TEXT = ArtifactTypeKey("scalar.text", 1)
 MARKDOWN = ArtifactTypeKey("text.markdown", 1)
@@ -46,7 +51,7 @@ class EmptyInput(NodeInput):
 
 
 class TextOutput(NodeOutput):
-    text: Annotated[str, OutPort(TEXT)]
+    text: str
 
 
 class TextNode(Node[TextConfig, EmptyInput, TextOutput]):
@@ -70,13 +75,14 @@ class TextNode(Node[TextConfig, EmptyInput, TextOutput]):
 
 class CollectInput(NodeInput):
     items: Annotated[
-        list[ArtifactRef | ArtifactRefSequence],
-        InPort(T, variadic=True, instance_plugs=True),
+        list[Ref[Any] | RefSequence[Any]],
+        Plugs(variadic=True, instance=True),
+        Binds("T"),
     ]
 
 
 class CollectOutput(NodeOutput):
-    items: Annotated[ArtifactRefSequence, OutPort(T)]
+    items: Annotated[RefSequence[Any], Binds("T")]
 
 
 class CollectNode(Node[NoConfig, CollectInput, CollectOutput]):
@@ -99,7 +105,7 @@ class CollectNode(Node[NoConfig, CollectInput, CollectOutput]):
 
 
 class MarkdownInput(NodeInput):
-    markdown: Annotated[str, InPort(MARKDOWN)]
+    markdown: MarkdownValue
 
 
 class EmptyOutput(NodeOutput):
@@ -126,11 +132,11 @@ class MarkdownNode(Node[NoConfig, MarkdownInput, EmptyOutput]):
 
 
 class TransformInput(NodeInput):
-    text: Annotated[str, InPort(TEXT)]
+    text: str
 
 
 class TransformOutput(NodeOutput):
-    text: Annotated[str, OutPort(TEXT)]
+    text: str
 
 
 class TransformNode(Node[NoConfig, TransformInput, TransformOutput]):

@@ -60,7 +60,7 @@ def test_collect_declares_one_homogeneous_generic_contract() -> None:
 
     assert isinstance(input_port.accepts, ArtifactTypeVariable)
     assert input_port.accepts.name == "T"
-    assert output_port.produces is input_port.accepts
+    assert output_port.produces == input_port.accepts
     assert input_port.title == "Documents"
     assert output_port.title == "List"
     assert input_port.accepted_shapes == (PortShape.ONE, PortShape.MANY)
@@ -84,17 +84,17 @@ def test_sequence_nodes_declare_generic_ref_container_contracts() -> None:
     assert slice_output.title == "List"
     assert item_at_input.title == "List"
     assert item_at_output.title == "Item"
-    assert count_input.accepts is collected_type
+    assert count_input.accepts == collected_type
     assert count_input.shape is PortShape.MANY
     assert count_output.produces == INTEGER_VALUE.key
     assert count_output.shape is PortShape.ONE
-    assert slice_input.accepts is collected_type
+    assert slice_input.accepts == collected_type
     assert slice_input.shape is PortShape.MANY
-    assert slice_output.produces is collected_type
+    assert slice_output.produces == collected_type
     assert slice_output.shape is PortShape.MANY
-    assert item_at_input.accepts is collected_type
+    assert item_at_input.accepts == collected_type
     assert item_at_input.shape is PortShape.MANY
-    assert item_at_output.produces is collected_type
+    assert item_at_output.produces == collected_type
     assert item_at_output.shape is PortShape.ONE
 
 
@@ -374,7 +374,10 @@ async def test_item_at_returns_the_existing_ref() -> None:
     )
 
     assert isinstance(result, PersistedNodeOutput)
-    assert result["item"] == refs[1]
+    item = result["item"]
+    assert isinstance(item, ArtifactRef)
+    assert item.artifact_id == refs[1].artifact_id
+    assert item.key() == refs[1].key()
 
 
 @pytest.mark.asyncio

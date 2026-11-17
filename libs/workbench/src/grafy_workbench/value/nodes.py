@@ -8,11 +8,13 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.nodes import OutPort
 from grafy_core.plugins import NodeCachePolicy
 from grafy_core.runtime.artifact_values import scalar_artifact
 
 from grafy_workbench.value.declaration import VALUE
+
+
+VALUE.register(scalar_artifact(INTEGER_VALUE, int, IntegerValuePayload))
 
 
 class IntegerConfig(NodeConfig):
@@ -26,7 +28,6 @@ class IntegerInput(NodeInput):
 class IntegerOutput(NodeOutput):
     value: Annotated[
         StrictInt,
-        OutPort(INTEGER_VALUE),
         Field(title="Value", description="The configured integer value."),
     ]
 
@@ -40,6 +41,3 @@ class IntegerOutput(NodeOutput):
 async def integer(config: IntegerConfig, _inputs: IntegerInput) -> IntegerOutput:
     """Produces a configured integer value."""
     return IntegerOutput(value=config.value)
-
-
-VALUE.register(scalar_artifact(INTEGER_VALUE, int, IntegerValuePayload))

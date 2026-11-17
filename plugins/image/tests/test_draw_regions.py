@@ -1,21 +1,23 @@
 from io import BytesIO
-from typing import Literal
-from uuid import UUID, uuid4
+from typing import Literal, cast
+from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
 from PIL import Image
 from grafy_core.artifact_contracts import (
-    IMAGE_REGIONS,
-    RASTER_IMAGE,
     ImagePage,
     ImageRegion,
     ImageRegionSet,
 )
-from grafy_core.artifacts import ArtifactObject, ArtifactRef
+from grafy_core.documents import RasterImage
 from grafy_core.nodes import NodeExecutionContext
-from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.ports.storage import (
+    FileStoragePort,
+    SaveFileCommand,
+    StoredFile,
+    StoredObjectInfo,
+)
 
 from grafy_plugin_image import IMAGES
 from grafy_core.runtime.invocation import (
@@ -70,6 +72,24 @@ class FakeStorage:
 
     async def delete(self, bucket: str, path: str) -> None:
         raise AssertionError(f"Unexpected delete for {bucket}/{path}")
+
+
+def page_image(content: bytes, filename: str | None = "scan.png") -> RasterImage:
+    return RasterImage.from_content(
+        content, content_type="image/png", filename=filename
+    )
+
+
+def stored_page(storage: FakeStorage, filename: str | None = "scan.png") -> RasterImage:
+    return RasterImage(
+        content_type="image/png",
+        byte_size=len(storage.stream.getvalue()),
+        filename=filename,
+        content=None,
+        storage=cast(FileStoragePort, storage),
+        bucket="artifacts",
+        object_key="scan.png",
+    )
 
 
 def region_set(kind: str = "table") -> ImageRegionSet:
@@ -179,71 +199,46 @@ async def test_node_loads_raster_and_preserves_filename() -> None:
     buffer = BytesIO()
     Image.new("RGB", (100, 50), "white").save(buffer, format="PNG")
     storage = FakeStorage(buffer.getvalue())
-    uow = InMemoryUnitOfWork()
-    artifact = ArtifactObject(
-        id=uuid4(),
-        workspace_id=WORKSPACE_ID,
-        artifact_type=RASTER_IMAGE.key.id,
-        schema_version=1,
-        content_type="image/png",
-        bucket="artifacts",
-        object_key="scan.png",
-        metadata={"original_filename": "scan.png"},
-    )
-    async with uow as transaction:
-        _ = await transaction.artifacts.add(artifact)
-        _ = await transaction.commit()
-    output = await DrawRegionsNode(storage=storage, uow=uow).run(
+    output = await DrawRegionsNode().run(
         NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="draw"),
         DrawRegionsConfig(label_text="none"),
-        DrawRegionsInput(image=artifact.ref(), regions=region_set()),
+        DrawRegionsInput(image=stored_page(storage), regions=region_set()),
     )
     assert output.image.filename == "scan-regions.png"
     assert output.image.content_type == "image/png"
     assert storage.stream.closed
-    with Image.open(BytesIO(output.image.content)) as image:
+    with Image.open(BytesIO(await output.image.read(max_bytes=8_000_000))) as image:
         assert image.getpixel((10, 10)) == (34, 197, 94)
 
 
-@pytest.mark.parametrize("wrong_type", [False, True])
-async def test_node_rejects_missing_or_wrong_type_artifact(wrong_type: bool) -> None:
-    ref = ArtifactRef.from_key(
-        artifact_id=uuid4(), key=IMAGE_REGIONS.key if wrong_type else RASTER_IMAGE.key
-    )
-    with pytest.raises(DrawRegionsError, match=str(ref.artifact_id)):
-        _ = await DrawRegionsNode(
-            storage=FakeStorage(b""), uow=InMemoryUnitOfWork()
-        ).run(
+async def test_node_wraps_an_undecodable_image() -> None:
+    image = page_image(b"invalid png", filename="scan.png")
+    with pytest.raises(DrawRegionsError, match="scan.png") as raised:
+        _ = await DrawRegionsNode().run(
             NodeExecutionContext(workspace_id=WORKSPACE_ID),
             DrawRegionsConfig(),
-            DrawRegionsInput(image=ref, regions=region_set()),
-        )
-
-
-@pytest.mark.parametrize("stored", [False, True])
-async def test_node_wraps_storage_and_decode_errors(stored: bool) -> None:
-    uow = InMemoryUnitOfWork()
-    storage = FakeStorage(b"invalid png")
-    artifact = ArtifactObject(
-        id=uuid4(),
-        workspace_id=WORKSPACE_ID,
-        artifact_type=RASTER_IMAGE.key.id,
-        schema_version=1,
-        content_type="image/png",
-        bucket="artifacts",
-        object_key="scan.png" if stored else "missing.png",
-    )
-    async with uow as transaction:
-        _ = await transaction.artifacts.add(artifact)
-        _ = await transaction.commit()
-    with pytest.raises(DrawRegionsError, match=str(artifact.id)) as raised:
-        _ = await DrawRegionsNode(storage=storage, uow=uow).run(
-            NodeExecutionContext(workspace_id=WORKSPACE_ID),
-            DrawRegionsConfig(),
-            DrawRegionsInput(image=artifact.ref(), regions=region_set()),
+            DrawRegionsInput(image=image, regions=region_set()),
         )
     assert raised.value.__cause__ is not None
-    assert storage.stream.closed == stored
+
+
+async def test_node_wraps_a_storage_read_without_the_object_path() -> None:
+    storage = FakeStorage(b"invalid png")
+    page = stored_page(storage)
+    storage.stream.close()
+
+    async def fail_load(bucket: str, path: str) -> BytesIO:
+        raise RuntimeError(f"no such {bucket}/{path}")
+
+    storage.load = fail_load  # type: ignore[method-assign]
+    with pytest.raises(DrawRegionsError, match="Failed to read scan.png") as raised:
+        _ = await DrawRegionsNode().run(
+            NodeExecutionContext(workspace_id=WORKSPACE_ID),
+            DrawRegionsConfig(),
+            DrawRegionsInput(image=page, regions=region_set()),
+        )
+    assert "artifacts/scan.png" not in str(raised.value)
+    assert raised.value.__cause__ is not None
 
 
 def test_kinds_normalize_and_allow_free_form_values() -> None:
@@ -346,19 +341,6 @@ async def test_crop_scales_filters_pads_clamps_and_preserves_mode(
     buffer = BytesIO()
     source.save(buffer, format="PNG")
     storage = FakeStorage(buffer.getvalue())
-    uow = InMemoryUnitOfWork()
-    artifact = ArtifactObject(
-        workspace_id=WORKSPACE_ID,
-        artifact_type=RASTER_IMAGE.key.id,
-        schema_version=1,
-        content_type="image/png",
-        bucket="artifacts",
-        object_key="scan.png",
-        metadata={"original_filename": filename},
-    )
-    async with uow as transaction:
-        _ = await transaction.artifacts.add(artifact)
-        _ = await transaction.commit()
     regions = ImageRegionSet(
         pages=[
             ImagePage(index=0, width=100, height=50),
@@ -373,10 +355,10 @@ async def test_crop_scales_filters_pads_clamps_and_preserves_mode(
             ImageRegion(page=3, x0=40, y0=40, x1=40, y1=40, kind="image"),
         ],
     )
-    output = await CropRegionsNode(storage=storage, uow=uow).run(
+    output = await CropRegionsNode().run(
         NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="crop"),
         CropRegionsConfig(page=3, padding=2),
-        CropRegionsInput(image=artifact.ref(), regions=regions),
+        CropRegionsInput(image=stored_page(storage, filename), regions=regions),
     )
     stem = "scan" if filename else "region"
     assert [crop.filename for crop in output.crops] == [
@@ -385,7 +367,7 @@ async def test_crop_scales_filters_pads_clamps_and_preserves_mode(
     assert storage.stream.closed
     for crop, size in zip(output.crops, [(24, 24), (12, 12), (4, 4)], strict=True):
         assert crop.content_type == "image/png"
-        with Image.open(BytesIO(crop.content)) as image:
+        with Image.open(BytesIO(await crop.read(max_bytes=8_000_000))) as image:
             assert image.size == size
             assert image.mode == expected_mode
             assert image.getpixel((0, 0)) == source.convert(expected_mode).getpixel(
@@ -396,24 +378,14 @@ async def test_crop_scales_filters_pads_clamps_and_preserves_mode(
 async def test_crop_all_kinds_and_skips_zero_area_without_padding() -> None:
     buffer = BytesIO()
     Image.new("RGB", (100, 50), "red").save(buffer, format="PNG")
-    uow = InMemoryUnitOfWork()
-    artifact = ArtifactObject(
-        workspace_id=WORKSPACE_ID,
-        artifact_type=RASTER_IMAGE.key.id,
-        schema_version=1,
-        content_type="image/png",
-        bucket="artifacts",
-        object_key="scan.png",
-    )
-    async with uow as transaction:
-        _ = await transaction.artifacts.add(artifact)
-        _ = await transaction.commit()
     regions = region_set()
     regions.regions.append(ImageRegion(x0=20, y0=20, x1=20, y1=30, kind="image"))
-    output = await CropRegionsNode(storage=FakeStorage(buffer.getvalue()), uow=uow).run(
+    output = await CropRegionsNode().run(
         NodeExecutionContext(workspace_id=WORKSPACE_ID),
         CropRegionsConfig(kinds=None),
-        CropRegionsInput(image=artifact.ref(), regions=regions),
+        CropRegionsInput(
+            image=page_image(buffer.getvalue(), filename=None), regions=regions
+        ),
     )
     assert len(output.crops) == 1
     assert output.crops[0].filename == "region-table-0.png"
@@ -423,13 +395,11 @@ async def test_crop_rejects_missing_page_before_loading_image() -> None:
     with pytest.raises(
         DrawRegionsError, match="Region set has no page 2; available pages: 0"
     ):
-        _ = await CropRegionsNode(
-            storage=FakeStorage(b""), uow=InMemoryUnitOfWork()
-        ).run(
+        _ = await CropRegionsNode().run(
             NodeExecutionContext(workspace_id=WORKSPACE_ID),
             CropRegionsConfig(page=2),
             CropRegionsInput(
-                image=ArtifactRef.from_key(artifact_id=uuid4(), key=RASTER_IMAGE.key),
+                image=page_image(b"not-read", filename="unread.png"),
                 regions=region_set(),
             ),
         )

@@ -1,178 +1,49 @@
-from collections.abc import Sequence
 from types import UnionType
-from typing import Annotated, Union, cast, get_args, get_origin
+from typing import Annotated, Any, Literal, Union, cast, get_args, get_origin
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictInt, StrictStr
 
-from grafy_core.artifacts import (
-    ArtifactTypeKey,
-    ArtifactTypeSpec,
-    ArtifactRef,
-    ArtifactRefSequence,
-)
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.node_ports import (
-    InPort,
+    ArtifactTypeVariable,
+    Binds,
     InputContract,
     InputPortSpec,
     NodeContractError,
-    OutPort,
     OutputContract,
     OutputPortSpec,
+    Plugs,
     PortShape,
+    Ref,
+    RefSequence,
 )
+from grafy_core.declared_values import declared_key
 
 
 def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
     ports: dict[str, InputPortSpec] = {}
     for name, field in model.model_fields.items():
-        if any(isinstance(meta, OutPort) for meta in field.metadata):
-            message = (
-                f"{model.__name__}.{name} declares a {OutPort.__name__}; "
-                f"only {InPort.__name__} is valid on this side of the contract"
-            )
-            raise NodeContractError(message)
-        metadata_ports = [meta for meta in field.metadata if isinstance(meta, InPort)]
-        if len(metadata_ports) > 1:
-            message = (
-                f"{model.__name__}.{name} declares {len(metadata_ports)} "
-                f"{InPort.__name__} annotations; at most one is allowed"
-            )
-            raise NodeContractError(message)
-        port = metadata_ports[0] if metadata_ports else None
-        if port is None:
+        plugs, binds = _markers(model, name, field.metadata)
+        described = _describe(model, name, field.annotation, plugs, binds, output=False)
+        if described is None:
             continue
-        if port.shape_field is not None:
-            annotation = field.annotation
-            if get_origin(annotation) is Annotated:
-                annotation = get_args(annotation)[0]
-            members: set[object] = (
-                set(get_args(annotation))
-                if get_origin(annotation) in (UnionType, Union)
-                else set()
-            )
-            if members - {type(None)} == {ArtifactRef, ArtifactRefSequence}:
-                allows_none = type(None) in members
-            else:
-                message = (
-                    f"{model.__name__}.{name} chooses its shape from config and must "
-                    "use exactly ArtifactRef | ArtifactRefSequence"
-                )
-                raise NodeContractError(message)
-            shape = PortShape.ONE
-            accepted_shapes = (PortShape.ONE, PortShape.MANY)
-            target_type = None
-            preserves_ref_container = True
-        elif port.instance_plugs:
-            annotation = field.annotation
-            if not port.variadic:
-                message = (
-                    f"{model.__name__}.{name} declares instance_plugs=True; "
-                    "instance plugs require variadic=True"
-                )
-                raise NodeContractError(message)
-            if get_origin(annotation) is not list:
-                message = (
-                    f"{model.__name__}.{name} must use exactly "
-                    "list[T] for typed instance plugs or "
-                    "list[ArtifactRef | ArtifactRefSequence] to preserve refs"
-                )
-                raise NodeContractError(message)
-            item_type = _sequence_item_type(
-                model=model,
-                field_name=name,
-                annotation=annotation,
-                purpose="instance plugs",
-            )
-            item_origin = get_origin(item_type)
-            item_types = set(get_args(item_type))
-            if item_origin in (UnionType, Union) and item_types == {
-                ArtifactRef,
-                ArtifactRefSequence,
-            }:
-                shape = PortShape.ONE
-                accepted_shapes = (PortShape.ONE, PortShape.MANY)
-                target_type = None
-                preserves_ref_container = True
-                allows_none = False
-            else:
-                shape = PortShape.ONE
-                accepted_shapes = (PortShape.ONE,)
-                target_type = _concrete_type(model, name, item_type)
-                preserves_ref_container = False
-                allows_none = False
-        else:
-            annotation = field.annotation
-            value_type, allows_none = _unwrap_optional(annotation)
-            if port.variadic:
-                value_type = _sequence_item_type(
-                    model=model,
-                    field_name=name,
-                    annotation=value_type,
-                    purpose="a variadic input port",
-                )
-                value_type, item_allows_none = _unwrap_optional(value_type)
-                allows_none = allows_none or item_allows_none
-            if value_type is ArtifactRef:
-                shape = PortShape.ONE
-                accepted_shapes = (PortShape.ONE,)
-                target_type = None
-                preserves_ref_container = True
-            elif value_type is ArtifactRefSequence:
-                shape = PortShape.MANY
-                accepted_shapes = (PortShape.MANY,)
-                target_type = None
-                preserves_ref_container = True
-            elif _is_sequence_origin(get_origin(value_type)):
-                item_type = _sequence_item_type(
-                    model=model,
-                    field_name=name,
-                    annotation=value_type,
-                    purpose="an artifact sequence",
-                )
-                item_type, _ = _unwrap_optional(item_type)
-                target_type = _concrete_type(model, name, item_type)
-                shape = PortShape.MANY
-                accepted_shapes = (PortShape.MANY,)
-                preserves_ref_container = False
-            else:
-                target_type = _concrete_type(model, name, value_type)
-                shape = PortShape.ONE
-                accepted_shapes = (PortShape.ONE,)
-                preserves_ref_container = False
-        accepts = (
-            port.accepts.key
-            if isinstance(port.accepts, ArtifactTypeSpec)
-            else port.accepts
-        )
-        concrete_also_accepts: list[ArtifactTypeKey] = []
-        for raw_also_accepts in port.also_accepts:
-            value = cast(object, raw_also_accepts)
-            if isinstance(value, ArtifactTypeSpec):
-                concrete_also_accepts.append(value.key)
-            elif isinstance(value, ArtifactTypeKey):
-                concrete_also_accepts.append(value)
-            else:
-                raise NodeContractError(
-                    "Additional accepted artifact types must be concrete artifact types, got "
-                    f"{type(value).__name__}"
-                )
+        variadic, instance, spare, agent_default = _plug_flags(plugs)
         ports[name] = InputPortSpec(
             name=name,
-            accepts=accepts,
-            also_accepts=tuple(concrete_also_accepts),
+            accepts=described.accepts,
+            also_accepts=described.also_accepts,
             title=field.title,
             description=field.description,
-            shape=shape,
-            variadic=port.variadic,
-            instance_plugs=port.instance_plugs,
-            spare_plugs=port.spare_plugs,
-            accepted_shapes=accepted_shapes,
-            target_type=target_type,
-            preserves_ref_container=preserves_ref_container,
-            allows_none=allows_none,
+            shape=described.shape,
+            variadic=variadic,
+            instance_plugs=instance,
+            spare_plugs=spare,
+            accepted_shapes=described.accepted_shapes,
+            value_types=described.value_types,
+            preserves_ref_container=described.preserves_ref_container,
+            allows_none=described.allows_none,
             required=field.is_required(),
-            shape_field=port.shape_field,
-            agent_default=port.agent_default,
+            agent_default=agent_default,
         )
     return InputContract(model=model, ports=ports)
 
@@ -180,70 +51,393 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
 def derive_output_contract[T: BaseModel](model: type[T]) -> OutputContract[T]:
     ports: dict[str, OutputPortSpec] = {}
     for name, field in model.model_fields.items():
-        if any(isinstance(meta, InPort) for meta in field.metadata):
-            message = (
-                f"{model.__name__}.{name} declares a {InPort.__name__}; "
-                f"only {OutPort.__name__} is valid on this side of the contract"
-            )
-            raise NodeContractError(message)
-        metadata_ports = [meta for meta in field.metadata if isinstance(meta, OutPort)]
-        if len(metadata_ports) > 1:
-            message = (
-                f"{model.__name__}.{name} declares {len(metadata_ports)} "
-                f"{OutPort.__name__} annotations; at most one is allowed"
-            )
-            raise NodeContractError(message)
-        port = metadata_ports[0] if metadata_ports else None
-        if port is None:
+        plugs, binds = _markers(model, name, field.metadata)
+        described = _describe(model, name, field.annotation, plugs, binds, output=True)
+        if described is None:
             continue
-        value_type, _ = _unwrap_optional(field.annotation)
-        if value_type is ArtifactRef:
-            shape = PortShape.ONE
-        elif value_type is ArtifactRefSequence:
-            shape = PortShape.MANY
-        elif _is_sequence_origin(get_origin(value_type)):
-            _sequence_item_type(
-                model=model,
-                field_name=name,
-                annotation=value_type,
-                purpose="an artifact sequence",
-            )
-            shape = PortShape.MANY
-        else:
-            shape = PortShape.ONE
-        produces = (
-            port.produces.key
-            if isinstance(port.produces, ArtifactTypeSpec)
-            else port.produces
-        )
         ports[name] = OutputPortSpec(
             name=name,
-            produces=produces,
+            produces=described.accepts,
             title=field.title,
             description=field.description,
-            shape=shape,
+            shape=described.shape,
             required=field.is_required(),
-            shape_field=port.shape_field,
+            value_type=described.value_type,
         )
     return OutputContract(model=model, ports=ports)
 
 
-def _unwrap_optional(annotation: object) -> tuple[object, bool]:
-    origin = get_origin(annotation)
-    if origin is Annotated:
-        return _unwrap_optional(get_args(annotation)[0])
-    if origin not in (UnionType, Union):
-        return annotation, False
+class _Described:
+    def __init__(
+        self,
+        *,
+        shape: PortShape,
+        accepted_shapes: tuple[PortShape, ...],
+        value_types: tuple[type[object], ...],
+        accepts: ArtifactTypeKey | ArtifactTypeVariable,
+        also_accepts: tuple[ArtifactTypeKey, ...],
+        preserves_ref_container: bool,
+        allows_none: bool,
+        value_type: type[object] | None,
+    ) -> None:
+        self.shape = shape
+        self.accepted_shapes = accepted_shapes
+        self.value_types = value_types
+        self.accepts = accepts
+        self.also_accepts = also_accepts
+        self.preserves_ref_container = preserves_ref_container
+        self.allows_none = allows_none
+        self.value_type = value_type
 
-    args = get_args(annotation)
-    non_none = tuple(arg for arg in args if arg is not type(None))
-    if len(non_none) == 1 and len(non_none) != len(args):
-        return non_none[0], True
-    return annotation, False
+
+def _markers(
+    model: type[BaseModel],
+    name: str,
+    metadata: list[object],
+) -> tuple[Plugs | None, Binds | None]:
+    plugs = _one_marker(model, name, metadata, Plugs)
+    binds = _one_marker(model, name, metadata, Binds)
+    if plugs is not None and plugs.instance and not plugs.variadic:
+        raise NodeContractError(
+            f"{model.__name__}.{name}: Plugs instance requires variadic plugs"
+        )
+    return plugs, binds
+
+
+def _one_marker[MarkerT](
+    model: type[BaseModel],
+    name: str,
+    metadata: list[object],
+    marker: type[MarkerT],
+) -> MarkerT | None:
+    found = [item for item in metadata if isinstance(item, marker)]
+    if len(found) > 1:
+        raise NodeContractError(
+            f"{model.__name__}.{name} declares {len(found)} {marker.__name__} "
+            "annotations; at most one is allowed"
+        )
+    if not found:
+        return None
+    return found[0]
+
+
+def _plug_flags(
+    plugs: Plugs | None,
+) -> tuple[bool, bool, bool, Literal["fill", "hidden"]]:
+    if plugs is None:
+        return False, False, False, "fill"
+    return plugs.variadic, plugs.instance, plugs.spare, plugs.agent_default
+
+
+def _describe(
+    model: type[BaseModel],
+    name: str,
+    annotation: object,
+    plugs: Plugs | None,
+    binds: Binds | None,
+    *,
+    output: bool,
+) -> _Described | None:
+    members, allows_none = _without_none(annotation)
+    if plugs is not None and (plugs.variadic or plugs.instance):
+        kind = "instance plugs" if plugs.instance else "variadic plugs"
+        if len(members) != 1 or get_origin(members[0]) is not list:
+            raise NodeContractError(
+                f"{model.__name__}.{name} must use a list annotation for {kind}"
+            )
+        item = _sequence_item_type(
+            model=model,
+            field_name=name,
+            annotation=members[0],
+            purpose=kind,
+        )
+        item_members, item_allows_none = _without_none(item)
+        members = item_members
+        allows_none = allows_none or item_allows_none
+    listed = False
+    if len(members) == 1 and get_origin(members[0]) is list:
+        item = _sequence_item_type(
+            model=model,
+            field_name=name,
+            annotation=members[0],
+            purpose="an artifact sequence",
+        )
+        members, item_allows_none = _without_none(item)
+        allows_none = allows_none or item_allows_none
+        listed = True
+    described = _describe_members(model, name, members, plugs, binds, output=output)
+    if described is None:
+        if plugs is not None or binds is not None:
+            raise NodeContractError(f"{model.__name__}.{name} is not an artifact port")
+        return None
+    described.allows_none = allows_none
+    if listed:
+        if described.preserves_ref_container:
+            raise NodeContractError(
+                f"{model.__name__}.{name} cannot list Ref values; use RefSequence"
+            )
+        described.shape = PortShape.MANY
+        described.accepted_shapes = (PortShape.MANY,)
+    return described
+
+
+def _describe_members(
+    model: type[BaseModel],
+    name: str,
+    members: tuple[object, ...],
+    plugs: Plugs | None,
+    binds: Binds | None,
+    *,
+    output: bool,
+) -> _Described | None:
+    if not members or members == (type(None),):
+        return None
+    classified: list[_Member] = []
+    saw_port = False
+    for member in members:
+        item = _classify_member(model, name, member)
+        if item is None:
+            continue
+        saw_port = True
+        classified.append(item)
+    if not saw_port:
+        return None
+    if len(classified) != len(members):
+        raise NodeContractError(
+            f"{model.__name__}.{name} mixes a declared port type with a value "
+            "that is not a port"
+        )
+    kinds = {item.kind for item in classified}
+    if "value" in kinds and kinds != {"value"}:
+        raise NodeContractError(f"{model.__name__}.{name} mixes a value class with Ref")
+    if kinds == {"value"}:
+        return _value_port(model, name, classified, output=output)
+    return _ref_port(model, name, classified, plugs, binds, output=output)
+
+
+class _Member:
+    def __init__(
+        self,
+        kind: str,
+        argument: object,
+        value_type: type[object] | None,
+        key: ArtifactTypeKey | None,
+    ) -> None:
+        self.kind = kind
+        self.argument = argument
+        self.value_type = value_type
+        self.key = key
+
+
+def _classify_member(
+    model: type[BaseModel],
+    name: str,
+    member: object,
+) -> _Member | None:
+    if _is_file_base(member):
+        raise NodeContractError(
+            f"{model.__name__}.{name} cannot use File; name a declared file class"
+        )
+    if member is ArtifactRef or member is ArtifactRefSequence:
+        raise NodeContractError(
+            f"{model.__name__}.{name} must use Ref, not {member.__name__}"
+        )
+    if member is Ref or member is RefSequence:
+        raise NodeContractError(
+            f"{model.__name__}.{name} must parameterize {member.__name__}"
+        )
+    ref = _ref_parameter(member)
+    if ref is not None:
+        origin, argument = ref
+        kind = "ref" if origin is Ref else "refseq"
+        if argument is Any:
+            return _Member(kind, argument, None, None)
+        declared = _declared_class(argument)
+        if declared is None:
+            raise NodeContractError(
+                f"{model.__name__}.{name} Ref argument is not a declared value class"
+            )
+        value_type, key = declared
+        return _Member(kind, value_type, value_type, key)
+    declared = _declared_class(member)
+    if declared is None:
+        return None
+    value_type, key = declared
+    return _Member("value", value_type, value_type, key)
+
+
+def _value_port(
+    model: type[BaseModel],
+    name: str,
+    members: list[_Member],
+    *,
+    output: bool,
+) -> _Described:
+    if output and len(members) != 1:
+        raise NodeContractError(
+            f"{model.__name__}.{name} output cannot be a union of value classes"
+        )
+    keys = tuple(_required_key(model, name, member) for member in members)
+    value_types = _concrete_type(
+        model,
+        name,
+        tuple(_required_type(model, name, member) for member in members),
+    )
+    return _Described(
+        shape=PortShape.ONE,
+        accepted_shapes=(PortShape.ONE,),
+        value_types=value_types,
+        accepts=keys[0],
+        also_accepts=keys[1:],
+        preserves_ref_container=False,
+        allows_none=False,
+        value_type=None if output and len(value_types) != 1 else value_types[0],
+    )
+
+
+def _ref_port(
+    model: type[BaseModel],
+    name: str,
+    members: list[_Member],
+    plugs: Plugs | None,
+    binds: Binds | None,
+    *,
+    output: bool,
+) -> _Described:
+    del output
+    generic = any(member.argument is Any for member in members)
+    if generic and any(member.argument is not Any for member in members):
+        raise NodeContractError(
+            f"{model.__name__}.{name} mixes a generic Ref with a concrete Ref"
+        )
+    if generic and binds is None:
+        raise NodeContractError(f"{model.__name__}.{name} generic port requires Binds")
+    if not generic and binds is not None:
+        raise NodeContractError(
+            f"{model.__name__}.{name} concrete port cannot declare Binds"
+        )
+    kinds = {member.kind for member in members}
+    mixed = kinds == {"ref", "refseq"}
+    if mixed:
+        if len(members) != 2:
+            raise NodeContractError(
+                f"{model.__name__}.{name} must use Ref and RefSequence together"
+            )
+        if plugs is None or not plugs.instance:
+            raise NodeContractError(
+                f"{model.__name__}.{name}: Ref and RefSequence together require "
+                "Plugs instance"
+            )
+        shape = PortShape.ONE
+        accepted = (PortShape.ONE, PortShape.MANY)
+    elif kinds == {"refseq"}:
+        shape = PortShape.MANY
+        accepted = (PortShape.MANY,)
+    else:
+        shape = PortShape.ONE
+        accepted = (PortShape.ONE,)
+    if generic:
+        assert binds is not None
+        accepts: ArtifactTypeKey | ArtifactTypeVariable = ArtifactTypeVariable(
+            binds.variable
+        )
+        also: tuple[ArtifactTypeKey, ...] = ()
+    else:
+        keys = tuple(_required_key(model, name, member) for member in members)
+        accepts = keys[0]
+        also = tuple(key for key in keys[1:] if key != accepts)
+    return _Described(
+        shape=shape,
+        accepted_shapes=accepted,
+        value_types=(),
+        accepts=accepts,
+        also_accepts=also,
+        preserves_ref_container=True,
+        allows_none=False,
+        value_type=None,
+    )
+
+
+def _required_key(
+    model: type[BaseModel],
+    name: str,
+    member: _Member,
+) -> ArtifactTypeKey:
+    if member.key is None:
+        raise NodeContractError(
+            f"{model.__name__}.{name} is missing an artifact type key"
+        )
+    return member.key
+
+
+def _required_type(
+    model: type[BaseModel],
+    name: str,
+    member: _Member,
+) -> type[object]:
+    if member.value_type is None:
+        raise NodeContractError(f"{model.__name__}.{name} is missing a value class")
+    return member.value_type
+
+
+def _declared_class(member: object) -> tuple[type[object], ArtifactTypeKey] | None:
+    if member is StrictStr:
+        member = str
+    elif member is StrictInt:
+        member = int
+    if not isinstance(member, type):
+        return None
+    key = declared_key(member)
+    if key is None:
+        return None
+    return member, key
+
+
+def _ref_parameter(member: object) -> tuple[type[object], object] | None:
+    if not isinstance(member, type):
+        return None
+    metadata = cast(object, getattr(member, "__pydantic_generic_metadata__", None))
+    if not isinstance(metadata, dict):
+        return None
+    items = cast(dict[object, object], metadata)
+    origin = items.get("origin")
+    if origin is not Ref and origin is not RefSequence:
+        return None
+    args = items.get("args")
+    if not isinstance(args, tuple):
+        return None
+    parameters = cast(tuple[object, ...], args)
+    if len(parameters) != 1:
+        return None
+    return cast(type[object], origin), parameters[0]
+
+
+def _is_file_base(member: object) -> bool:
+    return (
+        isinstance(member, type)
+        and member.__module__ == "grafy_core.documents"
+        and member.__name__ == "File"
+    )
+
+
+def _without_none(annotation: object) -> tuple[tuple[object, ...], bool]:
+    while get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+    origin = get_origin(annotation)
+    if origin not in (UnionType, Union):
+        return (annotation,), False
+    members: list[object] = []
+    for member in get_args(annotation):
+        while get_origin(member) is Annotated:
+            member = get_args(member)[0]
+        members.append(member)
+    if type(None) not in members:
+        return tuple(members), False
+    return tuple(member for member in members if member is not type(None)), True
 
 
 def _is_sequence_origin(origin: object) -> bool:
-    return origin is list or origin is tuple or origin is Sequence
+    return origin is list
 
 
 def _sequence_item_type(
@@ -256,8 +450,7 @@ def _sequence_item_type(
     origin = get_origin(annotation)
     if not _is_sequence_origin(origin):
         message = (
-            f"{model.__name__}.{field_name} must use a list, tuple, or Sequence "
-            f"annotation for {purpose}"
+            f"{model.__name__}.{field_name} must use a list annotation for {purpose}"
         )
         raise NodeContractError(message)
     args = get_args(annotation)
@@ -272,12 +465,22 @@ def _sequence_item_type(
 def _concrete_type(
     model: type[BaseModel],
     field_name: str,
-    annotation: object,
-) -> type[object]:
-    if isinstance(annotation, type):
-        return annotation
-    message = (
-        f"{model.__name__}.{field_name} artifact value type must be a concrete "
-        f"Python type, got {annotation!r}"
-    )
-    raise NodeContractError(message)
+    annotations: tuple[type[object], ...],
+) -> tuple[type[object], ...]:
+    """Return declared value classes in catalog order, including a union."""
+
+    if not annotations:
+        raise NodeContractError(
+            f"{model.__name__}.{field_name} is missing a value class"
+        )
+    resolved: list[type[object]] = []
+    for annotation in annotations:
+        declared = _declared_class(annotation)
+        if declared is None:
+            message = (
+                f"{model.__name__}.{field_name} artifact value type must be a "
+                f"declared class, got {annotation!r}"
+            )
+            raise NodeContractError(message)
+        resolved.append(declared[0])
+    return tuple(resolved)

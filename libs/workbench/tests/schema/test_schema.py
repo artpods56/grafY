@@ -55,7 +55,7 @@ def test_schema_plugin_declares_json_schema_text_and_builder_contract() -> None:
     assert schemas_input.accepted_shapes == (PortShape.ONE,)
     assert schemas_input.variadic is True
     assert schemas_input.instance_plugs is True
-    assert schemas_input.target_type is JsonSchemaText
+    assert schemas_input.value_types == (JsonSchemaText,)
     assert schemas_input.preserves_ref_container is False
     assert schemas_input.required is False
 

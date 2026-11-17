@@ -58,7 +58,7 @@ class NodeInput(BaseModel):
 
 
 class NodeOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
 class NoConfig(NodeConfig):

@@ -1,9 +1,7 @@
 import asyncio
 import json
 from collections.abc import Callable
-from hashlib import sha256
 from typing import Annotated, Any, Final, Literal, cast, final, override
-from uuid import UUID
 
 import httpx
 from pydantic import Field, model_validator
@@ -11,21 +9,14 @@ from reducto import APIConnectionError, APIStatusError, AsyncReducto
 from reducto.types import SettingsParam
 from reducto.types.shared_params.page_range import PageRange
 
-from grafy_core.artifact_contracts import (
-    MARKDOWN,
-    RASTER_IMAGE,
-    TEXT_VALUE,
-    MarkdownValue,
-)
-from grafy_core.artifacts import ArtifactRef, NodeConfig, NodeInput, NodeOutput
-from grafy_core.file_contracts import PDF_FILE
+from grafy_core.artifact_contracts import MarkdownValue
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressRejectedError, PinnedPublicAddressTransport
 from grafy_core.nodes import (
-    InPort,
     Node,
     NodeExecutionContext,
-    OutPort,
     UserFacingNodeError,
 )
 from grafy_core.plugins import (
@@ -33,19 +24,20 @@ from grafy_core.plugins import (
     NodeSecretInput,
     PluginRuntimeContext,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
-from grafy_core.ports.storage import FileStoragePort
 from grafy_core.table_contracts import (
-    TABLE_DATA,
     Table,
     TableColumn,
     TableValue,
     TableValueType,
 )
 
+import grafy_workbench.table.plugin as _table_plugin
+import grafy_workbench.text.nodes as _text_nodes
 from grafy_plugin_reducto.declaration import REDUCTO
 from grafy_plugin_reducto.response import ParseChunk, ParseChunkList
+
+_ = (_table_plugin.__name__, _text_nodes.__name__)  # notes classes before these ports
 
 REDUCTO_BASE_URL: Final = "https://platform.reducto.ai"
 MAX_SOURCE_BYTES: Final = 50_000_000
@@ -137,7 +129,6 @@ class ReductoOcrConfig(NodeConfig):
 class ReductoOcrInput(NodeInput):
     document_url: Annotated[
         str | None,
-        InPort(TEXT_VALUE),
         Field(
             title="Document link",
             description=(
@@ -147,8 +138,7 @@ class ReductoOcrInput(NodeInput):
         ),
     ] = None
     image: Annotated[
-        ArtifactRef | None,
-        InPort(RASTER_IMAGE, also_accepts=(PDF_FILE,)),
+        RasterImage | PdfFile | None,
         Field(
             title="Scan or PDF",
             description=(
@@ -162,7 +152,6 @@ class ReductoOcrInput(NodeInput):
 class ReductoOcrOutput(NodeOutput):
     markdown: Annotated[
         MarkdownValue,
-        OutPort(MARKDOWN),
         Field(
             title="Transcription",
             description="The reading, with pages kept in order.",
@@ -170,7 +159,6 @@ class ReductoOcrOutput(NodeOutput):
     ]
     blocks: Annotated[
         Table,
-        OutPort(TABLE_DATA),
         Field(
             title="Text blocks",
             description=(
@@ -220,11 +208,7 @@ def build_parse_output(chunks: list[ParseChunk]) -> ReductoOcrOutput:
 
 
 def build_reducto_ocr_node(context: PluginRuntimeContext) -> "ReductoOcrNode":
-    return ReductoOcrNode(
-        uow=context.uow,
-        storage=context.storage,
-        node_secrets=context.node_secrets,
-    )
+    return ReductoOcrNode(node_secrets=context.node_secrets)
 
 
 @REDUCTO.node(
@@ -257,15 +241,11 @@ class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
     def __init__(
         self,
         *,
-        uow: UnitOfWorkPort,
-        storage: FileStoragePort,
         node_secrets: NodeSecretResolverPort,
         transport_factory: Callable[
             [], httpx.AsyncBaseTransport
         ] = PinnedPublicAddressTransport,
     ) -> None:
-        self._uow = uow
-        self._storage = storage
         self._node_secrets = node_secrets
         self._transport_factory = transport_factory
 
@@ -334,9 +314,7 @@ class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
                     ) as client,
                 ):
                     if inputs.image is not None:
-                        source = await self._upload_image(
-                            client, inputs.image, context.workspace_id
-                        )
+                        source = await self._upload_image(client, inputs.image)
                     else:
                         source = cast(str, inputs.document_url)
                     # Raw: the typed response picks its class by `response_type` and
@@ -387,62 +365,33 @@ class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
             ) from None
 
     async def _upload_image(
-        self, client: AsyncReducto, ref: ArtifactRef, workspace_id: UUID
+        self, client: AsyncReducto, image: RasterImage | PdfFile
     ) -> str:
-        if ref.key() not in (RASTER_IMAGE.key, PDF_FILE.key):
-            raise ReductoOcrError(
-                f"Unsupported source artifact type {ref.artifact_type}"
-            )
-        try:
-            async with self._uow as uow:
-                artifact = await uow.artifacts.get(workspace_id, ref.artifact_id)
-            if (
-                artifact is None
-                or artifact.ref() != ref
-                or artifact.bucket is None
-                or artifact.object_key is None
-            ):
-                raise ReductoOcrError(f"Raster image {ref.artifact_id} was not found")
-            extension = (
-                ".pdf"
-                if ref.key() == PDF_FILE.key
-                and artifact.content_type == "application/pdf"
-                else IMAGE_EXTENSIONS.get(artifact.content_type)
-                if ref.key() == RASTER_IMAGE.key
-                else None
-            )
+        label = image.filename or "this file"
+        if isinstance(image, PdfFile):
+            extension = ".pdf"
+            content_type = PdfFile.media_type
+        else:
+            extension = IMAGE_EXTENSIONS.get(image.content_type)
+            content_type = image.content_type
             if extension is None:
                 raise ReductoOcrError(
-                    f"Raster image {ref.artifact_id} has unsupported content type "
-                    f"{artifact.content_type!r}"
+                    f"{label} has unsupported content type {image.content_type!r}"
                 )
-            stream = await self._storage.load(
-                bucket=artifact.bucket, path=artifact.object_key
-            )
-            try:
-                content = stream.read(MAX_SOURCE_BYTES + 1)
-            finally:
-                stream.close()
+        try:
+            content = await image.read(max_bytes=MAX_SOURCE_BYTES)
+        except ValueError as exc:
+            if "over the limit" in str(exc):
+                raise ReductoOcrError(
+                    f"{label} exceeds the {MAX_SOURCE_BYTES}-byte source limit"
+                ) from exc
+            raise ReductoOcrError(f"Reducto OCR could not read {label}") from exc
         except ReductoOcrError:
             raise
         except Exception as exc:
-            raise ReductoOcrError(
-                f"Reducto OCR could not read raster image {ref.artifact_id}"
-            ) from exc
-        if len(content) > MAX_SOURCE_BYTES:
-            raise ReductoOcrError(
-                f"Raster image {ref.artifact_id} exceeds the "
-                f"{MAX_SOURCE_BYTES}-byte source limit"
-            )
-        if (
-            artifact.sha256 is not None
-            and sha256(content).hexdigest() != artifact.sha256
-        ):
-            raise ReductoOcrError(
-                f"Raster image {ref.artifact_id} SHA-256 does not match"
-            )
+            raise ReductoOcrError(f"Reducto OCR could not read {label}") from exc
         upload = await client.upload(
-            file=(f"document{extension}", content, artifact.content_type),
+            file=(f"document{extension}", content, content_type),
             extension=extension,
         )
         return upload.file_id

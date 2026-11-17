@@ -50,20 +50,35 @@ class InputMaterializer:
         self._resolver_registry = resolver_registry
         self._values = values
 
-    async def _resolve(
+    async def _resolve_value(
         self,
+        name: str,
         ref: ArtifactRef,
-        target: type[object],
+        value_types: tuple[type[object], ...],
         workspace_id: UUID,
     ) -> object:
         values = self._values
         if values is not None and values.declaration_for(ref.key()) is not None:
-            return await values.resolve(ref, workspace_id)
-        return await self._resolver_registry.resolve(
-            ref=ref,
-            target=target,
-            workspace_id=workspace_id,
-        )
+            resolved = await values.resolve(ref, workspace_id)
+        elif len(value_types) == 1:
+            resolved = await self._resolver_registry.resolve(
+                ref=ref,
+                target=value_types[0],
+                workspace_id=workspace_id,
+            )
+        else:
+            raise MaterializationError(
+                name,
+                "has no artifact declaration for "
+                f"{ref.artifact_type}@{ref.schema_version}",
+            )
+        if type(resolved) not in value_types:
+            expected = " or ".join(value_type.__name__ for value_type in value_types)
+            raise MaterializationError(
+                name,
+                f"resolved {type(resolved).__name__}, expected {expected}",
+            )
+        return resolved
 
     async def materialize[T: BaseModel](
         self,
@@ -187,13 +202,16 @@ class InputMaterializer:
                 values[name] = value
                 continue
 
-            target = spec.target_type
-            if target is None:
+            value_types = spec.value_types
+            if len(value_types) == 0:
                 raise MaterializationError(
                     name, "does not declare a resolvable Python value type"
                 )
             resolved = [
-                [await self._resolve(ref, target, workspace_id) for ref in edge]
+                [
+                    await self._resolve_value(name, ref, value_types, workspace_id)
+                    for ref in edge
+                ]
                 for edge in edges
             ]
             match spec.variadic, spec.shape:

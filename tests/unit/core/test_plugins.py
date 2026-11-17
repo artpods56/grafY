@@ -1,7 +1,7 @@
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated, cast, override
+from typing import cast, override
 from uuid import UUID
 
 import pytest
@@ -23,10 +23,10 @@ from grafy_core.conversions import (
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     MAX_NODE_PROGRESS_COUNTER,
-    InPort,
     Node,
     NodeExecutionContext,
 )
+from grafy_core.declared_values import note_declaration
 from grafy_core.plugins import (
     NodeCachePolicy,
     NodeHttpEgressContract,
@@ -145,8 +145,15 @@ UNREGISTERED_VALUE = ArtifactTypeSpec(
 )
 
 
+class UnregisteredValue:
+    pass
+
+
+note_declaration(UnregisteredValue, UNREGISTERED_VALUE.key)
+
+
 class ConcretePortInput(NodeInput):
-    value: Annotated[object, InPort(UNREGISTERED_VALUE)]
+    value: UnregisteredValue
 
 
 class ConcretePortNode(Node[NoConfig, ConcretePortInput, EmptyOutput]):

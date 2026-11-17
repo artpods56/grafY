@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
-from grafy_core.artifacts import ArtifactTypeKey, ArtifactTypeSpec
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 
 
 class PortShape(StrEnum):
@@ -42,56 +42,60 @@ class ArtifactTypeVariable:
 ArtifactTypeContract = ArtifactTypeKey | ArtifactTypeVariable
 
 
-@dataclass(frozen=True, slots=True)
-class InPort:
-    """Marks an input model field as an artifact port via Annotated metadata.
+class Ref[T](ArtifactRef):
+    """A stored artifact ref. ``T`` is the value class, or ``Any`` when bound."""
 
-    ``accepts`` is the primary artifact type (or the single artifact type
-    variable). ``also_accepts`` adds the remaining concrete types the same input
-    accepts, so one port can take several artifact types without a type variable.
-    ``shape_field`` names the node config field that chooses this port's shape
-    for one node instance; the field holds ``one`` or ``many``.
-    ``spare_plugs`` lets a saved node keep input plugs nothing feeds, the spare an
-    editor holds ready for the port's next member; a Run ignores them. Without it
-    every plug must carry exactly one connection.
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_stored_ref(cls, value: object) -> object:
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, ArtifactRef) and not isinstance(
+            value, ArtifactRefSequence
+        ):
+            return value.model_dump()
+        return value
+
+
+class RefSequence[T](ArtifactRefSequence):
+    """A stored sequence of artifact refs."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_stored_sequence(cls, value: object) -> object:
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, ArtifactRefSequence):
+            return value.model_dump()
+        return value
+
+
+@dataclass(frozen=True, slots=True)
+class Binds:
+    """Names the artifact type variable a generic ``Ref`` port takes."""
+
+    variable: str
+
+
+@dataclass(frozen=True, slots=True)
+class Plugs:
+    """Plug options that are not part of the value type.
+
+    ``spare`` lets a saved node keep input plugs nothing feeds. A Run ignores
+    them. Without it every plug must carry exactly one connection.
+    ``agent_default`` is what an Agent tool link does with this input unless
+    told otherwise. ``fill`` offers it to the model. ``hidden`` leaves it to
+    the Graph.
     """
 
-    accepts: ArtifactTypeSpec | ArtifactTypeContract
     variadic: bool = False
-    instance_plugs: bool = False
-    spare_plugs: bool = False
-    also_accepts: tuple[ArtifactTypeSpec | ArtifactTypeKey, ...] = ()
-    shape_field: str | None = None
+    instance: bool = False
+    spare: bool = False
     agent_default: Literal["fill", "hidden"] = "fill"
-    """What an Agent tool link does with this input unless told otherwise.
-
-    ``fill`` offers it to the model as a parameter; ``hidden`` leaves it to the Graph. An
-    input that makes the node fetch whatever address a model writes is hidden by default."""
 
     def __post_init__(self) -> None:
-        if self.also_accepts and isinstance(self.accepts, ArtifactTypeVariable):
-            raise NodeContractError(
-                "An input port must declare either an artifact type variable or "
-                "additional accepted artifact types, not both"
-            )
-        if self.shape_field is not None and (self.variadic or self.instance_plugs):
-            raise NodeContractError(
-                "A config-chosen port shape cannot be variadic or use instance plugs"
-            )
-        if self.spare_plugs and not self.instance_plugs:
-            raise NodeContractError("Spare plugs require instance plugs")
-
-
-@dataclass(frozen=True, slots=True)
-class OutPort:
-    """Marks an output model field as an artifact port via Annotated metadata.
-
-    ``shape_field`` names the node config field that chooses this port's shape
-    for one node instance; the field holds ``one`` or ``many``.
-    """
-
-    produces: ArtifactTypeSpec | ArtifactTypeContract
-    shape_field: str | None = None
+        if self.spare and not self.instance:
+            raise NodeContractError("Plugs spare requires instance plugs")
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +109,7 @@ class InputPortSpec:
     instance_plugs: bool = False
     spare_plugs: bool = False
     accepted_shapes: tuple[PortShape, ...] = (PortShape.ONE,)
-    target_type: type[object] | None = None
+    value_types: tuple[type[object], ...] = ()
     preserves_ref_container: bool = False
     allows_none: bool = False
     required: bool = True
@@ -152,6 +156,7 @@ class OutputPortSpec:
     description: str | None = None
     shape: PortShape = PortShape.ONE
     required: bool = True
+    value_type: type[object] | None = None
     shape_field: str | None = None
 
 

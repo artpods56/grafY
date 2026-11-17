@@ -14,8 +14,9 @@ import pytest
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeSpec
 from grafy_core.bounded_subprocess import BoundedSubprocessError
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.file_contracts import BLOB_FILE, TIFF_FILE
-from grafy_core.nodes import NodeExecutionContext
+from grafy_core.documents import TiffFile
+from grafy_core.file_contracts import BLOB_FILE
+from grafy_core.nodes import NodeExecutionContext, Ref, RefSequence
 from grafy_core.plugins import (
     NodeHttpEgressInput,
     PluginRegistry,
@@ -41,6 +42,7 @@ from grafy_plugin_gis.artifacts import (
     GEO_RASTER_SCAN,
 )
 from grafy_plugin_gis.gdal import GdalCli, GdalError
+from grafy_plugin_gis.models import GeoRasterScan
 from grafy_core.spatial_contracts import (
     GeoCategorizedPointStyle,
     GeoFeatureArtifactSource,
@@ -96,7 +98,6 @@ from tests.support.egress import (
     resolve_loopback_host,
     trusted_loopback_network,
 )
-from tests.support.file_artifacts import seed_file_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -613,7 +614,9 @@ async def test_builds_typed_vector_raster_and_wms_layers() -> None:
                 }
             ),
         ),
-        VectorLayerInput(features=features_ref),
+        VectorLayerInput(
+            features=cast(Ref[GeoFeatureCollection], features_ref),
+        ),
     )
     categorized = await build_vector_layer(
         VectorLayerConfig(
@@ -641,7 +644,9 @@ async def test_builds_typed_vector_raster_and_wms_layers() -> None:
                 }
             ),
         ),
-        VectorLayerInput(features=features_ref),
+        VectorLayerInput(
+            features=cast(Ref[GeoFeatureCollection], features_ref),
+        ),
     )
     raster = await build_raster_layer(
         RasterLayerConfig(
@@ -649,7 +654,7 @@ async def test_builds_typed_vector_raster_and_wms_layers() -> None:
             opacity=0.6,
             style=GeoRasterStyle(contrast=0.25, resampling="nearest"),
         ),
-        RasterLayerInput(raster=raster_ref),
+        RasterLayerInput(raster=cast(Ref[GeoRasterScan], raster_ref)),
     )
     wms = await build_wms_layer(
         WmsLayerConfig.model_validate(
@@ -733,18 +738,21 @@ async def test_compose_map_preserves_ordered_layer_refs() -> None:
             basemap="openstreetmap",
             initial_bounds=(13.0, 52.0, 14.0, 53.0),
         ),
-        ComposeMapInput(layers=sequence),
+        ComposeMapInput(layers=cast(RefSequence[GeoMapLayer], sequence)),
     )
     assert result.map.layers == [first, second]
     assert result.map.initial_bounds == (13.0, 52.0, 14.0, 53.0)
 
     with pytest.raises(ValidationError, match="requires an ordered"):
         ComposeMapInput(
-            layers=ArtifactRefSequence(
-                artifact_type=GEO_MAP_LAYER.key.id,
-                schema_version=GEO_MAP_LAYER.key.schema_version,
-                item_refs=[first],
-                ordered=False,
+            layers=cast(
+                RefSequence[GeoMapLayer],
+                ArtifactRefSequence(
+                    artifact_type=GEO_MAP_LAYER.key.id,
+                    schema_version=GEO_MAP_LAYER.key.schema_version,
+                    item_refs=[first],
+                    ordered=False,
+                ),
             )
         )
 
@@ -1084,22 +1092,16 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
     uow = InMemoryUnitOfWork()
     object_root = tmp_path / "objects"
     storage = LocalFileObjectStore(object_root)
-    file_ref = await seed_file_artifact(
-        storage,
-        uow,
-        workspace_id=TEST_WORKSPACE_ID,
-        spec=TIFF_FILE,
-        content=source_content,
-        original_filename="historical-map.tif",
-        content_type="image/tiff",
-    )
-    raster = await ImportRasterScanNode(
-        storage=storage,
-        uow=uow,
-    ).run(
+    raster = await ImportRasterScanNode().run(
         NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="raster_scan"),
         GeoRasterScanImportConfig(source_name="Historical map"),
-        GeoRasterScanImportInput(file=file_ref),
+        GeoRasterScanImportInput(
+            file=TiffFile.from_content(
+                source_content,
+                content_type="image/tiff",
+                filename="historical-map.tif",
+            )
+        ),
     )
     values = ArtifactValues(
         (raster_scan_artifact(),),

@@ -13,41 +13,44 @@ from pydantic import (
 from mistralai.client.models.ocrresponse import OCRResponse
 
 from grafy_core.artifact_contracts import (
-    RASTER_IMAGE,
-    TEXT_VALUE,
-    MARKDOWN,
-    IMAGE_REGIONS,
     MarkdownValue,
     ImageRegion,
     ImageRegionSet,
     ImagePage,
 )
 from grafy_core.table_contracts import (
-    TABLE_DATA,
     Table,
     TableColumn,
     TableValue,
     TableValueType,
 )
-from grafy_core.artifacts import ArtifactRef, NodeConfig, NodeInput, NodeOutput
-from grafy_core.file_contracts import PDF_FILE
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
-    InPort,
     Node,
     NodeExecutionContext,
-    OutPort,
+    Plugs,
     UserFacingNodeError,
 )
+
+import grafy_plugin_image.nodes as _image_nodes
+import grafy_workbench.table.plugin as _table_plugin
+import grafy_workbench.text.nodes as _text_nodes
 from grafy_core.plugins import (
     NodeHttpEgressContract,
     NodeSecretInput,
     PluginRuntimeContext,
 )
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
-
 from grafy_plugin_mistral.declaration import MISTRAL
 from grafy_plugin_mistral.response import OcrPage
+
+_ = (
+    _image_nodes.__name__,
+    _table_plugin.__name__,
+    _text_nodes.__name__,
+)  # notes classes before these ports
 
 
 _URL = TypeAdapter(AnyHttpUrl)
@@ -107,7 +110,7 @@ class MistralOcrInput(NodeInput):
     document_url: Annotated[
         str | None,
         # A model that could write any address here would be choosing what Mistral fetches.
-        InPort(TEXT_VALUE, agent_default="hidden"),
+        Plugs(agent_default="hidden"),
         Field(
             title="Document link",
             description=(
@@ -117,8 +120,7 @@ class MistralOcrInput(NodeInput):
         ),
     ] = None
     image: Annotated[
-        ArtifactRef | None,
-        InPort(RASTER_IMAGE, also_accepts=(PDF_FILE,)),
+        RasterImage | PdfFile | None,
         Field(
             title="Scan or PDF",
             description=(
@@ -132,7 +134,6 @@ class MistralOcrInput(NodeInput):
 class MistralOcrOutput(NodeOutput):
     markdown: Annotated[
         MarkdownValue,
-        OutPort(MARKDOWN),
         Field(
             title="Transcription",
             description="The reading, with pages kept in order.",
@@ -140,7 +141,6 @@ class MistralOcrOutput(NodeOutput):
     ]
     blocks: Annotated[
         Table,
-        OutPort(TABLE_DATA),
         Field(
             title="Text blocks",
             description=(
@@ -151,7 +151,6 @@ class MistralOcrOutput(NodeOutput):
     ]
     regions: Annotated[
         ImageRegionSet,
-        OutPort(IMAGE_REGIONS),
         Field(
             title="Boxes on the page",
             description="Where each region sits on the page, in pixels.",
@@ -164,7 +163,7 @@ class MistralOcrProvider(Protocol):
         self,
         *,
         document_url: str | None,
-        image: ArtifactRef | None,
+        image: RasterImage | PdfFile | None,
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
@@ -224,10 +223,7 @@ def build_mistral_ocr_node(context: PluginRuntimeContext) -> "MistralOcrNode":
     from grafy_plugin_mistral.ocr_sdk import MistralOcrSdkProvider
 
     return MistralOcrNode(
-        provider=MistralOcrSdkProvider(
-            uow=context.uow,
-            storage=context.storage,
-        ),
+        provider=MistralOcrSdkProvider(),
         node_secrets=context.node_secrets,
     )
 

@@ -16,6 +16,7 @@ from grafy_core.ports.node_secrets import (
 )
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.runtime.artifact_values import ArtifactValues
+from grafy_core.runtime.port_check import check_port_declarations
 from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import (
@@ -140,6 +141,7 @@ def build_workbench_components(
         bucket=bucket,
         storage_backend=storage_backend,
     )
+    check_port_declarations(plugin_registry.nodes, values)
     plugin_context = PluginRuntimeContext(
         workspace=resolved_workspace,
         storage=resolved_storage,

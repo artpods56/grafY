@@ -15,11 +15,15 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.nodes import OutPort
 from grafy_core.plugins import NodeCachePolicy
 from grafy_core.runtime.artifact_values import inline_model_artifact, scalar_artifact
 
 from grafy_workbench.text.declaration import TEXT
+
+
+TEXT.register(scalar_artifact(TEXT_VALUE, str, TextValuePayload))
+TEXT.register(inline_model_artifact(MARKDOWN, MarkdownValue))
+TEXT.register(inline_model_artifact(HTML_PAGE, HtmlPage))
 
 
 class TextInputConfig(NodeConfig):
@@ -34,11 +38,7 @@ class TextInputInput(NodeInput):
 
 
 class TextInputOutput(NodeOutput):
-    text: Annotated[
-        StrictStr,
-        OutPort(TEXT_VALUE),
-        Field(description="The configured text value."),
-    ]
+    text: Annotated[StrictStr, Field(description="The configured text value.")]
 
 
 @TEXT.function_node(
@@ -55,8 +55,3 @@ async def text_input(
 
 
 TextInputNode = TEXT.nodes[-1].node_class
-
-
-TEXT.register(scalar_artifact(TEXT_VALUE, str, TextValuePayload))
-TEXT.register(inline_model_artifact(MARKDOWN, MarkdownValue))
-TEXT.register(inline_model_artifact(HTML_PAGE, HtmlPage))

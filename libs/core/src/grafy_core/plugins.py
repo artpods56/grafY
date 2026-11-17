@@ -26,6 +26,7 @@ from grafy_core.artifacts import (
     NodeOutput,
 )
 from grafy_core.runtime.artifact_values import Artifact, ArtifactValues
+from grafy_core.declared_values import note_declaration
 from grafy_core.callable_nodes import callable_node_class
 from grafy_core.conversions import (
     ArtifactConversion,
@@ -512,8 +513,10 @@ class Plugin:
         Positional parameters are graph inputs, keyword-only parameters are
         configuration, and the return value is one artifact output. An exact
         first NodeExecutionContext parameter is injected by the runtime.
-        Standard str/int artifact contracts are inferred but must still be
-        registered as owned types or explicit dependencies. Sync functions run
+        A positional annotation is a port when its class is a declared value.
+        ``str`` is text and ``int`` is an integer once those declarations are
+        noted. The classes must still be owned types or explicit dependencies.
+        Sync functions run
         in a worker thread; async functions run on the executor's event loop.
         The decorator returns the original callable for ordinary Python use.
         """
@@ -599,6 +602,7 @@ class Plugin:
         self._writer_factories.append(factory)
 
     def register(self, artifact: Artifact[Any]) -> None:
+        note_declaration(artifact.value_type, artifact.spec.key)
         self.register_artifact_type(artifact.spec)
         self._artifacts.append(artifact)
 

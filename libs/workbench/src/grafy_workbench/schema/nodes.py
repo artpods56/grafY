@@ -15,12 +15,9 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
+from grafy_core.nodes import Node, NodeExecutionContext, Plugs
 from grafy_core.plugins import NodeCachePolicy
-from grafy_core.schema_contracts import (
-    JSON_SCHEMA,
-    parse_json_schema,
-)
+from grafy_core.schema_contracts import parse_json_schema
 
 from grafy_workbench.schema.declaration import SCHEMAS
 from grafy_workbench.schema.values import (
@@ -28,6 +25,9 @@ from grafy_workbench.schema.values import (
     canonical_schema_text,
     json_schema_artifact,
 )
+
+
+SCHEMAS.register(json_schema_artifact())
 
 
 class SchemaFieldKind(StrEnum):
@@ -108,7 +108,7 @@ class JsonSchemaBuilderConfig(NodeConfig):
 class JsonSchemaBuilderInput(NodeInput):
     schemas: Annotated[
         list[JsonSchemaText],
-        InPort(JSON_SCHEMA, variadic=True, instance_plugs=True),
+        Plugs(variadic=True, instance=True),
     ] = Field(
         default_factory=list,
         description=(
@@ -120,7 +120,6 @@ class JsonSchemaBuilderInput(NodeInput):
 class JsonSchemaBuilderOutput(NodeOutput):
     json_schema: Annotated[
         JsonSchemaText,
-        OutPort(JSON_SCHEMA),
         Field(
             title="JSON Schema",
             description="Canonical Draft 2020-12 object JSON Schema text.",
@@ -238,9 +237,6 @@ class JsonSchemaBuilderNode(
         return JsonSchemaBuilderOutput(
             json_schema=JsonSchemaText(value=canonical_schema_text(schema_definition))
         )
-
-
-SCHEMAS.register(json_schema_artifact())
 
 
 __all__ = [

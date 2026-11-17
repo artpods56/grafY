@@ -2,14 +2,13 @@ from typing import Annotated
 
 from pydantic import Field, StrictStr
 
-from grafy_core.artifact_contracts import RASTER_IMAGE, TEXT_VALUE
 from grafy_core.artifacts import (
-    ArtifactRefSequence,
     NodeConfig,
     NodeInput,
     NodeOutput,
 )
-from grafy_core.nodes import InPort, OutPort
+from grafy_core.documents import RasterImage
+from grafy_core.nodes import RefSequence
 from grafy_core.plugins import NodeCachePolicy
 from grafy_core.prompt_contracts import (
     PROMPT_MESSAGE,
@@ -18,7 +17,13 @@ from grafy_core.prompt_contracts import (
 )
 from grafy_core.runtime.artifact_values import inline_model_artifact
 
+import grafy_workbench.text.nodes as _text_nodes
 from grafy_plugin_llm.declaration import LLM
+
+_ = _text_nodes.__name__  # notes str before these ports
+
+
+LLM.register(inline_model_artifact(PROMPT_MESSAGE, PromptMessage))
 
 
 class PromptMessageConfig(NodeConfig):
@@ -31,12 +36,10 @@ class PromptMessageConfig(NodeConfig):
 class PromptMessageInput(NodeInput):
     text: Annotated[
         StrictStr,
-        InPort(TEXT_VALUE),
         Field(title="Words", description="Text content of the prompt message."),
     ]
     images: Annotated[
-        ArtifactRefSequence | None,
-        InPort(RASTER_IMAGE),
+        RefSequence[RasterImage] | None,
         Field(
             title="Pictures",
             description="Optional ordered image artifacts for a user message.",
@@ -47,7 +50,6 @@ class PromptMessageInput(NodeInput):
 class PromptMessageOutput(NodeOutput):
     message: Annotated[
         PromptMessage,
-        OutPort(PROMPT_MESSAGE),
         Field(title="Instruction", description="The composed prompt message."),
     ]
 
@@ -79,9 +81,6 @@ async def create_prompt_message(
 
 
 CreatePromptMessageNode = LLM.nodes[-1].node_class
-
-
-LLM.register(inline_model_artifact(PROMPT_MESSAGE, PromptMessage))
 
 
 __all__ = [

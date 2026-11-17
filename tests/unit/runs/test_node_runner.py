@@ -12,7 +12,7 @@ has no operator that consumes a text value.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, final, override
+from typing import final, override
 from uuid import UUID
 
 import pytest
@@ -46,7 +46,7 @@ from grafy_core.kernel.instances import ExpandedGraph, InstanceKey
 from grafy_core.kernel.memory_results import InMemoryResultStore
 from grafy_core.kernel.project import GraphDefinition, ProjectDocument
 from grafy_core.kernel.scheduler import ComputationRequest, ComputationRunner
-from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
+from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import Plugin, PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
 from grafy_core.runtime.artifact_values import ArtifactValues
@@ -89,11 +89,11 @@ class EchoConfig(NodeConfig):
 
 
 class EchoInput(NodeInput):
-    text: Annotated[str, InPort(TEXT_VALUE)]
+    text: str
 
 
 class EchoOutput(NodeOutput):
-    text: Annotated[str, OutPort(TEXT_VALUE)]
+    text: str
 
 
 @ECHO.node(operator_id="test.echo_text", version=1, title="Echo text")

@@ -31,10 +31,25 @@ EXPECTED_PRIVATE_DEFINITIONS: dict[str, frozenset[str]] = {
     "node_context": frozenset(),
     "node_derivation": frozenset(
         {
+            "_Described",
+            "_Member",
+            "_classify_member",
             "_concrete_type",
+            "_declared_class",
+            "_describe",
+            "_describe_members",
+            "_is_file_base",
             "_is_sequence_origin",
+            "_markers",
+            "_one_marker",
+            "_plug_flags",
+            "_ref_parameter",
+            "_ref_port",
+            "_required_key",
+            "_required_type",
             "_sequence_item_type",
-            "_unwrap_optional",
+            "_value_port",
+            "_without_none",
         }
     ),
 }

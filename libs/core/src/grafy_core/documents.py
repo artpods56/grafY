@@ -23,6 +23,7 @@ from grafy_core.file_contracts import (
     XLSX_FILE,
 )
 from grafy_core.ports.storage import FileStoragePort
+from grafy_core.declared_values import note_declaration
 from grafy_core.runtime.artifact_values import (
     Artifact,
     ArtifactFiles,
@@ -315,6 +316,8 @@ FILE_ARTIFACTS: tuple[Artifact[File], ...] = (
     file_artifact(TXT_FILE, TxtFile),
     file_artifact(BLOB_FILE, BlobFile),
 )
+for _file_artifact in FILE_ARTIFACTS:
+    note_declaration(_file_artifact.value_type, _file_artifact.spec.key)
 
 
 def raster_image_artifact() -> Artifact[RasterImage]:
@@ -341,8 +344,13 @@ def raster_image_artifact() -> Artifact[RasterImage]:
     )
 
 
+RASTER_IMAGE_ARTIFACT = raster_image_artifact()
+note_declaration(RasterImage, RASTER_IMAGE.key)
+
+
 __all__ = [
     "FILE_ARTIFACTS",
+    "RASTER_IMAGE_ARTIFACT",
     "BmpFile",
     "BlobFile",
     "CsvFile",

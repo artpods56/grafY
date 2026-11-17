@@ -16,7 +16,8 @@ from grafy_core.artifact_contracts import (
     MARKDOWN,
     IMAGE_REGIONS,
 )
-from grafy_core.artifacts import ArtifactObject, ArtifactRef
+from grafy_core.documents import PdfFile, RasterImage
+from grafy_core.file_contracts import PDF_FILE
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.runtime.invocation import (
@@ -98,7 +99,7 @@ class FakeProvider:
         self,
         *,
         document_url: str | None,
-        image: ArtifactRef | None,
+        image: RasterImage | PdfFile | None,
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
@@ -284,6 +285,7 @@ def test_node_declares_ocr_ports_secret_and_egress() -> None:
     assert not MistralOcrNode.input_contract.ports["document_url"].required
     image = MistralOcrNode.input_contract.ports["image"]
     assert image.accepts == RASTER_IMAGE.key
+    assert image.also_accepts == (PDF_FILE.key,)
     assert image.shape is PortShape.ONE
     assert image.allows_none
     assert set(MistralOcrNode.input_contract.ports) == {"document_url", "image"}
@@ -381,9 +383,10 @@ async def test_node_requires_exactly_one_document_source() -> None:
             MistralOcrConfig(),
             MistralOcrInput(
                 document_url="https://files.example/report.pdf",
-                image=ArtifactRef.from_key(
-                    artifact_id=uuid4(),
-                    key=RASTER_IMAGE.key,
+                image=RasterImage.from_content(
+                    b"\x89PNG\r\n\x1a\nfake",
+                    content_type="image/png",
+                    filename="page.png",
                 ),
             ),
         )
@@ -394,7 +397,7 @@ async def test_provider_posts_the_ocr_process_request(
 ) -> None:
     recorder = RequestRecorder(ocr_response())
     recorder.install(monkeypatch)
-    provider = MistralOcrSdkProvider(uow=InMemoryUnitOfWork(), storage=FakeStorage())
+    provider = MistralOcrSdkProvider()
     output = await provider.process(
         document_url="https://files.example/report.pdf?token=abc",
         image=None,
@@ -435,28 +438,15 @@ async def test_provider_sends_a_raster_image_as_a_data_url(
 ) -> None:
     recorder = RequestRecorder(ocr_response())
     recorder.install(monkeypatch)
-    uow = InMemoryUnitOfWork()
-    storage = FakeStorage()
     content = b"\x89PNG\r\n\x1a\nfake"
-    image = ArtifactObject(
-        workspace_id=WORKSPACE_ID,
-        id=uuid4(),
-        artifact_type=RASTER_IMAGE.key.id,
-        schema_version=RASTER_IMAGE.key.schema_version,
-        content_type="image/png",
-        bucket="artifacts",
-        object_key="images/page.png",
-        byte_size=len(content),
+    image = RasterImage.from_content(
+        content, content_type="image/png", filename="page.png"
     )
-    storage.files[("artifacts", "images/page.png")] = content
-    async with uow as transaction:
-        await transaction.artifacts.add(image)
-        await transaction.commit()
-    provider = MistralOcrSdkProvider(uow=uow, storage=storage)
+    provider = MistralOcrSdkProvider()
 
     document = await provider.process(
         document_url=None,
-        image=image.ref(),
+        image=image,
         config=MistralOcrConfig(),
         api_key=SecretStr("secret-provider-key"),
         workspace_id=WORKSPACE_ID,
@@ -475,27 +465,14 @@ async def test_provider_sends_pdf_as_document_data_url(
 ) -> None:
     recorder = RequestRecorder(ocr_response())
     recorder.install(monkeypatch)
-    uow = InMemoryUnitOfWork()
-    storage = FakeStorage()
     content = b"%PDF-example"
-    pdf = ArtifactObject(
-        workspace_id=WORKSPACE_ID,
-        id=uuid4(),
-        artifact_type="file.pdf",
-        schema_version=1,
-        content_type="application/pdf",
-        bucket="artifacts",
-        object_key="page.pdf",
-        byte_size=len(content),
+    pdf = PdfFile.from_content(
+        content, content_type="application/pdf", filename="page.pdf"
     )
-    storage.files[("artifacts", "page.pdf")] = content
-    async with uow as transaction:
-        await transaction.artifacts.add(pdf)
-        await transaction.commit()
-    provider = MistralOcrSdkProvider(uow=uow, storage=storage)
+    provider = MistralOcrSdkProvider()
     await provider.process(
         document_url=None,
-        image=pdf.ref(),
+        image=pdf,
         config=MistralOcrConfig(),
         api_key=SecretStr("key"),
         workspace_id=WORKSPACE_ID,
@@ -517,10 +494,7 @@ async def test_provider_hides_rejected_response_bodies(
         )
     )
     recorder.install(monkeypatch)
-    provider = MistralOcrSdkProvider(
-        uow=InMemoryUnitOfWork(),
-        storage=FakeStorage(),
-    )
+    provider = MistralOcrSdkProvider()
 
     with pytest.raises(MistralOcrProviderError, match="HTTP 401") as raised:
         await provider.process(
@@ -546,7 +520,7 @@ async def test_provider_retries_only_retryable_statuses_when_enabled(
         }
     recorder.next_responses = [httpx.Response(status, json=error_body)]
     recorder.install(monkeypatch)
-    provider = MistralOcrSdkProvider(uow=InMemoryUnitOfWork(), storage=FakeStorage())
+    provider = MistralOcrSdkProvider()
     if status in {429, 500}:
         document = await provider.process(
             document_url="https://files.example/report.pdf",
@@ -583,7 +557,7 @@ async def test_provider_preserves_cancellation(monkeypatch: pytest.MonkeyPatch) 
         raise asyncio.CancelledError
 
     monkeypatch.setattr(httpx.AsyncClient, "send", send)
-    provider = MistralOcrSdkProvider(uow=InMemoryUnitOfWork(), storage=FakeStorage())
+    provider = MistralOcrSdkProvider()
     with pytest.raises(asyncio.CancelledError):
         _ = await provider.process(
             document_url="https://files.example/report.pdf",
@@ -622,8 +596,6 @@ async def test_provider_dials_a_self_hosted_endpoint_only_when_the_operator_allo
 
         async def process(egress_policy: object) -> str:
             provider = MistralOcrSdkProvider(
-                uow=InMemoryUnitOfWork(),
-                storage=FakeStorage(),
                 egress_policy=egress_policy,  # pyright: ignore[reportArgumentType]
             )
             output = await provider.process(

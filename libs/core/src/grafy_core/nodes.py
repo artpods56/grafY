@@ -19,16 +19,18 @@ from grafy_core.node_derivation import (
 from grafy_core.node_ports import (
     ArtifactTypeContract as ArtifactTypeContract,
     ArtifactTypeVariable as ArtifactTypeVariable,
+    Binds as Binds,
     ConfigContract as ConfigContract,
-    InPort as InPort,
     InputContract as InputContract,
     InputPortSpec as InputPortSpec,
     NodeContractError as NodeContractError,
     NodeContractResolutionError as NodeContractResolutionError,
-    OutPort as OutPort,
     OutputContract as OutputContract,
     OutputPortSpec as OutputPortSpec,
+    Plugs as Plugs,
     PortShape as PortShape,
+    Ref as Ref,
+    RefSequence as RefSequence,
     ResolvedNodeContracts as ResolvedNodeContracts,
 )
 

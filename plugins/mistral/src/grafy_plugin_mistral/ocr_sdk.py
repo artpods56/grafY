@@ -1,6 +1,5 @@
 import asyncio
 import base64
-from hashlib import sha256
 from typing import Final, final, override
 from uuid import UUID
 
@@ -12,12 +11,8 @@ from mistralai.client.models.imageurlchunk import ImageURLChunkTypedDict
 from mistralai.client.models.ocrresponse import OCRResponse
 from pydantic import SecretStr
 
-from grafy_core.artifact_contracts import RASTER_IMAGE
-from grafy_core.artifacts import ArtifactRef
-from grafy_core.file_contracts import PDF_FILE
+from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.egress import EgressPolicy, EgressRejectedError
-from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.ports.storage import FileStoragePort
 
 from grafy_plugin_mistral.egress_transport import EgressPinnedHttpx2Transport
 from grafy_plugin_mistral.ocr import (
@@ -52,12 +47,8 @@ class MistralOcrSdkProvider(MistralOcrProvider):
     def __init__(
         self,
         *,
-        uow: UnitOfWorkPort,
-        storage: FileStoragePort,
         egress_policy: EgressPolicy | None = None,
     ) -> None:
-        self._uow = uow
-        self._storage = storage
         # The Mistral SDK builds its own requests, so the provider endpoint can
         # only be pinned from below. `None` takes the deployment policy named by
         # `GRAFY_EGRESS_TRUSTED_DESTINATIONS`, read when the request is dialed.
@@ -68,7 +59,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         self,
         *,
         document_url: str | None,
-        image: ArtifactRef | None,
+        image: RasterImage | PdfFile | None,
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
@@ -95,8 +86,8 @@ class MistralOcrSdkProvider(MistralOcrProvider):
             }
             document = url_document
         elif image is not None:
-            data_url = await self._image_data_url(image, workspace_id=workspace_id)
-            if image.key() == PDF_FILE.key:
+            data_url = await self._image_data_url(image)
+            if isinstance(image, PdfFile):
                 document = {"type": "document_url", "document_url": data_url}
             else:
                 document = {"type": "image_url", "image_url": data_url}
@@ -164,91 +155,26 @@ class MistralOcrSdkProvider(MistralOcrProvider):
             )
         return build_ocr_output(response, config)
 
-    async def _image_data_url(
-        self,
-        ref: ArtifactRef,
-        *,
-        workspace_id: UUID,
-    ) -> str:
-        if ref.key() not in (RASTER_IMAGE.key, PDF_FILE.key):
+    async def _image_data_url(self, image: RasterImage | PdfFile) -> str:
+        label = image.filename or "this file"
+        if isinstance(image, PdfFile):
+            content_type = PdfFile.media_type
+        elif image.content_type in _SUPPORTED_IMAGE_CONTENT_TYPES:
+            content_type = image.content_type
+        else:
             raise MistralOcrProviderError(
-                f"Raster image {ref.artifact_id} must reference "
-                f"{RASTER_IMAGE.key.id}@{RASTER_IMAGE.key.schema_version}, "
-                f"got {ref.artifact_type}@{ref.schema_version}"
+                f"{label} has unsupported content type {image.content_type!r}"
             )
         try:
-            async with self._uow as uow:
-                artifact = await uow.artifacts.get(workspace_id, ref.artifact_id)
+            image_bytes = await image.read(max_bytes=MISTRAL_OCR_MAX_SOURCE_BYTES)
+        except ValueError as exc:
+            if "over the limit" in str(exc):
+                raise MistralOcrProviderError(
+                    f"{label} exceeds the {MISTRAL_OCR_MAX_SOURCE_BYTES}-byte limit"
+                ) from exc
+            raise MistralOcrProviderError(f"Failed to read {label}") from exc
         except Exception as exc:
-            raise MistralOcrProviderError(
-                f"Failed to look up raster image {ref.artifact_id}"
-            ) from exc
-        if artifact is None or artifact.workspace_id != workspace_id:
-            raise MistralOcrProviderError(
-                f"Raster image {ref.artifact_id} was not found"
-            )
-        if artifact.ref() != ref:
-            raise MistralOcrProviderError(
-                f"Artifact repository returned a different ref for raster image "
-                f"{ref.artifact_id}"
-            )
-        if artifact.bucket is None or artifact.object_key is None:
-            raise MistralOcrProviderError(
-                f"Raster image {ref.artifact_id} does not have a storage object"
-            )
-        if (
-            ref.key() == RASTER_IMAGE.key
-            and artifact.content_type not in _SUPPORTED_IMAGE_CONTENT_TYPES
-        ) or (ref.key() == PDF_FILE.key and artifact.content_type != "application/pdf"):
-            raise MistralOcrProviderError(
-                f"Raster image {ref.artifact_id} has unsupported content type "
-                f"{artifact.content_type!r}"
-            )
-        if (
-            artifact.byte_size is not None
-            and artifact.byte_size > MISTRAL_OCR_MAX_SOURCE_BYTES
-        ):
-            raise MistralOcrProviderError(
-                f"Raster image {ref.artifact_id} exceeds the "
-                f"{MISTRAL_OCR_MAX_SOURCE_BYTES}-byte limit"
-            )
-
-        try:
-            stream = await self._storage.load(
-                bucket=artifact.bucket,
-                path=artifact.object_key,
-            )
-            try:
-                image_bytes = stream.read(MISTRAL_OCR_MAX_SOURCE_BYTES + 1)
-            finally:
-                stream.close()
-        except Exception as exc:
-            raise MistralOcrProviderError(
-                f"Failed to load raster image {ref.artifact_id} from "
-                f"{artifact.bucket}/{artifact.object_key}"
-            ) from exc
-
-        if len(image_bytes) > MISTRAL_OCR_MAX_SOURCE_BYTES:
-            raise MistralOcrProviderError(
-                f"Raster image {ref.artifact_id} exceeds the "
-                f"{MISTRAL_OCR_MAX_SOURCE_BYTES}-byte limit"
-            )
-        if artifact.byte_size is not None and len(image_bytes) != artifact.byte_size:
-            raise MistralOcrProviderError(
-                f"Raster image {ref.artifact_id} size does not match its metadata"
-            )
-        actual_sha256 = sha256(image_bytes).hexdigest()
-        expected_hashes = {
-            expected
-            for expected in (artifact.sha256, ref.content_hash)
-            if expected is not None
-        }
-        if any(expected != actual_sha256 for expected in expected_hashes):
-            raise MistralOcrProviderError(
-                f"Raster image {ref.artifact_id} SHA-256 does not match"
-            )
-
-        content_type = artifact.content_type
+            raise MistralOcrProviderError(f"Failed to read {label}") from exc
         encoded = base64.b64encode(image_bytes).decode("ascii")
         return f"data:{content_type};base64,{encoded}"
 

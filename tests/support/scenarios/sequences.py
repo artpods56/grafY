@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field
 
@@ -13,31 +13,24 @@ from grafy_core.artifacts import (
     NodeOutput,
 )
 from grafy_core.nodes import (
-    ArtifactTypeVariable,
-    InPort,
-    OutPort,
+    Binds,
+    Plugs,
+    Ref,
+    RefSequence,
     UserFacingNodeError,
 )
-from grafy_core.plugins import NodeCachePolicy
-
-from grafy_core.plugins import Plugin
+from grafy_core.plugins import NodeCachePolicy, Plugin
 
 
 SEQUENCES = Plugin(slug="test.sequence", title="Sequence fixtures")
 SEQUENCES.register_artifact_type_dependency(INTEGER_VALUE)
 
 
-SEQUENCE_ARTIFACT_TYPE = ArtifactTypeVariable("T")
-
-
 class CollectInput(NodeInput):
     items: Annotated[
-        list[ArtifactRef | ArtifactRefSequence],
-        InPort(
-            SEQUENCE_ARTIFACT_TYPE,
-            variadic=True,
-            instance_plugs=True,
-        ),
+        list[Ref[Any] | RefSequence[Any]],
+        Plugs(variadic=True, instance=True),
+        Binds("T"),
         Field(
             min_length=1,
             description="Artifacts and sequences in connection order.",
@@ -47,8 +40,8 @@ class CollectInput(NodeInput):
 
 class CollectOutput(NodeOutput):
     items: Annotated[
-        ArtifactRefSequence,
-        OutPort(SEQUENCE_ARTIFACT_TYPE),
+        RefSequence[Any],
+        Binds("T"),
         Field(description="One sequence containing every input artifact."),
     ]
 
@@ -113,12 +106,14 @@ async def collect(
         )
 
     return CollectOutput(
-        items=ArtifactRefSequence(
-            artifact_type=artifact_type.id,
-            schema_version=artifact_type.schema_version,
-            item_refs=item_refs,
-            ordered=ordered,
-            metadata={"collect_segments": collect_segments},
+        items=RefSequence[Any].model_validate(
+            ArtifactRefSequence(
+                artifact_type=artifact_type.id,
+                schema_version=artifact_type.schema_version,
+                item_refs=item_refs,
+                ordered=ordered,
+                metadata={"collect_segments": collect_segments},
+            )
         )
     )
 

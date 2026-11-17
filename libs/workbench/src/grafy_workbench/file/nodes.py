@@ -11,11 +11,10 @@ from collections.abc import Iterable, Mapping
 from hashlib import sha256
 from io import BytesIO
 from mimetypes import guess_type
-from typing import Annotated, final, override
+from typing import Annotated, Any, final, override
 
 from grafy_core.artifacts import (
     ArtifactObject,
-    ArtifactRef,
     ArtifactTypeKey,
     ArtifactTypeSpec,
     JsonObject,
@@ -23,15 +22,14 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.file_artifacts import load_file_artifact
+from grafy_core.documents import BlobFile
 from grafy_core.file_contracts import BLOB_FILE
 from grafy_core.nodes import (
-    ArtifactTypeVariable,
-    InPort,
+    Binds,
     Node,
     NodeContractResolutionError,
     NodeExecutionContext,
-    OutPort,
+    Ref,
     UserFacingNodeError,
 )
 from grafy_core.ports.artifacts import UnitOfWorkPort
@@ -42,6 +40,7 @@ from grafy_workbench.file.declaration import FILES
 
 
 FORMAT_ARTIFACT_TYPE_VARIABLE = "format"
+_HANDLE_READ_LIMIT = 256 * 1024 * 1024
 
 
 def _is_claimed_format(key: ArtifactTypeKey) -> bool:
@@ -52,8 +51,7 @@ def _is_claimed_format(key: ArtifactTypeKey) -> bool:
 
 class InterpretFileInput(NodeInput):
     file: Annotated[
-        ArtifactRef,
-        InPort(BLOB_FILE),
+        BlobFile,
         Field(
             title="File",
             description="The file whose type is still unrecognized.",
@@ -63,8 +61,8 @@ class InterpretFileInput(NodeInput):
 
 class InterpretFileOutput(NodeOutput):
     file: Annotated[
-        ArtifactRef,
-        OutPort(ArtifactTypeVariable(FORMAT_ARTIFACT_TYPE_VARIABLE)),
+        Ref[Any],
+        Binds(FORMAT_ARTIFACT_TYPE_VARIABLE),
         Field(
             title="File",
             description="The same bytes, labeled as the type you chose.",
@@ -153,14 +151,9 @@ class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput
             self._artifact_types,
         )
         source = inputs.file
-        file = await load_file_artifact(
-            storage=self._storage,
-            uow=self._uow,
-            workspace_id=context.workspace_id,
-            ref=source,
-        )
-        if not spec.confirmation_rule.confirms(file.content):
-            label = file.original_filename or f"artifact {source.artifact_id}"
+        content = await source.read(max_bytes=_HANDLE_READ_LIMIT)
+        if not spec.confirmation_rule.confirms(content):
+            label = source.filename or "this file"
             expected = spec.key.id.removeprefix("file.").upper()
             raise UserFacingNodeError(
                 f"{label} does not look like a {expected} file. Choose another "
@@ -168,15 +161,15 @@ class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput
             )
 
         key = spec.key
-        content_hash = sha256(file.content).hexdigest()
+        content_hash = sha256(content).hexdigest()
         suffix = f".{spec.extensions[0]}"
         content_type = guess_type(f"file{suffix}")[0] or "application/octet-stream"
         storage_metadata: FileMetadata = {
             "artifact_kind": key.id,
             "sha256": content_hash,
         }
-        if file.original_filename is not None:
-            storage_metadata["original_filename"] = file.original_filename
+        if source.filename is not None:
+            storage_metadata["original_filename"] = source.filename
         if context.node_id is not None:
             storage_metadata["job_id"] = context.node_id
         storage_path = (
@@ -188,7 +181,7 @@ class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput
                 SaveFileCommand(
                     bucket=self._bucket,
                     path=storage_path,
-                    stream=BytesIO(file.content),
+                    stream=BytesIO(content),
                     content_type=content_type,
                     metadata=storage_metadata,
                     allow_overwrite=True,
@@ -205,13 +198,12 @@ class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput
             "content_hash": content_hash,
             "confirmed_with": spec.confirmation_rule.rule,
             "interpreted_from": {
-                "artifact_id": str(source.artifact_id),
-                "artifact_type": source.artifact_type,
-                "schema_version": source.schema_version,
+                "artifact_type": BLOB_FILE.key.id,
+                "schema_version": BLOB_FILE.key.schema_version,
             },
         }
-        if file.original_filename is not None:
-            metadata["original_filename"] = file.original_filename
+        if source.filename is not None:
+            metadata["original_filename"] = source.filename
         artifact = ArtifactObject(
             workspace_id=context.workspace_id,
             artifact_type=key.id,
@@ -227,7 +219,7 @@ class InterpretFileNode(Node[NodeConfig, InterpretFileInput, InterpretFileOutput
         async with self._uow as uow:
             await uow.artifacts.add(artifact)
             await uow.commit()
-        return InterpretFileOutput(file=artifact.ref())
+        return InterpretFileOutput(file=Ref[Any].model_validate(artifact.ref()))
 
 
 __all__ = [
