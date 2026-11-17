@@ -114,6 +114,7 @@ import {
   resolvedNodeWidth,
 } from "../canvas/node-layout";
 import { useNodeSecrets } from "./useNodeSecrets";
+import { useGraphAutosave } from "./useGraphAutosave";
 import {
   useSavedGraphLifecycle,
   type GraphRoomPersistenceAdapter,
@@ -156,6 +157,12 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
 } from "../canvas/WorkflowCanvas";
+import {
+  draggedNodeProps,
+  holdsDraggedIds,
+  moveDraggedNodes,
+  type FlowStore,
+} from "../canvas/flow-drag-store";
 import {
   addNodeCommand,
   addEdgeCommand,
@@ -486,6 +493,47 @@ function WorkbenchBody({
   const [transientNodePositions, setTransientNodePositions] = React.useState<
     Record<string, { x: number; y: number }>
   >({});
+  /**
+   * The canvas nodes the hand holds, exactly as the canvas drew them when the
+   * gesture closed.
+   *
+   * A pointer sample arrives far faster than a frame and changes nothing the
+   * document holds, so it cannot pay for a render that re-derives every node and
+   * card on the canvas. The sample writes React Flow's own store instead (see
+   * `moveDraggedNodes`), which moves the held node and redraws the wires on it
+   * without this component rendering at all — the position a gesture is drawing
+   * lives in the canvas, and the document only learns it when the hand opens.
+   *
+   * What is still state is the handful of node objects the canvas was already
+   * showing for the held ids, because the store keeps an incoming position only
+   * while the prop object it arrives with is the one it already holds. Two
+   * renders a gesture, the hand closing and the hand opening, and any render in
+   * between that returns these objects untouched draws the pointer's position
+   * instead of snapping the node back to the document. A held node's own data is
+   * therefore a snapshot until the drop.
+   *
+   * `transientNodePositions` above stays the path for a gesture with no canvas to
+   * write to, where the position has to travel through the render. The ref beside
+   * it answers the next pointer sample, which must not render to find out what is
+   * already held.
+   */
+  const [heldCanvasNodes, setHeldCanvasNodes] = React.useState<Record<
+    string,
+    CanvasNode
+  > | null>(null);
+  const heldCanvasNodesRef = React.useRef<Record<string, CanvasNode> | null>(
+    null,
+  );
+  const flowStoreRef = React.useRef<FlowStore | null>(null);
+  /**
+   * True while a pointer gesture owns the canvas: a node, card, or annotation
+   * drag, or a connection being drawn. A gesture in flight changes no document —
+   * its position is transient until the hand opens — so an autosave armed by the
+   * previous edit would otherwise fire under the pointer and settle the canvas
+   * mid-drag. Persistence waits for the gesture, and the position the drop
+   * commits re-arms it.
+   */
+  const [pointerGestureActive, setPointerGestureActive] = React.useState(false);
   // React Flow keeps nodes at visibility:hidden until measured width/height are
   // present on the controlled node objects. Authored-document hydration never
   // carries those fields, so dimension changes must be stored separately and
@@ -690,6 +738,7 @@ function WorkbenchBody({
     dispatchAuthoringState,
     localAuthoringBlockedMessageRef,
     localAuthoringEnabledRef,
+    nodeRegistry: registry ?? null,
     roomCommandSyncRef,
     setArtifactViewers,
     setPendingConnectionRoute,
@@ -917,6 +966,8 @@ function WorkbenchBody({
       setSelectedEdgeIdSet(new Set());
       setPositionOverrides({});
       setTransientNodePositions({});
+      heldCanvasNodesRef.current = null;
+      setHeldCanvasNodes(null);
       setNodeMeasurements({});
     },
     [dispatchAuthoringState],
@@ -990,6 +1041,7 @@ function WorkbenchBody({
     activeGraph,
     graphName,
     setGraphName,
+    currentFingerprint,
     isDirty,
     saving,
     openingGraphId,
@@ -1241,13 +1293,26 @@ function WorkbenchBody({
   // Adjusting state while rendering is React's way to derive it from another
   // hook's result without a frame that paints the old catalog.
   const projectGraphs = projectRoom.head?.document.graphs ?? NO_GRAPHS;
-  const projectCatalogKey = JSON.stringify([
-    openGraphId,
-    projectGraphs.map((graph) => [graph.id, graph.name, graphInterface(graph)]),
-    openGraphId === null
-      ? []
-      : callableGraphs(projectGraphs, openGraphId).map((graph) => graph.id),
-  ]);
+  // This projection walks every Graph of the Project — an interface port per
+  // boundary node, and a cycle check that rebuilds the whole call graph per
+  // candidate — and a pointer gesture changes none of that. Written in the render
+  // body it ran on every render, so dragging a node paid for it at pointer-sample
+  // rate; it is now remembered until the Project head moves.
+  const projectCatalogKey = React.useMemo(
+    () =>
+      JSON.stringify([
+        openGraphId,
+        projectGraphs.map((graph) => [
+          graph.id,
+          graph.name,
+          graphInterface(graph),
+        ]),
+        openGraphId === null
+          ? []
+          : callableGraphs(projectGraphs, openGraphId).map((graph) => graph.id),
+      ]),
+    [openGraphId, projectGraphs],
+  );
   if (projectCatalog.key !== projectCatalogKey) {
     setProjectCatalog({
       key: projectCatalogKey,
@@ -1660,6 +1725,17 @@ function WorkbenchBody({
     (projectId
       ? canEditProject && projectEditsTrusted && projectRoom.canSubmitCommands
       : canCreateProject);
+  useGraphAutosave({
+    enabled: localAuthoringEnabled && !pointerGestureActive,
+    dirty: isDirty,
+    // The hook only compares this for equality, so it is built by hand: a
+    // fingerprint is the whole document as JSON, and JSON.stringify would
+    // re-escape all of it on every render of a drag.
+    fingerprint: `${projectId ?? ""}\u0000${lifecycleOpenGraphId ?? ""}\u0000${currentFingerprint}`,
+    // Background: write what the canvas holds without rebuilding it, so the
+    // person keeps their selection, their node sizes, and their next gesture.
+    save: () => saveCurrentGraph(undefined, { background: true }),
+  });
   const localAuthoringBlockedMessage = !(projectId
     ? canEditProject
     : canCreateProject)
@@ -1782,31 +1858,50 @@ function WorkbenchBody({
     localDraggingNodeIdsRef,
   );
   const selectedNodeCount = selectedNodeIds.length;
-  const selectedNodesAreRunnable = nodes.every(
-    (node) =>
-      !node.selected ||
-      (workflowNodeIsSupported(node.data) &&
-        validateConfig(node.data.spec.config_schema, node.data.config)
-          .length === 0),
+  // What the selection permits is a walk over the graph, and a drag re-renders
+  // this body sixty times a second without moving the selection. Each derivation
+  // below is cached against what it actually reads, so a gesture costs a
+  // dependency check instead of a validation pass over every node.
+  const selectedNodesAreRunnable = React.useMemo(
+    () =>
+      nodes.every(
+        (node) =>
+          !node.selected ||
+          (workflowNodeIsSupported(node.data) &&
+            validateConfig(node.data.spec.config_schema, node.data.config)
+              .length === 0),
+      ),
+    [nodes],
   );
   const nodeTitles = React.useMemo(
     () =>
       Object.fromEntries(nodes.map((node) => [node.id, node.data.spec.title])),
     [nodes],
   );
-  const selectedWithDependencyIds = selectedNodeAndAncestorIds(nodes, edges);
-  const selectedWithDependenciesCount = selectedWithDependencyIds.size;
-  const selectedWithDependenciesAreRunnable = nodes.every(
-    (node) =>
-      !selectedWithDependencyIds.has(node.id) ||
-      (workflowNodeIsSupported(node.data) &&
-        validateConfig(node.data.spec.config_schema, node.data.config)
-          .length === 0),
+  const selectedWithDependencyIds = React.useMemo(
+    () => selectedNodeAndAncestorIds(nodes, edges),
+    [nodes, edges],
   );
-  const selectedWorkflowCount = nodes.filter((node) => node.selected).length;
-  const selectedViewerCount = artifactViewers.nodes.filter(
-    (node) => node.selected,
-  ).length;
+  const selectedWithDependenciesCount = selectedWithDependencyIds.size;
+  const selectedWithDependenciesAreRunnable = React.useMemo(
+    () =>
+      nodes.every(
+        (node) =>
+          !selectedWithDependencyIds.has(node.id) ||
+          (workflowNodeIsSupported(node.data) &&
+            validateConfig(node.data.spec.config_schema, node.data.config)
+              .length === 0),
+      ),
+    [nodes, selectedWithDependencyIds],
+  );
+  const selectedWorkflowCount = React.useMemo(
+    () => nodes.filter((node) => node.selected).length,
+    [nodes],
+  );
+  const selectedViewerCount = React.useMemo(
+    () => artifactViewers.nodes.filter((node) => node.selected).length,
+    [artifactViewers.nodes],
+  );
   const selectedArtifactCards = React.useMemo(
     () =>
       artifactViewers.nodes.flatMap((node) => {
@@ -1830,28 +1925,47 @@ function WorkbenchBody({
       ),
     [selectedArtifactCards],
   );
-  const selectedViewerCards = artifactViewers.nodes.filter(
-    (node) => node.selected,
+  const selectedViewerCards = React.useMemo(
+    () => artifactViewers.nodes.filter((node) => node.selected),
+    [artifactViewers.nodes],
   );
-  const collectCardValues = Object.fromEntries(
-    selectedArtifactCards.map(({ node, value }) => [node.id, value]),
+  const collectCardValues = React.useMemo(
+    () =>
+      Object.fromEntries(
+        selectedArtifactCards.map(({ node, value }) => [node.id, value]),
+      ),
+    [selectedArtifactCards],
   );
-  const collectsIntoSequence = selectionCollectsIntoSequence(
-    selectedArtifactCards.map(({ value }) => value),
+  const collectsIntoSequence = React.useMemo(
+    () =>
+      selectionCollectsIntoSequence(
+        selectedArtifactCards.map(({ value }) => value),
+      ),
+    [selectedArtifactCards],
   );
-  const groupingDisabledReason =
-    selectedNodeCount !== selectedViewerCards.length
-      ? "Select only artifacts to collect."
-      : selectedViewerCards.length > 0 &&
-          selectedArtifactCards.length !== selectedViewerCards.length
-        ? "Run the producing node first, so its artifact is known."
-        : artifactGroupingDisabledReason({
-            cards: selectedArtifactCards.map(({ node }) => node),
-            state: artifactViewers,
-            origins: authoredDocument.origins,
-            values: collectCardValues,
-            allowProducerFeeds: true,
-          });
+  const groupingDisabledReason = React.useMemo(
+    () =>
+      selectedNodeCount !== selectedViewerCards.length
+        ? "Select only artifacts to collect."
+        : selectedViewerCards.length > 0 &&
+            selectedArtifactCards.length !== selectedViewerCards.length
+          ? "Run the producing node first, so its artifact is known."
+          : artifactGroupingDisabledReason({
+              cards: selectedArtifactCards.map(({ node }) => node),
+              state: artifactViewers,
+              origins: authoredDocument.origins,
+              values: collectCardValues,
+              allowProducerFeeds: true,
+            }),
+    [
+      artifactViewers,
+      authoredDocument.origins,
+      collectCardValues,
+      selectedArtifactCards,
+      selectedNodeCount,
+      selectedViewerCards,
+    ],
+  );
   // With the collection operator available, "Collect" makes a collection: it
   // can gather Library cards and cards on a node's output alike.
   const collectSpec = React.useMemo(
@@ -2023,27 +2137,35 @@ function WorkbenchBody({
           positions: draggingPositions,
           targetIds,
         };
-        const nextTransientPositions = Object.fromEntries(
-          draggingPositions.map((position) => [
-            position.node_id,
-            { x: position.x, y: position.y },
-          ]),
-        );
-        setTransientNodePositions((current) => {
-          const currentIds = Object.keys(current);
-          if (
-            currentIds.length === targetIds.length &&
-            targetIds.every(
-              (id) =>
-                current[id]?.x === nextTransientPositions[id]?.x &&
-                current[id]?.y === nextTransientPositions[id]?.y,
-            )
-          ) {
-            return current;
+        if (moveDraggedNodes(flowStoreRef.current, draggingPositions)) {
+          if (!holdsDraggedIds(heldCanvasNodesRef.current, targetIds)) {
+            // The objects the canvas drew for these ids when the hand closed. Every
+            // render until the hand opens hands them back untouched, which is what
+            // lets the position just written to the store survive a prop sync.
+            const held = draggedNodeProps<CanvasNode>(
+              flowStoreRef.current,
+              targetIds,
+            );
+            heldCanvasNodesRef.current = held;
+            setHeldCanvasNodes(held);
+            setTransientNodePositions((current) =>
+              Object.keys(current).length ? {} : current,
+            );
           }
-          return nextTransientPositions;
-        });
+        } else {
+          // No canvas to write to: carry the gesture through this render instead,
+          // which is what it cost before the canvas could be moved directly.
+          setTransientNodePositions(
+            Object.fromEntries(
+              draggingPositions.map((position) => [
+                position.node_id,
+                { x: position.x, y: position.y },
+              ]),
+            ),
+          );
+        }
         schedulePresenceSnapshot();
+        setPointerGestureActive(true);
         if (draggingPositions.length === changes.length) return;
       }
       const snapNodeChangePosition = <
@@ -2343,8 +2465,14 @@ function WorkbenchBody({
           (change) => change.type === "position" && change.dragging === false,
         );
       if (dragEnded) {
+        setPointerGestureActive(false);
         localDraggingNodeIdsRef.current = new Set();
         presenceDragRef.current = null;
+        // Released before the render the commit causes, so the nodes this gesture
+        // held are drawn from the position the document now carries — which is
+        // also how a drop the document refused puts its node back.
+        heldCanvasNodesRef.current = null;
+        setHeldCanvasNodes((current) => (current ? null : current));
         setTransientNodePositions((current) =>
           Object.keys(current).length ? {} : current,
         );
@@ -3399,6 +3527,7 @@ function WorkbenchBody({
 
   const onConnectEnd = React.useCallback<OnConnectEnd>(
     (event, connectionState) => {
+      setPointerGestureActive(false);
       setContextualDiscovery(null);
       if (!registry || !canEditProject || running) return;
       if (!("fromHandle" in connectionState) || !connectionState.fromHandle) {
@@ -3729,6 +3858,24 @@ function WorkbenchBody({
         return;
       }
 
+      if (
+        !isConnectionAccepted(
+          edgeConnection,
+          [...nodesRef.current, { id, data }],
+          edgesRef.current,
+          registry.artifact_types,
+          registry.artifact_conversions,
+          null,
+          authoredDocumentRef.current.origins,
+        )
+      ) {
+        setContextualDiscovery(null);
+        setRunError(
+          "This input is already connected or no longer accepts this connection.",
+        );
+        return;
+      }
+
       const edgeCommand = addEdgeCommand(
         edgeConnection,
         {
@@ -3761,6 +3908,7 @@ function WorkbenchBody({
       newCatalogNodeData,
       registry,
       running,
+      setRunError,
     ],
   );
 
@@ -3994,121 +4142,123 @@ function WorkbenchBody({
     running,
   ]);
 
-  const canvasNodes = React.useMemo(
-    () =>
-      nodes.map((node) => {
-        const savedNode = activeGraph?.nodes.find(
-          (candidate) => candidate.id === node.id,
-        );
-        return {
-          ...node,
-          data: {
-            ...attachNodeCallbacks(node.data),
-            onRunNode:
-              canStartRun &&
-              projectEditsTrusted &&
-              !running &&
-              workflowNodeIsSupported(node.data) &&
-              (node.selected ||
-                !edges.some(
-                  (edge) =>
-                    edge.source === node.id && edge.data?.enabled !== false,
-                ))
-                ? requestNodeRun
-                : undefined,
-            onRevealNodeOutput: localAuthoringEnabled
-              ? revealNodeOutput
+  const canvasNodes = React.useMemo(() => {
+    // Which nodes an output card reads. Asked per node against the edge list, one
+    // rebuild costs a scan of every card edge for every node.
+    const cardSourceNodeIds = new Set(
+      activeArtifactViewers.edges.map((edge) => edge.source),
+    );
+    return nodes.map((node) => {
+      const savedNode = activeGraph?.nodes.find(
+        (candidate) => candidate.id === node.id,
+      );
+      return {
+        ...node,
+        data: {
+          ...attachNodeCallbacks(node.data),
+          onRunNode:
+            canStartRun &&
+            projectEditsTrusted &&
+            !running &&
+            workflowNodeIsSupported(node.data) &&
+            (node.selected ||
+              !edges.some(
+                (edge) =>
+                  edge.source === node.id && edge.data?.enabled !== false,
+              ))
+              ? requestNodeRun
               : undefined,
-            hasFollowingOutputCard: activeArtifactViewers.edges.some(
-              (edge) => edge.source === node.id,
-            ),
-            historyContext: {
-              workspaceId,
-              graphId: openGraphId,
-              isDirty,
-            },
-            secretStatuses: nodeSecretStatuses[node.id] ?? {},
-            secretInputReadiness: Object.fromEntries(
-              (workflowNodeIsSupported(node.data)
-                ? nodeSecretInputs(node.data.spec)
-                : []
-              ).map((input) => [
-                input.name,
-                nodeSecretBindingReady(
-                  input,
-                  {
-                    id: node.id,
-                    operator_id: node.data.spec.operator_id,
-                    operator_version: node.data.spec.operator_version,
-                    config: node.data.config,
-                  },
-                  savedNode,
-                ),
-              ]),
-            ),
-            secretInputScope: `${openGraphId ?? "unsaved"}:${activeGraph?.revision ?? "none"}`,
-            // Freshness of this node's own instance, looked up by the instance
-            // the card is drawing. A Run computed it; the Run is not what owns it.
-            instanceState: nodeInstanceStates[node.id] ?? null,
-            onApplyNodeSecret: applyConfiguredNodeSecret,
-            onRemoveNodeSecret: removeConfiguredNodeSecret,
-            mappedInputPorts: mappedInputPortsForNode(
-              node.id,
-              edges,
-              false,
-              authoredDocument.origins,
-            ),
-            inputPlugBindings: inputPlugBindingsForNode(
-              node,
-              nodes,
-              edges,
-              registry?.artifact_conversions ?? [],
-              registry?.artifact_types ?? [],
-            ),
-            ...(isCollectionNode(node)
-              ? {
-                  collectionMembers: collectionMembers(
-                    node,
-                    nodes,
-                    edges,
-                    authoredDocument.origins,
-                  ),
-                  ungroupDisabledReason: ungroupCollectionDisabledReason(
-                    node.id,
-                    edges,
-                  ),
-                  onUngroupCollection: localAuthoringEnabled
-                    ? ungroupCollection
-                    : undefined,
-                }
-              : {}),
+          onRevealNodeOutput: localAuthoringEnabled
+            ? revealNodeOutput
+            : undefined,
+          hasFollowingOutputCard: cardSourceNodeIds.has(node.id),
+          historyContext: {
+            workspaceId,
+            graphId: openGraphId,
+            isDirty,
           },
-        };
-      }),
-    [
-      activeGraph,
-      activeArtifactViewers.edges,
-      authoredDocument.origins,
-      canStartRun,
-      projectEditsTrusted,
-      requestNodeRun,
-      revealNodeOutput,
-      running,
-      localAuthoringEnabled,
-      ungroupCollection,
-      applyConfiguredNodeSecret,
-      attachNodeCallbacks,
-      edges,
-      isDirty,
-      nodeSecretStatuses,
-      nodes,
-      nodeInstanceStates,
-      openGraphId,
-      registry,
-      removeConfiguredNodeSecret,
-      workspaceId,
-    ],
-  );
+          secretStatuses: nodeSecretStatuses[node.id] ?? {},
+          secretInputReadiness: Object.fromEntries(
+            (workflowNodeIsSupported(node.data)
+              ? nodeSecretInputs(node.data.spec)
+              : []
+            ).map((input) => [
+              input.name,
+              nodeSecretBindingReady(
+                input,
+                {
+                  id: node.id,
+                  operator_id: node.data.spec.operator_id,
+                  operator_version: node.data.spec.operator_version,
+                  config: node.data.config,
+                },
+                savedNode,
+              ),
+            ]),
+          ),
+          secretInputScope: `${openGraphId ?? "unsaved"}:${activeGraph?.revision ?? "none"}`,
+          // Freshness of this node's own instance, looked up by the instance
+          // the card is drawing. A Run computed it; the Run is not what owns it.
+          instanceState: nodeInstanceStates[node.id] ?? null,
+          onApplyNodeSecret: applyConfiguredNodeSecret,
+          onRemoveNodeSecret: removeConfiguredNodeSecret,
+          mappedInputPorts: mappedInputPortsForNode(
+            node.id,
+            edges,
+            false,
+            authoredDocument.origins,
+          ),
+          inputPlugBindings: inputPlugBindingsForNode(
+            node,
+            nodes,
+            edges,
+            registry?.artifact_conversions ?? [],
+            registry?.artifact_types ?? [],
+          ),
+          ...(isCollectionNode(node)
+            ? {
+                collectionMembers: collectionMembers(
+                  node,
+                  nodes,
+                  edges,
+                  authoredDocument.origins,
+                ),
+                ungroupDisabledReason: ungroupCollectionDisabledReason(
+                  node.id,
+                  edges,
+                ),
+                onUngroupCollection: localAuthoringEnabled
+                  ? ungroupCollection
+                  : undefined,
+              }
+            : {}),
+        },
+      };
+    });
+  }, [
+    activeArtifactViewers.edges,
+    activeGraph,
+    applyConfiguredNodeSecret,
+    attachNodeCallbacks,
+    authoredDocument.origins,
+    canStartRun,
+    edges,
+    isDirty,
+    localAuthoringEnabled,
+    nodeInstanceStates,
+    nodeSecretStatuses,
+    nodes,
+    openGraphId,
+    projectEditsTrusted,
+    registry?.artifact_conversions,
+    registry?.artifact_types,
+    removeConfiguredNodeSecret,
+    requestNodeRun,
+    revealNodeOutput,
+    running,
+    ungroupCollection,
+    workspaceId,
+  ]);
 
   const canvasEdges = React.useMemo(
     () =>
@@ -4492,6 +4642,27 @@ function WorkbenchBody({
       applyAuthoringCommands,
     ],
   );
+  // Which node each remote person has selected, resolved once per presence
+  // update. Asked per node inside the canvas projection below, it walked every
+  // participant's selection list for every node on every pointer sample.
+  const remoteSelectionColors = React.useMemo(() => {
+    const colors: Record<string, string> = {};
+    for (const participant of projectRoom.participants) {
+      if (participant.project_room_session_id === projectRoom.localSessionId) {
+        continue;
+      }
+      for (const nodeId of participant.selected_node_ids) {
+        if (colors[nodeId] !== undefined) continue;
+        const color = remoteSelectionColor(
+          projectRoom.participants,
+          projectRoom.localSessionId,
+          nodeId,
+        );
+        if (color !== null) colors[nodeId] = color;
+      }
+    }
+    return colors;
+  }, [projectRoom.localSessionId, projectRoom.participants]);
   const allCanvasNodes = React.useMemo<CanvasNode[]>(() => {
     const combined = [
       ...agentCanvasNodes,
@@ -4505,6 +4676,11 @@ function WorkbenchBody({
       bypass: bypassSnap,
     });
     return combined.map((node) => {
+      // While the hand holds this node, its object is handed back untouched: the
+      // position being drawn is in the canvas's store, and the store keeps it only
+      // while this prop object is the one it already has. See `draggedNodeProps`.
+      const held = heldCanvasNodes?.[node.id];
+      if (held) return held;
       const transientPosition = transientNodePositions[node.id];
       let positioned = transientPosition
         ? {
@@ -4540,11 +4716,7 @@ function WorkbenchBody({
           positioned = { ...positioned, position: snapped };
         }
       }
-      const remoteColor = remoteSelectionColor(
-        projectRoom.participants,
-        projectRoom.localSessionId,
-        node.id,
-      );
+      const remoteColor = remoteSelectionColors[node.id] ?? null;
       if ((positioned.data.remoteSelectionColor ?? null) === remoteColor) {
         return positioned;
       }
@@ -4563,9 +4735,9 @@ function WorkbenchBody({
     bypassSnap,
     canvasGridSettings,
     canvasNodes,
-    projectRoom.localSessionId,
-    projectRoom.participants,
+    remoteSelectionColors,
     remoteDragPreviews,
+    heldCanvasNodes,
     transientNodePositions,
   ]);
   const allCanvasEdges = React.useMemo<CanvasEdge[]>(
@@ -5158,6 +5330,7 @@ function WorkbenchBody({
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onConnectStart={() => setPointerGestureActive(true)}
             onConnectEnd={onConnectEnd}
             isValidConnection={isValidConnection}
             editable={localAuthoringEnabled}
@@ -5177,6 +5350,7 @@ function WorkbenchBody({
             onlyRenderVisibleElements={
               canvasGridSettings.onlyRenderVisibleElements
             }
+            flowStoreRef={flowStoreRef}
           >
             <PresenceOverlay
               participants={projectRoom.participants}
