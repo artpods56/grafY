@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import type {
   CollaborativeHead,
@@ -18,6 +19,7 @@ import { renderHook } from "./test/renderHook";
 import { useGraphAutosave } from "./useGraphAutosave";
 import {
   useSavedGraphLifecycle,
+  type GraphRoomPersistenceAdapter,
   type GraphRoomPersistenceResult,
 } from "./useSavedGraphLifecycle";
 
@@ -190,6 +192,21 @@ function headWithDocument(
  * one head, checkpointed at the sequence the write landed at, holding that
  * draft's document.
  */
+/**
+ * A save whose completion the test decides, typed so the draft it was handed can
+ * be read back out of the mock rather than assumed.
+ */
+type DraftPersist = Mock<GraphRoomPersistenceAdapter["persistDocument"]>;
+
+function submittedDraft(
+  calls: readonly (readonly unknown[])[],
+  index: number,
+): GraphDraft {
+  const draft = calls[index]?.[0] as GraphDraft | undefined;
+  if (!draft) throw new Error(`write ${index + 1} submitted no draft`);
+  return draft;
+}
+
 function roomEcho(
   draft: GraphDraft,
   sequence: number,
@@ -450,7 +467,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
   it("leaves the canvas alone when a background save wrote what it already shows", async () => {
     const graph = savedGraph(GRAPH_A_ID, "Autosave me", 2);
     const write = deferred<GraphRoomPersistenceResult>();
-    const persistDocument = vi.fn(() => write.promise);
+    const persistDocument: DraftPersist = vi.fn(() => write.promise);
     stubOpen(graph);
     const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
     options.roomPersistence = { canPersist: true, persistDocument };
@@ -469,8 +486,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
     const replacements = callbacks.replaceDocument.mock.calls.length;
     const presentationReplacements =
       callbacks.replacePresentation.mock.calls.length;
-    const secretRefreshes =
-      callbacks.refreshNodeSecretStatuses.mock.calls.length;
+    const secretRefreshes = vi.mocked(callbacks.refreshNodeSecretStatuses).mock
+      .calls.length;
 
     let inFlight!: Promise<void>;
     await React.act(async () => {
@@ -486,7 +503,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(hook.result.current.persistenceOperationBusy).toBe(false);
 
     await React.act(async () => {
-      write.resolve(roomEcho(persistDocument.mock.calls[0][0], 3));
+      write.resolve(roomEcho(submittedDraft(persistDocument.mock.calls, 0), 3));
       await inFlight;
     });
 
@@ -587,7 +604,9 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(persistDocument).toHaveBeenCalledOnce();
 
     await React.act(async () => {
-      firstWrite.resolve(roomEcho(persistDocument.mock.calls[0][0], 3));
+      firstWrite.resolve(
+        roomEcho(submittedDraft(persistDocument.mock.calls, 0), 3),
+      );
       await first;
     });
     await React.act(async () => {
@@ -596,14 +615,16 @@ describe("useSavedGraphLifecycle document ownership", () => {
 
     // Dropping the queued write would lose the only copy of the newer edit.
     expect(persistDocument).toHaveBeenCalledTimes(2);
-    expect(persistDocument.mock.calls[1][0].name).toBe("Queue last");
+    expect(submittedDraft(persistDocument.mock.calls, 1).name).toBe(
+      "Queue last",
+    );
     expect(hook.result.current.isDirty).toBe(false);
   });
 
   it("still holds the canvas busy for the Save a person asked for", async () => {
     const graph = savedGraph(GRAPH_A_ID, "Explicit", 2);
     const write = deferred<GraphRoomPersistenceResult>();
-    const persistDocument = vi.fn(() => write.promise);
+    const persistDocument: DraftPersist = vi.fn(() => write.promise);
     stubOpen(graph);
     const { options } = lifecycleOptions(GRAPH_A_ID);
     options.roomPersistence = { canPersist: true, persistDocument };
@@ -618,7 +639,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(hook.result.current.persistenceOperationBusy).toBe(true);
 
     await React.act(async () => {
-      write.resolve(roomEcho(persistDocument.mock.calls[0][0], 3));
+      write.resolve(roomEcho(submittedDraft(persistDocument.mock.calls, 0), 3));
       await inFlight;
     });
     expect(hook.result.current.persistenceOperationBusy).toBe(false);
