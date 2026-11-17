@@ -93,7 +93,8 @@ jobs:
           print(capabilities.model_dump_json())
           PY
       - name: Run backend tests
-        run: uv run pytest
+        # loadscope keeps each module on one worker. Local pytest stays serial.
+        run: uv run pytest -n auto --dist loadscope
       - name: Verify presigned uploads through the gateway
         run: |
           stack=(docker compose --file infra/docker/compose.storage-gateway-test.yaml)
