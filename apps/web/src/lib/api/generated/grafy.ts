@@ -3326,6 +3326,11 @@ export interface components {
              */
             readonly direction: "input" | "output";
             /**
+             * Features
+             * @description Feature strings a service output's implementation declares, so the workbench can mute ports a connected provider does not produce.
+             */
+            readonly features?: readonly string[];
+            /**
              * Instance Plugs
              * @default false
              */

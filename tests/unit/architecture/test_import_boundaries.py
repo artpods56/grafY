@@ -24,6 +24,7 @@ WORKBENCH_FAMILIES = (
     "text",
     "schema",
     "table",
+    "ocr",
 )
 SYSTEM_PLUGIN_FAMILIES = PUBLISHED_PLUGIN_FAMILIES
 SYSTEM_PLUGIN_IMPORTS = tuple(
@@ -310,7 +311,8 @@ def test_converged_operator_implementations_are_owned_by_the_application() -> No
 
     for family in WORKBENCH_FAMILIES:
         assert (REPO_ROOT / "libs/workbench/src/grafy_workbench" / family).is_dir()
-        if family not in {"image", "table"}:
+        # image/table stay dual-homed; ocr's old plugin tree is only local leftovers.
+        if family not in {"image", "table", "ocr"}:
             assert not (REPO_ROOT / "plugins" / family).exists()
 
 

@@ -172,6 +172,13 @@ class NodeExecutionContext:
         repr=False,
         compare=False,
     )
+    # Notes a node attaches to its own computation (for example unsupported
+    # optional outputs). Merged into the metadata written with the result.
+    output_metadata: dict[str, object] = dataclass_field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "call_path", tuple(self.call_path))

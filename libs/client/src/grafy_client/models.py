@@ -37,6 +37,7 @@ class CatalogPort(ClientModel):
     artifact_type_variable: str | None = None
     also_accepts: tuple[ArtifactTypeKey, ...] = ()
     service_contracts: tuple[ServiceContractKey, ...] = ()
+    features: tuple[str, ...] = ()
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...]
     instance_plugs: bool = False

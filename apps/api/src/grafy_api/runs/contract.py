@@ -208,6 +208,9 @@ class NodeContractBinder:
         instance: ExpandedInstance,
         upstream: Mapping[InstanceKey, Mapping[str, ArtifactOutputValue]],
         service_sources: Mapping[InstanceKey, ExpandedInstance] | None = None,
+        unsupported_outputs: (
+            Mapping[InstanceKey, Mapping[str, str]] | None
+        ) = None,
     ) -> BoundNode:
         graph_node = instance.node
         node, registration = self.build_node(graph_node)
@@ -244,7 +247,12 @@ class NodeContractBinder:
                 if connection.source not in providers
             ),
         )
-        incoming = self._incoming(artifact_instance, upstream)
+        incoming = self._incoming(
+            artifact_instance,
+            upstream,
+            {} if unsupported_outputs is None else unsupported_outputs,
+            resolved_contracts.input_contract.ports,
+        )
         invocation = _derive_invocation(view, graph_node.id, incoming)
         self._validate_input_plugs(node, graph_node, incoming)
 
@@ -468,6 +476,8 @@ class NodeContractBinder:
         self,
         instance: ExpandedInstance,
         upstream: Mapping[InstanceKey, Mapping[str, ArtifactOutputValue]],
+        unsupported_outputs: Mapping[InstanceKey, Mapping[str, str]],
+        input_ports: Mapping[str, InputPortSpec],
     ) -> tuple[_Incoming, ...]:
         """Read every connection's upstream result and every origin's value.
 
@@ -481,6 +491,19 @@ class NodeContractBinder:
             source = _source_outputs(instance, connection.source, upstream)
             value = source.get(edge.from_port)
             if value is None:
+                provider = unsupported_outputs.get(connection.source, {}).get(
+                    edge.from_port
+                )
+                if provider is not None:
+                    port = input_ports.get(edge.to_port)
+                    label = (
+                        (port.title or "").strip()
+                        if port is not None
+                        else ""
+                    ) or edge.to_port.replace("_", " ")
+                    raise NodeComputationError(
+                        f"{label} are not produced by {provider}"
+                    )
                 raise NodeComputationError(
                     f"Node {instance.key.node_id!r} input {edge.to_port!r} reads "
                     f"{edge.from_port!r} of {_describe(connection.source)}, whose "

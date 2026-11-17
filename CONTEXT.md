@@ -559,6 +559,25 @@ consumer's runner builds the connected provider in-process. An Agent tool never
 offers a service input to the model.
 _Avoid_: OutPort/InPort for services
 
+### Provider node
+
+A node whose only outputs are service ports. It has no artifact inputs. Its
+config and node-scoped secrets shape the live object the consumer builds. The
+planner never schedules it; changing its config or key still enters the
+consumer's fingerprint through `upstream_fingerprints`.
+_Avoid_: capability node, OCR vendor node as a synonym for every provider
+
+### OCR node
+
+The app-owned builtin that takes a `RasterImage | PdfFile` document and an
+`OcrReader` service input, and produces transcription markdown plus optional
+blocks and regions. It names no vendor. An optional output the connected
+provider does not declare is omitted from the stored result and recorded as
+`unsupported_outputs`; a downstream node fed by that port fails naming the
+provider, not with an empty artifact.
+_Avoid_: Mistral node / Reducto node (those are provider nodes or the legacy
+read-with-vendor operators)
+
 ### Port
 
 A named node input or output that declares one or more accepted concrete

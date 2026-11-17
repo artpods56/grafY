@@ -38,6 +38,10 @@ class EdgeValueResolver:
     def __init__(self, *, values: ArtifactValues) -> None:
         self._values = values
 
+    @property
+    def values(self) -> ArtifactValues:
+        return self._values
+
     def describe(self, slot: InputSlot) -> tuple[ArtifactOutputValue, EdgeTransform]:
         return slot.value, _transform(slot)
 

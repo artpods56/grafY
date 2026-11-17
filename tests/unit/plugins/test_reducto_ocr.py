@@ -208,13 +208,13 @@ def parse_chunks(*payloads: object) -> list[ParseChunk]:
     return ParseChunkList.validate_python(list(payloads))
 
 
-def test_the_family_installs_with_one_operator() -> None:
+def test_the_family_installs_its_ocr_operators() -> None:
     registry = PluginRegistry()
     registry.install(INSTALLED)
     registry.freeze()
     keys = {registration.key for registration in REDUCTO.nodes}
     assert REDUCTO.slug == "external.reducto"
-    assert keys == {("reducto.ocr.process", 1)}
+    assert keys == {("reducto.ocr.process", 1), ("reducto.ocr.provider", 1)}
 
 
 def test_the_node_declares_exactly_its_ports(env: Env) -> None:
@@ -236,7 +236,9 @@ def test_the_node_declares_exactly_its_ports(env: Env) -> None:
 
 
 def test_the_family_needs_egress_and_secrets() -> None:
-    registration = REDUCTO.nodes[0]
+    registration = next(
+        node for node in REDUCTO.nodes if node.key == ("reducto.ocr.process", 1)
+    )
     assert REDUCTO.capabilities == (
         PluginRuntimeCapability.NETWORK_EGRESS,
         PluginRuntimeCapability.NODE_SECRETS,
@@ -246,7 +248,9 @@ def test_the_family_needs_egress_and_secrets() -> None:
 
 
 def test_the_family_declares_one_secret_and_its_destinations() -> None:
-    registration = REDUCTO.nodes[0]
+    registration = next(
+        node for node in REDUCTO.nodes if node.key == ("reducto.ocr.process", 1)
+    )
     destinations = registration.http_egress
     assert [secret.name for secret in registration.secret_inputs] == ["api_key"]
     assert registration.secret_inputs[0].config_dependencies == ()

@@ -130,6 +130,8 @@ class NodeRuntime:
                 failure_code=PluginFailureCode.OPERATOR_FAILURE,
             ) from exc
         recorded: JsonObject = {} if metadata is None else dict(metadata)
+        if context.output_metadata:
+            recorded.update(context.output_metadata)
         if implementation is not None:
             recorded["implementation"] = implementation.provenance_document()
         persisted = await self._persister.persist(

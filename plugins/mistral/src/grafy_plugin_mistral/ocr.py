@@ -1,6 +1,6 @@
 import logging
 from ipaddress import ip_address
-from typing import Annotated, Literal, Protocol, final, override
+from typing import Annotated, ClassVar, Literal, Protocol, final, override
 from uuid import UUID
 
 from pydantic import (
@@ -13,6 +13,7 @@ from pydantic import (
 from mistralai.client.models.ocrresponse import OCRResponse
 
 from grafy_core.artifact_contracts import (
+    IMAGE_REGIONS,
     MarkdownValue,
     ImageRegion,
     ImageRegionSet,
@@ -25,6 +26,7 @@ from grafy_core.table_contracts import (
     TableValueType,
 )
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.declared_values import note_declaration
 from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
@@ -33,8 +35,8 @@ from grafy_core.nodes import (
     Plugs,
     UserFacingNodeError,
 )
+from grafy_core.ocr_contracts import OcrFeature, OcrReader, OcrResult
 
-import grafy_plugin_image.nodes as _image_nodes
 import grafy_workbench.table.plugin as _table_plugin
 import grafy_workbench.text.nodes as _text_nodes
 from grafy_core.plugins import (
@@ -45,11 +47,9 @@ from grafy_core.plugins import (
 from grafy_plugin_mistral.declaration import MISTRAL
 from grafy_plugin_mistral.response import OcrPage
 
-_ = (
-    _image_nodes.__name__,
-    _table_plugin.__name__,
-    _text_nodes.__name__,
-)  # notes classes before these ports
+_ = (_table_plugin.__name__, _text_nodes.__name__)
+# Image regions are owned by the image plugin; note the type without importing it.
+note_declaration(ImageRegionSet, IMAGE_REGIONS.key)
 
 
 _URL = TypeAdapter(AnyHttpUrl)
@@ -166,7 +166,7 @@ class MistralOcrProvider(Protocol):
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> MistralOcrOutput: ...
+    ) -> OcrResult: ...
 
 
 class MistralOcrProviderError(RuntimeError):
@@ -175,6 +175,55 @@ class MistralOcrProviderError(RuntimeError):
 
 class MistralOcrExecutionError(UserFacingNodeError):
     pass
+
+
+class MistralReader(OcrReader):
+    features: ClassVar[frozenset[OcrFeature]] = frozenset(
+        {OcrFeature.BLOCKS, OcrFeature.REGIONS}
+    )
+    title: ClassVar[str] = "Mistral OCR"
+
+    def __init__(
+        self,
+        *,
+        config: MistralOcrConfig,
+        api_key: SecretStr,
+        workspace_id: UUID,
+        provider: MistralOcrProvider,
+    ) -> None:
+        self._config = config
+        self._api_key = api_key
+        self._workspace_id = workspace_id
+        self._provider = provider
+
+    async def read(self, document: RasterImage | PdfFile) -> OcrResult:
+        return await self._provider.process(
+            document_url=None,
+            image=document,
+            config=self._config,
+            api_key=self._api_key,
+            workspace_id=self._workspace_id,
+        )
+
+    async def read_document_url(self, document_url: str) -> OcrResult:
+        return await self._provider.process(
+            document_url=document_url,
+            image=None,
+            config=self._config,
+            api_key=self._api_key,
+            workspace_id=self._workspace_id,
+        )
+
+
+class MistralProviderInput(NodeInput):
+    pass
+
+
+class MistralProviderOutput(NodeOutput):
+    reader: Annotated[
+        MistralReader,
+        Field(title="OCR reader", description="Reads a scan or PDF with Mistral OCR."),
+    ]
 
 
 def validate_public_http_url(
@@ -234,6 +283,57 @@ def build_mistral_ocr_node(context: PluginRuntimeContext) -> "MistralOcrNode":
     return MistralOcrNode(provider=MistralOcrSdkProvider())
 
 
+def build_mistral_ocr_provider_node(
+    context: PluginRuntimeContext,
+) -> "MistralOcrProviderNode":
+    from grafy_plugin_mistral.ocr_sdk import MistralOcrSdkProvider
+
+    del context
+    return MistralOcrProviderNode(provider=MistralOcrSdkProvider())
+
+
+@MISTRAL.node(
+    operator_id="mistral.ocr.provider",
+    version=1,
+    title="Mistral OCR",
+    factory=build_mistral_ocr_provider_node,
+    required_capabilities=(
+        PluginRuntimeCapability.NETWORK_EGRESS,
+        PluginRuntimeCapability.NODE_SECRETS,
+    ),
+    secret_inputs=(API_KEY,),
+    http_egress=NodeHttpEgressContract(
+        fixed_destinations=("https://api.mistral.ai",),
+    ),
+)
+@final
+class MistralOcrProviderNode(
+    Node[MistralOcrConfig, MistralProviderInput, MistralProviderOutput]
+):
+    """Supplies a Mistral OCR reader. Connect it to an OCR node."""
+
+    def __init__(self, *, provider: MistralOcrProvider) -> None:
+        self._provider = provider
+
+    @override
+    async def run(
+        self,
+        context: NodeExecutionContext,
+        config: MistralOcrConfig,
+        _inputs: MistralProviderInput,
+        /,
+    ) -> MistralProviderOutput:
+        api_key = await context.secrets.require(API_KEY.name)
+        return MistralProviderOutput(
+            reader=MistralReader(
+                config=config,
+                api_key=api_key,
+                workspace_id=context.workspace_id,
+                provider=self._provider,
+            )
+        )
+
+
 @MISTRAL.node(
     operator_id="mistral.ocr.process",
     version=1,
@@ -273,22 +373,33 @@ class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
                 "not neither."
             )
         api_key = await context.secrets.require(API_KEY.name)
-
+        reader = MistralReader(
+            config=config,
+            api_key=api_key,
+            workspace_id=context.workspace_id,
+            provider=self._provider,
+        )
         try:
-            document = await self._provider.process(
-                document_url=inputs.document_url,
-                image=inputs.image,
-                config=config,
-                api_key=api_key,
-                workspace_id=context.workspace_id,
-            )
+            if inputs.document_url is not None:
+                result = await reader.read_document_url(inputs.document_url)
+            else:
+                assert inputs.image is not None
+                result = await reader.read(inputs.image)
         except MistralOcrProviderError as exc:
             raise MistralOcrExecutionError(str(exc)) from exc
         except Exception as exc:
             raise MistralOcrExecutionError(
                 f"Mistral OCR failed for node {context.node_id!r}"
             ) from exc
-        return document
+        if result.blocks is None or result.regions is None:
+            raise MistralOcrExecutionError(
+                "Mistral OCR did not return text blocks and page boxes"
+            )
+        return MistralOcrOutput(
+            markdown=result.markdown,
+            blocks=result.blocks,
+            regions=result.regions,
+        )
 
 
 def _normalise_box(x0: int, y0: int, x1: int, y1: int) -> tuple[int, int, int, int]:
@@ -376,9 +487,7 @@ _BLOCK_COLUMNS = (
 )
 
 
-def build_ocr_output(
-    response: OCRResponse, config: MistralOcrConfig
-) -> MistralOcrOutput:
+def build_ocr_output(response: OCRResponse, config: MistralOcrConfig) -> OcrResult:
     markdown_pages: list[str] = []
     rows: list[dict[str, TableValue]] = []
     pages: list[ImagePage] = []
@@ -449,7 +558,7 @@ def build_ocr_output(
         response.usage_info.pages_processed,
         response.usage_info.doc_size_bytes,
     )
-    return MistralOcrOutput(
+    return OcrResult(
         markdown=MarkdownValue(markdown="\n\n".join(markdown_pages)),
         blocks=Table(
             columns=[

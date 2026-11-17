@@ -6,6 +6,7 @@ from grafy_core.artifact_contracts import (
 )
 from grafy_core.file_contracts import PDF_FILE
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.ocr_contracts import OcrReader
 from grafy_core.plugins import Plugin
 from grafy_core.table_contracts import TABLE_DATA
 
@@ -24,3 +25,4 @@ MISTRAL.register_artifact_type_dependency(PDF_FILE)
 MISTRAL.register_artifact_type_dependency(TABLE_DATA)
 MISTRAL.register_artifact_type_dependency(IMAGE_REGIONS)
 MISTRAL.register_artifact_type_dependency(MARKDOWN)
+MISTRAL.register_service_contract_dependency(OcrReader)

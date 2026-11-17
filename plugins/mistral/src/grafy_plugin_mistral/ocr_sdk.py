@@ -15,9 +15,10 @@ from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.egress import EgressPolicy, EgressRejectedError
 
 from grafy_plugin_mistral.egress_transport import EgressPinnedHttpx2Transport
+from grafy_core.ocr_contracts import OcrResult
+
 from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
-    MistralOcrOutput,
     build_ocr_output,
     MistralOcrProvider,
     MistralOcrProviderError,
@@ -63,7 +64,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> MistralOcrOutput:
+    ) -> OcrResult:
         if (document_url is None) == (image is None):
             raise MistralOcrProviderError(
                 "Connect either a document link or a page image, not both, and "

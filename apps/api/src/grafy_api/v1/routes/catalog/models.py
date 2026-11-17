@@ -225,6 +225,13 @@ class PortResponse(ApiResponse):
     artifact_type_variable: ArtifactTypeVariableIdentifier | None = None
     also_accepts: list[ArtifactTypeKeyResponse] = Field(default_factory=list)
     service_contracts: list[ServiceContractKeyResponse] = Field(default_factory=list)
+    features: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Feature strings a service output's implementation declares, so the "
+            "workbench can mute ports a connected provider does not produce."
+        ),
+    )
     shape: PortShape
     accepted_shapes: list[PortShape]
     instance_plugs: bool = False
@@ -289,6 +296,7 @@ class PortResponse(ApiResponse):
                     ServiceContractKeyResponse.from_key(key)
                     for key in port.service_contracts
                 ],
+                features=[],
                 shape=port.shape,
                 accepted_shapes=list(port.accepted_shapes),
                 instance_plugs=port.instance_plugs,
@@ -346,6 +354,7 @@ class PortResponse(ApiResponse):
                     ServiceContractKeyResponse.from_key(key)
                     for key in port.service_contracts
                 ],
+                features=list(port.features),
                 shape=port.shape,
                 accepted_shapes=[port.shape],
                 instance_plugs=False,

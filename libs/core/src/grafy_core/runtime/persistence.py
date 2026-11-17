@@ -88,6 +88,13 @@ class OutputPersister:
                 if spec.required:
                     raise RuntimeError(f"Missing required output {name!r}")
                 continue
+            if values[name] is None:
+                # An optional None is omitted, not stored as a null artifact. The
+                # computation may still record why in unsupported_outputs metadata.
+                if spec.required:
+                    raise RuntimeError(f"Missing required output {name!r}")
+                values.pop(name, None)
+                continue
 
             values[name] = await self._persist_value(
                 spec,

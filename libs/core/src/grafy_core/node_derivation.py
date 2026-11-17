@@ -73,6 +73,7 @@ def derive_output_contract[T: BaseModel](model: type[T]) -> OutputContract[T]:
             value_type=described.value_type,
             kind=described.kind,
             service_contracts=described.service_contracts,
+            features=described.features,
         )
     return OutputContract(model=model, ports=ports)
 
@@ -91,6 +92,7 @@ class _Described:
         value_type: type[object] | None,
         kind: Literal["artifact", "service"] = "artifact",
         service_contracts: tuple[ServiceContractKey, ...] = (),
+        features: tuple[str, ...] = (),
     ) -> None:
         self.shape = shape
         self.accepted_shapes = accepted_shapes
@@ -102,6 +104,7 @@ class _Described:
         self.value_type = value_type
         self.kind = kind
         self.service_contracts = service_contracts
+        self.features = features
 
 
 def _markers(
@@ -234,6 +237,7 @@ def _service_port(
     member = members[0]
     if output:
         keys = tuple(spec.key for spec in produced_contracts(member))
+        features = _service_features(member)
     else:
         own = marked_contract(member)
         if own is None:
@@ -242,6 +246,7 @@ def _service_port(
                 "not an implementation"
             )
         keys = (own.key,)
+        features = ()
     return _Described(
         shape=PortShape.ONE,
         accepted_shapes=(PortShape.ONE,),
@@ -250,10 +255,24 @@ def _service_port(
         also_accepts=(),
         preserves_ref_container=False,
         allows_none=False,
-        value_type=None,
+        value_type=member if output else None,
         kind="service",
         service_contracts=keys,
+        features=features,
     )
+
+
+def _service_features(cls: type[object]) -> tuple[str, ...]:
+    """Sorted feature strings a service implementation declares, if any."""
+
+    raw = getattr(cls, "features", None)
+    if not isinstance(raw, frozenset | set | tuple | list):
+        return ()
+    values: list[str] = []
+    for item in raw:
+        value = getattr(item, "value", None)
+        values.append(value if isinstance(value, str) else str(item))
+    return tuple(sorted(values))
 
 
 def _contains_service(members: tuple[object, ...]) -> bool:

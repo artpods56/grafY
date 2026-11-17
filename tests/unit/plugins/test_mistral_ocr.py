@@ -30,10 +30,10 @@ from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_plugin_mistral.declaration import MISTRAL
+from grafy_core.ocr_contracts import OcrResult
 from grafy_plugin_mistral.ocr import (
     API_KEY,
     MistralOcrConfig,
-    MistralOcrOutput,
     MistralOcrExecutionError,
     MistralOcrInput,
     MistralOcrNode,
@@ -91,7 +91,7 @@ class FakeNodeSecrets:
 
 
 class FakeProvider:
-    def __init__(self, document: MistralOcrOutput) -> None:
+    def __init__(self, document: OcrResult) -> None:
         self._document = document
         self.api_key: SecretStr | None = None
         self.document_url: str | None = None
@@ -104,7 +104,7 @@ class FakeProvider:
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> MistralOcrOutput:
+    ) -> OcrResult:
         del image, config
         assert workspace_id == WORKSPACE_ID
         self.document_url = document_url
@@ -198,7 +198,7 @@ class FakeStorage:
         raise AssertionError(f"Unexpected delete from {bucket}/{path}")
 
 
-def document_payload() -> MistralOcrOutput:
+def document_payload() -> OcrResult:
     return build_ocr_output(
         OCRResponse.model_validate(ocr_response().json()), MistralOcrConfig()
     )

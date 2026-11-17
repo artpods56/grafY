@@ -210,6 +210,8 @@ class OutputPortSpec:
     shape_field: str | None = None
     kind: Literal["artifact", "service"] = "artifact"
     service_contracts: tuple[ServiceContractKey, ...] = ()
+    # Feature strings a service implementation declares (for example OCR blocks).
+    features: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.kind == "service":

@@ -4936,6 +4936,14 @@
             "title": "Direction",
             "type": "string"
           },
+          "features": {
+            "description": "Feature strings a service output's implementation declares, so the workbench can mute ports a connected provider does not produce.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Features",
+            "type": "array"
+          },
           "instance_plugs": {
             "default": false,
             "title": "Instance Plugs",

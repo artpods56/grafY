@@ -464,9 +464,9 @@ class NodeSecretService(NodeSecretResolverPort):
         if name != "api_key":
             return None
         config = self._provider_secrets
-        if operator_id == "reducto.ocr.process":
+        if operator_id in {"reducto.ocr.process", "reducto.ocr.provider"}:
             key = config.reducto_api_key
-        elif operator_id == "mistral.ocr.process":
+        elif operator_id in {"mistral.ocr.process", "mistral.ocr.provider"}:
             key = config.mistral_api_key
         elif operator_id == "llm.openai_compatible.chat_completion":
             endpoint = dependencies.get("base_url")

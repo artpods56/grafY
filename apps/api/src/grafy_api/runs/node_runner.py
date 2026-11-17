@@ -95,10 +95,12 @@ class NodeComputationRunner:
                 )
             return {GRAPH_BOUNDARY_PORT: value}
 
+        unsupported = await self._unsupported_outputs(upstream)
         bound = self._binder.bind(
             instance,
             upstream,
             request.service_sources,
+            unsupported,
         )
         # Secrets belong to the node that is about to run, so they are bound here,
         # once, to this Project's identity and to the operator's own declaration:
@@ -131,6 +133,42 @@ class NodeComputationRunner:
             context=context,
             metadata=metadata,
         )
+
+    async def _unsupported_outputs(
+        self,
+        upstream: Mapping[InstanceKey, Mapping[str, ArtifactOutputValue]],
+    ) -> dict[InstanceKey, dict[str, str]]:
+        """Read ``unsupported_outputs`` from any sibling artifact of each source.
+
+        An optional OCR output the provider does not produce is omitted from the
+        stored result and named in that metadata, so a downstream binder can say
+        who left the port empty.
+        """
+
+        from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+
+        found: dict[InstanceKey, dict[str, str]] = {}
+        for key, outputs in upstream.items():
+            for value in outputs.values():
+                raw: object | None = None
+                if isinstance(value, ArtifactRefSequence):
+                    raw = value.metadata.get("unsupported_outputs")
+                elif isinstance(value, ArtifactRef):
+                    stored = await self._edge_values.values.open(
+                        value, self._workspace_id
+                    )
+                    raw = stored.row.metadata.get("unsupported_outputs")
+                if not isinstance(raw, dict):
+                    continue
+                mapping = {
+                    str(port): str(provider)
+                    for port, provider in raw.items()
+                    if isinstance(port, str) and isinstance(provider, str)
+                }
+                if mapping:
+                    found[key] = mapping
+                    break
+        return found
 
     async def _read_upstream(
         self, request: ComputationRequest
