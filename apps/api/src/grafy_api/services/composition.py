@@ -177,7 +177,6 @@ def build_workbench_components(
     runners = NodeComputationRunnerFactory(
         registry=plugin_registry,
         runtime=runtime,
-        unit_of_work=uow,
         node_secrets=resolved_node_secrets,
         plugin_context=plugin_context,
         values=values,

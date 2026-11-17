@@ -184,17 +184,29 @@ def _class_name(value_type: type[object]) -> str:
 
 
 def _provenance(context: ArtifactWriteContext) -> JsonObject:
-    return {
-        input_name: [
-            {
+    derivations_by_input = context.provenance.derivations_by_input
+    recorded: JsonObject = {}
+    for input_name, refs in context.provenance.refs_by_input.items():
+        derivations = derivations_by_input.get(input_name, ())
+        entries: list[object] = []
+        for index, ref in enumerate(refs):
+            entry: dict[str, object] = {
                 "artifact_id": str(ref.artifact_id),
                 "artifact_type": ref.artifact_type,
                 "schema_version": ref.schema_version,
             }
-            for ref in refs
-        ]
-        for input_name, refs in context.provenance.refs_by_input.items()
-    }
+            if index < len(derivations):
+                derivation = derivations[index]
+                if derivation.projection_path is not None:
+                    entry["projection_path"] = list(derivation.projection_path)
+                if derivation.conversion_keys:
+                    entry["conversion_keys"] = [
+                        {"id": key.id, "version": key.version}
+                        for key in derivation.conversion_keys
+                    ]
+            entries.append(entry)
+        recorded[input_name] = entries
+    return recorded
 
 
 class ArtifactValues:

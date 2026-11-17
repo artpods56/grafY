@@ -4,9 +4,11 @@ The scheduler hands over a ``ComputationRequest``: the fingerprint to store unde
 the expanded instance to compute, and the fingerprint of every upstream instance
 this one reads from. Nothing is passed in memory, so the runner reads each
 connection's result out of the Workspace-bound result store, binds the instance to
-its operator, applies the projections and conversions its connections declared,
-and runs it once or once per item. It never writes the store: the scheduler
-appends the returned outputs under the fingerprint it asked for (ADR 0020).
+its operator, and runs it once or once per item. A projection or conversion stays
+on the edge until the materializer loads each value. A ref port, and an edge that
+crosses a Graph boundary, still write the converted artifact. The runner never
+writes the store: the scheduler appends the returned outputs under the fingerprint
+it asked for (ADR 0020).
 
 One call is independent of every other: the runner holds no state a computation
 can disturb, so a scheduler may run any number of them concurrently.
@@ -23,7 +25,6 @@ from grafy_core.kernel.results import ResultStore
 from grafy_core.kernel.scheduler import ComputationRequest, ComputationRunner
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
-from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.execution import NodeRuntime
@@ -70,20 +71,30 @@ class NodeComputationRunner:
         )
         if is_boundary(instance):
             # A Graph's own input or output is no operator: the one value that
-            # reaches it is what the interface port carries.
+            # reaches it is what the interface port carries. A projection or
+            # conversion on that edge still writes, because the next graph
+            # reads a stored ref.
             slot = self._binder.boundary_input(instance, upstream)
-            value = await self._edge_values.resolve(slot, context)
+            value, transform = self._edge_values.describe(slot)
+            if transform.rewrites:
+                value = await self._edge_values.store(
+                    value,
+                    transform,
+                    context,
+                    port_name=slot.to_port,
+                )
             return {GRAPH_BOUNDARY_PORT: value}
 
         bound = self._binder.bind(instance, upstream)
-        inputs = await self._edge_values.assemble_inputs(
+        assembled = await self._edge_values.assemble_inputs(
             slots=bound.slots,
             ports=bound.ports,
             context=context,
         )
         return await self._node_execution.execute(
             bound=bound,
-            inputs=inputs,
+            inputs=assembled.values,
+            transforms=assembled.transforms,
             context=context,
         )
 
@@ -143,7 +154,6 @@ class NodeComputationRunnerFactory:
         *,
         registry: PluginRegistry,
         runtime: NodeRuntime,
-        unit_of_work: UnitOfWorkPort,
         node_secrets: NodeSecretResolverPort,
         values: ArtifactValues,
         max_map_concurrency: int = 1,
@@ -153,10 +163,7 @@ class NodeComputationRunnerFactory:
             registry=registry,
             plugin_context=plugin_context,
         )
-        self._edge_values = EdgeValueResolver(
-            unit_of_work=unit_of_work,
-            values=values,
-        )
+        self._edge_values = EdgeValueResolver(values=values)
         self._node_execution = NodeExecutionService(
             runtime=runtime,
             max_map_concurrency=max_map_concurrency,

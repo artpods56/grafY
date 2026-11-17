@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from enum import StrEnum
 from typing import cast
@@ -20,6 +20,7 @@ from grafy_core.nodes import (
     UserFacingNodeError,
     resolve_node_contracts,
 )
+from grafy_core.runtime.edge_transform import EdgeTransform
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import OutputPersister, PersistedNodeOutput
 
@@ -78,6 +79,7 @@ class NodeRuntime:
         config: JsonObject | None = None,
         artifact_type_bindings: Mapping[str, ArtifactTypeKey] | None = None,
         implementation: ImplementationIdentity | None = None,
+        transforms: Mapping[str, Sequence[EdgeTransform]] | None = None,
     ) -> PersistedNodeOutput | BaseModel:
         effective_bindings = artifact_type_bindings or {}
         raw_config: JsonObject = {} if config is None else config
@@ -96,6 +98,9 @@ class NodeRuntime:
             contract=cast(InputContract[InputT], resolved_contracts.input_contract),
             inputs=inputs,
             workspace_id=context.workspace_id,
+            transforms=transforms,
+            node_context=context,
+            item_index=context.invocation_index,
         )
         try:
             run_output = await node.run(
