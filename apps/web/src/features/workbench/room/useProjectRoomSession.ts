@@ -14,11 +14,11 @@ import {
   type ProjectRoomFailure,
   type ProjectRoomStatus,
   type ProjectRoomTerminalReason,
-  type PresenceParticipant,
   type PresenceUpdateSubmit,
   type RoomInstanceState,
   type RoomProjectCommand,
 } from "./graph-room-session";
+import { ProjectRoomPresenceStore } from "./presence-store";
 import { instanceKeyText } from "./protocol";
 import type {
   InstancesChangedMessage,
@@ -51,7 +51,7 @@ export interface UseProjectRoomSessionResult {
   readonly canPublishPresence: boolean;
   readonly canRun: boolean;
   readonly localSessionId: string | null;
-  readonly participants: readonly PresenceParticipant[];
+  readonly presenceStore: ProjectRoomPresenceStore;
   /**
    * Every Run the room believes is open for this Project. **No order is
    * promised**: the join snapshot arrives `created_at DESC` while a locally
@@ -128,9 +128,10 @@ export function useProjectRoomSession({
   const [authorizationVersion, setAuthorizationVersion] = React.useState<
     number | null
   >(null);
-  const [participants, setParticipants] = React.useState<
-    readonly PresenceParticipant[]
-  >([]);
+  const presenceStore = React.useMemo(
+    () => new ProjectRoomPresenceStore({ workspaceId, projectId }),
+    [projectId, workspaceId],
+  );
   const [activeRuns, setActiveRunsState] =
     React.useState<readonly ActiveRunSummary[]>(EMPTY_RUNS);
   const [instances, setInstancesState] =
@@ -214,7 +215,6 @@ export function useProjectRoomSession({
         setHead(null);
         setCapabilities([]);
         setAuthorizationVersion(null);
-        setParticipants([]);
         setActiveRuns(EMPTY_RUNS);
         setInstances(EMPTY_INSTANCES);
         setLocalSessionId(null);
@@ -226,7 +226,6 @@ export function useProjectRoomSession({
         setTerminalReason(null);
         setFailure(null);
         setLocalSessionId(ready.project_room_session_id);
-        setParticipants(ready.participants);
         setActiveRuns(ready.active_runs);
         setInstances(instanceMap(ready.instances));
         onReadyRef.current?.(ready);
@@ -248,13 +247,11 @@ export function useProjectRoomSession({
         if (nextHead) setHead(nextHead);
         onCommandRejectedRef.current?.(message);
       },
-      onPresenceChange: setParticipants,
       onFailureChange: (nextFailure) => {
         setFailure(nextFailure);
         if (!nextFailure) return;
         setCapabilities([]);
         setAuthorizationVersion(null);
-        setParticipants([]);
         setActiveRuns(EMPTY_RUNS);
         setInstances(EMPTY_INSTANCES);
         setLocalSessionId(null);
@@ -279,12 +276,12 @@ export function useProjectRoomSession({
         setTerminalReason(reason);
         setCapabilities([]);
         setAuthorizationVersion(null);
-        setParticipants([]);
         setActiveRuns(EMPTY_RUNS);
         setInstances(EMPTY_INSTANCES);
         setLocalSessionId(null);
         onTerminalCloseRef.current?.(reason);
       },
+      presenceStore,
     });
     sessionRef.current = session;
     session.connect();
@@ -295,7 +292,7 @@ export function useProjectRoomSession({
         sessionRef.current = null;
       }
     };
-  }, [projectId, setActiveRuns, setInstances, workspaceId]);
+  }, [presenceStore, projectId, setActiveRuns, setInstances, workspaceId]);
 
   const stateIsCurrent = projectId !== null && stateProjectId === projectId;
   const currentStatus = stateIsCurrent ? status : "idle";
@@ -307,7 +304,6 @@ export function useProjectRoomSession({
     ? authorizationVersion
     : null;
   const currentLocalSessionId = stateIsCurrent ? localSessionId : null;
-  const currentParticipants = stateIsCurrent ? participants : [];
   const currentActiveRuns = stateIsCurrent ? activeRuns : EMPTY_RUNS;
   const currentInstances = stateIsCurrent ? instances : EMPTY_INSTANCES;
 
@@ -410,7 +406,7 @@ export function useProjectRoomSession({
       currentCapabilities.includes("start_run") &&
       currentTerminalReason === null,
     localSessionId: currentLocalSessionId,
-    participants: currentParticipants,
+    presenceStore,
     activeRuns: currentActiveRuns,
     instances: currentInstances,
     runsRevision,

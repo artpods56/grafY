@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PresenceParticipant } from "./protocol";
+import { ProjectRoomPresenceStore } from "./presence-store";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -57,17 +58,15 @@ describe("PresenceOverlay", () => {
   });
 
   function render(participants: readonly PresenceParticipant[]) {
+    const store = new ProjectRoomPresenceStore();
+    store.replaceParticipants(participants, LOCAL_SESSION_ID);
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
     roots.push(root);
     React.act(() => {
       root.render(
-        <PresenceOverlay
-          participants={participants}
-          localSessionId={LOCAL_SESSION_ID}
-          now={() => 0}
-        />,
+        <PresenceOverlay store={store} graphId={GRAPH_ID} now={() => 0} />,
       );
     });
     return container;
@@ -87,10 +86,17 @@ describe("PresenceOverlay", () => {
     );
   });
 
-  it("shows every remote session in the Project, whichever Graph it is on", () => {
+  it("shows only remote sessions on the active Graph", () => {
     const container = render([
       participant("Ada", { x: 12, y: 34 }, { graph_id: GRAPH_ID }),
-      participant("Grace", { x: 5, y: 6 }, { graph_id: OTHER_GRAPH_ID }),
+      participant(
+        "Grace",
+        { x: 5, y: 6 },
+        {
+          project_room_session_id: "remote-grace",
+          graph_id: OTHER_GRAPH_ID,
+        },
+      ),
       // The room carries this client's own participant too; it never chairs
       // itself alongside the others.
       participant(
@@ -105,9 +111,10 @@ describe("PresenceOverlay", () => {
 
     const strip = container.querySelector('[aria-label="Collaborators"]');
     expect(strip?.textContent).toContain("Ada");
-    expect(strip?.textContent).toContain("Grace");
+    expect(strip?.textContent).not.toContain("Grace");
     expect(strip?.textContent).not.toContain("Me");
-    expect(strip?.querySelectorAll("span[title]")).toHaveLength(2);
+    expect(strip?.querySelectorAll("span[title]")).toHaveLength(1);
+    expect(container.querySelectorAll("svg")).toHaveLength(1);
   });
 
   it("renders nothing when the Project room holds only this session", () => {

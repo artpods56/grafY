@@ -131,7 +131,6 @@ import {
   defaultGraphId,
   graphReadiness,
   instanceKeyText,
-  remoteSelectionColor,
   shouldReplaceCollaborativeHead,
   toLocalGraphCommand,
   toRoomGraphCommand,
@@ -140,6 +139,8 @@ import {
   toRoomRenameProjectCommand,
   useProjectRoomSession,
   useRemoteDragPreviews,
+  useRemoteSelectionColors,
+  type ProjectRoomPresenceStore,
   type RoomGraphBodyCommand,
   type RoomInstanceState,
   type RoomProjectCommand,
@@ -156,6 +157,7 @@ import {
   WorkflowCanvas,
   applyEdgeChanges,
   applyNodeChanges,
+  type WorkflowCanvasProps,
 } from "../canvas/WorkflowCanvas";
 import {
   draggedNodeProps,
@@ -402,6 +404,66 @@ interface PendingFolderDropState {
 interface ActiveArtifactViewerActivity {
   activity: ArtifactViewerActivity;
   revision: number;
+}
+
+interface PresenceAwareWorkflowCanvasProps extends WorkflowCanvasProps {
+  presenceStore: ProjectRoomPresenceStore;
+  graphId: string | null;
+}
+
+function PresenceAwareWorkflowCanvas({
+  presenceStore,
+  graphId,
+  nodes,
+  ...canvasProps
+}: PresenceAwareWorkflowCanvasProps) {
+  const localDraggingNodeIds = React.useMemo(
+    () => new Set(nodes.flatMap((node) => (node.dragging ? [node.id] : []))),
+    [nodes],
+  );
+  const remoteSelectionColors = useRemoteSelectionColors(
+    presenceStore,
+    graphId,
+  );
+  const remoteDragPreviews = useRemoteDragPreviews(
+    presenceStore,
+    graphId,
+    localDraggingNodeIds,
+  );
+  const presenceNodes = React.useMemo(
+    () =>
+      nodes.map((node) => {
+        let positioned = node;
+        const preview = localDraggingNodeIds.has(node.id)
+          ? undefined
+          : remoteDragPreviews[node.id];
+        if (preview) {
+          positioned = {
+            ...positioned,
+            position: { x: preview.x, y: preview.y },
+            style: {
+              ...positioned.style,
+              // Ease between sparse presence samples without per-frame React writes.
+              transition: "transform 70ms linear",
+            },
+          };
+        }
+        const remoteColor = remoteSelectionColors.get(node.id) ?? null;
+        if ((positioned.data.remoteSelectionColor ?? null) === remoteColor) {
+          return positioned;
+        }
+        return {
+          ...positioned,
+          data: {
+            ...positioned.data,
+            remoteSelectionColor: remoteColor,
+          },
+        } as CanvasNode;
+      }),
+    [localDraggingNodeIds, nodes, remoteDragPreviews, remoteSelectionColors],
+  );
+
+  return <WorkflowCanvas {...canvasProps} nodes={presenceNodes} />;
 }
 
 export function Workbench(props: WorkbenchProps) {
@@ -1273,7 +1335,6 @@ function WorkbenchBody({
       }
     },
   });
-
   /**
    * The Graph this canvas shows, read out of the room's head: it is a projection
    * of the one Project document, never a second copy of it. The Project's first
@@ -1791,7 +1852,6 @@ function WorkbenchBody({
     positions: TransientNodePosition[];
     targetIds: string[];
   } | null>(null);
-  const localDraggingNodeIdsRef = React.useRef<ReadonlySet<string>>(new Set());
   const presencePublishTimerRef = React.useRef<number | null>(null);
   const lastPresencePublishAtRef = React.useRef(0);
   const canPublishRoomPresence = projectRoom.canPublishPresence;
@@ -1814,6 +1874,7 @@ function WorkbenchBody({
 
       const drag = presenceDragRef.current;
       const published = publishRoomPresence({
+        graph_id: openGraphIdRef.current,
         cursor: presenceCursorRef.current,
         selected_node_ids: selectedNodeIdsRef.current,
         activity: drag ? "moving_nodes" : null,
@@ -1843,6 +1904,11 @@ function WorkbenchBody({
   React.useEffect(() => {
     schedulePresenceSnapshot();
   }, [presenceSelectionKey, schedulePresenceSnapshot]);
+  React.useEffect(() => {
+    presenceCursorRef.current = null;
+    presenceClientPointDirtyRef.current = true;
+    schedulePresenceSnapshot();
+  }, [openGraphId, schedulePresenceSnapshot]);
   // Server clears idle cursors after ~5s without updates; keepalives while parked.
   React.useEffect(() => {
     if (!projectRoom.canPublishPresence) return;
@@ -1852,11 +1918,6 @@ function WorkbenchBody({
     }, 2000);
     return () => window.clearInterval(timer);
   }, [projectRoom.canPublishPresence, schedulePresenceSnapshot]);
-  const remoteDragPreviews = useRemoteDragPreviews(
-    projectRoom.participants,
-    projectRoom.localSessionId,
-    localDraggingNodeIdsRef,
-  );
   const selectedNodeCount = selectedNodeIds.length;
   // What the selection permits is a walk over the graph, and a drag re-renders
   // this body sixty times a second without moving the selection. Each derivation
@@ -2132,7 +2193,6 @@ function WorkbenchBody({
       });
       if (draggingPositions.length) {
         const targetIds = draggingPositions.map((position) => position.node_id);
-        localDraggingNodeIdsRef.current = new Set(targetIds);
         presenceDragRef.current = {
           positions: draggingPositions,
           targetIds,
@@ -2466,7 +2526,6 @@ function WorkbenchBody({
         );
       if (dragEnded) {
         setPointerGestureActive(false);
-        localDraggingNodeIdsRef.current = new Set();
         presenceDragRef.current = null;
         // Released before the render the commit causes, so the nodes this gesture
         // held are drawn from the position the document now carries — which is
@@ -4642,27 +4701,6 @@ function WorkbenchBody({
       applyAuthoringCommands,
     ],
   );
-  // Which node each remote person has selected, resolved once per presence
-  // update. Asked per node inside the canvas projection below, it walked every
-  // participant's selection list for every node on every pointer sample.
-  const remoteSelectionColors = React.useMemo(() => {
-    const colors: Record<string, string> = {};
-    for (const participant of projectRoom.participants) {
-      if (participant.project_room_session_id === projectRoom.localSessionId) {
-        continue;
-      }
-      for (const nodeId of participant.selected_node_ids) {
-        if (colors[nodeId] !== undefined) continue;
-        const color = remoteSelectionColor(
-          projectRoom.participants,
-          projectRoom.localSessionId,
-          nodeId,
-        );
-        if (color !== null) colors[nodeId] = color;
-      }
-    }
-    return colors;
-  }, [projectRoom.localSessionId, projectRoom.participants]);
   const allCanvasNodes = React.useMemo<CanvasNode[]>(() => {
     const combined = [
       ...agentCanvasNodes,
@@ -4689,22 +4727,8 @@ function WorkbenchBody({
             dragging: true,
           }
         : node;
-      const preview = !localDragging.has(node.id)
-        ? remoteDragPreviews[node.id]
-        : undefined;
-      if (preview) {
-        positioned = {
-          ...positioned,
-          position: { x: preview.x, y: preview.y },
-          style: {
-            ...positioned.style,
-            // Ease between sparse presence samples without per-frame React writes.
-            transition: "transform 70ms linear",
-          },
-        };
-      }
       // Keep idle cards on the lattice even when stored coords predate snapping.
-      if (!preview && !localDragging.has(node.id) && alignIdlePosition) {
+      if (!localDragging.has(node.id) && alignIdlePosition) {
         const snapped = snapPosition(
           positioned.position,
           canvasGridSettings.cellSize,
@@ -4716,17 +4740,7 @@ function WorkbenchBody({
           positioned = { ...positioned, position: snapped };
         }
       }
-      const remoteColor = remoteSelectionColors[node.id] ?? null;
-      if ((positioned.data.remoteSelectionColor ?? null) === remoteColor) {
-        return positioned;
-      }
-      return {
-        ...positioned,
-        data: {
-          ...positioned.data,
-          remoteSelectionColor: remoteColor,
-        },
-      } as CanvasNode;
+      return positioned;
     });
   }, [
     agentCanvasNodes,
@@ -4735,8 +4749,6 @@ function WorkbenchBody({
     bypassSnap,
     canvasGridSettings,
     canvasNodes,
-    remoteSelectionColors,
-    remoteDragPreviews,
     heldCanvasNodes,
     transientNodePositions,
   ]);
@@ -5323,7 +5335,9 @@ function WorkbenchBody({
               {canvasUpload}
             </div>
           ) : null}
-          <WorkflowCanvas
+          <PresenceAwareWorkflowCanvas
+            presenceStore={projectRoom.presenceStore}
+            graphId={openGraphId}
             fitViewOptions={workbenchFitViewOptions}
             nodes={allCanvasNodes}
             edges={allCanvasEdges}
@@ -5353,8 +5367,8 @@ function WorkbenchBody({
             flowStoreRef={flowStoreRef}
           >
             <PresenceOverlay
-              participants={projectRoom.participants}
-              localSessionId={projectRoom.localSessionId}
+              store={projectRoom.presenceStore}
+              graphId={openGraphId}
             />
             {selectedWorkflowCount ||
             collectsIntoSequence ||
@@ -5511,7 +5525,7 @@ function WorkbenchBody({
                 }
               />
             ) : null}
-          </WorkflowCanvas>
+          </PresenceAwareWorkflowCanvas>
         </NodeMenuRegistryContext.Provider>
       </section>
 

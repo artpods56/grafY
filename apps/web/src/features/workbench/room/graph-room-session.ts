@@ -12,6 +12,7 @@ import {
   type OutgoingProjectCommand,
 } from "./command-outbox";
 import { projectRoomWebSocketUrl } from "./project-room-url";
+import { ProjectRoomPresenceStore } from "./presence-store";
 import {
   ROOM_COMMAND_QUEUE_CAP,
   ROOM_PROTOCOL_VERSION,
@@ -118,6 +119,7 @@ export interface ProjectRoomSessionOptions extends ProjectRoomSessionListeners {
   reconnectDelayMs?: number;
   maxReconnectAttempts?: number;
   createCommandId?: () => string;
+  presenceStore?: ProjectRoomPresenceStore;
 }
 
 type ProjectRoomFailureDetail = Omit<
@@ -149,7 +151,7 @@ export class ProjectRoomSession {
   private head: CollaborativeHead | null = null;
   private capabilities: readonly WorkspaceCapability[] = [];
   private authorizationVersion: number | null = null;
-  private participants = new Map<string, PresenceParticipant>();
+  private readonly presenceStore: ProjectRoomPresenceStore;
   private presenceSequence = 0;
   private lastPresenceSentAt = 0;
   private activeRuns = new Map<string, ActiveRunSummary>();
@@ -162,6 +164,12 @@ export class ProjectRoomSession {
       options.webSocketFactory ?? ((url) => new WebSocket(url));
     this.reconnectDelayMs = options.reconnectDelayMs ?? 750;
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
+    this.presenceStore =
+      options.presenceStore ??
+      new ProjectRoomPresenceStore({
+        workspaceId: options.workspaceId,
+        projectId: options.projectId,
+      });
     this.listeners = {
       onStatusChange: options.onStatusChange,
       onReady: options.onReady,
@@ -229,7 +237,11 @@ export class ProjectRoomSession {
   }
 
   getParticipants(): readonly PresenceParticipant[] {
-    return [...this.participants.values()];
+    return this.presenceStore.getParticipants();
+  }
+
+  getPresenceStore(): ProjectRoomPresenceStore {
+    return this.presenceStore;
   }
 
   getRemoteParticipants(): readonly PresenceParticipant[] {
@@ -669,11 +681,9 @@ export class ProjectRoomSession {
     this.head = ready.head;
     this.capabilities = message.capabilities.capabilities;
     this.authorizationVersion = message.capabilities.authorization_version;
-    this.participants = new Map(
-      message.participants.map((participant) => [
-        participant.project_room_session_id,
-        participant,
-      ]),
+    this.presenceStore.replaceParticipants(
+      message.participants,
+      message.project_room_session_id,
     );
     this.presenceSequence = 0;
     this.lastPresenceSentAt = 0;
@@ -698,18 +708,17 @@ export class ProjectRoomSession {
   }
 
   private upsertParticipant(participant: PresenceParticipant): void {
-    this.participants.set(participant.project_room_session_id, participant);
+    this.presenceStore.upsertParticipant(participant);
     this.emitPresenceChange();
   }
 
   private removeParticipant(sessionId: string): void {
-    if (!this.participants.delete(sessionId)) return;
+    if (!this.presenceStore.removeParticipant(sessionId)) return;
     this.emitPresenceChange();
   }
 
   private clearPresence(): void {
-    if (this.participants.size === 0) return;
-    this.participants.clear();
+    if (!this.presenceStore.clear()) return;
     this.emitPresenceChange();
   }
 

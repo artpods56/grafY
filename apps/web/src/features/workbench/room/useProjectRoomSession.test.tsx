@@ -907,7 +907,7 @@ describe("useProjectRoomSession after the room closes", () => {
     expect(room().canRun).toBe(true);
     expect(room().canSubmitCommands).toBe(true);
     expect(room().canPublishPresence).toBe(true);
-    expect(room().participants).toHaveLength(2);
+    expect(room().presenceStore.getParticipants()).toHaveLength(2);
     const headBefore = room().head;
     expect(headBefore).not.toBeNull();
     const runsBefore = room().runsRevision;
@@ -928,7 +928,7 @@ describe("useProjectRoomSession after the room closes", () => {
     expect(closed.capabilities).toEqual([]);
     expect(closed.authorizationVersion).toBeNull();
     expect(closed.localSessionId).toBeNull();
-    expect(closed.participants).toEqual([]);
+    expect(closed.presenceStore.getParticipants()).toEqual([]);
     expect(closed.activeRuns).toEqual([]);
     expect(closed.instances.size).toBe(0);
     // And nothing derived from it is authorised any more.
@@ -1018,7 +1018,7 @@ describe("useProjectRoomSession project identity", () => {
     expect(room().status).toBe("connecting");
     expect(room().head).toBeNull();
     expect(room().capabilities).toEqual([]);
-    expect(room().participants).toEqual([]);
+    expect(room().presenceStore.getParticipants()).toEqual([]);
     expect(room().activeRuns).toEqual([]);
     expect(room().instances.size).toBe(0);
     expect(room().canRun).toBe(false);
@@ -1063,7 +1063,7 @@ describe("useProjectRoomSession project identity", () => {
     expect(room().status).toBe("idle");
     expect(room().head).toBeNull();
     expect(room().capabilities).toEqual([]);
-    expect(room().participants).toEqual([]);
+    expect(room().presenceStore.getParticipants()).toEqual([]);
     expect(room().activeRuns).toEqual([]);
     expect(room().instances.size).toBe(0);
     expect(room().localSessionId).toBeNull();
