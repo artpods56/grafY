@@ -7,14 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from grafy_core.artifact_contracts import IMAGE_REGIONS, ImageRegionSet
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
-from grafy_core.documents import (
-    BmpFile,
-    JpegFile,
-    PngFile,
-    RasterImage,
-    TiffFile,
-    WebpFile,
-)
+from grafy_core.documents import RasterImage
 from grafy_core.nodes import Node, NodeExecutionContext, UserFacingNodeError
 from grafy_core.runtime.artifact_values import inline_model_artifact
 from pydantic import Field, StrictStr, field_validator
@@ -25,61 +18,6 @@ from grafy_plugin_image.declaration import IMAGES
 IMAGES.register(inline_model_artifact(IMAGE_REGIONS, ImageRegionSet))
 
 _HANDLE_READ_LIMIT = 256 * 1024 * 1024
-_IMAGE_FILES = (PngFile, JpegFile, WebpFile, TiffFile, BmpFile)
-
-
-class ImageDecodeError(RuntimeError):
-    pass
-
-
-class ImageDecodeInput(NodeInput):
-    files: Annotated[
-        list[PngFile | JpegFile | WebpFile | TiffFile | BmpFile],
-        Field(
-            title="Image files", description="Ordered image file artifacts to decode."
-        ),
-    ]
-
-
-class ImageDecodeOutput(NodeOutput):
-    images: Annotated[
-        list[RasterImage],
-        Field(title="Images", description="Decoded raster images in input order."),
-    ]
-
-
-@IMAGES.node(
-    operator_id="image.decode",
-    version=1,
-    title="Read images",
-)
-@final
-class DecodeImagesNode(Node[NodeConfig, ImageDecodeInput, ImageDecodeOutput]):
-    """Turns image files into pictures on the canvas."""
-
-    @override
-    async def run(
-        self,
-        context: NodeExecutionContext,
-        _config: NodeConfig,
-        inputs: ImageDecodeInput,
-        /,
-    ) -> ImageDecodeOutput:
-        del context
-        images: list[RasterImage] = []
-        for image_file in inputs.files:
-            if type(image_file) not in _IMAGE_FILES:
-                label = image_file.filename or "this file"
-                raise ImageDecodeError(f"Image decode does not accept {label}")
-            content = await image_file.read(max_bytes=_HANDLE_READ_LIMIT)
-            images.append(
-                RasterImage.from_content(
-                    content,
-                    content_type=type(image_file).media_type,
-                    filename=image_file.filename,
-                )
-            )
-        return ImageDecodeOutput(images=images)
 
 
 class DrawRegionsError(UserFacingNodeError):

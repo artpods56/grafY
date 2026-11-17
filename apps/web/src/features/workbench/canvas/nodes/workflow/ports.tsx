@@ -7,7 +7,6 @@ import { useEdges, useNodes } from "@xyflow/react";
 
 import type { Port } from "@/lib/api";
 import { Switch } from "@/components/ui/switch";
-import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CanvasPortBall, nodeChrome } from "../CanvasNodeChrome";
@@ -423,13 +422,7 @@ export function usePortBallTypeProps({
     shape === "many"
       ? formatArtifactTypeSequence(inner ?? "any type")
       : (inner ?? ANY_TYPE_LABEL);
-  const options = variable
-    ? artifactTypeVariableOptions(
-        data.spec.operator_id,
-        variable,
-        data.bindableArtifactTypes ?? [],
-      )
-    : [];
+  const options = variable ? (data.bindableArtifactTypes ?? []) : [];
   const picks =
     variable !== null &&
     !locked &&

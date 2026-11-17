@@ -1,24 +1,18 @@
-"""The four replacement file nodes turn a persisted file.* artifact into a value.
+"""The replacement file nodes turn a persisted file.* artifact into a value.
 
 Ingest writes the bytes and never interprets them, so each test seeds the exact
 `file.*` artifact the upload path produces and then runs the visible node.
 """
 
 import json
-from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
-from typing import Any, cast
 from uuid import UUID
 
 import pytest
 from grafy_core.artifact_contracts import RASTER_IMAGE
-from grafy_core.documents import FILE_ARTIFACTS, RasterImage, raster_image_artifact
-from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.artifacts import (
     ArtifactObject,
-    ArtifactRefSequence,
-    ArtifactTypeSpec,
 )
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.file_artifacts import FileArtifactError
@@ -35,13 +29,7 @@ from grafy_core.file_contracts import (
 )
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry
-from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.runtime.materialization import InputMaterializer
-from grafy_core.runtime.persistence import (
-    OutputPersister,
-    PersistedNodeOutput,
-)
 from grafy_core.table_contracts import TABLE_DATA
 from grafy_plugin_gis.artifacts import (
     GEO_FEATURE_COLLECTION,
@@ -59,7 +47,6 @@ from grafy_plugin_gis.plugin import GIS
 from grafy_storage import LocalFileObjectStore
 from grafy_plugin_image import IMAGES
 from grafy_workbench.image import IMAGES as IMAGE_ARTIFACTS
-from grafy_plugin_image.nodes import DecodeImagesNode, ImageDecodeInput
 from grafy_plugin_table import TABLES
 from grafy_workbench.table import TABLES as TABLE_ARTIFACTS
 from grafy_plugin_table.nodes import (
@@ -117,114 +104,6 @@ def node_context() -> NodeExecutionContext:
         workspace_id=TEST_WORKSPACE_ID,
         node_id="replacement-file-node",
     )
-
-
-@pytest.mark.asyncio
-async def test_image_decode_decodes_the_whole_ordered_batch_through_the_runtime(
-    tmp_path: Path,
-) -> None:
-    storage = LocalFileObjectStore(tmp_path / "objects")
-    uow = InMemoryUnitOfWork()
-    first = await seed_file_artifact(
-        storage,
-        uow,
-        workspace_id=TEST_WORKSPACE_ID,
-        spec=PNG_FILE,
-        content=b"\x89PNG\r\n\x1a\nfirst",
-        original_filename="page-001.png",
-    )
-    second = await seed_file_artifact(
-        storage,
-        uow,
-        workspace_id=TEST_WORKSPACE_ID,
-        spec=PNG_FILE,
-        content=b"\x89PNG\r\n\x1a\nsecond",
-        original_filename="page-002.png",
-    )
-    values = ArtifactValues(
-        (*FILE_ARTIFACTS, raster_image_artifact()),
-        uow=uow,
-        storage=storage,
-        bucket="artifacts",
-        storage_backend="local",
-    )
-    runtime = NodeRuntime(
-        materializer=InputMaterializer(values),
-        persister=OutputPersister(values),
-    )
-
-    output = await runtime.run_node(
-        DecodeImagesNode(),
-        node_context(),
-        {
-            "files": ArtifactRefSequence.from_key(
-                key=PNG_FILE.key,
-                item_refs=[second, first],
-            )
-        },
-    )
-
-    assert isinstance(output, PersistedNodeOutput)
-    images = output["images"]
-    assert isinstance(images, ArtifactRefSequence)
-    assert images.artifact_type == RASTER_IMAGE.key.id
-    assert len(images.item_refs) == 2
-    async with uow as entered:
-        stored_images = await entered.artifacts.list_by_type(
-            TEST_WORKSPACE_ID,
-            RASTER_IMAGE.key,
-        )
-    assert [artifact.sha256 for artifact in stored_images] == [
-        sha256(b"\x89PNG\r\n\x1a\nsecond").hexdigest(),
-        sha256(b"\x89PNG\r\n\x1a\nfirst").hexdigest(),
-    ]
-    assert [artifact.metadata["original_filename"] for artifact in stored_images] == [
-        "page-002.png",
-        "page-001.png",
-    ]
-
-
-@pytest.mark.parametrize(
-    ("spec", "content_type"),
-    [
-        (PNG_FILE, "image/png"),
-        (JPEG_FILE, "image/jpeg"),
-        (WEBP_FILE, "image/webp"),
-        (TIFF_FILE, "image/tiff"),
-        (BMP_FILE, "image/bmp"),
-    ],
-)
-@pytest.mark.asyncio
-async def test_image_decode_maps_each_accepted_container_to_its_content_type(
-    tmp_path: Path,
-    spec: ArtifactTypeSpec,
-    content_type: str,
-) -> None:
-    storage = LocalFileObjectStore(tmp_path / "objects")
-    uow = InMemoryUnitOfWork()
-    ref = await seed_file_artifact(
-        storage, uow, workspace_id=TEST_WORKSPACE_ID, spec=spec, content=b"image-bytes"
-    )
-    values = ArtifactValues(
-        (*FILE_ARTIFACTS, raster_image_artifact()),
-        uow=uow,
-        storage=storage,
-        bucket="artifacts",
-        storage_backend="local",
-    )
-    handle = cast(Any, await values.resolve(ref, TEST_WORKSPACE_ID))
-    node = DecodeImagesNode()
-
-    output = await node.run(
-        node_context(),
-        node.config_contract.model.model_validate({}),
-        ImageDecodeInput(files=[handle]),
-    )
-
-    assert len(output.images) == 1
-    assert isinstance(output.images[0], RasterImage)
-    assert output.images[0].content_type == content_type
-    assert output.images[0].filename is None
 
 
 @pytest.mark.asyncio
@@ -532,22 +411,6 @@ def test_replacement_nodes_declare_their_catalog_contracts() -> None:
     registry.install(TABLES)
     registry.install(GIS)
     registry.freeze()
-
-    decode = registry.node_registration("image.decode", 1)
-    decode_files = decode.node_class.input_contract.ports["files"]
-    assert decode_files.accepts == PNG_FILE.key
-    assert decode_files.also_accepts == (
-        JPEG_FILE.key,
-        WEBP_FILE.key,
-        TIFF_FILE.key,
-        BMP_FILE.key,
-    )
-    assert decode_files.shape.value == "many"
-    assert decode_files.preserves_ref_container is True
-    decode_images = decode.node_class.output_contract.ports["images"]
-    assert decode_images.produces == RASTER_IMAGE.key
-    assert decode_images.shape.value == "many"
-    assert decode.required_capabilities == ()
 
     import_table = registry.node_registration("table.import", 1)
     table_file = import_table.node_class.input_contract.ports["file"]

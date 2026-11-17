@@ -4,10 +4,9 @@ from uuid import UUID
 
 import pytest
 from grafy_core.artifact_contracts import IMAGE_REGIONS, RASTER_IMAGE
-from grafy_core.documents import FILE_ARTIFACTS, RasterImage, raster_image_artifact
+from grafy_core.documents import RasterImage, raster_image_artifact
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.artifacts import ArtifactRefSequence
-from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry
 from grafy_core.runtime.execution import NodeRuntime
@@ -24,11 +23,8 @@ from grafy_core.runtime.persistence import (
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.image import IMAGES
 from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
-from grafy_plugin_image.nodes import DecodeImagesNode
 from tests.support.scenarios.sequences import CollectNode
 from PIL import Image
-
-from tests.support.file_artifacts import seed_file_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -46,59 +42,57 @@ def _png_bytes(size: tuple[int, int]) -> bytes:
 
 @pytest.mark.asyncio
 async def test_runtime_chains_image_collect_and_raster_writers(tmp_path: Path) -> None:
+    """Two raster values written in order survive a collection unchanged.
+
+    An image file reaches a raster port through its canonical conversion, so the
+    chain starts at the written raster artifact.
+    """
+
     uow = InMemoryUnitOfWork()
     first_content = _png_bytes((3, 2))
     second_content = _png_bytes((5, 4))
     storage = LocalFileObjectStore(tmp_path / "object-store")
-    first_ref = await seed_file_artifact(
-        storage,
-        uow,
-        workspace_id=TEST_WORKSPACE_ID,
-        spec=PNG_FILE,
-        content=first_content,
-        original_filename="page-001.png",
-        content_type="image/png",
-    )
-    second_ref = await seed_file_artifact(
-        storage,
-        uow,
-        workspace_id=TEST_WORKSPACE_ID,
-        spec=PNG_FILE,
-        content=second_content,
-        original_filename="page-002.png",
-        content_type="image/png",
-    )
     values = ArtifactValues(
-        (*FILE_ARTIFACTS, raster_image_artifact()),
+        (raster_image_artifact(),),
         uow=uow,
         storage=storage,
         bucket="artifacts",
         storage_backend="local",
+    )
+    write_context = ArtifactWriteContext(
+        node_context=NodeExecutionContext(
+            workspace_id=TEST_WORKSPACE_ID,
+            node_id="image_convert_1",
+        ),
+        provenance=MaterializationProvenance(refs_by_input={}),
+    )
+    second_ref = await values.write(
+        RASTER_IMAGE.key,
+        RasterImage.from_content(
+            second_content,
+            content_type="image/png",
+            filename="page-002.png",
+        ),
+        write_context,
+    )
+    first_ref = await values.write(
+        RASTER_IMAGE.key,
+        RasterImage.from_content(
+            first_content,
+            content_type="image/png",
+            filename="page-001.png",
+        ),
+        write_context,
     )
     runtime = NodeRuntime(
         materializer=InputMaterializer(values),
         persister=OutputPersister(values),
     )
 
-    decode_output = await runtime.run_node(
-        DecodeImagesNode(),
-        NodeExecutionContext(
-            workspace_id=TEST_WORKSPACE_ID,
-            node_id="image_decode_1",
-        ),
-        {
-            "files": ArtifactRefSequence.from_key(
-                key=PNG_FILE.key,
-                item_refs=[second_ref, first_ref],
-            )
-        },
+    decoded_images = ArtifactRefSequence.from_key(
+        key=RASTER_IMAGE.key,
+        item_refs=[second_ref, first_ref],
     )
-    assert isinstance(decode_output, PersistedNodeOutput)
-    decoded_images = decode_output["images"]
-
-    assert isinstance(decoded_images, ArtifactRefSequence)
-    assert decoded_images.artifact_type == RASTER_IMAGE.key.id
-    assert len(decoded_images.item_refs) == 2
 
     collect_output = await runtime.run_node(
         CollectNode(),

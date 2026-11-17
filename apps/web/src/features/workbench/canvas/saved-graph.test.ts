@@ -982,7 +982,7 @@ describe("saved Module nodes", () => {
           {
             id: "images",
             kind: "builtin" as const,
-            operator_id: "image.decode",
+            operator_id: "image.crop_regions",
             operator_version: 1,
             config: {},
             input_plugs: [],
@@ -1044,7 +1044,10 @@ describe("saved Module nodes", () => {
         bundle: { format: "inline-json" as const, version: 1 },
       })),
       artifact_conversions: [],
-      nodes: [nodeSpec("image.decode", "output", "x"), ...(spec ? [spec] : [])],
+      nodes: [
+        nodeSpec("image.crop_regions", "output", "x"),
+        ...(spec ? [spec] : []),
+      ],
     };
   }
 

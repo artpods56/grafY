@@ -12,7 +12,6 @@ def test_plugin_declares_image_operators() -> None:
 
     assert IMAGES.slug == "external.image"
     assert {node.key for node in registry.nodes} == {
-        ("image.decode", 1),
         ("image.crop_regions", 1),
         ("image.draw_regions", 1),
     }

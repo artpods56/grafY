@@ -121,7 +121,7 @@ The closed check a file format artifact declares for its bytes: `magic`, `json`,
 `json_document`, or `none`. `json` means a JSON object, `json_document` means a
 JSON object or array, and `magic` means the bytes match a declared signature.
 Agreement is a prefix check rather than a full parse, so a truncated or corrupt
-file fails in the visible decode or import node.
+file fails in the edge conversion or in the visible import node.
 
 ### File blob artifact
 
@@ -130,10 +130,10 @@ The format type for bytes whose extension the deployment does not recognize:
 reading, that nothing has interpreted these bytes yet. A blob has no domain
 meaning and projects no fields. Recognizing the format later does not rewrite a
 stored blob: a Plugin that claims an extension types the next upload, and rows
-already stored stay `file.blob@1`. A blob reaches a typed node only through the
-visible `file.interpret@1` node, which confirms the bytes with the chosen
-format's confirmation rule, writes a new artifact of that type, and leaves the
-blob row unchanged. A blob never gains a format in place.
+already stored stay `file.blob@1`. Nothing claims those bytes afterwards. No port
+takes a blob and no node retypes one, so they reach no typed node until the
+deployment claims their extension and they are uploaded again. A blob never gains
+a format in place.
 _Avoid_: opaque file, raw file
 
 ### Artifact bundle contract

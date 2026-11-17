@@ -5,7 +5,6 @@ import { useUpdateNodeInternals } from "@xyflow/react";
 import * as stylex from "@stylexjs/stylex";
 import { RotateCcw } from "lucide-react";
 
-import { artifactTypeVariableOptions } from "@/features/workbench/model/claimed-formats";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { Button, IconButton } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -124,13 +123,9 @@ export function GenericArtifactTypeState({
     <div {...stylex.props(s.genericTypes)} aria-label="Generic artifact types">
       {variables.map((variable) => {
         const artifactType = data.artifactTypeBindings[variable];
-        const options = artifactTypeVariableOptions(
-          data.spec.operator_id,
-          variable,
-          bindableArtifactTypes,
-        );
         const picksType =
-          data.onBindArtifactTypeBinding !== undefined && options.length > 0;
+          data.onBindArtifactTypeBinding !== undefined &&
+          bindableArtifactTypes.length > 0;
         const label = artifactType
           ? formatArtifactTypeLabel(artifactType, artifactTypes)
           : ANY_TYPE_LABEL;
@@ -163,7 +158,7 @@ export function GenericArtifactTypeState({
                 }}
               >
                 <option value="">{ANY_TYPE_LABEL}</option>
-                {options.map((type) => (
+                {bindableArtifactTypes.map((type) => (
                   <option
                     key={artifactTypeKey(type)}
                     value={artifactTypeKey(type)}

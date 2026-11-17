@@ -261,13 +261,6 @@ Text and integer.
 | `text.input` | `text` | `StrictStr` | drop marker |
 | `value.integer` | `value` | `StrictInt` | drop marker |
 
-File interpret, `libs/workbench/src/grafy_workbench/file/nodes.py`.
-
-| Field | After | Body |
-| --- | --- | --- |
-| `file` in | `BlobFile` | `await inputs.file.read(max_bytes=...)`. Delete the `load_file_artifact` call. The format check stays |
-| `file` out | `Ref[Any]`, `Binds("format")` | still returns the new artifact's ref |
-
 Table plugin, `plugins/table/.../nodes.py`.
 
 | Field | After | Body |
@@ -324,8 +317,6 @@ Image plugin, `plugins/image/.../nodes.py`. Output class becomes `RasterImage`. 
 
 | Node | Field | After | Body |
 | --- | --- | --- | --- |
-| `image.decode` | `files` | `list[PngFile \| JpegFile \| WebpFile \| TiffFile \| BmpFile]` | shape stays MANY. Catalog primary stays PNG. Iterate handles and `read` them. Delete the ref content-type map that switches on `ref.artifact_type`. Switch on the class |
-| `image.decode` | `images` | `list[RasterImage]` | `RasterImage.from_content(...)` |
 | draw | `image` | `RasterImage` | `read` instead of `load_file_artifact` |
 | draw | `regions` | `ImageRegionSet` | drop marker |
 | draw | `image` out | `RasterImage` | `from_content` |

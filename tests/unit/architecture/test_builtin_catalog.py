@@ -19,7 +19,7 @@ EXPECTED_BUILTIN_OPERATORS = {
     ("value.integer", 1),
     ("text.input", 1),
     ("schema.builder", 1),
-    ("file.interpret", 1),
+    ("ocr.read", 1),
 }
 
 
@@ -40,7 +40,12 @@ def test_builtin_catalog_keeps_artifact_support_without_retired_operators() -> N
     assert registry.artifact_type_owner(INTEGER_VALUE.key) != "sequence"
     installed_operators = {node.key[0] for node in registry.nodes}
     assert "sequence.collect" in installed_operators
-    assert not installed_operators & {"text.split", "table.text.normalize"}
+    assert not installed_operators & {
+        "text.split",
+        "table.text.normalize",
+        "file.interpret",
+        "image.decode",
+    }
 
 
 def test_file_plugins_install_alongside_builtin_artifact_contracts() -> None:
@@ -49,7 +54,10 @@ def test_file_plugins_install_alongside_builtin_artifact_contracts() -> None:
         registry.install(family)
     registry.freeze()
 
-    assert registry.node_registration("image.decode", 1).plugin_slug == "external.image"
+    assert (
+        registry.node_registration("image.draw_regions", 1).plugin_slug
+        == "external.image"
+    )
     assert registry.node_registration("table.import", 1).plugin_slug == "external.table"
     assert registry.artifact_type_owner(RASTER_IMAGE.key) == "image"
     assert registry.artifact_type_owner(TABLE_DATA.key) == "table"

@@ -1,6 +1,8 @@
 # ADR 0008: The interpret node picks its format through an artifact type binding
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR 0024 (`file.interpret@1` is removed, so nothing picks a
+  format per instance any more; `Binds` itself stays for the sequence family)
+- **Related:** ADR 0024
 
 ## Context
 
