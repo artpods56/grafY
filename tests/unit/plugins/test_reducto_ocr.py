@@ -17,7 +17,11 @@ from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.file_contracts import PDF_FILE
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressPolicy, PinnedPublicAddressTransport
-from grafy_core.nodes import NodeExecutionContext
+from grafy_core.nodes import (
+    NodeExecutionContext,
+    UserFacingNodeError,
+    bind_node_secrets,
+)
 from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.ports.storage import FileStoragePort
@@ -148,17 +152,16 @@ class Env:
     def __init__(self) -> None:
         self.fake = FakeReducto()
         self.workspace_id = uuid4()
-        self.context = NodeExecutionContext(
-            self.workspace_id, uuid4(), "graph-1", "reducto-1"
-        )
         self.secrets = RecordingSecrets()
+        self.context = bind_node_secrets(
+            NodeExecutionContext(self.workspace_id, uuid4(), "graph-1", "reducto-1"),
+            cast(NodeSecretResolverPort, self.secrets),
+            (ocr.API_KEY,),
+        )
         self.use_transport(httpx.MockTransport(self.fake.handle))
 
     def use_transport(self, transport: httpx.AsyncBaseTransport) -> None:
-        self.node = ReductoOcrNode(
-            node_secrets=cast(NodeSecretResolverPort, self.secrets),
-            transport_factory=lambda: transport,
-        )
+        self.node = ReductoOcrNode(transport_factory=lambda: transport)
 
     async def run(
         self,
@@ -323,7 +326,7 @@ async def test_the_key_is_resolved_for_the_node_that_asked(env: Env) -> None:
 
 async def test_a_failing_secret_resolver_stops_the_run(env: Env) -> None:
     env.secrets.error = RuntimeError("the secret store is down")
-    with pytest.raises(ReductoOcrError, match="could not resolve"):
+    with pytest.raises(UserFacingNodeError, match="could not resolve"):
         await env.run()
     assert env.fake.requests == []
 

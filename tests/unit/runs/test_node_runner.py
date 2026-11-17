@@ -60,9 +60,24 @@ from grafy_core.kernel.instances import ExpandedGraph, InstanceKey
 from grafy_core.kernel.memory_results import InMemoryResultStore
 from grafy_core.kernel.project import GraphDefinition, ProjectDocument
 from grafy_core.kernel.scheduler import ComputationRequest, ComputationRunner
-from grafy_core.nodes import Node, NodeExecutionContext, RefSequence
-from grafy_core.plugins import Plugin, PluginRegistry, PluginRuntimeContext
-from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
+from grafy_core.nodes import (
+    Node,
+    NodeExecutionContext,
+    RefSequence,
+)
+from grafy_core.domain.node_secrets import JsonValue
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.plugins import (
+    NodeSecretInput,
+    Plugin,
+    PluginRegistry,
+    PluginRuntimeContext,
+)
+from grafy_core.ports.node_secrets import (
+    NodeSecretResolverPort,
+    NodeSecretUnavailableError,
+    UnavailableNodeSecretResolver,
+)
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.execution import NodeRunError, NodeRuntime
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
@@ -81,7 +96,7 @@ from grafy_workbench.schema.values import JsonSchemaText
 from grafy_workbench.sequence import SEQUENCES
 from grafy_workbench.text import TEXT
 from grafy_workbench.value import VALUE
-from pydantic import Field, StrictStr
+from pydantic import Field, SecretStr, StrictStr
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000941")
 PROJECT_ID = UUID("00000000-0000-0000-0000-000000000942")
@@ -90,6 +105,8 @@ GRAPH_ID = "main"
 
 #: The context each ``test.echo_text`` run was handed, in run order.
 ECHO_RUNS: list[NodeExecutionContext] = []
+#: The node and the key each ``test.read_secret`` run resolved, in run order.
+SECRET_RUNS: list[tuple[str | None, str]] = []
 JOINED: list[list[str]] = []
 RASTER_HANDLES: list[RasterImage] = []
 RASTER_SEQUENCES: list[RefSequence[RasterImage]] = []
@@ -127,6 +144,100 @@ class EchoTextNode(Node[EchoConfig, EchoInput, EchoOutput]):
     ) -> EchoOutput:
         ECHO_RUNS.append(context)
         return EchoOutput(text=f"{config.prefix}{inputs.text}")
+
+
+#: A key declared against the origin it belongs to, so a saved base URL moves it.
+API_KEY = NodeSecretInput(
+    name="api_key",
+    title="API key",
+    config_dependencies=("base_url",),
+)
+
+
+class SecretConfig(NodeConfig):
+    base_url: StrictStr = Field(
+        default="https://api.example.test",
+        description="Origin the key belongs to.",
+    )
+
+
+class SecretInput(NodeInput):
+    pass
+
+
+class SecretOutput(NodeOutput):
+    text: str
+
+
+@ECHO.node(
+    operator_id="test.read_secret",
+    version=1,
+    title="Read secret",
+    secret_inputs=(API_KEY,),
+    required_capabilities=(PluginRuntimeCapability.NODE_SECRETS,),
+)
+@final
+class ReadSecretNode(Node[SecretConfig, SecretInput, SecretOutput]):
+    """Reads its own API key off its execution context and returns it as text."""
+
+    @override
+    async def run(
+        self,
+        context: NodeExecutionContext,
+        config: SecretConfig,
+        inputs: SecretInput,
+        /,
+    ) -> SecretOutput:
+        del config, inputs
+        api_key = await context.secrets.require(API_KEY.name)
+        SECRET_RUNS.append((context.node_id, api_key.get_secret_value()))
+        return SecretOutput(text=api_key.get_secret_value())
+
+
+class RecordingNodeSecrets:
+    """A secret store holding one key per node, looked up by where the node sits."""
+
+    def __init__(self, keys: Mapping[str, str] | None = None) -> None:
+        self.keys: dict[str, str] = dict(keys or {})
+        self.lookups: list[dict[str, object]] = []
+
+    async def resolve_secret(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID | None,
+        graph_id: str | None,
+        node_id: str | None,
+        name: str,
+        dependencies: Mapping[str, JsonValue],
+    ) -> SecretStr:
+        self.lookups.append(
+            {
+                "workspace_id": workspace_id,
+                "project_id": project_id,
+                "graph_id": graph_id,
+                "node_id": node_id,
+                "name": name,
+                "dependencies": dict(dependencies),
+            }
+        )
+        key = self.keys.get(str(node_id))
+        if key is None:
+            raise NodeSecretUnavailableError("Required node secret is not configured")
+        return SecretStr(key)
+
+    async def cache_revision(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID | None,
+        graph_id: str | None,
+        node_id: str | None,
+        name: str,
+        dependencies: Mapping[str, JsonValue],
+    ) -> str:
+        del workspace_id, project_id, graph_id, node_id, name, dependencies
+        return "revision"
 
 
 class JoinConfig(NodeConfig):
@@ -220,6 +331,7 @@ class Harness:
     values: ArtifactValues
     runner: ComputationRunner
     object_root: Path
+    secrets: RecordingNodeSecrets
 
     def stored_object_count(self) -> int:
         root = self.object_root
@@ -397,6 +509,7 @@ def _field(field_id: str, name: str, kind: str) -> dict[str, object]:
 @pytest.fixture(autouse=True)
 def _clear_echo_runs() -> None:
     ECHO_RUNS.clear()
+    SECRET_RUNS.clear()
     JOINED.clear()
     RASTER_HANDLES.clear()
     RASTER_SEQUENCES.clear()
@@ -408,11 +521,12 @@ def build_factory(
     runtime: NodeRuntime,
     plugin_context: PluginRuntimeContext | None,
     values: ArtifactValues,
+    node_secrets: NodeSecretResolverPort | None = None,
 ) -> NodeComputationRunnerFactory:
     return NodeComputationRunnerFactory(
         registry=registry,
         runtime=runtime,
-        node_secrets=UnavailableNodeSecretResolver(),
+        node_secrets=node_secrets or UnavailableNodeSecretResolver(),
         values=values,
         max_map_concurrency=2,
         plugin_context=plugin_context,
@@ -428,6 +542,7 @@ def harness(tmp_path: Path) -> Harness:
     for family in (VALUE, TEXT, SCHEMAS, SEQUENCES, ECHO):
         registry.install(family)
     registry.freeze()
+    secrets = RecordingNodeSecrets()
     values = ArtifactValues(
         (*registry.artifacts, *FILE_ARTIFACTS, RASTER_IMAGE_ARTIFACT),
         uow=uow,
@@ -451,6 +566,7 @@ def harness(tmp_path: Path) -> Harness:
         runtime=runtime,
         plugin_context=runtime_context,
         values=values,
+        node_secrets=secrets,
     )
     store = InMemoryResultStore()
     return Harness(
@@ -458,6 +574,7 @@ def harness(tmp_path: Path) -> Harness:
         store=store,
         values=values,
         object_root=object_root,
+        secrets=secrets,
         runner=factory.for_project(
             workspace_id=WORKSPACE_ID,
             project_id=PROJECT_ID,
@@ -841,6 +958,7 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
         bucket="artifacts",
         storage_backend="local",
     )
+    secrets = RecordingNodeSecrets()
     factory = build_factory(
         registry=registry,
         runtime=NodeRuntime(
@@ -849,6 +967,7 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
         ),
         plugin_context=None,
         values=values,
+        node_secrets=secrets,
     )
     store = InMemoryResultStore()
     harness = Harness(
@@ -856,6 +975,7 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
         store=store,
         values=values,
         object_root=object_root,
+        secrets=secrets,
         runner=factory.for_project(
             workspace_id=WORKSPACE_ID,
             project_id=PROJECT_ID,
@@ -1095,3 +1215,54 @@ async def test_a_graph_boundary_conversion_still_writes(harness: Harness) -> Non
     assert written.key() == TEXT_VALUE.key
     assert await harness.text_of(written) == "8"
     assert written.artifact_id != number_ref.artifact_id
+
+
+async def test_each_node_reads_its_own_key_off_its_own_context(
+    harness: Harness,
+) -> None:
+    """Two runs of one operator, each with its own credential.
+
+    The runner binds secrets to the node it is about to compute, so the operator
+    never says whose key it wants: it names one. The second node's document does not
+    even carry the base URL its key belongs to, and still gets its own rather than
+    the first node's.
+    """
+
+    harness.secrets.keys.update({"first": "key-of-first", "second": "key-of-second"})
+    graph = _expand(
+        _node("first", "test.read_secret", config={"base_url": "https://one.test"}),
+        _node("second", "test.read_secret"),
+    )
+
+    first_outputs = await harness.compute_node(graph, "first")
+    second_outputs = await harness.compute_node(graph, "second")
+
+    assert SECRET_RUNS == [("first", "key-of-first"), ("second", "key-of-second")]
+    assert [
+        (lookup["node_id"], lookup["dependencies"])
+        for lookup in harness.secrets.lookups
+    ] == [
+        ("first", {"base_url": "https://one.test"}),
+        # The document omits base_url, so the node's own contract says what its
+        # key was stored against.
+        ("second", {"base_url": "https://api.example.test"}),
+    ]
+    first_ref = first_outputs["text"]
+    second_ref = second_outputs["text"]
+    assert isinstance(first_ref, ArtifactRef)
+    assert isinstance(second_ref, ArtifactRef)
+    assert await harness.text_of(first_ref) == "key-of-first"
+    assert await harness.text_of(second_ref) == "key-of-second"
+
+
+async def test_a_node_whose_key_was_never_set_fails_as_a_user_error(
+    harness: Harness,
+) -> None:
+    """A missing credential is the graph's own state, said in user terms."""
+
+    graph = _expand(_node("first", "test.read_secret"))
+
+    with pytest.raises(NodeRunError, match="could not resolve its API key"):
+        await harness.compute_node(graph, "first")
+
+    assert harness.secrets.lookups[0]["node_id"] == "first"

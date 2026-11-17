@@ -42,7 +42,6 @@ from grafy_core.plugins import (
     NodeSecretInput,
     PluginRuntimeContext,
 )
-from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_plugin_mistral.declaration import MISTRAL
 from grafy_plugin_mistral.response import OcrPage
 
@@ -219,13 +218,20 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+#: The credential this node reads with `context.secrets.require(API_KEY.name)`.
+API_KEY = NodeSecretInput(
+    name="api_key",
+    title="API key",
+    description="Write-only bearer credential for the configured API origin.",
+    config_dependencies=(),
+)
+
+
 def build_mistral_ocr_node(context: PluginRuntimeContext) -> "MistralOcrNode":
     from grafy_plugin_mistral.ocr_sdk import MistralOcrSdkProvider
 
-    return MistralOcrNode(
-        provider=MistralOcrSdkProvider(),
-        node_secrets=context.node_secrets,
-    )
+    del context
+    return MistralOcrNode(provider=MistralOcrSdkProvider())
 
 
 @MISTRAL.node(
@@ -237,14 +243,7 @@ def build_mistral_ocr_node(context: PluginRuntimeContext) -> "MistralOcrNode":
         PluginRuntimeCapability.NETWORK_EGRESS,
         PluginRuntimeCapability.NODE_SECRETS,
     ),
-    secret_inputs=(
-        NodeSecretInput(
-            name="api_key",
-            title="API key",
-            description="Write-only bearer credential for the configured API origin.",
-            config_dependencies=(),
-        ),
-    ),
+    secret_inputs=(API_KEY,),
     http_egress=NodeHttpEgressContract(
         fixed_destinations=("https://api.mistral.ai",),
     ),
@@ -257,10 +256,8 @@ class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
         self,
         *,
         provider: MistralOcrProvider,
-        node_secrets: NodeSecretResolverPort,
     ) -> None:
         self._provider = provider
-        self._node_secrets = node_secrets
 
     @override
     async def run(
@@ -275,20 +272,7 @@ class MistralOcrNode(Node[MistralOcrConfig, MistralOcrInput, MistralOcrOutput]):
                 "Connect either a document link or a page image, not both, and "
                 "not neither."
             )
-        try:
-            api_key = await self._node_secrets.resolve_secret(
-                workspace_id=context.workspace_id,
-                project_id=context.project_id,
-                graph_id=context.graph_id,
-                node_id=context.node_id,
-                name="api_key",
-                dependencies={},
-            )
-        except Exception as exc:
-            raise MistralOcrExecutionError(
-                "Mistral OCR could not resolve its API key for node "
-                f"{context.node_id!r}"
-            ) from exc
+        api_key = await context.secrets.require(API_KEY.name)
 
         try:
             document = await self._provider.process(

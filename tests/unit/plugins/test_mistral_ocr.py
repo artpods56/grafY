@@ -19,7 +19,7 @@ from grafy_core.artifact_contracts import (
 from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.file_contracts import PDF_FILE
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.nodes import NodeExecutionContext, PortShape
+from grafy_core.nodes import NodeExecutionContext, PortShape, bind_node_secrets
 from grafy_core.runtime.invocation import (
     InvocationMode,
     NodeInvocation,
@@ -31,6 +31,7 @@ from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectIn
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_plugin_mistral.declaration import MISTRAL
 from grafy_plugin_mistral.ocr import (
+    API_KEY,
     MistralOcrConfig,
     MistralOcrOutput,
     MistralOcrExecutionError,
@@ -346,14 +347,18 @@ async def test_node_resolves_the_bound_secret_and_returns_the_document() -> None
     secret = SecretStr("secret-provider-key")
     secrets = FakeNodeSecrets(secret)
     provider = FakeProvider(document_payload())
-    node = MistralOcrNode(provider=provider, node_secrets=secrets)
+    node = MistralOcrNode(provider=provider)
 
     output = await node.run(
-        NodeExecutionContext(
-            workspace_id=WORKSPACE_ID,
-            project_id=uuid4(),
-            graph_id="scans",
-            node_id="ocr-1",
+        bind_node_secrets(
+            NodeExecutionContext(
+                workspace_id=WORKSPACE_ID,
+                project_id=uuid4(),
+                graph_id="scans",
+                node_id="ocr-1",
+            ),
+            secrets,
+            (API_KEY,),
         ),
         MistralOcrConfig(),
         MistralOcrInput(document_url="https://files.example/report.pdf"),
@@ -366,10 +371,7 @@ async def test_node_resolves_the_bound_secret_and_returns_the_document() -> None
 
 
 async def test_node_requires_exactly_one_document_source() -> None:
-    node = MistralOcrNode(
-        provider=FakeProvider(document_payload()),
-        node_secrets=FakeNodeSecrets(SecretStr("secret-provider-key")),
-    )
+    node = MistralOcrNode(provider=FakeProvider(document_payload()))
     context = NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="ocr-1")
 
     with pytest.raises(MistralOcrExecutionError, match="not both, and not neither"):

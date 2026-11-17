@@ -24,7 +24,6 @@ from grafy_core.plugins import (
     NodeSecretInput,
     PluginRuntimeContext,
 )
-from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.table_contracts import (
     Table,
     TableColumn,
@@ -207,8 +206,18 @@ def build_parse_output(chunks: list[ParseChunk]) -> ReductoOcrOutput:
     )
 
 
+#: The credential this node reads with `context.secrets.require(API_KEY.name)`.
+API_KEY = NodeSecretInput(
+    name="api_key",
+    title="API key",
+    description="Write-only bearer credential for the Reducto platform API.",
+    config_dependencies=(),
+)
+
+
 def build_reducto_ocr_node(context: PluginRuntimeContext) -> "ReductoOcrNode":
-    return ReductoOcrNode(node_secrets=context.node_secrets)
+    del context
+    return ReductoOcrNode()
 
 
 @REDUCTO.node(
@@ -220,14 +229,7 @@ def build_reducto_ocr_node(context: PluginRuntimeContext) -> "ReductoOcrNode":
         PluginRuntimeCapability.NETWORK_EGRESS,
         PluginRuntimeCapability.NODE_SECRETS,
     ),
-    secret_inputs=(
-        NodeSecretInput(
-            name="api_key",
-            title="API key",
-            description="Write-only bearer credential for the Reducto platform API.",
-            config_dependencies=(),
-        ),
-    ),
+    secret_inputs=(API_KEY,),
     http_egress=NodeHttpEgressContract(
         fixed_destinations=(REDUCTO_BASE_URL,),
         # A large result comes back as a presigned URL on the provider's storage.
@@ -241,12 +243,10 @@ class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
     def __init__(
         self,
         *,
-        node_secrets: NodeSecretResolverPort,
         transport_factory: Callable[
             [], httpx.AsyncBaseTransport
         ] = PinnedPublicAddressTransport,
     ) -> None:
-        self._node_secrets = node_secrets
         self._transport_factory = transport_factory
 
     @override
@@ -268,19 +268,7 @@ class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
             "https://"
         ):
             raise ReductoOcrError("The document link has to start with https://.")
-        try:
-            api_key = await self._node_secrets.resolve_secret(
-                workspace_id=context.workspace_id,
-                project_id=context.project_id,
-                graph_id=context.graph_id,
-                node_id=context.node_id,
-                name="api_key",
-                dependencies={},
-            )
-        except Exception as exc:
-            raise ReductoOcrError(
-                f"Reducto OCR could not resolve its API key for node {context.node_id!r}"
-            ) from exc
+        api_key = await context.secrets.require(API_KEY.name)
 
         settings: SettingsParam = {
             "model": config.model,

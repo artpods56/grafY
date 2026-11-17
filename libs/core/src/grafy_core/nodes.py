@@ -10,7 +10,11 @@ from grafy_core.node_context import (
     MAX_NODE_PROGRESS_MESSAGE_LENGTH as MAX_NODE_PROGRESS_MESSAGE_LENGTH,
     NodeExecutionContext as NodeExecutionContext,
     NodeProgressReporter as NodeProgressReporter,
+    NodeSecretRequirementError as NodeSecretRequirementError,
+    NodeSecrets as NodeSecrets,
     UserFacingNodeError as UserFacingNodeError,
+    bind_node_secret_config as bind_node_secret_config,
+    bind_node_secrets as bind_node_secrets,
 )
 from grafy_core.node_derivation import (
     derive_input_contract as derive_input_contract,

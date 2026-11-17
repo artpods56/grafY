@@ -19,6 +19,8 @@ from grafy_core.nodes import (
     MAX_NODE_PROGRESS_COUNTER,
     Node,
     NodeExecutionContext,
+    UserFacingNodeError,
+    bind_node_secrets,
 )
 from grafy_core.declared_values import note_declaration
 from grafy_core.plugins import (
@@ -32,7 +34,10 @@ from grafy_core.plugins import (
     PluginRuntimeContext,
     UnknownOperatorError,
 )
-from grafy_core.ports.node_secrets import NodeSecretUnavailableError
+from grafy_core.ports.node_secrets import (
+    NodeSecretUnavailableError,
+    UnavailableNodeSecretResolver,
+)
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_storage import LocalFileObjectStore
 from pydantic import BaseModel, ConfigDict
@@ -146,6 +151,16 @@ async def context_function_node(
     _inputs: EmptyInput,
 ) -> EmptyOutput:
     _context_function_calls.append(context)
+    return EmptyOutput()
+
+
+async def secret_function_node(
+    context: NodeExecutionContext,
+    _config: SecretConfig,
+    _inputs: EmptyInput,
+) -> EmptyOutput:
+    """Reads the one credential its own declaration carries."""
+    await context.secrets.require("api_key")
     return EmptyOutput()
 
 
@@ -364,6 +379,37 @@ def test_node_decorator_records_declared_secret_config_dependencies() -> None:
     )(SecretNode)
 
     assert plugin.nodes[0].secret_inputs == (declared,)
+
+
+@pytest.mark.asyncio
+async def test_function_node_secret_inputs_reach_the_execution_context(
+    tmp_path: Path,
+) -> None:
+    plugin = Plugin(slug="example.secret-functions", title="Secret functions")
+    declared = NodeSecretInput(name="api_key", title="API key")
+    plugin.function_node(
+        operator_id="example.secret-function",
+        version=1,
+        title="Secret function",
+        secret_inputs=(declared,),
+        required_capabilities=(PluginRuntimeCapability.NODE_SECRETS,),
+    )(secret_function_node)
+    registry = installed_registry(plugin)
+    registry.freeze()
+
+    registration = registry.node_registration("example.secret-function", 1)
+    context = bind_node_secrets(
+        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="secret-node"),
+        UnavailableNodeSecretResolver(),
+        registration.secret_inputs,
+    )
+    node = registry.build_node("example.secret-function", 1, runtime_context(tmp_path))
+
+    assert registration.secret_inputs == (declared,)
+    # The declaration reached the function's context: its own name is a secret the
+    # runtime is asked for, not a field the function happens to carry.
+    with pytest.raises(UserFacingNodeError, match="could not resolve its API key"):
+        await node.run(context, SecretConfig(), EmptyInput())
 
 
 @pytest.mark.parametrize(

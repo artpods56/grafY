@@ -23,7 +23,7 @@ from grafy_core.kernel.instances import InstanceKey
 from grafy_core.kernel.project import GRAPH_BOUNDARY_PORT
 from grafy_core.kernel.results import ResultStore
 from grafy_core.kernel.scheduler import ComputationRequest, ComputationRunner
-from grafy_core.nodes import NodeExecutionContext
+from grafy_core.nodes import NodeExecutionContext, bind_node_secrets
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.runtime.artifact_values import ArtifactValues
@@ -47,6 +47,7 @@ class NodeComputationRunner:
         binder: NodeContractBinder,
         edge_values: EdgeValueResolver,
         node_execution: NodeExecutionService,
+        node_secrets: NodeSecretResolverPort,
     ) -> None:
         self._workspace_id = workspace_id
         self._project_id = project_id
@@ -54,6 +55,7 @@ class NodeComputationRunner:
         self._binder = binder
         self._edge_values = edge_values
         self._node_execution = node_execution
+        self._node_secrets = node_secrets
 
     async def __call__(
         self,
@@ -86,6 +88,14 @@ class NodeComputationRunner:
             return {GRAPH_BOUNDARY_PORT: value}
 
         bound = self._binder.bind(instance, upstream)
+        # Secrets belong to the node that is about to run, so they are bound here,
+        # once, to this Project's identity and to the operator's own declaration:
+        # a node names a credential, it never names where one lives.
+        context = bind_node_secrets(
+            context,
+            self._node_secrets,
+            bound.registration.secret_inputs,
+        )
         assembled = await self._edge_values.assemble_inputs(
             slots=bound.slots,
             ports=bound.ports,
@@ -142,11 +152,10 @@ class NodeComputationRunnerFactory:
 
     ``plugin_context`` is what an operator needing runtime services -- storage,
     a workbench workspace -- is built with; an operator that needs none is built
-    from its class and the runner works without one. ``node_secrets`` belongs to
-    that same composition: a node resolves its own credentials through the plugin
-    runtime context while it runs, and the secret revisions that make a node
-    stale enter its fingerprint outside the runner, so a computation reads no
-    secret here.
+    from its class and the runner works without one. ``node_secrets`` is what a
+    node reads its own credential through: the runner binds it to the executing
+    node on that node's execution context, while the secret revisions that make a
+    node stale enter its fingerprint outside the runner.
     """
 
     def __init__(
@@ -184,6 +193,7 @@ class NodeComputationRunnerFactory:
             binder=self._binder,
             edge_values=self._edge_values,
             node_execution=self._node_execution,
+            node_secrets=self._node_secrets,
         )
 
 

@@ -18,6 +18,7 @@ from grafy_core.nodes import (
     Node,
     NodeExecutionContext,
     UserFacingNodeError,
+    bind_node_secret_config,
     resolve_node_contracts,
 )
 from grafy_core.runtime.edge_transform import EdgeTransform
@@ -93,6 +94,7 @@ class NodeRuntime:
             artifact_type_bindings=effective_bindings,
         )
         validated_config = node.config_contract.model.model_validate(raw_config)
+        context = bind_node_secret_config(context, validated_config)
 
         materialized_inputs, provenance = await self._materializer.materialize(
             contract=cast(InputContract[InputT], resolved_contracts.input_contract),
