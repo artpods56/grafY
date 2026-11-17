@@ -1,11 +1,8 @@
 import json
 import re
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import (
-    TYPE_CHECKING,
-    Any,
     Literal,
     Self,
     TypeAlias,
@@ -13,11 +10,6 @@ from typing import (
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
-if TYPE_CHECKING:
-    from grafy_core.plugins import PluginRuntimeContext
-    from grafy_core.runtime.persistence import ArtifactOutputWriter
-    from grafy_core.runtime.resolvers import Resolver
 
 JsonObject: TypeAlias = dict[str, object]
 MaterializedJsonType: TypeAlias = Literal["string", "integer"]
@@ -228,13 +220,6 @@ class ArtifactTypeSpec:
                 "Artifact references currently require the inline-json bundle"
             )
         validate_extension_claims(self.key.id, self.extensions)
-
-
-@dataclass(frozen=True, slots=True)
-class Artifact:
-    spec: ArtifactTypeSpec
-    resolver: "Callable[[PluginRuntimeContext], Resolver[Any]]"
-    writer: "Callable[[PluginRuntimeContext], ArtifactOutputWriter]"
 
 
 class ArtifactRef(BaseModel):
@@ -483,7 +468,6 @@ class ArtifactObject:
 
 
 __all__ = [
-    "Artifact",
     "ArtifactBundleContract",
     "ArtifactBundleFormat",
     "ArtifactConfirmationRule",

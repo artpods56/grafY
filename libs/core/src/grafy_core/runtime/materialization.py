@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, cast
+from typing import TYPE_CHECKING, Final, cast
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -12,6 +12,9 @@ from grafy_core.artifacts import (
 )
 from grafy_core.nodes import InputContract, PortShape
 from grafy_core.runtime.resolvers import ResolverRegistry
+
+if TYPE_CHECKING:
+    from grafy_core.runtime.artifact_values import ArtifactValues
 
 
 class MaterializationError(RuntimeError):
@@ -39,8 +42,28 @@ _EXPECTED_PORT_VALUE: Final = {
 
 
 class InputMaterializer:
-    def __init__(self, resolver_registry: ResolverRegistry) -> None:
+    def __init__(
+        self,
+        resolver_registry: ResolverRegistry,
+        values: "ArtifactValues | None" = None,
+    ) -> None:
         self._resolver_registry = resolver_registry
+        self._values = values
+
+    async def _resolve(
+        self,
+        ref: ArtifactRef,
+        target: type[object],
+        workspace_id: UUID,
+    ) -> object:
+        values = self._values
+        if values is not None and values.declaration_for(ref.key()) is not None:
+            return await values.resolve(ref, workspace_id)
+        return await self._resolver_registry.resolve(
+            ref=ref,
+            target=target,
+            workspace_id=workspace_id,
+        )
 
     async def materialize[T: BaseModel](
         self,
@@ -170,14 +193,7 @@ class InputMaterializer:
                     name, "does not declare a resolvable Python value type"
                 )
             resolved = [
-                [
-                    await self._resolver_registry.resolve(
-                        ref=ref,
-                        target=target,
-                        workspace_id=workspace_id,
-                    )
-                    for ref in edge
-                ]
+                [await self._resolve(ref, target, workspace_id) for ref in edge]
                 for edge in edges
             ]
             match spec.variadic, spec.shape:

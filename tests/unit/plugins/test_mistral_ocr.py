@@ -28,7 +28,6 @@ from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.runtime.persistence import InlineModelOutputWriter
 from grafy_plugin_mistral.declaration import MISTRAL
 from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
@@ -335,8 +334,7 @@ def test_plugin_registers_dependency_writers(tmp_path: Path) -> None:
     writers = {
         writer.artifact_type: writer for writer in registry.build_writers(context)
     }
-    assert set(writers) == {MARKDOWN.key, IMAGE_REGIONS.key}
-    assert isinstance(writers[MARKDOWN.key], InlineModelOutputWriter)
+    assert writers == {}
     # TABLE_DATA uses the guest's table-bundle fallback, like the SQL plugin.
     assert TABLE_DATA.key in {spec.key for spec in MISTRAL.artifact_type_dependencies}
     assert registry.declared_artifact_types == ()

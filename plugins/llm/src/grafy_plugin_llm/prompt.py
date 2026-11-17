@@ -4,7 +4,6 @@ from pydantic import Field, StrictStr
 
 from grafy_core.artifact_contracts import RASTER_IMAGE, TEXT_VALUE
 from grafy_core.artifacts import (
-    Artifact,
     ArtifactRefSequence,
     NodeConfig,
     NodeInput,
@@ -17,8 +16,7 @@ from grafy_core.prompt_contracts import (
     PromptMessage,
     PromptMessageRole,
 )
-from grafy_core.runtime.persistence import InlineModelOutputWriter
-from grafy_core.runtime.resolvers import InlineModelResolver
+from grafy_core.runtime.artifact_values import inline_model_artifact
 
 from grafy_plugin_llm.declaration import LLM
 
@@ -83,21 +81,7 @@ async def create_prompt_message(
 CreatePromptMessageNode = LLM.nodes[-1].node_class
 
 
-LLM.register(
-    Artifact(
-        spec=PROMPT_MESSAGE,
-        resolver=lambda context: InlineModelResolver(
-            source=PROMPT_MESSAGE.key,
-            target=PromptMessage,
-            uow=context.uow,
-        ),
-        writer=lambda context: InlineModelOutputWriter(
-            artifact_type=PROMPT_MESSAGE.key,
-            model=PromptMessage,
-            uow=context.uow,
-        ),
-    )
-)
+LLM.register(inline_model_artifact(PROMPT_MESSAGE, PromptMessage))
 
 
 __all__ = [

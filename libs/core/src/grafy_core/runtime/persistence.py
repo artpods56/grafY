@@ -2,7 +2,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from hashlib import sha256
-from typing import Any, Protocol, cast, final, override
+from typing import TYPE_CHECKING, Any, Protocol, cast, final, override
 
 from pydantic import BaseModel
 
@@ -21,6 +21,9 @@ from grafy_core.nodes import (
     PortShape,
 )
 from grafy_core.runtime.materialization import MaterializationProvenance
+
+if TYPE_CHECKING:
+    from grafy_core.runtime.artifact_values import ArtifactValues
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,8 +154,24 @@ class InlineModelOutputWriter[T: BaseModel](ArtifactOutputWriter):
 
 
 class OutputPersister:
-    def __init__(self, writer_registry: ArtifactWriterRegistry) -> None:
+    def __init__(
+        self,
+        writer_registry: ArtifactWriterRegistry,
+        values: "ArtifactValues | None" = None,
+    ) -> None:
         self._writer_registry = writer_registry
+        self._values = values
+
+    async def _write(
+        self,
+        key: ArtifactTypeKey,
+        value: object,
+        context: ArtifactWriteContext,
+    ) -> ArtifactRef:
+        values = self._values
+        if values is not None and values.declaration_for(key) is not None:
+            return await values.write(key, value, context)
+        return await self._writer_registry.writer_for(key).write(value, context)
 
     async def persist(
         self,
@@ -252,12 +271,12 @@ class OutputPersister:
                 f"Output {spec.name!r} expected one ArtifactRef, got {len(refs)}"
             )
 
-        writer = self._writer_registry.writer_for(spec.produces)
         if spec.shape == PortShape.MANY:
             if items is None:
                 raise RuntimeError(f"Output {spec.name!r} expected a sequence")
             item_refs = [
-                await writer.write(
+                await self._write(
+                    spec.produces,
                     item,
                     ArtifactWriteContext(
                         node_context=context.node_context,
@@ -278,7 +297,7 @@ class OutputPersister:
                 item_refs=item_refs,
             )
 
-        return await writer.write(cast(object, value), context)
+        return await self._write(spec.produces, cast(object, value), context)
 
 
 def _model_values(value: BaseModel) -> dict[str, object]:

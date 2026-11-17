@@ -1,7 +1,7 @@
 """The node computation runner: one instance, computed from stored upstream results.
 
 The operators are the workbench's own -- ``schema.builder`` and ``value.integer``,
-with their real inline writers and resolvers over an in-memory unit of work -- and
+with their real artifact declarations over an in-memory unit of work -- and
 the instances come from the kernel's own expansion of a Project document, so what
 the runner is handed is what the scheduler will hand it: one ``ExpandedInstance``,
 the fingerprint to store under, and the fingerprint of each instance it reads
@@ -49,6 +49,7 @@ from grafy_core.kernel.scheduler import ComputationRequest, ComputationRunner
 from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
 from grafy_core.plugins import Plugin, PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.execution import NodeRunError, NodeRuntime
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import (
@@ -64,6 +65,7 @@ from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_core.schema_contracts import JSON_SCHEMA
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.schema import SCHEMAS
+from grafy_workbench.schema.values import JsonSchemaText
 from grafy_workbench.sequence import SEQUENCES
 from grafy_workbench.text import TEXT
 from grafy_workbench.value import VALUE
@@ -119,21 +121,21 @@ class Harness:
     store: InMemoryResultStore
     writers: ArtifactWriterRegistry
     resolvers: ResolverRegistry
+    values: ArtifactValues
     runner: ComputationRunner
 
     async def write(self, artifact_type: ArtifactTypeKey, value: object) -> ArtifactRef:
-        ref = await self.writers.writer_for(artifact_type).write(
-            value,
-            ArtifactWriteContext(
-                node_context=NodeExecutionContext(
-                    workspace_id=WORKSPACE_ID,
-                    project_id=PROJECT_ID,
-                    node_id="seed",
-                ),
-                provenance=MaterializationProvenance(refs_by_input={}),
+        context = ArtifactWriteContext(
+            node_context=NodeExecutionContext(
+                workspace_id=WORKSPACE_ID,
+                project_id=PROJECT_ID,
+                node_id="seed",
             ),
+            provenance=MaterializationProvenance(refs_by_input={}),
         )
-        return ref
+        if self.values.declaration_for(artifact_type) is not None:
+            return await self.values.write(artifact_type, value, context)
+        return await self.writers.writer_for(artifact_type).write(value, context)
 
     async def write_sequence(
         self,
@@ -297,6 +299,7 @@ def build_factory(
     writers: ArtifactWriterRegistry,
     unit_of_work: InMemoryUnitOfWork,
     plugin_context: PluginRuntimeContext | None,
+    values: ArtifactValues,
 ) -> NodeComputationRunnerFactory:
     return NodeComputationRunnerFactory(
         registry=registry,
@@ -307,27 +310,37 @@ def build_factory(
         node_secrets=UnavailableNodeSecretResolver(),
         max_map_concurrency=2,
         plugin_context=plugin_context,
+        values=values,
     )
 
 
 @pytest.fixture
 def harness(tmp_path: Path) -> Harness:
     uow = InMemoryUnitOfWork()
-    runtime_context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=LocalFileObjectStore(tmp_path / "objects"),
-        uow=uow,
-        bucket="artifacts",
-    )
+    storage = LocalFileObjectStore(tmp_path / "objects")
     registry = PluginRegistry()
     for family in (VALUE, TEXT, SCHEMAS, SEQUENCES, ECHO):
         registry.install(family)
     registry.freeze()
+    values = ArtifactValues(
+        registry.artifacts,
+        uow=uow,
+        storage=storage,
+        bucket="artifacts",
+        storage_backend="local",
+    )
+    runtime_context = PluginRuntimeContext(
+        workspace=tmp_path,
+        storage=storage,
+        uow=uow,
+        bucket="artifacts",
+        values=values,
+    )
     resolvers = ResolverRegistry(list(registry.build_resolvers(runtime_context)))
     writers = ArtifactWriterRegistry(list(registry.build_writers(runtime_context)))
     runtime = NodeRuntime(
-        materializer=InputMaterializer(resolvers),
-        persister=OutputPersister(writers),
+        materializer=InputMaterializer(resolvers, values),
+        persister=OutputPersister(writers, values),
     )
     factory = build_factory(
         registry=registry,
@@ -336,6 +349,7 @@ def harness(tmp_path: Path) -> Harness:
         writers=writers,
         unit_of_work=uow,
         plugin_context=runtime_context,
+        values=values,
     )
     store = InMemoryResultStore()
     return Harness(
@@ -343,6 +357,7 @@ def harness(tmp_path: Path) -> Harness:
         store=store,
         writers=writers,
         resolvers=resolvers,
+        values=values,
         runner=factory.for_project(
             workspace_id=WORKSPACE_ID,
             project_id=PROJECT_ID,
@@ -392,8 +407,13 @@ async def test_computes_a_node_from_the_result_its_upstream_stored(
 async def test_collect_ignores_the_spare_plug_nothing_feeds(harness: Harness) -> None:
     """The canvas keeps an empty plug on a collection for its next member."""
 
-    first = await harness.write(JSON_SCHEMA.key, '{"type":"object"}')
-    second = await harness.write(JSON_SCHEMA.key, '{"type":"object","properties":{}}')
+    first = await harness.write(
+        JSON_SCHEMA.key, JsonSchemaText(value='{"type":"object"}')
+    )
+    second = await harness.write(
+        JSON_SCHEMA.key,
+        JsonSchemaText(value='{"type":"object","properties":{}}'),
+    )
     graph = _expand(
         _node("first", "schema.builder", config={"fields": []}),
         _node("second", "schema.builder", config={"fields": []}),
@@ -451,7 +471,7 @@ async def test_a_plug_that_keeps_no_spares_must_be_fed(harness: Harness) -> None
 
     with pytest.raises(
         NodeComputationError,
-        match=r"input plug 'line' requires exactly one incoming connection",
+        match="Each slot needs exactly one connection",
     ):
         await harness.compute_node(graph, "parent")
 
@@ -460,7 +480,7 @@ async def test_applies_the_projection_an_edge_declares(harness: Harness) -> None
     """An edge projected at ``value`` delivers that field as a text artifact."""
 
     schema_text = '{"type":"object","properties":{},"required":[]}'
-    child_ref = await harness.write(JSON_SCHEMA.key, schema_text)
+    child_ref = await harness.write(JSON_SCHEMA.key, JsonSchemaText(value=schema_text))
     graph = _expand(
         _node("child", "schema.builder", config={"fields": []}),
         _node("echo", "test.echo_text", config={"prefix": "projected: "}),
@@ -506,7 +526,7 @@ async def test_applies_the_conversion_path_an_edge_declares(harness: Harness) ->
     echo_ref = outputs["text"]
     assert isinstance(echo_ref, ArtifactRef)
     assert await harness.text_of(echo_ref) == "got 41"
-    assert await harness.resolvers.resolve(echo_ref, str, WORKSPACE_ID) == "got 41"
+    assert await harness.values.resolve(echo_ref, WORKSPACE_ID) == "got 41"
 
     converted = [
         artifact
@@ -667,7 +687,7 @@ async def test_a_failing_operator_raises(harness: Harness) -> None:
 
     child_ref = await harness.write(
         JSON_SCHEMA.key,
-        '{"type":"object","properties":{},"required":[]}',
+        JsonSchemaText(value='{"type":"object","properties":{},"required":[]}'),
     )
     graph = _expand(
         _node("child", "schema.builder", config={"fields": []}),
@@ -699,28 +719,38 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
     """
 
     uow = InMemoryUnitOfWork()
-    runtime_context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=LocalFileObjectStore(tmp_path / "objects"),
-        uow=uow,
-        bucket="artifacts",
-    )
+    storage = LocalFileObjectStore(tmp_path / "objects")
     registry = PluginRegistry()
     for family in (VALUE, TEXT, ECHO):
         registry.install(family)
     registry.freeze()
+    values = ArtifactValues(
+        registry.artifacts,
+        uow=uow,
+        storage=storage,
+        bucket="artifacts",
+        storage_backend="local",
+    )
+    runtime_context = PluginRuntimeContext(
+        workspace=tmp_path,
+        storage=storage,
+        uow=uow,
+        bucket="artifacts",
+        values=values,
+    )
     resolvers = ResolverRegistry(list(registry.build_resolvers(runtime_context)))
     writers = ArtifactWriterRegistry(list(registry.build_writers(runtime_context)))
     factory = build_factory(
         registry=registry,
         runtime=NodeRuntime(
-            materializer=InputMaterializer(resolvers),
-            persister=OutputPersister(writers),
+            materializer=InputMaterializer(resolvers, values),
+            persister=OutputPersister(writers, values),
         ),
         resolvers=resolvers,
         writers=writers,
         unit_of_work=uow,
         plugin_context=None,
+        values=values,
     )
     store = InMemoryResultStore()
     harness = Harness(
@@ -728,6 +758,7 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
         store=store,
         writers=writers,
         resolvers=resolvers,
+        values=values,
         runner=factory.for_project(
             workspace_id=WORKSPACE_ID,
             project_id=PROJECT_ID,

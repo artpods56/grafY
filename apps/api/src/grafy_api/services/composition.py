@@ -14,6 +14,7 @@ from grafy_core.ports.node_secrets import (
     UnavailableNodeSecretResolver,
 )
 from grafy_core.ports.storage import FileStoragePort
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import (
@@ -131,6 +132,13 @@ def build_workbench_components(
         storage_backend=storage_backend,
     )
     resolved_node_secrets = node_secrets or UnavailableNodeSecretResolver()
+    values = ArtifactValues(
+        plugin_registry.artifacts,
+        uow=uow,
+        storage=resolved_storage,
+        bucket=bucket,
+        storage_backend=storage_backend,
+    )
     plugin_context = PluginRuntimeContext(
         workspace=resolved_workspace,
         storage=resolved_storage,
@@ -139,6 +147,7 @@ def build_workbench_components(
         storage_backend=storage_backend,
         artifact_types=tuple(artifact_types.values()),
         node_secrets=resolved_node_secrets,
+        values=values,
     )
 
     resolvers = list(plugin_registry.build_resolvers(plugin_context))
@@ -205,8 +214,8 @@ def build_workbench_components(
     )
     library_folders = LibraryFoldersService(uow)
     runtime = NodeRuntime(
-        materializer=InputMaterializer(resolver_registry),
-        persister=OutputPersister(writer_registry),
+        materializer=InputMaterializer(resolver_registry, values),
+        persister=OutputPersister(writer_registry, values),
     )
     runners = NodeComputationRunnerFactory(
         registry=plugin_registry,
@@ -216,6 +225,7 @@ def build_workbench_components(
         unit_of_work=uow,
         node_secrets=resolved_node_secrets,
         plugin_context=plugin_context,
+        values=values,
         max_map_concurrency=resolved_limits.map_max_concurrency,
     )
     resolved_tiler_config = (

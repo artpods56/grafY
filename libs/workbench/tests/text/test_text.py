@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import cast
 from uuid import UUID
 
@@ -13,8 +12,9 @@ from grafy_core.artifact_contracts import (
 )
 from grafy_core.artifacts import ArtifactRef
 from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.storage import FileStoragePort
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
@@ -27,11 +27,19 @@ from grafy_workbench.text.nodes import (
     TextInputConfig,
     TextInputInput,
     TextInputNode,
-    TextValueOutputWriter,
-    TextValueResolver,
 )
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
+
+
+def _text_values(uow: InMemoryUnitOfWork) -> ArtifactValues:
+    return ArtifactValues(
+        TEXT.artifacts,
+        uow=uow,
+        storage=cast(FileStoragePort, object()),
+        bucket="artifacts",
+        storage_backend="local",
+    )
 
 
 def test_text_payload_keeps_legacy_public_identity() -> None:
@@ -99,29 +107,14 @@ def test_markdown_artifact_is_nominally_registered() -> None:
 
 
 @pytest.mark.asyncio
-async def test_markdown_inline_factories_round_trip_typed_payload(
-    tmp_path: Path,
-) -> None:
+async def test_markdown_inline_factories_round_trip_typed_payload() -> None:
     uow = InMemoryUnitOfWork()
-    context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=cast(FileStoragePort, object()),
-        uow=uow,
-        bucket="artifacts",
-    )
-    registry = PluginRegistry()
-    registry.install(TEXT)
-    registry.freeze()
-    writers = {
-        writer.artifact_type: writer for writer in registry.build_writers(context)
-    }
-    resolvers = {
-        resolver.source: resolver for resolver in registry.build_resolvers(context)
-    }
+    values = _text_values(uow)
     source = "## Exact source\n\n| A | B |\n| - | - |\n| 1 | 2 |\n"
     payload = MarkdownValue(markdown=source)
 
-    ref = await writers[MARKDOWN.key].write(
+    ref = await values.write(
+        MARKDOWN.key,
         payload,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -132,7 +125,7 @@ async def test_markdown_inline_factories_round_trip_typed_payload(
         ),
     )
 
-    assert await resolvers[MARKDOWN.key].resolve(ref, TEST_WORKSPACE_ID) == payload
+    assert await values.resolve(ref, TEST_WORKSPACE_ID) == payload
     async with uow as entered:
         artifact = await entered.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
@@ -147,8 +140,9 @@ async def test_text_value_adapters_preserve_inline_payload_and_metadata() -> Non
         artifact_type="scalar.integer",
         schema_version=1,
     )
-    writer = TextValueOutputWriter(uow=uow)
-    ref = await writer.write(
+    values = _text_values(uow)
+    ref = await values.write(
+        TEXT_VALUE.key,
         "persisted text",
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -164,9 +158,7 @@ async def test_text_value_adapters_preserve_inline_payload_and_metadata() -> Non
             },
         ),
     )
-    resolver = TextValueResolver(uow=uow)
-
-    assert await resolver.resolve(ref, TEST_WORKSPACE_ID) == "persisted text"
+    assert await values.resolve(ref, TEST_WORKSPACE_ID) == "persisted text"
     async with uow as entered:
         artifact = await entered.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
@@ -235,25 +227,9 @@ def test_html_page_rejects_a_payload_that_is_not_one_page() -> None:
 
 
 @pytest.mark.asyncio
-async def test_html_page_inline_factories_round_trip_typed_payload(
-    tmp_path: Path,
-) -> None:
+async def test_html_page_inline_factories_round_trip_typed_payload() -> None:
     uow = InMemoryUnitOfWork()
-    context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=cast(FileStoragePort, object()),
-        uow=uow,
-        bucket="artifacts",
-    )
-    registry = PluginRegistry()
-    registry.install(TEXT)
-    registry.freeze()
-    writers = {
-        writer.artifact_type: writer for writer in registry.build_writers(context)
-    }
-    resolvers = {
-        resolver.source: resolver for resolver in registry.build_resolvers(context)
-    }
+    values = _text_values(uow)
     payload = HtmlPage(
         html="<p>{{baptisms}}</p>",
         sources={
@@ -265,7 +241,8 @@ async def test_html_page_inline_factories_round_trip_typed_payload(
         },
     )
 
-    ref = await writers[HTML_PAGE.key].write(
+    ref = await values.write(
+        HTML_PAGE.key,
         payload,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -276,7 +253,7 @@ async def test_html_page_inline_factories_round_trip_typed_payload(
         ),
     )
 
-    assert await resolvers[HTML_PAGE.key].resolve(ref, TEST_WORKSPACE_ID) == payload
+    assert await values.resolve(ref, TEST_WORKSPACE_ID) == payload
     async with uow as entered:
         artifact = await entered.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None

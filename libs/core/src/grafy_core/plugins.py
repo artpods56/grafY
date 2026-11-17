@@ -16,7 +16,6 @@ from typing import (
 )
 
 from grafy_core.artifacts import (
-    Artifact,
     ArtifactFieldProjection,
     ArtifactTypeKey,
     ArtifactTypeSpec,
@@ -26,6 +25,7 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
+from grafy_core.runtime.artifact_values import Artifact, ArtifactValues
 from grafy_core.callable_nodes import callable_node_class
 from grafy_core.conversions import (
     ArtifactConversion,
@@ -81,6 +81,7 @@ class PluginRuntimeContext:
     node_secrets: NodeSecretResolverPort = field(
         default_factory=UnavailableNodeSecretResolver
     )
+    values: ArtifactValues | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,6 +245,7 @@ class Plugin:
         ] = {}
         self._resolver_factories: list[ResolverFactory] = []
         self._writer_factories: list[WriterFactory] = []
+        self._artifacts: list[Artifact[Any]] = []
 
     def node[NodeT: Node[Any, Any, Any]](
         self,
@@ -596,10 +598,13 @@ class Plugin:
     def register_writer(self, factory: WriterFactory) -> None:
         self._writer_factories.append(factory)
 
-    def register(self, artifact: Artifact) -> None:
+    def register(self, artifact: Artifact[Any]) -> None:
         self.register_artifact_type(artifact.spec)
-        self._writer_factories.append(artifact.writer)
-        self._resolver_factories.append(artifact.resolver)
+        self._artifacts.append(artifact)
+
+    @property
+    def artifacts(self) -> tuple[Artifact[Any], ...]:
+        return tuple(self._artifacts)
 
     @property
     def nodes(self) -> tuple[NodeRegistration, ...]:
@@ -640,6 +645,7 @@ class _InstalledPluginDeclaration:
     artifact_type_dependencies: tuple[ArtifactTypeSpec, ...]
     resolver_factories: tuple[ResolverFactory, ...]
     writer_factories: tuple[WriterFactory, ...]
+    artifacts: tuple[Artifact[Any], ...]
 
 
 class PluginRegistry:
@@ -668,6 +674,7 @@ class PluginRegistry:
             artifact_type_dependencies=plugin.artifact_type_dependencies,
             resolver_factories=plugin.resolver_factories,
             writer_factories=plugin.writer_factories,
+            artifacts=plugin.artifacts,
         )
 
         duplicate_nodes = [
@@ -909,6 +916,14 @@ class PluginRegistry:
                 f"Plugin {registration.plugin_slug!r} operator "
                 f"{operator_id}@{operator_version} requires an explicit node factory"
             ) from exc
+
+    @property
+    def artifacts(self) -> tuple[Artifact[Any], ...]:
+        return tuple(
+            artifact
+            for declaration in self._declarations.values()
+            for artifact in declaration.artifacts
+        )
 
     def build_resolvers(
         self,

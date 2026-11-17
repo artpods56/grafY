@@ -5,7 +5,6 @@ import io
 import json
 from collections.abc import Callable
 from hashlib import sha256
-from pathlib import Path
 from typing import cast, final
 from uuid import UUID, uuid4
 
@@ -19,11 +18,7 @@ from grafy_core.artifacts import ArtifactObject, ArtifactRef
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressPolicy, PinnedPublicAddressTransport
 from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import (
-    PluginRegistry,
-    PluginRuntimeContext,
-    PluginUnitOfWorkPort,
-)
+from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.ports.storage import FileStoragePort
@@ -279,21 +274,14 @@ def test_the_node_declares_exactly_its_ports(env: Env) -> None:
     assert [port.title for port in took.values()] == ["Document link", "Scan or PDF"]
 
 
-def test_the_family_needs_egress_and_secrets_and_owns_the_markdown_writer() -> None:
+def test_the_family_needs_egress_and_secrets() -> None:
     registration = REDUCTO.nodes[0]
     assert REDUCTO.capabilities == (
         PluginRuntimeCapability.NETWORK_EGRESS,
         PluginRuntimeCapability.NODE_SECRETS,
     )
     assert registration.required_capabilities == REDUCTO.capabilities
-    runtime = PluginRuntimeContext(
-        Path("/tmp/grafy-reducto-test"),
-        cast(FileStoragePort, object()),
-        cast(PluginUnitOfWorkPort, object()),
-        "workbench-artifacts",
-    )
-    writers = [factory(runtime) for factory in REDUCTO.writer_factories]
-    assert [writer.artifact_type for writer in writers] == [MARKDOWN.key]
+    assert REDUCTO.writer_factories == ()
 
 
 def test_the_family_declares_one_secret_and_its_destinations() -> None:

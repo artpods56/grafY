@@ -1,13 +1,13 @@
 import json
-from pathlib import Path
 from typing import cast
 from uuid import UUID
 
 import pytest
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.nodes import NodeExecutionContext, PortShape
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.storage import FileStoragePort
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import (
     InputMaterializer,
@@ -23,6 +23,7 @@ from grafy_core.schema_contracts import (
 from pydantic import ValidationError
 
 from grafy_workbench.schema import SCHEMAS
+from grafy_workbench.schema.values import JsonSchemaText
 from grafy_workbench.schema.nodes import (
     JsonSchemaBuilderConfig,
     JsonSchemaBuilderInput,
@@ -34,7 +35,7 @@ from grafy_workbench.schema.nodes import (
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
 
-def test_schema_plugin_declares_nominal_string_artifact_and_builder_contract() -> None:
+def test_schema_plugin_declares_json_schema_text_and_builder_contract() -> None:
     registry = PluginRegistry()
     registry.install(SCHEMAS)
     registry.freeze()
@@ -54,7 +55,7 @@ def test_schema_plugin_declares_nominal_string_artifact_and_builder_contract() -
     assert schemas_input.accepted_shapes == (PortShape.ONE,)
     assert schemas_input.variadic is True
     assert schemas_input.instance_plugs is True
-    assert schemas_input.target_type is str
+    assert schemas_input.target_type is JsonSchemaText
     assert schemas_input.preserves_ref_container is False
     assert schemas_input.required is False
 
@@ -174,12 +175,12 @@ async def test_schema_builder_compiles_inline_fields_to_canonical_object_schema(
         JsonSchemaBuilderInput(),
     )
 
-    assert output.json_schema == json.dumps(
-        json.loads(output.json_schema),
+    assert output.json_schema.value == json.dumps(
+        json.loads(output.json_schema.value),
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    assert json.loads(output.json_schema) == {
+    assert json.loads(output.json_schema.value) == {
         "title": "Invoice",
         "description": "Extracted invoice fields",
         "type": "object",
@@ -196,7 +197,7 @@ async def test_schema_builder_compiles_inline_fields_to_canonical_object_schema(
         "additionalProperties": False,
         "required": ["number"],
     }
-    assert list(json.loads(output.json_schema)["properties"]) == [
+    assert list(json.loads(output.json_schema.value)["properties"]) == [
         "number",
         "page_count",
         "confidence",
@@ -245,10 +246,15 @@ async def test_schema_builder_inserts_connected_object_and_sequence_item_schemas
     output = await JsonSchemaBuilderNode().run(
         NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="invoice-schema"),
         config,
-        JsonSchemaBuilderInput(schemas=[customer_schema, line_schema]),
+        JsonSchemaBuilderInput(
+            schemas=[
+                JsonSchemaText(value=customer_schema),
+                JsonSchemaText(value=line_schema),
+            ]
+        ),
     )
 
-    schema = json.loads(output.json_schema)
+    schema = json.loads(output.json_schema.value)
     assert schema["properties"] == {
         "customer": json.loads(customer_schema),
         "status": {"type": ["string", "null"]},
@@ -281,7 +287,9 @@ async def test_schema_builder_reports_missing_connected_schema_field_ids() -> No
         await JsonSchemaBuilderNode().run(
             NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="schema"),
             config,
-            JsonSchemaBuilderInput(schemas=['{"type":"object","properties":{}}']),
+            JsonSchemaBuilderInput(
+                schemas=[JsonSchemaText(value='{"type":"object","properties":{}}')]
+            ),
         )
 
     message = str(exc_info.value)
@@ -325,21 +333,15 @@ def test_validate_json_schema_value_returns_matching_object_with_error_path() ->
 
 
 @pytest.mark.asyncio
-async def test_schema_artifact_factories_and_typed_instance_plugs_round_trip(
-    tmp_path: Path,
-) -> None:
+async def test_schema_artifact_factories_and_typed_instance_plugs_round_trip() -> None:
     uow = InMemoryUnitOfWork()
-    context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=cast(FileStoragePort, object()),
+    values = ArtifactValues(
+        SCHEMAS.artifacts,
         uow=uow,
+        storage=cast(FileStoragePort, object()),
         bucket="artifacts",
+        storage_backend="local",
     )
-    registry = PluginRegistry()
-    registry.install(SCHEMAS)
-    registry.freeze()
-    writer = registry.build_writers(context)[0]
-    resolver = registry.build_resolvers(context)[0]
     write_context = ArtifactWriteContext(
         node_context=NodeExecutionContext(
             workspace_id=TEST_WORKSPACE_ID,
@@ -349,17 +351,22 @@ async def test_schema_artifact_factories_and_typed_instance_plugs_round_trip(
     )
     child_schema = '{ "properties": {}, "type": "object" }'
     canonical_child_schema = '{"properties":{},"type":"object"}'
-    child_ref = await writer.write(child_schema, write_context)
+    child_ref = await values.write(
+        JSON_SCHEMA.key,
+        JsonSchemaText(value=child_schema),
+        write_context,
+    )
 
     inputs, provenance = await InputMaterializer(
-        ResolverRegistry([resolver])
+        ResolverRegistry(),
+        values,
     ).materialize(
         JsonSchemaBuilderNode.input_contract,
         {"schemas": [child_ref]},
         TEST_WORKSPACE_ID,
     )
 
-    assert inputs.schemas == [canonical_child_schema]
+    assert inputs.schemas == [JsonSchemaText(value=canonical_child_schema)]
     assert provenance.refs_for("schemas") == (child_ref,)
     output = await JsonSchemaBuilderNode().run(
         NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="parent-schema"),
@@ -368,7 +375,8 @@ async def test_schema_artifact_factories_and_typed_instance_plugs_round_trip(
         ),
         inputs,
     )
-    parent_ref = await writer.write(
+    parent_ref = await values.write(
+        JSON_SCHEMA.key,
         output.json_schema,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -379,13 +387,13 @@ async def test_schema_artifact_factories_and_typed_instance_plugs_round_trip(
         ),
     )
 
-    assert await resolver.resolve(parent_ref, TEST_WORKSPACE_ID) == output.json_schema
+    assert await values.resolve(parent_ref, TEST_WORKSPACE_ID) == output.json_schema
     async with uow as entered:
         artifact = await entered.artifacts.get(
             TEST_WORKSPACE_ID, parent_ref.artifact_id
         )
     assert artifact is not None
-    assert artifact.inline_payload == {"value": output.json_schema}
+    assert artifact.inline_payload == {"value": output.json_schema.value}
     assert artifact.metadata["provenance"] == {
         "schemas": [
             {

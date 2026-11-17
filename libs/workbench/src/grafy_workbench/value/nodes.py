@@ -1,19 +1,17 @@
-from typing import Annotated, final
+from typing import Annotated
 
 from pydantic import Field, StrictInt
 
 from grafy_core.artifact_contracts import INTEGER_VALUE, IntegerValuePayload
 from grafy_core.artifacts import (
-    Artifact,
     NodeConfig,
     NodeInput,
     NodeOutput,
 )
 from grafy_core.nodes import OutPort
 from grafy_core.plugins import NodeCachePolicy
-from grafy_core.ports.artifacts import UnitOfWorkPort
+from grafy_core.runtime.artifact_values import scalar_artifact
 
-from grafy_workbench.scalar_persistence import ScalarOutputWriter, ScalarResolver
 from grafy_workbench.value.declaration import VALUE
 
 
@@ -44,30 +42,4 @@ async def integer(config: IntegerConfig, _inputs: IntegerInput) -> IntegerOutput
     return IntegerOutput(value=config.value)
 
 
-@final
-class IntegerValueOutputWriter(ScalarOutputWriter):
-    """Keep the existing constructor used by runtime clients."""
-
-    def __init__(self, *, uow: UnitOfWorkPort) -> None:
-        super().__init__(
-            artifact_type=INTEGER_VALUE.key, model=IntegerValuePayload, uow=uow
-        )
-
-
-@final
-class IntegerValueResolver(ScalarResolver[int]):
-    """Keep the existing constructor used by runtime clients."""
-
-    def __init__(self, *, uow: UnitOfWorkPort) -> None:
-        super().__init__(
-            source=INTEGER_VALUE.key, target=int, model=IntegerValuePayload, uow=uow
-        )
-
-
-VALUE.register(
-    Artifact(
-        spec=INTEGER_VALUE,
-        resolver=lambda context: IntegerValueResolver(uow=context.uow),
-        writer=lambda context: IntegerValueOutputWriter(uow=context.uow),
-    )
-)
+VALUE.register(scalar_artifact(INTEGER_VALUE, int, IntegerValuePayload))

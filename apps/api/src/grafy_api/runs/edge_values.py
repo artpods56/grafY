@@ -13,14 +13,16 @@ list per incoming connection, or a list in the node's own input-plug order.
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, cast
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
-from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.conversions import ArtifactConversion
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.ports.artifacts import UnitOfWorkPort
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext, ArtifactWriterRegistry
 from grafy_core.runtime.resolvers import ResolverRegistry
@@ -38,10 +40,38 @@ class EdgeValueResolver:
         resolvers: ResolverRegistry,
         writers: ArtifactWriterRegistry,
         unit_of_work: UnitOfWorkPort,
+        values: ArtifactValues | None = None,
     ) -> None:
         self._resolvers = resolvers
         self._writers = writers
         self._uow = unit_of_work
+        self._values = values
+
+    async def _read(
+        self,
+        ref: ArtifactRef,
+        target: type[object],
+        workspace_id: UUID,
+    ) -> object:
+        values = self._values
+        if values is not None and values.declaration_for(ref.key()) is not None:
+            return await values.resolve(ref, workspace_id)
+        return await self._resolvers.resolve(
+            ref=ref,
+            target=target,
+            workspace_id=workspace_id,
+        )
+
+    async def _store(
+        self,
+        key: ArtifactTypeKey,
+        value: object,
+        context: ArtifactWriteContext,
+    ) -> ArtifactRef:
+        values = self._values
+        if values is not None and values.declaration_for(key) is not None:
+            return await values.write(key, value, context)
+        return await self._writers.writer_for(key).write(value, context)
 
     async def assemble_inputs(
         self,
@@ -192,8 +222,8 @@ class EdgeValueResolver:
                 )
             projected_value = mapping[segment]
 
-        writer = self._writers.writer_for(projection.target)
-        return await writer.write(
+        return await self._store(
+            projection.target,
             projected_value,
             ArtifactWriteContext(
                 node_context=replace(context, node_id=slot.source_node_id),
@@ -234,10 +264,10 @@ class EdgeValueResolver:
         final_conversion = conversions[-1]
         item_context = "" if item_index is None else f" at sequence item {item_index}"
         try:
-            source_value = await self._resolvers.resolve(
-                ref=ref,
-                target=first_conversion.source_type,
-                workspace_id=context.workspace_id,
+            source_value = await self._read(
+                ref,
+                first_conversion.source_type,
+                context.workspace_id,
             )
             converted_value: object = _validated_conversion_value(
                 source_value,
@@ -281,8 +311,8 @@ class EdgeValueResolver:
             "target_port": slot.to_port,
         }
         try:
-            writer = self._writers.writer_for(final_conversion.target)
-            written_ref = await writer.write(
+            written_ref = await self._store(
+                final_conversion.target,
                 converted_value,
                 ArtifactWriteContext(
                     node_context=replace(context, node_id=slot.source_node_id),

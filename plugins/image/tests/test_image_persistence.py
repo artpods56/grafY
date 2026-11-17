@@ -147,12 +147,6 @@ def test_image_plugin_uses_builtin_raster_type_and_registers_writer(
     assert RASTER_IMAGE in registry.artifact_type_dependencies
     assert {spec.key for spec in registry.artifact_types} == {IMAGE_REGIONS.key}
     writers = registry.build_writers(context)
-    assert {writer.artifact_type for writer in writers} == {
-        RASTER_IMAGE.key,
-        IMAGE_REGIONS.key,
-    }
-    resolvers = registry.build_resolvers(context)
-    assert any(
-        resolver.source == IMAGE_REGIONS.key and resolver.target is ImageRegionSet
-        for resolver in resolvers
-    )
+    assert {writer.artifact_type for writer in writers} == {RASTER_IMAGE.key}
+    assert [artifact.spec.key for artifact in registry.artifacts] == [IMAGE_REGIONS.key]
+    assert registry.artifacts[0].value_type is ImageRegionSet

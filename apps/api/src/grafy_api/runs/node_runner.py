@@ -25,6 +25,7 @@ from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.persistence import ArtifactWriterRegistry
 from grafy_core.runtime.resolvers import ResolverRegistry
@@ -150,6 +151,7 @@ class NodeComputationRunnerFactory:
         node_secrets: NodeSecretResolverPort,
         max_map_concurrency: int = 1,
         plugin_context: PluginRuntimeContext | None = None,
+        values: ArtifactValues | None = None,
     ) -> None:
         self._binder = NodeContractBinder(
             registry=registry,
@@ -159,6 +161,7 @@ class NodeComputationRunnerFactory:
             resolvers=resolvers,
             writers=writers,
             unit_of_work=unit_of_work,
+            values=values,
         )
         self._node_execution = NodeExecutionService(
             runtime=runtime,
