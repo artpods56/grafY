@@ -765,6 +765,16 @@ export function connectionRouteForSelection(
 ): ConnectionRoute | null {
   const source = decodeHandleId(connection.sourceHandle);
   const target = decodeHandleId(connection.targetHandle);
+  if (
+    (source && isDecodedServiceHandle(source)) ||
+    (target && isDecodedServiceHandle(target))
+  ) {
+    if (selection.projection || selection.conversionPath.length > 0)
+      return null;
+    return (
+      connectionRoutesFor(connection, artifactTypes, conversions)[0] ?? null
+    );
+  }
   const sourceArtifactType = source ? decodedHandleArtifactType(source) : null;
   const targetArtifactType = target ? decodedHandleArtifactType(target) : null;
   if (

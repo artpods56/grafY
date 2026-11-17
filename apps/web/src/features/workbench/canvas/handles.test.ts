@@ -148,6 +148,23 @@ describe("service contract routes", () => {
       { kind: "exact", conversionPath: [] },
     ]);
     expect(connectionIsValid(matching)).toBe(true);
+    expect(
+      connectionRouteForSelection(matching, [], [], { conversionPath: [] }),
+    ).toEqual({ kind: "exact", conversionPath: [] });
+    expect(
+      connectionRouteForSelection(mismatched, [], [], { conversionPath: [] }),
+    ).toBeNull();
+    expect(
+      connectionRouteForSelection(matching, [], [], {
+        conversionPath: [{ id: "not-a-service-conversion", version: 1 }],
+      }),
+    ).toBeNull();
+    expect(
+      connectionRouteForSelection(matching, [], [], {
+        projection: { path: ["reader"] },
+        conversionPath: [],
+      }),
+    ).toBeNull();
     expect(connectionRoutesFor(mismatched, [], [])).toEqual([]);
     expect(connectionIsValid(mismatched)).toBe(false);
   });
