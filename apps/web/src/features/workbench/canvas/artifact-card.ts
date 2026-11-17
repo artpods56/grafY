@@ -210,6 +210,37 @@ export function isTableArtifact(
   return ref.artifact_type === "table.data" && ref.schema_version === 1;
 }
 
+/** A card's clues about the bytes behind a reference. */
+export type ArtifactByteClues = {
+  contentType?: string | null;
+  fileName?: string | null;
+};
+
+/** A PDF: the browser's own reader beats anything the canvas can draw. */
+export function isPdfArtifact(
+  ref: Pick<ArtifactRef, "artifact_type">,
+  { contentType, fileName }: ArtifactByteClues = {},
+): boolean {
+  return (
+    contentType === "application/pdf" ||
+    ref.artifact_type === "file.pdf" ||
+    (fileName?.toLowerCase().endsWith(".pdf") ?? false)
+  );
+}
+
+/** A table carried as bytes rather than as the `table.data@1` grid. */
+export function isTableFileArtifact(
+  ref: Pick<ArtifactRef, "artifact_type">,
+  { contentType, fileName }: ArtifactByteClues = {},
+): boolean {
+  return (
+    contentType === "text/csv" ||
+    ref.artifact_type === "file.csv" ||
+    ref.artifact_type.startsWith("table.") ||
+    (fileName?.toLowerCase().endsWith(".csv") ?? false)
+  );
+}
+
 /** Whether a card paints this artifact as a picture. */
 export function isImageArtifact(
   ref: ArtifactRef,

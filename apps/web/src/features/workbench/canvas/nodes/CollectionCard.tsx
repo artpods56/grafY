@@ -31,12 +31,25 @@ import {
 } from "../../model/collection";
 import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
 import { libraryFileDisplayName } from "../../ui/side-panel/library-tree";
-import { DEFAULT_ARTIFACT_CARD_WIDTH, isImageArtifact } from "../artifact-card";
+import {
+  DEFAULT_ARTIFACT_CARD_WIDTH,
+  declaredArtifactContentType,
+  artifactTypeFor,
+  isImageArtifact,
+} from "../artifact-card";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { gridAlignedWidth } from "../grid-layout";
 import { encodeHandleId } from "../handles";
 import { artifactTypeColor } from "../nodes.css";
 import { useArtifactTypeCatalog } from "../use-artifact-type-catalog";
+import {
+  cardTextKey,
+  cardTextLimit,
+  fetchCardText,
+  formatCardText,
+  readsAsCardText,
+} from "./artifact-renderers/card-text";
+import { CardTextBody } from "./artifact-renderers/card-text-body";
 import {
   formatArtifactTypeLabel,
   formatArtifactTypeSequence,
@@ -50,7 +63,7 @@ import {
 import { artifactRail } from "./ArtifactControls";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
 import { NodeMenu, type NodeMenuItem } from "./NodeMenu";
-import { ArtifactStack, SequencePager } from "./ArtifactStack";
+import { ArtifactStack, SequencePager, stackPlateProps } from "./ArtifactStack";
 import {
   PortBall,
   PortRevealProvider,
@@ -113,6 +126,21 @@ const s = stylex.create({
   },
   tileRaised: { boxShadow: tokens.shadowNodeActive },
   tileDragged: { boxShadow: tokens.shadowNodeDragged },
+  // The front member's own words, framed as its file tile would have been.
+  textPlate: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "stretch",
+    boxSizing: "border-box",
+    minHeight: "80px",
+    padding: "8px 10px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusSm,
+    backgroundColor: tokens.colorSurface,
+    overflow: "hidden",
+  },
   tileText: {
     minWidth: 0,
     overflow: "hidden",
@@ -221,11 +249,16 @@ function memberRefs(member: CollectionMember): readonly ArtifactRef[] {
   return [];
 }
 
+/** Ten lines of the front member's JSON; the rest is reached by scrolling. */
+const COLLECTION_JSON_BODY_HEIGHT = 150;
+
 /**
  * A collection on the canvas: the artifacts it gathers, shown as the stack
- * they pass on. Members join through its one input ball (a wire from an
- * output, a card, or a Library drop onto the stack) and leave through its
- * member list. It is the `sequence.collect` operator underneath.
+ * they pass on. A member the canvas can read shows what it says, the way an
+ * artifact card does; the rest wait as file tiles. Members join through its one
+ * input ball (a wire from an output, a card, or a Library drop onto the stack)
+ * and leave through its member list. It is the `sequence.collect` operator
+ * underneath.
  */
 export function CollectionCard({
   id,
@@ -314,6 +347,30 @@ export function CollectionCard({
       itemsById.get(leader.artifact_id)?.artifact.content_type,
     );
   const first = refs[frontIndex] ?? null;
+  // What a member's bytes are: what the Library says it stored, or, for one an
+  // output produced, what its type declares.
+  const cluesFor = (ref: ArtifactRef) => ({
+    contentType:
+      itemsById.get(ref.artifact_id)?.artifact.content_type ??
+      declaredArtifactContentType(artifactTypeFor(ref, artifactTypes)),
+  });
+  // A member the canvas can read shows what it says, the way an artifact card
+  // shows its JSON. The leader decides, so paging a mixed collection never
+  // swaps one look for another.
+  const readable =
+    leader !== null && !pictures && readsAsCardText(leader, cluesFor(leader));
+  const textKey =
+    readable && first
+      ? cardTextKey(workspace.id, first.artifact_id, cardTextLimit(first))
+      : null;
+  // The member being left stays on screen until the next one is read, so the
+  // stack never drops to file tiles mid-shuffle.
+  const { data: textHead } = useSWR(textKey, fetchCardText, {
+    keepPreviousData: true,
+  });
+  const shownText = textHead
+    ? formatCardText(textHead, first?.artifact_type)
+    : null;
 
   const width = gridAlignedWidth(
     data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
@@ -352,6 +409,9 @@ export function CollectionCard({
 
   const bindingRevision = JSON.stringify(data.artifactTypeBindings);
   const plugRevision = members.map((member) => member.plugId).join("|");
+  // The body's height is what moves the ports, and reading a member's bytes is
+  // async: a tile giving way to its JSON has to republish the handles it moved.
+  const bodyRevision = shownText !== null ? "json" : "tile";
   const onHandlesMeasured = data.onHandlesMeasured;
   const measuredBindings = data.artifactTypeBindings;
   React.useLayoutEffect(() => {
@@ -365,6 +425,7 @@ export function CollectionCard({
   }, [
     bindingRevision,
     plugRevision,
+    bodyRevision,
     mediaHeight,
     managing,
     id,
@@ -590,6 +651,40 @@ export function CollectionCard({
                     [artifactId]: true,
                   }))
                 }
+              />
+            ) : shownText !== null ? (
+              <ArtifactStack
+                count={refs.length}
+                index={frontIndex}
+                overlay={pager}
+                renderLayer={(slot, place) => {
+                  const front = slot.slot === 0 && !slot.tail;
+                  return (
+                    <div
+                      {...place}
+                      {...(front ? {} : stackPlateProps(slot.tail))}
+                    >
+                      {front ? (
+                        <div
+                          data-artifact-value="true"
+                          data-artifact-shadow-scope="sequence-item"
+                          {...stylex.props(
+                            s.textPlate,
+                            tier === "active" ? s.tileRaised : null,
+                            tier === "dragged" ? s.tileDragged : null,
+                          )}
+                        >
+                          <CardTextBody
+                            height={COLLECTION_JSON_BODY_HEIGHT}
+                            interactive={Boolean(selected)}
+                          >
+                            {shownText}
+                          </CardTextBody>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }}
               />
             ) : refs.length ? (
               <ArtifactStack

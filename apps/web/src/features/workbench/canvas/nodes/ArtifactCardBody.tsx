@@ -42,7 +42,9 @@ import {
   declaredArtifactContentType,
   artifactTypeFor,
   isImageArtifact,
+  isPdfArtifact,
   isTableArtifact,
+  isTableFileArtifact,
   moveArtifactCardRef,
   type ArtifactCardValue,
 } from "../artifact-card";
@@ -78,11 +80,14 @@ import {
   CanvasCardHead,
 } from "./CanvasCardLayout";
 import {
-  formatTextHead,
-  readTextHead,
-  type TextHead,
-} from "./artifact-renderers/text-head";
+  cardTextKey,
+  cardTextLimit,
+  fetchCardText,
+  formatCardText,
+  readsAsCardText,
+} from "./artifact-renderers/card-text";
 import { HtmlPageFill } from "./artifact-renderers/html-page-fill";
+import { CardTextBody } from "./artifact-renderers/card-text-body";
 import {
   isHtmlPageArtifact,
   useHtmlPage,
@@ -207,27 +212,6 @@ const s = stylex.create({
     gap: "6px",
     overflow: "hidden",
   },
-  textContent: {
-    minWidth: 0,
-    margin: 0,
-    // Pretty-printed JSON can run to hundreds of lines. The card keeps a
-    // bounded height (set inline from the layout); the rest is reached by
-    // selecting the card and scrolling.
-    overflow: "hidden",
-    color: tokens.colorText,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: "10px",
-    lineHeight: 1.5,
-    whiteSpace: "pre-wrap",
-    overflowWrap: "anywhere",
-  },
-  // Rendered words take the page's type; the raw view keeps the monospace above.
-  textRendered: {
-    fontFamily: "inherit",
-    fontSize: tokens.fontSizeXs,
-    whiteSpace: "normal",
-  },
-  textScrollable: { overflow: "auto" },
   // Hung below the card, so offering it moves neither the card nor its ports.
   textViewSwitch: {
     position: "absolute",
@@ -343,47 +327,18 @@ const s = stylex.create({
   },
 });
 
-/** How much of an artifact's bytes a card reads to show as text. */
-const CARD_TEXT_BYTES = 4096;
-/**
- * A text value is read whole so it can be rendered: the head of a page is not a page.
- * Room for the most an Agent may create, each character at its longest once escaped.
- */
-const CARD_TEXT_VALUE_BYTES = 1_250_000;
-
 /** Height a text card opens at before the operator resizes it: twelve lines. */
 const TEXT_BODY_HEIGHT_DEFAULT = 180;
 /** A page laid out for a screen cannot be read at the size of a note. */
 const HTML_PAGE_CARD_WIDTH = 640;
 const HTML_PAGE_BODY_HEIGHT = 480;
 
-const NO_TEXT_EDGES = { above: false, below: false, wide: false };
 const NO_TEXT_VIEWS: readonly CellView[] = [];
 const HTML_PAGE_VIEWS: readonly CellView[] = ["html", "text"];
 const HTML_PAGE_UNREADABLE: HtmlPageLoad = {
   status: "unreadable",
   message: "This page could not be read",
 };
-/** How far the fade at a clipped edge of a card's text reaches. */
-const TEXT_FADE = "32px";
-
-function textFadeMask({ above, below }: typeof NO_TEXT_EDGES) {
-  if (!above && !below) return undefined;
-  const top = above ? `transparent, black ${TEXT_FADE}` : "black";
-  const bottom = below
-    ? `black calc(100% - ${TEXT_FADE}), transparent`
-    : "black";
-  return `linear-gradient(to bottom, ${top}, ${bottom})`;
-}
-
-async function fetchArtifactText([, workspaceId, artifactId, limit]: readonly [
-  string,
-  string,
-  string,
-  number,
-]): Promise<TextHead | null> {
-  return readTextHead(artifactInlineContentUrl(workspaceId, artifactId), limit);
-}
 
 /**
  * An artifact on the canvas: the artifact itself is the node. The head is the
@@ -552,34 +507,26 @@ export function ArtifactCardBody({
     (first ? nameOf(first.artifact_id) : null) ??
     (typeof recordedName === "string" ? recordedName : null);
   const isPdf =
-    contentType === "application/pdf" ||
-    first?.artifact_type === "file.pdf" ||
-    fileName?.toLowerCase().endsWith(".pdf");
+    first !== null && isPdfArtifact(first, { contentType, fileName });
   const isTableFile =
-    contentType === "text/csv" ||
-    first?.artifact_type === "file.csv" ||
-    first?.artifact_type.startsWith("table.") ||
-    fileName?.toLowerCase().endsWith(".csv");
+    first !== null && isTableFileArtifact(first, { contentType, fileName });
   // An HTML page is not a file to skim: it names other artifacts and is filled
   // from them. Every other readable artifact still shows its own bytes.
   const htmlPageArtifact = isHtmlPageArtifact(first);
   // Readable bytes are shown as they are, JSON indented, instead of a file
   // tile. Binary bytes and file containers keep their tile.
   const textKey =
-    first && !htmlPageArtifact && !imageArtifact && !isPdf && !isTableFile
-      ? ([
-          "artifact-card-text",
-          workspace.id,
-          first.artifact_id,
-          first.artifact_type === "scalar.text" ||
-          first.artifact_type === "text.markdown"
-            ? CARD_TEXT_VALUE_BYTES
-            : CARD_TEXT_BYTES,
-        ] as const)
+    first &&
+    readsAsCardText(first, {
+      contentType,
+      fileName,
+      htmlPage: htmlPageArtifact,
+    })
+      ? cardTextKey(workspace.id, first.artifact_id, cardTextLimit(first))
       : null;
   // Paging a run keeps the item being left on screen until the next one is
   // read, so the stack never drops to file tiles mid-shuffle.
-  const { data: textHead } = useSWR(textKey, fetchArtifactText, {
+  const { data: textHead } = useSWR(textKey, fetchCardText, {
     keepPreviousData: isSequence,
   });
   const {
@@ -591,15 +538,7 @@ export function ArtifactCardBody({
     htmlPageArtifact && first ? first.artifact_id : null,
   );
   const shownText = textHead
-    ? formatTextHead(textHead, {
-        expandEmbeddedJson: true,
-        unwrapField:
-          first?.artifact_type === "scalar.text"
-            ? "value"
-            : first?.artifact_type === "text.markdown"
-              ? "markdown"
-              : undefined,
-      })
+    ? formatCardText(textHead, first?.artifact_type)
     : null;
   // Only a text artifact read whole has words to read another way: a file is its
   // bytes, and the head of a long text is not a document.
@@ -625,47 +564,9 @@ export function ArtifactCardBody({
   const textMaxHeight =
     layout?.bodyHeight ??
     (htmlPage ? HTML_PAGE_BODY_HEIGHT : TEXT_BODY_HEIGHT_DEFAULT);
-  // Overflow is measured, not counted: a long line wraps, so the number of
-  // newlines says little about how tall the text renders.
-  const textRef = React.useRef<HTMLElement>(null);
-  // Clipped text fades out at each edge that has more beyond it, instead of
-  // ending on a half line.
-  const [textEdges, setTextEdges] = React.useState(NO_TEXT_EDGES);
-  const measureText = React.useCallback(() => {
-    const element = textRef.current;
-    const next = element
-      ? {
-          above: element.scrollTop > 1,
-          below:
-            element.scrollTop + element.clientHeight < element.scrollHeight - 1,
-          wide: element.scrollWidth > element.clientWidth + 1,
-        }
-      : NO_TEXT_EDGES;
-    setTextEdges((current) =>
-      current.above === next.above &&
-      current.below === next.below &&
-      current.wide === next.wide
-        ? current
-        : next,
-    );
-  }, []);
-  React.useLayoutEffect(() => {
-    const element = textRef.current;
-    measureText();
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measureText);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [measureText, shownText, textMaxHeight, textView]);
-  const textOverflows = textEdges.above || textEdges.below || textEdges.wide;
   // Only a card that shows text takes a height: the others have no body to size.
   const textCard = !awaitingFeed && (shownText !== null || htmlPageArtifact);
   const textHeight = textCard ? textMaxHeight : null;
-  const textProps = stylex.props(
-    s.textContent,
-    textView !== "text" ? s.textRendered : null,
-    textOverflows && selected ? s.textScrollable : null,
-  );
   const feedLabel = feed
     ? `${producer?.data.spec.title ?? "Output"} → ${feedPort?.title ?? feedPortName ?? "output"}`
     : null;
@@ -1080,23 +981,12 @@ export function ArtifactCardBody({
                           tier === "dragged" ? s.fileBodyDragged : null,
                         )}
                       >
-                        {React.createElement(
-                          textView === "text" ? "pre" : "div",
-                          {
-                            ...textProps,
-                            ref: textRef,
-                            onScroll: measureText,
-                            style: {
-                              ...textProps.style,
-                              maxHeight: textMaxHeight,
-                              maskImage: textFadeMask(textEdges),
-                            },
-                            className:
-                              textOverflows && selected
-                                ? `nodrag nowheel ${textProps.className ?? ""}`
-                                : textProps.className,
-                          },
-                          textView === "markdown" ? (
+                        <CardTextBody
+                          height={textMaxHeight}
+                          rendered={textView !== "text"}
+                          interactive={Boolean(selected)}
+                        >
+                          {textView === "markdown" ? (
                             <SafeMarkdown style={{ fontSize: "inherit" }}>
                               {shownText}
                             </SafeMarkdown>
@@ -1108,8 +998,8 @@ export function ArtifactCardBody({
                             />
                           ) : (
                             shownText
-                          ),
-                        )}
+                          )}
+                        </CardTextBody>
                       </div>,
                     )}
                     {selected && textViews.length > 1 ? (
