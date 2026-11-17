@@ -24,12 +24,10 @@ from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
 
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.runtime.execution import NodeRuntime, PersistedNodeOutput
+from grafy_core.documents import FILE_ARTIFACTS
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.materialization import InputMaterializer
-from grafy_core.runtime.persistence import (
-    ArtifactWriterRegistry,
-    OutputPersister,
-)
-from grafy_core.runtime.resolvers import ResolverRegistry
+from grafy_core.runtime.persistence import OutputPersister
 from grafy_storage import LocalFileObjectStore
 
 
@@ -55,18 +53,16 @@ async def main() -> None:
         uow=uow,
         bucket=BUCKET,
     )
-    resolver_registry = ResolverRegistry(
-        list(plugin_registry.build_resolvers(plugin_context))
+    values = ArtifactValues(
+        (*FILE_ARTIFACTS, *plugin_registry.artifacts),
+        uow=uow,
+        storage=storage,
+        bucket=BUCKET,
+        storage_backend="local",
     )
     runtime = NodeRuntime(
-        materializer=InputMaterializer(resolver_registry),
-        persister=OutputPersister(
-            ArtifactWriterRegistry(
-                [
-                    *plugin_registry.build_writers(plugin_context),
-                ]
-            )
-        ),
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
     )
 
     image_files = [

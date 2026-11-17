@@ -6,7 +6,7 @@ from typing import Any
 
 from grafy_core.artifacts import ArtifactTypeKey, ArtifactTypeSpec
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
-from grafy_core.conversions import ArtifactConversion
+from grafy_core.conversions import Conversion
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import InstalledPlugin, NodeRegistration, PluginRegistry
 
@@ -29,7 +29,7 @@ class CatalogSnapshot:
     builtin_plugins: tuple[InstalledPlugin, ...]
     builtin_nodes: tuple[NodeRegistration, ...]
     artifact_types: tuple[ArtifactTypeSpec, ...]
-    conversions: tuple[ArtifactConversion[Any, Any], ...]
+    conversions: tuple[Conversion[Any, Any], ...]
     extension_claims: Mapping[str, ArtifactTypeKey]
 
     @classmethod

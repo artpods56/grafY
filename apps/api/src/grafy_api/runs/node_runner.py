@@ -27,8 +27,6 @@ from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.execution import NodeRuntime
-from grafy_core.runtime.persistence import ArtifactWriterRegistry
-from grafy_core.runtime.resolvers import ResolverRegistry
 
 from grafy_api.runs.contract import NodeContractBinder, is_boundary
 from grafy_api.runs.edge_values import EdgeValueResolver
@@ -145,21 +143,17 @@ class NodeComputationRunnerFactory:
         *,
         registry: PluginRegistry,
         runtime: NodeRuntime,
-        resolvers: ResolverRegistry,
-        writers: ArtifactWriterRegistry,
         unit_of_work: UnitOfWorkPort,
         node_secrets: NodeSecretResolverPort,
+        values: ArtifactValues,
         max_map_concurrency: int = 1,
         plugin_context: PluginRuntimeContext | None = None,
-        values: ArtifactValues | None = None,
     ) -> None:
         self._binder = NodeContractBinder(
             registry=registry,
             plugin_context=plugin_context,
         )
         self._edge_values = EdgeValueResolver(
-            resolvers=resolvers,
-            writers=writers,
             unit_of_work=unit_of_work,
             values=values,
         )

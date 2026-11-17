@@ -58,10 +58,8 @@ from grafy_core.runtime.materialization import (
 )
 from grafy_core.runtime.persistence import (
     ArtifactWriteContext,
-    ArtifactWriterRegistry,
     OutputPersister,
 )
-from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_core.schema_contracts import JSON_SCHEMA
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.schema import SCHEMAS
@@ -115,12 +113,10 @@ class EchoTextNode(Node[EchoConfig, EchoInput, EchoOutput]):
 
 @dataclass
 class Harness:
-    """One project's runner, wired with the workbench's own writers and resolvers."""
+    """One project's runner, wired with the workbench's artifact declarations."""
 
     unit_of_work: InMemoryUnitOfWork
     store: InMemoryResultStore
-    writers: ArtifactWriterRegistry
-    resolvers: ResolverRegistry
     values: ArtifactValues
     runner: ComputationRunner
 
@@ -133,9 +129,7 @@ class Harness:
             ),
             provenance=MaterializationProvenance(refs_by_input={}),
         )
-        if self.values.declaration_for(artifact_type) is not None:
-            return await self.values.write(artifact_type, value, context)
-        return await self.writers.writer_for(artifact_type).write(value, context)
+        return await self.values.write(artifact_type, value, context)
 
     async def write_sequence(
         self,
@@ -295,8 +289,6 @@ def build_factory(
     *,
     registry: PluginRegistry,
     runtime: NodeRuntime,
-    resolvers: ResolverRegistry,
-    writers: ArtifactWriterRegistry,
     unit_of_work: InMemoryUnitOfWork,
     plugin_context: PluginRuntimeContext | None,
     values: ArtifactValues,
@@ -304,13 +296,11 @@ def build_factory(
     return NodeComputationRunnerFactory(
         registry=registry,
         runtime=runtime,
-        resolvers=resolvers,
-        writers=writers,
         unit_of_work=unit_of_work,
         node_secrets=UnavailableNodeSecretResolver(),
+        values=values,
         max_map_concurrency=2,
         plugin_context=plugin_context,
-        values=values,
     )
 
 
@@ -336,17 +326,13 @@ def harness(tmp_path: Path) -> Harness:
         bucket="artifacts",
         values=values,
     )
-    resolvers = ResolverRegistry(list(registry.build_resolvers(runtime_context)))
-    writers = ArtifactWriterRegistry(list(registry.build_writers(runtime_context)))
     runtime = NodeRuntime(
-        materializer=InputMaterializer(resolvers, values),
-        persister=OutputPersister(writers, values),
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
     )
     factory = build_factory(
         registry=registry,
         runtime=runtime,
-        resolvers=resolvers,
-        writers=writers,
         unit_of_work=uow,
         plugin_context=runtime_context,
         values=values,
@@ -355,8 +341,6 @@ def harness(tmp_path: Path) -> Harness:
     return Harness(
         unit_of_work=uow,
         store=store,
-        writers=writers,
-        resolvers=resolvers,
         values=values,
         runner=factory.for_project(
             workspace_id=WORKSPACE_ID,
@@ -515,7 +499,7 @@ async def test_applies_the_conversion_path_an_edge_declares(harness: Harness) ->
                 "value",
                 "echo",
                 "text",
-                conversions=[(INTEGER_TO_TEXT.key.id, INTEGER_TO_TEXT.key.version)],
+                conversions=[(INTEGER_TO_TEXT.id, INTEGER_TO_TEXT.version)],
             ),
         ),
     )
@@ -534,7 +518,7 @@ async def test_applies_the_conversion_path_an_edge_declares(harness: Harness) ->
         if artifact.id != echo_ref.artifact_id
     ]
     assert len(converted) == 1
-    assert converted[0].metadata["conversion_id"] == INTEGER_TO_TEXT.key.id
+    assert converted[0].metadata["conversion_id"] == INTEGER_TO_TEXT.id
     assert converted[0].metadata["source_node_id"] == "number"
 
 
@@ -715,7 +699,7 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
 
     An operator that needs no runtime services is built from its own class, so a
     caller that wires the runner with the registry, the node runtime, the
-    resolvers, the writers and the unit of work gets a working computation.
+    artifact declarations and the unit of work gets a working computation.
     """
 
     uow = InMemoryUnitOfWork()
@@ -731,23 +715,12 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
         bucket="artifacts",
         storage_backend="local",
     )
-    runtime_context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=storage,
-        uow=uow,
-        bucket="artifacts",
-        values=values,
-    )
-    resolvers = ResolverRegistry(list(registry.build_resolvers(runtime_context)))
-    writers = ArtifactWriterRegistry(list(registry.build_writers(runtime_context)))
     factory = build_factory(
         registry=registry,
         runtime=NodeRuntime(
-            materializer=InputMaterializer(resolvers, values),
-            persister=OutputPersister(writers, values),
+            materializer=InputMaterializer(values),
+            persister=OutputPersister(values),
         ),
-        resolvers=resolvers,
-        writers=writers,
         unit_of_work=uow,
         plugin_context=None,
         values=values,
@@ -756,8 +729,6 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
     harness = Harness(
         unit_of_work=uow,
         store=store,
-        writers=writers,
-        resolvers=resolvers,
         values=values,
         runner=factory.for_project(
             workspace_id=WORKSPACE_ID,
@@ -775,7 +746,7 @@ async def test_a_runner_with_no_plugin_context_computes_operators_that_need_none
                 "value",
                 "echo",
                 "text",
-                conversions=[(INTEGER_TO_TEXT.key.id, INTEGER_TO_TEXT.key.version)],
+                conversions=[(INTEGER_TO_TEXT.id, INTEGER_TO_TEXT.version)],
             ),
         ),
     )

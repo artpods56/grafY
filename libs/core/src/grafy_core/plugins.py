@@ -5,7 +5,6 @@ from enum import StrEnum
 from inspect import Parameter, getdoc, iscoroutinefunction, signature
 from pathlib import Path
 from typing import (
-    TYPE_CHECKING,
     Any,
     Final,
     Protocol,
@@ -28,10 +27,6 @@ from grafy_core.artifacts import (
 from grafy_core.runtime.artifact_values import Artifact, ArtifactValues
 from grafy_core.declared_values import note_declaration
 from grafy_core.callable_nodes import callable_node_class
-from grafy_core.conversions import (
-    ArtifactConversion,
-    ArtifactConversionKey,
-)
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     ArtifactTypeContract,
@@ -49,10 +44,6 @@ from grafy_core.ports.node_secrets import (
 )
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.ports.uploads import UploadRepositoryPort
-
-if TYPE_CHECKING:
-    from grafy_core.runtime.persistence import ArtifactOutputWriter
-    from grafy_core.runtime.resolvers import Resolver
 
 
 _MAX_PROJECTION_SCHEMA_DEPTH: Final = 32
@@ -166,14 +157,6 @@ type NodeFunction[ConfigT: NodeConfig, InputT: NodeInput, OutputT: NodeOutput] =
     LegacyNodeFunction[ConfigT, InputT, OutputT]
     | ContextNodeFunction[ConfigT, InputT, OutputT]
 )
-ResolverFactory: TypeAlias = Callable[
-    [PluginRuntimeContext],
-    "Resolver[object]",
-]
-WriterFactory: TypeAlias = Callable[
-    [PluginRuntimeContext],
-    "ArtifactOutputWriter",
-]
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,12 +223,6 @@ class Plugin:
         self._nodes: dict[tuple[str, int], NodeRegistration] = {}
         self._artifact_types: dict[tuple[str, int], ArtifactTypeSpec] = {}
         self._artifact_type_dependencies: dict[tuple[str, int], ArtifactTypeSpec] = {}
-        self._artifact_conversions: dict[
-            ArtifactConversionKey,
-            ArtifactConversion[Any, Any],
-        ] = {}
-        self._resolver_factories: list[ResolverFactory] = []
-        self._writer_factories: list[WriterFactory] = []
         self._artifacts: list[Artifact[Any]] = []
 
     def node[NodeT: Node[Any, Any, Any]](
@@ -584,23 +561,6 @@ class Plugin:
             )
         self._artifact_type_dependencies[key] = artifact_type
 
-    def register_artifact_conversion[SourceT, TargetT](
-        self,
-        conversion: ArtifactConversion[SourceT, TargetT],
-    ) -> None:
-        if conversion.key in self._artifact_conversions:
-            raise PluginRegistrationError(
-                f"Plugin {self.slug!r} already declares artifact conversion "
-                f"{conversion.key.id}@{conversion.key.version}"
-            )
-        self._artifact_conversions[conversion.key] = conversion
-
-    def register_resolver(self, factory: ResolverFactory) -> None:
-        self._resolver_factories.append(factory)
-
-    def register_writer(self, factory: WriterFactory) -> None:
-        self._writer_factories.append(factory)
-
     def register(self, artifact: Artifact[Any]) -> None:
         note_declaration(artifact.value_type, artifact.spec.key)
         self.register_artifact_type(artifact.spec)
@@ -622,18 +582,6 @@ class Plugin:
     def artifact_type_dependencies(self) -> tuple[ArtifactTypeSpec, ...]:
         return tuple(self._artifact_type_dependencies.values())
 
-    @property
-    def artifact_conversions(self) -> tuple[ArtifactConversion[Any, Any], ...]:
-        return tuple(self._artifact_conversions.values())
-
-    @property
-    def resolver_factories(self) -> tuple[ResolverFactory, ...]:
-        return tuple(self._resolver_factories)
-
-    @property
-    def writer_factories(self) -> tuple[WriterFactory, ...]:
-        return tuple(self._writer_factories)
-
 
 @dataclass(frozen=True, slots=True)
 class InstalledPlugin:
@@ -647,8 +595,6 @@ class _InstalledPluginDeclaration:
     nodes: tuple[NodeRegistration, ...]
     artifact_types: tuple[ArtifactTypeSpec, ...]
     artifact_type_dependencies: tuple[ArtifactTypeSpec, ...]
-    resolver_factories: tuple[ResolverFactory, ...]
-    writer_factories: tuple[WriterFactory, ...]
     artifacts: tuple[Artifact[Any], ...]
 
 
@@ -676,8 +622,6 @@ class PluginRegistry:
             nodes=plugin.nodes,
             artifact_types=plugin.artifact_types,
             artifact_type_dependencies=plugin.artifact_type_dependencies,
-            resolver_factories=plugin.resolver_factories,
-            writer_factories=plugin.writer_factories,
             artifacts=plugin.artifacts,
         )
 
@@ -927,26 +871,6 @@ class PluginRegistry:
             artifact
             for declaration in self._declarations.values()
             for artifact in declaration.artifacts
-        )
-
-    def build_resolvers(
-        self,
-        context: PluginRuntimeContext,
-    ) -> tuple["Resolver[object]", ...]:
-        return tuple(
-            factory(context)
-            for declaration in self._declarations.values()
-            for factory in declaration.resolver_factories
-        )
-
-    def build_writers(
-        self,
-        context: PluginRuntimeContext,
-    ) -> tuple["ArtifactOutputWriter", ...]:
-        return tuple(
-            factory(context)
-            for declaration in self._declarations.values()
-            for factory in declaration.writer_factories
         )
 
 

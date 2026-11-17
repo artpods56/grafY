@@ -15,17 +15,14 @@ from dataclasses import replace
 from typing import Any, cast
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, TypeAdapter
-
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
-from grafy_core.conversions import ArtifactConversion
+from grafy_core.conversions import Conversion
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.materialization import MaterializationProvenance
-from grafy_core.runtime.persistence import ArtifactWriteContext, ArtifactWriterRegistry
-from grafy_core.runtime.resolvers import ResolverRegistry
+from grafy_core.runtime.persistence import ArtifactWriteContext
 
 from grafy_api.runs.contract import InputPortPlan, InputSlot
 from grafy_api.runs.errors import NodeComputationError
@@ -37,30 +34,14 @@ class EdgeValueResolver:
     def __init__(
         self,
         *,
-        resolvers: ResolverRegistry,
-        writers: ArtifactWriterRegistry,
         unit_of_work: UnitOfWorkPort,
-        values: ArtifactValues | None = None,
+        values: ArtifactValues,
     ) -> None:
-        self._resolvers = resolvers
-        self._writers = writers
         self._uow = unit_of_work
         self._values = values
 
-    async def _read(
-        self,
-        ref: ArtifactRef,
-        target: type[object],
-        workspace_id: UUID,
-    ) -> object:
-        values = self._values
-        if values is not None and values.declaration_for(ref.key()) is not None:
-            return await values.resolve(ref, workspace_id)
-        return await self._resolvers.resolve(
-            ref=ref,
-            target=target,
-            workspace_id=workspace_id,
-        )
+    async def _read(self, ref: ArtifactRef, workspace_id: UUID) -> object:
+        return await self._values.resolve(ref, workspace_id)
 
     async def _store(
         self,
@@ -68,10 +49,7 @@ class EdgeValueResolver:
         value: object,
         context: ArtifactWriteContext,
     ) -> ArtifactRef:
-        values = self._values
-        if values is not None and values.declaration_for(key) is not None:
-            return await values.write(key, value, context)
-        return await self._writers.writer_for(key).write(value, context)
+        return await self._values.write(key, value, context)
 
     async def assemble_inputs(
         self,
@@ -168,9 +146,10 @@ class EdgeValueResolver:
                         **_conversion_path_metadata(conversions),
                     }
                 )
+                target_key = final_conversion.target.spec.key
                 value = ArtifactRefSequence(
-                    artifact_type=final_conversion.target.id,
-                    schema_version=final_conversion.target.schema_version,
+                    artifact_type=target_key.id,
+                    schema_version=target_key.schema_version,
                     item_refs=converted_refs,
                     ordered=value.ordered,
                     index_key=value.index_key,
@@ -263,16 +242,10 @@ class EdgeValueResolver:
         first_conversion = conversions[0]
         final_conversion = conversions[-1]
         item_context = "" if item_index is None else f" at sequence item {item_index}"
+        source_key = first_conversion.source.spec.key
+        target_key = final_conversion.target.spec.key
         try:
-            source_value = await self._read(
-                ref,
-                first_conversion.source_type,
-                context.workspace_id,
-            )
-            converted_value: object = _validated_conversion_value(
-                source_value,
-                first_conversion.source_type,
-            )
+            converted_value: object = await self._read(ref, context.workspace_id)
         except Exception as exc:
             raise NodeComputationError(
                 f"Failed to resolve artifact {ref.artifact_id}{item_context} for "
@@ -281,18 +254,11 @@ class EdgeValueResolver:
 
         for step_index, conversion in enumerate(conversions):
             try:
-                step_input = _validated_conversion_value(
-                    converted_value,
-                    conversion.source_type,
-                )
-                converted_value = _validated_conversion_value(
-                    conversion.convert(step_input),
-                    conversion.target_type,
-                )
+                converted_value = await conversion.convert(cast(Any, converted_value))
             except Exception as exc:
                 raise NodeComputationError(
                     f"Failed conversion step {step_index + 1}/{len(conversions)} "
-                    f"{conversion.key.id!r}@{conversion.key.version} for artifact "
+                    f"{conversion.id!r}@{conversion.version} for artifact "
                     f"{ref.artifact_id}{item_context} on {slot.label}"
                 ) from exc
 
@@ -303,16 +269,16 @@ class EdgeValueResolver:
             "source_node_id": slot.source_node_id,
             "source_port": slot.source_port,
             **_conversion_path_metadata(conversions),
-            "conversion_source_artifact_type": first_conversion.source.id,
-            "conversion_source_schema_version": first_conversion.source.schema_version,
-            "conversion_target_artifact_type": final_conversion.target.id,
-            "conversion_target_schema_version": final_conversion.target.schema_version,
+            "conversion_source_artifact_type": source_key.id,
+            "conversion_source_schema_version": source_key.schema_version,
+            "conversion_target_artifact_type": target_key.id,
+            "conversion_target_schema_version": target_key.schema_version,
             "target_node_id": slot.target_node_id,
             "target_port": slot.to_port,
         }
         try:
             written_ref = await self._store(
-                final_conversion.target,
+                target_key,
                 converted_value,
                 ArtifactWriteContext(
                     node_context=replace(context, node_id=slot.source_node_id),
@@ -323,12 +289,12 @@ class EdgeValueResolver:
                     metadata=metadata,
                 ),
             )
-            if written_ref.key() != final_conversion.target:
+            if written_ref.key() != target_key:
                 raise NodeComputationError(
                     f"Final conversion writer returned {written_ref.artifact_type}@"
                     f"{written_ref.schema_version}, expected "
-                    f"{final_conversion.target.id}@"
-                    f"{final_conversion.target.schema_version} for artifact "
+                    f"{target_key.id}@"
+                    f"{target_key.schema_version} for artifact "
                     f"{ref.artifact_id}{item_context} on {slot.label}"
                 )
             return written_ref
@@ -337,20 +303,20 @@ class EdgeValueResolver:
         except Exception as exc:
             raise NodeComputationError(
                 "Failed to materialize final target "
-                f"{final_conversion.target.id}@"
-                f"{final_conversion.target.schema_version} for the conversion path "
+                f"{target_key.id}@"
+                f"{target_key.schema_version} for the conversion path "
                 f"from artifact {ref.artifact_id}{item_context} on {slot.label}"
             ) from exc
 
 
 def _conversion_path_metadata(
-    conversions: tuple[ArtifactConversion[Any, Any], ...],
+    conversions: tuple[Conversion[Any, Any], ...],
 ) -> dict[str, object]:
     metadata: dict[str, object] = {
         "conversion_path": [
             {
-                "id": conversion.key.id,
-                "version": conversion.key.version,
+                "id": conversion.id,
+                "version": conversion.version,
             }
             for conversion in conversions
         ],
@@ -360,30 +326,12 @@ def _conversion_path_metadata(
         conversion = conversions[0]
         metadata.update(
             {
-                "conversion_id": conversion.key.id,
-                "conversion_version": conversion.key.version,
+                "conversion_id": conversion.id,
+                "conversion_version": conversion.version,
                 "conversion_title": conversion.title,
             }
         )
     return metadata
-
-
-def _validated_conversion_value[ValueT](
-    value: object,
-    target: type[ValueT],
-) -> ValueT:
-    if issubclass(target, BaseModel):
-        if not isinstance(value, target):
-            raise TypeError(
-                f"Expected {target.__module__}.{target.__qualname__}, got "
-                f"{type(value).__module__}.{type(value).__qualname__}"
-            )
-        raw_value = value.model_dump(mode="python", round_trip=True)
-        return target.model_validate(raw_value, strict=True)
-    return TypeAdapter(
-        target,
-        config=ConfigDict(arbitrary_types_allowed=True),
-    ).validate_python(value, strict=True)
 
 
 __all__ = ["EdgeValueResolver"]

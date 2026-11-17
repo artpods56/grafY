@@ -14,7 +14,7 @@ from grafy_core.runtime.materialization import (
     MaterializationProvenance,
 )
 from grafy_core.runtime.persistence import ArtifactWriteContext
-from grafy_core.runtime.resolvers import ResolverRegistry
+
 from grafy_core.schema_contracts import (
     JSON_SCHEMA,
     parse_json_schema,
@@ -357,10 +357,7 @@ async def test_schema_artifact_factories_and_typed_instance_plugs_round_trip() -
         write_context,
     )
 
-    inputs, provenance = await InputMaterializer(
-        ResolverRegistry(),
-        values,
-    ).materialize(
+    inputs, provenance = await InputMaterializer(values).materialize(
         JsonSchemaBuilderNode.input_contract,
         {"schemas": [child_ref]},
         TEST_WORKSPACE_ID,

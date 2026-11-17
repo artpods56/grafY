@@ -7,7 +7,7 @@ from grafy_core.artifacts import (
     ConfirmationRule,
     MaterializedJsonType,
 )
-from grafy_core.conversions import ArtifactConversion, ArtifactConversionKey
+from grafy_core.conversions import ArtifactConversionKey, Conversion
 from grafy_core.nodes import (
     ArtifactTypeVariable,
     InputPortSpec,
@@ -164,16 +164,18 @@ class ArtifactConversionSpecResponse(ApiResponse):
     title: str
 
     @classmethod
-    def from_conversion(cls, conversion: ArtifactConversion[Any, Any]) -> Self:
+    def from_conversion(cls, conversion: Conversion[Any, Any]) -> Self:
+        source = conversion.source.spec.key
+        target = conversion.target.spec.key
         return cls(
             key=ArtifactConversionKeyResponse(
-                id=conversion.key.id, version=conversion.key.version
+                id=conversion.id, version=conversion.version
             ),
             source_artifact_type=ArtifactTypeKeyResponse(
-                id=conversion.source.id, schema_version=conversion.source.schema_version
+                id=source.id, schema_version=source.schema_version
             ),
             target_artifact_type=ArtifactTypeKeyResponse(
-                id=conversion.target.id, schema_version=conversion.target.schema_version
+                id=target.id, schema_version=target.schema_version
             ),
             title=conversion.title,
         )

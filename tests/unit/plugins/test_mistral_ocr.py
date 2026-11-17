@@ -333,10 +333,7 @@ def test_plugin_registers_dependency_writers(tmp_path: Path) -> None:
         uow=InMemoryUnitOfWork(),
         bucket="artifacts",
     )
-    writers = {
-        writer.artifact_type: writer for writer in registry.build_writers(context)
-    }
-    assert writers == {}
+    assert MISTRAL.artifacts == ()
     # TABLE_DATA uses the guest's table-bundle fallback, like the SQL plugin.
     assert TABLE_DATA.key in {spec.key for spec in MISTRAL.artifact_type_dependencies}
     assert registry.declared_artifact_types == ()

@@ -33,11 +33,9 @@ from grafy_core.runtime.materialization import (
     MaterializationError,
 )
 from grafy_core.runtime.persistence import (
-    ArtifactWriterRegistry,
     OutputPersister,
     PersistedNodeOutput,
 )
-from grafy_core.runtime.resolvers import ResolverRegistry
 
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
@@ -49,8 +47,8 @@ OTHER_TYPE = ArtifactTypeKey("example.other", 1)
 
 def _runtime() -> NodeRuntime:
     return NodeRuntime(
-        materializer=InputMaterializer(ResolverRegistry()),
-        persister=OutputPersister(ArtifactWriterRegistry()),
+        materializer=InputMaterializer(),
+        persister=OutputPersister(),
     )
 
 

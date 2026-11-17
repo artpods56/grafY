@@ -4,12 +4,12 @@ from uuid import UUID
 
 import pytest
 from grafy_core.artifact_contracts import IMAGE_REGIONS, RASTER_IMAGE
-from grafy_core.documents import RasterImage, raster_image_artifact
+from grafy_core.documents import FILE_ARTIFACTS, RasterImage, raster_image_artifact
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.artifacts import ArtifactRefSequence
 from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.plugins import PluginRegistry
 from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import (
@@ -18,11 +18,9 @@ from grafy_core.runtime.materialization import (
 )
 from grafy_core.runtime.persistence import (
     ArtifactWriteContext,
-    ArtifactWriterRegistry,
     OutputPersister,
     PersistedNodeOutput,
 )
-from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.image import IMAGES
 from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
@@ -70,22 +68,20 @@ async def test_runtime_chains_image_collect_and_raster_writers(tmp_path: Path) -
         original_filename="page-002.png",
         content_type="image/png",
     )
+    values = ArtifactValues(
+        (*FILE_ARTIFACTS, raster_image_artifact()),
+        uow=uow,
+        storage=storage,
+        bucket="artifacts",
+        storage_backend="local",
+    )
     runtime = NodeRuntime(
-        materializer=InputMaterializer(ResolverRegistry()),
-        persister=OutputPersister(
-            ArtifactWriterRegistry(),
-            ArtifactValues(
-                (raster_image_artifact(),),
-                uow=uow,
-                storage=storage,
-                bucket="artifacts",
-                storage_backend="local",
-            ),
-        ),
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
     )
 
     decode_output = await runtime.run_node(
-        DecodeImagesNode(storage=storage, uow=uow),
+        DecodeImagesNode(),
         NodeExecutionContext(
             workspace_id=TEST_WORKSPACE_ID,
             node_id="image_decode_1",
@@ -193,24 +189,15 @@ async def test_raster_writer_persists_content_without_upload_metadata(
     )
 
 
-def test_image_plugin_uses_builtin_raster_type_and_registers_writer(
-    tmp_path: Path,
-) -> None:
+def test_image_plugin_uses_builtin_raster_type() -> None:
     registry = PluginRegistry()
     registry.install(IMAGES)
     registry.install(IMAGE_OPERATORS)
-    context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=LocalFileObjectStore(tmp_path / "objects"),
-        uow=InMemoryUnitOfWork(),
-        bucket="artifacts",
-    )
 
     assert {spec.key for spec in registry.artifact_types} == {
         RASTER_IMAGE.key,
         IMAGE_REGIONS.key,
     }
-    assert registry.build_writers(context) == ()
     assert {artifact.spec.key for artifact in registry.artifacts} == {
         RASTER_IMAGE.key,
         IMAGE_REGIONS.key,

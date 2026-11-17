@@ -1,19 +1,15 @@
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from hashlib import sha256
-from typing import TYPE_CHECKING, Any, Protocol, cast, final, override
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
 from grafy_core.artifacts import (
-    ArtifactObject,
     ArtifactRef,
     ArtifactRefSequence,
     ArtifactTypeKey,
     JsonObject,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.nodes import (
     NodeExecutionContext,
     OutputContract,
@@ -54,112 +50,8 @@ class PersistedNodeOutput:
             raise AttributeError(name) from exc
 
 
-class ArtifactOutputWriter(Protocol):
-    artifact_type: ArtifactTypeKey
-
-    async def write(
-        self,
-        value: object,
-        context: ArtifactWriteContext,
-    ) -> ArtifactRef: ...
-
-
-class ArtifactWriterRegistry:
-    def __init__(self, writers: list[ArtifactOutputWriter] | None = None) -> None:
-        self._writers: dict[ArtifactTypeKey, ArtifactOutputWriter] = {}
-        for writer in writers or []:
-            self.register(writer)
-
-    def register(self, writer: ArtifactOutputWriter) -> None:
-        if writer.artifact_type in self._writers:
-            artifact_type = writer.artifact_type
-            raise ValueError(
-                f"Output writer already registered for {artifact_type.id}@"
-                f"{artifact_type.schema_version}"
-            )
-        self._writers[writer.artifact_type] = writer
-
-    def writer_for(self, artifact_type: ArtifactTypeKey) -> ArtifactOutputWriter:
-        writer = self._writers.get(artifact_type)
-        if writer is None:
-            message = (
-                f"No output writer registered for {artifact_type.id}@"
-                f"{artifact_type.schema_version}"
-            )
-            raise RuntimeError(message)
-        return writer
-
-
-@final
-class InlineModelOutputWriter[T: BaseModel](ArtifactOutputWriter):
-    """Persists a typed Pydantic payload as an inline JSON artifact."""
-
-    def __init__(
-        self,
-        *,
-        artifact_type: ArtifactTypeKey,
-        model: type[T],
-        uow: UnitOfWorkPort,
-    ) -> None:
-        self.artifact_type = artifact_type
-        self._model = model
-        self._uow = uow
-
-    @override
-    async def write(
-        self,
-        value: object,
-        context: ArtifactWriteContext,
-    ) -> ArtifactRef:
-        payload = self._model.model_validate(value)
-        payload_json = cast(JsonObject, payload.model_dump(mode="json", by_alias=True))
-        payload_bytes = json.dumps(
-            payload_json,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        provenance: dict[str, object] = {
-            input_name: [
-                {
-                    "artifact_id": str(ref.artifact_id),
-                    "artifact_type": ref.artifact_type,
-                    "schema_version": ref.schema_version,
-                }
-                for ref in refs
-            ]
-            for input_name, refs in context.provenance.refs_by_input.items()
-        }
-        metadata: JsonObject = {
-            "producer_node_id": context.node_context.node_id,
-        }
-        if provenance:
-            metadata["provenance"] = provenance
-        metadata.update(context.metadata)
-        artifact = ArtifactObject(
-            workspace_id=context.node_context.workspace_id,
-            artifact_type=self.artifact_type.id,
-            schema_version=self.artifact_type.schema_version,
-            content_type="application/json",
-            storage_backend="inline",
-            inline_payload=payload_json,
-            byte_size=len(payload_bytes),
-            sha256=sha256(payload_bytes).hexdigest(),
-            metadata=metadata,
-        )
-        async with self._uow as uow:
-            await uow.artifacts.add(artifact)
-            await uow.commit()
-        return artifact.ref()
-
-
 class OutputPersister:
-    def __init__(
-        self,
-        writer_registry: ArtifactWriterRegistry,
-        values: "ArtifactValues | None" = None,
-    ) -> None:
-        self._writer_registry = writer_registry
+    def __init__(self, values: "ArtifactValues | None" = None) -> None:
         self._values = values
 
     async def _write(
@@ -169,9 +61,11 @@ class OutputPersister:
         context: ArtifactWriteContext,
     ) -> ArtifactRef:
         values = self._values
-        if values is not None and values.declaration_for(key) is not None:
-            return await values.write(key, value, context)
-        return await self._writer_registry.writer_for(key).write(value, context)
+        if values is None or values.declaration_for(key) is None:
+            raise RuntimeError(
+                f"No artifact declaration for {key.id}@{key.schema_version}"
+            )
+        return await values.write(key, value, context)
 
     async def persist(
         self,

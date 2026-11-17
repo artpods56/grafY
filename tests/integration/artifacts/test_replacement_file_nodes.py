@@ -8,11 +8,12 @@ import json
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from grafy_core.artifact_contracts import RASTER_IMAGE, RasterImageContent
-from grafy_core.documents import raster_image_artifact
+from grafy_core.artifact_contracts import RASTER_IMAGE
+from grafy_core.documents import FILE_ARTIFACTS, RasterImage, raster_image_artifact
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.artifacts import (
     ArtifactObject,
@@ -38,11 +39,9 @@ from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import (
-    ArtifactWriterRegistry,
     OutputPersister,
     PersistedNodeOutput,
 )
-from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_core.table_contracts import TABLE_DATA
 from grafy_plugin_gis.artifacts import (
     GEO_FEATURE_COLLECTION,
@@ -142,22 +141,20 @@ async def test_image_decode_decodes_the_whole_ordered_batch_through_the_runtime(
         content=b"\x89PNG\r\n\x1a\nsecond",
         original_filename="page-002.png",
     )
+    values = ArtifactValues(
+        (*FILE_ARTIFACTS, raster_image_artifact()),
+        uow=uow,
+        storage=storage,
+        bucket="artifacts",
+        storage_backend="local",
+    )
     runtime = NodeRuntime(
-        materializer=InputMaterializer(ResolverRegistry()),
-        persister=OutputPersister(
-            ArtifactWriterRegistry(),
-            ArtifactValues(
-                (raster_image_artifact(),),
-                uow=uow,
-                storage=storage,
-                bucket="artifacts",
-                storage_backend="local",
-            ),
-        ),
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
     )
 
     output = await runtime.run_node(
-        DecodeImagesNode(storage=storage, uow=uow),
+        DecodeImagesNode(),
         node_context(),
         {
             "files": ArtifactRefSequence.from_key(
@@ -208,18 +205,24 @@ async def test_image_decode_maps_each_accepted_container_to_its_content_type(
     ref = await seed_file_artifact(
         storage, uow, workspace_id=TEST_WORKSPACE_ID, spec=spec, content=b"image-bytes"
     )
-    node = DecodeImagesNode(storage=storage, uow=uow)
+    values = ArtifactValues(
+        (*FILE_ARTIFACTS, raster_image_artifact()),
+        uow=uow,
+        storage=storage,
+        bucket="artifacts",
+        storage_backend="local",
+    )
+    handle = cast(Any, await values.resolve(ref, TEST_WORKSPACE_ID))
+    node = DecodeImagesNode()
 
     output = await node.run(
         node_context(),
         node.config_contract.model.model_validate({}),
-        ImageDecodeInput(
-            files=ArtifactRefSequence.from_key(key=spec.key, item_refs=[ref])
-        ),
+        ImageDecodeInput(files=[handle]),
     )
 
     assert len(output.images) == 1
-    assert isinstance(output.images[0], RasterImageContent)
+    assert isinstance(output.images[0], RasterImage)
     assert output.images[0].content_type == content_type
     assert output.images[0].filename is None
 

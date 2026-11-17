@@ -75,14 +75,6 @@ def test_text_models_reject_invalid_values(
         model.model_validate(payload)
 
 
-def test_text_release_does_not_own_canonical_conversions() -> None:
-    registry = PluginRegistry()
-    registry.install(TEXT)
-    registry.freeze()
-
-    assert TEXT.artifact_conversions == ()
-
-
 def test_markdown_artifact_is_nominally_registered() -> None:
     registry = PluginRegistry()
     registry.install(TEXT)

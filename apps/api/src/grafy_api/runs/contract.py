@@ -31,9 +31,8 @@ from grafy_core.artifacts import (
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_core.conversions import (
     MAX_ARTIFACT_CONVERSION_HOPS,
-    ArtifactConversion,
     ArtifactConversionKey,
-    conversion_runtime_types_are_compatible,
+    Conversion,
 )
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.graph_documents import (
@@ -115,7 +114,7 @@ class InputSlot:
     to_plug: str | None
     value: ArtifactOutputValue
     projection: ArtifactFieldProjection | None
-    conversion_path: tuple[ArtifactConversion[Any, Any], ...]
+    conversion_path: tuple[Conversion[Any, Any], ...]
     map_driven: bool
     label: str
     source_node_id: str
@@ -436,14 +435,14 @@ class NodeContractBinder:
         self,
         item: _Incoming,
         artifact_type: ArtifactTypeKey,
-    ) -> tuple[tuple[ArtifactConversion[Any, Any], ...], ArtifactTypeKey]:
+    ) -> tuple[tuple[Conversion[Any, Any], ...], ArtifactTypeKey]:
         if len(item.conversion_path) > MAX_ARTIFACT_CONVERSION_HOPS:
             raise NodeComputationError(
                 f"{item.label} conversion path exceeds the maximum of "
                 f"{MAX_ARTIFACT_CONVERSION_HOPS} steps"
             )
         seen = {artifact_type}
-        conversions: list[ArtifactConversion[Any, Any]] = []
+        conversions: list[Conversion[Any, Any]] = []
         source = artifact_type
         for step_index, step in enumerate(item.conversion_path):
             key = ArtifactConversionKey(id=step.id, version=step.version)
@@ -453,32 +452,24 @@ class NodeContractBinder:
                     f"{item.label} requests undeclared conversion {key.id!r}@"
                     f"{key.version} at step {step_index + 1}"
                 )
-            if conversion.source != source:
+            source_key = conversion.source.spec.key
+            target_key = conversion.target.spec.key
+            if source_key != source:
                 raise NodeComputationError(
                     f"{item.label} applies conversion step {step_index + 1} "
-                    f"{conversion.key.id!r}@{conversion.key.version}, which expects "
-                    f"{conversion.source.id}@{conversion.source.schema_version}, to "
+                    f"{conversion.id!r}@{conversion.version}, which expects "
+                    f"{source_key.id}@{source_key.schema_version}, to "
                     f"{source.id}@{source.schema_version}"
                 )
-            if conversions and not conversion_runtime_types_are_compatible(
-                conversions[-1].target_type,
-                conversion.source_type,
-            ):
-                previous = conversions[-1]
-                raise NodeComputationError(
-                    f"{item.label} conversion steps {step_index} and "
-                    f"{step_index + 1} have incompatible runtime types: "
-                    f"{previous.target_type} does not match {conversion.source_type}"
-                )
-            if conversion.target in seen:
+            if target_key in seen:
                 raise NodeComputationError(
                     f"{item.label} conversion path repeats artifact type "
-                    f"{conversion.target.id}@{conversion.target.schema_version} "
+                    f"{target_key.id}@{target_key.schema_version} "
                     f"at step {step_index + 1}"
                 )
             conversions.append(conversion)
-            seen.add(conversion.target)
-            source = conversion.target
+            seen.add(target_key)
+            source = target_key
         return tuple(conversions), source
 
     def _validate_input_plugs(
@@ -577,7 +568,7 @@ def _check_target(
         )
     delivered = _value_key(slot.value)
     if slot.conversion_path:
-        delivered = slot.conversion_path[-1].target
+        delivered = slot.conversion_path[-1].target.spec.key
     elif slot.projection is not None:
         delivered = slot.projection.target
     if delivered not in accepted:

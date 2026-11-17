@@ -23,6 +23,5 @@ def test_plugin_declares_image_operators() -> None:
     assert {
         (spec.key.id, spec.key.schema_version) for spec in IMAGES.artifact_types
     } == {(IMAGE_REGIONS.key.id, IMAGE_REGIONS.key.schema_version)}
-    assert IMAGES.artifact_conversions == ()
     assert "grafy-core==0.1.0" in (requires("grafy-plugin-image") or [])
     assert "pillow" in (requires("grafy-plugin-image") or [])

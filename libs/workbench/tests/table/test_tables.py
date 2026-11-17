@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 from grafy_core.artifacts import ArtifactObject, JsonObject
 from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.storage import (
     FileStoragePort,
     SaveFileCommand,
@@ -188,16 +188,10 @@ def test_table_model_rejects_non_rectangular_or_mistyped_rows() -> None:
         Table(columns=columns, rows=[{"count": "1"}])
 
 
-def test_table_plugin_registers_chunked_persistence(tmp_path: Path) -> None:
+def test_table_plugin_registers_chunked_persistence() -> None:
     registry = PluginRegistry()
     registry.install(TABLES)
     registry.freeze()
-    context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=FakeFileObjectStore(tmp_path / "artifacts"),
-        uow=InMemoryUnitOfWork(),
-        bucket="artifacts",
-    )
 
     assert TABLES.slug == "table"
     assert TABLES.title == "Table"
@@ -205,8 +199,6 @@ def test_table_plugin_registers_chunked_persistence(tmp_path: Path) -> None:
     assert TABLE_DATA.payload_schema == Table.model_json_schema()
     assert [artifact.spec.key for artifact in registry.artifacts] == [TABLE_DATA.key]
     assert registry.artifacts[0].value_type is Table
-    assert registry.build_resolvers(context) == ()
-    assert registry.build_writers(context) == ()
     assert sample_table().rows[0]["column_2"] == "19.99"
     assert registry.nodes == ()
 

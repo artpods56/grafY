@@ -1,10 +1,8 @@
 """Composition root for workbench-facing application components."""
 
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.egress import EgressPolicy, default_egress_policy
 from grafy_core.documents import FILE_ARTIFACTS
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
@@ -19,12 +17,7 @@ from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.port_check import check_port_declarations
 from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.materialization import InputMaterializer
-from grafy_core.runtime.persistence import (
-    ArtifactWriterRegistry,
-    ArtifactOutputWriter,
-    OutputPersister,
-)
-from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
+from grafy_core.runtime.persistence import OutputPersister
 from grafy_shared.config import ExecutionConfig
 from grafy_storage import LocalFileObjectStore
 
@@ -42,8 +35,6 @@ from grafy_api.artifacts.tables import ArtifactTableService
 from grafy_api.artifacts.wms import WmsTileClient
 from grafy_api.library.folders import LibraryFoldersService
 from grafy_api.library.service import LibraryService
-
-logger = logging.getLogger(__name__)
 
 _WORKBENCH_BUCKET = "workbench-artifacts"
 
@@ -153,43 +144,6 @@ def build_workbench_components(
         values=values,
     )
 
-    resolvers = list(plugin_registry.build_resolvers(plugin_context))
-    writers = list(plugin_registry.build_writers(plugin_context))
-    # Several first-party plugins declare a handler for the same built-in artifact type,
-    # and both registries refuse a duplicate registration outright. The first handler for
-    # an artifact type serves it and the rest are logged, so a shared format does not
-    # make startup fail on the second plugin that can also handle it.
-    resolver_keys: set[tuple[ArtifactTypeKey, type[object]]] = set()
-    unique_resolvers: list[Resolver[object]] = []
-    for resolver in resolvers:
-        key = (resolver.source, resolver.target)
-        if key in resolver_keys:
-            logger.info(
-                "shared_artifact_resolver_deduplicated source=%s@%s target=%s",
-                resolver.source.id,
-                resolver.source.schema_version,
-                resolver.target,
-            )
-            continue
-        resolver_keys.add(key)
-        unique_resolvers.append(resolver)
-    resolvers = unique_resolvers
-    writer_keys: set[ArtifactTypeKey] = set()
-    unique_writers: list[ArtifactOutputWriter] = []
-    for writer in writers:
-        if writer.artifact_type in writer_keys:
-            logger.info(
-                "shared_artifact_writer_deduplicated artifact_type=%s@%s",
-                writer.artifact_type.id,
-                writer.artifact_type.schema_version,
-            )
-            continue
-        writer_keys.add(writer.artifact_type)
-        unique_writers.append(writer)
-    writers = unique_writers
-    resolver_registry = ResolverRegistry(resolvers)
-    writer_registry = ArtifactWriterRegistry(writers)
-
     availability = ArtifactAvailability(uow)
     wms = WmsTileClient(egress_policy=resolved_egress_policy)
     artifact_content = ArtifactContentService(
@@ -217,14 +171,12 @@ def build_workbench_components(
     )
     library_folders = LibraryFoldersService(uow)
     runtime = NodeRuntime(
-        materializer=InputMaterializer(resolver_registry, values),
-        persister=OutputPersister(writer_registry, values),
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
     )
     runners = NodeComputationRunnerFactory(
         registry=plugin_registry,
         runtime=runtime,
-        resolvers=resolver_registry,
-        writers=writer_registry,
         unit_of_work=uow,
         node_secrets=resolved_node_secrets,
         plugin_context=plugin_context,

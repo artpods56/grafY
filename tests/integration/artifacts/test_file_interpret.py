@@ -36,13 +36,13 @@ from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.storage import SaveFileCommand
 from grafy_core.runtime.execution import NodeRunError, NodeRuntime
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.documents import FILE_ARTIFACTS
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import (
-    ArtifactWriterRegistry,
     OutputPersister,
     PersistedNodeOutput,
 )
-from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.file import FILES
 from grafy_workbench.file.nodes import (
@@ -124,9 +124,16 @@ async def run_interpret(
     blob: ArtifactRef,
     artifact_types: tuple[ArtifactTypeSpec, ...] = (JPEG_FILE,),
 ) -> object:
+    values = ArtifactValues(
+        FILE_ARTIFACTS,
+        uow=uow,
+        storage=storage,
+        bucket="artifacts",
+        storage_backend="local",
+    )
     runtime = NodeRuntime(
-        materializer=InputMaterializer(ResolverRegistry()),
-        persister=OutputPersister(ArtifactWriterRegistry()),
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
     )
     return await runtime.run_node(
         interpret_node(storage, uow),

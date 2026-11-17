@@ -1,6 +1,5 @@
 from hashlib import sha256
 from io import BytesIO
-from pathlib import Path
 from typing import cast
 from uuid import UUID
 
@@ -13,7 +12,7 @@ from grafy_core.artifact_contracts import (
 from grafy_core.documents import RasterImage, raster_image_artifact
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.storage import (
     FileStoragePort,
     FileStreamProtocol,
@@ -145,20 +144,11 @@ async def test_raster_writer_preserves_storage_layout_and_metadata() -> None:
     assert await resolved.read(max_bytes=len(content)) == content
 
 
-def test_image_plugin_uses_builtin_raster_type_and_registers_writer(
-    tmp_path: Path,
-) -> None:
+def test_image_plugin_uses_builtin_raster_type() -> None:
     registry = PluginRegistry()
     registry.install(IMAGES)
-    context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=RecordingFileStorage(),
-        uow=InMemoryUnitOfWork(),
-        bucket="artifacts",
-    )
 
     assert RASTER_IMAGE in registry.artifact_type_dependencies
     assert {spec.key for spec in registry.artifact_types} == {IMAGE_REGIONS.key}
-    assert registry.build_writers(context) == ()
     assert [artifact.spec.key for artifact in registry.artifacts] == [IMAGE_REGIONS.key]
     assert registry.artifacts[0].value_type is ImageRegionSet

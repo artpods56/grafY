@@ -11,7 +11,6 @@ from grafy_core.artifacts import (
     ArtifactTypeKey,
 )
 from grafy_core.nodes import InputContract, PortShape
-from grafy_core.runtime.resolvers import ResolverRegistry
 
 if TYPE_CHECKING:
     from grafy_core.runtime.artifact_values import ArtifactValues
@@ -42,12 +41,7 @@ _EXPECTED_PORT_VALUE: Final = {
 
 
 class InputMaterializer:
-    def __init__(
-        self,
-        resolver_registry: ResolverRegistry,
-        values: "ArtifactValues | None" = None,
-    ) -> None:
-        self._resolver_registry = resolver_registry
+    def __init__(self, values: "ArtifactValues | None" = None) -> None:
         self._values = values
 
     async def _resolve_value(
@@ -58,20 +52,13 @@ class InputMaterializer:
         workspace_id: UUID,
     ) -> object:
         values = self._values
-        if values is not None and values.declaration_for(ref.key()) is not None:
-            resolved = await values.resolve(ref, workspace_id)
-        elif len(value_types) == 1:
-            resolved = await self._resolver_registry.resolve(
-                ref=ref,
-                target=value_types[0],
-                workspace_id=workspace_id,
-            )
-        else:
+        if values is None or values.declaration_for(ref.key()) is None:
             raise MaterializationError(
                 name,
                 "has no artifact declaration for "
                 f"{ref.artifact_type}@{ref.schema_version}",
             )
+        resolved = await values.resolve(ref, workspace_id)
         if type(resolved) not in value_types:
             expected = " or ".join(value_type.__name__ for value_type in value_types)
             raise MaterializationError(

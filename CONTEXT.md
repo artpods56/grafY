@@ -346,9 +346,9 @@ properties are not inferred as scalar projections.
 ### Materialized scalar
 
 An artifact type that declares it can materialize one JSON primitive runtime
-value. `scalar.text@1` consumes and produces runtime `str`; its writer wraps that
-primitive in the stable `{ "value": string }` payload and its resolver unwraps
-the payload again. `scalar.integer@1` follows the same boundary for runtime
+value. `scalar.text@1` consumes and produces runtime `str`. The declaration
+stores that primitive in the stable `{ "value": string }` payload and loads
+the payload back out as `str`. `scalar.integer@1` does the same for runtime
 `int`. Storage envelopes must not leak into node input, output, projection, or
 conversion callables.
 
@@ -376,13 +376,12 @@ A bounded, ordered sequence of exact conversion keys stored on one edge. The
 canonical conversions form a directed graph, so declarations `X -> Y` and
 `Y -> Z` make `X -> Z` authorable without an adapter node. Each selected path is
 simple: it cannot revisit an artifact type, even though the canonical map may
-contain conversions in both directions. Deployment construction rejects adjacent
-declarations whose runtime target and source types cannot compose. Authoring may
-automatically select one unambiguous shortest path, but execution never searches
-Plugin registry state. It validates and replays the stored keys against the
-immutable deployment map, composes
-their pure callables in memory, and materializes only the final target-typed
-artifact.
+contain conversions in both directions. Deployment construction rejects a step
+whose source declaration is not the artifact type produced by the previous
+step. Authoring may automatically select one unambiguous shortest path, but
+execution never searches plugin registry state. It validates and replays the
+stored keys against the immutable deployment map, awaits each conversion, and
+materializes only the final target-typed artifact.
 
 ### Spatial artifact model
 
@@ -477,8 +476,8 @@ _Avoid_: bundled plugin, host plugin, system builtin plugin
 ### Plugin
 
 A node-family package under `plugins/<family>/` that the API process loads at
-composition: nodes, artifact types, and the resolver and writer factories those
-types require, under one stable slug. A Plugin is application code, not a
+composition: nodes, artifact types, and the declarations that load and store
+those types, under one stable slug. A Plugin is application code, not a
 deployable. It ships in the API's own image and lockfile, is installed into the
 same `PluginRegistry` as the builtin families from one static tuple, and its
 nodes identify by family slug and the deployment's build digest — exactly as a

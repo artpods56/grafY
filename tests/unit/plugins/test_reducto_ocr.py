@@ -239,7 +239,7 @@ def test_the_family_needs_egress_and_secrets() -> None:
         PluginRuntimeCapability.NODE_SECRETS,
     )
     assert registration.required_capabilities == REDUCTO.capabilities
-    assert REDUCTO.writer_factories == ()
+    assert REDUCTO.artifacts == ()
 
 
 def test_the_family_declares_one_secret_and_its_destinations() -> None:

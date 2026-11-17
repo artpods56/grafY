@@ -1,8 +1,8 @@
-from collections.abc import Callable
-from typing import Annotated, ClassVar, cast, override
+from typing import Annotated, Any, ClassVar, cast, override
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from grafy_core.artifacts import (
     ArtifactRef,
@@ -27,7 +27,16 @@ from grafy_core.nodes import (
     derive_output_contract,
 )
 from grafy_core.declared_values import note_declaration
+from grafy_core.runtime.artifact_values import (
+    Artifact,
+    ArtifactFiles,
+    ArtifactValues,
+    EncodedArtifact,
+    StoredArtifact,
+    encode_inline_model,
+)
 from grafy_core.runtime.execution import NodeRuntime
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.invocation import (
     InvocationError,
     InvocationMode,
@@ -43,14 +52,13 @@ from grafy_core.runtime.materialization import (
     MaterializationError,
     MaterializationProvenance,
 )
+from grafy_core.ports.storage import FileStoragePort
 from grafy_core.runtime.persistence import (
-    ArtifactOutputWriter,
     ArtifactWriteContext,
-    ArtifactWriterRegistry,
     OutputPersister,
     PersistedNodeOutput,
 )
-from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
+from grafy_core.runtime.resolvers import ArtifactContractError
 
 
 INPUT_VALUE = ArtifactTypeSpec(
@@ -91,44 +99,53 @@ note_declaration(SampleOut, OUTPUT_VALUE.key)
 note_declaration(SampleOther, OTHER_VALUE.key)
 
 
-class IntResolver:
-    source = INPUT_VALUE.key
-    target = SampleIn
+class _SamplePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    def __init__(self, values: dict[UUID, int]) -> None:
-        self._values = values
-
-    async def resolve(self, ref: ArtifactRef, workspace_id: UUID) -> SampleIn:
-        return SampleIn(self._values[ref.artifact_id])
+    value: int
 
 
-class RecordingWriter:
-    artifact_type = OUTPUT_VALUE.key
+def _sample_artifact[T](
+    spec: ArtifactTypeSpec,
+    value_type: type[T],
+) -> Artifact[T]:
+    async def resolve(stored: StoredArtifact) -> T:
+        payload = stored.row.inline_payload
+        if not isinstance(payload, dict) or not isinstance(payload.get("value"), int):
+            raise ArtifactContractError(
+                f"Artifact {stored.row.id} does not store an integer value"
+            )
+        return cast(T, cast(Any, value_type)(payload["value"]))
 
-    def __init__(self, completed_count: Callable[[], int] = lambda: 0) -> None:
-        self._completed_count = completed_count
-        self.values: list[int] = []
-        self.item_indexes: list[int | None] = []
-        self.completed_counts: list[int] = []
-        self.context_metadata: list[dict[str, object]] = []
-        self.refs: list[ArtifactRef] = []
+    async def write(value: T, _files: ArtifactFiles) -> EncodedArtifact:
+        return encode_inline_model(_SamplePayload(value=int(cast(Any, value))))
 
-    async def write(
-        self,
-        value: object,
-        context: ArtifactWriteContext,
-    ) -> ArtifactRef:
-        assert isinstance(value, int)
-        self.values.append(value)
-        self.item_indexes.append(context.item_index)
-        self.completed_counts.append(self._completed_count())
-        self.context_metadata.append(dict(context.metadata))
-        ref = ArtifactRef.from_key(
-            artifact_id=uuid4(),
-            key=self.artifact_type,
-        )
-        self.refs.append(ref)
-        return ref
+    return Artifact(
+        spec=spec,
+        value_type=value_type,
+        resolve=resolve,
+        write=write,
+    )
+
+
+def _values(*declarations: Artifact[Any]) -> ArtifactValues:
+    return ArtifactValues(
+        declarations,
+        uow=InMemoryUnitOfWork(),
+        storage=cast(FileStoragePort, object()),
+        bucket="artifacts",
+        storage_backend="local",
+    )
+
+
+def _write_context() -> ArtifactWriteContext:
+    return ArtifactWriteContext(
+        node_context=NodeExecutionContext(
+            workspace_id=TEST_WORKSPACE_ID,
+            node_id="seed",
+        ),
+        provenance=MaterializationProvenance(refs_by_input={}),
+    )
 
 
 class CollectionInput(NodeInput):
@@ -290,24 +307,19 @@ def _passthrough_contract() -> OutputContract[LooseOutput]:
     )
 
 
-def runtime_with(resolver: IntResolver, writer: RecordingWriter) -> NodeRuntime:
-    resolvers = ResolverRegistry()
-    resolvers.register(cast(Resolver[object], resolver))
-    writers = ArtifactWriterRegistry()
-    writers.register(cast(ArtifactOutputWriter, writer))
-    return NodeRuntime(
-        materializer=InputMaterializer(resolvers),
-        persister=OutputPersister(writers),
-    )
-
-
 @pytest.mark.asyncio
 async def test_once_invokes_collection_node_once_with_the_whole_sequence() -> None:
-    first_ref = ArtifactRef.from_key(artifact_id=uuid4(), key=INPUT_VALUE.key)
-    second_ref = ArtifactRef.from_key(artifact_id=uuid4(), key=INPUT_VALUE.key)
-    resolver = IntResolver({first_ref.artifact_id: 2, second_ref.artifact_id: 4})
-    writer = RecordingWriter()
-    runtime = runtime_with(resolver, writer)
+    values = _values(
+        _sample_artifact(INPUT_VALUE, SampleIn),
+        _sample_artifact(OUTPUT_VALUE, SampleOut),
+    )
+    context = _write_context()
+    first_ref = await values.write(INPUT_VALUE.key, SampleIn(2), context)
+    second_ref = await values.write(INPUT_VALUE.key, SampleIn(4), context)
+    runtime = NodeRuntime(
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
+    )
     node = CollectionNode()
 
     result = await runtime.run_node(
@@ -322,10 +334,10 @@ async def test_once_invokes_collection_node_once_with_the_whole_sequence() -> No
     )
 
     assert node.calls == [(None, [2, 4])]
-    assert writer.values == [6]
-    assert writer.item_indexes == [None]
     assert isinstance(result, PersistedNodeOutput)
-    assert result["total"] == writer.refs[0]
+    total = result["total"]
+    assert isinstance(total, ArtifactRef)
+    assert await values.resolve(total, TEST_WORKSPACE_ID) == SampleOut(6)
 
 
 def test_invocation_capabilities_and_effective_shapes() -> None:
@@ -391,7 +403,7 @@ def test_invalid_map_drivers_and_output_contracts_are_rejected(
 
 @pytest.mark.asyncio
 async def test_materializer_rejects_wrong_key_empty_sequence() -> None:
-    materializer = InputMaterializer(ResolverRegistry())
+    materializer = InputMaterializer()
 
     with pytest.raises(
         MaterializationError,
@@ -411,7 +423,7 @@ async def test_materializer_rejects_wrong_key_empty_sequence() -> None:
 
 @pytest.mark.asyncio
 async def test_materializer_accepts_every_declared_artifact_type() -> None:
-    materializer = InputMaterializer(ResolverRegistry())
+    materializer = InputMaterializer()
     contract = derive_input_contract(MultiTypeInput)
 
     for key in (INPUT_VALUE.key, OTHER_VALUE.key):
@@ -450,7 +462,7 @@ async def test_materializer_preserves_mixed_plugs_and_flattens_provenance() -> N
     )
     raw_items: list[ArtifactRef | ArtifactRefSequence] = [first_ref, sequence]
 
-    inputs, provenance = await InputMaterializer(ResolverRegistry()).materialize(
+    inputs, provenance = await InputMaterializer().materialize(
         derive_input_contract(MixedInstancePlugInput),
         {"items": raw_items},
         TEST_WORKSPACE_ID,
@@ -483,7 +495,7 @@ async def test_materializer_rejects_wrong_instance_plug_keys(
         MaterializationError,
         match="expected test.input_value@1, got test.other_value@1",
     ):
-        await InputMaterializer(ResolverRegistry()).materialize(
+        await InputMaterializer().materialize(
             derive_input_contract(MixedInstancePlugInput),
             {"items": value},
             TEST_WORKSPACE_ID,
@@ -496,28 +508,16 @@ async def test_materializer_rejects_empty_required_instance_plugs() -> None:
         MaterializationError,
         match="expected at least one incoming edge",
     ):
-        await InputMaterializer(ResolverRegistry()).materialize(
+        await InputMaterializer().materialize(
             derive_input_contract(MixedInstancePlugInput),
             {"items": []},
             TEST_WORKSPACE_ID,
         )
 
 
-def test_registries_reject_duplicate_contracts() -> None:
-    resolver = cast(Resolver[object], IntResolver({}))
-    resolvers = ResolverRegistry([resolver])
-    with pytest.raises(ValueError, match="Resolver already registered"):
-        resolvers.register(resolver)
-
-    writer = cast(ArtifactOutputWriter, RecordingWriter())
-    writers = ArtifactWriterRegistry([writer])
-    with pytest.raises(ValueError, match="Output writer already registered"):
-        writers.register(writer)
-
-
 @pytest.mark.asyncio
 async def test_output_persister_rejects_passthrough_key_and_shape_mismatches() -> None:
-    persister = OutputPersister(ArtifactWriterRegistry())
+    persister = OutputPersister()
     contract = _passthrough_contract()
     context = NodeExecutionContext(
         workspace_id=TEST_WORKSPACE_ID,
@@ -572,12 +572,10 @@ async def test_sequence_items_carry_the_metadata_of_their_port() -> None:
     produced it, and the card that follows it fell back to waiting.
     """
 
-    writer = RecordingWriter()
-    writers = ArtifactWriterRegistry()
-    writers.register(cast(ArtifactOutputWriter, writer))
+    values = _values(_sample_artifact(OUTPUT_VALUE, SampleOut))
     implementation = BuiltinImplementationIdentity(build_digest="a" * 64)
 
-    await OutputPersister(writers).persist(
+    result = await OutputPersister(values).persist(
         derive_output_contract(ManyOutput),
         NodeExecutionContext(
             workspace_id=TEST_WORKSPACE_ID,
@@ -588,11 +586,19 @@ async def test_sequence_items_carry_the_metadata_of_their_port() -> None:
         metadata={"implementation": implementation.provenance_document()},
     )
 
-    assert writer.item_indexes == [0, 1, 2]
-    assert writer.context_metadata == [
-        {"implementation": {"kind": "builtin", "build_digest": "a" * 64}},
-        {"implementation": {"kind": "builtin", "build_digest": "a" * 64}},
-        {"implementation": {"kind": "builtin", "build_digest": "a" * 64}},
+    assert isinstance(result, PersistedNodeOutput)
+    sequence = result["values"]
+    assert isinstance(sequence, ArtifactRefSequence)
+    stored = [await values.open(ref, TEST_WORKSPACE_ID) for ref in sequence.item_refs]
+    assert [row.row.inline_payload for row in stored] == [
+        {"value": 1},
+        {"value": 2},
+        {"value": 3},
+    ]
+    assert [row.row.metadata["implementation"] for row in stored] == [
+        {"kind": "builtin", "build_digest": "a" * 64},
+        {"kind": "builtin", "build_digest": "a" * 64},
+        {"kind": "builtin", "build_digest": "a" * 64},
     ]
 
 
