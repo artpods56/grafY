@@ -79,6 +79,11 @@ class OutputPersister:
         values = _model_values(validated_output)
 
         for name, spec in contract.ports.items():
+            if spec.kind == "service":
+                # A service output is the live object the node returned. It is
+                # never written, and it does not become part of the stored result.
+                values.pop(name, None)
+                continue
             if name not in values:
                 if spec.required:
                     raise RuntimeError(f"Missing required output {name!r}")

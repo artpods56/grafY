@@ -19,6 +19,7 @@ from grafy_core.node_context import (
 from grafy_core.node_derivation import (
     derive_input_contract as derive_input_contract,
     derive_output_contract as derive_output_contract,
+    validate_service_node as validate_service_node,
 )
 from grafy_core.node_ports import (
     ArtifactTypeContract as ArtifactTypeContract,
@@ -36,6 +37,12 @@ from grafy_core.node_ports import (
     Ref as Ref,
     RefSequence as RefSequence,
     ResolvedNodeContracts as ResolvedNodeContracts,
+    ServiceContractKey as ServiceContractKey,
+)
+from grafy_core.service_contracts import (
+    ServiceContract as ServiceContract,
+    implements_service_contract as implements_service_contract,
+    service_contract as service_contract,
 )
 
 
@@ -74,6 +81,11 @@ class Node[
             cls.config_contract = ConfigContract(model=config_model)
             cls.input_contract = derive_input_contract(input_model)
             cls.output_contract = derive_output_contract(output_model)
+            validate_service_node(
+                cls.__name__,
+                cls.input_contract,
+                cls.output_contract,
+            )
             return
 
     @abstractmethod

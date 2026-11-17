@@ -42,6 +42,24 @@ class ArtifactTypeVariable:
 ArtifactTypeContract = ArtifactTypeKey | ArtifactTypeVariable
 
 
+@dataclass(frozen=True, slots=True)
+class ServiceContractKey:
+    """The id and version of one service contract, without its title or protocol."""
+
+    id: str
+    version: int
+
+    def __post_init__(self) -> None:
+        if self.id.strip() == "" or self.id != self.id.strip() or " " in self.id:
+            raise ValueError(
+                "Service contract id must be non-empty without whitespace"
+            )
+        if len(self.id) > 255:
+            raise ValueError("Service contract id must be at most 255 characters")
+        if isinstance(self.version, bool) or self.version < 1:
+            raise ValueError("Service contract version must be a positive integer")
+
+
 class Ref[T](ArtifactRef):
     """A stored artifact ref. ``T`` is the value class, or ``Any`` when bound."""
 
@@ -101,7 +119,7 @@ class Plugs:
 @dataclass(frozen=True, slots=True)
 class InputPortSpec:
     name: str
-    accepts: ArtifactTypeContract
+    accepts: ArtifactTypeContract | None
     title: str | None = None
     description: str | None = None
     shape: PortShape = PortShape.ONE
@@ -116,8 +134,36 @@ class InputPortSpec:
     also_accepts: tuple[ArtifactTypeKey, ...] = ()
     shape_field: str | None = None
     agent_default: Literal["fill", "hidden"] = "fill"
+    kind: Literal["artifact", "service"] = "artifact"
+    service_contracts: tuple[ServiceContractKey, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.kind == "service":
+            if self.accepts is not None or self.also_accepts:
+                raise NodeContractError(
+                    f"Input port {self.name!r} is a service port and cannot "
+                    "declare an artifact type"
+                )
+            if not self.service_contracts:
+                raise NodeContractError(
+                    f"Input port {self.name!r} must name the service contract "
+                    "it accepts"
+                )
+            if self.shape is not PortShape.ONE or self.variadic or self.instance_plugs:
+                raise NodeContractError(
+                    f"Input port {self.name!r} service port must be one value, "
+                    "not variadic or instance plugs"
+                )
+            return
+        if self.service_contracts:
+            raise NodeContractError(
+                f"Input port {self.name!r} is an artifact port and cannot "
+                "declare a service contract"
+            )
+        if self.accepts is None:
+            raise NodeContractError(
+                f"Input port {self.name!r} must declare an artifact type"
+            )
         if not self.also_accepts:
             return
         if isinstance(self.accepts, ArtifactTypeVariable):
@@ -140,24 +186,58 @@ class InputPortSpec:
     def accepted_types(self) -> tuple[ArtifactTypeKey, ...]:
         """Concrete artifact types this input accepts, primary type first.
 
-        Empty for a port that declares a named artifact type variable.
+        Empty for a service port and for a port that declares a named artifact
+        type variable.
         """
 
-        if isinstance(self.accepts, ArtifactTypeVariable):
+        if self.kind == "service":
             return ()
-        return (self.accepts, *self.also_accepts)
+        accepts = self.accepts
+        if not isinstance(accepts, ArtifactTypeKey):
+            return ()
+        return (accepts, *self.also_accepts)
 
 
 @dataclass(frozen=True, slots=True)
 class OutputPortSpec:
     name: str
-    produces: ArtifactTypeContract
+    produces: ArtifactTypeContract | None
     title: str | None = None
     description: str | None = None
     shape: PortShape = PortShape.ONE
     required: bool = True
     value_type: type[object] | None = None
     shape_field: str | None = None
+    kind: Literal["artifact", "service"] = "artifact"
+    service_contracts: tuple[ServiceContractKey, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.kind == "service":
+            if self.produces is not None:
+                raise NodeContractError(
+                    f"Output port {self.name!r} is a service port and cannot "
+                    "declare an artifact type"
+                )
+            if not self.service_contracts:
+                raise NodeContractError(
+                    f"Output port {self.name!r} must name the service contract "
+                    "it produces"
+                )
+            if self.shape is not PortShape.ONE:
+                raise NodeContractError(
+                    f"Output port {self.name!r} service port must be one value, "
+                    "not variadic or instance plugs"
+                )
+            return
+        if self.service_contracts:
+            raise NodeContractError(
+                f"Output port {self.name!r} is an artifact port and cannot "
+                "declare a service contract"
+            )
+        if self.produces is None:
+            raise NodeContractError(
+                f"Output port {self.name!r} must declare an artifact type"
+            )
 
 
 @dataclass(frozen=True, slots=True)

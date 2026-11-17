@@ -4427,6 +4427,13 @@
             },
             "title": "Plugins",
             "type": "array"
+          },
+          "service_contracts": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceContractResponse"
+            },
+            "title": "Service Contracts",
+            "type": "array"
           }
         },
         "required": [
@@ -4877,7 +4884,7 @@
                 "type": "null"
               }
             ],
-            "description": "'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter.",
+            "description": "'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter. A service input is always hidden.",
             "title": "Agent Default"
           },
           "also_accepts": {
@@ -4934,6 +4941,15 @@
             "title": "Instance Plugs",
             "type": "boolean"
           },
+          "kind": {
+            "default": "artifact",
+            "enum": [
+              "artifact",
+              "service"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -4942,6 +4958,13 @@
             "default": true,
             "title": "Required",
             "type": "boolean"
+          },
+          "service_contracts": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceContractKeyResponse"
+            },
+            "title": "Service Contracts",
+            "type": "array"
           },
           "shape": {
             "$ref": "#/components/schemas/PortShape"
@@ -6163,6 +6186,49 @@
           "text"
         ],
         "title": "SendAgentTurnRequest",
+        "type": "object"
+      },
+      "ServiceContractKeyResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version"
+        ],
+        "title": "ServiceContractKeyResponse",
+        "type": "object"
+      },
+      "ServiceContractResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title"
+        ],
+        "title": "ServiceContractResponse",
         "type": "object"
       },
       "SessionResponse": {

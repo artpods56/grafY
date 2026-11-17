@@ -5,6 +5,7 @@ from pydantic import BaseModel, StrictInt, StrictStr
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
 from grafy_core.node_ports import (
+    ArtifactTypeContract,
     ArtifactTypeVariable,
     Binds,
     InputContract,
@@ -16,8 +17,10 @@ from grafy_core.node_ports import (
     PortShape,
     Ref,
     RefSequence,
+    ServiceContractKey,
 )
 from grafy_core.declared_values import declared_key
+from grafy_core.service_contracts import marked_contract, produced_contracts
 
 
 def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
@@ -28,6 +31,9 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
         if described is None:
             continue
         variadic, instance, spare, agent_default = _plug_flags(plugs)
+        if described.kind == "service":
+            # A service input is never a model parameter. The Graph feeds it.
+            agent_default = "hidden"
         ports[name] = InputPortSpec(
             name=name,
             accepts=described.accepts,
@@ -44,6 +50,8 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
             allows_none=described.allows_none,
             required=field.is_required(),
             agent_default=agent_default,
+            kind=described.kind,
+            service_contracts=described.service_contracts,
         )
     return InputContract(model=model, ports=ports)
 
@@ -63,6 +71,8 @@ def derive_output_contract[T: BaseModel](model: type[T]) -> OutputContract[T]:
             shape=described.shape,
             required=field.is_required(),
             value_type=described.value_type,
+            kind=described.kind,
+            service_contracts=described.service_contracts,
         )
     return OutputContract(model=model, ports=ports)
 
@@ -74,11 +84,13 @@ class _Described:
         shape: PortShape,
         accepted_shapes: tuple[PortShape, ...],
         value_types: tuple[type[object], ...],
-        accepts: ArtifactTypeKey | ArtifactTypeVariable,
+        accepts: ArtifactTypeContract | None,
         also_accepts: tuple[ArtifactTypeKey, ...],
         preserves_ref_container: bool,
         allows_none: bool,
         value_type: type[object] | None,
+        kind: Literal["artifact", "service"] = "artifact",
+        service_contracts: tuple[ServiceContractKey, ...] = (),
     ) -> None:
         self.shape = shape
         self.accepted_shapes = accepted_shapes
@@ -88,6 +100,8 @@ class _Described:
         self.preserves_ref_container = preserves_ref_container
         self.allows_none = allows_none
         self.value_type = value_type
+        self.kind = kind
+        self.service_contracts = service_contracts
 
 
 def _markers(
@@ -139,6 +153,10 @@ def _describe(
     output: bool,
 ) -> _Described | None:
     members, allows_none = _without_none(annotation)
+    service = _service_port(model, name, members, plugs, output=output)
+    if service is not None:
+        service.allows_none = allows_none
+        return service
     if plugs is not None and (plugs.variadic or plugs.instance):
         kind = "instance plugs" if plugs.instance else "variadic plugs"
         if len(members) != 1 or get_origin(members[0]) is not list:
@@ -179,6 +197,78 @@ def _describe(
         described.shape = PortShape.MANY
         described.accepted_shapes = (PortShape.MANY,)
     return described
+
+
+def _service_port(
+    model: type[BaseModel],
+    name: str,
+    members: tuple[object, ...],
+    plugs: Plugs | None,
+    *,
+    output: bool,
+) -> _Described | None:
+    """Describe a service port, or return None when the field is not one.
+
+    A service port is one value. A list, a variadic plug, or an instance plug
+    is rejected here, and a union of service types is rejected. An input is
+    typed as the contract itself; an output produces every contract its class
+    subclasses, including a contract the class declares on itself.
+    """
+
+    if not _contains_service(members):
+        return None
+    if plugs is not None and (plugs.variadic or plugs.instance):
+        raise NodeContractError(
+            f"{model.__name__}.{name} service port must be one value, not "
+            "variadic or instance plugs"
+        )
+    if len(members) == 1 and get_origin(members[0]) is list:
+        raise NodeContractError(
+            f"{model.__name__}.{name} service port must be one value, not "
+            "variadic or instance plugs"
+        )
+    if len(members) != 1 or not isinstance(members[0], type):
+        raise NodeContractError(
+            f"{model.__name__}.{name} service port cannot be a union"
+        )
+    member = members[0]
+    if output:
+        keys = tuple(spec.key for spec in produced_contracts(member))
+    else:
+        own = marked_contract(member)
+        if own is None:
+            raise NodeContractError(
+                f"{model.__name__}.{name} service input must be the contract, "
+                "not an implementation"
+            )
+        keys = (own.key,)
+    return _Described(
+        shape=PortShape.ONE,
+        accepted_shapes=(PortShape.ONE,),
+        value_types=(),
+        accepts=None,
+        also_accepts=(),
+        preserves_ref_container=False,
+        allows_none=False,
+        value_type=None,
+        kind="service",
+        service_contracts=keys,
+    )
+
+
+def _contains_service(members: tuple[object, ...]) -> bool:
+    for member in members:
+        if _is_service_type(member):
+            return True
+        if get_origin(member) is list:
+            args = get_args(member)
+            if args and _contains_service(_without_none(args[0])[0]):
+                return True
+    return False
+
+
+def _is_service_type(member: object) -> bool:
+    return isinstance(member, type) and bool(produced_contracts(member))
 
 
 def _describe_members(
@@ -460,6 +550,47 @@ def _sequence_item_type(
         )
         raise NodeContractError(message)
     return args[0]
+
+
+def validate_service_node(
+    name: str,
+    inputs: InputContract[Any],
+    outputs: OutputContract[Any],
+) -> None:
+    """Reject a node shape v1 does not run.
+
+    A service output is a whole node: it has no input ports and no artifact
+    outputs. A service port is one value. The port specs already reject a
+    variadic or instance-plug service port; this checks the node around them.
+    """
+
+    service_outputs = [
+        port for port in outputs.ports.values() if port.kind == "service"
+    ]
+    for port in inputs.ports.values():
+        if port.kind == "service" and (
+            port.shape is not PortShape.ONE or port.variadic or port.instance_plugs
+        ):
+            raise NodeContractError(
+                f"{name}.{port.name} service port must be one value, not "
+                "variadic or instance plugs"
+            )
+    for port in service_outputs:
+        if port.shape is not PortShape.ONE:
+            raise NodeContractError(
+                f"{name}.{port.name} service port must be one value, not "
+                "variadic or instance plugs"
+            )
+    if not service_outputs:
+        return
+    if inputs.ports:
+        raise NodeContractError(
+            f"{name} declares a service output and cannot declare input ports"
+        )
+    if any(port.kind != "service" for port in outputs.ports.values()):
+        raise NodeContractError(
+            f"{name} declares a service output and cannot declare an artifact output"
+        )
 
 
 def _concrete_type(

@@ -36,7 +36,9 @@ from grafy_core.nodes import (
     NodeExecutionContext,
     derive_input_contract,
     derive_output_contract,
+    validate_service_node,
 )
+from grafy_core.service_contracts import ServiceContract, marked_contract
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import (
     NodeSecretResolverPort,
@@ -199,6 +201,17 @@ class PluginRegistrationError(RuntimeError):
     pass
 
 
+def _require_service_contract(slug: str, protocol: type[object]) -> ServiceContract:
+    spec = marked_contract(protocol)
+    if spec is None or spec.protocol is not protocol:
+        raise PluginRegistrationError(
+            f"Plugin {slug!r} cannot register "
+            f"{getattr(protocol, '__name__', repr(protocol))} as a service "
+            "contract; decorate the class with service_contract"
+        )
+    return spec
+
+
 class UnknownOperatorError(LookupError):
     pass
 
@@ -223,6 +236,8 @@ class Plugin:
         self._nodes: dict[tuple[str, int], NodeRegistration] = {}
         self._artifact_types: dict[tuple[str, int], ArtifactTypeSpec] = {}
         self._artifact_type_dependencies: dict[tuple[str, int], ArtifactTypeSpec] = {}
+        self._service_contracts: dict[tuple[str, int], ServiceContract] = {}
+        self._service_contract_dependencies: dict[tuple[str, int], ServiceContract] = {}
         self._artifacts: list[Artifact[Any]] = []
 
     def node[NodeT: Node[Any, Any, Any]](
@@ -333,6 +348,11 @@ class Plugin:
                     f"Plugin {self.slug!r} node {operator_id!r} declares HTTP "
                     "egress without requiring network.egress"
                 )
+            validate_service_node(
+                f"{operator_id}@{version}",
+                node_class.input_contract,
+                node_class.output_contract,
+            )
             registered_class: type[Node[Any, Any, Any]] = node_class
             registration = NodeRegistration(
                 node_class=registered_class,
@@ -563,6 +583,43 @@ class Plugin:
             )
         self._artifact_type_dependencies[key] = artifact_type
 
+    def register_service_contract(self, protocol: type[object]) -> None:
+        """Own the service contract declared on ``protocol``."""
+
+        spec = _require_service_contract(self.slug, protocol)
+        key = (spec.id, spec.version)
+        if key in self._service_contract_dependencies:
+            raise PluginRegistrationError(
+                f"Plugin {self.slug!r} cannot both own and depend on service "
+                f"contract {spec.id}@{spec.version}"
+            )
+        if key in self._service_contracts:
+            raise PluginRegistrationError(
+                f"Plugin {self.slug!r} already declares service contract "
+                f"{spec.id}@{spec.version}"
+            )
+        self._service_contracts[key] = spec
+
+    def register_service_contract_dependency(self, protocol: type[object]) -> None:
+        """Use a service contract this plugin does not define."""
+
+        spec = _require_service_contract(self.slug, protocol)
+        key = (spec.id, spec.version)
+        if key in self._service_contracts:
+            raise PluginRegistrationError(
+                f"Plugin {self.slug!r} cannot both own and depend on service "
+                f"contract {spec.id}@{spec.version}"
+            )
+        existing = self._service_contract_dependencies.get(key)
+        if existing == spec:
+            return
+        if existing is not None:
+            raise PluginRegistrationError(
+                f"Plugin {self.slug!r} declares different exact contracts for "
+                f"service contract dependency {spec.id}@{spec.version}"
+            )
+        self._service_contract_dependencies[key] = spec
+
     def register(self, artifact: Artifact[Any]) -> None:
         note_declaration(artifact.value_type, artifact.spec.key)
         self.register_artifact_type(artifact.spec)
@@ -584,6 +641,14 @@ class Plugin:
     def artifact_type_dependencies(self) -> tuple[ArtifactTypeSpec, ...]:
         return tuple(self._artifact_type_dependencies.values())
 
+    @property
+    def service_contracts(self) -> tuple[ServiceContract, ...]:
+        return tuple(self._service_contracts.values())
+
+    @property
+    def service_contract_dependencies(self) -> tuple[ServiceContract, ...]:
+        return tuple(self._service_contract_dependencies.values())
+
 
 @dataclass(frozen=True, slots=True)
 class InstalledPlugin:
@@ -597,6 +662,8 @@ class _InstalledPluginDeclaration:
     nodes: tuple[NodeRegistration, ...]
     artifact_types: tuple[ArtifactTypeSpec, ...]
     artifact_type_dependencies: tuple[ArtifactTypeSpec, ...]
+    service_contracts: tuple[ServiceContract, ...]
+    service_contract_dependencies: tuple[ServiceContract, ...]
     artifacts: tuple[Artifact[Any], ...]
 
 
@@ -606,6 +673,7 @@ class PluginRegistry:
         self._nodes: dict[tuple[str, int], NodeRegistration] = {}
         self._artifact_types: dict[tuple[str, int], ArtifactTypeSpec] = {}
         self._artifact_type_owners: dict[tuple[str, int], str] = {}
+        self._service_contracts: dict[tuple[str, int], ServiceContract] = {}
         self._frozen = False
 
     def install(
@@ -624,6 +692,8 @@ class PluginRegistry:
             nodes=plugin.nodes,
             artifact_types=plugin.artifact_types,
             artifact_type_dependencies=plugin.artifact_type_dependencies,
+            service_contracts=plugin.service_contracts,
+            service_contract_dependencies=plugin.service_contract_dependencies,
             artifacts=plugin.artifacts,
         )
 
@@ -656,6 +726,18 @@ class PluginRegistry:
                 f"{artifact_id}@{schema_version} is already installed"
             )
 
+        duplicate_services = [
+            (contract.id, contract.version)
+            for contract in declaration.service_contracts
+            if (contract.id, contract.version) in self._service_contracts
+        ]
+        if duplicate_services:
+            contract_id, contract_version = duplicate_services[0]
+            raise PluginRegistrationError(
+                f"Plugin {plugin.slug!r} service contract "
+                f"{contract_id}@{contract_version} is already installed"
+            )
+
         self._declarations[plugin.slug] = declaration
         for registration in declaration.nodes:
             self._nodes[registration.key] = registration
@@ -666,6 +748,8 @@ class PluginRegistry:
             )
             self._artifact_types[key] = artifact_type
             self._artifact_type_owners[key] = plugin.slug
+        for contract in declaration.service_contracts:
+            self._service_contracts[(contract.id, contract.version)] = contract
 
     def freeze(self) -> None:
         artifact_contracts_by_key: dict[
@@ -693,6 +777,29 @@ class PluginRegistry:
                     f"{dependency.key.id}@{dependency.key.schema_version}"
                 )
 
+        service_contracts_by_key: dict[
+            tuple[str, int], tuple[ServiceContract, str]
+        ] = {
+            (contract.id, contract.version): (contract, plugin_slug)
+            for plugin_slug, declaration in self._declarations.items()
+            for contract in declaration.service_contracts
+        }
+        for plugin_slug, declaration in self._declarations.items():
+            for dependency in declaration.service_contract_dependencies:
+                key = (dependency.id, dependency.version)
+                existing = service_contracts_by_key.get(key)
+                if existing is None:
+                    service_contracts_by_key[key] = (dependency, plugin_slug)
+                    continue
+                existing_contract, existing_plugin_slug = existing
+                if existing_contract == dependency:
+                    continue
+                raise PluginRegistrationError(
+                    f"Plugins {existing_plugin_slug!r} and {plugin_slug!r} declare "
+                    "different exact contracts for service contract "
+                    f"{dependency.id}@{dependency.version}"
+                )
+
         for registration in self._nodes.values():
             declaration = self._declarations.get(registration.plugin_slug)
             declared_artifact_keys: set[ArtifactTypeKey] = (
@@ -709,12 +816,43 @@ class PluginRegistry:
             port_contracts: list[tuple[str, str, ArtifactTypeContract]] = [
                 ("input", port.name, artifact_type)
                 for port in registration.node_class.input_contract.ports.values()
+                if port.kind != "service"
                 for artifact_type in port.accepted_types
             ]
             port_contracts.extend(
-                ("output", port.name, port.produces)
+                ("output", port.name, produces)
                 for port in registration.node_class.output_contract.ports.values()
+                if port.kind != "service" and (produces := port.produces) is not None
             )
+            service_keys = (
+                set()
+                if declaration is None
+                else {
+                    contract.key
+                    for contract in (
+                        *declaration.service_contracts,
+                        *declaration.service_contract_dependencies,
+                    )
+                }
+            )
+            for direction, contract_ports in (
+                ("input", registration.node_class.input_contract.ports.values()),
+                ("output", registration.node_class.output_contract.ports.values()),
+            ):
+                for port in contract_ports:
+                    if port.kind != "service":
+                        continue
+                    for service_key in port.service_contracts:
+                        if service_key in service_keys:
+                            continue
+                        raise PluginRegistrationError(
+                            f"Plugin {registration.plugin_slug!r} operator "
+                            f"{registration.key[0]}@{registration.key[1]} "
+                            f"{direction} port {port.name!r} references service "
+                            f"contract {service_key.id}@{service_key.version}, "
+                            "which is neither owned nor declared as an exact "
+                            "dependency"
+                        )
             for direction, port_name, artifact_type in port_contracts:
                 if isinstance(artifact_type, ArtifactTypeVariable):
                     continue
@@ -813,6 +951,30 @@ class PluginRegistry:
     @property
     def artifact_types(self) -> tuple[ArtifactTypeSpec, ...]:
         return tuple(self._artifact_types.values())
+
+    @property
+    def service_contracts(self) -> tuple[ServiceContract, ...]:
+        """Service contracts this deployment owns, in id then version order."""
+
+        return tuple(
+            sorted(
+                self._service_contracts.values(),
+                key=lambda contract: (contract.id, contract.version),
+            )
+        )
+
+    @property
+    def service_operators(self) -> frozenset[tuple[str, int]]:
+        """Operators whose output is a live service object, never a stored result."""
+
+        return frozenset(
+            registration.key
+            for registration in self._nodes.values()
+            if any(
+                port.kind == "service"
+                for port in registration.node_class.output_contract.ports.values()
+            )
+        )
 
     @property
     def declared_artifact_types(self) -> tuple[ArtifactTypeSpec, ...]:

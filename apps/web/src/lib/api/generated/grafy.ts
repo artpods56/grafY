@@ -3110,6 +3110,8 @@ export interface components {
             readonly nodes: readonly components["schemas"]["NodeSpecResponse"][];
             /** Plugins */
             readonly plugins: readonly components["schemas"]["PluginSpecResponse"][];
+            /** Service Contracts */
+            readonly service_contracts?: readonly components["schemas"]["ServiceContractResponse"][];
         };
         /** NodeSecretInputResponse */
         readonly NodeSecretInputResponse: {
@@ -3308,7 +3310,7 @@ export interface components {
             readonly accepted_shapes: readonly components["schemas"]["PortShape"][];
             /**
              * Agent Default
-             * @description 'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter.
+             * @description 'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter. A service input is always hidden.
              */
             readonly agent_default?: "hidden" | null;
             /** Also Accepts */
@@ -3328,6 +3330,12 @@ export interface components {
              * @default false
              */
             readonly instance_plugs: boolean;
+            /**
+             * Kind
+             * @default artifact
+             * @enum {string}
+             */
+            readonly kind: "artifact" | "service";
             /** Name */
             readonly name: string;
             /**
@@ -3335,6 +3343,8 @@ export interface components {
              * @default true
              */
             readonly required: boolean;
+            /** Service Contracts */
+            readonly service_contracts?: readonly components["schemas"]["ServiceContractKeyResponse"][];
             readonly shape: components["schemas"]["PortShape"];
             /**
              * Shape Field
@@ -3873,6 +3883,22 @@ export interface components {
             readonly client_turn_id: string;
             /** Text */
             readonly text: string;
+        };
+        /** ServiceContractKeyResponse */
+        readonly ServiceContractKeyResponse: {
+            /** Id */
+            readonly id: string;
+            /** Version */
+            readonly version: number;
+        };
+        /** ServiceContractResponse */
+        readonly ServiceContractResponse: {
+            /** Id */
+            readonly id: string;
+            /** Title */
+            readonly title: string;
+            /** Version */
+            readonly version: number;
         };
         /** SessionResponse */
         readonly SessionResponse: {

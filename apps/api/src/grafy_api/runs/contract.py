@@ -17,7 +17,7 @@ this module.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any
 
@@ -123,6 +123,19 @@ class InputSlot:
 
 
 @dataclass(frozen=True, slots=True)
+class ServiceFeed:
+    """One service output the consumer's runner builds from the connected instance.
+
+    The object is not a stored result. ``source`` is the provider instance the
+    edge points at, and the ports name the field to take and the input to fill.
+    """
+
+    source: ExpandedInstance
+    from_port: str
+    to_port: str
+
+
+@dataclass(frozen=True, slots=True)
 class BoundNode:
     """One instance ready to run with the values its upstream instances stored."""
 
@@ -134,6 +147,7 @@ class BoundNode:
     artifact_type_bindings: Mapping[str, ArtifactTypeKey]
     ports: tuple[InputPortPlan, ...]
     slots: tuple[InputSlot, ...]
+    service_feeds: tuple[ServiceFeed, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "config", dict(self.config))
@@ -193,9 +207,10 @@ class NodeContractBinder:
         self,
         instance: ExpandedInstance,
         upstream: Mapping[InstanceKey, Mapping[str, ArtifactOutputValue]],
+        service_sources: Mapping[InstanceKey, ExpandedInstance] | None = None,
     ) -> BoundNode:
         graph_node = instance.node
-        node, registration = self._build_node(graph_node)
+        node, registration = self.build_node(graph_node)
         bindings = graph_node.artifact_type_binding_map()
         for variable, artifact_type in bindings.items():
             if artifact_type in self._artifact_types:
@@ -218,8 +233,18 @@ class NodeContractBinder:
                 f"bindings: {exc}"
             ) from exc
         view = ResolvedNodeContractView.of(node.operator_id, resolved_contracts)
-
-        incoming = self._incoming(instance, upstream)
+        providers = {} if service_sources is None else service_sources
+        self._reject_service_origins(instance, resolved_contracts)
+        self._reject_stored_service_feeds(instance, resolved_contracts, providers)
+        artifact_instance = replace(
+            instance,
+            connections=tuple(
+                connection
+                for connection in instance.connections
+                if connection.source not in providers
+            ),
+        )
+        incoming = self._incoming(artifact_instance, upstream)
         invocation = _derive_invocation(view, graph_node.id, incoming)
         self._validate_input_plugs(node, graph_node, incoming)
 
@@ -243,6 +268,12 @@ class NodeContractBinder:
                     f"connection, got {connections_by_port[slot.to_port]}"
                 )
             slots.append(slot)
+        service_feeds = self._service_feeds(
+            instance,
+            resolved_contracts,
+            providers,
+            connections_by_port,
+        )
         for name, port in resolved_contracts.input_contract.ports.items():
             if port.required and connections_by_port.get(name, 0) == 0:
                 raise NodeComputationError(
@@ -274,7 +305,106 @@ class NodeContractBinder:
                 for name, port in resolved_contracts.input_contract.ports.items()
             ),
             slots=tuple(slots),
+            service_feeds=service_feeds,
         )
+
+    def build_node(
+        self,
+        graph_node: GraphNode,
+    ) -> tuple[Node[Any, Any, Any], NodeRegistration]:
+        return self._build_node(graph_node)
+
+    def _reject_service_origins(
+        self,
+        instance: ExpandedInstance,
+        resolved_contracts: ResolvedNodeContracts,
+    ) -> None:
+        ports = resolved_contracts.input_contract.ports
+        for origin in instance.origins:
+            port = ports.get(origin.to_port)
+            if port is None or port.kind != "service":
+                continue
+            raise NodeComputationError(
+                f"Node {instance.key.node_id!r} service input {origin.to_port!r} "
+                "cannot be fed by an origin"
+            )
+
+    def _reject_stored_service_feeds(
+        self,
+        instance: ExpandedInstance,
+        resolved_contracts: ResolvedNodeContracts,
+        providers: Mapping[InstanceKey, ExpandedInstance],
+    ) -> None:
+        ports = resolved_contracts.input_contract.ports
+        for connection in instance.connections:
+            if connection.source in providers:
+                continue
+            port = ports.get(connection.edge.to_port)
+            if port is None or port.kind != "service":
+                continue
+            raise NodeComputationError(
+                f"Node {instance.key.node_id!r} service input "
+                f"{connection.edge.to_port!r} cannot be fed by a stored output"
+            )
+
+    def _service_feeds(
+        self,
+        instance: ExpandedInstance,
+        resolved_contracts: ResolvedNodeContracts,
+        providers: Mapping[InstanceKey, ExpandedInstance],
+        connections_by_port: dict[str, int],
+    ) -> tuple[ServiceFeed, ...]:
+        """Count each service edge as fed, without reading a stored result."""
+
+        ports = resolved_contracts.input_contract.ports
+        feeds: list[ServiceFeed] = []
+        for connection in instance.connections:
+            source = providers.get(connection.source)
+            if source is None:
+                continue
+            edge = connection.edge
+            port = ports.get(edge.to_port)
+            if port is None:
+                raise NodeComputationError(
+                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
+                    f"{edge.to_node!r}.{edge.to_port!r} references unknown input "
+                    f"port {edge.to_port!r} on node {instance.key.node_id!r}"
+                )
+            if port.kind != "service":
+                raise NodeComputationError(
+                    f"Node {instance.key.node_id!r} input {edge.to_port!r} is not "
+                    f"a service input; the service output of node "
+                    f"{source.key.node_id!r} feeds only a service input"
+                )
+            source_node, _registration = self._build_node(source.node)
+            source_port = source_node.output_contract.ports.get(edge.from_port)
+            if source_port is None or source_port.kind != "service":
+                raise NodeComputationError(
+                    f"Node {source.key.node_id!r} output {edge.from_port!r} is "
+                    "not a service output"
+                )
+            if set(port.service_contracts).isdisjoint(source_port.service_contracts):
+                raise NodeComputationError(
+                    f"Node {instance.key.node_id!r} input {edge.to_port!r} does "
+                    f"not accept the service contract produced by node "
+                    f"{source.key.node_id!r} output {edge.from_port!r}"
+                )
+            connections_by_port[edge.to_port] = (
+                connections_by_port.get(edge.to_port, 0) + 1
+            )
+            if not port.variadic and connections_by_port[edge.to_port] > 1:
+                raise NodeComputationError(
+                    f"Node {instance.key.node_id!r} input {edge.to_port!r} accepts "
+                    f"one connection, got {connections_by_port[edge.to_port]}"
+                )
+            feeds.append(
+                ServiceFeed(
+                    source=source,
+                    from_port=edge.from_port,
+                    to_port=edge.to_port,
+                )
+            )
+        return tuple(feeds)
 
     def boundary_input(
         self,

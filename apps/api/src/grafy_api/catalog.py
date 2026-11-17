@@ -9,6 +9,7 @@ from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS
 from grafy_core.conversions import Conversion
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import InstalledPlugin, NodeRegistration, PluginRegistry
+from grafy_core.service_contracts import ServiceContract
 
 
 def _by_key(
@@ -31,6 +32,7 @@ class CatalogSnapshot:
     artifact_types: tuple[ArtifactTypeSpec, ...]
     conversions: tuple[Conversion[Any, Any], ...]
     extension_claims: Mapping[str, ArtifactTypeKey]
+    service_contracts: tuple[ServiceContract, ...] = ()
 
     @classmethod
     def from_registry(
@@ -51,6 +53,7 @@ class CatalogSnapshot:
             artifact_types=tuple(serialized.values()),
             conversions=tuple(CANONICAL_ARTIFACT_CONVERSIONS),
             extension_claims=extension_claims,
+            service_contracts=registry.service_contracts,
         )
 
 

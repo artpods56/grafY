@@ -81,6 +81,7 @@ class NodeRuntime:
         artifact_type_bindings: Mapping[str, ArtifactTypeKey] | None = None,
         implementation: ImplementationIdentity | None = None,
         transforms: Mapping[str, Sequence[EdgeTransform]] | None = None,
+        metadata: JsonObject | None = None,
     ) -> PersistedNodeOutput | BaseModel:
         effective_bindings = artifact_type_bindings or {}
         raw_config: JsonObject = {} if config is None else config
@@ -128,15 +129,14 @@ class NodeRuntime:
                 f"({PluginFailureCode.OPERATOR_FAILURE.value})",
                 failure_code=PluginFailureCode.OPERATOR_FAILURE,
             ) from exc
+        recorded: JsonObject = {} if metadata is None else dict(metadata)
+        if implementation is not None:
+            recorded["implementation"] = implementation.provenance_document()
         persisted = await self._persister.persist(
             contract=resolved_contracts.output_contract,
             context=context,
             output=run_output,
             provenance=provenance,
-            metadata=(
-                {}
-                if implementation is None
-                else {"implementation": implementation.provenance_document()}
-            ),
+            metadata=recorded,
         )
         return persisted

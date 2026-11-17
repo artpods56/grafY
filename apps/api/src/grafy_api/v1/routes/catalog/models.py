@@ -3,6 +3,7 @@ from typing import Any, Literal, Self, cast
 from grafy_core.artifacts import (
     ArtifactBundleFormat,
     ArtifactConfirmationRule,
+    ArtifactTypeKey,
     ArtifactTypeSpec,
     ConfirmationRule,
     MaterializedJsonType,
@@ -13,8 +14,10 @@ from grafy_core.nodes import (
     InputPortSpec,
     OutputPortSpec,
     PortShape,
+    ServiceContractKey,
 )
 from grafy_core.plugins import NodeRegistration, NodeSecretInput
+from grafy_core.service_contracts import ServiceContract
 from pydantic import BaseModel, Field, model_validator
 from pydantic.errors import PydanticInvalidForJsonSchema
 
@@ -28,6 +31,7 @@ from grafy_api.v1.models import (
 )
 
 PortDirection = Literal["input", "output"]
+PortKind = Literal["artifact", "service"]
 CatalogOrigin = Literal["builtin"]
 CatalogEntryKind = Literal["plugin"]
 
@@ -192,14 +196,35 @@ class PluginSpecResponse(ApiResponse):
         return cls(slug=slug, title=title, origin="builtin")
 
 
+class ServiceContractKeyResponse(ApiResponse):
+    id: str
+    version: int = Field(ge=1, strict=True)
+
+    @classmethod
+    def from_key(cls, key: ServiceContractKey) -> Self:
+        return cls(id=key.id, version=key.version)
+
+
+class ServiceContractResponse(ApiResponse):
+    id: str
+    version: int = Field(ge=1, strict=True)
+    title: str
+
+    @classmethod
+    def from_contract(cls, contract: ServiceContract) -> Self:
+        return cls(id=contract.id, version=contract.version, title=contract.title)
+
+
 class PortResponse(ApiResponse):
     name: str
     title: str | None = None
     description: str | None = None
     direction: PortDirection
+    kind: PortKind = "artifact"
     artifact_type: ArtifactTypeKeyResponse | None = None
     artifact_type_variable: ArtifactTypeVariableIdentifier | None = None
     also_accepts: list[ArtifactTypeKeyResponse] = Field(default_factory=list)
+    service_contracts: list[ServiceContractKeyResponse] = Field(default_factory=list)
     shape: PortShape
     accepted_shapes: list[PortShape]
     instance_plugs: bool = False
@@ -216,12 +241,27 @@ class PortResponse(ApiResponse):
         default=None,
         description=(
             "'hidden' when an Agent tool link leaves this input to the Graph unless told "
-            "otherwise. Absent means the input is offered to the model as a parameter."
+            "otherwise. Absent means the input is offered to the model as a parameter. "
+            "A service input is always hidden."
         ),
     )
 
     @model_validator(mode="after")
-    def validate_artifact_type_contract(self) -> Self:
+    def validate_port_contract(self) -> Self:
+        if self.kind == "service":
+            if (
+                self.artifact_type is not None
+                or self.artifact_type_variable is not None
+                or self.also_accepts
+            ):
+                raise ValueError(
+                    "Service port cannot declare an artifact type or variable"
+                )
+            if not self.service_contracts:
+                raise ValueError("Service port must name at least one service contract")
+            return self
+        if self.service_contracts:
+            raise ValueError("Artifact port cannot declare a service contract")
         if (self.artifact_type is None) == (self.artifact_type_variable is None):
             raise ValueError(
                 "Port must declare exactly one of artifact_type or "
@@ -235,12 +275,38 @@ class PortResponse(ApiResponse):
 
     @classmethod
     def from_input_port(cls, port: InputPortSpec) -> Self:
+        if port.kind == "service":
+            return cls(
+                name=port.name,
+                title=port.title,
+                description=port.description,
+                direction="input",
+                kind="service",
+                artifact_type=None,
+                artifact_type_variable=None,
+                also_accepts=[],
+                service_contracts=[
+                    ServiceContractKeyResponse.from_key(key)
+                    for key in port.service_contracts
+                ],
+                shape=port.shape,
+                accepted_shapes=list(port.accepted_shapes),
+                instance_plugs=port.instance_plugs,
+                variadic=port.variadic,
+                required=port.required,
+                shape_field=port.shape_field,
+                agent_default="hidden",
+            )
         artifact_type: ArtifactTypeKeyResponse | None
         artifact_type_variable: str | None
         if isinstance(port.accepts, ArtifactTypeVariable):
             artifact_type = None
             artifact_type_variable = port.accepts.name
         else:
+            if not isinstance(port.accepts, ArtifactTypeKey):
+                raise ValueError(
+                    f"Artifact input port {port.name!r} must declare an artifact type"
+                )
             artifact_type = ArtifactTypeKeyResponse.from_key(port.accepts)
             artifact_type_variable = None
         return cls(
@@ -248,11 +314,13 @@ class PortResponse(ApiResponse):
             title=port.title,
             description=port.description,
             direction="input",
+            kind="artifact",
             artifact_type=artifact_type,
             artifact_type_variable=artifact_type_variable,
             also_accepts=[
                 ArtifactTypeKeyResponse.from_key(key) for key in port.also_accepts
             ],
+            service_contracts=[],
             shape=port.shape,
             accepted_shapes=list(port.accepted_shapes),
             instance_plugs=port.instance_plugs,
@@ -264,12 +332,37 @@ class PortResponse(ApiResponse):
 
     @classmethod
     def from_output_port(cls, port: OutputPortSpec) -> Self:
+        if port.kind == "service":
+            return cls(
+                name=port.name,
+                title=port.title,
+                description=port.description,
+                direction="output",
+                kind="service",
+                artifact_type=None,
+                artifact_type_variable=None,
+                also_accepts=[],
+                service_contracts=[
+                    ServiceContractKeyResponse.from_key(key)
+                    for key in port.service_contracts
+                ],
+                shape=port.shape,
+                accepted_shapes=[port.shape],
+                instance_plugs=False,
+                variadic=False,
+                required=port.required,
+                shape_field=port.shape_field,
+            )
         artifact_type: ArtifactTypeKeyResponse | None
         artifact_type_variable: str | None
         if isinstance(port.produces, ArtifactTypeVariable):
             artifact_type = None
             artifact_type_variable = port.produces.name
         else:
+            if not isinstance(port.produces, ArtifactTypeKey):
+                raise ValueError(
+                    f"Artifact output port {port.name!r} must declare an artifact type"
+                )
             artifact_type = ArtifactTypeKeyResponse.from_key(port.produces)
             artifact_type_variable = None
         return cls(
@@ -277,8 +370,10 @@ class PortResponse(ApiResponse):
             title=port.title,
             description=port.description,
             direction="output",
+            kind="artifact",
             artifact_type=artifact_type,
             artifact_type_variable=artifact_type_variable,
+            service_contracts=[],
             shape=port.shape,
             accepted_shapes=[port.shape],
             instance_plugs=False,
@@ -358,6 +453,7 @@ class NodeRegistryResponse(ApiResponse):
     plugins: list[PluginSpecResponse]
     artifact_types: list[ArtifactTypeSpecResponse]
     artifact_conversions: list[ArtifactConversionSpecResponse]
+    service_contracts: list[ServiceContractResponse] = Field(default_factory=list)
     nodes: list[NodeSpecResponse]
 
     @classmethod
@@ -377,6 +473,10 @@ class NodeRegistryResponse(ApiResponse):
             artifact_conversions=[
                 ArtifactConversionSpecResponse.from_conversion(conversion)
                 for conversion in snapshot.conversions
+            ],
+            service_contracts=[
+                ServiceContractResponse.from_contract(contract)
+                for contract in snapshot.service_contracts
             ],
             nodes=[
                 NodeSpecResponse.from_registration(registration)
@@ -401,5 +501,8 @@ __all__ = [
     "NodeSpecResponse",
     "PluginSpecResponse",
     "PortDirection",
+    "PortKind",
     "PortResponse",
+    "ServiceContractKeyResponse",
+    "ServiceContractResponse",
 ]

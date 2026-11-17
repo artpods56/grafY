@@ -3,7 +3,6 @@
 from collections.abc import Sequence
 
 from grafy_core.artifacts import ArtifactTypeKey
-from grafy_core.node_ports import ArtifactTypeVariable
 from grafy_core.plugins import NodeRegistration, PluginRegistrationError
 from grafy_core.runtime.artifact_values import ArtifactValues
 
@@ -14,15 +13,15 @@ def check_port_declarations(
 ) -> None:
     """Fail when a value port's class is not the class declared for its key.
 
-    Ref ports are skipped. Their type is chosen per instance. Service ports do
-    not exist yet; a later pass skips a port whose class is a service contract.
+    Ref ports are skipped. Their type is chosen per instance. A service port
+    carries no artifact class, so this pass skips it.
     """
 
     for registration in nodes:
         node = registration.node_class
         operator = f"{node.operator_id}@{node.operator_version}"
         for port in node.input_contract.ports.values():
-            if not port.value_types:
+            if port.kind == "service" or not port.value_types:
                 continue
             for key in port.accepted_types:
                 _require_value_class(
@@ -34,15 +33,18 @@ def check_port_declarations(
                     expected=port.value_types,
                 )
         for port in node.output_contract.ports.values():
-            if port.value_type is None or isinstance(
-                port.produces, ArtifactTypeVariable
+            produces = port.produces
+            if (
+                port.kind == "service"
+                or port.value_type is None
+                or not isinstance(produces, ArtifactTypeKey)
             ):
                 continue
             _require_value_class(
                 operator=operator,
                 direction="output",
                 port_name=port.name,
-                key=port.produces,
+                key=produces,
                 values=values,
                 expected=(port.value_type,),
             )

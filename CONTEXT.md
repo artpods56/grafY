@@ -223,7 +223,8 @@ Derived, never stored: **fresh** when the current fingerprint has a result,
 **queued** or **running** while a computation for it is in flight, **failed** when
 the last attempt at this fingerprint failed, otherwise **stale**. An edit during a
 Run leaves the instance stale; the Run's result is stored under the fingerprint it
-started with.
+started with. A service node has no stored result, so stale is omitted: it shows
+an in-flight or failed condition, or nothing.
 
 ### Refresh generation
 
@@ -539,12 +540,32 @@ headers, columns, and inferred values is a source-specific normalization rather
 than a shape-preserving artifact conversion. Plugin families provide remote and
 domain-specific nodes through the same registry as the builtin families.
 
+### Service contract
+
+A nominal protocol a Plugin registers with an id, version and title. A class
+implements the contract only by subclassing it; a matching method name is not
+enough. The object that satisfies it is built while a consumer runs and is gone
+when that computation ends. It is never an artifact: it is never stored, never
+logged, and never part of metadata.
+_Avoid_: DI service, capability provider object
+
+### Service port
+
+A node input or output typed as a service contract (or, on an output, a class
+that subclasses one or more). It carries contract keys, not an artifact type. A
+service output feeds only a service input, and the reverse. A node with a
+service output has no input ports. The planner never plans a service node; the
+consumer's runner builds the connected provider in-process. An Agent tool never
+offers a service input to the model.
+_Avoid_: OutPort/InPort for services
+
 ### Port
 
 A named node input or output that declares one or more accepted concrete
-artifact types or a single named artifact-type variable, plus cardinality. An
-input that declares several concrete types accepts any one of them; an origin
-or edge whose artifact type is none of them is refused unless a declared
+artifact types or a single named artifact-type variable, plus cardinality — or,
+for a service port, the service contract keys it accepts or produces. An
+artifact input that declares several concrete types accepts any one of them; an
+origin or edge whose artifact type is none of them is refused unless a declared
 artifact conversion reaches one of them. Every use of the same variable on one
 node shares one concrete binding owned by that node instance. Ports may
 carry one artifact, an ordered artifact sequence, or variadic incoming edges when

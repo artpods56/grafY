@@ -187,6 +187,7 @@ async def build_app_resources(
         runners=workbench.runner_factory,
         events=ProjectRunEvents(hub=project_room_hub, uow_factory=new_unit_of_work),
         concurrency=settings.execution.project_computation_concurrency,
+        service_operators=registry.service_operators,
     )
     # An Agent calls a node as a tool through the Run service, so the turn runtime is built
     # once Runs exist: it shares the Project's scheduler and its concurrency budget.

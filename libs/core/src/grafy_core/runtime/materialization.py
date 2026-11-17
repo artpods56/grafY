@@ -117,6 +117,16 @@ class InputMaterializer:
                     raise MaterializationError(name, "is required")
                 continue
 
+            if spec.kind == "service":
+                # The runner built this object for the connected provider. It is
+                # not an artifact, so the type check and the ref path do not apply.
+                value = inputs[name]
+                if value is None and spec.allows_none:
+                    values[name] = None
+                    continue
+                values[name] = value
+                continue
+
             accepted_types = spec.accepted_types
             if not accepted_types:
                 raise MaterializationError(

@@ -16,14 +16,27 @@ class ClientModel(BaseModel):
     )
 
 
+class ServiceContractKey(ClientModel):
+    id: str
+    version: int
+
+
+class ServiceContract(ClientModel):
+    id: str
+    version: int
+    title: str
+
+
 class CatalogPort(ClientModel):
     name: str
     title: str | None = None
     description: str | None = None
     direction: Literal["input", "output"]
+    kind: Literal["artifact", "service"] = "artifact"
     artifact_type: ArtifactTypeKey | None = None
     artifact_type_variable: str | None = None
     also_accepts: tuple[ArtifactTypeKey, ...] = ()
+    service_contracts: tuple[ServiceContractKey, ...] = ()
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...]
     instance_plugs: bool = False
@@ -33,7 +46,25 @@ class CatalogPort(ClientModel):
     agent_default: Literal["hidden"] | None = None
 
     @model_validator(mode="after")
-    def require_one_artifact_contract(self) -> Self:
+    def require_port_contract(self) -> Self:
+        if self.kind == "service":
+            if (
+                self.artifact_type is not None
+                or self.artifact_type_variable is not None
+                or self.also_accepts
+            ):
+                raise ValueError(
+                    "Catalog service port cannot declare an artifact type or variable"
+                )
+            if not self.service_contracts:
+                raise ValueError(
+                    "Catalog service port must name at least one service contract"
+                )
+            return self
+        if self.service_contracts:
+            raise ValueError(
+                "Catalog artifact port cannot declare a service contract"
+            )
         if (self.artifact_type is None) == (self.artifact_type_variable is None):
             raise ValueError(
                 "Catalog port must declare exactly one artifact type or variable"
@@ -86,6 +117,7 @@ class CatalogConversion(ClientModel):
 class NodeCatalog(ClientModel):
     plugins: tuple[dict[str, object], ...]
     artifact_types: tuple[dict[str, object], ...]
+    service_contracts: tuple[ServiceContract, ...] = ()
     nodes: tuple[CatalogNode, ...]
     artifact_conversions: tuple[CatalogConversion, ...]
 
@@ -200,6 +232,8 @@ __all__ = [
     "ProjectHead",
     "Run",
     "RunTarget",
+    "ServiceContract",
+    "ServiceContractKey",
     "SubmittedCommands",
     "UploadItem",
 ]
