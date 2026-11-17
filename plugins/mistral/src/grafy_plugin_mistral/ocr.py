@@ -169,7 +169,7 @@ class MistralOcrProvider(Protocol):
     ) -> OcrResult: ...
 
 
-class MistralOcrProviderError(RuntimeError):
+class MistralOcrProviderError(UserFacingNodeError):
     """A provider failure whose message is safe to show to graph users."""
 
 

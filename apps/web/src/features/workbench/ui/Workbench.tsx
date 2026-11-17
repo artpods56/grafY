@@ -193,6 +193,7 @@ import {
   ARTIFACT_CARD_OUTPUT_HANDLE,
   artifactCardConnectionValue,
   artifactCardOutputPort,
+  outputReleasePlacesArtifactCard,
   artifactOriginConnections,
   resolveArtifactCardConnection,
 } from "../canvas/artifact-connections";

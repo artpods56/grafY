@@ -24,7 +24,7 @@ from grafy_core.artifacts import (
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.nodes import NodeExecutionContext, PortShape
 from grafy_core.runtime.edge_transform import EdgeTransform, EdgeTransformError
-from grafy_core.runtime.execution import NodeRuntime
+from grafy_core.runtime.execution import NodeRunError, NodeRuntime
 from grafy_core.runtime.invocation import InvocationMode
 from grafy_core.runtime.persistence import PersistedNodeOutput
 
@@ -41,6 +41,7 @@ class _MappedItemError(NodeComputationError):
         operator_id: str,
         mapped_refs: Mapping[str, ArtifactRef],
         index: int,
+        cause: Exception,
     ) -> None:
         self.index = index
         if len(mapped_refs) == 1:
@@ -54,6 +55,8 @@ class _MappedItemError(NodeComputationError):
                 f"{name}={ref.artifact_id}" for name, ref in mapped_refs.items()
             )
             message = f"Node {operator_id!r} MAP inputs failed at item {index} ({refs})"
+        if isinstance(cause, NodeRunError):
+            message = f"{message}: {cause}"
         super().__init__(message)
 
 
@@ -172,6 +175,7 @@ class NodeExecutionService:
             for name, port in output_contract.ports.items()
             if port.kind != "service"
         }
+        item_metadata: list[JsonObject] = [{} for _ in range(item_count)]
         limiter = asyncio.Semaphore(self._max_map_concurrency)
 
         async def run_item(index: int) -> PersistedNodeOutput:
@@ -189,6 +193,7 @@ class NodeExecutionService:
                     )
                 item_context = replace(
                     context,
+                    output_metadata=item_metadata[index],
                     invocation_index=index,
                     invocation_path=(*context.invocation_path, index),
                 )
@@ -211,6 +216,7 @@ class NodeExecutionService:
                         operator_id=node.operator_id,
                         mapped_refs=mapped_refs,
                         index=index,
+                        cause=exc,
                     ) from exc
             if not isinstance(result, PersistedNodeOutput):
                 raise NodeComputationError(
@@ -249,6 +255,8 @@ class NodeExecutionService:
                 if output_port.kind == "service":
                     continue
                 value = item_result.values.get(name)
+                if value is None and not output_port.required:
+                    continue
                 if not isinstance(value, ArtifactRef):
                     raise NodeComputationError(
                         f"Node {node.operator_id!r} MAP output {name!r} at item "
@@ -259,6 +267,14 @@ class NodeExecutionService:
 
         values: dict[str, ArtifactOutputValue] = {}
         for name, output_port in output_contract.ports.items():
+            if item_count and not output_port.required:
+                if not refs_by_output[name]:
+                    continue
+                if len(refs_by_output[name]) != item_count:
+                    raise NodeComputationError(
+                        f"Node {node.operator_id!r} MAP output {name!r} was only "
+                        "produced for some items; cannot preserve sequence alignment"
+                    )
             if not isinstance(output_port.produces, ArtifactTypeKey):
                 raise NodeComputationError(
                     f"Node {node.operator_id!r} MAP output {name!r} has an "
@@ -275,10 +291,14 @@ class NodeExecutionService:
             }
             if metadata:
                 sequence_metadata.update(metadata)
+            for recorded in item_metadata:
+                sequence_metadata.update(recorded)
             if len(sequences) == 1:
                 identity["source"] = str(first_sequence.sequence_id)
                 sequence_metadata["map_input"] = next(iter(sequences))
-                sequence_metadata["source_sequence_id"] = str(first_sequence.sequence_id)
+                sequence_metadata["source_sequence_id"] = str(
+                    first_sequence.sequence_id
+                )
             else:
                 source_ids = [
                     str(sequence.sequence_id) for sequence in sequences.values()

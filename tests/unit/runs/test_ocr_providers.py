@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from io import BytesIO
 from pathlib import Path
 from typing import ClassVar, final, override
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from PIL import Image
@@ -24,6 +24,7 @@ from grafy_core.artifact_contracts import (
 )
 from grafy_core.artifacts import (
     ArtifactRef,
+    ArtifactRefSequence,
     NodeConfig,
     NodeInput,
     NodeOutput,
@@ -132,9 +133,7 @@ def _empty_blocks() -> Table:
 def _regions() -> ImageRegionSet:
     return ImageRegionSet(
         pages=[ImagePage(index=0, width=10, height=10)],
-        regions=[
-            ImageRegion(page=0, x0=0, y0=0, x1=1, y1=1, kind="text", label="a")
-        ],
+        regions=[ImageRegion(page=0, x0=0, y0=0, x1=1, y1=1, kind="text", label="a")],
     )
 
 
@@ -152,7 +151,9 @@ class FullReader(OcrReader):
         del document
         READ_KEYS.append(self.api_key.get_secret_value())
         return OcrResult(
-            markdown=MarkdownValue(markdown=f"{self.label}:{self.api_key.get_secret_value()}"),
+            markdown=MarkdownValue(
+                markdown=f"{self.label}:{self.api_key.get_secret_value()}"
+            ),
             blocks=_empty_blocks(),
             regions=_regions(),
         )
@@ -415,9 +416,7 @@ async def _write_raster(values: ArtifactValues) -> ArtifactRef:
 
     return await values.write(
         RASTER_IMAGE.key,
-        RasterImage.from_content(
-            _png(), content_type="image/png", filename="page.png"
-        ),
+        RasterImage.from_content(_png(), content_type="image/png", filename="page.png"),
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
                 workspace_id=WORKSPACE_ID, node_id="seed"
@@ -467,9 +466,7 @@ async def test_old_and_new_mistral_nodes_share_a_transcription() -> None:
         _png(), content_type="image/png", filename="page.png"
     )
     old = MistralOcrNode(provider=provider)
-    old_out = await old.run(
-        bound, MistralOcrConfig(), MistralOcrInput(image=image)
-    )
+    old_out = await old.run(bound, MistralOcrConfig(), MistralOcrInput(image=image))
     reader = MistralReader(
         config=MistralOcrConfig(),
         api_key=SecretStr("key"),
@@ -544,7 +541,8 @@ async def test_two_providers_each_supply_their_own_key(harness) -> None:
     assert READ_KEYS == ["key-left", "key-right"]
 
 
-async def test_reducto_style_provider_leaves_boxes_unsupported(harness) -> None:
+@pytest.mark.parametrize("mapped", [False, True])
+async def test_reducto_style_provider_leaves_boxes_unsupported(harness, mapped) -> None:
     runner, secrets, uow, values, store, _registry = harness
     secrets.keys["provider"] = "key"
     raster = await _write_raster(values)
@@ -561,7 +559,18 @@ async def test_reducto_style_provider_leaves_boxes_unsupported(harness) -> None:
                 id="o-doc",
                 to_node="ocr",
                 to_port="document",
-                value=raster,
+                value=(
+                    ArtifactRefSequence(
+                        sequence_id=uuid4(),
+                        artifact_type=raster.artifact_type,
+                        schema_version=raster.schema_version,
+                        item_refs=[raster, raster],
+                        ordered=True,
+                    )
+                    if mapped
+                    else raster
+                ),
+                collection_mode="map" if mapped else "direct",
             ),
         ),
     )
@@ -580,15 +589,20 @@ async def test_reducto_style_provider_leaves_boxes_unsupported(harness) -> None:
     assert "markdown" in ocr_outputs
     await store.put_result("fp-ocr", ocr_outputs)
     ref = ocr_outputs["markdown"]
+    if mapped:
+        assert isinstance(ref, ArtifactRefSequence)
+        assert len(ref.item_refs) == 2
+        assert ref.metadata["unsupported_outputs"] == {"regions": "Reducto"}
+        assert isinstance(ocr_outputs["blocks"], ArtifactRefSequence)
+        assert len(ocr_outputs["blocks"].item_refs) == 2
+        ref = ref.item_refs[0]
     assert isinstance(ref, ArtifactRef)
     async with uow as unit:
         artifact = await unit.artifacts.get(WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
     assert artifact.metadata.get("unsupported_outputs") == {"regions": "Reducto"}
 
-    with pytest.raises(
-        NodeComputationError, match="Boxes are not produced by Reducto"
-    ):
+    with pytest.raises(NodeComputationError, match="Boxes are not produced by Reducto"):
         await runner(
             ComputationRequest(
                 fingerprint="fp-draw",

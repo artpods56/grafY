@@ -10,6 +10,7 @@ import {
 } from "./artifact-viewer";
 import {
   artifactCardOutputPort,
+  outputReleasePlacesArtifactCard,
   resolveArtifactCardSource,
 } from "./artifact-connections";
 
@@ -100,5 +101,37 @@ describe("artifact card discovery port", () => {
       shape: "many",
       accepted_shapes: ["many"],
     });
+  });
+});
+
+describe("releasing an output on the canvas", () => {
+  it("plants a sequence card even before the output has artifacts", () => {
+    expect(
+      outputReleasePlacesArtifactCard({
+        onCanvas: true,
+        portShape: "many",
+        hasMaterializedArtifacts: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("leaves a sequence release off the canvas to the node menu", () => {
+    expect(
+      outputReleasePlacesArtifactCard({
+        onCanvas: false,
+        portShape: "many",
+        hasMaterializedArtifacts: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("opens the node menu for a single output that has not produced an artifact", () => {
+    expect(
+      outputReleasePlacesArtifactCard({
+        onCanvas: true,
+        portShape: "one",
+        hasMaterializedArtifacts: false,
+      }),
+    ).toBe(false);
   });
 });

@@ -31,6 +31,27 @@ import {
 
 export const ARTIFACT_CARD_OUTPUT_HANDLE = "artifact-card-output";
 
+/**
+ * Releasing an output wire on empty canvas.
+ *
+ * A sequence always becomes a card that follows the output: that card is how
+ * the sequence is passed on, including before the node has produced items.
+ * A single output becomes a card once it has an artifact. Anything else
+ * offers nodes that can take the output.
+ */
+export function outputReleasePlacesArtifactCard({
+  onCanvas,
+  portShape,
+  hasMaterializedArtifacts,
+}: {
+  onCanvas: boolean;
+  portShape: "one" | "many";
+  hasMaterializedArtifacts: boolean;
+}): boolean {
+  if (!onCanvas) return false;
+  return portShape === "many" || hasMaterializedArtifacts;
+}
+
 /** Describe the card value as an output for catalog compatibility checks. */
 export function artifactCardOutputPort(
   value: ArtifactCardValue,
