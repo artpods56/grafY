@@ -50,6 +50,7 @@ import {
 import { artifactRail } from "./ArtifactControls";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
 import { NodeMenu, type NodeMenuItem } from "./NodeMenu";
+import { ArtifactStack, SequencePager } from "./ArtifactStack";
 import {
   PortBall,
   PortRevealProvider,
@@ -251,6 +252,7 @@ export function CollectionCard({
   );
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [managing, setManaging] = React.useState(false);
+  const [activeIndex, setActiveIndex] = React.useState(0);
   const [imageSizes, setImageSizes] = React.useState<
     Record<string, { width: number; height: number }>
   >({});
@@ -290,6 +292,8 @@ export function CollectionCard({
     ? artifactTypeColor(artifactType.id, tokens.colorAccent)
     : tokens.colorAccent;
   const refs = filled.flatMap((member) => [...memberRefs(member)]);
+  // Paging turns the stack without changing the order it passes on.
+  const frontIndex = Math.min(activeIndex, Math.max(0, refs.length - 1));
   const pending = filled.filter(
     (member) => member.kind === "output" && member.refs === null,
   );
@@ -300,13 +304,16 @@ export function CollectionCard({
     const item = itemsById.get(ref.artifact_id);
     return item ? libraryFileDisplayName(item) : null;
   };
-  const first = refs[0] ?? null;
+  // The first member decides how the stack draws, so paging a mixed collection
+  // never swaps one look for another; the front item sets the picture's shape.
+  const leader = refs[0] ?? null;
   const pictures =
-    first !== null &&
+    leader !== null &&
     isImageArtifact(
-      first,
-      itemsById.get(first.artifact_id)?.artifact.content_type,
+      leader,
+      itemsById.get(leader.artifact_id)?.artifact.content_type,
     );
+  const first = refs[frontIndex] ?? null;
 
   const width = gridAlignedWidth(
     data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
@@ -421,6 +428,16 @@ export function CollectionCard({
     tier === "active" ? s.tileRaised : null,
     tier === "dragged" ? s.tileDragged : null,
   ];
+
+  const pager =
+    selected && refs.length > 1 ? (
+      <SequencePager
+        index={frontIndex}
+        count={refs.length}
+        name={first ? nameOf(first) : null}
+        onIndex={setActiveIndex}
+      />
+    ) : null;
 
   return (
     <PortRevealProvider value={portReveal}>
@@ -557,6 +574,8 @@ export function CollectionCard({
                 mediaHeight={mediaHeight}
                 selected={Boolean(selected)}
                 tier={tier}
+                frontIndex={frontIndex}
+                overlay={pager}
                 onSize={(artifactId, w, h) =>
                   setImageSizes((current) =>
                     current[artifactId]?.width === w &&
@@ -572,49 +591,44 @@ export function CollectionCard({
                   }))
                 }
               />
-            ) : (
-              <div
-                {...stylex.props(s.tiles)}
-                style={{ height: 80 + Math.max(0, stackDepth - 1) * 8 }}
-              >
-                {refs.length === 0 ? (
-                  <div
-                    {...stylex.props(...tileStyle, s.tileEmpty)}
-                    style={{ inset: 0 }}
-                  >
-                    {pending.length ? (
-                      <>
-                        <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-                        <span {...stylex.props(s.tileText)}>
-                          Waiting for{" "}
-                          {pending[0]?.kind === "output"
-                            ? pending[0].label
-                            : "outputs"}
-                        </span>
-                      </>
-                    ) : (
-                      <span>Wire outputs or drop artifacts here</span>
-                    )}
-                  </div>
-                ) : (
-                  refs.slice(0, 3).map((ref, index) => (
-                    <div
-                      key={`${index}:${ref.artifact_id}`}
-                      {...stylex.props(...tileStyle)}
-                      style={{
-                        width: `calc(100% - ${(stackDepth - 1) * 12}px)`,
-                        left: index * 12,
-                        top: index * 8,
-                        zIndex: stackDepth - index,
-                      }}
-                    >
+            ) : refs.length ? (
+              <ArtifactStack
+                count={refs.length}
+                index={frontIndex}
+                frontHeight={80}
+                overlay={pager}
+                renderLayer={(slot, place) => {
+                  const ref = refs[slot.item];
+                  return ref ? (
+                    <div {...place} {...stylex.props(...tileStyle)}>
                       <FileIcon size={20} />
                       <span {...stylex.props(s.tileText)}>
                         {nameOf(ref) ?? ref.artifact_type}
                       </span>
                     </div>
-                  ))
-                )}
+                  ) : null;
+                }}
+              />
+            ) : (
+              <div {...stylex.props(s.tiles)} style={{ height: 80 }}>
+                <div
+                  {...stylex.props(...tileStyle, s.tileEmpty)}
+                  style={{ inset: 0 }}
+                >
+                  {pending.length ? (
+                    <>
+                      <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+                      <span {...stylex.props(s.tileText)}>
+                        Waiting for{" "}
+                        {pending[0]?.kind === "output"
+                          ? pending[0].label
+                          : "outputs"}
+                      </span>
+                    </>
+                  ) : (
+                    <span>Wire outputs or drop artifacts here</span>
+                  )}
+                </div>
               </div>
             )}
           </div>

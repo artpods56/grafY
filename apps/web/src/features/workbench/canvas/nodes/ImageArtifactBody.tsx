@@ -1,8 +1,10 @@
+import type * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { TiffArtifactView } from "./TiffArtifactView";
 import { ImageOff } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
+import { ArtifactStack, type StackPlace } from "./ArtifactStack";
 
 const s = stylex.create({
   header: {
@@ -114,6 +116,8 @@ export function ImageArtifactBody({
   selected,
   tier,
   remoteSelectionColor,
+  frontIndex = 0,
+  overlay,
   onSize,
   onError,
 }: {
@@ -130,76 +134,92 @@ export function ImageArtifactBody({
   selected: boolean;
   tier: "rest" | "active" | "dragged";
   remoteSelectionColor?: string | null;
+  /** The image at the front of a sequence; `images` keep their own order. */
+  frontIndex?: number;
+  /** Drawn over the front image, e.g. its pager. */
+  overlay?: React.ReactNode;
   onSize: (id: string, width: number, height: number) => void;
   onError: (id: string) => void;
 }) {
-  // The first item is the front image, top-left where the input port sits; the
-  // layers behind it step down and right toward the output port.
-  const visible = images.slice(0, 3);
-  return (
+  type Image = (typeof images)[number];
+  const media = (
+    image: Image,
+    {
+      front,
+      tail,
+      place,
+    }: { front: boolean; tail?: boolean; place?: StackPlace },
+  ) => (
     <div
-      aria-label={sequence ? `${images.length} items in sequence` : undefined}
-      {...stylex.props(s.stack)}
-      style={{
-        height: mediaHeight + (sequence ? (visible.length - 1) * 8 : 0),
-      }}
+      {...place}
+      data-artifact-media={tail ? undefined : "true"}
+      data-artifact-shadow-scope={
+        tail ? undefined : sequence ? "sequence-item" : "image"
+      }
+      {...stylex.props(
+        s.media,
+        sequence ? s.stacked : null,
+        tier === "active" ? s.raised : null,
+        tier === "dragged" ? s.dragged : null,
+      )}
+      style={{ height: mediaHeight, ...place?.style }}
     >
-      {visible.map((image, index) => (
-        <div
-          // Keyed by position: a sequence may show one artifact twice.
-          key={`${index}:${image.id}`}
-          data-artifact-media="true"
-          data-artifact-shadow-scope={sequence ? "sequence-item" : "image"}
-          {...stylex.props(
-            s.media,
-            sequence ? s.stacked : null,
-            tier === "active" ? s.raised : null,
-            tier === "dragged" ? s.dragged : null,
-          )}
-          style={{
-            height: mediaHeight,
-            ...(sequence
-              ? {
-                  width: `calc(100% - ${(visible.length - 1) * 12}px)`,
-                  left: index * 12,
-                  top: index * 8,
-                  zIndex: visible.length - index,
-                }
-              : {}),
-          }}
-        >
-          {!selected && remoteSelectionColor && index === 0 ? (
-            <RemoteSelectionRing color={remoteSelectionColor} radius={5} />
-          ) : null}
-          {image.tiff ? (
-            <TiffArtifactView
-              workspaceId={workspaceId}
-              artifactId={image.id}
-              name={image.name}
-            />
-          ) : image.failed ? (
-            <div {...stylex.props(s.unavailable)}>
-              <ImageOff size={18} /> Preview unavailable
-            </div>
-          ) : (
-            /* eslint-disable-next-line @next/next/no-img-element -- workspace artifact bytes bypass the public image optimizer */
-            <img
-              src={image.url}
-              alt={image.name}
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              onLoad={(event) => {
-                const { naturalWidth, naturalHeight } = event.currentTarget;
-                if (naturalWidth && naturalHeight)
-                  onSize(image.id, naturalWidth, naturalHeight);
-              }}
-              onError={() => onError(image.id)}
-              {...stylex.props(s.image)}
-            />
-          )}
+      {!selected && remoteSelectionColor && front ? (
+        <RemoteSelectionRing color={remoteSelectionColor} radius={5} />
+      ) : null}
+      {image.tiff ? (
+        <TiffArtifactView
+          workspaceId={workspaceId}
+          artifactId={image.id}
+          name={image.name}
+        />
+      ) : image.failed ? (
+        <div {...stylex.props(s.unavailable)}>
+          <ImageOff size={18} /> Preview unavailable
         </div>
-      ))}
+      ) : (
+        /* eslint-disable-next-line @next/next/no-img-element -- workspace artifact bytes bypass the public image optimizer */
+        <img
+          src={image.url}
+          alt={image.name}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onLoad={(event) => {
+            const { naturalWidth, naturalHeight } = event.currentTarget;
+            if (naturalWidth && naturalHeight)
+              onSize(image.id, naturalWidth, naturalHeight);
+          }}
+          onError={() => onError(image.id)}
+          {...stylex.props(s.image)}
+        />
+      )}
+    </div>
+  );
+
+  if (sequence)
+    return (
+      <ArtifactStack
+        count={images.length}
+        index={frontIndex}
+        frontHeight={mediaHeight}
+        overlay={overlay}
+        renderLayer={(slot, place) => {
+          const image = images[slot.item];
+          return image
+            ? media(image, {
+                front: slot.slot === 0 && !slot.tail,
+                tail: slot.tail,
+                place,
+              })
+            : null;
+        }}
+      />
+    );
+  const image = images[0];
+  return (
+    <div {...stylex.props(s.stack)} style={{ height: mediaHeight }}>
+      {image ? media(image, { front: true }) : null}
     </div>
   );
 }

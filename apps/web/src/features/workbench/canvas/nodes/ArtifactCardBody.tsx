@@ -8,8 +8,6 @@ import useSWR from "swr";
 import {
   ArrowDown,
   ArrowUp,
-  ChevronLeft,
-  ChevronRight,
   File as FileIcon,
   FileSpreadsheet,
   FileText,
@@ -100,6 +98,7 @@ import {
 } from "./artifact-renderers/table/cell-views";
 import { SafeMarkdown } from "../safe-markdown";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
+import { ArtifactStack, SequencePager, stackPlateProps } from "./ArtifactStack";
 import { TableArtifactBody } from "./TableArtifactBody";
 import { usePickupLift } from "./usePickupLift";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
@@ -108,9 +107,6 @@ import {
   libraryFileDisplayName,
 } from "../../ui/side-panel/library-tree";
 
-// Each layer behind a sequence's front item steps this far right and down.
-const STACK_STEP_X = 12;
-const STACK_STEP_Y = 8;
 const STACK_THUMB_HEIGHT = 105;
 
 const s = stylex.create({
@@ -255,7 +251,6 @@ const s = stylex.create({
     lineHeight: 1.4,
     overflowWrap: "anywhere",
   },
-  stack: { position: "relative", width: "100%" },
   stackThumb: {
     position: "absolute",
     display: "grid",
@@ -276,19 +271,6 @@ const s = stylex.create({
   stackThumbSelected: { boxShadow: tokens.shadowNodeActive },
   stackThumbDragged: { boxShadow: tokens.shadowNodeDragged },
   stackFile: { backgroundColor: tokens.colorSurfaceRaised },
-  pager: {
-    display: "flex",
-    alignItems: "center",
-    gap: "4px",
-    color: "light-dark(#555, #bbb)",
-    fontSize: tokens.fontSizeXs,
-    minWidth: 0,
-  },
-  pagerName: {
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
   reorder: {
     display: "flex",
     flexDirection: "column",
@@ -559,7 +541,7 @@ export function ArtifactCardBody({
     : contract.startsWith("List of ")
       ? contract
       : `List of ${contract}`;
-  const tableCard = !isSequence && first !== null && isTableArtifact(first);
+  const tableCard = first !== null && isTableArtifact(first);
   const tableHeight = Math.max(
     160,
     layout?.bodyHeight ?? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
@@ -595,7 +577,11 @@ export function ArtifactCardBody({
             : CARD_TEXT_BYTES,
         ] as const)
       : null;
-  const { data: textHead } = useSWR(textKey, fetchArtifactText);
+  // Paging a run keeps the item being left on screen until the next one is
+  // read, so the stack never drops to file tiles mid-shuffle.
+  const { data: textHead } = useSWR(textKey, fetchArtifactText, {
+    keepPreviousData: isSequence,
+  });
   const {
     data: htmlPageLoad,
     error: htmlPageError,
@@ -808,39 +794,50 @@ export function ArtifactCardBody({
   ]);
 
   const reorderStyle = stylex.props(s.reorder);
-  // Same direction as every stack: the first item in front at the top-left,
-  // where the input port sits, with the ones behind it stepping down and right
-  // toward the output port.
-  const stacked = refs.slice(0, 3);
+  // Every stack of more than one item pages from its front item, whatever the
+  // items are, so a run of pictures and a run of documents step the same way.
+  const multiple = isSequence && refs.length > 1;
+  const pager =
+    multiple && selected ? (
+      <SequencePager
+        index={clampedIndex}
+        count={refs.length}
+        name={fileName}
+        onIndex={setActiveIndex}
+      />
+    ) : null;
+  const remoteRing =
+    !selected && data.remoteSelectionColor ? (
+      <RemoteSelectionRing color={data.remoteSelectionColor} radius={5} />
+    ) : null;
+  // A run of files with no reader shows a tile for each item.
   const sequenceStack = isSequence ? (
-    <div
-      aria-label={`${refs.length} items in sequence`}
-      {...stylex.props(s.stack)}
-      style={{
-        height: STACK_THUMB_HEIGHT + (stacked.length - 1) * STACK_STEP_Y,
-      }}
-    >
-      {!selected && data.remoteSelectionColor ? (
-        <RemoteSelectionRing color={data.remoteSelectionColor} radius={5} />
-      ) : null}
-      {stacked.map((ref, index) => {
-        const position = {
-          width: `calc(100% - ${(stacked.length - 1) * STACK_STEP_X}px)`,
-          left: index * STACK_STEP_X,
-          top: index * STACK_STEP_Y,
-          zIndex: stacked.length - index,
-        };
+    <ArtifactStack
+      count={refs.length}
+      index={clampedIndex}
+      frontHeight={STACK_THUMB_HEIGHT}
+      overlay={
+        remoteRing || pager ? (
+          <>
+            {remoteRing}
+            {pager}
+          </>
+        ) : null
+      }
+      renderLayer={(slot, place) => {
+        const ref = refs[slot.item];
+        if (!ref) return null;
+        const scope = slot.tail ? undefined : "sequence-item";
         return isImageArtifact(
           ref,
           itemsById.get(ref.artifact_id)?.artifact.content_type,
         ) && !imagesFailed[ref.artifact_id] ? (
           /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
           <img
-            // Keyed by position: a sequence may show one artifact twice.
-            key={`${index}:${ref.artifact_id}`}
-            data-artifact-shadow-scope="sequence-item"
+            {...place}
+            data-artifact-shadow-scope={scope}
             src={artifactInlineContentUrl(workspace.id, ref.artifact_id)}
-            alt={nameOf(ref.artifact_id) ?? `Item ${index + 1}`}
+            alt={nameOf(ref.artifact_id) ?? `Item ${slot.item + 1}`}
             loading="lazy"
             decoding="async"
             draggable={false}
@@ -855,26 +852,44 @@ export function ArtifactCardBody({
               selected ? s.stackThumbSelected : null,
               tier === "dragged" ? s.stackThumbDragged : null,
             )}
-            style={position}
           />
         ) : (
           <span
-            key={`${index}:${ref.artifact_id}`}
-            data-artifact-shadow-scope="sequence-item"
+            {...place}
+            data-artifact-shadow-scope={scope}
             {...stylex.props(
               s.stackThumb,
               s.stackFile,
               selected ? s.stackThumbSelected : null,
               tier === "dragged" ? s.stackThumbDragged : null,
             )}
-            style={position}
           >
             <FileIcon size={28} />
           </span>
         );
-      })}
-    </div>
+      }}
+    />
   ) : null;
+  // A reader that shows one item whole (markdown, text, a page, a table) is the
+  // front layer of the same stack; the layers behind it are plain plates.
+  const stackedBody = (body: React.ReactNode) =>
+    multiple ? (
+      <ArtifactStack
+        count={refs.length}
+        index={clampedIndex}
+        overlay={pager}
+        renderLayer={(slot, place) => {
+          const front = slot.slot === 0 && !slot.tail;
+          return (
+            <div {...place} {...(front ? {} : stackPlateProps(slot.tail))}>
+              {front ? body : null}
+            </div>
+          );
+        }}
+      />
+    ) : (
+      body
+    );
 
   return (
     <PortRevealProvider value={portReveal}>
@@ -905,37 +920,6 @@ export function ArtifactCardBody({
               />
             </CanvasCardHead>
           )}
-          {isSequence && refs.length > 1 ? (
-            <div
-              className={`nodrag nopan nowheel ${stylex.props(s.pager).className ?? ""}`}
-              aria-label="Sequence pages"
-            >
-              <IconButton
-                label="Previous item"
-                size="2xs"
-                xstyle={s.step}
-                disabled={clampedIndex === 0}
-                onClick={() => setActiveIndex(clampedIndex - 1)}
-              >
-                <ChevronLeft size={12} />
-              </IconButton>
-              <span>
-                {clampedIndex + 1} / {refs.length}
-              </span>
-              <IconButton
-                label="Next item"
-                size="2xs"
-                xstyle={s.step}
-                disabled={clampedIndex === refs.length - 1}
-                onClick={() => setActiveIndex(clampedIndex + 1)}
-              >
-                <ChevronRight size={12} />
-              </IconButton>
-              {fileName ? (
-                <span {...stylex.props(s.pagerName)}>{fileName}</span>
-              ) : null}
-            </div>
-          ) : null}
           <CanvasCardBody>
             {followsOutput ? (
               <ArtifactLeftRail
@@ -965,13 +949,7 @@ export function ArtifactCardBody({
             {imageArtifact ? (
               <ImageArtifactBody
                 workspaceId={workspace.id}
-                images={(isSequence
-                  ? [
-                      refs[clampedIndex],
-                      ...refs.filter((_, index) => index !== clampedIndex),
-                    ].filter((ref) => ref !== undefined)
-                  : refs
-                ).map((ref, index) => ({
+                images={refs.map((ref, index) => ({
                   id: ref.artifact_id,
                   tiff:
                     ref.artifact_type === "file.tiff" ||
@@ -980,7 +958,7 @@ export function ArtifactCardBody({
                   url: artifactInlineContentUrl(workspace.id, ref.artifact_id),
                   name:
                     nameOf(ref.artifact_id) ??
-                    (index === 0 ? titleLabel : `Item ${index + 1}`),
+                    (index === clampedIndex ? titleLabel : `Item ${index + 1}`),
                   failed: imagesFailed[ref.artifact_id] ?? false,
                 }))}
                 sequence={isSequence}
@@ -988,6 +966,8 @@ export function ArtifactCardBody({
                 selected={selected ?? false}
                 tier={tier}
                 remoteSelectionColor={data.remoteSelectionColor}
+                frontIndex={isSequence ? clampedIndex : 0}
+                overlay={pager}
                 onSize={(artifactId, width, height) =>
                   setImageSizes((current) => {
                     const previous = current[artifactId];
@@ -1005,13 +985,15 @@ export function ArtifactCardBody({
                 }
               />
             ) : tableCard && first ? (
-              <TableArtifactBody
-                artifact={first}
-                height={tableHeight}
-                selected={selected ?? false}
-                tier={tier}
-                remoteSelectionColor={data.remoteSelectionColor}
-              />
+              stackedBody(
+                <TableArtifactBody
+                  artifact={first}
+                  height={tableHeight}
+                  selected={selected ?? false}
+                  tier={tier}
+                  remoteSelectionColor={data.remoteSelectionColor}
+                />,
+              )
             ) : (
               <>
                 {awaitingFeed ? (
@@ -1044,27 +1026,29 @@ export function ArtifactCardBody({
                 ) : null}
                 {htmlPageArtifact && first && !awaitingFeed ? (
                   <>
-                    <div
-                      data-artifact-value="true"
-                      data-html-page={htmlPageLoad?.status ?? "loading"}
-                      data-artifact-shadow-scope="file"
-                      {...stylex.props(
-                        s.fileBody,
-                        s.textBody,
-                        tier === "active" ? s.fileBodyRaised : null,
-                        tier === "dragged" ? s.fileBodyDragged : null,
-                      )}
-                    >
-                      <HtmlPageFill
-                        load={
-                          htmlPageError ? HTML_PAGE_UNREADABLE : htmlPageLoad
-                        }
-                        height={textMaxHeight}
-                        selected={Boolean(selected)}
-                        view={textView === "text" ? "text" : "html"}
-                        onRetry={() => void retryHtmlPage()}
-                      />
-                    </div>
+                    {stackedBody(
+                      <div
+                        data-artifact-value="true"
+                        data-html-page={htmlPageLoad?.status ?? "loading"}
+                        data-artifact-shadow-scope="file"
+                        {...stylex.props(
+                          s.fileBody,
+                          s.textBody,
+                          tier === "active" ? s.fileBodyRaised : null,
+                          tier === "dragged" ? s.fileBodyDragged : null,
+                        )}
+                      >
+                        <HtmlPageFill
+                          load={
+                            htmlPageError ? HTML_PAGE_UNREADABLE : htmlPageLoad
+                          }
+                          height={textMaxHeight}
+                          selected={Boolean(selected)}
+                          view={textView === "text" ? "text" : "html"}
+                          onRetry={() => void retryHtmlPage()}
+                        />
+                      </div>,
+                    )}
                     {selected &&
                     textViews.length > 1 &&
                     htmlPageLoad &&
@@ -1085,47 +1069,49 @@ export function ArtifactCardBody({
                   </>
                 ) : first && !awaitingFeed && shownText !== null ? (
                   <>
-                    <div
-                      data-artifact-value="true"
-                      data-artifact-shadow-scope="file"
-                      {...stylex.props(
-                        s.fileBody,
-                        s.textBody,
-                        tier === "active" ? s.fileBodyRaised : null,
-                        tier === "dragged" ? s.fileBodyDragged : null,
-                      )}
-                    >
-                      {React.createElement(
-                        textView === "text" ? "pre" : "div",
-                        {
-                          ...textProps,
-                          ref: textRef,
-                          onScroll: measureText,
-                          style: {
-                            ...textProps.style,
-                            maxHeight: textMaxHeight,
-                            maskImage: textFadeMask(textEdges),
+                    {stackedBody(
+                      <div
+                        data-artifact-value="true"
+                        data-artifact-shadow-scope="file"
+                        {...stylex.props(
+                          s.fileBody,
+                          s.textBody,
+                          tier === "active" ? s.fileBodyRaised : null,
+                          tier === "dragged" ? s.fileBodyDragged : null,
+                        )}
+                      >
+                        {React.createElement(
+                          textView === "text" ? "pre" : "div",
+                          {
+                            ...textProps,
+                            ref: textRef,
+                            onScroll: measureText,
+                            style: {
+                              ...textProps.style,
+                              maxHeight: textMaxHeight,
+                              maskImage: textFadeMask(textEdges),
+                            },
+                            className:
+                              textOverflows && selected
+                                ? `nodrag nowheel ${textProps.className ?? ""}`
+                                : textProps.className,
                           },
-                          className:
-                            textOverflows && selected
-                              ? `nodrag nowheel ${textProps.className ?? ""}`
-                              : textProps.className,
-                        },
-                        textView === "markdown" ? (
-                          <SafeMarkdown style={{ fontSize: "inherit" }}>
-                            {shownText}
-                          </SafeMarkdown>
-                        ) : textView === "html" ? (
-                          <HtmlView
-                            html={shownText}
-                            height={textMaxHeight}
-                            interactive={Boolean(selected)}
-                          />
-                        ) : (
-                          shownText
-                        ),
-                      )}
-                    </div>
+                          textView === "markdown" ? (
+                            <SafeMarkdown style={{ fontSize: "inherit" }}>
+                              {shownText}
+                            </SafeMarkdown>
+                          ) : textView === "html" ? (
+                            <HtmlView
+                              html={shownText}
+                              height={textMaxHeight}
+                              interactive={Boolean(selected)}
+                            />
+                          ) : (
+                            shownText
+                          ),
+                        )}
+                      </div>,
+                    )}
                     {selected && textViews.length > 1 ? (
                       <SegmentedControl
                         aria-label="Read this text as"

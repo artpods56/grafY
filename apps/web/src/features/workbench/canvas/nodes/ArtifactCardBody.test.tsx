@@ -788,6 +788,137 @@ describe("artifact on the canvas", () => {
     expect(container.textContent).toContain("First page");
   });
 
+  it("stacks a markdown sequence like an image one, paged from its front", () => {
+    libraryMocks.values = {
+      m1: { text: JSON.stringify({ markdown: "# First" }), truncated: false },
+      m2: { text: JSON.stringify({ markdown: "# Second" }), truncated: false },
+      m3: { text: JSON.stringify({ markdown: "# Third" }), truncated: false },
+    };
+    const value = {
+      ...sequence(["m1", "m2", "m3"]),
+      artifact_type: "text.markdown",
+      item_refs: ["m1", "m2", "m3"].map((artifact_id) => ({
+        artifact_id,
+        artifact_type: "text.markdown",
+        schema_version: 1,
+      })),
+    };
+    const { container } = mount(value, {}, true);
+    const stack = container.querySelector<HTMLElement>(
+      '[aria-label="3 items in sequence"]',
+    );
+    expect(stack?.querySelector("[data-artifact-value]")).not.toBeNull();
+    expect(
+      stack?.querySelectorAll('[data-artifact-shadow-scope="sequence-item"]'),
+    ).toHaveLength(2);
+    expect(stack?.style.paddingRight).toBe("24px");
+    expect(stack?.style.paddingBottom).toBe("16px");
+    // The pager rides the front item, not the card head.
+    expect(
+      container.querySelector(
+        '[data-artifact-head] [aria-label="Sequence pages"]',
+      ),
+    ).toBeNull();
+    expect(
+      stack?.querySelector('[aria-label="Sequence pages"]'),
+    ).not.toBeNull();
+  });
+
+  it("pages an image stack from over its front image", () => {
+    const { container } = mount(sequence(["a1", "a2"]), {}, true);
+    const stack = container.querySelector('[aria-label="2 items in sequence"]');
+    const pager = stack?.querySelector('[aria-label="Sequence pages"]');
+    expect(pager?.textContent).toContain("1 / 2");
+    // Over the layers, not inside one: the layers trade places under it.
+    expect(pager?.closest("[data-stack-item]")).toBeNull();
+  });
+
+  it("turns the stack like a ring: the front item goes to the back", () => {
+    const { container } = mount(sequence(["a1", "a2", "a3"]), {}, true);
+    const order = () =>
+      [
+        ...container.querySelectorAll<HTMLElement>(
+          '[data-artifact-media="true"]',
+        ),
+      ]
+        .sort((a, b) => Number(b.style.zIndex) - Number(a.style.zIndex))
+        .map((layer) => layer.dataset.stackItem);
+    const first = container.querySelector('[data-stack-item="0"]');
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(order()).toEqual(["1", "2", "0"]);
+    // The layer that went to the back is the same element, moved: that is
+    // what lets it animate there.
+    expect(container.querySelector('[data-stack-item="0"]')).toBe(first);
+    expect(
+      container.querySelector<HTMLElement>('[data-stack-item="0"]')?.style.left,
+    ).toBe("24px");
+  });
+
+  it("keeps the pager hidden until the stack is selected", () => {
+    const { container } = mount(sequence(["a1", "a2"]));
+    expect(container.querySelector('[aria-label="Sequence pages"]')).toBeNull();
+  });
+
+  // One stack for every kind of sequence: what a layer looks like is the only
+  // thing the kind decides.
+  it.each([
+    ["image", "image.raster"],
+    ["markdown", "text.markdown"],
+    ["text", "scalar.text"],
+    ["table", "table.data"],
+    ["csv file", "file.csv"],
+    ["pdf file", "file.pdf"],
+  ])("stacks and pages a %s sequence the same way", (_, artifactType) => {
+    libraryMocks.values = Object.fromEntries(
+      ["k1", "k2", "k3"].map((id) => [
+        id,
+        {
+          text: JSON.stringify(
+            artifactType === "text.markdown"
+              ? { markdown: `# ${id}` }
+              : { value: id },
+          ),
+          truncated: false,
+        },
+      ]),
+    );
+    const { container } = mount(
+      {
+        ...sequence([]),
+        artifact_type: artifactType,
+        item_refs: ["k1", "k2", "k3"].map((artifact_id) => ({
+          artifact_id,
+          artifact_type: artifactType,
+          schema_version: 1,
+        })),
+      },
+      {},
+      true,
+    );
+    const stack = container.querySelector('[aria-label="3 items in sequence"]');
+    expect(stack).not.toBeNull();
+    expect(stack?.querySelectorAll(":scope > [data-stack-item]")).toHaveLength(
+      3,
+    );
+    const pager = stack?.querySelector('[aria-label="Sequence pages"]');
+    expect(pager?.textContent).toContain("1 / 3");
+    const first = stack?.querySelector('[data-stack-item="0"]');
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(pager?.textContent).toContain("2 / 3");
+    // The front item went to the back as the same element.
+    const sent = stack?.querySelector<HTMLElement>('[data-stack-item="0"]');
+    expect(sent).toBe(first);
+    expect(sent?.style.left).toBe("24px");
+  });
+
   it("pages table sequence references through the table reader", () => {
     const value = {
       ...sequence(["t1", "t2"]),
