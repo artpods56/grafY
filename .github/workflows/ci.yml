@@ -18,20 +18,6 @@ jobs:
     name: Backend tests
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_DB: grafy
-          POSTGRES_USER: grafy
-          POSTGRES_PASSWORD: grafy-ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready --username grafy --dbname grafy"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,19 +45,6 @@ jobs:
           sudo apt-get install --yes --no-install-recommends gdal-bin
       - name: Install locked Python workspace
         run: uv sync --locked
-      - name: Verify fresh PostgreSQL migration
-        env:
-          GRAFY_TEST_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
-        run: >-
-          uv run pytest -q -o log_cli=false
-          tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
-      - name: Verify PostgreSQL persistence contracts
-        env:
-          GRAFY_TEST_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
-          GRAFY_TEST_TRANSIENT_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
-        run: >-
-          uv run pytest -q -o log_cli=false tests/unit/persistence
-          --deselect tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
       - name: Verify OCI and GIS capabilities
         run: |
           docker version
@@ -103,6 +76,48 @@ jobs:
           GRAFY_TEST_S3_GATEWAY_URL=http://127.0.0.1:18080/storage \
           GRAFY_TEST_S3_ENDPOINT_URL=http://127.0.0.1:19000 \
             uv run pytest -q -o log_cli=false tests/integration/uploads/test_storage_gateway.py
+
+  postgres-persistence:
+    name: PostgreSQL persistence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: grafy
+          POSTGRES_USER: grafy
+          POSTGRES_PASSWORD: grafy-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username grafy --dbname grafy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install locked Python workspace
+        run: uv sync --locked
+      - name: Verify fresh PostgreSQL migration
+        env:
+          GRAFY_TEST_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
+        run: >-
+          uv run pytest -q -o log_cli=false
+          tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
+      - name: Verify PostgreSQL persistence contracts
+        env:
+          GRAFY_TEST_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
+          GRAFY_TEST_TRANSIENT_POSTGRES_URL: postgresql+asyncpg://grafy:grafy-ci@127.0.0.1:5432/grafy
+        run: >-
+          uv run pytest -q -o log_cli=false tests/unit/persistence
+          --deselect tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
 
   native-runtime:
     name: Native API runtime image
@@ -288,6 +303,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs:
       - backend-tests
+      - postgres-persistence
       - native-runtime
       - quality-contracts
       - web
