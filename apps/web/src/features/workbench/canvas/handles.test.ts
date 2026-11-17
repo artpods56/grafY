@@ -97,6 +97,81 @@ describe("typed handle ids", () => {
     });
     expect(canonicalHandleId(withFeed)).toBe("result::doc.ocr::1::one::output");
   });
+
+  it("round-trips a service contract handle", () => {
+    const id = encodeHandleId({
+      portName: "reader",
+      shape: "one",
+      direction: "output",
+      serviceContracts: [{ id: "ocr.reader", version: 1 }],
+    });
+
+    expect(id).toBe(
+      "reader::$service::$service::one::output::svc=ocr.reader%401",
+    );
+    expect(decodeHandleId(id)).toEqual({
+      portName: "reader",
+      shape: "one",
+      direction: "output",
+      serviceContracts: [{ id: "ocr.reader", version: 1 }],
+    });
+  });
+});
+
+describe("service contract routes", () => {
+  it("accepts a matching service contract and rejects a mismatched one", () => {
+    const matching = {
+      sourceHandle: encodeHandleId({
+        portName: "reader",
+        shape: "one",
+        direction: "output",
+        serviceContracts: [{ id: "ocr.reader", version: 1 }],
+      }),
+      targetHandle: encodeHandleId({
+        portName: "reader",
+        shape: "one",
+        direction: "input",
+        serviceContracts: [{ id: "ocr.reader", version: 1 }],
+      }),
+    };
+    const mismatched = {
+      ...matching,
+      targetHandle: encodeHandleId({
+        portName: "reader",
+        shape: "one",
+        direction: "input",
+        serviceContracts: [{ id: "other.service", version: 1 }],
+      }),
+    };
+
+    expect(connectionRoutesFor(matching, [], [])).toEqual([
+      { kind: "exact", conversionPath: [] },
+    ]);
+    expect(connectionIsValid(matching)).toBe(true);
+    expect(connectionRoutesFor(mismatched, [], [])).toEqual([]);
+    expect(connectionIsValid(mismatched)).toBe(false);
+  });
+
+  it("does not mix a service handle with an artifact handle", () => {
+    const mixed = {
+      sourceHandle: encodeHandleId({
+        portName: "reader",
+        shape: "one",
+        direction: "output",
+        serviceContracts: [{ id: "ocr.reader", version: 1 }],
+      }),
+      targetHandle: encodeHandleId({
+        portName: "text",
+        artifactTypeId: "scalar.text",
+        schemaVersion: 1,
+        shape: "one",
+        direction: "input",
+      }),
+    };
+
+    expect(connectionRoutesFor(mixed, [], [])).toEqual([]);
+    expect(connectionIsValid(mixed)).toBe(false);
+  });
 });
 
 function artifactType(

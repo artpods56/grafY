@@ -12,6 +12,7 @@ import type {
   RunNodeInput,
   RunNodeResult,
   SavedGraphNode,
+  ServiceContractKey,
 } from "@/lib/api";
 import {
   initialInputPlugs,
@@ -122,11 +123,19 @@ export type PortMeta = PortMetaBase &
         artifactTypeId: string;
         schemaVersion: number;
         artifactTypeVariable?: never;
+        serviceContracts?: never;
       }
     | {
         artifactTypeId?: never;
         schemaVersion?: never;
         artifactTypeVariable: string;
+        serviceContracts?: never;
+      }
+    | {
+        artifactTypeId?: never;
+        schemaVersion?: never;
+        artifactTypeVariable?: never;
+        serviceContracts: readonly ServiceContractKey[];
       }
   );
 
@@ -448,19 +457,43 @@ export function effectivePortShape(
   return data.mappedInputPorts.includes(port.name) ? "many" : port.shape;
 }
 
+export function portIsService(port: Port): boolean {
+  return port.kind === "service";
+}
+
+/** A provider node: every output is a service port (no stored artifact). */
+export function isServiceProviderNode(spec: NodeSpec): boolean {
+  return (
+    spec.outputs.length > 0 && spec.outputs.every((port) => portIsService(port))
+  );
+}
+
 export function portMetaForPort(
   port: Port,
   shape: Port["shape"] = port.shape,
   plugId?: string,
   artifactTypeBindings: WorkflowArtifactTypeBindings = {},
 ): PortMeta {
-  const artifactType = resolvedPortArtifactType(port, artifactTypeBindings);
   const base = {
     portName: port.name,
     shape,
     direction: port.direction,
     ...(plugId ? { plugId } : {}),
   };
+  if (portIsService(port)) {
+    const serviceContracts = port.service_contracts ?? [];
+    if (!serviceContracts.length) {
+      throw new Error(
+        `Cannot encode service port ${port.name}: it names no service contract`,
+      );
+    }
+    return {
+      ...base,
+      serviceContracts,
+    };
+  }
+
+  const artifactType = resolvedPortArtifactType(port, artifactTypeBindings);
   if (artifactType) {
     const alsoAccepts = port.also_accepts ?? [];
     return {

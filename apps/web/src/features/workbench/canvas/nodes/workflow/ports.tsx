@@ -3,7 +3,7 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Popover } from "@base-ui/react/popover";
-import { useEdges } from "@xyflow/react";
+import { useEdges, useNodes } from "@xyflow/react";
 
 import type { Port } from "@/lib/api";
 import { Switch } from "@/components/ui/switch";
@@ -20,11 +20,17 @@ import {
   formatArtifactTypeSequence,
   formatArtifactTypeTooltip,
 } from "../../artifact-type-label";
+import {
+  connectedServiceProvider,
+  unsupportedOutputForPort,
+  unsupportedOutputLabel,
+} from "../../provider-outputs";
 import { useArtifactTypeCatalog } from "../../use-artifact-type-catalog";
 import {
   compatibilityHandleId,
   effectivePortShape,
   portHasInstancePlugs,
+  portIsService,
   portMetaForPort,
   resolvedPortArtifactType,
   type WorkflowEdge,
@@ -234,8 +240,18 @@ function PortTab({
 }) {
   const input = port.direction === "input";
   const connection = useOptionalInputConnection(id, port);
+  const edges = useEdges<WorkflowEdge>();
+  const nodes = useNodes<{ data: WorkflowNodeData }>();
   const artifactTypes = useArtifactTypeCatalog();
-  const visibleName = port.title ?? port.name;
+  const provider = React.useMemo(
+    () => connectedServiceProvider(id, nodes, edges),
+    [edges, id, nodes],
+  );
+  const unsupported = unsupportedOutputForPort(port, provider);
+  const portTitle = port.title ?? port.name;
+  const visibleName = unsupported
+    ? unsupportedOutputLabel(unsupported)
+    : portTitle;
   const artifactType = resolvedPortArtifactType(
     port,
     data.artifactTypeBindings,
@@ -243,17 +259,30 @@ function PortTab({
   const color = artifactType
     ? artifactTypeColor(artifactType.id, tokens.colorAccent)
     : tokens.colorAccent;
-  const artifactContract = artifactType
-    ? formatArtifactTypeContract(artifactType, artifactTypes, shape === "many")
-    : shape === "many"
-      ? formatArtifactTypeSequence("Any artifact")
-      : "Any artifact";
+  const serviceContract = portIsService(port)
+    ? (port.service_contracts ?? [])
+        .map((contract) => `${contract.id}@${contract.version}`)
+        .join(", ") || "service"
+    : null;
+  const artifactContract = serviceContract
+    ? serviceContract
+    : artifactType
+      ? formatArtifactTypeContract(
+          artifactType,
+          artifactTypes,
+          shape === "many",
+        )
+      : shape === "many"
+        ? formatArtifactTypeSequence("Any artifact")
+        : "Any artifact";
   const contractTooltip = artifactType
     ? ` (${formatArtifactTypeTooltip(artifactType)})`
     : "";
-  const accessibleLabel = input
-    ? `Input port ${visibleName}, accepts ${artifactContract}${port.required ? ", required" : ""}`
-    : `Output port ${visibleName}, provides ${artifactContract}`;
+  const accessibleLabel = unsupported
+    ? `Output port ${portTitle}, ${unsupportedOutputLabel(unsupported)}`
+    : input
+      ? `Input port ${portTitle}, accepts ${artifactContract}${port.required ? ", required" : ""}`
+      : `Output port ${portTitle}, provides ${artifactContract}`;
   const connectionDisabled = Boolean(connection && !connection.enabled);
   const handleId = encodeHandleId(
     portMetaForPort(
@@ -267,13 +296,15 @@ function PortTab({
   // A drawer drop lands on the row itself, so only a plain input port row
   // publishes the identity a drop reads. A port that takes plugs publishes it
   // on each plug row instead.
-  const artifactDropRow = input && !portHasInstancePlugs(port);
+  const artifactDropRow =
+    input && !portHasInstancePlugs(port) && !portIsService(port);
 
   return (
     <div
       data-docked-port={docked ? "true" : undefined}
       data-input-node-id={artifactDropRow ? id : undefined}
       data-input-port-name={artifactDropRow ? port.name : undefined}
+      data-unsupported-output={unsupported ? "true" : undefined}
       {...stylex.props(nodeChrome.tabRow, input ? null : nodeChrome.tabRowOut)}
     >
       <div
@@ -281,7 +312,8 @@ function PortTab({
           nodeChrome.tab,
           input ? nodeChrome.tabIn : nodeChrome.tabOut,
           connection ? s.tabWithToggle : null,
-          connectionDisabled ? s.tabDisabled : null,
+          connectionDisabled || unsupported ? s.tabDisabled : null,
+          unsupported ? nodeChrome.tabInactive : null,
           docked ? nodeChrome.tabDocked : null,
         )}
       >
@@ -292,10 +324,14 @@ function PortTab({
         >
           <Popover.Trigger
             type="button"
-            aria-label={`Inspect ${visibleName} type`}
+            aria-label={
+              unsupported ? accessibleLabel : `Inspect ${portTitle} type`
+            }
             title={
-              port.description ??
-              `Inspect ${visibleName} type${contractTooltip}`
+              unsupported
+                ? `${portTitle}: ${unsupportedOutputLabel(unsupported)}`
+                : (port.description ??
+                  `Inspect ${portTitle} type${contractTooltip}`)
             }
             {...nodeInteractionProps(stylex.props(s.tabTrigger))}
           >
@@ -316,18 +352,16 @@ function PortTab({
           </Popover.Trigger>
         </PortTypePopover>
         {connection ? (
-          <OptionalConnectionToggle
-            connection={connection}
-            label={visibleName}
-          />
+          <OptionalConnectionToggle connection={connection} label={portTitle} />
         ) : null}
       </div>
       <CanvasPortBall
         nodeId={id}
         handleId={handleId}
         side={input ? "input" : "output"}
-        color={color}
+        color={unsupported ? tokens.colorMuted : color}
         sequence={shape === "many"}
+        idle={Boolean(unsupported)}
         docked={docked}
         {...usePortBallTypeProps({
           id,
@@ -335,13 +369,15 @@ function PortTab({
           port,
           shape,
           locked: typeLocked,
-          name: visibleName,
+          name: portTitle,
         })}
         ariaLabel={accessibleLabel}
         title={
-          input
-            ? `${accessibleLabel}. Connect a compatible output here.${port.description ? ` ${port.description}` : ""}`
-            : `${accessibleLabel}. Drag to a compatible input. If fields are available, you can choose what arrives after connecting.${port.description ? ` ${port.description}` : ""}`
+          unsupported
+            ? `${accessibleLabel}. Existing connections stay; switch the provider to use this output again.`
+            : input
+              ? `${accessibleLabel}. Connect a compatible output here.${port.description ? ` ${port.description}` : ""}`
+              : `${accessibleLabel}. Drag to a compatible input. If fields are available, you can choose what arrives after connecting.${port.description ? ` ${port.description}` : ""}`
         }
       />
     </div>

@@ -7,7 +7,11 @@ import { IconButton } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CanvasNodeHeader } from "../CanvasNodeChrome";
-import type { NodeExecutionStatus, WorkflowNodeData } from "../../types";
+import {
+  isServiceProviderNode,
+  type NodeExecutionStatus,
+  type WorkflowNodeData,
+} from "../../types";
 
 import { sharedStyles } from "./styles";
 
@@ -61,6 +65,7 @@ export function NodeHeader({
   selected: boolean;
   onMenuOpenChange?: (open: boolean) => void;
 }) {
+  const isProvider = isServiceProviderNode(data.spec);
   const executionIsBusy =
     data.execution.status === "queued" ||
     data.execution.status === "running" ||
@@ -79,7 +84,7 @@ export function NodeHeader({
       onRemove={() => data.onRemoveNode?.(id)}
       onMenuOpenChange={onMenuOpenChange}
       status={
-        data.execution.status === "idle" ? null : (
+        isProvider || data.execution.status === "idle" ? null : (
           <span
             role="status"
             aria-label={executionName}
@@ -117,7 +122,8 @@ export function NodeHeader({
         )
       }
     >
-      {data.onRevealNodeOutput &&
+      {!isProvider &&
+      data.onRevealNodeOutput &&
       !data.hasFollowingOutputCard &&
       (data.run?.outputs ?? []).some(
         (output) => output.artifacts.length > 0,
@@ -133,7 +139,7 @@ export function NodeHeader({
           <Eye size={11} />
         </IconButton>
       ) : null}
-      {data.onRunNode && !executionIsBusy ? (
+      {!isProvider && data.onRunNode && !executionIsBusy ? (
         <IconButton
           label={`Run ${data.spec.title}`}
           size="xs"

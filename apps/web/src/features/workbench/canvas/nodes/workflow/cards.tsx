@@ -3,7 +3,9 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import {
+  useEdges,
   useNodeConnections,
+  useNodes,
   useUpdateNodeInternals,
   type NodeProps,
 } from "@xyflow/react";
@@ -17,6 +19,7 @@ import { CanvasNodeHeader } from "../CanvasNodeChrome";
 import { artifactTypeKey } from "../../artifact-type-key";
 import { schemaFields, validateConfig } from "../../config-schema";
 import { nodeSecretInputs } from "../../node-secrets";
+import { notProducedInputReasons } from "../../provider-outputs";
 import {
   SCHEMA_BUILDER_INPUT_PORT,
   SCHEMA_BUILDER_OPERATOR_ID,
@@ -28,7 +31,9 @@ import {
 } from "../../node-layout";
 import {
   GIS_VECTOR_LAYER_OPERATOR_ID,
+  isServiceProviderNode,
   portHasInstancePlugs,
+  type WorkflowEdge,
   type WorkflowNodeData,
 } from "../../types";
 import { useOptionalCanvasGridSettings } from "../../canvas-grid-settings";
@@ -111,6 +116,11 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: tokens.fontSizeXs,
     lineHeight: 1.45,
+  },
+  blockingReasons: {
+    display: "grid",
+    gap: "6px",
+    padding: "4px 12px 10px",
   },
   spacer: { minHeight: "4px" },
 });
@@ -280,6 +290,13 @@ export function SupportedWorkflowNodeCard({
   const secretInputs = nodeSecretInputs(data.spec);
   const isSchemaBuilder = data.spec.operator_id === SCHEMA_BUILDER_OPERATOR_ID;
   const isVectorLayer = data.spec.operator_id === GIS_VECTOR_LAYER_OPERATOR_ID;
+  const isProvider = isServiceProviderNode(data.spec);
+  const edges = useEdges<WorkflowEdge>();
+  const nodes = useNodes<{ data: WorkflowNodeData }>();
+  const notProducedReasons = React.useMemo(
+    () => (isProvider ? [] : notProducedInputReasons(id, nodes, edges)),
+    [edges, id, isProvider, nodes],
+  );
   const visibleInputPorts = data.spec.inputs.filter((port) => {
     if (isSchemaBuilder && port.name === SCHEMA_BUILDER_INPUT_PORT) {
       return false;
@@ -400,16 +417,18 @@ export function SupportedWorkflowNodeCard({
         ) : undefined
       }
       appendix={
-        <NodeExecutionAppendix
-          nodeId={id}
-          nodeTitle={data.spec.title}
-          expanded={selected}
-          width={paintWidth}
-          execution={data.execution}
-          progress={data.progress}
-          run={data.run}
-          historyContext={data.historyContext}
-        />
+        isProvider ? undefined : (
+          <NodeExecutionAppendix
+            nodeId={id}
+            nodeTitle={data.spec.title}
+            expanded={selected}
+            width={paintWidth}
+            execution={data.execution}
+            progress={data.progress}
+            run={data.run}
+            historyContext={data.historyContext}
+          />
+        )
       }
     >
       <GenericArtifactTypeState
@@ -440,6 +459,19 @@ export function SupportedWorkflowNodeCard({
                 typeLocked={typeLocked}
               />
             ))}
+        </div>
+      ) : null}
+      {notProducedReasons.length ? (
+        <div
+          role="status"
+          aria-label="Inputs not produced by the connected provider"
+          {...stylex.props(s.blockingReasons)}
+        >
+          {notProducedReasons.map((reason) => (
+            <Notice key={reason.portName} tone="neutral">
+              {reason.message}
+            </Notice>
+          ))}
         </div>
       ) : null}
       {isSchemaBuilder ? (

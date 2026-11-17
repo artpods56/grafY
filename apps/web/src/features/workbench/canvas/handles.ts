@@ -4,14 +4,18 @@ import type {
   ArtifactTypeKey,
   ArtifactTypeSpec,
   FieldProjection,
+  ServiceContractKey,
 } from "@/lib/api";
 import type { HandleFeedIntent, PortMeta } from "./types";
 import { artifactTypeKey } from "./artifact-type-key";
+import { serviceContractKey } from "./service-contract-key";
 
 export type { HandleFeedIntent };
 
 const HANDLE_FEED_PREFIX = "feed=";
 const HANDLE_ALSO_ACCEPTS_PREFIX = "also=";
+const HANDLE_SERVICE_CONTRACTS_PREFIX = "svc=";
+const HANDLE_SERVICE_SENTINEL = "$service";
 
 function encodeHandleFeedSegment(feed: HandleFeedIntent): string {
   if (feed.kind === "whole") return `${HANDLE_FEED_PREFIX}whole`;
@@ -55,6 +59,43 @@ function isHandleAlsoAcceptsSegment(segment: string | undefined): boolean {
   );
 }
 
+/** Encode the service contracts a service port accepts or produces. */
+function encodeHandleServiceContractsSegment(
+  contracts: readonly ServiceContractKey[],
+): string {
+  return `${HANDLE_SERVICE_CONTRACTS_PREFIX}${contracts
+    .map((key) => encodeURIComponent(serviceContractKey(key)))
+    .join(",")}`;
+}
+
+function decodeHandleServiceContractsSegment(
+  segment: string,
+): ServiceContractKey[] | null {
+  const body = segment.slice(HANDLE_SERVICE_CONTRACTS_PREFIX.length);
+  if (!body) return null;
+  try {
+    return body.split(",").map((entry) => {
+      const decoded = decodeURIComponent(entry);
+      const separator = decoded.lastIndexOf("@");
+      const id = decoded.slice(0, separator);
+      const version = Number(decoded.slice(separator + 1));
+      if (separator <= 0 || !id || !Number.isInteger(version)) {
+        throw new Error("invalid service contract");
+      }
+      return { id, version };
+    });
+  } catch {
+    return null;
+  }
+}
+
+function isHandleServiceContractsSegment(segment: string | undefined): boolean {
+  return (
+    typeof segment === "string" &&
+    segment.startsWith(HANDLE_SERVICE_CONTRACTS_PREFIX)
+  );
+}
+
 function decodeHandleFeedSegment(segment: string): HandleFeedIntent | null {
   if (!segment.startsWith(HANDLE_FEED_PREFIX)) return null;
   const body = segment.slice(HANDLE_FEED_PREFIX.length);
@@ -83,22 +124,33 @@ function isHandleFeedSegment(segment: string | undefined): boolean {
  * lookups. Optional {@link PortMeta.feed} marks catalog satellites.
  */
 export function encodeHandleId(port: PortMeta): string {
-  const parts = port.artifactTypeVariable
+  const parts = port.serviceContracts
     ? [
         port.portName,
-        encodeURIComponent(port.artifactTypeVariable),
-        "$generic",
+        HANDLE_SERVICE_SENTINEL,
+        HANDLE_SERVICE_SENTINEL,
         port.shape,
         port.direction,
       ]
-    : [
-        port.portName,
-        port.artifactTypeId,
-        port.schemaVersion,
-        port.shape,
-        port.direction,
-      ];
+    : port.artifactTypeVariable
+      ? [
+          port.portName,
+          encodeURIComponent(port.artifactTypeVariable),
+          "$generic",
+          port.shape,
+          port.direction,
+        ]
+      : [
+          port.portName,
+          port.artifactTypeId,
+          port.schemaVersion,
+          port.shape,
+          port.direction,
+        ];
   if (port.plugId) parts.push(port.plugId);
+  if (port.serviceContracts?.length) {
+    parts.push(encodeHandleServiceContractsSegment(port.serviceContracts));
+  }
   if (port.alsoAccepts?.length) {
     parts.push(encodeHandleAlsoAcceptsSegment(port.alsoAccepts));
   }
@@ -129,15 +181,25 @@ interface DecodedConcreteHandle extends DecodedHandleBase {
   artifactTypeId: string;
   schemaVersion: number;
   artifactTypeVariable?: never;
+  serviceContracts?: never;
 }
 
 interface DecodedGenericHandle extends DecodedHandleBase {
   artifactTypeId?: never;
   schemaVersion?: never;
   artifactTypeVariable: string;
+  serviceContracts?: never;
 }
 
-export type DecodedHandle = DecodedConcreteHandle | DecodedGenericHandle;
+interface DecodedServiceHandle extends DecodedHandleBase {
+  artifactTypeId?: never;
+  schemaVersion?: never;
+  artifactTypeVariable?: never;
+  serviceContracts: ServiceContractKey[];
+}
+
+export type DecodedHandle =
+  DecodedConcreteHandle | DecodedGenericHandle | DecodedServiceHandle;
 
 export function decodeHandleId(
   id: string | null | undefined,
@@ -164,6 +226,7 @@ export function decodeHandleId(
   let plugId: string | undefined;
   let feed: HandleFeedIntent | undefined;
   let alsoAccepts: ArtifactTypeKey[] | undefined;
+  let serviceContracts: ServiceContractKey[] | undefined;
   for (const segment of p.slice(5)) {
     if (isHandleFeedSegment(segment)) {
       if (feed) return null;
@@ -179,11 +242,34 @@ export function decodeHandleId(
       alsoAccepts = decodedAccepted;
       continue;
     }
+    if (isHandleServiceContractsSegment(segment)) {
+      if (serviceContracts) return null;
+      const decodedContracts = decodeHandleServiceContractsSegment(segment);
+      if (!decodedContracts) return null;
+      serviceContracts = decodedContracts;
+      continue;
+    }
     if (!segment || plugId) return null;
     plugId = segment;
   }
 
+  if (
+    typePart === HANDLE_SERVICE_SENTINEL &&
+    versionPart === HANDLE_SERVICE_SENTINEL
+  ) {
+    if (!serviceContracts?.length || alsoAccepts) return null;
+    return {
+      portName,
+      shape,
+      direction,
+      serviceContracts,
+      ...(plugId ? { plugId } : {}),
+      ...(feed ? { feed } : {}),
+    };
+  }
+
   if (versionPart === "$generic") {
+    if (serviceContracts) return null;
     try {
       const artifactTypeVariable = decodeURIComponent(typePart);
       if (!artifactTypeVariable) return null;
@@ -201,7 +287,7 @@ export function decodeHandleId(
   }
 
   const schemaVersion = Number(versionPart);
-  if (!Number.isInteger(schemaVersion)) return null;
+  if (!Number.isInteger(schemaVersion) || serviceContracts) return null;
   return {
     portName,
     artifactTypeId: typePart,
@@ -214,9 +300,16 @@ export function decodeHandleId(
   };
 }
 
+export function isDecodedServiceHandle(
+  handle: DecodedHandle,
+): handle is DecodedServiceHandle {
+  return Array.isArray(handle.serviceContracts);
+}
+
 export function decodedHandleArtifactType(
   handle: DecodedHandle,
 ): ArtifactTypeKey | null {
+  if (isDecodedServiceHandle(handle)) return null;
   if (
     typeof handle.artifactTypeId !== "string" ||
     typeof handle.schemaVersion !== "number"
@@ -227,6 +320,14 @@ export function decodedHandleArtifactType(
     id: handle.artifactTypeId,
     schema_version: handle.schemaVersion,
   };
+}
+
+function serviceContractsOverlap(
+  source: readonly ServiceContractKey[],
+  target: readonly ServiceContractKey[],
+): boolean {
+  const produced = new Set(source.map(serviceContractKey));
+  return target.some((contract) => produced.has(serviceContractKey(contract)));
 }
 
 /** Concrete artifact types one decoded handle accepts, primary type first. */
@@ -247,7 +348,7 @@ function handleAcceptsArtifactType(
   );
 }
 
-/** A connection is valid when the output and input share an artifact contract. */
+/** A connection is valid when the output and input share an artifact or service contract. */
 export function connectionIsValid(connection: {
   sourceHandle?: string | null;
   targetHandle?: string | null;
@@ -255,16 +356,26 @@ export function connectionIsValid(connection: {
   const s = decodeHandleId(connection.sourceHandle);
   const t = decodeHandleId(connection.targetHandle);
   if (!s || !t) return false;
+  if (s.direction !== "output" || t.direction !== "input") return false;
+  if (s.shape !== t.shape) return false;
+
+  const sourceService = isDecodedServiceHandle(s);
+  const targetService = isDecodedServiceHandle(t);
+  if (sourceService || targetService) {
+    return (
+      sourceService &&
+      targetService &&
+      serviceContractsOverlap(s.serviceContracts, t.serviceContracts)
+    );
+  }
+
   const sourceArtifactType = decodedHandleArtifactType(s);
   const targetArtifactType = decodedHandleArtifactType(t);
   if (!sourceArtifactType && !targetArtifactType) return false;
   return (
-    s.direction === "output" &&
-    t.direction === "input" &&
-    (!sourceArtifactType ||
-      !targetArtifactType ||
-      handleAcceptsArtifactType(t, sourceArtifactType)) &&
-    s.shape === t.shape
+    !sourceArtifactType ||
+    !targetArtifactType ||
+    handleAcceptsArtifactType(t, sourceArtifactType)
   );
 }
 
@@ -524,6 +635,19 @@ export function connectionRoutesFor(
     target.direction !== "input"
   ) {
     return [];
+  }
+
+  const sourceService = isDecodedServiceHandle(source);
+  const targetService = isDecodedServiceHandle(target);
+  if (sourceService || targetService) {
+    if (
+      !sourceService ||
+      !targetService ||
+      !serviceContractsOverlap(source.serviceContracts, target.serviceContracts)
+    ) {
+      return [];
+    }
+    return [{ kind: "exact", conversionPath: [] }];
   }
 
   const sourceArtifactType = decodedHandleArtifactType(source);

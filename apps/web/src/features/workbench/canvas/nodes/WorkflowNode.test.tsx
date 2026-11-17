@@ -9,6 +9,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const xyflowMocks = vi.hoisted(() => ({
   updateNodeInternals: vi.fn(),
   edges: [] as unknown[],
+  nodes: [] as unknown[],
 }));
 
 vi.mock("@xyflow/react", () => ({
@@ -32,6 +33,7 @@ vi.mock("@xyflow/react", () => ({
   ),
   Position: { Left: "left", Right: "right" },
   useEdges: () => xyflowMocks.edges as never[],
+  useNodes: () => xyflowMocks.nodes as never[],
   useNodeConnections: () => [],
   useConnection: (selector: (state: { inProgress: boolean }) => unknown) =>
     selector({ inProgress: false }),
@@ -40,7 +42,13 @@ vi.mock("@xyflow/react", () => ({
       edges: unknown[];
       nodeLookup: Map<string, unknown>;
     }) => unknown,
-  ) => selector({ edges: [], nodeLookup: new Map() }),
+  ) =>
+    selector({
+      edges: xyflowMocks.edges,
+      nodeLookup: new Map(
+        (xyflowMocks.nodes as { id: string }[]).map((node) => [node.id, node]),
+      ),
+    }),
   useUpdateNodeInternals: () => xyflowMocks.updateNodeInternals,
   useViewport: () => ({ zoom: 1, x: 0, y: 0 }),
 }));
@@ -2051,6 +2059,7 @@ describe("WorkflowNode plug row controls", () => {
 describe("WorkflowNode optional connection switch", () => {
   afterEach(() => {
     xyflowMocks.edges = [];
+    xyflowMocks.nodes = [];
   });
 
   it("writes a wire's enabled flag through the edge and keeps the row still", () => {
@@ -2182,6 +2191,314 @@ describe("workflow node execution actions", () => {
     expect(
       container.querySelector('[aria-label="Show output of Text pipe"]'),
     ).toBeNull();
+    React.act(() => root.unmount());
+  });
+});
+
+function ocrReaderContract() {
+  return { id: "ocr.reader", version: 1 } as const;
+}
+
+function reductoProviderSpec(): NodeSpec {
+  return {
+    operator_id: "reducto.ocr.provider",
+    operator_version: 1,
+    plugin_slug: "reducto",
+    origin: "plugin",
+    title: "Reducto",
+    description: "OCR provider",
+    catalog_visible: true,
+    runnable: true,
+    config_schema: {},
+    input_schema: {},
+    output_schema: {},
+    secret_inputs: [
+      {
+        name: "api_key",
+        title: "API key",
+        description: null,
+        required: true,
+        config_dependencies: [],
+      },
+    ],
+    inputs: [],
+    outputs: [
+      {
+        name: "reader",
+        title: "Reader",
+        description: null,
+        direction: "output",
+        kind: "service",
+        service_contracts: [ocrReaderContract()],
+        features: ["blocks"],
+        artifact_type: null,
+        artifact_type_variable: null,
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+    ],
+  };
+}
+
+function ocrNodeSpec(): NodeSpec {
+  return {
+    operator_id: "ocr.read",
+    operator_version: 1,
+    plugin_slug: "workbench",
+    origin: "builtin",
+    title: "OCR",
+    description: "Read a document",
+    catalog_visible: true,
+    runnable: true,
+    config_schema: {},
+    input_schema: {},
+    output_schema: {},
+    inputs: [
+      {
+        name: "document",
+        title: "Scan or PDF",
+        description: null,
+        direction: "input",
+        kind: "artifact",
+        artifact_type: { id: "image.raster", schema_version: 1 },
+        artifact_type_variable: null,
+        also_accepts: [{ id: "document.pdf", schema_version: 1 }],
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+      {
+        name: "reader",
+        title: "Reader",
+        description: null,
+        direction: "input",
+        kind: "service",
+        service_contracts: [ocrReaderContract()],
+        artifact_type: null,
+        artifact_type_variable: null,
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+    ],
+    outputs: [
+      {
+        name: "markdown",
+        title: "Transcription",
+        description: null,
+        direction: "output",
+        kind: "artifact",
+        artifact_type: { id: "text.markdown", schema_version: 1 },
+        artifact_type_variable: null,
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+      {
+        name: "blocks",
+        title: "Text blocks",
+        description: null,
+        direction: "output",
+        kind: "artifact",
+        artifact_type: { id: "table.data", schema_version: 1 },
+        artifact_type_variable: null,
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: false,
+      },
+      {
+        name: "regions",
+        title: "Boxes on the page",
+        description: null,
+        direction: "output",
+        kind: "artifact",
+        artifact_type: { id: "image.regions", schema_version: 1 },
+        artifact_type_variable: null,
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: false,
+      },
+    ],
+  };
+}
+
+function drawBoxesSpec(): NodeSpec {
+  return {
+    operator_id: "test.draw_boxes",
+    operator_version: 1,
+    plugin_slug: "test",
+    origin: "builtin",
+    title: "Draw boxes",
+    description: null,
+    catalog_visible: true,
+    runnable: true,
+    config_schema: {},
+    input_schema: {},
+    output_schema: {},
+    inputs: [
+      {
+        name: "regions",
+        title: "Boxes",
+        description: null,
+        direction: "input",
+        kind: "artifact",
+        artifact_type: { id: "image.regions", schema_version: 1 },
+        artifact_type_variable: null,
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+    ],
+    outputs: [
+      {
+        name: "text",
+        title: "Text",
+        description: null,
+        direction: "output",
+        kind: "artifact",
+        artifact_type: { id: "scalar.text", schema_version: 1 },
+        artifact_type_variable: null,
+        shape: "one",
+        accepted_shapes: ["one"],
+        instance_plugs: false,
+        variadic: false,
+        required: true,
+      },
+    ],
+  };
+}
+
+describe("WorkflowNode provider-dependent OCR outputs", () => {
+  afterEach(() => {
+    xyflowMocks.edges = [];
+    xyflowMocks.nodes = [];
+  });
+
+  it("mutes an OCR output the connected provider does not produce", () => {
+    const ocrData = createWorkflowNodeData(ocrNodeSpec());
+    const providerData = createWorkflowNodeData(reductoProviderSpec());
+    const readerInput = ocrData.spec.inputs.find(
+      (port) => port.name === "reader",
+    );
+    const readerOutput = providerData.spec.outputs.find(
+      (port) => port.name === "reader",
+    );
+    if (!readerInput || !readerOutput) {
+      throw new Error("expected reader ports");
+    }
+
+    xyflowMocks.nodes = [
+      { id: "provider", data: providerData },
+      { id: "ocr", data: ocrData },
+    ];
+    xyflowMocks.edges = [
+      {
+        id: "provider-to-ocr",
+        source: "provider",
+        target: "ocr",
+        sourceHandle: encodeHandleId(portMetaForPort(readerOutput)),
+        targetHandle: encodeHandleId(portMetaForPort(readerInput)),
+        data: { enabled: true, collectionMode: "direct" },
+      },
+    ];
+
+    const { container, root } = renderNode("ocr", ocrData);
+
+    const muted = container.querySelector('[data-unsupported-output="true"]');
+    expect(muted?.textContent).toContain("Not produced by Reducto");
+    expect(
+      container.querySelector('[aria-label*="Boxes on the page"]')?.textContent,
+    ).toContain("Not produced by Reducto");
+    expect(container.textContent).toContain("Transcription");
+    expect(container.textContent).toContain("Text blocks");
+
+    React.act(() => root.unmount());
+  });
+
+  it("shows the downstream blocking reason when a muted OCR output is wired", () => {
+    const ocrData = createWorkflowNodeData(ocrNodeSpec());
+    const providerData = createWorkflowNodeData(reductoProviderSpec());
+    const drawData = createWorkflowNodeData(drawBoxesSpec());
+    const readerInput = ocrData.spec.inputs.find(
+      (port) => port.name === "reader",
+    );
+    const readerOutput = providerData.spec.outputs.find(
+      (port) => port.name === "reader",
+    );
+    const regionsOutput = ocrData.spec.outputs.find(
+      (port) => port.name === "regions",
+    );
+    const boxesInput = drawData.spec.inputs.find(
+      (port) => port.name === "regions",
+    );
+    if (!readerInput || !readerOutput || !regionsOutput || !boxesInput) {
+      throw new Error("expected OCR and boxes ports");
+    }
+
+    xyflowMocks.nodes = [
+      { id: "provider", data: providerData },
+      { id: "ocr", data: ocrData },
+      { id: "draw", data: drawData },
+    ];
+    xyflowMocks.edges = [
+      {
+        id: "provider-to-ocr",
+        source: "provider",
+        target: "ocr",
+        sourceHandle: encodeHandleId(portMetaForPort(readerOutput)),
+        targetHandle: encodeHandleId(portMetaForPort(readerInput)),
+        data: { enabled: true, collectionMode: "direct" },
+      },
+      {
+        id: "ocr-to-draw",
+        source: "ocr",
+        target: "draw",
+        sourceHandle: encodeHandleId(portMetaForPort(regionsOutput)),
+        targetHandle: encodeHandleId(portMetaForPort(boxesInput)),
+        data: { enabled: true, collectionMode: "direct" },
+      },
+    ];
+
+    const { container, root } = renderNode("draw", drawData);
+
+    expect(container.textContent).toContain(
+      "Boxes are not produced by Reducto",
+    );
+    expect(container.textContent).not.toContain(
+      "No result saved for this step yet",
+    );
+
+    React.act(() => root.unmount());
+  });
+
+  it("keeps a provider card without a result appendix", () => {
+    const data = createWorkflowNodeData(reductoProviderSpec());
+    data.onRunNode = vi.fn();
+    const { container, root } = renderNode("provider", data, true);
+
+    expect(
+      container.querySelector('[aria-label="Reducto execution appendix"]'),
+    ).toBeNull();
+    expect(container.querySelector('[aria-label="Run Reducto"]')).toBeNull();
+    expect(container.textContent).not.toContain(
+      "No result saved for this step yet",
+    );
+
     React.act(() => root.unmount());
   });
 });
