@@ -93,7 +93,9 @@ jobs:
           print(capabilities.model_dump_json())
           PY
       - name: Run backend tests
-        run: uv run pytest
+        # The PostgreSQL migration and persistence steps above already ran
+        # tests/unit/persistence. Collecting that tree again only repeats it.
+        run: uv run pytest --ignore=tests/unit/persistence
       - name: Verify presigned uploads through the gateway
         run: |
           stack=(docker compose --file infra/docker/compose.storage-gateway-test.yaml)
