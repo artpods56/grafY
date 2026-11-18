@@ -117,8 +117,8 @@ test("real TIFF artifacts on a saved canvas", async ({ page }) => {
                 artifact_type: "file.tiff",
                 schema_version: 1,
               },
-              // Height follows the scan aspect (about 440px with the label), so
-              // a tighter row step lets the next card cover this card's zoom bar.
+              // The frame takes this height, so the card is about 390px with
+              // its label and the row step below leaves its zoom bar clear.
               position: {
                 x: (index % 2) * 720,
                 y: Math.floor(index / 2) * 640,

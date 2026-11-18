@@ -27,6 +27,8 @@ import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { resolveArtifactCardSource } from "../artifact-connections";
 import { gridAlignedWidth } from "../grid-layout";
+import { ARTIFACT_ORIGIN_EDGE_TYPE } from "../artifact-origin-edge";
+import { decodeHandleId } from "../handles";
 import {
   ARTIFACT_CARD_WIDTH_MIN,
   DEFAULT_ARTIFACT_CARD_WIDTH,
@@ -55,6 +57,7 @@ import {
   type ArtifactViewerNodeData,
   type CanvasEdge,
   type CanvasNode,
+  type CanvasWorkflowNode,
 } from "../artifact-viewer";
 import { artifactTypeColor } from "../nodes.css";
 import { useArtifactTypeCatalog } from "../use-artifact-type-catalog";
@@ -86,6 +89,8 @@ import {
   formatCardText,
   readsAsCardText,
 } from "./artifact-renderers/card-text";
+import { TiffTextArtifact } from "./artifact-renderers/tiff-text-renderer";
+import { readTiffWindow, type TiffWindowSelection } from "./TiffWindowSelector";
 import { HtmlPageFill } from "./artifact-renderers/html-page-fill";
 import { CardTextBody } from "./artifact-renderers/card-text-body";
 import {
@@ -113,6 +118,21 @@ import {
 } from "../../ui/side-panel/library-tree";
 
 const STACK_THUMB_HEIGHT = 105;
+
+function linkedWindow(node: Pick<CanvasWorkflowNode, "id" | "data"> | null) {
+  const patch = node?.data.onConfigPatch;
+  const artifactId = node?.data.tiffWindowSourceId;
+  if (!node || !patch || !artifactId) return undefined;
+  const window = readTiffWindow(node.data.config);
+  if (!window) return undefined;
+  const selection: TiffWindowSelection = {
+    window,
+    wholePage: node.data.config.scope === "Whole TIFF page",
+    singleCrop: node.data.config.strategy === "Single crop",
+    onChange: (next) => patch(node.id, next),
+  };
+  return { artifactId, selection };
+}
 
 const s = stylex.create({
   artifactNode: {
@@ -391,6 +411,18 @@ export function ArtifactCardBody({
   const producerCandidate = useNodesData<CanvasNode>(feed?.source ?? "");
   const producer =
     producerCandidate?.type === WORKFLOW_NODE_TYPE ? producerCandidate : null;
+  const tiffConsumers = edges.filter(
+    (edge) =>
+      edge.type === ARTIFACT_ORIGIN_EDGE_TYPE &&
+      edge.source === id &&
+      decodeHandleId(edge.targetHandle)?.portName === "tiff",
+  );
+  const tiffConsumer = useNodesData<CanvasNode>(
+    tiffConsumers.length === 1 ? (tiffConsumers[0]?.target ?? "") : "",
+  );
+  const sourceWindow = linkedWindow(
+    tiffConsumer?.type === WORKFLOW_NODE_TYPE ? tiffConsumer : null,
+  );
   const feedPortName = feed?.data?.sourcePortName ?? null;
   const feedPort =
     producer && feedPortName
@@ -513,10 +545,19 @@ export function ArtifactCardBody({
   // An HTML page is not a file to skim: it names other artifacts and is filled
   // from them. Every other readable artifact still shows its own bytes.
   const htmlPageArtifact = isHtmlPageArtifact(first);
+  const recognizedTiffText =
+    first?.artifact_type === "ocr.tiff_recognized_text" &&
+    first.schema_version === 1;
+  const tiffTextArtifact =
+    recognizedTiffText ||
+    (first?.artifact_type === "ocr.tiff_text_regions" &&
+      first.schema_version === 1);
+  const detectorWindow = linkedWindow(producer);
   // Readable bytes are shown as they are, JSON indented, instead of a file
   // tile. Binary bytes and file containers keep their tile.
   const textKey =
     first &&
+    !tiffTextArtifact &&
     readsAsCardText(first, {
       contentType,
       fileName,
@@ -632,9 +673,11 @@ export function ArtifactCardBody({
           .filter(Boolean)
           .join(" · ");
   const imageAspect = imageSize ? imageSize.width / imageSize.height : 4 / 3;
-  // An unsized picture is held to a height so a tall one stays a thumbnail. A
-  // width the operator dragged out is the zoom they asked for, so it is taken
-  // whole and the height follows the aspect.
+  // A picture's frame is a window onto the page, so a height the operator
+  // dragged is the band they asked for and is taken whole: the page is cropped
+  // or margined by it, never squeezed to keep its shape. Before any drag the box
+  // follows the page's aspect, and an unsized picture is held to a height so a
+  // tall one stays a thumbnail.
   const mediaWidth =
     imageArtifact && layout?.width === undefined
       ? Math.min(
@@ -642,12 +685,15 @@ export function ArtifactCardBody({
           Math.round((layout?.bodyHeight ?? 360) * imageAspect),
         )
       : requestedWidth;
-  const mediaHeight = imageArtifact
-    ? Math.round(
-        (mediaWidth - (isSequence ? (Math.min(refs.length, 3) - 1) * 12 : 0)) /
-          imageAspect,
-      )
-    : (layout?.bodyHeight ?? artifactCardMediaHeight(mediaWidth));
+  const mediaHeight =
+    layout?.bodyHeight ??
+    (imageArtifact
+      ? Math.round(
+          (mediaWidth -
+            (isSequence ? (Math.min(refs.length, 3) - 1) * 12 : 0)) /
+            imageAspect,
+        )
+      : artifactCardMediaHeight(mediaWidth));
   const portColor = first
     ? artifactTypeColor(first.artifact_type, tokens.colorAccent)
     : tokens.colorInfo;
@@ -868,6 +914,7 @@ export function ArtifactCardBody({
                 tier={tier}
                 remoteSelectionColor={data.remoteSelectionColor}
                 frontIndex={isSequence ? clampedIndex : 0}
+                tiffWindow={!isSequence ? sourceWindow : undefined}
                 overlay={pager}
                 onSize={(artifactId, width, height) =>
                   setImageSizes((current) => {
@@ -885,6 +932,16 @@ export function ArtifactCardBody({
                   }))
                 }
               />
+            ) : tiffTextArtifact || (awaitingFeed && detectorWindow) ? (
+              stackedBody(
+                <TiffTextArtifact
+                  url={tiffTextArtifact ? firstUrl : null}
+                  workspaceId={workspace.id}
+                  height={mediaHeight}
+                  linkedWindow={detectorWindow}
+                  recognized={recognizedTiffText}
+                />,
+              )
             ) : tableCard && first ? (
               stackedBody(
                 <TableArtifactBody
@@ -1051,7 +1108,11 @@ export function ArtifactCardBody({
               </>
             )}
             {allowCornerResize ||
-            ((imageArtifact || htmlPage || textCard || tableCard) &&
+            ((imageArtifact ||
+              tiffTextArtifact ||
+              htmlPage ||
+              textCard ||
+              tableCard) &&
               selected) ? (
               <LayoutResizeHandle
                 layout={
@@ -1061,10 +1122,22 @@ export function ArtifactCardBody({
                         width: requestedWidth,
                         bodyHeight: tableCard ? tableHeight : textMaxHeight,
                       }
-                    : { ...layout, width: cardWidth }
+                    : {
+                        ...layout,
+                        width: cardWidth,
+                        // The corner is grabbed at the height the card actually
+                        // draws, so a body whose height still comes from the
+                        // media box does not jump to the default on the first
+                        // drag.
+                        ...(imageArtifact || tiffTextArtifact
+                          ? { bodyHeight: mediaHeight }
+                          : null),
+                      }
                 }
                 axes={
-                  textCard || tableCard ? ["width", "bodyHeight"] : ["width"]
+                  textCard || tableCard || imageArtifact || tiffTextArtifact
+                    ? ["width", "bodyHeight"]
+                    : ["width"]
                 }
                 ariaLabel="Resize artifact"
                 onDraft={setDraftLayout}

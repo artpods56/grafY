@@ -259,6 +259,7 @@ import {
 } from "../canvas/node-secrets";
 import { artifactTypeColor } from "../canvas/nodes.css";
 import {
+  TIFF_TEXT_DETECTOR_OPERATOR_ID,
   WORKFLOW_EDGE_TYPE,
   WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
@@ -268,6 +269,7 @@ import {
   type WorkflowEdgeRouteOption,
   type WorkflowEdgeUpdate,
   type WorkflowArtifactTypeBindings,
+  type WorkflowNodeConfig,
   type WorkflowNodeData,
   portMetaForPort,
   workflowNodeIsSupported,
@@ -847,18 +849,23 @@ function WorkbenchBody({
     [applyAuthoringCommands],
   );
 
-  const updateConfig = React.useCallback(
-    (nodeId: string, name: string, value: unknown) => {
-      applyAuthoringCommands([
-        {
+  const updateConfigPatch = React.useCallback(
+    (nodeId: string, patch: WorkflowNodeConfig) => {
+      applyAuthoringCommands(
+        Object.entries(patch).map(([field, value]) => ({
           kind: "update_node_configuration",
           node_id: nodeId,
-          field: name,
+          field,
           value,
-        },
-      ]);
+        })),
+      );
     },
     [applyAuthoringCommands],
+  );
+  const updateConfig = React.useCallback(
+    (nodeId: string, name: string, value: unknown) =>
+      updateConfigPatch(nodeId, { [name]: value }),
+    [updateConfigPatch],
   );
 
   const updateLayout = React.useCallback(
@@ -4212,6 +4219,16 @@ function WorkbenchBody({
       const savedNode = activeGraph?.nodes.find(
         (candidate) => candidate.id === node.id,
       );
+      const tiffOrigin =
+        localAuthoringEnabled &&
+        node.data.spec.operator_id === TIFF_TEXT_DETECTOR_OPERATOR_ID &&
+        workflowNodeIsSupported(node.data)
+          ? authoredDocument.origins.find(
+              (origin) =>
+                origin.to_node === node.id && origin.to_port === "tiff",
+            )
+          : undefined;
+      const tiffRef = tiffOrigin?.value;
       const instance = nodeInstanceStates[node.id];
       const history =
         projectId && openGraphId
@@ -4246,6 +4263,11 @@ function WorkbenchBody({
         data: {
           ...attachNodeCallbacks(node.data),
           progress,
+          tiffWindowSourceId:
+            tiffRef?.artifact_type === "file.tiff" && !("item_refs" in tiffRef)
+              ? tiffRef.artifact_id
+              : undefined,
+          onConfigPatch: tiffRef ? updateConfigPatch : undefined,
           onRunNode:
             canStartRun &&
             projectEditsTrusted &&
@@ -4350,6 +4372,7 @@ function WorkbenchBody({
     revealNodeOutput,
     running,
     ungroupCollection,
+    updateConfigPatch,
     workspaceId,
   ]);
 
