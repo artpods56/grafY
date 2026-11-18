@@ -3,12 +3,13 @@
 `image/tiff` artifacts cannot render in the workbench: browsers do not decode
 TIFF, so an `<img>` on the raw bytes shows "Preview unavailable". Grafy renders
 TIFFs on demand instead of converting them at import. A separate **tiler**
-container produces deep-zoom tiles and thumbnails; the API stays the only public
-entry and decides who may see what.
+container produces deep-zoom tiles, thumbnails and native pixel windows. The
+API stays the only public entry and decides who may see what.
 
 This document records the decisions behind the tiler (`apps/tiler`) and the
 constraints the API proxy and the web viewer must keep. The API exposes the
-Workspace-scoped proxy; browser tile-viewer integration is a separate step.
+Workspace-scoped proxy; the canvas card that reads it is described under "The
+card frames the page".
 
 ## Shape
 
@@ -38,7 +39,7 @@ flowchart LR
 ## The tiler never takes a URL
 
 Server-side request forgery is closed by construction. The tiler has no URL or
-path parameter. Its only input is the `X-Grafy-Grant` header: base64url JSON
+path parameter. Its only source selector is the `X-Grafy-Grant` header: base64url JSON
 `{v, b: bucket, k: key, s: sha256, n: byte_size, p: page, exp}` plus an
 HMAC-SHA256 signature.
 
@@ -96,6 +97,79 @@ fails without a CRS), so the tiler is a thin FastAPI app on rio-tiler.
 `titiler.core` is kept only for its error handlers and middleware. The tiler has
 its own project and lock file in `apps/tiler`, outside the root uv workspace,
 because `titiler.core` needs `starlette>=1` while the API pins `starlette<1`.
+
+## The card frames the page
+
+A canvas card is a window onto the page: growing the frame shows more scan, never
+the same scan bigger. OpenSeadragon does the opposite on its own, because its
+zoom is a magnification relative to the frame (`getBounds().width` is `1 / zoom`)
+so holding it across a resize redraws the page proportionally wider. The surface
+therefore watches its own size (`autoResize: false`) and divides the held zoom by
+the width it gained, anchoring the view at its top-left — the corner opposite the
+grip a card is dragged by. `minZoomImageRatio` (0.25) is the floor: OpenSeadragon
+reads its minimum zoom as a fraction of home, so the page stops shrinking at a
+quarter of the frame and grows with it past that.
+
+The frame's shape belongs to the operator, not the page: a height they dragged is
+the band of scan they asked for, and the page is cropped or margined by it. The
+page's aspect, read from `info` because a TIFF has no `<img>` to report a natural
+size, only sets the box a card starts with; without it every scan would start in
+the 4:3 fallback and a portrait page would sit in a landscape box.
+
+## Native pixel windows
+
+Server code calls `ArtifactImageService.read_window(access, artifact_id,
+col=..., row=..., width=..., height=..., page=0)` with Workspace access
+authorized for `VIEW_ARTIFACTS`, including the PAT scope check when applicable.
+The service resolves the artifact's stored source in that Workspace. This
+works for both ordinary TIFFs and parameterized GeoTIFF COG artifacts. A
+window on a COG uses the pixel grid of the stored COG. A TIFF upload can be
+read directly through its file artifact.
+
+The internal tiler receives the signed source grant and integer
+`col`, `row`, `width` and `height` query parameters on `GET /window`.
+Offsets are zero-based from the top left of the granted page. The rectangle
+is half-open and must fit entirely inside the raster. Crossing an edge gives
+422. At most 1,000,000 pixels and 8 MiB of PNG may be returned per read.
+The read uses the source grid at 1:1 and bypasses display rendering and caching.
+It accepts 8-bit grayscale and RGB, including JPEG YCbCr decoded to RGB by GDAL.
+PNG preserves those decoded sample values. An alpha
+band retains its opacity where the source mask and nodata allow it. Palette,
+CMYK, sub-byte, higher-depth, and layouts that require color-space conversion
+return 415.
+GDAL reads intersecting blocks or strips. A crop whose estimated block decode
+exceeds `TILER_MAX_WINDOW_DECODE_BYTES` returns 413. The default is 64 MiB.
+
+The response carries the PNG body and an `X-Grafy-Window` JSON header with
+the actual `col`, `row`, `width`, `height`, `affine` and `crs`. With usable
+georeferencing, `crs` carries WKT and the six affine coefficients
+`[a, b, c, d, e, f]` map
+crop-local pixel corners `(x, y)` to `(a*x + b*y + c, d*x + e*y + f)` in
+the returned CRS. This includes rotation and shear. Without usable
+georeferencing, both fields are null and the source offsets still locate the
+crop on the TIFF.
+
+The canvas window selector writes the detector's saved page and pixel bounds
+through graph authoring. The selected rectangle and the previous run's
+polygons both use full-page pixel coordinates, so changing the selection
+leaves the previous detections anchored while the viewer serves display tiles
+at the current zoom. Scan area selects either that rectangle or the entire
+page. Automatic strategy pads reads around the scan area and splits large
+areas into overlapping native windows within the read limit. It merges
+detections in page pixels and includes polygons whose centers fall in the
+scan area, keeping the full shape of labels that cross its border. Single crop
+reads exactly the requested bounds and retains the native read limit.
+
+The detector reports separate window counts for the first scan and any seam
+repair pass. These are transient Project room events. The canvas can show
+progress while a Run is active, and the result remains independently readable
+after the progress history is gone.
+
+Recognition consumes a saved set of detections. It reads each polygon from the
+source page at native resolution, masks its surroundings, and straightens the
+crop before sending it to the connected recognizer. The recognition artifact
+keeps the source-page polygon and the recognizer's raw text, confidence, and
+model revision together.
 
 ## Cache lives in the tiler
 

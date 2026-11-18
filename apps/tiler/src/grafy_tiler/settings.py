@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     max_source_bytes: int = Field(default=1024**3, ge=1)
     max_pixels: int = Field(default=2_000_000_000, ge=1)
     max_pages: int = Field(default=1024, ge=1)
+    # A native window decodes whole blocks or strips, not just its own pixels.
+    # This bounds that decode, so a 10x10 crop of a single-strip image cannot
+    # make GDAL unpack a gigabyte.
+    max_window_decode_bytes: int = Field(default=64 * 1024**2, ge=1024**2)
     # A source without overviews that is larger than this on its longest side
     # gets one lazily built overview, so low-zoom tiles do not decode it whole.
     overview_min_pixels: int = Field(default=4096, ge=OVERVIEW_EDGE)
