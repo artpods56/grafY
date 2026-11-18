@@ -54,6 +54,7 @@ function port(name: string, direction: Port["direction"] = "input"): Port {
   const shape = "one";
   return {
     name,
+    kind: "artifact",
     title: name,
     description: null,
     direction,
@@ -511,6 +512,58 @@ describe("reading what a Graph's node instances hold", () => {
 });
 
 describe("asking for a Run", () => {
+  it("submits OCR as the target while leaving its reader as an upstream dependency", async () => {
+    const reader: Port = {
+      ...port("reader", "output"),
+      kind: "service",
+      artifact_type: null,
+      service_contracts: [{ id: "ocr.reader", version: 1 }],
+    };
+    const canvas = canvasState([
+      workflowNode("mistral", {
+        spec: nodeSpec("mistral.ocr.provider", { outputs: [reader] }),
+      }),
+      workflowNode("ocr", {
+        spec: nodeSpec("ocr.read", {
+          inputs: [{ ...reader, direction: "input" }],
+        }),
+        selected: true,
+      }),
+    ]);
+    const connection: WorkflowEdge = {
+      id: "reader",
+      source: "mistral",
+      target: "ocr",
+      sourceHandle: encodeHandleId({
+        portName: "reader",
+        direction: "output",
+        shape: "one",
+        serviceContracts: reader.service_contracts ?? [],
+      }),
+      targetHandle: encodeHandleId({
+        portName: "reader",
+        direction: "input",
+        shape: "one",
+        serviceContracts: reader.service_contracts ?? [],
+      }),
+      data: { enabled: true, collectionMode: "direct" },
+    };
+    api.getRun.mockResolvedValue(run("running"));
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, { edges: [connection] }),
+    );
+    await settle();
+    await React.act(async () =>
+      hook.result.current.runWorkflow("selected-with-dependencies"),
+    );
+    expect(api.startRun).toHaveBeenCalledWith(WORKSPACE_ID, PROJECT_ID, {
+      graph_id: GRAPH_ID,
+      targets: [{ node_id: "ocr", call_path: [] }],
+    });
+    await hook.unmount();
+  });
+
   it("names every node of the Graph when the whole Graph is asked for", async () => {
     const canvas = canvasState([
       workflowNode("a"),
