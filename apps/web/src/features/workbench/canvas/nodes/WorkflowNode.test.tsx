@@ -594,8 +594,9 @@ describe("WorkflowNode pickup", () => {
         .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("true");
-    // Option C rides a 200ms spring; handles remeasure per frame while it
-    // runs so edges track the lift instead of jumping at settle.
+    // Option C rides a 200ms spring. Nothing is measured while it travels — one
+    // store-wide look per tier is worth 6.4ms and the animation crosses it freely —
+    // so the measurement lands when the card stops.
     expect(xyflowMocks.updateNodeInternals).not.toHaveBeenCalled();
     await vi.waitFor(() =>
       expect(xyflowMocks.updateNodeInternals).toHaveBeenCalled(),
@@ -619,8 +620,16 @@ describe("WorkflowNode pickup", () => {
         .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-dragging"),
     ).toBe("true");
-    // A real drag snaps the spring and remeasures immediately for the drag loop.
-    expect(xyflowMocks.updateNodeInternals).toHaveBeenCalledOnce();
+    // A real drag does not force a layout inside the gesture: the drag loop already
+    // tells React Flow where the node is, and this tier is measured when it lands.
+    // Counted as a delta because the card's own port motion measures too.
+    const beforeDrag = xyflowMocks.updateNodeInternals.mock.calls.length;
+    expect(xyflowMocks.updateNodeInternals).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(xyflowMocks.updateNodeInternals.mock.calls.length).toBeGreaterThan(
+        beforeDrag,
+      ),
+    );
 
     React.act(() => node.root.unmount());
   });
