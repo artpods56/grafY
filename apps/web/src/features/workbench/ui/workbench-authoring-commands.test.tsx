@@ -26,6 +26,7 @@ import {
   type AuthoredGraphDocument,
   type GraphCommand,
 } from "../model/graph-document";
+import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import {
   useWorkbenchAuthoringCommands,
   type WorkbenchRoomCommandSync,
@@ -91,6 +92,115 @@ function initialDocument(): AuthoredGraphDocument {
   );
 }
 
+/** A port that says what it carries, which a collection mode is decided from. */
+function portSpec(
+  direction: "input" | "output",
+  name: string,
+  artifactId: string,
+  shape: "one" | "many" = "one",
+): Port {
+  return {
+    accepted_shapes: [shape],
+    artifact_type: { id: artifactId, schema_version: 1 },
+    direction,
+    instance_plugs: false,
+    kind: "artifact",
+    name,
+    required: true,
+    shape,
+    variadic: false,
+  };
+}
+
+function stepSpec(
+  operatorId: string,
+  inputs: readonly Port[],
+  outputs: readonly Port[],
+): NodeSpec {
+  return {
+    operator_id: operatorId,
+    operator_version: 1,
+    plugin_slug: "test",
+    origin: "builtin",
+    title: operatorId,
+    description: operatorId,
+    catalog_visible: true,
+    runnable: true,
+    config_schema: {},
+    input_schema: {},
+    output_schema: {},
+    inputs: [...inputs],
+    outputs: [...outputs],
+  };
+}
+
+/** Pages, the OCR step that reads them, and the step that paints boxes on them. */
+function mappedStepRegistry(): NodeRegistry {
+  return {
+    plugins: [],
+    artifact_types: [],
+    artifact_conversions: [],
+    nodes: [
+      stepSpec("test.pages", [], [portSpec("output", "items", "page", "many")]),
+      stepSpec(
+        "test.ocr",
+        [portSpec("input", "document", "page")],
+        [
+          portSpec("output", "markdown", "markdown"),
+          portSpec("output", "regions", "boxes"),
+        ],
+      ),
+      stepSpec(
+        "test.boxes",
+        [
+          portSpec("input", "image", "page"),
+          portSpec("input", "regions", "boxes"),
+        ],
+        [portSpec("output", "image", "page")],
+      ),
+    ],
+  };
+}
+
+function savedConnection(
+  id: string,
+  fromNode: string,
+  fromPort: string,
+  toNode: string,
+  toPort: string,
+): AuthoredGraphDocument["edges"][number] {
+  return {
+    id,
+    enabled: true,
+    from_node: fromNode,
+    from_port: fromPort,
+    to_node: toNode,
+    to_port: toPort,
+    to_plug: null,
+    collection_mode: "map",
+    projection: null,
+    route_offset: null,
+    conversion_path: [],
+  };
+}
+
+/** The graph as it stands while the OCR step runs once per page. */
+function mappedStepDocument(): AuthoredGraphDocument {
+  return authoredGraphDocument(
+    createSavedGraphRequest({
+      name: "Readings",
+      nodes: [savedNode("pages"), savedNode("ocr"), savedNode("boxes")],
+      edges: [
+        savedConnection("feed", "pages", "items", "ocr", "document"),
+        savedConnection("page", "pages", "items", "boxes", "image"),
+        savedConnection("reading", "ocr", "regions", "boxes", "regions"),
+      ],
+      origins: [],
+      agents: [],
+    }),
+  );
+}
+
 type Harness = {
   apply: (
     commands: readonly GraphCommand[],
@@ -103,7 +213,13 @@ type Harness = {
   viewers: ArtifactViewerCanvasState;
 };
 
-async function mount(options: { localAuthoringEnabled?: boolean } = {}) {
+async function mount(
+  options: {
+    localAuthoringEnabled?: boolean;
+    nodeRegistry?: NodeRegistry | null;
+    document?: AuthoredGraphDocument;
+  } = {},
+) {
   const submitted: GraphCommand[][] = [];
   const refused: { message: string | null } = { message: null };
   let latest: Harness | null = null;
@@ -111,7 +227,11 @@ async function mount(options: { localAuthoringEnabled?: boolean } = {}) {
   function HarnessComponent() {
     const [authoring, dispatchAuthoringState] = React.useReducer(
       reduceWorkbenchAuthoringState,
-      { document: initialDocument(), nodeOverlays: {}, error: null },
+      {
+        document: options.document ?? initialDocument(),
+        nodeOverlays: {},
+        error: null,
+      },
     );
     const authoredDocumentRef = React.useRef(authoring.document);
     React.useLayoutEffect(() => {
@@ -146,6 +266,7 @@ async function mount(options: { localAuthoringEnabled?: boolean } = {}) {
       dispatchAuthoringState,
       localAuthoringBlockedMessageRef,
       localAuthoringEnabledRef,
+      nodeRegistry: options.nodeRegistry ?? null,
       roomCommandSyncRef,
       setArtifactViewers,
       setPendingConnectionRoute: () => undefined,
@@ -323,5 +444,60 @@ describe("workbench authoring commands", () => {
       "artifact-viewer-edge-2",
     ]);
     expect(harness.submitted).toEqual([]);
+  });
+
+  it("moves the collection modes a removal left behind into the same batch", async () => {
+    const view = await mount({
+      nodeRegistry: mappedStepRegistry(),
+      document: mappedStepDocument(),
+    });
+
+    // Removing the sequence feed from the OCR step: it runs once now, so the
+    // reading it offers is one value and cannot travel as a list.
+    await view.run([{ kind: "remove_edges", edge_ids: ["feed"] }]);
+
+    const harness = view.read();
+    expect(harness.submitted.at(-1)).toEqual([
+      { kind: "remove_edges", edge_ids: ["feed"] },
+      {
+        kind: "update_edge",
+        edge_id: "reading",
+        update: { collection_mode: "direct" },
+      },
+    ]);
+    expect(
+      harness.liveDocument().edges.find((edge) => edge.id === "reading")
+        ?.collection_mode,
+    ).toBe("direct");
+    // The page still arrives one at a time, so that connection keeps its list.
+    expect(
+      harness.liveDocument().edges.find((edge) => edge.id === "page")
+        ?.collection_mode,
+    ).toBe("map");
+  });
+
+  it("moves no mode while the graph still runs its step per item", async () => {
+    const view = await mount({
+      nodeRegistry: mappedStepRegistry(),
+      document: mappedStepDocument(),
+    });
+
+    await view.run([{ kind: "remove_edges", edge_ids: ["page"] }]);
+
+    const harness = view.read();
+    expect(harness.submitted.at(-1)).toEqual([
+      { kind: "remove_edges", edge_ids: ["page"] },
+    ]);
+  });
+
+  it("moves no mode until the node types are known", async () => {
+    const view = await mount({ document: mappedStepDocument() });
+
+    await view.run([{ kind: "remove_edges", edge_ids: ["feed"] }]);
+
+    const harness = view.read();
+    expect(harness.submitted.at(-1)).toEqual([
+      { kind: "remove_edges", edge_ids: ["feed"] },
+    ]);
   });
 });

@@ -313,6 +313,9 @@ async function mount() {
       dispatchAuthoringState,
       localAuthoringBlockedMessageRef,
       localAuthoringEnabledRef,
+      // This harness is about card links, not collection modes: it says nothing
+      // about the node types, so the command batch carries no mode repairs.
+      nodeRegistry: null,
       roomCommandSyncRef,
       setArtifactViewers,
       setPendingConnectionRoute: () => undefined,

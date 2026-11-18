@@ -1,10 +1,13 @@
 import * as React from "react";
 
+import type { NodeRegistry } from "@/lib/api";
 import { withoutViewerEdgesFromNodes } from "../canvas/artifact-viewer-edits";
 import type { ArtifactViewerCanvasState } from "../canvas/artifact-viewer";
-import type {
-  AuthoredGraphDocument,
-  GraphCommand,
+import { collectionModeRepairCommands } from "../canvas/edge-collection-modes";
+import {
+  applyGraphCommandNormalized,
+  type AuthoredGraphDocument,
+  type GraphCommand,
 } from "../model/graph-document";
 import {
   reduceWorkbenchAuthoringState,
@@ -33,6 +36,7 @@ export type WorkbenchAuthoringCommandDeps = {
   dispatchAuthoringState: React.Dispatch<WorkbenchAuthoringAction>;
   localAuthoringBlockedMessageRef: React.RefObject<string>;
   localAuthoringEnabledRef: React.RefObject<boolean>;
+  nodeRegistry: NodeRegistry | null;
   roomCommandSyncRef: React.RefObject<WorkbenchRoomCommandSync>;
   setArtifactViewers: React.Dispatch<
     React.SetStateAction<ArtifactViewerCanvasState>
@@ -63,6 +67,11 @@ export type WorkbenchAuthoringCommandDeps = {
  * that replaces a collection node with cards. Pruning anywhere else would leave a
  * gesture that forgets it, and the next save of that graph would offer the server a
  * link against a node the document no longer has.
+ *
+ * Collection modes follow the same rule and the same batch. A connection's mode says
+ * how many values it carries, which is decided by the map connections of the step it
+ * leaves, so deleting one connection can move the modes of the connections after it.
+ * Repairing them here is what keeps the saved document a graph the runner accepts.
  */
 export function useWorkbenchAuthoringCommands(
   deps: WorkbenchAuthoringCommandDeps,
@@ -73,6 +82,7 @@ export function useWorkbenchAuthoringCommands(
     dispatchAuthoringState,
     localAuthoringBlockedMessageRef,
     localAuthoringEnabledRef,
+    nodeRegistry,
     roomCommandSyncRef,
     setArtifactViewers,
     setPendingConnectionRoute,
@@ -94,11 +104,27 @@ export function useWorkbenchAuthoringCommands(
       const before = authoredDocumentRef.current;
       // React Flow emits node and edge removals before React renders again.
       // Later handlers must read the result of the preceding batch.
-      authoredDocumentRef.current = reduceWorkbenchAuthoringState(
+      const edited = reduceWorkbenchAuthoringState(
         { document: before, nodeOverlays: {}, error: null },
         { kind: "apply_commands", commands },
       ).document;
+      const repairs = collectionModeRepairCommands(edited, nodeRegistry);
+      // A repair only ever lands on a connection the document already carried
+      // before this batch: the mode of a connection a batch adds is chosen from
+      // the shapes its source step has at that moment, so only a removal or a
+      // mode change can leave a mode behind. That is what lets these repairs ride
+      // the same room submission as the gesture that moved the shapes, since a
+      // submission describes every command against the document from before the
+      // batch.
+      let after = edited;
+      for (const repair of repairs) {
+        after = applyGraphCommandNormalized(after, repair);
+      }
+      authoredDocumentRef.current = after;
       dispatchAuthoringState({ kind: "apply_commands", commands });
+      if (repairs.length) {
+        dispatchAuthoringState({ kind: "apply_commands", commands: repairs });
+      }
       setPositionOverrides({});
       setSelectedNodeIdSet(
         (current) =>
@@ -125,7 +151,10 @@ export function useWorkbenchAuthoringCommands(
       setPendingConnectionRoute(null);
       setRunError(null);
       if (options?.syncRoom !== false) {
-        roomCommandSyncRef.current.submitLocal(commands, before);
+        roomCommandSyncRef.current.submitLocal(
+          repairs.length ? [...commands, ...repairs] : commands,
+          before,
+        );
       }
     },
     [
@@ -135,6 +164,7 @@ export function useWorkbenchAuthoringCommands(
       dispatchAuthoringState,
       localAuthoringBlockedMessageRef,
       localAuthoringEnabledRef,
+      nodeRegistry,
       roomCommandSyncRef,
       setArtifactViewers,
       setPendingConnectionRoute,
