@@ -31,7 +31,7 @@ from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
 from grafy_api.realtime.agent_events import ProjectAgentEvents
 from grafy_api.realtime.hub import ProjectRoomHub
-from grafy_api.realtime.run_events import ProjectRunEvents
+from grafy_api.realtime.run_events import ProjectNodeProgress, ProjectRunEvents
 from grafy_api.runs.service import RunService
 from grafy_api.runs.facts import ApplicationFactsFactory
 from grafy_api.runs.persistence import PersistentResultStore, RepositoryProjectDocuments
@@ -170,6 +170,7 @@ async def build_app_resources(
         tiler_config=settings.tiler,
         upload_config=UploadServiceConfig.from_settings(settings.uploads),
         node_secrets=node_secrets,
+        progress_reporter_factory=lambda: ProjectNodeProgress(project_room_hub),
         egress_policy=workbench_egress_policy(settings.egress),
     )
     digests = RegistryImplementationDigests.from_registry(
