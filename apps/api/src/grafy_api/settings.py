@@ -24,6 +24,7 @@ from grafy_shared.config import (
     EgressConfig,
     ExecutionConfig,
     KeysConfig,
+    ProviderCacheConfig,
     ProviderSecretsConfig,
     RealtimeConfig,
     StorageConfig,
@@ -59,6 +60,7 @@ class Settings(BaseModel):
     keys: KeysConfig = Field(default_factory=KeysConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     providers: ProviderSecretsConfig = Field(default_factory=ProviderSecretsConfig)
+    provider_cache: ProviderCacheConfig = Field(default_factory=ProviderCacheConfig)
     realtime: RealtimeConfig = Field(default_factory=RealtimeConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     tiler: TilerConfig = Field(default_factory=TilerConfig)
