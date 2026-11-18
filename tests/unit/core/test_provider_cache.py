@@ -8,6 +8,7 @@ scheduling accidents.
 import asyncio
 import contextlib
 import logging
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 import gc
 import inspect
@@ -22,6 +23,7 @@ from grafy_core.provider_cache import (
     CacheSpec,
     InMemoryCacheStore,
     ProviderCache,
+    ProviderCacheError,
     ProviderOperationPayloadTooLargeError,
     UnstableRequestError,
     cached_call,
@@ -707,6 +709,104 @@ def test_cached_call_keeps_the_signature_and_reports_what_happened() -> None:
     assert asyncio.run(exercise()) == ["en text of page 3"] * 2 + ["de text of page 3"]
     assert calls == 2
     assert observations == [False, True, False]
+
+
+async def test_a_batch_asks_the_provider_only_for_the_misses() -> None:
+    cache = ProviderCache(InMemoryCacheStore())
+    calls: list[list[int]] = []
+
+    async def compute_one() -> str:
+        return "stored"
+
+    await cache.get_or_compute(WORKSPACE, TEXT_SPEC, {"page": 1}, compute_one)
+    pages = [0, 1, 0, 2]
+
+    async def compute_many(missing: Sequence[int]) -> list[str]:
+        calls.append(list(missing))
+        return [f"page {pages[index]}" for index in missing]
+
+    found = await cache.get_or_compute_many(
+        WORKSPACE,
+        TEXT_SPEC,
+        [{"page": page} for page in pages],
+        compute_many,
+    )
+
+    assert calls == [[0, 3]]
+    assert found == [
+        ("page 0", False),
+        ("stored", True),
+        ("page 0", False),
+        ("page 2", False),
+    ]
+    assert cache.in_flight == 0
+
+    async def explode(missing: Sequence[int]) -> list[str]:
+        raise AssertionError(missing)
+
+    again = await cache.get_or_compute_many(
+        WORKSPACE,
+        TEXT_SPEC,
+        [{"page": 0}, {"page": 1}, {"page": 2}],
+        explode,
+    )
+    assert [hit for _, hit in again] == [True, True, True]
+
+
+async def test_a_failed_batch_stores_nothing() -> None:
+    store = InMemoryCacheStore()
+    cache = ProviderCache(store)
+
+    async def boom(missing: Sequence[int]) -> list[str]:
+        raise RuntimeError("provider down")
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        await cache.get_or_compute_many(
+            WORKSPACE, TEXT_SPEC, [{"page": 1}, {"page": 2}], boom
+        )
+    assert cache.in_flight == 0
+    assert store.entries == 0
+
+    async def short(missing: Sequence[int]) -> list[str]:
+        return ["only"]
+
+    with pytest.raises(ProviderCacheError, match="2 misses"):
+        await cache.get_or_compute_many(
+            WORKSPACE, TEXT_SPEC, [{"page": 1}, {"page": 2}], short
+        )
+    assert store.entries == 0
+
+
+async def test_overlapping_batches_compute_a_shared_key_once() -> None:
+    cache = ProviderCache(InMemoryCacheStore())
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    computed: list[int] = []
+
+    async def run(pages: list[int]) -> list[tuple[str, bool]]:
+        async def slow(missing: Sequence[int]) -> list[str]:
+            computed.extend(pages[index] for index in missing)
+            if pages == [1, 2]:
+                entered.set()
+                await release.wait()
+            return [f"page {pages[index]}" for index in missing]
+
+        return await cache.get_or_compute_many(
+            WORKSPACE, TEXT_SPEC, [{"page": page} for page in pages], slow
+        )
+
+    first = asyncio.create_task(run([1, 2]))
+    await entered.wait()
+    second = asyncio.create_task(run([2, 3]))
+    await _let_tasks_reach_the_lock([second])
+    release.set()
+    first_result, second_result = await asyncio.gather(first, second)
+
+    assert sorted(computed) == [1, 2, 3]
+    assert first_result == [("page 1", False), ("page 2", False)]
+    assert second_result[0] == ("page 2", True)
+    assert second_result[1] == ("page 3", False)
+    assert cache.in_flight == 0
 
 
 async def _let_tasks_reach_the_lock(tasks: list[asyncio.Task[object]]) -> None:

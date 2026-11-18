@@ -294,6 +294,78 @@ class ProviderCache:
         await self._cleanup_if_due()
         return outcome
 
+    async def get_or_compute_many[T](
+        self,
+        workspace: UUID,
+        spec: CacheSpec[T],
+        requests: Sequence[JsonValue],
+        compute: Callable[[Sequence[int]], Awaitable[Sequence[T]]],
+    ) -> list[tuple[T, bool]]:
+        """The answer for each request, and whether that request skipped ``compute``.
+
+        ``compute`` receives the indexes of the misses, in request order. A key
+        that appears twice is listed once, at its first index, and both positions
+        share that answer. One call covers every miss. Hits are left out of it.
+
+        Locks are taken in key order. Locks for hits are released before
+        ``compute`` runs, so a stored answer does not wait on the provider call
+        for a neighbouring miss. Each miss keeps its lock until its answer is
+        written, which is what makes a second batch wait and then read that
+        answer instead of calling the provider again.
+        """
+
+        if not requests:
+            return []
+        keys = [spec.key(request) for request in requests]
+        unique: list[str] = list(dict.fromkeys(keys))
+        gates: dict[str, _Gate] = {}
+        coalesced: dict[str, bool] = {}
+        for key in unique:
+            gate = self._gates.setdefault((workspace, key), _Gate())
+            coalesced[key] = gate.holders > 0
+            gate.holders += 1
+            gates[key] = gate
+
+        acquired: list[str] = []
+        released: set[str] = set()
+        resolved: dict[str, tuple[T, bool]] = {}
+        try:
+            for key in sorted(unique):
+                await gates[key].lock.acquire()
+                acquired.append(key)
+            missing = await self._collect_misses(
+                workspace, spec, keys, coalesced, resolved
+            )
+            miss_keys = {keys[index] for index in missing}
+            for key in acquired:
+                if key in miss_keys:
+                    continue
+                gates[key].lock.release()
+                released.add(key)
+            if missing:
+                computed = await compute(missing)
+                if len(computed) != len(missing):
+                    raise ProviderCacheError(
+                        f"Batch compute returned {len(computed)} answers for "
+                        f"{len(missing)} misses"
+                    )
+                for index, result in zip(missing, computed, strict=True):
+                    resolved[keys[index]] = await self._remember(
+                        workspace, spec, keys[index], result
+                    )
+        finally:
+            for key in acquired:
+                if key in released:
+                    continue
+                gates[key].lock.release()
+            for key in unique:
+                gate = gates[key]
+                gate.holders -= 1
+                if gate.holders == 0 and self._gates.get((workspace, key)) is gate:
+                    del self._gates[(workspace, key)]
+        await self._cleanup_if_due()
+        return [resolved[key] for key in keys]
+
     async def _coalesced[T](
         self,
         workspace: UUID,
@@ -390,6 +462,98 @@ class ProviderCache:
         # Another process stored an answer for this key first. Its bytes are the
         # persisted state, so they are what this call returns; this call still ran
         # its provider, so it is not reported as a hit.
+        try:
+            return spec.codec.validate_json(winner), False
+        except ValidationError as exc:
+            logger.warning(
+                "provider_cache_competing_payload_unreadable workspace=%s key=%s error=%s",
+                workspace,
+                key,
+                type(exc).__name__,
+            )
+            return result, False
+
+    async def _collect_misses[T](
+        self,
+        workspace: UUID,
+        spec: CacheSpec[T],
+        keys: Sequence[str],
+        coalesced: dict[str, bool],
+        resolved: dict[str, tuple[T, bool]],
+    ) -> list[int]:
+        """Indexes of the first occurrence of each key that is not stored."""
+
+        missing: list[int] = []
+        seen: set[str] = set()
+        for index, key in enumerate(keys):
+            if key in seen:
+                continue
+            seen.add(key)
+            found = await self._cached_answer(
+                workspace, spec, key, coalesced=coalesced[key]
+            )
+            if found is None:
+                missing.append(index)
+                continue
+            resolved[key] = found
+        return missing
+
+    async def _cached_answer[T](
+        self,
+        workspace: UUID,
+        spec: CacheSpec[T],
+        key: str,
+        *,
+        coalesced: bool,
+    ) -> tuple[T, bool] | None:
+        """A stored answer, or None when this key has to be computed."""
+
+        stored = await self._read(workspace, key)
+        if stored is not None:
+            try:
+                answer = spec.codec.validate_json(stored)
+            except ValidationError as exc:
+                logger.warning(
+                    "provider_cache_payload_unreadable workspace=%s key=%s error=%s",
+                    workspace,
+                    key,
+                    type(exc).__name__,
+                )
+                await self._retire(workspace, key, spec)
+            else:
+                logger.debug(
+                    "provider_cache_hit workspace=%s operation=%s key=%s coalesced=%s",
+                    workspace,
+                    spec.operation,
+                    key,
+                    coalesced,
+                )
+                return answer, True
+        logger.debug(
+            "provider_cache_miss workspace=%s operation=%s key=%s",
+            workspace,
+            spec.operation,
+            key,
+        )
+        return None
+
+    async def _remember[T](
+        self,
+        workspace: UUID,
+        spec: CacheSpec[T],
+        key: str,
+        result: T,
+    ) -> tuple[T, bool]:
+        """Store one computed answer and report that this call did not skip it."""
+
+        payload = self._encode(spec, workspace, key, result)
+        if payload is None:
+            return result, False
+        winner = await self._write(
+            workspace, key, payload, ttl_seconds=spec.ttl_seconds
+        )
+        if winner is None or winner == payload:
+            return result, False
         try:
             return spec.codec.validate_json(winner), False
         except ValidationError as exc:
