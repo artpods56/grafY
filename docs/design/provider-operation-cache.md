@@ -267,13 +267,35 @@ whose pixels differ. A provider whose response carries a model id should fold th
 into `revision` rather than into the request: it describes who answered, not what was
 asked.
 
-### Progress
+### Progress and logs
 
 `observe_hit` is where a per-item marker lands when the canvas wants one. It is
 called once per operation with whether the work was skipped, from the operation's own
-task, so a progress reporter can attribute it to the running item. Nothing reads it
-today and nothing in the web changes until someone decides what a cache hit is worth
-showing.
+task, so a progress reporter can attribute it to the running item. Nothing in the web
+reads it today and nothing will change until someone decides what a cache hit is
+worth showing.
+
+At `DEBUG`, `grafy_core.provider_cache` says which way each call went:
+
+```
+provider_cache_miss workspace=<uuid> operation=tiff.window_boxes key=<sha256>
+provider_cache_hit  workspace=<uuid> operation=tiff.window_boxes key=<sha256> coalesced=false
+```
+
+`coalesced=true` marks the caller that waited on another call's provider request
+rather than reading a stored row — the two are one boolean to the caller because the
+answer they got is the same, and the log is where the difference is still there.
+Faults are logged at `WARNING` (`provider_cache_read_failed`,
+`provider_cache_write_failed`, `provider_cache_payload_unreadable`,
+`provider_cache_cleanup_failed`), which is what a deployment without `DEBUG` sees,
+and those lines are enough to tell a cache that is off from one that is silently
+failing.
+
+The key is a digest and the request never enters a log line. That is deliberate: a
+request names a document, a page and a rectangle, and a node's own progress message
+is the place an operator who is allowed to see that graph can read it. A hit counter
+belongs in the node's progress line (`report_progress`) for the same reason — the
+cache has no business naming what it was asked about.
 
 ## Deliberately out of scope
 

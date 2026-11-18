@@ -7,6 +7,7 @@ scheduling accidents.
 
 import asyncio
 import contextlib
+import logging
 from datetime import UTC, datetime, timedelta
 import gc
 import inspect
@@ -500,6 +501,73 @@ async def test_a_payload_the_codec_refuses_is_dropped_not_raised() -> None:
         True,
     )
     assert calls == 1
+
+
+async def test_hits_and_misses_are_visible_in_the_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A deployment needs to tell a working cache from an absent one.
+
+    The line carries the operation and the key rather than the request, because the
+    request is what may name a document; the key is already a digest of it.
+    """
+
+    cache = ProviderCache(InMemoryCacheStore())
+    calls = 0
+
+    async def read() -> str:
+        nonlocal calls
+        calls += 1
+        return "text"
+
+    with caplog.at_level(logging.DEBUG, logger="grafy_core.provider_cache"):
+        await cache.get_or_compute(WORKSPACE, TEXT_SPEC, {"page": 7}, read)
+        await cache.get_or_compute(WORKSPACE, TEXT_SPEC, {"page": 7}, read)
+
+    lines = [record.getMessage() for record in caplog.records]
+    miss = next(line for line in lines if "provider_cache_miss" in line)
+    hit = next(line for line in lines if "provider_cache_hit" in line)
+    assert f"operation={TEXT_SPEC.operation}" in miss
+    assert "coalesced=False" in hit
+    assert calls == 1
+
+    # A request value never reaches the log, only its digest.
+    secret_request: JsonValue = {
+        "page": 7,
+        "document_title": "scan of the sealed annex",
+    }
+    await cache.get_or_compute(WORKSPACE, TEXT_SPEC, secret_request, read)
+    assert "sealed annex" not in caplog.text
+
+
+async def test_a_caller_that_waited_on_another_is_logged_as_coalesced(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cache = ProviderCache(InMemoryCacheStore())
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_read() -> str:
+        entered.set()
+        await release.wait()
+        return "one answer"
+
+    leader = asyncio.create_task(
+        cache.get_or_compute(WORKSPACE, TEXT_SPEC, {"page": 1}, slow_read)
+    )
+    await entered.wait()
+    with caplog.at_level(logging.DEBUG, logger="grafy_core.provider_cache"):
+        waiter = asyncio.create_task(
+            cache.get_or_compute(WORKSPACE, TEXT_SPEC, {"page": 1}, slow_read)
+        )
+        await _let_tasks_reach_the_lock([waiter])
+        release.set()
+        assert await leader == ("one answer", False)
+        assert await waiter == ("one answer", True)
+
+    lines = [record.getMessage() for record in caplog.records]
+    hit = next(line for line in lines if "provider_cache_hit" in line)
+    assert "coalesced=True" in hit
 
 
 async def test_a_cache_that_cannot_read_is_a_cache_that_was_not_there() -> None:

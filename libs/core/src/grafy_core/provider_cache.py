@@ -302,13 +302,19 @@ class ProviderCache:
         compute: Callable[[], Awaitable[T]],
     ) -> tuple[T, bool]:
         gate = self._gates.setdefault((workspace, key), _Gate())
+        # Who else had this key claimed when this caller arrived. Only the log line
+        # uses it: a caller that waited and found the leader's write is a hit like
+        # any other, and the answer it got does not depend on who asked first.
+        coalesced = gate.holders > 0
         # Registered before anything is awaited and released in a finally, so an
         # entry cannot outlive the calls that made it — including a cancellation
         # that lands while this caller is queued behind another's provider call.
         gate.holders += 1
         try:
             async with gate.lock:
-                return await self._under_lock(workspace, spec, key, compute)
+                return await self._under_lock(
+                    workspace, spec, key, compute, coalesced=coalesced
+                )
         finally:
             gate.holders -= 1
             if gate.holders == 0 and self._gates.get((workspace, key)) is gate:
@@ -339,11 +345,13 @@ class ProviderCache:
         spec: CacheSpec[T],
         key: str,
         compute: Callable[[], Awaitable[T]],
+        *,
+        coalesced: bool,
     ) -> tuple[T, bool]:
         stored = await self._read(workspace, key)
         if stored is not None:
             try:
-                return spec.codec.validate_json(stored), True
+                answer = spec.codec.validate_json(stored)
             except ValidationError as exc:
                 # A payload this codec cannot read is not this answer: retire the
                 # row, then compute. It is never a node failure.
@@ -354,7 +362,22 @@ class ProviderCache:
                     type(exc).__name__,
                 )
                 await self._retire(workspace, key, spec)
+            else:
+                logger.debug(
+                    "provider_cache_hit workspace=%s operation=%s key=%s coalesced=%s",
+                    workspace,
+                    spec.operation,
+                    key,
+                    coalesced,
+                )
+                return answer, True
 
+        logger.debug(
+            "provider_cache_miss workspace=%s operation=%s key=%s",
+            workspace,
+            spec.operation,
+            key,
+        )
         result = await compute()
         payload = self._encode(spec, workspace, key, result)
         if payload is None:
