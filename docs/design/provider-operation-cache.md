@@ -193,11 +193,11 @@ sit under a window of a page, reading the page lazily. The key it needs:
 
 ```python
 {
-    "tiff_sha256": <content digest of the file artifact>,   # not the artifact id
-    "page": page,
-    "bounds": [x0, y0, x1, y1],                             # page pixels, see below
-    "preprocessing": "<pixel transform version>",           # window-png@1
-    "detect": {**effective_detection_settings},             # sizes, thresholds, merge
+    "source_sha256": page.source_sha256,   # content digest, not the artifact id
+    "page": page.page,
+    "window": [col, row, width, height],   # page-anchored tile, see below
+    "png": "window-png@1",                 # bump when the read or encode changes
+    "detect": {"core_edge": 600, "context": 200},
 }
 ```
 
@@ -253,19 +253,23 @@ sent plus what the recognizer was told:
 ```python
 {
     "crop_sha256": sha256(prepared_crop_bytes),   # exact bytes after preprocessing
-    "preprocessing": "<normalisation version>",
-    "language": language,
-    **effective_recognition_options,
+    "recognizer": <model id>,
+    "preprocessing": "label-crop@1",
+    "options": {},                                # what the recognizer was actually sent
 }
 ```
 
+The node looks up a group of prepared crops together. Stored crops come back from
+the cache. The misses go to the recognizer in one call, and each answer is stored
+under its own key. A repeated crop is one of those keys, so it does not add a second
+provider call. The model id is the spec's revision, and the request names it as well
+so two recognizers cannot share one answer.
+
 Digest the prepared bytes, not the source region: two polygons on two different pages
 of two different files that cut to identical pixels are the same call, and that is a
-feature — the recognizer never saw the file. The digest must be of the *bytes sent*,
+feature. The recognizer never saw the file. The digest must be of the bytes sent,
 taken after any resize or normalisation, or the key will claim reuse for two requests
-whose pixels differ. A provider whose response carries a model id should fold that id
-into `revision` rather than into the request: it describes who answered, not what was
-asked.
+whose pixels differ.
 
 ### Progress and logs
 

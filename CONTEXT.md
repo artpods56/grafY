@@ -567,6 +567,15 @@ planner never schedules it; changing its config or key still enters the
 consumer's fingerprint through `upstream_fingerprints`.
 _Avoid_: capability node, OCR vendor node as a synonym for every provider
 
+### TIFF text regions
+
+A result on one page of a stored TIFF. It records the native window that was
+read and the detected polygons in full-resolution source page pixels, with the
+top-left as the origin. A text detector takes the window PNG and returns
+window-relative polygons, optionally with readings. The detection node places
+them in source pixels before persistence. The result references the exact
+Workspace artifact so its card can overlay the polygons on that page as it zooms.
+
 ### OCR node
 
 The app-owned builtin that takes a `RasterImage | PdfFile` document and an

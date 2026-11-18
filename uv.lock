@@ -697,13 +697,19 @@ version = "0.1.0"
 source = { editable = "libs/workbench" }
 dependencies = [
     { name = "grafy-core" },
+    { name = "httpx" },
+    { name = "pillow" },
     { name = "pydantic" },
+    { name = "shapely" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "grafy-core", editable = "libs/core" },
+    { name = "httpx" },
+    { name = "pillow" },
     { name = "pydantic" },
+    { name = "shapely", specifier = ">=2.1.0" },
 ]
 
 [[package]]

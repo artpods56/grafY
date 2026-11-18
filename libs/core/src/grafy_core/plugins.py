@@ -28,6 +28,8 @@ from grafy_core.runtime.artifact_values import Artifact, ArtifactValues
 from grafy_core.declared_values import note_declaration
 from grafy_core.callable_nodes import callable_node_class
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.provider_cache import ProviderCache
+from grafy_core.text_regions import TiffPageOpener
 from grafy_core.nodes import (
     ArtifactTypeContract,
     ArtifactTypeVariable,
@@ -76,6 +78,9 @@ class PluginRuntimeContext:
         default_factory=UnavailableNodeSecretResolver
     )
     values: ArtifactValues | None = None
+    open_tiff_page: TiffPageOpener | None = None
+    provider_cache: ProviderCache | None = None
+    provider_cache_ttl_seconds: int = 30 * 24 * 60 * 60
 
 
 @dataclass(frozen=True, slots=True)
