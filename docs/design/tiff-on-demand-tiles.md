@@ -53,8 +53,8 @@ HMAC-SHA256 signature.
   another host.
 - `n` is bounded by `TILER_MAX_SOURCE_BYTES`. In `local` mode the stored size
   must also equal `n` (409). In `s3` mode GDAL's `/vsis3/` offers no stat, so
-  the SHA-256 in the grant, which is part of every cache key, is what ties
-  cached output to the bytes.
+  reads rely on the stored object key remaining bound to the artifact. The
+  SHA-256 in the grant ties cached display output to that identity.
 - Credentials are a dedicated MinIO account allowed `s3:GetObject` on the one
   bucket, nothing else.
 - `TILER_STORAGE=local` reads `<TILER_LOCAL_ROOT>/<bucket>/<key>` for native
