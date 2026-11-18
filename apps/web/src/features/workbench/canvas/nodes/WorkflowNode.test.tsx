@@ -1412,7 +1412,7 @@ describe("WorkflowNode execution progress", () => {
       );
     });
     expect(xyflowMocks.updateNodeInternals).not.toHaveBeenCalled();
-    expect(appendix?.textContent).toContain("branch-c · item 2 · Completed");
+    expect(appendix?.textContent).toContain("Completed · branch-c · item 2");
     expect(appendix?.textContent).not.toContain("Preparing the payload");
 
     const discloseEarlierEvents = appendix?.querySelector<HTMLButtonElement>(
@@ -1429,9 +1429,9 @@ describe("WorkflowNode execution progress", () => {
         (event) => event.textContent,
       ),
     ).toEqual([
-      "branch-a › inner-1 · items 3 › 2 · <script>Preparing the payload</script> · 2 / 5",
-      "branch-b · item 1 · Uploading",
-      "Remote WMS map layer · Queued",
+      "2 / 5 · 3 left · <script>Preparing the payload</script> · branch-a › inner-1 · items 3 › 2",
+      "Uploading · branch-b · item 1",
+      "Queued · Remote WMS map layer",
     ]);
     expect(earlierEvents?.querySelector("script")).toBeNull();
     React.act(() => root.unmount());

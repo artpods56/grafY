@@ -493,6 +493,44 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("keeps ordered, project-scoped progress and starts a fresh history each computation", async () => {
+  const { room, push } = await openRoom();
+  const instance = instanceKey(GRAPH_ID, "detect");
+  const event = {
+    protocol_version: 1,
+    type: "node.progress",
+    instance,
+    fingerprint: "scan-fingerprint",
+    computation_id: "first-scan",
+    sequence: 1,
+    message: "Scanning TIFF windows",
+    current: 0,
+    total: 12,
+    invocation_path: [],
+  };
+  await push(event);
+  await push({ ...event, sequence: 3, current: 2 });
+  await push({ ...event, sequence: 2, current: 1 });
+  await push({
+    ...event,
+    sequence: 4,
+    current: 9,
+    instance: { ...instance, project_id: "different-project" },
+  });
+  const key = instanceKeyText(instance);
+  const history = room().nodeProgress.get(key);
+  expect(history?.entries.map(({ current }) => current)).toEqual([2, 0]);
+  expect(history?.omittedCount).toBe(1);
+
+  await push({ ...event, computation_id: "second-scan" });
+  expect(
+    room()
+      .nodeProgress.get(key)
+      ?.entries.map(({ current }) => current),
+  ).toEqual([0]);
+  expect(room().nodeProgress.get(key)?.omittedCount).toBe(0);
+});
+
 describe("useProjectRoomSession instances", () => {
   it("keeps the instances an `instances.changed` delta did not name", async () => {
     const openFresh = instanceState(GRAPH_ID, "n1", "fresh");

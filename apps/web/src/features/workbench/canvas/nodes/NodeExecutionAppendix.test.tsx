@@ -252,6 +252,7 @@ describe("NodeExecutionAppendix", () => {
     });
 
     expect(container.textContent).toContain("reading pages");
+    expect(container.textContent).toContain("2 / 5 · 3 left");
     expect(container.textContent).toContain("Extract invoice");
   });
 

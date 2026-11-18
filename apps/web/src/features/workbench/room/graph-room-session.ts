@@ -26,6 +26,7 @@ import {
   type ProjectRoomRecoveryReason,
   type ProjectRoomTerminalReason,
   type InstancesChangedMessage,
+  type NodeProgressMessage,
   type PresenceParticipant,
   type PresenceUpdateSubmit,
   type RoomInstanceState,
@@ -70,6 +71,7 @@ const KNOWN_SERVER_MESSAGE_TYPES = new Set([
   "run.started",
   "run.finished",
   "instances.changed",
+  "node.progress",
   "project.command.accepted",
   "project.command.receipt",
   "project.command.rejected",
@@ -105,6 +107,7 @@ export interface ProjectRoomSessionListeners {
   onActiveRunsChange?: (runs: readonly ActiveRunSummary[]) => void;
   /** Derived state deltas for node instances, with the keys that disappeared. */
   onInstancesChange?: (message: InstancesChangedMessage) => void;
+  onNodeProgress?: (message: NodeProgressMessage) => void;
   /** A Run left the active list; its results live on the instances. */
   onRunFinished?: (message: RunFinishedMessage) => void;
   onAuthorizationVersionChange?: (authorizationVersion: number) => void;
@@ -178,6 +181,7 @@ export class ProjectRoomSession {
       onPresenceChange: options.onPresenceChange,
       onActiveRunsChange: options.onActiveRunsChange,
       onInstancesChange: options.onInstancesChange,
+      onNodeProgress: options.onNodeProgress,
       onRunFinished: options.onRunFinished,
       onAuthorizationVersionChange: options.onAuthorizationVersionChange,
       onFailureChange: options.onFailureChange,
@@ -623,6 +627,12 @@ export class ProjectRoomSession {
       this.activeRuns.delete(message.run_id);
       this.emitActiveRunsChange();
       this.listeners.onRunFinished?.(message);
+      return;
+    }
+    if (message.type === "node.progress") {
+      if (message.instance.project_id === this.projectId) {
+        this.listeners.onNodeProgress?.(message);
+      }
       return;
     }
     if (message.type === "instances.changed") {

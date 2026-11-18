@@ -4207,14 +4207,45 @@ function WorkbenchBody({
     const cardSourceNodeIds = new Set(
       activeArtifactViewers.edges.map((edge) => edge.source),
     );
+    const callPath = callTrail.map((entry) => entry.nodeId);
     return nodes.map((node) => {
       const savedNode = activeGraph?.nodes.find(
         (candidate) => candidate.id === node.id,
       );
+      const instance = nodeInstanceStates[node.id];
+      const history =
+        projectId && openGraphId
+          ? projectRoom.nodeProgress.get(
+              instanceKeyText({
+                project_id: projectId,
+                graph_id: openGraphId,
+                call_path: callPath,
+                node_id: node.id,
+                map_index: null,
+              }),
+            )
+          : undefined;
+      const progress =
+        history &&
+        (!instance || history.entries[0]?.fingerprint === instance.fingerprint)
+          ? {
+              omittedCount: history.omittedCount,
+              entries: history.entries.map((event) => ({
+                sequence: event.sequence,
+                message: event.message,
+                current: event.current,
+                total: event.total,
+                sourceNodePath: [],
+                invocationIndex: event.invocation_path.at(-1) ?? null,
+                invocationPath: event.invocation_path,
+              })),
+            }
+          : null;
       return {
         ...node,
         data: {
           ...attachNodeCallbacks(node.data),
+          progress,
           onRunNode:
             canStartRun &&
             projectEditsTrusted &&
@@ -4300,6 +4331,7 @@ function WorkbenchBody({
     applyConfiguredNodeSecret,
     attachNodeCallbacks,
     authoredDocument.origins,
+    callTrail,
     canStartRun,
     edges,
     isDirty,
@@ -4308,6 +4340,8 @@ function WorkbenchBody({
     nodeSecretStatuses,
     nodes,
     openGraphId,
+    projectId,
+    projectRoom.nodeProgress,
     projectEditsTrusted,
     registry?.artifact_conversions,
     registry?.artifact_types,
