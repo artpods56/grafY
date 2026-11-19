@@ -25,6 +25,9 @@ EXPECTED_BUILTIN_OPERATORS = {
     ("ocr.paddle_cyrillic_provider", 1),
     ("ocr.recognize_tiff_text", 1),
     ("ocr.georeference_places", 1),
+    ("ocr.filter_tiff_jev", 1),
+    ("ocr.export_label_studio", 1),
+    ("ocr.import_label_studio", 1),
 }
 
 
