@@ -13,6 +13,7 @@ from grafy_shared.config.auth import AuthConfig
 from grafy_shared.config.egress import EgressConfig
 from grafy_shared.config.execution import ExecutionConfig
 from grafy_shared.config.keys import KeysConfig
+from grafy_shared.config.provider_cache import ProviderCacheConfig
 from grafy_shared.config.providers import ProviderSecretsConfig
 from grafy_shared.config.realtime import RealtimeConfig
 from grafy_shared.config.storage import StorageConfig
@@ -27,6 +28,7 @@ __all__ = [
     "EgressConfig",
     "ExecutionConfig",
     "KeysConfig",
+    "ProviderCacheConfig",
     "ProviderSecretsConfig",
     "RealtimeConfig",
     "StorageConfig",

@@ -94,12 +94,18 @@ def _headers(grant: Grant) -> dict[str, str]:
     return {"X-Grafy-Grant": grant.sign_grant(SIGNING_KEY.encode())}
 
 
-async def test_tiles_and_thumbnails_are_read_through_vsis3(
+async def test_display_and_native_windows_read_through_vsis3(
     s3_client: httpx.AsyncClient,
     uploaded: Callable[[Path, str], Grant],
     rgb_tiled_with_overviews: Writer,
 ) -> None:
     grant = uploaded(rgb_tiled_with_overviews(), "ws-1/artifacts/ab/scan.tif")
+    crop = await s3_client.get(
+        "/window?col=300&row=71&width=1&height=1", headers=_headers(grant)
+    )
+    assert crop.status_code == 200, crop.text
+    assert Image.open(io.BytesIO(crop.content)).getpixel((0, 0)) == (200, 51, 40)
+
     info = await s3_client.get("/info", headers=_headers(grant))
     assert info.status_code == 200, info.text
     assert (info.json()["width"], info.json()["overview_count"]) == (1500, 3)
@@ -121,6 +127,13 @@ async def test_a_later_page_of_a_multipage_tiff_is_read_through_vsis3(
     second = replace(grant, page=1)
     response = await s3_client.get("/info", headers=_headers(second))
     assert (response.status_code, response.json()["width"]) == (200, 400)
+    crop = await s3_client.get(
+        "/window?col=399&row=239&width=1&height=1", headers=_headers(second)
+    )
+    assert crop.status_code == 200, crop.text
+    image = Image.open(io.BytesIO(crop.content))
+    assert image.size == (1, 1)
+    assert image.getpixel((0, 0)) == (0, 255, 0)
 
 
 async def test_a_missing_object_is_unprocessable_not_a_crash(

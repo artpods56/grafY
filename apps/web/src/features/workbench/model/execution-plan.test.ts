@@ -33,6 +33,7 @@ function port(
   const shape = options.shape ?? "one";
   return {
     name,
+    kind: "artifact",
     title: "title" in options ? options.title : name,
     description: null,
     direction,
@@ -500,6 +501,61 @@ describe("execution validation", () => {
 });
 
 describe("run targets", () => {
+  it("explains a provider-only selection instead of submitting an empty target list", () => {
+    const reader: Port = {
+      ...port("reader", "output"),
+      kind: "service",
+      artifact_type: null,
+      service_contracts: [{ id: "ocr.reader", version: 1 }],
+    };
+    const provider = workflowNode(
+      "mistral",
+      nodeSpec("mistral.ocr.provider", [], [reader]),
+    );
+    expect(executionValidationIssue("selected", [provider], [])).toEqual({
+      nodeId: null,
+      message:
+        "Select a processing step to run. Providers run through the steps connected to them.",
+    });
+    expect(
+      runTargetsFor({
+        nodes: [provider],
+        edges: [],
+        nodeIds: new Set([provider.id]),
+      }),
+    ).toEqual([]);
+  });
+
+  it.each(["all", "selected-with-dependencies", "selected"] as const)(
+    "runs OCR without targeting its service provider for %s",
+    (scope) => {
+      const reader: Port = {
+        ...port("reader", "output"),
+        kind: "service",
+        artifact_type: null,
+        service_contracts: [{ id: "ocr.reader", version: 1 }],
+      };
+      const provider = workflowNode(
+        "mistral",
+        nodeSpec("mistral.ocr.provider", [], [reader]),
+        { selected: true },
+      );
+      const ocr = workflowNode(
+        "ocr",
+        nodeSpec("ocr.read", [{ ...reader, direction: "input" }]),
+        { selected: true },
+      );
+      const execution = executionSubgraphFor(
+        scope,
+        [provider, ocr],
+        [workflowEdge("mistral", "ocr")],
+      );
+      expect(runTargetsFor(execution)).toEqual([
+        { node_id: "ocr", call_path: [] },
+      ]);
+    },
+  );
+
   it("names every node of the Graph when the whole Graph is run", () => {
     const source = workflowNode("source");
     const target = workflowNode("target", nodeSpec("target"));

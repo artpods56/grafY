@@ -22,6 +22,7 @@ import { ProjectRoomPresenceStore } from "./presence-store";
 import { instanceKeyText } from "./protocol";
 import type {
   InstancesChangedMessage,
+  NodeProgressMessage,
   ProjectCommandAcceptedMessage,
   ProjectCommandRejectedMessage,
   RoomReadyMessage,
@@ -37,6 +38,15 @@ export interface ProjectRoomSubmitResult {
   >["accepted"];
   readonly head: CollaborativeHead;
 }
+
+interface NodeProgressHistory {
+  readonly entries: readonly NodeProgressMessage[];
+  readonly omittedCount: number;
+}
+
+const MAX_PROGRESS_ENTRIES = 20;
+const MAX_PROGRESS_NODES = 128;
+const EMPTY_PROGRESS: ReadonlyMap<string, NodeProgressHistory> = new Map();
 
 export interface UseProjectRoomSessionResult {
   readonly status: ProjectRoomStatus;
@@ -65,6 +75,7 @@ export interface UseProjectRoomSessionResult {
   readonly instances: ReadonlyMap<string, RoomInstanceState>;
   /** Bumped on `instances.changed`, the room's only signal that a result landed. */
   readonly instancesRevision: number;
+  readonly nodeProgress: ReadonlyMap<string, NodeProgressHistory>;
   readonly submitCommands: (
     commands: readonly RoomProjectCommand[],
   ) => Promise<ProjectRoomSubmitResult>;
@@ -134,6 +145,7 @@ export function useProjectRoomSession({
   );
   const [activeRuns, setActiveRunsState] =
     React.useState<readonly ActiveRunSummary[]>(EMPTY_RUNS);
+  const [nodeProgress, setNodeProgress] = React.useState(EMPTY_PROGRESS);
   const [instances, setInstancesState] =
     React.useState<ReadonlyMap<string, RoomInstanceState>>(EMPTY_INSTANCES);
   /**
@@ -217,6 +229,7 @@ export function useProjectRoomSession({
         setAuthorizationVersion(null);
         setActiveRuns(EMPTY_RUNS);
         setInstances(EMPTY_INSTANCES);
+        setNodeProgress(EMPTY_PROGRESS);
         setLocalSessionId(null);
       },
       onReady: (ready) => {
@@ -232,6 +245,7 @@ export function useProjectRoomSession({
       },
       onRehydrate: (nextHead) => {
         setHead(nextHead);
+        setNodeProgress(EMPTY_PROGRESS);
         onRehydrateRef.current?.(nextHead);
       },
       onHeadRefreshRequired: () => {
@@ -254,6 +268,7 @@ export function useProjectRoomSession({
         setAuthorizationVersion(null);
         setActiveRuns(EMPTY_RUNS);
         setInstances(EMPTY_INSTANCES);
+        setNodeProgress(EMPTY_PROGRESS);
         setLocalSessionId(null);
       },
       onActiveRunsChange: (runs) => {
@@ -263,6 +278,34 @@ export function useProjectRoomSession({
       onRunFinished: (message) => {
         setActiveRuns(session.getActiveRuns());
         onRunFinishedRef.current?.(message);
+      },
+      onNodeProgress: (event) => {
+        setNodeProgress((current) => {
+          const key = instanceKeyText(event.instance);
+          const history = current.get(key);
+          const latest = history?.entries[0];
+          const sameComputation =
+            latest?.computation_id === event.computation_id;
+          if (sameComputation && latest.sequence >= event.sequence)
+            return current;
+          const entries = [
+            event,
+            ...(sameComputation
+              ? (history?.entries ?? []).slice(0, MAX_PROGRESS_ENTRIES - 1)
+              : []),
+          ];
+          const next = new Map(current);
+          next.delete(key);
+          next.set(key, {
+            entries,
+            omittedCount: event.sequence - entries.length,
+          });
+          if (next.size > MAX_PROGRESS_NODES) {
+            const oldest = next.keys().next();
+            if (!oldest.done) next.delete(oldest.value);
+          }
+          return next;
+        });
       },
       onInstancesChange: (message) => {
         // `changed` is a delta and `removed` was already applied inside the
@@ -278,6 +321,7 @@ export function useProjectRoomSession({
         setAuthorizationVersion(null);
         setActiveRuns(EMPTY_RUNS);
         setInstances(EMPTY_INSTANCES);
+        setNodeProgress(EMPTY_PROGRESS);
         setLocalSessionId(null);
         onTerminalCloseRef.current?.(reason);
       },
@@ -411,6 +455,7 @@ export function useProjectRoomSession({
     instances: currentInstances,
     runsRevision,
     instancesRevision,
+    nodeProgress: stateIsCurrent ? nodeProgress : EMPTY_PROGRESS,
     submitCommands,
     replaceHead,
     reconcileCheckpointHead,

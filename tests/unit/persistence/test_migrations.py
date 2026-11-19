@@ -42,6 +42,7 @@ BASELINE_TABLES = {
     "project_heads",
     "project_organizations",
     "projects",
+    "provider_operations",
     "security_audit_events",
     "uploads",
     "user_project_states",

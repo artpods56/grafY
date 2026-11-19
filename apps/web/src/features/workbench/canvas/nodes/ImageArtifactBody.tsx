@@ -1,6 +1,7 @@
 import type * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { TiffArtifactView } from "./TiffArtifactView";
+import type { TiffWindowSelection } from "./TiffWindowSelector";
 import { ImageOff } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
@@ -117,6 +118,7 @@ export function ImageArtifactBody({
   tier,
   remoteSelectionColor,
   frontIndex = 0,
+  tiffWindow,
   overlay,
   onSize,
   onError,
@@ -136,6 +138,7 @@ export function ImageArtifactBody({
   remoteSelectionColor?: string | null;
   /** The image at the front of a sequence; `images` keep their own order. */
   frontIndex?: number;
+  tiffWindow?: { artifactId: string; selection: TiffWindowSelection };
   /** Drawn over the front image, e.g. its pager. */
   overlay?: React.ReactNode;
   onSize: (id: string, width: number, height: number) => void;
@@ -172,6 +175,12 @@ export function ImageArtifactBody({
           workspaceId={workspaceId}
           artifactId={image.id}
           name={image.name}
+          onSize={(width, height) => onSize(image.id, width, height)}
+          selection={
+            tiffWindow?.artifactId === image.id
+              ? tiffWindow.selection
+              : undefined
+          }
         />
       ) : image.failed ? (
         <div {...stylex.props(s.unavailable)}>

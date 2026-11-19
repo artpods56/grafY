@@ -1,6 +1,6 @@
 import io
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from dataclasses import replace
 
 import httpx
@@ -12,31 +12,7 @@ from PIL import Image
 from grafy_tiler.app import create_app
 from grafy_tiler.service import Overloaded, TileService
 from grafy_tiler.settings import Settings
-from tests.conftest import BUCKET, SIGNING_KEY, Writer
-
-GRANT_HEADER = "X-Grafy-Grant"
-
-
-@pytest.fixture
-async def client(settings: Settings) -> AsyncIterator[httpx.AsyncClient]:
-    app = create_app(settings)
-    async with app.router.lifespan_context(app):
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://tiler"
-        ) as http:
-            yield http
-
-
-@pytest.fixture
-def auth(
-    grant_for: Callable[..., Grant], token_for: Callable[[Grant], str]
-) -> Callable[..., dict[str, str]]:
-    def headers(name: str, **changes: object) -> dict[str, str]:
-        grant = replace(grant_for(name), **changes)  # pyright: ignore[reportArgumentType]
-        return {GRANT_HEADER: token_for(grant)}
-
-    return headers
+from tests.conftest import BUCKET, GRANT_HEADER, SIGNING_KEY, Writer
 
 
 def _image(response: httpx.Response) -> Image.Image:
@@ -125,7 +101,15 @@ async def test_pages_are_selected_by_the_grant(
     assert (await client.get("/info", headers=auth(name, page=5))).status_code == 404
 
 
-@pytest.mark.parametrize("path", ["/info", "/tiles/11/0/0.jpg", "/thumbnail"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/info",
+        "/tiles/11/0/0.jpg",
+        "/thumbnail",
+        "/window?col=0&row=0&width=4&height=4",
+    ],
+)
 async def test_every_data_route_demands_a_grant(
     client: httpx.AsyncClient, path: str
 ) -> None:
@@ -194,7 +178,7 @@ async def test_no_route_accepts_a_url_path_or_bucket(settings: Settings) -> None
     """The SSRF guard: the only things a caller can vary are tile coordinates,
     a thumbnail size, and the signed grant header."""
     app = create_app(settings)  # inspected, never started
-    allowed = {"z", "x", "y", "extension", "edge"}
+    allowed = {"z", "x", "y", "extension", "edge", "col", "row", "width", "height"}
     for route in app.routes:
         if not isinstance(route, APIRoute):
             continue

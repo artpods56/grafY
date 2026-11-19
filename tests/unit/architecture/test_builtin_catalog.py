@@ -20,6 +20,11 @@ EXPECTED_BUILTIN_OPERATORS = {
     ("text.input", 1),
     ("schema.builder", 1),
     ("ocr.read", 1),
+    ("ocr.detect_tiff_text", 1),
+    ("ocr.craft_provider", 1),
+    ("ocr.paddle_cyrillic_provider", 1),
+    ("ocr.recognize_tiff_text", 1),
+    ("ocr.georeference_places", 1),
 }
 
 

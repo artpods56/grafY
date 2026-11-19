@@ -90,12 +90,14 @@ describe("artifact source resolution", () => {
 describe("artifact card discovery port", () => {
   it("preserves the artifact contract and distinguishes single and sequence cards", () => {
     expect(artifactCardOutputPort(saved)).toMatchObject({
+      kind: "artifact",
       direction: "output",
       artifact_type: { id: "file.png", schema_version: 1 },
       shape: "one",
       accepted_shapes: ["one"],
     });
     expect(artifactCardOutputPort(sequence)).toMatchObject({
+      kind: "artifact",
       direction: "output",
       artifact_type: { id: "file.png", schema_version: 1 },
       shape: "many",

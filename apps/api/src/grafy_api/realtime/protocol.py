@@ -213,6 +213,21 @@ class RunFinishedMessage(RoomProtocolModel):
     error: str | None = Field(default=None, max_length=2000)
 
 
+class NodeProgressMessage(RoomProtocolModel):
+    """A transient update from one computation of a node instance."""
+
+    protocol_version: Literal[1] = PROTOCOL_VERSION
+    type: Literal["node.progress"] = "node.progress"
+    instance: InstanceKeyEntry
+    fingerprint: str
+    computation_id: UUID
+    sequence: int = Field(ge=1)
+    message: str = Field(min_length=1, max_length=1000)
+    current: int | None = Field(default=None, ge=0)
+    total: int | None = Field(default=None, ge=0)
+    invocation_path: tuple[int, ...] = ()
+
+
 class InstancesChangedMessage(RoomProtocolModel):
     """Instance-state deltas. ``removed`` lists instance keys that no longer exist."""
 

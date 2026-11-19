@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CanvasPortBall, nodeChrome } from "../CanvasNodeChrome";
+import type { CanvasNode } from "../../artifact-viewer";
 import { useHandleIsDocked } from "../../edges/useDockedConnection";
 import { decodeHandleId, encodeHandleId } from "../../handles";
 import { artifactTypeColor } from "../../nodes.css";
@@ -26,6 +27,7 @@ import {
 } from "../../provider-outputs";
 import { useArtifactTypeCatalog } from "../../use-artifact-type-catalog";
 import {
+  WORKFLOW_NODE_TYPE,
   compatibilityHandleId,
   effectivePortShape,
   portHasInstancePlugs,
@@ -240,10 +242,15 @@ function PortTab({
   const input = port.direction === "input";
   const connection = useOptionalInputConnection(id, port);
   const edges = useEdges<WorkflowEdge>();
-  const nodes = useNodes<{ data: WorkflowNodeData }>();
+  const nodes = useNodes<CanvasNode>();
   const artifactTypes = useArtifactTypeCatalog();
   const provider = React.useMemo(
-    () => connectedServiceProvider(id, nodes, edges),
+    () =>
+      connectedServiceProvider(
+        id,
+        nodes.filter((node) => node.type === WORKFLOW_NODE_TYPE),
+        edges,
+      ),
     [edges, id, nodes],
   );
   const unsupported = unsupportedOutputForPort(port, provider);

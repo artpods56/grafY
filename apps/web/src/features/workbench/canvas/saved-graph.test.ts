@@ -5,11 +5,13 @@ import type {
   GraphDefinition,
   NodeRegistry,
   NodeSpec,
+  Port,
   SavedGraph,
   SavedGraphDocument,
   SavedGraphEdge,
   SavedGraphNode,
 } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { registryWithProjectGraphs } from "../model/project-graphs";
 import { decodeHandleId } from "./handles";
 import {
@@ -39,33 +41,19 @@ function nodeSpec(
   shape: "one" | "many" = "one",
   acceptedShapes: readonly ("one" | "many")[] = [shape],
 ): NodeSpec {
-  const port = {
+  const port = artifactPortFixture({
     name: direction,
-    title: direction,
-    description: null,
     direction,
     artifact_type: { id: artifactTypeId, schema_version: 1 },
     shape,
     accepted_shapes: acceptedShapes,
-    instance_plugs: false,
-    variadic: false,
-    required: true,
-  };
-  return {
+  });
+  return nodeSpecFixture({
     operator_id: operatorId,
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
-    title: operatorId,
     description: operatorId,
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: direction === "input" ? [port] : [],
     outputs: direction === "output" ? [port] : [],
-  };
+  });
 }
 
 const conversionPath = [
@@ -570,38 +558,182 @@ describe("saved collection modes", () => {
       ).toThrow("A connection uses a list mode this input does not accept.");
     },
   );
+
+  it("keeps a graph whose sequence feed was removed openable", () => {
+    const graph = mappedStepGraph([ocrPageEdge(), ocrReadingEdge()]);
+
+    expect(() => hydrateSavedGraph(graph, mappedStepRegistry())).not.toThrow();
+
+    const hydrated = hydrateSavedGraph(graph, mappedStepRegistry());
+    const reading = hydrated.edges.find((edge) => edge.id === "reading");
+    expect(reading?.data?.collectionMode).toBe("direct");
+    expect(decodeHandleId(reading?.sourceHandle)?.shape).toBe("one");
+    const page = hydrated.edges.find((edge) => edge.id === "page");
+    expect(page?.data?.collectionMode).toBe("map");
+  });
+
+  it("leaves the modes of a graph that still runs its step per item alone", () => {
+    const graph = mappedStepGraph([
+      sequenceFeedEdge(),
+      ocrPageEdge(),
+      ocrReadingEdge(),
+    ]);
+
+    const hydrated = hydrateSavedGraph(graph, mappedStepRegistry());
+
+    expect(
+      hydrated.edges.map((edge) => [edge.id, edge.data?.collectionMode]),
+    ).toEqual([
+      ["feed", "map"],
+      ["page", "map"],
+      ["reading", "map"],
+    ]);
+  });
 });
+
+/** A port that says what it carries, which the handle of a connection needs. */
+function portSpec(
+  direction: "input" | "output",
+  name: string,
+  artifactId: string,
+  shape: "one" | "many" = "one",
+): Port {
+  const built = nodeSpec(name, direction, artifactId, shape);
+  const builtPort = direction === "input" ? built.inputs[0] : built.outputs[0];
+  if (!builtPort) throw new Error("port fixture has no port");
+  return {
+    ...builtPort,
+    name,
+    artifact_type: { id: artifactId, schema_version: 1 },
+  };
+}
+
+function stepSpec(
+  operatorId: string,
+  inputs: readonly Port[],
+  outputs: readonly Port[],
+): NodeSpec {
+  const built = nodeSpec(operatorId, "input", "page");
+  return { ...built, inputs: [...inputs], outputs: [...outputs] };
+}
+
+/** Pages, an OCR step that reads them, and the step that paints boxes on them. */
+function mappedStepRegistry(): NodeRegistry {
+  return {
+    plugins: [],
+    artifact_types: ["page", "markdown", "boxes"].map((id) => ({
+      key: { id, schema_version: 1 },
+      title: id,
+      payload_schema: {},
+      field_projections: [],
+      bundle: { format: "inline-json", version: 1 },
+    })),
+    artifact_conversions: [],
+    nodes: [
+      stepSpec("test.pages", [], [portSpec("output", "items", "page", "many")]),
+      stepSpec(
+        "test.ocr",
+        [portSpec("input", "document", "page")],
+        [
+          portSpec("output", "markdown", "markdown"),
+          portSpec("output", "regions", "boxes"),
+        ],
+      ),
+      stepSpec(
+        "test.boxes",
+        [
+          portSpec("input", "image", "page"),
+          portSpec("input", "regions", "boxes"),
+        ],
+        [portSpec("output", "image", "page")],
+      ),
+    ],
+  };
+}
+
+function savedStep(id: string, operatorId: string, x: number): SavedGraphNode {
+  return {
+    id,
+    kind: "builtin",
+    operator_id: operatorId,
+    operator_version: 1,
+    config: {},
+    input_plugs: [],
+    artifact_type_bindings: [],
+    position: { x, y: 0 },
+  };
+}
+
+function savedConnection(
+  id: string,
+  fromNode: string,
+  fromPort: string,
+  toNode: string,
+  toPort: string,
+  collectionMode: "direct" | "map",
+): SavedGraphEdge {
+  return {
+    id,
+    enabled: true,
+    from_node: fromNode,
+    from_port: fromPort,
+    to_node: toNode,
+    to_port: toPort,
+    to_plug: null,
+    collection_mode: collectionMode,
+    projection: null,
+    route_offset: null,
+    conversion_path: [],
+  };
+}
+
+const sequenceFeedEdge = () =>
+  savedConnection("feed", "pages", "items", "ocr", "document", "map");
+const ocrPageEdge = () =>
+  savedConnection("page", "pages", "items", "boxes", "image", "map");
+const ocrReadingEdge = () =>
+  savedConnection("reading", "ocr", "regions", "boxes", "regions", "map");
+
+function mappedStepGraph(edges: readonly SavedGraphEdge[]): SavedGraph {
+  return {
+    id: "00000000-0000-4000-8000-000000000002",
+    revision: 1,
+    name: "Readings",
+    created_at: "2026-07-15T12:00:00Z",
+    updated_at: "2026-07-15T12:00:00Z",
+    document: {
+      schema_version: 7,
+      origins: [],
+      agents: [],
+      nodes: [
+        savedStep("pages", "test.pages", 0),
+        savedStep("ocr", "test.ocr", 300),
+        savedStep("boxes", "test.boxes", 600),
+      ],
+      edges: [...edges],
+      presentation: { viewers: [], links: [], bindings: [], annotations: [] },
+    },
+  };
+}
 
 function collectRegistry(): NodeRegistry {
   const source = nodeSpec("source", "output", "text");
-  const collector: NodeSpec = {
+  const collector: NodeSpec = nodeSpecFixture({
     operator_id: "test.collect",
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title: "Collect text",
     description: "Collect ordered text inputs.",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: [
-      {
+      artifactPortFixture({
         name: "items",
         title: "Items",
-        description: null,
         direction: "input",
         artifact_type: { id: "text", schema_version: 1 },
         shape: "many",
         accepted_shapes: ["one", "many"],
         instance_plugs: true,
-        variadic: false,
-        required: true,
-      },
+      }),
     ],
-    outputs: [],
-  };
+  });
   return {
     plugins: [],
     artifact_types: [
@@ -746,49 +878,32 @@ describe("saved instance plugs", () => {
 });
 
 function genericCollectRegistry(): NodeRegistry {
-  const collector: NodeSpec = {
+  const collector: NodeSpec = nodeSpecFixture({
     operator_id: "sequence.collect",
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title: "Collect",
     description: "Collect ordered artifacts.",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: [
-      {
+      artifactPortFixture({
         name: "items",
         title: "Items",
-        description: null,
         direction: "input",
         artifact_type: null,
         artifact_type_variable: "T",
-        shape: "one",
         accepted_shapes: ["one", "many"],
         instance_plugs: true,
-        variadic: false,
-        required: true,
-      },
+      }),
     ],
     outputs: [
-      {
+      artifactPortFixture({
         name: "items",
         title: "Items",
-        description: null,
         direction: "output",
         artifact_type: null,
         artifact_type_variable: "T",
         shape: "many",
-        accepted_shapes: ["many"],
-        instance_plugs: false,
-        variadic: false,
-        required: true,
-      },
+      }),
     ],
-  };
+  });
   return {
     plugins: [],
     artifact_types: [

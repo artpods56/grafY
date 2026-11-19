@@ -1,5 +1,6 @@
 """Composition root for workbench-facing application components."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -7,6 +8,8 @@ from grafy_core.egress import EgressPolicy, default_egress_policy
 from grafy_core.documents import FILE_ARTIFACTS
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.provider_cache import ProviderCache
+from grafy_core.node_context import NodeProgressReporter
 from grafy_core.ports.library import LibraryUnitOfWorkPort
 from grafy_core.ports.node_secrets import (
     NodeSecretResolverPort,
@@ -19,6 +22,7 @@ from grafy_core.runtime.execution import NodeRuntime
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import OutputPersister
 from grafy_shared.config import ExecutionConfig
+from grafy_shared.config.provider_cache import DEFAULT_TTL_SECONDS
 from grafy_storage import LocalFileObjectStore
 
 from grafy_api.artifact_availability import ArtifactAvailability
@@ -86,6 +90,9 @@ def build_workbench_components(
     upload_config: UploadServiceConfig | None = None,
     node_secrets: NodeSecretResolverPort | None = None,
     egress_policy: EgressPolicy | None = None,
+    progress_reporter_factory: Callable[[], NodeProgressReporter] | None = None,
+    provider_cache: ProviderCache | None = None,
+    provider_cache_ttl_seconds: int = DEFAULT_TTL_SECONDS,
 ) -> WorkbenchComponents:
     if plugin_registry is None:
         from grafy_api.services.families import build_application_registry
@@ -133,6 +140,12 @@ def build_workbench_components(
         storage_backend=storage_backend,
     )
     check_port_declarations(plugin_registry.nodes, values)
+    resolved_tiler_config = (
+        tiler_config if tiler_config is not None else TilerConfig.model_construct()
+    )
+    artifact_images = ArtifactImageService(
+        uow, resolved_tiler_config, HttpTiler(resolved_tiler_config)
+    )
     plugin_context = PluginRuntimeContext(
         workspace=resolved_workspace,
         storage=resolved_storage,
@@ -142,6 +155,9 @@ def build_workbench_components(
         artifact_types=tuple(artifact_types.values()),
         node_secrets=resolved_node_secrets,
         values=values,
+        open_tiff_page=artifact_images.open_run_tiff_page,
+        provider_cache=provider_cache,
+        provider_cache_ttl_seconds=provider_cache_ttl_seconds,
     )
 
     availability = ArtifactAvailability(uow)
@@ -181,9 +197,7 @@ def build_workbench_components(
         plugin_context=plugin_context,
         values=values,
         max_map_concurrency=resolved_limits.map_max_concurrency,
-    )
-    resolved_tiler_config = (
-        tiler_config if tiler_config is not None else TilerConfig.model_construct()
+        progress_reporter_factory=progress_reporter_factory,
     )
     return WorkbenchComponents(
         plugin_registry=plugin_registry,
@@ -191,9 +205,7 @@ def build_workbench_components(
         uploads=uploads,
         runner_factory=runners,
         artifact_content=artifact_content,
-        artifact_images=ArtifactImageService(
-            uow, resolved_tiler_config, HttpTiler(resolved_tiler_config)
-        ),
+        artifact_images=artifact_images,
         artifact_tables=artifact_tables,
         artifact_geo=artifact_geo,
         artifact_geo_tiles=artifact_geo_tiles,

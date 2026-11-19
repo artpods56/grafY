@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 import type { NodeSpec, Port } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { encodeHandleId } from "../canvas/handles";
 import { reduceWorkbenchAuthoringState } from "../canvas/graph-document-adapter";
 import {
@@ -52,54 +53,38 @@ function spec(
   outputs: Port[],
   title = operator_id,
 ): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id,
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title,
     description: title,
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs,
     outputs,
-  };
+  });
 }
 
 const collectSpec = spec(
   COLLECTION_OPERATOR_ID,
   [
-    {
+    artifactPortFixture({
       name: COLLECTION_PORT,
       title: "items",
-      description: null,
       direction: "input",
       artifact_type: null,
       artifact_type_variable: "T",
-      shape: "one",
       accepted_shapes: ["one", "many"],
       instance_plugs: true,
       variadic: true,
-      required: true,
-    },
+    }),
   ],
   [
-    {
+    artifactPortFixture({
       name: COLLECTION_PORT,
       title: "items",
-      description: null,
       direction: "output",
       artifact_type: null,
       artifact_type_variable: "T",
       shape: "many",
-      accepted_shapes: ["many"],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-    },
+    }),
   ],
   "Collect",
 );
@@ -108,18 +93,12 @@ const resizeSpec = spec(
   "image.resize",
   [],
   [
-    {
+    artifactPortFixture({
       name: "image",
       title: "Resized",
-      description: null,
       direction: "output",
       artifact_type: IMAGE,
-      shape: "one",
-      accepted_shapes: ["one"],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-    },
+    }),
   ],
   "Resize image",
 );
@@ -313,6 +292,9 @@ async function mount() {
       dispatchAuthoringState,
       localAuthoringBlockedMessageRef,
       localAuthoringEnabledRef,
+      // This harness is about card links, not collection modes: it says nothing
+      // about the node types, so the command batch carries no mode repairs.
+      nodeRegistry: null,
       roomCommandSyncRef,
       setArtifactViewers,
       setPendingConnectionRoute: () => undefined,

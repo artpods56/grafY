@@ -1,11 +1,14 @@
 """OCR node and provider readers through the Run service and the runner."""
 
+from base64 import b64decode
 from collections.abc import Mapping, Sequence
 from io import BytesIO
+import json
 from pathlib import Path
 from typing import ClassVar, final, override
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from PIL import Image
 from pydantic import Field, SecretStr
@@ -34,7 +37,9 @@ from grafy_core.documents import (
     RASTER_IMAGE_ARTIFACT,
     PdfFile,
     RasterImage,
+    TiffFile,
 )
+from grafy_core.file_contracts import TIFF_FILE
 from grafy_core.domain.graph_documents import (
     GraphDocument,
     GraphEdge,
@@ -87,6 +92,10 @@ from grafy_plugin_mistral.ocr import (
 )
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.ocr import OCR
+from grafy_workbench.ocr.craft import CRAFT_MODEL
+from grafy_workbench.ocr.provider_http import serve_client
+from grafy_workbench.ocr.text_regions import TiffTextRegions
+from grafy_core.text_regions import TiffPage
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
 
@@ -364,7 +373,33 @@ def _clear_reads() -> None:
 
 
 @pytest.fixture
-def harness(tmp_path: Path):
+def tiff_windows():
+    class Windows:
+        calls: list[tuple[UUID, UUID, dict[str, int]]]
+
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def __call__(
+            self, workspace_id: UUID, artifact_id: UUID, *, page: int
+        ) -> TiffPage:
+            async def read(*, col: int, row: int, width: int, height: int) -> bytes:
+                self.calls.append(
+                    (
+                        workspace_id,
+                        artifact_id,
+                        dict(page=page, col=col, row=row, width=width, height=height),
+                    )
+                )
+                return _png()
+
+            return TiffPage(20, 20, read, source_sha256="0" * 64, page=page)
+
+    return Windows()
+
+
+@pytest.fixture
+def harness(tmp_path: Path, tiff_windows):
     uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
     registry = PluginRegistry()
@@ -396,6 +431,7 @@ def harness(tmp_path: Path):
             uow=uow,
             bucket="artifacts",
             values=values,
+            open_tiff_page=tiff_windows,
         ),
         max_map_concurrency=2,
     )
@@ -843,3 +879,97 @@ async def _markdown(uow: InMemoryUnitOfWork, ref: object) -> str:
     value = payload["markdown"]
     assert isinstance(value, str)
     return value
+
+
+@pytest.mark.parametrize("initial_status", [200, 500])
+async def test_craft_provider_persists_source_pixel_polygons(
+    harness, tiff_windows, monkeypatch: pytest.MonkeyPatch, initial_status: int
+) -> None:
+    from grafy_core.runtime.materialization import MaterializationProvenance
+    from grafy_core.runtime.persistence import ArtifactWriteContext
+
+    runner, secrets, _uow, values, _store, _registry = harness
+    secrets.keys["craft"] = "scoped-test-key"
+    tiff_bytes = BytesIO()
+    Image.new("RGB", (20, 20)).save(tiff_bytes, format="TIFF")
+    tiff = await values.write(
+        TIFF_FILE.key,
+        TiffFile.from_content(
+            tiff_bytes.getvalue(), content_type="image/tiff", filename="map.tiff"
+        ),
+        ArtifactWriteContext(
+            node_context=NodeExecutionContext(
+                workspace_id=WORKSPACE_ID, node_id="seed"
+            ),
+            provenance=MaterializationProvenance(refs_by_input={}),
+        ),
+    )
+
+    statuses = iter((initial_status, 200))
+    delays: list[float] = []
+
+    async def record_retry(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr("grafy_workbench.ocr.provider_http.sleep", record_retry)
+
+    def craft(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/v1/ocr/craft/detect"
+        assert request.headers["Authorization"] == "Bearer scoped-test-key"
+        assert b64decode(json.loads(request.content)["image_base64"]) == _png()
+        status = next(statuses)
+        if status != 200:
+            return httpx.Response(status)
+        return httpx.Response(
+            200,
+            json={
+                "width": 2,
+                "height": 2,
+                "model": CRAFT_MODEL,
+                "polygons": [[[0.0, 0.5], [1.5, 0.0], [2.0, 1.0], [0.5, 1.5]]],
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(craft))
+    window = {"page": 1, "col": 11, "row": 13, "width": 2, "height": 2}
+    graph = _expand(
+        _node("craft", "ocr.craft_provider"),
+        _node(
+            "detect",
+            "ocr.detect_tiff_text",
+            config={**window, "strategy": "Single crop"},
+        ),
+        edges=(_edge("craft", "detector", "detect", "detector"),),
+        origins=(GraphOrigin(id="scan", to_node="detect", to_port="tiff", value=tiff),),
+    )
+    keys = {key.node_id: key for key in graph.instances}
+    with serve_client(client):
+        outputs = await runner(
+            ComputationRequest(
+                fingerprint="fp-detect",
+                instance=graph.instances[keys["detect"]],
+                upstream_fingerprints={keys["craft"]: "fp-craft"},
+                service_sources={keys["craft"]: graph.instances[keys["craft"]]},
+            )
+        )
+    if initial_status == 500:
+        assert len(delays) == 1
+        assert 0.25 <= delays[0] <= 0.5
+    else:
+        assert delays == []
+    assert tiff_windows.calls == [(WORKSPACE_ID, tiff.artifact_id, window)]
+    output = outputs["regions"]
+    assert isinstance(output, ArtifactRef)
+    result = await values.resolve(output, WORKSPACE_ID)
+    assert isinstance(result, TiffTextRegions)
+    assert result.source.artifact_id == tiff.artifact_id
+    assert result.window.model_dump() == window
+    assert len(result.regions) == 1
+    assert result.regions[0].polygon == [
+        (11.0, 13.5),
+        (12.5, 13.0),
+        (13.0, 14.0),
+        (11.5, 14.5),
+    ]
+    assert result.regions[0].text is None

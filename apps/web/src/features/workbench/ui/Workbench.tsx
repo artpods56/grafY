@@ -259,6 +259,7 @@ import {
 } from "../canvas/node-secrets";
 import { artifactTypeColor } from "../canvas/nodes.css";
 import {
+  TIFF_TEXT_DETECTOR_OPERATOR_ID,
   WORKFLOW_EDGE_TYPE,
   WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
@@ -268,6 +269,7 @@ import {
   type WorkflowEdgeRouteOption,
   type WorkflowEdgeUpdate,
   type WorkflowArtifactTypeBindings,
+  type WorkflowNodeConfig,
   type WorkflowNodeData,
   portMetaForPort,
   workflowNodeIsSupported,
@@ -847,18 +849,23 @@ function WorkbenchBody({
     [applyAuthoringCommands],
   );
 
-  const updateConfig = React.useCallback(
-    (nodeId: string, name: string, value: unknown) => {
-      applyAuthoringCommands([
-        {
+  const updateConfigPatch = React.useCallback(
+    (nodeId: string, patch: WorkflowNodeConfig) => {
+      applyAuthoringCommands(
+        Object.entries(patch).map(([field, value]) => ({
           kind: "update_node_configuration",
           node_id: nodeId,
-          field: name,
+          field,
           value,
-        },
-      ]);
+        })),
+      );
     },
     [applyAuthoringCommands],
+  );
+  const updateConfig = React.useCallback(
+    (nodeId: string, name: string, value: unknown) =>
+      updateConfigPatch(nodeId, { [name]: value }),
+    [updateConfigPatch],
   );
 
   const updateLayout = React.useCallback(
@@ -4207,14 +4214,60 @@ function WorkbenchBody({
     const cardSourceNodeIds = new Set(
       activeArtifactViewers.edges.map((edge) => edge.source),
     );
+    const callPath = callTrail.map((entry) => entry.nodeId);
     return nodes.map((node) => {
       const savedNode = activeGraph?.nodes.find(
         (candidate) => candidate.id === node.id,
       );
+      const tiffOrigin =
+        localAuthoringEnabled &&
+        node.data.spec.operator_id === TIFF_TEXT_DETECTOR_OPERATOR_ID &&
+        workflowNodeIsSupported(node.data)
+          ? authoredDocument.origins.find(
+              (origin) =>
+                origin.to_node === node.id && origin.to_port === "tiff",
+            )
+          : undefined;
+      const tiffRef = tiffOrigin?.value;
+      const instance = nodeInstanceStates[node.id];
+      const history =
+        projectId && openGraphId
+          ? projectRoom.nodeProgress.get(
+              instanceKeyText({
+                project_id: projectId,
+                graph_id: openGraphId,
+                call_path: callPath,
+                node_id: node.id,
+                map_index: null,
+              }),
+            )
+          : undefined;
+      const progress =
+        history &&
+        (!instance || history.entries[0]?.fingerprint === instance.fingerprint)
+          ? {
+              omittedCount: history.omittedCount,
+              entries: history.entries.map((event) => ({
+                sequence: event.sequence,
+                message: event.message,
+                current: event.current,
+                total: event.total,
+                sourceNodePath: [],
+                invocationIndex: event.invocation_path.at(-1) ?? null,
+                invocationPath: event.invocation_path,
+              })),
+            }
+          : null;
       return {
         ...node,
         data: {
           ...attachNodeCallbacks(node.data),
+          progress,
+          tiffWindowSourceId:
+            tiffRef?.artifact_type === "file.tiff" && !("item_refs" in tiffRef)
+              ? tiffRef.artifact_id
+              : undefined,
+          onConfigPatch: tiffRef ? updateConfigPatch : undefined,
           onRunNode:
             canStartRun &&
             projectEditsTrusted &&
@@ -4300,6 +4353,7 @@ function WorkbenchBody({
     applyConfiguredNodeSecret,
     attachNodeCallbacks,
     authoredDocument.origins,
+    callTrail,
     canStartRun,
     edges,
     isDirty,
@@ -4308,6 +4362,8 @@ function WorkbenchBody({
     nodeSecretStatuses,
     nodes,
     openGraphId,
+    projectId,
+    projectRoom.nodeProgress,
     projectEditsTrusted,
     registry?.artifact_conversions,
     registry?.artifact_types,
@@ -4316,6 +4372,7 @@ function WorkbenchBody({
     revealNodeOutput,
     running,
     ungroupCollection,
+    updateConfigPatch,
     workspaceId,
   ]);
 

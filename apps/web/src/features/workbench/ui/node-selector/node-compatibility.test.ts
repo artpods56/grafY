@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+import { nodeSpecFixture, servicePortFixture } from "../../test-fixtures";
 
 import { compatibleNodesForPort } from "./node-compatibility";
 
@@ -9,21 +10,12 @@ function servicePort(
   direction: Port["direction"],
   contractId = "ocr.reader",
 ): Port {
-  return {
+  return servicePortFixture({
     name,
     title: name,
-    description: null,
     direction,
-    kind: "service",
     service_contracts: [{ id: contractId, version: 1 }],
-    artifact_type: null,
-    artifact_type_variable: null,
-    shape: "one",
-    accepted_shapes: ["one"],
-    instance_plugs: false,
-    variadic: false,
-    required: true,
-  };
+  });
 }
 
 function node(
@@ -32,21 +24,12 @@ function node(
   inputs: readonly Port[],
   outputs: readonly Port[],
 ): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id,
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title,
-    description: null,
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs,
     outputs,
-  };
+  });
 }
 
 describe("compatibleNodesForPort service contracts", () => {

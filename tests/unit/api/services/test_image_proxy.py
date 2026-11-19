@@ -2,6 +2,7 @@ import time
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import httpx
@@ -10,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import HttpUrl, SecretStr, ValidationError
 
-from grafy_api.artifacts.images import ArtifactImageService
+from grafy_api.artifacts.images import ArtifactImageService, ImageProxyError
 from grafy_api.artifacts.tiler_client import IMAGE_RESPONSE_MAX_BYTES, HttpTiler
 from grafy_api.v1.routes.artifacts.dependencies import artifact_image_service
 from grafy_api.v1.routes.artifacts.images import router
@@ -71,6 +72,7 @@ class Harness:
     body: bytes = b"tile bytes"
     content_type: str = "image/jpeg"
     renderer: str = "1"
+    window_metadata: str = ""
     fail: bool = False
 
     @property
@@ -117,6 +119,7 @@ async def proxy() -> AsyncIterator[Harness]:
                 headers={
                     "Content-Type": harness.content_type,
                     "X-Grafy-Renderer": harness.renderer,
+                    "X-Grafy-Window": harness.window_metadata,
                     "Retry-After": "3",
                     "Location": "https://other.test",
                     "Set-Cookie": "secret=never-forward",
@@ -144,6 +147,141 @@ async def proxy() -> AsyncIterator[Harness]:
             yield harness
         finally:
             await service.close()
+
+
+@pytest.mark.parametrize(
+    "content_type,artifact_type,object_key",
+    [
+        ("image/tiff", "file.tiff", "workspaces/one/original.tiff"),
+        (
+            "image/tiff; application=geotiff; profile=cloud-optimized",
+            "geo.raster_scan",
+            "workspaces/one/canonical.tif",
+        ),
+    ],
+)
+async def test_window_reads_the_workspace_artifacts_stored_object(
+    proxy: Harness, content_type: str, artifact_type: str, object_key: str
+) -> None:
+    artifact = replace(
+        proxy.artifact,
+        id=uuid4(),
+        content_type=content_type,
+        artifact_type=artifact_type,
+        object_key=object_key,
+    )
+    async with proxy.uow as uow:
+        await uow.artifacts.add(artifact)
+        await uow.commit()
+    proxy.content_type = "image/png"
+    proxy.body = b"native PNG bytes"
+    proxy.renderer = "independent of the display renderer"
+    proxy.window_metadata = (
+        '{"col":7,"row":2,"width":3,"height":5,'
+        '"affine":[2,0.25,100,-0.5,-3,200],"crs":"EPSG:2180"}'
+    )
+    access = await proxy.identity.authorize(
+        actor=ActorContext(user_id=USER),
+        workspace_id=WS,
+        capability=WorkspaceCapability.VIEW_ARTIFACTS,
+    )
+    service = proxy.app.dependency_overrides[artifact_image_service]()
+    coordinates = {"col": 7, "row": 2, "width": 3, "height": 5, "page": 2}
+
+    revoked = replace(
+        access,
+        membership=replace(access.membership, revoked_at=datetime.now(UTC)),
+    )
+    with pytest.raises(CapabilityDeniedError):
+        await service.read_window(revoked, artifact.id, **coordinates)
+
+    with pytest.raises(ImageProxyError) as failure:
+        other_workspace = uuid4()
+        other_access = replace(
+            access,
+            workspace_id=other_workspace,
+            membership=replace(access.membership, workspace_id=other_workspace),
+        )
+        await service.read_window(other_access, artifact.id, **coordinates)
+    assert failure.value.status == 404
+    assert proxy.requests == []
+
+    result = await service.read_window(access, artifact.id, **coordinates)
+    assert result.body == b"native PNG bytes"
+    assert result.placement.affine == (2, 0.25, 100, -0.5, -3, 200)
+    assert result.placement.crs == "EPSG:2180"
+    (request,) = proxy.requests
+    assert request.url.path == "/window"
+    assert dict(request.url.params) == {
+        "col": "7",
+        "row": "2",
+        "width": "3",
+        "height": "5",
+    }
+    grant = Grant.verify_grant(
+        request.headers["X-Grafy-Grant"],
+        keys=[KEY.encode()],
+        bucket="bucket",
+        now=int(time.time()),
+        skew_seconds=0,
+        max_source_bytes=1024,
+    )
+    assert (grant.key, grant.page, grant.sha256, grant.byte_size) == (
+        object_key,
+        2,
+        "a" * 64,
+        100,
+    )
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        "",
+        '{"col":0,"row":0,"width":1,"height":1,"affine":null,"crs":"EPSG:2180"}',
+        '{"col":1,"row":0,"width":1,"height":1,"affine":null,"crs":null}',
+    ],
+)
+async def test_window_rejects_invalid_upstream_placement(
+    proxy: Harness, metadata: str
+) -> None:
+    proxy.content_type = "image/png"
+    proxy.window_metadata = metadata
+    access = await proxy.identity.authorize(
+        actor=ActorContext(user_id=USER),
+        workspace_id=WS,
+        capability=WorkspaceCapability.VIEW_ARTIFACTS,
+    )
+    service = proxy.app.dependency_overrides[artifact_image_service]()
+    with pytest.raises(ImageProxyError) as failure:
+        await service.read_window(
+            access, proxy.artifact.id, col=0, row=0, width=1, height=1
+        )
+    assert failure.value.status == 502
+
+
+@pytest.mark.parametrize(
+    "coordinates",
+    [
+        {"col": -1, "row": 0, "width": 1, "height": 1},
+        {"col": 0, "row": 0, "width": 0, "height": 1},
+        {"col": 0, "row": False, "width": 1, "height": 1},
+        {"col": 0, "row": 0, "width": 1, "height": 1, "page": 1024},
+    ],
+)
+async def test_invalid_window_does_not_send_a_grant(
+    proxy: Harness, coordinates: dict[str, int]
+) -> None:
+    access = await proxy.identity.authorize(
+        actor=ActorContext(user_id=USER),
+        workspace_id=WS,
+        capability=WorkspaceCapability.VIEW_ARTIFACTS,
+    )
+    service = proxy.app.dependency_overrides[artifact_image_service]()
+    with pytest.raises(ImageProxyError) as failure:
+        await service.read_window(access, proxy.artifact.id, **coordinates)
+    assert failure.value.status == 422
+    assert proxy.requests == []
 
 
 async def test_tile_signs_source_and_returns_only_image_and_cache_headers(
@@ -428,6 +566,71 @@ async def test_operation_timeouts(proxy: Harness) -> None:
     assert proxy.requests[-1].extensions["timeout"]["read"] == 30
 
 
+async def test_a_window_timeout_is_retried_once(proxy: Harness) -> None:
+    import httpx
+    from grafy_api.artifacts.images import TiffSource
+
+    calls = 0
+
+    async def once(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        assert request.extensions["timeout"]["read"] == 30
+        if calls == 1:
+            raise httpx.ReadTimeout("slow window", request=request)
+        return httpx.Response(
+            200,
+            content=b"png",
+            headers={
+                "Content-Type": "image/png",
+                "X-Grafy-Window": (
+                    '{"col":1,"row":2,"width":3,"height":4,"affine":null,"crs":null}'
+                ),
+            },
+        )
+
+    tiler = HttpTiler(
+        proxy.config, client=httpx.AsyncClient(transport=httpx.MockTransport(once))
+    )
+    try:
+        window = await tiler.read_window(
+            TiffSource("bucket", "scan.tif", "a" * 64, 100, 0),
+            col=1,
+            row=2,
+            width=3,
+            height=4,
+        )
+    finally:
+        await tiler.close()
+    assert calls == 2
+    assert window.body == b"png"
+
+
+async def test_a_closed_tiler_is_not_called_a_timeout(proxy: Harness) -> None:
+    import httpx
+    from grafy_api.artifacts.images import ImageProxyError, TiffSource
+
+    async def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    tiler = HttpTiler(
+        proxy.config, client=httpx.AsyncClient(transport=httpx.MockTransport(refused))
+    )
+    try:
+        with pytest.raises(ImageProxyError) as failure:
+            await tiler.read_window(
+                TiffSource("bucket", "scan.tif", "a" * 64, 100, 0),
+                col=0,
+                row=0,
+                width=1,
+                height=1,
+            )
+    finally:
+        await tiler.close()
+    assert str(failure.value) == "Tiler is unavailable"
+    assert failure.value.status == 503
+
+
 async def test_whole_request_deadline_releases_stalled_upstream(proxy: Harness) -> None:
     import asyncio
     from grafy_api.artifacts.images import ImageProxyError, TiffSource
@@ -451,6 +654,62 @@ async def test_whole_request_deadline_releases_stalled_upstream(proxy: Harness) 
             )
         assert entered.is_set()
         assert failure.value.status == 503
+        assert str(failure.value) == "Tiler timed out"
         assert failure.value.retry_after == "2"
     finally:
         await tiler.close()
+
+
+@pytest.mark.parametrize(
+    "affine,crs",
+    [((2.0, 0.25, 100.0, -0.5, -3.0, 200.0), "EPSG:2180"), (None, None)],
+)
+async def test_a_run_page_carries_the_georeference_of_its_origin_pixel(
+    proxy: Harness,
+    affine: tuple[float, float, float, float, float, float] | None,
+    crs: str | None,
+) -> None:
+    info = {
+        "width": 640,
+        "height": 480,
+        "page_count": 3,
+        "has_alpha": False,
+        "tile_size": 512,
+        "min_level": 1,
+        "max_level": 10,
+        "tile_format": "jpg",
+    }
+    placement = {"col": 0, "row": 0, "width": 1, "height": 1}
+    placement |= {"affine": affine, "crs": crs}
+    windows: list[dict[str, str]] = []
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/info":
+            return httpx.Response(200, json=info)
+        assert request.url.path == "/window"
+        windows.append(dict(request.url.params))
+        return httpx.Response(
+            200,
+            content=b"one pixel",
+            headers={
+                "Content-Type": "image/png",
+                "X-Grafy-Window": json.dumps(placement),
+            },
+        )
+
+    service = ArtifactImageService(
+        proxy.uow,
+        proxy.config,
+        HttpTiler(
+            proxy.config,
+            client=httpx.AsyncClient(transport=httpx.MockTransport(upstream)),
+        ),
+    )
+    try:
+        page = await service.open_run_tiff_page(WS, proxy.artifact.id, page=2)
+    finally:
+        await service.close()
+
+    assert (page.width, page.height, page.page) == (640, 480, 2)
+    assert (page.affine, page.crs) == (affine, crs)
+    assert windows == [{"col": "0", "row": "0", "width": "1", "height": "1"}]

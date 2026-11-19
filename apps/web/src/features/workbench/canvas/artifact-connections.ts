@@ -61,6 +61,7 @@ export function artifactCardOutputPort(
     name: "artifact",
     title: "Artifact",
     direction: "output",
+    kind: "artifact",
     artifact_type: {
       id: value.artifact_type,
       schema_version: value.schema_version,

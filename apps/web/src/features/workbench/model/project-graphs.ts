@@ -253,6 +253,7 @@ function boundaryPort(direction: Port["direction"]): Port {
     title: "Value",
     description: null,
     direction,
+    kind: "artifact",
     artifact_type: null,
     artifact_type_variable: GRAPH_ARTIFACT_TYPE_VARIABLE,
     shape: "one",
@@ -329,6 +330,7 @@ export function callNodeSpec(
     title: port.name,
     description: port.description,
     direction: "input",
+    kind: "artifact",
     artifact_type: port.artifactType,
     // A port the Graph left untyped takes any artifact; each such port is its
     // own variable so two untyped ports do not have to agree.
@@ -344,6 +346,7 @@ export function callNodeSpec(
     title: port.name,
     description: port.description,
     direction: "output",
+    kind: "artifact",
     artifact_type: port.artifactType,
     // A port the Graph left untyped takes any artifact; each such port is its
     // own variable so two untyped ports do not have to agree.

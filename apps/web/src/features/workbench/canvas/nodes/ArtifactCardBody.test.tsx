@@ -129,6 +129,23 @@ vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
   useOptionalWorkspaceContext: () => workspaceMocks.value,
 }));
 
+const tiffMocks = vi.hoisted(() => ({
+  reportSize: [] as ((width: number, height: number) => void)[],
+}));
+
+vi.mock("./TiffArtifactView", () => ({
+  TiffArtifactView: ({
+    artifactId,
+    onSize,
+  }: {
+    artifactId: string;
+    onSize?: (width: number, height: number) => void;
+  }) => {
+    if (onSize) tiffMocks.reportSize.push(onSize);
+    return <div data-testid="tiff-surface" data-artifact={artifactId} />;
+  },
+}));
+
 vi.mock("@base-ui/react/menu", () => ({
   Menu: {
     Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -272,6 +289,7 @@ afterEach(() => {
   tableMocks.error = undefined;
   const _ = tableMocks.retry.mockClear();
   registryMocks.artifactTypes = [];
+  tiffMocks.reportSize.length = 0;
   flowMocks.edges = [];
   flowMocks.nodes = new Map();
 });
@@ -1302,7 +1320,52 @@ describe("artifact on the canvas", () => {
     expect(image.draggable).toBe(false);
   });
 
-  it("keeps the image's aspect ratio when a saved height is larger", () => {
+  it("holds a TIFF card to the shape of its page", () => {
+    // A TIFF has no <img> to ask for its natural size, so the card learns it
+    // from the tile pyramid instead. Until then it holds the same fallback an
+    // unsized picture does; after, a portrait scan stops sitting in a landscape
+    // box and the frame follows the page.
+    libraryMocks.items = [
+      {
+        ...libraryItem("a-tiff", "page.tif"),
+        artifact: {
+          artifact_id: "a-tiff",
+          artifact_type: "file.tiff",
+          schema_version: 1,
+          content_type: "image/tiff",
+          byte_size: 8_400_000,
+        },
+      },
+    ];
+    const { container } = mount({
+      artifact_id: "a-tiff",
+      artifact_type: "file.tiff",
+      schema_version: 1,
+    });
+    const media = container.querySelector<HTMLElement>("[data-artifact-media]");
+    expect(media?.style.height).toBe("198px");
+
+    const report = tiffMocks.reportSize.at(-1);
+    if (!report) throw new Error("The TIFF never reported its page");
+    React.act(() => report(1240, 1754));
+
+    expect(media?.style.height).toBe("373px");
+
+    // A height the operator dragged outranks that shape: the same scan in a
+    // frame as wide as the canvas and as tall as one line of the register.
+    const stripe = mount(
+      { artifact_id: "a-tiff", artifact_type: "file.tiff", schema_version: 1 },
+      { layout: { width: 900, bodyHeight: 120 } },
+    );
+    React.act(() => tiffMocks.reportSize.at(-1)?.(1240, 1754));
+
+    expect(
+      stripe.container.querySelector<HTMLElement>("[data-artifact-media]")
+        ?.style.height,
+    ).toBe("120px");
+  });
+
+  it("takes a dragged height as the window's height, not the picture's shape", () => {
     const { container } = mount(single("a1"), {
       layout: { width: 264, bodyHeight: 220 },
     });
@@ -1316,7 +1379,7 @@ describe("artifact on the canvas", () => {
     expect(
       container.querySelector<HTMLElement>("[data-artifact-media]")?.style
         .height,
-    ).toBe("149px");
+    ).toBe("220px");
   });
 
   it("scales a resized image past the thumbnail height, keeping its aspect", () => {
@@ -1344,6 +1407,57 @@ describe("artifact on the canvas", () => {
       );
     expect(handle(true)).not.toBeNull();
     expect(handle(false)).toBeNull();
+  });
+
+  it("drags a scan card's corner into a shape the page does not have", () => {
+    // The corner is grabbed at the height the card draws: a 400-wide picture
+    // without a known aspect and a 400-wide text overlay both start at 300, and
+    // both end up wider and shorter than they began.
+    const drag = (value: ArtifactCardValue) => {
+      const onLayoutChange = vi.fn();
+      const { container } = mount(
+        value,
+        { layout: { width: 400 }, onLayoutChange },
+        true,
+      );
+      const handle = container.querySelector<HTMLButtonElement>(
+        '[aria-label="Resize artifact"]',
+      );
+      if (!handle) throw new Error("Resize handle missing");
+      Object.assign(handle, {
+        setPointerCapture: vi.fn(),
+        releasePointerCapture: vi.fn(),
+        hasPointerCapture: () => false,
+      });
+      const pointer = (type: string, x: number, y: number) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          button: 0,
+          clientX: x,
+          clientY: y,
+        });
+        Object.defineProperty(event, "pointerId", { value: 7 });
+        React.act(() => handle.dispatchEvent(event));
+      };
+      pointer("pointerdown", 0, 0);
+      pointer("pointermove", 120, -60);
+      pointer("pointerup", 120, -60);
+      return onLayoutChange.mock.lastCall?.[1];
+    };
+
+    const scan = drag({
+      artifact_id: "a-tiff",
+      artifact_type: "file.tiff",
+      schema_version: 1,
+    });
+    expect(scan).toEqual({ width: 520, bodyHeight: 240 });
+
+    const overlay = drag({
+      artifact_id: "a-regions",
+      artifact_type: "ocr.tiff_text_regions",
+      schema_version: 1,
+    });
+    expect(overlay).toEqual({ width: 520, bodyHeight: 240 });
   });
 
   it("preserves the filename and drag action when an image fails to load", () => {

@@ -14,6 +14,7 @@ import type {
   SavedGraphDocument,
   SavedGraphSummary,
 } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { deferred } from "./test/deferred";
 import { renderHook } from "./test/renderHook";
 import { useGraphAutosave } from "./useGraphAutosave";
@@ -1629,34 +1630,19 @@ describe("useSavedGraphLifecycle Graphs inside one Project", () => {
 });
 
 describe("useSavedGraphLifecycle presentation ownership", () => {
-  const sourceSpec: NodeSpec = {
+  const sourceSpec: NodeSpec = nodeSpecFixture({
     operator_id: "test.source",
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title: "Source",
     description: "Source",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
-    inputs: [],
     outputs: [
-      {
+      artifactPortFixture({
         name: "output",
         title: "Output",
-        description: null,
         direction: "output",
-        artifact_type: { id: "scalar.text", schema_version: 1 },
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
         required: false,
-      },
+      }),
     ],
-  };
+  });
 
   const producerNode = {
     id: "node-a",

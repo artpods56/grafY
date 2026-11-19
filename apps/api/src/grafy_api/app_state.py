@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 from grafy_core.application.identity import IdentityService
 from grafy_core.ports.identity import IdentityUnitOfWorkPort
+from grafy_workbench.ocr.provider_http import aclose_provider_clients
 
 if TYPE_CHECKING:
     from grafy_core.application.collaboration import CollaborationService
@@ -65,6 +66,9 @@ class AppResources:
         await self.runs.close()
         await self.workbench.wms.close()
         await self.workbench.artifact_images.close()
+        # The OCR providers dial through pooled clients the family owns, so their
+        # connections outlive one Run and are the last thing to close.
+        await aclose_provider_clients()
 
 
 def get_identity(app: FastAPI) -> AppIdentity:

@@ -18,7 +18,9 @@ class TilerConfig(BaseSettings):
     tiler_shared_key: SecretStr | None = None
     tiler_renderer_version: str = Field(default="1", min_length=1)
     tiler_timeout_seconds: float = Field(default=10, gt=0)
-
+    # A preview tile is small. A native window of a large TIFF is not, so it
+    # does not share the tile budget.
+    tiler_window_timeout_seconds: float = Field(default=30, gt=0)
     tiler_info_timeout_seconds: float = Field(default=30, gt=0)
 
     @model_validator(mode="after")

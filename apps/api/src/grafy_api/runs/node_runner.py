@@ -14,7 +14,7 @@ can disturb, so a scheduler may run any number of them concurrently.
 """
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import cast
 from uuid import UUID
 
@@ -28,6 +28,7 @@ from grafy_core.kernel.results import ResultStore
 from grafy_core.kernel.scheduler import ComputationRequest, ComputationRunner
 from grafy_core.nodes import (
     NodeExecutionContext,
+    NodeProgressReporter,
     UserFacingNodeError,
     bind_node_secret_config,
     bind_node_secrets,
@@ -37,7 +38,12 @@ from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.execution import NodeRuntime
 
-from grafy_api.runs.contract import BoundNode, NodeContractBinder, ServiceFeed, is_boundary
+from grafy_api.runs.contract import (
+    BoundNode,
+    NodeContractBinder,
+    ServiceFeed,
+    is_boundary,
+)
 from grafy_api.runs.edge_values import EdgeValueResolver
 from grafy_api.runs.errors import NodeComputationError
 from grafy_api.runs.node_execution import NodeExecutionService
@@ -56,6 +62,7 @@ class NodeComputationRunner:
         edge_values: EdgeValueResolver,
         node_execution: NodeExecutionService,
         node_secrets: NodeSecretResolverPort,
+        progress_reporter_factory: Callable[[], NodeProgressReporter] | None = None,
     ) -> None:
         self._workspace_id = workspace_id
         self._project_id = project_id
@@ -64,6 +71,7 @@ class NodeComputationRunner:
         self._edge_values = edge_values
         self._node_execution = node_execution
         self._node_secrets = node_secrets
+        self._progress_reporter_factory = progress_reporter_factory
 
     async def __call__(
         self,
@@ -78,6 +86,11 @@ class NodeComputationRunner:
             node_id=instance.key.node_id,
             call_path=instance.key.call_path,
             fingerprint=request.fingerprint,
+            progress_reporter=(
+                self._progress_reporter_factory()
+                if self._progress_reporter_factory
+                else None
+            ),
         )
         if is_boundary(instance):
             # A Graph's own input or output is no operator: the one value that
@@ -345,6 +358,7 @@ class NodeComputationRunnerFactory:
         values: ArtifactValues,
         max_map_concurrency: int = 1,
         plugin_context: PluginRuntimeContext | None = None,
+        progress_reporter_factory: Callable[[], NodeProgressReporter] | None = None,
     ) -> None:
         self._binder = NodeContractBinder(
             registry=registry,
@@ -356,6 +370,7 @@ class NodeComputationRunnerFactory:
             max_map_concurrency=max_map_concurrency,
         )
         self._node_secrets = node_secrets
+        self._progress_reporter_factory = progress_reporter_factory
 
     def for_project(
         self,
@@ -372,6 +387,7 @@ class NodeComputationRunnerFactory:
             edge_values=self._edge_values,
             node_execution=self._node_execution,
             node_secrets=self._node_secrets,
+            progress_reporter_factory=self._progress_reporter_factory,
         )
 
 

@@ -599,6 +599,23 @@ async def test_table_wkt_error_identifies_row_and_column() -> None:
 
 
 @pytest.mark.asyncio
+async def test_table_to_features_refuses_an_ambiguous_column_title() -> None:
+    table = Table(
+        columns=[
+            TableColumn(id="column_1", title="wkt", value_type=TableValueType.TEXT),
+            TableColumn(id="column_2", title="wkt", value_type=TableValueType.TEXT),
+        ],
+        rows=[{"column_1": "POINT (0 0)", "column_2": "POINT (1 1)"}],
+    )
+
+    with pytest.raises(TableToGeoFeaturesError, match="'wkt' is ambiguous"):
+        await table_to_geo_features(
+            TableToGeoFeaturesConfig(geometry_column="wkt", source_crs="EPSG:4326"),
+            TableToGeoFeaturesInput(table=table),
+        )
+
+
+@pytest.mark.asyncio
 async def test_builds_typed_vector_raster_and_wms_layers() -> None:
     features_ref = artifact_ref(GEO_FEATURE_COLLECTION)
     raster_ref = artifact_ref(GEO_RASTER_SCAN)

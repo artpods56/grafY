@@ -233,6 +233,8 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   /** Ephemeral collaborator selection tint; never persisted. */
   remoteSelectionColor?: string | null;
   onConfigChange?: (nodeId: string, name: string, value: unknown) => void;
+  tiffWindowSourceId?: string;
+  onConfigPatch?: (nodeId: string, patch: WorkflowNodeConfig) => void;
   onLayoutChange?: (nodeId: string, layout: WorkflowNodeLayout | null) => void;
   onRunNode?: (nodeId: string) => void;
   onRevealNodeOutput?: (nodeId: string) => void;
@@ -280,6 +282,7 @@ export const WORKFLOW_NODE_TYPE = "grafyWorkflowNode";
 export const WORKFLOW_EDGE_TYPE = "grafyWorkflowEdge";
 export const GIS_COMPOSE_MAP_OPERATOR_ID = "gis.map.compose";
 export const GIS_VECTOR_LAYER_OPERATOR_ID = "gis.map.vector_layer";
+export const TIFF_TEXT_DETECTOR_OPERATOR_ID = "ocr.detect_tiff_text";
 
 export function workflowNodeIsSupported(data: WorkflowNodeData): boolean {
   return data.compatibility.status === "supported";
