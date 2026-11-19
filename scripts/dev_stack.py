@@ -12,6 +12,9 @@ import sys
 STARTUP_TIMEOUT = 180
 SHUTDOWN_GRACE = 5
 POLL_INTERVAL = 0.2
+# The size of one read from a service's output. A StreamReader only guarantees a
+# line up to its own 64 KiB limit, so the lines are reassembled here.
+LOG_CHUNK = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -56,9 +59,33 @@ def healthy(service: Service) -> bool:
         connection.close()
 
 
+def print_line(name: str, chunk: bytes) -> None:
+    print(f"[{name}] {chunk.decode(errors='replace').rstrip()}", flush=True)
+
+
 async def print_logs(name: str, stream: asyncio.StreamReader) -> None:
-    async for line in stream:
-        print(f"[{name}] {line.decode(errors='replace').rstrip()}", flush=True)
+    """Echo one service's output, keeping the pipe drained at every size.
+
+    Lines are reassembled from chunks rather than read with `async for line in
+    stream`: past the reader's 64 KiB line limit that iteration raises, this task
+    dies with the pipe undrained, and the service blocks forever on its next
+    write. A line that big is ordinary development output — `next dev` quotes the
+    module it failed on, uvicorn logs a long request — so it must not take the
+    stack down with it.
+    """
+    pending = b""
+    while chunk := await stream.read(LOG_CHUNK):
+        *lines, pending = (pending + chunk).split(b"\n")
+        for line in lines:
+            print_line(name, line)
+        if len(pending) > LOG_CHUNK:
+            # No newline in a whole buffer: a progress bar redrawing with `\r`.
+            # Print it and restart the line, so bytes keep flowing in both
+            # directions however the service chooses to break its output.
+            print_line(name, pending)
+            pending = b""
+    if pending:
+        print_line(name, pending)
 
 
 async def start(service: Service) -> Child:

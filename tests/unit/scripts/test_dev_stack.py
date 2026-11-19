@@ -147,6 +147,48 @@ while True:
     ]
 
 
+async def test_oversized_log_line_reaches_the_reader_without_stalling_the_writer(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """One line past the stream reader's own limit used to take the stack down.
+
+    `async for line in stream` raises once a line is longer than the reader's
+    64 KiB limit. The log task died with the pipe undrained, so the service then
+    blocked on its next write and the supervised run hung with no output: `next
+    dev` quotes the module it failed on, and uvicorn logs a long request. A
+    progress bar that redraws with carriage breaks never sends a newline at all,
+    which is the second shape asserted here.
+    """
+    long_line = "x" * (dev_stack.LOG_CHUNK * 2)
+    progress = "P" * (dev_stack.LOG_CHUNK * 2)
+    service = dev_stack.Service(
+        "test",
+        (
+            sys.executable,
+            "-c",
+            f"import sys; w = sys.stdout.write; "
+            f"w({long_line!r} + '\\n'); w({progress!r}); w('done\\n'); "
+            "sys.stdout.flush()",
+        ),
+        0,
+        "",
+    )
+
+    child = await dev_stack.start(service)
+    # The writer stops mid-buffer until the reader keeps draining, so a reader
+    # that died surfaces here as a timeout rather than as a silently short run.
+    await asyncio.wait_for(child.process.wait(), 10)
+    await asyncio.wait_for(child.logs, 10)
+
+    # Chunk boundaries fall wherever the pipe happens to fill, so only the
+    # concatenation is fixed: nothing dropped, nothing reordered, nothing eaten.
+    printed = capsys.readouterr().out.splitlines()
+    assert child.process.returncode == 0
+    assert "".join(line.removeprefix("[test] ") for line in printed) == (
+        long_line + progress + "done"
+    )
+
+
 async def test_shutdown_escalates_for_captured_group_after_leader_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
