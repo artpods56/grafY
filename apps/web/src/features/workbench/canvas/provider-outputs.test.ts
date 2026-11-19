@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { NodeSpec, Port } from "@/lib/api";
+import {
+  artifactPortFixture,
+  nodeSpecFixture,
+  servicePortFixture,
+} from "../test-fixtures";
 
 import { encodeHandleId } from "./handles";
 import {
@@ -20,22 +25,13 @@ function servicePort(
   direction: Port["direction"],
   features?: readonly string[],
 ): Port {
-  return {
+  return servicePortFixture({
     name,
     title: name,
-    description: null,
     direction,
-    kind: "service",
     service_contracts: [{ id: "ocr.reader", version: 1 }],
     features: features ? [...features] : undefined,
-    artifact_type: null,
-    artifact_type_variable: null,
-    shape: "one",
-    accepted_shapes: ["one"],
-    instance_plugs: false,
-    variadic: false,
-    required: true,
-  };
+  });
 }
 
 function artifactPort(
@@ -44,20 +40,12 @@ function artifactPort(
   required: boolean,
   title?: string,
 ): Port {
-  return {
+  return artifactPortFixture({
     name,
     title: title ?? name,
-    description: null,
     direction,
-    kind: "artifact",
-    artifact_type: { id: "scalar.text", schema_version: 1 },
-    artifact_type_variable: null,
-    shape: "one",
-    accepted_shapes: ["one"],
-    instance_plugs: false,
-    variadic: false,
     required,
-  };
+  });
 }
 
 function spec(
@@ -66,21 +54,12 @@ function spec(
   inputs: readonly Port[],
   outputs: readonly Port[],
 ): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: id,
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title,
-    description: null,
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs,
     outputs,
-  };
+  });
 }
 
 function edge(

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { NodeSpec } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { decodeHandleId, encodeHandleId } from "./handles";
 import {
   createWorkflowNodeData,
@@ -8,49 +9,32 @@ import {
   serializeRunNode,
 } from "./types";
 
-const genericNodeSpec: NodeSpec = {
+const genericNodeSpec: NodeSpec = nodeSpecFixture({
   operator_id: "sequence.collect",
-  operator_version: 1,
-  plugin_slug: "test",
-  origin: "builtin",
   title: "Collect",
   description: "Collect ordered artifacts.",
-  catalog_visible: true,
-  runnable: true,
-  config_schema: {},
-  input_schema: {},
-  output_schema: {},
   inputs: [
-    {
+    artifactPortFixture({
       name: "items",
       title: "Items",
-      description: null,
       direction: "input",
       artifact_type: null,
       artifact_type_variable: "T",
-      shape: "one",
       accepted_shapes: ["one", "many"],
       instance_plugs: true,
-      variadic: false,
-      required: true,
-    },
+    }),
   ],
   outputs: [
-    {
+    artifactPortFixture({
       name: "items",
       title: "Items",
-      description: null,
       direction: "output",
       artifact_type: null,
       artifact_type_variable: "T",
       shape: "many",
-      accepted_shapes: ["many"],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-    },
+    }),
   ],
-};
+});
 
 describe("generic artifact type bindings", () => {
   it("resolves every port sharing T after the first binding", () => {

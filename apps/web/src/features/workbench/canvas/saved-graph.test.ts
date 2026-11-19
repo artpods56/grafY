@@ -11,6 +11,7 @@ import type {
   SavedGraphEdge,
   SavedGraphNode,
 } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { registryWithProjectGraphs } from "../model/project-graphs";
 import { decodeHandleId } from "./handles";
 import {
@@ -40,33 +41,19 @@ function nodeSpec(
   shape: "one" | "many" = "one",
   acceptedShapes: readonly ("one" | "many")[] = [shape],
 ): NodeSpec {
-  const port = {
+  const port = artifactPortFixture({
     name: direction,
-    title: direction,
-    description: null,
     direction,
     artifact_type: { id: artifactTypeId, schema_version: 1 },
     shape,
     accepted_shapes: acceptedShapes,
-    instance_plugs: false,
-    variadic: false,
-    required: true,
-  };
-  return {
+  });
+  return nodeSpecFixture({
     operator_id: operatorId,
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
-    title: operatorId,
     description: operatorId,
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: direction === "input" ? [port] : [],
     outputs: direction === "output" ? [port] : [],
-  };
+  });
 }
 
 const conversionPath = [
@@ -731,34 +718,22 @@ function mappedStepGraph(edges: readonly SavedGraphEdge[]): SavedGraph {
 
 function collectRegistry(): NodeRegistry {
   const source = nodeSpec("source", "output", "text");
-  const collector: NodeSpec = {
+  const collector: NodeSpec = nodeSpecFixture({
     operator_id: "test.collect",
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title: "Collect text",
     description: "Collect ordered text inputs.",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: [
-      {
+      artifactPortFixture({
         name: "items",
         title: "Items",
-        description: null,
         direction: "input",
         artifact_type: { id: "text", schema_version: 1 },
         shape: "many",
         accepted_shapes: ["one", "many"],
         instance_plugs: true,
-        variadic: false,
-        required: true,
-      },
+      }),
     ],
-    outputs: [],
-  };
+  });
   return {
     plugins: [],
     artifact_types: [
@@ -903,49 +878,32 @@ describe("saved instance plugs", () => {
 });
 
 function genericCollectRegistry(): NodeRegistry {
-  const collector: NodeSpec = {
+  const collector: NodeSpec = nodeSpecFixture({
     operator_id: "sequence.collect",
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title: "Collect",
     description: "Collect ordered artifacts.",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: [
-      {
+      artifactPortFixture({
         name: "items",
         title: "Items",
-        description: null,
         direction: "input",
         artifact_type: null,
         artifact_type_variable: "T",
-        shape: "one",
         accepted_shapes: ["one", "many"],
         instance_plugs: true,
-        variadic: false,
-        required: true,
-      },
+      }),
     ],
     outputs: [
-      {
+      artifactPortFixture({
         name: "items",
         title: "Items",
-        description: null,
         direction: "output",
         artifact_type: null,
         artifact_type_variable: "T",
         shape: "many",
-        accepted_shapes: ["many"],
-        instance_plugs: false,
-        variadic: false,
-        required: true,
-      },
+      }),
     ],
-  };
+  });
   return {
     plugins: [],
     artifact_types: [

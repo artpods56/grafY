@@ -334,11 +334,11 @@ describe("project-graphs specs", () => {
 
     // An input node produces its Graph's input, an output node consumes one.
     expect(input?.inputs).toEqual([]);
-    expect(input?.outputs.map((port) => [port.name, port.direction])).toEqual([
-      ["value", "output"],
+    expect(input?.outputs).toMatchObject([
+      { name: "value", direction: "output", kind: "artifact" },
     ]);
-    expect(output?.inputs.map((port) => [port.name, port.direction])).toEqual([
-      ["value", "input"],
+    expect(output?.inputs).toMatchObject([
+      { name: "value", direction: "input", kind: "artifact" },
     ]);
     expect(output?.outputs).toEqual([]);
     expect(input?.outputs[0]?.artifact_type_variable).toBe("T");
@@ -391,6 +391,7 @@ describe("project-graphs specs", () => {
         title: "rows",
         description: null,
         direction: "input",
+        kind: "artifact",
         artifact_type: { id: "table.data", schema_version: 2 },
         artifact_type_variable: null,
         shape: "one",
@@ -404,6 +405,7 @@ describe("project-graphs specs", () => {
         title: "note",
         description: "Optional note",
         direction: "input",
+        kind: "artifact",
         artifact_type: null,
         artifact_type_variable: "note",
         shape: "one",
@@ -419,6 +421,7 @@ describe("project-graphs specs", () => {
         title: "report",
         description: null,
         direction: "output",
+        kind: "artifact",
         artifact_type: { id: "scalar.text", schema_version: 1 },
         artifact_type_variable: null,
         shape: "one",
