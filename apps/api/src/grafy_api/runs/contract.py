@@ -426,7 +426,9 @@ class NodeContractBinder:
         Graph's interface is what typed that port when the document was written.
         """
 
-        incoming = self._incoming(instance, upstream)
+        # No contract means no ports a connected provider could fail to produce:
+        # that refusal names a registered consumer, never a pass-through.
+        incoming = self._incoming(instance, upstream, {}, {})
         if not incoming:
             raise NodeComputationError(
                 f"Boundary node {instance.key.node_id!r} of graph "

@@ -394,21 +394,41 @@ def test_system_plugins_do_not_import_other_plugin_implementations() -> None:
     assert offenders == []
 
 
-# Deliberately NOT restored: `test_system_plugins_depend_on_core_not_outer_layers`,
-# deleted by 93063148 alongside the guards this file has been recovering, forbade a
-# family importing `grafy_api`, `grafy_mcp`, `grafy_persistence`, `grafy_storage` or
-# `grafy_workbench`. It fails today on exactly one module, and that module is a defect
-# rather than a boundary worth reopening. `plugins/gis/src/grafy_plugin_gis/smoke.py`
-# imports `grafy_storage.LocalFileObjectStore`, and it is not family code: its docstring
-# says it exercises the installed family "without an API", and it plays the host itself —
-# it builds `InMemoryUnitOfWork()` and `LocalFileObjectStore(root / "objects")` and
-# injects both into the family's own ports (`RasterScanOutputWriter(storage=..., uow=...)`,
-# `RasterScanResolver(storage=..., uow=...)`), and CI plus `docs/how-to-run-gis.md` run it
-# as `-m grafy_plugin_gis.smoke`. Constructing an object store is composition-root work
-# (ADR 0011), so the repair is to move that harness out of the family package to sit next
-# to `scripts/smoke_workbench.py`, not to let families import storage. No guard ships for
-# this boundary in the meantime and no exemption names that file: an exemption would turn
-# a defect into policy, and the suite must not read as covering what it does not cover.
+FORBIDDEN_PLUGIN_OUTER_LAYER_IMPORTS = (
+    "grafy_api",
+    "grafy_mcp",
+    "grafy_persistence",
+    "grafy_storage",
+)
+
+
+def test_system_plugins_depend_on_core_not_outer_layers() -> None:
+    """A family imports inward, and only the composition root wires it outward.
+
+    Restored from the guard 93063148 deleted. What kept it out was
+    `grafy_plugin_gis.smoke`, which built an `InMemoryUnitOfWork` and a
+    `LocalFileObjectStore` inside the family package; constructing an object
+    store is composition-root work (ADR 0011), so that harness is
+    `scripts/smoke_gis.py` now and the guard has nothing left to excuse.
+    `grafy_workbench` is not on the forbidden list because ADR 0017 makes a
+    Plugin application code beside the builtin families: importing them is
+    importing application code, not reaching out to a host.
+    """
+
+    offenders: list[str] = []
+
+    for family in SYSTEM_PLUGIN_FAMILIES:
+        source_root = REPO_ROOT / "plugins" / family / "src"
+        for path in source_root.rglob("*.py"):
+            package = ".".join(path.parent.relative_to(source_root).parts)
+            for module in _imported_modules(path.read_text(), package):
+                if any(
+                    module == forbidden or module.startswith(f"{forbidden}.")
+                    for forbidden in FORBIDDEN_PLUGIN_OUTER_LAYER_IMPORTS
+                ):
+                    offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
 
 
 def test_run_runtime_does_not_import_http_or_route_modules() -> None:

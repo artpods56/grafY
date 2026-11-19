@@ -16,9 +16,10 @@ from grafy_core.artifact_collections import (
     save_json_collections,
 )
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey, JsonObject
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.resolvers import ResolutionError
-from grafy_plugin_gis.persistence import FeatureCollectionResolver
+from grafy_plugin_gis.persistence import feature_collection_artifact
 from grafy_storage import LocalFileObjectStore
 
 
@@ -129,9 +130,14 @@ async def test_complete_feature_reads_preserve_integrity_and_reader_validation(
         operation = service.load_content(artifact)
         error_type = ArtifactContentUnavailableError
     else:
-        operation = FeatureCollectionResolver(uow=uow, storage=storage).resolve(
-            artifact.ref(), workspace_id
+        values = ArtifactValues(
+            (feature_collection_artifact(),),
+            uow=uow,
+            storage=storage,
+            bucket=stored.bucket,
+            storage_backend="local",
         )
+        operation = values.resolve(artifact.ref(), workspace_id)
         error_type = ResolutionError
     if error_fragment is not None:
         with pytest.raises(error_type) as error:
