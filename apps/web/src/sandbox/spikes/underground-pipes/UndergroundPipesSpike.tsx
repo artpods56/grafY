@@ -67,6 +67,7 @@ import {
   type PipeCorners,
   type PipeLook,
   type PipeMaterial,
+  type PipeWell,
 } from "./pipe-layers";
 
 /**
@@ -481,6 +482,20 @@ function LookPanel({
         />
       </div>
       <div {...stylex.props(s.row)}>
+        <span {...stylex.props(s.rowLabel)}>Wells</span>
+        <SegmentedControl<PipeWell>
+          aria-label="Wells"
+          size="sm"
+          disabled={!pipes}
+          value={look.well}
+          onValueChange={(well) => onLook({ ...look, well })}
+          options={[
+            { value: "recessed", label: "Recessed" },
+            { value: "flat", label: "Flat" },
+          ]}
+        />
+      </div>
+      <div {...stylex.props(s.row)}>
         <span {...stylex.props(s.rowLabel)}>Lanes</span>
         <SegmentedControl<"on" | "off">
           aria-label="Lanes"
@@ -566,6 +581,7 @@ export function UndergroundPipesSpike() {
   const [look, setLook] = React.useState<PipeLook>({
     corners: "sharp",
     material: "liquid",
+    well: "recessed",
     lanes: true,
     depth: true,
     blur: 4,
@@ -578,6 +594,7 @@ export function UndergroundPipesSpike() {
   const [deepPipes, setDeepPipes] = React.useState<SVGGElement | null>(null);
   const [sharp, setSharp] = React.useState<SVGGElement | null>(null);
   const [wells, setWells] = React.useState<SVGGElement | null>(null);
+  const [frostCuts, setFrostCuts] = React.useState<SVGGElement | null>(null);
   const [lenses, setLenses] = React.useState<SVGGElement | null>(null);
   const [lensMasks, setLensMasks] = React.useState<SVGGElement | null>(null);
   const [rims, setRims] = React.useState<SVGGElement | null>(null);
@@ -647,6 +664,7 @@ export function UndergroundPipesSpike() {
       pipes: [pipeGroup, middlePipes, deepPipes],
       sharp,
       wells,
+      frostCuts,
       lenses,
       lensMasks,
       rims,
@@ -661,6 +679,7 @@ export function UndergroundPipesSpike() {
       deepPipes,
       sharp,
       wells,
+      frostCuts,
       lenses,
       lensMasks,
       rims,
@@ -724,6 +743,7 @@ export function UndergroundPipesSpike() {
                 onDeepPipes={setDeepPipes}
                 onSharp={setSharp}
                 onWells={setWells}
+                onFrostCuts={setFrostCuts}
                 onLenses={setLenses}
                 onLensMasks={setLensMasks}
                 onRims={setRims}
