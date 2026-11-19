@@ -22,6 +22,9 @@ workbench can persist and execute the exact `X -> Y -> Z` path on one edge.
 These choices remain visible without adding boilerplate adapter nodes.
 Configurable or domain-significant transformations remain nodes.
 
+For native development and local script authentication, see
+[Run Grafy locally](docs/how-to-run-local.md).
+
 ## Architecture
 
 ```mermaid

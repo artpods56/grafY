@@ -62,6 +62,14 @@ elsewhere. Walk this list and say which entries applied:
 - **Web traps.** Frontend work follows `apps/web/AGENTS.md`; read it before
   touching `apps/web`, it holds the web-specific hazards.
 
+## Local development
+
+Use `just dev` to start the native stack when its ports are free. Ctrl-C stops
+its native processes. `just keycloak-down` stops the separate Keycloak
+container. For local scripts, `just dev-pat` issues a scoped PAT after the
+imported `owner` signs in once. See [local development](docs/how-to-run-local.md)
+for setup and token revocation.
+
 ## Verifying
 
 - Smallest proof first: `uv run pytest tests/unit/<area>/test_<thing>.py`, or

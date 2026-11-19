@@ -14,6 +14,15 @@ install:
     npm --prefix apps/web ci
     uv run prek install
 
+# Start Keycloak as needed and supervise the native development services.
+dev:
+    @exec uv run --no-project --python 3.14 python scripts/dev_stack.py
+
+# Mint a scoped PAT for the local Keycloak owner.
+[positional-arguments]
+dev-pat *args:
+    @uv run --no-sync python scripts/dev_pat.py "$@"
+
 # Start the API with installed application families and native GIS tools.
 api: db-upgrade
     uv run --exact --no-dev uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
@@ -28,7 +37,7 @@ tiler:
 
 # Start the web development server.
 web port="":
-    npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
+    npm --prefix apps/web run dev {{ if port != "" {"-- --port=" + port} else {""} }}
 
 # Run backend and web tests.
 test:
