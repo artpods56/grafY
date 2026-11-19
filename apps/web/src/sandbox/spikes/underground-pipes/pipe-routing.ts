@@ -13,9 +13,10 @@ import { Position } from "@xyflow/react";
  * stay in it.
  *
  * A channel between two cards is narrow: a bend keeps its distance from both
- * ports. When a channel holds more pipes than lanes fit, the longest pipes
- * sink to a deeper layer under the glass, where they take lanes of their own.
- * Long trunks run deep; short local hops stay near the surface.
+ * ports. When a channel holds more pipes than lanes fit, pipes passing through
+ * the crowded stretch sink to a deeper layer under the glass, where they take
+ * lanes of their own. Pipes starting or ending at a card right beside the
+ * crowded stretch stay near the surface.
  */
 
 export interface Point {
@@ -324,8 +325,8 @@ function spread(channel: Segment[], axis: Axis): void {
   }
 }
 
-/** The segments running abreast where the most of them do. */
-function busiestStretch(channel: readonly Segment[]): Segment[] {
+/** Midpoint of the first positive-length interval with peak occupancy. */
+function busiestPosition(channel: readonly Segment[]): number {
   const ends = channel
     .flatMap((segment) => [
       { at: segment.low, step: 1 },
@@ -338,34 +339,75 @@ function busiestStretch(channel: readonly Segment[]): Segment[] {
   for (const [index, end] of ends.entries()) {
     abreast += end.step;
     const next = ends[index + 1];
-    if (abreast > most && next) {
+    if (abreast > most && next && next.at > end.at) {
       most = abreast;
       where = (end.at + next.at) / 2;
     }
   }
-  return channel.filter(
-    (segment) => segment.low < where && where < segment.high,
-  );
-}
-
-function longestPipe(segments: readonly Segment[]): Route | null {
-  let longest: Route | null = null;
-  for (const { route } of segments) {
-    if (
-      !longest ||
-      route.length > longest.length ||
-      (route.length === longest.length && route.id < longest.id)
-    ) {
-      longest = route;
-    }
-  }
-  return longest;
+  return where;
 }
 
 /**
- * Where a channel needs more lanes than fit, sink the longest pipe running
- * through its busiest stretch one layer deeper, until it fits or the deepest
- * layer is reached.
+ * True when a port sits on a card directly beside the crowded point `(at, where)`.
+ * Such a pipe is terminating or starting right at the bottleneck rather than
+ * passing through it, so it should stay on the shallower layer.
+ */
+function isPortBesideBottleneck(
+  port: Point | undefined,
+  at: number,
+  where: number,
+  axis: Axis,
+): boolean {
+  if (!port) return false;
+  const along = other(axis);
+  const reach = PIPE_STUB * 2;
+  return (
+    Math.abs(port[axis] - at) <= reach && Math.abs(port[along] - where) <= reach
+  );
+}
+
+/**
+ * Pick the best pass-through pipe to sink from a crowded channel's busiest
+ * stretch. Pipes whose source or target port sits right beside the bottleneck
+ * never sink; among the remaining pass-through pipes, prefer ones whose
+ * segment clears the bottleneck cleanly on both sides, then longest overall.
+ */
+function sinkingThroughPipe(
+  channel: readonly Segment[],
+  axis: Axis,
+): Route | null {
+  const where = busiestPosition(channel);
+  let best: Route | null = null;
+  let bestClear = false;
+  for (const segment of channel) {
+    if (segment.low >= where || segment.high <= where) continue;
+    const { route, at } = segment;
+    if (
+      isPortBesideBottleneck(route.points[0], at, where, axis) ||
+      isPortBesideBottleneck(route.points.at(-1), at, where, axis)
+    ) {
+      continue;
+    }
+    const clearance = Math.min(where - segment.low, segment.high - where);
+    const clear = clearance >= PIPE_STUB * 3;
+    if (
+      !best ||
+      (clear && !bestClear) ||
+      (clear === bestClear &&
+        (route.length > best.length ||
+          (route.length === best.length && route.id < best.id)))
+    ) {
+      best = route;
+      bestClear = clear;
+    }
+  }
+  return best;
+}
+
+/**
+ * Where a channel needs more lanes than fit, sink the best pass-through pipe
+ * running through its busiest stretch one layer deeper, until it fits or no
+ * pass-through pipe remains.
  */
 function assignDepths(routes: readonly Route[]): void {
   for (let depth = 0; depth < PIPE_MAX_DEPTH; depth += 1) {
@@ -377,7 +419,7 @@ function assignDepths(routes: readonly Route[]): void {
           const room = capacity(channel);
           let members = channel;
           while (laneCount(laneIndices(members)) > room) {
-            const sinking = longestPipe(busiestStretch(members));
+            const sinking = sinkingThroughPipe(members, axis);
             if (!sinking) break;
             sinking.depth = depth + 1;
             sank = true;

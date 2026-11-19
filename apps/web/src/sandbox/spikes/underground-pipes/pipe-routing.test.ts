@@ -100,6 +100,44 @@ describe("routePipes", () => {
     }
   });
 
+  it("sinks a pass-through pipe instead of a longer pipe ending beside the channel", () => {
+    // `terminal` is far longer overall, yet terminates at y=50 right beside the
+    // crowded stretch around y=25. Only `through` passes straight past it.
+    const routes = routePipes([
+      request("terminal", [0, -1000], [64, 50]),
+      request("through", [0, -220], [64, 280]),
+      request("local", [0, 0], [64, 60]),
+    ]);
+
+    expect(routes.get("terminal")?.depth).toBe(0);
+    expect(routes.get("local")?.depth).toBe(0);
+    expect(routes.get("through")?.depth).toBe(1);
+  });
+
+  it("keeps every pipe shallow when only local port approaches crowd a gap", () => {
+    const routes = routePipes([
+      request("one", [0, 0], [54, 50]),
+      request("two", [0, 5], [54, 55]),
+    ]);
+
+    expect([...routes.values()].map((pipe) => pipe.depth)).toEqual([0, 0]);
+  });
+
+  it("prefers sinking a pipe with clear margin over one bending just past the bottleneck", () => {
+    // Gap width 64 leaves room=10 (capacity 2). Both `just-past` and `clear`
+    // avoid the immediate port reach, yet `clear` passes squarely through the
+    // bottleneck while `just-past` turns into a port right below it.
+    const routes = routePipes([
+      request("just-past", [0, -900], [64, 90]),
+      request("clear", [0, -260], [64, 260]),
+      request("local", [0, 0], [64, 50]),
+    ]);
+
+    expect(routes.get("local")?.depth).toBe(0);
+    expect(routes.get("just-past")?.depth).toBe(0);
+    expect(routes.get("clear")?.depth).toBe(1);
+  });
+
   it("splits two forward pipes that bend in the same channel", () => {
     const routes = routePipes([
       request("upper", [0, 0], [200, 100]),

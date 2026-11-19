@@ -162,9 +162,19 @@ const WELL_MENISCUS_HI =
 const WELL_MENISCUS_LO =
   "light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 35%, transparent))";
 
-/** How much more a layer blurs, and how much it fades, per step deeper. */
-const DEPTH_BLUR_STEP = 0.9;
-const DEPTH_OPACITY = [1, 0.72, 0.5] as const;
+/**
+ * Per-plane depth cues so all three planes stay legible while reading as
+ * distinct elevations: moderate blur growth, preserved opacity, gentle
+ * perspective narrowing, and subtle overhead light falloff.
+ */
+const DEPTH_BLUR_STEP = 0.35;
+const DEPTH_OPACITY = [1, 0.88, 0.76] as const;
+const DEPTH_GIRTH = [1, 0.92, 0.84] as const;
+const DEPTH_BRIGHTNESS = [1, 0.94, 0.88] as const;
+const PIPE_CAST_SHADOW_TOP =
+  "light-dark(color-mix(in srgb, black 16%, transparent), color-mix(in srgb, black 48%, transparent))";
+const PIPE_CAST_SHADOW_MID =
+  "light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 30%, transparent))";
 
 interface RoutedPath {
   path: string;
@@ -311,6 +321,8 @@ export function GlassStage({
     const filters: string[] = [];
     const blur = look.blur * (1 + depth * DEPTH_BLUR_STEP);
     if (blur > 0) filters.push(`blur(${blur}px)`);
+    const brightness = DEPTH_BRIGHTNESS[depth] ?? 1;
+    if (brightness < 1) filters.push(`brightness(${brightness})`);
     // Vibrancy: colour under Apple's glass is boosted rather than washed out.
     if (look.material === "liquid") filters.push("saturate(1.9)");
     return filters.length > 0 ? filters.join(" ") : undefined;
@@ -804,22 +816,40 @@ export function PipeRouter({
 
 const NO_BOOK_SUBSCRIPTION = () => () => {};
 
-/** A tube: the type colour with a lighter shine down its middle. */
+/** A tube: optional under-crossing shadow, type colour, and lighter specular shine. */
 function PipeBody({
   path,
   color,
   corners,
   girth = 1,
+  shadow,
 }: {
   path: string;
   color: string;
   corners: PipeCorners;
-  /** Width multiplier; a refracted stub is drawn magnified. */
+  /** Width multiplier; deeper layers taper slightly, refracted stubs widen. */
   girth?: number;
+  /** Cast a soft shadow onto deeper layers crossing underneath this pipe. */
+  shadow?: "surface" | "middle";
 }) {
   const join = corners === "sharp" ? "miter" : "round";
   return (
     <g>
+      {shadow ? (
+        <path
+          d={path}
+          transform="translate(0, 2.2)"
+          fill="none"
+          strokeWidth={PIPE_WIDTH * girth + 1.2}
+          strokeLinejoin={join}
+          style={{
+            stroke:
+              shadow === "surface"
+                ? PIPE_CAST_SHADOW_TOP
+                : PIPE_CAST_SHADOW_MID,
+          }}
+        />
+      ) : null}
       <path
         d={path}
         fill="none"
@@ -1167,7 +1197,11 @@ export function PipeEdgeView({
   const sourceSequence = isSequenceHandle(sourceHandleId);
   const targetSequence = isSequenceHandle(targetHandleId);
   const resting = moving ? undefined : routed;
-  const layer = targets.pipes[resting?.depth ?? 0] ?? targets.pipes[0];
+  const depth = resting?.depth ?? 0;
+  const layer = targets.pipes[depth] ?? targets.pipes[0];
+  const depthGirth = DEPTH_GIRTH[depth] ?? 1;
+  const depthShadow =
+    depth === 0 ? "surface" : depth === 1 ? "middle" : undefined;
   const path =
     resting?.path ??
     soloPath(
@@ -1248,7 +1282,13 @@ export function PipeEdgeView({
       {settled && layer
         ? createPortal(
             <g data-pipe={id}>
-              <PipeBody path={path} color={color} corners={corners} />
+              <PipeBody
+                path={path}
+                color={color}
+                corners={corners}
+                girth={depthGirth}
+                shadow={depthShadow}
+              />
             </g>,
             layer,
           )
