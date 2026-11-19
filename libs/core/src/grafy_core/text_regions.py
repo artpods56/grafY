@@ -55,6 +55,10 @@ class TiffWindowReader(Protocol):
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
+type PixelAffine = tuple[float, float, float, float, float, float]
+"""GDAL/rasterio ``(a, b, c, d, e, f)``: ``x = a*col + b*row + c`` and
+``y = d*col + e*row + f``, where ``(col, row)`` is a pixel corner of the page."""
+
 
 @dataclass(frozen=True, slots=True)
 class TiffPage:
@@ -63,6 +67,9 @@ class TiffPage:
     read: TiffWindowReader
     source_sha256: str
     page: int
+    # Both are set for a georeferenced page and both are None otherwise.
+    affine: PixelAffine | None = None
+    crs: str | None = None
 
     def __post_init__(self) -> None:
         if _SHA256.fullmatch(self.source_sha256) is None:
@@ -71,6 +78,8 @@ class TiffPage:
             )
         if self.page < 0:
             raise ValueError("TIFF page index must not be negative")
+        if (self.affine is None) != (self.crs is None):
+            raise ValueError("TIFF page affine and CRS must be present together")
 
 
 class TiffPageOpener(Protocol):

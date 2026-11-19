@@ -24,6 +24,7 @@ EXPECTED_BUILTIN_OPERATORS = {
     ("ocr.craft_provider", 1),
     ("ocr.paddle_cyrillic_provider", 1),
     ("ocr.recognize_tiff_text", 1),
+    ("ocr.georeference_places", 1),
 }
 
 

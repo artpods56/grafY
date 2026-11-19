@@ -700,6 +700,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pillow" },
     { name = "pydantic" },
+    { name = "pyproj" },
     { name = "shapely" },
 ]
 
@@ -709,6 +710,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "pillow" },
     { name = "pydantic" },
+    { name = "pyproj", specifier = ">=3.7.0" },
     { name = "shapely", specifier = ">=2.1.0" },
 ]
 

@@ -658,3 +658,58 @@ async def test_whole_request_deadline_releases_stalled_upstream(proxy: Harness) 
         assert failure.value.retry_after == "2"
     finally:
         await tiler.close()
+
+
+@pytest.mark.parametrize(
+    "affine,crs",
+    [((2.0, 0.25, 100.0, -0.5, -3.0, 200.0), "EPSG:2180"), (None, None)],
+)
+async def test_a_run_page_carries_the_georeference_of_its_origin_pixel(
+    proxy: Harness,
+    affine: tuple[float, float, float, float, float, float] | None,
+    crs: str | None,
+) -> None:
+    info = {
+        "width": 640,
+        "height": 480,
+        "page_count": 3,
+        "has_alpha": False,
+        "tile_size": 512,
+        "min_level": 1,
+        "max_level": 10,
+        "tile_format": "jpg",
+    }
+    placement = {"col": 0, "row": 0, "width": 1, "height": 1}
+    placement |= {"affine": affine, "crs": crs}
+    windows: list[dict[str, str]] = []
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/info":
+            return httpx.Response(200, json=info)
+        assert request.url.path == "/window"
+        windows.append(dict(request.url.params))
+        return httpx.Response(
+            200,
+            content=b"one pixel",
+            headers={
+                "Content-Type": "image/png",
+                "X-Grafy-Window": json.dumps(placement),
+            },
+        )
+
+    service = ArtifactImageService(
+        proxy.uow,
+        proxy.config,
+        HttpTiler(
+            proxy.config,
+            client=httpx.AsyncClient(transport=httpx.MockTransport(upstream)),
+        ),
+    )
+    try:
+        page = await service.open_run_tiff_page(WS, proxy.artifact.id, page=2)
+    finally:
+        await service.close()
+
+    assert (page.width, page.height, page.page) == (640, 480, 2)
+    assert (page.affine, page.crs) == (affine, crs)
+    assert windows == [{"col": "0", "row": "0", "width": "1", "height": "1"}]
