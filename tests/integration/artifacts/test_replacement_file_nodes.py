@@ -14,8 +14,8 @@ from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_core.artifacts import (
     ArtifactObject,
 )
+from grafy_core.documents import FILE_ARTIFACTS
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.file_artifacts import FileArtifactError
 from grafy_core.file_contracts import (
     BMP_FILE,
     CSV_FILE,
@@ -29,7 +29,10 @@ from grafy_core.file_contracts import (
 )
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.plugins import PluginRegistry
+from grafy_core.ports.storage import FileStoragePort
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.runtime.resolvers import ArtifactContractError
 from grafy_core.table_contracts import TABLE_DATA
 from grafy_plugin_gis.artifacts import (
     GEO_FEATURE_COLLECTION,
@@ -106,6 +109,18 @@ def node_context() -> NodeExecutionContext:
     )
 
 
+def file_values(storage: FileStoragePort, uow: InMemoryUnitOfWork) -> ArtifactValues:
+    """The declarations the runtime uses to turn a seeded file artifact into a value."""
+
+    return ArtifactValues(
+        FILE_ARTIFACTS,
+        uow=uow,
+        storage=storage,
+        bucket="artifacts",
+        storage_backend="local",
+    )
+
+
 @pytest.mark.asyncio
 async def test_table_import_dispatches_on_the_declared_format_not_the_filename(
     tmp_path: Path,
@@ -131,17 +146,19 @@ async def test_table_import_dispatches_on_the_declared_format_not_the_filename(
         ),
         original_filename="places.csv",
     )
-    node = ImportTableNode(storage=storage, uow=uow)
+    node = ImportTableNode()
+    csv_document = await file_values(storage, uow).resolve(csv_ref, TEST_WORKSPACE_ID)
+    xlsx_document = await file_values(storage, uow).resolve(xlsx_ref, TEST_WORKSPACE_ID)
 
     csv_output = await node.run(
         node_context(),
         node.config_contract.model.model_validate({}),
-        TableImportInput(file=csv_ref),
+        TableImportInput(file=csv_document),
     )
     xlsx_output = await node.run(
         node_context(),
         node.config_contract.model.model_validate({}),
-        TableImportInput(file=xlsx_ref),
+        TableImportInput(file=xlsx_document),
     )
 
     assert [column.title for column in csv_output.table.columns] == [
@@ -173,22 +190,23 @@ async def test_table_import_applies_delimiter_header_and_empty_row_parameters(
         spec=CSV_FILE,
         content=b"Places of the region\nname;population\nBelynichi;10\n;\n",
     )
-    node = ImportTableNode(storage=storage, uow=uow)
+    node = ImportTableNode()
+    document = await file_values(storage, uow).resolve(ref, TEST_WORKSPACE_ID)
 
     default_output = await node.run(
         node_context(),
         node.config_contract.model.model_validate({}),
-        TableImportInput(file=ref),
+        TableImportInput(file=document),
     )
     configured_output = await node.run(
         node_context(),
         TableImportConfig(delimiter=";", header_row=2, skip_empty_rows=True),
-        TableImportInput(file=ref),
+        TableImportInput(file=document),
     )
     kept_output = await node.run(
         node_context(),
         TableImportConfig(delimiter=";", header_row=2, skip_empty_rows=False),
-        TableImportInput(file=ref),
+        TableImportInput(file=document),
     )
 
     assert default_output.table.columns[0].title == "Places of the region"
@@ -231,17 +249,21 @@ async def test_table_import_selects_the_named_sheet_and_rejects_a_zip_without_on
         spec=XLSX_FILE,
         content=b"PK\x03\x04not-a-workbook",
     )
-    node = ImportTableNode(storage=storage, uow=uow)
+    node = ImportTableNode()
+    document = await file_values(storage, uow).resolve(ref, TEST_WORKSPACE_ID)
+    broken_document = await file_values(storage, uow).resolve(
+        broken_ref, TEST_WORKSPACE_ID
+    )
 
     active = await node.run(
         node_context(),
         TableImportConfig(),
-        TableImportInput(file=ref),
+        TableImportInput(file=document),
     )
     selected = await node.run(
         node_context(),
         TableImportConfig(sheet_name="Places"),
-        TableImportInput(file=ref),
+        TableImportInput(file=document),
     )
     assert [column.title for column in active.table.columns] == ["ignored_header"]
     assert active.table.rows == [{"column_1": "ignored_row"}]
@@ -251,13 +273,13 @@ async def test_table_import_selects_the_named_sheet_and_rejects_a_zip_without_on
         _ = await node.run(
             node_context(),
             TableImportConfig(sheet_name="Missing"),
-            TableImportInput(file=ref),
+            TableImportInput(file=document),
         )
     with pytest.raises(TableFileImportError, match="not a readable XLSX workbook"):
         _ = await node.run(
             node_context(),
             TableImportConfig(),
-            TableImportInput(file=broken_ref),
+            TableImportInput(file=broken_document),
         )
 
 
@@ -283,17 +305,21 @@ async def test_geojson_parse_accepts_both_declared_container_types(
         content=feature_collection_bytes((13.405, 52.52)),
         original_filename="cities.json",
     )
-    node = ParseGeoJsonNode(storage=storage, uow=uow)
+    node = ParseGeoJsonNode()
+    geojson_document = await file_values(storage, uow).resolve(
+        geojson_ref, TEST_WORKSPACE_ID
+    )
+    json_document = await file_values(storage, uow).resolve(json_ref, TEST_WORKSPACE_ID)
 
     geojson = await node.run(
         node_context(),
         node.config_contract.model.model_validate({}),
-        GeoJsonParseInput(file=geojson_ref),
+        GeoJsonParseInput(file=geojson_document),
     )
     plain_json = await node.run(
         node_context(),
         node.config_contract.model.model_validate({}),
-        GeoJsonParseInput(file=json_ref),
+        GeoJsonParseInput(file=json_document),
     )
 
     assert geojson.features.source_name == "cities.geojson"
@@ -324,19 +350,25 @@ async def test_geojson_parse_validates_the_document_shape_at_run_time(
         content=feature_collection_bytes((4_000_000.0, 5_000_000.0)),
         original_filename="projected.geojson",
     )
-    node = ParseGeoJsonNode(storage=storage, uow=uow)
+    node = ParseGeoJsonNode()
+    array_document = await file_values(storage, uow).resolve(
+        array_ref, TEST_WORKSPACE_ID
+    )
+    projected_document = await file_values(storage, uow).resolve(
+        projected_ref, TEST_WORKSPACE_ID
+    )
 
     with pytest.raises(GeoJsonParseError, match="not a valid GeoJSON"):
         _ = await node.run(
             node_context(),
             node.config_contract.model.model_validate({}),
-            GeoJsonParseInput(file=array_ref),
+            GeoJsonParseInput(file=array_document),
         )
     with pytest.raises(GeoJsonParseError, match="outside WGS84"):
         _ = await node.run(
             node_context(),
             node.config_contract.model.model_validate({}),
-            GeoJsonParseInput(file=projected_ref),
+            GeoJsonParseInput(file=projected_document),
         )
 
 
@@ -361,17 +393,23 @@ async def test_raster_scan_import_names_the_source_and_keeps_the_original_filena
         spec=TIFF_FILE,
         content=b"II*\x00geotiff-bytes-again",
     )
-    node = ImportRasterScanNode(storage=storage, uow=uow)
+    node = ImportRasterScanNode()
+    named_document = await file_values(storage, uow).resolve(
+        named_ref, TEST_WORKSPACE_ID
+    )
+    unnamed_document = await file_values(storage, uow).resolve(
+        unnamed_ref, TEST_WORKSPACE_ID
+    )
 
     named = await node.run(
         node_context(),
         GeoRasterScanImportConfig(source_name="Orthophoto 2024"),
-        GeoRasterScanImportInput(file=named_ref),
+        GeoRasterScanImportInput(file=named_document),
     )
     unnamed = await node.run(
         node_context(),
         GeoRasterScanImportConfig(source_name="Orthophoto 2024"),
-        GeoRasterScanImportInput(file=unnamed_ref),
+        GeoRasterScanImportInput(file=unnamed_document),
     )
 
     assert named.raster.content == b"II*\x00geotiff-bytes"
@@ -393,14 +431,9 @@ async def test_file_artifact_reader_fails_closed_without_stored_bytes() -> None:
     async with uow as entered:
         await entered.artifacts.add(artifact)
         await entered.commit()
-    node = ImportTableNode(storage=storage, uow=uow)
 
-    with pytest.raises(FileArtifactError, match="has no stored object"):
-        _ = await node.run(
-            node_context(),
-            TableImportConfig(),
-            TableImportInput(file=artifact.ref()),
-        )
+    with pytest.raises(ArtifactContractError, match="has no stored object"):
+        await file_values(storage, uow).resolve(artifact.ref(), TEST_WORKSPACE_ID)
 
 
 def test_replacement_nodes_declare_their_catalog_contracts() -> None:
@@ -417,7 +450,8 @@ def test_replacement_nodes_declare_their_catalog_contracts() -> None:
     assert table_file.accepts == CSV_FILE.key
     assert table_file.also_accepts == (XLSX_FILE.key,)
     assert table_file.shape.value == "one"
-    assert table_file.preserves_ref_container is True
+    # The port carries the materialized file, never the reference it came from.
+    assert table_file.preserves_ref_container is False
     assert (
         import_table.node_class.output_contract.ports["table"].produces
         == TABLE_DATA.key
