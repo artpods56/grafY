@@ -11,6 +11,12 @@ export const SPIKES = [
     summary:
       "The product canvas with real node cards, kept as a base for building an input interaction.",
   },
+  {
+    id: "underground-pipes",
+    title: "Pipes under the canvas",
+    summary:
+      "Edges as angular pipes laid under a translucent canvas, surfacing through sockets at the ports.",
+  },
 ] as const;
 
 export type SpikeId = (typeof SPIKES)[number]["id"];
