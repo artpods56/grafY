@@ -100,12 +100,12 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
         public_origin=settings.app.public_origin,
         unit_of_work_factory=identity_uow_factory,
         identity_service=identity_service,
+        allowed_cors_origins=settings.app.allowed_cors_origins,
     )
     return AppIdentity(
         identity_uow_factory=identity_uow_factory,
         identity_service=identity_service,
         auth_service=auth_service,
-        public_origin=settings.app.public_origin,
     )
 
 

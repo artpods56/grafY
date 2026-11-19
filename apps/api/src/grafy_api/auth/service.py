@@ -83,14 +83,15 @@ class AuthService:
         public_origin: str,
         unit_of_work_factory: Callable[[], IdentityUnitOfWorkPort],
         identity_service: IdentityService,
+        allowed_cors_origins: tuple[str, ...] = (),
         abuse_control: AuthAbuseControl | None = None,
     ) -> None:
         self._auth = auth
         # public_origin is AppConfig and oidc_callback_path is AuthConfig; the
         # browser redirect target is their only joint derivation, so it is resolved
         # once here rather than giving either section a copy of the other's value.
-        self._public_origin = public_origin
         self._oidc_callback_url = auth.resolved_callback_url(public_origin)
+        self.trusted_browser_origins = frozenset((public_origin, *allowed_cors_origins))
         self._uow_factory = unit_of_work_factory
         self._identity_service = identity_service
         configured_browser_cookie_secret = auth.oidc_auth_wrapping_key
@@ -336,7 +337,9 @@ class AuthService:
             request.state.auth_session = session
             request.state.auth_actor_user_id = session.user_id
             request.state.auth_credential_reference = f"session:{session.id}"
-            check_cookie_request(request, public_origin=self._public_origin)
+            check_cookie_request(
+                request, trusted_browser_origins=self.trusted_browser_origins
+            )
             session.last_used_at = now
             await uow.commit()
         return ActorContext(
