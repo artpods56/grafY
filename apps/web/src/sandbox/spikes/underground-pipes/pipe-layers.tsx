@@ -6,6 +6,7 @@ import * as stylex from "@stylexjs/stylex";
 import {
   Position,
   useStore,
+  useNodeConnections,
   type ConnectionLineComponentProps,
   type Edge,
   type EdgeProps,
@@ -283,6 +284,182 @@ const s = stylex.create({
 
 type GroupRef = (group: SVGGElement | null) => void;
 
+function WellGradients({ prefix = "" }: { prefix?: string }) {
+  return (
+    <>
+      {/* Deep recessed cavity shadow cast by the overhead glass slab. */}
+      <radialGradient
+        id={prefix + WELL_CAVITY_SHADE_ID}
+        cx="50%"
+        cy="68%"
+        r="72%"
+      >
+        <stop offset="32%" stopColor="black" stopOpacity={0} />
+        <stop offset="76%" stopColor="black" stopOpacity={0.22} />
+        <stop offset="100%" stopColor="black" stopOpacity={0.5} />
+      </radialGradient>
+      <linearGradient id={prefix + WELL_EDGE_ID} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="black" stopOpacity={0.4} />
+        <stop offset="50%" stopColor="black" stopOpacity={0} />
+        <stop
+          offset="100%"
+          stopOpacity={0.95}
+          style={{ stopColor: WELL_GLINT }}
+        />
+      </linearGradient>
+      {/* Frost bore wall thickness: shadowed upper inner wall, diffused
+                frosted catchlight along the lower inner wall. */}
+      <linearGradient
+        id={prefix + WELL_WALL_FROST_ID}
+        x1="0"
+        y1="0"
+        x2="0"
+        y2="1"
+      >
+        <stop offset="0%" style={{ stopColor: WELL_WALL_FROST_TOP }} />
+        <stop offset="44%" style={{ stopColor: WELL_WALL_FROST_MID }} />
+        <stop offset="78%" style={{ stopColor: WELL_WALL_FROST_LOW }} />
+        <stop offset="100%" style={{ stopColor: WELL_WALL_FROST_BOT }} />
+      </linearGradient>
+      {/* Liquid glass bore wall: high-contrast crystalline refraction. */}
+      <linearGradient
+        id={prefix + WELL_WALL_LIQUID_ID}
+        x1="0"
+        y1="0"
+        x2="1"
+        y2="1"
+      >
+        <stop offset="0%" style={{ stopColor: WELL_WALL_LIQUID_TOP }} />
+        <stop offset="45%" style={{ stopColor: WELL_WALL_LIQUID_MID }} />
+        <stop offset="100%" style={{ stopColor: WELL_WALL_LIQUID_BOT }} />
+      </linearGradient>
+      {/* Outer meniscus bevel sheen for Liquid glass. */}
+      <linearGradient
+        id={prefix + WELL_MENISCUS_ID}
+        x1="0"
+        y1="0"
+        x2="1"
+        y2="1"
+      >
+        <stop offset="0%" style={{ stopColor: WELL_MENISCUS_HI }} />
+        <stop offset="45%" stopColor="white" stopOpacity={0} />
+        <stop offset="100%" style={{ stopColor: WELL_MENISCUS_LO }} />
+      </linearGradient>
+      {/* Liquid glass: light from the top left glints on both sides of a
+                cut edge. */}
+      <linearGradient
+        id={prefix + WELL_SPECULAR_ID}
+        x1="0"
+        y1="0"
+        x2="1"
+        y2="1"
+      >
+        <stop offset="0%" stopColor="white" stopOpacity={0.95} />
+        <stop offset="32%" stopColor="white" stopOpacity={0} />
+        <stop offset="68%" stopColor="white" stopOpacity={0} />
+        <stop offset="100%" stopColor="white" stopOpacity={0.55} />
+      </linearGradient>
+      {/* Opposing inner-edge bounce specular for thick liquid glass. */}
+      <linearGradient
+        id={prefix + WELL_INNER_SPEC_ID}
+        x1="0"
+        y1="0"
+        x2="1"
+        y2="1"
+      >
+        <stop offset="0%" stopColor="black" stopOpacity={0.48} />
+        <stop offset="38%" stopColor="black" stopOpacity={0.08} />
+        <stop offset="70%" stopColor="white" stopOpacity={0.12} />
+        <stop offset="100%" stopColor="white" stopOpacity={0.78} />
+      </linearGradient>
+      {/* Cylindrical shading for horizontal & vertical pipe stubs inside
+                a well: off-center top highlight, rounded dark underside. */}
+      <linearGradient id={prefix + PIPE_CYL_H_ID} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="black" stopOpacity={0.16} />
+        <stop offset="22%" stopColor="white" stopOpacity={0.52} />
+        <stop offset="48%" stopColor="white" stopOpacity={0} />
+        <stop offset="78%" stopColor="black" stopOpacity={0.22} />
+        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
+      </linearGradient>
+      <linearGradient id={prefix + PIPE_CYL_V_ID} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stopColor="black" stopOpacity={0.16} />
+        <stop offset="24%" stopColor="white" stopOpacity={0.48} />
+        <stop offset="50%" stopColor="white" stopOpacity={0} />
+        <stop offset="80%" stopColor="black" stopOpacity={0.22} />
+        <stop offset="100%" stopColor="black" stopOpacity={0.4} />
+      </linearGradient>
+      {/* Glass overhang shadow where the deep pipe emerges from beneath
+                the bore wall, brightening as it approaches the vertical riser. */}
+      <linearGradient
+        id={prefix + PIPE_OVERHANG_RIGHT_ID}
+        x1="0"
+        y1="0"
+        x2="1"
+        y2="0"
+      >
+        <stop offset="0%" stopColor="black" stopOpacity={0} />
+        <stop offset="58%" stopColor="black" stopOpacity={0.04} />
+        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
+      </linearGradient>
+      <linearGradient
+        id={prefix + PIPE_OVERHANG_LEFT_ID}
+        x1="1"
+        y1="0"
+        x2="0"
+        y2="0"
+      >
+        <stop offset="0%" stopColor="black" stopOpacity={0} />
+        <stop offset="58%" stopColor="black" stopOpacity={0.04} />
+        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
+      </linearGradient>
+      <linearGradient
+        id={prefix + PIPE_OVERHANG_DOWN_ID}
+        x1="0"
+        y1="0"
+        x2="0"
+        y2="1"
+      >
+        <stop offset="0%" stopColor="black" stopOpacity={0} />
+        <stop offset="58%" stopColor="black" stopOpacity={0.04} />
+        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
+      </linearGradient>
+      <linearGradient
+        id={prefix + PIPE_OVERHANG_UP_ID}
+        x1="0"
+        y1="1"
+        x2="0"
+        y2="0"
+      >
+        <stop offset="0%" stopColor="black" stopOpacity={0} />
+        <stop offset="58%" stopColor="black" stopOpacity={0.04} />
+        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
+      </linearGradient>
+      {/* Top-down vertical riser crown: curved shoulder catching overhead
+                top-left light as the pipe rises straight up into the port. */}
+      <radialGradient
+        id={prefix + PIPE_RISER_CROWN_ID}
+        cx="34%"
+        cy="30%"
+        r="70%"
+      >
+        <stop offset="0%" stopColor="white" stopOpacity={0.56} />
+        <stop offset="45%" stopColor="white" stopOpacity={0.06} />
+        <stop offset="78%" stopColor="black" stopOpacity={0.18} />
+        <stop offset="100%" stopColor="black" stopOpacity={0.44} />
+      </radialGradient>
+      {/* Contact shadow directly beneath the port ring resting on top of
+                the rising pipe collar. */}
+      <radialGradient id={prefix + PIPE_PORT_SHADOW_ID}>
+        <stop offset="55%" stopColor="black" stopOpacity={0.42} />
+        <stop offset="82%" stopColor="black" stopOpacity={0.16} />
+        <stop offset="100%" stopColor="black" stopOpacity={0} />
+      </radialGradient>
+    </>
+  );
+}
+
+const DRAG_GRADIENT_PREFIX = "drag-";
+
 /** Layers 1 to 3. Edges fill them through {@link PipeTargetsProvider}. */
 export function GlassStage({
   look,
@@ -430,139 +607,7 @@ export function GlassStage({
               <stop offset="58%" stopColor="black" stopOpacity={0} />
               <stop offset="100%" stopColor="black" stopOpacity={0.38} />
             </radialGradient>
-            {/* Deep recessed cavity shadow cast by the overhead glass slab. */}
-            <radialGradient id={WELL_CAVITY_SHADE_ID} cx="50%" cy="68%" r="72%">
-              <stop offset="32%" stopColor="black" stopOpacity={0} />
-              <stop offset="76%" stopColor="black" stopOpacity={0.22} />
-              <stop offset="100%" stopColor="black" stopOpacity={0.5} />
-            </radialGradient>
-            <linearGradient id={WELL_EDGE_ID} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="black" stopOpacity={0.4} />
-              <stop offset="50%" stopColor="black" stopOpacity={0} />
-              <stop
-                offset="100%"
-                stopOpacity={0.95}
-                style={{ stopColor: WELL_GLINT }}
-              />
-            </linearGradient>
-            {/* Frost bore wall thickness: shadowed upper inner wall, diffused
-                frosted catchlight along the lower inner wall. */}
-            <linearGradient id={WELL_WALL_FROST_ID} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" style={{ stopColor: WELL_WALL_FROST_TOP }} />
-              <stop offset="44%" style={{ stopColor: WELL_WALL_FROST_MID }} />
-              <stop offset="78%" style={{ stopColor: WELL_WALL_FROST_LOW }} />
-              <stop offset="100%" style={{ stopColor: WELL_WALL_FROST_BOT }} />
-            </linearGradient>
-            {/* Liquid glass bore wall: high-contrast crystalline refraction. */}
-            <linearGradient
-              id={WELL_WALL_LIQUID_ID}
-              x1="0"
-              y1="0"
-              x2="1"
-              y2="1"
-            >
-              <stop offset="0%" style={{ stopColor: WELL_WALL_LIQUID_TOP }} />
-              <stop offset="45%" style={{ stopColor: WELL_WALL_LIQUID_MID }} />
-              <stop offset="100%" style={{ stopColor: WELL_WALL_LIQUID_BOT }} />
-            </linearGradient>
-            {/* Outer meniscus bevel sheen for Liquid glass. */}
-            <linearGradient id={WELL_MENISCUS_ID} x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" style={{ stopColor: WELL_MENISCUS_HI }} />
-              <stop offset="45%" stopColor="white" stopOpacity={0} />
-              <stop offset="100%" style={{ stopColor: WELL_MENISCUS_LO }} />
-            </linearGradient>
-            {/* Liquid glass: light from the top left glints on both sides of a
-                cut edge. */}
-            <linearGradient id={WELL_SPECULAR_ID} x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="white" stopOpacity={0.95} />
-              <stop offset="32%" stopColor="white" stopOpacity={0} />
-              <stop offset="68%" stopColor="white" stopOpacity={0} />
-              <stop offset="100%" stopColor="white" stopOpacity={0.55} />
-            </linearGradient>
-            {/* Opposing inner-edge bounce specular for thick liquid glass. */}
-            <linearGradient id={WELL_INNER_SPEC_ID} x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="black" stopOpacity={0.48} />
-              <stop offset="38%" stopColor="black" stopOpacity={0.08} />
-              <stop offset="70%" stopColor="white" stopOpacity={0.12} />
-              <stop offset="100%" stopColor="white" stopOpacity={0.78} />
-            </linearGradient>
-            {/* Cylindrical shading for horizontal & vertical pipe stubs inside
-                a well: off-center top highlight, rounded dark underside. */}
-            <linearGradient id={PIPE_CYL_H_ID} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="black" stopOpacity={0.16} />
-              <stop offset="22%" stopColor="white" stopOpacity={0.52} />
-              <stop offset="48%" stopColor="white" stopOpacity={0} />
-              <stop offset="78%" stopColor="black" stopOpacity={0.22} />
-              <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-            </linearGradient>
-            <linearGradient id={PIPE_CYL_V_ID} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="black" stopOpacity={0.16} />
-              <stop offset="24%" stopColor="white" stopOpacity={0.48} />
-              <stop offset="50%" stopColor="white" stopOpacity={0} />
-              <stop offset="80%" stopColor="black" stopOpacity={0.22} />
-              <stop offset="100%" stopColor="black" stopOpacity={0.4} />
-            </linearGradient>
-            {/* Glass overhang shadow where the deep pipe emerges from beneath
-                the bore wall, brightening as it approaches the vertical riser. */}
-            <linearGradient
-              id={PIPE_OVERHANG_RIGHT_ID}
-              x1="0"
-              y1="0"
-              x2="1"
-              y2="0"
-            >
-              <stop offset="0%" stopColor="black" stopOpacity={0} />
-              <stop offset="58%" stopColor="black" stopOpacity={0.04} />
-              <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-            </linearGradient>
-            <linearGradient
-              id={PIPE_OVERHANG_LEFT_ID}
-              x1="1"
-              y1="0"
-              x2="0"
-              y2="0"
-            >
-              <stop offset="0%" stopColor="black" stopOpacity={0} />
-              <stop offset="58%" stopColor="black" stopOpacity={0.04} />
-              <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-            </linearGradient>
-            <linearGradient
-              id={PIPE_OVERHANG_DOWN_ID}
-              x1="0"
-              y1="0"
-              x2="0"
-              y2="1"
-            >
-              <stop offset="0%" stopColor="black" stopOpacity={0} />
-              <stop offset="58%" stopColor="black" stopOpacity={0.04} />
-              <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-            </linearGradient>
-            <linearGradient
-              id={PIPE_OVERHANG_UP_ID}
-              x1="0"
-              y1="1"
-              x2="0"
-              y2="0"
-            >
-              <stop offset="0%" stopColor="black" stopOpacity={0} />
-              <stop offset="58%" stopColor="black" stopOpacity={0.04} />
-              <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-            </linearGradient>
-            {/* Top-down vertical riser crown: curved shoulder catching overhead
-                top-left light as the pipe rises straight up into the port. */}
-            <radialGradient id={PIPE_RISER_CROWN_ID} cx="34%" cy="30%" r="70%">
-              <stop offset="0%" stopColor="white" stopOpacity={0.56} />
-              <stop offset="45%" stopColor="white" stopOpacity={0.06} />
-              <stop offset="78%" stopColor="black" stopOpacity={0.18} />
-              <stop offset="100%" stopColor="black" stopOpacity={0.44} />
-            </radialGradient>
-            {/* Contact shadow directly beneath the port ring resting on top of
-                the rising pipe collar. */}
-            <radialGradient id={PIPE_PORT_SHADOW_ID}>
-              <stop offset="55%" stopColor="black" stopOpacity={0.42} />
-              <stop offset="82%" stopColor="black" stopOpacity={0.16} />
-              <stop offset="100%" stopColor="black" stopOpacity={0} />
-            </radialGradient>
+            <WellGradients />
             {/* The refracting lip (flat mode): clear right at the well's edge,
                 fading into the frost further out. */}
             <radialGradient id={LENS_RING_ID}>
@@ -602,6 +647,9 @@ export function GlassStage({
         style={{ transform: viewport }}
       >
         <svg {...stylex.props(s.planeSvg)}>
+          <defs>
+            <WellGradients prefix={DRAG_GRADIENT_PREFIX} />
+          </defs>
           <g ref={onMovingOver} />
         </svg>
       </div>
@@ -907,6 +955,7 @@ function RecessedWell({
   sequence: boolean;
   withFloor?: boolean;
 }) {
+  const prefix = withFloor ? DRAG_GRADIENT_PREFIX : "";
   const liquid = material === "liquid";
   const horizontal = position === Position.Left || position === Position.Right;
   const stub = stubBodyPath(
@@ -932,7 +981,7 @@ function RecessedWell({
         <circle
           cx={centre.x}
           cy={centre.y}
-          r={RECESSED_OUTER_RADIUS}
+          r={RECESSED_INNER_RADIUS}
           style={{ fill: FLOOR }}
         />
       ) : null}
@@ -941,7 +990,7 @@ function RecessedWell({
         cx={centre.x}
         cy={centre.y}
         r={RECESSED_INNER_RADIUS}
-        fill={`url(#${WELL_CAVITY_SHADE_ID})`}
+        fill={`url(#${prefix}${WELL_CAVITY_SHADE_ID})`}
       />
       {/* Cast shadow of the horizontal pipe and vertical riser on the floor. */}
       <path d={shadowStub} style={{ fill: WELL_SHADOW_INK }} />
@@ -953,8 +1002,8 @@ function RecessedWell({
       />
       {/* 3D cylindrical pipe stub tucked cleanly under the glass bore wall. */}
       <path d={stub} style={{ fill: color }} />
-      <path d={stub} fill={`url(#${cylGrad})`} />
-      <path d={stub} fill={`url(#${overhangGrad})`} />
+      <path d={stub} fill={`url(#${prefix}${cylGrad})`} />
+      <path d={stub} fill={`url(#${prefix}${overhangGrad})`} />
       {/* Top-down 90° vertical riser shoulder rising straight into the port. */}
       <circle
         cx={centre.x}
@@ -966,14 +1015,14 @@ function RecessedWell({
         cx={centre.x}
         cy={centre.y}
         r={riserRadius}
-        fill={`url(#${PIPE_RISER_CROWN_ID})`}
+        fill={`url(#${prefix}${PIPE_RISER_CROWN_ID})`}
       />
       {/* Contact shadow immediately under the card's floating port ring. */}
       <circle
         cx={centre.x}
         cy={centre.y + 1.1}
         r={portShadowRadius}
-        fill={`url(#${PIPE_PORT_SHADOW_ID})`}
+        fill={`url(#${prefix}${PIPE_PORT_SHADOW_ID})`}
       />
       {/* Thick glass bore wall drawn above the stub so the pipe visibly passes
           underneath the glass slab thickness. */}
@@ -984,7 +1033,7 @@ function RecessedWell({
           r={RECESSED_OUTER_RADIUS + 1.4}
           fill="none"
           strokeWidth={2.4}
-          stroke={`url(#${WELL_MENISCUS_ID})`}
+          stroke={`url(#${prefix}${WELL_MENISCUS_ID})`}
         />
       ) : null}
       <circle
@@ -993,7 +1042,7 @@ function RecessedWell({
         r={RECESSED_WALL_MID_RADIUS}
         fill="none"
         strokeWidth={RECESSED_WALL_THICKNESS}
-        stroke={`url(#${liquid ? WELL_WALL_LIQUID_ID : WELL_WALL_FROST_ID})`}
+        stroke={`url(#${prefix}${liquid ? WELL_WALL_LIQUID_ID : WELL_WALL_FROST_ID})`}
       />
       {/* Liquid glass internal refraction: the cut glass wall catches a
           tapered coloured caustic right where the pipe passes under the lip. */}
@@ -1030,7 +1079,7 @@ function RecessedWell({
         r={RECESSED_INNER_RADIUS}
         fill="none"
         strokeWidth={liquid ? 0.9 : 0.8}
-        stroke={liquid ? `url(#${WELL_INNER_SPEC_ID})` : undefined}
+        stroke={liquid ? `url(#${prefix}${WELL_INNER_SPEC_ID})` : undefined}
         style={liquid ? undefined : { stroke: WELL_INNER_STEP }}
       />
       {/* Outer top lip of the glass sheet. */}
@@ -1040,7 +1089,7 @@ function RecessedWell({
         r={RECESSED_OUTER_RADIUS}
         fill="none"
         strokeWidth={liquid ? 1.25 : 1}
-        stroke={`url(#${liquid ? WELL_SPECULAR_ID : WELL_EDGE_ID})`}
+        stroke={`url(#${prefix}${liquid ? WELL_SPECULAR_ID : WELL_EDGE_ID})`}
       />
     </g>
   );
@@ -1163,6 +1212,49 @@ function Lens({
   );
 }
 
+/** A shared port has one bore, and only the card holding it can move it. */
+function PortWell({
+  edgeId,
+  nodeId,
+  end,
+  handleId,
+  moving,
+  targets,
+  ...well
+}: Omit<React.ComponentProps<typeof RecessedWell>, "withFloor"> & {
+  edgeId: string;
+  nodeId: string;
+  end: "source" | "target";
+  handleId?: string | null;
+  moving: boolean;
+  targets: PipeTargets;
+}) {
+  const connections = useNodeConnections({
+    id: nodeId,
+    handleType: end,
+    handleId: handleId ?? undefined,
+  });
+  if (connections[0]?.edgeId !== edgeId) return null;
+  const layer = moving ? targets.movingOver : targets.rims;
+  return (
+    <>
+      {!moving &&
+        targets.frostCuts &&
+        createPortal(
+          <circle
+            cx={well.centre.x}
+            cy={well.centre.y}
+            r={RECESSED_FEATHER_RADIUS}
+            fill={`url(#${WELL_FROST_CUT_ID})`}
+          />,
+          targets.frostCuts,
+        )}
+      {layer &&
+        createPortal(<RecessedWell {...well} withFloor={moving} />, layer)}
+    </>
+  );
+}
+
 export function PipeEdgeView({
   id,
   source: sourceId,
@@ -1179,11 +1271,13 @@ export function PipeEdgeView({
 }: EdgeProps<PipeEdge>) {
   const targets = React.useContext(PipeTargetsContext);
   const [hovered, setHovered] = React.useState(false);
-  const moving = useStore(
-    (state) =>
-      Boolean(state.nodeLookup.get(sourceId)?.dragging) ||
-      Boolean(state.nodeLookup.get(targetId)?.dragging),
+  const sourceMoving = useStore((state) =>
+    Boolean(state.nodeLookup.get(sourceId)?.dragging),
   );
+  const targetMoving = useStore((state) =>
+    Boolean(state.nodeLookup.get(targetId)?.dragging),
+  );
+  const moving = sourceMoving || targetMoving;
   const book = targets?.book;
   const subscribe = React.useCallback(
     (listener: () => void) => book?.subscribe(id, listener) ?? (() => {}),
@@ -1244,47 +1338,31 @@ export function PipeEdgeView({
       />
       {moving && targets.movingUnder
         ? createPortal(
-            <PipeBody path={path} color={color} corners={corners} />,
+            <PipeBody
+              path={path}
+              color={color}
+              corners={corners}
+              shadow="surface"
+            />,
             targets.movingUnder,
           )
         : null}
-      {moving && targets.movingOver
+      {moving && flat && targets.movingOver
         ? createPortal(
-            flat ? (
-              <>
-                <OpenWell
-                  centre={source}
-                  position={sourcePosition}
-                  color={color}
-                  corners={corners}
-                />
-                <OpenWell
-                  centre={target}
-                  position={targetPosition}
-                  color={color}
-                  corners={corners}
-                />
-              </>
-            ) : (
-              <>
-                <RecessedWell
-                  centre={source}
-                  position={sourcePosition}
-                  color={color}
-                  material={material}
-                  sequence={sourceSequence}
-                  withFloor
-                />
-                <RecessedWell
-                  centre={target}
-                  position={targetPosition}
-                  color={color}
-                  material={material}
-                  sequence={targetSequence}
-                  withFloor
-                />
-              </>
-            ),
+            <>
+              <OpenWell
+                centre={source}
+                position={sourcePosition}
+                color={color}
+                corners={corners}
+              />
+              <OpenWell
+                centre={target}
+                position={targetPosition}
+                color={color}
+                corners={corners}
+              />
+            </>,
             targets.movingOver,
           )
         : null}
@@ -1374,25 +1452,6 @@ export function PipeEdgeView({
             targets.wells,
           )
         : null}
-      {settled && !flat && targets.frostCuts
-        ? createPortal(
-            <>
-              <circle
-                cx={source.x}
-                cy={source.y}
-                r={RECESSED_FEATHER_RADIUS}
-                fill={`url(#${WELL_FROST_CUT_ID})`}
-              />
-              <circle
-                cx={target.x}
-                cy={target.y}
-                r={RECESSED_FEATHER_RADIUS}
-                fill={`url(#${WELL_FROST_CUT_ID})`}
-              />
-            </>,
-            targets.frostCuts,
-          )
-        : null}
       {flat && liquid && targets.lensMasks
         ? createPortal(
             <>
@@ -1432,27 +1491,36 @@ export function PipeEdgeView({
             targets.rims,
           )
         : null}
-      {settled && !flat && targets.rims
-        ? createPortal(
-            <>
-              <RecessedWell
-                centre={source}
-                position={sourcePosition}
-                color={color}
-                material={material}
-                sequence={sourceSequence}
-              />
-              <RecessedWell
-                centre={target}
-                position={targetPosition}
-                color={color}
-                material={material}
-                sequence={targetSequence}
-              />
-            </>,
-            targets.rims,
-          )
-        : null}
+      {!flat && (
+        <>
+          <PortWell
+            edgeId={id}
+            nodeId={sourceId}
+            end="source"
+            handleId={sourceHandleId}
+            moving={sourceMoving}
+            targets={targets}
+            centre={source}
+            position={sourcePosition}
+            color={color}
+            material={material}
+            sequence={sourceSequence}
+          />
+          <PortWell
+            edgeId={id}
+            nodeId={targetId}
+            end="target"
+            handleId={targetHandleId}
+            moving={targetMoving}
+            targets={targets}
+            centre={target}
+            position={targetPosition}
+            color={color}
+            material={material}
+            sequence={targetSequence}
+          />
+        </>
+      )}
     </>
   );
 }
