@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from tempfile import SpooledTemporaryFile
 from uuid import UUID
 
@@ -72,6 +73,7 @@ async def receive_upload_content(
     access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> Response:
     del access
+    started_at = datetime.now(UTC)
     if not service.accepts_direct_upload:
         raise HTTPException(
             status_code=404,
@@ -90,6 +92,15 @@ async def receive_upload_content(
             raise UploadTooLargeError(
                 f"Upload exceeds the upload limit of {upload_limits.max_upload_bytes} bytes"
             )
+
+    try:
+        await service.require_receivable(workspace_id=workspace_id, upload_id=upload_id)
+    except UploadNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except UploadExpiredError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except WorkbenchOperationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     buffer = SpooledTemporaryFile(max_size=_STREAM_BUFFER_BYTES)
     byte_count = 0
@@ -111,6 +122,7 @@ async def receive_upload_content(
                 workspace_id=workspace_id,
                 upload_id=upload_id,
                 stream=buffer,
+                started_at=started_at,
             )
         except UploadTooLargeError as exc:
             raise HTTPException(status_code=413, detail=str(exc)) from exc

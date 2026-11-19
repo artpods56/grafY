@@ -5,12 +5,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from starlette.routing import Route
 from grafy_persistence.database import create_database
 
 from grafy_api.app_state import get_identity
 from grafy_api.diagnostics import configure_diagnostics
 from grafy_api.health import HealthResponse, health, readiness
 from grafy_api.http_errors import register_http_error_handlers
+from grafy_api.mcp import MCP_PATH, McpEndpoint, build_mcp_server
 from grafy_api.services.application import (
     acquire_api_owner_lease,
     build_app_identity,
@@ -45,6 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     database = create_database(resolved_settings.app.resolved_database_url)
     identity = build_app_identity(resolved_settings, database)
+    # Built after diagnostics so the SDK's logging setup finds handlers in place.
+    mcp_endpoint = McpEndpoint(build_mcp_server())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
@@ -68,7 +72,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
                 )
                 try:
-                    yield
+                    async with mcp_endpoint.serving():
+                        yield
                 finally:
                     cleanup_task.cancel()
                     await asyncio.gather(cleanup_task, return_exceptions=True)
@@ -159,6 +164,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(images_router, prefix="/v1")
     application.include_router(library_router, prefix="/v1")
     application.include_router(library_folders_router, prefix="/v1")
+    # Streamable HTTP MCP for external agents (ADR 0023): PAT-only, and every tool
+    # call goes back through the routes above.
+    application.router.routes.append(
+        Route(
+            MCP_PATH,
+            endpoint=mcp_endpoint,
+            methods=["GET", "POST", "DELETE"],
+            include_in_schema=False,
+        )
+    )
     return application
 
 

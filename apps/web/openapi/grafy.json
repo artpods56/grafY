@@ -1581,7 +1581,7 @@
         "description": "Reserve one upload before the bytes leave the client.",
         "properties": {
           "byte_size": {
-            "maximum": 67108864.0,
+            "maximum": 2147483648.0,
             "minimum": 0.0,
             "title": "Byte Size",
             "type": "integer"
@@ -8307,6 +8307,7 @@
     },
     "/v1/workspaces": {
       "get": {
+        "description": "The caller's Workspaces: every active membership, or a token's one Workspace.\n\nA personal access token is bound to one Workspace, so it lists that one and only\nthat one, with the capabilities it actually carries there: its scopes intersected\nwith the member's current role.",
         "operationId": "list_workspaces_v1_workspaces_get",
         "responses": {
           "200": {
@@ -8327,6 +8328,9 @@
         "security": [
           {
             "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Workspaces",
