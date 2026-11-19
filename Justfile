@@ -14,6 +14,15 @@ install:
     npm --prefix apps/web ci
     uv run prek install
 
+# Start Keycloak as needed and supervise the native development services.
+dev:
+    @exec uv run --no-project --python 3.14 python scripts/dev_stack.py
+
+# Mint a scoped PAT for the local Keycloak owner.
+[positional-arguments]
+dev-pat *args:
+    @uv run --no-sync python scripts/dev_pat.py "$@"
+
 # Both API recipes use the workspace .venv with its dev group. `--exact` (the
 # flag `api` used to carry) prunes every package the lock's dev group does not
 # cover, so starting the API uninstalled pytest, ruff and pyright and the next
@@ -50,7 +59,7 @@ typecheck-tiler:
 
 # Start the web development server.
 web port="":
-    npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
+    npm --prefix apps/web run dev {{ if port != "" {"-- --port=" + port} else {""} }}
 
 # Run backend and web tests.
 test:
