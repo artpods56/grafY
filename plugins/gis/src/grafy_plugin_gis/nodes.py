@@ -16,8 +16,10 @@ from grafy_core.runtime.artifact_values import inline_model_artifact
 from grafy_core.table_contracts import (
     Table,
     TableColumn,
+    TableColumnLookupError,
     TableValue,
     TableValueType,
+    resolve_table_column,
 )
 from pydantic import (
     AnyHttpUrl,
@@ -329,20 +331,6 @@ class TableToGeoFeaturesOutput(NodeOutput):
     ]
 
 
-def _resolve_table_column(table: Table, reference: str) -> str:
-    ids = {column.id for column in table.columns}
-    if reference in ids:
-        return reference
-    title_matches = [column.id for column in table.columns if column.title == reference]
-    if len(title_matches) == 1:
-        return title_matches[0]
-    if len(title_matches) > 1:
-        raise TableToGeoFeaturesError(
-            f"Table column title {reference!r} is ambiguous; use a column id"
-        )
-    raise TableToGeoFeaturesError(f"Table has no column id or title {reference!r}")
-
-
 @GIS.function_node(
     operator_id="gis.table.to_features",
     version=1,
@@ -354,12 +342,14 @@ async def table_to_geo_features(
     inputs: TableToGeoFeaturesInput,
 ) -> TableToGeoFeaturesOutput:
     """Parses exact table WKT geometries and normalizes them to WGS84."""
-    geometry_column = _resolve_table_column(inputs.table, config.geometry_column)
-    feature_id_column = None
-    if config.feature_id_column is not None:
-        feature_id_column = _resolve_table_column(
-            inputs.table, config.feature_id_column
-        )
+    columns = inputs.table.columns
+    try:
+        geometry_column = resolve_table_column(columns, config.geometry_column)
+        feature_id_column = None
+        if config.feature_id_column is not None:
+            feature_id_column = resolve_table_column(columns, config.feature_id_column)
+    except TableColumnLookupError as exc:
+        raise TableToGeoFeaturesError(str(exc)) from exc
     try:
         source_crs = _parse_crs(config.source_crs)
         transformer = Transformer.from_crs(

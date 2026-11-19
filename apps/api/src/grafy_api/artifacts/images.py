@@ -158,6 +158,11 @@ class ArtifactImageService:
         try:
             source = await self._window_source(workspace_id, artifact_id, page=page)
             info = await self._tiler.info(source)
+            # A window's affine is local to its corner, so the one at (0, 0)
+            # is the page's own pixel-to-CRS transform.
+            origin = await self._tiler.read_window(
+                source, col=0, row=0, width=1, height=1
+            )
         except ImageProxyError as exc:
             raise UserFacingNodeError(f"Could not open the TIFF page: {exc}") from exc
 
@@ -178,6 +183,8 @@ class ArtifactImageService:
             read,
             source_sha256=source.sha256,
             page=page,
+            affine=origin.placement.affine,
+            crs=origin.placement.crs,
         )
 
     async def _window_source(

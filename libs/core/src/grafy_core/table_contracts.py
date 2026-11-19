@@ -1,4 +1,5 @@
 import base64
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -164,6 +165,26 @@ class TableManifest(BaseModel):
         return self
 
 
+class TableColumnLookupError(LookupError):
+    pass
+
+
+def resolve_table_column(columns: Sequence[TableColumn], reference: str) -> str:
+    """Return the id of the column an exact id or one unique title names."""
+    for column in columns:
+        if column.id == reference:
+            return column.id
+    titled = [column.id for column in columns if column.title == reference]
+    if len(titled) > 1:
+        raise TableColumnLookupError(
+            f"Table column title {reference!r} is ambiguous; use one of the "
+            f"column ids {titled!r}"
+        )
+    if not titled:
+        raise TableColumnLookupError(f"Table has no column id or title {reference!r}")
+    return titled[0]
+
+
 def _matches_type(value: TableValue, value_type: TableValueType) -> bool:
     if value_type in {TableValueType.UNKNOWN, TableValueType.MIXED}:
         return True
@@ -227,8 +248,10 @@ __all__ = [
     "TableChunk",
     "TableChunkDescriptor",
     "TableColumn",
+    "TableColumnLookupError",
     "TableManifest",
     "TablePage",
     "TableValue",
     "TableValueType",
+    "resolve_table_column",
 ]
