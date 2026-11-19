@@ -600,6 +600,7 @@ export function UndergroundPipesSpike() {
   const [lensMasks, setLensMasks] = React.useState<SVGGElement | null>(null);
   const [rims, setRims] = React.useState<SVGGElement | null>(null);
   const [book] = React.useState(() => new RouteBook());
+  const [movingBook] = React.useState(() => new RouteBook());
   const [movingUnder, setMovingUnder] = React.useState<SVGGElement | null>(
     null,
   );
@@ -662,6 +663,7 @@ export function UndergroundPipesSpike() {
   const targets = React.useMemo(
     () => ({
       book,
+      movingBook,
       pipes: [pipeGroup, middlePipes, deepPipes],
       sharp,
       wells,
@@ -675,6 +677,7 @@ export function UndergroundPipesSpike() {
     }),
     [
       book,
+      movingBook,
       pipeGroup,
       middlePipes,
       deepPipes,
@@ -731,6 +734,7 @@ export function UndergroundPipesSpike() {
             {pipes ? (
               <PipeRouter
                 book={book}
+                movingBook={movingBook}
                 corners={look.corners}
                 lanes={look.lanes}
                 depth={look.depth}

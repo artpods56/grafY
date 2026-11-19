@@ -230,6 +230,8 @@ export class RouteBook {
 
 interface PipeTargets {
   book: RouteBook;
+  /** Live laned routes for pipes attached to cards currently being dragged. */
+  movingBook: RouteBook;
   /** One blurred group per layer, the surface first. */
   pipes: readonly (SVGGElement | null)[];
   sharp: SVGGElement | null;
@@ -800,18 +802,17 @@ function handleCentre(
   };
 }
 
-/**
- * Every resting pipe's ports, as a string so the router re-runs only when one
- * of them moves. Pipes of a dragged card are left out until it is put down.
- */
-function selectRestingPipes(state: ReactFlowState): string {
+const EMPTY_PATHS: ReadonlyMap<string, RoutedPath> = new Map();
+
+function selectPipesByMotion(state: ReactFlowState, moving: boolean): string {
   const requests: PipeRequest[] = [];
   for (const edge of state.edges) {
     if (edge.type !== PIPE_EDGE_TYPE) continue;
     const sourceNode = state.nodeLookup.get(edge.source);
     const targetNode = state.nodeLookup.get(edge.target);
     if (!sourceNode || !targetNode) continue;
-    if (sourceNode.dragging || targetNode.dragging) continue;
+    const edgeMoving = Boolean(sourceNode.dragging || targetNode.dragging);
+    if (edgeMoving !== moving) continue;
     const source = handleCentre(sourceNode, "source", edge.sourceHandle);
     const target = handleCentre(targetNode, "target", edge.targetHandle);
     if (!source || !target) continue;
@@ -826,14 +827,62 @@ function selectRestingPipes(state: ReactFlowState): string {
   return JSON.stringify(requests);
 }
 
+/**
+ * Every resting pipe's ports, as a string so the router re-runs only when one
+ * of them moves. Pipes of a dragged card are left out until it is put down.
+ */
+function selectRestingPipes(state: ReactFlowState): string {
+  return selectPipesByMotion(state, false);
+}
+
+/** Only pipes attached to cards currently being dragged. */
+function selectMovingPipes(state: ReactFlowState): string {
+  return selectPipesByMotion(state, true);
+}
+
+/**
+ * Routes just the dragging card(s)' pipes together so they stay spread into
+ * parallel lanes while moving, without touching any resting pipe or layer.
+ */
+function MovingPipeRouter({
+  book,
+  corners,
+  lanes,
+}: {
+  book: RouteBook;
+  corners: PipeCorners;
+  lanes: boolean;
+}) {
+  const moving = useStore(selectMovingPipes);
+  React.useLayoutEffect(() => {
+    const requests = JSON.parse(moving) as PipeRequest[];
+    if (requests.length === 0) {
+      book.publish(EMPTY_PATHS);
+      return;
+    }
+    const radius = cornerRadius(corners);
+    const paths = new Map<string, RoutedPath>();
+    for (const [id, routed] of routePipes(requests, { lanes, depth: false })) {
+      paths.set(id, {
+        path: pipePath(routed.points, radius),
+        depth: routed.depth,
+      });
+    }
+    book.publish(paths);
+  }, [book, corners, lanes, moving]);
+  return null;
+}
+
 /** Lays out all resting pipes together and publishes their paths. */
 export function PipeRouter({
   book,
+  movingBook,
   corners,
   lanes,
   depth,
 }: {
   book: RouteBook;
+  movingBook: RouteBook;
   corners: PipeCorners;
   lanes: boolean;
   depth: boolean;
@@ -851,7 +900,7 @@ export function PipeRouter({
     }
     book.publish(paths);
   }, [book, corners, depth, lanes, resting]);
-  return null;
+  return <MovingPipeRouter book={movingBook} corners={corners} lanes={lanes} />;
 }
 
 const NO_BOOK_SUBSCRIPTION = () => () => {};
@@ -1278,14 +1327,14 @@ export function PipeEdgeView({
     Boolean(state.nodeLookup.get(targetId)?.dragging),
   );
   const moving = sourceMoving || targetMoving;
-  const book = targets?.book;
+  const activeBook = moving ? targets?.movingBook : targets?.book;
   const subscribe = React.useCallback(
-    (listener: () => void) => book?.subscribe(id, listener) ?? (() => {}),
-    [book, id],
+    (listener: () => void) => activeBook?.subscribe(id, listener) ?? (() => {}),
+    [activeBook, id],
   );
   const routed = React.useSyncExternalStore(
-    book ? subscribe : NO_BOOK_SUBSCRIPTION,
-    () => book?.get(id),
+    activeBook ? subscribe : NO_BOOK_SUBSCRIPTION,
+    () => activeBook?.get(id),
     () => undefined,
   );
   if (!targets) return null;
@@ -1299,14 +1348,13 @@ export function PipeEdgeView({
   const target = ringCentre(targetX, targetY, targetPosition);
   const sourceSequence = isSequenceHandle(sourceHandleId);
   const targetSequence = isSequenceHandle(targetHandleId);
-  const resting = moving ? undefined : routed;
-  const depth = resting?.depth ?? 0;
+  const depth = moving ? 0 : (routed?.depth ?? 0);
   const layer = targets.pipes[depth] ?? targets.pipes[0];
   const depthGirth = DEPTH_GIRTH[depth] ?? 1;
   const depthShadow =
     depth === 0 ? "surface" : depth === 1 ? "middle" : undefined;
   const path =
-    resting?.path ??
+    routed?.path ??
     soloPath(
       {
         id,
