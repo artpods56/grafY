@@ -4,7 +4,8 @@ import * as React from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+import type { NodeRegistry, Port } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -24,39 +25,26 @@ function port(
   direction: Port["direction"],
   artifactTypeId: string,
 ): Port {
-  return {
+  return artifactPortFixture({
     name,
     title: name[0]?.toUpperCase() + name.slice(1),
     description: `${name} port`,
     direction,
     artifact_type: { id: artifactTypeId, schema_version: 1 },
-    artifact_type_variable: null,
-    shape: "one",
-    accepted_shapes: ["one"],
-    instance_plugs: false,
-    variadic: false,
-    required: true,
-  };
+  });
 }
 
 const INPUT = port("payload", "input", "scalar.text");
 const OUTPUT = port("result", "output", "scalar.text");
 
-const SPEC = {
+const SPEC = nodeSpecFixture({
   operator_id: "text.transform",
-  operator_version: 1,
   plugin_slug: "builtin",
   title: "Transform text",
   description: "Transform text description",
-  config_schema: {},
-  input_schema: {},
-  output_schema: {},
   inputs: [INPUT],
   outputs: [OUTPUT],
-  catalog_visible: true,
-  origin: "builtin",
-  runnable: true,
-} as unknown as NodeSpec;
+});
 
 const REGISTRY = {
   plugins: [],

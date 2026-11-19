@@ -8,6 +8,7 @@ import type {
   RunNodeResult,
   SavedGraphOrigin,
 } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { encodeHandleId } from "../canvas/handles";
 import {
   WORKFLOW_NODE_TYPE,
@@ -43,54 +44,38 @@ function spec(
   outputs: Port[],
   title = operator_id,
 ): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id,
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title,
     description: title,
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs,
     outputs,
-  };
+  });
 }
 
 const collectSpec = spec(
   COLLECTION_OPERATOR_ID,
   [
-    {
+    artifactPortFixture({
       name: COLLECTION_PORT,
       title: "items",
-      description: null,
       direction: "input",
       artifact_type: null,
       artifact_type_variable: "T",
-      shape: "one",
       accepted_shapes: ["one", "many"],
       instance_plugs: true,
       variadic: true,
-      required: true,
-    },
+    }),
   ],
   [
-    {
+    artifactPortFixture({
       name: COLLECTION_PORT,
       title: "items",
-      description: null,
       direction: "output",
       artifact_type: null,
       artifact_type_variable: "T",
       shape: "many",
-      accepted_shapes: ["many"],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-    },
+    }),
   ],
   "Collect",
 );
@@ -99,18 +84,12 @@ const resizeSpec = spec(
   "image.resize",
   [],
   [
-    {
+    artifactPortFixture({
       name: "image",
       title: "Resized",
-      description: null,
       direction: "output",
       artifact_type: IMAGE,
-      shape: "one",
-      accepted_shapes: ["one"],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-    },
+    }),
   ],
   "Resize image",
 );

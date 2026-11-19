@@ -5,6 +5,7 @@ import { changeOriginCardReferences } from "./origin-card-commands";
 import { describe, expect, it } from "vitest";
 
 import type { ArtifactConversionSpec, Port, SavedGraphOrigin } from "@/lib/api";
+import { artifactPortFixture } from "../test-fixtures";
 import { encodeHandleId } from "../canvas/handles";
 import type { WorkflowEdge } from "../canvas/types";
 import {
@@ -61,21 +62,14 @@ function sequence(...artifactIds: string[]): ArtifactRefSequence {
 }
 
 function port(overrides: Partial<Port> = {}): Port {
-  return {
+  return artifactPortFixture({
     name: "input",
     title: null,
-    description: null,
     direction: "input",
     artifact_type: { id: "table", schema_version: 1 },
-    artifact_type_variable: null,
-    shape: "one",
-    accepted_shapes: ["one"],
     also_accepts: [],
-    instance_plugs: false,
-    required: true,
-    variadic: false,
     ...overrides,
-  };
+  });
 }
 
 function conversion(

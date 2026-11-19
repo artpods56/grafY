@@ -16,6 +16,7 @@ import { IconButton } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 
 import { CanvasNodeHeader } from "../CanvasNodeChrome";
+import type { CanvasNode } from "../../artifact-viewer";
 import { artifactTypeKey } from "../../artifact-type-key";
 import { schemaFields, validateConfig } from "../../config-schema";
 import { nodeSecretInputs } from "../../node-secrets";
@@ -31,6 +32,7 @@ import {
 } from "../../node-layout";
 import {
   GIS_VECTOR_LAYER_OPERATOR_ID,
+  WORKFLOW_NODE_TYPE,
   isServiceProviderNode,
   portHasInstancePlugs,
   type WorkflowEdge,
@@ -292,9 +294,16 @@ export function SupportedWorkflowNodeCard({
   const isVectorLayer = data.spec.operator_id === GIS_VECTOR_LAYER_OPERATOR_ID;
   const isProvider = isServiceProviderNode(data.spec);
   const edges = useEdges<WorkflowEdge>();
-  const nodes = useNodes<{ data: WorkflowNodeData }>();
+  const nodes = useNodes<CanvasNode>();
   const notProducedReasons = React.useMemo(
-    () => (isProvider ? [] : notProducedInputReasons(id, nodes, edges)),
+    () =>
+      isProvider
+        ? []
+        : notProducedInputReasons(
+            id,
+            nodes.filter((node) => node.type === WORKFLOW_NODE_TYPE),
+            edges,
+          ),
     [edges, id, isProvider, nodes],
   );
   const visibleInputPorts = data.spec.inputs.filter((port) => {
