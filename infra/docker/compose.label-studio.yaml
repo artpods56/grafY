@@ -1,0 +1,84 @@
+name: grafy-label-studio
+
+services:
+  minio:
+    image: cgr.dev/chainguard/minio:latest-dev
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${LABEL_STUDIO_MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${LABEL_STUDIO_MINIO_PASSWORD:-minioadmin}
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"
+    ports:
+      - "${LABEL_STUDIO_MINIO_HOST:-127.0.0.1}:${LABEL_STUDIO_MINIO_PORT:-9100}:9000"
+      - "${LABEL_STUDIO_MINIO_HOST:-127.0.0.1}:${LABEL_STUDIO_MINIO_CONSOLE_PORT:-9101}:9001"
+    volumes:
+      - label-studio-minio-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  minio-init:
+    image: cgr.dev/chainguard/minio-client:latest-dev
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${LABEL_STUDIO_MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${LABEL_STUDIO_MINIO_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${LABEL_STUDIO_MINIO_BUCKET:-label-studio}
+      LABEL_STUDIO_HOST: ${LABEL_STUDIO_HOST:-http://127.0.0.1:8085}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
+        # Local dev only. The browser can fetch media from http://127.0.0.1:9100/label-studio/
+        # while Label Studio connects to S3 at http://minio:9000 inside Docker.
+        mc anonymous set download "local/$$MINIO_BUCKET"
+        origin=$$(printf '%s\n' "$$LABEL_STUDIO_HOST" | cut -d / -f 1-3)
+        headers=$$(wget -S -T 5 -O /dev/null --header="Origin: $$origin" \
+          "http://minio:9000/$$MINIO_BUCKET/" 2>&1)
+        allow_origin=$$(printf '%s\n' "$$headers" | tr -d '\r' |
+          awk 'tolower($$1) == "access-control-allow-origin:" { print $$2 }')
+        if [ "$$allow_origin" != "*" ] && [ "$$allow_origin" != "$$origin" ]; then
+          printf '%s\n' "MinIO did not allow the Label Studio origin" >&2
+          exit 1
+        fi
+
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      LABEL_STUDIO_USERNAME: ${LABEL_STUDIO_USERNAME:-admin@grafy.local}
+      LABEL_STUDIO_PASSWORD: ${LABEL_STUDIO_PASSWORD:-grafy-label-studio}
+      LABEL_STUDIO_USER_TOKEN: ${LABEL_STUDIO_USER_TOKEN:-grafy-local-label-studio-token}
+      # Use Authorization: Token <token> for API calls such as GET /api/projects.
+      LABEL_STUDIO_ENABLE_LEGACY_API_TOKEN: "true"
+      LABEL_STUDIO_HOST: ${LABEL_STUDIO_HOST:-http://127.0.0.1:8085}
+      # Use the operator endpoint by leaving s3_endpoint blank in storage requests.
+      LABEL_STUDIO_S3_ENDPOINT: http://minio:9000
+      LOCAL_FILES_SERVING_ENABLED: "true"
+    ports:
+      - "${LABEL_STUDIO_HOST_BIND:-127.0.0.1}:${LABEL_STUDIO_PORT:-8085}:8080"
+    volumes:
+      - label-studio-data:/label-studio/data
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8080/health', timeout=2).close()"
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 30s
+
+volumes:
+  label-studio-minio-data:
+  label-studio-data:

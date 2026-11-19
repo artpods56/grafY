@@ -44,7 +44,7 @@ _CONNECT_TIMEOUT_SECONDS: Final = 5.0
 # would return together and queue up the same way all over again.
 _MAX_BACKOFF_SECONDS: Final = 2.0
 _JITTER_SECONDS: Final = 0.25
-_RETRYABLE_STATUS: Final = frozenset({429, 500, 502, 503, 504})
+_RETRYABLE_STATUS: Final = frozenset({429, 500, 502, 503, 504, 529})
 
 _pooled: WeakKeyDictionary[AbstractEventLoop, dict[str, httpx.AsyncClient]] = (
     WeakKeyDictionary()
@@ -64,6 +64,8 @@ class ProviderRequest:
     timeout_seconds: float
     max_response_bytes: int
     slot: Callable[[], AbstractAsyncContextManager[Any]] | None = None
+    extra_headers: tuple[tuple[str, str], ...] = ()
+    connection_route: str | None = "LiteLLM"
 
 
 @contextmanager
@@ -122,7 +124,12 @@ async def post_json(request: ProviderRequest) -> bytes:
     """
 
     client = provider_client(request.url)
-    headers = {"Authorization": f"Bearer {request.api_key.get_secret_value()}"}
+    headers = {
+        name: value
+        for name, value in request.extra_headers
+        if name.lower() != "authorization"
+    }
+    headers["Authorization"] = f"Bearer {request.api_key.get_secret_value()}"
     timeout = httpx.Timeout(request.timeout_seconds, connect=_CONNECT_TIMEOUT_SECONDS)
     for attempt in range(request.attempts):
         if attempt:
@@ -152,9 +159,10 @@ async def post_json(request: ProviderRequest) -> bytes:
             ) from exc
         except httpx.RequestError as exc:
             if attempt + 1 >= request.attempts:
-                raise UserFacingNodeError(
-                    f"Could not reach {request.service} through LiteLLM"
-                ) from exc
+                message = f"Could not reach {request.service}"
+                if request.connection_route is not None:
+                    message += f" through {request.connection_route}"
+                raise UserFacingNodeError(message) from exc
     raise AssertionError(f"{request.service} request attempts exhausted")
 
 

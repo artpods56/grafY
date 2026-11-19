@@ -143,3 +143,11 @@ deploy sha:
 # Run Docker Compose against the separately managed MinIO service.
 minio *args:
     docker compose -f /opt/minio/compose.yaml {{ args }}
+
+# Start the local Label Studio and MinIO stack.
+label-studio-up:
+    docker compose -f infra/docker/compose.label-studio.yaml up -d --wait
+
+# Stop the local Label Studio and MinIO stack.
+label-studio-down:
+    docker compose -f infra/docker/compose.label-studio.yaml down
