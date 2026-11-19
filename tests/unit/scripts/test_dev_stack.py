@@ -159,15 +159,19 @@ async def test_oversized_log_line_reaches_the_reader_without_stalling_the_writer
     progress bar that redraws with carriage breaks never sends a newline at all,
     which is the second shape asserted here.
     """
-    long_line = "x" * (dev_stack.LOG_CHUNK * 2)
-    progress = "P" * (dev_stack.LOG_CHUNK * 2)
+    # The child builds these itself: an expanded 256 KiB literal in one `-c`
+    # argument is over Linux's MAX_ARG_STRLEN, so the spawn would fail on a runner
+    # where the same test passes on a laptop.
+    size = dev_stack.LOG_CHUNK * 2
+    long_line = "x" * size
+    progress = "P" * size
     service = dev_stack.Service(
         "test",
         (
             sys.executable,
             "-c",
             f"import sys; w = sys.stdout.write; "
-            f"w({long_line!r} + '\\n'); w({progress!r}); w('done\\n'); "
+            f"w('x' * {size} + '\\n'); w('P' * {size}); w('done\\n'); "
             "sys.stdout.flush()",
         ),
         0,
