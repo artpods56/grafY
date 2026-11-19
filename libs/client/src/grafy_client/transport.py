@@ -45,6 +45,11 @@ class HttpTransport:
 
         self.base_url = str(parsed_base_url).rstrip("/")
         self._token = token
+        # An ASGI transport delivers every request to the app it wraps, whatever host
+        # the URL names, so a client built this way can only ever address that app.
+        self._in_process_host: str | None = None
+        if isinstance(transport, httpx.ASGITransport):
+            self._in_process_host = f"{parsed_base_url.host}:{parsed_base_url.port}"
         self._http = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=timeout,
@@ -53,6 +58,31 @@ class HttpTransport:
 
     def __repr__(self) -> str:
         return f"HttpTransport(base_url={self.base_url!r}, token=<redacted>)"
+
+    def _refuse_unreachable_target(self, *, operation: str, path: str) -> None:
+        """Refuse a URL this client cannot deliver to, rather than misroute it.
+
+        Only an in-process client is restricted, and only an absolute URL to another
+        host. A signed upload target is exactly that: `httpx.ASGITransport` would hand
+        the bytes to the API instead of the bucket and the transfer would fail as a
+        puzzling 404. The host is reported, never the URL, whose query is a signature.
+        """
+
+        if self._in_process_host is None:
+            return
+        target = httpx.URL(path)
+        if target.host == "":
+            return
+        if f"{target.host}:{target.port}" == self._in_process_host:
+            return
+        unreachable = f"{target.host}:{target.port}"
+        raise GrafyClientError(
+            operation=operation,
+            detail=(
+                f"This client talks to the API in process and cannot send bytes to "
+                f"{unreachable}. Upload the file over HTTP to the API address instead."
+            ),
+        )
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -109,6 +139,7 @@ class HttpTransport:
         the credential there, and the bearer token must never leave for that host.
         """
 
+        self._refuse_unreachable_target(operation=operation, path=path)
         request_headers = dict(headers or {})
         token = self._token.get_secret_value()
         if authenticate:

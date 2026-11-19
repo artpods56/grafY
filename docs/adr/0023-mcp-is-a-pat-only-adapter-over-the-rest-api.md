@@ -71,6 +71,10 @@ content route refuses an expired target before reading the body. The gateway's
 - MCP is single-Workspace per token. An agent that needs two Workspaces holds two tokens.
 - Tool arguments are bounded at 4 MiB per request; files larger than 2 MiB go through the
   staged upload API, which `grafy_client.UploadClient.upload` streams from a path.
+- The adapter reaches only this API process, so `upload_file` serves the deployments
+  whose API receives upload bytes. Where the API hands out signed object-storage URLs,
+  no in-process client can PUT them and the tool refuses with that instruction; the
+  bytes go to the bucket from a client outside the process.
 
 ## Alternatives considered
 

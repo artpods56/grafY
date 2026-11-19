@@ -594,3 +594,113 @@ async def test_run_cancel_and_instance_states() -> None:
 
     assert cancelled.status == "cancelled"
     assert [(state.key.node_id, state.state) for state in states] == [("text", "stale")]
+
+
+async def test_an_in_process_client_refuses_a_signed_url_it_cannot_reach() -> None:
+    """A presigned storage URL is a different host: an in-process client must say so.
+
+    `httpx.ASGITransport` delivers every request to the app it wraps, whatever host
+    the URL names. Sending bytes to a signed object-storage URL that way hands them
+    to the API instead of the bucket, where they fail as a confusing 404.
+    """
+
+    delivered: list[str] = []
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        path = cast(str, scope["path"])
+        delivered.append(path)
+        if path.endswith("/uploads"):
+            body = json.dumps(
+                {
+                    "kind": "storage",
+                    "upload_id": "8c9b0e56e7a74de8a1a2b3c4d5e6f701",
+                    "url": (
+                        "http://minio:9000/workbench-artifacts/objects/2f1e/scan.tif"
+                        "?X-Amz-Signature=deadbeef"
+                    ),
+                    "method": "PUT",
+                    "expires_at": "2026-11-18T00:05:00Z",
+                    "headers": {"Content-Type": "image/tiff"},
+                }
+            ).encode()
+        else:  # pragma: no cover - the upload must never get this far
+            body = b'{"detail":"Not Found"}'
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200 if path.endswith("/uploads") else 404,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+    async with GrafyClient(
+        base_url="http://127.0.0.1",
+        token=SecretStr("grafy_pat_test"),
+        transport=httpx.ASGITransport(app=app),
+    ) as client:
+        with pytest.raises(GrafyClientError) as excinfo:
+            await client.uploads.upload(WORKSPACE_ID, b"tiff", filename="scan.tif")
+
+    assert delivered == [f"/v1/workspaces/{WORKSPACE_ID}/uploads"]
+    assert "minio:9000" in excinfo.value.detail
+    assert "X-Amz-Signature" not in str(excinfo.value)
+
+
+async def test_an_in_process_client_still_sends_bytes_to_its_own_api_route() -> None:
+    """The guard must not touch a local-storage deployment, whose target is this API."""
+
+    delivered: list[str] = []
+    upload_id = "8c9b0e56e7a74de8a1a2b3c4d5e6f701"
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        path = cast(str, scope["path"])
+        delivered.append(path)
+        if path.endswith("/uploads"):
+            body = json.dumps(
+                {
+                    "kind": "api",
+                    "upload_id": upload_id,
+                    "url": f"/v1/workspaces/{WORKSPACE_ID}/uploads/{upload_id}/content",
+                    "method": "PUT",
+                    "expires_at": "2026-11-18T00:05:00Z",
+                    "headers": {},
+                }
+            ).encode()
+        elif path.endswith("/complete"):
+            body = json.dumps(
+                {
+                    "upload_key": f"objects/{upload_id}",
+                    "filename": "scan.tif",
+                    "byte_size": 4,
+                    "artifact_id": str(UUID("22222222-2222-4222-8222-222222222222")),
+                    "artifact_type": "file.tiff@1",
+                    "notice": None,
+                }
+            ).encode()
+        else:
+            body = b"{}"
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+    async with GrafyClient(
+        base_url="http://127.0.0.1",
+        token=SecretStr("grafy_pat_test"),
+        transport=httpx.ASGITransport(app=app),
+    ) as client:
+        uploaded = await client.uploads.upload(
+            WORKSPACE_ID, b"tiff", filename="scan.tif"
+        )
+
+    assert uploaded.artifact_type == "file.tiff@1"
+    assert delivered == [
+        f"/v1/workspaces/{WORKSPACE_ID}/uploads",
+        f"/v1/workspaces/{WORKSPACE_ID}/uploads/{upload_id}/content",
+        f"/v1/workspaces/{WORKSPACE_ID}/uploads/{upload_id}/complete",
+    ]

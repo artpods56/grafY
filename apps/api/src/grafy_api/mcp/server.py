@@ -633,8 +633,11 @@ async def upload_file(
 ) -> dict[str, Any]:
     """Upload a small file (up to 2 MiB) and get its typed artifact reference.
 
-    Larger files go through the staged upload API (`grafy_client` uploads stream
-    a file of any size the deployment accepts).
+    Only a deployment whose API receives upload bytes serves this tool. Where the
+    API hands out signed object-storage URLs instead, the bytes cannot be sent from
+    inside the API process and the tool reports that; use the staged upload API over
+    HTTP. Larger files go through that API in every deployment (`grafy_client`
+    uploads stream a file of any size the deployment accepts).
     """
     try:
         content = base64.b64decode(content_base64, validate=True)
