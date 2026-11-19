@@ -10,6 +10,8 @@ from grafy_client import (
     CatalogNode,
     CatalogPort,
     CommandReceipt,
+    GeoFeatureMatch,
+    GeoRender,
     InstanceKey,
     InstanceResult,
     InstanceState,
@@ -17,8 +19,15 @@ from grafy_client import (
     NodeSecretStatus,
     Project,
     ProjectHead,
+    ProjectSummary,
     Run,
+    TableCell,
+    TableColumn,
+    TablePage,
+    TableSchema,
     UploadItem,
+    UploadTarget,
+    Workspace,
 )
 
 
@@ -100,6 +109,7 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
 
     base = "/v1/workspaces/{workspace_id}/projects"
     run_base = base + "/{project_id}/runs"
+    artifacts = "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}"
     operations = (
         (
             "/v1/workspaces/{workspace_id}/nodes",
@@ -121,6 +131,38 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             ("application/json", "CreateProjectRequest"),
             "201",
             "ProjectResponse",
+        ),
+        (base, "get", None, "200", "ProjectListResponse"),
+        (
+            "/v1/workspaces/{workspace_id}/uploads/{upload_id}/complete",
+            "post",
+            None,
+            "200",
+            "ImageUploadItemResponse",
+        ),
+        (artifacts + "/table/schema", "get", None, "200", "TableSchemaResponse"),
+        (artifacts + "/table/page", "get", None, "200", "TablePageResponse"),
+        (
+            artifacts + "/table/query",
+            "post",
+            ("application/json", "TableQueryRequest"),
+            "200",
+            "TablePageResponse",
+        ),
+        (artifacts + "/geo/render", "get", None, "200", "GeoRenderResponse"),
+        (
+            artifacts + "/geo/query",
+            "post",
+            ("application/json", "GeoFeatureQueryRequest"),
+            "200",
+            "GeoFeatureQueryResponse",
+        ),
+        (
+            "/v1/workspaces/{workspace_id}/library/artifacts",
+            "get",
+            None,
+            "200",
+            "LibraryListResponse",
         ),
         (base + "/{project_id}", "get", None, "200", "ProjectResponse"),
         (base + "/{project_id}/head", "get", None, "200", "ProjectHeadResponse"),
@@ -246,6 +288,17 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
         (InstanceKey, "InstanceKeyResponse", frozenset()),
         (InstanceState, "InstanceStateResponse", frozenset()),
         (InstanceResult, "InstanceResultResponse", frozenset({"outputs"})),
+        (Workspace, "WorkspaceResponse", frozenset()),
+        (ProjectSummary, "ProjectSummaryResponse", frozenset()),
+        # One client model reads both target kinds; the storage kind only makes
+        # `headers` required, which the client defaults to empty.
+        (UploadTarget, "ApiUploadTargetResponse", frozenset()),
+        (TableColumn, "TableColumnResponse", frozenset()),
+        (TableSchema, "TableSchemaResponse", frozenset()),
+        (TableCell, "TableCellPreviewResponse", frozenset()),
+        (TablePage, "TablePageResponse", frozenset({"rows"})),
+        (GeoRender, "GeoRenderResponse", frozenset({"initial_bounds", "layers"})),
+        (GeoFeatureMatch, "GeoFeatureQueryResponse", frozenset({"bounds"})),
     )
     for client_model, openapi_name, opaque_fields in wire_models:
         client_schema = cast(

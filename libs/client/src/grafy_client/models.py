@@ -5,7 +5,7 @@ from uuid import UUID
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.kernel.project import ProjectDocument
 from grafy_core.nodes import PortShape
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ClientModel(BaseModel):
@@ -90,6 +90,34 @@ class NodeCatalog(ClientModel):
     artifact_conversions: tuple[CatalogConversion, ...]
 
 
+class Workspace(ClientModel):
+    """One Workspace the caller reaches, with the capabilities it holds there.
+
+    A personal access token lists only the Workspace it is bound to, and its
+    capabilities are its scopes intersected with the member's current role.
+    """
+
+    id: UUID
+    slug: str
+    name: str
+    kind: Literal["personal", "shared"]
+    role: Literal["viewer", "editor", "owner"]
+    capabilities: tuple[str, ...]
+
+
+class ProjectSummary(ClientModel):
+    """A Project as the Workspace list shows it: counts describe the live head."""
+
+    id: UUID
+    name: str
+    revision: int
+    graph_count: int
+    node_count: int
+    edge_count: int
+    updated_at: datetime
+    draft_pending: bool
+
+
 class Project(ClientModel):
     id: UUID
     name: str
@@ -130,6 +158,74 @@ class UploadItem(ClientModel):
     artifact_id: UUID | None = None
     artifact_type: str | None = None
     notice: str | None = None
+
+
+class UploadTarget(ClientModel):
+    """Where the bytes of one reserved upload go.
+
+    ``api`` targets are this API's own content route and take the bearer token;
+    ``storage`` targets are signed object-storage URLs whose signature is the
+    credential, so they take only ``headers``.
+    """
+
+    kind: Literal["api", "storage"] = "api"
+    upload_id: str
+    url: str
+    method: str
+    expires_at: datetime
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+class TableColumn(ClientModel):
+    id: str
+    title: str
+    value_type: str
+
+
+class TableSchema(ClientModel):
+    columns: tuple[TableColumn, ...]
+    total_rows: int
+
+
+class TableCell(ClientModel):
+    display: str | float | bool | None
+    truncated: bool
+    original_length: int | None = None
+
+
+class TablePage(ClientModel):
+    """A bounded window of a table artifact; long cells arrive truncated."""
+
+    columns: tuple[TableColumn, ...]
+    rows: tuple[dict[str, TableCell], ...]
+    row_indices: tuple[int, ...] = ()
+    highlighted_row_indices: tuple[int, ...] = ()
+    offset: int
+    limit: int
+    total_rows: int
+    column_offset: int
+    column_limit: int
+    total_columns: int
+
+
+class GeoRender(ClientModel):
+    """The render descriptor of a geo artifact: layers, bounds, basemap.
+
+    Layer entries stay JSON objects; they carry tile URLs relative to the API.
+    """
+
+    artifact_id: UUID
+    kind: str
+    basemap: Literal["openstreetmap", "none"]
+    initial_bounds: tuple[float, float, float, float] | None
+    layers: tuple[dict[str, object], ...]
+
+
+class GeoFeatureMatch(ClientModel):
+    artifact_id: UUID
+    bounds: tuple[float, float, float, float] | None
+    matched_feature_count: int
+    source_artifact_ids: tuple[UUID, ...]
 
 
 class NodeSecretStatus(ClientModel):
@@ -191,6 +287,8 @@ __all__ = [
     "CatalogNode",
     "CatalogPort",
     "CommandReceipt",
+    "GeoFeatureMatch",
+    "GeoRender",
     "InstanceKey",
     "InstanceResult",
     "InstanceState",
@@ -198,8 +296,15 @@ __all__ = [
     "NodeSecretStatus",
     "Project",
     "ProjectHead",
+    "ProjectSummary",
     "Run",
     "RunTarget",
     "SubmittedCommands",
+    "TableCell",
+    "TableColumn",
+    "TablePage",
+    "TableSchema",
     "UploadItem",
+    "UploadTarget",
+    "Workspace",
 ]

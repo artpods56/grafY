@@ -22,6 +22,9 @@ workbench can persist and execute the exact `X -> Y -> Z` path on one edge.
 These choices remain visible without adding boilerplate adapter nodes.
 Configurable or domain-significant transformations remain nodes.
 
+For native development and local script authentication, see
+[Run Grafy locally](docs/how-to-run-local.md).
+
 ## Architecture
 
 ```mermaid
@@ -240,6 +243,10 @@ that the generated OpenAPI client is current, and builds the production web
 bundle. Python verification enables every declared development extra so all
 System Plugin families remain covered without making them ambient runtime
 discoveries.
+
+`apps/tiler` is its own uv project on Python 3.13, so it is not covered by
+`just check`. Verify it with `just test-tiler`, `just lint-tiler`, and
+`just typecheck-tiler`, which use `apps/tiler/.venv`.
 
 To exercise the runtime without the browser:
 

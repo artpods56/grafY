@@ -451,7 +451,9 @@ port shapes and artifact-type bindings, and submits the
 ordinary nested `{ name, document }` graph contract. There is no automation-only
 graph representation or execution path. A Run reloads the requested
 revision on the server and derives the runtime request from that canonical
-document; the client cannot replace its topology at execution time.
+document; the client cannot replace its topology at execution time. MCP tools
+author through the same client and the same REST routes, never a service beneath
+them, and place artifact cards only in the forms the Workbench creates (ADR 0023).
 
 ### Input plug
 

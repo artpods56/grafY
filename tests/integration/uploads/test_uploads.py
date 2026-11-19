@@ -1,28 +1,35 @@
 import asyncio
-from datetime import timedelta
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
+from time import sleep
 from typing import cast, override
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
+from grafy_persistence.database import create_database
+from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
+from pydantic import SecretStr
 
-from grafy_shared.config import UploadConfig
+from grafy_shared.config import AppConfig, UploadConfig
 
+from grafy_api.services.composition import build_workbench_components
 from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES, Settings
 from grafy_api.uploads import (
     FileFormatMismatchError,
     PresigningStorage,
+    UploadExpiredError,
     UploadNotFoundError,
     UploadService,
     UploadServiceConfig,
     UploadStateError,
     UploadTransportUnsupportedError,
 )
-from grafy_api.v1.routes.uploads.dependencies import upload_service
+from grafy_api.v1.routes.uploads.dependencies import upload_config, upload_service
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey
 from grafy_core.domain.uploads import Upload, UploadStatus
 from grafy_core.file_contracts import (
@@ -41,7 +48,10 @@ from grafy_storage import LocalFileObjectStore
 from pydantic import ValidationError
 
 from tests.support.clients import GrafyApi
-from tests.support.identity import TEST_USER_ID, WORKSPACE_ID
+from tests.support.identity import TEST_USER_ID, WORKSPACE_ID, create_schema
+from tests.support.system_plugins import build_selected_system_plugin_deployment
+from tests.support.workbench import workbench_dependency_overrides
+from tests.testkit import client_with_overrides
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\nstaged payload"
 BUCKET = "workbench-artifacts"
@@ -146,6 +156,61 @@ def test_staged_upload_settings_enforce_release_bounds() -> None:
                 staged_upload_max_bytes=STAGED_UPLOAD_HARD_MAX_BYTES + 1
             )
         )
+
+
+def test_an_operator_may_raise_the_staged_upload_limit_to_the_hard_ceiling() -> None:
+    raised = Settings(
+        uploads=UploadConfig(staged_upload_max_bytes=STAGED_UPLOAD_HARD_MAX_BYTES)
+    )
+
+    assert STAGED_UPLOAD_HARD_MAX_BYTES == 2 * 1024 * 1024 * 1024
+    assert (
+        UploadServiceConfig.from_settings(raised.uploads).max_upload_bytes
+        == STAGED_UPLOAD_HARD_MAX_BYTES
+    )
+
+
+async def test_a_body_that_started_inside_the_target_lifetime_is_received(
+    tmp_path: Path,
+) -> None:
+    """The target lifetime bounds when a PUT starts, not when its last byte lands.
+
+    A large GeoTIFF can still be arriving after the 15-minute target expired; the
+    route records when it began and the service judges the target at that moment.
+    """
+
+    service, uow, _ = _upload_service(tmp_path)
+    created_at = datetime.now(UTC) - timedelta(minutes=20)
+    record = Upload(
+        workspace_id=WORKSPACE_ID,
+        upload_id=uuid4(),
+        original_filename="scan.png",
+        bucket=BUCKET,
+        object_key=f"objects/{uuid4()}",
+        expected_size=len(PNG_BYTES),
+        created_at=created_at,
+    )
+    async with uow as entered:
+        await entered.uploads.add(record)
+        await entered.commit()
+
+    with pytest.raises(UploadExpiredError):
+        await service.require_receivable(
+            workspace_id=WORKSPACE_ID, upload_id=record.upload_id
+        )
+    with pytest.raises(UploadExpiredError):
+        await service.receive_content(
+            workspace_id=WORKSPACE_ID,
+            upload_id=record.upload_id,
+            stream=BytesIO(PNG_BYTES),
+            started_at=created_at + timedelta(minutes=16),
+        )
+    await service.receive_content(
+        workspace_id=WORKSPACE_ID,
+        upload_id=record.upload_id,
+        stream=BytesIO(PNG_BYTES),
+        started_at=created_at + timedelta(minutes=14),
+    )
 
 
 def test_upload_service_config_rejects_limit_above_release_hard_max() -> None:
@@ -548,6 +613,60 @@ def test_upload_endpoint_requires_content_only_on_the_local_backend(
     target = uploads.create_ok("page.png", len(PNG_BYTES))
 
     assert uploads.put_content(target, PNG_BYTES).status_code == 204
+
+
+def test_a_stalled_upload_body_is_dropped_rather_than_held_open(
+    tmp_path: Path,
+) -> None:
+    """The receive window alone bounds a trickle, because the target lifetime does not.
+
+    The target lifetime bounds when a PUT may start, so a client that stops sending
+    after starting would otherwise keep the request, its spooled bytes and a worker
+    open until the connection itself died.
+    """
+
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'api.sqlite3'}"
+    asyncio.run(create_schema(database_url))
+    deployment = build_selected_system_plugin_deployment()
+    components = build_workbench_components(
+        plugin_registry=deployment.registry,
+        workspace=tmp_path / "workbench",
+        unit_of_work=SqlAlchemyUnitOfWork(create_database(database_url).sessions),
+    )
+    stalled = components.upload_config.model_copy(
+        update={"upload_receive_timeout": timedelta(milliseconds=20)}
+    )
+    with client_with_overrides(
+        settings=Settings(
+            app=AppConfig(
+                workspace=tmp_path / "workbench",
+                database_url=SecretStr(database_url),
+            )
+        ),
+        overrides={
+            **workbench_dependency_overrides(components),
+            upload_config: lambda: stalled,
+        },
+    ) as client:
+        uploads = GrafyApi(client).workspace(WORKSPACE_ID).uploads
+        target = uploads.create_ok("page.png", len(PNG_BYTES))
+        response = client.request(
+            target.method,
+            target.url,
+            content=_trickle(PNG_BYTES),
+            headers=dict(target.headers) or None,
+        )
+
+    assert response.status_code == 408
+    assert "did not arrive" in str(response.json()["detail"])
+
+
+def _trickle(payload: bytes) -> Iterator[bytes]:
+    """Send the first chunk, then stop: the rest of the body never arrives."""
+
+    yield payload[:4]
+    sleep(0.2)
+    yield payload[4:]
 
 
 class _PresigningStore:

@@ -1,7 +1,8 @@
 # ADR 0003: Authenticate users and scope collaboration to workspaces
 
 - **Status:** Accepted; amended 2026-08-26 to remove the legacy local workspace;
-  amended 2026-09-01 to authenticate workspace HTTP automation with PATs
+  amended 2026-09-01 to authenticate workspace HTTP automation with PATs;
+  MCP implemented by [ADR 0023](0023-mcp-is-a-pat-only-adapter-over-the-rest-api.md)
 - **Date:** 2026-08-06
 - **Scope:** Identity, workspace tenancy, browser sessions, collaboration authorization, HTTP automation, and MCP access
 - **Designs:** [Authentication and workspace tenancy design](../design/authentication-and-workspace-tenancy.md), [realtime Workbench collaboration rework](../design/workbench-realtime-collaboration.md)

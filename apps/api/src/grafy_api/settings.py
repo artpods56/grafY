@@ -17,6 +17,7 @@ from functools import lru_cache
 from pydantic import BaseModel, ConfigDict, Field
 
 from grafy_shared.config import (
+    STAGED_UPLOAD_DEFAULT_MAX_BYTES,
     STAGED_UPLOAD_HARD_MAX_BYTES,
     AgentsConfig,
     AppConfig,
@@ -31,6 +32,7 @@ from grafy_shared.config import (
 )
 
 __all__ = [
+    "STAGED_UPLOAD_DEFAULT_MAX_BYTES",
     "STAGED_UPLOAD_HARD_MAX_BYTES",
     "Settings",
     "get_settings",

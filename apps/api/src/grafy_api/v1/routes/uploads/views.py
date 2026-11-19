@@ -1,3 +1,5 @@
+import asyncio
+from datetime import UTC, datetime
 from tempfile import SpooledTemporaryFile
 from uuid import UUID
 
@@ -72,6 +74,7 @@ async def receive_upload_content(
     access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> Response:
     del access
+    started_at = datetime.now(UTC)
     if not service.accepts_direct_upload:
         raise HTTPException(
             status_code=404,
@@ -91,26 +94,40 @@ async def receive_upload_content(
                 f"Upload exceeds the upload limit of {upload_limits.max_upload_bytes} bytes"
             )
 
+    try:
+        await service.require_receivable(workspace_id=workspace_id, upload_id=upload_id)
+    except UploadNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except UploadExpiredError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except WorkbenchOperationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     buffer = SpooledTemporaryFile(max_size=_STREAM_BUFFER_BYTES)
     byte_count = 0
+    receive_seconds = upload_limits.upload_receive_timeout.total_seconds()
     try:
-        async for chunk in request.stream():
-            byte_count += len(chunk)
-            if byte_count > upload_limits.max_upload_bytes:
-                raise HTTPException(
-                    status_code=413,
-                    detail=(
-                        "Upload exceeds the upload limit of "
-                        f"{upload_limits.max_upload_bytes} bytes"
-                    ),
-                )
-            _ = buffer.write(chunk)
+        # The target lifetime bounds when a PUT may start, so this window alone keeps a
+        # client that stopped sending from holding the request open indefinitely.
+        async with asyncio.timeout(receive_seconds):
+            async for chunk in request.stream():
+                byte_count += len(chunk)
+                if byte_count > upload_limits.max_upload_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            "Upload exceeds the upload limit of "
+                            f"{upload_limits.max_upload_bytes} bytes"
+                        ),
+                    )
+                _ = buffer.write(chunk)
         _ = buffer.seek(0)
         try:
             await service.receive_content(
                 workspace_id=workspace_id,
                 upload_id=upload_id,
                 stream=buffer,
+                started_at=started_at,
             )
         except UploadTooLargeError as exc:
             raise HTTPException(status_code=413, detail=str(exc)) from exc
@@ -122,6 +139,11 @@ async def receive_upload_content(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except WorkbenchOperationError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=408,
+            detail=(f"Upload body did not arrive within {receive_seconds:.0f} seconds"),
+        ) from exc
     finally:
         buffer.close()
     return Response(status_code=204)
