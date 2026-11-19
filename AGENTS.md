@@ -67,6 +67,14 @@ elsewhere. Walk this list and say which entries applied:
 - Smallest proof first: `uv run pytest tests/unit/<area>/test_<thing>.py`, or
   `npm --prefix apps/web test -- <file>` for the web suite. Architecture
   changes run `tests/unit/architecture/` locally; CI owns everything else.
+- **`apps/tiler` is a second uv project** (Python 3.13, own lock, excluded from
+  the root workspace because `titiler.core` needs `starlette>=1` and the API
+  pins `starlette<1`). Verify it with `just test-tiler`, `just lint-tiler`, and
+  `just typecheck-tiler`, which run in `apps/tiler/.venv` the way the CI `tiler`
+  job does. Root `uv run pytest` and root `basedpyright` do not reach it at all —
+  `apps/tiler` is outside the root `testpaths` and the root pyright `include` —
+  so nothing else you run locally notices a broken tiler. Its `container`-marked
+  tests need Docker and `GRAFY_TEST_TILER_IMAGE`.
 - Do not run repo-wide suites. `just check` and the full matrix in
   `.github/workflows/ci.yml` belong to CI.
 - Persistence tests that need PostgreSQL silently skip unless

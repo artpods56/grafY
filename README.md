@@ -241,6 +241,10 @@ bundle. Python verification enables every declared development extra so all
 System Plugin families remain covered without making them ambient runtime
 discoveries.
 
+`apps/tiler` is its own uv project on Python 3.13, so it is not covered by
+`just check`. Verify it with `just test-tiler`, `just lint-tiler`, and
+`just typecheck-tiler`, which use `apps/tiler/.venv`.
+
 To exercise the runtime without the browser:
 
 ```bash

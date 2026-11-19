@@ -14,17 +14,39 @@ install:
     npm --prefix apps/web ci
     uv run prek install
 
+# Both API recipes use the workspace .venv with its dev group. `--exact` (the
+# flag `api` used to carry) prunes every package the lock's dev group does not
+# cover, so starting the API uninstalled pytest, ruff and pyright and the next
+# `uv run pytest` reinstalled them. The production-shaped environment (locked, no
+# dev group) is what infra/docker/api.Dockerfile builds.
+
 # Start the API with installed application families and native GIS tools.
 api: db-upgrade
-    uv run --exact --no-dev uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
+    uv run uvicorn grafy_api.main:app --reload --host 0.0.0.0 --port 8000
 
 # Start the API with installed families and reload edits under apps, libs and plugins.
 api-dev: db-upgrade
-    uv run --no-dev uvicorn grafy_api.main:app --reload --reload-dir apps --reload-dir libs --reload-dir plugins --host 0.0.0.0 --port 8000
+    uv run uvicorn grafy_api.main:app --reload --reload-dir apps --reload-dir libs --reload-dir plugins --host 0.0.0.0 --port 8000
 
 # Start the internal TIFF tile service natively (reads TILER_* from .env).
 tiler:
     cd apps/tiler && uv run --locked --no-dev python -m grafy_tiler
+
+# The tiler is its own uv project on Python 3.13 with its own lock, so these run
+# in apps/tiler/.venv and mirror the CI `tiler` job. The root recipes cannot stand
+# in for them: see the `exclude` in the root pyproject workspace.
+
+# Run the tiler suite (container-marked tests need Docker and GRAFY_TEST_TILER_IMAGE).
+test-tiler:
+    cd apps/tiler && uv run --locked pytest -q -o log_cli=false
+
+# Lint the tiler and the crypto library it shares with the API.
+lint-tiler:
+    cd apps/tiler && uv run --locked ruff check src tests ../../libs/crypto
+
+# Type check the tiler against its own environment.
+typecheck-tiler:
+    cd apps/tiler && uv run --locked pyright
 
 # Start the web development server.
 web port="":
