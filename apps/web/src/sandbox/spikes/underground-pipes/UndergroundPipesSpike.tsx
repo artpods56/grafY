@@ -541,7 +541,8 @@ function LookPanel({
         label="Blur"
         min={0}
         max={12}
-        step={1}
+        step={0.1}
+        format={(blur) => blur.toFixed(1)}
         disabled={!pipes}
         value={look.blur}
         onValueChange={(blur) => onLook({ ...look, blur })}
@@ -579,12 +580,12 @@ export function UndergroundPipesSpike() {
   }, []);
   const [edgeStyle, setEdgeStyle] = React.useState<EdgeStyle>("pipes");
   const [look, setLook] = React.useState<PipeLook>({
-    corners: "sharp",
+    corners: "rounded",
     material: "liquid",
     well: "recessed",
     lanes: true,
     depth: true,
-    blur: 4,
+    blur: 0.3,
     frost: 0.5,
   });
   const [pipeGroup, setPipeGroup] = React.useState<SVGGElement | null>(null);
