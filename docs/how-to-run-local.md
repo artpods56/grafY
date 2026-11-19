@@ -23,6 +23,23 @@
 Ctrl-C or SIGTERM stops the supervised processes. Keycloak runs in a separate
 Docker container. Run `just keycloak-down` when you want to stop it too.
 
+## Sign in without Keycloak
+
+Set `GRAFY_AUTH_DEV_LOGIN=true` in `.env` and restart the API. Sign-in then
+skips Keycloak and opens a session for the local user `dev@grafy.local`. To
+sign in as another user, open
+`/api/v1/auth/oidc/login?as=alice&return_path=/`. Names are lowercase letters,
+digits and hyphens. Each name gets its own personal Workspace. Dev users are
+separate from your Keycloak account.
+
+This is how to open the app from another device on the LAN, where the
+`keycloak.localhost` redirect cannot resolve. Add that device's origin, for
+example `http://192.168.1.45:3000`, to `GRAFY_CORS_ORIGINS`. To put dev users
+in one shared Workspace, grant their domain:
+`GRAFY_OIDC_DOMAIN_WORKSPACES=grafy.local:dev-team:Dev team`.
+
+The API refuses to start with the flag when `GRAFY_ENVIRONMENT=production`.
+
 ## Mint a token for a local script
 
 Once the owner has signed in to this database, run `just dev-pat`. It prints

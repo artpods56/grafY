@@ -5,6 +5,7 @@ in their own modules. This type is the workflow those pieces share, including
 the request-state the browser routes read.
 """
 
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from secrets import token_bytes, token_urlsafe
@@ -73,6 +74,13 @@ from grafy_api.auth.sessions import (
     session_is_expired,
 )
 from grafy_api.auth.transactions import LoginTransactions
+
+# Dev login identities live under their own issuer, so they never merge with an
+# account from the real provider.
+DEV_LOGIN_ISSUER = "grafy-dev"
+DEV_LOGIN_EMAIL_DOMAIN = "grafy.local"
+DEV_LOGIN_DEFAULT_USER = "dev"
+_DEV_LOGIN_USER_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
 
 
 class AuthService:
@@ -281,6 +289,61 @@ class AuthService:
             )
             await uow.commit()
         return issued
+
+    @property
+    def dev_login_enabled(self) -> bool:
+        return self._auth.auth_dev_login
+
+    async def dev_login(
+        self,
+        *,
+        user_name: str,
+        return_path: str,
+        current_session_cookie: str | None = None,
+    ) -> tuple[IssuedSession, str]:
+        """Sign in a local dev user without the OIDC provider.
+
+        The user is an ordinary OIDC identity under the ``grafy-dev`` issuer, so
+        Workspace membership, capabilities, CSRF and origin checks all run as they
+        do for a provider login. Only who vouches for the identity differs.
+        """
+
+        if not self._auth.auth_dev_login:
+            raise OidcProtocolError("dev_login_disabled")
+        if _DEV_LOGIN_USER_NAME.fullmatch(user_name) is None:
+            raise OidcProtocolError("invalid_dev_login_user")
+        safe_return_path = self.transactions.validate_return_path(return_path)
+        try:
+            provisioned = await self._identity_service.provision_oidc_identity(
+                issuer=DEV_LOGIN_ISSUER,
+                subject=user_name,
+                email=f"{user_name}@{DEV_LOGIN_EMAIL_DOMAIN}",
+                display_name=user_name,
+                email_verified=True,
+            )
+        except UserDisabledError as exc:
+            raise OidcProtocolError("identity_not_eligible") from exc
+        async with self._uow_factory() as uow:
+            issued = await issue_session_in_unit_of_work(
+                uow,
+                provisioned.user.id,
+                replacing_cookie=current_session_cookie,
+                absolute_seconds=self._auth.auth_session_absolute_seconds,
+                idle_seconds=self._auth.auth_session_idle_seconds,
+            )
+            await uow.security_audit.add(
+                SecurityAuditEvent(
+                    actor_kind=SecurityAuditActorKind.AUTHENTICATED,
+                    user_id=provisioned.user.id,
+                    credential_reference=f"session:{issued.session.id}",
+                    operation="dev.login.success",
+                    outcome=SecurityAuditOutcome.SUCCESS,
+                    resource_type="auth_session",
+                    resource_id=str(issued.session.id),
+                )
+            )
+            await uow.commit()
+        return issued, safe_return_path
 
     def issue_personal_access_token(
         self,

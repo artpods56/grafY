@@ -642,3 +642,11 @@ def test_production_refuses_to_derive_its_build_digest(
             environment="production",
             _env_file=None,  # pyright: ignore[reportCallIssue]
         ).resolved_build_digest
+
+
+def test_dev_login_is_refused_in_production() -> None:
+    with pytest.raises(ValidationError, match="GRAFY_AUTH_DEV_LOGIN"):
+        Settings(
+            app=AppConfig(environment="production", _env_file=None),  # pyright: ignore[reportCallIssue]
+            auth=AuthConfig(auth_dev_login=True, _env_file=None),  # pyright: ignore[reportCallIssue]
+        )
