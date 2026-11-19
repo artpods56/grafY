@@ -679,8 +679,9 @@ function stubBodyPath(
 
 /**
  * Tapered lens-shaped caustic crescent hugging the glass bore wall on the side
- * the pipe passes beneath it. Pinches to sharp zero-width tips at both ends so
- * it reads as internal light refraction rather than a pill stroke.
+ * the pipe passes beneath it. The inner edge traces the exact circular arc of
+ * `innerRadius`, while the outer curve swells to `outerRadius` at the entry
+ * centre and pinches cleanly to zero-width tips at both ends.
  */
 function causticCrescentPath(
   centre: Point,
@@ -696,25 +697,16 @@ function causticCrescentPath(
     [Position.Top]: -Math.PI / 2,
   }[position];
   const half = (halfAngleDeg * Math.PI) / 180;
-  // Place tips near the outer bore wall so the entire crescent stays inside
-  // the glass thickness ring and never cuts across the open inner bore.
-  const rTip = outerRadius - 0.5;
-  const x0 = centre.x + rTip * Math.cos(mid - half);
-  const y0 = centre.y + rTip * Math.sin(mid - half);
-  const x1 = centre.x + rTip * Math.cos(mid + half);
-  const y1 = centre.y + rTip * Math.sin(mid + half);
-  const cosMid = Math.cos(mid);
-  const sinMid = Math.sin(mid);
-  // Quadratic control points computed so t=0.5 hits outerRadius / innerRadius.
-  const outMidX = centre.x + outerRadius * cosMid;
-  const outMidY = centre.y + outerRadius * sinMid;
+  const x0 = centre.x + innerRadius * Math.cos(mid - half);
+  const y0 = centre.y + innerRadius * Math.sin(mid - half);
+  const x1 = centre.x + innerRadius * Math.cos(mid + half);
+  const y1 = centre.y + innerRadius * Math.sin(mid + half);
+  const outMidX = centre.x + outerRadius * Math.cos(mid);
+  const outMidY = centre.y + outerRadius * Math.sin(mid);
+  // Quadratic control point computed so t=0.5 hits outerRadius at `mid`.
   const outCtrlX = 2 * outMidX - 0.5 * (x0 + x1);
   const outCtrlY = 2 * outMidY - 0.5 * (y0 + y1);
-  const inMidX = centre.x + innerRadius * cosMid;
-  const inMidY = centre.y + innerRadius * sinMid;
-  const inCtrlX = 2 * inMidX - 0.5 * (x0 + x1);
-  const inCtrlY = 2 * inMidY - 0.5 * (y0 + y1);
-  return `M${x0.toFixed(2)},${y0.toFixed(2)} Q${outCtrlX.toFixed(2)},${outCtrlY.toFixed(2)} ${x1.toFixed(2)},${y1.toFixed(2)} Q${inCtrlX.toFixed(2)},${inCtrlY.toFixed(2)} ${x0.toFixed(2)},${y0.toFixed(2)} Z`;
+  return `M${x0.toFixed(2)},${y0.toFixed(2)} Q${outCtrlX.toFixed(2)},${outCtrlY.toFixed(2)} ${x1.toFixed(2)},${y1.toFixed(2)} A${innerRadius},${innerRadius} 0 0 0 ${x0.toFixed(2)},${y0.toFixed(2)} Z`;
 }
 
 function overhangGradientId(position: Position): string {
@@ -823,6 +815,7 @@ function PipeBody({
   corners,
   girth = 1,
   shadow,
+  cylindrical = false,
 }: {
   path: string;
   color: string;
@@ -831,6 +824,8 @@ function PipeBody({
   girth?: number;
   /** Cast a soft shadow onto deeper layers crossing underneath this pipe. */
   shadow?: "surface" | "middle";
+  /** Richer edge casing and off-center highlight for sharp wiped pipes. */
+  cylindrical?: boolean;
 }) {
   const join = corners === "sharp" ? "miter" : "round";
   return (
@@ -850,19 +845,33 @@ function PipeBody({
           }}
         />
       ) : null}
+      {cylindrical ? (
+        <path
+          d={path}
+          fill="none"
+          strokeWidth={PIPE_WIDTH * girth + 0.8}
+          strokeLinejoin={join}
+          style={{ stroke: `color-mix(in srgb, ${color} 68%, black)` }}
+        />
+      ) : null}
       <path
         d={path}
         fill="none"
-        strokeWidth={PIPE_WIDTH * girth}
+        strokeWidth={PIPE_WIDTH * girth - (cylindrical ? 0.6 : 0)}
         strokeLinejoin={join}
         style={{ stroke: color }}
       />
       <path
         d={path}
+        transform={cylindrical ? "translate(0, -1.2)" : undefined}
         fill="none"
-        strokeWidth={PIPE_SHINE_WIDTH * girth}
+        strokeWidth={(cylindrical ? 1.8 : PIPE_SHINE_WIDTH) * girth}
         strokeLinejoin={join}
-        style={{ stroke: `color-mix(in srgb, ${color} 45%, white)` }}
+        style={{
+          stroke: cylindrical
+            ? `color-mix(in srgb, ${color} 35%, white)`
+            : `color-mix(in srgb, ${color} 45%, white)`,
+        }}
       />
     </g>
   );
@@ -994,9 +1003,9 @@ function RecessedWell({
             d={causticCrescentPath(
               centre,
               position,
-              RECESSED_INNER_RADIUS + 0.15,
-              RECESSED_OUTER_RADIUS - 0.05,
-              32,
+              RECESSED_INNER_RADIUS,
+              RECESSED_OUTER_RADIUS - 0.1,
+              38,
             )}
             fillOpacity={0.32}
             style={{ fill: color }}
@@ -1005,9 +1014,9 @@ function RecessedWell({
             d={causticCrescentPath(
               centre,
               position,
-              RECESSED_INNER_RADIUS + 0.2,
+              RECESSED_INNER_RADIUS + 0.1,
               RECESSED_INNER_RADIUS + 1.5,
-              24,
+              28,
             )}
             fillOpacity={0.6}
             style={{ fill: `color-mix(in srgb, ${color} 35%, white)` }}
@@ -1296,7 +1305,13 @@ export function PipeEdgeView({
       {settled && (flat || wipe > 0) && targets.sharp
         ? createPortal(
             wipe > 0 ? (
-              <PipeBody path={path} color={color} corners={corners} />
+              <PipeBody
+                path={path}
+                color={color}
+                corners={corners}
+                shadow="surface"
+                cylindrical={!flat}
+              />
             ) : (
               <>
                 <PipeBody
@@ -1334,15 +1349,26 @@ export function PipeEdgeView({
                 </>
               ) : null}
               {wipe > 0 ? (
-                <path
-                  d={path}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeOpacity={wipe}
-                  strokeWidth={PIPE_WIDTH + 12}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
+                <>
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeOpacity={wipe * 0.35}
+                    strokeWidth={PIPE_WIDTH + 18}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeOpacity={wipe}
+                    strokeWidth={PIPE_WIDTH + 9}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                </>
               ) : null}
             </>,
             targets.wells,
@@ -1439,6 +1465,7 @@ export function PipeConnectionLine({
   toY,
   fromPosition,
   toPosition,
+  fromHandle,
 }: ConnectionLineComponentProps) {
   const targets = React.useContext(PipeTargetsContext);
   const path = soloPath(
@@ -1451,13 +1478,33 @@ export function PipeConnectionLine({
     },
     targets?.look.corners ?? "sharp",
   );
+  const color = fromHandle?.id ? pipeColor(fromHandle.id) : tokens.colorAccent;
   return (
-    <path
-      d={path}
-      fill="none"
-      strokeWidth={2}
-      strokeDasharray="7 5"
-      style={{ stroke: tokens.colorAccent }}
-    />
+    <g>
+      <path
+        d={path}
+        fill="none"
+        strokeWidth={PIPE_WIDTH}
+        strokeOpacity={0.18}
+        strokeLinejoin="round"
+        style={{ stroke: color }}
+      />
+      <path
+        d={path}
+        fill="none"
+        strokeWidth={2.2}
+        strokeDasharray="6 5"
+        strokeLinecap="round"
+        style={{ stroke: color }}
+      />
+      <circle
+        cx={toX}
+        cy={toY}
+        r={4}
+        fill="none"
+        strokeWidth={1.8}
+        style={{ stroke: color }}
+      />
+    </g>
   );
 }
