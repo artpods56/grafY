@@ -260,6 +260,7 @@ const s = stylex.create({
   // React Flow's renderer (cards, handles, hit paths) sits at z-index 4.
   pipes: { zIndex: 1 },
   glass: { zIndex: 2 },
+  movingOver: { zIndex: 3 },
   planeSvg: {
     position: "absolute",
     top: 0,
@@ -362,6 +363,17 @@ export function GlassStage({
       >
         <svg {...stylex.props(s.planeSvg)}>
           <g ref={onPipes} />
+        </svg>
+      </div>
+      {/* Pipes of a dragged card sit in their own blurred plane under the
+          frosted sheet so dragging never invalidates the resting layers. */}
+      <div
+        aria-hidden="true"
+        {...stylex.props(s.plane, s.pipes)}
+        style={{ transform: viewport, filter }}
+      >
+        <svg {...stylex.props(s.planeSvg)}>
+          <g ref={onMovingUnder} />
         </svg>
       </div>
       <div
@@ -557,9 +569,6 @@ export function GlassStage({
             </radialGradient>
             <g ref={onLensMasks} />
           </defs>
-          {/* Pipes of a dragged card, blurred on their own and frosted with
-              the rest. */}
-          <g ref={onMovingUnder} style={{ filter }} />
           <rect
             {...sheet}
             mask={`url(#${FROST_MASK_ID})`}
@@ -569,9 +578,19 @@ export function GlassStage({
           <g mask={`url(#${CLEAR_MASK_ID})`}>
             <g ref={onSharp} />
           </g>
-          <g ref={onMovingOver} />
           <g ref={onLenses} />
           <g ref={onRims} />
+        </svg>
+      </div>
+      {/* Wells of a dragged card sit above the static glass sheet so drag
+          frames leave the whole-sheet frost mask and resting wells untouched. */}
+      <div
+        aria-hidden="true"
+        {...stylex.props(s.plane, s.movingOver)}
+        style={{ transform: viewport }}
+      >
+        <svg {...stylex.props(s.planeSvg)}>
+          <g ref={onMovingOver} />
         </svg>
       </div>
     </>
