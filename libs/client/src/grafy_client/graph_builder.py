@@ -7,7 +7,14 @@ from typing import Literal
 
 from pydantic import ValidationError
 
-from grafy_core.artifacts import ArtifactTypeKey, NodeConfig, NodeInput, NodeOutput
+from grafy_core.artifacts import (
+    ArtifactRef,
+    ArtifactRefSequence,
+    ArtifactTypeKey,
+    NodeConfig,
+    NodeInput,
+    NodeOutput,
+)
 from grafy_core.domain.graph_documents import (
     GraphPoint,
     GraphArtifactTypeBinding,
@@ -16,11 +23,18 @@ from grafy_core.domain.graph_documents import (
     GraphEdge,
     GraphInputPlug,
     GraphNode,
+    GraphOrigin,
+    GraphPresentationBinding,
+    GraphPresentationBindingMapping,
+    GraphPresentationDocument,
+    GraphPresentationLink,
+    GraphPresentationViewer,
+    GraphProjection,
 )
 from grafy_core.nodes import ArtifactTypeVariable, Node
 from grafy_core.schema_contracts import validate_json_schema_value
 
-from .models import CatalogConversion, CatalogNode, NodeCatalog
+from .models import CatalogConversion, CatalogNode, CatalogPort, NodeCatalog
 
 
 class GraphBuilderError(ValueError):
@@ -61,6 +75,30 @@ class OutputHandle:
     builder_identity: object = field(repr=False, compare=False)
 
 
+@dataclass(frozen=True, slots=True)
+class CardHandle:
+    """An artifact card on the canvas: a Library card or one following an output."""
+
+    card_id: str
+    artifact_ref: ArtifactRef | ArtifactRefSequence | None = None
+    builder_identity: object = field(default=None, repr=False, compare=False)
+
+
+type ArtifactValue = ArtifactRef | ArtifactRefSequence
+
+InteractionEffect = Literal["filter", "highlight", "focus"]
+
+
+def _value_type(value: ArtifactValue) -> ArtifactTypeKey:
+    return ArtifactTypeKey(id=value.artifact_type, schema_version=value.schema_version)
+
+
+def _value_owners(value: ArtifactValue) -> int:
+    if isinstance(value, ArtifactRef):
+        return 1
+    return len(value.item_refs)
+
+
 @dataclass(slots=True)
 class _AuthoredNode:
     handle: NodeHandle
@@ -69,6 +107,13 @@ class _AuthoredNode:
     bindings: dict[str, ArtifactTypeKey]
     input_plugs: list[GraphInputPlug]
     position: GraphPoint | None
+
+
+def _port(ports: Sequence[CatalogPort], name: str) -> CatalogPort | None:
+    for port in ports:
+        if port.name == name:
+            return port
+    return None
 
 
 def _artifact_type_variables(catalog_node: CatalogNode) -> set[str]:
@@ -86,6 +131,10 @@ class GraphBuilder:
         self._identity = object()
         self._nodes: list[_AuthoredNode] = []
         self._edges: list[GraphEdge] = []
+        self._origins: list[GraphOrigin] = []
+        self._cards: list[GraphPresentationViewer] = []
+        self._card_links: list[GraphPresentationLink] = []
+        self._card_bindings: list[GraphPresentationBinding] = []
 
     def add[
         ConfigT: NodeConfig,
@@ -98,6 +147,7 @@ class GraphBuilder:
         *,
         bindings: Mapping[str, ArtifactTypeKey] | None = None,
         position: GraphPoint | None = None,
+        node_id: str | None = None,
     ) -> NodeHandle:
         matching = [
             node
@@ -218,6 +268,7 @@ class GraphBuilder:
             config.model_dump(mode="json"),
             bindings=bindings,
             position=position,
+            node_id=node_id,
         )
 
     def add_catalog_node(
@@ -229,6 +280,7 @@ class GraphBuilder:
         plugin_slug: str | None = None,
         bindings: Mapping[str, ArtifactTypeKey] | None = None,
         position: GraphPoint | None = None,
+        node_id: str | None = None,
     ) -> NodeHandle:
         matching = [
             node
@@ -261,6 +313,7 @@ class GraphBuilder:
             config_payload,
             bindings=bindings,
             position=position,
+            node_id=node_id,
         )
 
     def _append_node(
@@ -270,6 +323,7 @@ class GraphBuilder:
         *,
         bindings: Mapping[str, ArtifactTypeKey] | None,
         position: GraphPoint | None,
+        node_id: str | None = None,
     ) -> NodeHandle:
         if not catalog_node.runnable:
             raise GraphBuilderError(
@@ -277,16 +331,21 @@ class GraphBuilder:
                 f"{catalog_node.operator_version} is in a catalog this build cannot run"
             )
 
-        node_number = len(self._nodes) + 1
-        slug = re.sub(
-            r"[^a-z0-9]+",
-            "-",
-            catalog_node.operator_id.lower(),
-        ).strip("-")
-        handle = NodeHandle(
-            node_id=f"node-{node_number:04d}-{slug}",
-            builder_identity=self._identity,
-        )
+        if node_id is None:
+            node_number = len(self._nodes) + 1
+            slug = re.sub(
+                r"[^a-z0-9]+",
+                "-",
+                catalog_node.operator_id.lower(),
+            ).strip("-")
+            node_id = f"node-{node_number:04d}-{slug}"
+        elif node_id.strip() != node_id or node_id == "":
+            raise GraphBuilderError(
+                f"Node id {node_id!r} must be non-blank and trimmed"
+            )
+        if self._find_node(node_id) is not None:
+            raise GraphBuilderError(f"Node id {node_id!r} is already in this graph")
+        handle = NodeHandle(node_id=node_id, builder_identity=self._identity)
         explicit_bindings = dict(bindings or {})
         unknown_bindings = sorted(
             set(explicit_bindings) - _artifact_type_variables(catalog_node)
@@ -449,12 +508,7 @@ class GraphBuilder:
                 f"{inferred_target.schema_version} with the requested conversion path"
             )
 
-        existing_target_edges = [
-            edge
-            for edge in self._edges
-            if edge.to_node == target.node_id and edge.to_port == target.port
-        ]
-        if not target_port.variadic and existing_target_edges:
+        if not target_port.variadic and self._input_is_satisfied(target):
             raise GraphBuilderError(
                 f"Input {target.node_id}.{target.port} accepts at most one edge"
             )
@@ -484,6 +538,274 @@ class GraphBuilder:
             target_node.input_plugs.append(input_plug)
         self._edges.append(edge)
 
+    def _find_node(self, node_id: str) -> _AuthoredNode | None:
+        for authored in self._nodes:
+            if authored.handle.node_id == node_id:
+                return authored
+        return None
+
+    def _input_is_satisfied(self, target: InputHandle) -> bool:
+        for edge in self._edges:
+            if edge.to_node == target.node_id and edge.to_port == target.port:
+                return True
+        for origin in self._origins:
+            if origin.to_node == target.node_id and origin.to_port == target.port:
+                return True
+        return False
+
+    def _own_card(self, card: CardHandle) -> GraphPresentationViewer:
+        if card.builder_identity is not self._identity:
+            raise GraphBuilderError("Cannot use a card from another graph builder")
+        for viewer in self._cards:
+            if viewer.id == card.card_id:
+                return viewer
+        raise GraphBuilderError(f"Card {card.card_id} is not in this graph")
+
+    def _next_card_id(self) -> str:
+        return f"artifact-viewer-{len(self._cards) + 1:04d}"
+
+    def _card_position(self, position: GraphPoint | None) -> GraphPoint:
+        if position is not None:
+            return position
+        index = len(self._cards)
+        return GraphPoint(
+            x=float(4 * 360 + (index % 2) * 380), y=float((index // 2) * 320)
+        )
+
+    def place(
+        self,
+        target: InputHandle,
+        source: ArtifactRef | ArtifactRefSequence | CardHandle,
+        *,
+        conversion_path: Sequence[GraphConversion] = (),
+        collection_mode: Literal["direct", "map"] = "direct",
+    ) -> None:
+        """Satisfy ``target`` with a stored artifact instead of an upstream edge.
+
+        This writes an origin: the exact reference becomes the input, and no node is
+        added. Passing a Library card (from :meth:`add_artifact_card`) records the
+        card as the owner of that contribution, the way dropping a card on an input
+        does in the Workbench.
+        """
+        if target.builder_identity is not self._identity:
+            raise GraphBuilderError("Cannot place into a handle from another builder")
+        card_id: str | None = None
+        if isinstance(source, CardHandle):
+            viewer = self._own_card(source)
+            if viewer.artifact_ref is None:
+                raise GraphBuilderError(
+                    f"Card {viewer.id} follows a node output and holds no artifact"
+                )
+            value: ArtifactValue = viewer.artifact_ref
+            card_id = viewer.id
+        else:
+            value = source
+        target_node = self._find_node(target.node_id)
+        if target_node is None:
+            raise GraphBuilderError(
+                "Cannot place into a node that is not in this graph"
+            )
+        target_port = _port(target_node.catalog_node.inputs, target.port)
+        if target_port is None:
+            raise GraphBuilderError(
+                f"Node {target.node_id} has no input port {target.port!r}"
+            )
+        shape = type(target_port.shape)
+        value_shape = shape.ONE if isinstance(value, ArtifactRef) else shape.MANY
+        if collection_mode == "map":
+            if value_shape is not shape.MANY:
+                raise GraphBuilderError("A mapped origin needs an artifact sequence")
+            value_shape = shape.ONE
+        if value_shape not in target_port.accepted_shapes:
+            raise GraphBuilderError(
+                f"Input {target.node_id}.{target.port} does not accept a "
+                f"{value_shape.value!r} artifact value"
+            )
+        if not target_port.variadic and self._input_is_satisfied(target):
+            raise GraphBuilderError(
+                f"Input {target.node_id}.{target.port} is already satisfied"
+            )
+        delivered = self._convert(_value_type(value), conversion_path)
+        variable = target_port.artifact_type_variable
+        if variable is not None:
+            bound = target_node.bindings.get(variable)
+            if bound is not None and bound != delivered:
+                raise GraphBuilderError(
+                    f"Input {target.node_id}.{target.port} is bound to "
+                    f"{bound.id}@{bound.schema_version}, not "
+                    f"{delivered.id}@{delivered.schema_version}"
+                )
+        elif delivered not in {target_port.artifact_type, *target_port.also_accepts}:
+            raise GraphBuilderError(
+                f"Input {target.node_id}.{target.port} does not accept "
+                f"{delivered.id}@{delivered.schema_version}"
+            )
+
+        input_plug: GraphInputPlug | None = None
+        if target_port.instance_plugs:
+            input_plug = GraphInputPlug(
+                id=f"plug-{len(target_node.input_plugs) + 1:04d}",
+                port=target.port,
+            )
+        origin = GraphOrigin(
+            id=f"origin-{len(self._origins) + 1:04d}",
+            to_node=target.node_id,
+            to_port=target.port,
+            to_plug=None if input_plug is None else input_plug.id,
+            value=value,
+            source_card_ids=(
+                None if card_id is None else (card_id,) * _value_owners(value)
+            ),
+            collection_mode=collection_mode,
+            conversion_path=tuple(conversion_path),
+        )
+        if variable is not None:
+            target_node.bindings[variable] = delivered
+        if input_plug is not None:
+            target_node.input_plugs.append(input_plug)
+        self._origins.append(origin)
+
+    def _convert(
+        self,
+        start: ArtifactTypeKey,
+        conversion_path: Sequence[GraphConversion],
+    ) -> ArtifactTypeKey:
+        current = start
+        visited = {current}
+        for requested in conversion_path:
+            matching = [
+                conversion
+                for conversion in self._catalog.artifact_conversions
+                if conversion.key.id == requested.id
+                and conversion.key.version == requested.version
+            ]
+            if len(matching) != 1:
+                raise GraphBuilderError(
+                    f"Catalog does not declare conversion {requested.id}@"
+                    f"{requested.version}"
+                )
+            conversion = matching[0]
+            if conversion.source != current:
+                raise GraphBuilderError(
+                    f"Conversion {requested.id}@{requested.version} expects "
+                    f"{conversion.source.id}@{conversion.source.schema_version}, "
+                    f"not {current.id}@{current.schema_version}"
+                )
+            if conversion.target in visited:
+                raise GraphBuilderError(
+                    "Artifact conversion path must not contain a cycle"
+                )
+            current = conversion.target
+            visited.add(current)
+        return current
+
+    def add_artifact_card(
+        self,
+        artifact: ArtifactRef | ArtifactRefSequence,
+        *,
+        position: GraphPoint | None = None,
+        card_id: str | None = None,
+    ) -> CardHandle:
+        """Show a stored artifact (or an ordered sequence of them) on the canvas.
+
+        The Workbench's Library drop: the card carries the reference and executes
+        nothing. Pass the card to :meth:`place` to feed it into a node input.
+        """
+        viewer = GraphPresentationViewer(
+            id=card_id or self._next_card_id(),
+            position=self._card_position(position),
+            artifact_ref=artifact,
+        )
+        self._add_card(viewer)
+        return CardHandle(
+            card_id=viewer.id,
+            artifact_ref=artifact,
+            builder_identity=self._identity,
+        )
+
+    def add_output_card(
+        self,
+        source: OutputHandle,
+        *,
+        position: GraphPoint | None = None,
+        projection: Sequence[str] = (),
+        card_id: str | None = None,
+    ) -> CardHandle:
+        """Show what a node output produces, the Workbench's output-port drop.
+
+        The card follows the output across Runs; ``projection`` previews one nested
+        field of the produced artifact instead of the whole value.
+        """
+        if source.builder_identity is not self._identity:
+            raise GraphBuilderError("Cannot link a handle from another graph builder")
+        source_node = self._find_node(source.node_id)
+        if source_node is None:
+            raise GraphBuilderError("Cannot link a node that is not in this graph")
+        if _port(source_node.catalog_node.outputs, source.port) is None:
+            raise GraphBuilderError(
+                f"Node {source.node_id} has no output port {source.port!r}"
+            )
+        viewer = GraphPresentationViewer(
+            id=card_id or self._next_card_id(),
+            position=self._card_position(position),
+            mode="artifact",
+        )
+        self._add_card(viewer)
+        self._card_links.append(
+            GraphPresentationLink(
+                id=f"artifact-viewer-edge-{len(self._card_links) + 1:04d}",
+                source_node_id=source.node_id,
+                source_port_name=source.port,
+                target_viewer_id=viewer.id,
+                projection=(
+                    GraphProjection(path=tuple(projection)) if projection else None
+                ),
+            )
+        )
+        return CardHandle(card_id=viewer.id, builder_identity=self._identity)
+
+    def _add_card(self, viewer: GraphPresentationViewer) -> None:
+        for existing in self._cards:
+            if existing.id == viewer.id:
+                raise GraphBuilderError(f"Card id {viewer.id!r} is already in use")
+        self._cards.append(viewer)
+
+    def bind_cards(
+        self,
+        source: CardHandle,
+        target: CardHandle,
+        fields: Mapping[str, str],
+        *,
+        effects: Sequence[InteractionEffect] = ("highlight", "focus"),
+    ) -> str:
+        """Link a selection on ``source`` to ``target`` by matching key fields.
+
+        ``fields`` maps a field of the source card's selected rows or features to
+        the field of the target card it must equal. ``effects`` decide what the
+        target does with the matches; the default is the Workbench's own.
+        """
+        source_viewer = self._own_card(source)
+        target_viewer = self._own_card(target)
+        if not fields:
+            raise GraphBuilderError("A card binding needs at least one field pair")
+        try:
+            binding = GraphPresentationBinding(
+                id=f"artifact-viewer-binding-{len(self._card_bindings) + 1:04d}",
+                source_viewer_id=source_viewer.id,
+                target_viewer_id=target_viewer.id,
+                mappings=tuple(
+                    GraphPresentationBindingMapping(
+                        source_field=source_field, target_field=target_field
+                    )
+                    for source_field, target_field in fields.items()
+                ),
+                effects=tuple(effects),
+            )
+        except ValidationError as exc:
+            raise GraphBuilderError(f"Invalid card binding: {exc}") from exc
+        self._card_bindings.append(binding)
+        return binding.id
+
     def build(self) -> GraphDocument:
         for authored in self._nodes:
             missing_bindings = sorted(
@@ -498,12 +820,8 @@ class GraphBuilder:
             for port in authored.catalog_node.inputs:
                 if not port.required:
                     continue
-                has_connection = any(
-                    edge.to_node == authored.handle.node_id
-                    and edge.to_port == port.name
-                    for edge in self._edges
-                )
-                if not has_connection:
+                handle = authored.handle.input(port.name)
+                if not self._input_is_satisfied(handle):
                     raise GraphBuilderError(
                         f"Node {authored.catalog_node.operator_id}@"
                         f"{authored.catalog_node.operator_version} required input "
@@ -555,10 +873,23 @@ class GraphBuilder:
             )
             for index, authored in enumerate(self._nodes)
         )
-        return GraphDocument(nodes=nodes, edges=tuple(self._edges))
+        try:
+            return GraphDocument(
+                nodes=nodes,
+                edges=tuple(self._edges),
+                origins=tuple(self._origins),
+                presentation=GraphPresentationDocument(
+                    viewers=tuple(self._cards),
+                    links=tuple(self._card_links),
+                    bindings=tuple(self._card_bindings),
+                ),
+            )
+        except ValidationError as exc:
+            raise GraphBuilderError(f"Graph document is invalid: {exc}") from exc
 
 
 __all__ = [
+    "CardHandle",
     "GraphBuilder",
     "GraphBuilderError",
     "InputHandle",

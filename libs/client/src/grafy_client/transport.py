@@ -1,5 +1,5 @@
 import json
-from collections.abc import Mapping
+from collections.abc import AsyncIterable, Mapping
 from ipaddress import ip_address
 from typing import cast
 
@@ -66,57 +66,19 @@ class HttpTransport:
         json_payload: object | None = None,
         files: Mapping[str, tuple[str, bytes, str]] | None = None,
         headers: Mapping[str, str] | None = None,
-        params: Mapping[str, str | list[str]] | None = None,
+        params: Mapping[str, str | int | list[str]] | None = None,
         sensitive_values: tuple[str, ...] = (),
     ) -> object:
-        request_headers = dict(headers or {})
-        token = self._token.get_secret_value()
-        request_headers["Authorization"] = f"Bearer {token}"
-        try:
-            response = await self._http.request(
-                method,
-                path,
-                headers=request_headers,
-                json=json_payload,
-                files=files,
-                params=params,
-            )
-        except httpx.RequestError as exc:
-            raise GrafyClientError(
-                operation=operation,
-                detail="HTTP transport failed",
-            ) from exc
-        if response.is_error:
-            try:
-                response_payload: object = response.json()
-                detail_value: object = response_payload
-                if isinstance(response_payload, dict) and "detail" in response_payload:
-                    response_mapping = cast(
-                        Mapping[object, object],
-                        response_payload,
-                    )
-                    detail_value = response_mapping["detail"]
-                if isinstance(detail_value, str):
-                    detail = detail_value
-                else:
-                    detail = json.dumps(
-                        detail_value,
-                        ensure_ascii=False,
-                        sort_keys=True,
-                    )
-            except (ValueError, UnicodeDecodeError):
-                detail = response.text
-            for sensitive in (token, *sensitive_values):
-                if sensitive != "":
-                    detail = detail.replace(sensitive, "<redacted>")
-            if detail.strip() == "":
-                detail = response.reason_phrase or "Request failed"
-            raise GrafyClientError(
-                operation=operation,
-                detail=detail[:4_000],
-                status_code=response.status_code,
-                request_id=response.headers.get("X-Request-ID"),
-            )
+        response = await self.send(
+            operation=operation,
+            method=method,
+            path=path,
+            json_payload=json_payload,
+            files=files,
+            headers=headers,
+            params=params,
+            sensitive_values=sensitive_values,
+        )
         try:
             return response.json()
         except (ValueError, UnicodeDecodeError) as exc:
@@ -126,6 +88,78 @@ class HttpTransport:
                 status_code=response.status_code,
                 request_id=response.headers.get("X-Request-ID"),
             ) from exc
+
+    async def send(
+        self,
+        *,
+        operation: str,
+        method: str,
+        path: str,
+        json_payload: object | None = None,
+        files: Mapping[str, tuple[str, bytes, str]] | None = None,
+        content: bytes | AsyncIterable[bytes] | None = None,
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, str | int | list[str]] | None = None,
+        sensitive_values: tuple[str, ...] = (),
+        authenticate: bool = True,
+    ) -> httpx.Response:
+        """Send one request and raise a redacted `GrafyClientError` on failure.
+
+        ``authenticate=False`` is for a signed object-storage URL: the signature is
+        the credential there, and the bearer token must never leave for that host.
+        """
+
+        request_headers = dict(headers or {})
+        token = self._token.get_secret_value()
+        if authenticate:
+            request_headers["Authorization"] = f"Bearer {token}"
+        try:
+            response = await self._http.request(
+                method,
+                path,
+                headers=request_headers,
+                json=json_payload,
+                files=files,
+                content=content,
+                params=params,
+            )
+        except httpx.RequestError as exc:
+            raise GrafyClientError(
+                operation=operation,
+                detail="HTTP transport failed",
+            ) from exc
+        if not response.is_error:
+            return response
+        try:
+            response_payload: object = response.json()
+            detail_value: object = response_payload
+            if isinstance(response_payload, dict) and "detail" in response_payload:
+                response_mapping = cast(
+                    Mapping[object, object],
+                    response_payload,
+                )
+                detail_value = response_mapping["detail"]
+            if isinstance(detail_value, str):
+                detail = detail_value
+            else:
+                detail = json.dumps(
+                    detail_value,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+        except (ValueError, UnicodeDecodeError):
+            detail = response.text
+        for sensitive in (token, *sensitive_values):
+            if sensitive != "":
+                detail = detail.replace(sensitive, "<redacted>")
+        if detail.strip() == "":
+            detail = response.reason_phrase or "Request failed"
+        raise GrafyClientError(
+            operation=operation,
+            detail=detail[:4_000],
+            status_code=response.status_code,
+            request_id=response.headers.get("X-Request-ID"),
+        )
 
 
 __all__ = ["HttpTransport"]

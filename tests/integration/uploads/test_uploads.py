@@ -1,5 +1,5 @@
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -16,6 +16,7 @@ from grafy_api.settings import STAGED_UPLOAD_HARD_MAX_BYTES, Settings
 from grafy_api.uploads import (
     FileFormatMismatchError,
     PresigningStorage,
+    UploadExpiredError,
     UploadNotFoundError,
     UploadService,
     UploadServiceConfig,
@@ -146,6 +147,61 @@ def test_staged_upload_settings_enforce_release_bounds() -> None:
                 staged_upload_max_bytes=STAGED_UPLOAD_HARD_MAX_BYTES + 1
             )
         )
+
+
+def test_an_operator_may_raise_the_staged_upload_limit_to_the_hard_ceiling() -> None:
+    raised = Settings(
+        uploads=UploadConfig(staged_upload_max_bytes=STAGED_UPLOAD_HARD_MAX_BYTES)
+    )
+
+    assert STAGED_UPLOAD_HARD_MAX_BYTES == 2 * 1024 * 1024 * 1024
+    assert (
+        UploadServiceConfig.from_settings(raised.uploads).max_upload_bytes
+        == STAGED_UPLOAD_HARD_MAX_BYTES
+    )
+
+
+async def test_a_body_that_started_inside_the_target_lifetime_is_received(
+    tmp_path: Path,
+) -> None:
+    """The target lifetime bounds when a PUT starts, not when its last byte lands.
+
+    A large GeoTIFF can still be arriving after the 15-minute target expired; the
+    route records when it began and the service judges the target at that moment.
+    """
+
+    service, uow, _ = _upload_service(tmp_path)
+    created_at = datetime.now(UTC) - timedelta(minutes=20)
+    record = Upload(
+        workspace_id=WORKSPACE_ID,
+        upload_id=uuid4(),
+        original_filename="scan.png",
+        bucket=BUCKET,
+        object_key=f"objects/{uuid4()}",
+        expected_size=len(PNG_BYTES),
+        created_at=created_at,
+    )
+    async with uow as entered:
+        await entered.uploads.add(record)
+        await entered.commit()
+
+    with pytest.raises(UploadExpiredError):
+        await service.require_receivable(
+            workspace_id=WORKSPACE_ID, upload_id=record.upload_id
+        )
+    with pytest.raises(UploadExpiredError):
+        await service.receive_content(
+            workspace_id=WORKSPACE_ID,
+            upload_id=record.upload_id,
+            stream=BytesIO(PNG_BYTES),
+            started_at=created_at + timedelta(minutes=16),
+        )
+    await service.receive_content(
+        workspace_id=WORKSPACE_ID,
+        upload_id=record.upload_id,
+        stream=BytesIO(PNG_BYTES),
+        started_at=created_at + timedelta(minutes=14),
+    )
 
 
 def test_upload_service_config_rejects_limit_above_release_hard_max() -> None:

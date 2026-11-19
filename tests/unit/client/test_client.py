@@ -1,4 +1,6 @@
 import json
+from pathlib import Path
+from typing import Any, cast
 from uuid import UUID
 
 import httpx
@@ -6,6 +8,7 @@ import pytest
 from pydantic import SecretStr
 
 from grafy_core.domain.collaboration import RenameProjectCommand
+from grafy_core.domain.graph_documents import GraphDocument, GraphNode, GraphPoint
 
 from grafy_client import (
     ExecutionTimeoutError,
@@ -233,38 +236,238 @@ async def test_empty_command_batch_is_refused_before_the_request() -> None:
             )
 
 
+UPLOAD_ID = "77777777-7777-4777-8777-777777777777"
+ARTIFACT_ID = "88888888-8888-4888-8888-888888888888"
+
+
+def _upload_item() -> dict[str, object]:
+    return {
+        "upload_key": UPLOAD_ID,
+        "filename": "scan.tif",
+        "byte_size": 9,
+        "artifact_id": ARTIFACT_ID,
+        "artifact_type": "file.tiff@1",
+    }
+
+
 @pytest.mark.asyncio
-async def test_upload_create_sends_multipart_bytes_and_returns_upload_item() -> None:
+async def test_upload_streams_a_file_to_the_api_target_then_completes(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "scan.tif"
+    source.write_bytes(b"TIFFBYTES")
+    seen: list[tuple[str, str]] = []
+    uploads = f"/v1/workspaces/{WORKSPACE_ID}/uploads"
+
     def respond(request: httpx.Request) -> httpx.Response:
-        assert request.method == "POST"
-        assert request.url.path == f"/v1/workspaces/{WORKSPACE_ID}/uploads"
-        assert request.headers["Content-Type"].startswith("multipart/form-data;")
-        assert b'filename="pixel.png"' in request.content
-        assert b"PNG_BYTES" in request.content
+        seen.append((request.method, request.url.path))
+        assert request.headers["Authorization"] == "Bearer nrt_live_secret"
+        if request.url.path == uploads:
+            assert json.loads(request.content) == {
+                "filename": "scan.tif",
+                "byte_size": 9,
+                "content_type": "image/tiff",
+            }
+            return httpx.Response(
+                201,
+                json={
+                    "kind": "api",
+                    "upload_id": UPLOAD_ID,
+                    "url": f"{uploads}/{UPLOAD_ID}/content",
+                    "method": "PUT",
+                    "expires_at": "2026-09-01T10:15:00Z",
+                    "headers": {},
+                },
+            )
+        if request.method == "PUT":
+            assert request.headers["Content-Length"] == "9"
+            assert request.read() == b"TIFFBYTES"
+            return httpx.Response(204)
+        return httpx.Response(200, json=_upload_item())
+
+    async with _client(httpx.MockTransport(respond)) as client:
+        upload = await client.uploads.upload(WORKSPACE_ID, source, chunk_bytes=4)
+
+    assert seen == [
+        ("POST", uploads),
+        ("PUT", f"{uploads}/{UPLOAD_ID}/content"),
+        ("POST", f"{uploads}/{UPLOAD_ID}/complete"),
+    ]
+    assert upload.artifact_type == "file.tiff@1"
+
+
+@pytest.mark.asyncio
+async def test_upload_to_signed_storage_never_sends_the_bearer_token() -> None:
+    signed = "https://storage.test/workbench-artifacts/objects/x?X-Amz-Signature=s"
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "storage.test":
+            assert "Authorization" not in request.headers
+            assert request.headers["If-None-Match"] == "*"
+            assert request.read() == b"a,b\n1,2\n"
+            return httpx.Response(200)
+        if request.url.path.endswith("/uploads"):
+            return httpx.Response(
+                201,
+                json={
+                    "kind": "storage",
+                    "upload_id": UPLOAD_ID,
+                    "url": signed,
+                    "method": "PUT",
+                    "expires_at": "2026-09-01T10:15:00Z",
+                    "headers": {"If-None-Match": "*"},
+                },
+            )
+        return httpx.Response(200, json={**_upload_item(), "filename": "t.csv"})
+
+    async with _client(httpx.MockTransport(respond)) as client:
+        upload = await client.uploads.upload(
+            WORKSPACE_ID, b"a,b\n1,2\n", filename="t.csv"
+        )
+
+    assert upload.filename == "t.csv"
+
+
+@pytest.mark.asyncio
+async def test_a_token_resolves_its_one_workspace() -> None:
+    workspace = {
+        "id": str(WORKSPACE_ID),
+        "slug": "lab",
+        "name": "Lab",
+        "kind": "shared",
+        "role": "editor",
+        "capabilities": ["view_project"],
+    }
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/workspaces"
+        return httpx.Response(200, json=[workspace])
+
+    async with _client(httpx.MockTransport(respond)) as client:
+        current = await client.workspaces.current()
+
+    assert current.id == WORKSPACE_ID
+    assert current.capabilities == ("view_project",)
+
+
+def _head_with_graph(sequence: int, document: dict[str, object]) -> dict[str, object]:
+    return {
+        **_head_payload(sequence),
+        "document": {"graphs": [{"id": "main", "name": "Main", "document": document}]},
+    }
+
+
+@pytest.mark.asyncio
+async def test_upsert_graph_replaces_a_changed_graph_and_checkpoints() -> None:
+    base = f"/v1/workspaces/{WORKSPACE_ID}/projects/{PROJECT_ID}"
+    sent: list[object] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == f"{base}/head":
+            return httpx.Response(200, json=_head_with_graph(0, {}))
+        if request.url.path == f"{base}/commands":
+            body = json.loads(request.content)
+            sent.append(body["commands"])
+            return httpx.Response(
+                200,
+                json={
+                    "head": _head_with_graph(1, {"nodes": []}),
+                    "receipt": {
+                        "command_id": body["command_id"],
+                        "outcome": "accepted",
+                        "accepted_sequence": 1,
+                        "room_epoch": str(ROOM_EPOCH),
+                        "deduplicated": False,
+                    },
+                },
+            )
+        assert request.url.path == f"{base}/checkpoints"
+        assert json.loads(request.content)["expected_sequence"] == 1
+        checkpointed = {**_head_with_graph(1, {}), "checkpoint_sequence": 1}
+        return httpx.Response(200, json={"head": checkpointed})
+
+    document = GraphDocument(
+        nodes=(
+            GraphNode(
+                kind="builtin",
+                id="text",
+                operator_id="text.input",
+                operator_version=1,
+                config={"text": "x"},
+                position=GraphPoint(x=0, y=0),
+            ),
+        )
+    )
+    async with _client(httpx.MockTransport(respond)) as client:
+        head = await client.projects.upsert_graph(
+            WORKSPACE_ID,
+            PROJECT_ID,
+            graph_id="main",
+            document=document,
+            name="Renamed",
+        )
+
+    commands = cast(list[dict[str, Any]], sent[0])
+    assert [command["kind"] for command in commands] == ["in_graph", "rename_graph"]
+    assert commands[0]["command"]["kind"] == "replace_document"
+    assert commands[1] == {
+        "kind": "rename_graph",
+        "graph_id": "main",
+        "name": "Renamed",
+        "expected_name": "Main",
+    }
+    assert head.checkpoint_sequence == 1
+
+
+@pytest.mark.asyncio
+async def test_table_query_and_geo_render_use_the_artifact_routes() -> None:
+    artifact = f"/v1/workspaces/{WORKSPACE_ID}/artifacts/{ARTIFACT_ID}"
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == f"{artifact}/table/query":
+            body = json.loads(request.content)
+            assert body["filter_groups"] == [
+                {"rows": [{"values": {"column_2": "roman"}}]}
+            ]
+            assert body["highlight_groups"] == []
+            return httpx.Response(
+                200,
+                json={
+                    "columns": [
+                        {"id": "column_2", "title": "period", "value_type": "text"}
+                    ],
+                    "rows": [{"column_2": {"display": "roman", "truncated": False}}],
+                    "row_indices": [0],
+                    "highlighted_row_indices": [],
+                    "offset": 0,
+                    "limit": 50,
+                    "total_rows": 1,
+                    "column_offset": 0,
+                    "column_limit": 25,
+                    "total_columns": 1,
+                },
+            )
+        assert request.url.path == f"{artifact}/geo/render"
         return httpx.Response(
             200,
             json={
-                "upload_key": "uploads/pixel.png",
-                "filename": "pixel.png",
-                "byte_size": 9,
+                "artifact_id": ARTIFACT_ID,
+                "kind": "raster_scan",
+                "basemap": "none",
+                "initial_bounds": [14.0, 49.0, 24.0, 55.0],
+                "layers": [{"id": "scan"}],
             },
         )
 
-    async with GrafyClient(
-        base_url="https://grafy.test",
-        token=SecretStr("nrt_live_secret"),
-        transport=httpx.MockTransport(respond),
-    ) as client:
-        upload = await client.uploads.create(
-            WORKSPACE_ID,
-            filename="pixel.png",
-            content=b"PNG_BYTES",
-            content_type="image/png",
+    async with _client(httpx.MockTransport(respond)) as client:
+        page = await client.artifacts.table_query(
+            WORKSPACE_ID, UUID(ARTIFACT_ID), filter_rows=[{"column_2": "roman"}]
         )
+        render = await client.artifacts.geo_render(WORKSPACE_ID, UUID(ARTIFACT_ID))
 
-    assert upload.upload_key == "uploads/pixel.png"
-    assert upload.filename == "pixel.png"
-    assert upload.byte_size == 9
+    assert page.row_indices == (0,)
+    assert page.rows[0]["column_2"].display == "roman"
+    assert render.initial_bounds == (14.0, 49.0, 24.0, 55.0)
 
 
 @pytest.mark.asyncio

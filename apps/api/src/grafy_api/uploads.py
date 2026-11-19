@@ -30,7 +30,11 @@ from grafy_core.ports.uploads import UploadUnitOfWorkPort
 from grafy_storage.adapters.local import LocalFileObjectStore
 
 from grafy_api.services.errors import WorkbenchOperationError
-from grafy_shared.config import STAGED_UPLOAD_HARD_MAX_BYTES, UploadConfig
+from grafy_shared.config import (
+    STAGED_UPLOAD_DEFAULT_MAX_BYTES,
+    STAGED_UPLOAD_HARD_MAX_BYTES,
+    UploadConfig,
+)
 from grafy_api.upload_inspection import (
     FileFormatMismatchError,
     UploadInspectionError,
@@ -44,7 +48,7 @@ class UploadServiceConfig(BaseModel):
     """Deployment knobs for upload reserve / receive / cleanup."""
 
     max_upload_bytes: int = Field(
-        default=STAGED_UPLOAD_HARD_MAX_BYTES,
+        default=STAGED_UPLOAD_DEFAULT_MAX_BYTES,
         ge=1,
         le=STAGED_UPLOAD_HARD_MAX_BYTES,
     )
@@ -268,20 +272,47 @@ class UploadService:
             headers=dict(signed.required_headers),
         )
 
+    async def require_receivable(
+        self,
+        *,
+        workspace_id: UUID,
+        upload_id: UUID,
+    ) -> None:
+        """Refuse a PUT before its body is read, not after it has all arrived.
+
+        The content route spools the body before storing it, so without this check a
+        large upload to an expired or unknown target is refused only once every byte
+        has crossed the network.
+        """
+
+        if not self.accepts_direct_upload:
+            raise UploadTransportUnsupportedError(
+                "This deployment accepts upload bytes only through signed URLs"
+            )
+        _ = await self._require_pending(workspace_id, upload_id)
+
     async def receive_content(
         self,
         *,
         workspace_id: UUID,
         upload_id: UUID,
         stream: ReadableStream,
+        started_at: datetime | None = None,
     ) -> None:
-        """Store bytes a client sent to this API's own content route."""
+        """Store bytes a client sent to this API's own content route.
+
+        ``started_at`` is when the PUT began. The target lifetime bounds when a
+        transfer may start, so a large body that started in time is not refused
+        because it is still arriving when the target expires.
+        """
 
         if not self.accepts_direct_upload:
             raise UploadTransportUnsupportedError(
                 "This deployment accepts upload bytes only through signed URLs"
             )
-        record = await self._require_pending(workspace_id, upload_id)
+        record = await self._require_pending(
+            workspace_id, upload_id, started_at=started_at
+        )
         command = SaveFileCommand(
             bucket=record.bucket,
             path=record.object_key,
@@ -486,7 +517,13 @@ class UploadService:
             )
         return record
 
-    async def _require_pending(self, workspace_id: UUID, upload_id: UUID) -> Upload:
+    async def _require_pending(
+        self,
+        workspace_id: UUID,
+        upload_id: UUID,
+        *,
+        started_at: datetime | None = None,
+    ) -> Upload:
         record = await self._load_upload(workspace_id, upload_id)
         if record.status is UploadStatus.READY:
             raise UploadStateError(f"Upload {upload_id} is already complete")
@@ -499,7 +536,8 @@ class UploadService:
             raise UploadExpiredError(
                 f"Upload {record.original_filename!r} expired before it was used"
             )
-        if datetime.now(UTC) > record.created_at + self._config.upload_target_ttl:
+        started = datetime.now(UTC) if started_at is None else started_at
+        if started > record.created_at + self._config.upload_target_ttl:
             raise UploadExpiredError(
                 f"Upload {record.original_filename!r} expired before it was used"
             )

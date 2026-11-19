@@ -150,6 +150,45 @@ async def workspace_actor(
     return principal
 
 
+async def listing_principal(
+    request: Request,
+    auth: AuthServiceDependency,
+    session_cookie: Annotated[str | None, Security(session_cookie_scheme)],
+    _bearer: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Security(workspace_pat_scheme),
+    ],
+) -> ActorContext | WorkspacePatPrincipal:
+    """A browser session, or a PAT that names its own Workspace.
+
+    For routes with no Workspace in the path, such as the Workspace list: the token
+    supplies the one Workspace it is bound to, and the caller cannot widen it.
+    """
+
+    authorization = request.headers.get("authorization")
+    if authorization is not None and session_cookie is not None:
+        await auth.audit_unauthenticated_failure(
+            operation="auth.workspace.verify",
+            error_code="ambiguous_credentials",
+        )
+        request.state.auth_failure_audited = True
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Use either browser session or bearer authentication",
+        )
+    if authorization is None:
+        return await browser_actor(request, auth, session_cookie)
+    try:
+        return await auth.require_workspace_pat_principal(request, authorization)
+    except HTTPException:
+        await auth.audit_unauthenticated_failure(
+            operation="auth.pat.verify",
+            error_code="authentication_required",
+        )
+        request.state.auth_failure_audited = True
+        raise
+
+
 def require_workspace_capability(capability: WorkspaceCapability):
     async def dependency(
         workspace_id: UUID,
@@ -181,6 +220,7 @@ __all__ = [
     "browser_actor",
     "identity_service",
     "identity_uow_factory",
+    "listing_principal",
     "require_workspace_capability",
     "session_cookie_scheme",
     "workspace_actor",

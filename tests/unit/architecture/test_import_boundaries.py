@@ -547,3 +547,45 @@ def test_crypto_protocols_depend_only_on_the_standard_library() -> None:
     assert offenders == []
     project = tomllib.loads((REPO_ROOT / "libs/crypto/pyproject.toml").read_text())
     assert project["project"]["dependencies"] == []
+
+
+MCP_ADAPTER_FORBIDDEN_IMPORTS = (
+    "grafy_api.v1",
+    "grafy_api.services",
+    "grafy_api.runs",
+    "grafy_api.realtime",
+    "grafy_api.uploads",
+    "grafy_api.library",
+    "grafy_api.artifacts",
+    "grafy_api.project_contracts",
+    "grafy_core.application",
+    "grafy_persistence",
+    "grafy_storage",
+    *SYSTEM_PLUGIN_IMPORTS,
+)
+
+
+def test_mcp_adapter_reaches_the_application_only_through_the_rest_api() -> None:
+    """MCP tools call the REST routes in process; they never call a service (ADR 0023).
+
+    The route is where role ∩ PAT scope ∩ capability is computed, where a Project is
+    read under the token's Workspace, and where an accepted batch is published to the
+    room and re-derives instance state. A tool that imported a service or a route
+    module could skip any of those. The adapter may use the client SDK, the auth
+    service that admits a bearer token, and the app state that holds it.
+    """
+
+    api_source_root = REPO_ROOT / "apps/api/src"
+    mcp_root = api_source_root / "grafy_api/mcp"
+    assert any(mcp_root.glob("*.py"))
+    offenders: list[str] = []
+    for path in mcp_root.rglob("*.py"):
+        package = ".".join(path.parent.relative_to(api_source_root).parts)
+        for module in _imported_modules(path.read_text(), package):
+            if any(
+                module == forbidden or module.startswith(f"{forbidden}.")
+                for forbidden in MCP_ADAPTER_FORBIDDEN_IMPORTS
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
+
+    assert offenders == []
