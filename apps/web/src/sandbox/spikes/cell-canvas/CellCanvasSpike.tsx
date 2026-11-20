@@ -6,7 +6,7 @@ import * as stylex from "@stylexjs/stylex";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { CellCard } from "./CellCard";
+import { CellCard } from "@/features/workbench/cell-canvas/CellCard";
 import {
   CellLookPanel,
   CellZoomBar,
@@ -19,8 +19,11 @@ import {
   type StagePipe,
   type StageViewport,
   type StageWell,
-} from "./cell-glass-stage";
-import { createDemoCellGraph, createStressCellGraph } from "./cell-graphs";
+} from "@/features/workbench/cell-canvas/cell-glass-stage";
+import {
+  createDemoCellGraph,
+  createStressCellGraph,
+} from "@/features/workbench/cell-canvas/cell-graphs";
 import {
   CELL_PIPE_STUB_MIN,
   CELL_SIZE,
@@ -37,8 +40,8 @@ import {
   type CellRoutingOptions,
   type CellRoutingResult,
   type WorldPoint,
-} from "./cell-model";
-import { routeCellGraph } from "./cell-router";
+} from "@/features/workbench/cell-canvas/cell-model";
+import { routeCellGraph } from "@/features/workbench/cell-canvas/cell-router";
 import {
   MORPH_DURATION_MS,
   SETTLE_DURATION_MS,
@@ -50,8 +53,11 @@ import {
   snapCellWithHysteresis,
   stepCardSettle,
   type CardSettleState,
-} from "./cell-transitions";
-import { useCellViewport, type WorldBounds } from "./use-cell-viewport";
+} from "@/features/workbench/cell-canvas/cell-transitions";
+import {
+  useCellViewport,
+  type WorldBounds,
+} from "@/features/workbench/cell-canvas/use-cell-viewport";
 
 /**
  * The cell canvas spike: cards, ports and pipes on a square grid, drawn over

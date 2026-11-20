@@ -6,7 +6,7 @@ import * as stylex from "@stylexjs/stylex";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { ConnectorFitting } from "../underground-pipes/connector-designs";
+import { ConnectorFitting } from "./pipe-visuals";
 import type { CellGlassMaterial } from "./cell-glass-stage";
 import {
   CARD_HEADER_HEIGHT,

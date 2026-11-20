@@ -48,6 +48,7 @@ export interface UseCellViewportResult {
     screenY?: number,
   ) => StageViewport;
   screenToWorld: (clientX: number, clientY: number) => WorldPoint;
+  worldToScreen: (world: WorldPoint) => WorldPoint;
   onBackgroundPointerDown: (event: React.PointerEvent<HTMLElement>) => void;
 }
 
@@ -297,6 +298,20 @@ export function useCellViewport(
     [containerRef],
   );
 
+  const worldToScreen = React.useCallback(
+    (world: WorldPoint): WorldPoint => {
+      const box = containerBox(containerRef.current);
+      const left = box?.left ?? 0;
+      const top = box?.top ?? 0;
+      const view = viewportRef.current;
+      return {
+        x: left + view.x + world.x * view.zoom,
+        y: top + view.y + world.y * view.zoom,
+      };
+    },
+    [containerRef],
+  );
+
   return {
     viewport,
     panning,
@@ -306,6 +321,7 @@ export function useCellViewport(
     fitRect,
     viewAt,
     screenToWorld,
+    worldToScreen,
     onBackgroundPointerDown,
   };
 }

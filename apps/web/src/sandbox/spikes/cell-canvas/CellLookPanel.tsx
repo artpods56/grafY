@@ -14,18 +14,18 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   PIPE_FAMILIES,
   type PipeFamily,
-} from "../underground-pipes/pipe-designs";
+} from "@/features/workbench/cell-canvas/pipe-visuals";
 import type {
   CellCorners,
   CellGlassLook,
   CellGlassMaterial,
   CellWellStyle,
-} from "./cell-glass-stage";
+} from "@/features/workbench/cell-canvas/cell-glass-stage";
 import type {
   CellExits,
   CellRoutingOptions,
   UnderCardsMode,
-} from "./cell-model";
+} from "@/features/workbench/cell-canvas/cell-model";
 
 export type CellGraphKind = "demo" | "stress";
 

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  PIPE_LANE_MIN,
-  PIPE_MAX_DEPTH,
-  PIPE_STUB_MIN,
-} from "../underground-pipes/pipe-routing";
 import { createDemoCellGraph, createStressCellGraph } from "./cell-graphs";
 import {
   CELL_PIPE_LANE_MIN,
@@ -183,9 +178,9 @@ function routed(result: CellRoutingResult, id: string) {
 
 describe("cell model", () => {
   it("repeats the underground pipe contract constants", () => {
-    expect(CELL_PIPE_STUB_MIN).toBe(PIPE_STUB_MIN);
-    expect(CELL_PIPE_LANE_MIN).toBe(PIPE_LANE_MIN);
-    expect(CELL_PIPE_MAX_DEPTH).toBe(PIPE_MAX_DEPTH);
+    expect(CELL_PIPE_STUB_MIN).toBe(27);
+    expect(CELL_PIPE_LANE_MIN).toBe(10);
+    expect(CELL_PIPE_MAX_DEPTH).toBe(2);
   });
 
   it("places tracks inside a one-cell band", () => {
@@ -266,11 +261,11 @@ describe.each(Object.entries(GRAPHS))("routing the %s graph", (_, graph) => {
         expect(
           Math.hypot(second.x - first.x, second.y - first.y),
           model.id,
-        ).toBeGreaterThanOrEqual(PIPE_STUB_MIN - 1e-6);
+        ).toBeGreaterThanOrEqual(CELL_PIPE_STUB_MIN - 1e-6);
         expect(
           Math.hypot(last.x - beforeLast.x, last.y - beforeLast.y),
           model.id,
-        ).toBeGreaterThanOrEqual(PIPE_STUB_MIN - 1e-6);
+        ).toBeGreaterThanOrEqual(CELL_PIPE_STUB_MIN - 1e-6);
       }
       for (const [from, to] of segments(points)) {
         const dx = Math.abs(to.x - from.x);
@@ -280,7 +275,7 @@ describe.each(Object.entries(GRAPHS))("routing the %s graph", (_, graph) => {
       }
       expect(Number.isInteger(routedPipe.depth)).toBe(true);
       expect(routedPipe.depth).toBeGreaterThanOrEqual(0);
-      expect(routedPipe.depth).toBeLessThanOrEqual(PIPE_MAX_DEPTH);
+      expect(routedPipe.depth).toBeLessThanOrEqual(CELL_PIPE_MAX_DEPTH);
       if (!options.depth) expect(routedPipe.depth).toBe(0);
       if (routedPipe.depth > 0) deep += 1;
       deepest = Math.max(deepest, routedPipe.depth);

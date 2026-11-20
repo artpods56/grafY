@@ -50,6 +50,23 @@ export interface WorldPoint {
 /** `one` carries a single artifact, `many` a list (drawn as a twin pipe). */
 export type PortShape = "one" | "many";
 
+export type CellCardKind =
+  "operator" | "artifact" | "collection" | "annotation" | "agent";
+
+export interface CellResizeBounds {
+  minWidthCells: number;
+  maxWidthCells?: number;
+  minHeightCells: number;
+  maxHeightCells?: number;
+}
+
+export interface CellRect {
+  col: number;
+  row: number;
+  widthCells: number;
+  heightCells: number;
+}
+
 export interface CellPort {
   id: string;
   name: string;
@@ -65,12 +82,15 @@ export interface CellCardModel {
   id: string;
   title: string;
   subtitle: string;
-  status?: "idle" | "done" | "working";
+  kind?: CellCardKind;
+  status?: "idle" | "done" | "working" | "error";
   col: number;
   row: number;
   widthCells: number;
   heightCells: number;
   ports: readonly CellPort[];
+  resizable?: boolean;
+  resizeBounds?: CellResizeBounds;
 }
 
 export interface CellPipeModel {
@@ -79,6 +99,9 @@ export interface CellPipeModel {
   sourcePortId: string;
   targetCardId: string;
   targetPortId: string;
+  projectionLabel?: string | null;
+  conversionLabel?: string | null;
+  enabled?: boolean;
 }
 
 export interface CellGraph {
@@ -150,6 +173,15 @@ export function cardWorldRect(card: CellCardModel): {
     y: card.row * CELL_SIZE,
     width: card.widthCells * CELL_SIZE,
     height: card.heightCells * CELL_SIZE,
+  };
+}
+
+export function cardCellRect(card: CellCardModel): CellRect {
+  return {
+    col: card.col,
+    row: card.row,
+    widthCells: card.widthCells,
+    heightCells: card.heightCells,
   };
 }
 

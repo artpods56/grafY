@@ -5,16 +5,15 @@ import * as stylex from "@stylexjs/stylex";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
+  ConnectorFitting,
   FLOOR,
   PIPE_WIDTH,
   PipeBody,
   pipeDesign,
   type PipeDesign,
   type PipeFamily,
-} from "../underground-pipes/pipe-designs";
-import { ConnectorFitting } from "../underground-pipes/connector-designs";
-import { twinPaths } from "../underground-pipes/pipe-geometry";
-import { pipePath, type Point } from "../underground-pipes/pipe-routing";
+} from "./pipe-visuals";
+import { pipePath, twinPaths, type Point } from "./pipe-path";
 
 /**
  * The cell canvas's glass stage: the floor, the pipes lying on it, a frosted
