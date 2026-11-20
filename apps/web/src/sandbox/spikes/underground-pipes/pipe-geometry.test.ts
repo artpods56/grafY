@@ -13,7 +13,11 @@ describe("twinPaths", () => {
         ],
         0,
       ),
-    ).toEqual({ path: "M0,2.65 L20,2.65", twin: "M0,-2.65 L20,-2.65" });
+    ).toEqual({
+      path: "M0,2.65 L20,2.65",
+      twin: "M0,-2.65 L20,-2.65",
+      centre: "M0,0 L20,0",
+    });
   });
 
   it("rounds both strands at a diagonal turn", () => {

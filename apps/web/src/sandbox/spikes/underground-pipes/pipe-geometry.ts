@@ -40,5 +40,10 @@ export function twinPaths(points: readonly Point[], radius: number) {
       radius,
     );
   }
-  return { path: strand(STRAND_OFFSET), twin: strand(-STRAND_OFFSET) };
+  return {
+    path: strand(STRAND_OFFSET),
+    twin: strand(-STRAND_OFFSET),
+    // The line between the strands, for a design that sheathes both.
+    centre: pipePath(runs, radius),
+  };
 }
