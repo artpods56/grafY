@@ -60,7 +60,8 @@ services:
       LABEL_STUDIO_USER_TOKEN: ${LABEL_STUDIO_USER_TOKEN:-grafy-local-label-studio-token}
       # Use Authorization: Token <token> for API calls such as GET /api/projects.
       LABEL_STUDIO_ENABLE_LEGACY_API_TOKEN: "true"
-      LABEL_STUDIO_HOST: ${LABEL_STUDIO_HOST:-http://127.0.0.1:8085}
+      # Keep browser API requests on the page's origin unless a public URL is configured.
+      LABEL_STUDIO_HOST: ${LABEL_STUDIO_HOST:-}
       # Use the operator endpoint by leaving s3_endpoint blank in storage requests.
       LABEL_STUDIO_S3_ENDPOINT: http://minio:9000
       LOCAL_FILES_SERVING_ENABLED: "true"
