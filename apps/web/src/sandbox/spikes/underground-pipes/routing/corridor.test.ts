@@ -157,6 +157,49 @@ describe("corridor router", () => {
     }
   });
 
+  it("keeps placed lanes through selection and pickup", () => {
+    const rest = gridScene(9, 2);
+    const cardId = "0-3";
+    const selected = {
+      ...rest,
+      cards: rest.cards.map((rect) =>
+        rect.id === cardId ? { ...rect, height: rect.height + 23 } : rect,
+      ),
+    };
+    const pickup = moveCard(selected, cardId, 1.2, 0.6);
+    const route = corridorRouter.create();
+    const resting = route(rest, options);
+    const grown = route(selected, options);
+    const dragged = route(pickup, options);
+
+    // The taller wall used to repack an entire shared channel. At pickup,
+    // the stretched rough routes changed the packing again, swapping lanes
+    // even though the placed pipes could still follow their ports.
+    expect(grown).toEqual(resting);
+
+    const attached = pickup.pipes.filter((pipe, index) => {
+      const before = selected.pipes[index];
+      return (
+        before &&
+        (pipe.source !== before.source || pipe.target !== before.target)
+      );
+    });
+    expect(attached).toHaveLength(4);
+    for (const { id, source, target } of attached) {
+      const before = pointsFor(grown, id);
+      const after = pointsFor(dragged, id);
+      expect(after, id).toHaveLength(before.length);
+      expect(after[0], id).toEqual(source);
+      expect(after.at(-1), id).toEqual(target);
+      expect(dragged.get(id)?.depth, id).toBe(grown.get(id)?.depth);
+      for (const [index, point] of before.entries()) {
+        const moved = after[index];
+        if (!moved) throw new Error(`Missing pickup point for ${id}`);
+        expect(distance(point, moved), id).toBeLessThan(PIPE_LANE_MIN);
+      }
+    }
+  });
+
   it.each([
     ["demo", DEMO_SCENE],
     ["narrow gap", NARROW_GAP],

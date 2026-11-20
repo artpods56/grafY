@@ -6,6 +6,7 @@ import {
   type PipeRequest,
   type PipeRoutingBackend,
   type Point,
+  type RoutedPipe,
   type RoutingOptions,
   type RoutingScene,
   type SceneRouter,
@@ -842,11 +843,105 @@ interface Remembered {
   lanes: Lanes;
 }
 
+interface PlacedLayout {
+  scene: RoutingScene;
+  cards: ReadonlyMap<string, CardRect>;
+  options: RoutingOptions;
+  pipes: Map<string, RoutedPipe>;
+}
+
+function crossesInterior(a: Point, b: Point, box: Box): boolean {
+  return (
+    Math.min(a.x, b.x) < box.maxX &&
+    Math.max(a.x, b.x) > box.minX &&
+    Math.min(a.y, b.y) < box.maxY &&
+    Math.max(a.y, b.y) > box.minY
+  );
+}
+
+function entersCard(
+  before: readonly Point[],
+  after: readonly Point[],
+  oldBox: Box,
+  newBox: Box,
+): boolean {
+  for (let index = 1; index < after.length; index += 1) {
+    const a = after[index - 1];
+    const b = after[index];
+    const oldA = before[index - 1];
+    const oldB = before[index];
+    if (!a || !b || !oldA || !oldB) continue;
+    if (crossesInterior(a, b, newBox) && !crossesInterior(oldA, oldB, oldBox)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Keep the placed lanes through small edits. Packing from scratch lets a
+ * tighter wall move the whole channel, and a tiny endpoint move can reorder
+ * its lanes or change which pipe sinks. Measure drift from the last packing
+ * so many small edits still eventually get a fresh layout.
+ */
+function keepLayout(
+  placed: PlacedLayout,
+  scene: RoutingScene,
+  options: RoutingOptions,
+): Map<string, RoutedPipe> | null {
+  if (
+    placed.options.lanes !== options.lanes ||
+    placed.options.depth !== options.depth ||
+    placed.scene.pipes.length !== scene.pipes.length
+  ) {
+    return null;
+  }
+  const walls: { before: Box; now: Box }[] = [];
+  for (const { before, now } of changedCards(placed.cards, scene.cards)) {
+    if (
+      !before ||
+      !now ||
+      Math.abs(before.x - now.x) + Math.abs(before.y - now.y) > SEARCH_STEP ||
+      // A card's status row can expand a wall without moving any ports.
+      Math.abs(before.width - now.width) +
+        Math.abs(before.height - now.height) >
+        2 * SEARCH_STEP
+    ) {
+      return null;
+    }
+    walls.push({ before: cardBox(before), now: cardBox(now) });
+  }
+  const kept = new Map<string, RoutedPipe>();
+  for (const [index, pipe] of scene.pipes.entries()) {
+    const request = placed.scene.pipes[index];
+    const old = placed.pipes.get(pipe.id);
+    if (!request || request.id !== pipe.id || !old) return null;
+    const shift = portShift(request, pipe);
+    if (shift > SEARCH_STEP) return null;
+    const points =
+      shift === 0 ? old.points : stretch(old.points, request, pipe);
+    if (!points) return null;
+    for (const wall of walls) {
+      if (entersCard(old.points, points, wall.before, wall.now)) return null;
+    }
+    kept.set(
+      pipe.id,
+      points === old.points ? old : { points, depth: old.depth },
+    );
+  }
+  return kept;
+}
+
 function createCorridorRouter(): SceneRouter {
   const buffers = new SearchBuffers();
   let remembered = new Map<string, Remembered>();
   let knownCards = new Map<string, CardRect>();
+  let placed: PlacedLayout | undefined;
   return (scene: RoutingScene, options: RoutingOptions) => {
+    if (options.lanes && placed) {
+      const kept = keepLayout(placed, scene, options);
+      if (kept) return kept;
+    }
     const changes = changedCards(knownCards, scene.cards);
     let grid: CorridorGrid | null = null;
     const next = new Map<string, Remembered>();
@@ -904,7 +999,9 @@ function createCorridorRouter(): SceneRouter {
     }
     remembered = next;
     knownCards = new Map(scene.cards.map((card) => [card.id, card]));
-    return layOutLanes(routes, options);
+    const pipes = layOutLanes(routes, options);
+    placed = { scene, cards: knownCards, options: { ...options }, pipes };
+    return pipes;
   };
 }
 
