@@ -178,8 +178,10 @@ const PIPE_CAST_SHADOW_TOP =
 const PIPE_CAST_SHADOW_MID =
   "light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 30%, transparent))";
 
-interface RoutedPath {
+export interface RoutedPath {
   path: string;
+  /** The route's corner points in flow units, ports first and last. */
+  points: readonly Point[];
   depth: number;
 }
 
@@ -908,6 +910,7 @@ function MovingPipeRouter({
       if (!movingIds.has(id)) continue;
       paths.set(id, {
         path: pipePath(routed.points, radius),
+        points: routed.points,
         depth: routed.depth,
       });
     }
@@ -939,6 +942,7 @@ export function PipeRouter({
     for (const [id, routed] of routePipes(requests, { lanes, depth })) {
       paths.set(id, {
         path: pipePath(routed.points, radius),
+        points: routed.points,
         depth: routed.depth,
       });
     }
