@@ -19,7 +19,15 @@ import { PIPE_EDGE_TYPE, type RouteBook } from "./pipe-router";
 import { outward, pipePath } from "./pipe-routing";
 import { elbowRoute } from "./routing/elbow";
 import type { PipeRouterId } from "./routing";
-import { PIPE_WIDTH, PipeBody, type PipeDesign } from "./pipe-designs";
+import {
+  FLOOR,
+  PIPE_WIDTH,
+  PipeBody,
+  pipeDesign,
+  type DesignPass,
+  type PipeDesign,
+  type PipeFamily,
+} from "./pipe-designs";
 import {
   ConnectorFitting,
   RING_RADIUS,
@@ -84,7 +92,11 @@ export interface PipeLook {
   material: PipeMaterial;
   well: PipeWell;
   /** What the pipes are made of (`./pipe-designs.tsx`). */
-  pipe: PipeDesign;
+  pipe: PipeFamily;
+  /** Which design pass draws the pipes. */
+  pipeBy: DesignPass;
+  /** Which design pass draws the port connectors. */
+  connector: DesignPass;
   /** Spread pipes that share a channel into lanes side by side. */
   lanes: boolean;
   /** Sink pipes a channel cannot hold into deeper, blurrier layers. */
@@ -133,7 +145,6 @@ const WELL_MENISCUS_ID = "pipe-stage-well-meniscus";
 const LENS_RING_ID = "pipe-stage-lens-ring";
 
 /** The floor is darker than the glass, so a well reads as a hole. */
-const FLOOR = `light-dark(color-mix(in srgb, ${tokens.colorBg} 88%, black), color-mix(in srgb, ${tokens.colorBg} 35%, black))`;
 /** The glass edge at the bottom of a well catches the light. */
 const WELL_GLINT =
   "light-dark(white, color-mix(in srgb, white 45%, transparent))";
@@ -617,6 +628,7 @@ function RecessedWell({
   twin,
   portColor,
   pipe,
+  connector,
   withFloor = false,
 }: {
   centre: Point;
@@ -627,6 +639,7 @@ function RecessedWell({
   twin: boolean;
   portColor: string;
   pipe: PipeDesign;
+  connector: DesignPass;
   withFloor?: boolean;
 }) {
   const prefix = withFloor ? DRAG_GRADIENT_PREFIX : "";
@@ -655,7 +668,12 @@ function RecessedWell({
         color={color}
         sharp
       />
-      <ConnectorFitting centre={centre} color={portColor} sequence={sequence} />
+      <ConnectorFitting
+        centre={centre}
+        color={portColor}
+        sequence={sequence}
+        design={connector}
+      />
       {/* Thick glass bore wall drawn above the stub so the pipe visibly passes
           underneath the glass slab thickness. */}
       {liquid ? (
@@ -937,7 +955,8 @@ export function PipeEdgeView({
   );
   if (!targets) return null;
 
-  const { corners, material, well, pipe } = targets.look;
+  const { corners, material, well, connector } = targets.look;
+  const pipe = pipeDesign(targets.look.pipe, targets.look.pipeBy);
   const liquid = material === "liquid";
   const flat = well === "flat";
   const radius = cornerRadius(corners);
@@ -968,10 +987,15 @@ export function PipeEdgeView({
   const wipe = moving ? 0 : selected ? 1 : hovered ? 0.5 : 0;
   // Settled pipes go into the shared layers, moving ones into the overlay.
   const settled = !moving;
-  const sourceFitting = { color, sequence: sourceSequence };
+  const sourceFitting = {
+    color,
+    sequence: sourceSequence,
+    design: connector,
+  };
   const targetFitting = {
     color: pipeColor(targetHandleId),
     sequence: targetSequence,
+    design: connector,
   };
 
   return (
@@ -1179,6 +1203,7 @@ export function PipeEdgeView({
             twin={sourceSequence}
             portColor={sourceFitting.color}
             pipe={pipe}
+            connector={connector}
           />
           <PortWell
             edgeId={id}
@@ -1195,6 +1220,7 @@ export function PipeEdgeView({
             twin={sourceSequence}
             portColor={targetFitting.color}
             pipe={pipe}
+            connector={connector}
           />
         </>
       )}
@@ -1226,10 +1252,11 @@ export function PipeConnectionLine({
     ? twinPaths(points, radius)
     : { path: pipePath(points, radius) };
   const color = fromHandle?.id ? pipeColor(fromHandle.id) : tokens.colorAccent;
+  const look = targets?.look;
   return (
     <g opacity={0.82}>
       <PipeBody
-        design={targets?.look.pipe ?? "glass"}
+        design={look ? pipeDesign(look.pipe, look.pipeBy) : "glass"}
         {...paths}
         color={color}
         sharp
@@ -1238,6 +1265,7 @@ export function PipeConnectionLine({
         centre={{ x: toX, y: toY }}
         color={color}
         sequence={sequence}
+        design={look?.connector ?? "sol"}
       />
     </g>
   );

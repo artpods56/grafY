@@ -68,8 +68,18 @@ import {
   type PipeWell,
 } from "./pipe-layers";
 import { PIPE_EDGE_TYPE, PipeRouter, RouteBook } from "./pipe-router";
-import { PIPE_DESIGNS, PIPE_DESIGN_CSS, type PipeDesign } from "./pipe-designs";
-import { connectorCss, portColorCss } from "./connector-designs";
+import {
+  DESIGN_PASSES,
+  PIPE_DESIGN_CSS,
+  PIPE_FAMILIES,
+  type DesignPass,
+  type PipeFamily,
+} from "./pipe-designs";
+import {
+  connectorCss,
+  opusConnectorCss,
+  portColorCss,
+} from "./connector-designs";
 import {
   DEFAULT_PIPE_ROUTER,
   PIPE_ROUTERS,
@@ -371,7 +381,8 @@ const CARD_CSS = `
   border-color: light-dark(color-mix(in srgb, white 85%, transparent), color-mix(in srgb, white 14%, transparent));
   box-shadow: ${CARD_SPECULAR}, ${CARD_REST_SHADOW};
 }
-${connectorCss(PIPES_SCOPE)}
+${connectorCss(`${PIPES_SCOPE}[data-connector="sol"]`)}
+${opusConnectorCss(`${PIPES_SCOPE}[data-connector="opus"]`)}
 `;
 
 const SPIKE_CSS = CARD_CSS + PIPE_DESIGN_CSS;
@@ -532,13 +543,35 @@ function LookPanel({
       </div>
       <div {...stylex.props(s.row)}>
         <span {...stylex.props(s.rowLabel)}>Pipe</span>
-        <SegmentedControl<PipeDesign>
+        <SegmentedControl<PipeFamily>
           aria-label="Pipe"
           size="sm"
           disabled={!pipes}
           value={look.pipe}
           onValueChange={(pipe) => onLook({ ...look, pipe })}
-          options={PIPE_DESIGNS}
+          options={PIPE_FAMILIES}
+        />
+      </div>
+      <div {...stylex.props(s.row)}>
+        <span {...stylex.props(s.rowLabel)}>Pipe by</span>
+        <SegmentedControl<DesignPass>
+          aria-label="Pipe by"
+          size="sm"
+          disabled={!pipes}
+          value={look.pipeBy}
+          onValueChange={(pipeBy) => onLook({ ...look, pipeBy })}
+          options={DESIGN_PASSES}
+        />
+      </div>
+      <div {...stylex.props(s.row)}>
+        <span {...stylex.props(s.rowLabel)}>Connector</span>
+        <SegmentedControl<DesignPass>
+          aria-label="Connector"
+          size="sm"
+          disabled={!pipes}
+          value={look.connector}
+          onValueChange={(connector) => onLook({ ...look, connector })}
+          options={DESIGN_PASSES}
         />
       </div>
       <div {...stylex.props(s.row)}>
@@ -665,6 +698,8 @@ export function UndergroundPipesSpike() {
     material: "liquid",
     well: "recessed",
     pipe: "glass",
+    pipeBy: "opus",
+    connector: "opus",
     lanes: true,
     depth: true,
     blur: 0.3,
@@ -790,6 +825,7 @@ export function UndergroundPipesSpike() {
           style={canvasStyle.style}
           data-edges={edgeStyle}
           data-material={look.material}
+          data-connector={look.connector}
         >
           <style>{SPIKE_CSS + portCss}</style>
           <ReactFlow<CardNode, SpikeEdge>
