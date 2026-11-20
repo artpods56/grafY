@@ -1194,3 +1194,80 @@ async def test_workspace_failure_audits_preserve_route_metadata(
                 "validation_failed",
             ),
         ]
+
+
+async def test_dev_login_signs_in_named_local_users_without_the_provider(
+    tmp_path: Path, settings: Settings
+) -> None:
+    database_url = create_db_url(tmp_path, "dev-login.sqlite3")
+    async with db(database_url) as database:
+        app_settings = with_setting_values(
+            settings,
+            database_url=SecretStr(database_url),
+            auth_dev_login=True,
+        )
+
+        with client_with_overrides(settings=app_settings) as client:
+            api = GrafyApi(client)
+            login = client.get(
+                "/v1/auth/oidc/login",
+                params={"return_path": "/sandbox"},
+                follow_redirects=False,
+            )
+
+            assert login.status_code == 303
+            assert login.headers["location"] == "/sandbox"
+            dev = api.auth.get_session()
+            assert dev.status_code == 200
+            assert dev.json()["email"] == "dev@grafy.local"
+
+            client.get(
+                "/v1/auth/oidc/login",
+                params={"as": "alice"},
+                follow_redirects=False,
+            )
+            alice = api.auth.get_session()
+            assert alice.json()["email"] == "alice@grafy.local"
+            assert alice.json()["user_id"] != dev.json()["user_id"]
+
+            refused = client.get(
+                "/v1/auth/oidc/login",
+                params={"as": "Not A Name"},
+                follow_redirects=False,
+            )
+            assert refused.status_code == 400
+
+        async with database.sessions() as session:
+            operations = [
+                (event.operation, event.outcome)
+                for event in await session.scalars(
+                    select(SecurityAuditEvent).where(
+                        schema.security_audit_events.c.operation.like("dev.login%")
+                    )
+                )
+            ]
+
+        assert (
+            operations.count(("dev.login.success", SecurityAuditOutcome.SUCCESS)) == 2
+        )
+        assert ("dev.login", SecurityAuditOutcome.FAILURE) in operations
+
+
+async def test_login_without_dev_flag_never_issues_a_session(
+    tmp_path: Path, settings: Settings
+) -> None:
+    database_url = create_db_url(tmp_path, "no-dev-login.sqlite3")
+    async with db(database_url) as database:
+        app_settings = with_setting_values(
+            settings, database_url=SecretStr(database_url)
+        )
+        _, _, _ = await seed(database.sessions)
+
+        with client_with_overrides(settings=app_settings) as client:
+            client.get(
+                "/v1/auth/oidc/login",
+                params={"as": "dev"},
+                follow_redirects=False,
+            )
+
+            assert GrafyApi(client).auth.get_session().status_code == 401

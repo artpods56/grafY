@@ -27,15 +27,9 @@ required.
 
 ## Start Grafy
 
-With API env configured (see root `.env.example`):
-
-```bash
-just db-upgrade
-```
-
-Then `just api` and `just web`, open `http://localhost:3000`, and sign in as
-`owner` / `owner`. Grafy creates the user's personal workspace during the first
-successful OIDC callback.
+Follow [Run Grafy locally](../../docs/how-to-run-local.md) to configure the API
+and start the native stack with `just dev`. Grafy creates the owner's personal
+Workspace during the first successful OIDC callback.
 
 ## Reset realm import
 

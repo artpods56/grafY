@@ -42,6 +42,10 @@ class AuthConfig(BaseSettings):
         ge=60,
     )
     auth_cookie_secure: bool = True
+    # Development only: the login route signs in a local dev user instead of
+    # redirecting to the OIDC provider. The API refuses to start with it in
+    # production.
+    auth_dev_login: bool = False
     oidc_callback_path: str = "/api/v1/auth/oidc/callback"
     # Issuer-asserted email domains that receive shared Workspace membership on
     # login. Each grant is `domain:slug` or `domain:slug:name`. grafy-shared is a

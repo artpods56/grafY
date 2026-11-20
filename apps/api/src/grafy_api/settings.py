@@ -14,9 +14,10 @@ node named. Configuration stays a leaf and never imports the application. See
 
 from functools import lru_cache
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from grafy_shared.config import (
+    STAGED_UPLOAD_DEFAULT_MAX_BYTES,
     STAGED_UPLOAD_HARD_MAX_BYTES,
     AgentsConfig,
     AppConfig,
@@ -33,6 +34,7 @@ from grafy_shared.config import (
 )
 
 __all__ = [
+    "STAGED_UPLOAD_DEFAULT_MAX_BYTES",
     "STAGED_UPLOAD_HARD_MAX_BYTES",
     "Settings",
     "get_settings",
@@ -66,6 +68,14 @@ class Settings(BaseModel):
     tiler: TilerConfig = Field(default_factory=TilerConfig)
     uploads: UploadConfig = Field(default_factory=UploadConfig)
     egress: EgressConfig = Field(default_factory=EgressConfig)
+
+    @model_validator(mode="after")
+    def _refuse_dev_login_in_production(self) -> "Settings":
+        # The environment lives in AppConfig and the flag in AuthConfig, so this
+        # joint rule can only be checked where both sections meet.
+        if self.auth.auth_dev_login and self.app.environment == "production":
+            raise ValueError("GRAFY_AUTH_DEV_LOGIN must not be enabled in production")
+        return self
 
 
 @lru_cache

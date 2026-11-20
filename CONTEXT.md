@@ -455,7 +455,9 @@ port shapes and artifact-type bindings, and submits the
 ordinary nested `{ name, document }` graph contract. There is no automation-only
 graph representation or execution path. A Run reloads the requested
 revision on the server and derives the runtime request from that canonical
-document; the client cannot replace its topology at execution time.
+document; the client cannot replace its topology at execution time. MCP tools
+author through the same client and the same REST routes, never a service beneath
+them, and place artifact cards only in the forms the Workbench creates (ADR 0023).
 
 ### Input plug
 
@@ -712,7 +714,9 @@ the user removes the card deliberately.
 
 Collect replaces selected, unconnected artifact cards with one sequence card.
 It requires the same artifact type and schema version, orders cards top to
-bottom then left to right, and keeps each artifact reference once. Ungroup
+bottom then left to right, and preserves each contribution in its own input plug,
+including separate cards referencing the same artifact or producer output.
+Adding an artifact already present in a collection adds another member. Ungroup
 replaces that sequence with individual cards in its current order. Neither
 operation deletes artifacts. Cards with producer links, viewer bindings, or
 input origins must be disconnected before grouping or ungrouping. Tidy-up

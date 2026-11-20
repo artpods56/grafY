@@ -95,6 +95,11 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
         ),
         operator_emails=settings.auth.operator_emails,
     )
+    if settings.auth.auth_dev_login:
+        logger.warning(
+            "auth_dev_login_enabled: the login route signs in local dev users "
+            "without the OIDC provider"
+        )
     auth_service = AuthService(
         auth=settings.auth,
         public_origin=settings.app.public_origin,

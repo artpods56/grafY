@@ -82,8 +82,11 @@ adapters remain under collaboration routes.
 
 ## MCP
 
-There are no MCP packages in this repository; they were removed before the Projects
-rework. A future MCP surface would use the same Project command batches as the web.
+`grafy_api.mcp` serves stateless Streamable HTTP at `/mcp` for a Workspace PAT only
+(ADR 0023). Its tools hold no application logic: each one calls the REST routes in
+process through `grafy_client`, so authorization, tenancy, command-batch validation and
+room publication are the routes' own. Authoring goes through `GraphBuilder` before the
+batch is sent.
 
 ## Node families and the catalog
 

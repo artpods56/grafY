@@ -10,6 +10,7 @@ from grafy_core.domain.identity import (
     PersonalAccessToken,
     User,
     WorkspaceCapability,
+    WorkspacePatPrincipal,
     WorkspaceRole,
 )
 from pydantic import SecretStr
@@ -22,6 +23,7 @@ from grafy_api.v1.routes.auth.dependencies import (
     AuthServiceDependency,
     IdentityServiceDependency,
     browser_actor,
+    listing_principal,
 )
 from grafy_api.v1.routes.workspaces.models import (
     PersonalAccessTokenCreatedResponse,
@@ -46,14 +48,37 @@ me_router = APIRouter(prefix="/me", tags=["workspaces"])
 
 @router.get("", response_model=list[WorkspaceResponse])
 async def list_workspaces(
-    actor: Annotated[ActorContext, Depends(browser_actor)],
+    principal: Annotated[
+        ActorContext | WorkspacePatPrincipal, Depends(listing_principal)
+    ],
     identity: IdentityServiceDependency,
 ) -> list[WorkspaceResponse]:
-    rows = await identity.list_workspaces(actor=actor)
-    return [
-        WorkspaceResponse.from_membership(workspace, membership)
-        for workspace, membership in rows
-    ]
+    """The caller's Workspaces: every active membership, or a token's one Workspace.
+
+    A personal access token is bound to one Workspace, so it lists that one and only
+    that one, with the capabilities it actually carries there: its scopes intersected
+    with the member's current role.
+    """
+
+    if isinstance(principal, ActorContext):
+        rows = await identity.list_workspaces(actor=principal)
+        return [
+            WorkspaceResponse.from_membership(workspace, membership)
+            for workspace, membership in rows
+        ]
+    rows = await identity.list_workspaces(actor=principal.actor)
+    listed: list[WorkspaceResponse] = []
+    for workspace, membership in rows:
+        if workspace.id != principal.workspace_id:
+            continue
+        response = WorkspaceResponse.from_membership(workspace, membership)
+        effective = tuple(
+            capability
+            for capability in response.capabilities
+            if capability in principal.capabilities
+        )
+        listed.append(response.model_copy(update={"capabilities": effective}))
+    return listed
 
 
 @router.post("", response_model=WorkspaceResponse, status_code=status.HTTP_201_CREATED)

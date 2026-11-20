@@ -18,9 +18,14 @@ from grafy_shared.config.providers import ProviderSecretsConfig
 from grafy_shared.config.realtime import RealtimeConfig
 from grafy_shared.config.storage import StorageConfig
 from grafy_shared.config.tiler import TilerConfig
-from grafy_shared.config.uploads import STAGED_UPLOAD_HARD_MAX_BYTES, UploadConfig
+from grafy_shared.config.uploads import (
+    STAGED_UPLOAD_DEFAULT_MAX_BYTES,
+    STAGED_UPLOAD_HARD_MAX_BYTES,
+    UploadConfig,
+)
 
 __all__ = [
+    "STAGED_UPLOAD_DEFAULT_MAX_BYTES",
     "STAGED_UPLOAD_HARD_MAX_BYTES",
     "AgentsConfig",
     "AppConfig",

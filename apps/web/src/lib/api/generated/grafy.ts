@@ -216,7 +216,14 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** List Workspaces */
+        /**
+         * List Workspaces
+         * @description The caller's Workspaces: every active membership, or a token's one Workspace.
+         *
+         *     A personal access token is bound to one Workspace, so it lists that one and only
+         *     that one, with the capabilities it actually carries there: its scopes intersected
+         *     with the member's current role.
+         */
         readonly get: operations["list_workspaces_v1_workspaces_get"];
         readonly put?: never;
         /** Create Workspace */
