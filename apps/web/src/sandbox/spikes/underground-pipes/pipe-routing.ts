@@ -54,6 +54,10 @@ export interface RoutingOptions {
 }
 
 export interface RoutedPipe {
+  /** Corridor walls bounding the chosen runs. */
+  channel?: string;
+  /** Lane index by segment, independent of how far each lane is spread. */
+  lanes?: string;
   /** Corner points, the source port first and the target port last. */
   points: Point[];
   /** 0 is just under the glass; higher layers lie deeper. */

@@ -40,6 +40,7 @@ export interface Route {
   points: Point[];
   /** Per segment index: the range its line may move in, or absent if pinned. */
   movable: Map<number, LaneRange>;
+  lanes: string[];
   depth: number;
   /** Total length, so the longest pipes sink first. */
   length: number;
@@ -64,7 +65,14 @@ export function route(
   points: Point[],
   movable: Map<number, LaneRange>,
 ): Route {
-  return { id, points, movable, depth: 0, length: routeLength(points) };
+  return {
+    id,
+    points,
+    movable,
+    lanes: [],
+    depth: 0,
+    length: routeLength(points),
+  };
 }
 
 type Axis = "x" | "y";
@@ -225,6 +233,9 @@ function laneCount(lanes: ReadonlyMap<Segment, number>): number {
 function spread(channel: Segment[], axis: Axis): void {
   const lanes = laneIndices(channel);
   const count = laneCount(lanes);
+  for (const [segment, index] of lanes) {
+    segment.route.lanes[segment.index] = `${index}/${count}`;
+  }
   if (count < 2) return;
   const room = sharedRoom(channel);
   const spacing =
@@ -392,7 +403,11 @@ export function layOutLanes(
   return new Map(
     routes.map((route) => [
       route.id,
-      { points: route.points, depth: route.depth },
+      {
+        points: route.points,
+        depth: route.depth,
+        lanes: route.lanes.join("."),
+      },
     ]),
   );
 }

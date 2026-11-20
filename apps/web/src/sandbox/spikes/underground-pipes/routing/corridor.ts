@@ -667,6 +667,7 @@ function stretch(
 
 /** Where each stretch between the stubs may move when lanes are spread. */
 interface Lanes {
+  channel: string;
   ranges: Map<number, LaneRange>;
   /** Where a card moving would change a range. */
   reach: Box;
@@ -683,6 +684,7 @@ function laneRanges(
   cards: readonly CardRect[],
 ): Lanes {
   const ranges = new Map<number, LaneRange>();
+  const walls: string[] = [];
   const reach = {
     minX: Infinity,
     minY: Infinity,
@@ -701,15 +703,24 @@ function laneRanges(
     const high = Math.max(start[along], end[along]);
     let min = -Infinity;
     let max = Infinity;
+    let lowWall = "";
+    let highWall = "";
     for (const card of cards) {
       if (cardEnd(card, along) <= low || cardStart(card, along) >= high) {
         continue;
       }
       const near = cardStart(card, axis);
       const far = cardEnd(card, axis);
-      if (far <= at + 0.5) min = Math.max(min, far + LANE_CLEARANCE);
-      else if (near >= at - 0.5) max = Math.min(max, near - LANE_CLEARANCE);
+      if (far <= at + 0.5 && far + LANE_CLEARANCE > min) {
+        min = far + LANE_CLEARANCE;
+        lowWall = card.id;
+      }
+      if (near >= at - 0.5 && near - LANE_CLEARANCE < max) {
+        max = near - LANE_CLEARANCE;
+        highWall = card.id;
+      }
     }
+    walls.push(`${lowWall}/${highWall}`);
     // The cards bounding this stretch, and any card moving in between.
     const band = {
       [axis]: [min - LANE_CLEARANCE - 1, max + LANE_CLEARANCE + 1],
@@ -735,7 +746,7 @@ function laneRanges(
     }
     ranges.set(index, min <= max ? { min, max } : { min: at, max: at });
   }
-  return { ranges, reach };
+  return { ranges, reach, channel: walls.join(";") };
 }
 
 /** A card that was added, removed, moved or resized since the last call. */
@@ -841,6 +852,7 @@ interface Remembered {
   reach: Box;
   searched: Searched;
   lanes: Lanes;
+  channel: string;
 }
 
 interface PlacedLayout {
@@ -924,10 +936,7 @@ function keepLayout(
     for (const wall of walls) {
       if (entersCard(old.points, points, wall.before, wall.now)) return null;
     }
-    kept.set(
-      pipe.id,
-      points === old.points ? old : { points, depth: old.depth },
-    );
+    kept.set(pipe.id, points === old.points ? old : { ...old, points });
   }
   return kept;
 }
@@ -980,12 +989,14 @@ function createCorridorRouter(): SceneRouter {
             cards: cardsNear(boxOf(points, REACH), scene.cards),
           };
         }
+        const lanes = laneRanges(points, pipe, scene.cards);
         memory = {
           request: pipe,
           points,
           reach: boxOf(points, REACH),
           searched,
-          lanes: laneRanges(points, pipe, scene.cards),
+          lanes,
+          channel: old && points === kept ? old.channel : lanes.channel,
         };
       }
       next.set(pipe.id, memory);
@@ -1000,6 +1011,9 @@ function createCorridorRouter(): SceneRouter {
     remembered = next;
     knownCards = new Map(scene.cards.map((card) => [card.id, card]));
     const pipes = layOutLanes(routes, options);
+    for (const [id, pipe] of pipes) {
+      pipe.channel = next.get(id)?.channel ?? "";
+    }
     placed = { scene, cards: knownCards, options: { ...options }, pipes };
     return pipes;
   };

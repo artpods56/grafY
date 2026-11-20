@@ -223,7 +223,7 @@ const routeOctilinear: SceneRouter = (scene, options) => {
     if (!routed) continue;
     const { depth } = routed;
     const points = withPortStubs(routed.points, request);
-    if (points !== routed.points) layout.set(id, { points, depth });
+    if (points !== routed.points) layout.set(id, { ...routed, points });
     const cuts = findCuts(id, points);
     if (!cuts.length) continue;
     cutsByPipe.set(id, cuts);
@@ -260,7 +260,7 @@ const routeOctilinear: SceneRouter = (scene, options) => {
         y: point.y + length * outY,
       });
     }
-    layout.set(id, { points, depth: routed.depth });
+    layout.set(id, { ...routed, points });
   }
   return layout;
 };
