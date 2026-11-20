@@ -68,6 +68,13 @@ import {
   type PipeWell,
 } from "./pipe-layers";
 import { PIPE_EDGE_TYPE, PipeRouter, RouteBook } from "./pipe-router";
+import { PIPE_DESIGNS, PIPE_DESIGN_CSS, type PipeDesign } from "./pipe-designs";
+import {
+  CONNECTOR_DESIGNS,
+  connectorCss,
+  portColorCss,
+  type ConnectorDesign,
+} from "./connector-designs";
 import { DEFAULT_PIPE_ROUTER } from "./routing";
 
 /**
@@ -355,6 +362,19 @@ const CARD_CSS = `
 }
 `;
 
+/** The pipe and connector designs restyle the canvas only while it shows pipes. */
+const PIPES_SCOPE = '.grafy-pipes-spike[data-edges="pipes"]';
+const SPIKE_CSS = CARD_CSS + PIPE_DESIGN_CSS + connectorCss(PIPES_SCOPE);
+
+/** Every artifact type a graph's ports carry, for their `--port` colours. */
+function portTypeIds(graph: SpikeGraph): string[] {
+  return graph.nodes.flatMap(({ data }) =>
+    [...data.spec.inputs, ...data.spec.outputs].flatMap((port) =>
+      port.artifact_type ? [port.artifact_type.id] : [],
+    ),
+  );
+}
+
 const s = stylex.create({
   canvas: {
     position: "relative",
@@ -496,6 +516,28 @@ function LookPanel({
         />
       </div>
       <div {...stylex.props(s.row)}>
+        <span {...stylex.props(s.rowLabel)}>Pipe</span>
+        <SegmentedControl<PipeDesign>
+          aria-label="Pipe"
+          size="sm"
+          disabled={!pipes}
+          value={look.pipe}
+          onValueChange={(pipe) => onLook({ ...look, pipe })}
+          options={PIPE_DESIGNS}
+        />
+      </div>
+      <div {...stylex.props(s.row)}>
+        <span {...stylex.props(s.rowLabel)}>Connector</span>
+        <SegmentedControl<ConnectorDesign>
+          aria-label="Connector"
+          size="sm"
+          disabled={!pipes}
+          value={look.connector}
+          onValueChange={(connector) => onLook({ ...look, connector })}
+          options={CONNECTOR_DESIGNS}
+        />
+      </div>
+      <div {...stylex.props(s.row)}>
         <span {...stylex.props(s.rowLabel)}>Lanes</span>
         <SegmentedControl<"on" | "off">
           aria-label="Lanes"
@@ -584,6 +626,8 @@ export function UndergroundPipesSpike() {
     corners: "rounded",
     material: "liquid",
     well: "recessed",
+    pipe: "tube",
+    connector: "ring",
     lanes: true,
     depth: true,
     blur: 0.3,
@@ -696,6 +740,10 @@ export function UndergroundPipesSpike() {
 
   // The card CSS is scoped by a plain class, so merge it with StyleX's.
   const canvasStyle = stylex.props(s.canvas);
+  const portCss = React.useMemo(
+    () => portColorCss(PIPES_SCOPE, portTypeIds(graphState(graph))),
+    [graph],
+  );
 
   return (
     <WorkspaceContextScope value={SANDBOX_WORKSPACE_CONTEXT}>
@@ -705,8 +753,9 @@ export function UndergroundPipesSpike() {
           style={canvasStyle.style}
           data-edges={edgeStyle}
           data-material={look.material}
+          data-connector={look.connector}
         >
-          <style>{CARD_CSS}</style>
+          <style>{SPIKE_CSS + portCss}</style>
           <ReactFlow<CardNode, SpikeEdge>
             nodes={nodes}
             edges={typedEdges}

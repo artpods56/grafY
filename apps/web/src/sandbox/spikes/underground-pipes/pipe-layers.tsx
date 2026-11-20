@@ -19,6 +19,20 @@ import { PIPE_EDGE_TYPE, type RouteBook } from "./pipe-router";
 import { pipePath, type PipeRequest } from "./pipe-routing";
 import { elbowRoute } from "./routing/elbow";
 import type { PipeRouterId } from "./routing";
+import {
+  PIPE_WIDTH,
+  PipeBody,
+  PipeDesignDefs,
+  WellStub,
+  type PipeDesign,
+} from "./pipe-designs";
+import {
+  ConnectorDefs,
+  ConnectorFitting,
+  ConnectorHalo,
+  type ConnectorDesign,
+  type FittingProps,
+} from "./connector-designs";
 
 /**
  * Pipes on a floor under a pane of frosted glass; the cards stand on the glass.
@@ -74,6 +88,10 @@ export interface PipeLook {
   corners: PipeCorners;
   material: PipeMaterial;
   well: PipeWell;
+  /** What the pipes are made of (`./pipe-designs.tsx`). */
+  pipe: PipeDesign;
+  /** How a port meets its pipe (`./connector-designs.tsx`). */
+  connector: ConnectorDesign;
   /** Spread pipes that share a channel into lanes side by side. */
   lanes: boolean;
   /** Sink pipes a channel cannot hold into deeper, blurrier layers. */
@@ -90,8 +108,6 @@ interface Point {
 }
 
 /** Flow-unit geometry. The ring is the product's 10px port mark. */
-const PIPE_WIDTH = 8;
-const PIPE_SHINE_WIDTH = 2.5;
 const RING_RADIUS = 5;
 const WELL_RADIUS = 12;
 /** Top-down recessed well: open bore, thick glass wall, and feathered bevel. */
@@ -122,14 +138,6 @@ const WELL_INNER_SPEC_ID = "pipe-stage-well-inner-spec";
 const WELL_WALL_FROST_ID = "pipe-stage-well-wall-frost";
 const WELL_WALL_LIQUID_ID = "pipe-stage-well-wall-liquid";
 const WELL_MENISCUS_ID = "pipe-stage-well-meniscus";
-const PIPE_CYL_H_ID = "pipe-stage-cyl-h";
-const PIPE_CYL_V_ID = "pipe-stage-cyl-v";
-const PIPE_OVERHANG_RIGHT_ID = "pipe-stage-overhang-right";
-const PIPE_OVERHANG_LEFT_ID = "pipe-stage-overhang-left";
-const PIPE_OVERHANG_DOWN_ID = "pipe-stage-overhang-down";
-const PIPE_OVERHANG_UP_ID = "pipe-stage-overhang-up";
-const PIPE_RISER_CROWN_ID = "pipe-stage-riser-crown";
-const PIPE_PORT_SHADOW_ID = "pipe-stage-port-shadow";
 const LENS_RING_ID = "pipe-stage-lens-ring";
 
 /** The floor is darker than the glass, so a well reads as a hole. */
@@ -137,8 +145,6 @@ const FLOOR = `light-dark(color-mix(in srgb, ${tokens.colorBg} 88%, black), colo
 /** The glass edge at the bottom of a well catches the light. */
 const WELL_GLINT =
   "light-dark(white, color-mix(in srgb, white 45%, transparent))";
-const WELL_SHADOW_INK =
-  "light-dark(color-mix(in srgb, black 26%, transparent), color-mix(in srgb, black 64%, transparent))";
 const WELL_INNER_STEP =
   "light-dark(color-mix(in srgb, black 22%, transparent), color-mix(in srgb, black 65%, transparent))";
 const WELL_WALL_FROST_TOP =
@@ -169,10 +175,6 @@ const DEPTH_BLUR_STEP = 0.35;
 const DEPTH_OPACITY = [1, 0.88, 0.76] as const;
 const DEPTH_GIRTH = [1, 0.92, 0.84] as const;
 const DEPTH_BRIGHTNESS = [1, 0.94, 0.88] as const;
-const PIPE_CAST_SHADOW_TOP =
-  "light-dark(color-mix(in srgb, black 16%, transparent), color-mix(in srgb, black 48%, transparent))";
-const PIPE_CAST_SHADOW_MID =
-  "light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 30%, transparent))";
 
 interface PipeTargets {
   book: RouteBook;
@@ -320,88 +322,8 @@ function WellGradients({ prefix = "" }: { prefix?: string }) {
         <stop offset="70%" stopColor="white" stopOpacity={0.12} />
         <stop offset="100%" stopColor="white" stopOpacity={0.78} />
       </linearGradient>
-      {/* Cylindrical shading for horizontal & vertical pipe stubs inside
-                a well: off-center top highlight, rounded dark underside. */}
-      <linearGradient id={prefix + PIPE_CYL_H_ID} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="black" stopOpacity={0.16} />
-        <stop offset="22%" stopColor="white" stopOpacity={0.52} />
-        <stop offset="48%" stopColor="white" stopOpacity={0} />
-        <stop offset="78%" stopColor="black" stopOpacity={0.22} />
-        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-      </linearGradient>
-      <linearGradient id={prefix + PIPE_CYL_V_ID} x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stopColor="black" stopOpacity={0.16} />
-        <stop offset="24%" stopColor="white" stopOpacity={0.48} />
-        <stop offset="50%" stopColor="white" stopOpacity={0} />
-        <stop offset="80%" stopColor="black" stopOpacity={0.22} />
-        <stop offset="100%" stopColor="black" stopOpacity={0.4} />
-      </linearGradient>
-      {/* Glass overhang shadow where the deep pipe emerges from beneath
-                the bore wall, brightening as it approaches the vertical riser. */}
-      <linearGradient
-        id={prefix + PIPE_OVERHANG_RIGHT_ID}
-        x1="0"
-        y1="0"
-        x2="1"
-        y2="0"
-      >
-        <stop offset="0%" stopColor="black" stopOpacity={0} />
-        <stop offset="58%" stopColor="black" stopOpacity={0.04} />
-        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-      </linearGradient>
-      <linearGradient
-        id={prefix + PIPE_OVERHANG_LEFT_ID}
-        x1="1"
-        y1="0"
-        x2="0"
-        y2="0"
-      >
-        <stop offset="0%" stopColor="black" stopOpacity={0} />
-        <stop offset="58%" stopColor="black" stopOpacity={0.04} />
-        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-      </linearGradient>
-      <linearGradient
-        id={prefix + PIPE_OVERHANG_DOWN_ID}
-        x1="0"
-        y1="0"
-        x2="0"
-        y2="1"
-      >
-        <stop offset="0%" stopColor="black" stopOpacity={0} />
-        <stop offset="58%" stopColor="black" stopOpacity={0.04} />
-        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-      </linearGradient>
-      <linearGradient
-        id={prefix + PIPE_OVERHANG_UP_ID}
-        x1="0"
-        y1="1"
-        x2="0"
-        y2="0"
-      >
-        <stop offset="0%" stopColor="black" stopOpacity={0} />
-        <stop offset="58%" stopColor="black" stopOpacity={0.04} />
-        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
-      </linearGradient>
-      {/* Top-down vertical riser crown: curved shoulder catching overhead
-                top-left light as the pipe rises straight up into the port. */}
-      <radialGradient
-        id={prefix + PIPE_RISER_CROWN_ID}
-        cx="34%"
-        cy="30%"
-        r="70%"
-      >
-        <stop offset="0%" stopColor="white" stopOpacity={0.56} />
-        <stop offset="45%" stopColor="white" stopOpacity={0.06} />
-        <stop offset="78%" stopColor="black" stopOpacity={0.18} />
-        <stop offset="100%" stopColor="black" stopOpacity={0.44} />
-      </radialGradient>
-      {/* Contact shadow directly beneath the port ring resting on top of
-                the rising pipe collar. */}
-      <radialGradient id={prefix + PIPE_PORT_SHADOW_ID}>
-        <stop offset="55%" stopColor="black" stopOpacity={0.42} />
-        <stop offset="82%" stopColor="black" stopOpacity={0.16} />
-        <stop offset="100%" stopColor="black" stopOpacity={0} />
-      </radialGradient>
+      <PipeDesignDefs prefix={prefix} />
+      <ConnectorDefs prefix={prefix} />
     </>
   );
 }
@@ -645,35 +567,6 @@ function isSequenceHandle(handleId: string | null | undefined): boolean {
 }
 
 /**
- * Filled strip for the pipe stub inside a recessed well: rounded around the
- * port centre and trimmed flush with the circular inner bore wall of radius
- * `boreRadius`. No rectangular corner pokes into the glass wall, and the
- * non-zero bounding box keeps cylindrical and overhang gradients working on
- * both horizontal and vertical stubs.
- */
-function stubBodyPath(
-  centre: Point,
-  position: Position,
-  boreRadius: number,
-  halfWidth: number,
-): string {
-  const { x: cx, y: cy } = centre;
-  const r = halfWidth;
-  const R = boreRadius;
-  const reach = Math.sqrt(Math.max(0, R * R - r * r));
-  switch (position) {
-    case Position.Right:
-      return `M${cx},${cy - r} H${(cx + reach).toFixed(2)} A${R},${R} 0 0 1 ${(cx + reach).toFixed(2)},${cy + r} H${cx} A${r},${r} 0 0 1 ${cx},${cy - r} Z`;
-    case Position.Left:
-      return `M${cx},${cy - r} H${(cx - reach).toFixed(2)} A${R},${R} 0 0 0 ${(cx - reach).toFixed(2)},${cy + r} H${cx} A${r},${r} 0 0 0 ${cx},${cy - r} Z`;
-    case Position.Bottom:
-      return `M${cx - r},${cy} V${(cy + reach).toFixed(2)} A${R},${R} 0 0 0 ${cx + r},${(cy + reach).toFixed(2)} V${cy} A${r},${r} 0 0 0 ${cx - r},${cy} Z`;
-    case Position.Top:
-      return `M${cx - r},${cy} V${(cy - reach).toFixed(2)} A${R},${R} 0 0 1 ${cx + r},${(cy - reach).toFixed(2)} V${cy} A${r},${r} 0 0 1 ${cx - r},${cy} Z`;
-  }
-}
-
-/**
  * Tapered lens-shaped caustic crescent hugging the glass bore wall on the side
  * the pipe passes beneath it. The inner edge traces the exact circular arc of
  * `innerRadius`, while the outer curve swells to `outerRadius` at the entry
@@ -705,19 +598,6 @@ function causticCrescentPath(
   return `M${x0.toFixed(2)},${y0.toFixed(2)} Q${outCtrlX.toFixed(2)},${outCtrlY.toFixed(2)} ${x1.toFixed(2)},${y1.toFixed(2)} A${innerRadius},${innerRadius} 0 0 0 ${x0.toFixed(2)},${y0.toFixed(2)} Z`;
 }
 
-function overhangGradientId(position: Position): string {
-  switch (position) {
-    case Position.Right:
-      return PIPE_OVERHANG_RIGHT_ID;
-    case Position.Left:
-      return PIPE_OVERHANG_LEFT_ID;
-    case Position.Bottom:
-      return PIPE_OVERHANG_DOWN_ID;
-    case Position.Top:
-      return PIPE_OVERHANG_UP_ID;
-  }
-}
-
 export function cornerRadius(corners: PipeCorners): number {
   return corners === "sharp" ? 0 : ROUNDED_CORNER_RADIUS;
 }
@@ -729,75 +609,6 @@ function soloPath(request: PipeRequest, corners: PipeCorners): string {
 
 const NO_BOOK_SUBSCRIPTION = () => () => {};
 
-/** A tube: optional under-crossing shadow, type colour, and lighter specular shine. */
-function PipeBody({
-  path,
-  color,
-  corners,
-  girth = 1,
-  shadow,
-  cylindrical = false,
-}: {
-  path: string;
-  color: string;
-  corners: PipeCorners;
-  /** Width multiplier; deeper layers taper slightly, refracted stubs widen. */
-  girth?: number;
-  /** Cast a soft shadow onto deeper layers crossing underneath this pipe. */
-  shadow?: "surface" | "middle";
-  /** Richer edge casing and off-center highlight for sharp wiped pipes. */
-  cylindrical?: boolean;
-}) {
-  const join = corners === "sharp" ? "miter" : "round";
-  return (
-    <g>
-      {shadow ? (
-        <path
-          d={path}
-          transform="translate(0, 2.2)"
-          fill="none"
-          strokeWidth={PIPE_WIDTH * girth + 1.2}
-          strokeLinejoin={join}
-          style={{
-            stroke:
-              shadow === "surface"
-                ? PIPE_CAST_SHADOW_TOP
-                : PIPE_CAST_SHADOW_MID,
-          }}
-        />
-      ) : null}
-      {cylindrical ? (
-        <path
-          d={path}
-          fill="none"
-          strokeWidth={PIPE_WIDTH * girth + 0.8}
-          strokeLinejoin={join}
-          style={{ stroke: `color-mix(in srgb, ${color} 68%, black)` }}
-        />
-      ) : null}
-      <path
-        d={path}
-        fill="none"
-        strokeWidth={PIPE_WIDTH * girth - (cylindrical ? 0.6 : 0)}
-        strokeLinejoin={join}
-        style={{ stroke: color }}
-      />
-      <path
-        d={path}
-        transform={cylindrical ? "translate(0, -1.2)" : undefined}
-        fill="none"
-        strokeWidth={(cylindrical ? 1.8 : PIPE_SHINE_WIDTH) * girth}
-        strokeLinejoin={join}
-        style={{
-          stroke: cylindrical
-            ? `color-mix(in srgb, ${color} 35%, white)`
-            : `color-mix(in srgb, ${color} 45%, white)`,
-        }}
-      />
-    </g>
-  );
-}
-
 /**
  * Top-down recessed well drilled through thick glass.
  *
@@ -806,12 +617,12 @@ function PipeBody({
  * sheet. Layers from bottom to top:
  *   1. optional opaque floor (only while dragging over intact frost)
  *   2. deep cavity shadow under the glass overhang
- *   3. pipe floor cast shadow
- *   4. cylindrical pipe stub emerging from under the bore wall into a
- *      top-down 90° vertical riser collar directly beneath the port ring
- *   5. port ring contact shadow separating the top-plane handle from the shaft
- *   6. thick glass bore wall (translucent frosted or refractive liquid with a
+ *   3. the pipe design's stub emerging from under the bore wall into a
+ *      top-down 90° vertical riser directly beneath the port
+ *   4. the connector design's fitting on top of the riser
+ *   5. thick glass bore wall (translucent frosted or refractive liquid with a
  *      pipe-tinted edge caustic on the entry arc) and specular rims
+ *   6. the connector's glow in the frost around the well, if it has one
  */
 function RecessedWell({
   centre,
@@ -819,6 +630,11 @@ function RecessedWell({
   color,
   material,
   sequence,
+  pipe,
+  connector,
+  end,
+  haloId,
+  active,
   withFloor = false,
 }: {
   centre: Point;
@@ -826,27 +642,16 @@ function RecessedWell({
   color: string;
   material: PipeMaterial;
   sequence: boolean;
+  pipe: PipeDesign;
+  connector: ConnectorDesign;
+  end: "source" | "target";
+  haloId: string;
+  /** The pipe is hovered or selected. */
+  active: boolean;
   withFloor?: boolean;
 }) {
   const prefix = withFloor ? DRAG_GRADIENT_PREFIX : "";
   const liquid = material === "liquid";
-  const horizontal = position === Position.Left || position === Position.Right;
-  const stub = stubBodyPath(
-    centre,
-    position,
-    RECESSED_INNER_RADIUS + 0.3,
-    PIPE_WIDTH / 2,
-  );
-  const shadowStub = stubBodyPath(
-    { x: centre.x + 0.4, y: centre.y + 2 },
-    position,
-    RECESSED_INNER_RADIUS - 1.2,
-    PIPE_WIDTH / 2 - 0.3,
-  );
-  const cylGrad = horizontal ? PIPE_CYL_H_ID : PIPE_CYL_V_ID;
-  const overhangGrad = overhangGradientId(position);
-  const riserRadius = sequence ? 6.2 : 5.6;
-  const portShadowRadius = sequence ? 9.4 : 6.4;
 
   return (
     <g>
@@ -865,37 +670,23 @@ function RecessedWell({
         r={RECESSED_INNER_RADIUS}
         fill={`url(#${prefix}${WELL_CAVITY_SHADE_ID})`}
       />
-      {/* Cast shadow of the horizontal pipe and vertical riser on the floor. */}
-      <path d={shadowStub} style={{ fill: WELL_SHADOW_INK }} />
-      <circle
-        cx={centre.x + 0.5}
-        cy={centre.y + 2.2}
-        r={riserRadius}
-        style={{ fill: WELL_SHADOW_INK }}
+      <WellStub
+        design={pipe}
+        centre={centre}
+        position={position}
+        color={color}
+        sequence={sequence}
+        bore={RECESSED_INNER_RADIUS}
+        prefix={prefix}
       />
-      {/* 3D cylindrical pipe stub tucked cleanly under the glass bore wall. */}
-      <path d={stub} style={{ fill: color }} />
-      <path d={stub} fill={`url(#${prefix}${cylGrad})`} />
-      <path d={stub} fill={`url(#${prefix}${overhangGrad})`} />
-      {/* Top-down 90° vertical riser shoulder rising straight into the port. */}
-      <circle
-        cx={centre.x}
-        cy={centre.y}
-        r={riserRadius}
-        style={{ fill: color }}
-      />
-      <circle
-        cx={centre.x}
-        cy={centre.y}
-        r={riserRadius}
-        fill={`url(#${prefix}${PIPE_RISER_CROWN_ID})`}
-      />
-      {/* Contact shadow immediately under the card's floating port ring. */}
-      <circle
-        cx={centre.x}
-        cy={centre.y + 1.1}
-        r={portShadowRadius}
-        fill={`url(#${prefix}${PIPE_PORT_SHADOW_ID})`}
+      <ConnectorFitting
+        design={connector}
+        centre={centre}
+        color={color}
+        sequence={sequence}
+        end={end}
+        well="recessed"
+        prefix={prefix}
       />
       {/* Thick glass bore wall drawn above the stub so the pipe visibly passes
           underneath the glass slab thickness. */}
@@ -964,17 +755,33 @@ function RecessedWell({
         strokeWidth={liquid ? 1.25 : 1}
         stroke={`url(#${prefix}${liquid ? WELL_SPECULAR_ID : WELL_EDGE_ID})`}
       />
+      <ConnectorHalo
+        design={connector}
+        id={haloId}
+        centre={centre}
+        color={color}
+        active={active}
+      />
     </g>
   );
 }
 
-/** The well's cut edge in the glass (flat mode): shade under top, glint below. */
+/**
+ * The well's cut edge in the glass (flat mode): shade under top, glint below,
+ * then the connector's fitting over the hole and its glow, if it has one.
+ */
 function WellRim({
   centre,
   material,
+  fitting,
+  haloId,
+  active,
 }: {
   centre: Point;
   material: PipeMaterial;
+  fitting: Omit<FittingProps, "centre" | "well" | "prefix">;
+  haloId: string;
+  active: boolean;
 }) {
   return (
     <g>
@@ -994,6 +801,14 @@ function WellRim({
           material === "liquid" ? WELL_SPECULAR_ID : WELL_EDGE_ID
         })`}
       />
+      <ConnectorFitting {...fitting} centre={centre} well="flat" prefix="" />
+      <ConnectorHalo
+        design={fitting.design}
+        id={haloId}
+        centre={centre}
+        color={fitting.color}
+        active={active}
+      />
     </g>
   );
 }
@@ -1006,13 +821,15 @@ function WellRim({
 function OpenWell({
   centre,
   position,
-  color,
-  corners,
+  design,
+  radius,
+  fitting,
 }: {
   centre: Point;
   position: Position;
-  color: string;
-  corners: PipeCorners;
+  design: PipeDesign;
+  radius: number;
+  fitting: Omit<FittingProps, "centre" | "well" | "prefix">;
 }) {
   return (
     <g>
@@ -1023,16 +840,28 @@ function OpenWell({
         style={{ fill: FLOOR }}
       />
       <PipeBody
+        design={design}
         path={stubPath(centre, position, WELL_RADIUS)}
-        color={color}
-        corners={corners}
+        color={fitting.color}
+        radius={radius}
+      />
+      <ConnectorFitting
+        {...fitting}
+        centre={centre}
+        well="flat"
+        prefix={DRAG_GRADIENT_PREFIX}
       />
     </g>
   );
 }
 
-function lensMaskId(edgeId: string, end: "source" | "target"): string {
-  return `pipe-lens-${edgeId.replace(/[^\w-]/g, "_")}-${end}`;
+/** A per-well def's id: its lens mask or its connector's glow. */
+function wellPartId(
+  part: "lens" | "halo",
+  edgeId: string,
+  end: "source" | "target",
+): string {
+  return `pipe-${part}-${edgeId.replace(/[^\w-]/g, "_")}-${end}`;
 }
 
 /** Where a well's lip refracts: a ring around the well, in flow units. */
@@ -1065,20 +894,23 @@ function Lens({
   centre,
   position,
   color,
-  corners,
+  design,
+  radius,
 }: {
   id: string;
   centre: Point;
   position: Position;
   color: string;
-  corners: PipeCorners;
+  design: PipeDesign;
+  radius: number;
 }) {
   return (
     <g mask={`url(#${id})`}>
       <PipeBody
+        design={design}
         path={stubPath(centre, position, LENS_RADIUS)}
         color={color}
-        corners={corners}
+        radius={radius}
         girth={LENS_ZOOM}
       />
     </g>
@@ -1094,7 +926,10 @@ function PortWell({
   moving,
   targets,
   ...well
-}: Omit<React.ComponentProps<typeof RecessedWell>, "withFloor"> & {
+}: Omit<
+  React.ComponentProps<typeof RecessedWell>,
+  "withFloor" | "end" | "haloId"
+> & {
   edgeId: string;
   nodeId: string;
   end: "source" | "target";
@@ -1123,7 +958,15 @@ function PortWell({
           targets.frostCuts,
         )}
       {layer &&
-        createPortal(<RecessedWell {...well} withFloor={moving} />, layer)}
+        createPortal(
+          <RecessedWell
+            {...well}
+            end={end}
+            haloId={wellPartId("halo", edgeId, end)}
+            withFloor={moving}
+          />,
+          layer,
+        )}
     </>
   );
 }
@@ -1163,11 +1006,12 @@ export function PipeEdgeView({
   );
   if (!targets) return null;
 
-  const { corners, material, well } = targets.look;
+  const { corners, material, well, pipe, connector } = targets.look;
   const liquid = material === "liquid";
   const flat = well === "flat";
-  const sourceLens = lensMaskId(id, "source");
-  const targetLens = lensMaskId(id, "target");
+  const radius = cornerRadius(corners);
+  const sourceLens = wellPartId("lens", id, "source");
+  const targetLens = wellPartId("lens", id, "target");
   const source = ringCentre(sourceX, sourceY, sourcePosition);
   const target = ringCentre(targetX, targetY, targetPosition);
   const sourceSequence = isSequenceHandle(sourceHandleId);
@@ -1190,12 +1034,25 @@ export function PipeEdgeView({
       },
       corners,
     );
+  const points = routed?.points;
   const color = pipeColor(sourceHandleId);
   // Selection wipes the frost off along the pipe; hover thins it halfway.
   // Not while moving: a wipe is cut into the frost mask.
   const wipe = moving ? 0 : selected ? 1 : hovered ? 0.5 : 0;
   // Settled pipes go into the shared layers, moving ones into the overlay.
   const settled = !moving;
+  const sourceFitting = {
+    design: connector,
+    color,
+    sequence: sourceSequence,
+    end: "source" as const,
+  };
+  const targetFitting = {
+    design: connector,
+    color,
+    sequence: targetSequence,
+    end: "target" as const,
+  };
 
   return (
     <>
@@ -1213,9 +1070,11 @@ export function PipeEdgeView({
         ? createPortal(
             <g opacity={depthOpacity}>
               <PipeBody
+                design={pipe}
                 path={path}
+                points={points}
                 color={color}
-                corners={corners}
+                radius={radius}
                 girth={depthGirth}
                 shadow={depthShadow}
               />
@@ -1229,14 +1088,16 @@ export function PipeEdgeView({
               <OpenWell
                 centre={source}
                 position={sourcePosition}
-                color={color}
-                corners={corners}
+                design={pipe}
+                radius={radius}
+                fitting={sourceFitting}
               />
               <OpenWell
                 centre={target}
                 position={targetPosition}
-                color={color}
-                corners={corners}
+                design={pipe}
+                radius={radius}
+                fitting={targetFitting}
               />
             </>,
             targets.movingOver,
@@ -1246,9 +1107,11 @@ export function PipeEdgeView({
         ? createPortal(
             <g data-pipe={id}>
               <PipeBody
+                design={pipe}
                 path={path}
+                points={points}
                 color={color}
-                corners={corners}
+                radius={radius}
                 girth={depthGirth}
                 shadow={depthShadow}
               />
@@ -1260,23 +1123,28 @@ export function PipeEdgeView({
         ? createPortal(
             wipe > 0 ? (
               <PipeBody
+                design={pipe}
                 path={path}
+                points={points}
                 color={color}
-                corners={corners}
+                radius={radius}
                 shadow="surface"
-                cylindrical={!flat}
+                sharp={!flat}
+                flowing
               />
             ) : (
               <>
                 <PipeBody
+                  design={pipe}
                   path={stubPath(source, sourcePosition, WELL_RADIUS)}
                   color={color}
-                  corners={corners}
+                  radius={radius}
                 />
                 <PipeBody
+                  design={pipe}
                   path={stubPath(target, targetPosition, WELL_RADIUS)}
                   color={color}
-                  corners={corners}
+                  radius={radius}
                 />
               </>
             ),
@@ -1345,14 +1213,16 @@ export function PipeEdgeView({
                 centre={source}
                 position={sourcePosition}
                 color={color}
-                corners={corners}
+                design={pipe}
+                radius={radius}
               />
               <Lens
                 id={targetLens}
                 centre={target}
                 position={targetPosition}
                 color={color}
-                corners={corners}
+                design={pipe}
+                radius={radius}
               />
             </>,
             targets.lenses,
@@ -1361,8 +1231,20 @@ export function PipeEdgeView({
       {flat && targets.rims
         ? createPortal(
             <>
-              <WellRim centre={source} material={material} />
-              <WellRim centre={target} material={material} />
+              <WellRim
+                centre={source}
+                material={material}
+                fitting={sourceFitting}
+                haloId={wellPartId("halo", id, "source")}
+                active={wipe > 0}
+              />
+              <WellRim
+                centre={target}
+                material={material}
+                fitting={targetFitting}
+                haloId={wellPartId("halo", id, "target")}
+                active={wipe > 0}
+              />
             </>,
             targets.rims,
           )
@@ -1381,6 +1263,9 @@ export function PipeEdgeView({
             color={color}
             material={material}
             sequence={sourceSequence}
+            pipe={pipe}
+            connector={connector}
+            active={wipe > 0}
           />
           <PortWell
             edgeId={id}
@@ -1394,6 +1279,9 @@ export function PipeEdgeView({
             color={color}
             material={material}
             sequence={targetSequence}
+            pipe={pipe}
+            connector={connector}
+            active={wipe > 0}
           />
         </>
       )}
@@ -1412,31 +1300,33 @@ export function PipeConnectionLine({
   fromHandle,
 }: ConnectionLineComponentProps) {
   const targets = React.useContext(PipeTargetsContext);
-  const path = soloPath(
-    {
-      id: "connection",
-      source: ringCentre(fromX, fromY, fromPosition),
-      sourceSide: fromPosition,
-      target: { x: toX, y: toY },
-      targetSide: toPosition,
-    },
-    targets?.look.corners ?? "sharp",
-  );
+  const radius = cornerRadius(targets?.look.corners ?? "sharp");
+  const points = elbowRoute({
+    id: "connection",
+    source: ringCentre(fromX, fromY, fromPosition),
+    sourceSide: fromPosition,
+    target: { x: toX, y: toY },
+    targetSide: toPosition,
+  });
+  const path = pipePath(points, radius);
   const color = fromHandle?.id ? pipeColor(fromHandle.id) : tokens.colorAccent;
   return (
     <g>
+      {/* The pipe about to be laid, in the chosen design, not yet set down. */}
+      <g opacity={0.55}>
+        <PipeBody
+          design={targets?.look.pipe ?? "tube"}
+          path={path}
+          points={points}
+          color={color}
+          radius={radius}
+          sharp
+        />
+      </g>
       <path
         d={path}
         fill="none"
-        strokeWidth={PIPE_WIDTH}
-        strokeOpacity={0.18}
-        strokeLinejoin="round"
-        style={{ stroke: color }}
-      />
-      <path
-        d={path}
-        fill="none"
-        strokeWidth={2.2}
+        strokeWidth={1.4}
         strokeDasharray="6 5"
         strokeLinecap="round"
         style={{ stroke: color }}
