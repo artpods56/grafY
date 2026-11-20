@@ -59,6 +59,9 @@ const JACK_BEZEL = "light-dark(#c5cad1, #6c727b)";
 const JACK_RECESS = "light-dark(#26292d, #09090b)";
 
 const LAMP_BEZEL = "light-dark(#8e959e, #4c525a)";
+/** A lit bore darkens toward its wall, far less on a light sheet. */
+const LAMP_FALLOFF_INK =
+  "light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 42%, transparent))";
 const LAMP_HALO_RADIUS = 27;
 
 const PAD_RADIUS = 8;
@@ -243,7 +246,7 @@ function Lamp({ centre, color, well, prefix }: FittingProps) {
         cx={centre.x}
         cy={centre.y}
         r={spill}
-        fillOpacity={0.7}
+        fillOpacity={0.85}
         style={{
           fill: `light-dark(color-mix(in srgb, ${color} 55%, white), ${color})`,
         }}
@@ -262,7 +265,14 @@ function Lamp({ centre, color, well, prefix }: FittingProps) {
         strokeWidth={1.7}
         style={{ stroke: LAMP_BEZEL }}
       />
-      <circle cx={centre.x} cy={centre.y} r={6.4} style={{ fill: color }} />
+      <circle
+        cx={centre.x}
+        cy={centre.y}
+        r={6.4}
+        style={{
+          fill: `light-dark(color-mix(in srgb, ${color} 62%, white), ${color})`,
+        }}
+      />
       <circle
         cx={centre.x}
         cy={centre.y}
@@ -361,9 +371,11 @@ export function ConnectorHalo({
   if (design !== "lamp") return null;
   return (
     <g>
+      {/* Clear over the hole, brightest where the frost starts. */}
       <radialGradient id={id}>
-        <stop offset="0.36" stopOpacity={0.42} style={{ stopColor: color }} />
-        <stop offset="0.62" stopOpacity={0.14} style={{ stopColor: color }} />
+        <stop offset="0.4" stopOpacity={0} style={{ stopColor: color }} />
+        <stop offset="0.52" stopOpacity={0.42} style={{ stopColor: color }} />
+        <stop offset="0.72" stopOpacity={0.14} style={{ stopColor: color }} />
         <stop offset="1" stopOpacity={0} style={{ stopColor: color }} />
       </radialGradient>
       <circle
@@ -399,7 +411,7 @@ export function ConnectorDefs({ prefix }: { prefix: string }) {
       {/* A lamp lights the middle of its bore most. */}
       <radialGradient id={prefix + LAMP_FALLOFF_ID}>
         <stop offset="40%" stopColor="black" stopOpacity={0} />
-        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
+        <stop offset="100%" style={{ stopColor: LAMP_FALLOFF_INK }} />
       </radialGradient>
     </>
   );
