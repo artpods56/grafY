@@ -173,8 +173,18 @@ function wire(
   ];
 }
 
+const IMPORT_TABLE_LIST_SPEC: NodeSpec = {
+  ...IMPORT_TABLE_SPEC,
+  title: "Import tables",
+  outputs: IMPORT_TABLE_SPEC.outputs.map((port) => ({
+    ...port,
+    title: "tables",
+    shape: "many",
+  })),
+};
+
 function initialState(): { nodes: CardNode[]; edges: SpikeEdge[] } {
-  const importer = cardNode("import", IMPORT_TABLE_SPEC, { x: 0, y: 0 });
+  const importer = cardNode("import", IMPORT_TABLE_LIST_SPEC, { x: 0, y: 0 });
   const summarize = cardNode("summarize", SUMMARIZE_TABLES_SPEC, {
     x: 420,
     y: 200,
@@ -232,7 +242,7 @@ function stressState(): SpikeGraph {
         position: { x: column * STRESS_STEP.x, y: row * STRESS_STEP.y },
         selected: false,
         data: createWorkflowNodeData(
-          importer ? IMPORT_TABLE_SPEC : SUMMARIZE_TABLES_SPEC,
+          importer ? IMPORT_TABLE_LIST_SPEC : SUMMARIZE_TABLES_SPEC,
           STRESS_SLOTS.map((slot) => ({ id: `${id}-${slot}`, port })),
         ),
       });
