@@ -7,6 +7,7 @@ import {
   type PipeRoutingBackend,
   type Point,
   type RoutedPipe,
+  type CardAvoidance,
   type RoutingOptions,
   type RoutingScene,
   type SceneRouter,
@@ -37,10 +38,18 @@ import { layOutLanes, route, type LaneRange, type Route } from "./lanes";
 
 /** Pipes keep this far off a card's edge where the gap allows. */
 const CARD_MARGIN = 18;
-/** Extra cost per unit of length under a card, on top of the length. */
-const UNDER_CARD = 3;
-/** Extra cost per unit of length inside a card's margin. */
-const NEAR_CARD = 0.25;
+/** Extra cost per unit of length under a card and inside its margin. */
+interface CardCosts {
+  under: number;
+  near: number;
+}
+
+const CARD_COSTS: Record<CardAvoidance, CardCosts> = {
+  free: { under: 0, near: 0 },
+  gaps: { under: 3, near: 0.25 },
+  // Dearer than any detour on a canvas, but finite: a port may be boxed in.
+  avoid: { under: 60, near: 0.25 },
+};
 /** What a bend costs, in units of straight pipe. */
 const BEND = 50;
 /** A pipe keeps its old shape unless a new one is this much cheaper. */
@@ -112,11 +121,16 @@ function cardEnd(card: CardRect, axis: Axis): number {
  * margin, or not at all. The grid and the cost of a finished route both ask
  * this, so they always agree.
  */
-function cardWeight(card: CardRect, x: number, y: number): number {
+function cardWeight(
+  card: CardRect,
+  x: number,
+  y: number,
+  costs: CardCosts,
+): number {
   const right = card.x + card.width;
   const bottom = card.y + card.height;
   if (x > card.x && x < right && y > card.y && y < bottom) {
-    return 1 + UNDER_CARD;
+    return 1 + costs.under;
   }
   if (
     x > card.x - CARD_MARGIN &&
@@ -124,19 +138,31 @@ function cardWeight(card: CardRect, x: number, y: number): number {
     y > card.y - CARD_MARGIN &&
     y < bottom + CARD_MARGIN
   ) {
-    return 1 + NEAR_CARD;
+    return 1 + costs.near;
   }
   return 1;
 }
 
-function weightAt(x: number, y: number, cards: readonly CardRect[]): number {
+function weightAt(
+  x: number,
+  y: number,
+  cards: readonly CardRect[],
+  costs: CardCosts,
+): number {
   let weight = 1;
-  for (const card of cards) weight = Math.max(weight, cardWeight(card, x, y));
+  for (const card of cards) {
+    weight = Math.max(weight, cardWeight(card, x, y, costs));
+  }
   return weight;
 }
 
 /** The cost of a straight horizontal or vertical stretch. */
-function stretchCost(a: Point, b: Point, cards: readonly CardRect[]): number {
+function stretchCost(
+  a: Point,
+  b: Point,
+  cards: readonly CardRect[],
+  costs: CardCosts,
+): number {
   const horizontal = Math.abs(a.y - b.y) < 0.01;
   const along: Axis = horizontal ? "x" : "y";
   const across: Axis = horizontal ? "y" : "x";
@@ -166,8 +192,8 @@ function stretchCost(a: Point, b: Point, cards: readonly CardRect[]): number {
     const to = cuts[index] ?? high;
     const middle = (from + to) / 2;
     const weight = horizontal
-      ? weightAt(middle, line, nearby)
-      : weightAt(line, middle, nearby);
+      ? weightAt(middle, line, nearby, costs)
+      : weightAt(line, middle, nearby, costs);
     cost += (to - from) * weight;
   }
   return cost;
@@ -177,12 +203,13 @@ function stretchCost(a: Point, b: Point, cards: readonly CardRect[]): number {
 function routeCost(
   points: readonly Point[],
   cards: readonly CardRect[],
+  costs: CardCosts,
 ): number {
   let cost = BEND * Math.max(0, points.length - 2);
   for (let index = 1; index < points.length; index += 1) {
     const before = points[index - 1];
     const after = points[index];
-    if (before && after) cost += stretchCost(before, after, cards);
+    if (before && after) cost += stretchCost(before, after, cards, costs);
   }
   return cost;
 }
@@ -368,7 +395,14 @@ class CorridorGrid {
   private readonly down: Float64Array;
   private readonly buffers: SearchBuffers;
 
-  constructor({ pipes, cards }: RoutingScene, buffers: SearchBuffers) {
+  private readonly costs: CardCosts;
+
+  constructor(
+    { pipes, cards }: RoutingScene,
+    buffers: SearchBuffers,
+    costs: CardCosts,
+  ) {
+    this.costs = costs;
     const fixedX: number[] = [];
     const fixedY: number[] = [];
     for (const pipe of pipes) {
@@ -450,12 +484,12 @@ class CorridorGrid {
         const node = j * width + i;
         const nextX = xs[i + 1];
         if (nextX !== undefined) {
-          const weight = cardWeight(card, (x + nextX) / 2, y);
+          const weight = cardWeight(card, (x + nextX) / 2, y, this.costs);
           if (weight > (this.across[node] ?? 1)) this.across[node] = weight;
         }
         const nextY = ys[j + 1];
         if (nextY !== undefined) {
-          const weight = cardWeight(card, x, (y + nextY) / 2);
+          const weight = cardWeight(card, x, (y + nextY) / 2, this.costs);
           if (weight > (this.down[node] ?? 1)) this.down[node] = weight;
         }
       }
@@ -930,6 +964,7 @@ function keepLayout(
   if (
     placed.options.lanes !== options.lanes ||
     placed.options.depth !== options.depth ||
+    placed.options.cards !== options.cards ||
     placed.scene.pipes.length !== scene.pipes.length
   ) {
     return null;
@@ -972,7 +1007,16 @@ function createCorridorRouter(): SceneRouter {
   let remembered = new Map<string, Remembered>();
   let knownCards = new Map<string, CardRect>();
   let placed: PlacedLayout | undefined;
+  let avoidance: CardAvoidance | undefined;
   return (scene: RoutingScene, options: RoutingOptions) => {
+    const cards = options.cards ?? "gaps";
+    if (cards !== avoidance) {
+      // Every remembered route was weighed with the old costs.
+      remembered = new Map();
+      placed = undefined;
+      avoidance = cards;
+    }
+    const costs = CARD_COSTS[cards];
     if (options.lanes && placed) {
       const kept = keepLayout(placed, scene, options);
       if (kept) return kept;
@@ -1002,12 +1046,13 @@ function createCorridorRouter(): SceneRouter {
           points = kept;
           searched = old.searched;
         } else {
-          grid ??= new CorridorGrid(scene, buffers);
+          grid ??= new CorridorGrid(scene, buffers, costs);
           const fresh = grid.route(pipe) ?? elbowRoute(pipe);
           points =
             kept &&
-            routeCost(kept, scene.cards) <=
-              routeCost(fresh, scene.cards) * (1 + KEEP_RATIO) + KEEP_SLACK
+            routeCost(kept, scene.cards, costs) <=
+              routeCost(fresh, scene.cards, costs) * (1 + KEEP_RATIO) +
+                KEEP_SLACK
               ? kept
               : fresh;
           searched = {
@@ -1048,7 +1093,7 @@ function createCorridorRouter(): SceneRouter {
 export const corridorRouter = {
   id: "corridor",
   label: "Corridor",
-  supports: { lanes: true, depth: true },
+  supports: { lanes: true, depth: true, cards: true },
   angles: "orthogonal",
   create: createCorridorRouter,
 } as const satisfies PipeRoutingBackend;

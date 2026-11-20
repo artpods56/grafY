@@ -9,8 +9,9 @@ import { Position } from "@xyflow/react";
  * all pipes together, so that pipes sharing a channel can run side by side.
  *
  * The port stub contract: every route leaves its source port, and enters its
- * target port, straight and perpendicular to the card side for at least
- * {@link PIPE_STUB_MIN}. The wells and risers draw that stretch themselves and
+ * target port, straight out along the request's side for at least
+ * {@link PIPE_STUB_MIN}. The side is the card side the port sits on, unless
+ * `./routing/exits.ts` picked another way out of the well. The wells and risers draw that stretch themselves and
  * assume it; `routing/contract.test.ts` checks it for every router.
  */
 
@@ -46,11 +47,20 @@ export interface RoutingScene {
   cards: readonly CardRect[];
 }
 
+/**
+ * How a router that sees cards treats ground under them: `free` ignores
+ * cards, `gaps` runs under one only when going round is much longer, `avoid`
+ * runs under one only when there is no other way.
+ */
+export type CardAvoidance = "free" | "gaps" | "avoid";
+
 export interface RoutingOptions {
   /** Spread pipes that share a channel into lanes side by side. */
   lanes: boolean;
   /** Sink pipes a channel cannot hold into deeper layers. */
   depth: boolean;
+  /** Defaults to `gaps`. Routers that ignore cards ignore it. */
+  cards?: CardAvoidance;
 }
 
 export interface RoutedPipe {
@@ -80,7 +90,7 @@ export interface PipeRoutingBackend {
   /** Its name in the panel. */
   label: string;
   /** The options it honours; the panel disables the others. */
-  supports: Readonly<RoutingOptions>;
+  supports: Readonly<Record<keyof RoutingOptions, boolean>>;
   /** `orthogonal` routes turn at right angles; `octilinear` ones also run at 45°. */
   angles: "orthogonal" | "octilinear";
   /** A router for one canvas. The moving and the resting pipes share it. */

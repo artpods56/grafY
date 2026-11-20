@@ -268,7 +268,7 @@ const routeOctilinear: SceneRouter = (scene, options) => {
 export const octilinearRouter = {
   id: "octilinear",
   label: "PCB",
-  supports: { lanes: true, depth: true },
+  supports: { lanes: true, depth: true, cards: false },
   angles: "octilinear",
   create: () => routeOctilinear,
 } as const satisfies PipeRoutingBackend;

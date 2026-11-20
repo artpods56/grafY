@@ -107,6 +107,37 @@ describe("corridor router", () => {
     ).toBe(true);
   });
 
+  it("runs straight under a card when cards are free", () => {
+    const layout = corridorRouter.create()(SYMMETRIC, {
+      ...options,
+      cards: "free",
+    });
+    expect(pointsFor(layout, "across")).toEqual([
+      { x: 0, y: 0 },
+      { x: 700, y: 0 },
+    ]);
+  });
+
+  it("goes the long way round a card it must avoid", () => {
+    const wall = card("wall", 300, -1000, 100, 2000);
+    const scene = { cards: [wall], pipes: SYMMETRIC.pipes };
+    const layout = corridorRouter.create()(scene, {
+      ...options,
+      cards: "avoid",
+    });
+
+    expect(
+      samples(pointsFor(layout, "across")).some((point) => inside(point, wall)),
+    ).toBe(false);
+  });
+
+  it("forgets its routes when the card setting changes", () => {
+    const route = corridorRouter.create();
+    route(SYMMETRIC, options);
+    const free = route(SYMMETRIC, { ...options, cards: "free" });
+    expect(pointsFor(free, "across")).toHaveLength(2);
+  });
+
   it("keeps the old side after a card moves enough to favor the opposite side", () => {
     const route = corridorRouter.create();
     const initial = crossingAt(

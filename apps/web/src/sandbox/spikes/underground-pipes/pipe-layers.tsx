@@ -16,8 +16,9 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import { decodeHandleId } from "@/features/workbench/canvas/handles";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import { PIPE_EDGE_TYPE, type RouteBook } from "./pipe-router";
-import { outward, pipePath } from "./pipe-routing";
+import { outward, pipePath, type CardAvoidance } from "./pipe-routing";
 import { elbowRoute } from "./routing/elbow";
+import type { PipeExits } from "./routing/exits";
 import type { PipeRouterId } from "./routing";
 import {
   FLOOR,
@@ -101,6 +102,10 @@ export interface PipeLook {
   lanes: boolean;
   /** Sink pipes a channel cannot hold into deeper, blurrier layers. */
   depth: boolean;
+  /** How Corridor treats ground under cards. */
+  cards: CardAvoidance;
+  /** Which way a pipe may leave its well. */
+  exits: PipeExits;
   /** Blur of a pipe seen through the glass, in flow units. */
   blur: number;
   /** How milky the glass is, 0 (clear) to 1 (opaque). */
@@ -542,7 +547,23 @@ function ringCentre(x: number, y: number, position: Position): Point {
   }
 }
 
-/** The first straight run of a pipe out of its well, toward its port's side. */
+/** The side a pipe leaves its well toward: the way its first run heads. */
+function exitSide(
+  well: Point | undefined,
+  next: Point | undefined,
+  fallback: Position,
+): Position {
+  if (!well || !next) return fallback;
+  const dx = next.x - well.x;
+  const dy = next.y - well.y;
+  if (Math.abs(dx) + Math.abs(dy) < 1e-6) return fallback;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx > 0 ? Position.Right : Position.Left;
+  }
+  return dy > 0 ? Position.Bottom : Position.Top;
+}
+
+/** The first straight run of a pipe out of its well, toward its exit side. */
 function stubPaths(
   centre: Point,
   position: Position,
@@ -980,6 +1001,9 @@ export function PipeEdgeView({
       targetSide: targetPosition,
     });
   const path = routed?.path ?? pipePath(points, radius);
+  // A free exit may leave the well other than toward the card side.
+  const sourceExit = exitSide(points[0], points[1], sourcePosition);
+  const targetExit = exitSide(points.at(-1), points.at(-2), targetPosition);
   const bodyPaths = sourceSequence ? twinPaths(points, radius) : { path };
   const color = pipeColor(sourceHandleId);
   // Selection wipes the frost off along the pipe; hover thins it halfway.
@@ -1028,7 +1052,7 @@ export function PipeEdgeView({
             <>
               <OpenWell
                 centre={source}
-                position={sourcePosition}
+                position={sourceExit}
                 design={pipe}
                 twin={sourceSequence}
                 color={color}
@@ -1036,7 +1060,7 @@ export function PipeEdgeView({
               />
               <OpenWell
                 centre={target}
-                position={targetPosition}
+                position={targetExit}
                 design={pipe}
                 twin={sourceSequence}
                 color={color}
@@ -1069,7 +1093,7 @@ export function PipeEdgeView({
                   design={pipe}
                   {...stubPaths(
                     source,
-                    sourcePosition,
+                    sourceExit,
                     WELL_RADIUS,
                     sourceSequence,
                   )}
@@ -1080,7 +1104,7 @@ export function PipeEdgeView({
                   design={pipe}
                   {...stubPaths(
                     target,
-                    targetPosition,
+                    targetExit,
                     WELL_RADIUS,
                     sourceSequence,
                   )}
@@ -1152,7 +1176,7 @@ export function PipeEdgeView({
               <Lens
                 id={sourceLens}
                 centre={source}
-                position={sourcePosition}
+                position={sourceExit}
                 color={color}
                 design={pipe}
                 twin={sourceSequence}
@@ -1160,7 +1184,7 @@ export function PipeEdgeView({
               <Lens
                 id={targetLens}
                 centre={target}
-                position={targetPosition}
+                position={targetExit}
                 color={color}
                 design={pipe}
                 twin={sourceSequence}
@@ -1196,7 +1220,7 @@ export function PipeEdgeView({
             moving={sourceMoving}
             targets={targets}
             centre={source}
-            position={sourcePosition}
+            position={sourceExit}
             color={color}
             material={material}
             sequence={sourceSequence}
@@ -1213,7 +1237,7 @@ export function PipeEdgeView({
             moving={targetMoving}
             targets={targets}
             centre={target}
-            position={targetPosition}
+            position={targetExit}
             color={color}
             material={material}
             sequence={targetSequence}

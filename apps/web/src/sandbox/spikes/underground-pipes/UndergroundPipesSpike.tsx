@@ -68,6 +68,8 @@ import {
   type PipeWell,
 } from "./pipe-layers";
 import { PIPE_EDGE_TYPE, PipeRouter, RouteBook } from "./pipe-router";
+import type { CardAvoidance } from "./pipe-routing";
+import type { PipeExits } from "./routing/exits";
 import {
   DESIGN_PASSES,
   PIPE_FAMILIES,
@@ -606,6 +608,35 @@ function LookPanel({
         );
       })}
       <div {...stylex.props(s.row)}>
+        <span {...stylex.props(s.rowLabel)}>Exit</span>
+        <SegmentedControl<PipeExits>
+          aria-label="Exit"
+          size="sm"
+          disabled={!pipes}
+          value={look.exits}
+          onValueChange={(exits) => onLook({ ...look, exits })}
+          options={[
+            { value: "side", label: "Side" },
+            { value: "free", label: "Free" },
+          ]}
+        />
+      </div>
+      <div {...stylex.props(s.row)}>
+        <span {...stylex.props(s.rowLabel)}>Under cards</span>
+        <SegmentedControl<CardAvoidance>
+          aria-label="Under cards"
+          size="sm"
+          disabled={!pipes || !router.supports.cards}
+          value={look.cards}
+          onValueChange={(cards) => onLook({ ...look, cards })}
+          options={[
+            { value: "free", label: "Free" },
+            { value: "gaps", label: "Prefer gaps" },
+            { value: "avoid", label: "Avoid" },
+          ]}
+        />
+      </div>
+      <div {...stylex.props(s.row)}>
         <span {...stylex.props(s.rowLabel)}>Lanes</span>
         <SegmentedControl<"on" | "off">
           aria-label="Lanes"
@@ -701,6 +732,8 @@ export function UndergroundPipesSpike() {
     connector: "opus",
     lanes: true,
     depth: true,
+    cards: "gaps",
+    exits: "side",
     blur: 0.3,
     frost: 0.5,
   });
@@ -860,6 +893,8 @@ export function UndergroundPipesSpike() {
                 radius={cornerRadius(look.corners)}
                 lanes={look.lanes}
                 depth={look.depth}
+                cards={look.cards}
+                exits={look.exits}
                 dwell={look.dwell}
                 morph={look.morph}
               />

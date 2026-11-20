@@ -12,6 +12,7 @@ import {
   type RoutingScene,
 } from "../pipe-routing";
 import { PIPE_ROUTERS } from ".";
+import { withExits } from "./exits";
 import { DEMO_SCENE, card, gridScene, moveCard, pipe } from "./scenes";
 
 /**
@@ -37,10 +38,17 @@ const SCENES: Record<string, RoutingScene> = {
   },
 };
 
+// Every scene again with free exits: pipes leaving their wells up or down.
+for (const [name, scene] of Object.entries(SCENES)) {
+  SCENES[`${name} with free exits`] = withExits(scene, "free").scene;
+}
+
 const OPTIONS: RoutingOptions[] = [
   { lanes: true, depth: true },
   { lanes: true, depth: false },
   { lanes: false, depth: false },
+  { lanes: true, depth: true, cards: "free" },
+  { lanes: true, depth: true, cards: "avoid" },
 ];
 
 function segments(points: readonly Point[]): [Point, Point][] {
@@ -76,7 +84,7 @@ describe.each<PipeRoutingBackend>(PIPE_ROUTERS)("$label router", (router) => {
         expect(points[0]).toEqual(request.source);
         expect(points.at(-1)).toEqual(request.target);
 
-        // Leaves and enters straight and square to the card side.
+        // Leaves and enters straight along its exit side.
         const [first, second] = [points[0], points[1]];
         const [beforeLast, last] = [points.at(-2), points.at(-1)];
         if (!first || !second || !beforeLast || !last) {

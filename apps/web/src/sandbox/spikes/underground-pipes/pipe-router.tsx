@@ -10,6 +10,7 @@ import {
 } from "@xyflow/react";
 
 import {
+  type CardAvoidance,
   type CardRect,
   type PipeRequest,
   type Point,
@@ -17,6 +18,7 @@ import {
   type SceneRouter,
 } from "./pipe-routing";
 import { pipeRouter, type PipeRouterId } from "./routing";
+import { withExits, type ExitShape, type PipeExits } from "./routing/exits";
 
 import {
   anchor,
@@ -208,6 +210,8 @@ interface RouterProps {
   radius: number;
   lanes: boolean;
   depth: boolean;
+  cards: CardAvoidance;
+  exits: PipeExits;
   dwell: boolean;
   morph: boolean;
 }
@@ -220,6 +224,8 @@ export function PipeRouter({
   radius,
   lanes,
   depth,
+  cards,
+  exits,
   dwell,
   morph,
 }: RouterProps) {
@@ -232,6 +238,8 @@ export function PipeRouter({
   const store = useStoreApi();
   const [transitions] = React.useState(() => new RouteTransitions());
   const draggingRef = React.useRef(false);
+  // Each pipe's exit shape last time, so a dragged pipe keeps it near a line.
+  const shapesRef = React.useRef(new Map<string, ExitShape>());
   React.useLayoutEffect(() => () => transitions.dispose(), [transitions]);
 
   React.useLayoutEffect(
@@ -246,8 +254,19 @@ export function PipeRouter({
         for (const transition of resting.values()) transitions.stop(transition);
       }
       if (dragging && !moving && inFlight.size === 0) return;
-      const { scene, movingIds } = collectScene(store.getState());
-      const layout = route(scene, { lanes, depth });
+      const collected = collectScene(store.getState());
+      const { movingIds } = collected;
+      const exited = withExits(collected.scene, exits, shapesRef.current);
+      const { scene } = exited;
+      if (dragging) {
+        // Resting pipes are not routed while dragging: keep their shapes.
+        for (const [id, shape] of exited.shapes) {
+          if (movingIds.has(id)) shapesRef.current.set(id, shape);
+        }
+      } else {
+        shapesRef.current = exited.shapes;
+      }
+      const layout = route(scene, { lanes, depth, cards });
       const seen = new Set<string>();
       for (const pipe of scene.pipes) {
         const { id } = pipe;
@@ -256,7 +275,7 @@ export function PipeRouter({
         if (!routed) continue;
         seen.add(id);
         const destination = {
-          key: `${router}:${lanes}:${depth}:${routeKey(routed)}`,
+          key: `${router}:${lanes}:${depth}:${cards}:${exits}:${routeKey(routed)}`,
           path: toPath(routed.points, routed.depth, radius),
         };
         let transition = active.get(id);
@@ -322,6 +341,8 @@ export function PipeRouter({
       radius,
       lanes,
       depth,
+      cards,
+      exits,
       dwell,
       morph,
       settled,
