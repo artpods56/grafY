@@ -10,7 +10,6 @@ import {
 } from "@xyflow/react";
 
 import {
-  pipePath,
   type CardRect,
   type PipeRequest,
   type Point,
@@ -19,32 +18,19 @@ import {
 } from "./pipe-routing";
 import { pipeRouter, type PipeRouterId } from "./routing";
 
-/**
- * Feeds the canvas to the chosen router and publishes the routes the pipe
- * layers draw.
- *
- * Two rules keep a drag calm:
- *   - while any card drags, the resting pipes stay frozen in {@link RouteBook}:
- *     {@link selectSettledPipes} reads "" and nothing is re-published, so no
- *     resting pipe jumps lanes or repaints mid-drag
- *   - {@link MovingPipeRouter} routes the whole graph again on every drag
- *     frame, woken by a small signature of the moving pipes alone, and
- *     publishes only those pipes. Pickup and drop therefore see the same
- *     layout as the frames around them, and nothing jumps.
- *
- * Both share one router instance, so a router that remembers its last layout
- * carries it from the drag into the drop.
- */
+import {
+  anchor,
+  directions,
+  PipeTransition,
+  routeKey,
+  toPath,
+  type RoutedPath,
+} from "./routing/route-transitions";
+
+export type { RoutedPath } from "./routing/route-transitions";
 
 /** Edges of this type are pipes: routed here and drawn by the pipe layers. */
 export const PIPE_EDGE_TYPE = "pipe";
-
-export interface RoutedPath {
-  path: string;
-  /** The route's corner points in flow units, ports first and last. */
-  points: readonly Point[];
-  depth: number;
-}
 
 /**
  * The resting pipes' paths and layers, published by {@link PipeRouter}. A pipe
@@ -68,27 +54,12 @@ export class RouteBook {
     };
   }
 
-  publish(next: ReadonlyMap<string, RoutedPath>): void {
-    const changed: string[] = [];
-    const paths = new Map<string, RoutedPath>();
-    for (const [id, routed] of next) {
-      const current = this.paths.get(id);
-      // Keep the old object when nothing changed: it is the snapshot a pipe
-      // compares against.
-      if (current?.path === routed.path && current.depth === routed.depth) {
-        paths.set(id, current);
-      } else {
-        paths.set(id, routed);
-        changed.push(id);
-      }
-    }
-    for (const id of this.paths.keys()) {
-      if (!next.has(id)) changed.push(id);
-    }
-    this.paths = paths;
-    for (const id of changed) {
-      for (const listener of this.listeners.get(id) ?? []) listener();
-    }
+  set(id: string, next: RoutedPath | undefined): void {
+    const current = this.paths.get(id);
+    if (current?.path === next?.path && current?.depth === next?.depth) return;
+    if (next) this.paths.set(id, next);
+    else this.paths.delete(id);
+    for (const listener of this.listeners.get(id) ?? []) listener();
   }
 }
 
@@ -112,8 +83,6 @@ function handleCentre(
     side: handle.position,
   };
 }
-
-const EMPTY_PATHS: ReadonlyMap<string, RoutedPath> = new Map();
 
 function anyNodeDragging(state: ReactFlowState): boolean {
   for (const node of state.nodeLookup.values()) {
@@ -195,54 +164,55 @@ function selectMovingSignature(state: ReactFlowState): string {
   return parts.join("|");
 }
 
+/** One animation frame for both books. Only active morphs run in it. */
+class RouteTransitions {
+  readonly resting = new Map<string, PipeTransition>();
+  readonly moving = new Map<string, PipeTransition>();
+  private active = new Set<PipeTransition>();
+  private frame: number | undefined;
+
+  animate(transition: PipeTransition): void {
+    this.active.add(transition);
+    this.frame ??= requestAnimationFrame(this.tick);
+  }
+
+  stop(transition: PipeTransition): void {
+    transition.stop();
+    this.active.delete(transition);
+    if (this.active.size === 0 && this.frame !== undefined) {
+      cancelAnimationFrame(this.frame);
+      this.frame = undefined;
+    }
+  }
+
+  dispose(): void {
+    for (const routes of [this.resting, this.moving]) {
+      for (const transition of routes.values()) this.stop(transition);
+      routes.clear();
+    }
+  }
+
+  private tick = (now: number): void => {
+    this.frame = undefined;
+    for (const transition of this.active) {
+      if (!transition.frame(now)) this.active.delete(transition);
+    }
+    if (this.active.size) this.frame = requestAnimationFrame(this.tick);
+  };
+}
+
 interface RouterProps {
-  route: SceneRouter;
-  /** Corner radius of the drawn path; 0 for sharp corners. */
+  book: RouteBook;
+  movingBook: RouteBook;
+  router: PipeRouterId;
   radius: number;
   lanes: boolean;
   depth: boolean;
+  dwell: boolean;
+  morph: boolean;
 }
 
-/**
- * Routes the dragged card(s)' pipes in the full graph's layout while leaving
- * all resting pipes frozen in the resting book. Because it routes the same
- * full graph on pickup and on drop, lanes and depths never jump when grabbing
- * or releasing a card, and resting SVG layers never repaint.
- */
-function MovingPipeRouter({
-  book,
-  route,
-  radius,
-  lanes,
-  depth,
-}: RouterProps & { book: RouteBook }) {
-  const storeApi = useStoreApi();
-  const movingSig = useStore(selectMovingSignature);
-  React.useLayoutEffect(() => {
-    if (!movingSig) {
-      book.publish(EMPTY_PATHS);
-      return;
-    }
-    const { scene, movingIds } = collectScene(storeApi.getState());
-    if (movingIds.size === 0) {
-      book.publish(EMPTY_PATHS);
-      return;
-    }
-    const paths = new Map<string, RoutedPath>();
-    for (const [id, routed] of route(scene, { lanes, depth })) {
-      if (!movingIds.has(id)) continue;
-      paths.set(id, {
-        path: pipePath(routed.points, radius),
-        points: routed.points,
-        depth: routed.depth,
-      });
-    }
-    book.publish(paths);
-  }, [book, depth, lanes, movingSig, radius, route, storeApi]);
-  return null;
-}
-
-/** Lays out all resting pipes together and publishes their paths. */
+/** Freeze the resting book on pickup. On drop, seed it with the moving paths. */
 export function PipeRouter({
   book,
   movingBook,
@@ -250,33 +220,116 @@ export function PipeRouter({
   radius,
   lanes,
   depth,
-}: Omit<RouterProps, "route"> & {
-  book: RouteBook;
-  movingBook: RouteBook;
-  router: PipeRouterId;
-}) {
-  const route = React.useMemo(() => pipeRouter(router).create(), [router]);
-  const settled = useStore(selectSettledPipes);
-  React.useLayoutEffect(() => {
-    if (!settled) return;
-    const scene = JSON.parse(settled) as RoutingScene;
-    const paths = new Map<string, RoutedPath>();
-    for (const [id, routed] of route(scene, { lanes, depth })) {
-      paths.set(id, {
-        path: pipePath(routed.points, radius),
-        points: routed.points,
-        depth: routed.depth,
-      });
-    }
-    book.publish(paths);
-  }, [book, depth, lanes, radius, route, settled]);
-  return (
-    <MovingPipeRouter
-      book={movingBook}
-      route={route}
-      radius={radius}
-      lanes={lanes}
-      depth={depth}
-    />
+  dwell,
+  morph,
+}: RouterProps) {
+  const route: SceneRouter = React.useMemo(
+    () => pipeRouter(router).create(),
+    [router],
   );
+  const settled = useStore(selectSettledPipes);
+  const moving = useStore(selectMovingSignature);
+  const store = useStoreApi();
+  const [transitions] = React.useState(() => new RouteTransitions());
+  const draggingRef = React.useRef(false);
+  React.useLayoutEffect(() => () => transitions.dispose(), [transitions]);
+
+  React.useLayoutEffect(
+    function publishRoutes() {
+      const dragging = !settled;
+      const wasDragging = draggingRef.current;
+      draggingRef.current = dragging;
+      const { resting, moving: inFlight } = transitions;
+      const active = dragging ? inFlight : resting;
+      const output = dragging ? movingBook : book;
+      if (dragging && !wasDragging) {
+        for (const transition of resting.values()) transitions.stop(transition);
+      }
+      if (dragging && !moving && inFlight.size === 0) return;
+      const { scene, movingIds } = collectScene(store.getState());
+      const layout = route(scene, { lanes, depth });
+      const seen = new Set<string>();
+      for (const pipe of scene.pipes) {
+        const { id } = pipe;
+        if (dragging && !movingIds.has(id)) continue;
+        const routed = layout.get(id);
+        if (!routed) continue;
+        seen.add(id);
+        const destination = {
+          key: `${router}:${lanes}:${depth}:${routeKey(routed)}`,
+          path: toPath(routed.points, routed.depth, radius),
+        };
+        let transition = active.get(id);
+        const released = dragging ? undefined : inFlight.get(id);
+        if (!transition || released) {
+          if (transition) transitions.stop(transition);
+          const previous = dragging ? resting.get(id) : released;
+          const prior = previous?.destination ?? destination;
+          const priorPath = previous?.shown ?? destination.path;
+          const points = anchor(priorPath.points, pipe);
+          const shown = toPath(points, priorPath.depth, radius);
+          transition = new PipeTransition(
+            prior,
+            (path) => output.set(id, path),
+            (active) => transitions.animate(active),
+            shown,
+          );
+          active.set(id, transition);
+          output.set(id, shown);
+          // React Flow can mark a node as dragging before its ports move.
+          if (dragging && previous && points === priorPath.points) continue;
+          // With Morph off, keep a released path that already occupies the
+          // settled route. Its next ordinary layout will update it as usual.
+          if (
+            released &&
+            !morph &&
+            !released.animating &&
+            prior.key === destination.key &&
+            points === priorPath.points &&
+            directions(points) === directions(prior.path.points)
+          )
+            continue;
+        }
+        transition.update({
+          destination,
+          pipe,
+          radius,
+          dwell: dragging && dwell,
+          morph,
+          settle: !dragging && wasDragging,
+        });
+      }
+
+      for (const [id, transition] of active) {
+        if (seen.has(id)) continue;
+        transitions.stop(transition);
+        active.delete(id);
+        output.set(id, undefined);
+      }
+      if (!dragging) {
+        for (const [id, transition] of inFlight) {
+          transitions.stop(transition);
+          movingBook.set(id, undefined);
+        }
+        inFlight.clear();
+      }
+    },
+    [
+      book,
+      movingBook,
+      router,
+      route,
+      radius,
+      lanes,
+      depth,
+      dwell,
+      morph,
+      settled,
+      moving,
+      store,
+      transitions,
+    ],
+  );
+
+  return null;
 }

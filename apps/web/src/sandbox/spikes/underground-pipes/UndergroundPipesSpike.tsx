@@ -552,6 +552,27 @@ function LookPanel({
           options={PIPE_ROUTERS.map(({ id, label }) => ({ value: id, label }))}
         />
       </div>
+      {(["dwell", "morph"] as const).map((key) => {
+        const label = key === "dwell" ? "Dwell" : "Morph";
+        return (
+          <div {...stylex.props(s.row)} key={key}>
+            <span {...stylex.props(s.rowLabel)}>{label}</span>
+            <SegmentedControl<"on" | "off">
+              aria-label={label}
+              size="sm"
+              disabled={!pipes}
+              value={look[key] ? "on" : "off"}
+              onValueChange={(value) =>
+                onLook({ ...look, [key]: value === "on" })
+              }
+              options={[
+                { value: "on", label: "On" },
+                { value: "off", label: "Off" },
+              ]}
+            />
+          </div>
+        );
+      })}
       <div {...stylex.props(s.row)}>
         <span {...stylex.props(s.rowLabel)}>Lanes</span>
         <SegmentedControl<"on" | "off">
@@ -638,6 +659,8 @@ export function UndergroundPipesSpike() {
   const [edgeStyle, setEdgeStyle] = React.useState<EdgeStyle>("pipes");
   const [look, setLook] = React.useState<PipeLook>({
     router: DEFAULT_PIPE_ROUTER,
+    dwell: true,
+    morph: true,
     corners: "rounded",
     material: "liquid",
     well: "recessed",
@@ -802,6 +825,8 @@ export function UndergroundPipesSpike() {
                 radius={cornerRadius(look.corners)}
                 lanes={look.lanes}
                 depth={look.depth}
+                dwell={look.dwell}
+                morph={look.morph}
               />
             ) : null}
             {pipes ? (

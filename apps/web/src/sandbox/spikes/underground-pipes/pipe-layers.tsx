@@ -78,6 +78,8 @@ export type PipeWell = "recessed" | "flat";
 export interface PipeLook {
   /** Which router lays the pipes out. */
   router: PipeRouterId;
+  dwell: boolean;
+  morph: boolean;
   corners: PipeCorners;
   material: PipeMaterial;
   well: PipeWell;
