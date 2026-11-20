@@ -389,10 +389,14 @@ const s = stylex.create({
     backgroundColor: tokens.colorBg,
     color: tokens.colorText,
   },
+  // Scrolls once its rows outgrow the window, clear of the zoom controls.
   panel: {
     display: "grid",
     gap: "12px",
     width: "240px",
+    maxHeight: "calc(100svh - 170px)",
+    overflowY: "auto",
+    overscrollBehavior: "contain",
   },
   row: { display: "grid", gap: "5px" },
   rowLabel: {
