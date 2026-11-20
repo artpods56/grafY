@@ -29,14 +29,6 @@ export const PIPE_WIDTH = 8;
 /** The surface the pipes lie on, under the glass. */
 export const FLOOR = `light-dark(color-mix(in srgb, ${tokens.colorBg} 88%, black), color-mix(in srgb, ${tokens.colorBg} 35%, black))`;
 
-export const PIPE_DESIGN_CSS = `
-@keyframes pipe-flow { to { stroke-dashoffset: -72; } }
-.pipe-flow { animation: pipe-flow 2s linear infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .pipe-flow { animation: none; }
-}
-`;
-
 interface PipeBodyProps {
   design: PipeDesign;
   path: string;
@@ -47,7 +39,6 @@ interface PipeBodyProps {
   color: string;
   girth?: number;
   sharp?: boolean;
-  flowing?: boolean;
 }
 
 export function PipeBody(props: PipeBodyProps) {
@@ -63,7 +54,6 @@ function SolPipe({
   color,
   girth = 1,
   sharp = false,
-  flowing = false,
 }: PipeBodyProps) {
   const glass = design === "glass";
   const width = twin ? (glass ? 2.8 : 2.4) : glass ? PIPE_WIDTH : 4.4;
@@ -79,20 +69,11 @@ function SolPipe({
       strokeLinecap="round"
     >
       <path d={strands} strokeWidth={width * girth} style={{ stroke: body }} />
-      {(sharp || flowing) && (
+      {sharp && (
         <path
           d={strands}
           strokeWidth={(glass && !twin ? 2.5 : 0.9) * girth}
           style={{ stroke: `color-mix(in oklab, ${color} 58%, white)` }}
-        />
-      )}
-      {flowing && (
-        <path
-          d={strands}
-          className="pipe-flow"
-          strokeWidth={1.3 * girth}
-          strokeDasharray="4 68"
-          style={{ stroke: `color-mix(in oklab, ${color} 26%, white)` }}
         />
       )}
     </g>
@@ -119,41 +100,11 @@ function tint(color: string, light: number, dark: number): string {
   return `light-dark(color-mix(in oklab, ${color} ${light}%, ${FLOOR}), color-mix(in oklab, ${color} ${dark}%, ${FLOOR}))`;
 }
 
-/** A pulse travelling source to target along the cores, when wiped. */
-function Flow({
-  d,
-  width,
-  color,
-}: {
-  d: string;
-  width: number;
-  color: string;
-}) {
-  return (
-    <path
-      d={d}
-      className="pipe-flow"
-      strokeWidth={width}
-      strokeDasharray="6 66"
-      style={{
-        stroke: `light-dark(color-mix(in oklab, ${color} 40%, white), white)`,
-      }}
-    />
-  );
-}
-
 /**
  * A clear tube carrying coloured liquid: a faintly tinted sheath with a fine
  * wall, and the liquid as a solid core. A List[T] tube carries two cores.
  */
-function OpusGlass({
-  path,
-  twin,
-  centre,
-  color,
-  girth = 1,
-  flowing = false,
-}: PipeBodyProps) {
+function OpusGlass({ path, twin, centre, color, girth = 1 }: PipeBodyProps) {
   const list = twin !== undefined;
   const sheath = (list ? GLASS_SHEATH[1] : GLASS_SHEATH[0]) * girth;
   const core = (list ? GLASS_CORE[1] : GLASS_CORE[0]) * girth;
@@ -179,7 +130,6 @@ function OpusGlass({
         style={{ stroke: tint(color, 20, 36) }}
       />
       <path d={cores} strokeWidth={core} style={{ stroke: liquid }} />
-      {flowing && <Flow d={cores} width={core * 0.6} color={color} />}
     </g>
   );
 }
@@ -188,14 +138,7 @@ function OpusGlass({
  * A light guide: a thin hot core in a soft glow, with no walls at all. The
  * glow is a few stacked translucent strokes, so it costs no filter.
  */
-function OpusFibre({
-  path,
-  twin,
-  centre,
-  color,
-  girth = 1,
-  flowing = false,
-}: PipeBodyProps) {
+function OpusFibre({ path, twin, centre, color, girth = 1 }: PipeBodyProps) {
   const list = twin !== undefined;
   const axis = list ? (centre ?? path) : path;
   const cores = list ? `${path} ${twin}` : path;
@@ -231,9 +174,6 @@ function OpusFibre({
         strokeWidth={(list ? 1 : 1.3) * girth}
         style={{ stroke: hot }}
       />
-      {flowing && (
-        <Flow d={cores} width={(list ? 1 : 1.3) * girth} color={color} />
-      )}
     </g>
   );
 }

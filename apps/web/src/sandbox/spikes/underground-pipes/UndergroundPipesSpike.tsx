@@ -70,7 +70,6 @@ import {
 import { PIPE_EDGE_TYPE, PipeRouter, RouteBook } from "./pipe-router";
 import {
   DESIGN_PASSES,
-  PIPE_DESIGN_CSS,
   PIPE_FAMILIES,
   type DesignPass,
   type PipeFamily,
@@ -385,7 +384,7 @@ ${connectorCss(`${PIPES_SCOPE}[data-connector="sol"]`)}
 ${opusConnectorCss(`${PIPES_SCOPE}[data-connector="opus"]`)}
 `;
 
-const SPIKE_CSS = CARD_CSS + PIPE_DESIGN_CSS;
+const SPIKE_CSS = CARD_CSS;
 
 /** Every artifact type a graph's ports carry, for their `--port` colours. */
 function portTypeIds(graph: SpikeGraph): string[] {

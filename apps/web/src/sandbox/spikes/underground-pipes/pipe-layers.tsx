@@ -1062,7 +1062,7 @@ export function PipeEdgeView({
       {settled && (flat || wipe > 0) && targets.sharp
         ? createPortal(
             wipe > 0 ? (
-              <PipeBody design={pipe} {...bodyPaths} color={color} flowing />
+              <PipeBody design={pipe} {...bodyPaths} color={color} sharp />
             ) : (
               <>
                 <PipeBody
