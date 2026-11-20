@@ -31,13 +31,25 @@ export function twinPaths(points: readonly Point[], radius: number) {
       y: (incoming.y + outgoing.y) * scale,
     };
   });
+  // Which way each corner turns: positive toward the normal side.
+  const turns = runs.map((point, index) => {
+    const previous = runs[index - 1];
+    const next = runs[index + 1];
+    if (!previous || !next) return 0;
+    const cross =
+      (point.x - previous.x) * (next.y - point.y) -
+      (point.y - previous.y) * (next.x - point.x);
+    return Math.sign(cross);
+  });
   function strand(offset: number) {
     return pipePath(
       runs.map((point, index) => ({
         x: point.x + (offsets[index]?.x ?? 0) * offset,
         y: point.y + (offsets[index]?.y ?? 0) * offset,
       })),
-      radius,
+      // Concentric with the centre line: the inner strand turns tighter and
+      // the outer one wider, so the gap stays even through the bend.
+      (index) => Math.max(0, radius - (turns[index] ?? 0) * offset),
     );
   }
   return {

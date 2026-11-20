@@ -117,7 +117,13 @@ export function outward(side: Position): Point {
  * at any angle: a bend between a straight and a diagonal stretch rounds the
  * same way as a right angle.
  */
-export function pipePath(points: readonly Point[], radius: number): string {
+/** A corner radius, or one per corner by the corner's point index. */
+export type CornerRadius = number | ((index: number) => number);
+
+export function pipePath(
+  points: readonly Point[],
+  radius: CornerRadius,
+): string {
   const first = points[0];
   if (!first) return "";
   const parts = [`M${first.x},${first.y}`];
@@ -128,7 +134,8 @@ export function pipePath(points: readonly Point[], radius: number): string {
     if (!before || !corner || !after) continue;
     const inLength = Math.hypot(corner.x - before.x, corner.y - before.y);
     const outLength = Math.hypot(after.x - corner.x, after.y - corner.y);
-    const bend = Math.min(radius, inLength / 2, outLength / 2);
+    const cornerRadius = typeof radius === "number" ? radius : radius(index);
+    const bend = Math.min(cornerRadius, inLength / 2, outLength / 2);
     if (bend < 0.5) {
       parts.push(`L${corner.x},${corner.y}`);
       continue;
