@@ -75,7 +75,12 @@ import {
   portColorCss,
   type ConnectorDesign,
 } from "./connector-designs";
-import { DEFAULT_PIPE_ROUTER } from "./routing";
+import {
+  DEFAULT_PIPE_ROUTER,
+  PIPE_ROUTERS,
+  pipeRouter,
+  type PipeRouterId,
+} from "./routing";
 
 /**
  * Cards stand on a pane of frosted glass; edges are angular pipes on the floor
@@ -436,6 +441,7 @@ function LookPanel({
   onLook: (value: PipeLook) => void;
 }) {
   const pipes = edgeStyle === "pipes";
+  const router = pipeRouter(look.router);
   const { resolved, setPreference } = useTheme();
   const frameRate = useFrameRate();
   return (
@@ -538,11 +544,22 @@ function LookPanel({
         />
       </div>
       <div {...stylex.props(s.row)}>
+        <span {...stylex.props(s.rowLabel)}>Router</span>
+        <SegmentedControl<PipeRouterId>
+          aria-label="Router"
+          size="sm"
+          disabled={!pipes}
+          value={look.router}
+          onValueChange={(id) => onLook({ ...look, router: id })}
+          options={PIPE_ROUTERS.map(({ id, label }) => ({ value: id, label }))}
+        />
+      </div>
+      <div {...stylex.props(s.row)}>
         <span {...stylex.props(s.rowLabel)}>Lanes</span>
         <SegmentedControl<"on" | "off">
           aria-label="Lanes"
           size="sm"
-          disabled={!pipes}
+          disabled={!pipes || !router.supports.lanes}
           value={look.lanes ? "on" : "off"}
           onValueChange={(value) => onLook({ ...look, lanes: value === "on" })}
           options={[
@@ -556,7 +573,7 @@ function LookPanel({
         <SegmentedControl<"on" | "off">
           aria-label="Depth layers"
           size="sm"
-          disabled={!pipes || !look.lanes}
+          disabled={!pipes || !look.lanes || !router.supports.depth}
           value={look.depth ? "on" : "off"}
           onValueChange={(value) => onLook({ ...look, depth: value === "on" })}
           options={[
