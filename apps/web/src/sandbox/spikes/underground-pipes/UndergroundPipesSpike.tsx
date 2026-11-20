@@ -69,12 +69,7 @@ import {
 } from "./pipe-layers";
 import { PIPE_EDGE_TYPE, PipeRouter, RouteBook } from "./pipe-router";
 import { PIPE_DESIGNS, PIPE_DESIGN_CSS, type PipeDesign } from "./pipe-designs";
-import {
-  CONNECTOR_DESIGNS,
-  connectorCss,
-  portColorCss,
-  type ConnectorDesign,
-} from "./connector-designs";
+import { connectorCss, portColorCss } from "./connector-designs";
 import {
   DEFAULT_PIPE_ROUTER,
   PIPE_ROUTERS,
@@ -359,6 +354,7 @@ const CARD_SPECULAR = [
  * handles for 200ms, and every one of those frames re-routes the card's pipes.
  * The shadow no longer changes with the lift either.
  */
+const PIPES_SCOPE = '.grafy-pipes-spike[data-edges="pipes"]';
 const CARD_CSS = `
 .grafy-pipes-spike [data-node-tier] {
   transform: none;
@@ -375,11 +371,10 @@ const CARD_CSS = `
   border-color: light-dark(color-mix(in srgb, white 85%, transparent), color-mix(in srgb, white 14%, transparent));
   box-shadow: ${CARD_SPECULAR}, ${CARD_REST_SHADOW};
 }
+${connectorCss(PIPES_SCOPE)}
 `;
 
-/** The pipe and connector designs restyle the canvas only while it shows pipes. */
-const PIPES_SCOPE = '.grafy-pipes-spike[data-edges="pipes"]';
-const SPIKE_CSS = CARD_CSS + PIPE_DESIGN_CSS + connectorCss(PIPES_SCOPE);
+const SPIKE_CSS = CARD_CSS + PIPE_DESIGN_CSS;
 
 /** Every artifact type a graph's ports carry, for their `--port` colours. */
 function portTypeIds(graph: SpikeGraph): string[] {
@@ -547,17 +542,6 @@ function LookPanel({
         />
       </div>
       <div {...stylex.props(s.row)}>
-        <span {...stylex.props(s.rowLabel)}>Connector</span>
-        <SegmentedControl<ConnectorDesign>
-          aria-label="Connector"
-          size="sm"
-          disabled={!pipes}
-          value={look.connector}
-          onValueChange={(connector) => onLook({ ...look, connector })}
-          options={CONNECTOR_DESIGNS}
-        />
-      </div>
-      <div {...stylex.props(s.row)}>
         <span {...stylex.props(s.rowLabel)}>Router</span>
         <SegmentedControl<PipeRouterId>
           aria-label="Router"
@@ -657,8 +641,7 @@ export function UndergroundPipesSpike() {
     corners: "rounded",
     material: "liquid",
     well: "recessed",
-    pipe: "tube",
-    connector: "ring",
+    pipe: "glass",
     lanes: true,
     depth: true,
     blur: 0.3,
@@ -784,7 +767,6 @@ export function UndergroundPipesSpike() {
           style={canvasStyle.style}
           data-edges={edgeStyle}
           data-material={look.material}
-          data-connector={look.connector}
         >
           <style>{SPIKE_CSS + portCss}</style>
           <ReactFlow<CardNode, SpikeEdge>
