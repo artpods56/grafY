@@ -11,14 +11,14 @@ const IMPORT_CARD: CellCardModel = {
   status: "done",
   col: 2,
   row: 1,
-  widthCells: 6,
-  heightCells: 3,
+  widthCells: 12,
+  heightCells: 6,
   ports: [
     {
       id: "source",
       name: "source",
       direction: "input",
-      rowOffset: 1,
+      rowOffset: 2,
       artifactTypeId: "file.csv",
       shape: "one",
       required: true,
@@ -27,7 +27,7 @@ const IMPORT_CARD: CellCardModel = {
       id: "rows",
       name: "rows",
       direction: "output",
-      rowOffset: 1,
+      rowOffset: 2,
       artifactTypeId: "table.row",
       shape: "many",
     },
@@ -35,7 +35,7 @@ const IMPORT_CARD: CellCardModel = {
       id: "schema",
       name: "schema",
       direction: "output",
-      rowOffset: 2,
+      rowOffset: 4,
       artifactTypeId: "table.schema",
       shape: "one",
     },
@@ -48,14 +48,14 @@ const TALL_CARD: CellCardModel = {
   subtitle: "table.join",
   col: 0,
   row: 0,
-  widthCells: 6,
-  heightCells: 4,
+  widthCells: 12,
+  heightCells: 8,
   ports: [
     {
       id: "left",
       name: "left",
       direction: "input",
-      rowOffset: 1,
+      rowOffset: 2,
       artifactTypeId: "table.row",
       shape: "many",
     },
@@ -63,7 +63,7 @@ const TALL_CARD: CellCardModel = {
       id: "right",
       name: "right",
       direction: "input",
-      rowOffset: 2,
+      rowOffset: 4,
       artifactTypeId: "table.row",
       shape: "many",
     },
@@ -71,7 +71,7 @@ const TALL_CARD: CellCardModel = {
       id: "joined",
       name: "joined",
       direction: "output",
-      rowOffset: 3,
+      rowOffset: 6,
       artifactTypeId: "table.row",
       shape: "many",
     },
@@ -119,7 +119,7 @@ describe("CellCard", () => {
     expect(html).toContain('data-card-header="true"');
     expect(html).toContain("width:300px");
     expect(html).toContain("height:150px");
-    expect(html).toContain("transform:translate3d(100px, 50px, 0)");
+    expect(html).toContain("transform:translate3d(50px, 25px, 0)");
     // 150 - 26 (header + gap) - 4 (bottom inset)
     expect(html).toContain("height:120px");
     expect(html).toContain("Done");
@@ -127,7 +127,7 @@ describe("CellCard", () => {
 
   it("adds a visual offset only to the moving card", () => {
     const html = render({ visualOffset: { x: 7, y: -3 }, dragging: true });
-    expect(html).toContain("transform:translate3d(107px, 47px, 0)");
+    expect(html).toContain("transform:translate3d(57px, 22px, 0)");
     expect(html).toContain('data-dragging="true"');
     expect(html).toContain("z-index:20");
   });
@@ -136,15 +136,15 @@ describe("CellCard", () => {
     const html = render({ card: TALL_CARD });
     expect(html).toContain("height:200px");
     for (const port of TALL_CARD.ports) {
-      const centreY = (port.rowOffset + 0.5) * 50;
-      const centreX = port.direction === "input" ? -25 : 325;
+      const centreY = (port.rowOffset + 0.5) * 25;
+      const centreX = port.direction === "input" ? -12.5 : 312.5;
       const tag = portTag(html, port.id);
       expect(tag).toContain(`left:${centreX - 15}px`);
       expect(tag).toContain(`top:${centreY - 15}px`);
     }
     // Label rows start at the plate's padding box (26 + 1px border).
-    expect(html).toMatch(/data-port-row="1"[^>]*top:23px/);
-    expect(html).toMatch(/data-port-row="3"[^>]*top:123px/);
+    expect(html).toMatch(/data-port-row="2"[^>]*top:23px/);
+    expect(html).toMatch(/data-port-row="6"[^>]*top:123px/);
   });
 
   it("names each port and marks its direction and connection", () => {
@@ -178,8 +178,8 @@ describe("CellCard", () => {
 
   it("stops a connected port's stem at the well rim", () => {
     const html = render({ connectedPortIds: new Set(["rows"]) });
-    expect(html).toMatch(/data-port-stem="rows"[^>]*width:15px/);
-    expect(html).toMatch(/data-port-stem="source"[^>]*width:24px/);
+    expect(html).toMatch(/data-port-stem="rows"[^>]*width:5\.5px/);
+    expect(html).toMatch(/data-port-stem="source"[^>]*width:11\.5px/);
   });
 
   it("marks the targeted port hot", () => {
@@ -191,11 +191,19 @@ describe("CellCard", () => {
   it("draws frost and liquid plates without a backdrop filter", () => {
     const frost = render({ material: "frost" });
     const liquid = render({ material: "liquid", selected: true });
+    const held = render({ material: "frost", dragging: true });
     expect(frost).toContain("plateFrost");
-    expect(frost).toContain("frostRest");
+    expect(frost).toContain("frostShadow");
     expect(liquid).toContain("plateLiquid");
-    expect(liquid).toContain("liquidSelected");
+    // Selected or held, the plate takes a very light edge and a soft halo.
+    expect(frost).not.toContain("plateActive");
+    expect(liquid).toContain("plateActive");
+    expect(liquid).toContain("liquidShadowActive");
     expect(liquid).toContain('data-selected="true"');
+    // A held card keeps the same edge and halo: no lift.
+    expect(held).toContain("plateActive");
+    expect(held).toContain("frostShadowActive");
+    expect(held).not.toMatch(/Dragging|Lifted/);
     for (const html of [frost, liquid]) {
       expect(html).not.toMatch(/backdrop/i);
     }

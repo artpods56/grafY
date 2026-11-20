@@ -10,6 +10,7 @@ import { ConnectorFitting } from "./pipe-visuals";
 import type { CellGlassMaterial } from "./cell-glass-stage";
 import {
   CARD_HEADER_HEIGHT,
+  CARD_HEADER_TOP,
   CARD_PLATE_BOTTOM_INSET,
   CARD_PLATE_INSET_X,
   CARD_PLATE_TOP,
@@ -22,7 +23,7 @@ import {
 /**
  * One card on the cell canvas, drawn without React Flow.
  *
- * The card's outer box covers its cells exactly. Row 0 holds the floating
+ * The card's outer box covers its cells exactly. Rows 0 and 1 hold the floating
  * title (0..24) and the plate's subtitle strip (26..50), so a status or a long
  * subtitle never moves a port row. Every port row below is pinned to
  * `(rowOffset + 0.5) * CELL_SIZE`, the centre the router and the glass stage
@@ -62,7 +63,7 @@ const PORT_HIT_SIZE = 30;
 /** The open ring's drawing box, in flow units. */
 const RING_BOX = 20;
 /** Outer radius of the glass stage's recessed well: a stem stops at it. */
-const WELL_OUTER_RADIUS = 14;
+const WELL_OUTER_RADIUS = 11;
 /** The Opus ring's outer radius: an open port's stem stops at it. */
 const RING_OUTER_RADIUS = 5;
 
@@ -73,13 +74,10 @@ const MONO_FONT =
 /** Cards stand on the glass: a contact shadow, then a soft one cast below. */
 const REST_SHADOW =
   "0 1px 2px light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 45%, transparent)), 0 8px 20px -6px light-dark(color-mix(in srgb, black 18%, transparent), color-mix(in srgb, black 55%, transparent)), 0 22px 44px -14px light-dark(color-mix(in srgb, black 16%, transparent), color-mix(in srgb, black 50%, transparent))";
-/** A held card lifts off the glass: a wider, softer cast shadow. */
-const LIFTED_SHADOW =
-  "0 2px 4px light-dark(color-mix(in srgb, black 12%, transparent), color-mix(in srgb, black 50%, transparent)), 0 16px 32px -8px light-dark(color-mix(in srgb, black 24%, transparent), color-mix(in srgb, black 62%, transparent)), 0 36px 64px -18px light-dark(color-mix(in srgb, black 22%, transparent), color-mix(in srgb, black 58%, transparent))";
-const SELECTION_RING = `0 0 0 1px ${tokens.colorAccent}`;
 /** Liquid glass cards: a bright top edge and a faint bottom one. */
 const LIQUID_SPECULAR =
   "inset 0 1px 0 light-dark(color-mix(in srgb, white 95%, transparent), color-mix(in srgb, white 24%, transparent)), inset 0 -1px 0 color-mix(in srgb, white 10%, transparent)";
+const SELECTION_HALO = `0 0 0 3px color-mix(in srgb, ${tokens.colorAccent} 8%, transparent)`;
 const LIQUID_BORDER =
   "light-dark(color-mix(in srgb, white 85%, transparent), color-mix(in srgb, white 14%, transparent))";
 
@@ -145,15 +143,18 @@ const s = stylex.create({
     backgroundColor: `color-mix(in srgb, ${tokens.colorSurface} 58%, transparent)`,
     borderColor: LIQUID_BORDER,
   },
-  plateActiveBorder: { borderColor: tokens.colorBorderStrong },
-  frostRest: { boxShadow: REST_SHADOW },
-  frostSelected: { boxShadow: `${SELECTION_RING}, ${REST_SHADOW}` },
-  frostDragging: { boxShadow: LIFTED_SHADOW },
-  liquidRest: { boxShadow: `${LIQUID_SPECULAR}, ${REST_SHADOW}` },
-  liquidSelected: {
-    boxShadow: `${SELECTION_RING}, ${LIQUID_SPECULAR}, ${REST_SHADOW}`,
+  // Selected or held, the plate takes a very light accent edge and a soft 3px
+  // gutter that answers the ink-filled title tab. A held card keeps its
+  // resting shadow: the drop ghost shows the move.
+  plateActive: {
+    borderColor: `color-mix(in srgb, ${tokens.colorAccent} 20%, transparent)`,
   },
-  liquidDragging: { boxShadow: `${LIQUID_SPECULAR}, ${LIFTED_SHADOW}` },
+  frostShadow: { boxShadow: REST_SHADOW },
+  liquidShadow: { boxShadow: `${LIQUID_SPECULAR}, ${REST_SHADOW}` },
+  frostShadowActive: { boxShadow: `${SELECTION_HALO}, ${REST_SHADOW}` },
+  liquidShadowActive: {
+    boxShadow: `${LIQUID_SPECULAR}, ${SELECTION_HALO}, ${REST_SHADOW}`,
+  },
   subtitle: {
     boxSizing: "border-box",
     paddingInline: "10px",
@@ -241,19 +242,6 @@ const s = stylex.create({
   },
 });
 
-const PLATE_SHADOWS = {
-  frost: {
-    rest: s.frostRest,
-    selected: s.frostSelected,
-    dragging: s.frostDragging,
-  },
-  liquid: {
-    rest: s.liquidRest,
-    selected: s.liquidSelected,
-    dragging: s.liquidDragging,
-  },
-} as const;
-
 /** StyleX classes plus per-card geometry, which changes with every card. */
 function styled(
   inline: React.CSSProperties,
@@ -300,7 +288,6 @@ function CellCardImpl({
   const x = card.col * CELL_SIZE + (visualOffset?.x ?? 0);
   const y = card.row * CELL_SIZE + (visualOffset?.y ?? 0);
   const active = selected || dragging;
-  const shadowState = dragging ? "dragging" : selected ? "selected" : "rest";
   const plateHeight = height - CARD_PLATE_TOP - CARD_PLATE_BOTTOM_INSET;
   // Rows inside the plate are placed from its padding box, below the border.
   const plateContentTop = CARD_PLATE_TOP + PLATE_BORDER;
@@ -337,8 +324,9 @@ function CellCardImpl({
         onPointerDown={handleCardPointerDown}
         {...styled(
           {
+            marginTop: CARD_HEADER_TOP,
             height: CARD_HEADER_HEIGHT,
-            marginBottom: CARD_PLATE_TOP - CARD_HEADER_HEIGHT,
+            marginBottom: CARD_PLATE_TOP - CARD_HEADER_TOP - CARD_HEADER_HEIGHT,
             paddingInline: CARD_PLATE_INSET_X,
             cursor: dragging ? "grabbing" : "grab",
           },
@@ -371,13 +359,19 @@ function CellCardImpl({
           },
           s.plate,
           material === "liquid" ? s.plateLiquid : s.plateFrost,
-          active && s.plateActiveBorder,
-          PLATE_SHADOWS[material][shadowState],
+          active && s.plateActive,
+          material === "liquid"
+            ? active
+              ? s.liquidShadowActive
+              : s.liquidShadow
+            : active
+              ? s.frostShadowActive
+              : s.frostShadow,
         )}
       >
         <div
           {...styled(
-            // Plate border + this strip end exactly on row 0's lower edge.
+            // Plate border + this strip end at 62, above the first port row.
             { height: CARD_HEADER_HEIGHT - PLATE_BORDER },
             s.subtitle,
           )}

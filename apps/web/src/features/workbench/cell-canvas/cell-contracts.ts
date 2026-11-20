@@ -53,6 +53,7 @@ export interface CellMarqueeRect {
 
 export interface CellRemotePeerState {
   actorId: string;
+  sessionId?: string;
   displayName: string;
   color: string;
   cursor: WorldPoint | null;
@@ -158,7 +159,13 @@ export interface CellConnectDropEmptyEvent {
 // --- Real Grafy Card Surface Data (zero DOM measurement contracts) ---------
 
 export type CellConfigFieldKind =
-  "text" | "select" | "toggle" | "number" | "multiline";
+  | "text"
+  | "select"
+  | "toggle"
+  | "number"
+  | "multiline"
+  /** A node secret input: write-only, never read back. */
+  | "secret";
 
 export interface CellConfigFieldSpec {
   id: string;
@@ -171,6 +178,8 @@ export interface CellConfigFieldSpec {
   span?: 1 | 2;
   /** Dense 25px rows occupied (default 1 for single-line, 3 for multiline). */
   denseRows?: number;
+  /** Quiet line under the control, e.g. a secret's write-only note. */
+  description?: string;
 }
 
 export interface CellInstancePlugItem {

@@ -15,16 +15,27 @@ import {
   type WorldPoint,
 } from "./cell-model";
 
-/** Extra cells past the half-way line before a dragged card changes cell. */
-export const SNAP_HYSTERESIS_CELLS = 0.12;
+/**
+ * Extra cells past the half-way line before a dragged card changes cell: 6px
+ * on the 25px lattice.
+ */
+export const SNAP_HYSTERESIS_CELLS = 0.24;
 /** Share of the pointer's offset from the snapped cell the card follows. */
 export const MAGNETIC_TUG_FACTOR = 0.15;
 /** Furthest a card leans out of its snapped cell, in flow units. */
 export const MAGNETIC_TUG_MAX_PX = 6;
-/** Time a card takes to glide into a new cell. */
-export const SETTLE_DURATION_MS = 120;
+/**
+ * Angular frequency of the card's critically damped settle spring, in rad/s.
+ * At 20 a one-cell hop from rest covers 95% of the way in about 240ms.
+ */
+export const SETTLE_OMEGA = 20;
+/** Under this distance (flow units) and speed (units/s) the card lands. */
+export const SETTLE_REST_DISTANCE = 0.25;
+export const SETTLE_REST_SPEED = 2;
+/** A settle never runs longer than this, whatever its velocity. */
+export const SETTLE_MAX_DURATION_MS = 1000;
 /** Time a pipe takes to morph from one route to the next. */
-export const MORPH_DURATION_MS = 120;
+export const MORPH_DURATION_MS = 180;
 
 const EPSILON = 1e-6;
 const MAX_MORPH_SAMPLES = 24;
@@ -489,24 +500,60 @@ export function morphPipePoints(
 
 // --- Card settle -----------------------------------------------------------
 
+/**
+ * A card gliding into its cell on a critically damped spring. `origin` and
+ * `originVelocity` are where and how fast the card was at `startMs`; the
+ * spring's closed form gives every later frame exactly, so the glide does not
+ * depend on frame rate and a retarget carries the card's momentum.
+ */
 export interface CardSettleState {
-  from: WorldPoint;
+  origin: WorldPoint;
+  originVelocity: WorldPoint;
   to: WorldPoint;
   current: WorldPoint;
+  /** Velocity at `current`, in flow units per second. */
+  velocity: WorldPoint;
   startMs: number;
-  durationMs: number;
   active: boolean;
 }
 
+const AT_REST: WorldPoint = { x: 0, y: 0 };
+
 export function createCardSettle(origin: WorldPoint): CardSettleState {
   return {
-    from: { ...origin },
+    origin: { ...origin },
+    originVelocity: { ...AT_REST },
     to: { ...origin },
     current: { ...origin },
+    velocity: { ...AT_REST },
     startMs: 0,
-    durationMs: SETTLE_DURATION_MS,
     active: false,
   };
+}
+
+function landed(state: CardSettleState): CardSettleState {
+  return {
+    ...state,
+    current: { ...state.to },
+    velocity: { ...AT_REST },
+    active: false,
+  };
+}
+
+/** One axis of `x(t) = to + (d + (v + ωd)t)e^(-ωt)` and its derivative. */
+function springAxis(
+  from: number,
+  velocity: number,
+  to: number,
+  seconds: number,
+): [number, number] {
+  const offset = from - to;
+  const slope = velocity + SETTLE_OMEGA * offset;
+  const decay = Math.exp(-SETTLE_OMEGA * seconds);
+  return [
+    to + (offset + slope * seconds) * decay,
+    (velocity - SETTLE_OMEGA * slope * seconds) * decay,
+  ];
 }
 
 /** Where the settle is at `nowMs`; inactive once the card has arrived. */
@@ -515,30 +562,57 @@ export function stepCardSettle(
   nowMs: number,
 ): CardSettleState {
   if (!state.active) return state;
-  if (state.durationMs <= 0 || nowMs >= state.startMs + state.durationMs) {
-    return { ...state, current: { ...state.to }, active: false };
+  const elapsedMs = Math.max(nowMs - state.startMs, 0);
+  if (elapsedMs >= SETTLE_MAX_DURATION_MS) return landed(state);
+  const seconds = elapsedMs / 1000;
+  const [x, vx] = springAxis(
+    state.origin.x,
+    state.originVelocity.x,
+    state.to.x,
+    seconds,
+  );
+  const [y, vy] = springAxis(
+    state.origin.y,
+    state.originVelocity.y,
+    state.to.y,
+    seconds,
+  );
+  if (
+    Math.hypot(state.to.x - x, state.to.y - y) < SETTLE_REST_DISTANCE &&
+    Math.hypot(vx, vy) < SETTLE_REST_SPEED
+  ) {
+    return landed(state);
   }
-  const eased = easeOutCubic((nowMs - state.startMs) / state.durationMs);
-  return { ...state, current: interpolatePoint(state.from, state.to, eased) };
+  return { ...state, current: { x, y }, velocity: { x: vx, y: vy } };
 }
 
-/** Glide towards a new target from wherever the card is drawn at `nowMs`. */
+/**
+ * Glide towards a new target from wherever the card is drawn at `nowMs`,
+ * keeping its velocity so a fast multi-cell drag flows without stalling at
+ * each grid line.
+ */
 export function retargetCardSettle(
   state: CardSettleState,
   nextTarget: WorldPoint,
   nowMs: number,
-  durationMs = SETTLE_DURATION_MS,
 ): CardSettleState {
-  const current = stepCardSettle(state, nowMs).current;
-  const active =
-    Math.hypot(nextTarget.x - current.x, nextTarget.y - current.y) > 0.05;
-  return {
-    from: { ...current },
+  const { current, velocity } = stepCardSettle(state, nowMs);
+  const next: CardSettleState = {
+    origin: { ...current },
+    originVelocity: { ...velocity },
     to: { ...nextTarget },
-    // A hop too small to animate lands at once, so a resting card is exact.
-    current: active ? { ...current } : { ...nextTarget },
+    current: { ...current },
+    velocity: { ...velocity },
     startMs: nowMs,
-    durationMs,
-    active,
+    active: true,
   };
+  // A hop too small to see, from rest, lands at once so a resting card is exact.
+  const distance = Math.hypot(
+    nextTarget.x - current.x,
+    nextTarget.y - current.y,
+  );
+  const speed = Math.hypot(velocity.x, velocity.y);
+  return distance < SETTLE_REST_DISTANCE && speed < SETTLE_REST_SPEED
+    ? landed(next)
+    : next;
 }

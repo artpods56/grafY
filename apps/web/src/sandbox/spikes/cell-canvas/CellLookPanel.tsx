@@ -7,6 +7,7 @@ import { Minus, Plus } from "lucide-react";
 import { useTheme, type ResolvedTheme } from "@/components/theme";
 import { Button, IconButton } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Select } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Surface } from "@/components/ui/surface";
 import { tokens } from "@/lib/stylex/tokens.stylex";
@@ -29,6 +30,11 @@ import type {
 
 export type CellGraphKind = "demo" | "showcase" | "stress";
 
+export interface ShowcaseOperatorOption {
+  key: string;
+  label: string;
+}
+
 export interface CellLookPanelProps {
   graph: CellGraphKind;
   onGraph: (value: CellGraphKind) => void;
@@ -38,6 +44,11 @@ export interface CellLookPanelProps {
   onLook: (value: CellGlassLook) => void;
   routing: CellRoutingOptions;
   onRouting: (value: CellRoutingOptions) => void;
+  showcaseRegistrySource?: "live" | "fixture";
+  showcaseOperators?: readonly ShowcaseOperatorOption[];
+  selectedOperatorKey?: string;
+  onSelectedOperatorKeyChange?: (key: string) => void;
+  onAddShowcaseOperator?: () => void;
 }
 
 export interface CellZoomBarProps {
@@ -91,6 +102,11 @@ const s = stylex.create({
     fontSize: tokens.fontSizeXs,
     fontVariantNumeric: "tabular-nums",
   },
+  addRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+  },
   hint: {
     margin: 0,
     color: tokens.colorSubtle,
@@ -141,6 +157,11 @@ export function CellLookPanel({
   onLook,
   routing,
   onRouting,
+  showcaseRegistrySource,
+  showcaseOperators,
+  selectedOperatorKey,
+  onSelectedOperatorKeyChange,
+  onAddShowcaseOperator,
 }: CellLookPanelProps) {
   const { resolved, setPreference } = useTheme();
   return (
@@ -149,6 +170,7 @@ export function CellLookPanel({
       padding="md"
       shape="lg"
       xstyle={s.panel}
+      data-cell-canvas-chrome="true"
       onPointerDown={stopPropagation}
       onWheel={stopPropagation}
     >
@@ -188,6 +210,43 @@ export function CellLookPanel({
           {counts.deepCount} deep · {counts.reroutes} reroutes
         </span>
       </Row>
+      {graph === "showcase" &&
+      showcaseOperators &&
+      showcaseOperators.length > 0 &&
+      onAddShowcaseOperator ? (
+        <Row
+          label={
+            showcaseRegistrySource === "live"
+              ? `Add node · Live (${showcaseOperators.length})`
+              : `Add node · Fixture (${showcaseOperators.length})`
+          }
+        >
+          <div {...stylex.props(s.addRow)}>
+            <Select
+              aria-label="Catalog operator"
+              size="sm"
+              block
+              value={selectedOperatorKey ?? showcaseOperators[0]?.key ?? ""}
+              onChange={(event) =>
+                onSelectedOperatorKeyChange?.(event.currentTarget.value)
+              }
+            >
+              {showcaseOperators.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={onAddShowcaseOperator}
+            >
+              Add
+            </Button>
+          </div>
+        </Row>
+      ) : null}
       <Row label="Glass">
         <SegmentedControl<CellGlassMaterial>
           aria-label="Glass"
@@ -322,6 +381,7 @@ export function CellZoomBar({
       padding="xs"
       shape="lg"
       xstyle={s.zoomBar}
+      data-cell-canvas-chrome="true"
       onPointerDown={stopPropagation}
       onWheel={stopPropagation}
     >

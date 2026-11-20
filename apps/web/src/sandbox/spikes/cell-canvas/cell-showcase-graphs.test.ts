@@ -5,10 +5,15 @@ import type {
   CellRect,
 } from "@/features/workbench/cell-canvas/cell-model";
 import { routeCellGraph } from "@/features/workbench/cell-canvas/cell-router";
+import { cellGraphFromAuthoredDocument } from "@/features/workbench/cell-canvas/cell-document-adapter";
+import { applyGraphCommandNormalized } from "@/features/workbench/model/graph-document";
 
 import {
   createRealAnatomyShowcaseGraph,
+  createShowcaseAuthoredDocument,
   createStressGroupBenchmarkGraph,
+  mergeShowcaseRegistry,
+  showcaseFallbackRegistry,
 } from "./cell-showcase-graphs";
 
 function rectanglesOverlap(a: CellRect, b: CellRect): boolean {
@@ -66,15 +71,14 @@ describe("real anatomy showcase graph", () => {
     expect(overlappingPairs(foregroundCards)).toEqual([]);
   });
 
-  it("docks the scan output to the OCR input at the same seam and row", () => {
+  it("lines the scan output up with the OCR input across a three-cell gap", () => {
     const { graph } = createRealAnatomyShowcaseGraph();
-    const pipe = graph.pipes.find((pipe) => pipe.id === "dock-scan-ocr");
+    const pipe = graph.pipes.find((pipe) => pipe.id === "scan-to-ocr");
     expect(pipe).toMatchObject({
       sourceCardId: "doc-scan",
       sourcePortId: "image",
       targetCardId: "ocr-extract",
       targetPortId: "source",
-      enabled: true,
     });
     const source = graph.cards.find((card) => card.id === pipe?.sourceCardId);
     const target = graph.cards.find((card) => card.id === pipe?.targetCardId);
@@ -85,15 +89,22 @@ describe("real anatomy showcase graph", () => {
       (port) => port.id === pipe?.targetPortId,
     );
     if (!source || !target || !sourcePort || !targetPort) {
-      throw new Error("The docked pipe must refer to existing cards and ports");
+      throw new Error("The scan pipe must refer to existing cards and ports");
     }
 
-    expect(sourcePort.direction).toBe("output");
-    expect(targetPort.direction).toBe("input");
-    expect(source.col + source.widthCells).toBe(target.col);
+    // One cell for each port's well and a gutter cell between them: the pipe
+    // shows a short straight run.
+    expect(target.col - (source.col + source.widthCells)).toBe(3);
     expect(source.row + sourcePort.rowOffset).toBe(
       target.row + targetPort.rowOffset,
     );
+    const routed = routeCellGraph(graph, {
+      exits: "side",
+      underCards: "gaps",
+      depth: true,
+    }).pipes.get("scan-to-ocr");
+    const rows = new Set(routed?.points.map((point) => point.y));
+    expect(rows.size).toBe(1);
   });
 
   it("provides projection and conversion labels for the collection pipe", () => {
@@ -106,7 +117,7 @@ describe("real anatomy showcase graph", () => {
     });
   });
 
-  it("routes every non-docked pipe", () => {
+  it("routes every pipe", () => {
     const { graph } = createRealAnatomyShowcaseGraph();
     const result = routeCellGraph(graph, {
       exits: "side",
@@ -115,7 +126,6 @@ describe("real anatomy showcase graph", () => {
     });
 
     for (const { id } of graph.pipes) {
-      if (id === "dock-scan-ocr") continue;
       expect(
         result.pipes.get(id)?.points.length ?? 0,
         id,
@@ -133,4 +143,61 @@ it("points the benchmark group and its anchor at cards in the stress graph", () 
   expect(groupCardIds).toContain(anchorCardId);
   expect(groupCardIds.filter((id) => !cardIds.has(id))).toEqual([]);
   expect(cardIds.has(anchorCardId)).toBe(true);
+});
+
+it("drives the showcase authored document through normalized commands and merges live registry", () => {
+  const state = createShowcaseAuthoredDocument(showcaseFallbackRegistry);
+  const { graph, surfaceById } = cellGraphFromAuthoredDocument(
+    state.document,
+    showcaseFallbackRegistry,
+    {
+      presentation: state.presentation,
+      nodeRunState: state.nodeRunState,
+    },
+  );
+
+  expect(graph.cards.map((c) => c.id)).toEqual(
+    expect.arrayContaining([
+      "ocr-extract",
+      "page-batch",
+      "summarize",
+      "ask-model",
+      "reviewer-agent",
+      "doc-scan",
+      "frame-ingest",
+      "note-hint",
+    ]),
+  );
+  expect(surfaceById["ocr-extract"]).toMatchObject({
+    kind: "operator",
+    statusLabel: "240 ms",
+    appendix: { title: "Extracted markdown" },
+  });
+
+  const moved = applyGraphCommandNormalized(state.document, {
+    kind: "move_nodes",
+    positions: [{ node_id: "summarize", x: 1300, y: 150 }],
+  });
+  const afterMove = cellGraphFromAuthoredDocument(
+    moved,
+    showcaseFallbackRegistry,
+  );
+  expect(afterMove.graph.cards.find((c) => c.id === "summarize")).toMatchObject(
+    { col: 52, row: 6 },
+  );
+
+  const merged = mergeShowcaseRegistry({
+    ...showcaseFallbackRegistry,
+    nodes: [
+      {
+        ...showcaseFallbackRegistry.nodes[0]!,
+        title: "Ask a Live Model",
+      },
+    ],
+  });
+  expect(
+    merged.nodes.find(
+      (n) => n.operator_id === "llm.openai_compatible.chat_completion",
+    )?.title,
+  ).toBe("Ask a Live Model");
 });

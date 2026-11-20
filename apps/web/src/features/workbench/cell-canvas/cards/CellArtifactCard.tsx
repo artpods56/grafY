@@ -8,7 +8,6 @@ import {
   Map as MapIcon,
   Plus,
   ScanSearch,
-  Trash2,
   X,
 } from "lucide-react";
 
@@ -16,12 +15,11 @@ import { IconButton } from "@/components/ui/button";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { CellCardToolbar } from "../CellCanvasContext";
 import type {
   ArtifactCardSurfaceData,
   CollectionCardSurfaceData,
 } from "../cell-contracts";
-import { CELL_SIZE } from "../cell-model";
+import { CELL_SIZE, collectionRowOffset } from "../cell-model";
 import {
   CellCardShell,
   cellCardMarks as m,
@@ -220,12 +218,6 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: "9.5px",
   },
-  toolbarType: {
-    paddingInline: "6px",
-    color: tokens.colorMuted,
-    fontSize: "10px",
-    whiteSpace: "nowrap",
-  },
 
   memberRow: {
     display: "flex",
@@ -295,11 +287,10 @@ function TypeDot({ artifactTypeId }: { artifactTypeId: string }) {
 export interface CellArtifactCardProps extends CellCardBaseProps {
   surface: ArtifactCardSurfaceData;
   onInspect?: (cardId: string) => void;
-  onRemove?: (cardId: string) => void;
 }
 
 function CellArtifactCardImpl(props: CellArtifactCardProps) {
-  const { card, surface, onInspect, onRemove } = props;
+  const { card, surface, onInspect } = props;
   const state = useResolvedCardState(card.id, props);
   const headerMeta = surface.dimensionsLabel ?? surface.byteSizeLabel;
   const stripDetail = surface.filename ?? card.subtitle;
@@ -327,32 +318,18 @@ function CellArtifactCardImpl(props: CellArtifactCardProps) {
           ) : null}
         </>
       }
-      toolbar={
-        <CellCardToolbar visible={state.selected} position="top">
-          <span {...stylex.props(s.toolbarType)}>{surface.typeLabel}</span>
-          {onInspect ? (
-            <IconButton
-              size="2xs"
-              variant="ghost"
-              label={`Inspect ${card.title}`}
-              onPointerDown={stopCardDrag}
-              onClick={() => onInspect(card.id)}
-            >
-              <ScanSearch size={11} />
-            </IconButton>
-          ) : null}
-          {onRemove ? (
-            <IconButton
-              size="2xs"
-              variant="danger"
-              label={`Remove ${card.title}`}
-              onPointerDown={stopCardDrag}
-              onClick={() => onRemove(card.id)}
-            >
-              <Trash2 size={11} />
-            </IconButton>
-          ) : null}
-        </CellCardToolbar>
+      menuDetail={surface.typeLabel}
+      menuItems={
+        onInspect
+          ? [
+              {
+                id: "inspect",
+                label: "Inspect",
+                icon: <ScanSearch size={13} />,
+                onSelect: () => onInspect(card.id),
+              },
+            ]
+          : undefined
       }
     >
       <div
@@ -564,7 +541,12 @@ function CellCollectionCardImpl(props: CellCollectionCardProps) {
   const { card, surface, onRemoveMember } = props;
   const state = useResolvedCardState(card.id, props);
   const count = surface.members.length;
-  const spareRowOffset = count + 1;
+  // Each member row is two cells tall, starting cleanly under the 23px strip
+  // on its port's row.
+  const rowBand = (index: number) => ({
+    top: plateRowTop(collectionRowOffset(index)),
+    height: CELL_SIZE * 2,
+  });
 
   return (
     <CellCardShell
@@ -591,11 +573,7 @@ function CellCollectionCardImpl(props: CellCollectionCardProps) {
         <div
           key={member.id}
           data-collection-member={member.id}
-          {...styled(
-            { top: plateRowTop(index + 1), height: CELL_SIZE },
-            m.band,
-            s.memberRow,
-          )}
+          {...styled(rowBand(index), m.band, s.memberRow)}
         >
           <span {...stylex.props(m.indexBadge)}>{index + 1}</span>
           <TypeDot artifactTypeId={member.artifactTypeId} />
@@ -626,11 +604,7 @@ function CellCollectionCardImpl(props: CellCollectionCardProps) {
       {surface.showSparePlug ? (
         <div
           data-collection-spare-plug="true"
-          {...styled(
-            { top: plateRowTop(spareRowOffset), height: CELL_SIZE },
-            m.band,
-            s.spareRow,
-          )}
+          {...styled(rowBand(count), m.band, s.spareRow)}
         >
           <span {...stylex.props(s.spareSlot)}>
             <Plus size={11} aria-hidden="true" />

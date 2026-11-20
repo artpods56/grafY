@@ -27,6 +27,11 @@ export interface UseCellViewportOptions {
   maxZoom?: number;
   /** Default `{ x: 0, y: 0, zoom: 1 }`. */
   initialViewport?: StageViewport;
+  /**
+   * Extra left inset (in screen pixels) preserved on wide canvases (> 800px),
+   * e.g. for a docked floating inspector panel on the left. Default `0`.
+   */
+  fitLeftClearance?: number;
 }
 
 export interface UseCellViewportResult {
@@ -56,8 +61,6 @@ const DEFAULT_VIEWPORT: StageViewport = { x: 0, y: 0, zoom: 1 };
 /** Container size assumed before it is mounted or laid out. */
 const FALLBACK_WIDTH = 1400;
 const FALLBACK_HEIGHT = 860;
-/** Room kept clear for the floating look panel on a wide canvas. */
-const LOOK_PANEL_CLEARANCE = 270;
 const RIGHT_MARGIN = 32;
 const WIDE_CANVAS = 800;
 /** Zoom change per wheel pixel when pinching or holding Ctrl/Cmd. */
@@ -112,7 +115,12 @@ export function useCellViewport(
   containerRef: React.RefObject<HTMLElement | null>,
   options: UseCellViewportOptions = {},
 ): UseCellViewportResult {
-  const { minZoom = 0.15, maxZoom = 2, initialViewport } = options;
+  const {
+    minZoom = 0.15,
+    maxZoom = 2,
+    initialViewport,
+    fitLeftClearance = 0,
+  } = options;
   const [viewport, setViewportState] = React.useState<StageViewport>(
     () => initialViewport ?? DEFAULT_VIEWPORT,
   );
@@ -265,9 +273,9 @@ export function useCellViewport(
       const box = containerBox(containerRef.current);
       const width = box?.width ?? FALLBACK_WIDTH;
       const height = box?.height ?? FALLBACK_HEIGHT;
-      // On a wide canvas, fit to the right of the floating look panel.
+      // On a wide canvas, honor any left clearance (such as a floating panel).
       const wide = width > WIDE_CANVAS;
-      const left = wide ? LOOK_PANEL_CLEARANCE : 0;
+      const left = wide ? fitLeftClearance : 0;
       const right = wide ? width - RIGHT_MARGIN : width;
       const usable = 1 - Math.min(Math.max(paddingRatio, 0), 0.9);
       const zoom = Math.min(
@@ -283,7 +291,7 @@ export function useCellViewport(
         height / 2,
       );
     },
-    [containerRef, viewAt],
+    [containerRef, fitLeftClearance, viewAt],
   );
 
   const screenToWorld = React.useCallback(

@@ -193,18 +193,18 @@ const s = stylex.create({
     height: "8px",
     cursor: "ns-resize",
   },
+  // A quarter arc concentric with the plate's corner: the plate's 12px radius
+  // centres 16px in from the cell box's corner (4px inset + 12px), which is
+  // this 10×10 box's (0, 0) when placed 6px from right and bottom.
   cornerMark: {
     position: "absolute",
     right: "6px",
     bottom: "6px",
-    width: "7px",
-    height: "7px",
-    borderRightWidth: "1.5px",
-    borderBottomWidth: "1.5px",
-    borderRightStyle: "solid",
-    borderBottomStyle: "solid",
-    borderColor: "currentColor",
-    borderBottomRightRadius: "2px",
+    width: "10px",
+    height: "10px",
+    display: "block",
+    overflow: "visible",
+    pointerEvents: "none",
   },
   edgeBarE: {
     width: "2px",
@@ -313,7 +313,7 @@ type ResizeHandler = (
 ) => void;
 
 const GRIP_STYLE = { se: s.gripSe, e: s.gripE, s: s.gripS } as const;
-const MARK_STYLE = { se: s.cornerMark, e: s.edgeBarE, s: s.edgeBarS } as const;
+const EDGE_MARK_STYLE = { e: s.edgeBarE, s: s.edgeBarS } as const;
 
 /**
  * A card's resize handle, in place of React Flow's `NodeResizeControl`. It
@@ -376,7 +376,25 @@ export function CellResizeGrip({
       onPointerUp={finish}
       onPointerCancel={finish}
     >
-      <span aria-hidden {...stylex.props(MARK_STYLE[edge])} />
+      {edge === "se" ? (
+        <svg
+          aria-hidden="true"
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          fill="none"
+          {...stylex.props(s.cornerMark)}
+        >
+          <path
+            d="M 8.42 1.18 A 8.5 8.5 0 0 1 1.18 8.42"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+        </svg>
+      ) : (
+        <span aria-hidden {...stylex.props(EDGE_MARK_STYLE[edge])} />
+      )}
     </div>
   );
 }

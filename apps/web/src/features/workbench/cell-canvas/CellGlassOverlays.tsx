@@ -36,9 +36,9 @@ const SEQUENCE_STRAND_OFFSET = 2.65;
 /** How far a bridge reaches past each plate edge, onto the card it joins. */
 const BRIDGE_OVERHANG = 2;
 
-const DEFAULT_PILL_WIDTH_CELLS = 3;
+const DEFAULT_PILL_WIDTH_CELLS = 6;
 const DEFAULT_PILL_HEIGHT_CELLS = 1;
-const DEFAULT_CARD_HEIGHT_CELLS = 3;
+const DEFAULT_CARD_HEIGHT_CELLS = 6;
 
 const NO_PIPE_IDS: ReadonlySet<string> = new Set();
 
@@ -501,7 +501,7 @@ export function CellRemotePresenceLayer({
       {...stylex.props(s.plane)}
     >
       {peers.map((peer) => (
-        <React.Fragment key={peer.actorId}>
+        <React.Fragment key={peer.sessionId ?? peer.actorId}>
           {Object.entries(peer.draggingCards).map(([cardId, cell]) => {
             const card = cardById.get(cardId);
             const widthCells = card?.widthCells ?? STANDARD_CARD_WIDTH_CELLS;

@@ -1,37 +1,65 @@
 /**
  * The cell canvas: every card, port and pipe snaps to a square grid.
  *
- * A cell is two product dense rows tall. A card covers a block of cells; each
- * port sits in the cell just outside its card, inputs on the left and outputs
- * on the right, one port per cell row. Every cell outside a card is gutter,
- * and a gutter cell holds {@link TRACKS_PER_CELL} pipe tracks side by side.
+ * A cell is one product dense row (25px) tall. A card covers a block of cells;
+ * each port sits in the cell just outside its card, inputs on the left and
+ * outputs on the right, ports {@link PORT_ROW_PITCH} cell rows apart. Every
+ * cell outside a card is gutter, and a gutter cell holds
+ * {@link TRACKS_PER_CELL} pipe tracks side by side.
  *
  * This module is pure geometry and has no React or React Flow runtime import,
  * so the router and its tests run without a canvas.
  */
 
-/** Edge of one cell, in flow units: two 25px dense rows. */
-export const CELL_SIZE = 50;
+/** Edge of one cell, in flow units: one 25px dense row. */
+export const CELL_SIZE = 25;
 /** Pipes that fit side by side through one gutter cell on one layer. */
-export const TRACKS_PER_CELL = 3;
+export const TRACKS_PER_CELL = 1;
 /** Distance between the centre lines of neighbouring tracks. */
 export const TRACK_PITCH = 14;
 /** Distance from a gutter band's edge to its outermost track. */
-export const TRACK_MARGIN = 11;
-/** A standard card is six cells (300px) wide. */
-export const STANDARD_CARD_WIDTH_CELLS = 6;
+export const TRACK_MARGIN = 6;
+/** A standard card is twelve cells (300px) wide. */
+export const STANDARD_CARD_WIDTH_CELLS = 12;
+/**
+ * Cell rows from one port to the next: a 22px port tab and its well fill one
+ * cell, and the empty cell between two ports keeps their wells and pipes apart.
+ */
+export const PORT_ROW_PITCH = 2;
+/**
+ * The first port's row on an operator card. Row 0 holds the floating title
+ * (0..24) and row 1 holds the plate's rounded top (26..50); row 2's tab
+ * clears the 12px corner cleanly.
+ */
+export const FIRST_PORT_ROW = 2;
+/**
+ * The first port row on a card that opens its plate with a 23px strip
+ * (artifact, collection, agent, the demo card): the strip runs 26..50, ending
+ * right on row 2's upper edge.
+ */
+export const STRIP_FIRST_PORT_ROW = 2;
 export const CARD_PLATE_INSET_X = 4;
 export const CARD_HEADER_HEIGHT = 24;
-export const CARD_PLATE_TOP = 26;
 export const CARD_PLATE_BOTTOM_INSET = 4;
 export const CELL_CORNER_RADIUS = 12;
+/**
+ * Every card's plate starts here, whatever its kind, so cards side by side
+ * line up and cards stacked with no row between them keep a tight 6px gap
+ * from one plate to the next title.
+ */
+export const CARD_PLATE_TOP = 26;
+/** The floating title sits at the top of row 0 (0..24), 2px over the plate. */
+export const CARD_HEADER_TOP = 0;
 
 /**
- * The pipe contract the cell router keeps. These equal the underground-pipes
- * constants of the same meaning (`cell-router.test.ts` checks it); they are
- * repeated here so this module stays free of React Flow imports.
+ * The pipe contract the cell router keeps. A pipe's stub runs from its port
+ * cell's centre to its first bend; the shortest one the router lays leaves a
+ * 25px port cell for the next cell's track, which sits at least
+ * {@link TRACK_MARGIN} inside that cell: `CELL_SIZE / 2 + TRACK_MARGIN` =
+ * 18.5. The minimum sits just under it, so every routed stub keeps it and a
+ * 12px bend still fits on it.
  */
-export const CELL_PIPE_STUB_MIN = 27;
+export const CELL_PIPE_STUB_MIN = 18;
 export const CELL_PIPE_LANE_MIN = 10;
 export const CELL_PIPE_MAX_DEPTH = 2;
 
@@ -190,6 +218,19 @@ export function portCell(card: CellCardModel, port: CellPort): CellCoord {
   return port.direction === "input"
     ? { col: card.col - 1, row: card.row + port.rowOffset }
     : { col: card.col + card.widthCells, row: card.row + port.rowOffset };
+}
+
+/** The port row of a collection's `index`th member, or of its spare slot. */
+export function collectionRowOffset(index: number): number {
+  return STRIP_FIRST_PORT_ROW + index * PORT_ROW_PITCH;
+}
+
+/**
+ * Cells a collection card needs for `rows` member rows (its spare slot
+ * included): two header/strip rows (0..50), then two cells per row.
+ */
+export function collectionHeightCells(rows: number): number {
+  return STRIP_FIRST_PORT_ROW + Math.max(1, rows) * PORT_ROW_PITCH;
 }
 
 export function portSide(port: CellPort): CellDir {

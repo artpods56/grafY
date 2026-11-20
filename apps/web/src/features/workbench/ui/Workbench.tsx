@@ -10,6 +10,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Toast } from "@base-ui/react/toast";
 import {
   NodeToolbar,
+  type FitViewOptions,
   Position,
   type Connection,
   type EdgeChange,
@@ -74,6 +75,7 @@ import {
   NodeMenuRegistryContext,
 } from "../canvas/nodes/node-menu-registry";
 import {
+  CellContextualNodeDiscovery,
   ContextualNodeDiscovery,
   type ContextualDiscoverySession,
 } from "./ContextualNodeDiscovery";
@@ -88,7 +90,7 @@ import { artifactGroupingDisabledReason } from "../model/artifact-grouping";
 import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
 import { usePublishWorkbenchChrome } from "./WorkbenchChromeContext";
 import { renameProjectRemote } from "@/features/workspaces/graph-actions";
-import type { SavedGraphSummary } from "@/lib/api";
+import type { Port, SavedGraphSummary } from "@/lib/api";
 import {
   CanvasGridSettingsProvider,
   useCanvasGridSettings,
@@ -305,6 +307,30 @@ import {
   useCanvasSelection,
   withoutPresentationSelection,
 } from "./workbench-canvas-selection";
+import {
+  CellCanvas,
+  DEFAULT_CELL_GLASS_LOOK,
+  type CellCanvasHandle,
+  type CellCanvasProps,
+} from "../cell-canvas/CellCanvas";
+import {
+  annotationHexFromToken,
+  graphCommandsFromCellResizeForDocument,
+} from "../cell-canvas/cell-document-adapter";
+import {
+  CELL_SIZE,
+  cellToWorldOrigin,
+  portWorldCenter,
+} from "../cell-canvas/cell-model";
+import {
+  buildWorkbenchCellScene,
+  cellConnectionToWorkbenchConnection,
+  cellRemotePeersFromParticipants,
+  encodeCellPortHandleForDiscovery,
+  partitionCellMoves,
+  partitionCellRemovals,
+  partitionCellSelection,
+} from "./workbench-cell-canvas";
 import { useNodeCommands } from "./workbench-node-commands";
 import {
   artifactCardDropPositions,
@@ -431,6 +457,7 @@ function WorkbenchBody({
   );
   const {
     settings: canvasGridSettings,
+    canvasEngine,
     bypassSnap,
     panelOpen: gridPanelOpen,
     setPanelOpen: setGridPanelOpen,
@@ -618,6 +645,40 @@ function WorkbenchBody({
   } = useNodeSecrets(workspaceId, nodes);
   const [flow, setFlow] =
     React.useState<ReactFlowInstance<CanvasNode, CanvasEdge>>();
+  const [cellCanvasHandle, setCellCanvasHandle] =
+    React.useState<CellCanvasHandle | null>(null);
+  const [collapsedAppendices, setCollapsedAppendices] = React.useState<
+    ReadonlySet<string>
+  >(new Set());
+  const cellCanvasActive = canvasEngine === "cell-canvas";
+  const canvasReady = Boolean(cellCanvasActive ? cellCanvasHandle : flow);
+  const screenToCanvasPoint = React.useCallback(
+    (point: XYPosition) =>
+      cellCanvasActive
+        ? cellCanvasHandle?.viewportHandle.screenToWorld(point.x, point.y)
+        : flow?.screenToFlowPosition(point),
+    [cellCanvasActive, cellCanvasHandle, flow],
+  );
+  const fitCanvasView = React.useCallback(
+    (options: FitViewOptions<CanvasNode>) => {
+      if (!cellCanvasActive) {
+        void flow?.fitView(options);
+        return;
+      }
+      const padding =
+        typeof options.padding === "number" ? options.padding : 0.25;
+      if (options.nodes) {
+        cellCanvasHandle?.fitCards(
+          options.nodes.map(({ id }) => id),
+          padding,
+          options.maxZoom,
+        );
+      } else {
+        cellCanvasHandle?.fitGraph(padding, options.maxZoom);
+      }
+    },
+    [cellCanvasActive, cellCanvasHandle, flow],
+  );
   const { workspace } = useWorkspaceContext();
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const sidePanel = useWorkbenchSidePanel();
@@ -659,6 +720,15 @@ function WorkbenchBody({
   const [pendingFolderDrop, setPendingFolderDrop] =
     React.useState<PendingFolderDropState | null>(null);
   const [fitRevision, setFitRevision] = React.useState(0);
+  const [renderedCanvasEngine, setRenderedCanvasEngine] =
+    React.useState(canvasEngine);
+  if (renderedCanvasEngine !== canvasEngine) {
+    // A switched engine drops the old surface's handle and refits the new one.
+    setRenderedCanvasEngine(canvasEngine);
+    if (cellCanvasActive) setFlow(undefined);
+    setContextualDiscovery(null);
+    setFitRevision((current) => current + 1);
+  }
   const executionRunningRef = React.useRef(false);
   const isExecutionRunning = React.useCallback(
     () => executionRunningRef.current,
@@ -1642,16 +1712,23 @@ function WorkbenchBody({
     // Intentional refits only (graph open / blank / pane ready). Reading node
     // count from the ref avoids depending on nodes.length, which would recenter
     // the camera after duplicate/remove/add.
-    if (!flow || !nodesRef.current.length) return;
-    const frame = window.requestAnimationFrame(
-      () => void flow.fitView(workbenchFitViewOptions),
+    if (!canvasReady || (!cellCanvasActive && !nodesRef.current.length)) return;
+    const frame = window.requestAnimationFrame(() =>
+      fitCanvasView(workbenchFitViewOptions),
     );
     return () => window.cancelAnimationFrame(frame);
-  }, [fitRevision, flow, workbenchFitViewOptions]);
+  }, [
+    canvasReady,
+    cellCanvasActive,
+    fitCanvasView,
+    fitRevision,
+    workbenchFitViewOptions,
+  ]);
 
   const selectedNodeIds = React.useMemo(
     () => [
       ...nodes.flatMap((node) => (node.selected ? [node.id] : [])),
+      ...(cellCanvasActive ? selectedAgentIds : []),
       ...artifactViewers.nodes.flatMap((node) =>
         node.selected ? [node.id] : [],
       ),
@@ -1659,7 +1736,13 @@ function WorkbenchBody({
         node.selected ? [node.id] : [],
       ),
     ],
-    [artifactViewers.annotations, artifactViewers.nodes, nodes],
+    [
+      artifactViewers.annotations,
+      artifactViewers.nodes,
+      cellCanvasActive,
+      nodes,
+      selectedAgentIds,
+    ],
   );
   const selectedNodeIdsRef = React.useRef(selectedNodeIds);
   React.useLayoutEffect(() => {
@@ -1693,8 +1776,8 @@ function WorkbenchBody({
       if (!canPublishRoomPresence) return;
 
       const clientPoint = presenceClientPointRef.current;
-      if (presenceClientPointDirtyRef.current && clientPoint && flow) {
-        presenceCursorRef.current = flow.screenToFlowPosition(clientPoint);
+      if (presenceClientPointDirtyRef.current && clientPoint) {
+        presenceCursorRef.current = screenToCanvasPoint(clientPoint) ?? null;
         presenceClientPointDirtyRef.current = false;
       }
 
@@ -1708,7 +1791,7 @@ function WorkbenchBody({
       });
       if (published) lastPresencePublishAtRef.current = Date.now();
     }, delay);
-  }, [canPublishRoomPresence, flow, publishRoomPresence]);
+  }, [canPublishRoomPresence, screenToCanvasPoint, publishRoomPresence]);
   React.useEffect(() => {
     if (projectRoom.canPublishPresence) return;
     if (presencePublishTimerRef.current !== null) {
@@ -2624,7 +2707,7 @@ function WorkbenchBody({
       const groups = readArtifactDropGroups(event.dataTransfer);
       if (groups.length === 0) return;
       event.preventDefault();
-      const point = flow?.screenToFlowPosition({
+      const point = screenToCanvasPoint({
         x: event.clientX,
         y: event.clientY,
       }) ?? { x: 0, y: 0 };
@@ -2638,7 +2721,7 @@ function WorkbenchBody({
       }
       placeArtifactGroups(groups, point);
     },
-    [flow, placeArtifactGroups],
+    [screenToCanvasPoint, placeArtifactGroups],
   );
 
   /**
@@ -3135,9 +3218,9 @@ function WorkbenchBody({
         box && box.width > 0
           ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
           : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-      return flow?.screenToFlowPosition(client) ?? fallback;
+      return screenToCanvasPoint(client) ?? fallback;
     },
-    [flow],
+    [screenToCanvasPoint],
   );
 
   /**
@@ -3190,64 +3273,24 @@ function WorkbenchBody({
     [applyAuthoringCommands, canvasCenter, canvasSelection, newCatalogNodeData],
   );
 
-  const onConnectEnd = React.useCallback<OnConnectEnd>(
-    (event, connectionState) => {
-      setContextualDiscovery(null);
-      if (!registry || !canEditProject || running) return;
-      if (!("fromHandle" in connectionState) || !connectionState.fromHandle) {
-        return;
-      }
-      // Successful connections and drops onto handles/nodes keep existing behavior.
-      if (
-        connectionState.toHandle ||
-        connectionState.toNode ||
-        connectionState.isValid
-      ) {
-        return;
-      }
-
-      // An output with artifacts can be pulled onto the canvas. Other drags
-      // offer compatible workflow nodes in the discovery menu.
-      const upstream = connectionState.fromHandle.type === "target";
-      const handleId = connectionState.fromHandle.id;
-      if (!handleId) return;
-      const decoded = decodeHandleId(handleId);
-      if (
-        !decoded ||
-        (upstream
-          ? decoded.direction !== "input"
-          : decoded.direction !== "output")
-      ) {
-        return;
-      }
-
-      const fromNode = nodes.find(
-        (node) => node.id === connectionState.fromNode?.id,
-      );
-      if (!fromNode || !workflowNodeIsSupported(fromNode.data)) return;
-      const port = upstream
-        ? fromNode.data.spec.inputs.find(
-            (candidate) => candidate.name === decoded.portName,
-          )
-        : fromNode.data.spec.outputs.find(
-            (candidate) => candidate.name === decoded.portName,
-          );
-      if (!port) return;
-
-      const clientPoint =
-        "changedTouches" in event
-          ? {
-              x: event.changedTouches[0]?.clientX ?? 0,
-              y: event.changedTouches[0]?.clientY ?? 0,
-            }
-          : { x: event.clientX, y: event.clientY };
-      const flowPosition = flow?.screenToFlowPosition(clientPoint) ?? {
-        x: upstream
-          ? fromNode.position.x
-          : fromNode.position.x + DEFAULT_NODE_WIDTH,
-        y: connectionState.to?.y ?? fromNode.position.y,
-      };
-
+  const handleConnectionDrop = React.useCallback(
+    ({
+      fromNode,
+      port,
+      handleId,
+      decoded,
+      clientPoint,
+      flowPosition,
+    }: {
+      fromNode: WorkflowNode;
+      port: Port;
+      handleId: string;
+      decoded: NonNullable<ReturnType<typeof decodeHandleId>>;
+      clientPoint: XYPosition;
+      flowPosition: XYPosition;
+    }) => {
+      if (!registry) return;
+      const upstream = decoded.direction === "input";
       const materializedOutput =
         !upstream && fromNode.data.run?.status === "succeeded"
           ? fromNode.data.run.outputs.find(
@@ -3301,24 +3344,21 @@ function WorkbenchBody({
       }
 
       const catalogNodes = catalogNodeSpecs(registry, openGraphId);
-      const candidates = upstream
-        ? upstreamCandidatesFromInput({
-            targetPort: port as typeof port & {
-              readonly direction: "input";
-            },
-            targetHandle: handleId,
-            registry,
-            nodes: catalogNodes,
-          })
-        : downstreamCandidatesFromOutput({
-            sourcePort: port as typeof port & {
-              readonly direction: "output";
-            },
-            sourceHandle: handleId,
-            sourceFeed: decoded.feed ?? null,
-            registry,
-            nodes: catalogNodes,
-          });
+      const candidates =
+        port.direction === "input"
+          ? upstreamCandidatesFromInput({
+              targetPort: { ...port, direction: "input" },
+              targetHandle: handleId,
+              registry,
+              nodes: catalogNodes,
+            })
+          : downstreamCandidatesFromOutput({
+              sourcePort: { ...port, direction: "output" },
+              sourceHandle: handleId,
+              sourceFeed: decoded.feed ?? null,
+              registry,
+              nodes: catalogNodes,
+            });
       if (!candidates.length) return;
 
       setLibraryOpen(false);
@@ -3333,15 +3373,83 @@ function WorkbenchBody({
         candidates,
       });
     },
+    [canvasSelection, commitArtifactViewers, openGraphId, registry],
+  );
+
+  const onConnectEnd = React.useCallback<OnConnectEnd>(
+    (event, connectionState) => {
+      setContextualDiscovery(null);
+      if (!registry || !canEditProject || running) return;
+      if (!("fromHandle" in connectionState) || !connectionState.fromHandle) {
+        return;
+      }
+      // Successful connections and drops onto handles/nodes keep existing behavior.
+      if (
+        connectionState.toHandle ||
+        connectionState.toNode ||
+        connectionState.isValid
+      ) {
+        return;
+      }
+
+      // An output with artifacts can be pulled onto the canvas. Other drags
+      // offer compatible workflow nodes in the discovery menu.
+      const upstream = connectionState.fromHandle.type === "target";
+      const handleId = connectionState.fromHandle.id;
+      if (!handleId) return;
+      const decoded = decodeHandleId(handleId);
+      if (
+        !decoded ||
+        (upstream
+          ? decoded.direction !== "input"
+          : decoded.direction !== "output")
+      ) {
+        return;
+      }
+
+      const fromNode = nodes.find(
+        (node) => node.id === connectionState.fromNode?.id,
+      );
+      if (!fromNode || !workflowNodeIsSupported(fromNode.data)) return;
+      const port = upstream
+        ? fromNode.data.spec.inputs.find(
+            (candidate) => candidate.name === decoded.portName,
+          )
+        : fromNode.data.spec.outputs.find(
+            (candidate) => candidate.name === decoded.portName,
+          );
+      if (!port) return;
+
+      const clientPoint =
+        "changedTouches" in event
+          ? {
+              x: event.changedTouches[0]?.clientX ?? 0,
+              y: event.changedTouches[0]?.clientY ?? 0,
+            }
+          : { x: event.clientX, y: event.clientY };
+      const flowPosition = screenToCanvasPoint(clientPoint) ?? {
+        x: upstream
+          ? fromNode.position.x
+          : fromNode.position.x + DEFAULT_NODE_WIDTH,
+        y: connectionState.to?.y ?? fromNode.position.y,
+      };
+
+      handleConnectionDrop({
+        fromNode,
+        port,
+        handleId,
+        decoded,
+        clientPoint,
+        flowPosition,
+      });
+    },
     [
       canEditProject,
-      canvasSelection,
-      commitArtifactViewers,
-      flow,
+      handleConnectionDrop,
       nodes,
-      openGraphId,
       registry,
       running,
+      screenToCanvasPoint,
     ],
   );
 
@@ -3552,14 +3660,65 @@ function WorkbenchBody({
     running,
   ]);
 
+  const removeCellElements = React.useCallback(
+    (cardIds: readonly string[], pipeIds: readonly string[]) => {
+      if (!localAuthoringEnabled) return;
+      const removals = partitionCellRemovals(
+        cardIds,
+        pipeIds,
+        authoredDocumentRef.current,
+        artifactViewers,
+      );
+      applyAuthoringCommands(removals.graphCommands);
+      for (const id of removals.removedViewerIds) removeArtifactViewer(id);
+      for (const id of removals.removedAnnotationIds) removeAnnotation(id);
+      if (removals.removedViewerEdgeIds.length) {
+        const removed = new Set(removals.removedViewerEdgeIds);
+        commitArtifactViewers((current) => {
+          const edges = current.edges.filter((edge) => !removed.has(edge.id));
+          return edges.length === current.edges.length
+            ? current
+            : { ...current, edges };
+        });
+      }
+      if (removals.removedWorkflowNodeIds.length) {
+        const removed = new Set(removals.removedWorkflowNodeIds);
+        setNodeMeasurements((current) =>
+          Object.fromEntries(
+            Object.entries(current).filter(([id]) => !removed.has(id)),
+          ),
+        );
+      }
+    },
+    [
+      applyAuthoringCommands,
+      artifactViewers,
+      commitArtifactViewers,
+      localAuthoringEnabled,
+      removeAnnotation,
+      removeArtifactViewer,
+    ],
+  );
+
   const deleteSelectedNodes = React.useCallback(() => {
-    if (!flow || !selectedNodeIds.length || running) return;
+    if (!canvasReady || !selectedNodeIds.length || running) return;
     setPendingConnectionRoute(null);
     setRunError(null);
-    void flow.deleteElements({
-      nodes: selectedNodeIds.map((id) => ({ id })),
-    });
-  }, [flow, running, selectedNodeIds]);
+    if (cellCanvasActive) {
+      removeCellElements(selectedNodeIds, []);
+    } else {
+      void flow?.deleteElements({
+        nodes: selectedNodeIds.map((id) => ({ id })),
+      });
+    }
+  }, [
+    canvasReady,
+    cellCanvasActive,
+    flow,
+    removeCellElements,
+    running,
+    selectedNodeIds,
+  ]);
 
   const canvasNodes = React.useMemo(
     () =>
@@ -4367,6 +4526,33 @@ function WorkbenchBody({
         }
       : null;
 
+  const cellScene = React.useMemo(
+    () =>
+      cellCanvasActive && registry
+        ? buildWorkbenchCellScene({
+            document: authoredDocument,
+            registry,
+            presentation: sharedPresentation,
+            nodes,
+            nodeInstanceStates,
+            collapsedAppendices,
+            canRun: canStartRun && projectEditsTrusted && !running,
+          })
+        : null,
+    [
+      authoredDocument,
+      canStartRun,
+      cellCanvasActive,
+      collapsedAppendices,
+      nodeInstanceStates,
+      nodes,
+      projectEditsTrusted,
+      registry,
+      running,
+      sharedPresentation,
+    ],
+  );
+
   // --- The canvas right-click menu --------------------------------------------
 
   const openCanvasMenu = React.useCallback(
@@ -4382,6 +4568,14 @@ function WorkbenchBody({
         const selection = selectedNodeIdsRef.current;
         if (selection.length > 1 && selection.includes(nodeId)) {
           target = { kind: "selection" };
+        } else if (cellCanvasActive) {
+          canvasSelection.selectOnly(
+            partitionCellSelection(
+              { cardIds: new Set([nodeId]), pipeIds: new Set() },
+              authoredDocumentRef.current,
+              artifactViewers,
+            ),
+          );
         } else {
           // The menu speaks about the node under the pointer, so that node
           // becomes the selection, as a left click would make it.
@@ -4413,6 +4607,9 @@ function WorkbenchBody({
     [
       allCanvasEdges,
       allCanvasNodes,
+      artifactViewers,
+      canvasSelection,
+      cellCanvasActive,
       closeGraphBrowser,
       onEdgesChange,
       onNodesChange,
@@ -4420,8 +4617,9 @@ function WorkbenchBody({
     ],
   );
   const canvasMenuTrigger = useCanvasMenuTrigger(openCanvasMenu);
-  const canvasMenuPoint =
-    canvasMenu && flow ? flow.screenToFlowPosition(canvasMenu.point) : null;
+  const canvasMenuPoint = canvasMenu
+    ? (screenToCanvasPoint(canvasMenu.point) ?? null)
+    : null;
   const canvasMenuSelection: CanvasMenuSelection = {
     count: selectedNodeCount,
     workflowCount: selectedWorkflowCount,
@@ -4429,7 +4627,7 @@ function WorkbenchBody({
     canDuplicate:
       Boolean(selectedWorkflowCount || selectedViewerCount) &&
       localAuthoringEnabled,
-    canDelete: Boolean(flow) && selectedNodeCount > 0 && localAuthoringEnabled,
+    canDelete: canvasReady && selectedNodeCount > 0 && localAuthoringEnabled,
     collect: collectSpec
       ? selectedCollectionSources.length > 1
         ? {
@@ -4466,16 +4664,29 @@ function WorkbenchBody({
     addNodeHere: (spec) => addCatalogNode(spec, canvasMenuPoint ?? undefined),
     addAnnotationHere: (kind) =>
       addAnnotation(kind, canvasMenuPoint ?? undefined),
-    selectAll: () =>
+    selectAll: () => {
+      if (cellScene) {
+        canvasSelection.selectOnly(
+          partitionCellSelection(
+            {
+              cardIds: new Set(cellScene.graph.cards.map(({ id }) => id)),
+              pipeIds: selectedEdgeIdSet,
+            },
+            authoredDocumentRef.current,
+            artifactViewers,
+          ),
+        );
+        return;
+      }
       onNodesChange(
         allCanvasNodes.map((node) => ({
           id: node.id,
           type: "select" as const,
           selected: true,
         })),
-      ),
-    fitView: () =>
-      void flow?.fitView({ ...workbenchFitViewOptions, duration: 220 }),
+      );
+    },
+    fitView: () => fitCanvasView({ ...workbenchFitViewOptions, duration: 220 }),
     openCanvasSettings: () => setGridPanelOpen(true),
     runSelection: () => void runWorkflow("selected"),
     collect: collectSelectedArtifacts,
@@ -4483,15 +4694,16 @@ function WorkbenchBody({
     duplicate: duplicateSelectedNodes,
     remove: deleteSelectedNodes,
     fitSelection: () =>
-      void flow?.fitView({
+      fitCanvasView({
         nodes: selectedNodeIds.map((id) => ({ id })),
         padding: 0.3,
         maxZoom: 1.2,
         duration: 220,
       }),
     deleteEdge: (edgeId) => {
-      if (!flow || !localAuthoringEnabled || running) return;
-      void flow.deleteElements({ edges: [{ id: edgeId }] });
+      if (!canvasReady || !localAuthoringEnabled || running) return;
+      if (cellCanvasActive) removeCellElements([], [edgeId]);
+      else void flow?.deleteElements({ edges: [{ id: edgeId }] });
     },
   };
 
@@ -4596,6 +4808,279 @@ function WorkbenchBody({
   ]);
   usePublishWorkbenchChrome(chromeValue);
 
+  const cellSelectedCardIds = React.useMemo(
+    () => new Set(selectedNodeIds),
+    [selectedNodeIds],
+  );
+  const cellRemotePeers = React.useMemo(
+    () =>
+      cellCanvasActive
+        ? cellRemotePeersFromParticipants(
+            projectRoom.participants,
+            projectRoom.localSessionId,
+            openGraphId,
+          )
+        : [],
+    [
+      cellCanvasActive,
+      openGraphId,
+      projectRoom.localSessionId,
+      projectRoom.participants,
+    ],
+  );
+  const closeCanvasPopovers = () => {
+    setLibraryOpen(false);
+    setContextualDiscovery(null);
+    closeGraphBrowser();
+    setGridPanelOpen(false);
+  };
+
+  const moveCellCards: NonNullable<CellCanvasProps["onMoveCards"]> = (
+    moves,
+  ) => {
+    if (!localAuthoringEnabledRef.current) return;
+    const { graphCommands, viewerPositions, annotationPositions } =
+      partitionCellMoves(moves, authoredDocumentRef.current, artifactViewers);
+    applyAuthoringCommands(graphCommands);
+    if (viewerPositions.length || annotationPositions.length) {
+      const viewers = new Map(
+        viewerPositions.map(({ viewer_id, x, y }) => [viewer_id, { x, y }]),
+      );
+      const annotations = new Map(
+        annotationPositions.map(({ annotation_id, x, y }) => [
+          annotation_id,
+          { x, y },
+        ]),
+      );
+      setArtifactViewers((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) => {
+          const position = viewers.get(node.id);
+          return position ? { ...node, position } : node;
+        }),
+        annotations: current.annotations.map((node) => {
+          const position = annotations.get(node.id);
+          return position ? { ...node, position } : node;
+        }),
+      }));
+      if (viewerPositions.length)
+        presentationRoomSyncRef.current.submitMove(viewerPositions);
+      if (annotationPositions.length)
+        presentationRoomSyncRef.current.submitMoveAnnotations(
+          annotationPositions,
+        );
+    }
+  };
+
+  const resizeCellCard: NonNullable<CellCanvasProps["onResizeCard"]> = (
+    commit,
+  ) => {
+    const { cardId, widthCells, heightCells } = commit;
+    const width = widthCells * CELL_SIZE;
+    const height = heightCells * CELL_SIZE;
+    const viewer = artifactViewers.nodes.find((node) => node.id === cardId);
+    if (viewer) {
+      updateArtifactViewerLayout(cardId, {
+        ...viewer.data.layout,
+        width,
+        bodyHeight: height,
+      });
+    } else if (artifactViewers.annotations.some((node) => node.id === cardId)) {
+      updateAnnotationLayout(cardId, { width, height });
+    } else {
+      applyAuthoringCommands(
+        graphCommandsFromCellResizeForDocument(
+          authoredDocumentRef.current,
+          commit,
+        ),
+      );
+    }
+  };
+
+  const onCellDragProgress: NonNullable<
+    CellCanvasProps["onDragCardsProgress"]
+  > = (moves) => {
+    presenceDragRef.current = moves?.length
+      ? {
+          targetIds: moves.map(({ cardId }) => cardId),
+          positions: moves.map(({ cardId, col, row }) => ({
+            node_id: cardId,
+            ...cellToWorldOrigin(col, row),
+          })),
+        }
+      : null;
+    schedulePresenceSnapshot();
+  };
+
+  const onCellConnectDropEmpty: NonNullable<
+    CellCanvasProps["onConnectDropEmpty"]
+  > = (event) => {
+    setContextualDiscovery(null);
+    if (!canEditProject || !localAuthoringEnabledRef.current) return;
+    const target = document.elementFromPoint(
+      event.clientPoint.x,
+      event.clientPoint.y,
+    );
+    if (
+      !target?.closest('[data-cell-canvas="true"]') ||
+      target.closest(
+        '[data-cell-card="true"], [data-cell-canvas-chrome="true"]',
+      )
+    )
+      return;
+    const fromNode = canvasNodes.find((node) => node.id === event.sourceCardId);
+    if (!fromNode || !workflowNodeIsSupported(fromNode.data)) return;
+    const encoded = encodeCellPortHandleForDiscovery(
+      fromNode,
+      event.sourcePortId,
+      event.direction === "upstream" ? "input" : "output",
+    );
+    if (!encoded) return;
+    handleConnectionDrop({
+      fromNode,
+      ...encoded,
+      clientPoint: event.clientPoint,
+      flowPosition: event.worldPoint,
+    });
+  };
+
+  let discoverySourcePoint: XYPosition | null = null;
+  if (cellScene && activeContextualDiscovery) {
+    const decoded = decodeHandleId(activeContextualDiscovery.sourceHandle);
+    const card = cellScene.graph.cards.find(
+      ({ id }) => id === activeContextualDiscovery.sourceNodeId,
+    );
+    if (card && decoded) {
+      const portId = decoded.plugId
+        ? `${decoded.portName}::${decoded.plugId}`
+        : decoded.portName;
+      const port = card.ports.find(
+        ({ id, direction }) => id === portId && direction === decoded.direction,
+      );
+      if (port) discoverySourcePoint = portWorldCenter(card, port);
+    }
+  }
+
+  const selectionToolbar =
+    selectedWorkflowCount ||
+    collectsIntoSequence ||
+    selectedArtifactCards.length > 1 ||
+    selectedCollectionSources.length > 1 ? (
+      <>
+        <span {...stylex.props(s.selectionLabel)}>
+          {selectedNodeCount} selected
+        </span>
+        <span {...stylex.props(s.selectionDivider)} />
+        {collectSpec ? (
+          selectedCollectionSources.length > 1 ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={
+                !localAuthoringEnabled || Boolean(collectionDisabledReason)
+              }
+              title={
+                collectionDisabledReason ??
+                `Collect ${selectedCollectionSources.length} selected artifacts into one collection`
+              }
+              xstyle={phoneTouch.rail}
+              onClick={collectSelectedArtifacts}
+            >
+              <Layers size={13} />
+              Collect
+            </Button>
+          ) : null
+        ) : collectsIntoSequence ? (
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={
+              !collectedArtifactRefs ||
+              !localAuthoringEnabled ||
+              Boolean(groupingDisabledReason)
+            }
+            title={
+              groupingDisabledReason ??
+              (collectedArtifactRefs
+                ? selectedArtifactCards.length === 1
+                  ? "Put this artifact in a sequence"
+                  : `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
+                : "Select artifacts of the same type to collect")
+            }
+            xstyle={phoneTouch.rail}
+            onClick={collectSelectedArtifacts}
+          >
+            <Layers size={13} />
+            Collect
+          </Button>
+        ) : null}
+        {!selectedWorkflowCount && selectedArtifactCards.length > 1 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!localAuthoringEnabled}
+            xstyle={phoneTouch.rail}
+            onClick={tidySelectedArtifacts}
+          >
+            Tidy-up
+          </Button>
+        ) : null}
+        {selectedWorkflowCount ? (
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={runSelectedDisabled}
+            title={
+              !projectEditsTrusted
+                ? "Run is unavailable until the displayed graph is current"
+                : selectedNodesAreRunnable
+                  ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
+                  : "Unavailable or invalid selected nodes cannot run"
+            }
+            xstyle={phoneTouch.rail}
+            onClick={() => void runWorkflow("selected")}
+          >
+            {runningScope === "selected" ? (
+              <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+            ) : (
+              <Play size={13} />
+            )}
+            {runningScope === "selected" ? "Running…" : "Run"}
+          </Button>
+        ) : null}
+        {selectedWorkflowCount ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={runSelectedWithDependenciesDisabled}
+            title={
+              !projectEditsTrusted
+                ? "Run is unavailable until the displayed graph is current"
+                : selectedWithDependenciesAreRunnable
+                  ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
+                  : "Unavailable or invalid upstream dependencies cannot run"
+            }
+            xstyle={phoneTouch.rail}
+            onClick={() => void runWorkflow("selected-with-dependencies")}
+          >
+            {runningScope === "selected-with-dependencies" ? (
+              <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+            ) : (
+              <Workflow size={13} />
+            )}
+            {runningScope === "selected-with-dependencies"
+              ? "Running…"
+              : "With dependencies"}
+          </Button>
+        ) : null}
+      </>
+    ) : null;
+
   return (
     <main {...stylex.props(s.shell)}>
       <span
@@ -4624,7 +5109,7 @@ function WorkbenchBody({
         onContextMenu={canvasMenuTrigger.onContextMenu}
         onKeyDown={canvasMenuTrigger.onKeyDown}
         onPointerMove={(event) => {
-          if (!projectRoom.canPublishPresence || !flow) return;
+          if (!projectRoom.canPublishPresence || !canvasReady) return;
           presenceOverCanvasRef.current = true;
           presenceClientPointRef.current = {
             x: event.clientX,
@@ -4684,176 +5169,163 @@ function WorkbenchBody({
           />
         ) : null}
         <NodeMenuRegistryContext.Provider value={nodeMenus}>
-          <WorkflowCanvas
-            fitViewOptions={workbenchFitViewOptions}
-            nodes={allCanvasNodes}
-            edges={allCanvasEdges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onConnectEnd={onConnectEnd}
-            isValidConnection={isValidConnection}
-            editable={localAuthoringEnabled}
-            onPaneReady={setFlow}
-            onPaneClick={() => {
-              setLibraryOpen(false);
-              setContextualDiscovery(null);
-              closeGraphBrowser();
-              setGridPanelOpen(false);
-            }}
-            animateEdges={runsInProgress}
-            gridGap={
-              canvasGridSettings.showBackground
-                ? canvasGridSettings.cellSize
-                : null
-            }
-            onlyRenderVisibleElements={
-              canvasGridSettings.onlyRenderVisibleElements
-            }
-          >
-            <PresenceOverlay
-              participants={projectRoom.participants}
-              localSessionId={projectRoom.localSessionId}
-            />
-            {selectedWorkflowCount ||
-            collectsIntoSequence ||
-            selectedArtifactCards.length > 1 ||
-            selectedCollectionSources.length > 1 ? (
-              <NodeToolbar
-                nodeId={selectedNodeIds}
-                isVisible
-                position={Position.Top}
-                offset={20}
-                className={`grafy-node-detail ${stylex.props(s.selectionToolbar).className}`}
+          {cellCanvasActive ? (
+            cellScene && (
+              <CellCanvas
+                {...cellScene}
+                look={{
+                  ...DEFAULT_CELL_GLASS_LOOK,
+                  grid: canvasGridSettings.showBackground,
+                }}
+                editable={localAuthoringEnabled}
+                remotePeers={cellRemotePeers}
+                selectedCardIds={cellSelectedCardIds}
+                selectedPipeIds={selectedEdgeIdSet}
+                autoFitOnMount={false}
+                exposeDebugApi={process.env.NODE_ENV !== "production"}
+                onHandleReady={setCellCanvasHandle}
+                onMoveCards={moveCellCards}
+                onDragCardsProgress={onCellDragProgress}
+                onResizeCard={resizeCellCard}
+                onCanConnect={(candidate) => {
+                  const connection = cellConnectionToWorkbenchConnection(
+                    canvasNodes,
+                    artifactViewers.nodes,
+                    candidate,
+                  );
+                  return connection !== null && isValidConnection(connection);
+                }}
+                onConnect={(candidate) => {
+                  const connection = cellConnectionToWorkbenchConnection(
+                    canvasNodes,
+                    artifactViewers.nodes,
+                    candidate,
+                  );
+                  if (connection) onConnect(connection);
+                }}
+                onConnectDropEmpty={onCellConnectDropEmpty}
+                onRemoveCards={(ids) => removeCellElements(ids, [])}
+                onRemovePipes={(ids) => removeCellElements([], ids)}
+                onSelectionChange={(selection) =>
+                  canvasSelection.selectOnly(
+                    partitionCellSelection(
+                      selection,
+                      authoredDocumentRef.current,
+                      artifactViewers,
+                    ),
+                  )
+                }
+                onPaneClick={closeCanvasPopovers}
+                onOperatorRun={(cardId) => {
+                  canvasSelection.selectOnly({ nodeIds: [cardId] });
+                  void runWorkflow("selected", [cardId]);
+                }}
+                onOperatorConfigChange={updateConfig}
+                onOperatorAddPlug={addNodeInputPlug}
+                onOperatorRemovePlug={(cardId, portName, plugId) =>
+                  removeNodeInputPlug(
+                    cardId,
+                    plugId.startsWith(`${portName}::`)
+                      ? plugId.slice(portName.length + 2)
+                      : plugId,
+                  )
+                }
+                onOperatorToggleAppendix={(cardId) =>
+                  setCollapsedAppendices((current) => {
+                    const next = new Set(current);
+                    if (!next.delete(cardId)) next.add(cardId);
+                    return next;
+                  })
+                }
+                onAnnotationColorChange={(cardId, color) =>
+                  updateAnnotationColor(cardId, annotationHexFromToken(color))
+                }
+                onCollectionRemoveMember={(cardId, memberId) =>
+                  removeNodeInputPlug(
+                    cardId,
+                    memberId.startsWith(`${COLLECTION_PORT}::`)
+                      ? memberId.slice(COLLECTION_PORT.length + 2)
+                      : memberId,
+                  )
+                }
               >
-                <span {...stylex.props(s.selectionLabel)}>
-                  {selectedNodeCount} selected
-                </span>
-                <span {...stylex.props(s.selectionDivider)} />
-                {collectSpec ? (
-                  selectedCollectionSources.length > 1 ? (
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      disabled={
-                        !localAuthoringEnabled ||
-                        Boolean(collectionDisabledReason)
-                      }
-                      title={
-                        collectionDisabledReason ??
-                        `Collect ${selectedCollectionSources.length} selected artifacts into one collection`
-                      }
-                      xstyle={phoneTouch.rail}
-                      onClick={collectSelectedArtifacts}
-                    >
-                      <Layers size={13} />
-                      Collect
-                    </Button>
-                  ) : null
-                ) : collectsIntoSequence ? (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    disabled={
-                      !collectedArtifactRefs ||
-                      !localAuthoringEnabled ||
-                      Boolean(groupingDisabledReason)
-                    }
-                    title={
-                      groupingDisabledReason ??
-                      (collectedArtifactRefs
-                        ? selectedArtifactCards.length === 1
-                          ? "Put this artifact in a sequence"
-                          : `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
-                        : "Select artifacts of the same type to collect")
-                    }
-                    xstyle={phoneTouch.rail}
-                    onClick={collectSelectedArtifacts}
-                  >
-                    <Layers size={13} />
-                    Collect
-                  </Button>
-                ) : null}
-                {!selectedWorkflowCount && selectedArtifactCards.length > 1 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={!localAuthoringEnabled}
-                    xstyle={phoneTouch.rail}
-                    onClick={tidySelectedArtifacts}
-                  >
-                    Tidy-up
-                  </Button>
-                ) : null}
-                {selectedWorkflowCount ? (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    disabled={runSelectedDisabled}
-                    title={
-                      !projectEditsTrusted
-                        ? "Run is unavailable until the displayed graph is current"
-                        : selectedNodesAreRunnable
-                          ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
-                          : "Unavailable or invalid selected nodes cannot run"
-                    }
-                    xstyle={phoneTouch.rail}
-                    onClick={() => void runWorkflow("selected")}
-                  >
-                    {runningScope === "selected" ? (
-                      <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-                    ) : (
-                      <Play size={13} />
+                {selectionToolbar ? (
+                  <div
+                    data-cell-canvas-chrome="true"
+                    {...stylex.props(
+                      s.selectionToolbar,
+                      s.cellSelectionToolbar,
                     )}
-                    {runningScope === "selected" ? "Running…" : "Run"}
-                  </Button>
-                ) : null}
-                {selectedWorkflowCount ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={runSelectedWithDependenciesDisabled}
-                    title={
-                      !projectEditsTrusted
-                        ? "Run is unavailable until the displayed graph is current"
-                        : selectedWithDependenciesAreRunnable
-                          ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
-                          : "Unavailable or invalid upstream dependencies cannot run"
-                    }
-                    xstyle={phoneTouch.rail}
-                    onClick={() =>
-                      void runWorkflow("selected-with-dependencies")
-                    }
+                    onPointerDown={(event) => event.stopPropagation()}
                   >
-                    {runningScope === "selected-with-dependencies" ? (
-                      <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-                    ) : (
-                      <Workflow size={13} />
-                    )}
-                    {runningScope === "selected-with-dependencies"
-                      ? "Running…"
-                      : "With dependencies"}
-                  </Button>
+                    {selectionToolbar}
+                  </div>
                 ) : null}
-              </NodeToolbar>
-            ) : null}
-            {registry && activeContextualDiscovery ? (
-              <ContextualNodeDiscovery
-                key={`${activeContextualDiscovery.sourceNodeId}:${activeContextualDiscovery.sourceHandle}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
-                session={activeContextualDiscovery}
-                registry={registry}
-                canInsert={localAuthoringEnabled}
-                insertDisabledReason={localAuthoringBlockedMessage}
-                onClose={() => setContextualDiscovery(null)}
-                onConfirm={confirmContextualDiscovery}
+                {registry && activeContextualDiscovery ? (
+                  <CellContextualNodeDiscovery
+                    key={`${activeContextualDiscovery.sourceNodeId}:${activeContextualDiscovery.sourceHandle}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
+                    session={activeContextualDiscovery}
+                    registry={registry}
+                    sourcePoint={discoverySourcePoint}
+                    canInsert={localAuthoringEnabled}
+                    insertDisabledReason={localAuthoringBlockedMessage}
+                    onClose={() => setContextualDiscovery(null)}
+                    onConfirm={confirmContextualDiscovery}
+                  />
+                ) : null}
+              </CellCanvas>
+            )
+          ) : (
+            <WorkflowCanvas
+              fitViewOptions={workbenchFitViewOptions}
+              nodes={allCanvasNodes}
+              edges={allCanvasEdges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onConnectEnd={onConnectEnd}
+              isValidConnection={isValidConnection}
+              editable={localAuthoringEnabled}
+              onPaneReady={setFlow}
+              onPaneClick={closeCanvasPopovers}
+              animateEdges={runsInProgress}
+              gridGap={
+                canvasGridSettings.showBackground
+                  ? canvasGridSettings.cellSize
+                  : null
+              }
+              onlyRenderVisibleElements={
+                canvasGridSettings.onlyRenderVisibleElements
+              }
+            >
+              <PresenceOverlay
+                participants={projectRoom.participants}
+                localSessionId={projectRoom.localSessionId}
               />
-            ) : null}
-          </WorkflowCanvas>
+              {selectionToolbar ? (
+                <NodeToolbar
+                  nodeId={selectedNodeIds}
+                  isVisible
+                  position={Position.Top}
+                  offset={20}
+                  className={`grafy-node-detail ${stylex.props(s.selectionToolbar).className}`}
+                >
+                  {selectionToolbar}
+                </NodeToolbar>
+              ) : null}
+              {registry && activeContextualDiscovery ? (
+                <ContextualNodeDiscovery
+                  key={`${activeContextualDiscovery.sourceNodeId}:${activeContextualDiscovery.sourceHandle}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
+                  session={activeContextualDiscovery}
+                  registry={registry}
+                  canInsert={localAuthoringEnabled}
+                  insertDisabledReason={localAuthoringBlockedMessage}
+                  onClose={() => setContextualDiscovery(null)}
+                  onConfirm={confirmContextualDiscovery}
+                />
+              ) : null}
+            </WorkflowCanvas>
+          )}
         </NodeMenuRegistryContext.Provider>
       </section>
 
@@ -4978,10 +5450,10 @@ function WorkbenchBody({
           size="lg"
           label="Fit"
           title="Fit workflow"
-          disabled={!flow}
+          disabled={!canvasReady}
           xstyle={phoneTouch.rail}
           {...firefoxDynamicButtonProps}
-          onClick={() => void flow?.fitView(workbenchFitViewOptions)}
+          onClick={() => fitCanvasView(workbenchFitViewOptions)}
         >
           <Maximize2 size={14} />
         </IconButton>
@@ -5048,7 +5520,9 @@ function WorkbenchBody({
               ? `Delete ${selectedNodeCount} selected node${selectedNodeCount === 1 ? "" : "s"}`
               : "Select one or more nodes to delete"
           }
-          disabled={!flow || !selectedNodeCount || !localAuthoringEnabled}
+          disabled={
+            !canvasReady || !selectedNodeCount || !localAuthoringEnabled
+          }
           xstyle={phoneTouch.rail}
           onClick={deleteSelectedNodes}
         >

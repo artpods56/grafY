@@ -55,8 +55,8 @@ function stemTag(html: string, portId: string): string {
 
 /** Where a port's 30px hit target sits for its row and side, as `CellCard` places it. */
 function expectPortPinned(html: string, port: CellPort, widthCells: number) {
-  const centreX = port.direction === "input" ? -25 : widthCells * 50 + 25;
-  const centreY = (port.rowOffset + 0.5) * 50;
+  const centreX = port.direction === "input" ? -12.5 : widthCells * 25 + 12.5;
+  const centreY = (port.rowOffset + 0.5) * 25;
   const tag = portTag(html, port.id);
   expect(tag).toContain(`left:${centreX - 15}px`);
   expect(tag).toContain(`top:${centreY - 15}px`);
@@ -64,8 +64,8 @@ function expectPortPinned(html: string, port: CellPort, widthCells: number) {
 
 function expectExactBox(html: string, widthCells: number, heightCells: number) {
   const root = tagWith(html, "data-cell-card", "true");
-  expect(root).toContain(`width:${widthCells * 50}px`);
-  expect(root).toContain(`height:${heightCells * 50}px`);
+  expect(root).toContain(`width:${widthCells * 25}px`);
+  expect(root).toContain(`height:${heightCells * 25}px`);
 }
 
 function count(html: string, pattern: RegExp): number {
@@ -79,7 +79,7 @@ const OPERATOR_PORTS: readonly CellPort[] = [
     id: "source",
     name: "source",
     direction: "input",
-    rowOffset: 1,
+    rowOffset: 2,
     artifactTypeId: "table.row",
     shape: "many",
     required: true,
@@ -88,7 +88,7 @@ const OPERATOR_PORTS: readonly CellPort[] = [
     id: "result",
     name: "result",
     direction: "output",
-    rowOffset: 1,
+    rowOffset: 2,
     artifactTypeId: "table.row",
     shape: "many",
   },
@@ -96,7 +96,7 @@ const OPERATOR_PORTS: readonly CellPort[] = [
     id: "report",
     name: "report",
     direction: "output",
-    rowOffset: 2,
+    rowOffset: 4,
     artifactTypeId: "text.markdown",
     shape: "one",
   },
@@ -105,7 +105,7 @@ const OPERATOR_PORTS: readonly CellPort[] = [
     id: "images:0",
     name: "images",
     direction: "input",
-    rowOffset: 2,
+    rowOffset: 4,
     artifactTypeId: "image.raster",
     shape: "one",
   },
@@ -117,7 +117,7 @@ const PLUGS: NonNullable<OperatorCardSurfaceData["instancePlugGroups"]> = [
     title: "image",
     artifactTypeId: "image.raster",
     shape: "one",
-    startRowOffset: 2,
+    startRowOffset: 4,
     plugs: [
       {
         plugId: "images:0",
@@ -170,7 +170,7 @@ function operatorSurface(
     appendix: {
       title: "Last run",
       kindBadge: "table",
-      heightCells: 3,
+      heightCells: 6,
       collapsed: true,
       summaryText: "120 rows in 0.4s",
       previewLines: ["id,name", "1,alpha", "2,beta"],
@@ -187,10 +187,10 @@ function operatorCard(surface: OperatorCardSurfaceData): CellCardModel {
     subtitle: "table.merge",
     kind: "operator",
     status: "done",
-    col: 3,
-    row: 2,
-    widthCells: 6,
-    heightCells: 2,
+    col: 6,
+    row: 4,
+    widthCells: 12,
+    heightCells: 4,
     ports: OPERATOR_PORTS,
     resizable: true,
   };
@@ -227,18 +227,20 @@ describe("CellOperatorCard", () => {
   it("lays out header, ports, plugs, config and appendix on whole cells", () => {
     const surface = operatorSurface();
     const layout = computeOperatorCardLayout(operatorCard(surface), surface);
-    expect(layout.portBand).toEqual({ startRow: 1, heightCells: 2 });
-    expect(layout.plugBand).toEqual({ startRow: 2, heightCells: 3 });
+    expect(layout.portBand).toEqual({ startRow: 2, heightCells: 3 });
+    expect(layout.plugBand).toEqual({ startRow: 4, heightCells: 5 });
     // Prefix + Limit share a dense row; select, toggle 1 each; multiline 3.
-    expect(layout.configBand).toEqual({ startRow: 5, heightCells: 3 });
-    expect(layout.appendixBand).toEqual({ startRow: 8, heightCells: 1 });
-    expect(layout.totalHeightCells).toBe(9);
+    expect(layout.configBand).toEqual({ startRow: 10, heightCells: 6 });
+    expect(layout.appendixBand).toEqual({ startRow: 16, heightCells: 2 });
+    expect(layout.totalHeightCells).toBe(18);
   });
 
   it("renders the floating header with title, status and run action", () => {
-    const { html, card } = renderOperator(operatorSurface());
-    expectExactBox(html, 6, 9);
-    expect(card.heightCells).toBe(9);
+    const { html, card } = renderOperator(operatorSurface(), {
+      selected: true,
+    });
+    expectExactBox(html, 12, 18);
+    expect(card.heightCells).toBe(18);
     expect(html).toContain('data-card-kind="operator"');
     const header = html.slice(
       html.indexOf('data-card-header="true"'),
@@ -250,25 +252,96 @@ describe("CellOperatorCard", () => {
     expect(header).toContain('aria-label="Run Merge"');
   });
 
+  it("shows only the quiet title at rest, every header action once selected", () => {
+    const header = (html: string) =>
+      html.slice(
+        html.indexOf('data-card-header="true"'),
+        html.indexOf("<article"),
+      );
+    const rest = header(renderOperator(operatorSurface()).html);
+    expect(rest).toContain("Merge");
+    expect(rest).toContain('data-card-title="rest"');
+    expect(rest).not.toContain("data-card-header-actions");
+    expect(rest).not.toContain('aria-label="Run Merge"');
+    expect(rest).not.toContain('data-card-status="done"');
+    expect(rest).not.toContain('data-card-menu="true"');
+
+    const selected = header(
+      renderOperator(operatorSurface(), { selected: true }).html,
+    );
+    expect(selected).toContain('data-card-header-actions="true"');
+    expect(selected).toContain('aria-label="Run Merge"');
+    expect(selected).toContain('data-card-status="done"');
+    expect(selected).toContain('data-card-menu="true"');
+
+    const held = header(
+      renderOperator(operatorSurface(), { selected: true, dragging: true })
+        .html,
+    );
+    expect(held).toContain('data-card-title="selected"');
+    expect(held).not.toContain("data-card-header-actions");
+    expect(held).not.toContain('aria-label="Run Merge"');
+    expect(held).not.toContain('data-card-menu="true"');
+  });
+
   it("omits the run action without an onRun handler", () => {
-    const { html } = renderOperator(operatorSurface(), { onRun: undefined });
+    const { html } = renderOperator(operatorSurface(), {
+      selected: true,
+      onRun: undefined,
+    });
     expect(html).not.toContain('aria-label="Run Merge"');
   });
 
-  it("draws the fixed subtitle strip inside the plate", () => {
+  it("starts the plate at 26px with no strip, the title at the top of row 0", () => {
     const { html } = renderOperator(operatorSurface());
-    expect(html).toMatch(/data-card-strip="true"[^>]*height:23px/);
-    expect(html).toContain("table.merge");
-    // 9 cells: 450 - 26 (header + gap) - 4 (bottom inset).
+    expect(html).not.toContain("data-card-strip");
+    expect(html).not.toContain("table.merge");
+    // The 24px title sits at the top of row 0, 2px above the plate.
+    expect(html).toMatch(
+      /data-card-header="true"[^>]*margin-top:0;height:24px/,
+    );
+    // 18 cells: 450 - 26 (header + gap) - 4 (bottom inset).
     expect(html).toMatch(/<article[^>]*height:420px/);
+  });
+
+  it("frames a selected or held plate with a light edge and halo, no lift", () => {
+    const rest = renderOperator(operatorSurface()).html;
+    const selected = renderOperator(operatorSurface(), {
+      selected: true,
+    }).html;
+    const dragging = renderOperator(operatorSurface(), {
+      selected: true,
+      dragging: true,
+    }).html;
+    const plateClass = (html: string) =>
+      /<article[^>]*class="([^"]*)"/.exec(html)?.[1];
+    expect(plateClass(rest)).toBe("plate plateFrost frostShadow");
+    expect(plateClass(selected)).toBe(
+      "plate plateFrost plateActive frostShadowActive",
+    );
+    // A held card keeps the same edge and halo: no deeper drag shadow.
+    expect(plateClass(dragging)).toBe(plateClass(selected));
+    expect(selected).toContain('data-card-title="selected"');
+  });
+
+  it("puts the ⋯ beside the run button in the floating header", () => {
+    const { html } = renderOperator(operatorSurface(), { selected: true });
+    const header = html.slice(
+      html.indexOf('data-card-header="true"'),
+      html.indexOf("<article"),
+    );
+    const run = header.indexOf('aria-label="Run Merge"');
+    const menu = header.indexOf('data-card-menu="true"');
+    expect(run).toBeGreaterThan(-1);
+    expect(menu).toBeGreaterThan(run);
   });
 
   it("pairs regular ports by row and keeps plug ports out of them", () => {
     const { html } = renderOperator(operatorSurface());
-    expect(html).toMatch(/data-port-row="1"[^>]*top:23px/);
-    expect(html).toMatch(/data-port-row="2"[^>]*top:73px/);
-    const row1 = html.slice(html.indexOf('data-port-row="1"'));
-    expect(row1.slice(0, row1.indexOf("data-port-row=", 20))).toContain(
+    expect(html).toMatch(/data-port-row="2"[^>]*top:23px/);
+    expect(html).toMatch(/data-port-row="4"[^>]*top:73px/);
+    const row2 = html.slice(html.indexOf('data-port-row="2"'));
+    expect(row2.slice(0, row2.indexOf("data-port-row=", 20))).toContain(
       "source",
     );
     expect(count(html, /data-port-row="/)).toBe(2);
@@ -296,21 +369,21 @@ describe("CellOperatorCard", () => {
         id: "images:1",
         name: "Inset",
         direction: "input",
-        rowOffset: 3,
+        rowOffset: 6,
         artifactTypeId: "image.raster",
         shape: "one",
       },
-      6,
+      12,
     );
-    expect(stemTag(html, "images:1")).toContain("width:24px");
+    expect(stemTag(html, "images:1")).toContain("width:11.5px");
     // A plug the surface reports connected stops at the well rim.
     expect(portTag(html, "images:0")).toContain('data-port-connected="true"');
-    expect(stemTag(html, "images:0")).toContain("width:15px");
+    expect(stemTag(html, "images:0")).toContain("width:5.5px");
   });
 
   it("renders every config field kind in the dense shelf band", () => {
     const { html } = renderOperator(operatorSurface());
-    // Config band starts on row 5: 5 * 50 - 27; three cells tall.
+    // Config band starts on row 10: 10 * 25 - 27; six cells tall.
     expect(html).toMatch(/data-config-band="true"[^>]*top:223px;height:150px/);
     for (const field of CONFIG_FIELDS) {
       expect(html).toContain(`data-config-field="${field.id}"`);
@@ -327,7 +400,7 @@ describe("CellOperatorCard", () => {
     expect(html).toContain('role="switch"');
   });
 
-  it("renders a collapsed appendix as one cell with an inline summary", () => {
+  it("renders a collapsed appendix as two cells with an inline summary", () => {
     const { html } = renderOperator(operatorSurface());
     // The last band stops at the plate's content edge: 5px short of its cell
     // for the plate's bottom border and the card's 4px bottom inset.
@@ -345,7 +418,7 @@ describe("CellOperatorCard", () => {
       appendix: { ...operatorSurface().appendix!, collapsed: false },
     });
     const { html } = renderOperator(surface);
-    expectExactBox(html, 6, 11);
+    expectExactBox(html, 12, 22);
     expect(html).toMatch(
       /data-appendix-band="expanded"[^>]*top:373px;height:145px/,
     );
@@ -371,10 +444,10 @@ describe("CellOperatorCard", () => {
       expect(stemTag(collapsed, id)).toBe(stemTag(bare, id));
       expect(stemTag(expanded, id)).toBe(stemTag(bare, id));
     }
-    for (const port of OPERATOR_PORTS) expectPortPinned(expanded, port, 6);
-    expect(stemTag(expanded, "result")).toContain("width:15px");
-    expect(stemTag(expanded, "source")).toContain("width:24px");
-    expect(stemTag(expanded, "report")).toContain("width:24px");
+    for (const port of OPERATOR_PORTS) expectPortPinned(expanded, port, 12);
+    expect(stemTag(expanded, "result")).toContain("width:5.5px");
+    expect(stemTag(expanded, "source")).toContain("width:11.5px");
+    expect(stemTag(expanded, "report")).toContain("width:11.5px");
   });
 
   it("shows a resize grip only when selected or hovered", () => {
@@ -396,14 +469,14 @@ const ARTIFACT_CARD: CellCardModel = {
   kind: "artifact",
   col: 0,
   row: 0,
-  widthCells: 5,
-  heightCells: 4,
+  widthCells: 10,
+  heightCells: 8,
   ports: [
     {
       id: "in",
       name: "in",
       direction: "input",
-      rowOffset: 1,
+      rowOffset: 2,
       artifactTypeId: "image.raster",
       shape: "one",
     },
@@ -411,7 +484,7 @@ const ARTIFACT_CARD: CellCardModel = {
       id: "out",
       name: "out",
       direction: "output",
-      rowOffset: 2,
+      rowOffset: 4,
       artifactTypeId: "image.raster",
       shape: "one",
     },
@@ -492,7 +565,7 @@ describe("CellArtifactCard", () => {
   for (const kind of Object.keys(PREVIEWS) as ArtifactPreviewKind[]) {
     it(`renders a ${kind} preview inside its exact cells`, () => {
       const html = renderArtifact(PREVIEWS[kind]);
-      expectExactBox(html, 5, 4);
+      expectExactBox(html, 10, 8);
       expect(html).toContain('data-card-kind="artifact"');
       expect(html).toContain(`data-artifact-preview="${kind}"`);
       expect(html).toContain(PREVIEWS[kind].typeLabel);
@@ -504,28 +577,44 @@ describe("CellArtifactCard", () => {
   it("keeps its ports on its own edges in the glass stage's wells", () => {
     const html = renderArtifact(PREVIEWS.image);
     for (const port of ARTIFACT_CARD.ports) {
-      expectPortPinned(html, port, 5);
+      expectPortPinned(html, port, 10);
       expect(portTag(html, port.id)).toContain('data-port-card-id="photo"');
     }
-    expect(stemTag(html, "in")).toContain("width:24px");
-    expect(stemTag(html, "out")).toContain("width:15px");
+    expect(stemTag(html, "in")).toContain("width:11.5px");
+    expect(stemTag(html, "out")).toContain("width:5.5px");
   });
 
-  it("shows its toolbar only when selected", () => {
-    const rest = renderArtifact(PREVIEWS.file, {
-      onInspect: () => {},
-      onRemove: () => {},
+  it("shows its ⋯ menu and grip only while selected and at rest", () => {
+    const actions = { onInspect: () => {}, onRemove: () => {} };
+    const hovered = renderArtifact(PREVIEWS.file, {
+      ...actions,
+      hovered: true,
     });
-    expect(rest).not.toContain("data-cell-card-toolbar");
+    expect(hovered).not.toContain('data-card-menu="true"');
+    expect(hovered).not.toContain("data-card-header-actions");
+    expect(hovered).not.toContain("data-cell-resize-grip");
+    expect(hovered).toContain('data-card-title="rest"');
+
     const selected = renderArtifact(PREVIEWS.file, {
+      ...actions,
       selected: true,
-      onInspect: () => {},
-      onRemove: () => {},
     });
-    expect(selected).toContain('data-cell-card-toolbar="top"');
-    expect(selected).toContain('aria-label="Inspect Photo"');
-    expect(selected).toContain('aria-label="Remove Photo"');
+    expect(selected).not.toContain("data-cell-card-toolbar");
+    expect(selected).toContain('data-card-menu="true"');
+    expect(selected).toContain('data-card-header-actions="true"');
+    expect(selected).toContain('aria-label="Actions for Photo"');
+    expect(selected).toContain('data-card-title="selected"');
     expect(selected).toContain('data-cell-resize-grip="se"');
+
+    const dragging = renderArtifact(PREVIEWS.file, {
+      ...actions,
+      selected: true,
+      dragging: true,
+    });
+    expect(dragging).not.toContain('data-card-menu="true"');
+    expect(dragging).not.toContain("data-card-header-actions");
+    expect(dragging).not.toContain("data-cell-resize-grip");
+    expect(dragging).toContain('data-card-title="selected"');
   });
 });
 
@@ -562,15 +651,15 @@ const COLLECTION_CARD: CellCardModel = {
   title: "Shots",
   subtitle: "collection",
   kind: "collection",
-  col: 1,
-  row: 1,
-  widthCells: 5,
-  heightCells: 5,
+  col: 2,
+  row: 2,
+  widthCells: 10,
+  heightCells: 10,
   ports: COLLECTION_SURFACE.members.map((member, index) => ({
     id: `member:${member.id}`,
     name: member.label,
     direction: "input" as const,
-    rowOffset: index + 1,
+    rowOffset: 2 + index * 2,
     artifactTypeId: member.artifactTypeId,
     shape: "one" as const,
   })),
@@ -587,20 +676,31 @@ describe("CellCollectionCard", () => {
         onRemoveMember={() => {}}
       />,
     );
-    expectExactBox(html, 5, 5);
+    expectExactBox(html, 10, 10);
     expect(html).toContain('data-card-kind="collection"');
-    expect(html).toContain('data-collection-count="3"');
-    expect(html).toContain("3 items");
+    // The count is a header action: hidden at rest, shown once selected.
+    expect(html).not.toContain('data-collection-count="3"');
+    const selected = renderToStaticMarkup(
+      <CellCollectionCard
+        card={COLLECTION_CARD}
+        surface={COLLECTION_SURFACE}
+        selected
+        dragging={false}
+        onRemoveMember={() => {}}
+      />,
+    );
+    expect(selected).toContain('data-collection-count="3"');
+    expect(selected).toContain("3 items");
     COLLECTION_SURFACE.members.forEach((member, index) => {
       expect(html).toMatch(
         new RegExp(
-          `data-collection-member="${member.id}"[^>]*top:${(index + 1) * 50 - 27}px;height:50px`,
+          `data-collection-member="${member.id}"[^>]*top:${(2 + index * 2) * 25 - 27}px;height:50px`,
         ),
       );
       expect(html).toContain(member.label);
       expect(html).toContain(`aria-label="Remove ${member.label}"`);
     });
-    for (const port of COLLECTION_CARD.ports) expectPortPinned(html, port, 5);
+    for (const port of COLLECTION_CARD.ports) expectPortPinned(html, port, 10);
     expect(html).toMatch(
       /data-collection-spare-plug="true"[^>]*top:173px;height:50px/,
     );
@@ -626,10 +726,10 @@ const ANNOTATION_CARD: CellCardModel = {
   title: "Ingest zone",
   subtitle: "",
   kind: "annotation",
-  col: 2,
-  row: 3,
-  widthCells: 8,
-  heightCells: 6,
+  col: 4,
+  row: 6,
+  widthCells: 16,
+  heightCells: 12,
   ports: [],
 };
 
@@ -677,7 +777,7 @@ describe("CellAnnotationCard", () => {
       expect(html).toContain('data-annotation-label="true"');
       expect(html).toContain("Ingest zone");
       expect(html).toContain("Everything that reads raw files");
-      expectExactBox(html, 8, 6);
+      expectExactBox(html, 16, 12);
       expect(html).toContain("transform:translate3d(100px, 150px, 0)");
       expect(html).toMatch(/background-color:light-dark\(color-mix/);
       // A frame has no plate and no header: it is tint on the glass.
@@ -712,7 +812,7 @@ describe("CellAnnotationCard", () => {
       expect(html).toContain(`data-annotation-color="${color}"`);
       expect(html).toContain('data-annotation-body="true"');
       expect(html).toContain("<article");
-      expectExactBox(html, 8, 6);
+      expectExactBox(html, 16, 12);
       expect(html).not.toContain("data-cell-card-toolbar");
     });
   }
@@ -755,16 +855,16 @@ const AGENT_CARD: CellCardModel = {
   title: "Scout",
   subtitle: "Research agent",
   kind: "agent",
-  col: 4,
+  col: 8,
   row: 0,
-  widthCells: 6,
-  heightCells: 4,
+  widthCells: 12,
+  heightCells: 8,
   ports: [
     {
       id: "brief",
       name: "brief",
       direction: "input",
-      rowOffset: 1,
+      rowOffset: 2,
       artifactTypeId: "text.plain",
       shape: "one",
     },
@@ -772,7 +872,7 @@ const AGENT_CARD: CellCardModel = {
       id: "findings",
       name: "findings",
       direction: "output",
-      rowOffset: 1,
+      rowOffset: 2,
       artifactTypeId: "text.markdown",
       shape: "many",
     },
@@ -821,11 +921,22 @@ describe("CellAgentCard", () => {
         <CellAgentCard
           card={AGENT_CARD}
           surface={agentSurface(status)}
+          selected
+          connectedPortIds={new Set(["brief"])}
+        />,
+      );
+      const rest = renderToStaticMarkup(
+        <CellAgentCard
+          card={AGENT_CARD}
+          surface={agentSurface(status)}
           selected={false}
           connectedPortIds={new Set(["brief"])}
         />,
       );
-      expectExactBox(html, 6, 4);
+      // Model and status ride in the header: only while selected.
+      expect(rest).not.toContain(`data-agent-status-indicator="${status}"`);
+      expect(rest).not.toContain("data-card-header-actions");
+      expectExactBox(html, 12, 8);
       expect(html).toContain('data-card-kind="agent"');
       expect(html).toContain(`data-agent-status="${status}"`);
       expect(html).toContain(`data-agent-status-indicator="${status}"`);
@@ -839,9 +950,9 @@ describe("CellAgentCard", () => {
       expect(html).toContain("web.search");
       expect(html).toContain('data-agent-message-snippet="true"');
       expect(html).toContain("Two sources disagree");
-      for (const port of AGENT_CARD.ports) expectPortPinned(html, port, 6);
-      expect(stemTag(html, "brief")).toContain("width:15px");
-      expect(stemTag(html, "findings")).toContain("width:24px");
+      for (const port of AGENT_CARD.ports) expectPortPinned(html, port, 12);
+      expect(stemTag(html, "brief")).toContain("width:5.5px");
+      expect(stemTag(html, "findings")).toContain("width:11.5px");
     });
   }
 });
@@ -941,7 +1052,7 @@ const ATTACHMENT: CellPipeAttachment = {
   pipeId: "p9",
   anchor: { x: 400, y: 175 },
   segmentOrientation: "horizontal",
-  widthCells: 3,
+  widthCells: 6,
   heightCells: 1,
   label: "rows",
   conversionLabel: "csv → table",
@@ -951,7 +1062,7 @@ const ATTACHMENT: CellPipeAttachment = {
 };
 
 describe("CellEdgeSelectorPill", () => {
-  it("centres a 3×1-cell grab box with the label, conversion chip and remove", () => {
+  it("centres a 6×1-cell grab box with the label, conversion chip and remove", () => {
     const html = renderToStaticMarkup(
       <CellEdgeSelectorPill
         attachment={ATTACHMENT}
@@ -963,9 +1074,9 @@ describe("CellEdgeSelectorPill", () => {
     expect(box).toContain('data-edge-selector-orientation="horizontal"');
     expect(box).toContain('data-selected="true"');
     expect(box).toContain("left:325px");
-    expect(box).toContain("top:150px");
+    expect(box).toContain("top:162.5px");
     expect(box).toContain("width:150px");
-    expect(box).toContain("height:50px");
+    expect(box).toContain("height:25px");
     expect(box).toContain('data-hovered="false"');
     expect(html).toMatch(
       /data-edge-selector-color="true"[^>]*background-color:var\(--artifact-table\)/,
@@ -977,7 +1088,7 @@ describe("CellEdgeSelectorPill", () => {
     expect(html).toContain('aria-label="Remove rows"');
   });
 
-  it("falls back to a 3×1 box and leaves out absent parts", () => {
+  it("falls back to a 6×1 box and leaves out absent parts", () => {
     const html = renderToStaticMarkup(
       <CellEdgeSelectorPill
         attachment={{
@@ -993,7 +1104,7 @@ describe("CellEdgeSelectorPill", () => {
     expect(box).toContain('data-selected="false"');
     expect(box).toContain('data-edge-selector-orientation="vertical"');
     expect(box).toContain("width:150px");
-    expect(box).toContain("height:50px");
+    expect(box).toContain("height:25px");
     expect(html).not.toContain("data-edge-selector-conversion");
     expect(html).not.toContain("Remove rows");
   });
@@ -1039,7 +1150,7 @@ const PEER: CellRemotePeerState = {
   cursor: { x: 410, y: 220 },
   activity: "moving_nodes",
   selectedCardIds: ["merge"],
-  draggingCards: { merge: { col: 7, row: 4 }, ghost: { col: 1, row: 9 } },
+  draggingCards: { merge: { col: 14, row: 8 }, ghost: { col: 2, row: 18 } },
 };
 
 describe("CellRemotePresenceLayer", () => {
@@ -1059,7 +1170,7 @@ describe("CellRemotePresenceLayer", () => {
     expect(known).toContain(
       "background-color:color-mix(in srgb, var(--peer-ada) 10%, transparent)",
     );
-    // A card the layer was not told about takes the standard 6 × 3 size.
+    // A card the layer was not told about takes the standard 12 × 6 size.
     const unknown = tagWith(html, "data-remote-drag-ghost", "ada:ghost");
     expect(unknown).toContain("left:50px");
     expect(unknown).toContain("top:450px");

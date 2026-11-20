@@ -15,6 +15,7 @@ export * from "./cell-pipe-attachments";
 export * from "./cell-document-adapter";
 export * from "./cell-card-geometry";
 export * from "./CellCanvasContext";
+export * from "./CellCanvas";
 export * from "./CellGlassOverlays";
 export * from "./cards/CellOperatorCard";
 export * from "./cards/CellArtifactCard";

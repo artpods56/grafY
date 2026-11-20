@@ -333,7 +333,7 @@ function AnnotationFrame({
         <CellResizeGrip
           cardId={card.id}
           edge="se"
-          visible={state.selected || state.hovered}
+          visible={state.selected && !state.dragging}
           onResizeStart={onResizeStart}
           onResizeMove={onResizeMove}
           onResizeEnd={onResizeEnd}

@@ -2,11 +2,9 @@ import type { CellDockedJoin } from "./cell-contracts";
 import {
   CELL_SIZE,
   type CellCardModel,
-  type CellCoord,
   type CellGraph,
   type CellPipeModel,
   type CellPort,
-  type CellRect,
 } from "./cell-model";
 
 function pipeEndpoints(
@@ -94,70 +92,4 @@ export function detectCellDockedJoins(
   }
 
   return { dockedJoins, routablePipes, dockedPipeIds };
-}
-
-function overlaps(a: CellRect, b: CellRect): boolean {
-  return (
-    a.col < b.col + b.widthCells &&
-    a.col + a.widthCells > b.col &&
-    a.row < b.row + b.heightCells &&
-    a.row + a.heightCells > b.row
-  );
-}
-
-interface DockSnapCandidate extends CellCoord {
-  matchedPipeIds: string[];
-}
-
-export function findDockSnapCandidate(
-  draggedCard: CellCardModel,
-  stationaryCards: readonly CellCardModel[],
-  pipes: readonly CellPipeModel[],
-  thresholdCells = 1,
-): DockSnapCandidate | null {
-  const cardsById = new Map(stationaryCards.map((card) => [card.id, card]));
-  cardsById.set(draggedCard.id, draggedCard);
-
-  let best: DockSnapCandidate | null = null;
-  let bestDistance = Infinity;
-  let bestManhattanDistance = Infinity;
-  for (const pipe of pipes) {
-    const draggingSource = pipe.sourceCardId === draggedCard.id;
-    const draggingTarget = pipe.targetCardId === draggedCard.id;
-    if (draggingSource === draggingTarget) continue;
-
-    const ends = pipeEndpoints(pipe, cardsById);
-    if (!ends) continue;
-    const { sourceCard, sourcePort, targetCard, targetPort } = ends;
-    const col = draggingSource
-      ? targetCard.col - draggedCard.widthCells
-      : sourceCard.col + sourceCard.widthCells;
-    const row = draggingSource
-      ? targetCard.row + targetPort.rowOffset - sourcePort.rowOffset
-      : sourceCard.row + sourcePort.rowOffset - targetPort.rowOffset;
-
-    if (best && best.col === col && best.row === row) {
-      best.matchedPipeIds.push(pipe.id);
-      continue;
-    }
-    const columns = Math.abs(col - draggedCard.col);
-    const rows = Math.abs(row - draggedCard.row);
-    const distance = Math.max(columns, rows);
-    const manhattanDistance = columns + rows;
-    if (distance > thresholdCells || distance > bestDistance) continue;
-    if (distance === bestDistance && manhattanDistance >= bestManhattanDistance)
-      continue;
-
-    const placement = {
-      widthCells: draggedCard.widthCells,
-      heightCells: draggedCard.heightCells,
-      col,
-      row,
-    };
-    if (stationaryCards.some((card) => overlaps(placement, card))) continue;
-    best = { col, row, matchedPipeIds: [pipe.id] };
-    bestDistance = distance;
-    bestManhattanDistance = manhattanDistance;
-  }
-  return best;
 }

@@ -232,13 +232,13 @@ describe("marquee hit testing", () => {
       ports: [],
       col: 0,
       row: 0,
-      widthCells: 3,
-      heightCells: 2,
+      widthCells: 6,
+      heightCells: 4,
     };
     const cards = [
       card,
-      { ...card, id: "partial", col: -2 },
-      { ...card, id: "outside", row: 4 },
+      { ...card, id: "partial", col: -4 },
+      { ...card, id: "outside", row: 8 },
     ];
     const rect = { start: { x: 150, y: 100 }, current: { x: -20, y: -10 } };
     expect(normalizeMarqueeRect(rect)).toEqual({

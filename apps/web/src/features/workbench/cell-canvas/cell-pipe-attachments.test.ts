@@ -21,7 +21,7 @@ const output: CellPort = {
   name: "Result",
   direction: "output",
   artifactTypeId: "result",
-  rowOffset: 1,
+  rowOffset: 3,
   shape: "one",
 };
 const input: CellPort = { ...output, id: "in", direction: "input" };
@@ -31,20 +31,20 @@ const source: CellCardModel = {
   subtitle: "",
   col: 0,
   row: 0,
-  widthCells: 2,
-  heightCells: 3,
+  widthCells: 4,
+  heightCells: 6,
   ports: [output],
 };
 const target: CellCardModel = {
   ...source,
   id: "target",
-  col: 14,
+  col: 28,
   ports: [input],
 };
 const obstacle: CellCardModel = {
   ...source,
   id: "obstacle",
-  col: 7,
+  col: 14,
   ports: [],
 };
 const pipe: CellPipeModel = {
@@ -98,9 +98,9 @@ describe("solvePipeAttachmentAnchors", () => {
     expect(solvePipeAttachmentAnchors(params)).toEqual([
       {
         pipeId: "converted",
-        anchor: { x: 400, y: 75 },
+        anchor: { x: 400, y: 87.5 },
         segmentOrientation: "horizontal",
-        widthCells: 3,
+        widthCells: 6,
         heightCells: 1,
         label: "2 conv",
         conversionLabel: "2 conv",
@@ -121,7 +121,7 @@ describe("solvePipeAttachmentAnchors", () => {
 
   it("anchors a docked pill on the seam and preserves its join color", () => {
     const graph = {
-      cards: [source, { ...target, col: 2 }],
+      cards: [source, { ...target, col: 4 }],
       pipes: [{ ...pipe, conversionLabel: "1 conv", enabled: false }],
     };
     const { dockedJoins } = detectCellDockedJoins(graph, () => "seam-color");
@@ -136,9 +136,9 @@ describe("solvePipeAttachmentAnchors", () => {
     ).toEqual([
       {
         pipeId: "pipe",
-        anchor: { x: 100, y: 75 },
+        anchor: { x: 100, y: 87.5 },
         segmentOrientation: "horizontal",
-        widthCells: 3,
+        widthCells: 6,
         heightCells: 1,
         label: "field.name",
         conversionLabel: "1 conv",
@@ -203,7 +203,7 @@ describe("solvePipeAttachmentAnchors", () => {
         routedPipes: new Map([[pipe.id, route]]),
       }),
     ).toMatchObject([
-      { anchor: { x: 262.5, y: 75 }, segmentOrientation: "horizontal" },
+      { anchor: { x: 256.25, y: 87.5 }, segmentOrientation: "horizontal" },
     ]);
   });
 
@@ -251,7 +251,8 @@ describe("solvePipeAttachmentAnchors", () => {
     ]);
     const expected = [
       { pipeId: "a", anchor: { x: 400, y: 75 } },
-      { pipeId: "b", anchor: { x: 400, y: 139 } },
+      // A 25px pill clears its neighbour 28px across.
+      { pipeId: "b", anchor: { x: 400, y: 117 } },
     ];
 
     for (const pipes of [

@@ -30,6 +30,25 @@ export function wantsNativeMenu(element: Element): boolean {
 
 /** The canvas thing under `element`, or null for chrome that sits on the canvas. */
 export function canvasMenuTarget(element: Element): CanvasMenuTarget | null {
+  if (element.closest('[data-cell-canvas="true"]')) {
+    if (element.closest('[data-cell-canvas-chrome="true"]')) return null;
+    const card = element.closest<HTMLElement>('[data-cell-card="true"]');
+    if (card) {
+      const nodeId = card.getAttribute("data-card-id");
+      return nodeId ? { kind: "node", nodeId } : null;
+    }
+    const pill = element.closest<HTMLElement>("[data-edge-selector-pill]");
+    if (pill) {
+      const edgeId = pill.getAttribute("data-edge-selector-pill");
+      return edgeId ? { kind: "edge", edgeId } : null;
+    }
+    const join = element.closest<HTMLElement>("[data-docked-join]");
+    if (join) {
+      const edgeId = join.getAttribute("data-docked-join");
+      return edgeId ? { kind: "edge", edgeId } : null;
+    }
+    return { kind: "pane" };
+  }
   if (!element.closest(".react-flow")) return null;
   const node = element.closest<HTMLElement>(".react-flow__node");
   if (node) {

@@ -142,6 +142,12 @@ export const workbenchStyles = stylex.create({
     boxShadow: tokens.shadowNodeRaised,
     pointerEvents: "auto",
   },
+  cellSelectionToolbar: {
+    position: "absolute",
+    top: "68px",
+    left: "50%",
+    transform: "translateX(-50%)",
+  },
   selectionLabel: {
     paddingInline: "7px 9px",
     color: tokens.colorSubtle,

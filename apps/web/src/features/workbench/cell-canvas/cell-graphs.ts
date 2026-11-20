@@ -1,8 +1,10 @@
-import type {
-  CellCardModel,
-  CellGraph,
-  CellPipeModel,
-  CellPort,
+import {
+  STRIP_FIRST_PORT_ROW,
+  PORT_ROW_PITCH,
+  type CellCardModel,
+  type CellGraph,
+  type CellPipeModel,
+  type CellPort,
 } from "./cell-model";
 
 /**
@@ -59,9 +61,9 @@ function pipe(
 }
 
 /**
- * Four cards. The table list feeds Summarize and Publish through the one-cell
- * gutter at column 7 (twin pipes side by side); the report doubles back to
- * Render through the horizontal gutter at row 5, and feeds Publish below
+ * Four cards. The table list feeds Summarize and Publish through the gutter
+ * at columns 13–16 (twin pipes side by side); the report doubles back to
+ * Render through the horizontal gutter at rows 11–12, and feeds Publish below
  * Summarize, where free exits drop cleanly into the gutter instead of looping.
  */
 export function createDemoCellGraph(): CellGraph {
@@ -73,11 +75,11 @@ export function createDemoCellGraph(): CellGraph {
       status: "done",
       col: 0,
       row: 0,
-      widthCells: 6,
-      heightCells: 3,
+      widthCells: 12,
+      heightCells: 6,
       ports: [
-        input("file", 1, FILE_CSV, "one", true),
-        output("tables", 1, TABLE, "many"),
+        input("file", 2, FILE_CSV, "one", true),
+        output("tables", 2, TABLE, "many"),
       ],
     },
     {
@@ -85,13 +87,13 @@ export function createDemoCellGraph(): CellGraph {
       title: "Summarize tables",
       subtitle: "Aggregate rows",
       status: "done",
-      col: 9,
-      row: 2,
-      widthCells: 6,
-      heightCells: 3,
+      col: 18,
+      row: 4,
+      widthCells: 12,
+      heightCells: 6,
       ports: [
-        input("tables", 1, TABLE, "many", true),
-        output("report", 1, MARKDOWN, "one"),
+        input("tables", 2, TABLE, "many", true),
+        output("report", 2, MARKDOWN, "one"),
       ],
     },
     {
@@ -100,12 +102,12 @@ export function createDemoCellGraph(): CellGraph {
       subtitle: "Markdown → HTML",
       status: "idle",
       col: 0,
-      row: 6,
-      widthCells: 6,
-      heightCells: 3,
+      row: 12,
+      widthCells: 12,
+      heightCells: 6,
       ports: [
-        input("body", 1, MARKDOWN, "one", true),
-        input("logo", 2, IMAGE, "one", false),
+        input("body", 2, MARKDOWN, "one", true),
+        input("logo", 4, IMAGE, "one", false),
       ],
     },
     {
@@ -113,14 +115,14 @@ export function createDemoCellGraph(): CellGraph {
       title: "Publish bundle",
       subtitle: "Export dataset",
       status: "idle",
-      col: 9,
-      row: 6,
-      widthCells: 6,
-      heightCells: 3,
+      col: 18,
+      row: 12,
+      widthCells: 12,
+      heightCells: 6,
       ports: [
-        input("tables", 1, TABLE, "many", true),
-        input("report", 2, MARKDOWN, "one", true),
-        output("bundle", 1, DATASET, "one"),
+        input("tables", 2, TABLE, "many", true),
+        input("report", 4, MARKDOWN, "one", true),
+        output("bundle", 2, DATASET, "one"),
       ],
     },
   ];
@@ -135,12 +137,12 @@ export function createDemoCellGraph(): CellGraph {
 
 const STRESS_COLUMNS = 10;
 const STRESS_ROWS = 6;
-const STRESS_CARD_WIDTH = 6;
-const STRESS_CARD_HEIGHT = 4;
-/** One port column, one gutter column, one port column between cards. */
-const STRESS_STEP_COL = 9;
-/** Two gutter rows between cards. */
-const STRESS_STEP_ROW = 6;
+const STRESS_CARD_WIDTH = 12;
+const STRESS_CARD_HEIGHT = 8;
+/** One port column, four gutter columns, one port column between cards. */
+const STRESS_STEP_COL = 18;
+/** Four gutter rows between cards. */
+const STRESS_STEP_ROW = 12;
 
 function isImporter(row: number, column: number): boolean {
   return (row + column) % 3 === 0;
@@ -170,7 +172,7 @@ export function createStressCellGraph(): CellGraph {
           : slot === 0;
         return input(
           name,
-          slot + 1,
+          STRIP_FIRST_PORT_ROW + slot * PORT_ROW_PITCH,
           fromImporter ? TABLE : MARKDOWN,
           fromImporter ? "many" : "one",
         );
@@ -187,8 +189,8 @@ export function createStressCellGraph(): CellGraph {
         ports: [
           ...inputPorts,
           imports
-            ? output("out", 1, TABLE, "many")
-            : output("out", 1, MARKDOWN, "one"),
+            ? output("out", STRIP_FIRST_PORT_ROW, TABLE, "many")
+            : output("out", STRIP_FIRST_PORT_ROW, MARKDOWN, "one"),
         ],
       });
       for (const [name, fromColumn, fromRow] of feeds) {

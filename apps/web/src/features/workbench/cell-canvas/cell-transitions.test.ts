@@ -8,7 +8,8 @@ import {
 } from "./cell-model";
 import {
   MAGNETIC_TUG_MAX_PX,
-  SETTLE_DURATION_MS,
+  SETTLE_MAX_DURATION_MS,
+  SETTLE_OMEGA,
   anchorPipeEndpoints,
   createCardSettle,
   easeOutCubic,
@@ -60,12 +61,12 @@ function stubLength(
 }
 
 describe("snapCellWithHysteresis", () => {
-  it("keeps the current cell until 0.62 cells away", () => {
-    expect(snapCellWithHysteresis(at(2.55, 4), { col: 2, row: 4 })).toEqual({
+  it("keeps the current cell until 0.74 cells away", () => {
+    expect(snapCellWithHysteresis(at(2.7, 4), { col: 2, row: 4 })).toEqual({
       col: 2,
       row: 4,
     });
-    expect(snapCellWithHysteresis(at(2.63, 4), { col: 2, row: 4 })).toEqual({
+    expect(snapCellWithHysteresis(at(2.76, 4), { col: 2, row: 4 })).toEqual({
       col: 3,
       row: 4,
     });
@@ -74,16 +75,16 @@ describe("snapCellWithHysteresis", () => {
   it("does not chatter when the pointer comes back over the boundary", () => {
     const current = { col: 3, row: 1 };
     expect(snapCellWithHysteresis(at(2.45, 1), current).col).toBe(3);
-    expect(snapCellWithHysteresis(at(2.39, 1), current).col).toBe(3);
-    expect(snapCellWithHysteresis(at(2.36, 1), current).col).toBe(2);
+    expect(snapCellWithHysteresis(at(2.28, 1), current).col).toBe(3);
+    expect(snapCellWithHysteresis(at(2.24, 1), current).col).toBe(2);
   });
 
   it("treats each axis on its own", () => {
-    expect(snapCellWithHysteresis(at(2.7, 5.55), { col: 2, row: 5 })).toEqual({
+    expect(snapCellWithHysteresis(at(2.8, 5.7), { col: 2, row: 5 })).toEqual({
       col: 3,
       row: 5,
     });
-    expect(snapCellWithHysteresis(at(2.4, 5.7), { col: 2, row: 5 })).toEqual({
+    expect(snapCellWithHysteresis(at(2.4, 5.8), { col: 2, row: 5 })).toEqual({
       col: 2,
       row: 6,
     });
@@ -97,9 +98,9 @@ describe("snapCellWithHysteresis", () => {
   });
 
   it("handles negative coordinates without -0", () => {
-    expect(snapCellWithHysteresis(at(-0.55), { col: 0, row: 0 }).col).toBe(0);
-    expect(snapCellWithHysteresis(at(-0.7), { col: 0, row: 0 }).col).toBe(-1);
-    const back = snapCellWithHysteresis(at(-0.2, -0.3), { col: -1, row: -1 });
+    expect(snapCellWithHysteresis(at(-0.7), { col: 0, row: 0 }).col).toBe(0);
+    expect(snapCellWithHysteresis(at(-0.8), { col: 0, row: 0 }).col).toBe(-1);
+    const back = snapCellWithHysteresis(at(-0.2, -0.2), { col: -1, row: -1 });
     expect(back).toEqual({ col: 0, row: 0 });
     expect(Object.is(back.col, -0)).toBe(false);
     expect(Object.is(back.row, -0)).toBe(false);
@@ -111,7 +112,7 @@ describe("snapCellWithHysteresis", () => {
 
 describe("magneticTugOffset", () => {
   it("leans 15% of the way towards the pointer", () => {
-    const tug = magneticTugOffset({ x: 120, y: 90 }, { col: 2, row: 2 });
+    const tug = magneticTugOffset({ x: 70, y: 40 }, { col: 2, row: 2 });
     expect(tug.x).toBeCloseTo(3);
     expect(tug.y).toBeCloseTo(-1.5);
   });
@@ -124,7 +125,7 @@ describe("magneticTugOffset", () => {
   });
 
   it("is exactly zero on the cell origin", () => {
-    const tug = magneticTugOffset({ x: -50, y: 0 }, { col: -1, row: 0 });
+    const tug = magneticTugOffset({ x: -25, y: 0 }, { col: -1, row: 0 });
     expect(Object.is(tug.x, -0)).toBe(false);
     expect(tug).toEqual({ x: 0, y: 0 });
   });
@@ -393,11 +394,11 @@ describe("card settle", () => {
     const state = createCardSettle({ x: 100, y: 50 });
     expect(state.active).toBe(false);
     expect(state.current).toEqual({ x: 100, y: 50 });
-    expect(state.durationMs).toBe(SETTLE_DURATION_MS);
+    expect(state.velocity).toEqual({ x: 0, y: 0 });
     expect(stepCardSettle(state, 500)).toBe(state);
   });
 
-  it("glides monotonically with an ease-out cubic", () => {
+  it("glides a single hop monotonically with no overshoot", () => {
     const start = retargetCardSettle(
       createCardSettle({ x: 0, y: 0 }),
       { x: 50, y: 100 },
@@ -405,16 +406,45 @@ describe("card settle", () => {
     );
     expect(start.active).toBe(true);
     let previous = 0;
-    for (let ms = 0; ms < SETTLE_DURATION_MS; ms += 10) {
+    for (let ms = 1; ms < 600; ms += 1) {
       const frame = stepCardSettle(start, 1000 + ms);
-      expect(frame.active).toBe(true);
       expect(frame.current.x).toBeGreaterThanOrEqual(previous);
+      expect(frame.current.x).toBeLessThanOrEqual(50);
+      expect(frame.current.y).toBeLessThanOrEqual(100);
       expect(frame.current.y).toBeCloseTo(frame.current.x * 2);
-      expect(frame.current.x).toBeCloseTo(
-        50 * easeOutCubic(ms / SETTLE_DURATION_MS),
-      );
       previous = frame.current.x;
     }
+  });
+
+  it("follows the closed-form critically damped spring", () => {
+    const start = retargetCardSettle(
+      createCardSettle({ x: 0, y: 0 }),
+      { x: 50, y: 0 },
+      0,
+    );
+    const seconds = 0.1;
+    const frame = stepCardSettle(start, seconds * 1000);
+    const decay = Math.exp(-SETTLE_OMEGA * seconds);
+    expect(frame.current.x).toBeCloseTo(
+      50 - 50 * (1 + SETTLE_OMEGA * seconds) * decay,
+    );
+    expect(frame.velocity.x).toBeCloseTo(
+      50 * SETTLE_OMEGA ** 2 * seconds * decay,
+    );
+  });
+
+  it("is frame-rate independent", () => {
+    const start = retargetCardSettle(
+      createCardSettle({ x: 0, y: 0 }),
+      { x: 50, y: 0 },
+      0,
+    );
+    let stepped = start;
+    for (let ms = 0; ms <= 120; ms += 7) stepped = stepCardSettle(stepped, ms);
+    expect(stepCardSettle(stepped, 120).current.x).toBeCloseTo(
+      stepCardSettle(start, 120).current.x,
+      10,
+    );
   });
 
   it("lands exactly on the target and goes inactive", () => {
@@ -423,28 +453,40 @@ describe("card settle", () => {
       { x: 50, y: 100 },
       1000,
     );
-    for (const now of [1000 + SETTLE_DURATION_MS, 5000]) {
+    for (const now of [1500, 1000 + SETTLE_MAX_DURATION_MS, 9000]) {
       const done = stepCardSettle(start, now);
       expect(done.active).toBe(false);
       expect(done.current).toEqual({ x: 50, y: 100 });
+      expect(done.velocity).toEqual({ x: 0, y: 0 });
     }
   });
 
-  it("retargets mid-flight from where the card is drawn", () => {
+  it("keeps position and velocity when retargeted mid-flight", () => {
     const first = retargetCardSettle(
       createCardSettle({ x: 0, y: 0 }),
-      { x: 100, y: 0 },
+      { x: 50, y: 0 },
       0,
     );
-    const midway = stepCardSettle(first, 60).current;
-    const second = retargetCardSettle(first, { x: 0, y: 50 }, 60);
-    expect(second.from).toEqual(midway);
-    expect(stepCardSettle(second, 60).current).toEqual(midway);
-    // One frame later the card has barely moved: no jump on retarget.
-    const next = stepCardSettle(second, 61).current;
-    expect(Math.hypot(next.x - midway.x, next.y - midway.y)).toBeLessThan(5);
-    const done = stepCardSettle(second, 60 + SETTLE_DURATION_MS);
-    expect(done.current).toEqual({ x: 0, y: 50 });
+    const midway = stepCardSettle(first, 60);
+    const second = retargetCardSettle(first, { x: 100, y: 0 }, 60);
+    expect(second.current).toEqual(midway.current);
+    expect(second.velocity).toEqual(midway.velocity);
+    expect(second.velocity.x).toBeGreaterThan(0);
+    // Continuous: the next millisecond moves on at the carried speed.
+    const next = stepCardSettle(second, 61);
+    expect(next.current.x - midway.current.x).toBeCloseTo(
+      midway.velocity.x / 1000,
+      1,
+    );
+    // The glide never stalls on the way to the farther cell.
+    let previous = midway.current.x;
+    for (let ms = 61; ms < 500; ms += 1) {
+      const frame = stepCardSettle(second, ms);
+      expect(frame.current.x).toBeGreaterThan(previous - 1e-9);
+      previous = frame.current.x;
+    }
+    const done = stepCardSettle(second, 60 + SETTLE_MAX_DURATION_MS);
+    expect(done.current).toEqual({ x: 100, y: 0 });
     expect(done.active).toBe(false);
   });
 
@@ -456,15 +498,5 @@ describe("card settle", () => {
     );
     expect(state.active).toBe(false);
     expect(state.current).toEqual({ x: 10.01, y: 10 });
-  });
-
-  it("finishes at once with no duration", () => {
-    const state = retargetCardSettle(
-      createCardSettle({ x: 0, y: 0 }),
-      { x: 50, y: 0 },
-      0,
-      0,
-    );
-    expect(stepCardSettle(state, 0).current).toEqual({ x: 50, y: 0 });
   });
 });

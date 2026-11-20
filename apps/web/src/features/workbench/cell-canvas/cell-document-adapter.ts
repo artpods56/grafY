@@ -13,10 +13,8 @@ import {
   type SavedNodeLayout,
 } from "../canvas/node-layout";
 import {
-  configBoardColumns,
   configControlKind,
   fieldFootprint,
-  packFieldFootprints,
   type ConfigControlKind,
   type FieldFootprint,
 } from "../canvas/nodes/field-footprints";
@@ -34,23 +32,45 @@ import type {
 } from "../model/graph-document";
 import type {
   AnnotationColorToken,
+  ArtifactPreviewKind,
   CellCardSurfaceData,
   CellConfigFieldKind,
   CellConfigFieldSpec,
+  CellExecutionAppendixSpec,
   CellInstancePlugGroup,
   CellResizeCommit,
   CollectionCardSurfaceData,
 } from "./cell-contracts";
+import { countConfigShelfCells } from "./cell-card-geometry";
 import {
   CELL_SIZE,
+  STRIP_FIRST_PORT_ROW,
+  FIRST_PORT_ROW,
+  PORT_ROW_PITCH,
   cellToWorldOrigin,
+  collectionHeightCells,
   type CellCardModel,
   type CellCoord,
   type CellGraph,
+  type CellPipeModel,
   type CellPort,
 } from "./cell-model";
 
 const PLUG_SEPARATOR = "::";
+/** A config footprint row is 50px: two 25px dense rows, two cells. */
+const CELLS_PER_FOOTPRINT_ROW = 2;
+/**
+ * A node secret's label, input and save hint fit three dense rows; its
+ * two-row footprint would leave a dense row empty under the hint.
+ */
+const SECRET_DENSE_ROWS = 3;
+/** An expanded execution appendix is never shorter than four cells. */
+const MIN_APPENDIX_CELLS = 4;
+/** An operator never shrinks below its header and one port row. */
+const MIN_OPERATOR_HEIGHT_CELLS = 4;
+const MIN_CARD_WIDTH_CELLS = 8;
+const MAX_CARD_WIDTH_CELLS = 48;
+const MAX_CARD_HEIGHT_CELLS = 60;
 
 export function snapPixelsToCell(px: number): number {
   const cells = Math.round(px / CELL_SIZE);
@@ -110,26 +130,40 @@ function connectionsByNode(document: AuthoredGraphDocument) {
   return byNode;
 }
 
+/**
+ * Ports of a node, {@link PORT_ROW_PITCH} rows apart. An operator's fixed
+ * ports pair up by row from {@link FIRST_PORT_ROW} and its instance plugs
+ * follow in their own band, each group closing with its "Add" row and an
+ * empty row. A collection's plugs are its member rows, so they start level
+ * with its output at {@link STRIP_FIRST_PORT_ROW}.
+ */
 function nodePorts(
   node: AuthoredGraphNode,
   spec: NodeSpec | undefined,
   connections: ReadonlyMap<string, PlugConnection> | undefined,
+  isCollection: boolean,
 ) {
   const inputs = spec?.inputs ?? [];
   const fixedInputs = inputs.filter((port) => !port.instance_plugs);
   const outputs = spec?.outputs ?? [];
+  const firstRow = isCollection ? STRIP_FIRST_PORT_ROW : FIRST_PORT_ROW;
   const fixedPort = (port: Port, index: number): CellPort => ({
     id: port.name,
     name: port.title || port.name,
     direction: port.direction,
-    rowOffset: 1 + index,
+    rowOffset: firstRow + index * PORT_ROW_PITCH,
     artifactTypeId: portTypeId(node, port),
     shape: port.shape,
     required: port.required,
   });
   const ports = [...fixedInputs.map(fixedPort), ...outputs.map(fixedPort)];
   const groups: CellInstancePlugGroup[] = [];
-  let nextRow = 1 + Math.max(fixedInputs.length, outputs.length);
+  let nextRow =
+    firstRow +
+    PORT_ROW_PITCH *
+      (isCollection
+        ? fixedInputs.length
+        : Math.max(fixedInputs.length, outputs.length));
 
   for (const port of inputs) {
     if (!port.instance_plugs) continue;
@@ -145,11 +179,12 @@ function nodePorts(
           id,
           name: label,
           direction: "input",
-          rowOffset: nextRow++,
+          rowOffset: nextRow,
           artifactTypeId,
           shape: port.shape,
           required: port.required,
         });
+        nextRow += PORT_ROW_PITCH;
         return {
           plugId: plug.id,
           label,
@@ -165,6 +200,8 @@ function nodePorts(
       plugs,
       canAdd: true,
     });
+    // The "Add" row and the empty row under it.
+    nextRow += PORT_ROW_PITCH;
   }
   return { ports, groups, nextRow };
 }
@@ -206,7 +243,11 @@ function configField(
       label: String(option),
     })),
     span: footprint.columns >= 6 ? 2 : 1,
-    denseRows: footprint.rows * 2,
+    // A switch carries its label beside it, so it never needs a label row.
+    denseRows:
+      kind === "toggle"
+        ? footprint.rows * CELLS_PER_FOOTPRINT_ROW - 1
+        : footprint.rows * CELLS_PER_FOOTPRINT_ROW,
   };
 }
 
@@ -277,6 +318,13 @@ function collectionSurface(
   };
 }
 
+export interface CellNodeRunState {
+  status?: CellCardModel["status"];
+  statusLabel?: string;
+  runDisabled?: boolean;
+  appendix?: CellExecutionAppendixSpec | null;
+}
+
 function annotationColor(color: string): AnnotationColorToken {
   switch (color.toLowerCase()) {
     case "blue":
@@ -299,10 +347,54 @@ function annotationColor(color: string): AnnotationColorToken {
   }
 }
 
+export function annotationHexFromToken(color: AnnotationColorToken): string {
+  switch (color) {
+    case "blue":
+      return "#0369a1";
+    case "emerald":
+      return "#047857";
+    case "amber":
+      return "#b45309";
+    case "violet":
+      return "#6d28d9";
+    case "rose":
+      return "#be123c";
+    case "slate":
+      return "#475569";
+  }
+}
+
+function viewerPreviewKind(artifactTypeId: string): ArtifactPreviewKind {
+  const lower = artifactTypeId.toLowerCase();
+  if (
+    lower.startsWith("image.") ||
+    lower === "geo.raster_scan" ||
+    /^file\.(png|jpe?g|tiff|webp|bmp)$/.test(lower)
+  ) {
+    return "image";
+  }
+  if (lower.startsWith("table.") || lower.includes("tabular")) return "table";
+  if (lower.startsWith("geo.")) return "map";
+  if (
+    lower === "text.markdown" ||
+    lower === "scalar.text" ||
+    lower === "llm.completion" ||
+    lower.startsWith("text.") ||
+    lower.startsWith("prompt.")
+  ) {
+    return "markdown";
+  }
+  return "file";
+}
+
 export function cellGraphFromAuthoredDocument(
   document: AuthoredGraphDocument,
   registry: NodeRegistry,
-  options?: { presentation?: SavedGraphDocument["presentation"] | null },
+  options?: {
+    presentation?: SavedGraphDocument["presentation"] | null;
+    nodeRunState?: Readonly<Record<string, CellNodeRunState>>;
+    collapsedAppendices?: ReadonlySet<string>;
+  },
 ): { graph: CellGraph; surfaceById: Record<string, CellCardSurfaceData> } {
   const cards: CellCardModel[] = [];
   const surfaces = new Map<string, CellCardSurfaceData>();
@@ -313,6 +405,7 @@ export function cellGraphFromAuthoredDocument(
 
   for (const node of document.nodes) {
     const spec = specsByNode.get(node.id);
+    const runState = options?.nodeRunState?.[node.id];
     const isCollection =
       isCollectionSpec(spec) || node.operator_id === COLLECTION_OPERATOR_ID;
     const kind = isCollection ? "collection" : "operator";
@@ -320,76 +413,133 @@ export function cellGraphFromAuthoredDocument(
       ? DEFAULT_ARTIFACT_CARD_WIDTH
       : DEFAULT_NODE_WIDTH;
     const widthCells = Math.max(
-      4,
+      MIN_CARD_WIDTH_CELLS,
       snapPixelsToCell(node.layout?.width ?? defaultWidth),
     );
     const nodeConnections = connections.get(node.id);
-    const { ports, groups, nextRow } = nodePorts(node, spec, nodeConnections);
+    const { ports, groups, nextRow } = nodePorts(
+      node,
+      spec,
+      nodeConnections,
+      isCollection,
+    );
+    const collection = isCollection
+      ? collectionSurface(
+          node,
+          spec,
+          nodeConnections,
+          specsByNode,
+          registry.artifact_types,
+        )
+      : null;
 
     const fields = schemaFields(spec?.config_schema).map((field) => ({
       field,
       footprint: fieldFootprint(field),
     }));
-    const packedBoard = packFieldFootprints(
-      fields.map(({ footprint }) => footprint),
-      {
-        columns: configBoardColumns(widthCells * CELL_SIZE, CELL_SIZE),
-      },
-    );
+    const secretInputs = isCollection ? [] : (spec?.secret_inputs ?? []);
+    const configFields: CellConfigFieldSpec[] = [
+      ...fields.map(({ field, footprint }) =>
+        configField(node, field, footprint),
+      ),
+      ...secretInputs.map((input): CellConfigFieldSpec => ({
+        id: input.name,
+        label: input.title || input.name,
+        kind: "secret",
+        value: "",
+        span: 2,
+        denseRows: SECRET_DENSE_ROWS,
+        ...(input.description == null
+          ? {}
+          : { description: input.description }),
+      })),
+    ];
     const appendixHeight = node.layout?.appendix_height ?? 0;
-    const appendixCells =
+    const savedAppendixCells =
       appendixHeight > 0
-        ? Math.max(2, Math.ceil(appendixHeight / CELL_SIZE))
+        ? Math.max(MIN_APPENDIX_CELLS, Math.ceil(appendixHeight / CELL_SIZE))
         : 0;
+    const rawAppendix: CellExecutionAppendixSpec | null =
+      runState?.appendix !== undefined
+        ? runState.appendix
+        : savedAppendixCells > 0
+          ? {
+              title: "Execution output",
+              kindBadge: "Output",
+              heightCells: savedAppendixCells,
+              summaryText: "",
+            }
+          : null;
+    const collapsedFromSet = options?.collapsedAppendices?.has(node.id);
+    const isAppendixCollapsed =
+      rawAppendix != null &&
+      (collapsedFromSet || rawAppendix.collapsed === true);
+    const appendix: CellExecutionAppendixSpec | null = rawAppendix
+      ? isAppendixCollapsed || rawAppendix.collapsed !== undefined
+        ? { ...rawAppendix, collapsed: isAppendixCollapsed }
+        : rawAppendix
+      : null;
+    const effectiveAppendixCells = appendix
+      ? isAppendixCollapsed
+        ? 2
+        : Math.max(MIN_APPENDIX_CELLS, appendix.heightCells)
+      : 0;
+    // Counted the way the card lays its two-column shelves out.
+    const configCells = countConfigShelfCells(configFields);
+    // Config shelves end on an empty row so the plate's bottom inset never
+    // clips their last control; an appendix closes the card itself.
+    const tailCells =
+      effectiveAppendixCells > 0
+        ? effectiveAppendixCells
+        : configCells > 0
+          ? 1
+          : 0;
+    const bandCells = collection
+      ? collectionHeightCells(
+          collection.members.length + (collection.showSparePlug ? 1 : 0),
+        )
+      : nextRow + configCells + tailCells;
+    const minHeightCells = collection
+      ? collectionHeightCells(1)
+      : Math.max(MIN_OPERATOR_HEIGHT_CELLS, nextRow);
     const heightCells = Math.max(
-      2,
-      nextRow + packedBoard.rows + appendixCells,
-      snapPixelsToCell(node.layout?.body_height ?? 0) + appendixCells,
+      minHeightCells,
+      bandCells,
+      snapPixelsToCell(node.layout?.body_height ?? 0) + effectiveAppendixCells,
     );
 
     cards.push({
       id: node.id,
       title: spec?.title || node.operator_id,
-      subtitle: node.operator_id,
+      subtitle: spec?.description || node.operator_id,
       kind,
+      ...(runState?.status !== undefined ? { status: runState.status } : {}),
       ...cellOriginFromWorld(node.position),
       widthCells,
       heightCells,
       ports,
       resizable: true,
       resizeBounds: {
-        minWidthCells: 4,
-        maxWidthCells: 24,
-        minHeightCells: Math.max(2, nextRow),
-        maxHeightCells: 30,
+        minWidthCells: MIN_CARD_WIDTH_CELLS,
+        maxWidthCells: MAX_CARD_WIDTH_CELLS,
+        minHeightCells,
+        maxHeightCells: MAX_CARD_HEIGHT_CELLS,
       },
     });
     surfaces.set(
       node.id,
-      isCollection
-        ? collectionSurface(
-            node,
-            spec,
-            nodeConnections,
-            specsByNode,
-            registry.artifact_types,
-          )
-        : {
-            kind: "operator",
-            configFields: fields.map(({ field, footprint }) =>
-              configField(node, field, footprint),
-            ),
-            instancePlugGroups: groups,
-            appendix:
-              appendixCells > 0
-                ? {
-                    title: "Execution output",
-                    kindBadge: "Output",
-                    heightCells: appendixCells,
-                    summaryText: "",
-                  }
-                : null,
-          },
+      collection ?? {
+        kind: "operator",
+        ...(runState?.statusLabel !== undefined
+          ? { statusLabel: runState.statusLabel }
+          : {}),
+        ...(runState?.runDisabled !== undefined
+          ? { runDisabled: runState.runDisabled }
+          : {}),
+        configFields,
+        instancePlugGroups: groups,
+        appendix,
+      },
     );
   }
 
@@ -402,8 +552,8 @@ export function cellGraphFromAuthoredDocument(
       title: agent.name || "Agent",
       subtitle: modelLabel,
       ...cellOriginFromWorld(agent.position ?? { x: 0, y: 0 }),
-      widthCells: Math.max(5, snapPixelsToCell(agent.width || 360)),
-      heightCells: Math.max(4, snapPixelsToCell(agent.height || 200)),
+      widthCells: Math.max(10, snapPixelsToCell(agent.width || 360)),
+      heightCells: Math.max(8, snapPixelsToCell(agent.height || 200)),
       ports: [],
       resizable: true,
     });
@@ -416,6 +566,87 @@ export function cellGraphFromAuthoredDocument(
     });
   }
 
+  const presentationLinks = options?.presentation?.links ?? [];
+  const viewers = options?.presentation?.viewers ?? [];
+  for (const viewer of viewers) {
+    if (
+      !viewer?.id ||
+      typeof viewer.position?.x !== "number" ||
+      !Number.isFinite(viewer.position.x) ||
+      typeof viewer.position?.y !== "number" ||
+      !Number.isFinite(viewer.position.y)
+    ) {
+      continue;
+    }
+    const feedLink = presentationLinks.find(
+      (link) => link.target_viewer_id === viewer.id,
+    );
+    const ref = viewer.artifact_ref ?? null;
+    const feedNode = feedLink
+      ? document.nodes.find((n) => n.id === feedLink.source_node_id)
+      : undefined;
+    const feedSpec = feedNode ? specsByNode.get(feedNode.id) : undefined;
+    const feedPort = feedSpec?.outputs.find(
+      (p) => p.name === feedLink?.source_port_name,
+    );
+    const fallbackType =
+      feedNode && feedPort ? portArtifactType(feedNode, feedPort) : undefined;
+    const artifactKey: ArtifactTypeKey | null = ref
+      ? { id: ref.artifact_type, schema_version: ref.schema_version }
+      : (fallbackType ?? null);
+    const artifactTypeId = artifactKey?.id ?? "artifact";
+    const typeLabel = collectionTypeLabel(artifactKey, registry.artifact_types);
+    const previewKind = viewerPreviewKind(artifactTypeId);
+    const viewerPorts: CellPort[] = [];
+    if (feedLink || !ref) {
+      viewerPorts.push({
+        id: "artifact-viewer-input",
+        name: "feed",
+        direction: "input",
+        rowOffset: STRIP_FIRST_PORT_ROW,
+        artifactTypeId,
+        shape: "one",
+      });
+    }
+    if (ref) {
+      viewerPorts.push({
+        id: "artifact-card-output",
+        name: "artifact",
+        direction: "output",
+        rowOffset: STRIP_FIRST_PORT_ROW,
+        artifactTypeId,
+        shape: "item_refs" in ref ? "many" : "one",
+      });
+    }
+    const itemCountLabel =
+      ref && "item_refs" in ref ? `${ref.item_refs.length} items` : undefined;
+    cards.push({
+      id: viewer.id,
+      kind: "artifact",
+      title: typeLabel,
+      subtitle: itemCountLabel ?? (feedLink ? "From output" : typeLabel),
+      ...cellOriginFromWorld(viewer.position),
+      widthCells: Math.max(
+        MIN_CARD_WIDTH_CELLS,
+        snapPixelsToCell(viewer.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH),
+      ),
+      heightCells: Math.max(
+        6,
+        snapPixelsToCell(viewer.layout?.body_height ?? 150),
+      ),
+      ports: viewerPorts,
+      resizable: true,
+    });
+    surfaces.set(viewer.id, {
+      kind: "artifact",
+      previewKind,
+      artifactTypeId,
+      typeLabel,
+      ...(itemCountLabel ? { dimensionsLabel: itemCountLabel } : {}),
+      ...(feedLink ? { filename: feedLink.source_port_name } : {}),
+    });
+  }
+
   for (const annotation of options?.presentation?.annotations ?? []) {
     const isNote = annotation.kind === "text";
     cards.push({
@@ -424,8 +655,8 @@ export function cellGraphFromAuthoredDocument(
       title: isNote ? "Note" : "Frame",
       subtitle: annotation.kind,
       ...cellOriginFromWorld(annotation.position),
-      widthCells: Math.max(3, snapPixelsToCell(annotation.layout.width)),
-      heightCells: Math.max(2, snapPixelsToCell(annotation.layout.height)),
+      widthCells: Math.max(6, snapPixelsToCell(annotation.layout.width)),
+      heightCells: Math.max(4, snapPixelsToCell(annotation.layout.height)),
       ports: [],
       resizable: true,
     });
@@ -438,23 +669,50 @@ export function cellGraphFromAuthoredDocument(
     });
   }
 
+  const cardIds = new Set(cards.map((card) => card.id));
+  const pipes: CellPipeModel[] = [
+    ...document.edges.map((edge) => ({
+      id: edge.id,
+      sourceCardId: edge.from_node,
+      sourcePortId: edge.from_port,
+      targetCardId: edge.to_node,
+      targetPortId: targetPortId(edge.to_port, edge.to_plug),
+      enabled: edge.enabled,
+      projectionLabel: edge.projection?.path.length
+        ? edge.projection.path.join(".")
+        : null,
+      conversionLabel: edge.conversion_path.length
+        ? `${edge.conversion_path.length} conv`
+        : null,
+    })),
+    ...presentationLinks.flatMap((link): CellPipeModel[] => {
+      if (
+        !cardIds.has(link.source_node_id) ||
+        !cardIds.has(link.target_viewer_id)
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: link.id,
+          sourceCardId: link.source_node_id,
+          sourcePortId: link.source_port_name,
+          targetCardId: link.target_viewer_id,
+          targetPortId: "artifact-viewer-input",
+          enabled: true,
+          projectionLabel: link.projection?.path.length
+            ? link.projection.path.join(".")
+            : null,
+          conversionLabel: null,
+        },
+      ];
+    }),
+  ];
+
   return {
     graph: {
       cards,
-      pipes: document.edges.map((edge) => ({
-        id: edge.id,
-        sourceCardId: edge.from_node,
-        sourcePortId: edge.from_port,
-        targetCardId: edge.to_node,
-        targetPortId: targetPortId(edge.to_port, edge.to_plug),
-        enabled: edge.enabled,
-        projectionLabel: edge.projection?.path.length
-          ? edge.projection.path.join(".")
-          : null,
-        conversionLabel: edge.conversion_path.length
-          ? `${edge.conversion_path.length} conv`
-          : null,
-      })),
+      pipes,
     },
     surfaceById: Object.fromEntries(surfaces),
   };
@@ -537,5 +795,138 @@ export function graphCommandsFromCellDelete(
     commands.push({ kind: "remove_edges", edge_ids: pipeIds });
   if (cardIds.length > 0)
     commands.push({ kind: "remove_nodes", node_ids: cardIds });
+  return commands;
+}
+
+export function graphCommandsFromCellConfigChange(
+  cardId: string,
+  fieldId: string,
+  value: unknown,
+): GraphCommand[] {
+  return [
+    {
+      kind: "update_node_configuration",
+      node_id: cardId,
+      field: fieldId,
+      value,
+    },
+  ];
+}
+
+export function graphCommandsFromCellAddPlug(
+  cardId: string,
+  portName: string,
+  existingPlugs: readonly { id: string; port: string }[],
+): GraphCommand[] {
+  const usedIds = new Set(existingPlugs.map((plug) => plug.id));
+  const portPlugsCount = existingPlugs.filter(
+    (plug) => plug.port === portName,
+  ).length;
+  let index = portPlugsCount + 1;
+  let plugId = `${portName}-plug-${index}`;
+  while (usedIds.has(plugId)) {
+    index += 1;
+    plugId = `${portName}-plug-${index}`;
+  }
+  return [
+    {
+      kind: "add_input_plug",
+      node_id: cardId,
+      plug: { id: plugId, port: portName },
+    },
+  ];
+}
+
+export function graphCommandsFromCellRemovePlug(
+  cardId: string,
+  portName: string,
+  plugId: string,
+): GraphCommand[] {
+  const prefix = `${portName}${PLUG_SEPARATOR}`;
+  const rawPlugId = plugId.startsWith(prefix)
+    ? plugId.slice(prefix.length)
+    : plugId;
+  return [
+    {
+      kind: "remove_input_plug",
+      node_id: cardId,
+      plug_id: rawPlugId,
+    },
+  ];
+}
+
+export function graphCommandsFromCellMovesForDocument(
+  document: AuthoredGraphDocument,
+  moves: readonly { cardId: string; col: number; row: number }[],
+): GraphCommand[] {
+  if (moves.length === 0) return [];
+  const nodeIds = new Set(document.nodes.map((node) => node.id));
+  const agentsById = new Map(document.agents.map((agent) => [agent.id, agent]));
+  const nodeMoves: { cardId: string; col: number; row: number }[] = [];
+  const agentCommands: GraphCommand[] = [];
+  for (const move of moves) {
+    if (nodeIds.has(move.cardId)) {
+      nodeMoves.push(move);
+      continue;
+    }
+    const agent = agentsById.get(move.cardId);
+    if (agent) {
+      agentCommands.push({
+        kind: "configure_agent",
+        agent: {
+          ...agent,
+          position: cellToWorldOrigin(move.col, move.row),
+        },
+      });
+    }
+  }
+  return [...graphCommandsFromCellMoves(nodeMoves), ...agentCommands];
+}
+
+export function graphCommandsFromCellResizeForDocument(
+  document: AuthoredGraphDocument,
+  commit: CellResizeCommit,
+): GraphCommand[] {
+  const node = document.nodes.find(
+    (candidate) => candidate.id === commit.cardId,
+  );
+  if (node) {
+    return graphCommandsFromCellResize(commit, node.layout);
+  }
+  const agent = document.agents.find(
+    (candidate) => candidate.id === commit.cardId,
+  );
+  if (agent) {
+    return [
+      {
+        kind: "configure_agent",
+        agent: {
+          ...agent,
+          width: commit.widthCells * CELL_SIZE,
+          height: commit.heightCells * CELL_SIZE,
+        },
+      },
+    ];
+  }
+  return [];
+}
+
+export function graphCommandsFromCellDeleteForDocument(
+  document: AuthoredGraphDocument,
+  cardIds: readonly string[],
+  pipeIds: readonly string[],
+): GraphCommand[] {
+  const edgeIds = new Set(document.edges.map((edge) => edge.id));
+  const nodeIds = new Set(document.nodes.map((node) => node.id));
+  const agentIds = new Set(document.agents.map((agent) => agent.id));
+
+  const docEdgeIds = pipeIds.filter((id) => edgeIds.has(id));
+  const docNodeIds = cardIds.filter((id) => nodeIds.has(id));
+  const docAgentIds = cardIds.filter((id) => agentIds.has(id));
+
+  const commands = graphCommandsFromCellDelete(docNodeIds, docEdgeIds);
+  for (const agentId of docAgentIds) {
+    commands.push({ kind: "remove_agent", agent_id: agentId });
+  }
   return commands;
 }

@@ -7,14 +7,30 @@ import {
   normalizeCanvasGridSettings,
   type CanvasGridSettings,
 } from "./grid-layout";
+import {
+  readCanvasEnginePreference,
+  writeCanvasEnginePreference,
+  type WorkbenchCanvasEngineKind,
+} from "./canvas-surface-port";
 
 const STORAGE_KEY = "grafy.workbench.canvasGridSettings.v2";
+
+function subscribeToNothing(): () => void {
+  return () => {};
+}
+
+function serverCanvasEngine(): WorkbenchCanvasEngineKind {
+  return "react-flow";
+}
 
 type CanvasGridSettingsContextValue = {
   settings: CanvasGridSettings;
   setSettings: React.Dispatch<React.SetStateAction<CanvasGridSettings>>;
   patchSettings: (patch: Partial<CanvasGridSettings>) => void;
   resetSettings: () => void;
+  /** Active canvas surface implementation ("react-flow" | "cell-canvas"). */
+  canvasEngine: WorkbenchCanvasEngineKind;
+  setCanvasEngine: (engine: WorkbenchCanvasEngineKind) => void;
   /** True while Alt is held — bypasses snap for A/B free placement. */
   bypassSnap: boolean;
   panelOpen: boolean;
@@ -45,6 +61,15 @@ export function CanvasGridSettingsProvider({
   const [settings, setSettings] = React.useState<CanvasGridSettings>(() =>
     readStoredSettings(),
   );
+  // The server renders React Flow; hydration then switches to the stored engine.
+  const storedCanvasEngine = React.useSyncExternalStore(
+    subscribeToNothing,
+    readCanvasEnginePreference,
+    serverCanvasEngine,
+  );
+  const [chosenCanvasEngine, setCanvasEngineState] =
+    React.useState<WorkbenchCanvasEngineKind | null>(null);
+  const canvasEngine = chosenCanvasEngine ?? storedCanvasEngine;
   const [panelOpen, setPanelOpen] = React.useState(false);
   const [bypassSnap, setBypassSnap] = React.useState(false);
 
@@ -71,6 +96,14 @@ export function CanvasGridSettingsProvider({
     };
   }, []);
 
+  const setCanvasEngine = React.useCallback(
+    (engine: WorkbenchCanvasEngineKind) => {
+      setCanvasEngineState(engine);
+      writeCanvasEnginePreference(engine);
+    },
+    [],
+  );
+
   const patchSettings = React.useCallback(
     (patch: Partial<CanvasGridSettings>) => {
       setSettings((current) =>
@@ -82,7 +115,8 @@ export function CanvasGridSettingsProvider({
 
   const resetSettings = React.useCallback(() => {
     setSettings({ ...DEFAULT_CANVAS_GRID_SETTINGS });
-  }, []);
+    setCanvasEngine("react-flow");
+  }, [setCanvasEngine]);
 
   const value = React.useMemo(
     () => ({
@@ -90,11 +124,21 @@ export function CanvasGridSettingsProvider({
       setSettings,
       patchSettings,
       resetSettings,
+      canvasEngine,
+      setCanvasEngine,
       bypassSnap,
       panelOpen,
       setPanelOpen,
     }),
-    [bypassSnap, panelOpen, patchSettings, resetSettings, settings],
+    [
+      bypassSnap,
+      canvasEngine,
+      panelOpen,
+      patchSettings,
+      resetSettings,
+      setCanvasEngine,
+      settings,
+    ],
   );
 
   return (

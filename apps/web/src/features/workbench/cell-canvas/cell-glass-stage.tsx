@@ -109,17 +109,20 @@ export function cellCornerRadius(corners: CellCorners): number {
   return corners === "rounded" ? ROUNDED_CORNER_RADIUS : 0;
 }
 
-/** Flow-unit geometry. The ring is the product's 10px port mark. */
-const WELL_RADIUS = 12;
+/**
+ * Flow-unit geometry. The ring is the product's 10px port mark. A well's
+ * 22px outer rim sits inside its 25px port cell, clear of both cell edges.
+ */
+const WELL_RADIUS = 9.5;
 /** Top-down recessed well: open bore, thick glass wall, and feathered bevel. */
-const RECESSED_INNER_RADIUS = 11.2;
-const RECESSED_OUTER_RADIUS = 14;
+const RECESSED_INNER_RADIUS = 8.8;
+const RECESSED_OUTER_RADIUS = 11;
 const RECESSED_WALL_MID_RADIUS =
   (RECESSED_INNER_RADIUS + RECESSED_OUTER_RADIUS) / 2;
 const RECESSED_WALL_THICKNESS = RECESSED_OUTER_RADIUS - RECESSED_INNER_RADIUS;
-const RECESSED_FEATHER_RADIUS = 18;
+const RECESSED_FEATHER_RADIUS = 14;
 /** Liquid glass (flat mode): the lip around a well that refracts. */
-const LENS_RADIUS = 21;
+const LENS_RADIUS = 16;
 const LENS_ZOOM = 1.4;
 /** Half the side of the glass sheet, in flow units: past any reachable pan. */
 const SHEET_REACH = 100_000;

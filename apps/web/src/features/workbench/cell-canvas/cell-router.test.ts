@@ -178,26 +178,28 @@ function routed(result: CellRoutingResult, id: string) {
 
 describe("cell model", () => {
   it("repeats the underground pipe contract constants", () => {
-    expect(CELL_PIPE_STUB_MIN).toBe(27);
+    // The shortest stub leaves a 25px port cell for the next cell's track,
+    // at least TRACK_MARGIN (6) inside it: 12.5 + 6 = 18.5.
+    expect(CELL_PIPE_STUB_MIN).toBe(18);
     expect(CELL_PIPE_LANE_MIN).toBe(10);
     expect(CELL_PIPE_MAX_DEPTH).toBe(2);
   });
 
   it("places tracks inside a one-cell band", () => {
     expect(trackPositionsInBand(7, 7, 0, 7)).toEqual([]);
-    expect(trackPositionsInBand(7, 7, 1, 7)).toEqual([375]);
-    expect(trackPositionsInBand(7, 7, 1, 2)).toEqual([375]);
-    expect(trackPositionsInBand(7, 7, 2, 7)).toEqual([368, 382]);
-    expect(trackPositionsInBand(7, 7, 3, 7)).toEqual([361, 375, 389]);
-    // Over capacity the tracks squeeze rather than leave the band.
+    expect(trackPositionsInBand(7, 7, 1, 7)).toEqual([187.5]);
+    expect(trackPositionsInBand(7, 7, 1, 2)).toEqual([187.5]);
+    // Over its one-track capacity a 25px band squeezes its tracks between
+    // its 6px margins rather than let them leave it.
+    expect(trackPositionsInBand(7, 7, 2, 7)).toEqual([181, 194]);
     const squeezed = trackPositionsInBand(7, 7, 4, 7);
-    expect(squeezed[0]).toBeCloseTo(361, 6);
-    expect(squeezed.at(-1)).toBeCloseTo(389, 6);
+    expect(squeezed[0]).toBeCloseTo(181, 6);
+    expect(squeezed.at(-1)).toBeCloseTo(194, 6);
   });
 
   it("places tracks 14 apart inside a wider band", () => {
-    const tracks = trackPositionsInBand(6, 7, 6, 6);
-    expect(tracks).toEqual([311, 325, 339, 353, 367, 381]);
+    expect(trackPositionsInBand(6, 8, 3, 7)).toEqual([173.5, 187.5, 201.5]);
+    expect(trackPositionsInBand(6, 7, 2, 6)).toEqual([156, 170]);
   });
 
   it("puts inputs left of a card and outputs right of it", () => {
@@ -205,13 +207,13 @@ describe("cell model", () => {
     expect(portCell(c, port("in", "input", 1))).toEqual({ col: 2, row: 3 });
     expect(portCell(c, port("out", "output", 2))).toEqual({ col: 9, row: 4 });
     expect(portWorldCenter(c, port("in", "input", 1))).toEqual({
-      x: 125,
-      y: 175,
+      x: 62.5,
+      y: 87.5,
     });
     expect(portWorldCenter(c, port("in", "input", 1), { x: 1, y: -2 })).toEqual(
-      { x: 126, y: 173 },
+      { x: 63.5, y: 85.5 },
     );
-    expect(worldToCell(125, 175)).toEqual({ col: 2, row: 3 });
+    expect(worldToCell(62.5, 87.5)).toEqual({ col: 2, row: 3 });
     expect(worldToCell(-1, -1)).toEqual({ col: -1, row: -1 });
   });
 
@@ -330,8 +332,8 @@ describe("gutter capacity", () => {
   };
 
   /**
-   * Column 7 is a one-cell gutter between two tall walls: three stacked
-   * outputs drop down it to a card below and to the right.
+   * Columns 7–9 are a three-cell gutter, one track a cell, between two tall
+   * walls: three stacked outputs drop down it to a card below and right.
    */
   function verticalGutter(withPassThrough: boolean): CellGraph {
     const cards = [
@@ -342,7 +344,7 @@ describe("gutter capacity", () => {
       ]),
       card("far", 0, -6, 6, 4, [port("o", "output", 1)]),
       card("wall-left", 1, 5, 6, 10),
-      card("wall-right", 8, -8, 6, 23),
+      card("wall-right", 10, -8, 6, 23),
       card("target", 20, 17, 6, 4, [
         port("i0", "input", 0),
         port("i1", "input", 1),
@@ -359,24 +361,27 @@ describe("gutter capacity", () => {
     return { cards, pipes };
   }
 
-  /** The x of the pipe's run down the gutter in column 7. */
+  /** One track a cell, 14px apart, round the gutter's middle cell. */
+  const GUTTER_TRACKS = [216, 230, 244];
+
+  /** The x of the pipe's run down the gutter in columns 7–9. */
   function gutterX(result: CellRoutingResult, id: string): number {
     const { points } = routed(result, id);
     const run = segments(points).find(
       ([from, to]) =>
-        Math.abs(from.x - to.x) < 1e-6 && Math.abs(from.y - to.y) > 500,
+        Math.abs(from.x - to.x) < 1e-6 && Math.abs(from.y - to.y) > 250,
     );
     if (!run) throw new Error(`${id} has no run down the gutter`);
     return run[0].x;
   }
 
-  it("fits three pipes on three tracks of a one-cell gutter", () => {
+  it("fits three pipes on three tracks of a three-cell gutter", () => {
     const result = routeCellGraph(verticalGutter(false), options);
     for (const id of ["s1", "s2", "s3"]) {
       expect(routed(result, id).depth, id).toBe(0);
     }
     const xs = ["s1", "s2", "s3"].map((id) => gutterX(result, id));
-    expect([...xs].sort((a, b) => a - b)).toEqual([361, 375, 389]);
+    expect([...xs].sort((a, b) => a - b)).toEqual(GUTTER_TRACKS);
     expect(result.deepCount).toBe(0);
   });
 
@@ -388,7 +393,7 @@ describe("gutter capacity", () => {
     expect(routed(result, "pass").depth).toBe(1);
     expect(result.deepCount).toBe(1);
     const xs = ["s1", "s2", "s3"].map((id) => gutterX(result, id));
-    expect([...xs].sort((a, b) => a - b)).toEqual([361, 375, 389]);
+    expect([...xs].sort((a, b) => a - b)).toEqual(GUTTER_TRACKS);
   });
 
   it("squeezes four pipes into the gutter without depth", () => {
@@ -399,25 +404,26 @@ describe("gutter capacity", () => {
     const xs = ["s1", "s2", "s3", "pass"].map((id) => gutterX(result, id));
     expect(new Set(xs).size).toBe(4);
     for (const x of xs) {
-      expect(x).toBeGreaterThanOrEqual(7 * CELL_SIZE + 11 - 1e-6);
-      expect(x).toBeLessThanOrEqual(8 * CELL_SIZE - 11 + 1e-6);
+      expect(x).toBeGreaterThanOrEqual(7 * CELL_SIZE + 6 - 1e-6);
+      expect(x).toBeLessThanOrEqual(10 * CELL_SIZE - 6 + 1e-6);
     }
   });
 
   /**
-   * Rows 6 and 7 are a two-cell gutter between two wide walls: six stacked
-   * outputs cross it to six stacked inputs.
+   * Rows 6–11 are a six-cell gutter between two wide walls: six stacked
+   * outputs cross it to six stacked inputs. Seven-cell gutters either side
+   * carry the six pipes down to it and up again.
    */
   function horizontalGutter(withPassThrough: boolean): CellGraph {
     const outputs = [0, 1, 2, 3, 4, 5].map((n) => port(`o${n}`, "output", n));
     const inputs = [0, 1, 2, 3, 4, 5].map((n) => port(`i${n}`, "input", n));
     const cards = [
       card("source", 0, 0, 6, 6, outputs),
-      card("wall-top", 11, -10, 20, 16),
-      card("wall-bottom", 11, 8, 20, 13),
-      card("target", 36, 0, 6, 6, inputs),
-      card("far", -10, 8, 6, 4, [port("o", "output", 2)]),
-      card("far-target", 46, 3, 6, 4, [port("i", "input", 1)]),
+      card("wall-top", 14, -10, 20, 16),
+      card("wall-bottom", 14, 12, 20, 13),
+      card("target", 42, 0, 6, 6, inputs),
+      card("far", -10, 12, 6, 4, [port("o", "output", 2)]),
+      card("far-target", 52, 3, 6, 4, [port("i", "input", 1)]),
     ];
     const pipes = [0, 1, 2, 3, 4, 5].map((n) =>
       pipe(`s${n}`, `source.o${n}`, `target.i${n}`),
@@ -432,8 +438,8 @@ describe("gutter capacity", () => {
     const run = segments(points).find(
       ([from, to]) =>
         Math.abs(from.y - to.y) < 1e-6 &&
-        Math.min(from.x, to.x) < 11 * CELL_SIZE &&
-        Math.max(from.x, to.x) > 31 * CELL_SIZE,
+        Math.min(from.x, to.x) < 14 * CELL_SIZE &&
+        Math.max(from.x, to.x) > 34 * CELL_SIZE,
     );
     if (!run) throw new Error(`${id} has no run between the walls`);
     return run[0].y;
@@ -441,14 +447,14 @@ describe("gutter capacity", () => {
 
   const SIX = ["s0", "s1", "s2", "s3", "s4", "s5"];
 
-  it("fits six pipes on six tracks of a two-cell gutter", () => {
+  it("fits six pipes on six tracks of a six-cell gutter", () => {
     const result = routeCellGraph(horizontalGutter(false), options);
     for (const id of SIX) expect(routed(result, id).depth, id).toBe(0);
     const ys = SIX.map((id) => gutterY(result, id));
     expect(new Set(ys).size).toBe(6);
     for (const y of ys) {
-      expect(y).toBeGreaterThanOrEqual(6 * CELL_SIZE + 11);
-      expect(y).toBeLessThanOrEqual(8 * CELL_SIZE - 11);
+      expect(y).toBeGreaterThanOrEqual(6 * CELL_SIZE + 6);
+      expect(y).toBeLessThanOrEqual(12 * CELL_SIZE - 6);
     }
     const sorted = [...ys].sort((a, b) => a - b);
     for (let index = 1; index < sorted.length; index += 1) {

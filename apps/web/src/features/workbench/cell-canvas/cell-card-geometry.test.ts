@@ -38,14 +38,14 @@ const card: CellCardModel = {
   kind: "operator",
   col: 0,
   row: 0,
-  widthCells: 6,
-  heightCells: 2,
+  widthCells: 12,
+  heightCells: 4,
   ports: [
     {
       id: "in-a",
       name: "a",
       direction: "input",
-      rowOffset: 1,
+      rowOffset: 2,
       artifactTypeId: "scalar.text@1",
       shape: "one",
     },
@@ -53,7 +53,7 @@ const card: CellCardModel = {
       id: "out-b",
       name: "b",
       direction: "output",
-      rowOffset: 2,
+      rowOffset: 4,
       artifactTypeId: "scalar.text@1",
       shape: "one",
     },
@@ -61,7 +61,7 @@ const card: CellCardModel = {
       id: "pages:0",
       name: "pages",
       direction: "input",
-      rowOffset: 3,
+      rowOffset: 6,
       artifactTypeId: "image.raster@1",
       shape: "one",
     },
@@ -77,7 +77,7 @@ function surfaceWithPlugs(count: number): OperatorCardSurfaceData {
         title: "Pages",
         artifactTypeId: "image.raster@1",
         shape: "one",
-        startRowOffset: 3,
+        startRowOffset: 6,
         plugs: Array.from({ length: count }, (_, index) =>
           plug(`pages:${index}`),
         ),
@@ -100,69 +100,72 @@ describe("countConfigShelfCells", () => {
   });
 
   it("flushes a lone half-width field before a full-width one", () => {
-    // 1 dense row for the lone half shelf + 1 for the full shelf = 1 cell;
-    // a third full-width row tips it into a second cell.
+    // One dense row, one cell, for the lone half shelf and one for the full
+    // shelf; a third full-width row takes a third cell.
     expect(
       countConfigShelfCells([field("a", { span: 1 }), field("b", { span: 2 })]),
-    ).toBe(1);
+    ).toBe(2);
     expect(
       countConfigShelfCells([
         field("a", { span: 1 }),
         field("b", { span: 2 }),
         field("c"),
       ]),
-    ).toBe(2);
+    ).toBe(3);
     expect(
       countConfigShelfCells([
         field("a", { span: 1 }),
         field("b", { span: 1 }),
         field("c"),
       ]),
-    ).toBe(1);
+    ).toBe(2);
   });
 
-  it("packs a multiline field's three dense rows into two cells", () => {
+  it("gives a multiline field's three dense rows three cells", () => {
     expect(
       countConfigShelfCells([field("prompt", { kind: "multiline" })]),
-    ).toBe(2);
+    ).toBe(3);
   });
 });
 
 describe("computeOperatorCardLayout", () => {
   it("centres every regular port on its cell row", () => {
     const plan = computeOperatorCardLayout(card, { kind: "operator" });
-    expect(plan.portYOffsets["in-a"]).toBe(1.5 * CELL_SIZE);
-    expect(plan.portYOffsets["out-b"]).toBe(2.5 * CELL_SIZE);
-    expect(plan.portBand).toEqual({ startRow: 1, heightCells: 3 });
+    expect(plan.portYOffsets["in-a"]).toBe(2.5 * CELL_SIZE);
+    expect(plan.portYOffsets["out-b"]).toBe(4.5 * CELL_SIZE);
+    expect(plan.portBand).toEqual({ startRow: 2, heightCells: 5 });
     expect(plan.headerRow).toBe(0);
     expect(plan.plugBand).toBeNull();
-    expect(plan.totalHeightCells).toBe(4);
+    // The last port's row, then one empty row for the plate's bottom inset.
+    expect(plan.totalHeightCells).toBe(8);
   });
 
   it("leaves instance plug ports out of the regular port band", () => {
     const plan = computeOperatorCardLayout(card, surfaceWithPlugs(2));
-    expect(plan.portBand).toEqual({ startRow: 1, heightCells: 2 });
-    expect(plan.plugBand).toEqual({ startRow: 3, heightCells: 3 });
-    expect(plan.configBand).toEqual({ startRow: 6, heightCells: 1 });
-    expect(plan.totalHeightCells).toBe(7);
-    expect(plan.portYOffsets["pages:1"]).toBe(4.5 * CELL_SIZE);
+    expect(plan.portBand).toEqual({ startRow: 2, heightCells: 3 });
+    // Plugs on rows 6 and 8, the "Add" row on 10.
+    expect(plan.plugBand).toEqual({ startRow: 6, heightCells: 5 });
+    // One empty row between bands, and one under the config shelves.
+    expect(plan.configBand).toEqual({ startRow: 12, heightCells: 1 });
+    expect(plan.totalHeightCells).toBe(14);
+    expect(plan.portYOffsets["pages:1"]).toBe(8.5 * CELL_SIZE);
   });
 
-  it("adds a plug as one whole row without moving anything above it", () => {
+  it("adds a plug as one port pitch without moving anything above it", () => {
     const before = computeOperatorCardLayout(card, surfaceWithPlugs(2));
     const after = computeOperatorCardLayout(card, surfaceWithPlugs(3));
 
     expect(after.configBand?.startRow).toBe(
-      (before.configBand?.startRow ?? 0) + 1,
+      (before.configBand?.startRow ?? 0) + 2,
     );
-    expect(after.totalHeightCells).toBe(before.totalHeightCells + 1);
+    expect(after.totalHeightCells).toBe(before.totalHeightCells + 2);
     expect(after.portBand).toEqual(before.portBand);
     expect(after.portYOffsets["in-a"]).toBe(before.portYOffsets["in-a"]);
     expect(after.portYOffsets["out-b"]).toBe(before.portYOffsets["out-b"]);
-    expect(after.portYOffsets["pages:2"]).toBe(5.5 * CELL_SIZE);
+    expect(after.portYOffsets["pages:2"]).toBe(10.5 * CELL_SIZE);
   });
 
-  it("collapses the appendix to one row and keeps two rows at least open", () => {
+  it("collapses the appendix to two rows and keeps four rows at least open", () => {
     const appendix = {
       title: "Last run",
       kindBadge: "table",
@@ -182,19 +185,20 @@ describe("computeOperatorCardLayout", () => {
       appendix: { ...appendix, heightCells: 1 },
     });
 
-    expect(open.appendixBand).toEqual({ startRow: 4, heightCells: 4 });
-    expect(open.totalHeightCells).toBe(8);
-    expect(collapsed.appendixBand).toEqual({ startRow: 4, heightCells: 1 });
-    expect(collapsed.totalHeightCells).toBe(5);
-    expect(short.appendixBand?.heightCells).toBe(2);
+    // An appendix closes the card itself: no empty row under it.
+    expect(open.appendixBand).toEqual({ startRow: 8, heightCells: 4 });
+    expect(open.totalHeightCells).toBe(12);
+    expect(collapsed.appendixBand).toEqual({ startRow: 8, heightCells: 2 });
+    expect(collapsed.totalHeightCells).toBe(10);
+    expect(short.appendixBand?.heightCells).toBe(4);
   });
 
   it("never shrinks below the model's own height", () => {
     const plan = computeOperatorCardLayout(
-      { ...card, ports: [], heightCells: 9 },
+      { ...card, ports: [], heightCells: 19 },
       { kind: "operator" },
     );
-    expect(plan.totalHeightCells).toBe(9);
+    expect(plan.totalHeightCells).toBe(19);
   });
 });
 

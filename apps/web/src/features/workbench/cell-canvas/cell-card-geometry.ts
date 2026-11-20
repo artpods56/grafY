@@ -3,9 +3,15 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import type {
   AnnotationColorToken,
   CellConfigFieldSpec,
+  CellInstancePlugGroup,
   OperatorCardSurfaceData,
 } from "./cell-contracts";
-import { CELL_SIZE, type CellCardModel } from "./cell-model";
+import {
+  CELL_SIZE,
+  FIRST_PORT_ROW,
+  PORT_ROW_PITCH,
+  type CellCardModel,
+} from "./cell-model";
 
 /**
  * Where each part of a real card sits on the cell lattice, worked out from
@@ -22,7 +28,7 @@ export interface CellBand {
 
 export interface OperatorCardLayoutPlan {
   totalHeightCells: number;
-  /** Row 0 holds the floating header and the plate's subtitle strip. */
+  /** Rows 0 and 1 hold the floating header and the plate's rounded top. */
   headerRow: 0;
   portBand: CellBand;
   plugBand: CellBand | null;
@@ -32,8 +38,22 @@ export interface OperatorCardLayoutPlan {
   portYOffsets: Record<string, number>;
 }
 
-/** A cell is two dense 25px control rows. */
-const DENSE_ROWS_PER_CELL = 2;
+/** A cell is one dense 25px control row. */
+const DENSE_ROWS_PER_CELL = 1;
+/** The empty cell row between two bands, and under the last one. */
+const BAND_GAP_CELLS = 1;
+/** An expanded appendix is never shorter than its header and two lines. */
+const APPENDIX_MIN_CELLS = 4;
+/** A collapsed appendix is its 24px header with the plate's bottom inset under it. */
+const APPENDIX_COLLAPSED_CELLS = 2;
+
+/** The row of plug `index` in its group, one port pitch below the one before. */
+export function plugRowOffset(
+  group: Pick<CellInstancePlugGroup, "startRowOffset">,
+  index: number,
+): number {
+  return group.startRowOffset + index * PORT_ROW_PITCH;
+}
 
 function fieldDenseRows(field: CellConfigFieldSpec): number {
   const fallback = field.kind === "multiline" ? 3 : 1;
@@ -78,9 +98,13 @@ function portCentreY(rowOffset: number): number {
 }
 
 /**
- * Bands of an operator card, top to bottom: header (row 0), regular ports,
- * instance plugs, config shelves, execution appendix. The card is never
- * shorter than its bands, two cells, or the height the model already gives it.
+ * Bands of an operator card, top to bottom: header (rows 0 and 1, over the
+ * plate's rounded top), regular ports, instance plugs, config shelves,
+ * execution appendix. Ports and plugs sit {@link PORT_ROW_PITCH} rows apart
+ * and one empty row separates each band from the next; the last band but an
+ * appendix gets one empty row under it, so the plate's bottom inset never
+ * clips a control. The card is never shorter than its bands, two cells, or
+ * the height the model already gives it.
  */
 export function computeOperatorCardLayout(
   card: CellCardModel,
@@ -89,27 +113,32 @@ export function computeOperatorCardLayout(
   const groups = surface.instancePlugGroups ?? [];
   const plugPortNames = groups.map((group) => group.portName);
 
-  let maxRegularRow = 0;
+  let lastRegularRow: number | null = null;
   for (const port of card.ports) {
     const isPlug = plugPortNames.some(
       (name) => port.name === name || port.id.startsWith(`${name}:`),
     );
     if (isPlug) continue;
-    maxRegularRow = Math.max(maxRegularRow, port.rowOffset);
+    lastRegularRow = Math.max(lastRegularRow ?? 0, port.rowOffset);
   }
   const portBand: CellBand = {
-    startRow: 1,
-    heightCells: Math.max(0, maxRegularRow),
+    startRow: FIRST_PORT_ROW,
+    heightCells:
+      lastRegularRow === null
+        ? 0
+        : Math.max(0, lastRegularRow + 1 - FIRST_PORT_ROW),
   };
 
   let plugBand: CellBand | null = null;
   if (groups.length > 0) {
     const plugStart = Math.min(...groups.map((group) => group.startRowOffset));
     const plugEnd = Math.max(
-      ...groups.map(
-        (group) =>
-          group.startRowOffset + group.plugs.length + (group.canAdd ? 1 : 0),
-      ),
+      ...groups.map((group) => {
+        const rows = group.plugs.length + (group.canAdd ? 1 : 0);
+        return rows > 0
+          ? plugRowOffset(group, rows - 1) + 1
+          : group.startRowOffset;
+      }),
     );
     plugBand = {
       startRow: plugStart,
@@ -117,11 +146,10 @@ export function computeOperatorCardLayout(
     };
   }
 
-  const afterPortsAndPlugsRow = Math.max(
-    1,
-    portBand.startRow + portBand.heightCells,
-    plugBand ? plugBand.startRow + plugBand.heightCells : 1,
-  );
+  const bandEnds = [portBand, plugBand]
+    .filter((band): band is CellBand => band !== null && band.heightCells > 0)
+    .map((band) => band.startRow + band.heightCells + BAND_GAP_CELLS);
+  const afterPortsAndPlugsRow = Math.max(FIRST_PORT_ROW, ...bandEnds);
 
   const configCells = countConfigShelfCells(surface.configFields ?? []);
   const configBand: CellBand | null =
@@ -138,13 +166,15 @@ export function computeOperatorCardLayout(
       ? {
           startRow: afterConfigRow,
           heightCells: appendix.collapsed
-            ? 1
-            : Math.max(2, appendix.heightCells),
+            ? APPENDIX_COLLAPSED_CELLS
+            : Math.max(APPENDIX_MIN_CELLS, appendix.heightCells),
         }
       : null;
   const computedEndRow = appendixBand
     ? appendixBand.startRow + appendixBand.heightCells
-    : afterConfigRow;
+    : configBand
+      ? afterConfigRow + BAND_GAP_CELLS
+      : afterPortsAndPlugsRow;
 
   const portYOffsets: Record<string, number> = {};
   for (const port of card.ports) {
@@ -153,7 +183,7 @@ export function computeOperatorCardLayout(
   for (const group of groups) {
     group.plugs.forEach((plug, index) => {
       if (portYOffsets[plug.plugId] !== undefined) return;
-      portYOffsets[plug.plugId] = portCentreY(group.startRowOffset + index);
+      portYOffsets[plug.plugId] = portCentreY(plugRowOffset(group, index));
     });
   }
 

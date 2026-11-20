@@ -2,10 +2,27 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { ChevronDown, ChevronUp, Play, Plus, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  MoreHorizontal,
+  Play,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { Field, TextArea, TextInput } from "@/components/ui/field";
+import {
+  Menu,
+  MenuContent,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuSeparator,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
@@ -16,7 +33,10 @@ import {
   useCellCardState,
   useCellInteractionStore,
 } from "../CellCanvasContext";
-import { computeOperatorCardLayout } from "../cell-card-geometry";
+import {
+  computeOperatorCardLayout,
+  plugRowOffset,
+} from "../cell-card-geometry";
 import type {
   CellConfigFieldSpec,
   CellResizeEdge,
@@ -31,6 +51,7 @@ import {
   CARD_HEADER_HEIGHT,
   CARD_PLATE_BOTTOM_INSET,
   CARD_PLATE_INSET_X,
+  CARD_HEADER_TOP,
   CARD_PLATE_TOP,
   CELL_SIZE,
   type CellCardKind,
@@ -45,8 +66,10 @@ import { ConnectorFitting } from "../pipe-visuals";
  * built from.
  *
  * The shell is `CellCard`'s anatomy: the outer box covers the card's cells
- * exactly, row 0 holds the floating title (0..24) over the plate's top strip
- * (26..50), and each port's stem and open ring sit on `(rowOffset + 0.5) *
+ * exactly, the floating title (12..36) sits over the plate, which begins at
+ * 38 on every card kind; an artifact, collection, agent or note opens its
+ * plate with a 23px strip, an operator goes straight to its first port row —
+ * and each port's stem and open ring sit on `(rowOffset + 0.5) *
  * CELL_SIZE`, where the router and the glass stage put its well. A card's body
  * places its rows from the same lattice, so nothing in it is measured and no
  * content can push a port off its row.
@@ -85,6 +108,18 @@ export interface CellCardBaseProps {
   onResizeStart?: CellResizeHandler;
   onResizeMove?: CellResizeHandler;
   onResizeEnd?: CellResizeHandler;
+  /** Adds "Remove" to the card's "⋯" menu. */
+  onRemove?: (cardId: string) => void;
+}
+
+/** One action in a card's "⋯" menu, after what the card is. */
+export interface CellCardMenuItem {
+  id: string;
+  label: string;
+  icon?: React.ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
 }
 
 export interface CellCardState {
@@ -100,7 +135,7 @@ const PORT_HIT_SIZE = 30;
 /** The open ring's drawing box, in flow units. */
 const RING_BOX = 20;
 /** Outer radius of the glass stage's recessed well: a stem stops at it. */
-const WELL_OUTER_RADIUS = 14;
+const WELL_OUTER_RADIUS = 11;
 /** The Opus ring's outer radius: an open port's stem stops at it. */
 const RING_OUTER_RADIUS = 5;
 
@@ -110,15 +145,14 @@ const MONO_FONT =
 // StyleX evaluates these at build time, so they are plain strings, not calls.
 const REST_SHADOW =
   "0 1px 2px light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 45%, transparent)), 0 8px 20px -6px light-dark(color-mix(in srgb, black 18%, transparent), color-mix(in srgb, black 55%, transparent)), 0 22px 44px -14px light-dark(color-mix(in srgb, black 16%, transparent), color-mix(in srgb, black 50%, transparent))";
-const LIFTED_SHADOW =
-  "0 2px 4px light-dark(color-mix(in srgb, black 12%, transparent), color-mix(in srgb, black 50%, transparent)), 0 16px 32px -8px light-dark(color-mix(in srgb, black 24%, transparent), color-mix(in srgb, black 62%, transparent)), 0 36px 64px -18px light-dark(color-mix(in srgb, black 22%, transparent), color-mix(in srgb, black 58%, transparent))";
-const SELECTION_RING = `0 0 0 1px ${tokens.colorAccent}`;
 const LIQUID_SPECULAR =
   "inset 0 1px 0 light-dark(color-mix(in srgb, white 95%, transparent), color-mix(in srgb, white 24%, transparent)), inset 0 -1px 0 color-mix(in srgb, white 10%, transparent)";
+const SELECTION_HALO = `0 0 0 3px color-mix(in srgb, ${tokens.colorAccent} 8%, transparent)`;
 const LIQUID_BORDER =
   "light-dark(color-mix(in srgb, white 85%, transparent), color-mix(in srgb, white 14%, transparent))";
 
 const NO_CONNECTED_PORTS: ReadonlySet<string> = new Set();
+const NO_MENU_ITEMS: readonly CellCardMenuItem[] = [];
 
 const s = stylex.create({
   root: {
@@ -127,33 +161,101 @@ const s = stylex.create({
     left: 0,
     boxSizing: "border-box",
     color: tokens.colorText,
+    pointerEvents: "none",
     willChange: "transform",
   },
   header: {
     boxSizing: "border-box",
     display: "flex",
     alignItems: "center",
-    gap: "6px",
+    gap: "4px",
+    pointerEvents: "auto",
     userSelect: "none",
     touchAction: "none",
   },
+  // The name is a tab that hugs its text. At rest it is bare and recedes;
+  // selected, it fills with ink. Its padding is the same in both states, so
+  // the name never shifts. The plate answers it with a very light accent edge
+  // and a soft gutter (`plateActive`, `*ShadowActive`).
   title: {
-    flexGrow: 1,
+    flexShrink: 1,
     minWidth: 0,
+    marginRight: "auto",
+    boxSizing: "border-box",
+    height: "20px",
+    paddingInline: "10px",
+    borderRadius: tokens.radiusMd,
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    color: tokens.colorText,
     fontSize: "12px",
     fontWeight: 500,
+    lineHeight: "20px",
     opacity: 0.65,
+    transitionProperty: "background-color, color, opacity",
+    transitionDuration: {
+      default: "120ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
   },
-  titleActive: { opacity: 1 },
+  titleSelected: {
+    opacity: 1,
+    backgroundColor: tokens.colorAccent,
+    color: tokens.colorChrome,
+  },
+  // At rest only the title floats above the plate. Selected and at rest, or
+  // while the "⋯" menu is open, the header's actions (run, status, sizes,
+  // counts, then the "⋯") fade in together beside the title.
+  headerActions: {
+    flexShrink: 0,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    animationName: "grafy-node-detail-in",
+    animationDuration: {
+      default: "160ms",
+      "@media (prefers-reduced-motion: reduce)": "0s",
+    },
+    animationTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+    animationFillMode: "both",
+  },
+  menuSlot: {
+    flexShrink: 0,
+    width: "20px",
+    height: "20px",
+    display: "inline-grid",
+    placeItems: "center",
+  },
+  menuReveal: {
+    display: "inline-grid",
+    placeItems: "center",
+  },
+  menuTriggerOpen: {
+    color: tokens.colorText,
+    backgroundColor: tokens.colorHover,
+  },
+  menuInfo: {
+    display: "grid",
+    gap: "2px",
+    padding: "6px 8px 8px",
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
+    color: tokens.colorMuted,
+    overflowWrap: "anywhere",
+  },
+  menuInfoTitle: {
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 560,
+  },
   plate: {
     position: "relative",
     boxSizing: "border-box",
     overflow: "hidden",
     borderWidth: `${PLATE_BORDER}px`,
     borderStyle: "solid",
+    pointerEvents: "auto",
     touchAction: "none",
     userSelect: "none",
   },
@@ -165,15 +267,18 @@ const s = stylex.create({
     backgroundColor: `color-mix(in srgb, ${tokens.colorSurface} 58%, transparent)`,
     borderColor: LIQUID_BORDER,
   },
-  plateActiveBorder: { borderColor: tokens.colorBorderStrong },
-  frostRest: { boxShadow: REST_SHADOW },
-  frostSelected: { boxShadow: `${SELECTION_RING}, ${REST_SHADOW}` },
-  frostDragging: { boxShadow: LIFTED_SHADOW },
-  liquidRest: { boxShadow: `${LIQUID_SPECULAR}, ${REST_SHADOW}` },
-  liquidSelected: {
-    boxShadow: `${SELECTION_RING}, ${LIQUID_SPECULAR}, ${REST_SHADOW}`,
+  // Selected or held, the plate takes a very light accent edge and a soft 3px
+  // gutter that answers the ink-filled title tab. A held card keeps its
+  // resting shadow: the drop ghost shows the move.
+  plateActive: {
+    borderColor: `color-mix(in srgb, ${tokens.colorAccent} 20%, transparent)`,
   },
-  liquidDragging: { boxShadow: `${LIQUID_SPECULAR}, ${LIFTED_SHADOW}` },
+  frostShadow: { boxShadow: REST_SHADOW },
+  liquidShadow: { boxShadow: `${LIQUID_SPECULAR}, ${REST_SHADOW}` },
+  frostShadowActive: { boxShadow: `${SELECTION_HALO}, ${REST_SHADOW}` },
+  liquidShadowActive: {
+    boxShadow: `${LIQUID_SPECULAR}, ${SELECTION_HALO}, ${REST_SHADOW}`,
+  },
   strip: {
     boxSizing: "border-box",
     display: "flex",
@@ -212,6 +317,7 @@ const s = stylex.create({
         "color-mix(in srgb, var(--cell-port) 22%, transparent)",
     },
     cursor: "crosshair",
+    pointerEvents: "auto",
     touchAction: "none",
     outline: {
       default: "none",
@@ -285,28 +391,56 @@ const s = stylex.create({
     boxSizing: "border-box",
   },
   portRow: {
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: "8px",
-    paddingInline: "10px",
+    columnGap: "8px",
     pointerEvents: "none",
   },
-  portLabel: {
-    flexBasis: 0,
-    flexGrow: 1,
-    color: tokens.colorMuted,
+  portSlot: { minWidth: 0, display: "flex" },
+  portSlotOutput: { justifyContent: "flex-end" },
+  // A port's name sits in a tab flush with the plate's edge, square on the
+  // side its stem leaves from, so tab, stem and ring read as one line.
+  portTab: {
+    boxSizing: "border-box",
+    minWidth: 0,
+    maxWidth: "100%",
+    height: "22px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    paddingInline: "10px 8px",
+    borderRadius: "0 4px 4px 0",
+    backgroundColor: tokens.colorHover,
+    color: tokens.colorText,
     fontSize: tokens.fontSizeXs,
+    fontWeight: 500,
+    whiteSpace: "nowrap",
   },
-  portLabelOutput: { textAlign: "right" },
-  portMeta: { color: tokens.colorSubtle },
+  portTabOutput: {
+    paddingInline: "8px 10px",
+    borderRadius: "4px 0 0 4px",
+  },
+  portName: {
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  portMeta: { flexShrink: 0, color: tokens.colorSubtle, fontWeight: 400 },
   plugRow: {
     display: "flex",
     alignItems: "center",
     gap: "6px",
-    paddingInline: "10px 6px",
+    paddingRight: "6px",
     color: tokens.colorMuted,
     fontSize: tokens.fontSizeXs,
+  },
+  plugIndex: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+    fontFamily: MONO_FONT,
+    fontSize: "9.5px",
+    fontWeight: 400,
   },
   indexBadge: {
     flexShrink: 0,
@@ -331,7 +465,7 @@ const s = stylex.create({
   configGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    // One dense row is 25px and two make a cell, as the band's height counts.
+    // One dense row is 25px, one cell, as the band's height counts.
     gridAutoRows: "25px",
     rowGap: 0,
     columnGap: "8px",
@@ -340,11 +474,31 @@ const s = stylex.create({
     overflow: "hidden",
   },
   configCell: { minWidth: 0, minHeight: 0 },
-  // A single-line field keeps its label beside the control so it fits one dense row.
+  // A field given one dense row keeps its label beside the control; given a
+  // whole cell, the label sits above it, as on the workbench node.
   inlineField: {
     gridTemplateColumns: "minmax(0, 2fr) minmax(0, 3fr)",
     alignItems: "center",
     columnGap: "6px",
+  },
+  secretField: { alignContent: "start" },
+  secretControl: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gap: "5px",
+  },
+  secretFooter: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+  secretHint: {
+    minWidth: 0,
+    margin: 0,
+    color: tokens.colorSubtle,
+    fontSize: "9.5px",
+    lineHeight: 1.35,
   },
   appendix: {
     display: "flex",
@@ -392,19 +546,6 @@ const s = stylex.create({
     listStyle: "none",
   },
 });
-
-const PLATE_SHADOWS = {
-  frost: {
-    rest: s.frostRest,
-    selected: s.frostSelected,
-    dragging: s.frostDragging,
-  },
-  liquid: {
-    rest: s.liquidRest,
-    selected: s.liquidSelected,
-    dragging: s.liquidDragging,
-  },
-} as const;
 
 /** Shared marks for the other card files' headers, strips and rows. */
 export const cellCardMarks = {
@@ -493,11 +634,15 @@ export interface CellCardShellProps extends CellCardBaseProps {
   ports?: readonly CellPort[];
   /** Marks after the title in the floating header. */
   headerExtra?: React.ReactNode;
-  /** The plate's 23px top strip, ending on row 0's lower edge. */
+  /** The plate's 23px top strip, under the plate's top edge. */
   strip?: React.ReactNode;
   resizable: boolean;
   /** Floats over the card, e.g. a `CellCardToolbar`. */
   toolbar?: React.ReactNode;
+  /** Actions in the "⋯" menu, before "Remove". */
+  menuItems?: readonly CellCardMenuItem[];
+  /** The menu's line under the card's name; defaults to its subtitle. */
+  menuDetail?: React.ReactNode;
   /** Inline plate paint, e.g. an annotation's tint. */
   plateStyle?: React.CSSProperties;
   /** Extra `data-*` attributes on the outer box. */
@@ -521,22 +666,36 @@ export function CellCardShell({
   onResizeStart,
   onResizeMove,
   onResizeEnd,
+  onRemove,
   headerExtra,
   strip,
   resizable,
   toolbar,
+  menuItems = NO_MENU_ITEMS,
+  menuDetail = card.subtitle,
   plateStyle,
   rootData,
   children,
 }: CellCardShellProps) {
   const store = useCellInteractionStore();
-  const { selected, dragging, hovered } = state;
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const { selected, dragging } = state;
   const width = card.widthCells * CELL_SIZE;
   const height = card.heightCells * CELL_SIZE;
   const x = card.col * CELL_SIZE + (visualOffset?.x ?? 0);
   const y = card.row * CELL_SIZE + (visualOffset?.y ?? 0);
   const active = selected || dragging;
-  const shadowState = dragging ? "dragging" : selected ? "selected" : "rest";
+  const showHeaderActions = (selected && !dragging) || menuOpen;
+  const items: CellCardMenuItem[] = [...menuItems];
+  if (onRemove) {
+    items.push({
+      id: "remove",
+      label: "Remove",
+      icon: <Trash2 size={13} />,
+      danger: true,
+      onSelect: () => onRemove(card.id),
+    });
+  }
   const handleCardPointerDown = (event: React.PointerEvent<HTMLDivElement>) =>
     onCardPointerDown?.(card.id, event);
 
@@ -566,18 +725,45 @@ export function CellCardShell({
         onPointerDown={handleCardPointerDown}
         {...styled(
           {
+            marginTop: CARD_HEADER_TOP,
             height: CARD_HEADER_HEIGHT,
-            marginBottom: CARD_PLATE_TOP - CARD_HEADER_HEIGHT,
+            marginBottom: CARD_PLATE_TOP - CARD_HEADER_TOP - CARD_HEADER_HEIGHT,
             paddingInline: CARD_PLATE_INSET_X,
             cursor: dragging ? "grabbing" : "grab",
           },
           s.header,
         )}
       >
-        <span {...stylex.props(s.title, active && s.titleActive)}>
+        <span
+          data-card-title={active ? "selected" : "rest"}
+          title={card.title}
+          {...stylex.props(s.title, active && s.titleSelected)}
+        >
           {card.title}
         </span>
-        {headerExtra}
+        {showHeaderActions ? (
+          <span
+            data-card-header-actions="true"
+            {...stylex.props(s.headerActions)}
+          >
+            {headerExtra}
+            <span data-card-menu-slot="true" {...stylex.props(s.menuSlot)}>
+              <span
+                data-card-menu="true"
+                onPointerDown={stopCardDrag}
+                {...stylex.props(s.menuReveal)}
+              >
+                <CellCardMenu
+                  title={card.title}
+                  detail={menuDetail}
+                  items={items}
+                  open={menuOpen}
+                  onOpenChange={setMenuOpen}
+                />
+              </span>
+            </span>
+          </span>
+        ) : null}
       </div>
       <article
         onPointerDown={handleCardPointerDown}
@@ -591,15 +777,22 @@ export function CellCardShell({
           },
           s.plate,
           material === "liquid" ? s.plateLiquid : s.plateFrost,
-          active && s.plateActiveBorder,
-          PLATE_SHADOWS[material][shadowState],
+          active && s.plateActive,
+          material === "liquid"
+            ? active
+              ? s.liquidShadowActive
+              : s.liquidShadow
+            : active
+              ? s.frostShadowActive
+              : s.frostShadow,
         )}
       >
         {strip != null ? (
           <div
             data-card-strip="true"
             {...styled(
-              // Plate border + this strip end exactly on row 0's lower edge.
+              // Plate border + this strip end at 62, where row 2's port centre
+              // sits half a cell lower.
               { height: CARD_HEADER_HEIGHT - PLATE_BORDER },
               s.strip,
             )}
@@ -625,13 +818,68 @@ export function CellCardShell({
         <CellResizeGrip
           cardId={card.id}
           edge="se"
-          visible={selected || hovered}
+          visible={selected && !dragging}
           onResizeStart={onResizeStart}
           onResizeMove={onResizeMove}
           onResizeEnd={onResizeEnd}
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The card's one "⋯": what the card is, then what can be done with it, the
+ * way the workbench node's menu reads.
+ */
+function CellCardMenu({
+  title,
+  detail,
+  items,
+  open,
+  onOpenChange,
+}: {
+  title: string;
+  detail?: React.ReactNode;
+  items: readonly CellCardMenuItem[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Menu open={open} onOpenChange={onOpenChange}>
+      <MenuTrigger
+        render={
+          <IconButton
+            label={`Actions for ${title}`}
+            size="2xs"
+            variant="ghost"
+            xstyle={open ? s.menuTriggerOpen : null}
+          />
+        }
+      >
+        <MoreHorizontal size={13} />
+      </MenuTrigger>
+      <MenuContent side="bottom" align="end" sideOffset={6}>
+        <MenuGroup>
+          <MenuGroupLabel xstyle={s.menuInfo}>
+            <span {...stylex.props(s.menuInfoTitle)}>{title}</span>
+            {detail ? <span>{detail}</span> : null}
+          </MenuGroupLabel>
+          {items.length ? <MenuSeparator /> : null}
+          {items.map((item) => (
+            <MenuItem
+              key={item.id}
+              icon={item.icon}
+              danger={item.danger}
+              disabled={item.disabled}
+              onClick={item.onSelect}
+            >
+              {item.label}
+            </MenuItem>
+          ))}
+        </MenuGroup>
+      </MenuContent>
+    </Menu>
   );
 }
 
@@ -750,15 +998,21 @@ const STATUS_TEXT = {
   error: "Error",
 } as const;
 
-function portLabel(port: CellPort): React.ReactNode {
+function CellPortTab({ port }: { port: CellPort }) {
+  const output = port.direction === "output";
   return (
-    <>
-      {port.name}
-      {port.required ? <span {...stylex.props(s.portMeta)}> *</span> : null}
-      {port.shape === "many" ? (
-        <span {...stylex.props(s.portMeta)}> · list</span>
+    <span
+      data-port-tab={port.id}
+      {...stylex.props(s.portTab, output && s.portTabOutput)}
+    >
+      <span {...stylex.props(s.portName)}>{port.name}</span>
+      {!output && port.required ? (
+        <span {...stylex.props(s.portMeta)}>*</span>
       ) : null}
-    </>
+      {port.shape === "many" ? (
+        <span {...stylex.props(s.portMeta)}>· list</span>
+      ) : null}
+    </span>
   );
 }
 
@@ -794,7 +1048,7 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
         id: plug.plugId,
         name: plug.label,
         direction: "input",
-        rowOffset: group.startRowOffset + index,
+        rowOffset: plugRowOffset(group, index),
         artifactTypeId: group.artifactTypeId,
         shape: group.shape,
       });
@@ -861,7 +1115,6 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
       ports={ports}
       connectedPortIds={connected}
       headerExtra={headerExtra}
-      strip={<span {...stylex.props(s.ellipsis)}>{card.subtitle}</span>}
       resizable={card.resizable === true}
     >
       {[...portRows].map(([rowOffset, { input, output }]) => (
@@ -869,16 +1122,19 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
           key={`port-row:${rowOffset}`}
           data-port-row={rowOffset}
           {...styled(
-            { top: plateRowTop(rowOffset), height: CELL_SIZE },
+            {
+              top: plateRowTop(rowOffset),
+              height: CELL_SIZE,
+            },
             s.band,
             s.portRow,
           )}
         >
-          <span {...stylex.props(s.portLabel, s.ellipsis)}>
-            {input ? portLabel(input) : null}
+          <span {...stylex.props(s.portSlot)}>
+            {input ? <CellPortTab port={input} /> : null}
           </span>
-          <span {...stylex.props(s.portLabel, s.ellipsis, s.portLabelOutput)}>
-            {output ? portLabel(output) : null}
+          <span {...stylex.props(s.portSlot, s.portSlotOutput)}>
+            {output ? <CellPortTab port={output} /> : null}
           </span>
         </div>
       ))}
@@ -892,17 +1148,18 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
               data-plug-port={group.portName}
               {...styled(
                 {
-                  top: plateRowTop(group.startRowOffset + index),
+                  top: plateRowTop(plugRowOffset(group, index)),
                   height: CELL_SIZE,
                 },
                 s.band,
                 s.plugRow,
               )}
             >
-              <span title={group.title} {...stylex.props(s.indexBadge)}>
-                #{index + 1}
+              <span title={group.title} {...stylex.props(s.portTab)}>
+                <span {...stylex.props(s.plugIndex)}>#{index + 1}</span>
+                <span {...stylex.props(s.portName)}>{plug.label}</span>
               </span>
-              <span {...stylex.props(s.ellipsis, s.grow)}>{plug.label}</span>
+              <span {...stylex.props(s.grow)} />
               {plug.connectionMeta ? (
                 <span {...stylex.props(s.chip)}>{plug.connectionMeta}</span>
               ) : null}
@@ -926,7 +1183,7 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
               data-instance-plug-add={group.portName}
               {...styled(
                 {
-                  top: plateRowTop(group.startRowOffset + group.plugs.length),
+                  top: plateRowTop(plugRowOffset(group, group.plugs.length)),
                   height: CELL_SIZE,
                 },
                 s.band,
@@ -1067,6 +1324,7 @@ function ConfigFieldControl({
   onChange: (value: string | number | boolean) => void;
 }) {
   const text = String(field.value ?? "");
+  const labelStyle = fieldDenseRows(field) < 2 ? s.inlineField : null;
   switch (field.kind) {
     case "toggle":
       return (
@@ -1091,7 +1349,7 @@ function ConfigFieldControl({
       );
     case "select":
       return (
-        <Field size="dense" label={field.label} xstyle={s.inlineField}>
+        <Field size="dense" label={field.label} xstyle={labelStyle}>
           <Select
             size="dense"
             value={text}
@@ -1107,7 +1365,7 @@ function ConfigFieldControl({
       );
     case "number":
       return (
-        <Field size="dense" label={field.label} xstyle={s.inlineField}>
+        <Field size="dense" label={field.label} xstyle={labelStyle}>
           <TextInput
             size="dense"
             type="number"
@@ -1120,7 +1378,7 @@ function ConfigFieldControl({
       );
     case "text":
       return (
-        <Field size="dense" label={field.label} xstyle={s.inlineField}>
+        <Field size="dense" label={field.label} xstyle={labelStyle}>
           <TextInput
             size="dense"
             value={text}
@@ -1129,7 +1387,51 @@ function ConfigFieldControl({
           />
         </Field>
       );
+    case "secret":
+      return <CellSecretField field={field} />;
   }
+}
+
+/**
+ * A node secret, drawn the way the workbench draws one on a node that has not
+ * been saved yet: the cell canvas has no secret store, so the field shows its
+ * shape and takes no value. A secret never reaches `onConfigChange`.
+ */
+function CellSecretField({ field }: { field: CellConfigFieldSpec }) {
+  return (
+    <Field
+      size="dense"
+      label={field.label}
+      aside="Status unavailable"
+      xstyle={s.secretField}
+    >
+      <div {...stylex.props(s.secretControl)}>
+        <TextInput
+          size="dense"
+          mono
+          type="password"
+          value=""
+          readOnly
+          disabled
+          autoComplete="off"
+          aria-label={field.label}
+          title={field.description}
+          placeholder="Enter secret"
+        />
+        <Button type="button" size="xs" variant="soft" disabled>
+          Apply
+        </Button>
+      </div>
+      <div {...stylex.props(s.secretFooter)}>
+        <p {...stylex.props(s.secretHint)}>
+          Save this node before configuring this secret.
+        </p>
+        <Button type="button" size="xs" variant="danger" disabled>
+          Remove
+        </Button>
+      </div>
+    </Field>
+  );
 }
 
 export const CellOperatorCard = React.memo(CellOperatorCardImpl);

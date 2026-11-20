@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 
 import type {
   NodeRegistry,
@@ -17,12 +17,19 @@ import {
   type AuthoredGraphOrigin,
 } from "../model/graph-document";
 import {
+  annotationHexFromToken,
   cellGraphFromAuthoredDocument,
   cellOriginFromWorld,
+  graphCommandsFromCellAddPlug,
+  graphCommandsFromCellConfigChange,
   graphCommandsFromCellConnect,
   graphCommandsFromCellDelete,
+  graphCommandsFromCellDeleteForDocument,
   graphCommandsFromCellMoves,
+  graphCommandsFromCellMovesForDocument,
+  graphCommandsFromCellRemovePlug,
   graphCommandsFromCellResize,
+  graphCommandsFromCellResizeForDocument,
   snapPixelsToCell,
 } from "./cell-document-adapter";
 
@@ -77,6 +84,12 @@ const baseSpec: NodeSpec = {
       body: { type: "string", format: "textarea" },
     },
   },
+};
+const apiKeyInput = {
+  name: "api_key",
+  title: "API key",
+  description: "Write-only bearer credential for the configured API base URL.",
+  config_dependencies: ["base_url"],
 };
 const registry: NodeRegistry = {
   nodes: [
@@ -263,14 +276,14 @@ function savedDocument() {
 
 describe("cell document adapter", () => {
   it("rounds world positions to whole cells and returns positive zero near the origin", () => {
-    expect(snapPixelsToCell(25)).toBe(1);
-    expect(snapPixelsToCell(24)).toBe(0);
-    expect(snapPixelsToCell(-26)).toBe(-1);
-    expect(snapPixelsToCell(-75)).toBe(-1);
+    expect(snapPixelsToCell(13)).toBe(1);
+    expect(snapPixelsToCell(12)).toBe(0);
+    expect(snapPixelsToCell(-13)).toBe(-1);
+    expect(snapPixelsToCell(-37)).toBe(-1);
     expect(Object.is(snapPixelsToCell(-1), 0)).toBe(true);
     expect(cellOriginFromWorld({ x: 126, y: -76 })).toEqual({
-      col: 3,
-      row: -2,
+      col: 5,
+      row: -3,
     });
   });
 
@@ -292,22 +305,22 @@ describe("cell document adapter", () => {
       subtitle: "test.source",
       kind: "operator",
       col: 0,
-      row: 2,
-      widthCells: 6,
-      heightCells: 14,
+      row: 3,
+      widthCells: 13,
+      heightCells: 27,
       resizable: true,
       resizeBounds: {
-        minWidthCells: 4,
-        maxWidthCells: 24,
-        minHeightCells: 5,
-        maxHeightCells: 30,
+        minWidthCells: 8,
+        maxWidthCells: 48,
+        minHeightCells: 14,
+        maxHeightCells: 60,
       },
       ports: [
         {
           id: "trigger",
           name: "trigger",
           direction: "input",
-          rowOffset: 1,
+          rowOffset: 2,
           artifactTypeId: "scalar.text",
           shape: "one",
           required: true,
@@ -316,7 +329,7 @@ describe("cell document adapter", () => {
           id: "result",
           name: "Result",
           direction: "output",
-          rowOffset: 1,
+          rowOffset: 2,
           artifactTypeId: "scalar.text",
           shape: "one",
           required: true,
@@ -325,7 +338,7 @@ describe("cell document adapter", () => {
           id: "incoming::plug-a",
           name: "Incoming #1",
           direction: "input",
-          rowOffset: 2,
+          rowOffset: 4,
           artifactTypeId: "scalar.text",
           shape: "many",
           required: false,
@@ -334,7 +347,7 @@ describe("cell document adapter", () => {
           id: "incoming::plug-b",
           name: "Incoming #2",
           direction: "input",
-          rowOffset: 3,
+          rowOffset: 6,
           artifactTypeId: "scalar.text",
           shape: "many",
           required: false,
@@ -343,7 +356,7 @@ describe("cell document adapter", () => {
           id: "more::more-a",
           name: "more #1",
           direction: "input",
-          rowOffset: 4,
+          rowOffset: 10,
           artifactTypeId: "scalar.text",
           shape: "many",
           required: false,
@@ -373,7 +386,7 @@ describe("cell document adapter", () => {
             { value: "slow", label: "slow" },
           ],
         },
-        { id: "enabled", kind: "toggle", value: false, span: 1, denseRows: 2 },
+        { id: "enabled", kind: "toggle", value: false, span: 1, denseRows: 1 },
         { id: "limit", kind: "number", value: 0, span: 1, denseRows: 2 },
         {
           id: "body",
@@ -389,7 +402,7 @@ describe("cell document adapter", () => {
           title: "Incoming",
           artifactTypeId: "scalar.text",
           shape: "many",
-          startRowOffset: 2,
+          startRowOffset: 4,
           canAdd: true,
           plugs: [
             { plugId: "plug-a", label: "Incoming #1", connected: true },
@@ -401,27 +414,27 @@ describe("cell document adapter", () => {
           title: "more",
           artifactTypeId: "scalar.text",
           shape: "many",
-          startRowOffset: 4,
+          startRowOffset: 10,
           canAdd: true,
           plugs: [{ plugId: "more-a", label: "more #1", connected: true }],
         },
       ],
-      appendix: { heightCells: 3 },
+      appendix: { heightCells: 5 },
     });
     expect(collect).toMatchObject({
       id: "collection",
       title: "Collect",
       kind: "collection",
-      col: 8,
-      row: -2,
-      widthCells: 5,
-      heightCells: 5,
+      col: 16,
+      row: -3,
+      widthCells: 10,
+      heightCells: 8,
     });
     expect(collect?.ports.map((item) => [item.id, item.rowOffset])).toEqual([
-      ["sequence", 1],
+      ["sequence", 2],
       ["items::library", 2],
-      ["items::wired", 3],
-      ["items::spare", 4],
+      ["items::wired", 4],
+      ["items::spare", 6],
     ]);
     expect(surfaceById.collection).toEqual({
       kind: "collection",
@@ -448,10 +461,10 @@ describe("cell document adapter", () => {
       kind: "agent",
       title: "Review",
       subtitle: "example-model",
-      col: -3,
-      row: 2,
-      widthCells: 8,
-      heightCells: 4,
+      col: -6,
+      row: 4,
+      widthCells: 16,
+      heightCells: 8,
       ports: [],
     });
     expect(surfaceById.agent).toEqual({
@@ -466,18 +479,18 @@ describe("cell document adapter", () => {
       subtitle: "Deployment model",
       col: 0,
       row: 0,
-      widthCells: 7,
-      heightCells: 4,
+      widthCells: 14,
+      heightCells: 8,
     });
 
     expect(note).toMatchObject({
       id: "note",
       kind: "annotation",
       title: "Note",
-      col: 3,
-      row: -1,
-      widthCells: 3,
-      heightCells: 2,
+      col: 6,
+      row: -2,
+      widthCells: 6,
+      heightCells: 4,
       resizable: true,
     });
     expect(surfaceById.note).toEqual({
@@ -490,8 +503,8 @@ describe("cell document adapter", () => {
     expect(frame).toMatchObject({
       title: "Frame",
       subtitle: "ellipse",
-      widthCells: 5,
-      heightCells: 5,
+      widthCells: 10,
+      heightCells: 10,
     });
     expect(surfaceById.frame).toMatchObject({
       variant: "frame",
@@ -529,6 +542,97 @@ describe("cell document adapter", () => {
     ).toEqual(["source", "collection", "agent", "default-agent"]);
   });
 
+  it("appends a secret config field and adds its packed rows to the operator height", () => {
+    const document = {
+      ...authoredGraphDocument(savedDocument()),
+      nodes: [{ ...source, layout: null }],
+    };
+    const withoutSecret = cellGraphFromAuthoredDocument(document, registry);
+    const withSecret = cellGraphFromAuthoredDocument(document, {
+      ...registry,
+      nodes: [{ ...baseSpec, secret_inputs: [apiKeyInput] }],
+    });
+    const baseline = withoutSecret.surfaceById.source;
+    const operator = withSecret.surfaceById.source;
+    const baselineCard = withoutSecret.graph.cards[0];
+    assert(baseline?.kind === "operator" && baseline.configFields);
+    assert(operator?.kind === "operator");
+    assert(baselineCard);
+
+    expect(operator.configFields).toStrictEqual([
+      ...baseline.configFields,
+      {
+        id: "api_key",
+        label: "API key",
+        kind: "secret",
+        value: "",
+        span: 2,
+        denseRows: 3,
+        description: apiKeyInput.description,
+      },
+    ]);
+    expect(withSecret.graph.cards[0]?.heightCells).toBe(
+      baselineCard.heightCells + 3,
+    );
+  });
+
+  it("keeps the schema config fields when the operator declares no secret inputs", () => {
+    const document = authoredGraphDocument(savedDocument());
+    const { surfaceById } = cellGraphFromAuthoredDocument(document, registry);
+    const operator = surfaceById.source;
+    assert(operator?.kind === "operator");
+
+    expect(operator.configFields?.map(({ id, kind }) => [id, kind])).toEqual([
+      ["caption", "text"],
+      ["mode", "select"],
+      ["enabled", "toggle"],
+      ["limit", "number"],
+      ["body", "multiline"],
+    ]);
+  });
+
+  it("leaves the secret field blank when saved config contains the same name", () => {
+    const document = {
+      ...authoredGraphDocument(savedDocument()),
+      nodes: [
+        { ...source, config: { ...source.config, api_key: "saved value" } },
+      ],
+    };
+    const { surfaceById } = cellGraphFromAuthoredDocument(document, {
+      ...registry,
+      nodes: [
+        {
+          ...baseSpec,
+          secret_inputs: [{ ...apiKeyInput, title: "", description: null }],
+        },
+      ],
+    });
+    const operator = surfaceById.source;
+    assert(operator?.kind === "operator");
+
+    expect(operator.configFields?.at(-1)).toStrictEqual({
+      id: "api_key",
+      label: "api_key",
+      kind: "secret",
+      value: "",
+      span: 2,
+      denseRows: 3,
+    });
+  });
+
+  it("describes an operator in plain words, falling back to its id", () => {
+    const document = authoredGraphDocument(savedDocument());
+    const described = cellGraphFromAuthoredDocument(document, {
+      ...registry,
+      nodes: [{ ...baseSpec, description: "Reads rows from a source." }],
+    });
+    expect(described.graph.cards[0]?.subtitle).toBe(
+      "Reads rows from a source.",
+    );
+    const bare = cellGraphFromAuthoredDocument(document, registry);
+    expect(bare.graph.cards[0]?.subtitle).toBe("test.source");
+  });
+
   it("uses packed shelf height and the minimum appendix size when the saved body is too short", () => {
     const document = authoredGraphDocument(savedDocument());
     const result = cellGraphFromAuthoredDocument(
@@ -546,14 +650,14 @@ describe("cell document adapter", () => {
       { presentation: null },
     );
     expect(result.graph.cards[0]).toMatchObject({
-      widthCells: 4,
-      heightCells: 11,
+      widthCells: 8,
+      heightCells: 26,
     });
     expect(
       result.graph.cards[0]?.ports.find(({ id }) => id === "incoming::plug-a"),
     ).toMatchObject({ artifactTypeId: "T" });
     expect(result.surfaceById.source).toMatchObject({
-      appendix: { heightCells: 2 },
+      appendix: { heightCells: 4 },
     });
   });
 
@@ -570,7 +674,7 @@ describe("cell document adapter", () => {
     });
     expect(result.graph.cards[1]).toMatchObject({
       kind: "collection",
-      widthCells: 5,
+      widthCells: 10,
     });
     expect(result.surfaceById.collection).toMatchObject({
       kind: "collection",
@@ -588,20 +692,20 @@ describe("cell document adapter", () => {
       {
         kind: "move_nodes",
         positions: [
-          { node_id: "source", x: -100, y: 200 },
-          { node_id: "collection", x: 300, y: 150 },
+          { node_id: "source", x: -50, y: 100 },
+          { node_id: "collection", x: 150, y: 75 },
         ],
       },
     ]);
     const resize = graphCommandsFromCellResize(
-      { cardId: "source", widthCells: 10, heightCells: 8 },
+      { cardId: "source", widthCells: 20, heightCells: 24 },
       source.layout,
     );
     expect(resize).toEqual([
       {
         kind: "update_node_layout",
         node_id: "source",
-        layout: { width: 500, body_height: 400, appendix_height: 101 },
+        layout: { width: 500, body_height: 600, appendix_height: 101 },
       },
     ]);
     const updated = [...moves, ...resize].reduce(
@@ -612,14 +716,14 @@ describe("cell document adapter", () => {
     expect(graph.cards[0]).toMatchObject({
       col: -2,
       row: 4,
-      widthCells: 10,
-      heightCells: 12,
+      widthCells: 20,
+      heightCells: 29,
     });
     expect(graph.cards[1]).toMatchObject({ col: 6, row: 3 });
     const withoutAppendix = graphCommandsFromCellResize({
       cardId: "collection",
-      widthCells: 5,
-      heightCells: 6,
+      widthCells: 10,
+      heightCells: 12,
     });
     expect(
       withoutAppendix.reduce(applyGraphCommandNormalized, updated).nodes[1]
@@ -703,5 +807,182 @@ describe("cell document adapter", () => {
       { kind: "remove_nodes", node_ids: ["collection"] },
     ]);
     expect(graphCommandsFromCellDelete([], [])).toEqual([]);
+  });
+
+  it("applies live nodeRunState, collapsedAppendices, and presentation viewers + links", () => {
+    const document = authoredGraphDocument(savedDocument());
+    const result = cellGraphFromAuthoredDocument(document, registry, {
+      nodeRunState: {
+        source: {
+          status: "done",
+          statusLabel: "42 ms",
+          runDisabled: true,
+          appendix: {
+            title: "Run output",
+            kindBadge: "Text",
+            heightCells: 5,
+            summaryText: "1 item",
+          },
+        },
+      },
+      collapsedAppendices: new Set(["source"]),
+      presentation: {
+        ...presentation,
+        viewers: [
+          {
+            id: "viewer-1",
+            position: { x: 500, y: 50 },
+            layout: { width: 200, body_height: 150, appendix_height: null },
+            mode: "artifact",
+            artifact_ref: {
+              artifact_id: "art-1",
+              artifact_type: "image.raster",
+              schema_version: 1,
+            },
+          },
+        ],
+        links: [
+          {
+            id: "link-1",
+            source_node_id: "source",
+            source_port_name: "result",
+            target_viewer_id: "viewer-1",
+            projection: { path: ["preview"] },
+            route_offset: null,
+          },
+        ],
+      },
+    });
+
+    const sourceCard = result.graph.cards.find((c) => c.id === "source");
+    expect(sourceCard?.status).toBe("done");
+    expect(result.surfaceById.source).toMatchObject({
+      kind: "operator",
+      statusLabel: "42 ms",
+      runDisabled: true,
+      appendix: { collapsed: true, title: "Run output" },
+    });
+
+    const viewerCard = result.graph.cards.find((c) => c.id === "viewer-1");
+    expect(viewerCard).toMatchObject({
+      id: "viewer-1",
+      kind: "artifact",
+      col: 20,
+      row: 2,
+      widthCells: 8,
+      heightCells: 6,
+    });
+    expect(viewerCard?.ports.map((p) => p.id)).toEqual([
+      "artifact-viewer-input",
+      "artifact-card-output",
+    ]);
+    expect(result.surfaceById["viewer-1"]).toMatchObject({
+      kind: "artifact",
+      previewKind: "image",
+      artifactTypeId: "image.raster",
+    });
+    expect(result.graph.pipes.find((p) => p.id === "link-1")).toEqual({
+      id: "link-1",
+      sourceCardId: "source",
+      sourcePortId: "result",
+      targetCardId: "viewer-1",
+      targetPortId: "artifact-viewer-input",
+      enabled: true,
+      projectionLabel: "preview",
+      conversionLabel: null,
+    });
+  });
+
+  it("builds normalized commands for config, plugs, agents, and color hexes", () => {
+    const document = authoredGraphDocument(savedDocument());
+
+    expect(annotationHexFromToken("blue")).toBe("#0369a1");
+    expect(annotationHexFromToken("amber")).toBe("#b45309");
+    expect(annotationHexFromToken("slate")).toBe("#475569");
+
+    const cfgCmds = graphCommandsFromCellConfigChange("source", "mode", "fast");
+    expect(cfgCmds).toEqual([
+      {
+        kind: "update_node_configuration",
+        node_id: "source",
+        field: "mode",
+        value: "fast",
+      },
+    ]);
+    const afterCfg = cfgCmds.reduce(applyGraphCommandNormalized, document);
+    expect(afterCfg.nodes[0]?.config?.mode).toBe("fast");
+
+    const addPlugCmds = graphCommandsFromCellAddPlug(
+      "source",
+      "incoming",
+      source.input_plugs,
+    );
+    expect(addPlugCmds).toEqual([
+      {
+        kind: "add_input_plug",
+        node_id: "source",
+        plug: { id: "incoming-plug-3", port: "incoming" },
+      },
+    ]);
+    const afterAddPlug = addPlugCmds.reduce(
+      applyGraphCommandNormalized,
+      afterCfg,
+    );
+    expect(afterAddPlug.nodes[0]?.input_plugs).toContainEqual({
+      id: "incoming-plug-3",
+      port: "incoming",
+    });
+
+    const removePlugCmds = graphCommandsFromCellRemovePlug(
+      "source",
+      "incoming",
+      "incoming::plug-a",
+    );
+    expect(removePlugCmds).toEqual([
+      {
+        kind: "remove_input_plug",
+        node_id: "source",
+        plug_id: "plug-a",
+      },
+    ]);
+
+    const docMoves = graphCommandsFromCellMovesForDocument(document, [
+      { cardId: "source", col: 2, row: 1 },
+      { cardId: "agent", col: -4, row: 5 },
+    ]);
+    expect(docMoves).toHaveLength(2);
+    const afterMove = docMoves.reduce(applyGraphCommandNormalized, document);
+    expect(afterMove.nodes.find((n) => n.id === "source")?.position).toEqual({
+      x: 50,
+      y: 25,
+    });
+    expect(afterMove.agents.find((a) => a.id === "agent")?.position).toEqual({
+      x: -100,
+      y: 125,
+    });
+
+    const agentResize = graphCommandsFromCellResizeForDocument(document, {
+      cardId: "agent",
+      widthCells: 18,
+      heightCells: 10,
+    });
+    const afterResize = agentResize.reduce(
+      applyGraphCommandNormalized,
+      document,
+    );
+    expect(afterResize.agents.find((a) => a.id === "agent")).toMatchObject({
+      width: 450,
+      height: 250,
+    });
+
+    const delCmds = graphCommandsFromCellDeleteForDocument(
+      document,
+      ["collection", "agent"],
+      ["edge"],
+    );
+    const afterDel = delCmds.reduce(applyGraphCommandNormalized, document);
+    expect(afterDel.nodes.map((n) => n.id)).toEqual(["source"]);
+    expect(afterDel.agents.map((a) => a.id)).toEqual(["default-agent"]);
+    expect(afterDel.edges).toEqual([]);
   });
 });

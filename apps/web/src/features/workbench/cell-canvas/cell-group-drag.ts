@@ -177,7 +177,7 @@ export function resolveNonOverlappingDelta(
   cards: readonly CellCardModel[],
   movingCardIds: ReadonlySet<string>,
   proposedDelta: CellCoord,
-  maxSearchRadius = 24,
+  maxSearchRadius = 48,
 ): CellCoord {
   const moving: CellCardModel[] = [];
   const stationary: CellCardModel[] = [];
@@ -221,8 +221,9 @@ export function minCardHeightCellsForPorts(
   card: Pick<CellCardModel, "ports">,
 ): number {
   return card.ports.reduce(
-    (height, port) => Math.max(height, port.rowOffset + 1),
-    2,
+    // A port's row, then a row the plate's bottom inset may take.
+    (height, port) => Math.max(height, port.rowOffset + 2),
+    4,
   );
 }
 
@@ -239,8 +240,8 @@ export function computeCellResize(
       (currentPointerWorld.x - startPointerWorld.x) / CELL_SIZE,
     );
     widthCells = Math.max(
-      bounds?.minWidthCells ?? 3,
-      Math.min(bounds?.maxWidthCells ?? 40, widthCells + delta),
+      bounds?.minWidthCells ?? 6,
+      Math.min(bounds?.maxWidthCells ?? 80, widthCells + delta),
     );
   }
   if (edge === "s" || edge === "se") {
@@ -249,11 +250,11 @@ export function computeCellResize(
     );
     const minHeight = Math.max(
       minCardHeightCellsForPorts(card),
-      bounds?.minHeightCells ?? 2,
+      bounds?.minHeightCells ?? 4,
     );
     heightCells = Math.max(
       minHeight,
-      Math.min(bounds?.maxHeightCells ?? 40, heightCells + delta),
+      Math.min(bounds?.maxHeightCells ?? 80, heightCells + delta),
     );
   }
   return { cardId: card.id, widthCells, heightCells };

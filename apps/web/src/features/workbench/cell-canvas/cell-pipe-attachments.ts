@@ -8,13 +8,14 @@ import {
   type WorldPoint,
 } from "./cell-model";
 
-export const ATTACHMENT_WIDTH_CELLS = 3;
+/** A 150 × 25 box: the 24px capsule with a pixel to spare. */
+export const ATTACHMENT_WIDTH_CELLS = 6;
 export const ATTACHMENT_HEIGHT_CELLS = 1;
 export const ATTACHMENT_WIDTH_PX = ATTACHMENT_WIDTH_CELLS * CELL_SIZE;
 export const ATTACHMENT_HEIGHT_PX = ATTACHMENT_HEIGHT_CELLS * CELL_SIZE;
 
 const MIN_LONG_SEGMENT = 140;
-const PORT_CLEARANCE = 0.75 * CELL_SIZE;
+const PORT_CLEARANCE = 1.5 * CELL_SIZE;
 const CARD_PENALTY = 10_000;
 const PORT_PENALTY = 5_000;
 const HALF_WIDTH = ATTACHMENT_WIDTH_PX / 2;
@@ -129,7 +130,7 @@ function staggerAnchor(
     { along: 40, across: 0 },
     { along: 75, across: 0 },
     { along: 0, across: 28 },
-    { along: 0, across: CELL_SIZE },
+    { along: 0, across: 2 * CELL_SIZE },
   ];
   for (const { along, across } of nudges) {
     for (const sign of [1, -1]) {

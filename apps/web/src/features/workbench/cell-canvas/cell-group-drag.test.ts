@@ -32,32 +32,35 @@ describe("group drag", () => {
       cards,
       new Set(["other"]),
       "anchor",
-      { x: 230, y: 30 },
+      { x: 115, y: 15 },
     );
     expect(session.movingCardIds).toEqual(new Set(["anchor"]));
-    expect(session.grabOffsetWorld).toEqual({ x: 130, y: 80 });
+    expect(session.grabOffsetWorld).toEqual({ x: 65, y: 40 });
 
-    const near = updateGroupDragSession(session, cards, { x: 259, y: 30 });
+    // The card changes cell 0.74 cells (18.5px) past its origin.
+    const near = updateGroupDragSession(session, cards, { x: 133, y: 15 });
     expect(near.snappedDelta).toEqual({ col: 0, row: 0 });
     expect(near.changedCell).toBe(false);
-    expect(near.visualOffset).toEqual({ x: 4.35, y: 0 });
+    expect(near.visualOffset.x).toBeCloseTo(2.7);
+    expect(near.visualOffset.y).toBe(0);
 
-    const over = updateGroupDragSession(near.session, cards, { x: 263, y: 30 });
+    const over = updateGroupDragSession(near.session, cards, { x: 134, y: 15 });
     expect(over.snappedDelta).toEqual({ col: 1, row: 0 });
     expect(over.changedCell).toBe(true);
-    expect(over.visualOffset).toEqual({ x: -2.55, y: 0 });
+    expect(over.visualOffset.x).toBeCloseTo(-0.9);
+    expect(over.visualOffset.y).toBe(0);
     expect(over.movedCards[0]).toMatchObject({ col: 3, row: -1 });
     expect(over.movedCards[1]).toBe(cards[1]);
 
     const back = updateGroupDragSession(over.session, over.movedCards, {
-      x: 254,
-      y: 30,
+      x: 123,
+      y: 15,
     });
     expect(back.snappedDelta).toEqual({ col: 1, row: 0 });
     expect(back.changedCell).toBe(false);
     const returned = updateGroupDragSession(back.session, back.movedCards, {
-      x: 248,
-      y: 30,
+      x: 120,
+      y: 15,
     });
     expect(returned.snappedDelta).toEqual({ col: 0, row: 0 });
     expect(returned.movedCards).toEqual(cards);
@@ -75,17 +78,20 @@ describe("group drag", () => {
       new Set(["a", "b", "c", "missing"]),
       "a",
       {
-        x: -20,
-        y: 170,
+        x: -10,
+        y: 85,
       },
     );
     expect(session.movingCardIds).toEqual(new Set(["a", "b", "c"]));
-    const forward = updateGroupDragSession(session, cards, { x: 147, y: 59 });
+    const forward = updateGroupDragSession(session, cards, {
+      x: 73.5,
+      y: 29.5,
+    });
     expect(forward.snappedDelta).toEqual({ col: 3, row: -2 });
     const reverse = updateGroupDragSession(
       forward.session,
       forward.movedCards,
-      { x: -70, y: 320 },
+      { x: -35, y: 160 },
     );
     expect(reverse.snappedDelta).toEqual({ col: -1, row: 3 });
     expect(
@@ -105,11 +111,11 @@ describe("group drag", () => {
       x: 0,
       y: 0,
     });
-    const left = updateGroupDragSession(session, cards, { x: -50, y: -50 });
+    const left = updateGroupDragSession(session, cards, { x: -25, y: -25 });
     expect(left.snappedDelta).toEqual({ col: -1, row: -1 });
     const back = updateGroupDragSession(left.session, left.movedCards, {
-      x: -10,
-      y: -10,
+      x: -5,
+      y: -5,
     });
     expect(back.snappedDelta.col).toBe(0);
     expect(back.snappedDelta.row).toBe(0);
@@ -201,19 +207,19 @@ describe("card overlap", () => {
 });
 
 describe("card resize", () => {
-  const start = { x: 100, y: 100 };
+  const start = { x: 50, y: 50 };
 
   it("rounds movement to cells and only resizes the axes touched by the handle", () => {
-    const a = { ...card("a", 0, 0), widthCells: 5, heightCells: 4 };
-    expect(computeCellResize(a, "e", start, { x: 126, y: 400 })).toEqual({
+    const a = { ...card("a", 0, 0), widthCells: 5, heightCells: 6 };
+    expect(computeCellResize(a, "e", start, { x: 63, y: 200 })).toEqual({
       cardId: "a",
       widthCells: 6,
-      heightCells: 4,
+      heightCells: 6,
     });
-    expect(computeCellResize(a, "s", start, { x: 0, y: 74 })).toEqual({
+    expect(computeCellResize(a, "s", start, { x: 0, y: 37 })).toEqual({
       cardId: "a",
       widthCells: 5,
-      heightCells: 3,
+      heightCells: 5,
     });
   });
 
@@ -247,11 +253,12 @@ describe("card resize", () => {
         },
       ],
     };
-    expect(minCardHeightCellsForPorts(a)).toBe(6);
+    // The lowest port row, then the row the plate's bottom inset takes.
+    expect(minCardHeightCellsForPorts(a)).toBe(7);
     expect(computeCellResize(a, "se", start, { x: -100, y: -100 })).toEqual({
       cardId: "a",
       widthCells: 4,
-      heightCells: 6,
+      heightCells: 7,
     });
     expect(computeCellResize(a, "se", start, { x: 600, y: 600 })).toEqual({
       cardId: "a",
@@ -269,6 +276,6 @@ describe("card resize", () => {
     };
     expect(
       computeCellResize(lowCap, "s", start, { x: 100, y: -100 }).heightCells,
-    ).toBe(6);
+    ).toBe(7);
   });
 });
