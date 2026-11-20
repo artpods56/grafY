@@ -38,6 +38,7 @@ const textType = { id: "scalar.text", schema_version: 2 };
 function port(name: string, overrides: Partial<Port> = {}): Port {
   return {
     name,
+    kind: "artifact",
     accepted_shapes: ["one"],
     artifact_type: textType,
     direction: "input",

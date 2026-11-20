@@ -20,11 +20,13 @@ from fastapi import (
     Header,
     HTTPException,
     Path,
+    Query,
     Request,
     Response,
 )
 from fastapi.responses import JSONResponse
 from grafy_crypto.grants import Grant, GrantError
+from pydantic import BeforeValidator
 from rasterio.errors import NotGeoreferencedWarning
 from rio_tiler.errors import TileOutsideBounds
 from titiler.core.errors import add_exception_handlers
@@ -47,6 +49,11 @@ from grafy_tiler.service import (
     TileService,
 )
 from grafy_tiler.settings import Settings
+from grafy_tiler.window import (
+    UnsupportedPixelFormat,
+    WindowOutOfBounds,
+    WindowTooLarge,
+)
 
 logger = logging.getLogger("grafy_tiler")
 
@@ -130,6 +137,40 @@ async def thumbnail(
     return _image(data, tile_format)
 
 
+def _integer_query(value: object) -> str:
+    if not isinstance(value, str) or not value.isascii() or not value.isdecimal():
+        raise ValueError("expected an unsigned decimal integer")
+    return value
+
+
+PixelInteger = Annotated[int, BeforeValidator(_integer_query)]
+
+
+@router.get("/window")
+async def window(
+    grant: Granted,
+    service: Service,
+    col: Annotated[PixelInteger, Query(ge=0)],
+    row: Annotated[PixelInteger, Query(ge=0)],
+    width: Annotated[PixelInteger, Query(ge=1)],
+    height: Annotated[PixelInteger, Query(ge=1)],
+) -> Response:
+    """Exact source pixels of a rectangle, with where they came from.
+
+    Half-open `[col, col+width) x [row, row+height)` on the granted page, read
+    1:1 and never clipped, padded, stretched or resampled. The
+    ``X-Grafy-Window`` header carries the rectangle back plus the affine that
+    maps crop-local pixel corners into the source CRS, both null when the page
+    is not usefully georeferenced.
+    """
+    read = await service.window(grant, col, row, width, height)
+    return Response(
+        content=read.png,
+        media_type="image/png",
+        headers={"X-Grafy-Window": read.header},
+    )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved = settings if settings is not None else Settings()  # pyright: ignore[reportCallIssue]
 
@@ -168,6 +209,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             SourceError: 422,
             SourceMismatch: 409,
             SourceTooLarge: 413,
+            WindowOutOfBounds: 422,
+            WindowTooLarge: 413,
+            UnsupportedPixelFormat: 415,
         },
     )
 

@@ -2,11 +2,12 @@
 
 import logging
 from collections.abc import Callable, Sequence
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from grafy_core.domain.identity import ActorContext
 from grafy_core.domain.runs import Run
 from grafy_core.kernel.instances import InstanceKey
+from grafy_core.node_context import NodeExecutionContext
 from grafy_core.ports.collaboration import CollaborationUnitOfWorkPort
 
 from grafy_api.realtime.hub import ProjectRoomHub
@@ -16,6 +17,7 @@ from grafy_api.realtime.protocol import (
     InstanceKeyEntry,
     InstanceStateEntry,
     InstancesChangedMessage,
+    NodeProgressMessage,
     RunFinishedMessage,
     RunStartedMessage,
     RunTargetSummary,
@@ -63,6 +65,49 @@ def instance_state_entry(snapshot: InstanceStateSnapshot) -> InstanceStateEntry:
         last_result_fingerprint=snapshot.last_result_fingerprint,
         error=None if snapshot.error is None else snapshot.error[:2000],
     )
+
+
+class ProjectNodeProgress:
+    def __init__(self, hub: ProjectRoomHub) -> None:
+        self._hub = hub
+        self._computation_id = uuid4()
+        self._sequence = 0
+
+    async def report_progress(
+        self,
+        context: NodeExecutionContext,
+        message: str,
+        *,
+        current: int | None,
+        total: int | None,
+    ) -> None:
+        if (
+            context.project_id is None
+            or context.graph_id is None
+            or context.node_id is None
+            or context.fingerprint is None
+        ):
+            return
+        self._sequence += 1
+        await self._hub.publish_transient(
+            workspace_id=context.workspace_id,
+            project_id=context.project_id,
+            message=NodeProgressMessage(
+                instance=InstanceKeyEntry(
+                    project_id=context.project_id,
+                    graph_id=context.graph_id,
+                    node_id=context.node_id,
+                    call_path=context.call_path,
+                ),
+                fingerprint=context.fingerprint,
+                computation_id=self._computation_id,
+                sequence=self._sequence,
+                message=message,
+                current=current,
+                total=total,
+                invocation_path=context.invocation_path,
+            ),
+        )
 
 
 class ProjectRunEvents:

@@ -14,7 +14,7 @@ From the repository root, run:
 
 ```bash
 uv sync
-uv run python -m grafy_plugin_gis.smoke
+uv run python scripts/smoke_gis.py
 ```
 
 The command creates a small GeoTIFF, persists it as a COG with XYZ tiles,
@@ -27,8 +27,10 @@ To check the production image without starting a server:
 digest="$(git archive HEAD | shasum -a 256 | cut -d ' ' -f 1)"
 docker build --file infra/docker/api.Dockerfile --target api-release \
 	--build-arg GRAFY_BUILD_DIGEST="$digest" --tag grafy-api:gis-check .
-docker run --rm --network=none --entrypoint .venv/bin/python \
-	grafy-api:gis-check -m grafy_plugin_gis.smoke
+docker run --rm --network=none \
+  -v "$PWD/scripts/smoke_gis.py:/smoke_gis.py:ro" \
+  --entrypoint .venv/bin/python \
+  grafy-api:gis-check /smoke_gis.py
 ```
 
 The release target requires the source archive digest. Build from a clean

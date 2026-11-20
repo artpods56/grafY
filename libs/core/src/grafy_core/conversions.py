@@ -1,22 +1,12 @@
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from grafy_core.artifacts import ArtifactTypeKey
+if TYPE_CHECKING:
+    from grafy_core.runtime.artifact_values import Artifact
 
 
 MAX_ARTIFACT_CONVERSION_HOPS = 8
-
-
-def conversion_runtime_types_are_compatible(
-    produced: type[object],
-    accepted: type[object],
-) -> bool:
-    """Conservatively prove that every declared output fits the next input."""
-    if produced is accepted or accepted is object:
-        return True
-    if produced is int and accepted is float:
-        return True
-    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,15 +22,25 @@ class ArtifactConversionKey:
 
 
 @dataclass(frozen=True, slots=True)
-class ArtifactConversion[SourceT, TargetT]:
-    key: ArtifactConversionKey
-    source: ArtifactTypeKey
-    target: ArtifactTypeKey
-    source_type: type[SourceT]
-    target_type: type[TargetT]
+class Conversion[S, T]:
+    id: str
+    version: int
     title: str
-    convert: Callable[[SourceT], TargetT]
+    source: "Artifact[S]"
+    target: "Artifact[T]"
+    convert: Callable[[S], Awaitable[T]]
 
     def __post_init__(self) -> None:
+        if self.id.strip() == "":
+            raise ValueError("Artifact conversion id must not be blank")
+        if self.version < 1:
+            raise ValueError("Artifact conversion version must be positive")
         if self.title.strip() == "":
             raise ValueError("Artifact conversion title must not be blank")
+
+
+__all__ = [
+    "MAX_ARTIFACT_CONVERSION_HOPS",
+    "ArtifactConversionKey",
+    "Conversion",
+]

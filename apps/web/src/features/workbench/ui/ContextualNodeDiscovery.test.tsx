@@ -5,6 +5,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
+import {
+  artifactCardOutputPort,
+  ARTIFACT_CARD_OUTPUT_HANDLE,
+} from "../canvas/artifact-connections";
+import {
+  artifactDropCommands,
+  artifactDropPayload,
+} from "../model/artifact-drop";
 import { encodeHandleId } from "../canvas/handles";
 import { portMetaForPort } from "../canvas/types";
 import {
@@ -45,19 +54,12 @@ function port(
   direction: Port["direction"],
   artifactTypeId = "scalar.text",
 ): Port {
-  return {
+  return artifactPortFixture({
     name,
     title: name[0]?.toUpperCase() + name.slice(1),
-    description: null,
     direction,
     artifact_type: { id: artifactTypeId, schema_version: 1 },
-    artifact_type_variable: null,
-    shape: "one",
-    accepted_shapes: ["one"],
-    instance_plugs: false,
-    variadic: false,
-    required: true,
-  };
+  });
 }
 
 function node(
@@ -66,21 +68,14 @@ function node(
   inputs: readonly Port[],
   outputs: readonly Port[],
 ): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: operatorId,
-    operator_version: 1,
     plugin_slug: "builtin",
-    origin: "builtin",
     title,
     description: `${title} description`,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs,
     outputs,
-    catalog_visible: true,
-    runnable: true,
-  };
+  });
 }
 
 function registry(): NodeRegistry {
@@ -229,6 +224,59 @@ describe("popupPositionBesidePreview", () => {
 });
 
 describe("ContextualNodeDiscovery", () => {
+  it("offers compatible nodes from an artifact card without a second card action", async () => {
+    const catalog = registry();
+    const source = artifactCardOutputPort({
+      artifact_id: "page",
+      artifact_type: "scalar.text",
+      schema_version: 1,
+    });
+    const candidates = downstreamCandidatesFromOutput({
+      sourcePort: source,
+      sourceHandle: encodeHandleId(portMetaForPort(source, source.shape)),
+      registry: catalog,
+      nodes: catalog.nodes,
+    });
+    const onConfirm = vi.fn();
+    const { container } = await renderDiscovery({
+      session: {
+        ...sessionFor(catalog),
+        sourceHandle: ARTIFACT_CARD_OUTPUT_HANDLE,
+        candidates,
+      },
+      onConfirm,
+    });
+    expect(container.textContent).not.toContain("Place output card on canvas");
+    const candidate = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Transform text"),
+    );
+    await React.act(async () => candidate?.click());
+    expect(onConfirm).toHaveBeenCalledOnce();
+    const choice = onConfirm.mock.calls[0]?.[1];
+    expect(choice.candidatePort.name).toBe("text");
+    const commands = artifactDropCommands(
+      artifactDropPayload({
+        artifact_id: "page",
+        artifact_type: "scalar.text",
+        schema_version: 1,
+      }),
+      { nodeId: "new-node", portName: choice.candidatePort.name, plugId: null },
+      choice.candidatePort,
+      {},
+      { edges: [], origins: [], conversions: [] },
+    );
+    expect(commands).toEqual([
+      expect.objectContaining({
+        kind: "add_origin",
+        origin: expect.objectContaining({
+          to_node: "new-node",
+          to_port: "text",
+          value: expect.objectContaining({ artifact_id: "page" }),
+        }),
+      }),
+    ]);
+  });
+
   it.each([
     { matches: true, shouldFocus: true },
     { matches: false, shouldFocus: false },

@@ -85,6 +85,9 @@ from .library import (
 from .node_secrets import (
     node_secrets as node_secrets,
 )
+from .provider_operations import (
+    provider_operations as provider_operations,
+)
 from .projects import (
     project_checkpoint_mappings as project_checkpoint_mappings,
 )

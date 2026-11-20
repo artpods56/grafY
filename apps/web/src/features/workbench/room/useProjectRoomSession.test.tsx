@@ -493,6 +493,44 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("keeps ordered, project-scoped progress and starts a fresh history each computation", async () => {
+  const { room, push } = await openRoom();
+  const instance = instanceKey(GRAPH_ID, "detect");
+  const event = {
+    protocol_version: 1,
+    type: "node.progress",
+    instance,
+    fingerprint: "scan-fingerprint",
+    computation_id: "first-scan",
+    sequence: 1,
+    message: "Scanning TIFF windows",
+    current: 0,
+    total: 12,
+    invocation_path: [],
+  };
+  await push(event);
+  await push({ ...event, sequence: 3, current: 2 });
+  await push({ ...event, sequence: 2, current: 1 });
+  await push({
+    ...event,
+    sequence: 4,
+    current: 9,
+    instance: { ...instance, project_id: "different-project" },
+  });
+  const key = instanceKeyText(instance);
+  const history = room().nodeProgress.get(key);
+  expect(history?.entries.map(({ current }) => current)).toEqual([2, 0]);
+  expect(history?.omittedCount).toBe(1);
+
+  await push({ ...event, computation_id: "second-scan" });
+  expect(
+    room()
+      .nodeProgress.get(key)
+      ?.entries.map(({ current }) => current),
+  ).toEqual([0]);
+  expect(room().nodeProgress.get(key)?.omittedCount).toBe(0);
+});
+
 describe("useProjectRoomSession instances", () => {
   it("keeps the instances an `instances.changed` delta did not name", async () => {
     const openFresh = instanceState(GRAPH_ID, "n1", "fresh");
@@ -907,7 +945,7 @@ describe("useProjectRoomSession after the room closes", () => {
     expect(room().canRun).toBe(true);
     expect(room().canSubmitCommands).toBe(true);
     expect(room().canPublishPresence).toBe(true);
-    expect(room().participants).toHaveLength(2);
+    expect(room().presenceStore.getParticipants()).toHaveLength(2);
     const headBefore = room().head;
     expect(headBefore).not.toBeNull();
     const runsBefore = room().runsRevision;
@@ -928,7 +966,7 @@ describe("useProjectRoomSession after the room closes", () => {
     expect(closed.capabilities).toEqual([]);
     expect(closed.authorizationVersion).toBeNull();
     expect(closed.localSessionId).toBeNull();
-    expect(closed.participants).toEqual([]);
+    expect(closed.presenceStore.getParticipants()).toEqual([]);
     expect(closed.activeRuns).toEqual([]);
     expect(closed.instances.size).toBe(0);
     // And nothing derived from it is authorised any more.
@@ -1018,7 +1056,7 @@ describe("useProjectRoomSession project identity", () => {
     expect(room().status).toBe("connecting");
     expect(room().head).toBeNull();
     expect(room().capabilities).toEqual([]);
-    expect(room().participants).toEqual([]);
+    expect(room().presenceStore.getParticipants()).toEqual([]);
     expect(room().activeRuns).toEqual([]);
     expect(room().instances.size).toBe(0);
     expect(room().canRun).toBe(false);
@@ -1063,7 +1101,7 @@ describe("useProjectRoomSession project identity", () => {
     expect(room().status).toBe("idle");
     expect(room().head).toBeNull();
     expect(room().capabilities).toEqual([]);
-    expect(room().participants).toEqual([]);
+    expect(room().presenceStore.getParticipants()).toEqual([]);
     expect(room().activeRuns).toEqual([]);
     expect(room().instances.size).toBe(0);
     expect(room().localSessionId).toBeNull();

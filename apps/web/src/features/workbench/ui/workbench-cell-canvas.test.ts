@@ -26,6 +26,7 @@ import {
 const type = { id: "scalar.text", schema_version: 2 };
 const output: Port = {
   name: "result",
+  kind: "artifact",
   direction: "output",
   artifact_type: type,
   accepted_shapes: ["one"],

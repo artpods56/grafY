@@ -29,15 +29,14 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
-from grafy_core.artifact_contracts import INTEGER_VALUE, TEXT_VALUE
-from grafy_core.artifacts import ArtifactTypeSpec, NodeConfig, NodeInput, NodeOutput
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.nodes import (
+    Binds,
     ConfigContract,
-    InPort,
     Node,
     NodeContractError,
     NodeExecutionContext,
-    OutPort,
+    Plugs,
     derive_input_contract,
     derive_output_contract,
 )
@@ -55,25 +54,12 @@ def _without_none(annotation: object) -> tuple[object, bool]:
     if get_origin(value) not in (Union, UnionType):
         return value, False
     args = get_args(value)
+    if type(None) not in args:
+        return value, False
     non_null = tuple(arg for arg in args if arg is not type(None))
-    if len(non_null) == 1 and len(non_null) != len(args):
+    if len(non_null) == 1:
         return non_null[0], True
-    return value, False
-
-
-def _inferred_artifact(annotation: object) -> ArtifactTypeSpec | None:
-    value, _ = _without_none(annotation)
-    if get_origin(value) is list:
-        args = get_args(value)
-        if len(args) != 1:
-            return None
-        value, _ = _annotation_parts(args[0])
-    value, _ = _annotation_parts(value)
-    if value is str:
-        return TEXT_VALUE
-    if value is int:
-        return INTEGER_VALUE
-    return None
+    return value, True
 
 
 def _validate_field(name: str, annotation: object) -> tuple[object, ...]:
@@ -164,13 +150,12 @@ def callable_node_class(
             continue
 
         metadata = _validate_field(name, annotation)
-        input_ports = [item for item in metadata if isinstance(item, InPort)]
-        if any(isinstance(item, OutPort) for item in metadata):
-            raise NodeContractError(f"Parameter {name!r} cannot declare OutPort")
-        if len(input_ports) > 1:
-            raise NodeContractError(
-                f"Parameter {name!r} declares multiple InPort markers"
-            )
+        if any(isinstance(item, Plugs | Binds) for item in metadata):
+            if parameter.kind is Parameter.KEYWORD_ONLY:
+                raise NodeContractError(
+                    f"Keyword-only parameter {name!r} is configuration and cannot "
+                    "declare Plugs or Binds; move it before * to declare a graph input"
+                )
         default = parameter.default
         if isinstance(default, FieldInfo):
             raise NodeContractError(
@@ -178,11 +163,6 @@ def callable_node_class(
                 "constraints in Annotated and use an ordinary Python default"
             )
         if parameter.kind is Parameter.KEYWORD_ONLY:
-            if input_ports:
-                raise NodeContractError(
-                    f"Keyword-only parameter {name!r} is configuration and cannot "
-                    "declare InPort; move it before * to declare a graph input"
-                )
             if default is not Parameter.empty:
                 default_adapter: TypeAdapter[object] = TypeAdapter(annotation)
                 try:
@@ -204,14 +184,6 @@ def callable_node_class(
                 f"Graph input {name!r} may default only to None with a nullable "
                 "annotation; use keyword-only parameters for configuration defaults"
             )
-        if not input_ports:
-            artifact = _inferred_artifact(annotation)
-            if artifact is None:
-                raise NodeContractError(
-                    f"Graph input {name!r} needs an explicit InPort artifact "
-                    "contract; only str, int, and their list/optional forms are inferred"
-                )
-            annotation = Annotated[annotation, InPort(artifact)]
         input_fields[name] = (
             annotation,
             ... if default is Parameter.empty else default,
@@ -221,12 +193,7 @@ def callable_node_class(
     if "return" not in hints:
         raise NodeContractError("Callable requires a return type annotation")
     output_annotation = hints["return"]
-    output_metadata = _validate_field(output_name, output_annotation)
-    output_ports = [item for item in output_metadata if isinstance(item, OutPort)]
-    if any(isinstance(item, InPort) for item in output_metadata):
-        raise NodeContractError("Return annotation cannot declare InPort")
-    if len(output_ports) > 1:
-        raise NodeContractError("Return annotation declares multiple OutPort markers")
+    _validate_field(output_name, output_annotation)
     output_type, nullable = _without_none(output_annotation)
     output_origin = get_origin(output_type)
     if (
@@ -246,15 +213,6 @@ def callable_node_class(
             raise NodeContractError(
                 "Artifact output sequences cannot contain nullable items"
             )
-    if not output_ports:
-        artifact = _inferred_artifact(output_annotation)
-        if artifact is None:
-            raise NodeContractError(
-                "Return annotation needs an explicit OutPort artifact contract; "
-                "only str, int, and their list forms are inferred"
-            )
-        output_annotation = Annotated[output_annotation, OutPort(artifact)]
-
     model_prefix = re.sub(r"\W", "_", f"Callable_{operator_id}_v{version}")
     # Pydantic accepts dynamic field definitions through **kwargs. Names were
     # checked above so they cannot bind its reserved model-construction options.
@@ -307,7 +265,18 @@ def callable_node_class(
     CallableNodeAdapter.__name__ = function.__name__
     CallableNodeAdapter.__qualname__ = function.__qualname__
     CallableNodeAdapter.__doc__ = getdoc(function)
+    input_contract = derive_input_contract(input_model)
+    output_contract = derive_output_contract(output_model)
+    for field_name in input_fields:
+        if field_name not in input_contract.ports:
+            raise NodeContractError(
+                f"Parameter {field_name!r} does not resolve to a declared artifact value"
+            )
+    if output_name not in output_contract.ports:
+        raise NodeContractError(
+            "Return annotation does not resolve to a declared artifact value"
+        )
     CallableNodeAdapter.config_contract = ConfigContract(model=config_model)
-    CallableNodeAdapter.input_contract = derive_input_contract(input_model)
-    CallableNodeAdapter.output_contract = derive_output_contract(output_model)
+    CallableNodeAdapter.input_contract = input_contract
+    CallableNodeAdapter.output_contract = output_contract
     return CallableNodeAdapter

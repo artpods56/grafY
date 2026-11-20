@@ -471,6 +471,7 @@ function specPort(
 ): Port {
   return {
     name,
+    kind: "artifact",
     title,
     description: null,
     direction,

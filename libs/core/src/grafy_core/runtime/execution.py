@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from enum import StrEnum
 from typing import cast
@@ -18,8 +18,10 @@ from grafy_core.nodes import (
     Node,
     NodeExecutionContext,
     UserFacingNodeError,
+    bind_node_secret_config,
     resolve_node_contracts,
 )
+from grafy_core.runtime.edge_transform import EdgeTransform
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import OutputPersister, PersistedNodeOutput
 
@@ -78,6 +80,8 @@ class NodeRuntime:
         config: JsonObject | None = None,
         artifact_type_bindings: Mapping[str, ArtifactTypeKey] | None = None,
         implementation: ImplementationIdentity | None = None,
+        transforms: Mapping[str, Sequence[EdgeTransform]] | None = None,
+        metadata: JsonObject | None = None,
     ) -> PersistedNodeOutput | BaseModel:
         effective_bindings = artifact_type_bindings or {}
         raw_config: JsonObject = {} if config is None else config
@@ -91,11 +95,15 @@ class NodeRuntime:
             artifact_type_bindings=effective_bindings,
         )
         validated_config = node.config_contract.model.model_validate(raw_config)
+        context = bind_node_secret_config(context, validated_config)
 
         materialized_inputs, provenance = await self._materializer.materialize(
             contract=cast(InputContract[InputT], resolved_contracts.input_contract),
             inputs=inputs,
             workspace_id=context.workspace_id,
+            transforms=transforms,
+            node_context=context,
+            item_index=context.invocation_index,
         )
         try:
             run_output = await node.run(
@@ -121,15 +129,16 @@ class NodeRuntime:
                 f"({PluginFailureCode.OPERATOR_FAILURE.value})",
                 failure_code=PluginFailureCode.OPERATOR_FAILURE,
             ) from exc
+        recorded: JsonObject = {} if metadata is None else dict(metadata)
+        if context.output_metadata:
+            recorded.update(context.output_metadata)
+        if implementation is not None:
+            recorded["implementation"] = implementation.provenance_document()
         persisted = await self._persister.persist(
             contract=resolved_contracts.output_contract,
             context=context,
             output=run_output,
             provenance=provenance,
-            metadata=(
-                {}
-                if implementation is None
-                else {"implementation": implementation.provenance_document()}
-            ),
+            metadata=recorded,
         )
         return persisted

@@ -175,6 +175,19 @@ export interface RunFinishedMessage {
   readonly error: string | null;
 }
 
+export interface NodeProgressMessage {
+  readonly protocol_version: 1;
+  readonly type: "node.progress";
+  readonly instance: RoomInstanceKey;
+  readonly fingerprint: string;
+  readonly computation_id: string;
+  readonly sequence: number;
+  readonly message: string;
+  readonly current: number | null;
+  readonly total: number | null;
+  readonly invocation_path: readonly number[];
+}
+
 /** Instance-state deltas. `removed` names the instances that no longer exist. */
 export interface InstancesChangedMessage {
   readonly protocol_version: 1;
@@ -253,7 +266,8 @@ export type ServerRoomMessage =
   | PresenceUpdateMessage
   | RunStartedMessage
   | RunFinishedMessage
-  | InstancesChangedMessage;
+  | InstancesChangedMessage
+  | NodeProgressMessage;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -664,6 +678,38 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       run_id: raw.run_id,
       status,
       error: error ?? null,
+    };
+  }
+
+  if (type === "node.progress") {
+    const instance = parseInstanceKey(raw.instance);
+    if (
+      !instance ||
+      !isString(raw.fingerprint) ||
+      !isString(raw.computation_id) ||
+      !isNonNegativeInt(raw.sequence) ||
+      raw.sequence === 0 ||
+      !isString(raw.message) ||
+      raw.message.length === 0 ||
+      raw.message.length > 1000 ||
+      (raw.current !== null && !isNonNegativeInt(raw.current)) ||
+      (raw.total !== null && !isNonNegativeInt(raw.total)) ||
+      (raw.current !== null && raw.total !== null && raw.current > raw.total) ||
+      !Array.isArray(raw.invocation_path) ||
+      !raw.invocation_path.every(isNonNegativeInt)
+    )
+      return null;
+    return {
+      protocol_version: 1,
+      type,
+      instance,
+      fingerprint: raw.fingerprint,
+      computation_id: raw.computation_id,
+      sequence: raw.sequence,
+      message: raw.message,
+      current: raw.current,
+      total: raw.total,
+      invocation_path: raw.invocation_path,
     };
   }
 

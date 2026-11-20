@@ -11,6 +11,8 @@ interface SchemaFieldBase {
   pattern?: string;
   required: boolean;
   nullable: boolean;
+  advanced?: boolean;
+  defaultValue?: unknown;
 }
 
 export interface ScalarSchemaField extends SchemaFieldBase {
@@ -438,6 +440,13 @@ export function schemaFields(rawSchema: unknown): SchemaField[] {
             : typeof property.description === "string"
               ? property.description
               : undefined,
+        ...(propertyMetadata["x-grafy-advanced"] === true ||
+        property["x-grafy-advanced"] === true
+          ? { advanced: true }
+          : {}),
+        ...((propertyMetadata.default ?? property.default) !== undefined
+          ? { defaultValue: propertyMetadata.default ?? property.default }
+          : {}),
         required: required.has(name),
         nullable: editable.nullable,
       };

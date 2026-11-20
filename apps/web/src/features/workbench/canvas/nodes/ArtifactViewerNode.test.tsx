@@ -219,6 +219,7 @@ import type {
   RunNodeResult,
   RunPortOutput,
 } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../../test-fixtures";
 import {
   ARTIFACT_VIEWER_EDGE_TYPE,
   ARTIFACT_VIEWER_INPUT_HANDLE,
@@ -237,48 +238,27 @@ import ArtifactViewerNodeCard from "./ArtifactViewerNode";
 const roots: Root[] = [];
 
 function sourceSpec(shape: "one" | "many"): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: "test.render-source",
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title: "Prepare map",
     description: "Produces multiple outputs for viewer tests.",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
-    inputs: [],
     outputs: [
-      {
+      artifactPortFixture({
         name: "metadata",
         title: "Metadata",
-        description: null,
         direction: "output",
         artifact_type: { id: "json.object", schema_version: 1 },
-        artifact_type_variable: null,
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
-        required: true,
-      },
-      {
+      }),
+      artifactPortFixture({
         name: "preview",
         title: "Raster preview",
-        description: null,
         direction: "output",
         artifact_type: { id: "image.raster", schema_version: 1 },
-        artifact_type_variable: null,
         shape,
         accepted_shapes: [shape],
-        instance_plugs: false,
-        variadic: false,
-        required: true,
-      },
+      }),
     ],
-  };
+  });
 }
 
 function artifact(id: string, artifactType: string): RunPortArtifact {

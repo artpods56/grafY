@@ -4,6 +4,7 @@ import type {
   SavedGraphOrigin,
   RunPortOutput,
   RunNodeResult,
+  Port,
 } from "@/lib/api";
 import {
   artifactDropPayload,
@@ -49,6 +50,28 @@ export function outputReleasePlacesArtifactCard({
 }): boolean {
   if (!onCanvas) return false;
   return portShape === "many" || hasMaterializedArtifacts;
+}
+
+/** Describe the card value as an output for catalog compatibility checks. */
+export function artifactCardOutputPort(
+  value: ArtifactCardValue,
+): Port & { direction: "output" } {
+  const shape = "item_refs" in value ? "many" : "one";
+  return {
+    name: "artifact",
+    title: "Artifact",
+    direction: "output",
+    kind: "artifact",
+    artifact_type: {
+      id: value.artifact_type,
+      schema_version: value.schema_version,
+    },
+    shape,
+    accepted_shapes: [shape],
+    required: true,
+    variadic: false,
+    instance_plugs: false,
+  };
 }
 
 type ArtifactCardSource =

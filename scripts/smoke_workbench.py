@@ -7,30 +7,39 @@ from uuid import UUID
 
 from PIL import Image, ImageDraw
 
+from grafy_core.artifact_contracts import (
+    IMAGE_REGIONS,
+    RASTER_IMAGE,
+    ImagePage,
+    ImageRegion,
+    ImageRegionSet,
+)
 from grafy_core.artifacts import (
     ArtifactObject,
     ArtifactRef,
     ArtifactRefSequence,
-    InMemoryUnitOfWork,
 )
+from grafy_core.canonical_conversions import PNG_FILE_TO_RASTER
+from grafy_core.documents import FILE_ARTIFACTS
 from grafy_core.file_contracts import PNG_FILE
 from grafy_core.nodes import NodeExecutionContext
 from grafy_core.ports.storage import SaveFileCommand
-from grafy_core.artifact_contracts import (
-    RASTER_IMAGE,
-)
-from grafy_workbench.image import IMAGES
-from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
-
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.runtime.artifact_values import ArtifactValues
+from grafy_core.runtime.edge_transform import EdgeTransform
 from grafy_core.runtime.execution import NodeRuntime, PersistedNodeOutput
-from grafy_core.runtime.materialization import InputMaterializer
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.runtime.materialization import (
+    InputMaterializer,
+    MaterializationProvenance,
+)
 from grafy_core.runtime.persistence import (
-    ArtifactWriterRegistry,
+    ArtifactWriteContext,
     OutputPersister,
 )
-from grafy_core.runtime.resolvers import ResolverRegistry
 from grafy_storage import LocalFileObjectStore
+from grafy_plugin_image import IMAGES as IMAGE_OPERATORS
+from grafy_workbench.image import IMAGES
 
 
 WORKSPACE = Path(".grafy-artifacts/workbench-smoke").resolve()
@@ -38,6 +47,7 @@ WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 SAMPLE_DIR = WORKSPACE / "samples"
 OBJECT_STORE = WORKSPACE / "objects"
 BUCKET = "workbench-artifacts"
+IMAGE_SIZE = (260, 90)
 
 
 async def main() -> None:
@@ -55,18 +65,16 @@ async def main() -> None:
         uow=uow,
         bucket=BUCKET,
     )
-    resolver_registry = ResolverRegistry(
-        list(plugin_registry.build_resolvers(plugin_context))
+    values = ArtifactValues(
+        (*FILE_ARTIFACTS, *plugin_registry.artifacts),
+        uow=uow,
+        storage=storage,
+        bucket=BUCKET,
+        storage_backend="local",
     )
     runtime = NodeRuntime(
-        materializer=InputMaterializer(resolver_registry),
-        persister=OutputPersister(
-            ArtifactWriterRegistry(
-                [
-                    *plugin_registry.build_writers(plugin_context),
-                ]
-            )
-        ),
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
     )
 
     image_files = [
@@ -78,18 +86,37 @@ async def main() -> None:
         )
         for path in image_paths
     ]
+    regions_ref = await write_regions(values)
 
-    decode_output = await runtime.run_node(
-        plugin_registry.build_node("image.decode", 1, plugin_context),
-        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="image_decode_1"),
+    # An image file reaches a raster port through its canonical conversion, the
+    # same way a connection does: the stored file row is read, never retyped.
+    crop_output = await runtime.run_node(
+        plugin_registry.build_node("image.crop_regions", 1, plugin_context),
+        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="image_crop_1"),
         {
-            "files": ArtifactRefSequence.from_key(
-                key=PNG_FILE.key,
-                item_refs=image_files,
-            )
+            "image": image_files[0],
+            "regions": regions_ref,
+        },
+        transforms={
+            "image": (
+                EdgeTransform(
+                    projection_path=None,
+                    conversions=(PNG_FILE_TO_RASTER,),
+                    delivered=RASTER_IMAGE.key,
+                    label=f"{image_paths[0].name} image",
+                ),
+            ),
+            "regions": (
+                EdgeTransform(
+                    projection_path=None,
+                    conversions=(),
+                    delivered=IMAGE_REGIONS.key,
+                    label="boxes",
+                ),
+            ),
         },
     )
-    decoded_images = output_sequence(decode_output, "images")
+    crops = output_sequence(crop_output, "crops")
 
     async with uow as entered:
         image_artifacts = await entered.artifacts.list_by_type(
@@ -105,10 +132,10 @@ async def main() -> None:
 
     result: dict[str, object] = {
         "workspace": str(WORKSPACE),
-        "decoded_sequence_id": decoded_images.sequence_id,
+        "cropped_sequence_id": crops.sequence_id,
         "raster_image_count": len(image_artifacts),
-        "sequence_item_count": len(decoded_images.item_refs),
-        "first_decoded_ref": decoded_images.item_refs[0].model_dump(mode="json"),
+        "sequence_item_count": len(crops.item_refs),
+        "first_cropped_ref": crops.item_refs[0].model_dump(mode="json"),
         "first_raster_object_key": first_image.object_key,
     }
     print(json.dumps(result, indent=2, default=str))
@@ -150,6 +177,28 @@ async def seed_file_artifact(
     return artifact.ref()
 
 
+async def write_regions(values: ArtifactValues) -> ArtifactRef:
+    """Persist the boxes a document reader would have produced for page 0."""
+
+    regions = ImageRegionSet(
+        pages=[ImagePage(index=0, width=IMAGE_SIZE[0], height=IMAGE_SIZE[1])],
+        regions=[
+            ImageRegion(page=0, x0=10, y0=20, x1=140, y1=70, kind="image"),
+        ],
+    )
+    return await values.write(
+        IMAGE_REGIONS.key,
+        regions,
+        ArtifactWriteContext(
+            node_context=NodeExecutionContext(
+                workspace_id=WORKSPACE_ID,
+                node_id="seed_regions",
+            ),
+            provenance=MaterializationProvenance(refs_by_input={}),
+        ),
+    )
+
+
 def output_sequence(output: object, name: str) -> ArtifactRefSequence:
     if not isinstance(output, PersistedNodeOutput):
         raise RuntimeError(f"Node output is not persisted for {name!r}")
@@ -163,7 +212,7 @@ def create_sample_images(directory: Path) -> list[Path]:
     directory.mkdir(parents=True, exist_ok=True)
     paths = [directory / "page-001.png", directory / "page-002.png"]
     for index, path in enumerate(paths):
-        image = Image.new("RGB", (260, 90), color="white")
+        image = Image.new("RGB", IMAGE_SIZE, color="white")
         draw = ImageDraw.Draw(image)
         draw.text((20, 30), f"PAGE {index + 1}", fill="black")
         image.save(path, format="PNG")

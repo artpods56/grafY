@@ -17,6 +17,7 @@ from grafy_core.prompt_contracts import (
 from grafy_core.schema_contracts import JSON_SCHEMA
 from grafy_core.ports.node_secrets import JsonValue
 from grafy_plugin_llm.artifacts import COMPLETION
+from grafy_workbench.schema.values import JsonSchemaText
 from grafy_plugin_llm.declaration import LLM
 from grafy_plugin_llm.openai_compatible import (
     OpenAICompatibleConfig,
@@ -294,7 +295,7 @@ async def test_node_builds_schema_validated_completion_artifact() -> None:
                     ],
                 )
             ],
-            json_schema=schema,
+            json_schema=JsonSchemaText(value=schema),
         ),
     )
 

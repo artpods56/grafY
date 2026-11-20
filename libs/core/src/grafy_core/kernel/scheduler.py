@@ -54,6 +54,11 @@ class ComputationPlan:
     instances: tuple[InstanceKey, ...]
     depends_on: frozenset[str]
     upstream_fingerprints: Mapping[InstanceKey, str]
+    # The provider instances this computation builds in-process. Empty for a
+    # computation that reads only stored artifacts. Not mutated.
+    service_sources: Mapping[InstanceKey, ExpandedInstance] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +74,9 @@ class ComputationRequest:
     fingerprint: str
     instance: ExpandedInstance
     upstream_fingerprints: Mapping[InstanceKey, str]
+    service_sources: Mapping[InstanceKey, ExpandedInstance] = field(
+        default_factory=dict
+    )
 
 
 type ComputationRunner = Callable[
@@ -362,6 +370,7 @@ class _Scheduler:
             fingerprint=fingerprint,
             instance=record.plan.representative,
             upstream_fingerprints=record.plan.upstream_fingerprints,
+            service_sources=record.plan.service_sources,
         )
         try:
             outputs = await self._runner(request)

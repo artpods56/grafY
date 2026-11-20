@@ -23,7 +23,7 @@ The three pieces of local state, and why each is allowed to exist:
 
 import asyncio
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -162,6 +162,7 @@ class RunService:
         runners: ComputationRunnerFactory,
         events: RunEvents,
         concurrency: int,
+        service_operators: Collection[tuple[str, int]] = (),
     ) -> None:
         if concurrency < 1:
             raise ValueError(f"concurrency must be at least 1, got {concurrency}")
@@ -172,6 +173,7 @@ class RunService:
         self._runners = runners
         self._events = events
         self._concurrency = concurrency
+        self._service_operators = frozenset(service_operators)
         self._runtimes: dict[tuple[UUID, UUID], _ProjectRuntime] = {}
         self._watchers: dict[UUID, _WatchedRun] = {}
         self._closing = False
@@ -201,13 +203,18 @@ class RunService:
             document=document,
         )
         fingerprints = compute_fingerprints(expanded, facts)
-        keys = _resolve_targets(expanded, targets)
+        keys = _resolve_targets(
+            expanded,
+            targets,
+            service_operators=self._service_operators,
+        )
         runtime = self._runtime(workspace_id, project_id)
         plan = await plan_run(
             graph=expanded,
             fingerprints=fingerprints,
             targets=keys,
             store=runtime.store,
+            service_operators=self._service_operators,
         )
         run = Run(
             workspace_id=workspace_id,
@@ -273,6 +280,15 @@ class RunService:
         )
         fingerprints = compute_fingerprints(called, facts)
         fingerprint = fingerprints[key]
+        called_node = called.instances[key].node
+        if (
+            called_node.operator_id,
+            called_node.operator_version,
+        ) in self._service_operators:
+            raise RunRejectedError(
+                "nothing_to_compute",
+                f"node {node_id!r} is a service node; there is nothing to compute",
+            )
         runtime = self._runtime(workspace_id, project_id)
         plan = without_pointer(
             await plan_run(
@@ -280,6 +296,7 @@ class RunService:
                 fingerprints=fingerprints,
                 targets=[key],
                 store=runtime.store,
+                service_operators=self._service_operators,
             ),
             fingerprint,
         )
@@ -735,12 +752,22 @@ class RunService:
             fingerprints = compute_fingerprints(expanded, facts)
             for key in expanded.order:
                 fingerprint = fingerprints[key]
+                node = expanded.instances[key].node
+                execution_local = (
+                    node.operator_id,
+                    node.operator_version,
+                ) in self._service_operators
                 state = await derive_instance_state(
                     instance=key,
                     fingerprint=fingerprint,
                     store=store,
                     in_flight=in_flight,
+                    execution_local=execution_local,
                 )
+                if state is None:
+                    # A service node has no stored result. With nothing in flight
+                    # and no failure at this fingerprint, it shows no instance state.
+                    continue
                 pointer = await store.get_pointer(key)
                 snapshots.append(
                     InstanceStateSnapshot(
@@ -796,6 +823,8 @@ def _describe_key(key: InstanceKey) -> str:
 def _resolve_targets(
     expanded: ExpandedGraph,
     targets: Sequence[RunTarget],
+    *,
+    service_operators: Collection[tuple[str, int]] = (),
 ) -> list[InstanceKey]:
     """Turn a Run's target list into keys of this expansion.
 
@@ -804,9 +833,29 @@ def _resolve_targets(
     the whole Graph and never the union of everything inlined into it. A target
     that names no instance is a request nobody can satisfy, and the Run that made
     it is rejected rather than quietly narrowed to what does exist.
+
+    A service node has nothing to compute. An explicit target that names one is
+    refused. An empty target list skips service nodes among the root instances;
+    when that leaves no targets, the Run is refused the same way.
     """
+    service_keys = frozenset(service_operators)
     if not targets:
-        return [key for key in expanded.order if not key.call_path]
+        keys = [
+            key
+            for key in expanded.order
+            if not key.call_path
+            and (
+                expanded.instances[key].node.operator_id,
+                expanded.instances[key].node.operator_version,
+            )
+            not in service_keys
+        ]
+        if not keys:
+            raise RunRejectedError(
+                "nothing_to_compute",
+                "this Graph has no node with a stored result to compute",
+            )
+        return keys
     keys: list[InstanceKey] = []
     for target in targets:
         matches = [
@@ -821,7 +870,15 @@ def _resolve_targets(
                 f"call_path={'/'.join(target.call_path) or '(root)'} is not an "
                 f"instance of graph {expanded.graph_id!r}",
             )
-        keys.append(matches[0])
+        key = matches[0]
+        node = expanded.instances[key].node
+        if (node.operator_id, node.operator_version) in service_keys:
+            raise RunRejectedError(
+                "nothing_to_compute",
+                f"target node={target.node_id!r} is a service node; "
+                "there is nothing to compute",
+            )
+        keys.append(key)
     return keys
 
 

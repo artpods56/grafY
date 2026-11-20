@@ -6,6 +6,9 @@ Request path for a tile::
     miss            -> image info (memory, then disk, then read the header)
                     -> single-flight render on a bounded thread pool
                     -> cache write -> bytes
+
+A native window (:meth:`TileService.window`) shares the pool and nothing else:
+it skips info, overviews and the cache because it must return the stored pixels.
 """
 
 import asyncio
@@ -39,6 +42,12 @@ from grafy_tiler.raster import (
 )
 from grafy_tiler.render import render_region
 from grafy_tiler.settings import Settings
+from grafy_tiler.window import (
+    WindowRead,
+    check_output_shape,
+    limit_output_pixels,
+    read_window,
+)
 
 THUMBNAIL_EDGES: Final = (128, 256, 512, 1024)
 _INFO_MEMORY_ENTRIES: Final = 256
@@ -218,6 +227,31 @@ class TileService:
         )
         return data, info.tile_format
 
+    async def window(
+        self, grant: Grant, col: int, row: int, width: int, height: int
+    ) -> WindowRead:
+        """Read an exact crop of the source. Nothing about it is display work.
+
+        No `info`, no overview, no cache: the caller asked for these pixels, so
+        these are the pixels it gets, and the only shared resource is the render
+        pool's bounded concurrency.
+        """
+        check_output_shape(width, height)
+        limit_output_pixels(width, height)
+
+        def work() -> WindowRead:
+            return read_window(
+                source_path(self._settings, grant),
+                grant.page,
+                col,
+                row,
+                width,
+                height,
+                self._settings,
+            )
+
+        return await self._render(work)
+
     # -- info -------------------------------------------------------------
 
     async def _read_info(self, grant: Grant, key: str) -> ImageInfo:
@@ -314,7 +348,7 @@ class TileService:
 
         return await self._render(work)
 
-    async def _render(self, work: Callable[[], bytes]) -> bytes:
+    async def _render[T](self, work: Callable[[], T]) -> T:
         try:
             return await self._pool.run(work)
         except RasterioError as error:

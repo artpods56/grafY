@@ -19,7 +19,6 @@ from pydantic import SecretStr
 from grafy_shared.config import AppConfig, AuthConfig
 
 from grafy_api.settings import Settings
-from grafy_api.auth import audit as auth_audit
 from grafy_api.auth import (
     AuthService,
     OidcCallbackInternalError,
@@ -216,17 +215,12 @@ class _FailureOnlyAuditUnitOfWork(IdentityUnitOfWorkPort):
 async def test_secondary_failure_audit_write_is_fail_open(
     authenticated: bool,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     repository = _FailureOnlyAuditRepository()
     uow = _FailureOnlyAuditUnitOfWork(repository)
     auth = _auth_service()
     monkeypatch.setattr(auth, "_uow_factory", lambda: uow)
-    recorded: list[tuple[Exception, str]] = []
-
-    def record_failure(exc: Exception, *, operation: str) -> None:
-        recorded.append((exc, operation))
-
-    monkeypatch.setattr(auth_audit, "record_failure", record_failure)
     operation = "workspace.authorize"
     workspace_id = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -247,9 +241,13 @@ async def test_secondary_failure_audit_write_is_fail_open(
 
     assert len(repository.attempts) == 1
     assert uow.commit_attempts == 0
-    assert len(recorded) == 1
-    assert isinstance(recorded[0][0], RuntimeError)
-    assert recorded[0][1] == "security.audit.write.workspace.authorize"
+    record = next(
+        record
+        for record in caplog.records
+        if "security_audit_write_failed" in str(record.msg)
+    )
+    assert "workspace.authorize" in str(record.msg)
+    assert "failure audit sentinel" in caplog.text or "failure audit sentinel" in str(record.msg)
 
 
 def test_oidc_transaction_return_path_is_sensitive_state() -> None:

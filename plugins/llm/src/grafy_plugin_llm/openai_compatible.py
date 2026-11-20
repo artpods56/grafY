@@ -16,14 +16,10 @@ from pydantic import (
 from grafy_core.artifacts import JsonObject, NodeConfig, NodeInput, NodeOutput
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
-    InPort,
     Node,
     NodeExecutionContext,
-    OutPort,
     UserFacingNodeError,
 )
-from grafy_core.prompt_contracts import PROMPT_MESSAGE, PromptMessage
-from grafy_core.schema_contracts import JSON_SCHEMA
 from grafy_core.plugins import (
     NodeHttpEgressContract,
     NodeHttpEgressInput,
@@ -31,9 +27,19 @@ from grafy_core.plugins import (
     PluginRuntimeContext,
 )
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
+from grafy_core.prompt_contracts import PromptMessage
+from grafy_core.runtime.artifact_values import inline_model_artifact
 
+import grafy_plugin_llm.prompt as _prompt
+import grafy_workbench.schema.nodes as _schema_nodes
 from grafy_plugin_llm.artifacts import COMPLETION, CompletionPayload
 from grafy_plugin_llm.declaration import LLM
+from grafy_workbench.schema.values import JsonSchemaText
+
+_ = (_prompt.__name__, _schema_nodes.__name__)  # notes classes before these ports
+
+
+LLM.register(inline_model_artifact(COMPLETION, CompletionPayload))
 
 
 class OpenAICompatibleConfig(NodeConfig):
@@ -121,14 +127,12 @@ class OpenAICompatibleConfig(NodeConfig):
 class OpenAICompatibleInput(NodeInput):
     messages: Annotated[
         list[PromptMessage],
-        InPort(PROMPT_MESSAGE),
         Field(
             min_length=1, title="Instructions", description="Ordered prompt messages."
         ),
     ]
     json_schema: Annotated[
-        str | None,
-        InPort(JSON_SCHEMA),
+        JsonSchemaText | None,
         Field(
             title="Answer format",
             description="Optional schema for a structured completion.",
@@ -139,7 +143,6 @@ class OpenAICompatibleInput(NodeInput):
 class OpenAICompatibleOutput(NodeOutput):
     completion: Annotated[
         CompletionPayload,
-        OutPort(COMPLETION),
         Field(
             title="Answer", description="Completion content and safe provider metadata."
         ),
@@ -260,10 +263,11 @@ class OpenAICompatibleNode(
                 f"{config.base_url!r}"
             ) from exc
 
+        schema_text = None if inputs.json_schema is None else inputs.json_schema.value
         try:
             response = await self._provider.complete(
                 inputs.messages,
-                inputs.json_schema,
+                schema_text,
                 config,
                 api_key,
                 workspace_id=context.workspace_id,
@@ -282,13 +286,11 @@ class OpenAICompatibleNode(
                         for message in inputs.messages
                         for ref in message.image_refs
                     ],
-                    schema=inputs.json_schema,
+                    schema=schema_text,
                     schema_name=(
-                        config.schema_name if inputs.json_schema is not None else None
+                        config.schema_name if schema_text is not None else None
                     ),
-                    schema_strict=(
-                        config.strict if inputs.json_schema is not None else None
-                    ),
+                    schema_strict=(config.strict if schema_text is not None else None),
                     usage=response.usage,
                 )
             )
@@ -297,7 +299,7 @@ class OpenAICompatibleNode(
         except Exception as exc:
             structured_context = (
                 f"structured schema {config.schema_name!r}"
-                if inputs.json_schema is not None
+                if schema_text is not None
                 else "text output"
             )
             raise OpenAICompatibleExecutionError(

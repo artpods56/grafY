@@ -9,7 +9,7 @@ from starlette.routing import Route
 from grafy_persistence.database import create_database
 
 from grafy_api.app_state import get_identity
-from grafy_api.diagnostics import configure_diagnostics
+from grafy_api.logging_setup import configure_logging
 from grafy_api.health import HealthResponse, health, readiness
 from grafy_api.http_errors import register_http_error_handlers
 from grafy_api.mcp import MCP_PATH, McpEndpoint, build_mcp_server
@@ -41,7 +41,7 @@ from grafy_api.v1.routes.workspaces.views import router as workspaces_router
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
-    configure_diagnostics(
+    configure_logging(
         level=resolved_settings.app.log_level,
         renderer=resolved_settings.app.log_renderer,
     )

@@ -4,20 +4,17 @@ from decimal import Decimal
 from io import BytesIO, StringIO
 from typing import Annotated, cast, final, override
 
-from grafy_core.artifacts import ArtifactRef, NodeConfig, NodeInput, NodeOutput
-from grafy_core.file_artifacts import load_file_artifact
-from grafy_core.file_contracts import CSV_FILE, XLSX_FILE
-from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.documents import CsvFile, XlsxFile
+from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import NodeCachePolicy
-from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.ports.storage import FileStoragePort
 from grafy_core.table_contracts import (
-    TABLE_DATA,
     Table,
     TableColumn,
     TableValue,
     TableValueType,
 )
+
 from openpyxl import load_workbook
 from pydantic import (
     Field,
@@ -27,11 +24,17 @@ from pydantic import (
     field_validator,
 )
 
+import grafy_workbench.table.plugin as _table_plugin
 from grafy_plugin_table.declaration import TABLES
+
+_ = _table_plugin.__name__  # notes Table before these ports
 
 
 class TableFileImportError(RuntimeError):
     pass
+
+
+_HANDLE_READ_LIMIT = 256 * 1024 * 1024
 
 
 def _table_value(value: object) -> TableValue:
@@ -210,8 +213,7 @@ class TableImportConfig(NodeConfig):
 
 class TableImportInput(NodeInput):
     file: Annotated[
-        ArtifactRef,
-        InPort(CSV_FILE, also_accepts=(XLSX_FILE,)),
+        CsvFile | XlsxFile,
         Field(title="Spreadsheet", description="A CSV or Excel file."),
     ]
 
@@ -219,7 +221,6 @@ class TableImportInput(NodeInput):
 class TableImportOutput(NodeOutput):
     table: Annotated[
         Table,
-        OutPort(TABLE_DATA),
         Field(
             title="Table",
             description="The rows and columns from that file.",
@@ -231,19 +232,11 @@ class TableImportOutput(NodeOutput):
     operator_id="table.import",
     version=1,
     title="Read a spreadsheet",
-    factory=lambda context: ImportTableNode(
-        storage=context.storage,
-        uow=context.uow,
-    ),
     cache_policy=NodeCachePolicy.NEVER,
 )
 @final
 class ImportTableNode(Node[TableImportConfig, TableImportInput, TableImportOutput]):
     """Reads a CSV or Excel file into a table."""
-
-    def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
-        self._storage = storage
-        self._uow = uow
 
     @override
     async def run(
@@ -253,22 +246,12 @@ class ImportTableNode(Node[TableImportConfig, TableImportInput, TableImportOutpu
         inputs: TableImportInput,
         /,
     ) -> TableImportOutput:
-        ref = inputs.file
-        file = await load_file_artifact(
-            storage=self._storage,
-            uow=self._uow,
-            workspace_id=context.workspace_id,
-            ref=ref,
-        )
-        if ref.artifact_type == CSV_FILE.key.id:
-            matrix = _csv_matrix(file.content, config.delimiter)
-        elif ref.artifact_type == XLSX_FILE.key.id:
-            matrix = _xlsx_matrix(file.content, sheet_name=config.sheet_name)
+        del context
+        content = await inputs.file.read(max_bytes=_HANDLE_READ_LIMIT)
+        if isinstance(inputs.file, CsvFile):
+            matrix = _csv_matrix(content, config.delimiter)
         else:
-            raise TableFileImportError(
-                f"Table import does not accept {ref.artifact_type}@"
-                f"{ref.schema_version} for artifact {ref.artifact_id}"
-            )
+            matrix = _xlsx_matrix(content, sheet_name=config.sheet_name)
         return TableImportOutput(
             table=_table_from_matrix(
                 matrix,

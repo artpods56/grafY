@@ -689,6 +689,7 @@ export function SecretInputField({
   input: WorkflowNodeSecretInput;
 }) {
   const [value, setValue] = React.useState("");
+  const [changing, setChanging] = React.useState(false);
   const storedStatus = data.secretStatuses[input.name] ?? { state: "unknown" };
   const ready = data.secretInputReadiness[input.name] ?? false;
   const status =
@@ -713,6 +714,20 @@ export function SecretInputField({
         ? (status.message ?? "The secret action could not be completed.")
         : (input.description ??
           "Write-only · the stored value cannot be read back.");
+
+  if (status.state === "configured" && !changing) {
+    return (
+      <div className="nodrag nowheel" {...stylex.props(s.secretFooter)}>
+        <span>
+          {input.title} ·{" "}
+          <span {...stylex.props(s.secretStatusConfigured)}>Configured</span>
+        </span>
+        <Button size="xs" variant="ghost" onClick={() => setChanging(true)}>
+          Change
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <form
@@ -776,6 +791,19 @@ export function SecretInputField({
         </div>
         <div {...stylex.props(s.secretFooter)}>
           <p {...stylex.props(s.secretHint)}>{hint}</p>
+          {status.state === "configured" ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              className="nodrag nowheel"
+              onClick={() => {
+                setValue("");
+                setChanging(false);
+              }}
+            >
+              Done
+            </Button>
+          ) : null}
           <Button
             variant="danger"
             size="xs"

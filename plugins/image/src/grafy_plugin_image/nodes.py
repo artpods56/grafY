@@ -5,124 +5,19 @@ import zlib
 
 from PIL import Image, ImageDraw, ImageFont
 
-from grafy_core.artifact_contracts import (
-    IMAGE_REGIONS,
-    RASTER_IMAGE,
-    ImageRegionSet,
-    RasterImageContent,
-    RasterImageContentType,
-)
-from grafy_core.artifacts import (
-    ArtifactObject,
-    ArtifactRef,
-    ArtifactRefSequence,
-    NodeConfig,
-    NodeInput,
-    NodeOutput,
-)
-from grafy_core.file_artifacts import load_file_artifact
-from grafy_core.file_contracts import (
-    BMP_FILE,
-    JPEG_FILE,
-    PNG_FILE,
-    TIFF_FILE,
-    WEBP_FILE,
-)
-from grafy_core.nodes import (
-    InPort,
-    Node,
-    NodeExecutionContext,
-    OutPort,
-    UserFacingNodeError,
-)
-from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.ports.storage import FileStoragePort
+from grafy_core.artifact_contracts import IMAGE_REGIONS, ImageRegionSet
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.documents import RasterImage
+from grafy_core.nodes import Node, NodeExecutionContext, UserFacingNodeError
+from grafy_core.runtime.artifact_values import inline_model_artifact
 from pydantic import Field, StrictStr, field_validator
 
 from grafy_plugin_image.declaration import IMAGES
 
 
-class ImageDecodeError(RuntimeError):
-    pass
+IMAGES.register(inline_model_artifact(IMAGE_REGIONS, ImageRegionSet))
 
-
-_IMAGE_FILE_CONTENT_TYPES: dict[str, RasterImageContentType] = {
-    PNG_FILE.key.id: "image/png",
-    JPEG_FILE.key.id: "image/jpeg",
-    WEBP_FILE.key.id: "image/webp",
-    TIFF_FILE.key.id: "image/tiff",
-    BMP_FILE.key.id: "image/bmp",
-}
-
-
-class ImageDecodeInput(NodeInput):
-    files: Annotated[
-        ArtifactRefSequence,
-        InPort(
-            PNG_FILE,
-            also_accepts=(JPEG_FILE, WEBP_FILE, TIFF_FILE, BMP_FILE),
-        ),
-        Field(
-            title="Image files", description="Ordered image file artifacts to decode."
-        ),
-    ]
-
-
-class ImageDecodeOutput(NodeOutput):
-    images: Annotated[
-        list[RasterImageContent],
-        OutPort(RASTER_IMAGE),
-        Field(title="Images", description="Decoded raster images in input order."),
-    ]
-
-
-@IMAGES.node(
-    operator_id="image.decode",
-    version=1,
-    title="Read images",
-    factory=lambda context: DecodeImagesNode(
-        storage=context.storage,
-        uow=context.uow,
-    ),
-)
-@final
-class DecodeImagesNode(Node[NodeConfig, ImageDecodeInput, ImageDecodeOutput]):
-    """Turns image files into pictures on the canvas."""
-
-    def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
-        self._storage = storage
-        self._uow = uow
-
-    @override
-    async def run(
-        self,
-        context: NodeExecutionContext,
-        _config: NodeConfig,
-        inputs: ImageDecodeInput,
-        /,
-    ) -> ImageDecodeOutput:
-        images: list[RasterImageContent] = []
-        for ref in inputs.files.item_refs:
-            content_type = _IMAGE_FILE_CONTENT_TYPES.get(ref.artifact_type)
-            if content_type is None:
-                raise ImageDecodeError(
-                    f"Image decode does not accept {ref.artifact_type}@"
-                    f"{ref.schema_version} for artifact {ref.artifact_id}"
-                )
-            file = await load_file_artifact(
-                storage=self._storage,
-                uow=self._uow,
-                workspace_id=context.workspace_id,
-                ref=ref,
-            )
-            images.append(
-                RasterImageContent(
-                    content=file.content,
-                    content_type=content_type,
-                    filename=file.original_filename,
-                )
-            )
-        return ImageDecodeOutput(images=images)
+_HANDLE_READ_LIMIT = 256 * 1024 * 1024
 
 
 class DrawRegionsError(UserFacingNodeError):
@@ -202,13 +97,11 @@ class DrawRegionsConfig(NodeConfig):
 
 class DrawRegionsInput(NodeInput):
     image: Annotated[
-        ArtifactRef,
-        InPort(RASTER_IMAGE),
+        RasterImage,
         Field(title="Image", description="Raster image to draw on."),
     ]
     regions: Annotated[
         ImageRegionSet,
-        InPort(IMAGE_REGIONS),
         Field(
             title="Boxes",
             description="Boxes to draw, scaled from their coordinate space to the image size.",
@@ -218,8 +111,7 @@ class DrawRegionsInput(NodeInput):
 
 class DrawRegionsOutput(NodeOutput):
     image: Annotated[
-        RasterImageContent,
-        OutPort(RASTER_IMAGE),
+        RasterImage,
         Field(
             title="Image",
             description="PNG copy of the input image with regions drawn on top.",
@@ -297,59 +189,24 @@ def render_regions(
     return output.getvalue()
 
 
-async def _load_image(
-    context: NodeExecutionContext,
-    ref: ArtifactRef,
-    storage: FileStoragePort,
-    uow: UnitOfWorkPort,
-) -> tuple[Image.Image, ArtifactObject]:
-    if ref.key() != RASTER_IMAGE.key:
-        raise DrawRegionsError(
-            f"Expected image.raster@1 for artifact {ref.artifact_id}, "
-            f"got {ref.artifact_type}@{ref.schema_version}"
-        )
+async def _open_image(image: RasterImage) -> Image.Image:
+    label = image.filename or "this image"
     try:
-        async with uow as transaction:
-            artifact = await transaction.artifacts.get(
-                context.workspace_id, ref.artifact_id
-            )
+        data = await image.read(max_bytes=_HANDLE_READ_LIMIT)
+        with Image.open(BytesIO(data)) as opened:
+            return opened.copy()
     except Exception as exc:
-        raise DrawRegionsError(f"Failed to look up artifact {ref.artifact_id}") from exc
-    if artifact is None:
-        raise DrawRegionsError(f"Raster artifact {ref.artifact_id} was not found")
-    if artifact.workspace_id != context.workspace_id or artifact.ref() != ref:
-        raise DrawRegionsError(
-            f"Repository returned a different workspace or ref for artifact {ref.artifact_id}"
-        )
-    if artifact.bucket is None or artifact.object_key is None:
-        raise DrawRegionsError(f"Artifact {ref.artifact_id} has no storage object")
-    try:
-        stream = await storage.load(bucket=artifact.bucket, path=artifact.object_key)
-        try:
-            data = stream.read()
-        finally:
-            stream.close()
-        with Image.open(BytesIO(data)) as image:
-            return image.copy(), artifact
-    except Exception as exc:
-        raise DrawRegionsError(
-            f"Failed to load artifact {ref.artifact_id} as a raster image"
-        ) from exc
+        raise DrawRegionsError(f"Failed to read {label} as a raster image") from exc
 
 
 @IMAGES.node(
     operator_id="image.draw_regions",
     version=1,
     title="Draw boxes",
-    factory=lambda context: DrawRegionsNode(storage=context.storage, uow=context.uow),
 )
 @final
 class DrawRegionsNode(Node[DrawRegionsConfig, DrawRegionsInput, DrawRegionsOutput]):
     """Draws the boxes from a reading onto the page."""
-
-    def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
-        self._storage = storage
-        self._uow = uow
 
     @override
     async def run(
@@ -359,16 +216,14 @@ class DrawRegionsNode(Node[DrawRegionsConfig, DrawRegionsInput, DrawRegionsOutpu
         inputs: DrawRegionsInput,
         /,
     ) -> DrawRegionsOutput:
-        image, artifact = await _load_image(
-            context, inputs.image, self._storage, self._uow
-        )
+        del context
+        image = await _open_image(inputs.image)
         filename = "regions.png"
-        name = artifact.metadata.get("original_filename")
-        if isinstance(name, str) and name:
-            filename = f"{PurePosixPath(name).stem}-regions.png"
+        if inputs.image.filename:
+            filename = f"{PurePosixPath(inputs.image.filename).stem}-regions.png"
         return DrawRegionsOutput(
-            image=RasterImageContent(
-                content=render_regions(image, inputs.regions, config),
+            image=RasterImage.from_content(
+                render_regions(image, inputs.regions, config),
                 content_type="image/png",
                 filename=filename,
             )
@@ -398,14 +253,13 @@ class CropRegionsConfig(NodeConfig):
 
 
 class CropRegionsInput(NodeInput):
-    image: Annotated[ArtifactRef, InPort(RASTER_IMAGE), Field(title="Image")]
-    regions: Annotated[ImageRegionSet, InPort(IMAGE_REGIONS), Field(title="Boxes")]
+    image: Annotated[RasterImage, Field(title="Image")]
+    regions: Annotated[ImageRegionSet, Field(title="Boxes")]
 
 
 class CropRegionsOutput(NodeOutput):
     crops: Annotated[
-        list[RasterImageContent],
-        OutPort(RASTER_IMAGE),
+        list[RasterImage],
         Field(description="One PNG per matching box, in region order."),
     ]
 
@@ -414,15 +268,10 @@ class CropRegionsOutput(NodeOutput):
     operator_id="image.crop_regions",
     version=1,
     title="Crop boxes",
-    factory=lambda context: CropRegionsNode(storage=context.storage, uow=context.uow),
 )
 @final
 class CropRegionsNode(Node[CropRegionsConfig, CropRegionsInput, CropRegionsOutput]):
     """Cuts out each box as its own picture."""
-
-    def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
-        self._storage = storage
-        self._uow = uow
 
     @override
     async def run(
@@ -432,26 +281,24 @@ class CropRegionsNode(Node[CropRegionsConfig, CropRegionsInput, CropRegionsOutpu
         inputs: CropRegionsInput,
         /,
     ) -> CropRegionsOutput:
+        del context
         page = inputs.regions.page(config.page)
         if page is None:
             raise DrawRegionsError(
                 f"Region set has no page {config.page}; available pages: "
                 + ", ".join(str(page.index) for page in inputs.regions.pages)
             )
-        image, artifact = await _load_image(
-            context, inputs.image, self._storage, self._uow
-        )
+        image = await _open_image(inputs.image)
         if image.mode not in ("RGB", "RGBA"):
             has_alpha = "A" in image.getbands() or "transparency" in image.info
             image = image.convert("RGBA" if has_alpha else "RGB")
         stem = "region"
-        name = artifact.metadata.get("original_filename")
-        if isinstance(name, str) and name:
-            stem = PurePosixPath(name).stem
+        if inputs.image.filename:
+            stem = PurePosixPath(inputs.image.filename).stem
         sx = image.width / page.width
         sy = image.height / page.height
         kinds = set(config.kinds.split(",")) if config.kinds is not None else None
-        crops: list[RasterImageContent] = []
+        crops: list[RasterImage] = []
         for region in inputs.regions.regions:
             if region.page != config.page or (
                 kinds is not None and region.kind not in kinds
@@ -466,8 +313,8 @@ class CropRegionsNode(Node[CropRegionsConfig, CropRegionsInput, CropRegionsOutpu
             output = BytesIO()
             image.crop((left, top, right, bottom)).save(output, format="PNG")
             crops.append(
-                RasterImageContent(
-                    content=output.getvalue(),
+                RasterImage.from_content(
+                    output.getvalue(),
                     content_type="image/png",
                     filename=f"{stem}-{region.kind}-{len(crops)}.png",
                 )

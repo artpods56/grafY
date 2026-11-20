@@ -56,6 +56,7 @@ export interface ContextualNodeDiscoveryProps {
   canInsert: boolean;
   insertDisabledReason?: string;
   onClose: () => void;
+  onPlaceOutputCard?: () => void;
   onConfirm: (
     candidate: ContextualCandidate,
     choice: ContextualRouteChoice,
@@ -320,6 +321,7 @@ function ContextualNodeDiscoveryContent({
   insertDisabledReason = "You do not have permission to edit this graph.",
   onClose,
   onConfirm,
+  onPlaceOutputCard,
   sourcePoint,
   renderWorldPortal,
 }: ContextualNodeDiscoveryProps & {
@@ -643,6 +645,16 @@ function ContextualNodeDiscoveryContent({
           ) : null}
         </div>
 
+        {onPlaceOutputCard && !pendingCandidate ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!canInsert}
+            onClick={onPlaceOutputCard}
+          >
+            Place output card on canvas
+          </Button>
+        ) : null}
         <div {...stylex.props(s.list)} role="listbox">
           {pendingCandidate ? (
             pendingCandidate.choices.map((choice, index) => {

@@ -664,6 +664,7 @@ export const askAModelRegistry: NodeRegistry = {
       },
       inputs: [
         {
+          kind: "artifact",
           name: "messages",
           title: "Instructions",
           description: "Ordered prompt messages.",
@@ -683,6 +684,7 @@ export const askAModelRegistry: NodeRegistry = {
           agent_default: null,
         },
         {
+          kind: "artifact",
           name: "json_schema",
           title: "Answer format",
           description: "Optional schema for a structured completion.",
@@ -704,6 +706,7 @@ export const askAModelRegistry: NodeRegistry = {
       ],
       outputs: [
         {
+          kind: "artifact",
           name: "completion",
           title: "Answer",
           description: "Completion content and safe provider metadata.",

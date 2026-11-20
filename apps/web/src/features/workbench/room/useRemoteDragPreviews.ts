@@ -2,11 +2,9 @@
 
 import * as React from "react";
 
-import type { PresenceParticipant } from "./protocol";
-import {
-  REMOTE_DRAG_RELEASE_HOLD_MS,
-  remoteDragTargetsFromParticipants,
-} from "./remote-drag-preview";
+import type { ProjectRoomPresenceStore } from "./presence-store";
+import { REMOTE_DRAG_RELEASE_HOLD_MS } from "./remote-drag-preview";
+import { useRemoteDragTargets } from "./usePresenceStore";
 
 /**
  * Remote drag preview positions at presence sample rate (~20Hz).
@@ -14,10 +12,11 @@ import {
  * Visual easing between samples is handled with a short CSS transition on the node.
  */
 export function useRemoteDragPreviews(
-  participants: readonly PresenceParticipant[],
-  localSessionId: string | null,
-  localDraggingNodeIdsRef: React.RefObject<ReadonlySet<string>>,
+  store: ProjectRoomPresenceStore,
+  graphId: string | null,
+  localDraggingNodeIds: ReadonlySet<string>,
 ): Record<string, { x: number; y: number }> {
+  const targets = useRemoteDragTargets(store, graphId);
   const [positions, setPositions] = React.useState<
     Record<string, { x: number; y: number }>
   >({});
@@ -35,17 +34,12 @@ export function useRemoteDragPreviews(
   }, []);
 
   React.useEffect(() => {
-    const targets = remoteDragTargetsFromParticipants(
-      participants,
-      localSessionId,
-    );
-    const localDragging = localDraggingNodeIdsRef.current ?? new Set();
     const live: Record<string, { x: number; y: number }> = {
       ...heldRef.current,
     };
 
     for (const [nodeId, position] of targets) {
-      if (localDragging.has(nodeId)) continue;
+      if (localDraggingNodeIds.has(nodeId)) continue;
       const timer = releaseTimersRef.current.get(nodeId);
       if (timer !== undefined) {
         window.clearTimeout(timer);
@@ -56,7 +50,7 @@ export function useRemoteDragPreviews(
     }
 
     for (const nodeId of Object.keys(live)) {
-      if (targets.has(nodeId) || localDragging.has(nodeId)) continue;
+      if (targets.has(nodeId) || localDraggingNodeIds.has(nodeId)) continue;
       if (releaseTimersRef.current.has(nodeId)) continue;
       heldRef.current[nodeId] = live[nodeId]!;
       const timer = window.setTimeout(() => {
@@ -72,7 +66,7 @@ export function useRemoteDragPreviews(
       releaseTimersRef.current.set(nodeId, timer);
     }
 
-    for (const nodeId of localDragging) {
+    for (const nodeId of localDraggingNodeIds) {
       delete live[nodeId];
       delete heldRef.current[nodeId];
       const timer = releaseTimersRef.current.get(nodeId);
@@ -83,7 +77,7 @@ export function useRemoteDragPreviews(
     }
 
     setPositions((current) => (samePositions(current, live) ? current : live));
-  }, [localDraggingNodeIdsRef, localSessionId, participants]);
+  }, [localDraggingNodeIds, targets]);
 
   return positions;
 }

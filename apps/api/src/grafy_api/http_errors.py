@@ -1,4 +1,3 @@
-import os
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
@@ -24,11 +23,6 @@ from grafy_api.agents.turns import (
     AgentTurnConflictError,
     AgentTurnRequestError,
     AgentTurnStoppingError,
-)
-from grafy_api.diagnostics import (
-    DiagnosticContext,
-    diagnostic_scope,
-    record_failure,
 )
 from grafy_api.runs.ports import RunNotFoundError, RunRejectedError
 from grafy_api.node_secrets import NodeSecretValueError
@@ -60,16 +54,6 @@ _HTTP_CAPACITY_SPEC = FailureSpec(
     kind=FailureKind.CAPACITY,
     public_message="Request capacity exceeded",
 )
-_HTTP_UNAVAILABLE_SPEC = FailureSpec(
-    code="http.unavailable",
-    kind=FailureKind.UNAVAILABLE,
-    public_message="Service unavailable",
-)
-_INTERNAL_FAILURE_SPEC = FailureSpec(
-    code="internal.unexpected_error",
-    kind=FailureKind.INTERNAL,
-    public_message="An internal error occurred",
-)
 
 _FAILURE_STATUS = {
     FailureKind.VALIDATION: 422,
@@ -81,6 +65,29 @@ _FAILURE_STATUS = {
     FailureKind.UNAVAILABLE: 503,
     FailureKind.INTERNAL: 500,
 }
+
+
+def _http_failure(
+    exception: Exception,
+    *,
+    spec: FailureSpec,
+    operation: str = "http.request.handle",
+) -> Failure:
+    message = spec.public_message
+    if isinstance(exception, GrafyCoreError) and exception.public_message is not None:
+        message = exception.public_message
+    failure = Failure(error_id=uuid4(), code=spec.code, kind=spec.kind, message=message)
+    log = logger.bind(
+        error_id=str(failure.error_id), code=spec.code, operation=operation
+    )
+    if spec.kind in {FailureKind.INTERNAL, FailureKind.UNAVAILABLE}:
+        log.error(
+            "http_request_failed",
+            exc_info=(type(exception), exception, exception.__traceback__),
+        )
+    else:
+        log.info("http_request_rejected", detail=message)
+    return failure
 
 
 def _failure_response(failure: Failure, *, status_code: int) -> JSONResponse:
@@ -292,19 +299,16 @@ async def _request_validation_error_handler(
             abuse_keys.network_key,
         )
         spec = _REQUEST_VALIDATION_SPEC if allowed else _HTTP_CAPACITY_SPEC
-        failure = record_failure(
+        failure = _http_failure(
             exception,
             operation="http.request.validate" if allowed else "http.request.limit",
             spec=spec,
         )
-        with diagnostic_scope(
-            DiagnosticContext(primary_error_id=failure.error_id),
-        ):
-            await login_auth.audit_request_failure(
-                request,
-                operation="oidc.login.start",
-                error_code="validation_failed" if allowed else "rate_limited",
-            )
+        await login_auth.audit_request_failure(
+            request,
+            operation="oidc.login.start",
+            error_code="validation_failed" if allowed else "rate_limited",
+        )
         return JSONResponse(
             status_code=422 if allowed else 429,
             content={
@@ -318,20 +322,17 @@ async def _request_validation_error_handler(
         auth: AuthService = get_identity(request.app).auth_service
         allowed = await auth.cleanup_malformed_callback(request)
         spec = _REQUEST_VALIDATION_SPEC if allowed else _HTTP_CAPACITY_SPEC
-        failure = record_failure(
+        failure = _http_failure(
             exception,
             operation="http.request.validate" if allowed else "http.request.limit",
             spec=spec,
         )
         error_code = "validation_failed" if allowed else "rate_limited"
-        with diagnostic_scope(
-            DiagnosticContext(primary_error_id=failure.error_id),
-        ):
-            await auth.audit_request_failure(
-                request,
-                operation="oidc.login.callback",
-                error_code=error_code,
-            )
+        await auth.audit_request_failure(
+            request,
+            operation="oidc.login.callback",
+            error_code=error_code,
+        )
         response = JSONResponse(
             status_code=422 if allowed else 429,
             content={
@@ -343,15 +344,12 @@ async def _request_validation_error_handler(
         auth.clear_transaction_cookie(response)
         return response
 
-    failure = record_failure(
+    failure = _http_failure(
         exception,
         operation="http.request.validate",
         spec=_REQUEST_VALIDATION_SPEC,
     )
-    with diagnostic_scope(
-        DiagnosticContext(primary_error_id=failure.error_id),
-    ):
-        await _audit_workspace_failure(request, "validation_failed")
+    await _audit_workspace_failure(request, "validation_failed")
 
     return JSONResponse(
         status_code=422,
@@ -373,9 +371,9 @@ async def _grafy_core_error_handler(
     if spec is None:
         raise exception
 
-    failure = record_failure(
+    failure = _http_failure(
         exception,
-        operation="http.request.handle",
+        spec=spec,
     )
     if isinstance(exception, NotFoundError):
         audit_code = "not_found"
@@ -388,12 +386,9 @@ async def _grafy_core_error_handler(
     else:
         audit_code = failure.code
 
-    with diagnostic_scope(
-        DiagnosticContext(primary_error_id=failure.error_id),
-    ):
-        await _audit_workspace_failure(request, audit_code)
-        if isinstance(exception, NotFoundError):
-            await _audit_auth_failure(request, audit_code)
+    await _audit_workspace_failure(request, audit_code)
+    if isinstance(exception, NotFoundError):
+        await _audit_auth_failure(request, audit_code)
 
     return _failure_response(
         failure,
@@ -409,42 +404,24 @@ async def _render_http_error(
     detail: object,
     headers: Mapping[str, str] | None,
 ) -> Response:
-    """Answer one failed request: audit it, then send a plain detail or the internal envelope.
-
-    Below 500 the client gets ``{"detail": detail}``. At 500 and above the detail is replaced by
-    the recorded failure, so internal messages never reach the client.
-    """
+    """Keep intentional HTTP errors intact and log server failures with their cause."""
     error_code = "not_found" if status_code == 404 else "http_error"
-    if status_code < 500:
-        await _audit_workspace_failure(request, error_code)
-        await _audit_auth_failure(request, error_code)
-        response_headers = dict(headers) if headers is not None else None
-        if not is_body_allowed_for_status_code(status_code):
-            return Response(status_code=status_code, headers=response_headers)
-        return JSONResponse(
-            {"detail": detail},
+    await _audit_workspace_failure(request, error_code)
+    await _audit_auth_failure(request, error_code)
+    if status_code >= 500:
+        logger.error(
+            "http_request_failed",
             status_code=status_code,
-            headers=response_headers,
+            exc_info=(type(exception), exception, exception.__traceback__),
         )
-
-    if status_code == 503:
-        spec = _HTTP_UNAVAILABLE_SPEC
-    else:
-        spec = _INTERNAL_FAILURE_SPEC
-    failure = record_failure(
-        exception,
-        operation="http.request.reject",
-        spec=spec,
+    response_headers = dict(headers) if headers is not None else None
+    if not is_body_allowed_for_status_code(status_code):
+        return Response(status_code=status_code, headers=response_headers)
+    return JSONResponse(
+        {"detail": detail},
+        status_code=status_code,
+        headers=response_headers,
     )
-    with diagnostic_scope(
-        DiagnosticContext(primary_error_id=failure.error_id),
-    ):
-        await _audit_workspace_failure(request, error_code)
-        await _audit_auth_failure(request, error_code)
-    response = _failure_response(failure, status_code=status_code)
-    if headers is not None:
-        response.headers.update(headers)
-    return response
 
 
 async def _http_error_handler(request: Request, exception: Exception) -> Response:
@@ -543,7 +520,7 @@ def _route_template(request: Request) -> str:
     return "unmatched"
 
 
-async def _http_diagnostics_middleware(
+async def _request_logging_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
@@ -551,35 +528,17 @@ async def _http_diagnostics_middleware(
     request.state.request_id = request_id
     started_at = time.perf_counter()
 
-    with diagnostic_scope(
-        DiagnosticContext(request_id=request_id),
-        inherit=False,
-    ):
-        try:
-            response = await call_next(request)
-        except Exception as exception:
-            failure = record_failure(
-                exception,
-                operation="http.request.handle",
-                spec=_INTERNAL_FAILURE_SPEC,
-            )
-            response = _failure_response(failure, status_code=500)
-
+    structlog.contextvars.clear_contextvars()
+    with structlog.contextvars.bound_contextvars(request_id=str(request_id)):
+        response = await call_next(request)
         response.headers["X-Request-ID"] = str(request_id)
-        duration_ms = (time.perf_counter() - started_at) * 1_000
-        try:
-            logger.info(
-                "http_request_completed",
-                method=request.method,
-                route=_route_template(request),
-                status_code=response.status_code,
-                duration_ms=round(duration_ms, 3),
-            )
-        except Exception:
-            try:
-                os.write(2, b"grafy diagnostics: request completion logging failed\n")
-            except OSError:
-                pass
+        logger.info(
+            "http_request_completed",
+            method=request.method,
+            route=_route_template(request),
+            status_code=response.status_code,
+            duration_ms=round((time.perf_counter() - started_at) * 1_000, 3),
+        )
         return response
 
 
@@ -592,7 +551,7 @@ def register_http_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(GrafyCoreError, _grafy_core_error_handler)
     for error_type in _HTTP_MAPPINGS:
         app.add_exception_handler(error_type, _mapped_error_handler)
-    app.middleware("http")(_http_diagnostics_middleware)
+    app.middleware("http")(_request_logging_middleware)
 
 
 __all__ = ["register_http_error_handlers"]

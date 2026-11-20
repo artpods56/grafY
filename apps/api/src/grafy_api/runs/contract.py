@@ -17,7 +17,7 @@ this module.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any
 
@@ -31,9 +31,8 @@ from grafy_core.artifacts import (
 from grafy_core.canonical_conversions import CANONICAL_ARTIFACT_CONVERSIONS_BY_KEY
 from grafy_core.conversions import (
     MAX_ARTIFACT_CONVERSION_HOPS,
-    ArtifactConversion,
     ArtifactConversionKey,
-    conversion_runtime_types_are_compatible,
+    Conversion,
 )
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.domain.graph_documents import (
@@ -97,7 +96,8 @@ class InputPortPlan:
     name: str
     variadic: bool = False
     instance_plugs: bool = False
-    #: The ids of this port's input plugs, in the order the node declares them.
+    #: The ids of this port's input plugs, in the order the node declares them. A
+    #: port that keeps spare plugs lists only the ones a connection feeds.
     plugs: tuple[str, ...] = ()
 
 
@@ -114,12 +114,25 @@ class InputSlot:
     to_plug: str | None
     value: ArtifactOutputValue
     projection: ArtifactFieldProjection | None
-    conversion_path: tuple[ArtifactConversion[Any, Any], ...]
+    conversion_path: tuple[Conversion[Any, Any], ...]
     map_driven: bool
     label: str
     source_node_id: str
     source_port: str
     target_node_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceFeed:
+    """One service output the consumer's runner builds from the connected instance.
+
+    The object is not a stored result. ``source`` is the provider instance the
+    edge points at, and the ports name the field to take and the input to fill.
+    """
+
+    source: ExpandedInstance
+    from_port: str
+    to_port: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +147,7 @@ class BoundNode:
     artifact_type_bindings: Mapping[str, ArtifactTypeKey]
     ports: tuple[InputPortPlan, ...]
     slots: tuple[InputSlot, ...]
+    service_feeds: tuple[ServiceFeed, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "config", dict(self.config))
@@ -193,9 +207,13 @@ class NodeContractBinder:
         self,
         instance: ExpandedInstance,
         upstream: Mapping[InstanceKey, Mapping[str, ArtifactOutputValue]],
+        service_sources: Mapping[InstanceKey, ExpandedInstance] | None = None,
+        unsupported_outputs: (
+            Mapping[InstanceKey, Mapping[str, str]] | None
+        ) = None,
     ) -> BoundNode:
         graph_node = instance.node
-        node, registration = self._build_node(graph_node)
+        node, registration = self.build_node(graph_node)
         bindings = graph_node.artifact_type_binding_map()
         for variable, artifact_type in bindings.items():
             if artifact_type in self._artifact_types:
@@ -218,8 +236,23 @@ class NodeContractBinder:
                 f"bindings: {exc}"
             ) from exc
         view = ResolvedNodeContractView.of(node.operator_id, resolved_contracts)
-
-        incoming = self._incoming(instance, upstream)
+        providers = {} if service_sources is None else service_sources
+        self._reject_service_origins(instance, resolved_contracts)
+        self._reject_stored_service_feeds(instance, resolved_contracts, providers)
+        artifact_instance = replace(
+            instance,
+            connections=tuple(
+                connection
+                for connection in instance.connections
+                if connection.source not in providers
+            ),
+        )
+        incoming = self._incoming(
+            artifact_instance,
+            upstream,
+            {} if unsupported_outputs is None else unsupported_outputs,
+            resolved_contracts.input_contract.ports,
+        )
         invocation = _derive_invocation(view, graph_node.id, incoming)
         self._validate_input_plugs(node, graph_node, incoming)
 
@@ -243,6 +276,12 @@ class NodeContractBinder:
                     f"connection, got {connections_by_port[slot.to_port]}"
                 )
             slots.append(slot)
+        service_feeds = self._service_feeds(
+            instance,
+            resolved_contracts,
+            providers,
+            connections_by_port,
+        )
         for name, port in resolved_contracts.input_contract.ports.items():
             if port.required and connections_by_port.get(name, 0) == 0:
                 raise NodeComputationError(
@@ -251,6 +290,7 @@ class NodeContractBinder:
                     "incoming connection"
                 )
 
+        fed_plugs = {item.to_plug for item in incoming if item.to_plug is not None}
         return BoundNode(
             node=node,
             registration=registration,
@@ -264,13 +304,115 @@ class NodeContractBinder:
                     variadic=port.variadic,
                     instance_plugs=port.instance_plugs,
                     plugs=tuple(
-                        plug.id for plug in graph_node.input_plugs if plug.port == name
+                        plug.id
+                        for plug in graph_node.input_plugs
+                        if plug.port == name
+                        and (not port.spare_plugs or plug.id in fed_plugs)
                     ),
                 )
                 for name, port in resolved_contracts.input_contract.ports.items()
             ),
             slots=tuple(slots),
+            service_feeds=service_feeds,
         )
+
+    def build_node(
+        self,
+        graph_node: GraphNode,
+    ) -> tuple[Node[Any, Any, Any], NodeRegistration]:
+        return self._build_node(graph_node)
+
+    def _reject_service_origins(
+        self,
+        instance: ExpandedInstance,
+        resolved_contracts: ResolvedNodeContracts,
+    ) -> None:
+        ports = resolved_contracts.input_contract.ports
+        for origin in instance.origins:
+            port = ports.get(origin.to_port)
+            if port is None or port.kind != "service":
+                continue
+            raise NodeComputationError(
+                f"Node {instance.key.node_id!r} service input {origin.to_port!r} "
+                "cannot be fed by an origin"
+            )
+
+    def _reject_stored_service_feeds(
+        self,
+        instance: ExpandedInstance,
+        resolved_contracts: ResolvedNodeContracts,
+        providers: Mapping[InstanceKey, ExpandedInstance],
+    ) -> None:
+        ports = resolved_contracts.input_contract.ports
+        for connection in instance.connections:
+            if connection.source in providers:
+                continue
+            port = ports.get(connection.edge.to_port)
+            if port is None or port.kind != "service":
+                continue
+            raise NodeComputationError(
+                f"Node {instance.key.node_id!r} service input "
+                f"{connection.edge.to_port!r} cannot be fed by a stored output"
+            )
+
+    def _service_feeds(
+        self,
+        instance: ExpandedInstance,
+        resolved_contracts: ResolvedNodeContracts,
+        providers: Mapping[InstanceKey, ExpandedInstance],
+        connections_by_port: dict[str, int],
+    ) -> tuple[ServiceFeed, ...]:
+        """Count each service edge as fed, without reading a stored result."""
+
+        ports = resolved_contracts.input_contract.ports
+        feeds: list[ServiceFeed] = []
+        for connection in instance.connections:
+            source = providers.get(connection.source)
+            if source is None:
+                continue
+            edge = connection.edge
+            port = ports.get(edge.to_port)
+            if port is None:
+                raise NodeComputationError(
+                    f"Edge {edge.from_node!r}.{edge.from_port!r} -> "
+                    f"{edge.to_node!r}.{edge.to_port!r} references unknown input "
+                    f"port {edge.to_port!r} on node {instance.key.node_id!r}"
+                )
+            if port.kind != "service":
+                raise NodeComputationError(
+                    f"Node {instance.key.node_id!r} input {edge.to_port!r} is not "
+                    f"a service input; the service output of node "
+                    f"{source.key.node_id!r} feeds only a service input"
+                )
+            source_node, _registration = self._build_node(source.node)
+            source_port = source_node.output_contract.ports.get(edge.from_port)
+            if source_port is None or source_port.kind != "service":
+                raise NodeComputationError(
+                    f"Node {source.key.node_id!r} output {edge.from_port!r} is "
+                    "not a service output"
+                )
+            if set(port.service_contracts).isdisjoint(source_port.service_contracts):
+                raise NodeComputationError(
+                    f"Node {instance.key.node_id!r} input {edge.to_port!r} does "
+                    f"not accept the service contract produced by node "
+                    f"{source.key.node_id!r} output {edge.from_port!r}"
+                )
+            connections_by_port[edge.to_port] = (
+                connections_by_port.get(edge.to_port, 0) + 1
+            )
+            if not port.variadic and connections_by_port[edge.to_port] > 1:
+                raise NodeComputationError(
+                    f"Node {instance.key.node_id!r} input {edge.to_port!r} accepts "
+                    f"one connection, got {connections_by_port[edge.to_port]}"
+                )
+            feeds.append(
+                ServiceFeed(
+                    source=source,
+                    from_port=edge.from_port,
+                    to_port=edge.to_port,
+                )
+            )
+        return tuple(feeds)
 
     def boundary_input(
         self,
@@ -284,7 +426,9 @@ class NodeContractBinder:
         Graph's interface is what typed that port when the document was written.
         """
 
-        incoming = self._incoming(instance, upstream)
+        # No contract means no ports a connected provider could fail to produce:
+        # that refusal names a registered consumer, never a pass-through.
+        incoming = self._incoming(instance, upstream, {}, {})
         if not incoming:
             raise NodeComputationError(
                 f"Boundary node {instance.key.node_id!r} of graph "
@@ -334,6 +478,8 @@ class NodeContractBinder:
         self,
         instance: ExpandedInstance,
         upstream: Mapping[InstanceKey, Mapping[str, ArtifactOutputValue]],
+        unsupported_outputs: Mapping[InstanceKey, Mapping[str, str]],
+        input_ports: Mapping[str, InputPortSpec],
     ) -> tuple[_Incoming, ...]:
         """Read every connection's upstream result and every origin's value.
 
@@ -347,6 +493,19 @@ class NodeContractBinder:
             source = _source_outputs(instance, connection.source, upstream)
             value = source.get(edge.from_port)
             if value is None:
+                provider = unsupported_outputs.get(connection.source, {}).get(
+                    edge.from_port
+                )
+                if provider is not None:
+                    port = input_ports.get(edge.to_port)
+                    label = (
+                        (port.title or "").strip()
+                        if port is not None
+                        else ""
+                    ) or edge.to_port.replace("_", " ")
+                    raise NodeComputationError(
+                        f"{label} are not produced by {provider}"
+                    )
                 raise NodeComputationError(
                     f"Node {instance.key.node_id!r} input {edge.to_port!r} reads "
                     f"{edge.from_port!r} of {_describe(connection.source)}, whose "
@@ -431,14 +590,14 @@ class NodeContractBinder:
         self,
         item: _Incoming,
         artifact_type: ArtifactTypeKey,
-    ) -> tuple[tuple[ArtifactConversion[Any, Any], ...], ArtifactTypeKey]:
+    ) -> tuple[tuple[Conversion[Any, Any], ...], ArtifactTypeKey]:
         if len(item.conversion_path) > MAX_ARTIFACT_CONVERSION_HOPS:
             raise NodeComputationError(
                 f"{item.label} conversion path exceeds the maximum of "
                 f"{MAX_ARTIFACT_CONVERSION_HOPS} steps"
             )
         seen = {artifact_type}
-        conversions: list[ArtifactConversion[Any, Any]] = []
+        conversions: list[Conversion[Any, Any]] = []
         source = artifact_type
         for step_index, step in enumerate(item.conversion_path):
             key = ArtifactConversionKey(id=step.id, version=step.version)
@@ -448,32 +607,24 @@ class NodeContractBinder:
                     f"{item.label} requests undeclared conversion {key.id!r}@"
                     f"{key.version} at step {step_index + 1}"
                 )
-            if conversion.source != source:
+            source_key = conversion.source.spec.key
+            target_key = conversion.target.spec.key
+            if source_key != source:
                 raise NodeComputationError(
                     f"{item.label} applies conversion step {step_index + 1} "
-                    f"{conversion.key.id!r}@{conversion.key.version}, which expects "
-                    f"{conversion.source.id}@{conversion.source.schema_version}, to "
+                    f"{conversion.id!r}@{conversion.version}, which expects "
+                    f"{source_key.id}@{source_key.schema_version}, to "
                     f"{source.id}@{source.schema_version}"
                 )
-            if conversions and not conversion_runtime_types_are_compatible(
-                conversions[-1].target_type,
-                conversion.source_type,
-            ):
-                previous = conversions[-1]
-                raise NodeComputationError(
-                    f"{item.label} conversion steps {step_index} and "
-                    f"{step_index + 1} have incompatible runtime types: "
-                    f"{previous.target_type} does not match {conversion.source_type}"
-                )
-            if conversion.target in seen:
+            if target_key in seen:
                 raise NodeComputationError(
                     f"{item.label} conversion path repeats artifact type "
-                    f"{conversion.target.id}@{conversion.target.schema_version} "
+                    f"{target_key.id}@{target_key.schema_version} "
                     f"at step {step_index + 1}"
                 )
             conversions.append(conversion)
-            seen.add(conversion.target)
-            source = conversion.target
+            seen.add(target_key)
+            source = target_key
         return tuple(conversions), source
 
     def _validate_input_plugs(
@@ -539,8 +690,11 @@ class NodeContractBinder:
                 connections_by_plug.get(item.to_plug, 0) + 1
             )
 
-        for plug_id in plugs:
-            if connections_by_plug.get(plug_id) == 1:
+        for plug_id, port_name in plugs.items():
+            connections = connections_by_plug.get(plug_id, 0)
+            if connections == 1:
+                continue
+            if connections == 0 and node.input_contract.ports[port_name].spare_plugs:
                 continue
             raise NodeComputationError(
                 "Each slot needs exactly one connection. An empty extra slot, "
@@ -569,7 +723,7 @@ def _check_target(
         )
     delivered = _value_key(slot.value)
     if slot.conversion_path:
-        delivered = slot.conversion_path[-1].target
+        delivered = slot.conversion_path[-1].target.spec.key
     elif slot.projection is not None:
         delivered = slot.projection.target
     if delivered not in accepted:

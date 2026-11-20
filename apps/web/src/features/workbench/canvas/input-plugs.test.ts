@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { NodeSpec, RunNodeResult } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import {
   collectContributionLabel,
   createWorkflowInputPlug,
@@ -32,38 +33,28 @@ describe("ordered input plugs", () => {
   });
 
   it("does not manufacture an unowned plug for an optional instance port", () => {
-    const optionalInstanceSpec: NodeSpec = {
+    const optionalInstanceSpec: NodeSpec = nodeSpecFixture({
       operator_id: "schema.builder",
-      operator_version: 1,
       plugin_slug: "builtin.schema",
-      origin: "builtin",
       title: "Schema Builder",
       description: "Build a JSON Schema.",
-      catalog_visible: true,
-      runnable: true,
-      config_schema: {},
-      input_schema: {},
-      output_schema: {},
       inputs: [
-        {
+        artifactPortFixture({
           name: "schemas",
           title: "Nested schemas",
-          description: null,
           direction: "input",
           artifact_type: {
             id: "json.schema",
             schema_version: 1,
           },
-          artifact_type_variable: null,
           shape: "many",
           accepted_shapes: ["one"],
           required: false,
           variadic: true,
           instance_plugs: true,
-        },
+        }),
       ],
-      outputs: [],
-    };
+    });
 
     expect(initialInputPlugs(optionalInstanceSpec)).toEqual([]);
     expect(

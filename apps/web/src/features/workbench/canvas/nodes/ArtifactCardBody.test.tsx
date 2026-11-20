@@ -23,6 +23,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const libraryMocks = vi.hoisted(() => ({
   items: [] as PlacedLibraryItem[],
   value: undefined as { text: string; truncated: boolean } | undefined,
+  values: {} as Record<string, { text: string; truncated: boolean }>,
 }));
 const flowMocks = vi.hoisted(() => ({
   edges: [] as unknown[],
@@ -34,11 +35,13 @@ const tableMocks = vi.hoisted(
     schema: TableSchema | undefined;
     error: Error | undefined;
     retry: ReturnType<typeof vi.fn>;
+    requested: string[];
   } => ({
     page: undefined,
     schema: undefined,
     error: undefined,
     retry: vi.fn(),
+    requested: [],
   }),
 );
 
@@ -92,6 +95,7 @@ vi.mock("swr", () => ({
       return { data: { artifact_types: registryMocks.artifactTypes } };
     }
     if (key[0] === "table-artifact-schema") {
+      tableMocks.requested.push(String(key[2]));
       return {
         data: tableMocks.schema,
         error: tableMocks.error,
@@ -100,7 +104,7 @@ vi.mock("swr", () => ({
     }
     if (key[0] === "table-artifact-page") return { data: tableMocks.page };
     return key[0] === "artifact-card-text"
-      ? { data: libraryMocks.value }
+      ? { data: libraryMocks.values[String(key[2])] ?? libraryMocks.value }
       : { data: { folders: [], items: libraryMocks.items } };
   },
 }));
@@ -123,6 +127,23 @@ const workspaceMocks = vi.hoisted(() => ({
 vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
   useWorkspaceContext: () => workspaceMocks.value,
   useOptionalWorkspaceContext: () => workspaceMocks.value,
+}));
+
+const tiffMocks = vi.hoisted(() => ({
+  reportSize: [] as ((width: number, height: number) => void)[],
+}));
+
+vi.mock("./TiffArtifactView", () => ({
+  TiffArtifactView: ({
+    artifactId,
+    onSize,
+  }: {
+    artifactId: string;
+    onSize?: (width: number, height: number) => void;
+  }) => {
+    if (onSize) tiffMocks.reportSize.push(onSize);
+    return <div data-testid="tiff-surface" data-artifact={artifactId} />;
+  },
 }));
 
 vi.mock("@base-ui/react/menu", () => ({
@@ -261,11 +282,14 @@ afterEach(() => {
   document.body.replaceChildren();
   libraryMocks.items = [];
   libraryMocks.value = undefined;
+  libraryMocks.values = {};
+  tableMocks.requested = [];
   tableMocks.page = undefined;
   tableMocks.schema = undefined;
   tableMocks.error = undefined;
   const _ = tableMocks.retry.mockClear();
   registryMocks.artifactTypes = [];
+  tiffMocks.reportSize.length = 0;
   flowMocks.edges = [];
   flowMocks.nodes = new Map();
 });
@@ -708,6 +732,250 @@ describe("artifact on the canvas", () => {
     expect(port?.getAttribute("aria-disabled")).toBe("false");
   });
 
+  it("reads a single markdown sequence without a pager or file stack", () => {
+    libraryMocks.values = {
+      m1: {
+        text: JSON.stringify({ markdown: "# First page" }),
+        truncated: false,
+      },
+    };
+    const value = {
+      ...sequence(["m1"]),
+      artifact_type: "text.markdown",
+      item_refs: [
+        {
+          artifact_id: "m1",
+          artifact_type: "text.markdown",
+          schema_version: 1,
+        },
+      ],
+    };
+    const { container } = mount(value, {}, true);
+    expect(
+      container.querySelector("[data-artifact-value]")?.textContent,
+    ).toContain("First page");
+    expect(container.querySelector('[aria-label="Next item"]')).toBeNull();
+    expect(
+      container.querySelector('[aria-label="1 items in sequence"]'),
+    ).toBeNull();
+  });
+
+  it("pages through markdown and keeps navigation bounded", () => {
+    libraryMocks.values = {
+      m1: {
+        text: JSON.stringify({ markdown: "# First page" }),
+        truncated: false,
+      },
+      m2: {
+        text: JSON.stringify({ markdown: "# Second page" }),
+        truncated: false,
+      },
+    };
+    const value = {
+      ...sequence(["m1", "m2"]),
+      artifact_type: "text.markdown",
+      item_refs: ["m1", "m2"].map((artifact_id) => ({
+        artifact_id,
+        artifact_type: "text.markdown",
+        schema_version: 1,
+      })),
+    };
+    const { container } = mount(value, {}, true);
+    expect(container.textContent).toContain("First page");
+    expect(
+      container.querySelector<HTMLButtonElement>('[aria-label="Previous item"]')
+        ?.disabled,
+    ).toBe(true);
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(container.textContent).toContain("Second page");
+    expect(container.textContent).not.toContain("First page");
+    expect(container.textContent).toContain("2 / 2");
+    expect(
+      container.querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.disabled,
+    ).toBe(true);
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Previous item"]')
+        ?.click(),
+    );
+    expect(container.textContent).toContain("First page");
+  });
+
+  it("stacks a markdown sequence like an image one, paged from its front", () => {
+    libraryMocks.values = {
+      m1: { text: JSON.stringify({ markdown: "# First" }), truncated: false },
+      m2: { text: JSON.stringify({ markdown: "# Second" }), truncated: false },
+      m3: { text: JSON.stringify({ markdown: "# Third" }), truncated: false },
+    };
+    const value = {
+      ...sequence(["m1", "m2", "m3"]),
+      artifact_type: "text.markdown",
+      item_refs: ["m1", "m2", "m3"].map((artifact_id) => ({
+        artifact_id,
+        artifact_type: "text.markdown",
+        schema_version: 1,
+      })),
+    };
+    const { container } = mount(value, {}, true);
+    const stack = container.querySelector<HTMLElement>(
+      '[aria-label="3 items in sequence"]',
+    );
+    expect(stack?.querySelector("[data-artifact-value]")).not.toBeNull();
+    expect(
+      stack?.querySelectorAll('[data-artifact-shadow-scope="sequence-item"]'),
+    ).toHaveLength(2);
+    expect(stack?.style.paddingRight).toBe("24px");
+    expect(stack?.style.paddingBottom).toBe("16px");
+    // The pager rides the front item, not the card head.
+    expect(
+      container.querySelector(
+        '[data-artifact-head] [aria-label="Sequence pages"]',
+      ),
+    ).toBeNull();
+    expect(
+      stack?.querySelector('[aria-label="Sequence pages"]'),
+    ).not.toBeNull();
+  });
+
+  it("pages an image stack from over its front image", () => {
+    const { container } = mount(sequence(["a1", "a2"]), {}, true);
+    const stack = container.querySelector('[aria-label="2 items in sequence"]');
+    const pager = stack?.querySelector('[aria-label="Sequence pages"]');
+    expect(pager?.textContent).toContain("1 / 2");
+    // Over the layers, not inside one: the layers trade places under it.
+    expect(pager?.closest("[data-stack-item]")).toBeNull();
+  });
+
+  it("turns the stack like a ring: the front item goes to the back", () => {
+    const { container } = mount(sequence(["a1", "a2", "a3"]), {}, true);
+    const order = () =>
+      [
+        ...container.querySelectorAll<HTMLElement>(
+          '[data-artifact-media="true"]',
+        ),
+      ]
+        .sort((a, b) => Number(b.style.zIndex) - Number(a.style.zIndex))
+        .map((layer) => layer.dataset.stackItem);
+    const first = container.querySelector('[data-stack-item="0"]');
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(order()).toEqual(["1", "2", "0"]);
+    // The layer that went to the back is the same element, moved: that is
+    // what lets it animate there.
+    expect(container.querySelector('[data-stack-item="0"]')).toBe(first);
+    expect(
+      container.querySelector<HTMLElement>('[data-stack-item="0"]')?.style.left,
+    ).toBe("24px");
+  });
+
+  it("keeps the pager hidden until the stack is selected", () => {
+    const { container } = mount(sequence(["a1", "a2"]));
+    expect(container.querySelector('[aria-label="Sequence pages"]')).toBeNull();
+  });
+
+  // One stack for every kind of sequence: what a layer looks like is the only
+  // thing the kind decides.
+  it.each([
+    ["image", "image.raster"],
+    ["markdown", "text.markdown"],
+    ["text", "scalar.text"],
+    ["table", "table.data"],
+    ["csv file", "file.csv"],
+    ["pdf file", "file.pdf"],
+  ])("stacks and pages a %s sequence the same way", (_, artifactType) => {
+    libraryMocks.values = Object.fromEntries(
+      ["k1", "k2", "k3"].map((id) => [
+        id,
+        {
+          text: JSON.stringify(
+            artifactType === "text.markdown"
+              ? { markdown: `# ${id}` }
+              : { value: id },
+          ),
+          truncated: false,
+        },
+      ]),
+    );
+    const { container } = mount(
+      {
+        ...sequence([]),
+        artifact_type: artifactType,
+        item_refs: ["k1", "k2", "k3"].map((artifact_id) => ({
+          artifact_id,
+          artifact_type: artifactType,
+          schema_version: 1,
+        })),
+      },
+      {},
+      true,
+    );
+    const stack = container.querySelector('[aria-label="3 items in sequence"]');
+    expect(stack).not.toBeNull();
+    expect(stack?.querySelectorAll(":scope > [data-stack-item]")).toHaveLength(
+      3,
+    );
+    const pager = stack?.querySelector('[aria-label="Sequence pages"]');
+    expect(pager?.textContent).toContain("1 / 3");
+    const first = stack?.querySelector('[data-stack-item="0"]');
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(pager?.textContent).toContain("2 / 3");
+    // The front item went to the back as the same element.
+    const sent = stack?.querySelector<HTMLElement>('[data-stack-item="0"]');
+    expect(sent).toBe(first);
+    expect(sent?.style.left).toBe("24px");
+  });
+
+  it("pages table sequence references through the table reader", () => {
+    const value = {
+      ...sequence(["t1", "t2"]),
+      artifact_type: "table.data",
+      item_refs: ["t1", "t2"].map((artifact_id) => ({
+        artifact_id,
+        artifact_type: "table.data",
+        schema_version: 1,
+      })),
+    };
+    const { container } = mount(value, {}, true);
+    expect(
+      container.querySelector("[data-artifact-table-body]"),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("1 / 2");
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(
+      container.querySelector("[data-artifact-table-body]"),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("2 / 2");
+    expect(tableMocks.requested).toContain("t1");
+    expect(tableMocks.requested.at(-1)).toBe("t2");
+  });
+
+  it("moves the selected image to the front of its stack", () => {
+    const { container } = mount(sequence(["a1", "a2"]), {}, true);
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("a1");
+    React.act(() =>
+      container
+        .querySelector<HTMLButtonElement>('[aria-label="Next item"]')
+        ?.click(),
+    );
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("a2");
+  });
+
   it("shows a run of artifacts as a stack counted by item", () => {
     const { container } = mount(sequence(["a1", "a2", "a3"]), {}, true);
 
@@ -1052,7 +1320,52 @@ describe("artifact on the canvas", () => {
     expect(image.draggable).toBe(false);
   });
 
-  it("keeps the image's aspect ratio when a saved height is larger", () => {
+  it("holds a TIFF card to the shape of its page", () => {
+    // A TIFF has no <img> to ask for its natural size, so the card learns it
+    // from the tile pyramid instead. Until then it holds the same fallback an
+    // unsized picture does; after, a portrait scan stops sitting in a landscape
+    // box and the frame follows the page.
+    libraryMocks.items = [
+      {
+        ...libraryItem("a-tiff", "page.tif"),
+        artifact: {
+          artifact_id: "a-tiff",
+          artifact_type: "file.tiff",
+          schema_version: 1,
+          content_type: "image/tiff",
+          byte_size: 8_400_000,
+        },
+      },
+    ];
+    const { container } = mount({
+      artifact_id: "a-tiff",
+      artifact_type: "file.tiff",
+      schema_version: 1,
+    });
+    const media = container.querySelector<HTMLElement>("[data-artifact-media]");
+    expect(media?.style.height).toBe("198px");
+
+    const report = tiffMocks.reportSize.at(-1);
+    if (!report) throw new Error("The TIFF never reported its page");
+    React.act(() => report(1240, 1754));
+
+    expect(media?.style.height).toBe("373px");
+
+    // A height the operator dragged outranks that shape: the same scan in a
+    // frame as wide as the canvas and as tall as one line of the register.
+    const stripe = mount(
+      { artifact_id: "a-tiff", artifact_type: "file.tiff", schema_version: 1 },
+      { layout: { width: 900, bodyHeight: 120 } },
+    );
+    React.act(() => tiffMocks.reportSize.at(-1)?.(1240, 1754));
+
+    expect(
+      stripe.container.querySelector<HTMLElement>("[data-artifact-media]")
+        ?.style.height,
+    ).toBe("120px");
+  });
+
+  it("takes a dragged height as the window's height, not the picture's shape", () => {
     const { container } = mount(single("a1"), {
       layout: { width: 264, bodyHeight: 220 },
     });
@@ -1066,7 +1379,7 @@ describe("artifact on the canvas", () => {
     expect(
       container.querySelector<HTMLElement>("[data-artifact-media]")?.style
         .height,
-    ).toBe("149px");
+    ).toBe("220px");
   });
 
   it("scales a resized image past the thumbnail height, keeping its aspect", () => {
@@ -1094,6 +1407,57 @@ describe("artifact on the canvas", () => {
       );
     expect(handle(true)).not.toBeNull();
     expect(handle(false)).toBeNull();
+  });
+
+  it("drags a scan card's corner into a shape the page does not have", () => {
+    // The corner is grabbed at the height the card draws: a 400-wide picture
+    // without a known aspect and a 400-wide text overlay both start at 300, and
+    // both end up wider and shorter than they began.
+    const drag = (value: ArtifactCardValue) => {
+      const onLayoutChange = vi.fn();
+      const { container } = mount(
+        value,
+        { layout: { width: 400 }, onLayoutChange },
+        true,
+      );
+      const handle = container.querySelector<HTMLButtonElement>(
+        '[aria-label="Resize artifact"]',
+      );
+      if (!handle) throw new Error("Resize handle missing");
+      Object.assign(handle, {
+        setPointerCapture: vi.fn(),
+        releasePointerCapture: vi.fn(),
+        hasPointerCapture: () => false,
+      });
+      const pointer = (type: string, x: number, y: number) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          button: 0,
+          clientX: x,
+          clientY: y,
+        });
+        Object.defineProperty(event, "pointerId", { value: 7 });
+        React.act(() => handle.dispatchEvent(event));
+      };
+      pointer("pointerdown", 0, 0);
+      pointer("pointermove", 120, -60);
+      pointer("pointerup", 120, -60);
+      return onLayoutChange.mock.lastCall?.[1];
+    };
+
+    const scan = drag({
+      artifact_id: "a-tiff",
+      artifact_type: "file.tiff",
+      schema_version: 1,
+    });
+    expect(scan).toEqual({ width: 520, bodyHeight: 240 });
+
+    const overlay = drag({
+      artifact_id: "a-regions",
+      artifact_type: "ocr.tiff_text_regions",
+      schema_version: 1,
+    });
+    expect(overlay).toEqual({ width: 520, bodyHeight: 240 });
   });
 
   it("preserves the filename and drag action when an image fails to load", () => {

@@ -13,6 +13,7 @@ function port(
     title: options.title ?? name,
     description: options.description ?? null,
     direction,
+    kind: "artifact",
     artifact_type: { id: artifactTypeId, schema_version: 1 },
     artifact_type_variable: null,
     shape,
