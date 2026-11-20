@@ -57,18 +57,18 @@ import {
 } from "../../fixtures/drawer";
 import {
   GlassStage,
-  PIPE_EDGE_TYPE,
   PipeConnectionLine,
   PipeEdgeView,
-  PipeRouter,
   PipeTargetsProvider,
-  RouteBook,
+  cornerRadius,
   pipeColor,
   type PipeCorners,
   type PipeLook,
   type PipeMaterial,
   type PipeWell,
 } from "./pipe-layers";
+import { PIPE_EDGE_TYPE, PipeRouter, RouteBook } from "./pipe-router";
+import { DEFAULT_PIPE_ROUTER } from "./routing";
 
 /**
  * Cards stand on a pane of frosted glass; edges are angular pipes on the floor
@@ -580,6 +580,7 @@ export function UndergroundPipesSpike() {
   }, []);
   const [edgeStyle, setEdgeStyle] = React.useState<EdgeStyle>("pipes");
   const [look, setLook] = React.useState<PipeLook>({
+    router: DEFAULT_PIPE_ROUTER,
     corners: "rounded",
     material: "liquid",
     well: "recessed",
@@ -735,7 +736,8 @@ export function UndergroundPipesSpike() {
               <PipeRouter
                 book={book}
                 movingBook={movingBook}
-                corners={look.corners}
+                router={look.router}
+                radius={cornerRadius(look.corners)}
                 lanes={look.lanes}
                 depth={look.depth}
               />

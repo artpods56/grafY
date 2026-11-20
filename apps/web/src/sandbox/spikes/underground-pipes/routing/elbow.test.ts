@@ -5,10 +5,14 @@ import {
   PIPE_LANE,
   PIPE_LANE_MIN,
   PIPE_STUB_MIN,
-  routePipes,
   type PipeRequest,
   type Point,
-} from "./pipe-routing";
+} from "../pipe-routing";
+import { routeElbows } from "./elbow";
+
+function routePipes(pipes: PipeRequest[]) {
+  return routeElbows({ pipes, cards: [] }, { lanes: true, depth: true });
+}
 
 function request(
   id: string,
@@ -41,7 +45,7 @@ function lastBendX(routes: ReturnType<typeof routePipes>, id: string): number {
   return verticalXs(routes.get(id)?.points ?? []).at(-1) ?? Number.NaN;
 }
 
-describe("routePipes", () => {
+describe("elbow router", () => {
   it("gives pipes into stacked plugs their own lanes, nearest plug innermost", () => {
     // Three sources behind the card loop back into three plugs one above another.
     const routes = routePipes([

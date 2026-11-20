@@ -6,24 +6,19 @@ import * as stylex from "@stylexjs/stylex";
 import {
   Position,
   useStore,
-  useStoreApi,
   useNodeConnections,
   type ConnectionLineComponentProps,
   type Edge,
   type EdgeProps,
-  type InternalNode,
-  type ReactFlowState,
 } from "@xyflow/react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { decodeHandleId } from "@/features/workbench/canvas/handles";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
-import {
-  pipePath,
-  routePipe,
-  routePipes,
-  type PipeRequest,
-} from "./pipe-routing";
+import { PIPE_EDGE_TYPE, type RouteBook } from "./pipe-router";
+import { pipePath, type PipeRequest } from "./pipe-routing";
+import { elbowRoute } from "./routing/elbow";
+import type { PipeRouterId } from "./routing";
 
 /**
  * Pipes on a floor under a pane of frosted glass; the cards stand on the glass.
@@ -50,12 +45,11 @@ import {
  *     masks for a small overlay of their own, so a drag frame redraws those
  *     pipes and not the whole sheet
  *
- * Routes come from {@link PipeRouter}, which lays all resting pipes out
- * together so that pipes sharing a channel take lanes side by side. A pipe of
- * a dragged card routes on its own until the card is put down.
+ * Routes come from `PipeRouter` in `./pipe-router.tsx`, which hands the whole
+ * canvas to the router picked in the panel (`./routing/`), so that pipes
+ * sharing a channel take lanes side by side.
  */
 
-export const PIPE_EDGE_TYPE = "pipe";
 export type PipeEdge = Edge<Record<string, unknown>, typeof PIPE_EDGE_TYPE>;
 
 export type PipeCorners = "sharp" | "rounded";
@@ -75,6 +69,8 @@ export type PipeMaterial = "frost" | "liquid";
 export type PipeWell = "recessed" | "flat";
 
 export interface PipeLook {
+  /** Which router lays the pipes out. */
+  router: PipeRouterId;
   corners: PipeCorners;
   material: PipeMaterial;
   well: PipeWell;
@@ -177,59 +173,6 @@ const PIPE_CAST_SHADOW_TOP =
   "light-dark(color-mix(in srgb, black 16%, transparent), color-mix(in srgb, black 48%, transparent))";
 const PIPE_CAST_SHADOW_MID =
   "light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 30%, transparent))";
-
-export interface RoutedPath {
-  path: string;
-  /** The route's corner points in flow units, ports first and last. */
-  points: readonly Point[];
-  depth: number;
-}
-
-/**
- * The resting pipes' paths and layers, published by {@link PipeRouter}. A pipe
- * subscribes to its own entry only, so a re-route re-renders just the pipes
- * that moved.
- */
-export class RouteBook {
-  private paths = new Map<string, RoutedPath>();
-  private listeners = new Map<string, Set<() => void>>();
-
-  get(id: string): RoutedPath | undefined {
-    return this.paths.get(id);
-  }
-
-  subscribe(id: string, listener: () => void): () => void {
-    const listeners = this.listeners.get(id) ?? new Set();
-    listeners.add(listener);
-    this.listeners.set(id, listeners);
-    return () => {
-      listeners.delete(listener);
-    };
-  }
-
-  publish(next: ReadonlyMap<string, RoutedPath>): void {
-    const changed: string[] = [];
-    const paths = new Map<string, RoutedPath>();
-    for (const [id, routed] of next) {
-      const current = this.paths.get(id);
-      // Keep the old object when nothing changed: it is the snapshot a pipe
-      // compares against.
-      if (current?.path === routed.path && current.depth === routed.depth) {
-        paths.set(id, current);
-      } else {
-        paths.set(id, routed);
-        changed.push(id);
-      }
-    }
-    for (const id of this.paths.keys()) {
-      if (!next.has(id)) changed.push(id);
-    }
-    this.paths = paths;
-    for (const id of changed) {
-      for (const listener of this.listeners.get(id) ?? []) listener();
-    }
-  }
-}
 
 interface PipeTargets {
   book: RouteBook;
@@ -775,187 +718,13 @@ function overhangGradientId(position: Position): string {
   }
 }
 
-function cornerRadius(corners: PipeCorners): number {
+export function cornerRadius(corners: PipeCorners): number {
   return corners === "sharp" ? 0 : ROUNDED_CORNER_RADIUS;
 }
 
 /** A pipe's route on its own, without lanes: for a pipe in motion. */
 function soloPath(request: PipeRequest, corners: PipeCorners): string {
-  return pipePath(routePipe(request), cornerRadius(corners));
-}
-
-/** The centre of a handle's ring, and the side of the card it sits on. */
-function handleCentre(
-  node: InternalNode,
-  type: "source" | "target",
-  handleId: string | null | undefined,
-): { point: Point; side: Position } | null {
-  const handles = node.internals.handleBounds?.[type] ?? [];
-  const handle = handleId
-    ? handles.find((candidate) => candidate.id === handleId)
-    : handles[0];
-  if (!handle) return null;
-  const origin = node.internals.positionAbsolute;
-  return {
-    point: {
-      x: origin.x + handle.x + handle.width / 2,
-      y: origin.y + handle.y + handle.height / 2,
-    },
-    side: handle.position,
-  };
-}
-
-const EMPTY_PATHS: ReadonlyMap<string, RoutedPath> = new Map();
-
-function anyNodeDragging(state: ReactFlowState): boolean {
-  for (const node of state.nodeLookup.values()) {
-    if (node.dragging) return true;
-  }
-  return false;
-}
-
-function collectPipeRequests(state: ReactFlowState): {
-  all: PipeRequest[];
-  movingIds: Set<string>;
-} {
-  const all: PipeRequest[] = [];
-  const movingIds = new Set<string>();
-  for (const edge of state.edges) {
-    if (edge.type !== PIPE_EDGE_TYPE) continue;
-    const sourceNode = state.nodeLookup.get(edge.source);
-    const targetNode = state.nodeLookup.get(edge.target);
-    if (!sourceNode || !targetNode) continue;
-    const source = handleCentre(sourceNode, "source", edge.sourceHandle);
-    const target = handleCentre(targetNode, "target", edge.targetHandle);
-    if (!source || !target) continue;
-    all.push({
-      id: edge.id,
-      source: source.point,
-      sourceSide: source.side,
-      target: target.point,
-      targetSide: target.side,
-    });
-    if (sourceNode.dragging || targetNode.dragging) {
-      movingIds.add(edge.id);
-    }
-  }
-  return { all, movingIds };
-}
-
-/**
- * Every pipe's ports when no card is dragging; empty string while a drag is in
- * progress so resting pipes stay frozen in their pre-drag lanes and depths
- * instead of jumping when a card is picked up.
- */
-function selectSettledPipes(state: ReactFlowState): string {
-  if (anyNodeDragging(state)) return "";
-  return JSON.stringify(collectPipeRequests(state).all);
-}
-
-/**
- * Compact signature of only the pipes attached to dragging card(s), so drag
- * frames wake {@link MovingPipeRouter} without serialising the resting graph.
- */
-function selectMovingSignature(state: ReactFlowState): string {
-  if (!anyNodeDragging(state)) return "";
-  const parts: string[] = [];
-  for (const edge of state.edges) {
-    if (edge.type !== PIPE_EDGE_TYPE) continue;
-    const sourceNode = state.nodeLookup.get(edge.source);
-    const targetNode = state.nodeLookup.get(edge.target);
-    if (!sourceNode || !targetNode) continue;
-    if (!sourceNode.dragging && !targetNode.dragging) continue;
-    const source = handleCentre(sourceNode, "source", edge.sourceHandle);
-    const target = handleCentre(targetNode, "target", edge.targetHandle);
-    if (!source || !target) continue;
-    parts.push(
-      `${edge.id}:${source.point.x},${source.point.y},${target.point.x},${target.point.y}`,
-    );
-  }
-  return parts.join("|");
-}
-
-/**
- * Routes the dragged card(s)' pipes in the full graph's lane and depth layout
- * while leaving all resting pipes frozen in `book`. Because it evaluates the
- * same full-graph layout on pickup and on drop, lanes and depths never jump
- * when grabbing or releasing a card, and resting SVG layers never repaint.
- */
-function MovingPipeRouter({
-  book,
-  corners,
-  lanes,
-  depth,
-}: {
-  book: RouteBook;
-  corners: PipeCorners;
-  lanes: boolean;
-  depth: boolean;
-}) {
-  const storeApi = useStoreApi();
-  const movingSig = useStore(selectMovingSignature);
-  React.useLayoutEffect(() => {
-    if (!movingSig) {
-      book.publish(EMPTY_PATHS);
-      return;
-    }
-    const { all, movingIds } = collectPipeRequests(storeApi.getState());
-    if (movingIds.size === 0) {
-      book.publish(EMPTY_PATHS);
-      return;
-    }
-    const radius = cornerRadius(corners);
-    const paths = new Map<string, RoutedPath>();
-    for (const [id, routed] of routePipes(all, { lanes, depth })) {
-      if (!movingIds.has(id)) continue;
-      paths.set(id, {
-        path: pipePath(routed.points, radius),
-        points: routed.points,
-        depth: routed.depth,
-      });
-    }
-    book.publish(paths);
-  }, [book, corners, depth, lanes, movingSig, storeApi]);
-  return null;
-}
-
-/** Lays out all resting pipes together and publishes their paths. */
-export function PipeRouter({
-  book,
-  movingBook,
-  corners,
-  lanes,
-  depth,
-}: {
-  book: RouteBook;
-  movingBook: RouteBook;
-  corners: PipeCorners;
-  lanes: boolean;
-  depth: boolean;
-}) {
-  const settled = useStore(selectSettledPipes);
-  React.useLayoutEffect(() => {
-    if (!settled) return;
-    const requests = JSON.parse(settled) as PipeRequest[];
-    const radius = cornerRadius(corners);
-    const paths = new Map<string, RoutedPath>();
-    for (const [id, routed] of routePipes(requests, { lanes, depth })) {
-      paths.set(id, {
-        path: pipePath(routed.points, radius),
-        points: routed.points,
-        depth: routed.depth,
-      });
-    }
-    book.publish(paths);
-  }, [book, corners, depth, lanes, settled]);
-  return (
-    <MovingPipeRouter
-      book={movingBook}
-      corners={corners}
-      lanes={lanes}
-      depth={depth}
-    />
-  );
+  return pipePath(elbowRoute(request), cornerRadius(corners));
 }
 
 const NO_BOOK_SUBSCRIPTION = () => () => {};
