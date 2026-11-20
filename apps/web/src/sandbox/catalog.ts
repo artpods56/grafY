@@ -17,6 +17,12 @@ export const SPIKES = [
     summary:
       "Edges as angular pipes laid under a translucent canvas, surfacing through sockets at the ports.",
   },
+  {
+    id: "cell-canvas",
+    title: "Cell-based canvas",
+    summary:
+      "Cards, ports, gutters, and pipes on one shared 50px cell grid with snapping drag and track-capacity routing.",
+  },
 ] as const;
 
 export type SpikeId = (typeof SPIKES)[number]["id"];
