@@ -378,6 +378,7 @@ export function CellEdgeSelectorPill({
 
   return (
     <div
+      data-edge-pill={attachment.pipeId}
       data-edge-selector-pill={attachment.pipeId}
       data-edge-selector-orientation={attachment.segmentOrientation}
       data-edge-selector-docked={attachment.isDocked ? "true" : "false"}

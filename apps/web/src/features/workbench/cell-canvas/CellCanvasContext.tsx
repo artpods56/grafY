@@ -368,6 +368,7 @@ export function CellResizeGrip({
       aria-label={`Resize ${cardId}`}
       aria-orientation={edge === "s" ? "horizontal" : "vertical"}
       data-cell-resize-grip={edge}
+      data-resize-grip={edge}
       data-resize-card-id={cardId}
       {...stylex.props(s.grip, GRIP_STYLE[edge])}
       onPointerDown={onPointerDown}

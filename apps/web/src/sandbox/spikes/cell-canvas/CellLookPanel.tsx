@@ -27,7 +27,7 @@ import type {
   UnderCardsMode,
 } from "@/features/workbench/cell-canvas/cell-model";
 
-export type CellGraphKind = "demo" | "stress";
+export type CellGraphKind = "demo" | "showcase" | "stress";
 
 export interface CellLookPanelProps {
   graph: CellGraphKind;
@@ -172,6 +172,7 @@ export function CellLookPanel({
           onValueChange={onGraph}
           options={[
             { value: "demo", label: "Demo" },
+            { value: "showcase", label: "Showcase" },
             { value: "stress", label: "Stress" },
           ]}
         />
@@ -298,8 +299,8 @@ export function CellLookPanel({
         onValueChange={(frost) => onLook({ ...look, frost })}
       />
       <p {...stylex.props(s.hint)}>
-        Drag a card to snap cell by cell. Hover or click a pipe to wipe the
-        frost; drag from an output ring to wire.
+        Drag cards to snap cell by cell; Shift+drag to marquee or group-drag.
+        Hover a pipe or pill to wipe frost; drag a corner grip to resize.
       </p>
     </Surface>
   );
