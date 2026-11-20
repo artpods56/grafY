@@ -149,6 +149,49 @@ export function chevronsPath(
 }
 
 /**
+ * The unit normal of a direction that faces the light, which comes from the
+ * top left: up for a horizontal run, left for a vertical one, and the upper
+ * side of a diagonal.
+ */
+export function towardLight(dx: number, dy: number): { x: number; y: number } {
+  // `0 - v` rather than `-v`, so a zero stays 0 and not -0.
+  const x = 0 - dy;
+  const y = dx + 0;
+  return x + y <= 0 ? { x, y } : { x: 0 - x, y: 0 - y };
+}
+
+/**
+ * The straight runs of a route, each moved `offset` toward the light and cut
+ * short where a bend's curve begins, as one open path: a highlight that
+ * stays on the lit side of a pipe at any angle.
+ */
+export function litEdgePath(
+  points: readonly Point[],
+  radius: number,
+  offset: number,
+): string {
+  const parts: string[] = [];
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    if (!start || !end) continue;
+    const length = Math.hypot(end.x - start.x, end.y - start.y);
+    if (length === 0) continue;
+    const dx = (end.x - start.x) / length;
+    const dy = (end.y - start.y) / length;
+    const head = index === 0 ? 0 : Math.min(radius, length / 2);
+    const tail = index === points.length - 2 ? 0 : Math.min(radius, length / 2);
+    if (length - head - tail <= 0) continue;
+    const normal = towardLight(dx, dy);
+    const shift = { x: normal.x * offset, y: normal.y * offset };
+    parts.push(
+      `M${fixed(start.x + dx * head + shift.x)},${fixed(start.y + dy * head + shift.y)} L${fixed(end.x - dx * tail + shift.x)},${fixed(end.y - dy * tail + shift.y)}`,
+    );
+  }
+  return parts.join(" ");
+}
+
+/**
  * An SVG path through the points with every bend cut at 45 degrees, `chamfer`
  * back from its corner (less on a short leg), as a circuit trace is drawn.
  */

@@ -5,9 +5,11 @@ import {
   chamferPath,
   chevronsPath,
   evenStations,
+  litEdgePath,
   pointOnRun,
   routeBends,
   straightRuns,
+  towardLight,
 } from "./pipe-geometry";
 
 // Out to the right, down, and in to the right: two bends.
@@ -146,5 +148,28 @@ describe("chamferPath", () => {
         8,
       ),
     ).toBe("M0,0 L50,0");
+  });
+});
+
+describe("towardLight", () => {
+  it("faces up from a horizontal run and left from a vertical one", () => {
+    expect(towardLight(1, 0)).toEqual({ x: 0, y: -1 });
+    expect(towardLight(-1, 0)).toEqual({ x: 0, y: -1 });
+    expect(towardLight(0, 1)).toEqual({ x: -1, y: 0 });
+    expect(towardLight(0, -1)).toEqual({ x: -1, y: 0 });
+  });
+
+  it("faces the upper left side of a diagonal", () => {
+    const { x, y } = towardLight(Math.SQRT1_2, -Math.SQRT1_2);
+    expect(x).toBeCloseTo(-Math.SQRT1_2);
+    expect(y).toBeCloseTo(-Math.SQRT1_2);
+  });
+});
+
+describe("litEdgePath", () => {
+  it("moves each run toward the light and stops short of the bends", () => {
+    expect(litEdgePath(Z_ROUTE, 12, 3)).toBe(
+      "M0,-3 L88,-3 M97,12 L97,188 M112,197 L300,197",
+    );
   });
 });

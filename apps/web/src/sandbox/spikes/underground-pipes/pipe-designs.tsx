@@ -9,9 +9,11 @@ import {
   chamferPath,
   chevronsPath,
   evenStations,
+  litEdgePath,
   pointOnRun,
   routeBends,
   straightRuns,
+  towardLight,
 } from "./pipe-geometry";
 
 /**
@@ -309,11 +311,14 @@ function fittedParts(points: readonly Point[], radius: number, girth: number) {
   // Light from the top left catches each band's near edge: the top of a
   // horizontal band, the left of a vertical one.
   const edge = (PIPE_WIDTH * girth + FITTED_FLARE) / 2 - 0.7 * girth;
-  const toEdge = ({ at, dx, dy }: Station): Station => ({
-    at: { x: at.x - Math.abs(dy) * edge, y: at.y - Math.abs(dx) * edge },
-    dx,
-    dy,
-  });
+  const toEdge = ({ at, dx, dy }: Station): Station => {
+    const normal = towardLight(dx, dy);
+    return {
+      at: { x: at.x + normal.x * edge, y: at.y + normal.y * edge },
+      dx,
+      dy,
+    };
+  };
   return {
     elbows: elbows.join(" "),
     bands: `${bandsPath(collars, FITTED_COLLAR)} ${bandsPath(bells, FITTED_BELL)}`,
@@ -458,6 +463,7 @@ function TraceBody({
 /** A clear glass tube: edged wall, coloured fluid, a reflection on the wall. */
 function GlassBody({
   path,
+  points,
   color,
   radius,
   girth = 1,
@@ -466,6 +472,12 @@ function GlassBody({
 }: PipeBodyProps) {
   const join = joinFor(radius);
   const width = GLASS_WIDTH * girth;
+  // The wall's reflection runs along its lit side at any angle; a stub
+  // without route points is straight, so a shift toward the light does.
+  const reflection = React.useMemo(
+    () => (points ? litEdgePath(points, radius, 3.1 * girth) : null),
+    [girth, points, radius],
+  );
   return (
     <g>
       <CastShadow
@@ -517,10 +529,13 @@ function GlassBody({
         />
       ) : null}
       <path
-        d={path}
-        transform={`translate(${-3.1 * girth}, ${-3.1 * girth})`}
+        d={reflection ?? path}
+        transform={
+          reflection ? undefined : `translate(${-3.1 * girth}, ${-3.1 * girth})`
+        }
         fill="none"
         strokeWidth={0.9 * girth}
+        strokeLinecap="round"
         strokeLinejoin={join}
         style={{ stroke: GLASS_SPECULAR }}
       />
