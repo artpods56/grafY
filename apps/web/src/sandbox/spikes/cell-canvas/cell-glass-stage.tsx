@@ -179,7 +179,7 @@ const WELL_MENISCUS_HI =
 const WELL_MENISCUS_LO =
   "light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 35%, transparent))";
 
-const GRID_IMAGE = `linear-gradient(to right, ${tokens.colorGrid} 1px, transparent 1px), linear-gradient(to bottom, ${tokens.colorGrid} 1px, transparent 1px)`;
+const CELL_GRID_PATTERN_ID = `${STAGE_PREFIX}grid-pattern`;
 
 /**
  * Per-plane depth cues, as in pipe-layers: moderate blur growth, preserved
@@ -232,6 +232,13 @@ const s = stylex.create({
     position: "absolute",
     inset: 0,
     zIndex: 1,
+    pointerEvents: "none",
+  },
+  floorGrid: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
     pointerEvents: "none",
   },
   // A 1px plane at the flow origin, moved like a viewport. Not 0: an SVG with
@@ -704,23 +711,40 @@ const RestingUnderlay = React.memo(function RestingUnderlay({
   design: PipeDesign;
 }) {
   const transform = planeTransform(x, y, zoom);
-  const step = cellSize * zoom;
   return (
     <>
       <div
         aria-hidden="true"
         {...stylex.props(s.floor)}
-        style={
-          grid
-            ? {
-                backgroundColor: FLOOR,
-                backgroundImage: GRID_IMAGE,
-                backgroundSize: `${step}px ${step}px`,
-                backgroundPosition: `${x}px ${y}px`,
-              }
-            : { backgroundColor: FLOOR }
-        }
-      />
+        style={{ backgroundColor: FLOOR }}
+      >
+        {grid ? (
+          <svg {...stylex.props(s.floorGrid)}>
+            <defs>
+              <pattern
+                id={CELL_GRID_PATTERN_ID}
+                width={cellSize}
+                height={cellSize}
+                patternUnits="userSpaceOnUse"
+                patternTransform={`translate(${x} ${y}) scale(${zoom})`}
+              >
+                <path
+                  d={`M ${cellSize} 0 L 0 0 0 ${cellSize}`}
+                  fill="none"
+                  strokeWidth={1}
+                  vectorEffect="non-scaling-stroke"
+                  style={{ stroke: tokens.colorGrid }}
+                />
+              </pattern>
+            </defs>
+            <rect
+              width="100%"
+              height="100%"
+              fill={`url(#${CELL_GRID_PATTERN_ID})`}
+            />
+          </svg>
+        ) : null}
+      </div>
       {DEPTHS_DEEPEST_FIRST.map((depth) => (
         <div
           key={depth}
