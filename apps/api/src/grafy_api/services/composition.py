@@ -143,9 +143,8 @@ def build_workbench_components(
     resolved_tiler_config = (
         tiler_config if tiler_config is not None else TilerConfig.model_construct()
     )
-    artifact_images = ArtifactImageService(
-        uow, resolved_tiler_config, HttpTiler(resolved_tiler_config)
-    )
+    tiler = HttpTiler(resolved_tiler_config)
+    artifact_images = ArtifactImageService(uow, resolved_tiler_config, tiler)
     plugin_context = PluginRuntimeContext(
         workspace=resolved_workspace,
         storage=resolved_storage,
@@ -172,12 +171,16 @@ def build_workbench_components(
         uow,
         resolved_storage,
         availability=availability,
+        tiler=tiler,
+        tiler_config=resolved_tiler_config,
     )
     artifact_geo_tiles = ArtifactGeoTileService(
         uow,
         resolved_storage,
         availability=availability,
         wms=wms,
+        tiler=tiler,
+        tiler_config=resolved_tiler_config,
     )
     library = LibraryService(
         uow,

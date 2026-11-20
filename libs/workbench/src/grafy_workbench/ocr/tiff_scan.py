@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Sequence
+from typing import cast
 from dataclasses import dataclass
 from math import ceil, floor
 
@@ -15,13 +16,19 @@ from shapely.geometry.base import BaseGeometry
 
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.provider_cache import CacheSpec, ProviderCache
-from grafy_core.text_regions import TextDetector, TextRegion, TiffPage
+from grafy_core.text_regions import (
+    TextDetector,
+    TextRegion,
+    TiffPage,
+    detector_request_options,
+)
 from grafy_workbench.ocr.craft import CRAFT_MODEL
+from grafy_workbench.ocr.progress import cached_progress
 
 _READ_EDGE = 1000
 _CONTEXT = 200
 _CORE_EDGE = _READ_EDGE - 2 * _CONTEXT
-_MAX_READS = 1024
+_MAX_READS = 1152
 _MAX_REPAIRS = 32
 _PARALLEL_READS = 16
 _EDGE_TOLERANCE = 4
@@ -103,21 +110,18 @@ def _craft_spec(ttl_seconds: int) -> CacheSpec[list[TextRegion]]:
     )
 
 
-def _craft_request(page: TiffPage, window: Window) -> JsonValue:
-    return {
-        "source_sha256": page.source_sha256,
-        "page": page.page,
-        "window": [window.col, window.row, window.width, window.height],
-        "png": _PNG_VERSION,
-        "detect": {"core_edge": _CORE_EDGE, "context": _CONTEXT},
-    }
-
-
-def _progress_message(message: str, hits: list[bool]) -> str:
-    cached = sum(hits)
-    if cached == 0:
-        return message
-    return f"{message} · {cached} cached"
+def _craft_request(page: TiffPage, window: Window, detector: TextDetector) -> JsonValue:
+    return cast(
+        JsonValue,
+        {
+            "source_sha256": page.source_sha256,
+            "page": page.page,
+            "window": [window.col, window.row, window.width, window.height],
+            "png": _PNG_VERSION,
+            "detect": {"core_edge": _CORE_EDGE, "context": _CONTEXT},
+            "options": detector_request_options(detector),
+        },
+    )
 
 
 async def _detect(
@@ -147,7 +151,7 @@ async def _detect(
         local_regions, hit = await cache.get_or_compute(
             context.workspace_id,
             _craft_spec(cache_ttl_seconds),
-            _craft_request(page, window),
+            _craft_request(page, window, detector),
             compute,
         )
         hits.append(hit)
@@ -197,7 +201,7 @@ async def _detect_many(
                 hits=hits,
             )
             await context.progress(
-                _progress_message(message, hits),
+                cached_progress(message, hits),
                 current=len(results),
                 total=len(windows),
             )

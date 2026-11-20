@@ -30,6 +30,9 @@ export const DEFAULT_ARTIFACT_FILE_CARD_WIDTH = 150;
 export const DEFAULT_ARTIFACT_TABLE_CARD_WIDTH = 600;
 export const DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT = 360;
 
+export const DEFAULT_ARTIFACT_MAP_CARD_WIDTH = 450;
+export const DEFAULT_ARTIFACT_MAP_BODY_HEIGHT = 340;
+
 /**
  * Width a card following a node output opens at when it is not a picture:
  * four lattice cells, room for "Producer → port" beside its type while it
@@ -196,13 +199,28 @@ export function moveArtifactCardRef(
 const IMAGE_ARTIFACT_TYPES = new Set([
   "image.raster",
   "image.pixmap",
-  "geo.raster_scan",
   "file.png",
   "file.jpeg",
   "file.tiff",
   "file.webp",
   "file.bmp",
 ]);
+
+const GEO_MAP_ARTIFACT_TYPES = new Set([
+  "geo.feature_collection",
+  "geo.raster_scan",
+  "geo.map_layer",
+  "geo.map_document",
+]);
+
+export function isGeoMapArtifact(
+  ref: Pick<ArtifactRef, "artifact_type" | "schema_version">,
+): boolean {
+  return (
+    ref.schema_version === 1 &&
+    GEO_MAP_ARTIFACT_TYPES.has(ref.artifact_type)
+  );
+}
 
 export function isTableArtifact(
   ref: Pick<ArtifactRef, "artifact_type" | "schema_version">,
@@ -246,6 +264,7 @@ export function isImageArtifact(
   ref: ArtifactRef,
   contentType?: string | null,
 ): boolean {
+  if (isGeoMapArtifact(ref)) return false;
   if (contentType) return contentType.toLowerCase().startsWith("image/");
   return IMAGE_ARTIFACT_TYPES.has(ref.artifact_type);
 }

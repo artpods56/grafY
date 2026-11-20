@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, Self
 from uuid import UUID
@@ -108,6 +109,22 @@ class TilerPort(Protocol):
         self, source: TiffSource, *, z: int, x: int, y: int, extension: TileExtension
     ) -> TilerImage: ...
 
+    async def geo_tile(
+        self, source: TiffSource, *, z: int, x: int, y: int, extension: TileExtension
+    ) -> TilerImage: ...
+
+    async def geo_mosaic_tile(
+        self,
+        sources: Sequence[TiffSource],
+        *,
+        z: int,
+        x: int,
+        y: int,
+        extension: TileExtension,
+    ) -> TilerImage:
+        """Composite overlapping sources, given bottom to top, into one tile."""
+        ...
+
     async def thumbnail(self, source: TiffSource, *, edge: int) -> TilerImage: ...
 
     async def read_window(
@@ -158,6 +175,11 @@ class ArtifactImageService:
         try:
             source = await self._window_source(workspace_id, artifact_id, page=page)
             info = await self._tiler.info(source)
+            # A window's affine is local to its corner, so the one at (0, 0)
+            # is the page's own pixel-to-CRS transform.
+            origin = await self._tiler.read_window(
+                source, col=0, row=0, width=1, height=1
+            )
         except ImageProxyError as exc:
             raise UserFacingNodeError(f"Could not open the TIFF page: {exc}") from exc
 
@@ -178,6 +200,8 @@ class ArtifactImageService:
             read,
             source_sha256=source.sha256,
             page=page,
+            affine=origin.placement.affine,
+            crs=origin.placement.crs,
         )
 
     async def _window_source(
@@ -189,7 +213,7 @@ class ArtifactImageService:
                 raise ImageProxyError(404, "Artifact not found")
             if artifact.content_type.partition(";")[0].strip().lower() != "image/tiff":
                 raise ImageProxyError(415, "Pixel windows require a TIFF artifact")
-            source = _stored_tiff_source(artifact, page=page)
+            source = stored_tiff_source(artifact, page=page)
 
         if self._config.tiler_url is None:
             raise ImageProxyError(501, "TIFF rendering is disabled")
@@ -228,7 +252,7 @@ class ArtifactImageService:
             raise ImageProxyError(501, "TIFF rendering is disabled")
 
         etag = source.get_etag(
-            operation="info",
+            operation="info:georeference",
             edge=None,
             tiler_renderer_version=self._config.tiler_renderer_version,
         )
@@ -321,10 +345,10 @@ def _tiff_from_artifact(artifact: ArtifactObject | None, *, page: int) -> TiffSo
         raise ImageProxyError(404, "Artifact not found")
     if artifact.content_type != "image/tiff":
         raise ImageProxyError(415, "Image tiles require a TIFF artifact")
-    return _stored_tiff_source(artifact, page=page)
+    return stored_tiff_source(artifact, page=page)
 
 
-def _stored_tiff_source(artifact: ArtifactObject, *, page: int) -> TiffSource:
+def stored_tiff_source(artifact: ArtifactObject, *, page: int) -> TiffSource:
     if (
         not artifact.bucket
         or not artifact.object_key

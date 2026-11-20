@@ -25,6 +25,7 @@ class GeoTileRead:
     content: bytes
     content_type: str
     etag: str | None
+    immutable: bool = False
 
 
 class WmsTileClient:

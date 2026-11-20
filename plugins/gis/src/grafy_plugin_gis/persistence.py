@@ -1,4 +1,5 @@
 import json
+import math
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -35,7 +36,6 @@ from grafy_core.spatial_contracts import (
     GeoFeaturePropertyMetadata,
     GeoPropertyValueType,
     GeoStoredFeatureCollectionMetadata,
-    RasterProjectionMetadata,
     VectorProjectionMetadata,
 )
 from grafy_core.spatial_storage import (
@@ -43,8 +43,8 @@ from grafy_core.spatial_storage import (
     verify_spatial_artifact_content,
 )
 from grafy_plugin_gis.artifacts import GEO_FEATURE_COLLECTION, GEO_RASTER_SCAN
-from grafy_plugin_gis.gdal import GdalCli, GdalError
-from grafy_plugin_gis.models import GeoRasterScan
+from grafy_plugin_gis.gdal import GdalCli, GdalError, RasterBounds
+from grafy_plugin_gis.models import GeoRasterScan, RasterProjectionMetadata
 
 
 def _feature_property_fields(
@@ -323,6 +323,23 @@ def feature_collection_artifact(
     )
 
 
+def _mercator_y(latitude: float) -> float:
+    clamped = max(-85.05112878, min(85.05112878, latitude))
+    return math.asinh(math.tan(math.radians(clamped))) / math.tau
+
+
+def _raster_zoom_range(
+    bounds: RasterBounds, width: int, height: int
+) -> tuple[int, int]:
+    west, south, east, north = bounds
+    span_x = (east - west) / 360
+    span_y = _mercator_y(north) - _mercator_y(south)
+    fit_zoom = -math.log2(max(span_x, span_y, 2.0**-22))
+    native_zoom = -math.log2(max(256 * span_x / width, 256 * span_y / height, 2.0**-22))
+    min_zoom = max(0, math.floor(fit_zoom) - 2)
+    return min_zoom, max(min_zoom, min(22, math.ceil(native_zoom)))
+
+
 def raster_scan_artifact(gdal: GdalCli | None = None) -> Artifact[GeoRasterScan]:
     compiler = gdal or GdalCli()
 
@@ -366,7 +383,6 @@ def raster_scan_artifact(gdal: GdalCli | None = None) -> Artifact[GeoRasterScan]
             work_dir = Path(directory)
             source_path = work_dir / "source.tif"
             cog_path = work_dir / "source.cog.tif"
-            tiles_dir = work_dir / "tiles"
             source_path.write_bytes(value.content)
             try:
                 cog = await run_in_thread(
@@ -383,39 +399,14 @@ def raster_scan_artifact(gdal: GdalCli | None = None) -> Artifact[GeoRasterScan]
                 ) from exc
             cog_content = cog_path.read_bytes()
             cog_hash = sha256(cog_content).hexdigest()
-            try:
-                tile_projection = await run_in_thread(
-                    compiler.tile_raster_to_xyz,
-                    cog_path,
-                    tiles_dir,
-                )
-            except GdalError as exc:
-                node_id = files.node_id or "<unknown>"
+            if cog.bounds_wgs84 is None or cog.native_crs is None:
                 raise RuntimeError(
-                    f"Failed to compile XYZ tiles for raster source "
-                    f"{value.source_name!r} produced by node {node_id!r}"
-                ) from exc
-            tile_paths = sorted(tiles_dir.rglob("*.png"))
-            if not tile_paths:
-                raise RuntimeError(
-                    f"GDAL produced no non-blank XYZ tiles for raster "
-                    f"{value.source_name!r}"
+                    f"GDAL could not derive complete georeferencing metadata "
+                    f"for raster {value.source_name!r}"
                 )
-            if (
-                cog.bounds_wgs84 is None
-                or cog.native_crs is None
-                or tile_projection.min_zoom is None
-                or tile_projection.max_zoom is None
-            ):
-                raise RuntimeError(
-                    f"GDAL could not derive complete georeferencing and zoom "
-                    f"metadata for raster {value.source_name!r}"
-                )
-            if tile_projection.tile_count != len(tile_paths):
-                raise RuntimeError(
-                    f"GDAL reported {tile_projection.tile_count} XYZ tiles for raster "
-                    f"{value.source_name!r}, found {len(tile_paths)}"
-                )
+            min_zoom, max_zoom = _raster_zoom_range(
+                cog.bounds_wgs84, cog.width, cog.height
+            )
 
             cog_key = (
                 f"workspaces/{files.workspace_id}/"
@@ -446,57 +437,17 @@ def raster_scan_artifact(gdal: GdalCli | None = None) -> Artifact[GeoRasterScan]
                     f"{value.source_name!r} at {files.bucket}/{cog_key}"
                 ) from exc
 
-            tile_prefix = (
-                f"workspaces/{files.workspace_id}/"
-                f"{GEO_RASTER_SCAN.key.id}/v{GEO_RASTER_SCAN.key.schema_version}/"
-                f"projections/{cog_hash}/xyz"
-            )
-            stored_tiles: list[PortableArtifactFile] = []
-            for tile_path in tile_paths:
-                relative_tile = tile_path.relative_to(tiles_dir).as_posix()
-                tile_key = f"{tile_prefix}/{relative_tile}"
-                tile_content = tile_path.read_bytes()
-                tile_hash = sha256(tile_content).hexdigest()
-                try:
-                    stored_tile = await files.storage.save(
-                        SaveFileCommand(
-                            bucket=files.bucket,
-                            path=tile_key,
-                            stream=BytesIO(tile_content),
-                            content_type="image/png",
-                            metadata={
-                                "artifact_kind": GEO_RASTER_SCAN.key.id,
-                                "source": "gdal-xyz-projection",
-                                "sha256": tile_hash,
-                            },
-                            allow_overwrite=True,
-                        )
-                    )
-                except Exception as exc:
-                    raise RuntimeError(
-                        f"Failed to persist XYZ tile for raster "
-                        f"{value.source_name!r} at {files.bucket}/{tile_key}"
-                    ) from exc
-                stored_tiles.append(
-                    PortableArtifactFile(
-                        object_key=stored_tile.path,
-                        byte_size=stored_tile.byte_size,
-                        sha256=stored_tile.sha256,
-                        content_type="image/png",
-                    )
-                )
-
         raster_projection = RasterProjectionMetadata(
             bucket=stored_cog.bucket,
-            prefix=tile_prefix,
-            min_zoom=tile_projection.min_zoom,
-            max_zoom=tile_projection.max_zoom,
+            prefix=None,
+            min_zoom=min_zoom,
+            max_zoom=max_zoom,
             bounds=cog.bounds_wgs84,
             source_crs=cog.native_crs,
             width=cog.width,
             height=cog.height,
             band_count=cog.bands,
-            compiler=(f"{tile_projection.compiler} {tile_projection.compiler_version}"),
+            compiler=f"{cog.compiler} {cog.compiler_version}",
         )
         artifact_metadata: JsonObject = {
             "content_hash": stored_cog.sha256,
@@ -517,16 +468,11 @@ def raster_scan_artifact(gdal: GdalCli | None = None) -> Artifact[GeoRasterScan]
                             "image/tiff; application=geotiff; profile=cloud-optimized"
                         ),
                     ),
-                    *stored_tiles,
                 ),
                 references=(
                     PortableMetadataReference(
                         path=("raster_projection", "bucket"),
                         kind="bucket",
-                    ),
-                    PortableMetadataReference(
-                        path=("raster_projection", "prefix"),
-                        kind="prefix",
                     ),
                 ),
             ).as_metadata_value()

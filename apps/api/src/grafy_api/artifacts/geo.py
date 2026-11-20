@@ -1,3 +1,5 @@
+import asyncio
+from collections.abc import Collection
 from typing import cast
 from uuid import UUID
 
@@ -6,9 +8,24 @@ from grafy_core.artifacts import ArtifactObject, ArtifactRef
 from grafy_core.egress import validated_public_destination
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
-from grafy_core.spatial_contracts import GeoVectorStyle as StoredGeoVectorStyle
+from grafy_core.spatial_contracts import (
+    BasemapKind,
+    GeoVectorStyle as StoredGeoVectorStyle,
+)
+from grafy_shared.config.tiler import TilerConfig
 
 from grafy_api.artifact_availability import ArtifactAvailability, ArtifactReferenceError
+from grafy_api.artifacts.errors import GeoRenderArtifactNotFoundError
+from grafy_api.artifacts.geo_tiff import (
+    GEO_RASTER_SCAN_ARTIFACT_TYPE,
+    TIFF_ARTIFACT_TYPE,
+    GeoTiffInfo,
+    load_geo_raster_info,
+    load_geo_tiff,
+    require_raster_tiler,
+    tiff_title,
+)
+from grafy_api.artifacts.images import ImageProxyError, TilerPort
 from grafy_api.services.errors import (
     ArtifactContentUnavailableError,
     WorkbenchOperationError,
@@ -36,10 +53,10 @@ from grafy_api.artifacts.models import (
 
 
 GEO_FEATURE_COLLECTION_ARTIFACT_TYPE = "geo.feature_collection"
-GEO_RASTER_SCAN_ARTIFACT_TYPE = "geo.raster_scan"
 GEO_MAP_LAYER_ARTIFACT_TYPE = "geo.map_layer"
 GEO_MAP_DOCUMENT_ARTIFACT_TYPE = "geo.map_document"
 GEO_INTERACTION_FEATURE_LIMIT = 250_000
+RASTER_SOURCE_TYPES = (TIFF_ARTIFACT_TYPE, GEO_RASTER_SCAN_ARTIFACT_TYPE)
 
 
 def _coordinate_bounds(coordinates: object) -> GeoBounds | None:
@@ -59,7 +76,7 @@ def _coordinate_bounds(coordinates: object) -> GeoBounds | None:
     nested = [
         bounds for value in values if (bounds := _coordinate_bounds(value)) is not None
     ]
-    return _bounds_union(nested)
+    return bounds_union(nested)
 
 
 def _geometry_bounds(geometry: object) -> GeoBounds | None:
@@ -71,7 +88,7 @@ def _geometry_bounds(geometry: object) -> GeoBounds | None:
         if not isinstance(geometries, list):
             return None
         typed_geometries = cast(list[object], geometries)
-        return _bounds_union(
+        return bounds_union(
             [
                 bounds
                 for value in typed_geometries
@@ -81,7 +98,7 @@ def _geometry_bounds(geometry: object) -> GeoBounds | None:
     return _coordinate_bounds(typed_geometry.get("coordinates"))
 
 
-def _bounds_union(
+def bounds_union(
     bounds_values: list[tuple[float, float, float, float]],
 ) -> tuple[float, float, float, float] | None:
     if not bounds_values:
@@ -117,15 +134,19 @@ async def resolve_exact_artifacts(
     availability: ArtifactAvailability,
     refs: list[GeoArtifactRefPayload],
     *,
-    expected_type: str,
+    expected_type: str | Collection[str],
     context: str,
     workspace_id: UUID,
 ) -> list[ArtifactObject]:
+    allowed_types = (
+        [expected_type] if isinstance(expected_type, str) else list(expected_type)
+    )
     for ref in refs:
-        if ref.artifact_type != expected_type or ref.schema_version != 1:
+        if ref.artifact_type not in allowed_types or ref.schema_version != 1:
+            expected = " or ".join(f"{name}@1" for name in allowed_types)
             raise ArtifactContentUnavailableError(
                 f"{context} references {ref.artifact_type}@{ref.schema_version}, "
-                f"expected {expected_type}@1"
+                f"expected {expected}"
             )
     exact_refs = [
         ArtifactRef(
@@ -148,6 +169,29 @@ async def resolve_exact_artifacts(
         ) from exc
 
 
+async def load_mosaic_infos(
+    availability: ArtifactAvailability,
+    refs: list[GeoArtifactRefPayload],
+    tiler: TilerPort,
+    *,
+    context: str,
+    workspace_id: UUID,
+) -> list[GeoTiffInfo]:
+    """Footprints of a mosaic's sources, bottom to top, all in one Workspace."""
+    artifacts = await resolve_exact_artifacts(
+        availability,
+        refs,
+        expected_type=RASTER_SOURCE_TYPES,
+        context=context,
+        workspace_id=workspace_id,
+    )
+    return list(
+        await asyncio.gather(
+            *(load_geo_raster_info(artifact, tiler) for artifact in artifacts)
+        )
+    )
+
+
 class ArtifactGeoService:
     """Builds map render descriptors and linked feature queries."""
 
@@ -157,10 +201,14 @@ class ArtifactGeoService:
         storage: FileStoragePort,
         *,
         availability: ArtifactAvailability,
+        tiler: TilerPort | None = None,
+        tiler_config: TilerConfig | None = None,
     ) -> None:
         self._uow = uow
         self._storage = storage
         self._availability = availability
+        self._tiler = tiler
+        self._tiler_config = tiler_config
 
     async def get(
         self,
@@ -264,9 +312,46 @@ class ArtifactGeoService:
             ) from exc
         return GeoFeatureQueryResponse(
             artifact_id=artifact.id,
-            bounds=_bounds_union(matched_bounds),
+            bounds=bounds_union(matched_bounds),
             matched_feature_count=matched_feature_count,
             source_artifact_ids=source_ids,
+        )
+
+    async def load_combined_geo_render(
+        self,
+        artifact_ids: list[UUID],
+        *,
+        workspace_id: UUID,
+        basemap: BasemapKind,
+    ) -> GeoRenderResponse:
+        async with self._uow as uow:
+            artifacts = await uow.artifacts.get_many(workspace_id, artifact_ids)
+        ordered_artifacts: list[ArtifactObject] = []
+        for artifact_id in artifact_ids:
+            if (artifact := artifacts.get(artifact_id)) is None:
+                raise GeoRenderArtifactNotFoundError(
+                    f"Artifact {artifact_id} not found"
+                )
+            ordered_artifacts.append(artifact)
+
+        layers: list[GeoRenderLayerResponse] = []
+        layer_ids: set[str] = set()
+        bounds: list[GeoBounds] = []
+        for artifact in ordered_artifacts:
+            descriptor = await self.load_geo_render(artifact, workspace_id=workspace_id)
+            if descriptor.initial_bounds is not None:
+                bounds.append(descriptor.initial_bounds)
+            for layer in descriptor.layers:
+                if layer.id in layer_ids:
+                    layer = layer.model_copy(update={"id": f"{layer.id}:{len(layers)}"})
+                layer_ids.add(layer.id)
+                layers.append(layer)
+        return GeoRenderResponse(
+            artifact_id=artifact_ids[0],
+            kind="map_document",
+            basemap=basemap,
+            initial_bounds=bounds_union(bounds),
+            layers=layers,
         )
 
     async def load_geo_render(
@@ -299,11 +384,21 @@ class ArtifactGeoService:
                     initial_bounds=None if layer is None else layer.source.bounds,
                     layers=layers,
                 )
-            if artifact.artifact_type == GEO_RASTER_SCAN_ARTIFACT_TYPE:
-                title = source_name(artifact)
-                projection = GeoRasterProjectionMetadata.model_validate(
-                    artifact.metadata.get("raster_projection")
-                )
+            if artifact.artifact_type in (
+                TIFF_ARTIFACT_TYPE,
+                GEO_RASTER_SCAN_ARTIFACT_TYPE,
+            ):
+                if artifact.artifact_type == TIFF_ARTIFACT_TYPE:
+                    tiler = require_raster_tiler(self._tiler, self._tiler_config)
+                    info = await load_geo_tiff(artifact, tiler)
+                    title = tiff_title(artifact)
+                    bounds = info.bounds
+                else:
+                    title = source_name(artifact)
+                    projection = GeoRasterProjectionMetadata.model_validate(
+                        artifact.metadata.get("raster_projection")
+                    )
+                    bounds = projection.bounds
                 raster_layer = GeoRenderLayerResponse(
                     id=str(artifact.id),
                     title=title,
@@ -317,7 +412,7 @@ class ArtifactGeoService:
                             f"/v1/workspaces/{artifact.workspace_id}/artifacts/"
                             f"{artifact.id}/geo/raster/tilejson.json"
                         ),
-                        bounds=projection.bounds,
+                        bounds=bounds,
                     ),
                     style=GeoRasterStyle.default(),
                 )
@@ -365,7 +460,7 @@ class ArtifactGeoService:
                         for resolved in document_layers
                         if resolved.source.bounds is not None
                     ]
-                    effective_bounds = _bounds_union(layer_bounds)
+                    effective_bounds = bounds_union(layer_bounds)
                 return GeoRenderResponse(
                     artifact_id=artifact.id,
                     kind="map_document",
@@ -373,7 +468,7 @@ class ArtifactGeoService:
                     initial_bounds=effective_bounds,
                     layers=document_layers,
                 )
-        except (ArtifactContentUnavailableError, WorkbenchOperationError):
+        except (ImageProxyError, WorkbenchOperationError):
             raise
         except Exception as exc:
             raise ArtifactContentUnavailableError(
@@ -477,16 +572,20 @@ class ArtifactGeoService:
                 await resolve_exact_artifacts(
                     self._availability,
                     [layer.source.artifact],
-                    expected_type=GEO_RASTER_SCAN_ARTIFACT_TYPE,
+                    expected_type=RASTER_SOURCE_TYPES,
                     context=f"Map layer artifact {layer_artifact.id}",
                     workspace_id=workspace_id,
                 )
             )[0]
             if layer.style.kind != "raster":
                 raise ValueError("Raster scan layer has non-raster style")
-            projection = GeoRasterProjectionMetadata.model_validate(
-                source_artifact.metadata.get("raster_projection")
-            )
+            if source_artifact.artifact_type == TIFF_ARTIFACT_TYPE:
+                tiler = require_raster_tiler(self._tiler, self._tiler_config)
+                bounds = (await load_geo_tiff(source_artifact, tiler)).bounds
+            else:
+                bounds = GeoRasterProjectionMetadata.model_validate(
+                    source_artifact.metadata.get("raster_projection")
+                ).bounds
             return GeoRenderLayerResponse(
                 id=str(layer_artifact.id),
                 title=layer.title,
@@ -500,7 +599,37 @@ class ArtifactGeoService:
                         f"/v1/workspaces/{source_artifact.workspace_id}/artifacts/"
                         f"{source_artifact.id}/geo/raster/tilejson.json"
                     ),
-                    bounds=projection.bounds,
+                    bounds=bounds,
+                ),
+                style=layer.style,
+            )
+        if layer.source.kind == "raster_mosaic":
+            if layer.style.kind != "raster":
+                raise ValueError("Raster mosaic layer has non-raster style")
+            tiler = require_raster_tiler(self._tiler, self._tiler_config)
+            infos = await load_mosaic_infos(
+                self._availability,
+                layer.source.artifacts,
+                tiler,
+                context=f"Map layer artifact {layer_artifact.id}",
+                workspace_id=workspace_id,
+            )
+            bounds = bounds_union([info.bounds for info in infos])
+            assert bounds is not None  # a mosaic has at least one source
+            return GeoRenderLayerResponse(
+                id=str(layer_artifact.id),
+                title=layer.title,
+                visible=layer.visible,
+                opacity=layer.opacity,
+                min_zoom=layer.min_zoom,
+                max_zoom=layer.max_zoom,
+                source=GeoRasterRenderSourceResponse(
+                    artifact_id=layer_artifact.id,
+                    tilejson_url=(
+                        f"/v1/workspaces/{layer_artifact.workspace_id}/artifacts/"
+                        f"{layer_artifact.id}/geo/raster/tilejson.json"
+                    ),
+                    bounds=bounds,
                 ),
                 style=layer.style,
             )
@@ -533,7 +662,10 @@ __all__ = [
     "GEO_MAP_DOCUMENT_ARTIFACT_TYPE",
     "GEO_MAP_LAYER_ARTIFACT_TYPE",
     "GEO_RASTER_SCAN_ARTIFACT_TYPE",
+    "RASTER_SOURCE_TYPES",
+    "bounds_union",
     "feature_count",
+    "load_mosaic_infos",
     "resolve_exact_artifacts",
     "source_name",
 ]

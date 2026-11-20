@@ -69,7 +69,7 @@ vi.mock("maplibre-gl", () => ({
   default: {
     addProtocol: maplibreMock.addProtocol,
     Map: maplibreMock.MapMock,
-    NavigationControl: class NavigationControl {},
+    AttributionControl: class AttributionControl {},
     workerUrl: "",
   },
 }));

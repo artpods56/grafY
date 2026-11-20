@@ -4,19 +4,22 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 
 export const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
+const PANEL_BOTTOM = "70px";
+
 export const s = stylex.create({
   shell: {
     position: "relative",
+    display: "grid",
+    gridTemplateRows: "minmax(0, 1fr)",
     width: "100%",
-    minHeight: "320px",
     overflow: "hidden",
     borderRadius: "10px",
     backgroundColor: tokens.colorSurfaceSunken,
   },
-  map: { width: "100%", height: "100%" },
+  fillShell: { minHeight: "200px" },
+  map: { minWidth: 0, minHeight: 0 },
   placeholder: {
-    height: "100%",
-    minHeight: "320px",
+    minHeight: "200px",
     display: "grid",
     placeItems: "center",
     padding: "28px",
@@ -48,8 +51,9 @@ export const s = stylex.create({
   /** Positions the floating control pill over the map tiles. */
   mapControls: {
     position: "absolute",
-    top: "8px",
-    left: "10px",
+    bottom: "36px",
+    left: "50%",
+    transform: "translateX(-50%)",
     zIndex: 3,
     display: "flex",
     alignItems: "center",
@@ -57,11 +61,12 @@ export const s = stylex.create({
   },
   inspector: {
     position: "absolute",
-    top: "46px",
-    left: "10px",
+    bottom: PANEL_BOTTOM,
+    left: "50%",
+    transform: "translateX(-50%)",
     zIndex: 3,
     width: "min(292px, calc(100% - 20px))",
-    maxHeight: "calc(100% - 58px)",
+    maxHeight: "min(280px, 60%, calc(100% - 78px))",
     display: "grid",
     gap: "6px",
     overflowY: "auto",
@@ -183,7 +188,7 @@ export const s = stylex.create({
   featurePanel: {
     position: "absolute",
     right: "10px",
-    bottom: "30px",
+    bottom: PANEL_BOTTOM,
     zIndex: 3,
     width: "min(292px, calc(100% - 20px))",
     maxHeight: "min(280px, calc(100% - 82px))",

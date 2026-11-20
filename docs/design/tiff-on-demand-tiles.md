@@ -98,6 +98,32 @@ fails without a CRS), so the tiler is a thin FastAPI app on rio-tiler.
 its own project and lock file in `apps/tiler`, outside the root uv workspace,
 because `titiler.core` needs `starlette>=1` while the API pins `starlette<1`.
 
+### Raster mosaics
+
+A `raster_mosaic` map layer stitches up to 64 georeferenced `file.tiff@1` or
+`geo.raster_scan@1` sources, listed bottom to top, without writing a merged
+raster. The API keeps the stitching cheap before it reaches the tiler: it
+pre-filters sources by their WGS84 footprint, answers 204 when none overlaps the
+tile, sends a lone overlapping source to the ordinary `/geo/tiles` route, and
+calls the mosaic route only when two or more overlap.
+
+- `POST /geo/mosaic/tiles/{z}/{x}/{y}.{ext}` takes a signed `MosaicGrant` in a
+  JSON body `{"grant": ...}`. Sixty-four sources do not fit the 16 KiB header
+  limit of uvicorn/h11, so this is the one route whose grant is not the
+  `X-Grafy-Grant` header. The payload adds `"kind": "mosaic"` and a `src` list
+  of `{k, s, n, p}`; each source passes the same checks as a single grant.
+  Single-source verification rejects any payload carrying `kind`, so neither
+  token is accepted on the other's routes.
+- `GeoMosaicComposer` composites from the top sheet down with premultiplied
+  Porter-Duff `dst-over`: each lower sheet only fills the coverage left by the
+  sheets above it. Anti-aliased edges blend without halos, grayscale and RGB
+  sheets mix, and once the tile is opaque the remaining lower sheets are never
+  opened or decoded.
+- Composite tiles are cached as `geomosaic:{renderer}:{mosaic_digest}:{format}:{z}/{x}/{y}`.
+  `mosaic_digest` hashes the ordered `(sha256, page)` list, so reordering the
+  stack is a different tile and an object-key rename is not. Each source reuses
+  its own cached info and lazy geo overview.
+
 ## The card frames the page
 
 A canvas card is a window onto the page: growing the frame shows more scan, never

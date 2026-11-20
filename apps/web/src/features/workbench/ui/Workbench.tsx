@@ -208,6 +208,7 @@ import {
 } from "../canvas/artifact-connections";
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
   DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
   artifactCardContract,
   artifactCardMediaHeight,
@@ -215,6 +216,7 @@ import {
   collectArtifactCardRefs,
   originBelongsToCard,
   selectionCollectsIntoSequence,
+  isGeoMapArtifact,
   isTableArtifact,
 } from "../canvas/artifact-card";
 import { formatArtifactTypeLabel } from "../canvas/artifact-type-label";
@@ -2825,7 +2827,9 @@ function WorkbenchBody({
           width:
             !("item_refs" in group.value) && isTableArtifact(group.value)
               ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
-              : DEFAULT_ARTIFACT_CARD_WIDTH,
+              : !("item_refs" in group.value) && isGeoMapArtifact(group.value)
+                ? DEFAULT_ARTIFACT_MAP_CARD_WIDTH
+                : DEFAULT_ARTIFACT_CARD_WIDTH,
         })),
       );
       addArtifactCards(

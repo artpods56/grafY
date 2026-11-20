@@ -21,14 +21,16 @@ from grafy_core.artifacts import (
     JsonObject,
 )
 from grafy_core.spatial_contracts import (
+    BasemapKind,
     GeoPropertyValueType,
     GeoRasterStyle as StoredGeoRasterStyle,
     GeoBounds,
     GeoFeatureCollectionPayload,
     GeoFeatureCollectionMetadata,
     GeoVectorProjectionMetadata,
-    GeoRasterProjectionMetadata,
+    GeoRasterProjectionMetadata as StoredGeoRasterProjectionMetadata,
 )
+from grafy_core.spatial_contracts import MAX_RASTER_MOSAIC_SOURCES
 from grafy_core.table_contracts import TablePage, TableValueType
 
 from grafy_api.v1.models import ApiResponse
@@ -40,6 +42,11 @@ type GeoArtifactKind = Literal[
     "map_layer",
     "map_document",
 ]
+
+
+class GeoRasterProjectionMetadata(StoredGeoRasterProjectionMetadata):
+    # The shared model describes legacy static projections. The API also reads COGs.
+    prefix: StrictStr | None = Field(default=None, min_length=1)  # pyright: ignore[reportIncompatibleVariableOverride]
 
 
 class ArtifactExportFormatResponse(ApiResponse):
@@ -344,6 +351,13 @@ class GeoRasterArtifactSourcePayload(StrictGeoModel):
     artifact: GeoArtifactRefPayload
 
 
+class GeoRasterMosaicSourcePayload(StrictGeoModel):
+    kind: Literal["raster_mosaic"]
+    artifacts: list[GeoArtifactRefPayload] = Field(
+        min_length=1, max_length=MAX_RASTER_MOSAIC_SOURCES
+    )
+
+
 class GeoWmsSourcePayload(StrictGeoModel):
     kind: Literal["wms"]
     url: AnyHttpUrl
@@ -364,6 +378,7 @@ class GeoWmsSourcePayload(StrictGeoModel):
 GeoLayerSourcePayload = Annotated[
     GeoFeatureArtifactSourcePayload
     | GeoRasterArtifactSourcePayload
+    | GeoRasterMosaicSourcePayload
     | GeoWmsSourcePayload,
     Field(discriminator="kind"),
 ]
@@ -534,8 +549,13 @@ class GeoMapLayerPayload(StrictGeoModel):
                         f"Category {category.id!r} zoom range does not overlap "
                         "the layer zoom range"
                     )
-        if self.source.kind in {"raster_scan", "wms"} and self.style.kind != "raster":
-            raise ValueError("Raster scan and WMS sources require raster style")
+        if (
+            self.source.kind in {"raster_scan", "raster_mosaic", "wms"}
+            and self.style.kind != "raster"
+        ):
+            raise ValueError(
+                "Raster, raster mosaic and WMS sources require raster style"
+            )
         return self
 
 
@@ -586,6 +606,13 @@ class GeoRenderLayerResponse(ApiResponse):
     max_zoom: int = Field(ge=0, le=24)
     source: GeoRenderSourceResponse
     style: GeoLayerStyle
+
+
+class GeoRenderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_ids: list[UUID] = Field(min_length=1, max_length=64)
+    basemap: BasemapKind = "openstreetmap"
 
 
 class GeoRenderResponse(ApiResponse):
@@ -641,11 +668,13 @@ __all__ = [
     "GeoMapLayerPayload",
     "GeoPointCategory",
     "GeoPropertyFieldResponse",
+    "GeoRasterMosaicSourcePayload",
     "GeoRasterProjectionMetadata",
     "GeoRasterRenderSourceResponse",
     "GeoRasterStyle",
     "GeoRasterTileJsonResponse",
     "GeoRenderLayerResponse",
+    "GeoRenderRequest",
     "GeoRenderResponse",
     "GeoVectorProjectionMetadata",
     "GeoVectorRenderSourceResponse",
@@ -675,3 +704,5 @@ class ImageInfoResponse(BaseModel):
     min_level: int = Field(ge=0)
     max_level: int = Field(ge=0, le=31)
     tile_format: Literal["jpg", "png"]
+    georeferenced: bool = False
+    bounds_wgs84: GeoBounds | None = None

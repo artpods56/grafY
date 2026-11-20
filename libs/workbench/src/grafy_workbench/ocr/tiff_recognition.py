@@ -33,6 +33,7 @@ from grafy_core.text_regions import (
 )
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.paddle_recognizer import PADDLE_MODEL
+from grafy_workbench.ocr.progress import cached_progress
 from grafy_workbench.ocr.tiff_label_crop import read_label_crop
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
 
@@ -56,6 +57,13 @@ _READING_CODEC: TypeAdapter[TextReading] = TypeAdapter(TextReading)
 
 
 def _paddle_spec(ttl_seconds: int) -> CacheSpec[TextReading]:
+    """One crop's reading, as this deployment answers it.
+
+    This is where the Paddle service gets cached: the node that cuts the crops is
+    the only caller a recognizer ever has, so the provider itself keeps one job and
+    never holds a second copy of the same answers under a second key.
+    """
+
     return CacheSpec(
         operation="ocr.paddle.recognize_crop",
         deployment=_PADDLE_DEPLOYMENT,
@@ -67,6 +75,15 @@ def _paddle_spec(ttl_seconds: int) -> CacheSpec[TextReading]:
 
 
 def _crop_request(png: bytes) -> JsonValue:
+    """What a reading depends on, and nothing that merely describes the work.
+
+    The crop enters as a digest because those pixels are what the model is shown: any
+    change to the mask, the deskew, or the scaling re-cuts them and moves the digest,
+    so no older answer is ever served for a different crop. A timeout and a retry
+    count are absent on purpose — they bound how long the provider may take, never
+    what it answers.
+    """
+
     return {
         "crop_sha256": hashlib.sha256(png).hexdigest(),
         "recognizer": PADDLE_MODEL,
@@ -104,6 +121,16 @@ async def _prepare(
         return exc
 
 
+def _checked(readings: Sequence[TextReading], asked: int) -> list[TextReading]:
+    """One reading per crop, or the failure that says the recognizer miscounted."""
+
+    if len(readings) != asked:
+        raise UserFacingNodeError(
+            "Text recognizer returned the wrong number of readings"
+        )
+    return list(readings)
+
+
 class RecognizeInput(NodeInput):
     regions: TiffTextRegions = Field(title="Text regions")
     recognizer: TextRecognizer = Field(title="Recognizer")
@@ -136,24 +163,28 @@ class ReadTiffTextNode(Node[NoConfig, RecognizeInput, RecognizeOutput]):
         self._cache = cache
         self._cache_ttl_seconds = cache_ttl_seconds
 
-    async def _recognize_crops(
+    async def _recognize(
         self,
         context: NodeExecutionContext,
         recognizer: TextRecognizer,
         pngs: Sequence[bytes],
         hits: list[bool],
     ) -> list[TextReading]:
+        """One reading per crop in order, with the provider called only for the misses.
+
+        Every crop of a step goes out in one request, cached or not, which is what
+        keeps the recognizer's own batching and its one-batch-at-a-time slot intact.
+        """
+
         cache = self._cache
         if cache is None:
-            raise RuntimeError("crop recognition cache is unset")
+            return _checked(await recognizer.recognize(list(pngs)), len(pngs))
 
         async def compute(missing: Sequence[int]) -> list[TextReading]:
-            readings = await recognizer.recognize([pngs[index] for index in missing])
-            if len(readings) != len(missing):
-                raise UserFacingNodeError(
-                    "Text recognizer returned the wrong number of readings"
-                )
-            return list(readings)
+            # Only the misses go out, and a crop repeated within the step is asked
+            # for once, so the count to match is the misses, not the whole step.
+            crops = [pngs[index] for index in missing]
+            return _checked(await recognizer.recognize(crops), len(missing))
 
         found = await cache.get_or_compute_many(
             context.workspace_id,
@@ -188,57 +219,39 @@ class ReadTiffTextNode(Node[NoConfig, RecognizeInput, RecognizeOutput]):
                 page=detected.window.page,
             )
             hits: list[bool] = []
+            crops = 0
             for batch in batched(detected.regions, 8):
                 async with asyncio.TaskGroup() as group:
                     tasks = [group.create_task(_prepare(page, item)) for item in batch]
-                crops = [task.result() for task in tasks]
-                for crop in crops:
+                prepared = [task.result() for task in tasks]
+                for crop in prepared:
                     if isinstance(crop, UserFacingNodeError):
                         raise crop
-                if self._cache is None:
-                    pngs = [crop for crop in crops if isinstance(crop, bytes)]
-                    readings: list[TextReading] = (
-                        await inputs.recognizer.recognize(pngs) if pngs else []
+                pngs = [crop for crop in prepared if isinstance(crop, bytes)]
+                crops += len(pngs)
+                recognized: list[TextReading] = []
+                if pngs:
+                    recognized = await self._recognize(
+                        context, inputs.recognizer, pngs, hits
                     )
-                    if len(readings) != len(pngs):
-                        raise UserFacingNodeError(
-                            "Text recognizer returned the wrong number of readings"
+                ordered = iter(recognized)
+                for region, crop in zip(batch, prepared, strict=True):
+                    regions.append(
+                        TiffRecognizedRegion(
+                            polygon=region.polygon,
+                            text=region.text,
+                            score=region.score,
+                            reading=(
+                                next(ordered) if isinstance(crop, bytes) else None
+                            ),
                         )
-                    ordered = iter(readings)
-                    for region, crop in zip(batch, crops, strict=True):
-                        regions.append(
-                            TiffRecognizedRegion(
-                                polygon=region.polygon,
-                                text=region.text,
-                                score=region.score,
-                                reading=(
-                                    next(ordered) if isinstance(crop, bytes) else None
-                                ),
-                            )
-                        )
-                else:
-                    pngs = [crop for crop in crops if isinstance(crop, bytes)]
-                    if pngs:
-                        recognized = await self._recognize_crops(
-                            context, inputs.recognizer, pngs, hits
-                        )
-                    else:
-                        recognized = []
-                    ordered = iter(recognized)
-                    for region, crop in zip(batch, crops, strict=True):
-                        regions.append(
-                            TiffRecognizedRegion(
-                                polygon=region.polygon,
-                                text=region.text,
-                                score=region.score,
-                                reading=(
-                                    next(ordered) if isinstance(crop, bytes) else None
-                                ),
-                            )
-                        )
+                    )
                 await context.progress(
-                    "Reading labels", current=len(regions), total=total
+                    cached_progress("Reading labels", hits),
+                    current=len(regions),
+                    total=total,
                 )
+            context.output_metadata["tiff_crops"] = crops
             context.output_metadata["tiff_cache_hits"] = sum(hits)
         return RecognizeOutput(
             text=TiffRecognizedText(

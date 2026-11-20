@@ -1,6 +1,6 @@
 """OCR node and provider readers through the Run service and the runner."""
 
-from base64 import b64decode
+from base64 import b64decode, b64encode
 from collections.abc import Mapping, Sequence
 from io import BytesIO
 import json
@@ -973,3 +973,47 @@ async def test_craft_provider_persists_source_pixel_polygons(
         (11.5, 14.5),
     ]
     assert result.regions[0].text is None
+
+
+async def test_craft_detector_sends_configured_thresholds_with_each_window():
+    from grafy_workbench.ocr.craft import CraftConfig, CraftDetector
+
+    captured: dict[str, object] = {}
+
+    def craft(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={"width": 2, "height": 2, "model": CRAFT_MODEL, "polygons": []},
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(craft))
+    with serve_client(client):
+        detector = CraftDetector(
+            SecretStr("scoped-test-key"),
+            timeout_ms=5_000,
+            max_retries=0,
+            text_threshold=0.85,
+            link_threshold=0.5,
+            low_text=0.45,
+        )
+        regions = await detector.detect(_png(), width=2, height=2)
+
+    assert regions == []
+    assert captured == {
+        "image_base64": b64encode(_png()).decode("ascii"),
+        "text_threshold": 0.85,
+        "link_threshold": 0.5,
+        "low_text": 0.45,
+    }
+    assert detector.request_options == {
+        "text_threshold": 0.85,
+        "link_threshold": 0.5,
+        "low_text": 0.45,
+    }
+    defaults = CraftConfig()
+    assert (defaults.text_threshold, defaults.link_threshold, defaults.low_text) == (
+        0.7,
+        0.4,
+        0.4,
+    )

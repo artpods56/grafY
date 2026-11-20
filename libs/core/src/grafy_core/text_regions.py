@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 import re
-from typing import Annotated, Protocol
+from typing import Annotated, Protocol, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,6 +28,25 @@ class TextDetector(Protocol):
     async def detect(
         self, png: bytes, *, width: int, height: int
     ) -> list[TextRegion]: ...
+
+
+def detector_request_options(detector: TextDetector) -> dict[str, float]:
+    """Tuning parameters a detector sends with every request, e.g. CRAFT thresholds.
+
+    Detectors that accept them expose a ``request_options`` mapping; the scan
+    mirrors it into the provider cache key so two configurations never share
+    cached detections.
+    """
+    options = cast(
+        "dict[str, object] | None", getattr(detector, "request_options", None)
+    )
+    if options is None:
+        return {}
+    cleaned: dict[str, float] = {}
+    for key, value in options.items():
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            cleaned[key] = float(value)
+    return cleaned
 
 
 class TextReading(BaseModel):
@@ -55,6 +74,10 @@ class TiffWindowReader(Protocol):
 
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
+type PixelAffine = tuple[float, float, float, float, float, float]
+"""GDAL/rasterio ``(a, b, c, d, e, f)``: ``x = a*col + b*row + c`` and
+``y = d*col + e*row + f``, where ``(col, row)`` is a pixel corner of the page."""
+
 
 @dataclass(frozen=True, slots=True)
 class TiffPage:
@@ -63,6 +86,9 @@ class TiffPage:
     read: TiffWindowReader
     source_sha256: str
     page: int
+    # Both are set for a georeferenced page and both are None otherwise.
+    affine: PixelAffine | None = None
+    crs: str | None = None
 
     def __post_init__(self) -> None:
         if _SHA256.fullmatch(self.source_sha256) is None:
@@ -71,6 +97,8 @@ class TiffPage:
             )
         if self.page < 0:
             raise ValueError("TIFF page index must not be negative")
+        if (self.affine is None) != (self.crs is None):
+            raise ValueError("TIFF page affine and CRS must be present together")
 
 
 class TiffPageOpener(Protocol):

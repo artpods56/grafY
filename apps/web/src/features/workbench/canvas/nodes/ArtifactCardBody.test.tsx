@@ -24,6 +24,7 @@ const libraryMocks = vi.hoisted(() => ({
   items: [] as PlacedLibraryItem[],
   value: undefined as { text: string; truncated: boolean } | undefined,
   values: {} as Record<string, { text: string; truncated: boolean }>,
+  textRequested: [] as string[],
 }));
 const flowMocks = vi.hoisted(() => ({
   edges: [] as unknown[],
@@ -104,7 +105,8 @@ vi.mock("swr", () => ({
     }
     if (key[0] === "table-artifact-page") return { data: tableMocks.page };
     return key[0] === "artifact-card-text"
-      ? { data: libraryMocks.values[String(key[2])] ?? libraryMocks.value }
+      ? (libraryMocks.textRequested?.push(String(key[2])),
+        { data: libraryMocks.values[String(key[2])] ?? libraryMocks.value })
       : { data: { folders: [], items: libraryMocks.items } };
   },
 }));
@@ -144,6 +146,31 @@ vi.mock("./TiffArtifactView", () => ({
     if (onSize) tiffMocks.reportSize.push(onSize);
     return <div data-testid="tiff-surface" data-artifact={artifactId} />;
   },
+}));
+
+vi.mock("./geo-map-artifact-renderer", () => ({
+  GeoMapArtifactRenderer: ({
+    artifact,
+    mode,
+    autoLoad,
+    presentation,
+    availableHeight,
+  }: {
+    artifact: { artifact_id: string };
+    mode: string;
+    autoLoad?: boolean;
+    presentation?: string;
+    availableHeight?: number;
+  }) => (
+    <div
+      data-testid="geo-map-renderer"
+      data-artifact={artifact.artifact_id}
+      data-mode={mode}
+      data-auto-load={String(Boolean(autoLoad))}
+      data-presentation={presentation}
+      data-available-height={availableHeight}
+    />
+  ),
 }));
 
 vi.mock("@base-ui/react/menu", () => ({
@@ -283,6 +310,7 @@ afterEach(() => {
   libraryMocks.items = [];
   libraryMocks.value = undefined;
   libraryMocks.values = {};
+  libraryMocks.textRequested = [];
   tableMocks.requested = [];
   tableMocks.page = undefined;
   tableMocks.schema = undefined;
@@ -1510,5 +1538,41 @@ describe("artifact on the canvas", () => {
     expect(
       container.querySelector('[aria-label="Move earlier in the order"]'),
     ).toBeNull();
+  });
+
+  it("renders geo.map_layer and geo.map_document cards as interactive maps instead of raw JSON", () => {
+    for (const artifactType of ["geo.map_layer", "geo.map_document"] as const) {
+      libraryMocks.textRequested = [];
+      libraryMocks.values = {
+        [`map-${artifactType}`]: { text: '{"should":"not show"}', truncated: false },
+      };
+      const { container } = mount(
+        {
+          artifact_id: `map-${artifactType}`,
+          artifact_type: artifactType,
+          schema_version: 1,
+        },
+        { layout: null },
+        true,
+      );
+
+      const body = container.querySelector<HTMLElement>(
+        '[data-artifact-geo-map-body="true"]',
+      );
+      expect(body).not.toBeNull();
+      expect(body?.style.height).toBe("340px");
+      expect(
+        container.querySelector("[data-artifact-card-id]")?.getAttribute("style"),
+      ).toContain("width: 450px");
+      const renderer = container.querySelector<HTMLElement>(
+        '[data-testid="geo-map-renderer"]',
+      );
+      expect(renderer?.dataset.artifact).toBe(`map-${artifactType}`);
+      expect(renderer?.dataset.mode).toBe("map");
+      expect(renderer?.dataset.autoLoad).toBe("true");
+      expect(renderer?.dataset.presentation).toBe("canvas");
+      expect(libraryMocks.textRequested).toEqual([]);
+      expect(container.textContent).not.toContain("should");
+    }
   });
 });

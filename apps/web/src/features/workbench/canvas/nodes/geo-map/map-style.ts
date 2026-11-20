@@ -247,7 +247,9 @@ export function createGeoMapStyle(
         type: "raster",
         url: absoluteApiUrl(workspaceId, layer.source.tilejson_url),
         tileSize: 256,
-        attribution: layer.source.attribution ?? undefined,
+        ...(layer.source.attribution
+          ? { attribution: layer.source.attribution }
+          : {}),
       };
       renderLayers.push({
         id: layerId(layer, "raster"),

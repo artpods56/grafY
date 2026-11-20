@@ -428,9 +428,11 @@ def _ref_port(
     kinds = {member.kind for member in members}
     mixed = kinds == {"ref", "refseq"}
     if mixed:
-        if len(members) != 2:
+        ref_args = {member.argument for member in members if member.kind == "ref"}
+        refseq_args = {member.argument for member in members if member.kind == "refseq"}
+        if ref_args != refseq_args:
             raise NodeContractError(
-                f"{model.__name__}.{name} must use Ref and RefSequence together"
+                f"{model.__name__}.{name} must pair each Ref[T] with RefSequence[T]"
             )
         if plugs is None or not plugs.instance:
             raise NodeContractError(
@@ -452,9 +454,13 @@ def _ref_port(
         )
         also: tuple[ArtifactTypeKey, ...] = ()
     else:
-        keys = tuple(_required_key(model, name, member) for member in members)
+        keys: list[ArtifactTypeKey] = []
+        for member in members:
+            key = _required_key(model, name, member)
+            if key not in keys:
+                keys.append(key)
         accepts = keys[0]
-        also = tuple(key for key in keys[1:] if key != accepts)
+        also = tuple(keys[1:])
     return _Described(
         shape=shape,
         accepted_shapes=accepted,

@@ -10,7 +10,7 @@ from uuid import UUID
 
 import httpx
 import pytest
-from pydantic import ValidationError
+from pydantic import HttpUrl, SecretStr, ValidationError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -21,6 +21,8 @@ from grafy_core.artifact_collections import (
     save_json_collections,
 )
 from grafy_core.artifacts import ArtifactObject, ArtifactTypeKey, JsonObject
+from grafy_crypto.grants import Grant
+from grafy_shared.config.tiler import TilerConfig
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.ports.storage import (
     FileStoragePort,
@@ -46,6 +48,7 @@ from grafy_api.artifacts.models import (
     ArtifactExactMatchRow,
     GeoFeatureQueryRequest,
 )
+from grafy_api.artifacts.tiler_client import HttpTiler
 from grafy_api.artifacts.wms import WmsTileClient
 from grafy_api.v1.routes.artifacts.dependencies import (
     artifact_geo_service,
@@ -68,6 +71,49 @@ LAYER_KEY = ArtifactTypeKey("geo.map_layer", 1)
 DOCUMENT_KEY = ArtifactTypeKey("geo.map_document", 1)
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
 TEST_USER_ID = UUID(int=1)
+TILER_KEY = "test-key" * 8
+
+
+def _tiler_response(request: httpx.Request) -> httpx.Response:
+    grant = Grant.verify_grant(
+        request.headers["X-Grafy-Grant"],
+        keys=[TILER_KEY.encode()],
+        bucket="test",
+        skew_seconds=0,
+        max_source_bytes=1024,
+    )
+    assert grant.page == 0
+    assert request.method == "GET"
+    if request.url.path == "/info":
+        georeferenced = grant.key != "plain.tif"
+        return httpx.Response(
+            200,
+            json={
+                "width": 1024,
+                "height": 768,
+                "page_count": 1,
+                "has_alpha": True,
+                "tile_size": 256,
+                "min_level": 0,
+                "max_level": 10,
+                "tile_format": "png",
+                "georeferenced": georeferenced,
+                "bounds_wgs84": [10, 10, 20, 20] if georeferenced else None,
+            },
+        )
+    expected_source = b"canonical-cog" if grant.key.endswith("/source.tif") else b"tiff"
+    assert grant.sha256 == sha256(expected_source).hexdigest()
+    assert grant.byte_size == len(expected_source)
+    if request.url.path == "/geo/tiles/2/1/1.png":
+        return httpx.Response(404)
+    if request.url.path == "/geo/tiles/2/2/2.png":
+        return httpx.Response(503, headers={"Retry-After": "7"})
+    assert request.url.path == "/geo/tiles/2/2/1.png"
+    return httpx.Response(
+        200,
+        content=b"dynamic tile",
+        headers={"Content-Type": "image/png", "X-Grafy-Renderer": "1"},
+    )
 
 
 def test_json_collections_manifest_rejects_the_old_storage_format() -> None:
@@ -145,18 +191,39 @@ class TrackingStorage(FileStoragePort):
 @pytest.fixture
 def geo_artifact_client(
     tmp_path: Path,
+    request: pytest.FixtureRequest,
 ) -> Iterator[tuple[TestClient, InMemoryUnitOfWork, TrackingStorage]]:
     uow = InMemoryUnitOfWork()
     storage = TrackingStorage(LocalFileObjectStore(tmp_path / "objects"))
     application = FastAPI()
     availability = ArtifactAvailability(uow)
     wms = WmsTileClient()
-    geo = ArtifactGeoService(uow, storage, availability=availability)
+    config = (
+        None
+        if getattr(request, "param", True) is False
+        else TilerConfig.model_construct(
+            tiler_url=HttpUrl("http://tiler"),
+            tiler_shared_key=SecretStr(TILER_KEY),
+        )
+    )
+    tiler = (
+        None
+        if config is None
+        else HttpTiler(
+            config,
+            client=httpx.AsyncClient(transport=httpx.MockTransport(_tiler_response)),
+        )
+    )
+    geo = ArtifactGeoService(
+        uow, storage, availability=availability, tiler=tiler, tiler_config=config
+    )
     tiles = ArtifactGeoTileService(
         uow,
         storage,
         availability=availability,
         wms=wms,
+        tiler=tiler,
+        tiler_config=config,
     )
     application.dependency_overrides[artifact_geo_service] = lambda: geo
     application.dependency_overrides[artifact_geo_tile_service] = lambda: tiles
@@ -175,6 +242,8 @@ def geo_artifact_client(
     with TestClient(application) as client:
         yield client, uow, storage
     asyncio.run(wms.close())
+    if tiler is not None:
+        asyncio.run(tiler.close())
 
 
 def _point_feature(index: int, x: float, y: float) -> JsonObject:
@@ -397,6 +466,8 @@ async def _feature_artifact(
 async def _raster_artifact(
     unit_of_work: InMemoryUnitOfWork,
     storage: TrackingStorage,
+    *,
+    dynamic: bool = False,
 ) -> ArtifactObject:
     cog = b"canonical-cog"
     stored_cog = await storage.save(
@@ -409,17 +480,18 @@ async def _raster_artifact(
             allow_overwrite=True,
         )
     )
-    tile_prefix = "geo.raster_scan/v1/projections/source/xyz"
-    await storage.save(
-        SaveFileCommand(
-            bucket="test",
-            path=f"{tile_prefix}/2/2/1.png",
-            stream=BytesIO(b"png-tile"),
-            content_type="image/png",
-            metadata={},
-            allow_overwrite=True,
+    tile_prefix = None if dynamic else "geo.raster_scan/v1/projections/source/xyz"
+    if tile_prefix is not None:
+        await storage.save(
+            SaveFileCommand(
+                bucket="test",
+                path=f"{tile_prefix}/2/2/1.png",
+                stream=BytesIO(b"png-tile"),
+                content_type="image/png",
+                metadata={},
+                allow_overwrite=True,
+            )
         )
-    )
     return await _add_artifact(
         unit_of_work,
         ArtifactObject(
@@ -451,6 +523,25 @@ async def _raster_artifact(
                     "compiler": "fixture",
                 },
             },
+        ),
+    )
+
+
+async def _tiff_artifact(
+    uow: InMemoryUnitOfWork, *, key: str = "georeferenced.tif"
+) -> ArtifactObject:
+    return await _add_artifact(
+        uow,
+        ArtifactObject(
+            workspace_id=WORKSPACE_ID,
+            artifact_type="file.tiff",
+            schema_version=1,
+            content_type="image/tiff",
+            bucket="test",
+            object_key=key,
+            byte_size=4,
+            sha256=sha256(b"tiff").hexdigest(),
+            metadata={"original_filename": key},
         ),
     )
 
@@ -931,6 +1022,111 @@ def test_raster_tilejson_and_tiles_read_only_precomputed_xyz_objects(
     assert storage.range_requests == [
         ("geo.raster_scan/v1/projections/source/xyz/2/2/1.png", 0, 8)
     ]
+
+
+@pytest.mark.parametrize("kind", ["tiff", "cog", "layer", "tiff_layer"])
+def test_dynamic_raster_tiles_use_signed_stored_source(
+    geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
+    kind: str,
+) -> None:
+    client, uow, storage = geo_artifact_client
+    artifacts = GrafyApi(client).workspace(WORKSPACE_ID).artifacts
+    source = asyncio.run(
+        _tiff_artifact(uow)
+        if kind in {"tiff", "tiff_layer"}
+        else _raster_artifact(uow, storage, dynamic=True)
+    )
+    artifact = source
+    if kind in {"layer", "tiff_layer"}:
+        artifact = asyncio.run(
+            _inline_artifact(
+                uow,
+                LAYER_KEY,
+                {
+                    "title": "Scanned map",
+                    "visible": True,
+                    "opacity": 1.0,
+                    "min_zoom": 0,
+                    "max_zoom": 22,
+                    "source": {"kind": "raster_scan", "artifact": _ref(source)},
+                    "style": _raster_style(),
+                },
+            )
+        )
+    descriptor = artifacts.geo_render(artifact.id)
+    tilejson = artifacts.raster_tilejson(artifact.id)
+    tile = artifacts.raster_tile(artifact.id, z=2, x=2, y=1)
+    blank = artifacts.raster_tile(artifact.id, z=2, x=1, y=1)
+    busy = artifacts.raster_tile(artifact.id, z=2, x=2, y=2)
+
+    assert descriptor.status_code == tilejson.status_code == 200
+    assert descriptor.json()["initial_bounds"] == [10, 10, 20, 20]
+    assert descriptor.json()["layers"][0]["source"]["artifact_id"] == str(source.id)
+    assert (tilejson.json()["minzoom"], tilejson.json()["maxzoom"]) == (
+        (3, 7) if kind in {"tiff", "tiff_layer"} else (2, 6)
+    )
+    assert tile.status_code == 200
+    assert tile.content == b"dynamic tile"
+    assert tile.headers["etag"] == f'"{sha256(tile.content).hexdigest()}"'
+    assert tile.headers["cache-control"] == "private, max-age=300"
+    assert blank.status_code == 204
+    assert blank.content == b""
+    assert busy.status_code == 503
+    assert busy.headers["retry-after"] == "7"
+    assert storage.loaded_paths == storage.range_requests == []
+
+
+@pytest.mark.parametrize("geo_artifact_client", [True, False], indirect=True)
+def test_plain_tiff_cannot_be_rendered_on_a_map(
+    geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
+) -> None:
+    client, uow, _ = geo_artifact_client
+    artifacts = GrafyApi(client).workspace(WORKSPACE_ID).artifacts
+    tiff = asyncio.run(_tiff_artifact(uow, key="plain.tif"))
+
+    assert artifacts.geo_render(tiff.id).status_code == 422
+    assert artifacts.raster_tilejson(tiff.id).status_code == 422
+    assert artifacts.raster_tile(tiff.id, z=2, x=2, y=1).status_code == 422
+
+
+def test_combined_render_preserves_layer_order_and_workspace_scope(
+    geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
+) -> None:
+    client, uow, storage = geo_artifact_client
+    vector = asyncio.run(
+        _feature_artifact(
+            uow,
+            storage,
+            source_name="Points",
+            features=[_point_feature(1, 5.0, 25.0)],
+            bounds=(5, 25, 5, 25),
+        )
+    )
+    tiff = asyncio.run(_tiff_artifact(uow))
+    url = f"/v1/workspaces/{WORKSPACE_ID}/artifacts/geo/render"
+    response = client.post(
+        url, json={"artifact_ids": [str(tiff.id), str(vector.id)], "basemap": "none"}
+    )
+
+    assert response.status_code == 200
+    descriptor = response.json()
+    assert descriptor["artifact_id"] == str(tiff.id)
+    assert descriptor["kind"] == "map_document"
+    assert descriptor["basemap"] == "none"
+    assert descriptor["initial_bounds"] == [5, 10, 20, 25]
+    assert [layer["title"] for layer in descriptor["layers"]] == [
+        "georeferenced.tif",
+        "Points",
+    ]
+    other_workspace = f"/v1/workspaces/{UUID(int=90)}/artifacts/geo/render"
+    assert (
+        client.post(other_workspace, json={"artifact_ids": [str(tiff.id)]}).status_code
+        == 404
+    )
+    assert client.post(url, json={"artifact_ids": []}).status_code == 422
+    assert (
+        client.post(url, json={"artifact_ids": [str(tiff.id)] * 65}).status_code == 422
+    )
 
 
 def test_raster_render_validates_source_name_before_projection(

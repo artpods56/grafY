@@ -33,6 +33,8 @@ import {
   ARTIFACT_CARD_WIDTH_MIN,
   DEFAULT_ARTIFACT_CARD_WIDTH,
   DEFAULT_ARTIFACT_FILE_CARD_WIDTH,
+  DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
+  DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
   DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH,
   DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
   DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
@@ -43,6 +45,7 @@ import {
   cardArtifactRefs,
   declaredArtifactContentType,
   artifactTypeFor,
+  isGeoMapArtifact,
   isImageArtifact,
   isPdfArtifact,
   isTableArtifact,
@@ -109,6 +112,7 @@ import {
 import { SafeMarkdown } from "../safe-markdown";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
 import { ArtifactStack, SequencePager, stackPlateProps } from "./ArtifactStack";
+import { GeoMapArtifactBody } from "./GeoMapArtifactBody";
 import { TableArtifactBody } from "./TableArtifactBody";
 import { usePickupLift } from "./usePickupLift";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
@@ -533,6 +537,11 @@ export function ArtifactCardBody({
     160,
     layout?.bodyHeight ?? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
   );
+  const mapCard = first !== null && isGeoMapArtifact(first);
+  const mapHeight = Math.max(
+    200,
+    layout?.bodyHeight ?? DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
+  );
   const imageSize = first ? imageSizes[first.artifact_id] : undefined;
   const recordedName = librarySummary?.metadata?.original_filename;
   const fileName =
@@ -614,7 +623,7 @@ export function ArtifactCardBody({
   const titleLabel = isSequence
     ? imageArtifact
       ? `${refs.length} ${refs.length === 1 ? "item" : "items"}`
-      : tableCard || htmlPageArtifact || shownText !== null || textKey
+      : tableCard || mapCard || htmlPageArtifact || shownText !== null || textKey
         ? (fileName ??
           (refs.length === 1
             ? "1 item"
@@ -627,9 +636,11 @@ export function ArtifactCardBody({
           ? "Image"
           : tableCard
             ? "Table"
-            : htmlPageArtifact
-              ? "Page"
-              : "File"))
+            : mapCard
+              ? "Map"
+              : htmlPageArtifact
+                ? "Page"
+                : "File"))
       : // Nothing produced yet: name the card by what it follows.
         (feedLabel ?? "Artifact");
   const byteSize = formatLibraryByteSize(librarySummary?.byte_size);
@@ -637,20 +648,28 @@ export function ArtifactCardBody({
     ? "PDF"
     : isTableFile
       ? "Table"
-      : htmlPageArtifact
-        ? "Page"
-        : "File";
+      : mapCard
+        ? "Map"
+        : htmlPageArtifact
+          ? "Page"
+          : "File";
   const fileLabel = byteSize ? `${fileKind} · ${byteSize}` : fileKind;
   const defaultWidth = htmlPage
     ? HTML_PAGE_CARD_WIDTH
     : tableCard
       ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
-      : imageArtifact
-        ? DEFAULT_ARTIFACT_CARD_WIDTH
-        : feed
-          ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
-          : DEFAULT_ARTIFACT_FILE_CARD_WIDTH;
-  const minimumWidth = tableCard ? NODE_WIDTH_MIN : ARTIFACT_CARD_WIDTH_MIN;
+      : mapCard
+        ? DEFAULT_ARTIFACT_MAP_CARD_WIDTH
+        : imageArtifact
+          ? DEFAULT_ARTIFACT_CARD_WIDTH
+          : feed
+            ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
+            : DEFAULT_ARTIFACT_FILE_CARD_WIDTH;
+  const minimumWidth = tableCard
+    ? NODE_WIDTH_MIN
+    : mapCard
+      ? DEFAULT_ARTIFACT_CARD_WIDTH
+      : ARTIFACT_CARD_WIDTH_MIN;
   const requestedWidth = gridAlignedWidth(
     Math.max(minimumWidth, layout?.width ?? defaultWidth),
     grid?.settings,
@@ -713,6 +732,7 @@ export function ArtifactCardBody({
   const headless =
     Boolean(feed) &&
     !imageArtifact &&
+    !mapCard &&
     !isSequence &&
     (awaitingFeed || shownText !== null);
   // Only a card pulled out of a node's output port takes an input: it follows
@@ -735,6 +755,8 @@ export function ArtifactCardBody({
     textHeight,
     tableCard,
     tableHeight,
+    mapCard,
+    mapHeight,
     reordering,
     titleLabel,
     subtitle,
@@ -952,6 +974,16 @@ export function ArtifactCardBody({
                   remoteSelectionColor={data.remoteSelectionColor}
                 />,
               )
+            ) : mapCard && first ? (
+              stackedBody(
+                <GeoMapArtifactBody
+                  artifact={first}
+                  height={mapHeight}
+                  selected={selected ?? false}
+                  tier={tier}
+                  remoteSelectionColor={data.remoteSelectionColor}
+                />,
+              )
             ) : (
               <>
                 {awaitingFeed ? (
@@ -1112,15 +1144,20 @@ export function ArtifactCardBody({
               tiffTextArtifact ||
               htmlPage ||
               textCard ||
-              tableCard) &&
+              tableCard ||
+              mapCard) &&
               selected) ? (
               <LayoutResizeHandle
                 layout={
-                  textCard || tableCard
+                  textCard || tableCard || mapCard
                     ? {
                         ...layout,
                         width: requestedWidth,
-                        bodyHeight: tableCard ? tableHeight : textMaxHeight,
+                        bodyHeight: tableCard
+                          ? tableHeight
+                          : mapCard
+                            ? mapHeight
+                            : textMaxHeight,
                       }
                     : {
                         ...layout,
@@ -1135,7 +1172,11 @@ export function ArtifactCardBody({
                       }
                 }
                 axes={
-                  textCard || tableCard || imageArtifact || tiffTextArtifact
+                  textCard ||
+                  tableCard ||
+                  mapCard ||
+                  imageArtifact ||
+                  tiffTextArtifact
                     ? ["width", "bodyHeight"]
                     : ["width"]
                 }

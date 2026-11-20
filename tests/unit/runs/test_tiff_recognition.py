@@ -2,7 +2,7 @@ from base64 import b64decode
 from collections.abc import Sequence
 from io import BytesIO
 import json
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -14,15 +14,37 @@ from grafy_core.documents import TiffFile
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.node_ports import Ref
 from grafy_core.provider_cache import InMemoryCacheStore, ProviderCache
-from grafy_core.text_regions import TextReading, TextRecognizer, TextRegion, TiffPage
+from grafy_core.text_regions import (
+    PixelPoint,
+    TextReading,
+    TextRecognizer,
+    TextRegion,
+    TiffPage,
+)
 from grafy_workbench.ocr.paddle_recognizer import (
     PADDLE_MODEL,
     PADDLE_URL,
     PaddleCyrillicRecognizer,
 )
 from grafy_workbench.ocr.provider_http import serve_client
+from grafy_workbench.ocr.tiff_label_crop import NATIVE_CROP_PIXEL_LIMIT
 from grafy_workbench.ocr.tiff_recognition import ReadTiffTextNode, RecognizeInput
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
+
+
+class ReadProgress:
+    def __init__(self) -> None:
+        self.updates: list[tuple[str, int | None, int | None]] = []
+
+    async def report_progress(
+        self,
+        context: NodeExecutionContext,
+        message: str,
+        *,
+        current: int | None,
+        total: int | None,
+    ) -> None:
+        self.updates.append((message, current, total))
 
 
 async def test_reads_rotated_polygons_without_losing_their_source_coordinates():
@@ -124,7 +146,7 @@ async def test_a_repeated_crop_does_not_call_the_recognizer_again():
     )
 
     assert calls == 1
-    assert context.output_metadata["tiff_cache_hits"] == 0
+    assert context.output_metadata == {"tiff_crops": 2, "tiff_cache_hits": 0}
     assert [item.reading for item in result.text.regions] == [
         TextReading(text="same", confidence=0.9, model="test"),
         TextReading(text="same", confidence=0.9, model="test"),
@@ -166,9 +188,12 @@ async def test_distinct_misses_go_to_the_recognizer_in_one_call():
     regions = [TextRegion(polygon=polygon) for polygon in polygons]
     cache = ProviderCache(InMemoryCacheStore())
     node = ReadTiffTextNode(open_page, cache=cache)
+    reporter = ReadProgress()
 
     async def run() -> NodeExecutionContext:
-        context = NodeExecutionContext(workspace_id=workspace_id)
+        context = NodeExecutionContext(
+            workspace_id=workspace_id, node_id="read", progress_reporter=reporter
+        )
         await node.run(
             context,
             NoConfig(),
@@ -180,10 +205,228 @@ async def test_distinct_misses_go_to_the_recognizer_in_one_call():
         return context
 
     await run()
+    reporter.updates.clear()
     second = await run()
 
     assert batches == [2]
-    assert second.output_metadata["tiff_cache_hits"] == 2
+    assert second.output_metadata == {"tiff_crops": 2, "tiff_cache_hits": 2}
+    assert reporter.updates == [
+        ("Reading labels", 0, 2),
+        ("Reading labels · 2 cached", 2, 2),
+    ]
+
+
+async def test_a_second_scan_of_the_same_labels_reads_the_cache_not_the_provider():
+    workspace_id, artifact_id = uuid4(), uuid4()
+    page_side = 400
+    scan = Image.new("RGB", (page_side, page_side), "white")
+    draw = ImageDraw.Draw(scan)
+    regions: list[TextRegion] = []
+    for index in range(8):
+        # Each crop is cut tight, so these differ in width as well as in place.
+        left, top = 12 + (index % 4) * 90, 12 + (index // 4) * 60
+        right, bottom = left + 40 + 4 * index, top + 18
+        draw.rectangle((left, top, right, bottom), fill="black")
+        regions.append(
+            TextRegion(
+                polygon=[(left, top), (right, top), (right, bottom), (left, bottom)]
+            )
+        )
+    batches: list[int] = []
+
+    async def read(*, col: int, row: int, width: int, height: int) -> bytes:
+        buf = BytesIO()
+        scan.crop((col, row, col + width, row + height)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    async def open_page(
+        workspace_id: UUID, artifact_id: UUID, *, page: int
+    ) -> TiffPage:
+        del workspace_id, artifact_id
+        return TiffPage(page_side, page_side, read, source_sha256="ef" * 32, page=page)
+
+    class Recognizer(TextRecognizer):
+        async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
+            batches.append(len(crops))
+            return [
+                TextReading(text="line", confidence=0.4, model="test") for _ in crops
+            ]
+
+    source = Ref[TiffFile](
+        artifact_id=artifact_id, artifact_type="file.tiff", schema_version=1
+    )
+    window = TiffPixelWindow(page=0, col=0, row=0, width=page_side, height=page_side)
+    reporter = ReadProgress()
+    context = NodeExecutionContext(
+        workspace_id=workspace_id, node_id="read", progress_reporter=reporter
+    )
+    node = ReadTiffTextNode(open_page, cache=ProviderCache(InMemoryCacheStore()))
+
+    await node.run(
+        context,
+        NoConfig(),
+        RecognizeInput(
+            regions=TiffTextRegions(source=source, window=window, regions=regions),
+            recognizer=Recognizer(),
+        ),
+    )
+
+    # One step of eight crops is one provider call, cache or no cache.
+    assert batches == [8]
+    assert context.output_metadata == {"tiff_crops": 8, "tiff_cache_hits": 0}
+    assert reporter.updates == [("Reading labels", 0, 8), ("Reading labels", 8, 8)]
+
+    reporter.updates.clear()
+    await node.run(
+        context,
+        NoConfig(),
+        RecognizeInput(
+            regions=TiffTextRegions(source=source, window=window, regions=regions),
+            recognizer=Recognizer(),
+        ),
+    )
+
+    assert batches == [8]
+    assert context.output_metadata == {"tiff_crops": 8, "tiff_cache_hits": 8}
+    assert reporter.updates == [
+        ("Reading labels", 0, 8),
+        ("Reading labels · 8 cached", 8, 8),
+    ]
+
+
+async def test_the_paddle_route_is_asked_once_for_two_scans_of_one_label():
+    # The provider node hands out a PaddleCyrillicRecognizer, and the crop node is
+    # the only thing that ever calls it, so that one call site is the one cache.
+    workspace_id = uuid4()
+    polygon: list[PixelPoint] = [(10, 20), (86, 60), (80, 72), (4, 32)]
+    scan = Image.new("RGB", (100, 100), "white")
+    ImageDraw.Draw(scan).polygon(polygon, fill="black")
+    asked: list[int] = []
+
+    async def read(*, col: int, row: int, width: int, height: int) -> bytes:
+        buf = BytesIO()
+        scan.crop((col, row, col + width, row + height)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    async def open_page(
+        workspace_id: UUID, artifact_id: UUID, *, page: int
+    ) -> TiffPage:
+        del workspace_id, artifact_id
+        return TiffPage(100, 100, read, source_sha256="11" * 32, page=page)
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        crops = json.loads(request.content)["images_base64"]
+        asked.append(len(crops))
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"text": "Бѣлыничи", "confidence": 0.8, "model": PADDLE_MODEL}
+                    for _ in crops
+                ]
+            },
+        )
+
+    source = Ref[TiffFile](
+        artifact_id=uuid4(), artifact_type="file.tiff", schema_version=1
+    )
+    window = TiffPixelWindow(page=0, col=0, row=0, width=100, height=100)
+    reporter = ReadProgress()
+    second = NodeExecutionContext(
+        workspace_id=workspace_id, node_id="read", progress_reporter=reporter
+    )
+    node = ReadTiffTextNode(open_page, cache=ProviderCache(InMemoryCacheStore()))
+
+    async def read_labels(context: NodeExecutionContext) -> None:
+        await node.run(
+            context,
+            NoConfig(),
+            RecognizeInput(
+                regions=TiffTextRegions(
+                    source=source,
+                    window=window,
+                    regions=[TextRegion(polygon=polygon)],
+                ),
+                recognizer=PaddleCyrillicRecognizer(
+                    SecretStr("scoped-test"), timeout_ms=30_000, max_retries=0
+                ),
+            ),
+        )
+
+    with serve_client(httpx.AsyncClient(transport=httpx.MockTransport(respond))):
+        await read_labels(NodeExecutionContext(workspace_id=workspace_id))
+        reporter.updates.clear()
+        await read_labels(second)
+
+    assert asked == [1]
+    assert second.output_metadata == {"tiff_crops": 1, "tiff_cache_hits": 1}
+    assert reporter.updates == [
+        ("Reading labels", 0, 1),
+        ("Reading labels · 1 cached", 1, 1),
+    ]
+
+
+def _window_png(width: int, height: int) -> bytes:
+    buffer = BytesIO()
+    Image.new("RGB", (width, height), "black").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+async def test_a_label_wider_than_one_native_read_is_stitched_from_several_reads():
+    # The span a 12 box diagonal run joins into: a 1,280 x 1,280 box, 1,658,944 pixels
+    # with its margin, which is more than the tiler serves in one window. It is read
+    # in abutting strips and pasted back into one image, so the name is still read
+    # once rather than split across the spans it was joined from.
+    span = [
+        (871.7157287525382, 843.4314575050761),
+        (843.4314575050761, 871.7157287525382),
+        (2094.2842712474617, 2122.568542494924),
+        (2122.568542494924, 2094.2842712474617),
+    ]
+    reads: list[tuple[int, int, int, int]] = []
+
+    async def read(*, col: int, row: int, width: int, height: int) -> bytes:
+        assert width * height <= NATIVE_CROP_PIXEL_LIMIT
+        reads.append((col, row, width, height))
+        return _window_png(width, height)
+
+    async def open_page(
+        workspace_id: UUID, artifact_id: UUID, *, page: int
+    ) -> TiffPage:
+        del workspace_id, artifact_id
+        return TiffPage(4000, 5000, read, source_sha256="0" * 64, page=page)
+
+    crops: list[bytes] = []
+
+    class Recognizer(TextRecognizer):
+        async def recognize(self, requests: Sequence[bytes]) -> list[TextReading]:
+            crops.extend(requests)
+            return [
+                TextReading(text="MI", confidence=0.9, model="test") for _ in requests
+            ]
+
+    source = Ref[TiffFile](
+        artifact_id=uuid4(), artifact_type="file.tiff", schema_version=1
+    )
+    window = TiffPixelWindow(page=0, col=0, row=0, width=4000, height=5000)
+
+    await ReadTiffTextNode(open_page).run(
+        NodeExecutionContext(workspace_id=uuid4()),
+        NoConfig(),
+        RecognizeInput(
+            regions=TiffTextRegions(
+                source=source, window=window, regions=[TextRegion(polygon=span)]
+            ),
+            recognizer=Recognizer(),
+        ),
+    )
+
+    # Two strips, each within one read, abutting with no gap and no overlap.
+    assert reads == [(839, 839, 776, 1288), (1615, 839, 512, 1288)]
+    assert sum(width for _, _, width, _ in reads) == 1288
+    assert len(crops) == 1
+    with Image.open(BytesIO(crops[0])) as crop:
+        assert crop.width * crop.height <= NATIVE_CROP_PIXEL_LIMIT
 
 
 @pytest.mark.parametrize("invalid_revision", [False, True])

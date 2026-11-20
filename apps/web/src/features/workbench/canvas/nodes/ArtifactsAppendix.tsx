@@ -441,6 +441,7 @@ export function ArtifactPortPreview({
   onModeChoiceChange,
   feedProjection = null,
   interaction,
+  presentation = "inspector",
   onFocusedArtifactChange,
 }: {
   output: RunPortOutput;
@@ -451,6 +452,7 @@ export function ArtifactPortPreview({
   /** Edge-owned feed: whole output when null/empty, else project along path. */
   feedProjection?: { path: readonly string[] } | null;
   interaction?: ArtifactViewerInteractionContext;
+  presentation?: "inspector" | "canvas";
   /** The stored reference the card is showing, for the card's own actions. */
   onFocusedArtifactChange?: (artifact: RunPortArtifact | null) => void;
 }) {
@@ -613,14 +615,14 @@ export function ArtifactPortPreview({
   // answers which of its modes is showing. Either way one mode is on.
   const selectedMode = showingFeedProjection ? projectionMode : mode;
   return (
-    <section
-      draggable
-      onDragStart={(event) => {
-        writeArtifactDrop(event.dataTransfer, output.value);
-      }}
-      {...stylex.props(s.section)}
-    >
-      <div {...stylex.props(s.headRow)}>
+    <section {...stylex.props(s.section)}>
+      <div
+        draggable
+        onDragStart={(event) => {
+          writeArtifactDrop(event.dataTransfer, output.value);
+        }}
+        {...stylex.props(s.headRow)}
+      >
         <span {...stylex.props(s.headTitle)}>{output.port}</span>
         <span {...stylex.props(s.kindBadge)}>
           {sequence ? `sequence · ${artifacts.length}` : "single"}
@@ -774,6 +776,7 @@ export function ArtifactPortPreview({
                 mode={mode}
                 availableHeight={previewHeight}
                 interaction={interaction}
+                presentation={presentation}
               />
             )}
           </div>

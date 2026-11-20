@@ -27,6 +27,10 @@ WmsImageFormat = Literal["image/png", "image/jpeg"]
 BasemapKind = Literal["openstreetmap", "none"]
 
 
+MAX_RASTER_MOSAIC_SOURCES = 64
+RASTER_SOURCE_ARTIFACT_TYPES = ("geo.raster_scan", "file.tiff")
+
+
 def _validate_ref(
     ref: ArtifactRef,
     *,
@@ -66,12 +70,46 @@ class GeoRasterArtifactSource(BaseModel):
 
     @model_validator(mode="after")
     def validate_artifact(self) -> Self:
-        _validate_ref(
-            self.artifact,
-            artifact_type="geo.raster_scan",
-            schema_version=1,
-            field_name="raster source artifact",
-        )
+        ref = self.artifact
+        if (
+            ref.artifact_type not in RASTER_SOURCE_ARTIFACT_TYPES
+            or ref.schema_version != 1
+        ):
+            raise ValueError(
+                "raster source artifact must reference geo.raster_scan@1 or "
+                f"file.tiff@1, got {ref.artifact_type}@{ref.schema_version}"
+            )
+        return self
+
+
+class GeoRasterMosaicSource(BaseModel):
+    """Georeferenced rasters stacked bottom to top and composited by the tiler."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["raster_mosaic"] = "raster_mosaic"
+    artifacts: list[ArtifactRef] = Field(
+        min_length=1, max_length=MAX_RASTER_MOSAIC_SOURCES
+    )
+
+    @model_validator(mode="after")
+    def validate_artifacts(self) -> Self:
+        seen: set[object] = set()
+        for artifact in self.artifacts:
+            if (
+                artifact.artifact_type not in RASTER_SOURCE_ARTIFACT_TYPES
+                or artifact.schema_version != 1
+            ):
+                raise ValueError(
+                    "raster mosaic source artifact must reference geo.raster_scan@1 "
+                    f"or file.tiff@1, got {artifact.artifact_type}@"
+                    f"{artifact.schema_version}"
+                )
+            if artifact.artifact_id in seen:
+                raise ValueError(
+                    "Raster mosaic source artifact references must be unique"
+                )
+            seen.add(artifact.artifact_id)
         return self
 
 
@@ -109,7 +147,10 @@ class GeoWmsSource(BaseModel):
 
 
 GeoLayerSource = Annotated[
-    GeoFeatureArtifactSource | GeoRasterArtifactSource | GeoWmsSource,
+    GeoFeatureArtifactSource
+    | GeoRasterArtifactSource
+    | GeoRasterMosaicSource
+    | GeoWmsSource,
     Field(discriminator="kind"),
 ]
 
@@ -153,8 +194,13 @@ class GeoMapLayer(BaseModel):
                         f"Category {category.id!r} zoom range does not overlap "
                         "the layer zoom range"
                     )
-        if self.source.kind in {"raster_scan", "wms"} and self.style.kind != "raster":
-            raise ValueError("Raster scan and WMS sources require raster style")
+        if (
+            self.source.kind in {"raster_scan", "raster_mosaic", "wms"}
+            and self.style.kind != "raster"
+        ):
+            raise ValueError(
+                "Raster, raster mosaic and WMS sources require raster style"
+            )
         return self
 
 

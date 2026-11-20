@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from uuid import UUID
@@ -10,6 +11,7 @@ from grafy_core.artifacts import ArtifactObject
 from grafy_core.egress import validated_public_destination
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
+from grafy_shared.config.tiler import TilerConfig
 
 from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.services.errors import (
@@ -20,14 +22,32 @@ from grafy_api.services.errors import (
 from grafy_api.artifacts.errors import (
     ArtifactResponseTooLargeError,
     GeoRangeNotSatisfiableError,
+    GeoRasterTileNotFoundError,
 )
 from grafy_api.artifacts.geo import (
     GEO_FEATURE_COLLECTION_ARTIFACT_TYPE,
     GEO_MAP_LAYER_ARTIFACT_TYPE,
     GEO_RASTER_SCAN_ARTIFACT_TYPE,
+    RASTER_SOURCE_TYPES,
+    bounds_union,
     feature_count,
+    load_mosaic_infos,
     resolve_exact_artifacts,
     source_name,
+)
+from grafy_api.artifacts.geo_tiff import (
+    TIFF_ARTIFACT_TYPE,
+    bounds_intersect_tile,
+    fit_min_zoom,
+    load_geo_tiff,
+    require_raster_tiler,
+    tiff_title,
+)
+from grafy_api.artifacts.images import (
+    ImageProxyError,
+    TiffSource,
+    TilerPort,
+    stored_tiff_source,
 )
 from grafy_api.artifacts.models import (
     GeoExactFeatureResponse,
@@ -84,6 +104,10 @@ def _single_byte_range(value: str, total_size: int) -> tuple[int, int]:
     return start, min(total_size, end_inclusive + 1)
 
 
+def _in_xyz_grid(z: int, x: int, y: int) -> bool:
+    return 0 <= z <= 24 and 0 <= x < (1 << z) and 0 <= y < (1 << z)
+
+
 class ArtifactGeoTileService:
     def __init__(
         self,
@@ -92,11 +116,15 @@ class ArtifactGeoTileService:
         *,
         availability: ArtifactAvailability,
         wms: WmsTileClient,
+        tiler: TilerPort | None = None,
+        tiler_config: TilerConfig | None = None,
     ) -> None:
         self._uow = uow
         self._storage = storage
         self._availability = availability
         self._wms = wms
+        self._tiler = tiler
+        self._tiler_config = tiler_config
 
     async def get(
         self,
@@ -268,15 +296,29 @@ class ArtifactGeoTileService:
             raise WorkbenchOperationError(
                 f"Artifact {artifact.id} is not a supported raster source"
             )
+        tile_url = (
+            f"/v1/workspaces/{artifact.workspace_id}/artifacts/{artifact.id}"
+            "/geo/raster/{z}/{x}/{y}.png"
+        )
+        if artifact.artifact_type == TIFF_ARTIFACT_TYPE:
+            tiler = require_raster_tiler(self._tiler, self._tiler_config)
+            info = await load_geo_tiff(artifact, tiler)
+            return GeoRasterTileJsonResponse(
+                name=tiff_title(artifact),
+                tiles=[tile_url],
+                bounds=info.bounds,
+                minzoom=info.min_zoom,
+                maxzoom=info.max_zoom,
+            )
         if artifact.artifact_type == GEO_RASTER_SCAN_ARTIFACT_TYPE:
             projection = GeoRasterProjectionMetadata.model_validate(
                 artifact.metadata.get("raster_projection")
             )
+            if projection.prefix is None:
+                _ = require_raster_tiler(self._tiler, self._tiler_config)
             return GeoRasterTileJsonResponse(
                 name=source_name(artifact),
-                tiles=[
-                    f"/v1/workspaces/{artifact.workspace_id}/artifacts/{artifact.id}/geo/raster/{{z}}/{{x}}/{{y}}.png"
-                ],
+                tiles=[tile_url],
                 bounds=projection.bounds,
                 minzoom=projection.min_zoom,
                 maxzoom=projection.max_zoom,
@@ -290,24 +332,57 @@ class ArtifactGeoTileService:
             raise WorkbenchOperationError(
                 f"Map layer artifact {artifact.id} is not a raster layer"
             )
+        if layer.source.kind == "raster_mosaic":
+            tiler = require_raster_tiler(self._tiler, self._tiler_config)
+            infos = await load_mosaic_infos(
+                self._availability,
+                layer.source.artifacts,
+                tiler,
+                context=f"Map layer artifact {artifact.id}",
+                workspace_id=workspace_id,
+            )
+            bounds = bounds_union([info.bounds for info in infos])
+            assert bounds is not None
+            # The union can be wider than any one sheet, so fit it as a whole.
+            natural_min_zoom = min(fit_min_zoom(bounds), *(i.min_zoom for i in infos))
+            natural_max_zoom = max(info.max_zoom for info in infos)
+            minzoom = max(layer.min_zoom, natural_min_zoom)
+            return GeoRasterTileJsonResponse(
+                name=layer.title,
+                tiles=[tile_url],
+                bounds=bounds,
+                minzoom=minzoom,
+                maxzoom=max(minzoom, min(layer.max_zoom, natural_max_zoom)),
+            )
         if layer.source.kind == "raster_scan":
             source_artifact = (
                 await resolve_exact_artifacts(
                     self._availability,
                     [layer.source.artifact],
-                    expected_type=GEO_RASTER_SCAN_ARTIFACT_TYPE,
+                    expected_type=RASTER_SOURCE_TYPES,
                     context=f"Map layer artifact {artifact.id}",
                     workspace_id=workspace_id,
                 )
             )[0]
+            if source_artifact.artifact_type == TIFF_ARTIFACT_TYPE:
+                tiler = require_raster_tiler(self._tiler, self._tiler_config)
+                info = await load_geo_tiff(source_artifact, tiler)
+                minzoom = max(layer.min_zoom, info.min_zoom)
+                return GeoRasterTileJsonResponse(
+                    name=layer.title,
+                    tiles=[tile_url],
+                    bounds=info.bounds,
+                    minzoom=minzoom,
+                    maxzoom=max(minzoom, min(layer.max_zoom, info.max_zoom)),
+                )
             projection = GeoRasterProjectionMetadata.model_validate(
                 source_artifact.metadata.get("raster_projection")
             )
+            if projection.prefix is None:
+                _ = require_raster_tiler(self._tiler, self._tiler_config)
             return GeoRasterTileJsonResponse(
                 name=layer.title,
-                tiles=[
-                    f"/v1/workspaces/{artifact.workspace_id}/artifacts/{artifact.id}/geo/raster/{{z}}/{{x}}/{{y}}.png"
-                ],
+                tiles=[tile_url],
                 bounds=projection.bounds,
                 minzoom=max(layer.min_zoom, projection.min_zoom),
                 maxzoom=min(layer.max_zoom, projection.max_zoom),
@@ -315,9 +390,7 @@ class ArtifactGeoTileService:
         _ = validated_public_destination(layer.source.url, service_name="WMS")
         return GeoRasterTileJsonResponse(
             name=layer.title,
-            tiles=[
-                f"/v1/workspaces/{artifact.workspace_id}/artifacts/{artifact.id}/geo/raster/{{z}}/{{x}}/{{y}}.png"
-            ],
+            tiles=[tile_url],
             bounds=layer.source.bounds,
             minzoom=layer.min_zoom,
             maxzoom=layer.max_zoom,
@@ -333,9 +406,17 @@ class ArtifactGeoTileService:
         x: int,
         y: int,
     ) -> GeoTileRead | None:
-        if z < 0 or z > 24 or x < 0 or y < 0 or x >= (1 << z) or y >= (1 << z):
-            return None
+        if artifact.schema_version != 1:
+            raise WorkbenchOperationError(
+                f"Artifact {artifact.id} is not a supported raster source"
+            )
+        if artifact.artifact_type == TIFF_ARTIFACT_TYPE:
+            tiler = require_raster_tiler(self._tiler, self._tiler_config)
+            info = await load_geo_tiff(artifact, tiler)
+            return await _render_geo_tile(tiler, info.source, z=z, x=x, y=y)
+        in_grid = _in_xyz_grid(z, x, y)
         try:
+            source_artifact = artifact
             if artifact.artifact_type == GEO_RASTER_SCAN_ARTIFACT_TYPE:
                 projection = GeoRasterProjectionMetadata.model_validate(
                     artifact.metadata.get("raster_projection")
@@ -347,31 +428,66 @@ class ArtifactGeoTileService:
                     )
                 layer = GeoMapLayerPayload.model_validate(artifact.inline_payload)
                 if z < layer.min_zoom or z > layer.max_zoom:
-                    return None
+                    raise GeoRasterTileNotFoundError("Raster tile not found")
                 if layer.source.kind == "feature_collection":
                     raise WorkbenchOperationError(
                         f"Map layer artifact {artifact.id} is not a raster layer"
                     )
+                if layer.source.kind == "raster_mosaic":
+                    if not in_grid:
+                        return None
+                    tiler = require_raster_tiler(self._tiler, self._tiler_config)
+                    infos = await load_mosaic_infos(
+                        self._availability,
+                        layer.source.artifacts,
+                        tiler,
+                        context=f"Map layer artifact {artifact.id}",
+                        workspace_id=workspace_id,
+                    )
+                    overlapping = [
+                        info.source
+                        for info in infos
+                        if bounds_intersect_tile(info.bounds, z=z, x=x, y=y)
+                    ]
+                    if not overlapping:
+                        return None
+                    if len(overlapping) == 1:
+                        return await _render_geo_tile(
+                            tiler, overlapping[0], z=z, x=x, y=y
+                        )
+                    return await _render_geo_mosaic_tile(
+                        tiler, overlapping, z=z, x=x, y=y
+                    )
                 if layer.source.kind != "raster_scan":
+                    if not in_grid:
+                        raise GeoRasterTileNotFoundError("Raster tile not found")
                     return await self._wms.fetch_tile(layer.source, z=z, x=x, y=y)
                 source_artifact = (
                     await resolve_exact_artifacts(
                         self._availability,
                         [layer.source.artifact],
-                        expected_type=GEO_RASTER_SCAN_ARTIFACT_TYPE,
+                        expected_type=RASTER_SOURCE_TYPES,
                         context=f"Map layer artifact {artifact.id}",
                         workspace_id=workspace_id,
                     )
                 )[0]
+                if source_artifact.artifact_type == TIFF_ARTIFACT_TYPE:
+                    tiler = require_raster_tiler(self._tiler, self._tiler_config)
+                    info = await load_geo_tiff(source_artifact, tiler)
+                    return await _render_geo_tile(tiler, info.source, z=z, x=x, y=y)
                 projection = GeoRasterProjectionMetadata.model_validate(
                     source_artifact.metadata.get("raster_projection")
                 )
-            if z < projection.min_zoom or z > projection.max_zoom:
-                return None
+            if projection.prefix is None:
+                tiler = require_raster_tiler(self._tiler, self._tiler_config)
+                source = stored_tiff_source(source_artifact, page=0)
+                return await _render_geo_tile(tiler, source, z=z, x=x, y=y)
+            if not in_grid or z < projection.min_zoom or z > projection.max_zoom:
+                raise GeoRasterTileNotFoundError("Raster tile not found")
             object_key = f"{projection.prefix}/{z}/{x}/{y}.{projection.extension}"
             info = await self._storage.stat(projection.bucket, object_key)
             if info is None:
-                return None
+                raise GeoRasterTileNotFoundError("Raster tile not found")
             content = await self._storage.load_range(
                 projection.bucket,
                 object_key,
@@ -392,13 +508,48 @@ class ArtifactGeoTileService:
                 content=content,
                 content_type=projection.content_type,
                 etag=etag,
+                immutable=True,
             )
-        except (ArtifactContentUnavailableError, WorkbenchOperationError):
+        except (ImageProxyError, WorkbenchOperationError):
             raise
         except Exception as exc:
             raise ArtifactContentUnavailableError(
                 f"Could not load raster tile {z}/{x}/{y} for artifact {artifact.id}"
             ) from exc
+
+
+async def _render_geo_tile(
+    tiler: TilerPort, source: TiffSource, *, z: int, x: int, y: int
+) -> GeoTileRead | None:
+    if not _in_xyz_grid(z, x, y):
+        return None
+    try:
+        tile = await tiler.geo_tile(source, z=z, x=x, y=y, extension="png")
+    except ImageProxyError as exc:
+        if exc.status == 404:
+            return None
+        raise
+    return GeoTileRead(
+        content=tile.body,
+        content_type=tile.content_type,
+        etag=f'"{sha256(tile.body).hexdigest()}"',
+    )
+
+
+async def _render_geo_mosaic_tile(
+    tiler: TilerPort, sources: Sequence[TiffSource], *, z: int, x: int, y: int
+) -> GeoTileRead | None:
+    try:
+        tile = await tiler.geo_mosaic_tile(sources, z=z, x=x, y=y, extension="png")
+    except ImageProxyError as exc:
+        if exc.status == 404:
+            return None
+        raise
+    return GeoTileRead(
+        content=tile.body,
+        content_type=tile.content_type,
+        etag=f'"{sha256(tile.body).hexdigest()}"',
+    )
 
 
 __all__ = [
