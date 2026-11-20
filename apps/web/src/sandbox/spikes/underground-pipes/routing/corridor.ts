@@ -261,14 +261,7 @@ function gapMiddles(edges: number[]): number[] {
   return middles;
 }
 
-/** Steps on the grid: right, left, down, up. */
-const STEPS = [
-  [1, 0],
-  [-1, 0],
-  [0, 1],
-  [0, -1],
-] as const;
-/** Where a step may go next: straight on, or a turn either way. */
+/** Next steps after facing right, left, down or up: straight on, then turns. */
 const NEXT_STEPS = [
   [0, 2, 3],
   [1, 2, 3],
@@ -288,17 +281,13 @@ function stepOf(direction: Point): number {
 
 /** A binary min-heap of search states, keyed by estimated total cost. */
 class StateHeap {
-  private states: number[] = [];
-  private keys: number[] = [];
-
-  get size(): number {
-    return this.states.length;
-  }
+  private readonly states: number[] = [];
+  private readonly keys: number[] = [];
+  size = 0;
 
   push(state: number, key: number): void {
-    let index = this.states.length;
-    this.states.push(state);
-    this.keys.push(key);
+    let index = this.size;
+    this.size += 1;
     while (index > 0) {
       const parent = (index - 1) >> 1;
       if ((this.keys[parent] ?? 0) <= key) break;
@@ -312,9 +301,10 @@ class StateHeap {
 
   pop(): number {
     const top = this.states[0] ?? -1;
-    const lastState = this.states.pop() ?? 0;
-    const lastKey = this.keys.pop() ?? 0;
-    const count = this.states.length;
+    const count = this.size - 1;
+    this.size = count;
+    const lastState = this.states[count] ?? 0;
+    const lastKey = this.keys[count] ?? 0;
     if (count === 0) return top;
     let index = 0;
     for (;;) {
@@ -337,15 +327,20 @@ class StateHeap {
 }
 
 /**
- * Search state for every (node, heading) pair, kept between calls so a drag
- * frame allocates nothing. `seen` and `done` hold the number of the search
- * that last wrote a state, so nothing has to be cleared between searches.
+ * Reused grid and search buffers. Search marks store the current search
+ * number, so each pipe can search the grid without clearing those arrays.
  */
 class SearchBuffers {
   best = new Float64Array(0);
   parent = new Int32Array(0);
   seen = new Uint32Array(0);
   done = new Uint32Array(0);
+  blocked = new Uint32Array(0);
+  neighbors = new Int32Array(0);
+  edgeCosts = new Float64Array(0);
+  x = new Float64Array(0);
+  y = new Float64Array(0);
+  readonly heap = new StateHeap();
   search = 0;
 
   reserve(states: number): void {
@@ -354,6 +349,11 @@ class SearchBuffers {
     this.parent = new Int32Array(states);
     this.seen = new Uint32Array(states);
     this.done = new Uint32Array(states);
+    this.blocked = new Uint32Array(states / 4);
+    this.neighbors = new Int32Array(states);
+    this.edgeCosts = new Float64Array(states);
+    this.x = new Float64Array(states / 4);
+    this.y = new Float64Array(states / 4);
     this.search = 0;
   }
 }
@@ -398,6 +398,40 @@ class CorridorGrid {
     for (const card of cards) this.weighCard(card);
     buffers.reserve(nodes * 4);
     this.buffers = buffers;
+    this.buildEdges();
+  }
+
+  /** Precompute both directions of every weighted edge once per scene. */
+  private buildEdges(): void {
+    const { xs, ys, across, down } = this;
+    const { neighbors, edgeCosts, x, y } = this.buffers;
+    const width = xs.length;
+    neighbors.fill(-1, 0, width * ys.length * 4);
+    for (let j = 0; j < ys.length; j += 1) {
+      const cy = ys[j] ?? 0;
+      for (let i = 0; i < width; i += 1) {
+        const node = j * width + i;
+        const cx = xs[i] ?? 0;
+        x[node] = cx;
+        y[node] = cy;
+        const east = xs[i + 1];
+        if (east !== undefined) {
+          const cost = (east - cx) * (across[node] ?? 1);
+          neighbors[node * 4] = node + 1;
+          neighbors[(node + 1) * 4 + 1] = node;
+          edgeCosts[node * 4] = cost;
+          edgeCosts[(node + 1) * 4 + 1] = cost;
+        }
+        const south = ys[j + 1];
+        if (south !== undefined) {
+          const cost = (south - cy) * (down[node] ?? 1);
+          neighbors[node * 4 + 2] = node + width;
+          neighbors[(node + width) * 4 + 3] = node;
+          edgeCosts[node * 4 + 2] = cost;
+          edgeCosts[(node + width) * 4 + 3] = cost;
+        }
+      }
+    }
   }
 
   /** Raise the cost of every grid edge under or beside one card. */
@@ -437,7 +471,7 @@ class CorridorGrid {
   }
 
   /** Grid nodes on a stub, other than its far end: a route may not cross it. */
-  private stubNodes(port: Point, end: Point, into: Set<number>): void {
+  private blockStub(port: Point, end: Point, stamp: number): void {
     const horizontal = Math.abs(port.y - end.y) < 1e-6;
     const lines = horizontal ? this.xs : this.ys;
     const from = horizontal ? port.x : port.y;
@@ -455,7 +489,7 @@ class CorridorGrid {
       const node = this.nodeAt(
         horizontal ? { x: value, y: port.y } : { x: port.x, y: value },
       );
-      if (node >= 0) into.add(node);
+      if (node >= 0) this.buffers.blocked[node] = stamp;
     }
   }
 
@@ -473,39 +507,33 @@ class CorridorGrid {
     const leaving = stepOf(outward(pipe.sourceSide));
     const towardOut = outward(pipe.targetSide);
     const arriving = stepOf({ x: -towardOut.x, y: -towardOut.y });
-    const blocked = new Set<number>();
-    this.stubNodes(pipe.source, from, blocked);
-    this.stubNodes(pipe.target, to, blocked);
-    blocked.delete(start);
-    blocked.delete(goal);
-
-    const width = this.xs.length;
-    const goalX = to.x;
-    const goalY = to.y;
-    const estimate = (node: number, step: number): number => {
-      const x = this.xs[node % width] ?? 0;
-      const y = this.ys[Math.floor(node / width)] ?? 0;
-      const distance = Math.abs(goalX - x) + Math.abs(goalY - y);
-      return (
-        distance + BEND * fewestBends(step, arriving, goalX - x, goalY - y)
-      );
-    };
-
-    const { best, parent, seen, done } = this.buffers;
+    const { best, parent, seen, done, blocked, heap } = this.buffers;
     this.buffers.search += 1;
     const stamp = this.buffers.search;
-    const heap = new StateHeap();
-    const relax = (state: number, cost: number, from: number) => {
+    heap.size = 0;
+    this.blockStub(pipe.source, from, stamp);
+    this.blockStub(pipe.target, to, stamp);
+    blocked[start] = 0;
+    blocked[goal] = 0;
+
+    const { neighbors, edgeCosts, x, y } = this.buffers;
+    const relax = (node: number, step: number, cost: number, from: number) => {
+      const state = node * 4 + step;
       if (seen[state] === stamp && (best[state] ?? 0) <= cost) return;
       seen[state] = stamp;
       best[state] = cost;
       parent[state] = from;
+      const dx = to.x - (x[node] ?? 0);
+      const dy = to.y - (y[node] ?? 0);
       // Among equal estimates, the state nearer the goal first: it keeps
       // the search from flooding the many equally short ways across a grid.
-      const left = estimate(state >> 2, state & 3);
+      const left =
+        Math.abs(dx) +
+        Math.abs(dy) +
+        BEND * fewestBends(step, arriving, dx, dy);
       heap.push(state, cost + left * (1 + 1e-6));
     };
-    relax(start * 4 + leaving, 0, -1);
+    relax(start, leaving, 0, -1);
     let expansions = 0;
     while (heap.size > 0) {
       const state = heap.pop();
@@ -520,29 +548,19 @@ class CorridorGrid {
       if (node === goal) {
         // Turn into the target stub: a bend at the goal itself.
         if (perpendicular(step, arriving)) {
-          relax(goal * 4 + arriving, cost + BEND, state);
+          relax(goal, arriving, cost + BEND, state);
         }
         continue;
       }
-      const i = node % width;
-      const j = (node - i) / width;
-      for (const nextStep of NEXT_STEPS[step] ?? []) {
-        const [di, dj] = STEPS[nextStep];
-        const ni = i + di;
-        const nj = j + dj;
-        if (ni < 0 || nj < 0 || ni >= width || nj >= this.ys.length) continue;
-        const nextNode = nj * width + ni;
-        if (blocked.has(nextNode)) continue;
-        const length =
-          di === 0
-            ? Math.abs((this.ys[nj] ?? 0) - (this.ys[j] ?? 0))
-            : Math.abs((this.xs[ni] ?? 0) - (this.xs[i] ?? 0));
-        const weight =
-          di === 0
-            ? (this.down[Math.min(j, nj) * width + i] ?? 1)
-            : (this.across[j * width + Math.min(i, ni)] ?? 1);
+      const steps = NEXT_STEPS[step] ?? [];
+      for (let index = 0; index < steps.length; index += 1) {
+        const nextStep = steps[index];
+        if (nextStep === undefined) continue;
+        const edge = node * 4 + nextStep;
+        const nextNode = neighbors[edge] ?? -1;
+        if (nextNode < 0 || blocked[nextNode] === stamp) continue;
         const turn = nextStep === step ? 0 : BEND;
-        relax(nextNode * 4 + nextStep, cost + length * weight + turn, state);
+        relax(nextNode, nextStep, cost + (edgeCosts[edge] ?? 0) + turn, state);
       }
     }
     return null;
@@ -574,11 +592,10 @@ function fewestBends(
   dy: number,
 ): number {
   if (step === arriving) {
-    const [sx, sy] = STEPS[step] ?? [0, 0];
     const ahead =
-      sx !== 0
-        ? Math.abs(dy) < 1e-6 && dx * sx >= 0
-        : Math.abs(dx) < 1e-6 && dy * sy >= 0;
+      step < 2
+        ? Math.abs(dy) < 1e-6 && (step === 0 ? dx >= 0 : dx <= 0)
+        : Math.abs(dx) < 1e-6 && (step === 2 ? dy >= 0 : dy <= 0);
     return ahead ? 0 : 2;
   }
   return perpendicular(step, arriving) ? 1 : 2;
@@ -711,11 +728,12 @@ function laneRanges(
       }
       const near = cardStart(card, axis);
       const far = cardEnd(card, axis);
-      if (far <= at + 0.5 && far + LANE_CLEARANCE > min) {
-        min = far + LANE_CLEARANCE;
-        lowWall = card.id;
-      }
-      if (near >= at - 0.5 && near - LANE_CLEARANCE < max) {
+      if (far <= at + 0.5) {
+        if (far + LANE_CLEARANCE > min) {
+          min = far + LANE_CLEARANCE;
+          lowWall = card.id;
+        }
+      } else if (near >= at - 0.5 && near - LANE_CLEARANCE < max) {
         max = near - LANE_CLEARANCE;
         highWall = card.id;
       }
@@ -772,6 +790,14 @@ function changedCards(
     if (!present.has(id)) changes.push({ id, before, now: undefined });
   }
   return changes;
+}
+
+function touchesAny(changes: readonly CardChange[], reach: Box): boolean {
+  for (let i = 0; i < changes.length; i += 1) {
+    const change = changes[i];
+    if (change && touches(change, reach)) return true;
+  }
+  return false;
 }
 
 function cardShift(a: CardRect, b: CardRect): number {
@@ -961,10 +987,10 @@ function createCorridorRouter(): SceneRouter {
       if (
         old &&
         samePorts(old.request, pipe) &&
-        !changes.some((change) => touches(change, old.reach))
+        !touchesAny(changes, old.reach)
       ) {
         // Nothing near this pipe moved.
-        memory = changes.some((change) => touches(change, old.lanes.reach))
+        memory = touchesAny(changes, old.lanes.reach)
           ? { ...old, lanes: laneRanges(old.points, pipe, scene.cards) }
           : old;
       } else {
@@ -1003,7 +1029,7 @@ function createCorridorRouter(): SceneRouter {
       routes.push(
         route(
           pipe.id,
-          memory.points.map((point) => ({ ...point })),
+          memory.points.map(({ x, y }) => ({ x, y })),
           memory.lanes.ranges,
         ),
       );

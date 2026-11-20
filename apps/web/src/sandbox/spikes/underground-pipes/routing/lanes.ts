@@ -135,7 +135,9 @@ function sharesChannel(a: Segment, b: Segment): boolean {
 }
 
 /** Groups of segments that overlap on (nearly) the same line. */
-function channels(segments: readonly Segment[]): Segment[][] {
+function channels(segments: Segment[]): Segment[][] {
+  if (segments.length === 0) return [];
+  if (segments.length === 1) return [segments];
   const parent = segments.map((_, index) => index);
   const root = (index: number): number => {
     let current = index;
@@ -169,8 +171,14 @@ function channels(segments: readonly Segment[]): Segment[][] {
 
 /** The span every segment of a channel may move in, if both ends are bounded. */
 function sharedRoom(channel: readonly Segment[]): number | null {
-  const low = Math.max(...channel.map((segment) => segment.min));
-  const high = Math.min(...channel.map((segment) => segment.max));
+  let low = -Infinity;
+  let high = Infinity;
+  for (let index = 0; index < channel.length; index += 1) {
+    const segment = channel[index];
+    if (!segment) continue;
+    low = Math.max(low, segment.min);
+    high = Math.min(high, segment.max);
+  }
   if (!Number.isFinite(low) || !Number.isFinite(high) || high < low) {
     return null;
   }
@@ -205,35 +213,41 @@ function overlapsAlong(a: Segment, b: Segment): boolean {
   return Math.min(a.high, b.high) - Math.max(a.low, b.low) > 0.5;
 }
 
-/**
- * A lane per segment: one past every overlapping segment earlier in lane
- * order. Segments that never run side by side share a lane, so a long channel
- * needs as many lanes as pipes run abreast at once, not as many as pass
- * through it.
- */
-function laneIndices(channel: readonly Segment[]): Map<Segment, number> {
-  const lanes = new Map<Segment, number>();
-  for (const segment of [...channel].sort(laneOrder)) {
-    let lane = 0;
-    for (const [placed, index] of lanes) {
-      if (overlapsAlong(placed, segment)) lane = Math.max(lane, index + 1);
-    }
-    lanes.set(segment, lane);
-  }
-  return lanes;
+interface Lane {
+  segment: Segment;
+  index: number;
 }
 
-function laneCount(lanes: ReadonlyMap<Segment, number>): number {
+/** Non-overlapping segments can reuse the same lane. */
+function layOutChannel(channel: readonly Segment[]): {
+  lanes: Lane[];
+  count: number;
+} {
+  const lanes: Lane[] = [];
   let count = 0;
-  for (const index of lanes.values()) count = Math.max(count, index + 1);
-  return count;
+  for (const segment of channel.slice().sort(laneOrder)) {
+    let index = 0;
+    for (let rank = 0; rank < lanes.length; rank += 1) {
+      const placed = lanes[rank];
+      if (placed && overlapsAlong(placed.segment, segment)) {
+        index = Math.max(index, placed.index + 1);
+      }
+    }
+    count = Math.max(count, index + 1);
+    lanes.push({ segment, index });
+  }
+  return { lanes, count };
 }
 
 /** Spread one channel into lanes, keeping every segment inside its range. */
 function spread(channel: Segment[], axis: Axis): void {
-  const lanes = laneIndices(channel);
-  const count = laneCount(lanes);
-  for (const [segment, index] of lanes) {
+  const only = channel[0];
+  if (channel.length === 1 && only) {
+    only.route.lanes[only.index] = "0/1";
+    return;
+  }
+  const { lanes, count } = layOutChannel(channel);
+  for (const { segment, index } of lanes) {
     segment.route.lanes[segment.index] = `${index}/${count}`;
   }
   if (count < 2) return;
@@ -249,7 +263,7 @@ function spread(channel: Segment[], axis: Axis): void {
   // Shift the whole channel as little as possible to respect every range.
   let lowestShift = -Infinity;
   let highestShift = Infinity;
-  for (const [segment, index] of lanes) {
+  for (const { segment, index } of lanes) {
     lowestShift = Math.max(lowestShift, segment.min - laneAt(index));
     highestShift = Math.min(highestShift, segment.max - laneAt(index));
   }
@@ -257,7 +271,7 @@ function spread(channel: Segment[], axis: Axis): void {
     lowestShift <= highestShift
       ? Math.min(Math.max(0, lowestShift), highestShift)
       : (lowestShift + highestShift) / 2;
-  for (const [segment, index] of lanes) {
+  for (const { segment, index } of lanes) {
     const lane = laneAt(index) + shift;
     const at = Math.min(Math.max(lane, segment.min), segment.max);
     const start = segment.route.points[segment.index];
@@ -359,9 +373,8 @@ function assignDepths(routes: readonly Route[]): void {
         const layer = routes.filter((route) => route.depth === depth);
         for (const channel of channels(movableSegments(layer, axis))) {
           const room = capacity(channel);
-          if (room === Infinity) continue;
           let members = channel;
-          while (laneCount(laneIndices(members)) > room) {
+          while (members.length > room && layOutChannel(members).count > room) {
             const sinking = sinkingThroughPipe(members, axis);
             if (!sinking) break;
             sinking.depth = depth + 1;
