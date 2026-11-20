@@ -134,13 +134,19 @@ function channels(segments: readonly Segment[]): Segment[][] {
     while (parent[current] !== current) current = parent[current] ?? current;
     return current;
   };
-  for (let a = 0; a < segments.length; a += 1) {
-    for (let b = a + 1; b < segments.length; b += 1) {
-      const left = segments[a];
+  // Only segments less than CHANNEL_REACH apart can share a channel, so each
+  // is compared with its neighbours in order of position.
+  const byPosition = segments
+    .map((_, index) => index)
+    .sort((a, b) => (segments[a]?.at ?? 0) - (segments[b]?.at ?? 0));
+  for (let rank = 0; rank < byPosition.length; rank += 1) {
+    const a = byPosition[rank] ?? 0;
+    const left = segments[a];
+    for (let next = rank + 1; left && next < byPosition.length; next += 1) {
+      const b = byPosition[next] ?? 0;
       const right = segments[b];
-      if (left && right && sharesChannel(left, right)) {
-        parent[root(a)] = root(b);
-      }
+      if (!right || right.at - left.at >= CHANNEL_REACH) break;
+      if (sharesChannel(left, right)) parent[root(a)] = root(b);
     }
   }
   const groups = new Map<number, Segment[]>();
@@ -342,6 +348,7 @@ function assignDepths(routes: readonly Route[]): void {
         const layer = routes.filter((route) => route.depth === depth);
         for (const channel of channels(movableSegments(layer, axis))) {
           const room = capacity(channel);
+          if (room === Infinity) continue;
           let members = channel;
           while (laneCount(laneIndices(members)) > room) {
             const sinking = sinkingThroughPipe(members, axis);
