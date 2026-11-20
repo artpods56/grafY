@@ -1,4 +1,3 @@
-import json
 from enum import StrEnum
 from typing import Annotated, Self, final, override
 
@@ -12,22 +11,23 @@ from pydantic import (
 )
 
 from grafy_core.artifacts import (
-    Artifact,
-    ArtifactRef,
     NodeConfig,
     NodeInput,
     NodeOutput,
 )
-from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
+from grafy_core.nodes import Node, NodeExecutionContext, Plugs
 from grafy_core.plugins import NodeCachePolicy
-from grafy_core.schema_contracts import (
-    JSON_SCHEMA,
-    JsonSchemaPayload,
-    parse_json_schema,
+from grafy_core.schema_contracts import parse_json_schema
+
+from grafy_workbench.schema.declaration import SCHEMAS
+from grafy_workbench.schema.values import (
+    JsonSchemaText,
+    canonical_schema_text,
+    json_schema_artifact,
 )
 
-from grafy_workbench.scalar_persistence import ScalarOutputWriter, ScalarResolver
-from grafy_workbench.schema.declaration import SCHEMAS
+
+SCHEMAS.register(json_schema_artifact())
 
 
 class SchemaFieldKind(StrEnum):
@@ -107,8 +107,8 @@ class JsonSchemaBuilderConfig(NodeConfig):
 
 class JsonSchemaBuilderInput(NodeInput):
     schemas: Annotated[
-        list[str],
-        InPort(JSON_SCHEMA, variadic=True, instance_plugs=True),
+        list[JsonSchemaText],
+        Plugs(variadic=True, instance=True),
     ] = Field(
         default_factory=list,
         description=(
@@ -119,8 +119,7 @@ class JsonSchemaBuilderInput(NodeInput):
 
 class JsonSchemaBuilderOutput(NodeOutput):
     json_schema: Annotated[
-        str,
-        OutPort(JSON_SCHEMA),
+        JsonSchemaText,
         Field(
             title="JSON Schema",
             description="Canonical Draft 2020-12 object JSON Schema text.",
@@ -192,7 +191,7 @@ class JsonSchemaBuilderNode(
                 )
             elif field.kind is SchemaFieldKind.SCHEMA:
                 definition = parse_json_schema(
-                    inputs.schemas[child_index],
+                    inputs.schemas[child_index].value,
                     context=f"field {field.name!r} ({field.id})",
                 )
                 child_index += 1
@@ -209,7 +208,7 @@ class JsonSchemaBuilderNode(
                     }
                 else:
                     items = parse_json_schema(
-                        inputs.schemas[child_index],
+                        inputs.schemas[child_index].value,
                         context=(
                             f"sequence items for field {field.name!r} ({field.id})"
                         ),
@@ -236,46 +235,8 @@ class JsonSchemaBuilderNode(
             schema_definition["required"] = required
         Draft202012Validator.check_schema(schema_definition)
         return JsonSchemaBuilderOutput(
-            json_schema=_canonical_schema_text(schema_definition)
+            json_schema=JsonSchemaText(value=canonical_schema_text(schema_definition))
         )
-
-
-def _canonical_schema_text(schema_definition: dict[str, object]) -> str:
-    return json.dumps(
-        schema_definition,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-
-
-def _normalize_schema_value(value: object) -> str:
-    payload = JsonSchemaPayload.model_validate({"value": value})
-    schema_definition = parse_json_schema(payload.value, context="artifact output")
-    return _canonical_schema_text(schema_definition)
-
-
-def _check_schema_value(value: str, ref: ArtifactRef) -> None:
-    _ = parse_json_schema(value, context=f"artifact {ref.artifact_id}")
-
-
-SCHEMAS.register(
-    Artifact(
-        spec=JSON_SCHEMA,
-        resolver=lambda context: ScalarResolver(
-            source=JSON_SCHEMA.key,
-            target=str,
-            model=JsonSchemaPayload,
-            uow=context.uow,
-            check=_check_schema_value,
-        ),
-        writer=lambda context: ScalarOutputWriter(
-            artifact_type=JSON_SCHEMA.key,
-            model=JsonSchemaPayload,
-            uow=context.uow,
-            normalize=_normalize_schema_value,
-        ),
-    )
-)
 
 
 __all__ = [

@@ -8,19 +8,10 @@ from grafy_api.services.errors import ArtifactContentUnavailableError
 from grafy_api.services.composition import build_workbench_components
 from grafy_api.artifacts.models import GeoRasterStyle
 from grafy_core.artifacts import ArtifactObject
-from grafy_core.plugins import PluginRuntimeContext
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_storage import LocalFileObjectStore
-from grafy_workbench.value.nodes import (
-    INTEGER_VALUE,
-    IntegerValueOutputWriter,
-    IntegerValueResolver,
-)
-from grafy_workbench.text.nodes import (
-    TEXT_VALUE,
-    TextValueOutputWriter,
-    TextValueResolver,
-)
+from grafy_workbench.value.nodes import INTEGER_VALUE
+from grafy_workbench.text.nodes import TEXT_VALUE
 
 from tests.support.egress import (
     loopback_http_listener,
@@ -31,28 +22,14 @@ from tests.support.egress import (
 from tests.support.system_plugins import build_explicit_plugin_registry
 
 
-def test_builtin_scalar_runtime_contributions_come_from_plugin_registry(
-    tmp_path: Path,
-) -> None:
+def test_builtin_scalar_runtime_contributions_come_from_plugin_registry() -> None:
     registry = build_explicit_plugin_registry()
-    context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=LocalFileObjectStore(tmp_path / "objects"),
-        uow=InMemoryUnitOfWork(),
-        bucket="artifacts",
-    )
-
-    resolvers = {
-        resolver.source: resolver for resolver in registry.build_resolvers(context)
-    }
-    writers = {
-        writer.artifact_type: writer for writer in registry.build_writers(context)
+    artifacts = {
+        artifact.spec.key: artifact.value_type for artifact in registry.artifacts
     }
 
-    assert isinstance(resolvers[INTEGER_VALUE.key], IntegerValueResolver)
-    assert isinstance(writers[INTEGER_VALUE.key], IntegerValueOutputWriter)
-    assert isinstance(resolvers[TEXT_VALUE.key], TextValueResolver)
-    assert isinstance(writers[TEXT_VALUE.key], TextValueOutputWriter)
+    assert artifacts[INTEGER_VALUE.key] is int
+    assert artifacts[TEXT_VALUE.key] is str
 
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")

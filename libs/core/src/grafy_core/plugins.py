@@ -5,7 +5,6 @@ from enum import StrEnum
 from inspect import Parameter, getdoc, iscoroutinefunction, signature
 from pathlib import Path
 from typing import (
-    TYPE_CHECKING,
     Any,
     Final,
     Protocol,
@@ -16,7 +15,6 @@ from typing import (
 )
 
 from grafy_core.artifacts import (
-    Artifact,
     ArtifactFieldProjection,
     ArtifactTypeKey,
     ArtifactTypeSpec,
@@ -26,12 +24,12 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
+from grafy_core.runtime.artifact_values import Artifact, ArtifactValues
+from grafy_core.declared_values import note_declaration
 from grafy_core.callable_nodes import callable_node_class
-from grafy_core.conversions import (
-    ArtifactConversion,
-    ArtifactConversionKey,
-)
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.provider_cache import ProviderCache
+from grafy_core.text_regions import TiffPageOpener
 from grafy_core.nodes import (
     ArtifactTypeContract,
     ArtifactTypeVariable,
@@ -40,7 +38,9 @@ from grafy_core.nodes import (
     NodeExecutionContext,
     derive_input_contract,
     derive_output_contract,
+    validate_service_node,
 )
+from grafy_core.service_contracts import ServiceContract, marked_contract
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import (
     NodeSecretResolverPort,
@@ -48,10 +48,6 @@ from grafy_core.ports.node_secrets import (
 )
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.ports.uploads import UploadRepositoryPort
-
-if TYPE_CHECKING:
-    from grafy_core.runtime.persistence import ArtifactOutputWriter
-    from grafy_core.runtime.resolvers import Resolver
 
 
 _MAX_PROJECTION_SCHEMA_DEPTH: Final = 32
@@ -81,6 +77,10 @@ class PluginRuntimeContext:
     node_secrets: NodeSecretResolverPort = field(
         default_factory=UnavailableNodeSecretResolver
     )
+    values: ArtifactValues | None = None
+    open_tiff_page: TiffPageOpener | None = None
+    provider_cache: ProviderCache | None = None
+    provider_cache_ttl_seconds: int = 30 * 24 * 60 * 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,14 +164,6 @@ type NodeFunction[ConfigT: NodeConfig, InputT: NodeInput, OutputT: NodeOutput] =
     LegacyNodeFunction[ConfigT, InputT, OutputT]
     | ContextNodeFunction[ConfigT, InputT, OutputT]
 )
-ResolverFactory: TypeAlias = Callable[
-    [PluginRuntimeContext],
-    "Resolver[object]",
-]
-WriterFactory: TypeAlias = Callable[
-    [PluginRuntimeContext],
-    "ArtifactOutputWriter",
-]
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +206,17 @@ class PluginRegistrationError(RuntimeError):
     pass
 
 
+def _require_service_contract(slug: str, protocol: type[object]) -> ServiceContract:
+    spec = marked_contract(protocol)
+    if spec is None or spec.protocol is not protocol:
+        raise PluginRegistrationError(
+            f"Plugin {slug!r} cannot register "
+            f"{getattr(protocol, '__name__', repr(protocol))} as a service "
+            "contract; decorate the class with service_contract"
+        )
+    return spec
+
+
 class UnknownOperatorError(LookupError):
     pass
 
@@ -238,12 +241,9 @@ class Plugin:
         self._nodes: dict[tuple[str, int], NodeRegistration] = {}
         self._artifact_types: dict[tuple[str, int], ArtifactTypeSpec] = {}
         self._artifact_type_dependencies: dict[tuple[str, int], ArtifactTypeSpec] = {}
-        self._artifact_conversions: dict[
-            ArtifactConversionKey,
-            ArtifactConversion[Any, Any],
-        ] = {}
-        self._resolver_factories: list[ResolverFactory] = []
-        self._writer_factories: list[WriterFactory] = []
+        self._service_contracts: dict[tuple[str, int], ServiceContract] = {}
+        self._service_contract_dependencies: dict[tuple[str, int], ServiceContract] = {}
+        self._artifacts: list[Artifact[Any]] = []
 
     def node[NodeT: Node[Any, Any, Any]](
         self,
@@ -353,6 +353,11 @@ class Plugin:
                     f"Plugin {self.slug!r} node {operator_id!r} declares HTTP "
                     "egress without requiring network.egress"
                 )
+            validate_service_node(
+                f"{operator_id}@{version}",
+                node_class.input_contract,
+                node_class.output_contract,
+            )
             registered_class: type[Node[Any, Any, Any]] = node_class
             registration = NodeRegistration(
                 node_class=registered_class,
@@ -378,6 +383,7 @@ class Plugin:
         operator_id: str,
         version: int,
         title: str,
+        secret_inputs: tuple[NodeSecretInput, ...] = (),
         http_egress: NodeHttpEgressContract | None = None,
         required_capabilities: tuple[PluginRuntimeCapability, ...] = (),
         cache_policy: NodeCachePolicy = NodeCachePolicy.NEVER,
@@ -485,6 +491,7 @@ class Plugin:
                 operator_id=operator_id,
                 version=version,
                 title=title,
+                secret_inputs=secret_inputs,
                 http_egress=http_egress,
                 required_capabilities=required_capabilities,
                 cache_policy=cache_policy,
@@ -510,8 +517,10 @@ class Plugin:
         Positional parameters are graph inputs, keyword-only parameters are
         configuration, and the return value is one artifact output. An exact
         first NodeExecutionContext parameter is injected by the runtime.
-        Standard str/int artifact contracts are inferred but must still be
-        registered as owned types or explicit dependencies. Sync functions run
+        A positional annotation is a port when its class is a declared value.
+        ``str`` is text and ``int`` is an integer once those declarations are
+        noted. The classes must still be owned types or explicit dependencies.
+        Sync functions run
         in a worker thread; async functions run on the executor's event loop.
         The decorator returns the original callable for ordinary Python use.
         """
@@ -579,27 +588,51 @@ class Plugin:
             )
         self._artifact_type_dependencies[key] = artifact_type
 
-    def register_artifact_conversion[SourceT, TargetT](
-        self,
-        conversion: ArtifactConversion[SourceT, TargetT],
-    ) -> None:
-        if conversion.key in self._artifact_conversions:
+    def register_service_contract(self, protocol: type[object]) -> None:
+        """Own the service contract declared on ``protocol``."""
+
+        spec = _require_service_contract(self.slug, protocol)
+        key = (spec.id, spec.version)
+        if key in self._service_contract_dependencies:
             raise PluginRegistrationError(
-                f"Plugin {self.slug!r} already declares artifact conversion "
-                f"{conversion.key.id}@{conversion.key.version}"
+                f"Plugin {self.slug!r} cannot both own and depend on service "
+                f"contract {spec.id}@{spec.version}"
             )
-        self._artifact_conversions[conversion.key] = conversion
+        if key in self._service_contracts:
+            raise PluginRegistrationError(
+                f"Plugin {self.slug!r} already declares service contract "
+                f"{spec.id}@{spec.version}"
+            )
+        self._service_contracts[key] = spec
 
-    def register_resolver(self, factory: ResolverFactory) -> None:
-        self._resolver_factories.append(factory)
+    def register_service_contract_dependency(self, protocol: type[object]) -> None:
+        """Use a service contract this plugin does not define."""
 
-    def register_writer(self, factory: WriterFactory) -> None:
-        self._writer_factories.append(factory)
+        spec = _require_service_contract(self.slug, protocol)
+        key = (spec.id, spec.version)
+        if key in self._service_contracts:
+            raise PluginRegistrationError(
+                f"Plugin {self.slug!r} cannot both own and depend on service "
+                f"contract {spec.id}@{spec.version}"
+            )
+        existing = self._service_contract_dependencies.get(key)
+        if existing == spec:
+            return
+        if existing is not None:
+            raise PluginRegistrationError(
+                f"Plugin {self.slug!r} declares different exact contracts for "
+                f"service contract dependency {spec.id}@{spec.version}"
+            )
+        self._service_contract_dependencies[key] = spec
 
-    def register(self, artifact: Artifact) -> None:
+    def register(self, artifact: Artifact[Any]) -> None:
+        note_declaration(artifact.value_type, artifact.spec.key)
         self.register_artifact_type(artifact.spec)
-        self._writer_factories.append(artifact.writer)
-        self._resolver_factories.append(artifact.resolver)
+        self._artifacts.append(artifact)
+
+    @property
+    def artifacts(self) -> tuple[Artifact[Any], ...]:
+        return tuple(self._artifacts)
 
     @property
     def nodes(self) -> tuple[NodeRegistration, ...]:
@@ -614,16 +647,12 @@ class Plugin:
         return tuple(self._artifact_type_dependencies.values())
 
     @property
-    def artifact_conversions(self) -> tuple[ArtifactConversion[Any, Any], ...]:
-        return tuple(self._artifact_conversions.values())
+    def service_contracts(self) -> tuple[ServiceContract, ...]:
+        return tuple(self._service_contracts.values())
 
     @property
-    def resolver_factories(self) -> tuple[ResolverFactory, ...]:
-        return tuple(self._resolver_factories)
-
-    @property
-    def writer_factories(self) -> tuple[WriterFactory, ...]:
-        return tuple(self._writer_factories)
+    def service_contract_dependencies(self) -> tuple[ServiceContract, ...]:
+        return tuple(self._service_contract_dependencies.values())
 
 
 @dataclass(frozen=True, slots=True)
@@ -638,8 +667,9 @@ class _InstalledPluginDeclaration:
     nodes: tuple[NodeRegistration, ...]
     artifact_types: tuple[ArtifactTypeSpec, ...]
     artifact_type_dependencies: tuple[ArtifactTypeSpec, ...]
-    resolver_factories: tuple[ResolverFactory, ...]
-    writer_factories: tuple[WriterFactory, ...]
+    service_contracts: tuple[ServiceContract, ...]
+    service_contract_dependencies: tuple[ServiceContract, ...]
+    artifacts: tuple[Artifact[Any], ...]
 
 
 class PluginRegistry:
@@ -648,6 +678,7 @@ class PluginRegistry:
         self._nodes: dict[tuple[str, int], NodeRegistration] = {}
         self._artifact_types: dict[tuple[str, int], ArtifactTypeSpec] = {}
         self._artifact_type_owners: dict[tuple[str, int], str] = {}
+        self._service_contracts: dict[tuple[str, int], ServiceContract] = {}
         self._frozen = False
 
     def install(
@@ -666,8 +697,9 @@ class PluginRegistry:
             nodes=plugin.nodes,
             artifact_types=plugin.artifact_types,
             artifact_type_dependencies=plugin.artifact_type_dependencies,
-            resolver_factories=plugin.resolver_factories,
-            writer_factories=plugin.writer_factories,
+            service_contracts=plugin.service_contracts,
+            service_contract_dependencies=plugin.service_contract_dependencies,
+            artifacts=plugin.artifacts,
         )
 
         duplicate_nodes = [
@@ -699,6 +731,18 @@ class PluginRegistry:
                 f"{artifact_id}@{schema_version} is already installed"
             )
 
+        duplicate_services = [
+            (contract.id, contract.version)
+            for contract in declaration.service_contracts
+            if (contract.id, contract.version) in self._service_contracts
+        ]
+        if duplicate_services:
+            contract_id, contract_version = duplicate_services[0]
+            raise PluginRegistrationError(
+                f"Plugin {plugin.slug!r} service contract "
+                f"{contract_id}@{contract_version} is already installed"
+            )
+
         self._declarations[plugin.slug] = declaration
         for registration in declaration.nodes:
             self._nodes[registration.key] = registration
@@ -709,6 +753,8 @@ class PluginRegistry:
             )
             self._artifact_types[key] = artifact_type
             self._artifact_type_owners[key] = plugin.slug
+        for contract in declaration.service_contracts:
+            self._service_contracts[(contract.id, contract.version)] = contract
 
     def freeze(self) -> None:
         artifact_contracts_by_key: dict[
@@ -736,6 +782,29 @@ class PluginRegistry:
                     f"{dependency.key.id}@{dependency.key.schema_version}"
                 )
 
+        service_contracts_by_key: dict[
+            tuple[str, int], tuple[ServiceContract, str]
+        ] = {
+            (contract.id, contract.version): (contract, plugin_slug)
+            for plugin_slug, declaration in self._declarations.items()
+            for contract in declaration.service_contracts
+        }
+        for plugin_slug, declaration in self._declarations.items():
+            for dependency in declaration.service_contract_dependencies:
+                key = (dependency.id, dependency.version)
+                existing = service_contracts_by_key.get(key)
+                if existing is None:
+                    service_contracts_by_key[key] = (dependency, plugin_slug)
+                    continue
+                existing_contract, existing_plugin_slug = existing
+                if existing_contract == dependency:
+                    continue
+                raise PluginRegistrationError(
+                    f"Plugins {existing_plugin_slug!r} and {plugin_slug!r} declare "
+                    "different exact contracts for service contract "
+                    f"{dependency.id}@{dependency.version}"
+                )
+
         for registration in self._nodes.values():
             declaration = self._declarations.get(registration.plugin_slug)
             declared_artifact_keys: set[ArtifactTypeKey] = (
@@ -752,12 +821,43 @@ class PluginRegistry:
             port_contracts: list[tuple[str, str, ArtifactTypeContract]] = [
                 ("input", port.name, artifact_type)
                 for port in registration.node_class.input_contract.ports.values()
+                if port.kind != "service"
                 for artifact_type in port.accepted_types
             ]
             port_contracts.extend(
-                ("output", port.name, port.produces)
+                ("output", port.name, produces)
                 for port in registration.node_class.output_contract.ports.values()
+                if port.kind != "service" and (produces := port.produces) is not None
             )
+            service_keys = (
+                set()
+                if declaration is None
+                else {
+                    contract.key
+                    for contract in (
+                        *declaration.service_contracts,
+                        *declaration.service_contract_dependencies,
+                    )
+                }
+            )
+            for direction, contract_ports in (
+                ("input", registration.node_class.input_contract.ports.values()),
+                ("output", registration.node_class.output_contract.ports.values()),
+            ):
+                for port in contract_ports:
+                    if port.kind != "service":
+                        continue
+                    for service_key in port.service_contracts:
+                        if service_key in service_keys:
+                            continue
+                        raise PluginRegistrationError(
+                            f"Plugin {registration.plugin_slug!r} operator "
+                            f"{registration.key[0]}@{registration.key[1]} "
+                            f"{direction} port {port.name!r} references service "
+                            f"contract {service_key.id}@{service_key.version}, "
+                            "which is neither owned nor declared as an exact "
+                            "dependency"
+                        )
             for direction, port_name, artifact_type in port_contracts:
                 if isinstance(artifact_type, ArtifactTypeVariable):
                     continue
@@ -858,6 +958,30 @@ class PluginRegistry:
         return tuple(self._artifact_types.values())
 
     @property
+    def service_contracts(self) -> tuple[ServiceContract, ...]:
+        """Service contracts this deployment owns, in id then version order."""
+
+        return tuple(
+            sorted(
+                self._service_contracts.values(),
+                key=lambda contract: (contract.id, contract.version),
+            )
+        )
+
+    @property
+    def service_operators(self) -> frozenset[tuple[str, int]]:
+        """Operators whose output is a live service object, never a stored result."""
+
+        return frozenset(
+            registration.key
+            for registration in self._nodes.values()
+            if any(
+                port.kind == "service"
+                for port in registration.node_class.output_contract.ports.values()
+            )
+        )
+
+    @property
     def declared_artifact_types(self) -> tuple[ArtifactTypeSpec, ...]:
         """Artifact contracts as declared before registry projection expansion."""
 
@@ -910,24 +1034,12 @@ class PluginRegistry:
                 f"{operator_id}@{operator_version} requires an explicit node factory"
             ) from exc
 
-    def build_resolvers(
-        self,
-        context: PluginRuntimeContext,
-    ) -> tuple["Resolver[object]", ...]:
+    @property
+    def artifacts(self) -> tuple[Artifact[Any], ...]:
         return tuple(
-            factory(context)
+            artifact
             for declaration in self._declarations.values()
-            for factory in declaration.resolver_factories
-        )
-
-    def build_writers(
-        self,
-        context: PluginRuntimeContext,
-    ) -> tuple["ArtifactOutputWriter", ...]:
-        return tuple(
-            factory(context)
-            for declaration in self._declarations.values()
-            for factory in declaration.writer_factories
+            for artifact in declaration.artifacts
         )
 
 

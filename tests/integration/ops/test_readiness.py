@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import cast
-from uuid import UUID
 
 import pytest
 from fastapi import FastAPI
@@ -60,9 +59,9 @@ async def test_readiness_reports_database_failure_without_breaking_liveness(
             response = client.get("/ready")
 
             assert response.status_code == 503
-            assert response.json()["detail"] == "Service unavailable"
-            assert response.json()["code"] == "http.unavailable"
-            UUID(response.json()["error_id"])
+            # A readiness refusal is an intentional HTTP error: it reaches the
+            # client exactly as the route drew it, without a failure envelope.
+            assert response.json() == {"detail": "Service unavailable"}
             liveness = client.get("/health")
             assert liveness.status_code == 200
             assert liveness.json() == {"status": "ok"}
@@ -115,6 +114,4 @@ async def test_readiness_translates_uninitialized_resources_to_unavailable(
                 application.state.resources = resources
 
             assert response.status_code == 503
-            assert response.json()["detail"] == "Service unavailable"
-            assert response.json()["code"] == "http.unavailable"
-            UUID(response.json()["error_id"])
+            assert response.json() == {"detail": "Service unavailable"}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { encodeHandleId } from "../canvas/handles";
 import { portMetaForPort } from "../canvas/types";
 import {
@@ -27,20 +28,12 @@ function port(
   direction: Port["direction"],
   options: Partial<Port> = {},
 ): Port {
-  return {
+  return artifactPortFixture({
     name,
-    title: name,
-    description: null,
     direction,
-    artifact_type: { id: "scalar.text", schema_version: 1 },
-    artifact_type_variable: null,
-    shape: "one",
     accepted_shapes: ["one"],
-    instance_plugs: false,
-    variadic: false,
-    required: true,
     ...options,
-  };
+  });
 }
 
 function nodeSpec(
@@ -55,21 +48,16 @@ function nodeSpec(
     outputs?: Port[];
   } = {},
 ): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: operatorId,
     operator_version: operatorVersion,
     plugin_slug: pluginSlug,
     title: options.title ?? operatorId,
     description: options.description ?? operatorId,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: options.inputs ?? [],
     outputs: options.outputs ?? [],
     catalog_visible: catalogVisible,
-    origin: "builtin",
-    runnable: true,
-  };
+  });
 }
 
 function registry(): NodeRegistry {

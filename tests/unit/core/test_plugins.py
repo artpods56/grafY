@@ -1,7 +1,6 @@
 from dataclasses import replace
-from datetime import date, datetime
 from pathlib import Path
-from typing import Annotated, cast, override
+from typing import cast, override
 from uuid import UUID
 
 import pytest
@@ -15,18 +14,15 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.conversions import (
-    ArtifactConversion,
-    ArtifactConversionKey,
-    conversion_runtime_types_are_compatible,
-)
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     MAX_NODE_PROGRESS_COUNTER,
-    InPort,
     Node,
     NodeExecutionContext,
+    UserFacingNodeError,
+    bind_node_secrets,
 )
+from grafy_core.declared_values import note_declaration
 from grafy_core.plugins import (
     NodeCachePolicy,
     NodeHttpEgressContract,
@@ -38,10 +34,11 @@ from grafy_core.plugins import (
     PluginRuntimeContext,
     UnknownOperatorError,
 )
-from grafy_core.ports.node_secrets import NodeSecretUnavailableError
+from grafy_core.ports.node_secrets import (
+    NodeSecretUnavailableError,
+    UnavailableNodeSecretResolver,
+)
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.runtime.persistence import InlineModelOutputWriter
-from grafy_core.runtime.resolvers import InlineModelResolver
 from grafy_storage import LocalFileObjectStore
 from pydantic import BaseModel, ConfigDict
 
@@ -53,37 +50,6 @@ def installed_registry(*plugins: Plugin) -> PluginRegistry:
     for plugin in plugins:
         registry.install(plugin)
     return registry
-
-
-def _stringify_integer(value: int) -> str:
-    return str(value)
-
-
-class ConversionBase:
-    pass
-
-
-class ConversionChild(ConversionBase):
-    pass
-
-
-@pytest.mark.parametrize(
-    ("produced", "accepted", "expected"),
-    [
-        (bool, int, False),
-        (bool, float, False),
-        (bool, object, True),
-        (datetime, date, False),
-        (int, float, True),
-        (ConversionChild, ConversionBase, False),
-    ],
-)
-def test_conversion_runtime_type_compatibility_matches_strict_validation(
-    produced: type[object],
-    accepted: type[object],
-    expected: bool,
-) -> None:
-    assert conversion_runtime_types_are_compatible(produced, accepted) is expected
 
 
 class EmptyInput(NodeInput):
@@ -145,8 +111,15 @@ UNREGISTERED_VALUE = ArtifactTypeSpec(
 )
 
 
+class UnregisteredValue:
+    pass
+
+
+note_declaration(UnregisteredValue, UNREGISTERED_VALUE.key)
+
+
 class ConcretePortInput(NodeInput):
-    value: Annotated[object, InPort(UNREGISTERED_VALUE)]
+    value: UnregisteredValue
 
 
 class ConcretePortNode(Node[NoConfig, ConcretePortInput, EmptyOutput]):
@@ -178,6 +151,16 @@ async def context_function_node(
     _inputs: EmptyInput,
 ) -> EmptyOutput:
     _context_function_calls.append(context)
+    return EmptyOutput()
+
+
+async def secret_function_node(
+    context: NodeExecutionContext,
+    _config: SecretConfig,
+    _inputs: EmptyInput,
+) -> EmptyOutput:
+    """Reads the one credential its own declaration carries."""
+    await context.secrets.require("api_key")
     return EmptyOutput()
 
 
@@ -398,6 +381,37 @@ def test_node_decorator_records_declared_secret_config_dependencies() -> None:
     assert plugin.nodes[0].secret_inputs == (declared,)
 
 
+@pytest.mark.asyncio
+async def test_function_node_secret_inputs_reach_the_execution_context(
+    tmp_path: Path,
+) -> None:
+    plugin = Plugin(slug="example.secret-functions", title="Secret functions")
+    declared = NodeSecretInput(name="api_key", title="API key")
+    plugin.function_node(
+        operator_id="example.secret-function",
+        version=1,
+        title="Secret function",
+        secret_inputs=(declared,),
+        required_capabilities=(PluginRuntimeCapability.NODE_SECRETS,),
+    )(secret_function_node)
+    registry = installed_registry(plugin)
+    registry.freeze()
+
+    registration = registry.node_registration("example.secret-function", 1)
+    context = bind_node_secrets(
+        NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="secret-node"),
+        UnavailableNodeSecretResolver(),
+        registration.secret_inputs,
+    )
+    node = registry.build_node("example.secret-function", 1, runtime_context(tmp_path))
+
+    assert registration.secret_inputs == (declared,)
+    # The declaration reached the function's context: its own name is a secret the
+    # runtime is asked for, not a field the function happens to carry.
+    with pytest.raises(UserFacingNodeError, match="could not resolve its API key"):
+        await node.run(context, SecretConfig(), EmptyInput())
+
+
 @pytest.mark.parametrize(
     ("name", "title", "message"),
     [
@@ -598,49 +612,6 @@ def test_registry_freeze_requires_concrete_node_port_artifact_registration() -> 
         ),
     ):
         registry.freeze()
-
-
-def test_artifact_conversion_requires_valid_identity_and_title() -> None:
-    with pytest.raises(ValueError, match="id must not be blank"):
-        ArtifactConversionKey("   ", 1)
-    with pytest.raises(ValueError, match="version must be positive"):
-        ArtifactConversionKey("example.invalid", 0)
-    with pytest.raises(ValueError, match="title must not be blank"):
-        ArtifactConversion(
-            key=ArtifactConversionKey("example.invalid", 1),
-            source=ArtifactTypeKey("example.source", 1),
-            target=ArtifactTypeKey("example.target", 1),
-            source_type=int,
-            target_type=str,
-            title="   ",
-            convert=_stringify_integer,
-        )
-
-
-def test_plugin_reports_artifact_conversion_collisions() -> None:
-    conversion = ArtifactConversion(
-        key=ArtifactConversionKey("example.duplicate", 1),
-        source=ArtifactTypeKey("example.source", 1),
-        target=ArtifactTypeKey("example.target", 1),
-        source_type=int,
-        target_type=str,
-        title="Duplicate",
-        convert=_stringify_integer,
-    )
-    first = Plugin(slug="example.first-conversion", title="First conversion")
-    first.register_artifact_conversion(conversion)
-
-    with pytest.raises(
-        PluginRegistrationError,
-        match=(
-            "Plugin 'example.first-conversion' already declares artifact conversion "
-            "example.duplicate@1"
-        ),
-    ):
-        first.register_artifact_conversion(conversion)
-
-    assert first.artifact_conversions == (conversion,)
-    assert first.artifact_conversions[0].convert(7) == "7"
 
 
 def test_plugin_artifact_dependencies_are_exact_and_disjoint_from_owned_types() -> None:
@@ -1218,8 +1189,7 @@ def test_registry_freeze_bounds_derived_projection_count() -> None:
         registry.freeze()
 
 
-def test_registry_retains_family_snapshots_and_factory_order(tmp_path: Path) -> None:
-    context = runtime_context(tmp_path)
+def test_registry_retains_family_snapshots() -> None:
     first_type = ArtifactTypeSpec(
         key=ArtifactTypeKey("snapshot.first", 1),
         title="First",
@@ -1238,27 +1208,9 @@ def test_registry_retains_family_snapshots_and_factory_order(tmp_path: Path) -> 
     first.function_node(operator_id="snapshot.node", version=1, title="Node")(
         empty_function_node
     )
-    first_resolver = InlineModelResolver(
-        source=first_type.key, target=EmptyInput, uow=context.uow
-    )
-    second_resolver = InlineModelResolver(
-        source=second_type.key, target=EmptyInput, uow=context.uow
-    )
-    first_writer = InlineModelOutputWriter(
-        artifact_type=first_type.key, model=EmptyOutput, uow=context.uow
-    )
-    second_writer = InlineModelOutputWriter(
-        artifact_type=second_type.key, model=EmptyOutput, uow=context.uow
-    )
-    first.register_resolver(lambda _: first_resolver)
-    first.register_writer(lambda _: first_writer)
-    second.register_resolver(lambda _: second_resolver)
-    second.register_writer(lambda _: second_writer)
     registry = installed_registry(first, second)
 
     first.title = "Changed after install"
-    first.register_resolver(lambda _: second_resolver)
-    first.register_writer(lambda _: second_writer)
     first.function_node(operator_id="snapshot.late", version=1, title="Late")(
         empty_function_node
     )
@@ -1286,8 +1238,6 @@ def test_registry_retains_family_snapshots_and_factory_order(tmp_path: Path) -> 
         assert registry.declared_artifact_types == (first_type, second_type)
         assert registry.artifact_type_dependencies == (second_type,)
         assert registry.artifact_type_owner(first_type.key) == first.slug
-        assert registry.build_resolvers(context) == (first_resolver, second_resolver)
-        assert registry.build_writers(context) == (first_writer, second_writer)
     with pytest.raises(PluginRegistrationError, match="frozen"):
         registry.install(Plugin(slug="snapshot.rejected", title="Rejected"))
 

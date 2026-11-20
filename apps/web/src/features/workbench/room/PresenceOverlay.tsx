@@ -4,7 +4,8 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { ViewportPortal } from "@xyflow/react";
 
-import type { PresenceParticipant } from "./protocol";
+import type { PresenceActivityKind } from "./protocol";
+import type { ProjectRoomPresenceStore } from "./presence-store";
 import {
   applyRemoteCursorSample,
   beginRemoteCursorFade,
@@ -12,7 +13,10 @@ import {
   stepRemoteCursorMotion,
   type RemoteCursorMotion,
 } from "./remote-cursor-motion";
-import { actorColor } from "./remote-selection";
+import {
+  usePresenceCollaborators,
+  usePresenceCursorSamples,
+} from "./usePresenceStore";
 
 const s = stylex.create({
   cursor: {
@@ -90,9 +94,7 @@ const s = stylex.create({
   },
 });
 
-function activityLabel(
-  activity: PresenceParticipant["activity"],
-): string | null {
+function activityLabel(activity: PresenceActivityKind | null): string | null {
   if (activity === "moving_nodes") return "moving";
   if (activity === "editing_node") return "editing";
   if (activity === "connecting") return "connecting";
@@ -117,24 +119,63 @@ interface CursorTrackView {
 }
 
 export interface PresenceOverlayProps {
-  participants: readonly PresenceParticipant[];
-  localSessionId: string | null;
+  store: ProjectRoomPresenceStore;
+  graphId: string | null;
   /** Injectable clock for tests. */
   now?: () => number;
 }
 
 export function PresenceOverlay({
-  participants,
-  localSessionId,
-  now = () => performance.now(),
+  store,
+  graphId,
+  now = defaultNow,
 }: PresenceOverlayProps) {
-  const remote = React.useMemo(
-    () =>
-      participants.filter(
-        (participant) => participant.project_room_session_id !== localSessionId,
-      ),
-    [localSessionId, participants],
+  return (
+    <>
+      <CollaboratorStrip store={store} graphId={graphId} />
+      <RemoteCursorOverlay store={store} graphId={graphId} now={now} />
+    </>
   );
+}
+
+function CollaboratorStrip({
+  store,
+  graphId,
+}: Pick<PresenceOverlayProps, "store" | "graphId">) {
+  const collaborators = usePresenceCollaborators(store, graphId);
+
+  if (collaborators.length === 0) return null;
+  return (
+    <div {...stylex.props(s.strip)} aria-label="Collaborators">
+      {collaborators.map((collaborator) => {
+        const activity = activityLabel(collaborator.activity);
+        return (
+          <span
+            key={collaborator.sessionId}
+            {...stylex.props(s.chip)}
+            title={collaborator.displayName}
+          >
+            <span
+              {...stylex.props(s.dot)}
+              style={{ backgroundColor: collaborator.color }}
+            />
+            {collaborator.displayName}
+            {activity ? (
+              <span {...stylex.props(s.activity)}>{activity}</span>
+            ) : null}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function RemoteCursorOverlay({
+  store,
+  graphId,
+  now = defaultNow,
+}: PresenceOverlayProps) {
+  const remote = usePresenceCursorSamples(store, graphId);
 
   const tracksRef = React.useRef(new Map<string, CursorTrack>());
   const [cursorTracks, setCursorTracks] = React.useState<
@@ -227,25 +268,14 @@ export function PresenceOverlay({
     const sampleAt = now();
 
     for (const participant of remote) {
-      const sessionId = participant.project_room_session_id;
+      const sessionId = participant.sessionId;
       seen.add(sessionId);
-      const color = actorColor(participant.actor.color);
+      const color = participant.color;
       const existing = tracks.get(sessionId);
-      if (!participant.cursor) {
-        if (existing && !existing.motion.fadingOut) {
-          tracks.set(sessionId, {
-            ...existing,
-            motion: beginRemoteCursorFade(existing.motion),
-            displayName: participant.actor.display_name,
-            color,
-          });
-        }
-        continue;
-      }
       if (!existing) {
         tracks.set(sessionId, {
           sessionId,
-          displayName: participant.actor.display_name,
+          displayName: participant.displayName,
           color,
           motion: createRemoteCursorMotion({
             x: participant.cursor.x,
@@ -258,7 +288,7 @@ export function PresenceOverlay({
       }
       tracks.set(sessionId, {
         ...existing,
-        displayName: participant.actor.display_name,
+        displayName: participant.displayName,
         color,
         motion: applyRemoteCursorSample(existing.motion, {
           x: participant.cursor.x,
@@ -284,30 +314,6 @@ export function PresenceOverlay({
 
   return (
     <>
-      {remote.length > 0 ? (
-        <div {...stylex.props(s.strip)} aria-label="Collaborators">
-          {remote.map((participant) => {
-            const color = actorColor(participant.actor.color);
-            const activity = activityLabel(participant.activity);
-            return (
-              <span
-                key={participant.project_room_session_id}
-                {...stylex.props(s.chip)}
-                title={participant.actor.display_name}
-              >
-                <span
-                  {...stylex.props(s.dot)}
-                  style={{ backgroundColor: color }}
-                />
-                {participant.actor.display_name}
-                {activity ? (
-                  <span {...stylex.props(s.activity)}>{activity}</span>
-                ) : null}
-              </span>
-            );
-          })}
-        </div>
-      ) : null}
       {cursorTracks.length > 0 ? (
         <ViewportPortal>
           {cursorTracks.map((track) => (
@@ -348,4 +354,8 @@ export function PresenceOverlay({
       ) : null}
     </>
   );
+}
+
+function defaultNow(): number {
+  return performance.now();
 }

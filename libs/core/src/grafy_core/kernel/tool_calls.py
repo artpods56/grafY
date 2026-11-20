@@ -81,6 +81,7 @@ def without_pointer(plan: RunPlan, fingerprint: str) -> RunPlan:
             instances=(),
             depends_on=computation.depends_on,
             upstream_fingerprints=computation.upstream_fingerprints,
+            service_sources=computation.service_sources,
         )
     return RunPlan(targets=plan.targets, computations=computations)
 

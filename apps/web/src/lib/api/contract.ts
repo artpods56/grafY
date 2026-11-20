@@ -30,6 +30,8 @@ export type ArtifactTypeSpec = Schemas["ArtifactTypeSpecResponse"];
 export type ArtifactConversionSpec = Schemas["ArtifactConversionSpecResponse"];
 export type FieldProjection = Schemas["FieldProjectionResponse"];
 export type Port = Schemas["PortResponse"];
+export type ServiceContractKey = Schemas["ServiceContractKeyResponse"];
+export type ServiceContract = Schemas["ServiceContractResponse"];
 export type NodeSpec = Schemas["NodeSpecResponse"];
 export type PluginSpec = Schemas["PluginSpecResponse"];
 

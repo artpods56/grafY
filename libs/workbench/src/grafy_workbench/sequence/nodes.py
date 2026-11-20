@@ -1,10 +1,9 @@
 """The Sequence family: ordered artifact reference containers."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field, StrictInt
 
-from grafy_core.artifact_contracts import INTEGER_VALUE
 from grafy_core.artifacts import (
     ArtifactRef,
     ArtifactRefSequence,
@@ -16,27 +15,25 @@ from grafy_core.artifacts import (
     NodeOutput,
 )
 from grafy_core.nodes import (
-    ArtifactTypeVariable,
-    InPort,
-    OutPort,
+    Binds,
+    Plugs,
+    Ref,
+    RefSequence,
     UserFacingNodeError,
 )
 from grafy_core.plugins import NodeCachePolicy
 
+import grafy_workbench.value.nodes as _value_nodes
 from grafy_workbench.sequence.declaration import SEQUENCES
 
-
-SEQUENCE_ARTIFACT_TYPE = ArtifactTypeVariable("T")
+_ = _value_nodes.__name__  # notes int before these ports
 
 
 class CollectInput(NodeInput):
     items: Annotated[
-        list[ArtifactRef | ArtifactRefSequence],
-        InPort(
-            SEQUENCE_ARTIFACT_TYPE,
-            variadic=True,
-            instance_plugs=True,
-        ),
+        list[Ref[Any] | RefSequence[Any]],
+        Plugs(variadic=True, instance=True, spare=True),
+        Binds("T"),
         Field(
             min_length=1,
             title="Documents",
@@ -47,8 +44,8 @@ class CollectInput(NodeInput):
 
 class CollectOutput(NodeOutput):
     items: Annotated[
-        ArtifactRefSequence,
-        OutPort(SEQUENCE_ARTIFACT_TYPE),
+        RefSequence[Any],
+        Binds("T"),
         Field(
             title="List",
             description="Everything above, as one list.",
@@ -114,12 +111,14 @@ async def collect(
         )
 
     return CollectOutput(
-        items=ArtifactRefSequence(
-            artifact_type=artifact_type.id,
-            schema_version=artifact_type.schema_version,
-            item_refs=item_refs,
-            ordered=ordered,
-            metadata={"collect_segments": collect_segments},
+        items=RefSequence[Any].model_validate(
+            ArtifactRefSequence(
+                artifact_type=artifact_type.id,
+                schema_version=artifact_type.schema_version,
+                item_refs=item_refs,
+                ordered=ordered,
+                metadata={"collect_segments": collect_segments},
+            )
         )
     )
 
@@ -129,8 +128,8 @@ CollectNode = SEQUENCES.nodes[-1].node_class
 
 class CountInput(NodeInput):
     items: Annotated[
-        ArtifactRefSequence,
-        InPort(SEQUENCE_ARTIFACT_TYPE),
+        RefSequence[Any],
+        Binds("T"),
         Field(title="List", description="The list to count."),
     ]
 
@@ -138,7 +137,6 @@ class CountInput(NodeInput):
 class CountOutput(NodeOutput):
     count: Annotated[
         StrictInt,
-        OutPort(INTEGER_VALUE),
         Field(
             title="How many",
             description="How many items are in the list.",
@@ -175,16 +173,16 @@ class SliceConfig(NodeConfig):
 
 class SliceInput(NodeInput):
     items: Annotated[
-        ArtifactRefSequence,
-        InPort(SEQUENCE_ARTIFACT_TYPE),
+        RefSequence[Any],
+        Binds("T"),
         Field(title="List", description="The list to take a range from."),
     ]
 
 
 class SliceOutput(NodeOutput):
     items: Annotated[
-        ArtifactRefSequence,
-        OutPort(SEQUENCE_ARTIFACT_TYPE),
+        RefSequence[Any],
+        Binds("T"),
         Field(title="List", description="The items you kept."),
     ]
 
@@ -205,17 +203,19 @@ async def slice_sequence(config: SliceConfig, inputs: SliceInput) -> SliceOutput
 
     stop = None if config.count is None else config.start + config.count
     return SliceOutput(
-        items=ArtifactRefSequence(
-            artifact_type=source.artifact_type,
-            schema_version=source.schema_version,
-            item_refs=source.item_refs[config.start : stop],
-            ordered=True,
-            index_key=source.index_key,
-            metadata={
-                "source_sequence_id": str(source.sequence_id),
-                "start": config.start,
-                "count": config.count,
-            },
+        items=RefSequence[Any].model_validate(
+            ArtifactRefSequence(
+                artifact_type=source.artifact_type,
+                schema_version=source.schema_version,
+                item_refs=source.item_refs[config.start : stop],
+                ordered=True,
+                index_key=source.index_key,
+                metadata={
+                    "source_sequence_id": str(source.sequence_id),
+                    "start": config.start,
+                    "count": config.count,
+                },
+            )
         )
     )
 
@@ -233,16 +233,16 @@ class ItemAtConfig(NodeConfig):
 
 class ItemAtInput(NodeInput):
     items: Annotated[
-        ArtifactRefSequence,
-        InPort(SEQUENCE_ARTIFACT_TYPE),
+        RefSequence[Any],
+        Binds("T"),
         Field(title="List", description="The list to pick from."),
     ]
 
 
 class ItemAtOutput(NodeOutput):
     item: Annotated[
-        ArtifactRef,
-        OutPort(SEQUENCE_ARTIFACT_TYPE),
+        Ref[Any],
+        Binds("T"),
         Field(
             title="Item",
             description="The one item at that position.",
@@ -270,7 +270,7 @@ async def item_at(config: ItemAtConfig, inputs: ItemAtInput) -> ItemAtOutput:
             f"There is no item at position {config.index}. This list has "
             f"{length} items, and 0 is the first."
         )
-    return ItemAtOutput(item=source.item_refs[config.index])
+    return ItemAtOutput(item=Ref[Any].model_validate(source.item_refs[config.index]))
 
 
 ItemAtNode = SEQUENCES.nodes[-1].node_class

@@ -10,11 +10,10 @@ from grafy_core.domain.security_audit import (
 )
 from grafy_core.ports.identity import IdentityUnitOfWorkPort
 
-from grafy_api.diagnostics import (
-    DiagnosticContext,
-    diagnostic_scope,
-    record_failure,
-)
+import structlog
+
+
+logger = structlog.get_logger(__name__)
 
 
 def failure_audit_event(
@@ -49,13 +48,10 @@ async def write_failure_audit_event(
         async with unit_of_work_factory() as uow:
             await uow.security_audit.add(event)
             await uow.commit()
-    except Exception as exc:
-        context = DiagnosticContext(
+    except Exception:
+        logger.exception(
+            "security_audit_write_failed",
+            operation=event.operation,
             actor_id=event.user_id,
             workspace_id=event.workspace_id,
         )
-        with diagnostic_scope(context, inherit=True):
-            record_failure(
-                exc,
-                operation=f"security.audit.write.{event.operation}",
-            )

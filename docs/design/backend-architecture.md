@@ -141,6 +141,13 @@ flowchart LR
 Edge projection reads artifact rows through the core artifact unit-of-work port, then
 preserves exact-reference checks, projection, conversion order and provenance.
 
+Answers already given to a provider are reused below the node, not in the result
+store: `grafy_core.provider_cache` keys one request by Workspace, operation identity
+and request digest, and a binding wraps the callable it chose. Freshness, statuses
+and Run planning never read it. See
+[provider-operation cache](provider-operation-cache.md) for what a key must contain
+and what it promises across processes.
+
 ## Artifacts
 
 `grafy_api.artifacts` owns artifact reads (content, tiles, tables, geo queries)
@@ -188,6 +195,12 @@ Transaction adapters open task-local sessions and expose the repositories requir
 by each port. Writes commit explicitly. Context exit rolls back on error and
 closes the session; it does not implicitly commit success. Core in-memory runtime
 adapters preserve task isolation, cloning, and rollback for supported local use.
+
+One adapter deliberately breaks that pattern: `SqlProviderOperationStore` takes a
+session *factory* and opens a transaction of its own per call. It cannot be a
+repository on the unit of work, because the unit of work of a node computation
+stays open while a provider is being waited on, and a cache write has to commit the
+moment the answer arrives rather than whenever the enclosing transaction does.
 
 Docker definitions under `infra/docker` compose the gateway, API, web, and optional
 PostgreSQL and Keycloak services. Local and S3 object stores are

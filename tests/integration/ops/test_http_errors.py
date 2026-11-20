@@ -1,5 +1,7 @@
 import logging
+import traceback
 from collections.abc import Iterator, Mapping
+from types import TracebackType
 from typing import cast
 from uuid import UUID
 
@@ -10,7 +12,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 import pytest
 
-from grafy_api.diagnostics import configure_diagnostics
+from grafy_api.logging_setup import configure_logging
 from grafy_api.http_errors import register_http_error_handlers
 from grafy_core.domain.errors import NotFoundError
 
@@ -25,7 +27,7 @@ class _ValidatedRequest(BaseModel):
 
 @pytest.fixture
 def error_client() -> Iterator[TestClient]:
-    configure_diagnostics(level="INFO", renderer="json")
+    configure_logging(level="INFO", renderer="json")
     app = FastAPI()
 
     @app.get("/typed")
@@ -100,73 +102,32 @@ def test_typed_failure_exposes_only_the_declared_contract(
     assert _PRIVATE_IDENTIFIER not in response.text
 
 
-def test_unexpected_failure_is_correlated_without_exposing_exception_text(
-    error_client: TestClient,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    caplog.set_level(logging.INFO)
-
-    response = error_client.get(
-        "/unexpected",
-        headers={"Origin": "https://app.example"},
-    )
-
-    assert response.status_code == 500
-    body = response.json()
-    assert body["detail"] == "An internal error occurred"
-    assert body["code"] == "internal.unexpected_error"
-    error_id = UUID(body["error_id"])
-    request_id = UUID(response.headers["X-Request-ID"])
-    assert _UNEXPECTED_SENTINEL not in response.text
-    assert _UNEXPECTED_SENTINEL not in caplog.text
-    assert response.headers["Access-Control-Allow-Origin"] == "https://app.example"
-
-    failures = _event_records(caplog, "operation_failed")
-    matching_failure = next(
-        event for event in failures if event.get("error_id") == str(error_id)
-    )
-    assert matching_failure["request_id"] == str(request_id)
-    completions = _event_records(caplog, "http_request_completed")
-    assert any(
-        event.get("request_id") == str(request_id)
-        and event.get("route") == "/unexpected"
-        and event.get("status_code") == 500
-        for event in completions
-    )
+def test_unexpected_failure_propagates(error_client: TestClient) -> None:
+    with pytest.raises(RuntimeError, match=_UNEXPECTED_SENTINEL):
+        error_client.get("/unexpected")
 
 
-def test_legacy_internal_http_error_is_sanitized(
-    error_client: TestClient,
-) -> None:
+def test_internal_http_error_keeps_its_message(error_client: TestClient) -> None:
     response = error_client.get("/legacy-500")
-
     assert response.status_code == 500
-    assert response.json()["detail"] == "An internal error occurred"
-    assert response.json()["code"] == "internal.unexpected_error"
-    UUID(response.json()["error_id"])
-    assert _UNEXPECTED_SENTINEL not in response.text
+    assert response.json() == {"detail": _UNEXPECTED_SENTINEL}
 
 
-def test_unavailable_failure_keeps_sanitized_cause_diagnostics(
+def test_unavailable_failure_logs_original_cause(
     error_client: TestClient,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    caplog.set_level(logging.INFO)
-
     response = error_client.get("/unavailable")
-
     assert response.status_code == 503
-    body = response.json()
-    assert body["detail"] == "Service unavailable"
-    matching_failure = next(
-        event
-        for event in _event_records(caplog, "operation_failed")
-        if event.get("error_id") == body["error_id"]
+    assert response.json() == {"detail": "legacy detail"}
+    event = _event_records(caplog, "http_request_failed")[-1]
+    exc_info = cast(
+        tuple[type[BaseException], BaseException, TracebackType | None],
+        event["exc_info"],
     )
-    exception = cast(Mapping[str, object], matching_failure["exception"])
-    assert exception["type"] == "fastapi.exceptions.HTTPException"
-    assert exception["cause_types"] == ["builtins.ConnectionError"]
-    assert _UNEXPECTED_SENTINEL not in caplog.text
+    output = "".join(traceback.format_exception(*exc_info))
+    assert "ConnectionError: " + _UNEXPECTED_SENTINEL in output
+    assert "The above exception was the direct cause" in output
 
 
 def test_legacy_client_error_keeps_its_contract_without_phantom_error_id(

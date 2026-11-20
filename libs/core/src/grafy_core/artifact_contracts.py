@@ -1,12 +1,11 @@
 import re
-from typing import Literal, Self, cast
+from typing import Self, cast
 from uuid import UUID
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    StrictBytes,
     StrictInt,
     StrictStr,
     model_validator,
@@ -19,23 +18,6 @@ from grafy_core.artifacts import (
     ArtifactTypeSpec,
     JsonObject,
 )
-
-
-RasterImageContentType = Literal[
-    "image/png",
-    "image/jpeg",
-    "image/webp",
-    "image/tiff",
-    "image/bmp",
-]
-
-
-class RasterImageContent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    content: StrictBytes = Field(min_length=1)
-    content_type: RasterImageContentType
-    filename: StrictStr | None = Field(default=None, min_length=1)
 
 
 RASTER_IMAGE = ArtifactTypeSpec(
@@ -239,8 +221,6 @@ __all__ = [
     "ImageRegion",
     "ImageRegionSet",
     "IntegerValuePayload",
-    "RasterImageContent",
-    "RasterImageContentType",
     "TextValue",
     "TextValuePayload",
 ]

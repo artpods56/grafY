@@ -16,9 +16,10 @@ from grafy_core.artifact_contracts import (
     MARKDOWN,
     IMAGE_REGIONS,
 )
-from grafy_core.artifacts import ArtifactObject, ArtifactRef
+from grafy_core.documents import PdfFile, RasterImage
+from grafy_core.file_contracts import PDF_FILE
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.nodes import NodeExecutionContext, PortShape
+from grafy_core.nodes import NodeExecutionContext, PortShape, bind_node_secrets
 from grafy_core.runtime.invocation import (
     InvocationMode,
     NodeInvocation,
@@ -28,11 +29,11 @@ from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_core.runtime.persistence import InlineModelOutputWriter
 from grafy_plugin_mistral.declaration import MISTRAL
+from grafy_core.ocr_contracts import OcrResult
 from grafy_plugin_mistral.ocr import (
+    API_KEY,
     MistralOcrConfig,
-    MistralOcrOutput,
     MistralOcrExecutionError,
     MistralOcrInput,
     MistralOcrNode,
@@ -90,7 +91,7 @@ class FakeNodeSecrets:
 
 
 class FakeProvider:
-    def __init__(self, document: MistralOcrOutput) -> None:
+    def __init__(self, document: OcrResult) -> None:
         self._document = document
         self.api_key: SecretStr | None = None
         self.document_url: str | None = None
@@ -99,11 +100,11 @@ class FakeProvider:
         self,
         *,
         document_url: str | None,
-        image: ArtifactRef | None,
+        image: RasterImage | PdfFile | None,
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> MistralOcrOutput:
+    ) -> OcrResult:
         del image, config
         assert workspace_id == WORKSPACE_ID
         self.document_url = document_url
@@ -197,7 +198,7 @@ class FakeStorage:
         raise AssertionError(f"Unexpected delete from {bucket}/{path}")
 
 
-def document_payload() -> MistralOcrOutput:
+def document_payload() -> OcrResult:
     return build_ocr_output(
         OCRResponse.model_validate(ocr_response().json()), MistralOcrConfig()
     )
@@ -285,6 +286,7 @@ def test_node_declares_ocr_ports_secret_and_egress() -> None:
     assert not MistralOcrNode.input_contract.ports["document_url"].required
     image = MistralOcrNode.input_contract.ports["image"]
     assert image.accepts == RASTER_IMAGE.key
+    assert image.also_accepts == (PDF_FILE.key,)
     assert image.shape is PortShape.ONE
     assert image.allows_none
     assert set(MistralOcrNode.input_contract.ports) == {"document_url", "image"}
@@ -332,11 +334,7 @@ def test_plugin_registers_dependency_writers(tmp_path: Path) -> None:
         uow=InMemoryUnitOfWork(),
         bucket="artifacts",
     )
-    writers = {
-        writer.artifact_type: writer for writer in registry.build_writers(context)
-    }
-    assert set(writers) == {MARKDOWN.key, IMAGE_REGIONS.key}
-    assert isinstance(writers[MARKDOWN.key], InlineModelOutputWriter)
+    assert MISTRAL.artifacts == ()
     # TABLE_DATA uses the guest's table-bundle fallback, like the SQL plugin.
     assert TABLE_DATA.key in {spec.key for spec in MISTRAL.artifact_type_dependencies}
     assert registry.declared_artifact_types == ()
@@ -349,14 +347,18 @@ async def test_node_resolves_the_bound_secret_and_returns_the_document() -> None
     secret = SecretStr("secret-provider-key")
     secrets = FakeNodeSecrets(secret)
     provider = FakeProvider(document_payload())
-    node = MistralOcrNode(provider=provider, node_secrets=secrets)
+    node = MistralOcrNode(provider=provider)
 
     output = await node.run(
-        NodeExecutionContext(
-            workspace_id=WORKSPACE_ID,
-            project_id=uuid4(),
-            graph_id="scans",
-            node_id="ocr-1",
+        bind_node_secrets(
+            NodeExecutionContext(
+                workspace_id=WORKSPACE_ID,
+                project_id=uuid4(),
+                graph_id="scans",
+                node_id="ocr-1",
+            ),
+            secrets,
+            (API_KEY,),
         ),
         MistralOcrConfig(),
         MistralOcrInput(document_url="https://files.example/report.pdf"),
@@ -369,10 +371,7 @@ async def test_node_resolves_the_bound_secret_and_returns_the_document() -> None
 
 
 async def test_node_requires_exactly_one_document_source() -> None:
-    node = MistralOcrNode(
-        provider=FakeProvider(document_payload()),
-        node_secrets=FakeNodeSecrets(SecretStr("secret-provider-key")),
-    )
+    node = MistralOcrNode(provider=FakeProvider(document_payload()))
     context = NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="ocr-1")
 
     with pytest.raises(MistralOcrExecutionError, match="not both, and not neither"):
@@ -383,9 +382,10 @@ async def test_node_requires_exactly_one_document_source() -> None:
             MistralOcrConfig(),
             MistralOcrInput(
                 document_url="https://files.example/report.pdf",
-                image=ArtifactRef.from_key(
-                    artifact_id=uuid4(),
-                    key=RASTER_IMAGE.key,
+                image=RasterImage.from_content(
+                    b"\x89PNG\r\n\x1a\nfake",
+                    content_type="image/png",
+                    filename="page.png",
                 ),
             ),
         )
@@ -396,7 +396,7 @@ async def test_provider_posts_the_ocr_process_request(
 ) -> None:
     recorder = RequestRecorder(ocr_response())
     recorder.install(monkeypatch)
-    provider = MistralOcrSdkProvider(uow=InMemoryUnitOfWork(), storage=FakeStorage())
+    provider = MistralOcrSdkProvider()
     output = await provider.process(
         document_url="https://files.example/report.pdf?token=abc",
         image=None,
@@ -437,28 +437,15 @@ async def test_provider_sends_a_raster_image_as_a_data_url(
 ) -> None:
     recorder = RequestRecorder(ocr_response())
     recorder.install(monkeypatch)
-    uow = InMemoryUnitOfWork()
-    storage = FakeStorage()
     content = b"\x89PNG\r\n\x1a\nfake"
-    image = ArtifactObject(
-        workspace_id=WORKSPACE_ID,
-        id=uuid4(),
-        artifact_type=RASTER_IMAGE.key.id,
-        schema_version=RASTER_IMAGE.key.schema_version,
-        content_type="image/png",
-        bucket="artifacts",
-        object_key="images/page.png",
-        byte_size=len(content),
+    image = RasterImage.from_content(
+        content, content_type="image/png", filename="page.png"
     )
-    storage.files[("artifacts", "images/page.png")] = content
-    async with uow as transaction:
-        await transaction.artifacts.add(image)
-        await transaction.commit()
-    provider = MistralOcrSdkProvider(uow=uow, storage=storage)
+    provider = MistralOcrSdkProvider()
 
     document = await provider.process(
         document_url=None,
-        image=image.ref(),
+        image=image,
         config=MistralOcrConfig(),
         api_key=SecretStr("secret-provider-key"),
         workspace_id=WORKSPACE_ID,
@@ -472,6 +459,30 @@ async def test_provider_sends_a_raster_image_as_a_data_url(
     assert document.regions.pages[0].index == 0
 
 
+async def test_provider_sends_pdf_as_document_data_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = RequestRecorder(ocr_response())
+    recorder.install(monkeypatch)
+    content = b"%PDF-example"
+    pdf = PdfFile.from_content(
+        content, content_type="application/pdf", filename="page.pdf"
+    )
+    provider = MistralOcrSdkProvider()
+    await provider.process(
+        document_url=None,
+        image=pdf,
+        config=MistralOcrConfig(),
+        api_key=SecretStr("key"),
+        workspace_id=WORKSPACE_ID,
+    )
+    body = cast(dict[str, object], json.loads(recorder.requests[0].content))
+    assert body["document"] == {
+        "type": "document_url",
+        "document_url": "data:application/pdf;base64,JVBERi1leGFtcGxl",
+    }
+
+
 async def test_provider_hides_rejected_response_bodies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -482,10 +493,7 @@ async def test_provider_hides_rejected_response_bodies(
         )
     )
     recorder.install(monkeypatch)
-    provider = MistralOcrSdkProvider(
-        uow=InMemoryUnitOfWork(),
-        storage=FakeStorage(),
-    )
+    provider = MistralOcrSdkProvider()
 
     with pytest.raises(MistralOcrProviderError, match="HTTP 401") as raised:
         await provider.process(
@@ -511,7 +519,7 @@ async def test_provider_retries_only_retryable_statuses_when_enabled(
         }
     recorder.next_responses = [httpx.Response(status, json=error_body)]
     recorder.install(monkeypatch)
-    provider = MistralOcrSdkProvider(uow=InMemoryUnitOfWork(), storage=FakeStorage())
+    provider = MistralOcrSdkProvider()
     if status in {429, 500}:
         document = await provider.process(
             document_url="https://files.example/report.pdf",
@@ -548,7 +556,7 @@ async def test_provider_preserves_cancellation(monkeypatch: pytest.MonkeyPatch) 
         raise asyncio.CancelledError
 
     monkeypatch.setattr(httpx.AsyncClient, "send", send)
-    provider = MistralOcrSdkProvider(uow=InMemoryUnitOfWork(), storage=FakeStorage())
+    provider = MistralOcrSdkProvider()
     with pytest.raises(asyncio.CancelledError):
         _ = await provider.process(
             document_url="https://files.example/report.pdf",
@@ -587,8 +595,6 @@ async def test_provider_dials_a_self_hosted_endpoint_only_when_the_operator_allo
 
         async def process(egress_policy: object) -> str:
             provider = MistralOcrSdkProvider(
-                uow=InMemoryUnitOfWork(),
-                storage=FakeStorage(),
                 egress_policy=egress_policy,  # pyright: ignore[reportArgumentType]
             )
             output = await provider.process(

@@ -6,6 +6,7 @@ import { isCollectionNode } from "./collection-spec";
 import { validateConfig } from "../canvas/config-schema";
 import {
   WORKFLOW_NODE_TYPE,
+  isServiceProviderNode,
   portHasInstancePlugs,
   type WorkflowEdge,
   type WorkflowNodeData,
@@ -242,6 +243,14 @@ export function executionValidationIssue(
     };
   }
 
+  if (executionNodes.every((node) => isServiceProviderNode(node.data.spec))) {
+    return {
+      nodeId: null,
+      message:
+        "Select a processing step to run. Providers run through the steps connected to them.",
+    };
+  }
+
   for (const node of executionNodes) {
     const issue = validateConfig(
       node.data.spec.config_schema,
@@ -299,5 +308,7 @@ export function executionValidationIssue(
 export function runTargetsFor(
   execution: ExecutionSubgraph,
 ): readonly RunTargetInput[] {
-  return execution.nodes.map((node) => ({ node_id: node.id, call_path: [] }));
+  return execution.nodes
+    .filter((node) => !isServiceProviderNode(node.data.spec))
+    .map((node) => ({ node_id: node.id, call_path: [] }));
 }

@@ -23,6 +23,7 @@ function port(
 ): Port {
   return {
     name,
+    kind: "artifact",
     title: name.replaceAll("_", " "),
     description: null,
     direction,
@@ -392,6 +393,59 @@ describe("connection collection policy", () => {
 });
 
 describe("connection acceptance policy", () => {
+  it("rejects a second OCR provider, including a provider proposed by discovery", () => {
+    const output = port("reader", "output", "one", {
+      kind: "service",
+      artifact_type: null,
+      service_contracts: [{ id: "ocr.reader", version: 1 }],
+    });
+    const input = { ...output, direction: "input" as const };
+    const mistral = node("mistral", [], [output]);
+    const reducto = node("reducto", [], [output]);
+    const ocr = node("ocr", [input], [port("markdown", "output", "one")]);
+    const sourceHandle = encodeHandleId({
+      portName: "reader",
+      direction: "output",
+      shape: "one",
+      serviceContracts: output.service_contracts ?? [],
+    });
+    const targetHandle = encodeHandleId({
+      portName: "reader",
+      direction: "input",
+      shape: "one",
+      serviceContracts: input.service_contracts ?? [],
+    });
+    const existing: WorkflowEdge = {
+      id: "first-reader",
+      source: "mistral",
+      sourceHandle,
+      target: "ocr",
+      targetHandle,
+      data: { enabled: true, collectionMode: "direct" },
+    };
+    const candidate = {
+      source: "reducto",
+      sourceHandle,
+      target: "ocr",
+      targetHandle,
+    };
+    expect(
+      isConnectionAccepted(candidate, [mistral, ocr, reducto], [], [], []),
+    ).toBe(true);
+    expect(
+      isConnectionAccepted(
+        candidate,
+        [mistral, ocr, reducto],
+        [existing],
+        [],
+        [],
+      ),
+    ).toBe(false);
+    expect(
+      isConnectionAccepted(candidate, [mistral, ocr, reducto], [], [], []),
+    ).toBe(true);
+  });
+
   it("requires a compatible route before accepting an otherwise free input", () => {
     const source = node("source", [], [port("output", "output", "one")]);
     const target = node("target", [port("input", "input", "one")], []);

@@ -148,12 +148,9 @@ Set `title` and replace `description` on these fields. Do not rename the Python 
 
 | Field | New title | New description |
 | --- | --- | --- |
-| `InterpretFileInput.file` | File | The file whose type is still unrecognized. |
-| `InterpretFileOutput.file` | File | The same bytes, labeled as the type you chose. |
 
 `plugins/table/src/grafy_plugin_table/nodes.py`: input title `Spreadsheet`, description `A CSV or Excel file.`; output title `Table`, description `The rows and columns from that file.`
 
-`plugins/image/src/grafy_plugin_image/nodes.py`: `Decode images` input title `Image files`, output title `Images`. Draw/crop `image` title `Image`, `regions` title `Boxes`.
 
 `plugins/llm/src/grafy_plugin_llm/prompt.py`: text input title `Words`, image input title `Pictures`, output title `Instruction`.
 
@@ -176,21 +173,19 @@ Change `title=` and the docstring only. Leave `operator_id` and `version` as the
 | --- | --- | --- | --- | --- |
 | `plugins/reducto/src/grafy_plugin_reducto/ocr.py` `ReductoOcrNode` | `Reducto OCR` | `Parses a document URL or raster image with the Reducto Parse API.` | `Read with Reducto` | `Reads a PDF or a scanned page into text. You need a Reducto key.` |
 | `plugins/mistral/src/grafy_plugin_mistral/ocr.py` `MistralOcrNode` | `Mistral OCR` | `Recognizes a document URL or raster image with Mistral OCR.` | `Read with Mistral` | `Reads a PDF or a scanned page into text. You need a Mistral key.` |
-| `libs/workbench/src/grafy_workbench/file/nodes.py` `InterpretFileNode` | `Interpret file` | `Confirm blob bytes against one claimed file.* format and claim them.` | `Set file type` | `Tells Grafy what kind of file this is, when the upload was not recognized. Pick the type that matches the file.` |
 | `libs/workbench/src/grafy_workbench/sequence/nodes.py` `collect` | `Collect` | `Collects homogeneous artifact refs without rewriting their payloads.` | `Group into a list` | `Keeps pages or files together, in the order you add them. Every item has to be the same kind of thing.` |
 | same file `count` | `Count` | `Counts the refs in an artifact sequence.` | `Count items` | `Counts how many items are in a list.` |
 | same file `slice_sequence` | `Slice` | `Selects a contiguous range from an ordered artifact sequence.` | `Take a range` | `Keeps a stretch of items from a list. The first item is number 0.` |
 | same file `item_at` | `Pick item` | `Picks one artifact ref from an ordered artifact sequence.` | `Pick one` | `Picks one item from a list. The first item is number 0.` |
 | `plugins/llm/src/grafy_plugin_llm/openai_compatible.py` | `OpenAI-compatible Chat Completion` | `Calls a saved graph's OpenAI-compatible Chat Completions endpoint.` | `Ask a model` | `Sends the instructions to a chat model and keeps the answer.` |
 | `plugins/llm/src/grafy_plugin_llm/prompt.py` | `Create prompt message` | (use the current docstring’s first line if you need to find it) | `Write an instruction` | `The words, and any pictures, you want the model to read.` |
-| `plugins/image/src/grafy_plugin_image/nodes.py` | `Decode images` | | `Read images` | `Turns image files into pictures on the canvas.` |
 | same file | `Draw regions` | | `Draw boxes` | `Draws the boxes from a reading onto the page.` |
 | same file | `Crop regions` | | `Crop boxes` | `Cuts out each box as its own picture.` |
 | `plugins/table/src/grafy_plugin_table/nodes.py` | `Import table` | `Import one persisted CSV or XLSX file artifact as a table.` | `Read a spreadsheet` | `Reads a CSV or Excel file into a table.` |
 
 Acceptance: Add node and the card menu show the new title and the new sentence. They do not show `blob`, `artifact ref`, `raster`, or `operator`.
 
-Tests: any catalog test that asserts these titles. Search `Reducto OCR`, `Interpret file`, `OpenAI-compatible Chat Completion`, `Create prompt message`.
+Tests: any catalog test that asserts these titles. Search `Reducto OCR`, `OpenAI-compatible Chat Completion`, `Create prompt message`.
 
 ## HX-05 — Source names in Add node
 
@@ -450,15 +445,11 @@ Tests: `apps/web/src/features/workbench/model/execution-plan.test.ts` and `apps/
 | same, slice | `Cannot slice unordered sequence {sequence_id}` | `This list has no order, so a range cannot be taken from it.` |
 | same, pick | `Cannot pick an item from unordered sequence {sequence_id}` | `This list has no order, so one item cannot be picked by position.` |
 | same, pick | `Cannot pick index {index} from sequence {sequence_id} with length {length}` | `There is no item at position {index}. This list has {length} items, and 0 is the first.` |
-| `libs/workbench/src/grafy_workbench/file/nodes.py` | `Interpret file needs an explicit format: bind its file output to one claimed file.* artifact type.` | `Choose the file type on this step before running it.` |
-| same | `Interpret file does not know artifact type {id}@{version}` | `This file type is not available. Choose another type.` |
-| same | `{id}@{version} is not a claimed file format; choose a file.* type the deployment recognizes.` | `That choice is not a file type this copy of Grafy knows. Choose another type.` |
-| same | `file_format_mismatch: {label} does not look like a {expected} file. Bind the file output to another format or convert the file, then try again.` | `{label} does not look like a {expected} file. Choose another type, or replace the file, then run again.` |
 | `plugins/reducto/.../ocr.py` `validate_page_range` | `page_end must not precede page_start` | `The last page cannot come before the first page.` |
 
 Do not change `tests/integration/uploads/test_uploads.py`. That test asserts an API error code `file_format_mismatch` on upload, which is a different path.
 
-Tests: `tests/integration/artifacts/test_file_interpret.py` matches `file_format_mismatch`. Point it at `does not look like a`. Add one assertion each in the existing Reducto and sequence unit tests if those files already test the failure; do not create a new test module.
+Tests: add one assertion each in the existing Reducto and sequence unit tests if those files already test the failure; do not create a new test module.
 
 ## HX-12 — Plug failures must not quote ids
 

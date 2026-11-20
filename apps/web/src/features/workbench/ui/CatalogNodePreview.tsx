@@ -9,13 +9,30 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import type { SchemaField } from "../canvas/config-schema";
 import { PORT_RING_REACH, portMarkStyle } from "../canvas/handle-style";
 import { artifactTypeColor } from "../canvas/nodes.css";
-import { portArtifactType, portHasInstancePlugs } from "../canvas/types";
+import {
+  portArtifactType,
+  portHasInstancePlugs,
+  portIsService,
+} from "../canvas/types";
 
 export function portKey(port: Port): string {
   return `${port.direction}:${port.name}`;
 }
 
 export function artifactTitleFor(registry: NodeRegistry, port: Port): string {
+  if (portIsService(port)) {
+    const contracts = port.service_contracts ?? [];
+    if (!contracts.length) return "Service";
+    return contracts
+      .map((key) => {
+        const match = registry.service_contracts?.find(
+          (contract) =>
+            contract.id === key.id && contract.version === key.version,
+        );
+        return match?.title ?? `${key.id}@${key.version}`;
+      })
+      .join(", ");
+  }
   const artifactType = portArtifactType(port);
   if (!artifactType) return "Any artifact";
   return (

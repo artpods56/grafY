@@ -282,7 +282,8 @@ function progressEntryContext(
 function progressEntryAmount(entry: WorkflowNodeProgressEntry): string | null {
   if (entry.current === null && entry.total === null) return null;
   if (entry.total === null) return String(entry.current);
-  return `${entry.current ?? 0} / ${entry.total}`;
+  if (entry.current === null) return `Total ${entry.total}`;
+  return `${entry.current} / ${entry.total} · ${entry.total - entry.current} left`;
 }
 
 function progressEntryLabel(
@@ -309,12 +310,12 @@ function ProgressRow({
       title={progressEntryLabel(entry, nodeTitle)}
       {...stylex.props(s.rowCopy)}
     >
-      <span {...stylex.props(s.rowContext)}>{context}</span>
-      {" · "}
-      {entry.message}
       {amount ? (
-        <span {...stylex.props(s.rowAmount)}>{` · ${amount}`}</span>
+        <span {...stylex.props(s.rowAmount)}>{`${amount} · `}</span>
       ) : null}
+      {entry.message}
+      {" · "}
+      <span {...stylex.props(s.rowContext)}>{context}</span>
     </span>
   );
 }
@@ -347,19 +348,22 @@ function CollapsedFootprint({
   const executionIsActive =
     execution.status === "queued" ||
     execution.status === "running" ||
-    execution.status === "cancelling";
+    execution.status === "cancelling" ||
+    state === "running";
   if (latestEvent && (executionIsActive || artifactCount === 0)) {
+    const amount = progressEntryAmount(latestEvent);
     return (
       <p
         aria-live="polite"
         title={progressEntryLabel(latestEvent, nodeTitle)}
         {...stylex.props(s.footprint, s.footprintEvent)}
       >
+        {amount ? `${amount} · ` : null}
+        {latestEvent.message}
+        {" · "}
         <span {...stylex.props(s.rowContext)}>
           {progressEntryContext(latestEvent, nodeTitle)}
         </span>
-        {" · "}
-        {latestEvent.message}
       </p>
     );
   }

@@ -9,6 +9,7 @@ import {
   type ArtifactViewerEdge,
 } from "./artifact-viewer";
 import {
+  artifactCardOutputPort,
   outputReleasePlacesArtifactCard,
   resolveArtifactCardSource,
 } from "./artifact-connections";
@@ -50,38 +51,6 @@ const run: RunNodeResult = {
   ],
 };
 
-describe("releasing an output on the canvas", () => {
-  it("plants a sequence card even before the output has artifacts", () => {
-    expect(
-      outputReleasePlacesArtifactCard({
-        onCanvas: true,
-        portShape: "many",
-        hasMaterializedArtifacts: false,
-      }),
-    ).toBe(true);
-  });
-
-  it("leaves a sequence release off the canvas to the node menu", () => {
-    expect(
-      outputReleasePlacesArtifactCard({
-        onCanvas: false,
-        portShape: "many",
-        hasMaterializedArtifacts: true,
-      }),
-    ).toBe(false);
-  });
-
-  it("opens the node menu for a single output that has not produced an artifact", () => {
-    expect(
-      outputReleasePlacesArtifactCard({
-        onCanvas: true,
-        portShape: "one",
-        hasMaterializedArtifacts: false,
-      }),
-    ).toBe(false);
-  });
-});
-
 describe("artifact source resolution", () => {
   it("preserves the exact sequence and its identity when only one item was produced", () => {
     expect(resolveArtifactCardSource({ value: saved, feed, run })).toEqual({
@@ -115,5 +84,56 @@ describe("artifact source resolution", () => {
     expect(
       resolveArtifactCardSource({ value: saved, feed: projected, run }),
     ).toEqual({ kind: "waiting", value: null, output: null });
+  });
+});
+
+describe("artifact card discovery port", () => {
+  it("preserves the artifact contract and distinguishes single and sequence cards", () => {
+    expect(artifactCardOutputPort(saved)).toMatchObject({
+      kind: "artifact",
+      direction: "output",
+      artifact_type: { id: "file.png", schema_version: 1 },
+      shape: "one",
+      accepted_shapes: ["one"],
+    });
+    expect(artifactCardOutputPort(sequence)).toMatchObject({
+      kind: "artifact",
+      direction: "output",
+      artifact_type: { id: "file.png", schema_version: 1 },
+      shape: "many",
+      accepted_shapes: ["many"],
+    });
+  });
+});
+
+describe("releasing an output on the canvas", () => {
+  it("plants a sequence card even before the output has artifacts", () => {
+    expect(
+      outputReleasePlacesArtifactCard({
+        onCanvas: true,
+        portShape: "many",
+        hasMaterializedArtifacts: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("leaves a sequence release off the canvas to the node menu", () => {
+    expect(
+      outputReleasePlacesArtifactCard({
+        onCanvas: false,
+        portShape: "many",
+        hasMaterializedArtifacts: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("opens the node menu for a single output that has not produced an artifact", () => {
+    expect(
+      outputReleasePlacesArtifactCard({
+        onCanvas: true,
+        portShape: "one",
+        hasMaterializedArtifacts: false,
+      }),
+    ).toBe(false);
   });
 });

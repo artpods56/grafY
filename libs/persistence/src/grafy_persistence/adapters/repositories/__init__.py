@@ -27,6 +27,9 @@ from .library import (
 from .node_secrets import (
     SqlNodeSecretRepository as SqlNodeSecretRepository,
 )
+from .provider_operations import (
+    SqlProviderOperationStore as SqlProviderOperationStore,
+)
 from .projects import (
     SqlCollaborationRepository as SqlCollaborationRepository,
 )

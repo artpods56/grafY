@@ -9,6 +9,7 @@ from grafy_core.plugins import (
 
 from grafy_workbench.file import FILES
 from grafy_workbench.image import IMAGES
+from grafy_workbench.ocr import OCR
 from grafy_workbench.schema import SCHEMAS
 from grafy_workbench.sequence import SEQUENCES
 from grafy_workbench.table import TABLES
@@ -24,6 +25,7 @@ BUILTIN_FAMILIES: tuple[Plugin, ...] = (
     SCHEMAS,
     TABLES,
     FILES,
+    OCR,
 )
 
 

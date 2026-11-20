@@ -1,4 +1,13 @@
-"""Exercise the installed GIS family and its real native tools without an API."""
+"""Exercise the installed GIS family and its real native tools without an API.
+
+This harness plays the host: it builds the unit of work and the object store
+and injects them into the family's own artifact declarations. That is
+composition-root work (ADR 0011), so the file lives here and not inside
+`grafy_plugin_gis`, where it shipped as `-m grafy_plugin_gis.smoke`. Inside
+the release image the repository's `scripts/` is not copied, so CI and
+`docs/how-to-run-gis.md` bind-mount this file and run it with the image's
+interpreter and installed families.
+"""
 
 import asyncio
 import os
@@ -8,13 +17,15 @@ from uuid import uuid4
 
 from grafy_core.bounded_subprocess import run, run_in_thread
 from grafy_core.nodes import NodeExecutionContext
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
-from grafy_plugin_gis.gdal import GdalCli
 from grafy_core.spatial_contracts import RasterProjectionMetadata
+from grafy_plugin_gis.artifacts import GEO_RASTER_SCAN
+from grafy_plugin_gis.gdal import GdalCli
 from grafy_plugin_gis.models import GeoRasterScan
-from grafy_plugin_gis.persistence import RasterScanOutputWriter, RasterScanResolver
+from grafy_plugin_gis.persistence import raster_scan_artifact
 from grafy_storage import LocalFileObjectStore
 
 
@@ -63,14 +74,16 @@ async def main() -> None:
         workspace_id = uuid4()
         uow = InMemoryUnitOfWork()
         storage = LocalFileObjectStore(root / "objects")
-        writer = RasterScanOutputWriter(
-            storage=storage,
+        raster = raster_scan_artifact(gdal)
+        values = ArtifactValues(
+            (raster,),
             uow=uow,
+            storage=storage,
             bucket="smoke",
             storage_backend="local",
-            gdal=gdal,
         )
-        ref = await writer.write(
+        ref = await values.write(
+            GEO_RASTER_SCAN.key,
             GeoRasterScan(
                 content=source.read_bytes(),
                 filename="source.tif",
@@ -91,9 +104,7 @@ async def main() -> None:
         )
         assert projection.bounds == (13.0, 52.0, 14.0, 53.0)
         assert list((root / "objects" / "smoke" / projection.prefix).rglob("*.png"))
-        resolved = await RasterScanResolver(storage=storage, uow=uow).resolve(
-            ref, workspace_id
-        )
+        resolved = await raster.resolve(await values.open(ref, workspace_id))
         assert resolved.filename == "source.tif" and resolved.content
         print(capabilities.model_dump_json())
         print("GIS raster persisted as COG, XYZ tiles stored, artifact resolved")

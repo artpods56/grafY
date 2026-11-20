@@ -24,6 +24,16 @@ export const workbenchStyles = stylex.create({
     backgroundColor: tokens.colorBg,
     color: tokens.colorText,
   },
+  emptyCanvas: {
+    position: "absolute",
+    inset: 0,
+    display: "grid",
+    placeItems: "center",
+    pointerEvents: "none",
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
+    zIndex: 1,
+  },
   canvas: { position: "absolute", inset: 0 },
   /* Canvas tools dock over the canvas; the left edge belongs to app navigation. */
   toolDock: {

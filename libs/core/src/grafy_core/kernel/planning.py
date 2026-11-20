@@ -19,9 +19,9 @@ never enter it, and neither does the computation's own fingerprint.
 """
 
 from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 
-from grafy_core.kernel.instances import ExpandedGraph, InstanceKey
+from grafy_core.kernel.instances import ExpandedGraph, ExpandedInstance, InstanceKey
 from grafy_core.kernel.results import ResultStore
 from grafy_core.kernel.scheduler import ComputationPlan, RunPlan
 
@@ -42,6 +42,7 @@ async def plan_run(
     fingerprints: Mapping[InstanceKey, str],
     targets: Sequence[InstanceKey],
     store: ResultStore,
+    service_operators: Collection[tuple[str, int]] = (),
 ) -> RunPlan:
     """Plan the stale computations a Run needs for ``targets``.
 
@@ -50,6 +51,12 @@ async def plan_run(
     naming the key, never a silently skipped dependency. The store is queried
     once per distinct fingerprint. A fully fresh target set yields a plan with
     no computations.
+
+    A service operator is not a computation. The walk stops when it reaches
+    one: no store lookup, no upstream, no plan entry. Its fingerprint still
+    reaches a consumer through that consumer's ``upstream_fingerprints``, and
+    the connected instance is recorded on the consumer's ``service_sources``
+    so the runner can build the object from that instance.
     """
     deduped_targets: list[InstanceKey] = []
     seen_targets: set[InstanceKey] = set()
@@ -71,6 +78,7 @@ async def plan_run(
     fresh: set[str] = set()
     stale: set[str] = set()
     expanded: set[InstanceKey] = set()
+    service_operator_keys = set(service_operators)
     frontier = deque(deduped_targets)
     while frontier:
         key = frontier.popleft()
@@ -83,6 +91,10 @@ async def plan_run(
                 f"{_describe(key)}, reached upstream of a target, has no "
                 "fingerprint: every reachable instance must be fingerprinted"
             )
+        reached = graph.instances[key].node
+        if (reached.operator_id, reached.operator_version) in service_operator_keys:
+            # A service node has no stored result and nothing of its own to run.
+            continue
         if fingerprint in fresh:
             continue
         if fingerprint not in stale:
@@ -139,12 +151,20 @@ async def plan_run(
                     continue
                 if source_fingerprint in stale:
                     depends_on.add(source_fingerprint)
+        service_sources: dict[InstanceKey, ExpandedInstance] = {}
+        for connection in representative.connections:
+            source = graph.instances[connection.source]
+            operator_key = (source.node.operator_id, source.node.operator_version)
+            if operator_key not in service_operator_keys:
+                continue
+            service_sources[connection.source] = source
         computations[fingerprint] = ComputationPlan(
             fingerprint=fingerprint,
             representative=representative,
             instances=tuple(group),
             depends_on=frozenset(depends_on),
             upstream_fingerprints=upstream_fingerprints,
+            service_sources=service_sources,
         )
 
     for fingerprint, computation in computations.items():

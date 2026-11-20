@@ -212,6 +212,33 @@ def upgrade() -> None:
     )
     op.create_index("ix_workspaces_kind", "workspaces", ["kind"], unique=False)
     op.create_table(
+        "provider_operations",
+        sa.Column("workspace_id", sa.Uuid(), nullable=False),
+        sa.Column("key_sha256", sa.String(length=64), nullable=False),
+        sa.Column("payload", sa.LargeBinary(), nullable=False),
+        sa.Column("stored_at", UTCDateTime(), nullable=False),
+        sa.Column("expires_at", UTCDateTime(), nullable=False),
+        sa.CheckConstraint(
+            "expires_at >= stored_at",
+            name=op.f("ck_provider_operations_expiry_not_before_write"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id"],
+            ["workspaces.id"],
+            name=op.f("fk_provider_operations_workspace_id_workspaces"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint(
+            "workspace_id", "key_sha256", name=op.f("pk_provider_operations")
+        ),
+    )
+    op.create_index(
+        "ix_provider_operations_expires_at",
+        "provider_operations",
+        ["expires_at"],
+        unique=False,
+    )
+    op.create_table(
         "artifact_objects",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("workspace_id", sa.Uuid(), nullable=False),
@@ -1309,6 +1336,8 @@ def downgrade() -> None:
     op.drop_index("ix_artifact_objects_workspace_type", table_name="artifact_objects")
     op.drop_index("ix_artifact_objects_workspace_sha256", table_name="artifact_objects")
     op.drop_table("artifact_objects")
+    op.drop_index("ix_provider_operations_expires_at", table_name="provider_operations")
+    op.drop_table("provider_operations")
     op.drop_index("ix_workspaces_kind", table_name="workspaces")
     op.drop_table("workspaces")
     op.drop_index("ix_oidc_identities_user_id", table_name="oidc_identities")

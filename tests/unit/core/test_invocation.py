@@ -1,8 +1,8 @@
-from collections.abc import Callable
-from typing import Annotated, ClassVar, cast, override
+from typing import Annotated, Any, ClassVar, cast, override
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from grafy_core.artifacts import (
     ArtifactRef,
@@ -15,15 +15,28 @@ from grafy_core.artifacts import (
 )
 from grafy_core.domain.implementation import BuiltinImplementationIdentity
 from grafy_core.nodes import (
-    InPort,
     Node,
     NodeExecutionContext,
-    OutPort,
+    OutputContract,
+    OutputPortSpec,
+    Plugs,
     PortShape,
+    Ref,
+    RefSequence,
     derive_input_contract,
     derive_output_contract,
 )
+from grafy_core.declared_values import note_declaration
+from grafy_core.runtime.artifact_values import (
+    Artifact,
+    ArtifactFiles,
+    ArtifactValues,
+    EncodedArtifact,
+    StoredArtifact,
+    encode_inline_model,
+)
 from grafy_core.runtime.execution import NodeRuntime
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.invocation import (
     InvocationError,
     InvocationMode,
@@ -39,14 +52,13 @@ from grafy_core.runtime.materialization import (
     MaterializationError,
     MaterializationProvenance,
 )
+from grafy_core.ports.storage import FileStoragePort
 from grafy_core.runtime.persistence import (
-    ArtifactOutputWriter,
     ArtifactWriteContext,
-    ArtifactWriterRegistry,
     OutputPersister,
     PersistedNodeOutput,
 )
-from grafy_core.runtime.resolvers import Resolver, ResolverRegistry
+from grafy_core.runtime.resolvers import ArtifactContractError
 
 
 INPUT_VALUE = ArtifactTypeSpec(
@@ -66,59 +78,86 @@ OTHER_VALUE = ArtifactTypeSpec(
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
 
-class IntResolver:
-    source = INPUT_VALUE.key
-    target = int
-
-    def __init__(self, values: dict[UUID, int]) -> None:
-        self._values = values
-
-    async def resolve(self, ref: ArtifactRef, workspace_id: UUID) -> int:
-        return self._values[ref.artifact_id]
+class SampleIn(int):
+    pass
 
 
-class RecordingWriter:
-    artifact_type = OUTPUT_VALUE.key
+class SampleOut(int):
+    pass
 
-    def __init__(self, completed_count: Callable[[], int] = lambda: 0) -> None:
-        self._completed_count = completed_count
-        self.values: list[int] = []
-        self.item_indexes: list[int | None] = []
-        self.completed_counts: list[int] = []
-        self.context_metadata: list[dict[str, object]] = []
-        self.refs: list[ArtifactRef] = []
 
-    async def write(
-        self,
-        value: object,
-        context: ArtifactWriteContext,
-    ) -> ArtifactRef:
-        assert isinstance(value, int)
-        self.values.append(value)
-        self.item_indexes.append(context.item_index)
-        self.completed_counts.append(self._completed_count())
-        self.context_metadata.append(dict(context.metadata))
-        ref = ArtifactRef.from_key(
-            artifact_id=uuid4(),
-            key=self.artifact_type,
-        )
-        self.refs.append(ref)
-        return ref
+class SampleOther(int):
+    pass
+
+
+class DiagnosticNote:
+    pass
+
+
+note_declaration(SampleIn, INPUT_VALUE.key)
+note_declaration(SampleOut, OUTPUT_VALUE.key)
+note_declaration(SampleOther, OTHER_VALUE.key)
+
+
+class _SamplePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: int
+
+
+def _sample_artifact[T](
+    spec: ArtifactTypeSpec,
+    value_type: type[T],
+) -> Artifact[T]:
+    async def resolve(stored: StoredArtifact) -> T:
+        payload = stored.row.inline_payload
+        if not isinstance(payload, dict) or not isinstance(payload.get("value"), int):
+            raise ArtifactContractError(
+                f"Artifact {stored.row.id} does not store an integer value"
+            )
+        return cast(T, cast(Any, value_type)(payload["value"]))
+
+    async def write(value: T, _files: ArtifactFiles) -> EncodedArtifact:
+        return encode_inline_model(_SamplePayload(value=int(cast(Any, value))))
+
+    return Artifact(
+        spec=spec,
+        value_type=value_type,
+        resolve=resolve,
+        write=write,
+    )
+
+
+def _values(*declarations: Artifact[Any]) -> ArtifactValues:
+    return ArtifactValues(
+        declarations,
+        uow=InMemoryUnitOfWork(),
+        storage=cast(FileStoragePort, object()),
+        bucket="artifacts",
+        storage_backend="local",
+    )
+
+
+def _write_context() -> ArtifactWriteContext:
+    return ArtifactWriteContext(
+        node_context=NodeExecutionContext(
+            workspace_id=TEST_WORKSPACE_ID,
+            node_id="seed",
+        ),
+        provenance=MaterializationProvenance(refs_by_input={}),
+    )
 
 
 class CollectionInput(NodeInput):
-    items: Annotated[list[int], InPort(INPUT_VALUE)]
+    items: list[SampleIn]
 
 
 class MultiTypeInput(NodeInput):
-    source: Annotated[
-        ArtifactRef,
-        InPort(INPUT_VALUE, also_accepts=(OTHER_VALUE,)),
-    ]
+    source: Ref[SampleIn] | Ref[SampleOther]
 
 
 class CollectionOutput(NodeOutput):
-    total: Annotated[int, OutPort(OUTPUT_VALUE)]
+    total: SampleOut
 
 
 class CollectionNode(Node[NoConfig, CollectionInput, CollectionOutput]):
@@ -137,16 +176,16 @@ class CollectionNode(Node[NoConfig, CollectionInput, CollectionOutput]):
         /,
     ) -> CollectionOutput:
         self.calls.append((context.invocation_index, list(inputs.items)))
-        return CollectionOutput(total=sum(inputs.items))
+        return CollectionOutput(total=SampleOut(sum(inputs.items)))
 
 
 class ScalarInput(NodeInput):
-    item: Annotated[int, InPort(INPUT_VALUE)]
-    broadcast: Annotated[int, InPort(INPUT_VALUE)]
+    item: SampleIn
+    broadcast: SampleIn
 
 
 class ScalarOutput(NodeOutput):
-    value: Annotated[int, OutPort(OUTPUT_VALUE)]
+    value: SampleOut
 
 
 class ScalarNode(Node[NoConfig, ScalarInput, ScalarOutput]):
@@ -165,11 +204,11 @@ class ScalarNode(Node[NoConfig, ScalarInput, ScalarOutput]):
         /,
     ) -> ScalarOutput:
         self.calls.append((context.invocation_index, inputs.item, inputs.broadcast))
-        return ScalarOutput(value=inputs.item + inputs.broadcast)
+        return ScalarOutput(value=SampleOut(inputs.item + inputs.broadcast))
 
 
 class OptionalDriverInput(NodeInput):
-    item: Annotated[int | None, InPort(INPUT_VALUE)] = None
+    item: SampleIn | None = None
 
 
 class OptionalDriverNode(Node[NoConfig, OptionalDriverInput, ScalarOutput]):
@@ -184,17 +223,17 @@ class OptionalDriverNode(Node[NoConfig, OptionalDriverInput, ScalarOutput]):
         _inputs: OptionalDriverInput,
         /,
     ) -> ScalarOutput:
-        return ScalarOutput(value=0)
+        return ScalarOutput(value=SampleOut(0))
 
 
 class VariadicDriverInput(NodeInput):
-    items: Annotated[list[int], InPort(INPUT_VALUE, variadic=True)]
+    items: Annotated[list[SampleIn], Plugs(variadic=True)]
 
 
 class MixedInstancePlugInput(NodeInput):
     items: Annotated[
-        list[ArtifactRef | ArtifactRefSequence],
-        InPort(INPUT_VALUE, variadic=True, instance_plugs=True),
+        list[Ref[SampleIn] | RefSequence[SampleIn]],
+        Plugs(variadic=True, instance=True),
     ]
 
 
@@ -210,11 +249,11 @@ class VariadicDriverNode(Node[NoConfig, VariadicDriverInput, ScalarOutput]):
         _inputs: VariadicDriverInput,
         /,
     ) -> ScalarOutput:
-        return ScalarOutput(value=0)
+        return ScalarOutput(value=SampleOut(0))
 
 
 class ManyOutput(NodeOutput):
-    values: Annotated[list[int], OutPort(OUTPUT_VALUE)]
+    values: list[SampleOut]
 
 
 class ManyOutputNode(Node[NoConfig, ScalarInput, ManyOutput]):
@@ -229,12 +268,12 @@ class ManyOutputNode(Node[NoConfig, ScalarInput, ManyOutput]):
         inputs: ScalarInput,
         /,
     ) -> ManyOutput:
-        return ManyOutput(values=[inputs.item])
+        return ManyOutput(values=[SampleOut(inputs.item)])
 
 
 class ExtraOutput(NodeOutput):
-    value: Annotated[int, OutPort(OUTPUT_VALUE)]
-    diagnostic: str
+    value: SampleOut
+    diagnostic: DiagnosticNote
 
 
 class ExtraOutputNode(Node[NoConfig, ScalarInput, ExtraOutput]):
@@ -249,31 +288,38 @@ class ExtraOutputNode(Node[NoConfig, ScalarInput, ExtraOutput]):
         inputs: ScalarInput,
         /,
     ) -> ExtraOutput:
-        return ExtraOutput(value=inputs.item, diagnostic="unused")
+        return ExtraOutput(value=SampleOut(inputs.item), diagnostic=DiagnosticNote())
 
 
-class PassthroughOutput(NodeOutput):
-    value: Annotated[object, OutPort(OUTPUT_VALUE)]
+class LooseOutput(NodeOutput):
+    value: object
 
 
-def runtime_with(resolver: IntResolver, writer: RecordingWriter) -> NodeRuntime:
-    resolvers = ResolverRegistry()
-    resolvers.register(cast(Resolver[object], resolver))
-    writers = ArtifactWriterRegistry()
-    writers.register(cast(ArtifactOutputWriter, writer))
-    return NodeRuntime(
-        materializer=InputMaterializer(resolvers),
-        persister=OutputPersister(writers),
+def _passthrough_contract() -> OutputContract[LooseOutput]:
+    return OutputContract(
+        model=LooseOutput,
+        ports={
+            "value": OutputPortSpec(
+                name="value",
+                produces=OUTPUT_VALUE.key,
+            )
+        },
     )
 
 
 @pytest.mark.asyncio
 async def test_once_invokes_collection_node_once_with_the_whole_sequence() -> None:
-    first_ref = ArtifactRef.from_key(artifact_id=uuid4(), key=INPUT_VALUE.key)
-    second_ref = ArtifactRef.from_key(artifact_id=uuid4(), key=INPUT_VALUE.key)
-    resolver = IntResolver({first_ref.artifact_id: 2, second_ref.artifact_id: 4})
-    writer = RecordingWriter()
-    runtime = runtime_with(resolver, writer)
+    values = _values(
+        _sample_artifact(INPUT_VALUE, SampleIn),
+        _sample_artifact(OUTPUT_VALUE, SampleOut),
+    )
+    context = _write_context()
+    first_ref = await values.write(INPUT_VALUE.key, SampleIn(2), context)
+    second_ref = await values.write(INPUT_VALUE.key, SampleIn(4), context)
+    runtime = NodeRuntime(
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
+    )
     node = CollectionNode()
 
     result = await runtime.run_node(
@@ -288,10 +334,10 @@ async def test_once_invokes_collection_node_once_with_the_whole_sequence() -> No
     )
 
     assert node.calls == [(None, [2, 4])]
-    assert writer.values == [6]
-    assert writer.item_indexes == [None]
     assert isinstance(result, PersistedNodeOutput)
-    assert result["total"] == writer.refs[0]
+    total = result["total"]
+    assert isinstance(total, ArtifactRef)
+    assert await values.resolve(total, TEST_WORKSPACE_ID) == SampleOut(6)
 
 
 def test_invocation_capabilities_and_effective_shapes() -> None:
@@ -357,7 +403,7 @@ def test_invalid_map_drivers_and_output_contracts_are_rejected(
 
 @pytest.mark.asyncio
 async def test_materializer_rejects_wrong_key_empty_sequence() -> None:
-    materializer = InputMaterializer(ResolverRegistry())
+    materializer = InputMaterializer()
 
     with pytest.raises(
         MaterializationError,
@@ -377,7 +423,7 @@ async def test_materializer_rejects_wrong_key_empty_sequence() -> None:
 
 @pytest.mark.asyncio
 async def test_materializer_accepts_every_declared_artifact_type() -> None:
-    materializer = InputMaterializer(ResolverRegistry())
+    materializer = InputMaterializer()
     contract = derive_input_contract(MultiTypeInput)
 
     for key in (INPUT_VALUE.key, OTHER_VALUE.key):
@@ -387,7 +433,8 @@ async def test_materializer_accepts_every_declared_artifact_type() -> None:
             {"source": ref},
             TEST_WORKSPACE_ID,
         )
-        assert inputs.source == ref
+        assert inputs.source.artifact_id == ref.artifact_id
+        assert inputs.source.key() == ref.key()
 
     third = ArtifactRef.from_key(
         artifact_id=uuid4(),
@@ -415,15 +462,21 @@ async def test_materializer_preserves_mixed_plugs_and_flattens_provenance() -> N
     )
     raw_items: list[ArtifactRef | ArtifactRefSequence] = [first_ref, sequence]
 
-    inputs, provenance = await InputMaterializer(ResolverRegistry()).materialize(
+    inputs, provenance = await InputMaterializer().materialize(
         derive_input_contract(MixedInstancePlugInput),
         {"items": raw_items},
         TEST_WORKSPACE_ID,
     )
 
-    assert inputs.items == raw_items
     assert isinstance(inputs.items[0], ArtifactRef)
+    assert inputs.items[0].artifact_id == first_ref.artifact_id
+    assert inputs.items[0].key() == first_ref.key()
     assert isinstance(inputs.items[1], ArtifactRefSequence)
+    assert inputs.items[1].sequence_id == sequence.sequence_id
+    assert [item.artifact_id for item in inputs.items[1].item_refs] == [
+        second_ref.artifact_id,
+        third_ref.artifact_id,
+    ]
     assert provenance.refs_for("items") == (first_ref, second_ref, third_ref)
 
 
@@ -442,7 +495,7 @@ async def test_materializer_rejects_wrong_instance_plug_keys(
         MaterializationError,
         match="expected test.input_value@1, got test.other_value@1",
     ):
-        await InputMaterializer(ResolverRegistry()).materialize(
+        await InputMaterializer().materialize(
             derive_input_contract(MixedInstancePlugInput),
             {"items": value},
             TEST_WORKSPACE_ID,
@@ -455,29 +508,17 @@ async def test_materializer_rejects_empty_required_instance_plugs() -> None:
         MaterializationError,
         match="expected at least one incoming edge",
     ):
-        await InputMaterializer(ResolverRegistry()).materialize(
+        await InputMaterializer().materialize(
             derive_input_contract(MixedInstancePlugInput),
             {"items": []},
             TEST_WORKSPACE_ID,
         )
 
 
-def test_registries_reject_duplicate_contracts() -> None:
-    resolver = cast(Resolver[object], IntResolver({}))
-    resolvers = ResolverRegistry([resolver])
-    with pytest.raises(ValueError, match="Resolver already registered"):
-        resolvers.register(resolver)
-
-    writer = cast(ArtifactOutputWriter, RecordingWriter())
-    writers = ArtifactWriterRegistry([writer])
-    with pytest.raises(ValueError, match="Output writer already registered"):
-        writers.register(writer)
-
-
 @pytest.mark.asyncio
 async def test_output_persister_rejects_passthrough_key_and_shape_mismatches() -> None:
-    persister = OutputPersister(ArtifactWriterRegistry())
-    contract = derive_output_contract(PassthroughOutput)
+    persister = OutputPersister()
+    contract = _passthrough_contract()
     context = NodeExecutionContext(
         workspace_id=TEST_WORKSPACE_ID,
         node_id="passthrough",
@@ -495,7 +536,7 @@ async def test_output_persister_rejects_passthrough_key_and_shape_mismatches() -
         await persister.persist(
             contract,
             context,
-            PassthroughOutput(value=wrong_key_ref),
+            LooseOutput(value=wrong_key_ref),
             provenance,
         )
 
@@ -510,7 +551,7 @@ async def test_output_persister_rejects_passthrough_key_and_shape_mismatches() -
         await persister.persist(
             contract,
             context,
-            PassthroughOutput(
+            LooseOutput(
                 value=ArtifactRefSequence.from_key(
                     key=OUTPUT_VALUE.key,
                     item_refs=[correct_ref],
@@ -531,27 +572,33 @@ async def test_sequence_items_carry_the_metadata_of_their_port() -> None:
     produced it, and the card that follows it fell back to waiting.
     """
 
-    writer = RecordingWriter()
-    writers = ArtifactWriterRegistry()
-    writers.register(cast(ArtifactOutputWriter, writer))
+    values = _values(_sample_artifact(OUTPUT_VALUE, SampleOut))
     implementation = BuiltinImplementationIdentity(build_digest="a" * 64)
 
-    await OutputPersister(writers).persist(
+    result = await OutputPersister(values).persist(
         derive_output_contract(ManyOutput),
         NodeExecutionContext(
             workspace_id=TEST_WORKSPACE_ID,
             node_id="many",
         ),
-        ManyOutput(values=[1, 2, 3]),
+        ManyOutput(values=[SampleOut(1), SampleOut(2), SampleOut(3)]),
         MaterializationProvenance(refs_by_input={}),
         metadata={"implementation": implementation.provenance_document()},
     )
 
-    assert writer.item_indexes == [0, 1, 2]
-    assert writer.context_metadata == [
-        {"implementation": {"kind": "builtin", "build_digest": "a" * 64}},
-        {"implementation": {"kind": "builtin", "build_digest": "a" * 64}},
-        {"implementation": {"kind": "builtin", "build_digest": "a" * 64}},
+    assert isinstance(result, PersistedNodeOutput)
+    sequence = result["values"]
+    assert isinstance(sequence, ArtifactRefSequence)
+    stored = [await values.open(ref, TEST_WORKSPACE_ID) for ref in sequence.item_refs]
+    assert [row.row.inline_payload for row in stored] == [
+        {"value": 1},
+        {"value": 2},
+        {"value": 3},
+    ]
+    assert [row.row.metadata["implementation"] for row in stored] == [
+        {"kind": "builtin", "build_digest": "a" * 64},
+        {"kind": "builtin", "build_digest": "a" * 64},
+        {"kind": "builtin", "build_digest": "a" * 64},
     ]
 
 

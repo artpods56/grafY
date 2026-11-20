@@ -1,9 +1,9 @@
-from grafy_core.artifact_contracts import RASTER_IMAGE
+from grafy_core.documents import RASTER_IMAGE_ARTIFACT
 
 from grafy_workbench.image.declaration import IMAGES
 
 
-IMAGES.register_artifact_type(RASTER_IMAGE)
+IMAGES.register(RASTER_IMAGE_ARTIFACT)
 
 
 __all__ = ["IMAGES"]

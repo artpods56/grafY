@@ -11,14 +11,20 @@ result store's job (ADR 0020).
 
 import asyncio
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from uuid import NAMESPACE_URL, uuid5
 
-from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
+from grafy_core.artifacts import (
+    ArtifactRef,
+    ArtifactRefSequence,
+    ArtifactTypeKey,
+    JsonObject,
+)
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.nodes import NodeExecutionContext, PortShape
-from grafy_core.runtime.execution import NodeRuntime
+from grafy_core.runtime.edge_transform import EdgeTransform, EdgeTransformError
+from grafy_core.runtime.execution import NodeRunError, NodeRuntime
 from grafy_core.runtime.invocation import InvocationMode
 from grafy_core.runtime.persistence import PersistedNodeOutput
 
@@ -35,6 +41,7 @@ class _MappedItemError(NodeComputationError):
         operator_id: str,
         mapped_refs: Mapping[str, ArtifactRef],
         index: int,
+        cause: Exception,
     ) -> None:
         self.index = index
         if len(mapped_refs) == 1:
@@ -48,6 +55,8 @@ class _MappedItemError(NodeComputationError):
                 f"{name}={ref.artifact_id}" for name, ref in mapped_refs.items()
             )
             message = f"Node {operator_id!r} MAP inputs failed at item {index} ({refs})"
+        if isinstance(cause, NodeRunError):
+            message = f"{message}: {cause}"
         super().__init__(message)
 
 
@@ -71,15 +80,25 @@ class NodeExecutionService:
         bound: BoundNode,
         inputs: Mapping[str, object],
         context: NodeExecutionContext,
+        transforms: Mapping[str, Sequence[EdgeTransform]] | None = None,
+        metadata: JsonObject | None = None,
     ) -> dict[str, ArtifactOutputValue]:
         if bound.invocation.mode is InvocationMode.MAP:
-            return await self._run_mapped(bound=bound, inputs=inputs, context=context)
+            return await self._run_mapped(
+                bound=bound,
+                inputs=inputs,
+                transforms=transforms or {},
+                context=context,
+                metadata=metadata,
+            )
         result = await self._runtime.run_node(
             bound.node,
             context,
             inputs,
             config=bound.config,
             artifact_type_bindings=bound.artifact_type_bindings,
+            transforms=transforms,
+            metadata=metadata,
         )
         return _persisted_outputs(bound, result)
 
@@ -88,7 +107,9 @@ class NodeExecutionService:
         *,
         bound: BoundNode,
         inputs: Mapping[str, object],
+        transforms: Mapping[str, Sequence[EdgeTransform]],
         context: NodeExecutionContext,
+        metadata: JsonObject | None = None,
     ) -> dict[str, ArtifactOutputValue]:
         node = bound.node
         map_inputs = bound.invocation.map_inputs
@@ -115,9 +136,9 @@ class NodeExecutionService:
                     f"Node {node.operator_id!r} MAP input {map_input!r} has an "
                     "unresolved artifact type contract"
                 )
-            sequence_key = ArtifactTypeKey(
-                raw_sequence.artifact_type,
-                raw_sequence.schema_version,
+            sequence_key = _mapped_delivered_type(
+                raw_sequence,
+                transforms.get(map_input, ()),
             )
             if sequence_key not in accepted_types:
                 expected = ", ".join(
@@ -150,8 +171,11 @@ class NodeExecutionService:
             )
 
         refs_by_output: dict[str, list[ArtifactRef]] = {
-            name: [] for name in output_contract.ports
+            name: []
+            for name, port in output_contract.ports.items()
+            if port.kind != "service"
         }
+        item_metadata: list[JsonObject] = [{} for _ in range(item_count)]
         limiter = asyncio.Semaphore(self._max_map_concurrency)
 
         async def run_item(index: int) -> PersistedNodeOutput:
@@ -169,6 +193,7 @@ class NodeExecutionService:
                     )
                 item_context = replace(
                     context,
+                    output_metadata=item_metadata[index],
                     invocation_index=index,
                     invocation_path=(*context.invocation_path, index),
                 )
@@ -179,12 +204,19 @@ class NodeExecutionService:
                         item_inputs,
                         config=bound.config,
                         artifact_type_bindings=bound.artifact_type_bindings,
+                        transforms=transforms,
+                        metadata=metadata,
                     )
+                except EdgeTransformError as exc:
+                    # NodeComputationError carries the conversion sentence out of
+                    # the task group.
+                    raise NodeComputationError(str(exc)) from exc
                 except Exception as exc:
                     raise _MappedItemError(
                         operator_id=node.operator_id,
                         mapped_refs=mapped_refs,
                         index=index,
+                        cause=exc,
                     ) from exc
             if not isinstance(result, PersistedNodeOutput):
                 raise NodeComputationError(
@@ -213,11 +245,18 @@ class NodeExecutionService:
                 key=lambda error: error.index,
             )
             raise NodeComputationError(str(failure)) from failure.__cause__
+        except* NodeComputationError as failures:
+            first = next(iter(failures.exceptions))
+            raise NodeComputationError(str(first)) from first.__cause__
 
         for index, item_task in enumerate(item_tasks):
             item_result = item_task.result()
-            for name in output_contract.ports:
+            for name, output_port in output_contract.ports.items():
+                if output_port.kind == "service":
+                    continue
                 value = item_result.values.get(name)
+                if value is None and not output_port.required:
+                    continue
                 if not isinstance(value, ArtifactRef):
                     raise NodeComputationError(
                         f"Node {node.operator_id!r} MAP output {name!r} at item "
@@ -228,6 +267,14 @@ class NodeExecutionService:
 
         values: dict[str, ArtifactOutputValue] = {}
         for name, output_port in output_contract.ports.items():
+            if item_count and not output_port.required:
+                if not refs_by_output[name]:
+                    continue
+                if len(refs_by_output[name]) != item_count:
+                    raise NodeComputationError(
+                        f"Node {node.operator_id!r} MAP output {name!r} was only "
+                        "produced for some items; cannot preserve sequence alignment"
+                    )
             if not isinstance(output_port.produces, ArtifactTypeKey):
                 raise NodeComputationError(
                     f"Node {node.operator_id!r} MAP output {name!r} has an "
@@ -239,18 +286,26 @@ class NodeExecutionService:
                 "output": name,
                 "items": [str(ref.artifact_id) for ref in refs_by_output[name]],
             }
-            metadata: dict[str, object] = {"invocation_mode": InvocationMode.MAP.value}
+            sequence_metadata: dict[str, object] = {
+                "invocation_mode": InvocationMode.MAP.value
+            }
+            if metadata:
+                sequence_metadata.update(metadata)
+            for recorded in item_metadata:
+                sequence_metadata.update(recorded)
             if len(sequences) == 1:
                 identity["source"] = str(first_sequence.sequence_id)
-                metadata["map_input"] = next(iter(sequences))
-                metadata["source_sequence_id"] = str(first_sequence.sequence_id)
+                sequence_metadata["map_input"] = next(iter(sequences))
+                sequence_metadata["source_sequence_id"] = str(
+                    first_sequence.sequence_id
+                )
             else:
                 source_ids = [
                     str(sequence.sequence_id) for sequence in sequences.values()
                 ]
                 identity["sources"] = source_ids
-                metadata["map_inputs"] = list(map_inputs)
-                metadata["source_sequence_ids"] = source_ids
+                sequence_metadata["map_inputs"] = list(map_inputs)
+                sequence_metadata["source_sequence_ids"] = source_ids
             values[name] = ArtifactRefSequence(
                 sequence_id=uuid5(NAMESPACE_URL, _canonical(identity)),
                 artifact_type=output_port.produces.id,
@@ -258,7 +313,7 @@ class NodeExecutionService:
                 item_refs=refs_by_output[name],
                 ordered=first_sequence.ordered,
                 index_key=first_sequence.index_key,
-                metadata=metadata,
+                metadata=sequence_metadata,
             )
         return values
 
@@ -279,6 +334,21 @@ def _persisted_outputs(
 
 def _canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _mapped_delivered_type(
+    sequence: ArtifactRefSequence,
+    transforms: Sequence[EdgeTransform],
+) -> ArtifactTypeKey:
+    """The type a mapped sequence delivers after its edge transform.
+
+    The sequence object keeps the source artifact type. The port was checked
+    against the type the conversion delivers.
+    """
+
+    if transforms:
+        return transforms[0].delivered
+    return ArtifactTypeKey(sequence.artifact_type, sequence.schema_version)
 
 
 def _single_item_sequence(ref: ArtifactRef) -> ArtifactRefSequence:

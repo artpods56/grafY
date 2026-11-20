@@ -6,24 +6,30 @@ Nothing large is committed; every TIFF is written into `tmp_path` on demand.
 import hashlib
 import time
 import warnings
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import httpx
 import numpy as np
 import pytest
 import rasterio
+from affine import Affine
+from fastapi import FastAPI
 from grafy_crypto.grants import Grant
 from PIL import Image
 from rasterio.enums import ColorInterp, Resampling
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.transform import from_origin
 
+from grafy_tiler.app import create_app
 from grafy_tiler.settings import Settings
 
 BUCKET = "workbench-artifacts"
 SIGNING_KEY = "k" * 40
 SHA = "a" * 64
+GRANT_HEADER = "X-Grafy-Grant"
 
 warnings.filterwarnings("ignore", category=NotGeoreferencedWarning)
 
@@ -77,6 +83,35 @@ def grant_for(storage_root: Path) -> Callable[..., Grant]:
 @pytest.fixture
 def token_for() -> Callable[[Grant], str]:
     return lambda grant: grant.sign_grant(SIGNING_KEY.encode())
+
+
+@pytest.fixture
+def app(settings: Settings) -> FastAPI:
+    return create_app(settings)
+
+
+@pytest.fixture
+async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    """The app over ASGI, with its real cache and render pool."""
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://tiler"
+        ) as http:
+            yield http
+
+
+@pytest.fixture
+def auth(
+    grant_for: Callable[..., Grant], token_for: Callable[[Grant], str]
+) -> Callable[..., dict[str, str]]:
+    """Sign a grant for a file in the storage root, with optional changes."""
+
+    def headers(name: str, **changes: object) -> dict[str, str]:
+        grant = replace(grant_for(name), **changes)  # pyright: ignore[reportArgumentType]
+        return {GRANT_HEADER: token_for(grant)}
+
+    return headers
 
 
 def _profile(
@@ -133,6 +168,102 @@ def rgb_tiled_with_overviews(storage_root: Path) -> Writer:
         ) as ds:
             ds.write(data)
             ds.build_overviews([2, 4, 8], Resampling.average)
+        return path
+
+    return write
+
+
+@pytest.fixture
+def rotated_geotiff(storage_root: Path) -> Writer:
+    """An RGB GeoTIFF whose transform shears: pixel (x, y) is not axis-aligned.
+
+    A window on this must still say where its own corners landed, which is what
+    an affine with non-zero `b` and `d` proves.
+    """
+
+    def write(name: str = "rotated.tif", width: int = 90, height: int = 70) -> Path:
+        path = storage_root / BUCKET / name
+        data = np.zeros((3, height, width), dtype=np.uint8)
+        data[1] = np.tile(np.arange(width, dtype=np.uint8), (height, 1))
+        transform = Affine(2.0, 0.5, 500_000.0, -0.5, -2.0, 4_000_000.0)
+        with rasterio.open(
+            path,
+            "w",
+            **_profile(
+                width,
+                height,
+                3,
+                "uint8",
+                photometric="RGB",
+                crs="EPSG:32632",
+                transform=transform,
+            ),
+        ) as ds:
+            ds.write(data)
+        return path
+
+    return write
+
+
+@pytest.fixture
+def gray_internal_mask(storage_root: Path) -> Writer:
+    """Grayscale with a per-dataset internal mask: transparent in one square."""
+
+    def write(name: str = "gray-mask.tif", size: int = 64) -> Path:
+        path = storage_root / BUCKET / name
+        pixels = np.full((size, size), 9, dtype=np.uint8)
+        valid = np.full((size, size), 255, dtype=np.uint8)
+        valid[size // 2 :, size // 2 :] = 0
+        with rasterio.open(
+            path,
+            "w",
+            **_profile(
+                size, size, 1, "uint8", tiled=True, blockxsize=16, blockysize=16
+            ),
+        ) as ds:
+            ds.write(pixels, 1)
+            ds.write_mask(valid)
+        return path
+
+    return write
+
+
+@pytest.fixture
+def nodata_gray(storage_root: Path) -> Writer:
+    """Grayscale whose value 0 is nodata: the value stays, the alpha marks it."""
+
+    def write(name: str = "nodata.tif", size: int = 40) -> Path:
+        path = storage_root / BUCKET / name
+        pixels = np.full((size, size), 7, dtype=np.uint8)
+        pixels[size // 2, size // 2] = 0
+        with rasterio.open(
+            path, "w", **_profile(size, size, 1, "uint8", nodata=0)
+        ) as ds:
+            ds.write(pixels, 1)
+        return path
+
+    return write
+
+
+@pytest.fixture
+def coarsely_tiled_gray(storage_root: Path) -> Writer:
+    """A scan stored in one 1024 px tile: any window decodes that whole tile.
+
+    Tiles are usually 128 or 256; coarse ones are what make a small window cost
+    a large decode, which is the case the decode bound exists for.
+    """
+
+    def write(name: str = "coarse.tif", width: int = 900, height: int = 700) -> Path:
+        path = storage_root / BUCKET / name
+        rng = np.random.default_rng(7)
+        with rasterio.open(
+            path,
+            "w",
+            **_profile(
+                width, height, 1, "uint8", tiled=True, blockxsize=1024, blockysize=1024
+            ),
+        ) as ds:
+            ds.write(rng.integers(0, 256, (height, width), dtype=np.uint8), 1)
         return path
 
     return write
@@ -210,6 +341,27 @@ def palette(storage_root: Path) -> Writer:
             ds.write_colormap(
                 1, {0: (255, 0, 0, 255), 1: (0, 0, 255, 255), 2: (0, 255, 0, 255)}
             )
+        return path
+
+    return write
+
+
+@pytest.fixture
+def rgb_alpha_ramp(storage_root: Path) -> Writer:
+    """RGB whose alpha band runs 0..255 across the width, not a boolean mask."""
+
+    def write(name: str = "alpha-ramp.tif", width: int = 90, height: int = 30) -> Path:
+        path = storage_root / BUCKET / name
+        data = np.zeros((4, height, width), dtype=np.uint8)
+        data[0] = 250
+        data[1] = np.tile(np.arange(width, dtype=np.uint8), (height, 1))
+        data[3] = np.tile(np.arange(width, dtype=np.uint8), (height, 1))
+        with rasterio.open(
+            path,
+            "w",
+            **_profile(width, height, 4, "uint8", photometric="RGB", alpha="YES"),
+        ) as ds:
+            ds.write(data)
         return path
 
     return write

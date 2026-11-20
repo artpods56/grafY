@@ -332,12 +332,17 @@ def _room_stage(tmp_path: Path, name: str) -> Iterator[Stage]:
     hub, same fingerprint facts, and the same registry the routes advertise.
     """
 
+    from grafy_plugin_image import IMAGES
     from grafy_plugin_llm import LLM
 
     database_url = create_db_url(tmp_path, name)
     database = create_database(database_url)
     registry = PluginRegistry()
     registry.install(LLM)
+    # The OCR builtin's `regions` output carries `image.regions@1`, which the
+    # image Plugin declares: the deployment installs both together, and the
+    # port check refuses a composition that ships one without the other.
+    registry.install(IMAGES)
     for family in BUILTIN_FAMILIES:
         registry.install(family)
     registry.freeze()

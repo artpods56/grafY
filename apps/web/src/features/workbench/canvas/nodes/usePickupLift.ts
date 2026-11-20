@@ -6,23 +6,39 @@ import * as React from "react";
  * React Flow drag — or holding the press for a beat — promotes it to the
  * dragged tier. Hold-lift is group-aware: holding any member of the current
  * selection lifts the whole selection, because any subsequent move would
- * drag the group. While the spring lift runs, handle bounds are remeasured
- * every frame so connected edges glide with the handles instead of jumping
- * at settle; a real drag instead snaps the lift and remeasures immediately
- * so bounds are fresh before the drag loop begins.
+ * drag the group.
+ *
+ * A card lifted by a CSS transform takes its ports with it, and React Flow only
+ * learns where they went when it is asked to look again; asking is expensive, so it
+ * is asked once per tier, when the card stops travelling. Connected wires therefore
+ * jump the last few pixels at settle instead of gliding along with the spring.
  */
 
 export type PickupTier = "rest" | "active" | "dragged";
 
 const HOLD_TO_LIFT_MS = 150;
 const HOLD_MOVE_CANCEL_PX = 3;
+
+/**
+ * How long to wait for a lift that never announces it has stopped: an interrupted
+ * style, a hidden tab, a transition the browser skipped.
+ *
+ * This wait replaces a sweep that watched every painted frame. One measurement is
+ * not cheap: it re-measures this node's handles, walks the absolute position of every
+ * node, and notifies the whole store — 6.4 ms of main thread on a 17-node, 11-edge
+ * graph at zoom 1, against a 0.3 ms idle frame. Following a lift frame by frame, even
+ * only on the frames that carried a port half a pixel, cost about eighteen of those
+ * per pick-up gesture: ~115 ms of main thread to keep a 4 px rise honest. One look
+ * per tier costs 6.4 ms, and the resting geometry is still always measured, here or at
+ * settle, so a gesture leaves no stale port behind for the next wire to snap to.
+ */
 const SETTLE_FALLBACK_MS = 260;
 
 /**
  * Shared hold-to-lift signal. Holding any node that is part of the current
  * selection lifts the whole selection (a subsequent move would drag the
- * group), so the held id is module-level state observed by every node via
- * `useSyncExternalStore` — no extra dependency needed.
+ * group), so the held id is module-level state rather than a prop threaded
+ * through every card.
  */
 let heldNodeId: string | null = null;
 const heldListeners = new Set<() => void>();
@@ -40,10 +56,26 @@ function setHeldNodeId(next: string | null) {
   heldNodeId = next;
   heldListeners.forEach((listener) => listener());
 }
-function useHeldNodeId() {
-  // The held node is set by a pointer gesture, so the server value is always
-  // null. Without this the node card throws while server rendering.
-  return React.useSyncExternalStore(subscribeHeld, getHeldNodeId, () => null);
+
+/**
+ * Whether a hold lifts this card.
+ *
+ * A hold only ever comes from a selected card, and only a selected card can be
+ * lifted by it, so a card outside the selection reads `null` whatever the store
+ * holds. Reading the held id through the snapshot rather than the raw store value is
+ * what decides who re-renders: notifying every mounted card and letting each one
+ * decide re-rendered all of them, twice, for a gesture on one of them.
+ */
+function useHeldLift(selected: boolean | undefined): boolean {
+  return (
+    React.useSyncExternalStore(
+      subscribeHeld,
+      // A hold is set by a pointer gesture, so the server value is always null.
+      // Without this the node card throws while server rendering.
+      () => (selected ? heldNodeId : null),
+      () => null,
+    ) !== null
+  );
 }
 
 interface PickupLiftOptions {
@@ -63,7 +95,7 @@ export function usePickupLift({
   const holdTimer = React.useRef<number | null>(null);
   const holdOrigin = React.useRef<{ x: number; y: number } | null>(null);
   const liftRef = React.useRef<HTMLDivElement | null>(null);
-  const heldNodeId = useHeldNodeId();
+  const heldActive = useHeldLift(selected);
   const selectedRef = React.useRef(Boolean(selected));
   React.useEffect(() => {
     selectedRef.current = Boolean(selected);
@@ -150,7 +182,6 @@ export function usePickupLift({
     [onPointerDown, onPointerMove],
   );
 
-  const heldActive = heldNodeId !== null;
   const draggedTier = Boolean(dragging) || (Boolean(selected) && heldActive);
   const pickedUp = Boolean(selected) || draggedTier;
   const tier: PickupTier = draggedTier
@@ -177,29 +208,16 @@ export function usePickupLift({
       updateNodeInternals(id);
       return;
     }
-    if (tier === "dragged" && dragging) {
-      // A real drag needs fresh handle bounds right now: snap the lift past
-      // any running spring, measure, then hand the transition back.
-      element.style.transition = "none";
-      void element.offsetWidth;
-      updateNodeInternals(id);
-      const frame = window.requestAnimationFrame(() => {
-        element.style.transition = "";
-      });
-      return () => window.cancelAnimationFrame(frame);
-    }
-    // Track the spring frame-by-frame so connected edges glide with the
-    // handles instead of jumping when the lift settles. This is the same
-    // measurement React Flow already pays for on every frame of a drag,
-    // bounded to the transition window.
+    // One look, taken when the card stops travelling. The lift is a transform on
+    // the card, so React Flow's stored bounds cannot follow it on their own; the
+    // frames an easing spends creeping are simply not looked at, and the settle is
+    // what the store ends up holding.
     const lift = element;
-    let frame = 0;
-    let fallback = 0;
     let stopped = false;
+    let fallback = 0;
     function stop() {
       if (stopped) return;
       stopped = true;
-      window.cancelAnimationFrame(frame);
       window.clearTimeout(fallback);
       lift.removeEventListener("transitionend", onSettle);
       updateNodeInternals(id);
@@ -209,21 +227,14 @@ export function usePickupLift({
         stop();
       }
     }
-    function loop() {
-      if (stopped) return;
-      updateNodeInternals(id);
-      frame = window.requestAnimationFrame(loop);
-    }
     lift.addEventListener("transitionend", onSettle);
-    frame = window.requestAnimationFrame(loop);
     fallback = window.setTimeout(stop, SETTLE_FALLBACK_MS);
     return () => {
       stopped = true;
-      window.cancelAnimationFrame(frame);
       window.clearTimeout(fallback);
       lift.removeEventListener("transitionend", onSettle);
     };
-  }, [tier, dragging, id, prefersReducedMotion, updateNodeInternals]);
+  }, [id, prefersReducedMotion, tier, updateNodeInternals]);
 
   return { tier, pickedUp, draggedTier, liftRef, holdHandlers };
 }
