@@ -63,13 +63,21 @@ const FITTED_COLLAR = 2.4;
 const FITTED_BELL = 4.6;
 const FITTED_LIP = 1.2;
 const FITTED_FLARE = 3.2;
-const FITTED_CHEVRON = 3.4;
+const FITTED_CHEVRON = 4;
 /** An arrow only fits a gap between fittings at least this long. */
 const FITTED_ARROW_GAP = 34;
 
-/** Trace: a flat strip, narrower than a tube, cut 45 degrees at each bend. */
-const TRACE_WIDTH = 5.2;
+/**
+ * Trace: a flat channel outlined in its colour, as a board viewer draws
+ * copper, cut 45 degrees at each bend.
+ */
+const TRACE_WIDTH = 6.4;
+const TRACE_RIM = 1.25;
 const TRACE_CHAMFER = 10;
+
+function traceFill(color: string): string {
+  return `color-mix(in srgb, ${color} 30%, light-dark(white, black))`;
+}
 
 const GLASS_WIDTH = 9.4;
 const GLASS_FLUID = 4.2;
@@ -241,7 +249,7 @@ interface Station {
  * gap between fittings long enough to hold one. A bell's lip faces upstream,
  * as a bell-and-spigot pipe is laid, so the joints also read as direction.
  */
-function fittedParts(points: readonly Point[], radius: number) {
+function fittedParts(points: readonly Point[], radius: number, girth: number) {
   const elbows: string[] = [];
   const collars: Station[] = [];
   const first = points[0];
@@ -298,10 +306,18 @@ function fittedParts(points: readonly Point[], radius: number) {
       arrows.push({ at: pointOnRun(run, (before + after) / 2), dx, dy });
     }
   }
+  // Light from the top left catches each band's near edge: the top of a
+  // horizontal band, the left of a vertical one.
+  const edge = (PIPE_WIDTH * girth + FITTED_FLARE) / 2 - 0.7 * girth;
+  const toEdge = ({ at, dx, dy }: Station): Station => ({
+    at: { x: at.x - Math.abs(dy) * edge, y: at.y - Math.abs(dx) * edge },
+    dx,
+    dy,
+  });
   return {
     elbows: elbows.join(" "),
-    collars: bandsPath(collars, FITTED_COLLAR),
-    bells: bandsPath(bells, FITTED_BELL),
+    bands: `${bandsPath(collars, FITTED_COLLAR)} ${bandsPath(bells, FITTED_BELL)}`,
+    glints: `${bandsPath(collars.map(toEdge), FITTED_COLLAR)} ${bandsPath(bells.map(toEdge), FITTED_BELL)}`,
     lips: bandsPath(lips, FITTED_LIP),
     arrows: chevronsPath(arrows, FITTED_CHEVRON),
   };
@@ -319,8 +335,8 @@ function FittedBody({
   const join = joinFor(radius);
   const width = PIPE_WIDTH * girth;
   const parts = React.useMemo(
-    () => (points ? fittedParts(points, radius) : null),
-    [points, radius],
+    () => (points ? fittedParts(points, radius, girth) : null),
+    [girth, points, radius],
   );
   const casting = `color-mix(in srgb, ${color} 70%, black)`;
   const shine = `translate(${-1.3 * girth}, ${-1.3 * girth})`;
@@ -363,10 +379,16 @@ function FittedBody({
       {parts ? (
         <>
           <path
-            d={`${parts.collars} ${parts.bells}`}
+            d={parts.bands}
             fill="none"
             strokeWidth={width + FITTED_FLARE}
             style={{ stroke: casting }}
+          />
+          <path
+            d={parts.glints}
+            fill="none"
+            strokeWidth={1.1 * girth}
+            style={{ stroke: `color-mix(in srgb, ${color} 60%, white)` }}
           />
           <path
             d={parts.lips}
@@ -389,7 +411,7 @@ function FittedBody({
   );
 }
 
-/** A flat trace: crisp edge, flat fill, no shine and no shadow. */
+/** A flat trace: an outlined channel, no shine and no shadow. */
 function TraceBody({
   path,
   points,
@@ -408,28 +430,25 @@ function TraceBody({
       <path
         d={d}
         fill="none"
-        strokeWidth={width + 1.4 * girth}
+        strokeWidth={width}
         strokeLinejoin="miter"
-        style={{
-          stroke: `light-dark(color-mix(in srgb, ${color} 72%, black), color-mix(in srgb, ${color} 62%, white))`,
-        }}
+        style={{ stroke: color }}
       />
       <path
         d={d}
         fill="none"
-        strokeWidth={width}
+        strokeWidth={width - 2 * TRACE_RIM * girth}
         strokeLinejoin="miter"
-        style={{ stroke: color }}
+        style={{ stroke: traceFill(color) }}
       />
       {flowing ? (
         <path
           d={d}
           className="pipe-flow-pulse"
           fill="none"
-          strokeWidth={width - 1.6}
-          strokeDasharray="14 196"
-          strokeLinecap="round"
-          style={{ stroke: `color-mix(in srgb, ${color} 30%, white)` }}
+          strokeWidth={width - 2 * TRACE_RIM * girth}
+          strokeDasharray="16 194"
+          style={{ stroke: `color-mix(in srgb, ${color} 55%, white)` }}
         />
       ) : null}
     </g>
@@ -692,22 +711,26 @@ export function WellStub({
     }
     case "trace": {
       // Flat on the floor: no shadow. It ends in a plated via.
-      const stub = strip(TRACE_WIDTH / 2);
+      const outline = strip(TRACE_WIDTH / 2);
       return (
         <g>
+          <path d={outline} style={{ fill: color }} />
           <path
-            d={strip(TRACE_WIDTH / 2 + 0.7)}
-            style={{
-              fill: `light-dark(color-mix(in srgb, ${color} 72%, black), color-mix(in srgb, ${color} 62%, white))`,
-            }}
+            d={strip(TRACE_WIDTH / 2 - TRACE_RIM)}
+            style={{ fill: traceFill(color) }}
           />
-          <path d={stub} style={{ fill: color }} />
-          <path d={stub} fill={overhang} />
+          <path d={outline} fill={overhang} />
           <circle
             cx={centre.x}
             cy={centre.y}
             r={riser + 0.6}
             style={{ fill: color }}
+          />
+          <circle
+            cx={centre.x}
+            cy={centre.y}
+            r={riser + 0.6 - TRACE_RIM}
+            style={{ fill: traceFill(color) }}
           />
         </g>
       );

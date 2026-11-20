@@ -44,8 +44,8 @@ const FACE_SHEEN_ID = "pipe-stage-face-sheen";
 const LAMP_FALLOFF_ID = "pipe-stage-lamp-falloff";
 
 /** Nut: circumradius of the hex, so it clears the bore (11.2) with room. */
-const NUT_RADIUS = 8.6;
-const NUT_SEQUENCE_RADIUS = 9.6;
+const NUT_RADIUS = 9.2;
+const NUT_SEQUENCE_RADIUS = 9.9;
 /** Light from the top left, as the wells are lit: angle of the light. */
 const LIGHT_ANGLE = (225 * Math.PI) / 180;
 const NUT_METAL = "light-dark(#aab1ba, #747b85)";
@@ -238,12 +238,15 @@ function Lamp({ centre, color, well, prefix }: FittingProps) {
   const spill = well === "recessed" ? 11.2 : 12;
   return (
     <g>
+      {/* On a light sheet the lit bore is pale, not dark. */}
       <circle
         cx={centre.x}
         cy={centre.y}
         r={spill}
-        fillOpacity={0.55}
-        style={{ fill: color }}
+        fillOpacity={0.7}
+        style={{
+          fill: `light-dark(color-mix(in srgb, ${color} 55%, white), ${color})`,
+        }}
       />
       <circle
         cx={centre.x}
@@ -273,7 +276,7 @@ function Lamp({ centre, color, well, prefix }: FittingProps) {
 /** A plated pad: flat metal, a lighter rim; a sequence pad has two lands. */
 function Pad({ centre, color, sequence, prefix }: FittingProps) {
   const radius = sequence ? PAD_SEQUENCE_RADIUS : PAD_RADIUS;
-  const metal = `color-mix(in srgb, ${color} 22%, ${PAD_GOLD})`;
+  const metal = `color-mix(in srgb, ${color} 12%, ${PAD_GOLD})`;
   return (
     <g>
       <circle
@@ -396,7 +399,7 @@ export function ConnectorDefs({ prefix }: { prefix: string }) {
       {/* A lamp lights the middle of its bore most. */}
       <radialGradient id={prefix + LAMP_FALLOFF_ID}>
         <stop offset="40%" stopColor="black" stopOpacity={0} />
-        <stop offset="100%" stopColor="black" stopOpacity={0.5} />
+        <stop offset="100%" stopColor="black" stopOpacity={0.42} />
       </radialGradient>
     </>
   );
