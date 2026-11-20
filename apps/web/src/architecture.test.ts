@@ -175,6 +175,25 @@ describe("module architecture", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("keeps features/workbench/cell-canvas free of @xyflow/react", () => {
+    const offenders: string[] = [];
+    for (const file of allSourceFiles(
+      path.join(SRC_ROOT, "features/workbench/cell-canvas"),
+    )) {
+      for (const [, specifier] of readFileSync(file, "utf8").matchAll(
+        IMPORT_SPECIFIER,
+      )) {
+        if (
+          specifier === "@xyflow/react" ||
+          specifier?.startsWith("@xyflow/")
+        ) {
+          offenders.push(`${relative(file)} -> ${specifier}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("reaches the generated OpenAPI types only through lib/api/contract.ts", () => {
     const generated = `${GENERATED}/grafy`;
     const offenders = allSourceFiles(SRC_ROOT)
