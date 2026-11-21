@@ -79,10 +79,13 @@ class ProjectAutoCheckpointer:
         ):
             self._flush(pending, key)
         elif self._idle_seconds > 0:
-            schedule = self._schedule_timer or asyncio.get_running_loop().call_later
-            pending.timer = schedule(
-                self._idle_seconds, lambda: self._flush(pending, key)
-            )
+            self._schedule(pending, key, self._idle_seconds)
+
+    def _schedule(
+        self, pending: _PendingCheckpoint, key: RoomKey, delay: float
+    ) -> None:
+        schedule = self._schedule_timer or asyncio.get_running_loop().call_later
+        pending.timer = schedule(delay, lambda: self._flush(pending, key))
 
     def note_room_empty(self, workspace_id: UUID, project_id: UUID) -> None:
         key = (workspace_id, project_id)
@@ -155,10 +158,20 @@ class ProjectAutoCheckpointer:
                         workspace_id,
                         project_id,
                     )
+                    self._retry_if_pending(pending, key)
         finally:
             pending.task = None
             if pending.position is None:
                 del self._pending[key]
+
+    def _retry_if_pending(self, pending: _PendingCheckpoint, key: RoomKey) -> None:
+        if (
+            not self._closed
+            and pending.position is not None
+            and pending.timer is None
+            and not pending.flush_requested
+        ):
+            self._schedule(pending, key, max(5.0, self._idle_seconds))
 
     async def shutdown(self) -> None:
         self._closed = True

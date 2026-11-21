@@ -12,9 +12,7 @@ import {
   deleteProject,
   getCollaborativeHead,
   graphFromProjectHead,
-  submitProjectCommand,
   type CollaborativeHead,
-  type GraphDraft,
   type SavedGraph,
   type NodeRegistry,
   type RunNodeResult,
@@ -74,6 +72,7 @@ function activeGraphFrom(
     graphId: graph.id,
     // Every Graph shares its Project head's collaboration sequence.
     revision: head.collaboration_sequence,
+    roomEpoch: head.room_epoch,
     nodes: graph.document.nodes,
   };
 }
@@ -116,35 +115,6 @@ function presentationOf(graph: SavedGraph): GraphPresentation {
       };
 }
 
-async function createProjectWithGraph(
-  workspaceId: string,
-  draft: GraphDraft,
-): Promise<CollaborativeHead> {
-  const graphId = createUuid();
-  const project = await createProject(workspaceId, {
-    name: draft.name,
-    graph_id: graphId,
-    graph_name: draft.name,
-  });
-  const head = await getCollaborativeHead(workspaceId, project.id);
-  const submitted = await submitProjectCommand(workspaceId, project.id, {
-    command_id: createUuid(),
-    observed_sequence: head.collaboration_sequence,
-    room_epoch: head.room_epoch,
-    commands: [
-      {
-        kind: "in_graph",
-        graph_id: graphId,
-        command: {
-          kind: "replace_document",
-          document: { ...draft.document, schema_version: 7 },
-        },
-      },
-    ],
-  });
-  return submitted.head;
-}
-
 /**
  * The canvas' place in the server: one Graph, inside one Project.
  *
@@ -156,6 +126,7 @@ export interface ActiveSavedGraph {
   id: string;
   graphId: string;
   revision: number;
+  roomEpoch?: string;
   nodes: readonly SavedGraphNode[];
 }
 
@@ -192,6 +163,7 @@ interface UseSavedGraphLifecycleOptions {
   requestCanvasRefit: () => void;
   refreshNodeRegistry: () => void | Promise<unknown>;
   roomHead?: CollaborativeHead | null;
+  roomSessionId?: string | null;
   hasPendingRoomCommands?: boolean;
   /**
    * Edits the room refused while it was connecting or reconnecting, which therefore
@@ -254,6 +226,7 @@ export function useSavedGraphLifecycle({
   requestCanvasRefit,
   refreshNodeRegistry,
   roomHead = null,
+  roomSessionId = null,
   hasPendingRoomCommands = false,
   hasUnsyncedRoomEdits = false,
 }: UseSavedGraphLifecycleOptions): UseSavedGraphLifecycleResult {
@@ -294,6 +267,13 @@ export function useSavedGraphLifecycle({
   const emptyPresentation = React.useMemo(() => emptyGraphPresentation(), []);
   const presentationRef = React.useRef(presentation ?? emptyPresentation);
   const creatingRef = React.useRef(false);
+  const creationAttemptRef = React.useRef<{
+    fingerprint: string;
+    workspaceId: string;
+    project_id: string;
+    command_id: string;
+    graph_id: string;
+  } | null>(null);
   const secretRefreshRef = React.useRef<{
     key: string;
     request: AbortController;
@@ -431,6 +411,7 @@ export function useSavedGraphLifecycle({
       activeGraph.id,
       activeGraph.graphId,
       liveHead?.room_epoch,
+      roomSessionId,
       activeGraph.nodes.flatMap((node) => {
         const identity = JSON.stringify([
           node.operator_id,
@@ -450,7 +431,7 @@ export function useSavedGraphLifecycle({
         ];
       }),
     ]);
-  }, [activeGraph, liveHead?.room_epoch, secretSpecs]);
+  }, [activeGraph, liveHead?.room_epoch, roomSessionId, secretSpecs]);
 
   React.useEffect(() => {
     if (
@@ -471,7 +452,23 @@ export function useSavedGraphLifecycle({
       documentOfGraph(graph),
       registry,
     ).nodes.filter((node) => workflowNodeIsSupported(node.data));
-    void refreshNodeSecretStatuses(activeGraph, bindingNodes, request.signal);
+    const refresh = () =>
+      refreshNodeSecretStatuses(activeGraph, bindingNodes, request.signal);
+    void refresh().then((refreshed) => {
+      if (refreshed || request.signal.aborted) return;
+      const timer = window.setTimeout(() => {
+        void refresh().then((retried) => {
+          if (!retried && secretRefreshRef.current?.request === request) {
+            secretRefreshRef.current = null;
+          }
+        });
+      }, 1000);
+      request.signal.addEventListener(
+        "abort",
+        () => window.clearTimeout(timer),
+        { once: true },
+      );
+    });
   }, [
     activeGraph,
     liveHead,
@@ -517,7 +514,30 @@ export function useSavedGraphLifecycle({
       setSaving(true);
       setPersistenceError(null);
       try {
-        const head = await createProjectWithGraph(workspaceId, draft);
+        const fingerprint = savedGraphFingerprint(draft);
+        const previous = creationAttemptRef.current;
+        const attempt =
+          previous?.workspaceId === workspaceId &&
+          previous.fingerprint === fingerprint
+            ? previous
+            : {
+                fingerprint,
+                workspaceId,
+                project_id: createUuid(),
+                command_id: createUuid(),
+                graph_id: createUuid(),
+              };
+        creationAttemptRef.current = attempt;
+        const project = await createProject(workspaceId, {
+          name: draft.name,
+          graph_name: draft.name,
+          graph_id: attempt.graph_id,
+          project_id: attempt.project_id,
+          command_id: attempt.command_id,
+          graph_document: { ...draft.document, schema_version: 7 },
+        });
+        const head = await getCollaborativeHead(workspaceId, project.id);
+        creationAttemptRef.current = null;
         if (!mountedRef.current) return;
         void refreshGraphSummaries(workspaceId);
         if (documentGenerationRef.current !== documentGeneration) return;

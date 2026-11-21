@@ -356,6 +356,37 @@ async def test_create_project_replays_the_same_command_id(harness: Harness) -> N
     assert harness.revisions(project_id) == [1]
 
 
+async def test_create_project_checkpoints_its_initial_document_and_replays(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project_id, command_id = uuid4(), uuid4()
+    graph_document = GraphDocument(nodes=(node("draft-node"),))
+
+    def create(document: GraphDocument):
+        return harness.service.create_project(
+            actor=owner,
+            workspace_id=workspace.id,
+            name="Field survey",
+            project_id=project_id,
+            command_id=command_id,
+            graph_document=document,
+        )
+
+    created = await create(graph_document)
+    replay = await create(graph_document)
+    assert replay.head == created.head
+    assert replay.receipt is not None
+    assert replay.receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
+    assert harness.revisions(project_id) == [1]
+    assert (
+        harness.checkpoint_document(project_id, 1).graphs[0].document == graph_document
+    )
+
+    with pytest.raises(CollaborationIdempotencyMismatchError):
+        await create(GraphDocument())
+
+
 async def test_reused_command_id_with_another_name_is_refused(harness: Harness) -> None:
     workspace, owner = harness.workspace(name="Owner", slug="owner")
     project_id, command_id = uuid4(), uuid4()

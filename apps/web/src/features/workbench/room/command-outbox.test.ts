@@ -367,6 +367,9 @@ describe("ProjectRoomCommandOutbox", () => {
     );
     await expect(first.promise).rejects.toThrow("socket send rejected");
 
+    expect(outbox.isAwaitingHeadRehydration()).toBe(true);
+    outbox.finishHeadRehydration();
+
     // A non-Error failure still carries the command id and an error code.
     const second = outbox.submit(batch("Second"));
     expect(second.sends).toHaveLength(1);

@@ -446,6 +446,29 @@ describe("reading what a Graph's node instances hold", () => {
     await hook.unmount();
   });
 
+  it("keeps loaded Run results when only the live head revision changes", async () => {
+    api.listGraphInstances.mockResolvedValue({
+      instances: [instanceState("a", "fresh")],
+    });
+    const canvas = canvasState([workflowNode("a")]);
+    const options = hookOptions(canvas);
+    const hook = await renderHook(useRunExecution, options);
+    await settle();
+
+    await hook.rerender({
+      ...options,
+      activeGraph: activeSavedGraph({ revision: 10 }),
+    });
+    await settle();
+
+    expect(api.listGraphInstances).toHaveBeenCalledTimes(1);
+    expect(api.getInstanceResult).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.resultByNodeId.a?.result_fingerprint).toBe(
+      "result-a",
+    );
+    await hook.unmount();
+  });
+
   it("reads a result again the moment its instance points at a new fingerprint", async () => {
     api.listGraphInstances.mockResolvedValue({
       instances: [instanceState("a", "fresh")],

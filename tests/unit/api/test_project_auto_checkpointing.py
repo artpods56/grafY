@@ -212,3 +212,37 @@ async def test_restore_keeps_batches_already_committed_in_the_new_epoch() -> Non
     service.checkpoint_head_if_needed.assert_awaited_once_with(
         workspace_id=current.workspace_id, project_id=current.project_id
     )
+
+
+async def test_failed_checkpoint_retries_without_another_edit() -> None:
+    service = AsyncMock(spec=CollaborationService)
+    hub = AsyncMock(spec=ProjectRoomHub)
+    timers = ManualTimers()
+    retry_scheduled = asyncio.Event()
+    published = asyncio.Event()
+    head = head_at(1)
+    checkpointed = replace(head, checkpoint_sequence=1, checkpoint_revision=2)
+    service.checkpoint_head_if_needed.side_effect = [
+        RuntimeError("database unavailable"),
+        CheckpointOutcome(head=checkpointed, revision=2),
+    ]
+    hub.publish_checkpointed.side_effect = lambda _: published.set()
+
+    def schedule(delay: float, callback: Callable[[], None]) -> asyncio.TimerHandle:
+        handle = timers.schedule(delay, callback)
+        if len(timers.handles) == 2:
+            retry_scheduled.set()
+        return handle
+
+    coordinator = ProjectAutoCheckpointer(
+        service, hub, RealtimeConfig(), schedule_timer=schedule
+    )
+    coordinator.note_head_advanced(head)
+    timers.fire_latest()
+    await retry_scheduled.wait()
+    timers.fire_latest()
+    await published.wait()
+    await coordinator.shutdown()
+
+    assert service.checkpoint_head_if_needed.await_count == 2
+    hub.publish_checkpointed.assert_awaited_once_with(checkpointed)

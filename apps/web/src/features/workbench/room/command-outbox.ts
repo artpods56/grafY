@@ -286,7 +286,8 @@ export class ProjectRoomCommandOutbox {
     const pending = this.inFlight;
     if (!pending || pending.commandId !== commandId) return;
     this.inFlight = null;
-    this.notifyPendingCommands();
+    this.localCommandIds.delete(commandId);
+    this.requestHeadRefresh();
     pending.reject(
       new ProjectRoomCommandError(
         commandId,

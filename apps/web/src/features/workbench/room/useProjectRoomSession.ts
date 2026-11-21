@@ -93,6 +93,7 @@ interface UseProjectRoomSessionOptions {
   projectId: string | null;
   onReady?: (ready: RoomReadyMessage) => void;
   onRehydrate?: (head: CollaborativeHead) => void;
+  onPendingCommandsChange?: (pending: boolean) => void;
   onHeadRefreshRequired?: () => void;
   onCommandAccepted?: (
     message: ProjectCommandAcceptedMessage,
@@ -114,6 +115,7 @@ export function useProjectRoomSession({
   projectId,
   onReady,
   onRehydrate,
+  onPendingCommandsChange,
   onHeadRefreshRequired,
   onCommandAccepted,
   onCommandRejected,
@@ -174,6 +176,7 @@ export function useProjectRoomSession({
 
   const onReadyRef = React.useRef(onReady);
   const onRehydrateRef = React.useRef(onRehydrate);
+  const pendingListener = React.useRef(onPendingCommandsChange);
   const onHeadRefreshRequiredRef = React.useRef(onHeadRefreshRequired);
   const onCommandAcceptedRef = React.useRef(onCommandAccepted);
   const onCommandRejectedRef = React.useRef(onCommandRejected);
@@ -185,6 +188,7 @@ export function useProjectRoomSession({
   React.useEffect(() => {
     onReadyRef.current = onReady;
     onRehydrateRef.current = onRehydrate;
+    pendingListener.current = onPendingCommandsChange;
     onHeadRefreshRequiredRef.current = onHeadRefreshRequired;
     onCommandAcceptedRef.current = onCommandAccepted;
     onCommandRejectedRef.current = onCommandRejected;
@@ -195,6 +199,7 @@ export function useProjectRoomSession({
   }, [
     onCommandAccepted,
     onCommandRejected,
+    onPendingCommandsChange,
     onHeadRefreshRequired,
     onInstancesChange,
     onReady,
@@ -248,7 +253,10 @@ export function useProjectRoomSession({
         onRehydrateRef.current?.(nextHead);
       },
       onCheckpointed: setHead,
-      onPendingCommandsChange: setHasPendingCommands,
+      onPendingCommandsChange: (pending) => {
+        pendingListener.current?.(pending);
+        setHasPendingCommands(pending);
+      },
       onHeadRefreshRequired: () => {
         onHeadRefreshRequiredRef.current?.();
       },

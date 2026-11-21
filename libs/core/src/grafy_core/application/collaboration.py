@@ -44,7 +44,6 @@ from grafy_core.domain.collaboration import (
     apply_project_commands,
     command_hmac_digest,
     command_requires_exact_sequence,
-    empty_project_document,
     sanitize_project_for_cross_workspace_copy,
 )
 from grafy_core.domain.errors import (
@@ -59,6 +58,7 @@ from grafy_core.domain.errors import (
     ProjectCheckpointConflictError,
     UserDisabledError,
 )
+from grafy_core.domain.graph_documents import GraphDocument
 from grafy_core.domain.identity import (
     ActorContext,
     WorkspaceAccess,
@@ -75,6 +75,9 @@ from grafy_core.domain.security_audit import (
     SecurityAuditOutcome,
 )
 from grafy_core.ports.collaboration import CollaborationUnitOfWorkPort
+
+
+from grafy_core.kernel.project import ProjectDocument
 
 
 def _utc_now() -> datetime:
@@ -159,10 +162,11 @@ class CollaborationService:
         name: str,
         graph_id: str = MAIN_GRAPH_ID,
         graph_name: str = MAIN_GRAPH_NAME,
+        graph_document: GraphDocument | None = None,
         project_id: UUID | None = None,
         command_id: UUID | None = None,
     ) -> ProjectCreation:
-        """Open a Project with one empty Graph, its checkpoint 1 and its head.
+        """Open a Project with one Graph, its checkpoint 1 and its head.
 
         Pass ``project_id`` and ``command_id`` together to make creation replayable:
         a second call with the same pair and the same payload returns the Project that
@@ -176,9 +180,12 @@ class CollaborationService:
             created_by_user_id=actor.user_id,
             id=uuid4() if project_id is None else project_id,
         )
-        document = empty_project_document(graph_id, graph_name)
         opening_batch: tuple[ProjectCommand, ...] = (
-            AddGraphCommand(graph_id=graph_id, name=graph_name),
+            AddGraphCommand(
+                graph_id=graph_id,
+                name=graph_name,
+                document=graph_document or GraphDocument(),
+            ),
         )
         async with self._uow_factory() as uow:
             access = await self._authorize(
@@ -215,6 +222,11 @@ class CollaborationService:
             if replay is not None:
                 return replay
 
+            _, document = apply_project_commands(
+                name=project.name,
+                document=ProjectDocument(graphs=()),
+                commands=opening_batch,
+            )
             staged = await stage_project(
                 project,
                 document,

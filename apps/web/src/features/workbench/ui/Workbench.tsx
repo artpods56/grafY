@@ -128,7 +128,6 @@ import {
   defaultGraphId,
   graphReadiness,
   instanceKeyText,
-  shouldReplaceCollaborativeHead,
   toLocalGraphCommand,
   toRoomGraphCommand,
   toRoomRenameGraphCommand,
@@ -1151,12 +1150,6 @@ function WorkbenchBody({
             window.clearTimeout(headRefreshRetryRef.current);
             headRefreshRetryRef.current = null;
           }
-          const current = projectRoomHeadRef.current;
-          if (!shouldReplaceCollaborativeHead(current, head)) {
-            // The socket already applied newer commands while the request ran.
-            if (current) replaceHeadRef.current(current);
-            return;
-          }
           recoverRoomCanvas(replaceHeadRef.current(head));
         })
         .catch((error: unknown) => {
@@ -1196,6 +1189,9 @@ function WorkbenchBody({
       recoverRoomCanvas(ready.head);
     },
     onRehydrate: recoverRoomCanvas,
+    onPendingCommandsChange: (pending) => {
+      roomCommandsPendingRef.current = pending;
+    },
     onHeadRefreshRequired: () => {
       refreshCollaborativeHeadRef.current({ errorMessage: null });
     },
@@ -1367,6 +1363,7 @@ function WorkbenchBody({
       projectRoom.terminalReason === "project_deleted"
         ? null
         : projectRoom.head,
+    roomSessionId: projectRoom.localSessionId,
     hasPendingRoomCommands: projectRoom.hasPendingCommands,
     hasUnsyncedRoomEdits: unsyncedRoomEdits,
   });
@@ -1434,7 +1431,6 @@ function WorkbenchBody({
   }, [openGraphId, projectRoom.head, projectRoom.replaceHead]);
 
   React.useLayoutEffect(() => {
-    roomCommandsPendingRef.current = projectRoom.hasPendingCommands;
     const head = projectRoom.head;
     if (
       !projectRoom.hasPendingCommands &&
@@ -1485,23 +1481,23 @@ function WorkbenchBody({
   /** One gesture, one batch: the room accepts a batch or refuses the whole of it. */
   const submitRoomCommands = React.useCallback(
     (commands: readonly RoomProjectCommand[], fallback: string) => {
-      if (!canSubmitRoomCommands) {
-        setUnsyncedRoomEdits(true);
-        return;
-      }
+      if (projectId === null) return;
       void submitRoomBatch(commands).catch((error: unknown) => {
         if (
           error instanceof ProjectRoomCommandError &&
           (error.errorCode === "queue_full" ||
             error.errorCode === "not_ready" ||
-            error.errorCode === "send_failed")
+            error.errorCode === "send_failed" ||
+            error.errorCode === "reconnect_exhausted")
         ) {
           setUnsyncedRoomEdits(true);
+          if (error.errorCode === "queue_full")
+            refreshCollaborativeHeadRef.current();
         }
         reportCommandFailure(error, fallback);
       });
     },
-    [canSubmitRoomCommands, reportCommandFailure, submitRoomBatch],
+    [projectId, reportCommandFailure, submitRoomBatch],
   );
   /** Address a Graph-body command at the Graph this canvas shows. */
   const inOpenGraph = React.useCallback(
@@ -1643,11 +1639,7 @@ function WorkbenchBody({
     roomCommandSyncRef.current = {
       submitLocal: (commands, before) => {
         const graphId = openGraphIdRef.current;
-        if (graphId === null) {
-          // A draft is not in a Project yet: nothing can leave this tab.
-          setUnsyncedRoomEdits(true);
-          return;
-        }
+        if (graphId === null) return;
         const batch = commands
           .map((command) => toRoomGraphCommand(command, before, graphId))
           .filter((command): command is RoomProjectCommand => command !== null);
@@ -1663,10 +1655,7 @@ function WorkbenchBody({
           kind: "replace_presentation",
           presentation: presentationFromArtifactViewers(state),
         });
-        if (!command) {
-          setUnsyncedRoomEdits(true);
-          return;
-        }
+        if (!command) return;
         submitRoomCommands([command], "Presentation sync failed.");
       },
       submitMove: (positions) => {
@@ -1675,10 +1664,7 @@ function WorkbenchBody({
           kind: "move_artifact_viewers",
           positions: [...positions],
         });
-        if (!command) {
-          setUnsyncedRoomEdits(true);
-          return;
-        }
+        if (!command) return;
         submitRoomCommands([command], "Presentation sync failed.");
       },
       submitMoveAnnotations: (positions) => {
@@ -1687,10 +1673,7 @@ function WorkbenchBody({
           kind: "move_annotations",
           positions: [...positions],
         });
-        if (!command) {
-          setUnsyncedRoomEdits(true);
-          return;
-        }
+        if (!command) return;
         submitRoomCommands([command], "Presentation sync failed.");
       },
     };

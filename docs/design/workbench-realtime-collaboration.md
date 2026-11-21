@@ -201,6 +201,7 @@ locks the current head and appends a checkpoint only if it advanced. The audit
 event uses the system actor. An explicit checkpoint clears covered pending work,
 restore clears the prior epoch, and delete cancels the pending timer.
 
+Failed automatic checkpoints retry after a delay while the API is running.
 Shutdown flushes tracked heads within a bounded deadline and cancels remaining
 attempts before database disposal. A delayed or failed checkpoint leaves the committed
 head and command journal available.
@@ -526,7 +527,9 @@ imports canvas helpers), so the ADR's wider extraction stays open.
   creates a Project from a new draft and projects the active Graph from the live head.
 
 The draft at `/projects/new` supports manual Save and a one-second autosave after
-editing pauses. Once the Project exists, canvas edits are live-saved through room commands.
+editing pauses. Creation writes the draft and its first checkpoint in one transaction.
+A retry of the same draft reuses the Project and command IDs for that creation.
+Once the Project exists, canvas edits are live-saved through room commands.
 The rail shows `Saving…` while commands await confirmation and `Saved` when synced.
 For a Project, dirtiness reflects unsynced edits, queued commands, in-flight commands
 and head recovery. Runs can start once the canvas is synced and authorized. They read

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   CollaborativeHead,
-  GraphCommandInput,
   NodeRegistry,
   NodeSpec,
   SavedGraph,
@@ -185,27 +184,13 @@ function stubCreate(projectId: string, graph: SavedGraph) {
   api.getCollaborativeHead.mockImplementation(
     (workspaceId: string, requestedProjectId: string) =>
       requestedProjectId === projectId || !previousHeadRead
-        ? Promise.resolve(projectHead(savedGraph(projectId, graph.name, 0)))
+        ? Promise.resolve(projectHead(graph))
         : previousHeadRead(workspaceId, requestedProjectId),
   );
-  api.submitProjectCommand.mockResolvedValue({
-    head: projectHead(graph, { checkpointSequence: 0 }),
-  });
 }
 
-/** The document a save submitted, as the Project command carried it. */
-function submittedDocuments(): Extract<
-  GraphCommandInput,
-  { kind: "replace_document" }
->["document"][] {
-  return api.submitProjectCommand.mock.calls.map((call) => {
-    const body = call[2] as { commands: { command: GraphCommandInput }[] };
-    const command = body.commands[0]?.command;
-    if (command?.kind !== "replace_document") {
-      throw new Error("Expected the save to submit a replace_document command");
-    }
-    return command.document;
-  });
+function submittedDocuments(): SavedGraphDocument[] {
+  return api.createProject.mock.calls.map((call) => call[1].graph_document);
 }
 
 type LifecycleOptions = Parameters<typeof useSavedGraphLifecycle>[0];
@@ -360,8 +345,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
   it("pauses editing and prevents duplicate creation during a first save", async () => {
     const graph = savedGraph(GRAPH_A_ID, "First save");
     stubCreate(GRAPH_A_ID, graph);
-    const submitted = deferred<{ head: CollaborativeHead }>();
-    api.submitProjectCommand.mockReturnValue(submitted.promise);
+    const submitted = deferred<CollaborativeHead>();
+    api.getCollaborativeHead.mockReturnValue(submitted.promise);
     const { options } = lifecycleOptions(null);
     const hook = await renderHook(useSavedGraphLifecycle, options);
 
@@ -374,13 +359,32 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(api.createProject).toHaveBeenCalledTimes(1);
 
     await React.act(async () => {
-      submitted.resolve({
-        head: projectHead(graph, { checkpointSequence: 0 }),
-      });
+      submitted.resolve(projectHead(graph));
       await save;
     });
     expect(hook.result.current.activeGraph?.id).toBe(GRAPH_A_ID);
     expect(hook.result.current.persistenceOperationBusy).toBe(false);
+  });
+
+  it("reuses the first-save identity after a response is lost", async () => {
+    const graph = savedGraph(GRAPH_A_ID, "First save");
+    stubCreate(GRAPH_A_ID, graph);
+    api.createProject.mockRejectedValueOnce(new Error("Connection lost"));
+    const { options } = lifecycleOptions(null);
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+
+    await React.act(async () =>
+      hook.result.current.saveCurrentGraph("First save"),
+    );
+    expect(hook.result.current.persistenceError).toBe("Connection lost");
+
+    await React.act(async () =>
+      hook.result.current.saveCurrentGraph("First save"),
+    );
+    expect(api.createProject.mock.calls[1]).toEqual(
+      api.createProject.mock.calls[0],
+    );
+    expect(hook.result.current.activeGraph?.id).toBe(GRAPH_A_ID);
   });
 
   it("submits the canonical final drag position", async () => {
@@ -506,6 +510,29 @@ describe("useSavedGraphLifecycle document ownership", () => {
     });
     expect(callbacks.replaceDocument).not.toHaveBeenCalled();
     expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a transient secret status failure without an edit", async () => {
+    vi.useFakeTimers();
+    try {
+      const graph = savedGraph(GRAPH_A_ID, "Live graph");
+      const refresh = vi
+        .fn()
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
+      const { options } = lifecycleOptions(GRAPH_A_ID, refresh);
+      const hook = await renderHook(useSavedGraphLifecycle, {
+        ...options,
+        roomHead: projectHead(graph),
+      });
+
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await React.act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(refresh).toHaveBeenCalledTimes(2);
+      await hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("never submits a save for an existing Project", async () => {
@@ -666,8 +693,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
     const graphB = savedGraph(GRAPH_B_ID, "Graph B");
     const created = savedGraph(GRAPH_A_ID, "Local draft");
     stubCreate(GRAPH_A_ID, created);
-    const createResponse = deferred<{ head: CollaborativeHead }>();
-    api.submitProjectCommand.mockReturnValue(createResponse.promise);
+    const createResponse = deferred<{ id: string }>();
+    api.createProject.mockReturnValue(createResponse.promise);
     api.getCollaborativeHead.mockImplementation((_workspaceId, projectId) =>
       Promise.resolve(projectHead(projectId === GRAPH_A_ID ? created : graphB)),
     );
@@ -687,9 +714,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_B_ID);
 
     await React.act(async () => {
-      createResponse.resolve({
-        head: projectHead(created),
-      });
+      createResponse.resolve({ id: created.id });
       await savePromise;
     });
 

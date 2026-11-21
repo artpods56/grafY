@@ -201,6 +201,7 @@ async def create_project(
             name=request.name,
             graph_id=request.graph_id,
             graph_name=request.graph_name,
+            graph_document=request.graph_document,
             project_id=request.project_id,
             command_id=request.command_id,
         )
