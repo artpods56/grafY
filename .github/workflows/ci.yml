@@ -14,17 +14,52 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  quality-contracts:
+    name: Lint, type and API contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: apps/web/package.json
+      - name: Install locked Python workspace
+        run: uv sync --locked
+      - name: Install locked web workspace
+        run: bun install --cwd apps/web --frozen-lockfile
+      - name: Validate repository hooks and file formats
+        env:
+          SKIP: ruff-check,web-eslint,web-prettier
+        run: |
+          uv run prek validate-config .pre-commit-config.yaml
+          uv run prek run --all-files
+      - name: Python lint
+        run: uv run ruff check apps/api/src libs/client/src libs/crypto/src libs/core/src libs/persistence/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
+      - name: Client typecheck
+        run: uv run pyright libs/client
+      - name: Web lint
+        run: bun run --cwd apps/web --bun lint
+      - name: Web format
+        working-directory: apps/web
+        run: bun --bun run prettier --check "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
+      - name: Web typecheck
+        run: bun run --cwd apps/web --bun typecheck
+      - name: Generated API contract
+        run: bun run --cwd apps/web --bun check:api
+
   backend-tests:
     name: Backend tests
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
       - uses: astral-sh/setup-uv@v6
         with:
+          python-version: "3.14"
           enable-cache: true
       - uses: docker/setup-docker-action@v5
         with:
@@ -97,11 +132,9 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
       - uses: astral-sh/setup-uv@v6
         with:
+          python-version: "3.14"
           enable-cache: true
       - name: Install locked Python workspace
         run: uv sync --locked
@@ -119,132 +152,8 @@ jobs:
           uv run pytest -q -o log_cli=false tests/unit/persistence
           --deselect tests/unit/persistence/test_migrations.py::test_fresh_postgresql_database_upgrades_to_head
 
-  native-runtime:
-    name: Native API runtime image
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build the native API release image
-        run: |
-          digest="$(git archive HEAD | sha256sum | cut -d ' ' -f 1)"
-          docker build --file infra/docker/api.Dockerfile --target api-release \
-            --build-arg GRAFY_BUILD_DIGEST="$digest" --tag grafy-native-api-ci .
-      - name: Persist a raster through the installed GIS family
-        run: >-
-          docker run --rm --network=none
-          -v "$GITHUB_WORKSPACE/scripts/smoke_gis.py:/smoke_gis.py:ro"
-          --entrypoint .venv/bin/python grafy-native-api-ci /smoke_gis.py
-      - name: Verify bounded subprocesses on Linux
-        # The release image deliberately has no test dependencies. Use the
-        # runner's locked workspace to exercise real rlimits and cancellation.
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-      - run: uv run pytest -q -o log_cli=false tests/unit/core/test_bounded_subprocess.py
-
-  quality-contracts:
-    name: Lint, type and API contracts
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: apps/web/package.json
-      - name: Install locked Python workspace
-        id: python_install
-        run: uv sync --locked
-      - name: Install locked web workspace
-        id: web_install
-        if: ${{ !cancelled() }}
-        run: bun install --cwd apps/web --frozen-lockfile
-      - name: Validate repository hooks
-        if: ${{ !cancelled() && steps.python_install.outcome == 'success' && steps.web_install.outcome == 'success' }}
-        run: uv run prek run --all-files
-      - name: Python lint
-        if: ${{ !cancelled() && steps.python_install.outcome == 'success' }}
-        run: uv run ruff check apps/api/src libs/client/src libs/crypto/src libs/core/src libs/persistence/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
-      - name: Client typecheck
-        if: ${{ !cancelled() && steps.python_install.outcome == 'success' }}
-        run: uv run pyright libs/client
-      - name: Web lint
-        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        run: bun run --cwd apps/web --bun lint
-      - name: Web format
-        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        working-directory: apps/web
-        run: bun --bun run prettier --check "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
-      - name: Web typecheck
-        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        run: bun run --cwd apps/web --bun typecheck
-      - name: Generated API contract
-        if: ${{ !cancelled() && steps.python_install.outcome == 'success' && steps.web_install.outcome == 'success' }}
-        run: bun run --cwd apps/web --bun check:api
-
-  web:
-    name: Web tests and production build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: apps/web/package.json
-      - name: Install locked web workspace
-        id: web_install
-        run: bun install --cwd apps/web --frozen-lockfile
-      - name: Run web tests
-        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        run: bun run --cwd apps/web --bun test
-      - name: Cache Next.js build data
-        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        uses: actions/cache@v4
-        with:
-          path: apps/web/.next/cache
-          key: ${{ runner.os }}-${{ runner.arch }}-next-webpack-${{ hashFiles('apps/web/bun.lock') }}-${{ hashFiles('apps/web/src/**', 'apps/web/public/**', 'apps/web/*config.*', 'apps/web/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-next-webpack-${{ hashFiles('apps/web/bun.lock') }}-
-      - name: Build production web application
-        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        run: bun run --cwd apps/web --bun build
-
-  web-e2e:
-    name: Web e2e pilot (real backend)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: apps/web/package.json
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-      - run: uv sync --locked
-      - name: Install locked web workspace
-        run: bun install --cwd apps/web --frozen-lockfile
-      - name: Install Chromium and system libraries
-        working-directory: apps/web
-        run: bun --bun run e2e-web install chromium --with-deps
-      - name: Sign in, create a Graph, and run a builtin node
-        working-directory: apps/web
-        run: bun run test:e2e
-
-  deployment-images:
-    name: API deployment images
+  api-image:
+    name: API release image checks
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -270,52 +179,111 @@ jobs:
           -c 'from grafy_plugin_gis.gdal import GdalCli; c = GdalCli().capabilities();
           assert c.pmtiles_write and c.cog_write and c.png_write, c;
           print(c.model_dump_json())'
+      - name: Persist a raster through the installed GIS family
+        run: >-
+          docker run --rm --network=none
+          -v "$GITHUB_WORKSPACE/scripts/smoke_gis.py:/smoke_gis.py:ro"
+          --entrypoint .venv/bin/python grafy-api-ci /smoke_gis.py
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - name: Verify bounded subprocesses on Linux
+        run: uv run --locked pytest -q -o log_cli=false tests/unit/core/test_bounded_subprocess.py
+
   tiler:
     name: Tiler tests and image
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/tiler
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
       - uses: astral-sh/setup-uv@v6
         with:
+          python-version: "3.13"
           enable-cache: true
           cache-dependency-glob: apps/tiler/uv.lock
       - name: Install locked tiler environment
-        working-directory: apps/tiler
         run: uv sync --locked
       - name: Tiler lint and types
-        working-directory: apps/tiler
         run: |
           uv run ruff check src tests ../../libs/crypto
           uv run pyright
       - name: Tiler tests
-        working-directory: apps/tiler
         run: uv run pytest -q -o log_cli=false
       - name: Build the tiler image
+        working-directory: .
         run: docker build --file infra/docker/tiler.Dockerfile --target tiler --tag grafy-tiler-ci .
       - name: Run the tiler image against MinIO
-        working-directory: apps/tiler
         env:
           GRAFY_TEST_TILER_IMAGE: grafy-tiler-ci
         run: uv run pytest -q -o log_cli=false -m container
+
+  web:
+    name: Web tests and production build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: apps/web/package.json
+      - name: Install locked web workspace
+        id: web_install
+        run: bun ci
+      - name: Run web tests
+        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
+        run: bun --bun run test
+      - name: Cache Next.js build data
+        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
+        uses: actions/cache@v4
+        with:
+          path: apps/web/.next/cache
+          key: ${{ runner.os }}-${{ runner.arch }}-next-webpack-${{ hashFiles('apps/web/bun.lock') }}-${{ hashFiles('apps/web/src/**', 'apps/web/public/**', 'apps/web/*config.*', 'apps/web/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-next-webpack-${{ hashFiles('apps/web/bun.lock') }}-
+      - name: Build production web application
+        if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
+        run: bun --bun run build
+
+  web-e2e:
+    name: Web e2e pilot (real backend)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: apps/web/package.json
+      # The e2e CLI loads TypeScript via Node's module.registerHooks.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: uv sync --locked
+      - name: Install locked web workspace
+        run: bun install --cwd apps/web --frozen-lockfile
+      - name: Install Chromium and system libraries
+        working-directory: apps/web
+        run: bun --bun run e2e-web install chromium --with-deps
+      - name: Sign in, create a Graph, and run a builtin node
+        working-directory: apps/web
+        run: bun run test:e2e
 
   publish-images:
     name: Publish ${{ matrix.image }} image
     # Images exist only for commits that passed the required jobs on main, so a
     # deployable SHA is by construction a reviewed, CI-green commit.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs:
-      - backend-tests
-      - postgres-persistence
-      - native-runtime
-      - quality-contracts
-      - web
-      - web-e2e
-      - deployment-images
-      - tiler
+    needs: [quality-contracts, backend-tests, postgres-persistence, api-image, tiler, web, web-e2e]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -340,6 +308,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Compute source archive digest
+        if: matrix.image == 'grafy-api'
         id: source
         run: echo "digest=$(git archive HEAD | sha256sum | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
