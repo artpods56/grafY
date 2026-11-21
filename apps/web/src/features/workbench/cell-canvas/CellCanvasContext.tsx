@@ -25,15 +25,9 @@ import type { StageViewport } from "./cell-glass-stage";
  * a unit test or on the server), reading the resting default state.
  */
 
-export interface CellCanvasContextValue {
-  viewportApi: CellViewportApi | null;
-  store: CellInteractionStore | null;
-}
-
-const CellCanvasContext = React.createContext<CellCanvasContextValue>({
-  viewportApi: null,
-  store: null,
-});
+const CellViewportContext = React.createContext<CellViewportApi | null>(null);
+const CellInteractionStoreContext =
+  React.createContext<CellInteractionStore | null>(null);
 
 export function CellCanvasProvider({
   viewportApi = null,
@@ -44,23 +38,21 @@ export function CellCanvasProvider({
   store?: CellInteractionStore | null;
   children: React.ReactNode;
 }) {
-  const value = React.useMemo(
-    () => ({ viewportApi, store }),
-    [viewportApi, store],
-  );
   return (
-    <CellCanvasContext.Provider value={value}>
-      {children}
-    </CellCanvasContext.Provider>
+    <CellInteractionStoreContext.Provider value={store}>
+      <CellViewportContext.Provider value={viewportApi}>
+        {children}
+      </CellViewportContext.Provider>
+    </CellInteractionStoreContext.Provider>
   );
 }
 
 export function useCellViewportApi(): CellViewportApi | null {
-  return React.useContext(CellCanvasContext).viewportApi;
+  return React.useContext(CellViewportContext);
 }
 
 export function useCellInteractionStore(): CellInteractionStore | null {
-  return React.useContext(CellCanvasContext).store;
+  return React.useContext(CellInteractionStoreContext);
 }
 
 export const DEFAULT_CARD_INTERACTION_STATE: CellCardInteractionState =

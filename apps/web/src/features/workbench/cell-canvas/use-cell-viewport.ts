@@ -126,7 +126,7 @@ export function useCellViewport(
   );
   const [panning, setPanning] = React.useState(false);
   const viewportRef = React.useRef(viewport);
-  const stopPanRef = React.useRef<(() => void) | null>(null);
+  const stopPanRef = React.useRef<((commit?: boolean) => void) | null>(null);
 
   const clampZoom = React.useCallback(
     (zoom: number) => {
@@ -185,8 +185,7 @@ export function useCellViewport(
     return () => element.removeEventListener("wheel", onWheel);
   }, [containerRef, apply, clampZoom]);
 
-  // A pan in flight releases its window listeners with the canvas.
-  React.useEffect(() => () => stopPanRef.current?.(), []);
+  React.useEffect(() => () => stopPanRef.current?.(false), []);
 
   const onBackgroundPointerDown = React.useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
@@ -198,6 +197,7 @@ export function useCellViewport(
       const pointerId = event.pointerId;
       let lastX = event.clientX;
       let lastY = event.clientY;
+      let frame: number | null = null;
       function onMove(move: PointerEvent) {
         if (move.pointerId !== pointerId) return;
         const dx = move.clientX - lastX;
@@ -206,17 +206,31 @@ export function useCellViewport(
         lastY = move.clientY;
         if (dx === 0 && dy === 0) return;
         const current = viewportRef.current;
-        apply({ ...current, x: current.x + dx, y: current.y + dy });
+        viewportRef.current = {
+          ...current,
+          x: current.x + dx,
+          y: current.y + dy,
+        };
+        if (frame !== null) return;
+        frame = window.requestAnimationFrame(() => {
+          frame = null;
+          setViewportState(viewportRef.current);
+        });
       }
       function onEnd(end: PointerEvent) {
         if (end.pointerId === pointerId) stop();
       }
-      function stop() {
+      function stop(commit = true) {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onEnd);
         window.removeEventListener("pointercancel", onEnd);
         if (stopPanRef.current === stop) stopPanRef.current = null;
-        setPanning(false);
+        if (frame !== null) {
+          window.cancelAnimationFrame(frame);
+          frame = null;
+          if (commit) setViewportState(viewportRef.current);
+        }
+        if (commit) setPanning(false);
       }
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onEnd);
@@ -224,7 +238,7 @@ export function useCellViewport(
       stopPanRef.current = stop;
       setPanning(true);
     },
-    [apply],
+    [],
   );
 
   const viewAt = React.useCallback(

@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CellCanvas, type CellCanvasHandle } from "./CellCanvas";
+import { useCellCardState } from "./CellCanvasContext";
 import type {
   CellCardSurfaceData,
   CellRemotePeerState,
@@ -109,6 +110,90 @@ function mountCanvas(
 }
 
 describe("CellCanvas", () => {
+  it("pans without re-rendering a subscriber to an unchanged card", () => {
+    const renderCard = vi.fn();
+    function CardSubscriber() {
+      const state = useCellCardState("source");
+      renderCard(state);
+      return null;
+    }
+
+    const { container } = mountCanvas({ children: <CardSubscriber /> });
+    const canvas = container.querySelector<HTMLElement>("[data-cell-canvas]")!;
+    const world = container.querySelector<HTMLElement>("[data-cell-viewport]")!;
+    const initialTransform = world.style.transform;
+    expect(renderCard).toHaveBeenCalled();
+    renderCard.mockClear();
+
+    React.act(() => {
+      canvas.dispatchEvent(new WheelEvent("wheel", { deltaX: 40 }));
+    });
+    expect(world.style.transform).not.toBe(initialTransform);
+    expect(renderCard).not.toHaveBeenCalled();
+  });
+
+  it.each(["pointerup", "pointercancel"])(
+    "pans once per frame and applies the last move on %s",
+    (endEvent) => {
+      vi.useFakeTimers({
+        toFake: ["requestAnimationFrame", "cancelAnimationFrame"],
+      });
+      try {
+        const { container } = mountCanvas({ autoFitOnMount: false });
+        const canvas = container.querySelector("[data-cell-canvas]")!;
+        const world = container.querySelector<HTMLElement>(
+          "[data-cell-viewport]",
+        )!;
+        const initialTransform = world.style.transform;
+        const move = (clientX: number, clientY: number) => {
+          React.act(() => {
+            window.dispatchEvent(
+              new PointerEvent("pointermove", {
+                pointerId: 7,
+                clientX,
+                clientY,
+              }),
+            );
+          });
+        };
+
+        React.act(() => {
+          canvas.dispatchEvent(
+            new PointerEvent("pointerdown", { bubbles: true, pointerId: 7 }),
+          );
+        });
+        move(10, 5);
+        move(20, 10);
+        expect(world.style.transform).toBe(initialTransform);
+
+        React.act(() => {
+          vi.advanceTimersToNextFrame();
+        });
+        expect(world.style.transform).toBe(
+          "translate3d(20px, 10px, 0) scale(1)",
+        );
+
+        move(35, 15);
+        React.act(() => {
+          window.dispatchEvent(new PointerEvent(endEvent, { pointerId: 7 }));
+        });
+        expect(world.style.transform).toBe(
+          "translate3d(35px, 15px, 0) scale(1)",
+        );
+
+        move(55, 30);
+        React.act(() => {
+          vi.advanceTimersToNextFrame();
+        });
+        expect(world.style.transform).toBe(
+          "translate3d(35px, 15px, 0) scale(1)",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("renders cards, emits selection changes on click, and syncs controlled selection without loops", () => {
     const onSelectionChange = vi.fn();
     const { container, render } = mountCanvas({
