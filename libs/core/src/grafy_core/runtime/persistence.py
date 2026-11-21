@@ -1,19 +1,15 @@
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from hashlib import sha256
-from typing import Any, Protocol, cast, final, override
+from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
 from grafy_core.artifacts import (
-    ArtifactObject,
     ArtifactRef,
     ArtifactRefSequence,
     ArtifactTypeKey,
     JsonObject,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.nodes import (
     NodeExecutionContext,
     OutputContract,
@@ -21,6 +17,9 @@ from grafy_core.nodes import (
     PortShape,
 )
 from grafy_core.runtime.materialization import MaterializationProvenance
+
+if TYPE_CHECKING:
+    from grafy_core.runtime.artifact_values import ArtifactValues
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,108 +50,22 @@ class PersistedNodeOutput:
             raise AttributeError(name) from exc
 
 
-class ArtifactOutputWriter(Protocol):
-    artifact_type: ArtifactTypeKey
+class OutputPersister:
+    def __init__(self, values: "ArtifactValues | None" = None) -> None:
+        self._values = values
 
-    async def write(
+    async def _write(
         self,
-        value: object,
-        context: ArtifactWriteContext,
-    ) -> ArtifactRef: ...
-
-
-class ArtifactWriterRegistry:
-    def __init__(self, writers: list[ArtifactOutputWriter] | None = None) -> None:
-        self._writers: dict[ArtifactTypeKey, ArtifactOutputWriter] = {}
-        for writer in writers or []:
-            self.register(writer)
-
-    def register(self, writer: ArtifactOutputWriter) -> None:
-        if writer.artifact_type in self._writers:
-            artifact_type = writer.artifact_type
-            raise ValueError(
-                f"Output writer already registered for {artifact_type.id}@"
-                f"{artifact_type.schema_version}"
-            )
-        self._writers[writer.artifact_type] = writer
-
-    def writer_for(self, artifact_type: ArtifactTypeKey) -> ArtifactOutputWriter:
-        writer = self._writers.get(artifact_type)
-        if writer is None:
-            message = (
-                f"No output writer registered for {artifact_type.id}@"
-                f"{artifact_type.schema_version}"
-            )
-            raise RuntimeError(message)
-        return writer
-
-
-@final
-class InlineModelOutputWriter[T: BaseModel](ArtifactOutputWriter):
-    """Persists a typed Pydantic payload as an inline JSON artifact."""
-
-    def __init__(
-        self,
-        *,
-        artifact_type: ArtifactTypeKey,
-        model: type[T],
-        uow: UnitOfWorkPort,
-    ) -> None:
-        self.artifact_type = artifact_type
-        self._model = model
-        self._uow = uow
-
-    @override
-    async def write(
-        self,
+        key: ArtifactTypeKey,
         value: object,
         context: ArtifactWriteContext,
     ) -> ArtifactRef:
-        payload = self._model.model_validate(value)
-        payload_json = cast(JsonObject, payload.model_dump(mode="json", by_alias=True))
-        payload_bytes = json.dumps(
-            payload_json,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        provenance: dict[str, object] = {
-            input_name: [
-                {
-                    "artifact_id": str(ref.artifact_id),
-                    "artifact_type": ref.artifact_type,
-                    "schema_version": ref.schema_version,
-                }
-                for ref in refs
-            ]
-            for input_name, refs in context.provenance.refs_by_input.items()
-        }
-        metadata: JsonObject = {
-            "producer_node_id": context.node_context.node_id,
-        }
-        if provenance:
-            metadata["provenance"] = provenance
-        metadata.update(context.metadata)
-        artifact = ArtifactObject(
-            workspace_id=context.node_context.workspace_id,
-            artifact_type=self.artifact_type.id,
-            schema_version=self.artifact_type.schema_version,
-            content_type="application/json",
-            storage_backend="inline",
-            inline_payload=payload_json,
-            byte_size=len(payload_bytes),
-            sha256=sha256(payload_bytes).hexdigest(),
-            metadata=metadata,
-        )
-        async with self._uow as uow:
-            await uow.artifacts.add(artifact)
-            await uow.commit()
-        return artifact.ref()
-
-
-class OutputPersister:
-    def __init__(self, writer_registry: ArtifactWriterRegistry) -> None:
-        self._writer_registry = writer_registry
+        values = self._values
+        if values is None or values.declaration_for(key) is None:
+            raise RuntimeError(
+                f"No artifact declaration for {key.id}@{key.schema_version}"
+            )
+        return await values.write(key, value, context)
 
     async def persist(
         self,
@@ -166,9 +79,21 @@ class OutputPersister:
         values = _model_values(validated_output)
 
         for name, spec in contract.ports.items():
+            if spec.kind == "service":
+                # A service output is the live object the node returned. It is
+                # never written, and it does not become part of the stored result.
+                values.pop(name, None)
+                continue
             if name not in values:
                 if spec.required:
                     raise RuntimeError(f"Missing required output {name!r}")
+                continue
+            if values[name] is None:
+                # An optional None is omitted, not stored as a null artifact. The
+                # computation may still record why in unsupported_outputs metadata.
+                if spec.required:
+                    raise RuntimeError(f"Missing required output {name!r}")
+                values.pop(name, None)
                 continue
 
             values[name] = await self._persist_value(
@@ -252,12 +177,12 @@ class OutputPersister:
                 f"Output {spec.name!r} expected one ArtifactRef, got {len(refs)}"
             )
 
-        writer = self._writer_registry.writer_for(spec.produces)
         if spec.shape == PortShape.MANY:
             if items is None:
                 raise RuntimeError(f"Output {spec.name!r} expected a sequence")
             item_refs = [
-                await writer.write(
+                await self._write(
+                    spec.produces,
                     item,
                     ArtifactWriteContext(
                         node_context=context.node_context,
@@ -278,7 +203,7 @@ class OutputPersister:
                 item_refs=item_refs,
             )
 
-        return await writer.write(cast(object, value), context)
+        return await self._write(spec.produces, cast(object, value), context)
 
 
 def _model_values(value: BaseModel) -> dict[str, object]:

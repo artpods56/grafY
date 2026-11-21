@@ -38,11 +38,23 @@ export { PresenceOverlay } from "./PresenceOverlay";
 export { RemoteSelectionRing } from "./RemoteSelectionRing";
 export { remoteSelectionColor } from "./remote-selection";
 export {
+  ProjectRoomPresenceStore,
+  sameVisualParticipants,
+  type PresenceCollaborator,
+  type PresenceCursorSample,
+} from "./presence-store";
+export {
   useProjectRoomSession,
   type ProjectRoomSubmitResult,
   type UseProjectRoomSessionResult,
 } from "./useProjectRoomSession";
 export { useRemoteDragPreviews } from "./useRemoteDragPreviews";
+export {
+  usePresenceCollaborators,
+  usePresenceCursorSamples,
+  useRemoteDragTargets,
+  useRemoteSelectionColors,
+} from "./usePresenceStore";
 export {
   graphReadiness,
   type GraphReadiness,

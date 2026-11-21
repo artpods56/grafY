@@ -168,11 +168,14 @@ revocation invalidate the database row.
 
 Unsafe cookie-authenticated HTTP requests require both:
 
-- an exact allowed `Origin`; and
+- an `Origin` that exactly matches `GRAFY_PUBLIC_ORIGIN` or an entry in
+  `GRAFY_CORS_ORIGINS`
 - a session-bound CSRF token in `X-CSRF-Token`.
 
-CORS is not CSRF protection. Authentication endpoints and validation errors do
-not echo codes, verifiers, session values, or submitted secrets.
+The API enforces these checks independently of CORS middleware. Project room
+WebSockets use the same origin allowlist. Authentication endpoints and
+validation errors do not echo codes, verifiers, session values, or submitted
+secrets.
 
 ### Public endpoints
 
@@ -185,9 +188,16 @@ Login start and callback failures are rate limited, outstanding transactions
 per browser are bounded, and expired or consumed transactions are cleaned up on
 a fixed schedule. Abuse controls do not log submitted protocol values or claims.
 
-Development and acceptance tests use a configured OIDC provider or protocol-
-level test issuer. There is no trusted-user header, anonymous workspace, or
-authentication-disable mode.
+Acceptance tests use a configured OIDC provider or protocol-level test issuer.
+For local development without a reachable provider (another device on the LAN,
+no Docker), `GRAFY_AUTH_DEV_LOGIN=true` makes login start sign in a local dev
+user (`?as=<name>`, default `dev`) instead of redirecting to the provider. The
+dev user is an ordinary OIDC identity under the `grafy-dev` issuer with a
+verified `<name>@grafy.local` email, so it never merges with a provider
+account, and every request after login goes through the same session, CSRF,
+membership and capability checks. Each sign-in writes a `dev.login.success`
+audit event. The API refuses to start with the flag in production. There is no
+trusted-user header, anonymous workspace, or per-request authentication bypass.
 
 ## Personal access tokens
 
@@ -268,8 +278,8 @@ not a substitute for the workspace-visible graph history.
 
 ## API and gateway shape
 
-Internal FastAPI routes use `/v1`. The browser sees one HTTPS origin through a
-loopback-bound gateway:
+Internal FastAPI routes use `/v1`. In production the browser sees one HTTPS
+origin through a loopback-bound gateway:
 
 | Public path | Destination |
 | --- | --- |

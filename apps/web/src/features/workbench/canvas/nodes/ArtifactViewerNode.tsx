@@ -441,6 +441,7 @@ function RichArtifactViewerNode({
             onModeChoiceChange={(mode) => data.onModeChange?.(id, mode)}
             feedProjection={incomingEdge?.data?.projection ?? null}
             interaction={interaction}
+            presentation="canvas"
             onFocusedArtifactChange={setFocusedArtifact}
           />
         </div>

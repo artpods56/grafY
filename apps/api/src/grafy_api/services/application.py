@@ -14,11 +14,15 @@ import logging
 from pathlib import Path
 
 from grafy_core.application.identity import IdentityService
+from grafy_core.provider_cache import ProviderCache
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
 from grafy_core.egress import TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE, EgressPolicy
+from grafy_persistence.adapters.repositories.provider_operations import (
+    SqlProviderOperationStore,
+)
 from grafy_persistence.database import Database
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
-from grafy_shared.config import EgressConfig
+from grafy_shared.config import EgressConfig, ProviderCacheConfig
 
 from grafy_api.app_state import AppIdentity, AppResources
 from grafy_api.auth import AuthService
@@ -31,7 +35,7 @@ from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
 from grafy_api.realtime.agent_events import ProjectAgentEvents
 from grafy_api.realtime.hub import ProjectRoomHub
-from grafy_api.realtime.run_events import ProjectRunEvents
+from grafy_api.realtime.run_events import ProjectNodeProgress, ProjectRunEvents
 from grafy_api.runs.service import RunService
 from grafy_api.runs.facts import ApplicationFactsFactory
 from grafy_api.runs.persistence import PersistentResultStore, RepositoryProjectDocuments
@@ -43,6 +47,23 @@ from grafy_api.storage import configured_file_storage
 from grafy_api.uploads import UploadServiceConfig
 
 logger = logging.getLogger(__name__)
+
+
+def build_provider_cache(
+    database: Database, config: ProviderCacheConfig
+) -> ProviderCache | None:
+    """One cache for the process, or none when the deployment turns it off."""
+
+    if not config.provider_cache_enabled:
+        return None
+    return ProviderCache(
+        SqlProviderOperationStore(
+            database.sessions,
+            max_payload_bytes=config.provider_cache_max_payload_bytes,
+        ),
+        cleanup_interval_seconds=config.provider_cache_cleanup_interval_seconds,
+        cleanup_batch_rows=config.provider_cache_cleanup_batch_rows,
+    )
 
 
 def acquire_api_owner_lease(workspace: Path, *, required: bool) -> ApiOwnerLease | None:
@@ -74,17 +95,22 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
         ),
         operator_emails=settings.auth.operator_emails,
     )
+    if settings.auth.auth_dev_login:
+        logger.warning(
+            "auth_dev_login_enabled: the login route signs in local dev users "
+            "without the OIDC provider"
+        )
     auth_service = AuthService(
         auth=settings.auth,
         public_origin=settings.app.public_origin,
         unit_of_work_factory=identity_uow_factory,
         identity_service=identity_service,
+        allowed_cors_origins=settings.app.allowed_cors_origins,
     )
     return AppIdentity(
         identity_uow_factory=identity_uow_factory,
         identity_service=identity_service,
         auth_service=auth_service,
-        public_origin=settings.app.public_origin,
     )
 
 
@@ -137,6 +163,7 @@ async def build_app_resources(
         unit_of_work_factory=new_unit_of_work,
         plugin_registry=registry,
         encryption_key=settings.keys.credential_encryption_key,
+        provider_secrets=settings.providers,
     )
     # An Agent's own key is sealed with the same deployment key as a node secret, and
     # its endpoint is dialed against the same egress grants the workbench was built with.
@@ -169,7 +196,10 @@ async def build_app_resources(
         tiler_config=settings.tiler,
         upload_config=UploadServiceConfig.from_settings(settings.uploads),
         node_secrets=node_secrets,
+        progress_reporter_factory=lambda: ProjectNodeProgress(project_room_hub),
         egress_policy=workbench_egress_policy(settings.egress),
+        provider_cache=build_provider_cache(database, settings.provider_cache),
+        provider_cache_ttl_seconds=settings.provider_cache.provider_cache_ttl_seconds,
     )
     digests = RegistryImplementationDigests.from_registry(
         registry, uv_lock=Path(__file__).resolve().parents[5] / "uv.lock"
@@ -186,6 +216,7 @@ async def build_app_resources(
         runners=workbench.runner_factory,
         events=ProjectRunEvents(hub=project_room_hub, uow_factory=new_unit_of_work),
         concurrency=settings.execution.project_computation_concurrency,
+        service_operators=registry.service_operators,
     )
     # An Agent calls a node as a tool through the Run service, so the turn runtime is built
     # once Runs exist: it shares the Project's scheduler and its concurrency budget.

@@ -14,6 +14,7 @@ import {
   type NodeTypes,
   type OnConnect,
   type OnConnectEnd,
+  type OnConnectStart,
   type OnEdgesChange,
   type OnNodesChange,
   type ReactFlowInstance,
@@ -36,6 +37,7 @@ import {
   type CanvasEdge,
   type CanvasNode,
 } from "./artifact-viewer";
+import { FlowStoreBridge, type FlowStore } from "./flow-drag-store";
 import { connectionIsValid } from "./handles";
 import ArtifactViewerEdge from "./edges/ArtifactViewerEdge";
 import ArtifactViewerInteractionEdge from "./edges/ArtifactViewerInteractionEdge";
@@ -84,6 +86,8 @@ export interface WorkflowCanvasProps {
   onEdgesChange: OnEdgesChange<CanvasEdge>;
   onConnect: OnConnect;
   onConnectEnd?: OnConnectEnd;
+  /** A connection drag has begun: the canvas is being pointed at, not yet edited. */
+  onConnectStart?: OnConnectStart;
   isValidConnection?: IsValidConnection<CanvasEdge>;
   onPaneReady?: (instance: ReactFlowInstance<CanvasNode, CanvasEdge>) => void;
   onPaneClick?: () => void;
@@ -92,6 +96,12 @@ export interface WorkflowCanvasProps {
   editable?: boolean;
   /** Unmount nodes and edges outside the viewport. */
   onlyRenderVisibleElements?: boolean;
+  /**
+   * Receives React Flow's own store, so the owner of the document can move the
+   * nodes a pointer holds without rendering the canvas itself. See
+   * `moveDraggedNodes`.
+   */
+  flowStoreRef?: React.RefObject<FlowStore | null>;
   /** Background lattice gap in flow units; omit to hide the painted grid. */
   gridGap?: number | null;
 }
@@ -126,12 +136,14 @@ export function WorkflowCanvas({
   onEdgesChange,
   onConnect,
   onConnectEnd,
+  onConnectStart,
   isValidConnection = connectionIsValid,
   onPaneReady,
   onPaneClick,
   animateEdges = false,
   editable = true,
   onlyRenderVisibleElements = false,
+  flowStoreRef,
   gridGap = 54,
 }: WorkflowCanvasProps) {
   const { resolved } = useTheme();
@@ -159,6 +171,7 @@ export function WorkflowCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onInit={onPaneReady}
         onPaneClick={onPaneClick}
@@ -244,6 +257,7 @@ export function WorkflowCanvas({
         }}
       >
         <SelectionRectangleReset />
+        {flowStoreRef ? <FlowStoreBridge storeRef={flowStoreRef} /> : null}
         {children}
         {gridGap != null && gridGap > 0 ? (
           <Background

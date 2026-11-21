@@ -8,9 +8,10 @@ workspace `grafy-core` dependency and deployment build identity with families in
 ## Dependency and registration boundaries
 
 The family exports one `Plugin` containing node declarations, artifact contracts,
-and resolver/writer factories. The API composition owns the finite registration
-tuple. An absent family has no catalog entry or execution route. Python
-execution and its presets are retired, and there is no SQL family.
+and the `Artifact` declarations that load and store those types. The API
+composition owns the finite registration tuple. An absent family has no catalog
+entry or execution route. Python execution and its presets are retired, and
+there is no SQL family.
 
 Families import core contracts and ports. They never import `grafy_api`, HTTP
 routers, or concrete storage implementations. Factories receive the active
@@ -19,9 +20,8 @@ from declared `NodeSecretInput` slots, never from config fields or environment
 variables containing provider credentials.
 
 An artifact type has one owner. Consumers declare an exact dependency on its
-contract rather than defining a second type id for the same payload. Shared
-handlers for an identical type may be deduplicated at composition; differing
-artifact contracts must fail registry validation. Upload extensions belong to
+contract rather than defining a second type id for the same payload. Differing
+artifact contracts fail registry validation. Upload extensions belong to
 file-format contracts. Interpretation stays a visible decode or import node.
 
 ## In-process safety constraints

@@ -132,8 +132,9 @@ jobs:
             --build-arg GRAFY_BUILD_DIGEST="$digest" --tag grafy-native-api-ci .
       - name: Persist a raster through the installed GIS family
         run: >-
-          docker run --rm --network=none --entrypoint .venv/bin/python
-          grafy-native-api-ci -m grafy_plugin_gis.smoke
+          docker run --rm --network=none
+          -v "$GITHUB_WORKSPACE/scripts/smoke_gis.py:/smoke_gis.py:ro"
+          --entrypoint .venv/bin/python grafy-native-api-ci /smoke_gis.py
       - name: Verify bounded subprocesses on Linux
         # The release image deliberately has no test dependencies. Use the
         # runner's locked workspace to exercise real rlimits and cancellation.

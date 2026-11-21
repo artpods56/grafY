@@ -1,25 +1,15 @@
-from grafy_core.artifacts import Artifact
-from grafy_core.table_contracts import TABLE_DATA
-
 from grafy_workbench.table.declaration import TABLES
-from grafy_workbench.table.persistence import TableArtifactResolver, TableArtifactWriter
+from grafy_workbench.table.persistence import table_artifact
 
+# Note Table before the node class is created. Port derivation runs at class
+# definition, so registering afterwards leaves the transliteration node with no
+# table port.
+TABLES.register(table_artifact())
 
-TABLES.register(
-    Artifact(
-        spec=TABLE_DATA,
-        resolver=lambda context: TableArtifactResolver(
-            uow=context.uow,
-            storage=context.storage,
-        ),
-        writer=lambda context: TableArtifactWriter(
-            storage=context.storage,
-            uow=context.uow,
-            bucket=context.bucket,
-            storage_backend=context.storage_backend,
-        ),
-    )
-)
+from grafy_workbench.table import concat  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
+from grafy_workbench.table import markdown_tables  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
+from grafy_workbench.table import place_matching  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
+from grafy_workbench.table import transliteration  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]
 
 
 __all__ = ["TABLES"]

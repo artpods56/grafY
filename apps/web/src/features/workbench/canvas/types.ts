@@ -12,6 +12,7 @@ import type {
   RunNodeInput,
   RunNodeResult,
   SavedGraphNode,
+  ServiceContractKey,
 } from "@/lib/api";
 import {
   initialInputPlugs,
@@ -122,11 +123,19 @@ export type PortMeta = PortMetaBase &
         artifactTypeId: string;
         schemaVersion: number;
         artifactTypeVariable?: never;
+        serviceContracts?: never;
       }
     | {
         artifactTypeId?: never;
         schemaVersion?: never;
         artifactTypeVariable: string;
+        serviceContracts?: never;
+      }
+    | {
+        artifactTypeId?: never;
+        schemaVersion?: never;
+        artifactTypeVariable?: never;
+        serviceContracts: readonly ServiceContractKey[];
       }
   );
 
@@ -224,7 +233,12 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   /** Ephemeral collaborator selection tint; never persisted. */
   remoteSelectionColor?: string | null;
   onConfigChange?: (nodeId: string, name: string, value: unknown) => void;
+  tiffWindowSourceId?: string;
+  onConfigPatch?: (nodeId: string, patch: WorkflowNodeConfig) => void;
   onLayoutChange?: (nodeId: string, layout: WorkflowNodeLayout | null) => void;
+  onRunNode?: (nodeId: string) => void;
+  onRevealNodeOutput?: (nodeId: string) => void;
+  hasFollowingOutputCard?: boolean;
   onRemoveNode?: (nodeId: string) => void;
   onAddInputPlug?: (nodeId: string, portName: string) => void;
   onRemoveInputPlug?: (nodeId: string, plugId: string) => void;
@@ -268,6 +282,7 @@ export const WORKFLOW_NODE_TYPE = "grafyWorkflowNode";
 export const WORKFLOW_EDGE_TYPE = "grafyWorkflowEdge";
 export const GIS_COMPOSE_MAP_OPERATOR_ID = "gis.map.compose";
 export const GIS_VECTOR_LAYER_OPERATOR_ID = "gis.map.vector_layer";
+export const TIFF_TEXT_DETECTOR_OPERATOR_ID = "ocr.detect_tiff_text";
 
 export function workflowNodeIsSupported(data: WorkflowNodeData): boolean {
   return data.compatibility.status === "supported";
@@ -445,19 +460,43 @@ export function effectivePortShape(
   return data.mappedInputPorts.includes(port.name) ? "many" : port.shape;
 }
 
+export function portIsService(port: Port): boolean {
+  return port.kind === "service";
+}
+
+/** A provider node: every output is a service port (no stored artifact). */
+export function isServiceProviderNode(spec: NodeSpec): boolean {
+  return (
+    spec.outputs.length > 0 && spec.outputs.every((port) => portIsService(port))
+  );
+}
+
 export function portMetaForPort(
   port: Port,
   shape: Port["shape"] = port.shape,
   plugId?: string,
   artifactTypeBindings: WorkflowArtifactTypeBindings = {},
 ): PortMeta {
-  const artifactType = resolvedPortArtifactType(port, artifactTypeBindings);
   const base = {
     portName: port.name,
     shape,
     direction: port.direction,
     ...(plugId ? { plugId } : {}),
   };
+  if (portIsService(port)) {
+    const serviceContracts = port.service_contracts ?? [];
+    if (!serviceContracts.length) {
+      throw new Error(
+        `Cannot encode service port ${port.name}: it names no service contract`,
+      );
+    }
+    return {
+      ...base,
+      serviceContracts,
+    };
+  }
+
+  const artifactType = resolvedPortArtifactType(port, artifactTypeBindings);
   if (artifactType) {
     const alsoAccepts = port.also_accepts ?? [];
     return {

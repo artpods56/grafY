@@ -581,6 +581,7 @@ def install_gated_run_service(
             uow_factory=_collaboration_uow_factory(app),
         ),
         concurrency=concurrency,
+        service_operators=registry.service_operators,
     )
     return runner
 

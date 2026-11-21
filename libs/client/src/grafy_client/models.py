@@ -5,7 +5,7 @@ from uuid import UUID
 from grafy_core.artifacts import ArtifactTypeKey
 from grafy_core.kernel.project import ProjectDocument
 from grafy_core.nodes import PortShape
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ClientModel(BaseModel):
@@ -16,14 +16,28 @@ class ClientModel(BaseModel):
     )
 
 
+class ServiceContractKey(ClientModel):
+    id: str
+    version: int
+
+
+class ServiceContract(ClientModel):
+    id: str
+    version: int
+    title: str
+
+
 class CatalogPort(ClientModel):
     name: str
     title: str | None = None
     description: str | None = None
     direction: Literal["input", "output"]
+    kind: Literal["artifact", "service"] = "artifact"
     artifact_type: ArtifactTypeKey | None = None
     artifact_type_variable: str | None = None
     also_accepts: tuple[ArtifactTypeKey, ...] = ()
+    service_contracts: tuple[ServiceContractKey, ...] = ()
+    features: tuple[str, ...] = ()
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...]
     instance_plugs: bool = False
@@ -33,7 +47,25 @@ class CatalogPort(ClientModel):
     agent_default: Literal["hidden"] | None = None
 
     @model_validator(mode="after")
-    def require_one_artifact_contract(self) -> Self:
+    def require_port_contract(self) -> Self:
+        if self.kind == "service":
+            if (
+                self.artifact_type is not None
+                or self.artifact_type_variable is not None
+                or self.also_accepts
+            ):
+                raise ValueError(
+                    "Catalog service port cannot declare an artifact type or variable"
+                )
+            if not self.service_contracts:
+                raise ValueError(
+                    "Catalog service port must name at least one service contract"
+                )
+            return self
+        if self.service_contracts:
+            raise ValueError(
+                "Catalog artifact port cannot declare a service contract"
+            )
         if (self.artifact_type is None) == (self.artifact_type_variable is None):
             raise ValueError(
                 "Catalog port must declare exactly one artifact type or variable"
@@ -86,8 +118,37 @@ class CatalogConversion(ClientModel):
 class NodeCatalog(ClientModel):
     plugins: tuple[dict[str, object], ...]
     artifact_types: tuple[dict[str, object], ...]
+    service_contracts: tuple[ServiceContract, ...] = ()
     nodes: tuple[CatalogNode, ...]
     artifact_conversions: tuple[CatalogConversion, ...]
+
+
+class Workspace(ClientModel):
+    """One Workspace the caller reaches, with the capabilities it holds there.
+
+    A personal access token lists only the Workspace it is bound to, and its
+    capabilities are its scopes intersected with the member's current role.
+    """
+
+    id: UUID
+    slug: str
+    name: str
+    kind: Literal["personal", "shared"]
+    role: Literal["viewer", "editor", "owner"]
+    capabilities: tuple[str, ...]
+
+
+class ProjectSummary(ClientModel):
+    """A Project as the Workspace list shows it: counts describe the live head."""
+
+    id: UUID
+    name: str
+    revision: int
+    graph_count: int
+    node_count: int
+    edge_count: int
+    updated_at: datetime
+    draft_pending: bool
 
 
 class Project(ClientModel):
@@ -130,6 +191,74 @@ class UploadItem(ClientModel):
     artifact_id: UUID | None = None
     artifact_type: str | None = None
     notice: str | None = None
+
+
+class UploadTarget(ClientModel):
+    """Where the bytes of one reserved upload go.
+
+    ``api`` targets are this API's own content route and take the bearer token;
+    ``storage`` targets are signed object-storage URLs whose signature is the
+    credential, so they take only ``headers``.
+    """
+
+    kind: Literal["api", "storage"] = "api"
+    upload_id: str
+    url: str
+    method: str
+    expires_at: datetime
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+class TableColumn(ClientModel):
+    id: str
+    title: str
+    value_type: str
+
+
+class TableSchema(ClientModel):
+    columns: tuple[TableColumn, ...]
+    total_rows: int
+
+
+class TableCell(ClientModel):
+    display: str | float | bool | None
+    truncated: bool
+    original_length: int | None = None
+
+
+class TablePage(ClientModel):
+    """A bounded window of a table artifact; long cells arrive truncated."""
+
+    columns: tuple[TableColumn, ...]
+    rows: tuple[dict[str, TableCell], ...]
+    row_indices: tuple[int, ...] = ()
+    highlighted_row_indices: tuple[int, ...] = ()
+    offset: int
+    limit: int
+    total_rows: int
+    column_offset: int
+    column_limit: int
+    total_columns: int
+
+
+class GeoRender(ClientModel):
+    """The render descriptor of a geo artifact: layers, bounds, basemap.
+
+    Layer entries stay JSON objects; they carry tile URLs relative to the API.
+    """
+
+    artifact_id: UUID
+    kind: str
+    basemap: Literal["openstreetmap", "none"]
+    initial_bounds: tuple[float, float, float, float] | None
+    layers: tuple[dict[str, object], ...]
+
+
+class GeoFeatureMatch(ClientModel):
+    artifact_id: UUID
+    bounds: tuple[float, float, float, float] | None
+    matched_feature_count: int
+    source_artifact_ids: tuple[UUID, ...]
 
 
 class NodeSecretStatus(ClientModel):
@@ -191,6 +320,8 @@ __all__ = [
     "CatalogNode",
     "CatalogPort",
     "CommandReceipt",
+    "GeoFeatureMatch",
+    "GeoRender",
     "InstanceKey",
     "InstanceResult",
     "InstanceState",
@@ -198,8 +329,17 @@ __all__ = [
     "NodeSecretStatus",
     "Project",
     "ProjectHead",
+    "ProjectSummary",
     "Run",
     "RunTarget",
+    "ServiceContract",
+    "ServiceContractKey",
     "SubmittedCommands",
+    "TableCell",
+    "TableColumn",
+    "TablePage",
+    "TableSchema",
     "UploadItem",
+    "UploadTarget",
+    "Workspace",
 ]

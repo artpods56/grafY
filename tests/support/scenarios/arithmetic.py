@@ -17,8 +17,11 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.nodes import InPort, OutPort
 from grafy_core.plugins import NodeCachePolicy, Plugin
+
+import grafy_workbench.value.nodes as _value_nodes
+
+_ = _value_nodes.__name__  # notes int before these ports
 
 
 ARITHMETIC_TEST_PLUGIN = Plugin(
@@ -46,7 +49,6 @@ class IntegerSequenceInput(NodeInput):
 class IntegerSequenceOutput(NodeOutput):
     values: Annotated[
         list[StrictInt],
-        OutPort(INTEGER_VALUE),
         Field(title="Values", description="Ordered generated integer sequence."),
     ]
 
@@ -70,12 +72,10 @@ async def integer_sequence(
 class BinaryIntegerInput(NodeInput):
     left: Annotated[
         StrictInt,
-        InPort(INTEGER_VALUE),
         Field(title="Left", description="Left-hand integer operand."),
     ]
     right: Annotated[
         StrictInt,
-        InPort(INTEGER_VALUE),
         Field(title="Right", description="Right-hand integer operand."),
     ]
 
@@ -83,7 +83,6 @@ class BinaryIntegerInput(NodeInput):
 class IntegerResultOutput(NodeOutput):
     result: Annotated[
         StrictInt,
-        OutPort(INTEGER_VALUE),
         Field(description="Resulting integer value."),
     ]
 
@@ -133,7 +132,6 @@ async def multiply_integers(
 class SumIntegersInput(NodeInput):
     values: Annotated[
         list[StrictInt],
-        InPort(INTEGER_VALUE),
         Field(
             min_length=1,
             title="Values",
@@ -145,7 +143,6 @@ class SumIntegersInput(NodeInput):
 class SumIntegersOutput(NodeOutput):
     result: Annotated[
         StrictInt,
-        OutPort(INTEGER_VALUE),
         Field(description="Sum of all input integers."),
     ]
 

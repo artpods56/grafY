@@ -285,7 +285,10 @@ export interface UseSavedGraphLifecycleResult {
   savedGraphsError: string | null;
   refreshSavedGraphs: () => void;
   requestNewGraph: () => void;
-  saveCurrentGraph: (nameOverride?: string) => Promise<void>;
+  saveCurrentGraph: (
+    nameOverride?: string,
+    options?: { background?: boolean },
+  ) => Promise<void>;
   openSavedGraph: (graphId: string) => Promise<void>;
   removeSavedGraph: (graph: SavedGraphSummary) => Promise<void>;
   syncFromCollaborativeHead: (head: CollaborativeHead) => void;
@@ -358,11 +361,21 @@ export function useSavedGraphLifecycle({
   const mountedRef = React.useRef(true);
   const currentFingerprintRef = React.useRef("");
   const presentationRef = React.useRef(presentation);
+  // What the server last accepted, as read by a save that runs later than the
+  // render which queued it: a background save queued behind another has to
+  // decide against the canvas and the checkpoint as they are when it starts.
+  const savedFingerprintRef = React.useRef<string | null>(null);
+  const activeGraphRef = React.useRef<ActiveSavedGraph | null>(activeGraph);
+  // Saves are serialised through this chain. A background save must not be
+  // dropped when one is already in flight — the edit it carries is the only
+  // copy — so it queues, and each queued save re-reads the canvas at its turn.
+  const saveQueueRef = React.useRef<Promise<void>>(Promise.resolve());
 
   const currentDraft = React.useMemo(
     () => createGraphDraft(document, presentation),
     [document, presentation],
   );
+  const currentDraftRef = React.useRef(currentDraft);
   const currentFingerprint = React.useMemo(
     () => savedGraphFingerprint(currentDraft),
     [currentDraft],
@@ -379,7 +392,13 @@ export function useSavedGraphLifecycle({
   React.useEffect(() => {
     currentFingerprintRef.current = currentFingerprint;
     presentationRef.current = presentation;
-  }, [currentFingerprint, presentation]);
+    currentDraftRef.current = currentDraft;
+  }, [currentFingerprint, presentation, currentDraft]);
+
+  React.useEffect(() => {
+    savedFingerprintRef.current = savedFingerprint;
+    activeGraphRef.current = activeGraph;
+  }, [savedFingerprint, activeGraph]);
 
   const { isDirty, canMaterializeSavedGraph, persistenceOperationBusy } =
     savedGraphDirtiness({
@@ -522,13 +541,63 @@ export function useSavedGraphLifecycle({
     [syncFromCollaborativeHead],
   );
 
-  const saveCurrentGraph = React.useCallback(
-    async (nameOverride?: string) => {
-      if (isExecutionRunning() || saving || openingGraphId || deletingGraphId)
-        return;
+  /**
+   * Move the canvas' checkpoint to a head this tab's own save returned, without
+   * rebuilding the canvas.
+   *
+   * A save response is nearly always the document this tab just wrote. Running
+   * it back through `syncFromCollaborativeHead` discards state that exists only
+   * on the canvas — node measurements, drag positions, the selection — and
+   * React Flow hides every node until it has measured them again, which is what
+   * a person sees as the canvas blanking and repainting. When the accepted head
+   * says what the canvas already says, only the checkpoint it is compared
+   * against has moved, and that is all this updates. Anything else — a
+   * concurrent writer, a server-side normalization — returns null and the caller
+   * takes the full rehydration instead.
+   */
+  const acceptSavedHead = React.useCallback(
+    (head: CollaborativeHead, submitted: GraphSaveDraft) => {
+      const graph = openGraphOf(head, openGraphIdRef.current);
+      if (graph === null) return null;
+      const responseDocument = documentOfGraph(graph);
+      const responsePresentation = presentationOf(graph);
+      if (
+        savedGraphFingerprint(
+          createGraphDraft(responseDocument, responsePresentation),
+        ) !== savedGraphFingerprint(submitted)
+      ) {
+        return null;
+      }
+      const nextActiveGraph = activeGraphFrom(head, graph);
+      openGraphIdRef.current = graph.id;
+      setOpenGraphId(graph.id);
+      setActiveGraph(nextActiveGraph);
+      rememberSavedDraft(submitted);
+      setPersistenceError(null);
+      return nextActiveGraph;
+    },
+    [rememberSavedDraft],
+  );
+
+  const writeCurrentGraph = React.useCallback(
+    async (nameOverride?: string, background = false) => {
+      if (isExecutionRunning() || openingGraphId || deletingGraphId) return;
+      const draft = background ? currentDraftRef.current : currentDraft;
       const submittedDraft = nameOverride?.trim()
-        ? { ...currentDraft, name: nameOverride.trim() }
-        : currentDraft;
+        ? { ...draft, name: nameOverride.trim() }
+        : draft;
+      // A background save whose body the server already accepted would write
+      // the same document back to it. That happens when a queued background
+      // save reaches its turn after an earlier save carried the same edit. An
+      // explicit Save still writes, because it answers the person and reports
+      // why it could not.
+      if (
+        background &&
+        activeGraphRef.current !== null &&
+        savedFingerprintRef.current === savedGraphFingerprint(submittedDraft)
+      ) {
+        return;
+      }
       if (!submittedDraft.name) {
         setPersistenceError("Enter a graph name before saving.");
         return;
@@ -536,10 +605,11 @@ export function useSavedGraphLifecycle({
       // A save is addressed to one Graph of one Project. Pairing the adapter
       // with that Graph here means every write below carries it, and a canvas
       // with no Graph falls to the draft path rather than guessing.
+      const activeGraphNow = activeGraphRef.current ?? activeGraph;
       const roomSave =
-        activeGraph === null || roomPersistence === null
+        activeGraphNow === null || roomPersistence === null
           ? null
-          : { adapter: roomPersistence, graphId: activeGraph.graphId };
+          : { adapter: roomPersistence, graphId: activeGraphNow.graphId };
       if (roomSave !== null && !roomSave.adapter.canPersist) {
         setPersistenceError(
           "Graph synchronization is unavailable while the collaboration room connects or reconnects. Your canvas is unchanged; wait for synchronization to finish, then try saving again.",
@@ -547,7 +617,11 @@ export function useSavedGraphLifecycle({
         return;
       }
       const documentGeneration = documentGenerationRef.current;
-      setSaving(true);
+      // A background save leaves `saving` alone: it is the flag that pauses
+      // local authoring and drives the Save control, and pausing the canvas
+      // every time editing settles would make a person's next gesture bounce
+      // off a persistence operation they never asked for.
+      if (!background) setSaving(true);
       setPersistenceError(null);
       try {
         const persistenceResult = roomSave
@@ -564,56 +638,61 @@ export function useSavedGraphLifecycle({
               // the save writes it as a Project command and checkpoints the
               // Project to make it durable. A new canvas becomes a new Project
               // holding one Graph.
-              head: activeGraph
+              head: activeGraphNow
                 ? await writeGraphDocument(
                     workspaceId,
-                    activeGraph.id,
-                    activeGraph.graphId,
+                    activeGraphNow.id,
+                    activeGraphNow.graphId,
                     submittedDraft,
                   )
                 : await createProjectWithGraph(workspaceId, submittedDraft),
             };
         if (!mountedRef.current) return;
         void refreshGraphSummaries(workspaceId);
-        void refreshNodeRegistry();
+        // The node registry is the Workspace's catalog of node types. Saving a
+        // Graph cannot change it, so a background save does not refetch it.
+        if (!background) void refreshNodeRegistry();
         if (documentGenerationRef.current !== documentGeneration) {
           return;
         }
         if (persistenceResult.kind === "collaborative") {
           const { checkpointHead, currentHead } = persistenceResult.result;
-          syncFromCollaborativeHead(checkpointHead);
+          // The checkpoint this save landed at is what the canvas is now
+          // compared against. The room's command stream, not this save, is what
+          // keeps the canvas aligned with everyone else's edits.
+          if (acceptSavedHead(checkpointHead, submittedDraft) === null) {
+            syncFromCollaborativeHead(checkpointHead);
+          }
           if (
             currentHead.room_epoch !== checkpointHead.room_epoch ||
             currentHead.collaboration_sequence !==
               checkpointHead.collaboration_sequence
           ) {
+            // Someone else moved the head while this save was in flight, so the
+            // canvas has to be told: their content is not on it.
             syncFromCollaborativeHead(currentHead);
-          }
-          if (
-            !mountedRef.current ||
-            documentGenerationRef.current !== documentGeneration
-          ) {
-            return;
           }
           return;
         }
         const savedHead = persistenceResult.head;
         const savedGraph = openGraphOf(savedHead, openGraphIdRef.current);
         if (savedGraph === null) return;
-        openGraphIdRef.current = savedGraph.id;
-        setOpenGraphId(savedGraph.id);
-        const responseDocument = documentOfGraph(savedGraph);
-        const responsePresentation = presentationOf(savedGraph);
-        const nextActiveGraph = activeGraphFrom(savedHead, savedGraph);
-        const createdGraph = activeGraph === null;
+        const createdGraph = activeGraphNow === null;
         if (createdGraph) {
           approvedRouteGraphIdRef.current = savedHead.project_id;
         }
-        setActiveGraph(nextActiveGraph);
-        rememberSavedDraft(
-          createGraphDraft(responseDocument, responsePresentation),
-        );
-        replacePresentation(responsePresentation);
+        let nextActiveGraph = acceptSavedHead(savedHead, submittedDraft);
+        if (nextActiveGraph === null) {
+          openGraphIdRef.current = savedGraph.id;
+          setOpenGraphId(savedGraph.id);
+          const responsePresentation = presentationOf(savedGraph);
+          nextActiveGraph = activeGraphFrom(savedHead, savedGraph);
+          setActiveGraph(nextActiveGraph);
+          rememberSavedDraft(
+            createGraphDraft(documentOfGraph(savedGraph), responsePresentation),
+          );
+          replacePresentation(responsePresentation);
+        }
         if (createdGraph) {
           router.replace(
             workbenchGraphPath(workspaceSlug, savedHead.project_id),
@@ -622,7 +701,9 @@ export function useSavedGraphLifecycle({
             },
           );
         }
-        await refreshNodeSecretStatuses(nextActiveGraph, nodes);
+        if (!background) {
+          await refreshNodeSecretStatuses(nextActiveGraph, nodes);
+        }
         if (
           !mountedRef.current ||
           documentGenerationRef.current !== documentGeneration
@@ -648,11 +729,12 @@ export function useSavedGraphLifecycle({
           );
         }
       } finally {
-        if (mountedRef.current) setSaving(false);
+        if (!background && mountedRef.current) setSaving(false);
       }
     },
     [
       activeGraph,
+      acceptSavedHead,
       currentDraft,
       deletingGraphId,
       isExecutionRunning,
@@ -665,11 +747,35 @@ export function useSavedGraphLifecycle({
       replacePresentation,
       roomPersistence,
       router,
-      saving,
       syncFromCollaborativeHead,
       workspaceId,
       workspaceSlug,
     ],
+  );
+
+  /**
+   * Persist the canvas. A background save — the autosave behind an editing
+   * pause — runs off the person's hands: it does not pause authoring, does not
+   * rebuild the canvas from its own response, and queues behind a save already
+   * in flight rather than losing the edit it carried.
+   */
+  const saveCurrentGraph = React.useCallback(
+    (
+      nameOverride?: string,
+      options?: { background?: boolean },
+    ): Promise<void> => {
+      const background = options?.background === true;
+      // A second Save while one is in flight is the same request twice, so it is
+      // refused where it is made. A background save queues instead: the edit it
+      // carries has no other copy.
+      if (!background && saving) return Promise.resolve();
+      const write = () => writeCurrentGraph(nameOverride, background);
+      const queued = saveQueueRef.current.then(write, write);
+      // A failed write must not poison the chain for the edits after it.
+      saveQueueRef.current = queued.catch(() => undefined);
+      return queued;
+    },
+    [saving, writeCurrentGraph],
   );
 
   const purgeLocalGraphState = React.useCallback(() => {

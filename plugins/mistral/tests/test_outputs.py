@@ -2,13 +2,24 @@ import pytest
 from mistralai.client.models.ocrresponse import OCRResponse
 from pydantic import ValidationError
 
-from grafy_core.artifact_contracts import ImageRegion
-from grafy_core.table_contracts import TableValueType
+from grafy_core.artifact_contracts import ImageRegion, ImageRegionSet
+from grafy_core.ocr_contracts import OcrResult
+from grafy_core.table_contracts import Table, TableValueType
 from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
     MistralOcrProviderError,
     build_ocr_output,
 )
+
+
+def _blocks(result: OcrResult) -> Table:
+    assert result.blocks is not None
+    return result.blocks
+
+
+def _regions(result: OcrResult) -> ImageRegionSet:
+    assert result.regions is not None
+    return result.regions
 
 
 def response(pages: list[dict[str, object]]) -> OCRResponse:
@@ -86,7 +97,7 @@ def test_markdown_inlines_tables_and_preserves_images(table_format: str) -> None
         MistralOcrConfig.model_validate({"table_format": table_format}),
     )
     assert output.markdown.markdown == "TABLE ![img-0.jpeg](img-0.jpeg)\n\nsecond"
-    assert [page.index for page in output.regions.pages] == [0, 3]
+    assert [page.index for page in _regions(output).pages] == [0, 3]
 
 
 @pytest.mark.parametrize("granularity", [None, "block", "page"])
@@ -121,7 +132,7 @@ def test_blocks_columns_rows_and_confidence(granularity: str | None) -> None:
         ),
         MistralOcrConfig.model_validate({"confidence_scores_granularity": granularity}),
     )
-    assert [(c.id, c.title, c.value_type) for c in output.blocks.columns] == [
+    assert [(c.id, c.title, c.value_type) for c in _blocks(output).columns] == [
         ("page", "page", TableValueType.INTEGER),
         ("index", "index", TableValueType.INTEGER),
         ("kind", "kind", TableValueType.TEXT),
@@ -135,7 +146,7 @@ def test_blocks_columns_rows_and_confidence(granularity: str | None) -> None:
         ("min_confidence", "min_confidence", TableValueType.NUMBER),
         ("page_confidence", "page_confidence", TableValueType.NUMBER),
     ]
-    assert output.blocks.rows == [
+    assert _blocks(output).rows == [
         {
             "page": 0,
             "index": index,
@@ -198,7 +209,7 @@ def test_regions_labels_normalization_and_empty_block_pages() -> None:
     assert regions.regions[-1] == ImageRegion(
         x0=0, y0=0, x1=20, y1=30, kind="text", label="A title"
     )
-    row = output.blocks.rows[-1]
+    row = _blocks(output).rows[-1]
     assert (row["x0"], row["y0"], row["x1"], row["y1"]) == (
         regions.regions[-1].x0,
         regions.regions[-1].y0,
@@ -223,8 +234,8 @@ def test_images_fallback_only_when_blocks_absent(blocks: list[object] | None) ->
     output = build_ocr_output(
         response([page(blocks=blocks, images=images)]), MistralOcrConfig()
     )
-    assert output.blocks.rows == []
-    assert output.regions.regions == (
+    assert _blocks(output).rows == []
+    assert _regions(output).regions == (
         [ImageRegion(x0=0, y0=0, x1=20, y1=30, kind="image", label="complete")]
         if blocks is None
         else []
@@ -259,5 +270,5 @@ def test_region_pages_and_boxes_preserve_provider_order() -> None:
         ),
         MistralOcrConfig(),
     )
-    assert [p.index for p in output.regions.pages] == [3, 1]
-    assert [r.page for r in output.regions.regions] == [3, 1]
+    assert [p.index for p in _regions(output).pages] == [3, 1]
+    assert [r.page for r in _regions(output).regions] == [3, 1]

@@ -1,18 +1,14 @@
-"""Turn a window of a TIFF into JPEG or PNG bytes.
-
-One function, :func:`render_region`, serves tiles, thumbnails and the lazy
-overview: the caller picks the source window and the output size, this module
-makes the pixels displayable. Pixel space only; georeferencing is ignored.
-
-TODO(geo-open-on-map): a later "open on map" for georeferenced TIFFs adds a
-Web Mercator reader here (rio-tiler's ``Reader`` over the same source). It must
-stay a separate path: pixel-space tiles are what non-georeferenced scans need.
-"""
+"""Normalize TIFF pixels for image-space and Web Mercator rendering."""
 
 import numpy as np
+from morecantile import Tile
 from numpy.typing import NDArray
+from rasterio.enums import ColorInterp
 from rasterio.io import DatasetReader
+from rasterio.transform import Affine, from_bounds
 from rasterio.windows import Window
+from rio_tiler.constants import WEB_MERCATOR_TMS
+from rio_tiler.io import Reader
 from rio_tiler.models import ImageData
 from rio_tiler.reader import read as read_region
 
@@ -22,6 +18,7 @@ type Pixels = NDArray[np.uint8]
 
 # Samples per output pixel, per axis, when blending a two-colour scan.
 _SUPERSAMPLE = 8
+GEO_TILE_SIZE = 256
 
 
 def render_region(
@@ -40,6 +37,164 @@ def render_region(
     if tile_format == "jpg":
         return image.render(img_format="JPEG", add_mask=False, quality=jpeg_quality)
     return image.render(img_format="PNG", add_mask=info.has_alpha)
+
+
+def render_geo_tile(
+    ds: DatasetReader,
+    info: ImageInfo,
+    z: int,
+    x: int,
+    y: int,
+    *,
+    tile_format: TileFormat,
+    jpeg_quality: int,
+) -> bytes:
+    image = render_geo_tile_image(ds, info, z, x, y)
+    opaque = bool(np.all(image.mask == 255))
+    if tile_format == "jpg" and opaque:
+        return image.render(img_format="JPEG", add_mask=False, quality=jpeg_quality)
+    return image.render(img_format="PNG", add_mask=not opaque)
+
+
+def render_geo_tile_image(
+    ds: DatasetReader, info: ImageInfo, z: int, x: int, y: int
+) -> ImageData:
+    """Warp one Web Mercator tile to display pixels plus 0..255 coverage."""
+    # Ask GDAL to warp directly to the tile grid. The default rio-tiler VRT
+    # can describe the entire tile at native resolution before downsampling.
+    size = GEO_TILE_SIZE
+    bounds = WEB_MERCATOR_TMS.xy_bounds(Tile(x, y, z))
+    with Reader(None, dataset=ds) as reader:  # pyright: ignore[reportCallIssue] -- attrs defaults
+        tile = reader.tile(
+            x,
+            y,
+            z,
+            tilesize=size,
+            indexes=_geo_indexes(info, ds),
+            vrt_options={
+                "transform": from_bounds(*bounds, size, size),
+                "width": size,
+                "height": size,
+            },
+        )
+    return _display_image(tile, info, ds)
+
+
+class GeoMosaicComposer:
+    """Composites Web Mercator tiles top to bottom with premultiplied dst-over.
+
+    The caller adds the topmost sheet first. Each lower sheet only fills the
+    coverage the sheets above it left, so anti-aliased edges blend without
+    halos and the caller can stop as soon as the tile is opaque.
+    """
+
+    def __init__(self, size: int = GEO_TILE_SIZE) -> None:
+        self._rgb = np.zeros((3, size, size), dtype=np.float32)
+        self._alpha = np.zeros((size, size), dtype=np.float32)
+        self._has_pixels = False
+
+    @property
+    def is_opaque(self) -> bool:
+        return self._has_pixels and float(self._alpha.min()) >= 1.0 - (0.5 / 255.0)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self._has_pixels
+
+    def add_below(self, image: ImageData) -> None:
+        coverage = image.mask
+        if not np.any(coverage > 0):
+            return
+        layer_rgb = image.array.data
+        if layer_rgb.shape[0] == 1:
+            layer_rgb = np.repeat(layer_rgb, 3, axis=0)
+        else:
+            layer_rgb = layer_rgb[:3]
+        weight = (coverage.astype(np.float32) / 255.0) * (1.0 - self._alpha)
+        if not np.any(weight > 0.0):
+            return
+        self._rgb += layer_rgb.astype(np.float32) * weight[None, :, :]
+        self._alpha += weight
+        self._has_pixels = True
+
+    def encode(self, *, tile_format: TileFormat, jpeg_quality: int) -> bytes:
+        if not self._has_pixels:
+            raise ValueError("Cannot encode an empty mosaic tile")
+        out_rgb = np.zeros_like(self._rgb)
+        covered = self._alpha > 0.0
+        out_rgb[:, covered] = self._rgb[:, covered] / self._alpha[covered]
+        pixels = np.rint(np.clip(out_rgb, 0.0, 255.0)).astype(np.uint8)
+        alpha = np.rint(np.clip(self._alpha * 255.0, 0.0, 255.0)).astype(np.uint8)
+        image = ImageData(np.ma.MaskedArray(pixels), alpha_mask=alpha)  # pyright: ignore[reportCallIssue] -- attrs defaults
+        opaque = bool(np.all(alpha == 255))
+        if tile_format == "jpg" and opaque:
+            return image.render(img_format="JPEG", add_mask=False, quality=jpeg_quality)
+        return image.render(img_format="PNG", add_mask=not opaque)
+
+
+def render_geo_overview(
+    ds: DatasetReader, info: ImageInfo, width: int, height: int
+) -> bytes:
+    # Sparse nearest-neighbour sampling lets GDAL skip unsampled strips.
+    # The cached overview keeps the pixel grid's rotation as well as its CRS.
+    region = read_region(
+        ds,
+        indexes=_geo_indexes(info, ds),
+        width=width,
+        height=height,
+        resampling_method="nearest",
+    )
+    image = _display_image(region, info, ds)
+    return image.render(
+        img_format="GTiff",
+        transform=ds.transform @ Affine.scale(ds.width / width, ds.height / height),
+        crs=ds.crs,
+        compress="deflate",
+        alpha="yes",
+    )
+
+
+def _display_image(region: ImageData, info: ImageInfo, ds: DatasetReader) -> ImageData:
+    values = region.array
+    alpha = region.alpha_mask
+    if ds.nodata is not None and ColorInterp.alpha in ds.colorinterp:
+        values, alpha = values[:-1], values.data[-1]
+        alpha = np.where(np.ma.getmaskarray(values).all(axis=0), 0, alpha)
+    if alpha is None:
+        coverage = np.where(~np.ma.getmaskarray(values).all(axis=0), 255, 0)
+    else:
+        coverage = _alpha_as_byte(alpha, ds)
+    if info.palette is not None:
+        table = np.asarray(info.palette, dtype=np.uint8)
+        indexed = np.clip(values.data[0], 0, len(table) - 1)
+        colours = table[indexed]
+        pixels = np.moveaxis(colours[..., :3], -1, 0)
+        coverage = np.minimum(coverage, colours[..., 3])
+    else:
+        pixels = _normalize(values.data, info)
+    return ImageData(np.ma.MaskedArray(pixels), alpha_mask=coverage.astype(np.uint8))  # pyright: ignore[reportCallIssue] -- attrs defaults
+
+
+def _geo_indexes(info: ImageInfo, ds: DatasetReader) -> list[int]:
+    indexes = _display_indexes(info)
+    if ds.nodata is not None and ColorInterp.alpha in ds.colorinterp:
+        # rio-tiler exposes the nodata mask alone in this case. Read the
+        # source alpha as a band as well, then combine both in _display_image.
+        indexes.append(ds.colorinterp.index(ColorInterp.alpha) + 1)
+    return indexes
+
+
+def _alpha_as_byte(alpha: NDArray[np.generic], ds: DatasetReader) -> Pixels:
+    alpha_index = ds.colorinterp.index(ColorInterp.alpha) + 1
+    declared = ds.tags(alpha_index, ns="IMAGE_STRUCTURE").get("NBITS")
+    opaque = 1
+    if alpha.dtype.kind in "iu":
+        opaque = (
+            (1 << int(declared)) - 1 if declared else np.iinfo(alpha.dtype.name).max
+        )
+    return np.rint(np.clip(alpha.astype(np.float64) * (255.0 / opaque), 0, 255)).astype(
+        np.uint8
+    )
 
 
 def _read_pixels(
@@ -66,20 +221,24 @@ def _read_pixels(
         resampling_method=info.resampling,
         out_dtype="float32" if precise else None,
     )
-    values = region.array.data
     valid = ~np.ma.getmaskarray(region.array).any(axis=0)
+    return _normalize(region.array.data, info), valid
 
+
+def _normalize(values: NDArray[np.generic], info: ImageInfo) -> Pixels:
     if info.bit_depth < 8:
-        values = values * (255.0 / ((1 << info.bit_depth) - 1))
-    elif precise:
+        values = values.astype(np.float32, copy=False) * (
+            255.0 / ((1 << info.bit_depth) - 1)
+        )
+    elif info.bit_depth != 8 or info.dtype != "uint8":
         assert info.value_range is not None
         low, high = info.value_range
-        values = (values - low) * (255.0 / (high - low))
+        values = (values.astype(np.float32, copy=False) - low) * (255.0 / (high - low))
     pixels = np.clip(np.nan_to_num(values), 0, 255).astype(np.uint8)
 
     if info.kind == "cmyk":
         pixels = _cmyk_to_rgb(pixels)
-    return pixels, valid
+    return pixels
 
 
 def _display_indexes(info: ImageInfo) -> list[int]:

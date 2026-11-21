@@ -14,18 +14,21 @@ from sqlalchemy import text
 from authlib.jose import JsonWebKey, JsonWebToken
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi import HTTPException, Request
 from pydantic import SecretStr
 
 from grafy_shared.config import AppConfig, AuthConfig
 
 from grafy_api.settings import Settings
-from grafy_api.auth import audit as auth_audit
 from grafy_api.auth import (
+    CSRF_COOKIE,
+    SESSION_COOKIE,
     AuthService,
     OidcCallbackInternalError,
     OidcProtocolError,
     ProviderMetadata,
 )
+from grafy_api.services.application import build_app_identity
 from grafy_core.application.identity import IdentityService
 from grafy_core.domain.identity import OidcLoginTransaction, User
 from grafy_core.domain.security_audit import SecurityAuditEvent, SecurityAuditOutcome
@@ -56,6 +59,60 @@ def _auth_service() -> AuthService:
             cast(Callable[[], IdentityUnitOfWorkPort], lambda: None)
         ),
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("origin", "valid_csrf", "expected_error"),
+    [
+        ("http://localhost:3000", True, None),
+        ("http://localhost:3001", True, None),
+        ("http://localhost:3002", True, "Origin validation failed"),
+        (None, True, "Origin validation failed"),
+        ("http://localhost:3001", False, "CSRF validation failed"),
+    ],
+)
+async def test_cookie_mutation_checks_trusted_origin_and_session_csrf(
+    origin: str | None, valid_csrf: bool, expected_error: str | None
+) -> None:
+    settings = Settings(
+        app=AppConfig(
+            public_origin="http://localhost:3000",
+            cors_origins="http://localhost:3001",
+        ),
+    )
+    database = create_database("sqlite+aiosqlite:///:memory:")
+    try:
+        async with database.engine.begin() as connection:
+            await connection.run_sync(metadata.create_all)
+        identity = build_app_identity(settings, database)
+        user = User(id=UUID(int=1), email="owner@example.test", display_name="Owner")
+        async with identity.identity_uow_factory() as uow:
+            await uow.identity.add_user(user)
+            await uow.commit()
+        issued = await identity.auth_service.issue_session(user.id)
+        csrf_token = issued.csrf_value if valid_csrf else "forged-csrf-token"
+        headers = [
+            (
+                b"cookie",
+                f"{SESSION_COOKIE}={issued.cookie_value}; {CSRF_COOKIE}={csrf_token}".encode(),
+            ),
+            (b"x-csrf-token", csrf_token.encode()),
+        ]
+        if origin is not None:
+            headers.append((b"origin", origin.encode()))
+        request = Request({"type": "http", "method": "POST", "headers": headers})
+
+        if expected_error is None:
+            actor = await identity.auth_service.require_browser_actor(request)
+            assert actor.user_id == user.id
+        else:
+            with pytest.raises(HTTPException) as denied:
+                await identity.auth_service.require_browser_actor(request)
+            assert denied.value.status_code == 403
+            assert denied.value.detail == expected_error
+    finally:
+        await database.dispose()
 
 
 def _signed_token(
@@ -216,17 +273,12 @@ class _FailureOnlyAuditUnitOfWork(IdentityUnitOfWorkPort):
 async def test_secondary_failure_audit_write_is_fail_open(
     authenticated: bool,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     repository = _FailureOnlyAuditRepository()
     uow = _FailureOnlyAuditUnitOfWork(repository)
     auth = _auth_service()
     monkeypatch.setattr(auth, "_uow_factory", lambda: uow)
-    recorded: list[tuple[Exception, str]] = []
-
-    def record_failure(exc: Exception, *, operation: str) -> None:
-        recorded.append((exc, operation))
-
-    monkeypatch.setattr(auth_audit, "record_failure", record_failure)
     operation = "workspace.authorize"
     workspace_id = UUID("00000000-0000-0000-0000-000000000001")
 
@@ -247,9 +299,13 @@ async def test_secondary_failure_audit_write_is_fail_open(
 
     assert len(repository.attempts) == 1
     assert uow.commit_attempts == 0
-    assert len(recorded) == 1
-    assert isinstance(recorded[0][0], RuntimeError)
-    assert recorded[0][1] == "security.audit.write.workspace.authorize"
+    record = next(
+        record
+        for record in caplog.records
+        if "security_audit_write_failed" in str(record.msg)
+    )
+    assert "workspace.authorize" in str(record.msg)
+    assert "failure audit sentinel" in caplog.text or "failure audit sentinel" in str(record.msg)
 
 
 def test_oidc_transaction_return_path_is_sensitive_state() -> None:

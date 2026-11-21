@@ -1,5 +1,6 @@
 from hashlib import sha256
-from pathlib import Path
+from io import BytesIO
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -7,11 +8,13 @@ from grafy_core.artifact_contracts import (
     IMAGE_REGIONS,
     RASTER_IMAGE,
     ImageRegionSet,
-    RasterImageContent,
 )
+from grafy_core.documents import RasterImage, raster_image_artifact
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.storage import (
+    FileStoragePort,
     FileStreamProtocol,
     SaveFileCommand,
     StoredFile,
@@ -22,7 +25,6 @@ from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
 
 from grafy_plugin_image import IMAGES
-from grafy_plugin_image.persistence import RasterImageOutputWriter
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -57,7 +59,11 @@ class RecordingFileStorage:
         )
 
     async def load(self, bucket: str, path: str) -> FileStreamProtocol:
-        raise AssertionError(f"Unexpected load from {bucket}/{path}")
+        if self.saved_command is None or self.saved_content is None:
+            raise AssertionError(f"Unexpected load from {bucket}/{path}")
+        if bucket != self.saved_command.bucket or path != self.saved_command.path:
+            raise AssertionError(f"Unexpected load from {bucket}/{path}")
+        return BytesIO(self.saved_content)
 
     async def open_chunks(self, bucket: str, path: str) -> FileStreamProtocol:
         return await self.load(bucket, path)
@@ -86,15 +92,18 @@ async def test_raster_writer_preserves_storage_layout_and_metadata() -> None:
     content_hash = sha256(content).hexdigest()
     uow = InMemoryUnitOfWork()
     storage = RecordingFileStorage()
-    writer = RasterImageOutputWriter(
-        storage=storage,
+    values = ArtifactValues(
+        (raster_image_artifact(),),
         uow=uow,
+        storage=cast(FileStoragePort, storage),
         bucket="artifacts",
+        storage_backend="local",
     )
 
-    ref = await writer.write(
-        RasterImageContent(
-            content=content,
+    ref = await values.write(
+        RASTER_IMAGE.key,
+        RasterImage.from_content(
+            content,
             content_type="image/png",
             filename="generated.png",
         ),
@@ -114,10 +123,8 @@ async def test_raster_writer_preserves_storage_layout_and_metadata() -> None:
         f"workspaces/{TEST_WORKSPACE_ID}/image.raster/v1/{content_hash}.png"
     )
     assert storage.saved_command.metadata == {
-        "original_filename": "generated.png",
         "artifact_kind": "image.raster",
         "sha256": content_hash,
-        "job_id": "generated_image",
     }
     async with uow as entered:
         artifact = await entered.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
@@ -130,29 +137,18 @@ async def test_raster_writer_preserves_storage_layout_and_metadata() -> None:
         "storage_byte_size": len(content),
         "storage_sha256": content_hash,
     }
+    resolved = await values.resolve(ref, TEST_WORKSPACE_ID)
+    assert isinstance(resolved, RasterImage)
+    assert resolved.content_type == "image/png"
+    assert resolved.filename == "generated.png"
+    assert await resolved.read(max_bytes=len(content)) == content
 
 
-def test_image_plugin_uses_builtin_raster_type_and_registers_writer(
-    tmp_path: Path,
-) -> None:
+def test_image_plugin_uses_builtin_raster_type() -> None:
     registry = PluginRegistry()
     registry.install(IMAGES)
-    context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=RecordingFileStorage(),
-        uow=InMemoryUnitOfWork(),
-        bucket="artifacts",
-    )
 
     assert RASTER_IMAGE in registry.artifact_type_dependencies
     assert {spec.key for spec in registry.artifact_types} == {IMAGE_REGIONS.key}
-    writers = registry.build_writers(context)
-    assert {writer.artifact_type for writer in writers} == {
-        RASTER_IMAGE.key,
-        IMAGE_REGIONS.key,
-    }
-    resolvers = registry.build_resolvers(context)
-    assert any(
-        resolver.source == IMAGE_REGIONS.key and resolver.target is ImageRegionSet
-        for resolver in resolvers
-    )
+    assert [artifact.spec.key for artifact in registry.artifacts] == [IMAGE_REGIONS.key]
+    assert registry.artifacts[0].value_type is ImageRegionSet

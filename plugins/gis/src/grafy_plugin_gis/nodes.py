@@ -12,22 +12,28 @@ from grafy_core.artifacts import (
 )
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import validated_public_destination
-from grafy_core.file_artifacts import load_file_artifact
-from grafy_core.file_contracts import GEOJSON_FILE, JSON_FILE, TIFF_FILE
-from grafy_core.nodes import InPort, Node, NodeExecutionContext, OutPort
+from grafy_core.documents import GeoJsonFile, JsonFile, TiffFile
+from grafy_core.nodes import (
+    Node,
+    NodeExecutionContext,
+    Plugs,
+    Ref,
+    RefSequence,
+    UserFacingNodeError,
+)
 from grafy_core.plugins import (
     NodeCachePolicy,
     NodeHttpEgressContract,
     NodeHttpEgressInput,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.ports.storage import FileStoragePort
+from grafy_core.runtime.artifact_values import inline_model_artifact
 from grafy_core.table_contracts import (
-    TABLE_DATA,
     Table,
     TableColumn,
+    TableColumnLookupError,
     TableValue,
     TableValueType,
+    resolve_table_column,
 )
 from pydantic import (
     AnyHttpUrl,
@@ -47,14 +53,14 @@ from shapely import (
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import transform
 
-from grafy_plugin_gis.artifacts import (
-    GEO_FEATURE_COLLECTION,
-    GEO_MAP_DOCUMENT,
-    GEO_MAP_LAYER,
-    GEO_RASTER_SCAN,
-)
+from grafy_plugin_gis.artifacts import GEO_MAP_DOCUMENT, GEO_MAP_LAYER
 from grafy_plugin_gis.declaration import GIS
+from grafy_plugin_gis.persistence import (
+    feature_collection_artifact,
+    raster_scan_artifact,
+)
 from grafy_core.spatial_contracts import (
+    MAX_RASTER_MOSAIC_SOURCES,
     BasemapKind,
     Bounds,
     GeoFeatureArtifactSource,
@@ -63,6 +69,7 @@ from grafy_core.spatial_contracts import (
     GeoMapDocument,
     GeoMapLayer,
     GeoRasterArtifactSource,
+    GeoRasterMosaicSource,
     GeoRasterStyle,
     GeoVectorStyle,
     GeoWmsSource,
@@ -77,6 +84,19 @@ from grafy_plugin_gis.wfs import (
     WFS_IMPORT_TOTAL_RESPONSE_MAX_BYTES,
     WfsClient,
 )
+
+import grafy_core.documents as _documents
+import grafy_workbench.table.plugin as _table_plugin
+
+_ = (_documents.__name__, _table_plugin.__name__)  # notes classes before these ports
+
+
+_HANDLE_READ_LIMIT = 256 * 1024 * 1024
+
+GIS.register(feature_collection_artifact())
+GIS.register(raster_scan_artifact())
+GIS.register(inline_model_artifact(GEO_MAP_LAYER, GeoMapLayer))
+GIS.register(inline_model_artifact(GEO_MAP_DOCUMENT, GeoMapDocument))
 
 _parse_wkt = cast(Callable[[str], BaseGeometry], from_wkt)
 _parse_geojson = cast(Callable[[str], BaseGeometry], from_geojson)
@@ -132,7 +152,6 @@ class GeoFeaturesToTableConfig(NodeConfig):
 class GeoFeaturesToTableInput(NodeInput):
     features: Annotated[
         GeoFeatureCollection,
-        InPort(GEO_FEATURE_COLLECTION),
         Field(description="Exact WGS84 GeoJSON feature collection."),
     ]
 
@@ -140,7 +159,6 @@ class GeoFeaturesToTableInput(NodeInput):
 class GeoFeaturesToTableOutput(NodeOutput):
     table: Annotated[
         Table,
-        OutPort(TABLE_DATA),
         Field(description="Feature ids, properties, and exact WGS84 WKT geometry."),
     ]
 
@@ -318,7 +336,6 @@ class TableToGeoFeaturesConfig(NodeConfig):
 class TableToGeoFeaturesInput(NodeInput):
     table: Annotated[
         Table,
-        InPort(TABLE_DATA),
         Field(description="Generic table containing one WKT geometry per row."),
     ]
 
@@ -326,23 +343,8 @@ class TableToGeoFeaturesInput(NodeInput):
 class TableToGeoFeaturesOutput(NodeOutput):
     features: Annotated[
         GeoFeatureCollection,
-        OutPort(GEO_FEATURE_COLLECTION),
         Field(description="Exact WGS84 GeoJSON features created from table rows."),
     ]
-
-
-def _resolve_table_column(table: Table, reference: str) -> str:
-    ids = {column.id for column in table.columns}
-    if reference in ids:
-        return reference
-    title_matches = [column.id for column in table.columns if column.title == reference]
-    if len(title_matches) == 1:
-        return title_matches[0]
-    if len(title_matches) > 1:
-        raise TableToGeoFeaturesError(
-            f"Table column title {reference!r} is ambiguous; use a column id"
-        )
-    raise TableToGeoFeaturesError(f"Table has no column id or title {reference!r}")
 
 
 @GIS.function_node(
@@ -356,12 +358,14 @@ async def table_to_geo_features(
     inputs: TableToGeoFeaturesInput,
 ) -> TableToGeoFeaturesOutput:
     """Parses exact table WKT geometries and normalizes them to WGS84."""
-    geometry_column = _resolve_table_column(inputs.table, config.geometry_column)
-    feature_id_column = None
-    if config.feature_id_column is not None:
-        feature_id_column = _resolve_table_column(
-            inputs.table, config.feature_id_column
-        )
+    columns = inputs.table.columns
+    try:
+        geometry_column = resolve_table_column(columns, config.geometry_column)
+        feature_id_column = None
+        if config.feature_id_column is not None:
+            feature_id_column = resolve_table_column(columns, config.feature_id_column)
+    except TableColumnLookupError as exc:
+        raise TableToGeoFeaturesError(str(exc)) from exc
     try:
         source_crs = _parse_crs(config.source_crs)
         transformer = Transformer.from_crs(
@@ -428,8 +432,7 @@ async def table_to_geo_features(
 
 class GeoJsonParseInput(NodeInput):
     file: Annotated[
-        ArtifactRef,
-        InPort(GEOJSON_FILE, also_accepts=(JSON_FILE,)),
+        GeoJsonFile | JsonFile,
         Field(description="GeoJSON document artifact to parse."),
     ]
 
@@ -437,7 +440,6 @@ class GeoJsonParseInput(NodeInput):
 class GeoJsonParseOutput(NodeOutput):
     features: Annotated[
         GeoFeatureCollection,
-        OutPort(GEO_FEATURE_COLLECTION),
         Field(description="Validated exact WGS84 GeoJSON FeatureCollection."),
     ]
 
@@ -446,18 +448,10 @@ class GeoJsonParseOutput(NodeOutput):
     operator_id="gis.geojson.parse",
     version=1,
     title="Parse GeoJSON",
-    factory=lambda context: ParseGeoJsonNode(
-        storage=context.storage,
-        uow=context.uow,
-    ),
 )
 @final
 class ParseGeoJsonNode(Node[NodeConfig, GeoJsonParseInput, GeoJsonParseOutput]):
     """Parse one persisted GeoJSON document into an exact WGS84 collection."""
-
-    def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
-        self._storage = storage
-        self._uow = uow
 
     @override
     async def run(
@@ -467,17 +461,12 @@ class ParseGeoJsonNode(Node[NodeConfig, GeoJsonParseInput, GeoJsonParseOutput]):
         inputs: GeoJsonParseInput,
         /,
     ) -> GeoJsonParseOutput:
-        ref = inputs.file
-        file = await load_file_artifact(
-            storage=self._storage,
-            uow=self._uow,
-            workspace_id=context.workspace_id,
-            ref=ref,
-        )
-        source_name = file.original_filename or str(ref.artifact_id)
+        del context
+        content = await inputs.file.read(max_bytes=_HANDLE_READ_LIMIT)
+        source_name = inputs.file.filename or "this file"
         try:
             features = GeoFeatureCollection.from_geojson_bytes(
-                file.content,
+                content,
                 source_name,
             )
         except ValueError as exc:
@@ -502,8 +491,7 @@ class GeoRasterScanImportConfig(NodeConfig):
 
 class GeoRasterScanImportInput(NodeInput):
     file: Annotated[
-        ArtifactRef,
-        InPort(TIFF_FILE),
+        TiffFile,
         Field(description="Georeferenced TIFF file artifact to import."),
     ]
 
@@ -511,7 +499,6 @@ class GeoRasterScanImportInput(NodeInput):
 class GeoRasterScanImportOutput(NodeOutput):
     raster: Annotated[
         GeoRasterScan,
-        OutPort(GEO_RASTER_SCAN),
         Field(description="Georeferenced raster normalized to COG during persistence."),
     ]
 
@@ -521,10 +508,6 @@ class GeoRasterScanImportOutput(NodeOutput):
     version=1,
     title="Import raster scan",
     cache_policy=NodeCachePolicy.EXACT,
-    factory=lambda context: ImportRasterScanNode(
-        storage=context.storage,
-        uow=context.uow,
-    ),
     required_capabilities=(PluginRuntimeCapability.NATIVE_GDAL,),
 )
 @final
@@ -532,10 +515,6 @@ class ImportRasterScanNode(
     Node[GeoRasterScanImportConfig, GeoRasterScanImportInput, GeoRasterScanImportOutput]
 ):
     """Import one persisted GeoTIFF file artifact as a georeferenced scan."""
-
-    def __init__(self, *, storage: FileStoragePort, uow: UnitOfWorkPort) -> None:
-        self._storage = storage
-        self._uow = uow
 
     @override
     async def run(
@@ -545,24 +524,20 @@ class ImportRasterScanNode(
         inputs: GeoRasterScanImportInput,
         /,
     ) -> GeoRasterScanImportOutput:
-        ref = inputs.file
-        file = await load_file_artifact(
-            storage=self._storage,
-            uow=self._uow,
-            workspace_id=context.workspace_id,
-            ref=ref,
-        )
+        del context
+        content = await inputs.file.read(max_bytes=_HANDLE_READ_LIMIT)
+        label = inputs.file.filename or "this file"
         try:
             return GeoRasterScanImportOutput(
                 raster=GeoRasterScan(
-                    content=file.content,
-                    filename=file.original_filename or config.source_name,
+                    content=content,
+                    filename=inputs.file.filename or config.source_name,
                     source_name=config.source_name,
                 )
             )
         except ValueError as exc:
             raise GeoRasterScanImportError(
-                f"GeoTIFF artifact {ref.artifact_id} cannot be imported as raster "
+                f"GeoTIFF file {label} cannot be imported as raster "
                 f"scan {config.source_name!r}: {exc}"
             ) from exc
 
@@ -637,7 +612,6 @@ class WfsImportInput(NodeInput):
 class WfsImportOutput(NodeOutput):
     features: Annotated[
         GeoFeatureCollection,
-        OutPort(GEO_FEATURE_COLLECTION),
         Field(description="Bounded WGS84 feature collection imported through WFS 2.0."),
     ]
 
@@ -705,8 +679,7 @@ class VectorLayerConfig(_CommonLayerConfig):
 
 class VectorLayerInput(NodeInput):
     features: Annotated[
-        ArtifactRef,
-        InPort(GEO_FEATURE_COLLECTION),
+        Ref[GeoFeatureCollection],
         Field(description="Exact feature collection artifact reference."),
     ]
 
@@ -714,7 +687,6 @@ class VectorLayerInput(NodeInput):
 class MapLayerOutput(NodeOutput):
     layer: Annotated[
         GeoMapLayer,
-        OutPort(GEO_MAP_LAYER),
         Field(description="Lightweight map layer."),
     ]
 
@@ -750,10 +722,18 @@ class RasterLayerConfig(_CommonLayerConfig):
 
 class RasterLayerInput(NodeInput):
     raster: Annotated[
-        ArtifactRef,
-        InPort(GEO_RASTER_SCAN),
-        Field(description="Georeferenced raster scan artifact reference."),
+        Ref[GeoRasterScan] | Ref[TiffFile],
+        Field(description="Georeferenced raster scan or TIFF file artifact reference."),
     ]
+
+
+def _plain_ref(ref: ArtifactRef) -> ArtifactRef:
+    return ArtifactRef(
+        artifact_id=ref.artifact_id,
+        artifact_type=ref.artifact_type,
+        schema_version=ref.schema_version,
+        content_hash=ref.content_hash,
+    )
 
 
 @GIS.function_node(
@@ -766,7 +746,7 @@ async def build_raster_layer(
     config: RasterLayerConfig,
     inputs: RasterLayerInput,
 ) -> MapLayerOutput:
-    """Turn a georeferenced raster scan into a styled map layer."""
+    """Turn a georeferenced raster scan or TIFF into a styled map layer."""
 
     return MapLayerOutput(
         layer=GeoMapLayer(
@@ -775,7 +755,77 @@ async def build_raster_layer(
             opacity=config.opacity,
             min_zoom=config.min_zoom,
             max_zoom=config.max_zoom,
-            source=GeoRasterArtifactSource(artifact=inputs.raster),
+            source=GeoRasterArtifactSource(artifact=_plain_ref(inputs.raster)),
+            style=config.style,
+        )
+    )
+
+
+class RasterMosaicConfig(_CommonLayerConfig):
+    title: StrictStr = Field(default="Raster mosaic", min_length=1, max_length=1_024)
+    style: GeoRasterStyle = Field(default_factory=GeoRasterStyle)
+
+
+class RasterMosaicInput(NodeInput):
+    rasters: Annotated[
+        list[
+            Ref[TiffFile]
+            | Ref[GeoRasterScan]
+            | RefSequence[TiffFile]
+            | RefSequence[GeoRasterScan]
+        ],
+        Plugs(variadic=True, instance=True),
+        Field(
+            min_length=1,
+            title="Rasters",
+            description=(
+                "Georeferenced TIFF files, raster scans, or lists of them, "
+                "stacked bottom to top on the fly by the tiler."
+            ),
+        ),
+    ]
+
+
+@GIS.function_node(
+    operator_id="gis.map.raster_mosaic",
+    version=1,
+    title="Raster mosaic layer",
+    cache_policy=NodeCachePolicy.EXACT,
+)
+async def build_raster_mosaic(
+    config: RasterMosaicConfig,
+    inputs: RasterMosaicInput,
+) -> MapLayerOutput:
+    """Compose georeferenced rasters into one on-the-fly mosaic map layer."""
+
+    refs: list[ArtifactRef] = []
+    seen: set[object] = set()
+    for entry in inputs.rasters:
+        items = entry.item_refs if isinstance(entry, ArtifactRefSequence) else [entry]
+        for item in items:
+            if item.artifact_id in seen:
+                raise UserFacingNodeError(
+                    f"Raster artifact {item.artifact_id} is connected more than once."
+                )
+            seen.add(item.artifact_id)
+            refs.append(_plain_ref(item))
+    if not refs:
+        raise UserFacingNodeError(
+            "Raster mosaic requires at least one georeferenced TIFF or raster scan."
+        )
+    if len(refs) > MAX_RASTER_MOSAIC_SOURCES:
+        raise UserFacingNodeError(
+            f"Raster mosaic supports at most {MAX_RASTER_MOSAIC_SOURCES} rasters, "
+            f"got {len(refs)}."
+        )
+    return MapLayerOutput(
+        layer=GeoMapLayer(
+            title=config.title,
+            visible=config.visible,
+            opacity=config.opacity,
+            min_zoom=config.min_zoom,
+            max_zoom=config.max_zoom,
+            source=GeoRasterMosaicSource(artifacts=refs),
             style=config.style,
         )
     )
@@ -841,8 +891,7 @@ class ComposeMapConfig(NodeConfig):
 
 class ComposeMapInput(NodeInput):
     layers: Annotated[
-        ArtifactRefSequence,
-        InPort(GEO_MAP_LAYER),
+        RefSequence[GeoMapLayer],
         Field(description="Ordered map-layer artifact reference sequence."),
     ]
 
@@ -856,7 +905,6 @@ class ComposeMapInput(NodeInput):
 class ComposeMapOutput(NodeOutput):
     map: Annotated[
         GeoMapDocument,
-        OutPort(GEO_MAP_DOCUMENT),
         Field(description="Ordered interactive map composition."),
     ]
 
@@ -903,6 +951,8 @@ __all__ = [
     "ParseGeoJsonNode",
     "RasterLayerConfig",
     "RasterLayerInput",
+    "RasterMosaicConfig",
+    "RasterMosaicInput",
     "TableToGeoFeaturesConfig",
     "TableToGeoFeaturesError",
     "TableToGeoFeaturesInput",
@@ -914,6 +964,7 @@ __all__ = [
     "WmsLayerConfig",
     "WmsLayerInput",
     "build_raster_layer",
+    "build_raster_mosaic",
     "build_vector_layer",
     "build_wms_layer",
     "compose_map",

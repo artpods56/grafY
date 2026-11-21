@@ -1,11 +1,10 @@
 from collections.abc import Mapping
-from typing import Annotated, override
+from typing import Annotated, Any, override
 
 import pytest
 from grafy_core.artifact_contracts import RASTER_IMAGE, TEXT_VALUE
 from grafy_core.artifacts import (
     ArtifactRef,
-    ArtifactRefSequence,
     ArtifactTypeKey,
     NoConfig,
     NodeConfig,
@@ -15,23 +14,34 @@ from grafy_core.artifacts import (
 from grafy_core.nodes import (
     MAX_NODE_ERROR_MESSAGE_LENGTH,
     ArtifactTypeVariable,
-    InPort,
+    Binds,
     InputPortSpec,
     Node,
     NodeContractError,
     NodeContractResolutionError,
     NodeExecutionContext,
-    OutPort,
+    Plugs,
     PortShape,
+    Ref,
+    RefSequence,
     UserFacingNodeError,
     derive_input_contract,
     resolve_node_contracts,
 )
+from grafy_core.declared_values import note_declaration
 from pydantic import Field, ValidationError
 
 
 class ExampleImage:
     pass
+
+
+class ExampleText:
+    pass
+
+
+note_declaration(ExampleImage, RASTER_IMAGE.key)
+note_declaration(ExampleText, TEXT_VALUE.key)
 
 
 class ExampleConfig(NodeConfig):
@@ -41,13 +51,12 @@ class ExampleConfig(NodeConfig):
 class ExampleInput(NodeInput):
     pages: Annotated[
         list[ExampleImage],
-        InPort(RASTER_IMAGE),
         Field(title="Source pages", description="Images to process in order."),
     ]
 
 
 class ExampleOutput(NodeOutput):
-    pages: Annotated[ArtifactRefSequence, OutPort(RASTER_IMAGE)]
+    pages: list[ExampleImage]
 
 
 class ExampleNode(Node[ExampleConfig, ExampleInput, ExampleOutput]):
@@ -66,43 +75,64 @@ class ExampleNode(Node[ExampleConfig, ExampleInput, ExampleOutput]):
 
 
 class AnnotationShapesInput(NodeInput):
-    optional_page: Annotated[
-        ExampleImage | None,
-        InPort(RASTER_IMAGE),
-    ] = None
+    optional_page: ExampleImage | None = None
     page_batches: Annotated[
         list[list[ExampleImage]],
-        InPort(RASTER_IMAGE, variadic=True),
+        Plugs(variadic=True),
     ]
-    page_refs: Annotated[ArtifactRefSequence, InPort(RASTER_IMAGE)]
+    page_refs: RefSequence[ExampleImage]
 
 
 class InstancePlugInput(NodeInput):
     items: Annotated[
-        list[ArtifactRef | ArtifactRefSequence],
-        InPort(RASTER_IMAGE, variadic=True, instance_plugs=True),
+        list[Ref[ExampleImage] | RefSequence[ExampleImage]],
+        Plugs(variadic=True, instance=True),
     ]
 
 
 class MultiTypeInput(NodeInput):
-    source: Annotated[
-        ExampleImage,
-        InPort(RASTER_IMAGE, also_accepts=(TEXT_VALUE,)),
+    source: ExampleImage | ExampleText
+
+
+class MultiTypeInstancePlugInput(NodeInput):
+    items: Annotated[
+        list[
+            Ref[ExampleText]
+            | Ref[ExampleImage]
+            | RefSequence[ExampleText]
+            | RefSequence[ExampleImage]
+        ],
+        Plugs(variadic=True, instance=True),
+    ]
+
+
+class UnpairedInstancePlugInput(NodeInput):
+    items: Annotated[
+        list[Ref[ExampleImage] | RefSequence[ExampleText]],
+        Plugs(variadic=True, instance=True),
     ]
 
 
 class NonVariadicInstancePlugInput(NodeInput):
     items: Annotated[
-        list[ArtifactRef | ArtifactRefSequence],
-        InPort(RASTER_IMAGE, instance_plugs=True),
+        list[Ref[ExampleImage] | RefSequence[ExampleImage]],
+        Plugs(instance=True),
     ]
 
 
 class BroadInstancePlugInput(NodeInput):
     items: Annotated[
         list[ArtifactRef | object],
-        InPort(RASTER_IMAGE, variadic=True, instance_plugs=True),
+        Plugs(variadic=True, instance=True),
     ]
+
+
+class ConcreteBindsInput(NodeInput):
+    page: Annotated[Ref[ExampleImage], Binds("T")]
+
+
+class GenericWithoutBindsInput(NodeInput):
+    page: Ref[Any]
 
 
 GENERIC_ARTIFACT = ArtifactTypeVariable("T")
@@ -110,13 +140,14 @@ GENERIC_ARTIFACT = ArtifactTypeVariable("T")
 
 class GenericInput(NodeInput):
     items: Annotated[
-        list[ArtifactRef | ArtifactRefSequence],
-        InPort(GENERIC_ARTIFACT, variadic=True, instance_plugs=True),
+        list[Ref[Any] | RefSequence[Any]],
+        Plugs(variadic=True, instance=True),
+        Binds("T"),
     ]
 
 
 class GenericOutput(NodeOutput):
-    items: Annotated[ArtifactRefSequence, OutPort(GENERIC_ARTIFACT)]
+    items: Annotated[RefSequence[Any], Binds("T")]
 
 
 class GenericNode(Node[NoConfig, GenericInput, GenericOutput]):
@@ -158,7 +189,7 @@ def test_node_contracts_derive_shape_and_resolver_target_from_annotations() -> N
     assert ExampleNode.input_contract.ports["pages"].accepted_shapes == (
         PortShape.MANY,
     )
-    assert ExampleNode.input_contract.ports["pages"].target_type is ExampleImage
+    assert ExampleNode.input_contract.ports["pages"].value_types == (ExampleImage,)
     assert ExampleNode.input_contract.ports["pages"].title == "Source pages"
     assert (
         ExampleNode.input_contract.ports["pages"].description
@@ -189,17 +220,17 @@ def test_input_contract_supports_optional_variadic_and_structural_types() -> Non
 
     optional_page = contract.ports["optional_page"]
     assert optional_page.shape is PortShape.ONE
-    assert optional_page.target_type is ExampleImage
+    assert optional_page.value_types == (ExampleImage,)
     assert optional_page.allows_none is True
 
     page_batches = contract.ports["page_batches"]
     assert page_batches.shape is PortShape.MANY
     assert page_batches.variadic is True
-    assert page_batches.target_type is ExampleImage
+    assert page_batches.value_types == (ExampleImage,)
 
     page_refs = contract.ports["page_refs"]
     assert page_refs.shape is PortShape.MANY
-    assert page_refs.target_type is None
+    assert page_refs.value_types == ()
     assert page_refs.preserves_ref_container is True
 
 
@@ -224,7 +255,11 @@ def test_input_port_rejects_a_type_variable_with_additional_accepted_types() -> 
         NodeContractError,
         match="either an artifact type variable or additional accepted artifact types",
     ):
-        InPort(ArtifactTypeVariable("T"), also_accepts=(TEXT_VALUE,))
+        InputPortSpec(
+            name="source",
+            accepts=ArtifactTypeVariable("T"),
+            also_accepts=(TEXT_VALUE.key,),
+        )
 
 
 def test_input_port_rejects_repeating_its_primary_artifact_type() -> None:
@@ -255,20 +290,34 @@ def test_input_contract_derives_mixed_instance_plug_shapes() -> None:
     assert items.accepted_shapes == (PortShape.ONE, PortShape.MANY)
     assert items.variadic is True
     assert items.instance_plugs is True
-    assert items.target_type is None
+    assert items.value_types == ()
     assert items.preserves_ref_container is True
+
+
+def test_input_contract_derives_multi_type_instance_plugs_once_per_type() -> None:
+    items = derive_input_contract(MultiTypeInstancePlugInput).ports["items"]
+
+    assert items.shape is PortShape.ONE
+    assert items.accepted_shapes == (PortShape.ONE, PortShape.MANY)
+    assert items.accepts == TEXT_VALUE.key
+    assert items.also_accepts == (RASTER_IMAGE.key,)
+    assert items.instance_plugs is True
 
 
 @pytest.mark.parametrize(
     ("model", "message"),
     [
         (
+            UnpairedInstancePlugInput,
+            r"UnpairedInstancePlugInput.items must pair each Ref\[T\] with RefSequence",
+        ),
+        (
             NonVariadicInstancePlugInput,
-            "NonVariadicInstancePlugInput.items.*require variadic=True",
+            "NonVariadicInstancePlugInput.items.*Plugs instance requires variadic plugs",
         ),
         (
             BroadInstancePlugInput,
-            "BroadInstancePlugInput.items.*must be a concrete Python type",
+            "BroadInstancePlugInput.items.*must use Ref, not ArtifactRef",
         ),
     ],
 )
@@ -278,6 +327,21 @@ def test_input_contract_rejects_invalid_instance_plug_declarations(
 ) -> None:
     with pytest.raises(NodeContractError, match=message):
         derive_input_contract(model)
+
+
+def test_spare_plugs_belong_to_instance_plugs_only() -> None:
+    with pytest.raises(NodeContractError, match="Plugs spare requires instance plugs"):
+        Plugs(variadic=True, spare=True)
+
+    spare = Plugs(variadic=True, instance=True, spare=True)
+    assert spare.spare is True
+
+
+def test_binds_is_only_for_a_generic_ref() -> None:
+    with pytest.raises(NodeContractError, match="concrete port cannot declare Binds"):
+        derive_input_contract(ConcreteBindsInput)
+    with pytest.raises(NodeContractError, match="generic port requires Binds"):
+        derive_input_contract(GenericWithoutBindsInput)
 
 
 def test_generic_node_contract_resolves_shared_variable_without_mutation() -> None:

@@ -92,10 +92,11 @@ extension decides. One format can answer to several extension strings, so `.jpg`
 and `.jpeg` both produce `file.jpeg@1`, and `.tif` and `.tiff` both produce
 `file.tiff@1`. A plugin claims `.las` by declaring that mapping rather than by
 shipping an upload node.
-Interpretation is always a visible node, so `file.png@1` becomes
-`image.raster@1` through a decode node and `file.csv@1` becomes `table.data@1`
-through an import node whose delimiter and header choices the user can see and
-change.
+Configurable interpretation is a visible node, so `file.csv@1` becomes
+`table.data@1` through an import node whose delimiter and header choices the
+user can see and change; parameterless container conversions such as
+`file.txt@1` to `scalar.text@1` and `file.{png,jpeg,webp,tiff,bmp}@1` to
+`image.raster@1` run as canonical artifact conversions on the edge.
 _Avoid_: upload artifact, source node
 
 ### File JSON artifact
@@ -120,7 +121,7 @@ The closed check a file format artifact declares for its bytes: `magic`, `json`,
 `json_document`, or `none`. `json` means a JSON object, `json_document` means a
 JSON object or array, and `magic` means the bytes match a declared signature.
 Agreement is a prefix check rather than a full parse, so a truncated or corrupt
-file fails in the visible decode or import node.
+file fails in the edge conversion or in the visible import node.
 
 ### File blob artifact
 
@@ -129,10 +130,10 @@ The format type for bytes whose extension the deployment does not recognize:
 reading, that nothing has interpreted these bytes yet. A blob has no domain
 meaning and projects no fields. Recognizing the format later does not rewrite a
 stored blob: a Plugin that claims an extension types the next upload, and rows
-already stored stay `file.blob@1`. A blob reaches a typed node only through the
-visible `file.interpret@1` node, which confirms the bytes with the chosen
-format's confirmation rule, writes a new artifact of that type, and leaves the
-blob row unchanged. A blob never gains a format in place.
+already stored stay `file.blob@1`. Nothing claims those bytes afterwards. No port
+takes a blob and no node retypes one, so they reach no typed node until the
+deployment claims their extension and they are uploaded again. A blob never gains
+a format in place.
 _Avoid_: opaque file, raw file
 
 ### Artifact bundle contract
@@ -222,7 +223,8 @@ Derived, never stored: **fresh** when the current fingerprint has a result,
 **queued** or **running** while a computation for it is in flight, **failed** when
 the last attempt at this fingerprint failed, otherwise **stale**. An edit during a
 Run leaves the instance stale; the Run's result is stored under the fingerprint it
-started with.
+started with. A service node has no stored result, so stale is omitted: it shows
+an in-flight or failed condition, or nothing.
 
 ### Refresh generation
 
@@ -345,9 +347,9 @@ properties are not inferred as scalar projections.
 ### Materialized scalar
 
 An artifact type that declares it can materialize one JSON primitive runtime
-value. `scalar.text@1` consumes and produces runtime `str`; its writer wraps that
-primitive in the stable `{ "value": string }` payload and its resolver unwraps
-the payload again. `scalar.integer@1` follows the same boundary for runtime
+value. `scalar.text@1` consumes and produces runtime `str`. The declaration
+stores that primitive in the stable `{ "value": string }` payload and loads
+the payload back out as `str`. `scalar.integer@1` does the same for runtime
 `int`. Storage envelopes must not leak into node input, output, projection, or
 conversion callables.
 
@@ -360,11 +362,14 @@ requires a version bump. A conversion changes the artifact representation;
 unlike a field projection, it does not select a nested value. Configurable,
 lossy, or domain-significant transformations remain visible nodes.
 
-`file.txt@1` to `scalar.text@1` is the one conversion that starts at a File
-format artifact. It reads the stored bytes and decodes them as UTF-8, dropping a
-leading byte-order mark, with no choices to make, so it needs no node; bytes that
-are not UTF-8 fail the conversion step. Other formats still go through a visible
-decode or import node.
+`file.txt@1` to `scalar.text@1` and `file.{png,jpeg,webp,tiff,bmp}@1` to
+`image.raster@1` are the conversions that start at a File format artifact.
+`file.txt@1` reads the stored bytes and decodes them as UTF-8, dropping a
+leading byte-order mark, and the raster image conversions verify that the image
+container parses cleanly as its declared format, with no choices to make, so
+they need no node; corrupt or mismatched bytes fail the conversion step.
+Formats with parsing options, such as CSV or Excel tables, still go through a
+visible import node.
 
 ### Artifact conversion path
 
@@ -372,13 +377,12 @@ A bounded, ordered sequence of exact conversion keys stored on one edge. The
 canonical conversions form a directed graph, so declarations `X -> Y` and
 `Y -> Z` make `X -> Z` authorable without an adapter node. Each selected path is
 simple: it cannot revisit an artifact type, even though the canonical map may
-contain conversions in both directions. Deployment construction rejects adjacent
-declarations whose runtime target and source types cannot compose. Authoring may
-automatically select one unambiguous shortest path, but execution never searches
-Plugin registry state. It validates and replays the stored keys against the
-immutable deployment map, composes
-their pure callables in memory, and materializes only the final target-typed
-artifact.
+contain conversions in both directions. Deployment construction rejects a step
+whose source declaration is not the artifact type produced by the previous
+step. Authoring may automatically select one unambiguous shortest path, but
+execution never searches plugin registry state. It validates and replays the
+stored keys against the immutable deployment map, awaits each conversion, and
+materializes only the final target-typed artifact.
 
 ### Spatial artifact model
 
@@ -451,7 +455,9 @@ port shapes and artifact-type bindings, and submits the
 ordinary nested `{ name, document }` graph contract. There is no automation-only
 graph representation or execution path. A Run reloads the requested
 revision on the server and derives the runtime request from that canonical
-document; the client cannot replace its topology at execution time.
+document; the client cannot replace its topology at execution time. MCP tools
+author through the same client and the same REST routes, never a service beneath
+them, and place artifact cards only in the forms the Workbench creates (ADR 0023).
 
 ### Input plug
 
@@ -459,7 +465,9 @@ A stable, ordered input position owned by one node instance for a port that
 explicitly supports instance plugs. Each plug accepts exactly one incoming edge
 and keeps its identity when reordered, so the saved plug order—not canvas
 coordinates or edge creation order—defines execution order. The edge continues
-to own its projection and artifact conversion path.
+to own its projection and artifact conversion path. A port may declare spare
+plugs (Collect does): the canvas keeps one empty plug there for the next member,
+and a Run ignores any plug no edge feeds. Every other plug must be fed.
 
 ### Builtin family
 
@@ -471,8 +479,8 @@ _Avoid_: bundled plugin, host plugin, system builtin plugin
 ### Plugin
 
 A node-family package under `plugins/<family>/` that the API process loads at
-composition: nodes, artifact types, and the resolver and writer factories those
-types require, under one stable slug. A Plugin is application code, not a
+composition: nodes, artifact types, and the declarations that load and store
+those types, under one stable slug. A Plugin is application code, not a
 deployable. It ships in the API's own image and lockfile, is installed into the
 same `PluginRegistry` as the builtin families from one static tuple, and its
 nodes identify by family slug and the deployment's build digest — exactly as a
@@ -534,12 +542,70 @@ headers, columns, and inferred values is a source-specific normalization rather
 than a shape-preserving artifact conversion. Plugin families provide remote and
 domain-specific nodes through the same registry as the builtin families.
 
+### Service contract
+
+A nominal protocol a Plugin registers with an id, version and title. A class
+implements the contract only by subclassing it; a matching method name is not
+enough. The object that satisfies it is built while a consumer runs and is gone
+when that computation ends. It is never an artifact: it is never stored, never
+logged, and never part of metadata.
+_Avoid_: DI service, capability provider object
+
+### Service port
+
+A node input or output typed as a service contract (or, on an output, a class
+that subclasses one or more). It carries contract keys, not an artifact type. A
+service output feeds only a service input, and the reverse. A node with a
+service output has no input ports. The planner never plans a service node; the
+consumer's runner builds the connected provider in-process. An Agent tool never
+offers a service input to the model.
+_Avoid_: OutPort/InPort for services
+
+### Provider node
+
+A node whose only outputs are service ports. It has no artifact inputs. Its
+config and node-scoped secrets shape the live object the consumer builds. The
+planner never schedules it; changing its config or key still enters the
+consumer's fingerprint through `upstream_fingerprints`.
+_Avoid_: capability node, OCR vendor node as a synonym for every provider
+
+### TIFF text regions
+
+A result on one page of a stored TIFF. It records the native window that was
+read and the detected polygons in full-resolution source page pixels, with the
+top-left as the origin. A text detector takes the window PNG and returns
+window-relative polygons, optionally with readings. The detection node places
+them in source pixels before persistence. The result references the exact
+Workspace artifact so its card can overlay the polygons on that page as it zooms.
+
+A prepare node joins boxes on one baseline into a span in source pixels. The
+join can cover several words. When the rotated envelope would extend past the
+members' pixel bounds, the span uses their convex hull. Recognition reads the
+span once, stitching native TIFF reads for larger crops. A filter node keeps
+name-like readings. The places table gives each candidate's name, confidence,
+page, and centroid. It strips explicit Cyrillic settlement prefixes and skips
+readings with explicit water-feature prefixes. The collection node combines
+readings from multiple TIFF sheets into one places table. Each row includes
+the source TIFF artifact ID alongside its page and pixel coordinates.
+
+### OCR node
+
+The app-owned builtin that takes a `RasterImage | PdfFile` document and an
+`OcrReader` service input, and produces transcription markdown plus optional
+blocks and regions. It names no vendor. An optional output the connected
+provider does not declare is omitted from the stored result and recorded as
+`unsupported_outputs`; a downstream node fed by that port fails naming the
+provider, not with an empty artifact.
+_Avoid_: Mistral node / Reducto node (those are provider nodes or the legacy
+read-with-vendor operators)
+
 ### Port
 
 A named node input or output that declares one or more accepted concrete
-artifact types or a single named artifact-type variable, plus cardinality. An
-input that declares several concrete types accepts any one of them; an origin
-or edge whose artifact type is none of them is refused unless a declared
+artifact types or a single named artifact-type variable, plus cardinality — or,
+for a service port, the service contract keys it accepts or produces. An
+artifact input that declares several concrete types accepts any one of them; an
+origin or edge whose artifact type is none of them is refused unless a declared
 artifact conversion reaches one of them. Every use of the same variable on one
 node shares one concrete binding owned by that node instance. Ports may
 carry one artifact, an ordered artifact sequence, or variadic incoming edges when

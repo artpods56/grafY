@@ -2,20 +2,25 @@
 
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import type {
   CollaborativeHead,
   GraphCommandInput,
+  GraphDraft,
   NodeRegistry,
   NodeSpec,
   SavedGraph,
   SavedGraphDocument,
   SavedGraphSummary,
 } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { deferred } from "./test/deferred";
 import { renderHook } from "./test/renderHook";
+import { useGraphAutosave } from "./useGraphAutosave";
 import {
   useSavedGraphLifecycle,
+  type GraphRoomPersistenceAdapter,
   type GraphRoomPersistenceResult,
 } from "./useSavedGraphLifecycle";
 
@@ -181,6 +186,39 @@ function headWithDocument(
     updated_at: "2026-08-13T12:00:00Z",
     document: { graphs: [{ id: projectId, name, document }] },
   };
+}
+
+/**
+ * What a room save reports back when it wrote exactly the draft it was handed:
+ * one head, checkpointed at the sequence the write landed at, holding that
+ * draft's document.
+ */
+/**
+ * A save whose completion the test decides, typed so the draft it was handed can
+ * be read back out of the mock rather than assumed.
+ */
+type DraftPersist = Mock<GraphRoomPersistenceAdapter["persistDocument"]>;
+
+function submittedDraft(
+  calls: readonly (readonly unknown[])[],
+  index: number,
+): GraphDraft {
+  const draft = calls[index]?.[0] as GraphDraft | undefined;
+  if (!draft) throw new Error(`write ${index + 1} submitted no draft`);
+  return draft;
+}
+
+function roomEcho(
+  draft: GraphDraft,
+  sequence: number,
+): GraphRoomPersistenceResult {
+  const head = headWithDocument(
+    GRAPH_A_ID,
+    draft.document,
+    { collaboration: sequence, checkpoint: sequence },
+    draft.name,
+  );
+  return { checkpointHead: head, currentHead: head };
 }
 
 /** The open path: a Project whose head holds this Graph. */
@@ -392,6 +430,222 @@ afterEach(() => {
 });
 
 describe("useSavedGraphLifecycle document ownership", () => {
+  it("autosaves a new draft through Project creation and checkpointing", async () => {
+    vi.useFakeTimers();
+    try {
+      const graph = savedGraph(GRAPH_A_ID, "My draft");
+      stubCreate(GRAPH_A_ID, graph);
+      const { options } = lifecycleOptions(null, undefined, {
+        name: "My draft",
+        nodes: [],
+        edges: [],
+        origins: [],
+        agents: [],
+      });
+      const hook = await renderHook((props: LifecycleOptions) => {
+        const lifecycle = useSavedGraphLifecycle(props);
+        useGraphAutosave({
+          enabled: !lifecycle.persistenceOperationBusy,
+          dirty: lifecycle.isDirty,
+          fingerprint: lifecycle.currentFingerprint,
+          save: lifecycle.saveCurrentGraph,
+        });
+        return lifecycle;
+      }, options);
+      expect(api.createProject).not.toHaveBeenCalled();
+      await React.act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(api.createProject).toHaveBeenCalledTimes(1);
+      expect(api.checkpointProject).toHaveBeenCalledTimes(1);
+      expect(submittedDocuments()).toHaveLength(1);
+      expect(hook.result.current.activeGraph?.id).toBe(GRAPH_A_ID);
+      expect(hook.result.current.persistenceError).toBeNull();
+      await hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves the canvas alone when a background save wrote what it already shows", async () => {
+    const graph = savedGraph(GRAPH_A_ID, "Autosave me", 2);
+    const write = deferred<GraphRoomPersistenceResult>();
+    const persistDocument: DraftPersist = vi.fn(() => write.promise);
+    stubOpen(graph);
+    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
+    options.roomPersistence = { canPersist: true, persistDocument };
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
+
+    // The edit an autosave follows: a rename the canvas holds and the server
+    // does not.
+    await React.act(async () => {
+      await hook.rerender({
+        ...options,
+        document: { ...options.document, name: "Autosaved" },
+      });
+    });
+    expect(hook.result.current.isDirty).toBe(true);
+    const replacements = callbacks.replaceDocument.mock.calls.length;
+    const presentationReplacements =
+      callbacks.replacePresentation.mock.calls.length;
+    const secretRefreshes = vi.mocked(callbacks.refreshNodeSecretStatuses).mock
+      .calls.length;
+
+    let inFlight!: Promise<void>;
+    await React.act(async () => {
+      inFlight = hook.result.current.saveCurrentGraph(undefined, {
+        background: true,
+      });
+      await Promise.resolve();
+    });
+    expect(persistDocument).toHaveBeenCalledOnce();
+    // Writing in the background means the person is not locked out of the
+    // canvas, and is not told the canvas is busy with something they did not
+    // ask for.
+    expect(hook.result.current.persistenceOperationBusy).toBe(false);
+
+    await React.act(async () => {
+      write.resolve(roomEcho(submittedDraft(persistDocument.mock.calls, 0), 3));
+      await inFlight;
+    });
+
+    // The room sent back the document this tab had just written, so there is
+    // nothing for the canvas to learn: no replacement means no node loses its
+    // measured size, its dragged position, or the selection.
+    expect(callbacks.replaceDocument).toHaveBeenCalledTimes(replacements);
+    expect(callbacks.replacePresentation).toHaveBeenCalledTimes(
+      presentationReplacements,
+    );
+    expect(callbacks.refreshNodeRegistry).not.toHaveBeenCalled();
+    expect(callbacks.refreshNodeSecretStatuses).toHaveBeenCalledTimes(
+      secretRefreshes,
+    );
+    expect(hook.result.current.isDirty).toBe(false);
+    expect(hook.result.current.activeGraph).toMatchObject({
+      id: GRAPH_A_ID,
+      revision: 3,
+    });
+  });
+
+  it("rebuilds the canvas when a background save came back saying something else", async () => {
+    const graph = savedGraph(GRAPH_A_ID, "Autosave me", 2);
+    const persistDocument = vi
+      .fn()
+      .mockImplementation((draft: GraphDraft) =>
+        Promise.resolve(
+          roomEcho({ ...draft, name: "Named by another writer" }, 3),
+        ),
+      );
+    stubOpen(graph);
+    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
+    options.roomPersistence = { canPersist: true, persistDocument };
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
+    await React.act(async () => {
+      await hook.rerender({
+        ...options,
+        document: { ...options.document, name: "Autosaved" },
+      });
+    });
+
+    const replacements = callbacks.replaceDocument.mock.calls.length;
+
+    await React.act(async () => {
+      await hook.result.current.saveCurrentGraph(undefined, {
+        background: true,
+      });
+    });
+
+    // The accepted head is not the canvas: it carries another writer's name, so
+    // the canvas takes the head rather than being told it is saved.
+    expect(callbacks.replaceDocument).toHaveBeenCalledTimes(replacements + 1);
+  });
+
+  it("carries an edit made during a background save into the next write", async () => {
+    const graph = savedGraph(GRAPH_A_ID, "Queue", 2);
+    const firstWrite = deferred<GraphRoomPersistenceResult>();
+    const persistDocument = vi
+      .fn()
+      .mockReturnValueOnce(firstWrite.promise)
+      .mockImplementation((draft: GraphDraft) =>
+        Promise.resolve(roomEcho(draft, 4)),
+      );
+    stubOpen(graph);
+    const { options } = lifecycleOptions(GRAPH_A_ID);
+    options.roomPersistence = { canPersist: true, persistDocument };
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
+    await React.act(async () => {
+      await hook.rerender({
+        ...options,
+        document: { ...options.document, name: "Queue first" },
+      });
+    });
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    await React.act(async () => {
+      first = hook.result.current.saveCurrentGraph(undefined, {
+        background: true,
+      });
+      await Promise.resolve();
+    });
+    // The next edit lands while the first write is still out there.
+    await React.act(async () => {
+      await hook.rerender({
+        ...options,
+        document: { ...options.document, name: "Queue last" },
+      });
+    });
+    await React.act(async () => {
+      second = hook.result.current.saveCurrentGraph(undefined, {
+        background: true,
+      });
+      await Promise.resolve();
+    });
+    expect(persistDocument).toHaveBeenCalledOnce();
+
+    await React.act(async () => {
+      firstWrite.resolve(
+        roomEcho(submittedDraft(persistDocument.mock.calls, 0), 3),
+      );
+      await first;
+    });
+    await React.act(async () => {
+      await second;
+    });
+
+    // Dropping the queued write would lose the only copy of the newer edit.
+    expect(persistDocument).toHaveBeenCalledTimes(2);
+    expect(submittedDraft(persistDocument.mock.calls, 1).name).toBe(
+      "Queue last",
+    );
+    expect(hook.result.current.isDirty).toBe(false);
+  });
+
+  it("still holds the canvas busy for the Save a person asked for", async () => {
+    const graph = savedGraph(GRAPH_A_ID, "Explicit", 2);
+    const write = deferred<GraphRoomPersistenceResult>();
+    const persistDocument: DraftPersist = vi.fn(() => write.promise);
+    stubOpen(graph);
+    const { options } = lifecycleOptions(GRAPH_A_ID);
+    options.roomPersistence = { canPersist: true, persistDocument };
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
+
+    let inFlight!: Promise<void>;
+    await React.act(async () => {
+      inFlight = hook.result.current.saveCurrentGraph("Explicit save");
+      await Promise.resolve();
+    });
+    expect(hook.result.current.persistenceOperationBusy).toBe(true);
+
+    await React.act(async () => {
+      write.resolve(roomEcho(submittedDraft(persistDocument.mock.calls, 0), 3));
+      await inFlight;
+    });
+    expect(hook.result.current.persistenceOperationBusy).toBe(false);
+  });
+
   it("submits the canonical final drag position", async () => {
     const finalPosition = { x: 240, y: 180 };
     const node = {
@@ -1376,34 +1630,19 @@ describe("useSavedGraphLifecycle Graphs inside one Project", () => {
 });
 
 describe("useSavedGraphLifecycle presentation ownership", () => {
-  const sourceSpec: NodeSpec = {
+  const sourceSpec: NodeSpec = nodeSpecFixture({
     operator_id: "test.source",
-    operator_version: 1,
-    plugin_slug: "test",
-    origin: "builtin",
     title: "Source",
     description: "Source",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
-    inputs: [],
     outputs: [
-      {
+      artifactPortFixture({
         name: "output",
         title: "Output",
-        description: null,
         direction: "output",
-        artifact_type: { id: "scalar.text", schema_version: 1 },
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
         required: false,
-      },
+      }),
     ],
-  };
+  });
 
   const producerNode = {
     id: "node-a",

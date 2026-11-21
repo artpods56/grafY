@@ -1581,7 +1581,7 @@
         "description": "Reserve one upload before the bytes leave the client.",
         "properties": {
           "byte_size": {
-            "maximum": 67108864.0,
+            "maximum": 2147483648.0,
             "minimum": 0.0,
             "title": "Byte Size",
             "type": "integer"
@@ -2403,6 +2403,35 @@
           "style"
         ],
         "title": "GeoRenderLayerResponse",
+        "type": "object"
+      },
+      "GeoRenderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Artifact Ids",
+            "type": "array"
+          },
+          "basemap": {
+            "default": "openstreetmap",
+            "enum": [
+              "openstreetmap",
+              "none"
+            ],
+            "title": "Basemap",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_ids"
+        ],
+        "title": "GeoRenderRequest",
         "type": "object"
       },
       "GeoRenderResponse": {
@@ -3461,6 +3490,21 @@
       },
       "ImageInfoResponse": {
         "properties": {
+          "bounds_wgs84": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoBounds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "georeferenced": {
+            "default": false,
+            "title": "Georeferenced",
+            "type": "boolean"
+          },
           "has_alpha": {
             "title": "Has Alpha",
             "type": "boolean"
@@ -4427,6 +4471,13 @@
             },
             "title": "Plugins",
             "type": "array"
+          },
+          "service_contracts": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceContractResponse"
+            },
+            "title": "Service Contracts",
+            "type": "array"
           }
         },
         "required": [
@@ -4877,7 +4928,7 @@
                 "type": "null"
               }
             ],
-            "description": "'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter.",
+            "description": "'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter. A service input is always hidden.",
             "title": "Agent Default"
           },
           "also_accepts": {
@@ -4929,10 +4980,27 @@
             "title": "Direction",
             "type": "string"
           },
+          "features": {
+            "description": "Feature strings a service output's implementation declares, so the workbench can mute ports a connected provider does not produce.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Features",
+            "type": "array"
+          },
           "instance_plugs": {
             "default": false,
             "title": "Instance Plugs",
             "type": "boolean"
+          },
+          "kind": {
+            "default": "artifact",
+            "enum": [
+              "artifact",
+              "service"
+            ],
+            "title": "Kind",
+            "type": "string"
           },
           "name": {
             "title": "Name",
@@ -4942,6 +5010,13 @@
             "default": true,
             "title": "Required",
             "type": "boolean"
+          },
+          "service_contracts": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceContractKeyResponse"
+            },
+            "title": "Service Contracts",
+            "type": "array"
           },
           "shape": {
             "$ref": "#/components/schemas/PortShape"
@@ -6163,6 +6238,49 @@
           "text"
         ],
         "title": "SendAgentTurnRequest",
+        "type": "object"
+      },
+      "ServiceContractKeyResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version"
+        ],
+        "title": "ServiceContractKeyResponse",
+        "type": "object"
+      },
+      "ServiceContractResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "title"
+        ],
+        "title": "ServiceContractResponse",
         "type": "object"
       },
       "SessionResponse": {
@@ -8307,6 +8425,7 @@
     },
     "/v1/workspaces": {
       "get": {
+        "description": "The caller's Workspaces: every active membership, or a token's one Workspace.\n\nA personal access token is bound to one Workspace, so it lists that one and only\nthat one, with the capabilities it actually carries there: its scopes intersected\nwith the member's current role.",
         "operationId": "list_workspaces_v1_workspaces_get",
         "responses": {
           "200": {
@@ -8327,6 +8446,9 @@
         "security": [
           {
             "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
           }
         ],
         "summary": "List Workspaces",
@@ -8376,6 +8498,100 @@
         "summary": "Create Workspace",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/artifacts/geo/render": {
+      "post": {
+        "operationId": "render_geo_artifacts_v1_workspaces__workspace_id__artifacts_geo_render_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeoRenderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoRenderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid geo request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Artifact not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Artifact content is unavailable"
+          },
+          "503": {
+            "description": "Tiler unavailable or busy"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Render Geo Artifacts",
+        "tags": [
+          "workbench"
         ]
       }
     },
@@ -8756,6 +8972,9 @@
               }
             },
             "description": "Artifact content is unavailable"
+          },
+          "503": {
+            "description": "Tiler unavailable or busy"
           }
         },
         "security": [
@@ -9912,6 +10131,9 @@
               }
             },
             "description": "Raster projection is unavailable"
+          },
+          "503": {
+            "description": "Tiler unavailable or busy"
           }
         },
         "security": [
@@ -9987,11 +10209,13 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
-              }
+              "image/jpeg": {},
+              "image/png": {}
             },
             "description": "Successful Response"
+          },
+          "204": {
+            "description": "Tile is outside the georeferenced image"
           },
           "400": {
             "content": {
@@ -10032,6 +10256,9 @@
               }
             },
             "description": "Raster tile is unavailable"
+          },
+          "503": {
+            "description": "Tiler unavailable or busy"
           }
         },
         "security": [

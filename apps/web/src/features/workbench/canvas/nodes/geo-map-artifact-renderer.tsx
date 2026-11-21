@@ -16,19 +16,29 @@ import { GeoMapPreview } from "./geo-map/GeoMapPreview";
 import { mapInteractionProps } from "./geo-map/map-interaction-props";
 import { s } from "./geo-map/styles";
 
+type GeoMapRendererProps = {
+  artifact: Pick<ArtifactSummary, "artifact_id">;
+  mode: string;
+  availableHeight?: number;
+  interaction?: ArtifactViewerInteractionContext;
+  autoLoad?: boolean;
+  presentation?: "inspector" | "canvas";
+};
+
 function GeoMapRendererState({
   artifact,
   mode,
   availableHeight,
   interaction,
-}: {
-  artifact: ArtifactSummary;
-  mode: string;
-  availableHeight?: number;
-  interaction?: ArtifactViewerInteractionContext;
-}) {
+  autoLoad = false,
+  presentation = autoLoad ? "canvas" : "inspector",
+}: GeoMapRendererProps) {
   const { workspace } = useWorkspaceContext();
-  const [loadRequested, setLoadRequested] = React.useState(false);
+  const [loadRequested, setLoadRequested] = React.useState(
+    autoLoad || presentation === "canvas",
+  );
+  const onUnload =
+    presentation === "inspector" ? () => setLoadRequested(false) : undefined;
   const renderKey = loadRequested
     ? (["geo-artifact-render", workspace.id, artifact.artifact_id] as const)
     : null;
@@ -84,13 +94,11 @@ function GeoMapRendererState({
                   >
                     Retry
                   </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setLoadRequested(false)}
-                  >
-                    Unload
-                  </Button>
+                  {onUnload ? (
+                    <Button variant="secondary" size="sm" onClick={onUnload}>
+                      Unload
+                    </Button>
+                  ) : null}
                 </>
               }
             >
@@ -127,13 +135,11 @@ function GeoMapRendererState({
             {descriptor.kind} · {descriptor.layers.length}{" "}
             {descriptor.layers.length === 1 ? "layer" : "layers"}
           </span>
-          <Button
-            size="xs"
-            variant="secondary"
-            onClick={() => setLoadRequested(false)}
-          >
-            Unload
-          </Button>
+          {onUnload ? (
+            <Button size="xs" variant="secondary" onClick={onUnload}>
+              Unload
+            </Button>
+          ) : null}
         </div>
         <pre {...stylex.props(s.raw)}>
           {JSON.stringify(descriptor, null, 2)}
@@ -146,7 +152,7 @@ function GeoMapRendererState({
     <GeoMapPreview
       descriptor={descriptor}
       availableHeight={availableHeight}
-      onUnload={() => setLoadRequested(false)}
+      onUnload={onUnload}
       interaction={interaction}
     />
   );
@@ -154,23 +160,13 @@ function GeoMapRendererState({
 
 export function GeoMapArtifactRenderer({
   artifact,
-  mode,
-  availableHeight,
-  interaction,
-}: {
-  artifact: ArtifactSummary;
-  payload?: unknown;
-  mode: string;
-  availableHeight?: number;
-  interaction?: ArtifactViewerInteractionContext;
-}) {
+  ...props
+}: GeoMapRendererProps & { payload?: unknown }) {
   return (
     <GeoMapRendererState
       key={artifact.artifact_id}
       artifact={artifact}
-      mode={mode}
-      availableHeight={availableHeight}
-      interaction={interaction}
+      {...props}
     />
   );
 }

@@ -13,11 +13,15 @@ def test_manifest_loader_target_preserves_system_identity_and_freezes() -> None:
     assert MISTRAL.slug == "external.mistral"
     assert {registration.key for registration in MISTRAL.nodes} == {
         ("mistral.ocr.process", 1),
+        ("mistral.ocr.provider", 1),
     }
     assert "grafy-core==0.1.0" in (requires("grafy-plugin-mistral") or [])
 
     assert registry.declared_artifact_types == ()
-    contract = MISTRAL.nodes[0].http_egress
+    process = next(
+        node for node in MISTRAL.nodes if node.key == ("mistral.ocr.process", 1)
+    )
+    contract = process.http_egress
     assert contract is not None
     assert contract.fixed_destinations == ("https://api.mistral.ai",)
     assert contract.configured_inputs == ()

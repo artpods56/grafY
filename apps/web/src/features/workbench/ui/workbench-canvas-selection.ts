@@ -122,7 +122,15 @@ export function useCanvasSelection(deps: CanvasSelectionDeps) {
     ],
   );
 
-  return { clearWorkflowSelection, selectOnly };
+  // Held as one value so a command that depends on this bundle is not rebuilt on
+  // every render. A plain object literal here gave every consumer — the card
+  // commands, the output-card placement, and through them the canvas nodes — a
+  // dependency that moved each frame of a pointer drag, which rebuilt every node's
+  // data sixty times a second.
+  return React.useMemo(
+    () => ({ clearWorkflowSelection, selectOnly }),
+    [clearWorkflowSelection, selectOnly],
+  );
 }
 
 /** What a gesture can do to what the canvas holds. */

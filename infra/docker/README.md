@@ -134,9 +134,11 @@ The `grafy-data` volume contains the Grafy SQLite database, staged uploads,
 and local artifact objects. Treat migrations as a maintenance window for
 SQLite:
 
-Each staged file is limited to 64 MiB. The gateway allows 65 MiB request bodies
-to leave room for multipart framing, while the API enforces the exact file-byte
-limit. With `GRAFY_STORAGE_BACKEND=s3`, browsers PUT directly to presigned URLs. Keep
+Each staged file is limited to `GRAFY_STAGED_UPLOAD_MAX_BYTES`, 64 MiB by
+default and at most 2 GiB. The gateway allows 65 MiB request bodies, so raising
+the setting also means raising the gateway limits (see
+[`docs/deploy/upload-storage.md`](../../docs/deploy/upload-storage.md#raising-the-per-file-limit)),
+while the API enforces the exact file-byte limit. With `GRAFY_STORAGE_BACKEND=s3`, browsers PUT directly to presigned URLs. Keep
 MinIO private: include `compose.shared-storage.yaml` and set
 `GRAFY_S3_SIGNING_ENDPOINT_URL=${GRAFY_PUBLIC_ORIGIN}/storage` so uploads go
 through the gateway's `/storage/` location. See

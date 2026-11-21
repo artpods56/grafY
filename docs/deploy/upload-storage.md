@@ -17,6 +17,23 @@ Presigned MinIO/S3 uploads must enforce the same bound at the storage proxy:
   plus the receive timeout have elapsed, so a late in-flight PUT cannot leave
   unreclaimable bytes.
 
+## Raising the per-file limit
+
+`GRAFY_STAGED_UPLOAD_MAX_BYTES` defaults to 64 MiB and accepts up to 2 GiB
+(`2147483648`) for large scans such as GeoTIFFs. The API enforces it at reserve,
+receive and complete. The gateway's body limits are a second ceiling, so raise
+them in the same change, or larger uploads get `413` from nginx:
+
+- `client_max_body_size` at the top of `infra/docker/gateway/nginx.conf`
+  (local storage: bytes go through `/api/`), set slightly above the limit;
+- `client_max_body_size` in `location ^~ /storage/` (S3 through the gateway);
+- `client_max_body_size` in `infra/docker/gateway/minio-upload.conf` when the
+  direct route is enabled.
+
+A PUT must start within `GRAFY_UPLOAD_TARGET_TTL_SECONDS`; the body may then take
+up to `GRAFY_UPLOAD_RECEIVE_TIMEOUT_SECONDS`, so size that timeout for the
+slowest client at the largest file.
+
 ## Same-origin uploads through the Compose gateway
 
 MinIO stays on a private Docker network. Browsers upload through the gateway's
@@ -57,9 +74,10 @@ the gateway that sets `Host $host` is fine on the default HTTPS port.
 - only `/storage/workbench-artifacts/<key>?<query>`; every other bucket, the
   bucket root, MinIO admin/health paths and query-less requests get `404`. A
   non-default `GRAFY_STORAGE_BUCKET` must be changed in the `map` as well;
-- `client_max_body_size 64m`, the `GRAFY_STAGED_UPLOAD_MAX_BYTES` ceiling.
-  Oversized bodies get `413` before MinIO stores anything. An edge proxy in
-  front of the gateway needs a limit of at least 64 MiB;
+- `client_max_body_size 64m`, the default `GRAFY_STAGED_UPLOAD_MAX_BYTES`.
+  Oversized bodies get `413` before MinIO stores anything, because a signed
+  PUT does not bind its length. An edge proxy in front of the gateway needs a
+  limit of at least the configured value;
 - request and response streaming (`proxy_request_buffering off`,
   `proxy_buffering off`), cookies and Authorization headers stripped;
 - 60 s idle timeouts while receiving and forwarding the body. Open-source
@@ -106,7 +124,8 @@ The override joins the gateway to the existing private MinIO network. Set
 needs access to MinIO, for example through `compose.shared-storage.yaml`. The
 direct route is opt-in; the default `/storage/` route remains available.
 
-The direct route permits PUT only, limits bodies to 64 MiB, strips cookies and
+The direct route permits PUT only, limits bodies to 64 MiB (the default upload
+limit), strips cookies and
 Authorization headers, and disables access and error logging. It uses
 1800-second inactivity timeouts rather than the default route's 60 seconds;
 lower these when the API upload limits are lower. Neither route imposes a total

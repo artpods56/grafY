@@ -1,8 +1,10 @@
 """HTTP surface of the tiler. Internal only: the API is the public entry.
 
 Every data route takes exactly one input about what to read, the signed
-``X-Grafy-Grant`` header (see :mod:`grafy_crypto.grants`). There is no URL, path
-or bucket parameter anywhere, so there is nothing to point at another host.
+``X-Grafy-Grant`` header (see :mod:`grafy_crypto.grants`). The mosaic route
+carries its multi-source grant in a JSON body instead, because 64 sources do not
+fit a header. There is no URL, path or bucket parameter anywhere, so there is
+nothing to point at another host.
 """
 
 import faulthandler
@@ -20,11 +22,13 @@ from fastapi import (
     Header,
     HTTPException,
     Path,
+    Query,
     Request,
     Response,
 )
 from fastapi.responses import JSONResponse
-from grafy_crypto.grants import Grant, GrantError
+from grafy_crypto.grants import Grant, GrantError, MosaicGrant
+from pydantic import BaseModel, BeforeValidator, Field
 from rasterio.errors import NotGeoreferencedWarning
 from rio_tiler.errors import TileOutsideBounds
 from titiler.core.errors import add_exception_handlers
@@ -47,6 +51,11 @@ from grafy_tiler.service import (
     TileService,
 )
 from grafy_tiler.settings import Settings
+from grafy_tiler.window import (
+    UnsupportedPixelFormat,
+    WindowOutOfBounds,
+    WindowTooLarge,
+)
 
 logger = logging.getLogger("grafy_tiler")
 
@@ -116,6 +125,64 @@ async def tile(
     return _image(await service.tile(grant, z, x, y, tile_format), tile_format)
 
 
+@router.get("/geo/tiles/{z}/{x}/{y}.{extension}")
+async def geo_tile(
+    grant: Granted,
+    service: Service,
+    z: str,
+    x: Annotated[int, Path(ge=0)],
+    y: Annotated[int, Path(ge=0)],
+    extension: str,
+) -> Response:
+    if extension not in _MEDIA_TYPES:
+        raise TileNotFound("unknown tile format")
+    try:
+        zoom = int(_integer_query(z))
+    except ValueError as error:
+        raise TileNotFound("invalid Web Mercator zoom") from error
+    requested: TileFormat = "jpg" if extension == "jpg" else "png"
+    data, tile_format = await service.geo_tile(grant, zoom, x, y, requested)
+    return _image(data, tile_format)
+
+
+class MosaicGrantRequest(BaseModel):
+    grant: str = Field(min_length=1, max_length=65_536)
+
+
+@router.post("/geo/mosaic/tiles/{z}/{x}/{y}.{extension}")
+async def geo_mosaic_tile(
+    body: MosaicGrantRequest,
+    request: Request,
+    service: Service,
+    z: str,
+    x: Annotated[int, Path(ge=0)],
+    y: Annotated[int, Path(ge=0)],
+    extension: str,
+) -> Response:
+    config: Settings = request.app.state.settings
+    try:
+        grant = MosaicGrant.verify_grant(
+            body.grant,
+            keys=config.signing_key_values,
+            bucket=config.bucket,
+            now=int(time.time()),
+            skew_seconds=config.grant_clock_skew_seconds,
+            max_source_bytes=config.max_source_bytes,
+        )
+    except GrantError as error:
+        logger.warning("mosaic grant refused: %s", error)
+        raise HTTPException(status_code=403, detail="grant refused") from error
+    if extension not in _MEDIA_TYPES:
+        raise TileNotFound("unknown tile format")
+    try:
+        zoom = int(_integer_query(z))
+    except ValueError as error:
+        raise TileNotFound("invalid Web Mercator zoom") from error
+    requested: TileFormat = "jpg" if extension == "jpg" else "png"
+    data, tile_format = await service.geo_mosaic_tile(grant, zoom, x, y, requested)
+    return _image(data, tile_format)
+
+
 @router.get("/thumbnail")
 async def thumbnail(
     grant: Granted,
@@ -128,6 +195,40 @@ async def thumbnail(
         )
     data, tile_format = await service.thumbnail(grant, edge)
     return _image(data, tile_format)
+
+
+def _integer_query(value: object) -> str:
+    if not isinstance(value, str) or not value.isascii() or not value.isdecimal():
+        raise ValueError("expected an unsigned decimal integer")
+    return value
+
+
+PixelInteger = Annotated[int, BeforeValidator(_integer_query)]
+
+
+@router.get("/window")
+async def window(
+    grant: Granted,
+    service: Service,
+    col: Annotated[PixelInteger, Query(ge=0)],
+    row: Annotated[PixelInteger, Query(ge=0)],
+    width: Annotated[PixelInteger, Query(ge=1)],
+    height: Annotated[PixelInteger, Query(ge=1)],
+) -> Response:
+    """Exact source pixels of a rectangle, with where they came from.
+
+    Half-open `[col, col+width) x [row, row+height)` on the granted page, read
+    1:1 and never clipped, padded, stretched or resampled. The
+    ``X-Grafy-Window`` header carries the rectangle back plus the affine that
+    maps crop-local pixel corners into the source CRS, both null when the page
+    is not usefully georeferenced.
+    """
+    read = await service.window(grant, col, row, width, height)
+    return Response(
+        content=read.png,
+        media_type="image/png",
+        headers={"X-Grafy-Window": read.header},
+    )
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -168,6 +269,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             SourceError: 422,
             SourceMismatch: 409,
             SourceTooLarge: 413,
+            WindowOutOfBounds: 422,
+            WindowTooLarge: 413,
+            UnsupportedPixelFormat: 415,
         },
     )
 

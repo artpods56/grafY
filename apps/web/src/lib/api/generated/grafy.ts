@@ -216,7 +216,14 @@ export interface paths {
             readonly path?: never;
             readonly cookie?: never;
         };
-        /** List Workspaces */
+        /**
+         * List Workspaces
+         * @description The caller's Workspaces: every active membership, or a token's one Workspace.
+         *
+         *     A personal access token is bound to one Workspace, so it lists that one and only
+         *     that one, with the capabilities it actually carries there: its scopes intersected
+         *     with the member's current role.
+         */
         readonly get: operations["list_workspaces_v1_workspaces_get"];
         readonly put?: never;
         /** Create Workspace */
@@ -493,6 +500,23 @@ export interface paths {
         readonly get: operations["get_geo_vector_pmtiles_v1_workspaces__workspace_id__artifacts__source_id__geo_vector_pmtiles_get"];
         readonly put?: never;
         readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/artifacts/geo/render": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Render Geo Artifacts */
+        readonly post: operations["render_geo_artifacts_v1_workspaces__workspace_id__artifacts_geo_render_post"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -2433,6 +2457,17 @@ export interface components {
             /** Visible */
             readonly visible: boolean;
         };
+        /** GeoRenderRequest */
+        readonly GeoRenderRequest: {
+            /** Artifact Ids */
+            readonly artifact_ids: readonly string[];
+            /**
+             * Basemap
+             * @default openstreetmap
+             * @enum {string}
+             */
+            readonly basemap: "openstreetmap" | "none";
+        };
         /** GeoRenderResponse */
         readonly GeoRenderResponse: {
             /**
@@ -2823,6 +2858,12 @@ export interface components {
         };
         /** ImageInfoResponse */
         readonly ImageInfoResponse: {
+            readonly bounds_wgs84?: components["schemas"]["GeoBounds"] | null;
+            /**
+             * Georeferenced
+             * @default false
+             */
+            readonly georeferenced: boolean;
             /** Has Alpha */
             readonly has_alpha: boolean;
             /** Height */
@@ -3110,6 +3151,8 @@ export interface components {
             readonly nodes: readonly components["schemas"]["NodeSpecResponse"][];
             /** Plugins */
             readonly plugins: readonly components["schemas"]["PluginSpecResponse"][];
+            /** Service Contracts */
+            readonly service_contracts?: readonly components["schemas"]["ServiceContractResponse"][];
         };
         /** NodeSecretInputResponse */
         readonly NodeSecretInputResponse: {
@@ -3308,7 +3351,7 @@ export interface components {
             readonly accepted_shapes: readonly components["schemas"]["PortShape"][];
             /**
              * Agent Default
-             * @description 'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter.
+             * @description 'hidden' when an Agent tool link leaves this input to the Graph unless told otherwise. Absent means the input is offered to the model as a parameter. A service input is always hidden.
              */
             readonly agent_default?: "hidden" | null;
             /** Also Accepts */
@@ -3324,10 +3367,21 @@ export interface components {
              */
             readonly direction: "input" | "output";
             /**
+             * Features
+             * @description Feature strings a service output's implementation declares, so the workbench can mute ports a connected provider does not produce.
+             */
+            readonly features?: readonly string[];
+            /**
              * Instance Plugs
              * @default false
              */
             readonly instance_plugs: boolean;
+            /**
+             * Kind
+             * @default artifact
+             * @enum {string}
+             */
+            readonly kind: "artifact" | "service";
             /** Name */
             readonly name: string;
             /**
@@ -3335,6 +3389,8 @@ export interface components {
              * @default true
              */
             readonly required: boolean;
+            /** Service Contracts */
+            readonly service_contracts?: readonly components["schemas"]["ServiceContractKeyResponse"][];
             readonly shape: components["schemas"]["PortShape"];
             /**
              * Shape Field
@@ -3873,6 +3929,22 @@ export interface components {
             readonly client_turn_id: string;
             /** Text */
             readonly text: string;
+        };
+        /** ServiceContractKeyResponse */
+        readonly ServiceContractKeyResponse: {
+            /** Id */
+            readonly id: string;
+            /** Version */
+            readonly version: number;
+        };
+        /** ServiceContractResponse */
+        readonly ServiceContractResponse: {
+            /** Id */
+            readonly id: string;
+            /** Title */
+            readonly title: string;
+            /** Version */
+            readonly version: number;
         };
         /** SessionResponse */
         readonly SessionResponse: {
@@ -5141,6 +5213,13 @@ export interface operations {
                     readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
                 };
             };
+            /** @description Tiler unavailable or busy */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     readonly image_info_v1_workspaces__workspace_id__artifacts__artifact_id__image_info_get: {
@@ -5856,8 +5935,16 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": unknown;
+                    readonly "image/jpeg": unknown;
+                    readonly "image/png": unknown;
                 };
+            };
+            /** @description Tile is outside the georeferenced image */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Invalid raster source */
             readonly 400: {
@@ -5894,6 +5981,13 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
                 };
+            };
+            /** @description Tiler unavailable or busy */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5953,6 +6047,13 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
                 };
+            };
+            /** @description Tiler unavailable or busy */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6030,6 +6131,75 @@ export interface operations {
                 content: {
                     readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
                 };
+            };
+        };
+    };
+    readonly render_geo_artifacts_v1_workspaces__workspace_id__artifacts_geo_render_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["GeoRenderRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["GeoRenderResponse"];
+                };
+            };
+            /** @description Invalid geo request */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Artifact not found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Artifact content is unavailable */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Tiler unavailable or busy */
+            readonly 503: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

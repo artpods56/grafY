@@ -5,7 +5,8 @@
 - **Amended by:** Issue #117 retires `GRAFY_SYSTEM_PLUGIN_DEPLOYMENT_MANIFEST`;
   the no-rename guarantee below describes the original configuration split.
   Issue #202 adds a ninth section, `AgentsConfig`, for the deployment default Agent
-  model; the split below is unchanged by it.
+  model; the split below is unchanged by it. ADR 0023 raises the
+  `GRAFY_STAGED_UPLOAD_MAX_BYTES` ceiling to 2 GiB and keeps its 64 MiB default.
 
 `grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of ten
 responsibility-owned `BaseSettings` sections: `AgentsConfig`, `AppConfig`, `AuthConfig`,
@@ -72,7 +73,7 @@ Callers name the section they use, or they do not compile.
 
 **`app.state.settings` retained with narrowing at the call sites.** Rejected: keeping the
 whole object reachable from routes is what let new code reach for it. Its three readers
-now take a narrow carrier (`AppIdentity.public_origin`, `GraphRoomHub.heartbeat_seconds`,
+now take a narrow carrier (`AuthService.trusted_browser_origins`, `GraphRoomHub.heartbeat_seconds`,
 `AuthService.pat_max_lifetime_seconds`).
 
 ## Consequences

@@ -7,12 +7,14 @@ from uuid import UUID
 import pytest
 from grafy_core.artifacts import ArtifactObject, JsonObject
 from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.storage import (
+    FileStoragePort,
     SaveFileCommand,
     StoredFile,
     StoredObjectInfo,
 )
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
@@ -33,7 +35,7 @@ from pydantic import ValidationError
 
 from grafy_workbench.table import TABLES
 
-from grafy_workbench.table.persistence import TableArtifactResolver, TableArtifactWriter
+from grafy_workbench.table.persistence import table_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -99,6 +101,19 @@ class FakeFileObjectStore:
 
     async def delete(self, bucket: str, path: str) -> None:
         self._path(bucket, path).unlink(missing_ok=True)
+
+
+def _table_values(
+    uow: InMemoryUnitOfWork,
+    storage: FakeFileObjectStore,
+) -> ArtifactValues:
+    return ArtifactValues(
+        (table_artifact(),),
+        uow=uow,
+        storage=cast(FileStoragePort, storage),
+        bucket="artifacts",
+        storage_backend="local",
+    )
 
 
 def test_table_manifest_accepts_legacy_storage_format() -> None:
@@ -173,41 +188,31 @@ def test_table_model_rejects_non_rectangular_or_mistyped_rows() -> None:
         Table(columns=columns, rows=[{"count": "1"}])
 
 
-def test_table_plugin_registers_chunked_persistence(tmp_path: Path) -> None:
+def test_table_plugin_registers_chunked_persistence() -> None:
     registry = PluginRegistry()
     registry.install(TABLES)
     registry.freeze()
-    context = PluginRuntimeContext(
-        workspace=tmp_path,
-        storage=FakeFileObjectStore(tmp_path / "artifacts"),
-        uow=InMemoryUnitOfWork(),
-        bucket="artifacts",
-    )
 
     assert TABLES.slug == "table"
     assert TABLES.title == "Table"
     assert [artifact.key for artifact in registry.artifact_types] == [TABLE_DATA.key]
     assert TABLE_DATA.payload_schema == Table.model_json_schema()
-    resolver = registry.build_resolvers(context)[0]
-    writer = registry.build_writers(context)[0]
-    assert isinstance(resolver, TableArtifactResolver)
-    assert resolver.target is Table
-    assert isinstance(writer, TableArtifactWriter)
-    assert writer.artifact_type == TABLE_DATA.key
+    assert [artifact.spec.key for artifact in registry.artifacts] == [TABLE_DATA.key]
+    assert registry.artifacts[0].value_type is Table
     assert sample_table().rows[0]["column_2"] == "19.99"
-    assert registry.nodes == ()
+    assert {node.key for node in registry.nodes} == {
+        ("table.concat", 1),
+        ("table.extract_from_markdown", 1),
+        ("table.match_places", 1),
+        ("table.transliterate_cyrillic", 1),
+    }
 
 
 @pytest.mark.asyncio
 async def test_chunked_table_round_trip_and_cross_chunk_page(tmp_path: Path) -> None:
     uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
-    writer = TableArtifactWriter(
-        storage=storage,
-        uow=uow,
-        bucket="artifacts",
-        storage_backend="local",
-    )
+    values = _table_values(uow, storage)
     table = Table(
         columns=[
             TableColumn(id="row", title="Row", value_type=TableValueType.INTEGER),
@@ -216,7 +221,8 @@ async def test_chunked_table_round_trip_and_cross_chunk_page(tmp_path: Path) -> 
         rows=[{"row": index, "value": f"value-{index}"} for index in range(205)],
     )
 
-    ref = await writer.write(
+    ref = await values.write(
+        TABLE_DATA.key,
         table,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -241,34 +247,28 @@ async def test_chunked_table_round_trip_and_cross_chunk_page(tmp_path: Path) -> 
     assert artifact.metadata["chunk_count"] == 3
 
     page = await load_table_page(artifact, storage, offset=95, limit=10)
-    resolver = TableArtifactResolver(uow=uow, storage=storage)
-
     assert page.offset == 95
     assert page.total_rows == 205
     assert [row["row"] for row in page.rows] == list(range(95, 105))
     past_end = await load_table_page(artifact, storage, offset=999, limit=10)
     assert past_end.offset == 205
     assert past_end.rows == []
-    assert await resolver.resolve(ref, TEST_WORKSPACE_ID) == table
+    assert await values.resolve(ref, TEST_WORKSPACE_ID) == table
 
 
 @pytest.mark.asyncio
 async def test_empty_and_legacy_inline_tables_remain_resolvable(tmp_path: Path) -> None:
     uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
-    writer = TableArtifactWriter(
-        storage=storage,
-        uow=uow,
-        bucket="artifacts",
-        storage_backend="local",
-    )
+    values = _table_values(uow, storage)
     empty = Table(
         columns=[
             TableColumn(id="value", title="Value", value_type=TableValueType.TEXT)
         ],
         rows=[],
     )
-    empty_ref = await writer.write(
+    empty_ref = await values.write(
+        TABLE_DATA.key,
         empty,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -291,7 +291,6 @@ async def test_empty_and_legacy_inline_tables_remain_resolvable(tmp_path: Path) 
         await uow.artifacts.add(legacy_artifact)
         await uow.commit()
 
-    resolver = TableArtifactResolver(uow=uow, storage=storage)
     legacy_page = await load_table_page(
         legacy_artifact,
         storage,
@@ -299,8 +298,8 @@ async def test_empty_and_legacy_inline_tables_remain_resolvable(tmp_path: Path) 
         limit=10,
     )
 
-    assert await resolver.resolve(empty_ref, TEST_WORKSPACE_ID) == empty
-    assert await resolver.resolve(legacy_artifact.ref(), TEST_WORKSPACE_ID) == legacy
+    assert await values.resolve(empty_ref, TEST_WORKSPACE_ID) == empty
+    assert await values.resolve(legacy_artifact.ref(), TEST_WORKSPACE_ID) == legacy
     assert legacy_page.total_rows == 2
     assert legacy_page.rows == legacy.rows[1:]
 
@@ -309,13 +308,9 @@ async def test_empty_and_legacy_inline_tables_remain_resolvable(tmp_path: Path) 
 async def test_corrupt_table_chunk_reports_artifact_and_offset(tmp_path: Path) -> None:
     uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
-    writer = TableArtifactWriter(
-        storage=storage,
-        uow=uow,
-        bucket="artifacts",
-        storage_backend="local",
-    )
-    ref = await writer.write(
+    values = _table_values(uow, storage)
+    ref = await values.write(
+        TABLE_DATA.key,
         sample_table(),
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -353,12 +348,7 @@ async def test_corrupt_table_chunk_reports_artifact_and_offset(tmp_path: Path) -
 async def test_large_rows_are_split_by_chunk_byte_budget(tmp_path: Path) -> None:
     uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
-    writer = TableArtifactWriter(
-        storage=storage,
-        uow=uow,
-        bucket="artifacts",
-        storage_backend="local",
-    )
+    values = _table_values(uow, storage)
     table = Table(
         columns=[
             TableColumn(
@@ -369,7 +359,8 @@ async def test_large_rows_are_split_by_chunk_byte_budget(tmp_path: Path) -> None
         ],
         rows=[{"geometry": f"{index}-" + "x" * 600_000} for index in range(4)],
     )
-    ref = await writer.write(
+    ref = await values.write(
+        TABLE_DATA.key,
         table,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -395,13 +386,9 @@ async def test_table_manifest_and_logical_content_are_authenticated(
 ) -> None:
     uow = InMemoryUnitOfWork()
     storage = FakeFileObjectStore(tmp_path / "artifacts")
-    writer = TableArtifactWriter(
-        storage=storage,
-        uow=uow,
-        bucket="artifacts",
-        storage_backend="local",
-    )
-    ref = await writer.write(
+    values = _table_values(uow, storage)
+    ref = await values.write(
+        TABLE_DATA.key,
         sample_table(),
         ArtifactWriteContext(
             node_context=NodeExecutionContext(

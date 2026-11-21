@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 from grafy_core.application.identity import IdentityService
 from grafy_core.ports.identity import IdentityUnitOfWorkPort
+from grafy_workbench.ocr.provider_http import aclose_provider_clients
 
 if TYPE_CHECKING:
     from grafy_core.application.collaboration import CollaborationService
@@ -32,9 +33,6 @@ class AppIdentity:
     identity_uow_factory: Callable[[], IdentityUnitOfWorkPort]
     identity_service: IdentityService
     auth_service: AuthService
-    # The one AppConfig value a request handler needs: the Origin header of the
-    # browser this deployment serves. Routes read this instead of app.state.settings.
-    public_origin: str
 
 
 @dataclass(slots=True)
@@ -65,6 +63,9 @@ class AppResources:
         await self.runs.close()
         await self.workbench.wms.close()
         await self.workbench.artifact_images.close()
+        # The OCR providers dial through pooled clients the family owns, so their
+        # connections outlive one Run and are the last thing to close.
+        await aclose_provider_clients()
 
 
 def get_identity(app: FastAPI) -> AppIdentity:

@@ -4,11 +4,15 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, afterEach, it, vi } from "vitest";
 
+import type { CanvasNode } from "../artifact-viewer";
+import type { WorkflowEdge, WorkflowNodeData } from "../types";
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const xyflowMocks = vi.hoisted(() => ({
   updateNodeInternals: vi.fn(),
-  edges: [] as unknown[],
+  edges: [] as WorkflowEdge[],
+  nodes: [] as CanvasNode[],
 }));
 
 vi.mock("@xyflow/react", () => ({
@@ -31,7 +35,8 @@ vi.mock("@xyflow/react", () => ({
     </span>
   ),
   Position: { Left: "left", Right: "right" },
-  useEdges: () => xyflowMocks.edges as never[],
+  useEdges: () => xyflowMocks.edges,
+  useNodes: () => xyflowMocks.nodes,
   useNodeConnections: () => [],
   useConnection: (selector: (state: { inProgress: boolean }) => unknown) =>
     selector({ inProgress: false }),
@@ -40,7 +45,11 @@ vi.mock("@xyflow/react", () => ({
       edges: unknown[];
       nodeLookup: Map<string, unknown>;
     }) => unknown,
-  ) => selector({ edges: [], nodeLookup: new Map() }),
+  ) =>
+    selector({
+      edges: xyflowMocks.edges,
+      nodeLookup: new Map(xyflowMocks.nodes.map((node) => [node.id, node])),
+    }),
   useUpdateNodeInternals: () => xyflowMocks.updateNodeInternals,
   useViewport: () => ({ zoom: 1, x: 0, y: 0 }),
 }));
@@ -193,8 +202,17 @@ vi.mock("./type-inspector", () => ({
 }));
 
 import type { NodeSpec } from "@/lib/api";
-import { compatibilityHandleId, createWorkflowNodeData } from "../types";
-import { portMetaForPort } from "../types";
+import {
+  artifactPortFixture,
+  nodeSpecFixture,
+  servicePortFixture,
+} from "../../test-fixtures";
+import {
+  WORKFLOW_NODE_TYPE,
+  compatibilityHandleId,
+  createWorkflowNodeData,
+  portMetaForPort,
+} from "../types";
 import { encodeHandleId } from "../handles";
 import WorkflowNodeCard from "./WorkflowNode";
 import {
@@ -204,33 +222,22 @@ import {
 import { fieldFootprint } from "./field-footprints";
 
 function unavailableSpec(): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: "python.transform",
     operator_version: 4,
     plugin_slug: "unavailable",
-    origin: "builtin",
     title: "legacy.operator",
     description: "Unavailable operator",
     catalog_visible: false,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
-    inputs: [],
-    outputs: [],
-  };
+  });
 }
 
 function boundsSpec(): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: "gis.map.wms_layer",
-    operator_version: 1,
     plugin_slug: "gis",
-    origin: "builtin",
     title: "Remote WMS map layer",
     description: "Adds a remote WMS layer.",
-    catalog_visible: true,
-    runnable: true,
     config_schema: {
       type: "object",
       properties: {
@@ -271,23 +278,15 @@ function boundsSpec(): NodeSpec {
       },
       required: ["bounds"],
     },
-    input_schema: {},
-    output_schema: {},
-    inputs: [],
-    outputs: [],
-  };
+  });
 }
 
 function fuzzyMatchSpec(): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: "table.fuzzy_match",
-    operator_version: 1,
     plugin_slug: "builtin.table",
-    origin: "builtin",
     title: "Fuzzy match tables",
     description: "Ranks candidate records.",
-    catalog_visible: true,
-    runnable: true,
     config_schema: {
       type: "object",
       properties: {
@@ -300,128 +299,73 @@ function fuzzyMatchSpec(): NodeSpec {
         },
       },
     },
-    input_schema: {},
-    output_schema: {},
-    inputs: [],
-    outputs: [],
-  };
+  });
 }
 
 /** Two required, variadic instance-plug inputs, so plug rows own their identity. */
 function instancePlugsSpec(): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: "sequence.interleave",
-    operator_version: 1,
     plugin_slug: "sequence",
-    origin: "builtin",
     title: "Interleave sequences",
     description: "Pairs the members of two sequences.",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: [
-      {
+      artifactPortFixture({
         name: "headings",
         title: "Headings",
-        description: null,
         direction: "input",
         artifact_type: { id: "text.markdown", schema_version: 1 },
-        artifact_type_variable: null,
-        shape: "one",
-        accepted_shapes: ["one"],
         instance_plugs: true,
         variadic: true,
-        required: true,
-      },
-      {
+      }),
+      artifactPortFixture({
         name: "rows",
         title: "Rows",
-        description: null,
         direction: "input",
         artifact_type: { id: "table.data", schema_version: 1 },
-        artifact_type_variable: null,
-        shape: "one",
-        accepted_shapes: ["one"],
         instance_plugs: true,
         variadic: true,
-        required: true,
-      },
+      }),
     ],
-    outputs: [],
-  };
+  });
 }
 
 function textPipeSpec(): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: "text.pipe",
-    operator_version: 1,
     plugin_slug: "text",
-    origin: "builtin",
     title: "Text pipe",
     description: "Passes text through.",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: [
-      {
+      artifactPortFixture({
         name: "text",
-        title: "text",
-        description: null,
         direction: "input",
         artifact_type: { id: "text.plain", schema_version: 1 },
-        artifact_type_variable: null,
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
-        required: true,
-      },
+      }),
     ],
     outputs: [
-      {
+      artifactPortFixture({
         name: "text",
-        title: "text",
-        description: null,
         direction: "output",
         artifact_type: { id: "text.plain", schema_version: 1 },
-        artifact_type_variable: null,
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
         required: false,
-      },
-      {
+      }),
+      artifactPortFixture({
         name: "meta",
-        title: "meta",
-        description: null,
         direction: "output",
         artifact_type: { id: "json.document", schema_version: 1 },
-        artifact_type_variable: null,
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
         required: false,
-      },
+      }),
     ],
-  };
+  });
 }
 
 function multilineNoteSpec(): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: "text.note.write",
-    operator_version: 1,
     plugin_slug: "text",
-    origin: "builtin",
     title: "Note",
     description: "Stores one long-form note.",
-    catalog_visible: true,
-    runnable: true,
     config_schema: {
       type: "object",
       properties: {
@@ -434,24 +378,16 @@ function multilineNoteSpec(): NodeSpec {
       },
       required: ["body"],
     },
-    input_schema: {},
-    output_schema: {},
-    inputs: [],
-    outputs: [],
-  };
+  });
 }
 
 /** Mirrors llm.openai_compatible.chat_completion: short fields plus a secret. */
 function chatCompletionSpec(): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: "llm.openai_compatible.chat_completion",
-    operator_version: 1,
     plugin_slug: "llm",
-    origin: "builtin",
     title: "OpenAI-compatible Chat Completion",
     description: "Calls an OpenAI-compatible Chat Completions endpoint.",
-    catalog_visible: true,
-    runnable: true,
     config_schema: {
       type: "object",
       properties: {
@@ -487,10 +423,6 @@ function chatCompletionSpec(): NodeSpec {
         },
       },
     },
-    input_schema: {},
-    output_schema: {},
-    inputs: [],
-    outputs: [],
     secret_inputs: [
       {
         name: "api_key",
@@ -500,87 +432,29 @@ function chatCompletionSpec(): NodeSpec {
         config_dependencies: ["base_url"],
       },
     ],
-  };
+  });
 }
 
 function sequenceCollectSpec(): NodeSpec {
-  return {
+  return nodeSpecFixture({
     // Collections render as artifact stacks; any generic operator shows the
     // type-binding row.
     operator_id: "sequence.slice",
-    operator_version: 1,
     plugin_slug: "sequence",
-    origin: "builtin",
     title: "Collect",
     description: "Collects one artifact type.",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
     inputs: [
-      {
+      artifactPortFixture({
         name: "items",
         title: "Items",
-        description: null,
         direction: "input",
         artifact_type: null,
         artifact_type_variable: "T",
         shape: "many",
-        accepted_shapes: ["many"],
         instance_plugs: true,
-        variadic: false,
-        required: true,
-      },
+      }),
     ],
-    outputs: [],
-  };
-}
-
-function fileInterpretSpec(): NodeSpec {
-  return {
-    operator_id: "file.interpret",
-    operator_version: 1,
-    plugin_slug: "file",
-    origin: "builtin",
-    title: "Interpret file",
-    description: "Claims blob bytes as one chosen file format.",
-    catalog_visible: true,
-    runnable: true,
-    config_schema: {},
-    input_schema: {},
-    output_schema: {},
-    inputs: [
-      {
-        name: "file",
-        title: "File",
-        description: null,
-        direction: "input",
-        artifact_type: { id: "file.blob", schema_version: 1 },
-        artifact_type_variable: null,
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
-        required: true,
-      },
-    ],
-    outputs: [
-      {
-        name: "file",
-        title: "File",
-        description: null,
-        direction: "output",
-        artifact_type: null,
-        artifact_type_variable: "format",
-        shape: "one",
-        accepted_shapes: ["one"],
-        instance_plugs: false,
-        variadic: false,
-        required: true,
-      },
-    ],
-  };
+  });
 }
 
 function renderNode(
@@ -632,8 +506,9 @@ describe("WorkflowNode pickup", () => {
         .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-picked-up"),
     ).toBe("true");
-    // Option C rides a 200ms spring; handles remeasure per frame while it
-    // runs so edges track the lift instead of jumping at settle.
+    // Option C rides a 200ms spring. Nothing is measured while it travels — one
+    // store-wide look per tier is worth 6.4ms and the animation crosses it freely —
+    // so the measurement lands when the card stops.
     expect(xyflowMocks.updateNodeInternals).not.toHaveBeenCalled();
     await vi.waitFor(() =>
       expect(xyflowMocks.updateNodeInternals).toHaveBeenCalled(),
@@ -657,8 +532,16 @@ describe("WorkflowNode pickup", () => {
         .querySelector('[data-canvas-node-shell="true"]')
         ?.getAttribute("data-dragging"),
     ).toBe("true");
-    // A real drag snaps the spring and remeasures immediately for the drag loop.
-    expect(xyflowMocks.updateNodeInternals).toHaveBeenCalledOnce();
+    // A real drag does not force a layout inside the gesture: the drag loop already
+    // tells React Flow where the node is, and this tier is measured when it lands.
+    // Counted as a delta because the card's own port motion measures too.
+    const beforeDrag = xyflowMocks.updateNodeInternals.mock.calls.length;
+    expect(xyflowMocks.updateNodeInternals).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(xyflowMocks.updateNodeInternals.mock.calls.length).toBeGreaterThan(
+        beforeDrag,
+      ),
+    );
 
     React.act(() => node.root.unmount());
   });
@@ -1441,7 +1324,7 @@ describe("WorkflowNode execution progress", () => {
       );
     });
     expect(xyflowMocks.updateNodeInternals).not.toHaveBeenCalled();
-    expect(appendix?.textContent).toContain("branch-c · item 2 · Completed");
+    expect(appendix?.textContent).toContain("Completed · branch-c · item 2");
     expect(appendix?.textContent).not.toContain("Preparing the payload");
 
     const discloseEarlierEvents = appendix?.querySelector<HTMLButtonElement>(
@@ -1458,9 +1341,9 @@ describe("WorkflowNode execution progress", () => {
         (event) => event.textContent,
       ),
     ).toEqual([
-      "branch-a › inner-1 · items 3 › 2 · <script>Preparing the payload</script> · 2 / 5",
-      "branch-b · item 1 · Uploading",
-      "Remote WMS map layer · Queued",
+      "2 / 5 · 3 left · <script>Preparing the payload</script> · branch-a › inner-1 · items 3 › 2",
+      "Uploading · branch-b · item 1",
+      "Queued · Remote WMS map layer",
     ]);
     expect(earlierEvents?.querySelector("script")).toBeNull();
     React.act(() => root.unmount());
@@ -1543,19 +1426,14 @@ describe("WorkflowNode artifact type binding", () => {
   });
 
   it("puts each generic port's type choice on that port", () => {
-    const generic = (name: string, variable: string) => ({
-      name,
-      title: name,
-      description: null,
-      direction: "input" as const,
-      artifact_type: null,
-      artifact_type_variable: variable,
-      shape: "one" as const,
-      accepted_shapes: ["one" as const],
-      instance_plugs: false,
-      variadic: false,
-      required: true,
-    });
+    const generic = (name: string, variable: string) =>
+      artifactPortFixture({
+        name,
+        title: name,
+        direction: "input",
+        artifact_type: null,
+        artifact_type_variable: variable,
+      });
     const spec = {
       ...sequenceCollectSpec(),
       operator_id: "test.pair",
@@ -1577,25 +1455,6 @@ describe("WorkflowNode artifact type binding", () => {
     ).toBeNull();
   });
 
-  it("offers only claimed file formats as the interpret node's format", () => {
-    const data = {
-      ...createWorkflowNodeData(fileInterpretSpec()),
-      onBindArtifactTypeBinding: vi.fn(),
-      bindableArtifactTypes: [
-        { id: "file.blob", schema_version: 1 },
-        { id: "file.jpeg", schema_version: 1 },
-        { id: "file.png", schema_version: 1 },
-        { id: "image.raster", schema_version: 1 },
-        { id: "table.data", schema_version: 1 },
-      ],
-    };
-    const { container } = renderNode("interpret", data);
-
-    expect(
-      typeMenus(container)[0]?.map((option) => option.textContent),
-    ).toEqual(["Any type", "file.jpeg@1", "file.png@1"]);
-  });
-
   it("keeps the static type row when no binding options are supplied", () => {
     const { container } = renderNode(
       "collect",
@@ -1610,35 +1469,25 @@ describe("WorkflowNode artifact type binding", () => {
 });
 
 function schemaBuilderSpec(): NodeSpec {
-  return {
+  return nodeSpecFixture({
     operator_id: "schema.builder",
-    operator_version: 1,
     plugin_slug: "builtin",
-    origin: "builtin",
     title: "Build object",
     description: "Builds an object schema from named fields.",
-    catalog_visible: true,
-    runnable: true,
     config_schema: { type: "object", properties: {} },
-    input_schema: {},
-    output_schema: {},
     inputs: [
-      {
+      artifactPortFixture({
         name: "schemas",
         title: "Schemas",
-        description: null,
         direction: "input",
         artifact_type: null,
         artifact_type_variable: "T",
-        shape: "one",
-        accepted_shapes: ["one"],
         instance_plugs: true,
         variadic: true,
         required: false,
-      },
+      }),
     ],
-    outputs: [],
-  };
+  });
 }
 
 const PARCELS_FIELD = {
@@ -1948,7 +1797,17 @@ describe("WorkflowNode secret input brick", () => {
   }
 
   it("applies a typed secret through the form's submit button", async () => {
-    const { container, root, brick, onApplyNodeSecret } = renderSecretBrick();
+    const { container, root, onApplyNodeSecret } = renderSecretBrick();
+    expect(container.textContent).toContain("Configured");
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    React.act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Change")
+        ?.click(),
+    );
+    const brick = container.querySelector<HTMLInputElement>(
+      'input[aria-label="API key"]',
+    );
     // jsdom only runs a form's submit while the form is attached to a document.
     document.body.append(container);
     const form = brick?.closest("form");
@@ -1981,6 +1840,11 @@ describe("WorkflowNode secret input brick", () => {
 
   it("keeps the status line and the remove action named as they were", async () => {
     const { container, root, onRemoveNodeSecret } = renderSecretBrick();
+    React.act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Change")
+        ?.click(),
+    );
     const form = container.querySelector("form");
 
     expect(form?.textContent).toContain("Configured");
@@ -2036,6 +1900,7 @@ describe("WorkflowNode plug row controls", () => {
 describe("WorkflowNode optional connection switch", () => {
   afterEach(() => {
     xyflowMocks.edges = [];
+    xyflowMocks.nodes = [];
   });
 
   it("writes a wire's enabled flag through the edge and keeps the row still", () => {
@@ -2051,7 +1916,7 @@ describe("WorkflowNode optional connection switch", () => {
         source: "upstream",
         target: "text-pipe",
         targetHandle: encodeHandleId(portMetaForPort(port)),
-        data: { enabled: false, collectionMode: "each", onUpdate },
+        data: { enabled: false, collectionMode: "direct", onUpdate },
       },
     ];
 
@@ -2109,6 +1974,286 @@ describe("WorkflowNode config validation", () => {
 
     expect(container.textContent).toContain("This field is required.");
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    React.act(() => root.unmount());
+  });
+});
+
+describe("workflow node execution actions", () => {
+  it("runs the node and reveals materialized output", () => {
+    const data = createWorkflowNodeData(textPipeSpec());
+    data.onRunNode = vi.fn();
+    data.onRevealNodeOutput = vi.fn();
+    const artifact = {
+      artifact_id: "out",
+      artifact_type: "text.plain",
+      schema_version: 1,
+      content_hash: null,
+    };
+    data.run = {
+      node_id: "pipe",
+      status: "succeeded",
+      error: null,
+      result_fingerprint: "fp",
+      created_at: null,
+      outputs: [
+        {
+          port: "text",
+          kind: "single",
+          value: artifact,
+          artifacts: [artifact],
+        },
+      ],
+    };
+    const { container, root } = renderNode("pipe", data, true);
+    const run = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Run Text pipe"]',
+    );
+    const reveal = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Show output of Text pipe"]',
+    );
+    expect(run).not.toBeNull();
+    expect(reveal).not.toBeNull();
+    React.act(() => {
+      run?.click();
+      reveal?.click();
+    });
+    expect(data.onRunNode).toHaveBeenCalledWith("pipe");
+    expect(data.onRevealNodeOutput).toHaveBeenCalledWith("pipe");
+    React.act(() => root.unmount());
+  });
+  it("hides reveal when a following card exists and run while busy", () => {
+    const data = createWorkflowNodeData(textPipeSpec());
+    data.onRunNode = vi.fn();
+    data.onRevealNodeOutput = vi.fn();
+    data.hasFollowingOutputCard = true;
+    data.execution = { status: "running" };
+    const { container, root } = renderNode("pipe", data, true);
+    expect(container.querySelector('[aria-label="Run Text pipe"]')).toBeNull();
+    expect(
+      container.querySelector('[aria-label="Show output of Text pipe"]'),
+    ).toBeNull();
+    React.act(() => root.unmount());
+  });
+});
+
+function ocrReaderContract() {
+  return { id: "ocr.reader", version: 1 } as const;
+}
+
+function reductoProviderSpec(): NodeSpec {
+  return nodeSpecFixture({
+    operator_id: "reducto.ocr.provider",
+    plugin_slug: "reducto",
+    title: "Reducto",
+    description: "OCR provider",
+    secret_inputs: [
+      {
+        name: "api_key",
+        title: "API key",
+        description: null,
+        config_dependencies: [],
+      },
+    ],
+    outputs: [
+      servicePortFixture({
+        name: "reader",
+        title: "Reader",
+        direction: "output",
+        service_contracts: [ocrReaderContract()],
+        features: ["blocks"],
+      }),
+    ],
+  });
+}
+
+function ocrNodeSpec(): NodeSpec {
+  return nodeSpecFixture({
+    operator_id: "ocr.read",
+    plugin_slug: "workbench",
+    title: "OCR",
+    description: "Read a document",
+    inputs: [
+      artifactPortFixture({
+        name: "document",
+        title: "Scan or PDF",
+        direction: "input",
+        artifact_type: { id: "image.raster", schema_version: 1 },
+        also_accepts: [{ id: "document.pdf", schema_version: 1 }],
+      }),
+      servicePortFixture({
+        name: "reader",
+        title: "Reader",
+        direction: "input",
+        service_contracts: [ocrReaderContract()],
+      }),
+    ],
+    outputs: [
+      artifactPortFixture({
+        name: "markdown",
+        title: "Transcription",
+        direction: "output",
+        artifact_type: { id: "text.markdown", schema_version: 1 },
+      }),
+      artifactPortFixture({
+        name: "blocks",
+        title: "Text blocks",
+        direction: "output",
+        artifact_type: { id: "table.data", schema_version: 1 },
+        required: false,
+      }),
+      artifactPortFixture({
+        name: "regions",
+        title: "Boxes on the page",
+        direction: "output",
+        artifact_type: { id: "image.regions", schema_version: 1 },
+        required: false,
+      }),
+    ],
+  });
+}
+
+function drawBoxesSpec(): NodeSpec {
+  return nodeSpecFixture({
+    operator_id: "test.draw_boxes",
+    title: "Draw boxes",
+    inputs: [
+      artifactPortFixture({
+        name: "regions",
+        title: "Boxes",
+        direction: "input",
+        artifact_type: { id: "image.regions", schema_version: 1 },
+      }),
+    ],
+    outputs: [
+      artifactPortFixture({
+        name: "text",
+        title: "Text",
+        direction: "output",
+      }),
+    ],
+  });
+}
+
+describe("WorkflowNode provider-dependent OCR outputs", () => {
+  function workflowNode(id: string, data: WorkflowNodeData): CanvasNode {
+    return { id, data, type: WORKFLOW_NODE_TYPE, position: { x: 0, y: 0 } };
+  }
+
+  afterEach(() => {
+    xyflowMocks.edges = [];
+    xyflowMocks.nodes = [];
+  });
+
+  it("mutes an OCR output the connected provider does not produce", () => {
+    const ocrData = createWorkflowNodeData(ocrNodeSpec());
+    const providerData = createWorkflowNodeData(reductoProviderSpec());
+    const readerInput = ocrData.spec.inputs.find(
+      (port) => port.name === "reader",
+    );
+    const readerOutput = providerData.spec.outputs.find(
+      (port) => port.name === "reader",
+    );
+    if (!readerInput || !readerOutput) {
+      throw new Error("expected reader ports");
+    }
+
+    xyflowMocks.nodes = [
+      workflowNode("provider", providerData),
+      workflowNode("ocr", ocrData),
+    ];
+    xyflowMocks.edges = [
+      {
+        id: "provider-to-ocr",
+        source: "provider",
+        target: "ocr",
+        sourceHandle: encodeHandleId(portMetaForPort(readerOutput)),
+        targetHandle: encodeHandleId(portMetaForPort(readerInput)),
+        data: { enabled: true, collectionMode: "direct" },
+      },
+    ];
+
+    const { container, root } = renderNode("ocr", ocrData);
+
+    const muted = container.querySelector('[data-unsupported-output="true"]');
+    expect(muted?.textContent).toContain("Not produced by Reducto");
+    expect(
+      container.querySelector('[aria-label*="Boxes on the page"]')?.textContent,
+    ).toContain("Not produced by Reducto");
+    expect(container.textContent).toContain("Transcription");
+    expect(container.textContent).toContain("Text blocks");
+
+    React.act(() => root.unmount());
+  });
+
+  it("shows the downstream blocking reason when a muted OCR output is wired", () => {
+    const ocrData = createWorkflowNodeData(ocrNodeSpec());
+    const providerData = createWorkflowNodeData(reductoProviderSpec());
+    const drawData = createWorkflowNodeData(drawBoxesSpec());
+    const readerInput = ocrData.spec.inputs.find(
+      (port) => port.name === "reader",
+    );
+    const readerOutput = providerData.spec.outputs.find(
+      (port) => port.name === "reader",
+    );
+    const regionsOutput = ocrData.spec.outputs.find(
+      (port) => port.name === "regions",
+    );
+    const boxesInput = drawData.spec.inputs.find(
+      (port) => port.name === "regions",
+    );
+    if (!readerInput || !readerOutput || !regionsOutput || !boxesInput) {
+      throw new Error("expected OCR and boxes ports");
+    }
+
+    xyflowMocks.nodes = [
+      workflowNode("provider", providerData),
+      workflowNode("ocr", ocrData),
+      workflowNode("draw", drawData),
+    ];
+    xyflowMocks.edges = [
+      {
+        id: "provider-to-ocr",
+        source: "provider",
+        target: "ocr",
+        sourceHandle: encodeHandleId(portMetaForPort(readerOutput)),
+        targetHandle: encodeHandleId(portMetaForPort(readerInput)),
+        data: { enabled: true, collectionMode: "direct" },
+      },
+      {
+        id: "ocr-to-draw",
+        source: "ocr",
+        target: "draw",
+        sourceHandle: encodeHandleId(portMetaForPort(regionsOutput)),
+        targetHandle: encodeHandleId(portMetaForPort(boxesInput)),
+        data: { enabled: true, collectionMode: "direct" },
+      },
+    ];
+
+    const { container, root } = renderNode("draw", drawData);
+
+    expect(container.textContent).toContain(
+      "Boxes are not produced by Reducto",
+    );
+    expect(container.textContent).not.toContain(
+      "No result saved for this step yet",
+    );
+
+    React.act(() => root.unmount());
+  });
+
+  it("keeps a provider card without a result appendix", () => {
+    const data = createWorkflowNodeData(reductoProviderSpec());
+    data.onRunNode = vi.fn();
+    const { container, root } = renderNode("provider", data, true);
+
+    expect(
+      container.querySelector('[aria-label="Reducto execution appendix"]'),
+    ).toBeNull();
+    expect(container.querySelector('[aria-label="Run Reducto"]')).toBeNull();
+    expect(container.textContent).not.toContain(
+      "No result saved for this step yet",
+    );
+
     React.act(() => root.unmount());
   });
 });

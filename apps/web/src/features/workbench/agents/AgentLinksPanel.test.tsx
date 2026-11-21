@@ -12,6 +12,7 @@ import type {
   SavedGraphAgent,
   SavedGraphNode,
 } from "@/lib/api";
+import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { AgentLinksPanel } from "./AgentLinksPanel";
 import {
   cardContext,
@@ -29,33 +30,17 @@ type PanelDocument = PanelProps["document"];
 type ChangeAgent = (next: SavedGraphAgent) => void;
 
 function port(name: string, direction: Port["direction"], type: string): Port {
-  return {
+  return artifactPortFixture({
     name,
     title: name,
-    description: null,
     direction,
     artifact_type: { id: type, schema_version: 1 },
-    artifact_type_variable: null,
-    shape: "one",
-    accepted_shapes: ["one"],
-    instance_plugs: false,
-    variadic: false,
-    required: true,
-  };
+  });
 }
 
-const spec: NodeSpec = {
+const spec: NodeSpec = nodeSpecFixture({
   operator_id: "search",
-  operator_version: 1,
-  plugin_slug: "test",
-  origin: "builtin",
   title: "Search the letters",
-  description: "",
-  config_schema: {},
-  input_schema: {},
-  output_schema: {},
-  catalog_visible: true,
-  runnable: true,
   inputs: [
     port("query", "input", "scalar.text"),
     port("limit", "input", "scalar.integer"),
@@ -66,7 +51,7 @@ const spec: NodeSpec = {
     port("text", "output", "scalar.text"),
     port("count", "output", "scalar.integer"),
   ],
-};
+});
 
 /** The Graph's own boundary: a node of the Graph, not a node an Agent may call. */
 const boundarySpec: NodeSpec = {

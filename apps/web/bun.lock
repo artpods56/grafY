@@ -21,6 +21,7 @@
       },
       "devDependencies": {
         "@e2e-dev/web": "^0.15.5",
+        "@maplibre/maplibre-gl-style-spec": "^19.3.3",
         "@playwright/test": "^1.65.1",
         "@stylexjs/babel-plugin": "^0.19.0",
         "@stylexjs/postcss-plugin": "^0.19.0",

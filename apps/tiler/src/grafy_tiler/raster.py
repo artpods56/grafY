@@ -69,9 +69,7 @@ class ImageInfo:
     value_range: tuple[float, float] | None
     # Palette entries as (r, g, b, a), only for `palette` images.
     palette: tuple[tuple[int, int, int, int], ...] | None
-    # TODO(geo-open-on-map): these three feed a later "open on map" for
-    # georeferenced TIFFs. Nothing renders in map space yet; tiles stay in
-    # pixel space and ignore the georeferencing.
+    # Georeferencing for the map preview and Web Mercator tiles.
     georeferenced: bool
     crs: str | None
     bounds_wgs84: tuple[float, float, float, float] | None
@@ -180,15 +178,25 @@ def open_page(path: str, page: int) -> DatasetReader:
         raise SourceError("not a readable TIFF") from error
 
 
-def describe(path: str, page: int, settings: Settings) -> ImageInfo:
+def page_count(path: str) -> int:
+    """How many pages the object holds, from the header of the first one."""
     with open_page(path, 0) as first:
-        page_count = max(1, len(first.subdatasets))
-    if page_count > settings.max_pages:
+        return max(1, len(first.subdatasets))
+
+
+def check_page(page: int, pages: int, settings: Settings) -> None:
+    """The configured page limits, shared by display info and native windows."""
+    if pages > settings.max_pages:
         raise SourceTooLarge("too many pages")
-    if page >= page_count:
-        raise PageNotFound(f"page {page} of {page_count}")
+    if page >= pages:
+        raise PageNotFound(f"page {page} of {pages}")
+
+
+def describe(path: str, page: int, settings: Settings) -> ImageInfo:
+    pages = page_count(path)
+    check_page(page, pages, settings)
     with open_page(path, page) as ds:
-        return _describe(ds, page, page_count, settings)
+        return _describe(ds, page, pages, settings)
 
 
 def _describe(

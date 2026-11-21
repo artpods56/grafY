@@ -3,7 +3,14 @@ import json
 from pathlib import Path
 
 import pytest
-from grafy_crypto.grants import Grant, GrantError, is_safe_key
+from grafy_crypto.grants import (
+    Grant,
+    GrantError,
+    GrantSource,
+    MosaicGrant,
+    is_safe_key,
+    mosaic_digest,
+)
 
 KEY = b"k" * 40
 NOW = 1_000_000
@@ -183,3 +190,107 @@ def test_golden_vectors_pin_the_wire_format() -> None:
             )
             == grant
         )
+
+
+def _mosaic(count: int = 2) -> MosaicGrant:
+    return MosaicGrant(
+        bucket="bucket",
+        sources=tuple(
+            GrantSource(
+                key=f"ws/art/{index}.tif", sha256=f"{index:x}" * 64, byte_size=100
+            )
+            for index in range(count)
+        ),
+        expires_at=NOW + 60,
+    )
+
+
+def _verify_mosaic(token: str, **changes: object) -> MosaicGrant:
+    options: dict[str, object] = {
+        "keys": [KEY],
+        "bucket": "bucket",
+        "now": NOW,
+        "skew_seconds": 5,
+        "max_source_bytes": MAX_BYTES,
+    }
+    options.update(changes)
+    return MosaicGrant.verify_grant(token, **options)  # pyright: ignore[reportArgumentType]
+
+
+def _mosaic_payload(**changes: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "v": 1,
+        "kind": "mosaic",
+        "b": "bucket",
+        "exp": NOW + 60,
+        "src": [{"k": "ws/art/0.tif", "s": "a" * 64, "n": 100, "p": 0}],
+    }
+    payload.update(changes)
+    return payload
+
+
+def test_mosaic_round_trip_keeps_painter_order() -> None:
+    grant = _mosaic(3)
+    verified = _verify_mosaic(grant.sign_grant(KEY))
+    assert verified == grant
+    assert [single.key for single in verified.as_grants()] == [
+        "ws/art/0.tif",
+        "ws/art/1.tif",
+        "ws/art/2.tif",
+    ]
+    assert all(single.expires_at == NOW + 60 for single in verified.as_grants())
+
+
+def test_mosaic_and_single_grants_never_cross_verify() -> None:
+    with pytest.raises(GrantError, match="kind"):
+        _verify(_mosaic().sign_grant(KEY))
+    with pytest.raises(GrantError):
+        _verify_mosaic(_grant().sign_grant(KEY))
+    with pytest.raises(GrantError, match="kind"):
+        _verify(_forge(_payload(kind="single")))
+
+
+def test_mosaic_expiry_bucket_and_signature_are_checked() -> None:
+    token = _mosaic().sign_grant(KEY)
+    with pytest.raises(GrantError, match="expired"):
+        _verify_mosaic(token, now=NOW + 66)
+    with pytest.raises(GrantError, match="bucket"):
+        _verify_mosaic(token, bucket="other")
+    with pytest.raises(GrantError, match="signature"):
+        _verify_mosaic(_mosaic().sign_grant(b"x" * 40))
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"src": []},
+        {"src": "nope"},
+        {"src": [1]},
+        {"src": [{"k": "../x", "s": "a" * 64, "n": 1, "p": 0}]},
+        {"src": [{"k": "a.tif", "s": "A" * 64, "n": 1, "p": 0}]},
+        {"src": [{"k": "a.tif", "s": "a" * 64, "n": 0, "p": 0}]},
+        {"src": [{"k": "a.tif", "s": "a" * 64, "n": MAX_BYTES + 1, "p": 0}]},
+        {"src": [{"k": "a.tif", "s": "a" * 64, "n": 1, "p": 1024}]},
+        {"src": [{"k": "a.tif", "s": "a" * 64, "n": True, "p": 0}]},
+        {"v": 2},
+        {"exp": "soon"},
+    ],
+)
+def test_mosaic_out_of_bounds_fields_are_refused(changes: dict[str, object]) -> None:
+    with pytest.raises(GrantError):
+        _verify_mosaic(_forge(_mosaic_payload(**changes)))
+
+
+def test_mosaic_source_count_is_capped() -> None:
+    with pytest.raises(GrantError, match="count"):
+        _verify_mosaic(_mosaic(3).sign_grant(KEY), max_sources=2)
+
+
+def test_mosaic_digest_depends_on_order_and_page_not_keys() -> None:
+    first = GrantSource(key="a.tif", sha256="a" * 64, byte_size=1)
+    second = GrantSource(key="b.tif", sha256="b" * 64, byte_size=1)
+    renamed = GrantSource(key="c.tif", sha256="a" * 64, byte_size=1)
+    assert mosaic_digest([first, second]) == mosaic_digest([renamed, second])
+    assert mosaic_digest([first, second]) != mosaic_digest([second, first])
+    paged = GrantSource(key="a.tif", sha256="a" * 64, byte_size=1, page=1)
+    assert mosaic_digest([first]) != mosaic_digest([paged])

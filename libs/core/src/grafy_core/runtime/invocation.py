@@ -127,10 +127,6 @@ def validate_invocation(
             f"Node {node.operator_id!r} MAP output model has non-port fields: {fields}"
         )
     for name, output_port in output_ports.items():
-        if not output_port.required:
-            raise InvocationError(
-                f"Node {node.operator_id!r} MAP output {name!r} must be required"
-            )
         if output_port.shape is not PortShape.ONE:
             raise InvocationError(
                 f"Node {node.operator_id!r} MAP output {name!r} must have shape "
@@ -176,6 +172,4 @@ def _supports_mapped_outputs(node: NodeContractSource) -> bool:
         return False
     if set(node.output_contract.model.model_fields) != set(output_ports):
         return False
-    return all(
-        port.required and port.shape is PortShape.ONE for port in output_ports.values()
-    )
+    return all(port.shape is PortShape.ONE for port in output_ports.values())

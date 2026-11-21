@@ -27,10 +27,14 @@ import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
 import { resolveArtifactCardSource } from "../artifact-connections";
 import { gridAlignedWidth } from "../grid-layout";
+import { ARTIFACT_ORIGIN_EDGE_TYPE } from "../artifact-origin-edge";
+import { decodeHandleId } from "../handles";
 import {
   ARTIFACT_CARD_WIDTH_MIN,
   DEFAULT_ARTIFACT_CARD_WIDTH,
   DEFAULT_ARTIFACT_FILE_CARD_WIDTH,
+  DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
+  DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
   DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH,
   DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
   DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
@@ -41,8 +45,11 @@ import {
   cardArtifactRefs,
   declaredArtifactContentType,
   artifactTypeFor,
+  isGeoMapArtifact,
   isImageArtifact,
+  isPdfArtifact,
   isTableArtifact,
+  isTableFileArtifact,
   moveArtifactCardRef,
   type ArtifactCardValue,
 } from "../artifact-card";
@@ -53,6 +60,7 @@ import {
   type ArtifactViewerNodeData,
   type CanvasEdge,
   type CanvasNode,
+  type CanvasWorkflowNode,
 } from "../artifact-viewer";
 import { artifactTypeColor } from "../nodes.css";
 import { useArtifactTypeCatalog } from "../use-artifact-type-catalog";
@@ -78,11 +86,16 @@ import {
   CanvasCardHead,
 } from "./CanvasCardLayout";
 import {
-  formatTextHead,
-  readTextHead,
-  type TextHead,
-} from "./artifact-renderers/text-head";
+  cardTextKey,
+  cardTextLimit,
+  fetchCardText,
+  formatCardText,
+  readsAsCardText,
+} from "./artifact-renderers/card-text";
+import { TiffTextArtifact } from "./artifact-renderers/tiff-text-renderer";
+import { readTiffWindow, type TiffWindowSelection } from "./TiffWindowSelector";
 import { HtmlPageFill } from "./artifact-renderers/html-page-fill";
+import { CardTextBody } from "./artifact-renderers/card-text-body";
 import {
   isHtmlPageArtifact,
   useHtmlPage,
@@ -98,6 +111,8 @@ import {
 } from "./artifact-renderers/table/cell-views";
 import { SafeMarkdown } from "../safe-markdown";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
+import { ArtifactStack, SequencePager, stackPlateProps } from "./ArtifactStack";
+import { GeoMapArtifactBody } from "./GeoMapArtifactBody";
 import { TableArtifactBody } from "./TableArtifactBody";
 import { usePickupLift } from "./usePickupLift";
 import { PortRevealProvider, usePortReveal } from "./PortBall";
@@ -106,10 +121,22 @@ import {
   libraryFileDisplayName,
 } from "../../ui/side-panel/library-tree";
 
-// Each layer behind a sequence's front item steps this far right and down.
-const STACK_STEP_X = 12;
-const STACK_STEP_Y = 8;
 const STACK_THUMB_HEIGHT = 105;
+
+function linkedWindow(node: Pick<CanvasWorkflowNode, "id" | "data"> | null) {
+  const patch = node?.data.onConfigPatch;
+  const artifactId = node?.data.tiffWindowSourceId;
+  if (!node || !patch || !artifactId) return undefined;
+  const window = readTiffWindow(node.data.config);
+  if (!window) return undefined;
+  const selection: TiffWindowSelection = {
+    window,
+    wholePage: node.data.config.scope === "Whole TIFF page",
+    singleCrop: node.data.config.strategy === "Single crop",
+    onChange: (next) => patch(node.id, next),
+  };
+  return { artifactId, selection };
+}
 
 const s = stylex.create({
   artifactNode: {
@@ -209,27 +236,6 @@ const s = stylex.create({
     gap: "6px",
     overflow: "hidden",
   },
-  textContent: {
-    minWidth: 0,
-    margin: 0,
-    // Pretty-printed JSON can run to hundreds of lines. The card keeps a
-    // bounded height (set inline from the layout); the rest is reached by
-    // selecting the card and scrolling.
-    overflow: "hidden",
-    color: tokens.colorText,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    fontSize: "10px",
-    lineHeight: 1.5,
-    whiteSpace: "pre-wrap",
-    overflowWrap: "anywhere",
-  },
-  // Rendered words take the page's type; the raw view keeps the monospace above.
-  textRendered: {
-    fontFamily: "inherit",
-    fontSize: tokens.fontSizeXs,
-    whiteSpace: "normal",
-  },
-  textScrollable: { overflow: "auto" },
   // Hung below the card, so offering it moves neither the card nor its ports.
   textViewSwitch: {
     position: "absolute",
@@ -253,7 +259,6 @@ const s = stylex.create({
     lineHeight: 1.4,
     overflowWrap: "anywhere",
   },
-  stack: { position: "relative", width: "100%" },
   stackThumb: {
     position: "absolute",
     display: "grid",
@@ -346,47 +351,18 @@ const s = stylex.create({
   },
 });
 
-/** How much of an artifact's bytes a card reads to show as text. */
-const CARD_TEXT_BYTES = 4096;
-/**
- * A text value is read whole so it can be rendered: the head of a page is not a page.
- * Room for the most an Agent may create, each character at its longest once escaped.
- */
-const CARD_TEXT_VALUE_BYTES = 1_250_000;
-
 /** Height a text card opens at before the operator resizes it: twelve lines. */
 const TEXT_BODY_HEIGHT_DEFAULT = 180;
 /** A page laid out for a screen cannot be read at the size of a note. */
 const HTML_PAGE_CARD_WIDTH = 640;
 const HTML_PAGE_BODY_HEIGHT = 480;
 
-const NO_TEXT_EDGES = { above: false, below: false, wide: false };
 const NO_TEXT_VIEWS: readonly CellView[] = [];
 const HTML_PAGE_VIEWS: readonly CellView[] = ["html", "text"];
 const HTML_PAGE_UNREADABLE: HtmlPageLoad = {
   status: "unreadable",
   message: "This page could not be read",
 };
-/** How far the fade at a clipped edge of a card's text reaches. */
-const TEXT_FADE = "32px";
-
-function textFadeMask({ above, below }: typeof NO_TEXT_EDGES) {
-  if (!above && !below) return undefined;
-  const top = above ? `transparent, black ${TEXT_FADE}` : "black";
-  const bottom = below
-    ? `black calc(100% - ${TEXT_FADE}), transparent`
-    : "black";
-  return `linear-gradient(to bottom, ${top}, ${bottom})`;
-}
-
-async function fetchArtifactText([, workspaceId, artifactId, limit]: readonly [
-  string,
-  string,
-  string,
-  number,
-]): Promise<TextHead | null> {
-  return readTextHead(artifactInlineContentUrl(workspaceId, artifactId), limit);
-}
 
 /**
  * An artifact on the canvas: the artifact itself is the node. The head is the
@@ -419,6 +395,7 @@ export function ArtifactCardBody({
   );
   const artifactTypes = useArtifactTypeCatalog();
   const [reordering, setReordering] = React.useState(false);
+  const [activeIndex, setActiveIndex] = React.useState(0);
   const [overlayOpen, setOverlayOpen] = React.useState(false);
   const [imageSizes, setImageSizes] = React.useState<
     Record<string, { width: number; height: number }>
@@ -438,6 +415,18 @@ export function ArtifactCardBody({
   const producerCandidate = useNodesData<CanvasNode>(feed?.source ?? "");
   const producer =
     producerCandidate?.type === WORKFLOW_NODE_TYPE ? producerCandidate : null;
+  const tiffConsumers = edges.filter(
+    (edge) =>
+      edge.type === ARTIFACT_ORIGIN_EDGE_TYPE &&
+      edge.source === id &&
+      decodeHandleId(edge.targetHandle)?.portName === "tiff",
+  );
+  const tiffConsumer = useNodesData<CanvasNode>(
+    tiffConsumers.length === 1 ? (tiffConsumers[0]?.target ?? "") : "",
+  );
+  const sourceWindow = linkedWindow(
+    tiffConsumer?.type === WORKFLOW_NODE_TYPE ? tiffConsumer : null,
+  );
   const feedPortName = feed?.data?.sourcePortName ?? null;
   const feedPort =
     producer && feedPortName
@@ -517,7 +506,9 @@ export function ArtifactCardBody({
     data.onRefsChange?.(id, artifactCardValue(moved, shownValue));
   };
 
-  const first = refs[0] ?? null;
+  const isSequence = shownValue !== null && "item_refs" in shownValue;
+  const clampedIndex = Math.min(activeIndex, Math.max(0, refs.length - 1));
+  const first = refs[isSequence ? clampedIndex : 0] ?? null;
   const firstItem = first ? itemsById.get(first.artifact_id) : undefined;
   const firstUrl = first
     ? artifactInlineContentUrl(workspace.id, first.artifact_id)
@@ -534,7 +525,6 @@ export function ArtifactCardBody({
   const contentType =
     librarySummary?.content_type ?? declaredArtifactContentType(firstType);
   const imageArtifact = first !== null && isImageArtifact(first, contentType);
-  const isSequence = shownValue !== null && "item_refs" in shownValue;
   // A card belongs to the group of documents it holds: one document, or the
   // list it is. A contract already named as a list is not wrapped twice.
   const groupLabel = !isSequence
@@ -542,10 +532,15 @@ export function ArtifactCardBody({
     : contract.startsWith("List of ")
       ? contract
       : `List of ${contract}`;
-  const tableCard = !isSequence && first !== null && isTableArtifact(first);
+  const tableCard = first !== null && isTableArtifact(first);
   const tableHeight = Math.max(
     160,
     layout?.bodyHeight ?? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
+  );
+  const mapCard = first !== null && isGeoMapArtifact(first);
+  const mapHeight = Math.max(
+    200,
+    layout?.bodyHeight ?? DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
   );
   const imageSize = first ? imageSizes[first.artifact_id] : undefined;
   const recordedName = librarySummary?.metadata?.original_filename;
@@ -553,37 +548,37 @@ export function ArtifactCardBody({
     (first ? nameOf(first.artifact_id) : null) ??
     (typeof recordedName === "string" ? recordedName : null);
   const isPdf =
-    contentType === "application/pdf" ||
-    first?.artifact_type === "file.pdf" ||
-    fileName?.toLowerCase().endsWith(".pdf");
+    first !== null && isPdfArtifact(first, { contentType, fileName });
   const isTableFile =
-    contentType === "text/csv" ||
-    first?.artifact_type === "file.csv" ||
-    first?.artifact_type.startsWith("table.") ||
-    fileName?.toLowerCase().endsWith(".csv");
+    first !== null && isTableFileArtifact(first, { contentType, fileName });
   // An HTML page is not a file to skim: it names other artifacts and is filled
   // from them. Every other readable artifact still shows its own bytes.
-  const htmlPageArtifact = !isSequence && isHtmlPageArtifact(first);
+  const htmlPageArtifact = isHtmlPageArtifact(first);
+  const recognizedTiffText =
+    first?.artifact_type === "ocr.tiff_recognized_text" &&
+    first.schema_version === 1;
+  const tiffTextArtifact =
+    recognizedTiffText ||
+    (first?.artifact_type === "ocr.tiff_text_regions" &&
+      first.schema_version === 1);
+  const detectorWindow = linkedWindow(producer);
   // Readable bytes are shown as they are, JSON indented, instead of a file
   // tile. Binary bytes and file containers keep their tile.
   const textKey =
     first &&
-    !htmlPageArtifact &&
-    !isSequence &&
-    !imageArtifact &&
-    !isPdf &&
-    !isTableFile
-      ? ([
-          "artifact-card-text",
-          workspace.id,
-          first.artifact_id,
-          first.artifact_type === "scalar.text" ||
-          first.artifact_type === "text.markdown"
-            ? CARD_TEXT_VALUE_BYTES
-            : CARD_TEXT_BYTES,
-        ] as const)
+    !tiffTextArtifact &&
+    readsAsCardText(first, {
+      contentType,
+      fileName,
+      htmlPage: htmlPageArtifact,
+    })
+      ? cardTextKey(workspace.id, first.artifact_id, cardTextLimit(first))
       : null;
-  const { data: textHead } = useSWR(textKey, fetchArtifactText);
+  // Paging a run keeps the item being left on screen until the next one is
+  // read, so the stack never drops to file tiles mid-shuffle.
+  const { data: textHead } = useSWR(textKey, fetchCardText, {
+    keepPreviousData: isSequence,
+  });
   const {
     data: htmlPageLoad,
     error: htmlPageError,
@@ -593,15 +588,7 @@ export function ArtifactCardBody({
     htmlPageArtifact && first ? first.artifact_id : null,
   );
   const shownText = textHead
-    ? formatTextHead(textHead, {
-        expandEmbeddedJson: true,
-        unwrapField:
-          first?.artifact_type === "scalar.text"
-            ? "value"
-            : first?.artifact_type === "text.markdown"
-              ? "markdown"
-              : undefined,
-      })
+    ? formatCardText(textHead, first?.artifact_type)
     : null;
   // Only a text artifact read whole has words to read another way: a file is its
   // bytes, and the head of a long text is not a document.
@@ -627,55 +614,25 @@ export function ArtifactCardBody({
   const textMaxHeight =
     layout?.bodyHeight ??
     (htmlPage ? HTML_PAGE_BODY_HEIGHT : TEXT_BODY_HEIGHT_DEFAULT);
-  // Overflow is measured, not counted: a long line wraps, so the number of
-  // newlines says little about how tall the text renders.
-  const textRef = React.useRef<HTMLElement>(null);
-  // Clipped text fades out at each edge that has more beyond it, instead of
-  // ending on a half line.
-  const [textEdges, setTextEdges] = React.useState(NO_TEXT_EDGES);
-  const measureText = React.useCallback(() => {
-    const element = textRef.current;
-    const next = element
-      ? {
-          above: element.scrollTop > 1,
-          below:
-            element.scrollTop + element.clientHeight < element.scrollHeight - 1,
-          wide: element.scrollWidth > element.clientWidth + 1,
-        }
-      : NO_TEXT_EDGES;
-    setTextEdges((current) =>
-      current.above === next.above &&
-      current.below === next.below &&
-      current.wide === next.wide
-        ? current
-        : next,
-    );
-  }, []);
-  React.useLayoutEffect(() => {
-    const element = textRef.current;
-    measureText();
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measureText);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [measureText, shownText, textMaxHeight, textView]);
-  const textOverflows = textEdges.above || textEdges.below || textEdges.wide;
   // Only a card that shows text takes a height: the others have no body to size.
-  const textCard =
-    !isSequence && !awaitingFeed && (shownText !== null || htmlPageArtifact);
+  const textCard = !awaitingFeed && (shownText !== null || htmlPageArtifact);
   const textHeight = textCard ? textMaxHeight : null;
-  const textProps = stylex.props(
-    s.textContent,
-    textView !== "text" ? s.textRendered : null,
-    textOverflows && selected ? s.textScrollable : null,
-  );
   const feedLabel = feed
     ? `${producer?.data.spec.title ?? "Output"} → ${feedPort?.title ?? feedPortName ?? "output"}`
     : null;
   const titleLabel = isSequence
     ? imageArtifact
       ? `${refs.length} ${refs.length === 1 ? "item" : "items"}`
-      : "List"
+      : tableCard ||
+          mapCard ||
+          htmlPageArtifact ||
+          shownText !== null ||
+          textKey
+        ? (fileName ??
+          (refs.length === 1
+            ? "1 item"
+            : `${clampedIndex + 1} of ${refs.length}`))
+        : "File sequence"
     : first
       ? (fileName ??
         feedLabel ??
@@ -683,9 +640,11 @@ export function ArtifactCardBody({
           ? "Image"
           : tableCard
             ? "Table"
-            : htmlPageArtifact
-              ? "Page"
-              : "File"))
+            : mapCard
+              ? "Map"
+              : htmlPageArtifact
+                ? "Page"
+                : "File"))
       : // Nothing produced yet: name the card by what it follows.
         (feedLabel ?? "Artifact");
   const byteSize = formatLibraryByteSize(librarySummary?.byte_size);
@@ -693,20 +652,28 @@ export function ArtifactCardBody({
     ? "PDF"
     : isTableFile
       ? "Table"
-      : htmlPageArtifact
-        ? "Page"
-        : "File";
+      : mapCard
+        ? "Map"
+        : htmlPageArtifact
+          ? "Page"
+          : "File";
   const fileLabel = byteSize ? `${fileKind} · ${byteSize}` : fileKind;
   const defaultWidth = htmlPage
     ? HTML_PAGE_CARD_WIDTH
     : tableCard
       ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
-      : imageArtifact
-        ? DEFAULT_ARTIFACT_CARD_WIDTH
-        : feed
-          ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
-          : DEFAULT_ARTIFACT_FILE_CARD_WIDTH;
-  const minimumWidth = tableCard ? NODE_WIDTH_MIN : ARTIFACT_CARD_WIDTH_MIN;
+      : mapCard
+        ? DEFAULT_ARTIFACT_MAP_CARD_WIDTH
+        : imageArtifact
+          ? DEFAULT_ARTIFACT_CARD_WIDTH
+          : feed
+            ? DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH
+            : DEFAULT_ARTIFACT_FILE_CARD_WIDTH;
+  const minimumWidth = tableCard
+    ? NODE_WIDTH_MIN
+    : mapCard
+      ? DEFAULT_ARTIFACT_CARD_WIDTH
+      : ARTIFACT_CARD_WIDTH_MIN;
   const requestedWidth = gridAlignedWidth(
     Math.max(minimumWidth, layout?.width ?? defaultWidth),
     grid?.settings,
@@ -729,9 +696,11 @@ export function ArtifactCardBody({
           .filter(Boolean)
           .join(" · ");
   const imageAspect = imageSize ? imageSize.width / imageSize.height : 4 / 3;
-  // An unsized picture is held to a height so a tall one stays a thumbnail. A
-  // width the operator dragged out is the zoom they asked for, so it is taken
-  // whole and the height follows the aspect.
+  // A picture's frame is a window onto the page, so a height the operator
+  // dragged is the band they asked for and is taken whole: the page is cropped
+  // or margined by it, never squeezed to keep its shape. Before any drag the box
+  // follows the page's aspect, and an unsized picture is held to a height so a
+  // tall one stays a thumbnail.
   const mediaWidth =
     imageArtifact && layout?.width === undefined
       ? Math.min(
@@ -739,12 +708,15 @@ export function ArtifactCardBody({
           Math.round((layout?.bodyHeight ?? 360) * imageAspect),
         )
       : requestedWidth;
-  const mediaHeight = imageArtifact
-    ? Math.round(
-        (mediaWidth - (isSequence ? (Math.min(refs.length, 3) - 1) * 12 : 0)) /
-          imageAspect,
-      )
-    : (layout?.bodyHeight ?? artifactCardMediaHeight(mediaWidth));
+  const mediaHeight =
+    layout?.bodyHeight ??
+    (imageArtifact
+      ? Math.round(
+          (mediaWidth -
+            (isSequence ? (Math.min(refs.length, 3) - 1) * 12 : 0)) /
+            imageAspect,
+        )
+      : artifactCardMediaHeight(mediaWidth));
   const portColor = first
     ? artifactTypeColor(first.artifact_type, tokens.colorAccent)
     : tokens.colorInfo;
@@ -764,6 +736,7 @@ export function ArtifactCardBody({
   const headless =
     Boolean(feed) &&
     !imageArtifact &&
+    !mapCard &&
     !isSequence &&
     (awaitingFeed || shownText !== null);
   // Only a card pulled out of a node's output port takes an input: it follows
@@ -786,45 +759,58 @@ export function ArtifactCardBody({
     textHeight,
     tableCard,
     tableHeight,
+    mapCard,
+    mapHeight,
     reordering,
     titleLabel,
     subtitle,
   ]);
 
   const reorderStyle = stylex.props(s.reorder);
-  // Same direction as every stack: the first item in front at the top-left,
-  // where the input port sits, with the ones behind it stepping down and right
-  // toward the output port.
-  const stacked = refs.slice(0, 3);
+  // Every stack of more than one item pages from its front item, whatever the
+  // items are, so a run of pictures and a run of documents step the same way.
+  const multiple = isSequence && refs.length > 1;
+  const pager =
+    multiple && selected ? (
+      <SequencePager
+        index={clampedIndex}
+        count={refs.length}
+        name={fileName}
+        onIndex={setActiveIndex}
+      />
+    ) : null;
+  const remoteRing =
+    !selected && data.remoteSelectionColor ? (
+      <RemoteSelectionRing color={data.remoteSelectionColor} radius={5} />
+    ) : null;
+  // A run of files with no reader shows a tile for each item.
   const sequenceStack = isSequence ? (
-    <div
-      aria-label={`${refs.length} items in sequence`}
-      {...stylex.props(s.stack)}
-      style={{
-        height: STACK_THUMB_HEIGHT + (stacked.length - 1) * STACK_STEP_Y,
-      }}
-    >
-      {!selected && data.remoteSelectionColor ? (
-        <RemoteSelectionRing color={data.remoteSelectionColor} radius={5} />
-      ) : null}
-      {stacked.map((ref, index) => {
-        const position = {
-          width: `calc(100% - ${(stacked.length - 1) * STACK_STEP_X}px)`,
-          left: index * STACK_STEP_X,
-          top: index * STACK_STEP_Y,
-          zIndex: stacked.length - index,
-        };
+    <ArtifactStack
+      count={refs.length}
+      index={clampedIndex}
+      frontHeight={STACK_THUMB_HEIGHT}
+      overlay={
+        remoteRing || pager ? (
+          <>
+            {remoteRing}
+            {pager}
+          </>
+        ) : null
+      }
+      renderLayer={(slot, place) => {
+        const ref = refs[slot.item];
+        if (!ref) return null;
+        const scope = slot.tail ? undefined : "sequence-item";
         return isImageArtifact(
           ref,
           itemsById.get(ref.artifact_id)?.artifact.content_type,
         ) && !imagesFailed[ref.artifact_id] ? (
           /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
           <img
-            // Keyed by position: a sequence may show one artifact twice.
-            key={`${index}:${ref.artifact_id}`}
-            data-artifact-shadow-scope="sequence-item"
+            {...place}
+            data-artifact-shadow-scope={scope}
             src={artifactInlineContentUrl(workspace.id, ref.artifact_id)}
-            alt={nameOf(ref.artifact_id) ?? `Item ${index + 1}`}
+            alt={nameOf(ref.artifact_id) ?? `Item ${slot.item + 1}`}
             loading="lazy"
             decoding="async"
             draggable={false}
@@ -839,26 +825,44 @@ export function ArtifactCardBody({
               selected ? s.stackThumbSelected : null,
               tier === "dragged" ? s.stackThumbDragged : null,
             )}
-            style={position}
           />
         ) : (
           <span
-            key={`${index}:${ref.artifact_id}`}
-            data-artifact-shadow-scope="sequence-item"
+            {...place}
+            data-artifact-shadow-scope={scope}
             {...stylex.props(
               s.stackThumb,
               s.stackFile,
               selected ? s.stackThumbSelected : null,
               tier === "dragged" ? s.stackThumbDragged : null,
             )}
-            style={position}
           >
             <FileIcon size={28} />
           </span>
         );
-      })}
-    </div>
+      }}
+    />
   ) : null;
+  // A reader that shows one item whole (markdown, text, a page, a table) is the
+  // front layer of the same stack; the layers behind it are plain plates.
+  const stackedBody = (body: React.ReactNode) =>
+    multiple ? (
+      <ArtifactStack
+        count={refs.length}
+        index={clampedIndex}
+        overlay={pager}
+        renderLayer={(slot, place) => {
+          const front = slot.slot === 0 && !slot.tail;
+          return (
+            <div {...place} {...(front ? {} : stackPlateProps(slot.tail))}>
+              {front ? body : null}
+            </div>
+          );
+        }}
+      />
+    ) : (
+      body
+    );
 
   return (
     <PortRevealProvider value={portReveal}>
@@ -927,7 +931,7 @@ export function ArtifactCardBody({
                   url: artifactInlineContentUrl(workspace.id, ref.artifact_id),
                   name:
                     nameOf(ref.artifact_id) ??
-                    (index === 0 ? titleLabel : `Item ${index + 1}`),
+                    (index === clampedIndex ? titleLabel : `Item ${index + 1}`),
                   failed: imagesFailed[ref.artifact_id] ?? false,
                 }))}
                 sequence={isSequence}
@@ -935,6 +939,9 @@ export function ArtifactCardBody({
                 selected={selected ?? false}
                 tier={tier}
                 remoteSelectionColor={data.remoteSelectionColor}
+                frontIndex={isSequence ? clampedIndex : 0}
+                tiffWindow={!isSequence ? sourceWindow : undefined}
+                overlay={pager}
                 onSize={(artifactId, width, height) =>
                   setImageSizes((current) => {
                     const previous = current[artifactId];
@@ -951,14 +958,36 @@ export function ArtifactCardBody({
                   }))
                 }
               />
+            ) : tiffTextArtifact || (awaitingFeed && detectorWindow) ? (
+              stackedBody(
+                <TiffTextArtifact
+                  url={tiffTextArtifact ? firstUrl : null}
+                  workspaceId={workspace.id}
+                  height={mediaHeight}
+                  linkedWindow={detectorWindow}
+                  recognized={recognizedTiffText}
+                />,
+              )
             ) : tableCard && first ? (
-              <TableArtifactBody
-                artifact={first}
-                height={tableHeight}
-                selected={selected ?? false}
-                tier={tier}
-                remoteSelectionColor={data.remoteSelectionColor}
-              />
+              stackedBody(
+                <TableArtifactBody
+                  artifact={first}
+                  height={tableHeight}
+                  selected={selected ?? false}
+                  tier={tier}
+                  remoteSelectionColor={data.remoteSelectionColor}
+                />,
+              )
+            ) : mapCard && first ? (
+              stackedBody(
+                <GeoMapArtifactBody
+                  artifact={first}
+                  height={mapHeight}
+                  selected={selected ?? false}
+                  tier={tier}
+                  remoteSelectionColor={data.remoteSelectionColor}
+                />,
+              )
             ) : (
               <>
                 {awaitingFeed ? (
@@ -989,31 +1018,31 @@ export function ArtifactCardBody({
                     </span>
                   </div>
                 ) : null}
-                {isSequence ? (
-                  sequenceStack
-                ) : htmlPageArtifact && first && !awaitingFeed ? (
+                {htmlPageArtifact && first && !awaitingFeed ? (
                   <>
-                    <div
-                      data-artifact-value="true"
-                      data-html-page={htmlPageLoad?.status ?? "loading"}
-                      data-artifact-shadow-scope="file"
-                      {...stylex.props(
-                        s.fileBody,
-                        s.textBody,
-                        tier === "active" ? s.fileBodyRaised : null,
-                        tier === "dragged" ? s.fileBodyDragged : null,
-                      )}
-                    >
-                      <HtmlPageFill
-                        load={
-                          htmlPageError ? HTML_PAGE_UNREADABLE : htmlPageLoad
-                        }
-                        height={textMaxHeight}
-                        selected={Boolean(selected)}
-                        view={textView === "text" ? "text" : "html"}
-                        onRetry={() => void retryHtmlPage()}
-                      />
-                    </div>
+                    {stackedBody(
+                      <div
+                        data-artifact-value="true"
+                        data-html-page={htmlPageLoad?.status ?? "loading"}
+                        data-artifact-shadow-scope="file"
+                        {...stylex.props(
+                          s.fileBody,
+                          s.textBody,
+                          tier === "active" ? s.fileBodyRaised : null,
+                          tier === "dragged" ? s.fileBodyDragged : null,
+                        )}
+                      >
+                        <HtmlPageFill
+                          load={
+                            htmlPageError ? HTML_PAGE_UNREADABLE : htmlPageLoad
+                          }
+                          height={textMaxHeight}
+                          selected={Boolean(selected)}
+                          view={textView === "text" ? "text" : "html"}
+                          onRetry={() => void retryHtmlPage()}
+                        />
+                      </div>,
+                    )}
                     {selected &&
                     textViews.length > 1 &&
                     htmlPageLoad &&
@@ -1034,47 +1063,38 @@ export function ArtifactCardBody({
                   </>
                 ) : first && !awaitingFeed && shownText !== null ? (
                   <>
-                    <div
-                      data-artifact-value="true"
-                      data-artifact-shadow-scope="file"
-                      {...stylex.props(
-                        s.fileBody,
-                        s.textBody,
-                        tier === "active" ? s.fileBodyRaised : null,
-                        tier === "dragged" ? s.fileBodyDragged : null,
-                      )}
-                    >
-                      {React.createElement(
-                        textView === "text" ? "pre" : "div",
-                        {
-                          ...textProps,
-                          ref: textRef,
-                          onScroll: measureText,
-                          style: {
-                            ...textProps.style,
-                            maxHeight: textMaxHeight,
-                            maskImage: textFadeMask(textEdges),
-                          },
-                          className:
-                            textOverflows && selected
-                              ? `nodrag nowheel ${textProps.className ?? ""}`
-                              : textProps.className,
-                        },
-                        textView === "markdown" ? (
-                          <SafeMarkdown style={{ fontSize: "inherit" }}>
-                            {shownText}
-                          </SafeMarkdown>
-                        ) : textView === "html" ? (
-                          <HtmlView
-                            html={shownText}
-                            height={textMaxHeight}
-                            interactive={Boolean(selected)}
-                          />
-                        ) : (
-                          shownText
-                        ),
-                      )}
-                    </div>
+                    {stackedBody(
+                      <div
+                        data-artifact-value="true"
+                        data-artifact-shadow-scope="file"
+                        {...stylex.props(
+                          s.fileBody,
+                          s.textBody,
+                          tier === "active" ? s.fileBodyRaised : null,
+                          tier === "dragged" ? s.fileBodyDragged : null,
+                        )}
+                      >
+                        <CardTextBody
+                          height={textMaxHeight}
+                          rendered={textView !== "text"}
+                          interactive={Boolean(selected)}
+                        >
+                          {textView === "markdown" ? (
+                            <SafeMarkdown style={{ fontSize: "inherit" }}>
+                              {shownText}
+                            </SafeMarkdown>
+                          ) : textView === "html" ? (
+                            <HtmlView
+                              html={shownText}
+                              height={textMaxHeight}
+                              interactive={Boolean(selected)}
+                            />
+                          ) : (
+                            shownText
+                          )}
+                        </CardTextBody>
+                      </div>,
+                    )}
                     {selected && textViews.length > 1 ? (
                       <SegmentedControl
                         aria-label="Read this text as"
@@ -1090,6 +1110,8 @@ export function ArtifactCardBody({
                       />
                     ) : null}
                   </>
+                ) : isSequence ? (
+                  sequenceStack
                 ) : first && !awaitingFeed ? (
                   <div
                     data-artifact-file-body="true"
@@ -1121,19 +1143,46 @@ export function ArtifactCardBody({
                 ) : null}
               </>
             )}
-            {allowCornerResize || ((imageArtifact || htmlPage) && selected) ? (
+            {allowCornerResize ||
+            ((imageArtifact ||
+              tiffTextArtifact ||
+              htmlPage ||
+              textCard ||
+              tableCard ||
+              mapCard) &&
+              selected) ? (
               <LayoutResizeHandle
                 layout={
-                  textCard || tableCard
+                  textCard || tableCard || mapCard
                     ? {
                         ...layout,
                         width: requestedWidth,
-                        bodyHeight: tableCard ? tableHeight : textMaxHeight,
+                        bodyHeight: tableCard
+                          ? tableHeight
+                          : mapCard
+                            ? mapHeight
+                            : textMaxHeight,
                       }
-                    : { ...layout, width: cardWidth }
+                    : {
+                        ...layout,
+                        width: cardWidth,
+                        // The corner is grabbed at the height the card actually
+                        // draws, so a body whose height still comes from the
+                        // media box does not jump to the default on the first
+                        // drag.
+                        ...(imageArtifact || tiffTextArtifact
+                          ? { bodyHeight: mediaHeight }
+                          : null),
+                      }
                 }
                 axes={
-                  textCard || tableCard ? ["width", "bodyHeight"] : ["width"]
+                  textCard ||
+                  tableCard ||
+                  mapCard ||
+                  imageArtifact ||
+                  tiffTextArtifact
+                    ? ["width", "bodyHeight"]
+                    : ["width"]
                 }
                 ariaLabel="Resize artifact"
                 onDraft={setDraftLayout}

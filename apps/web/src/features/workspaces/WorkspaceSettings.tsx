@@ -50,8 +50,6 @@ const tokenPurposeOptions = [
       "view_project",
       "view_artifacts",
       "view_runs",
-      "view_runs",
-      "view_runs",
       "create_project",
       "edit_project",
       "checkpoint_project",

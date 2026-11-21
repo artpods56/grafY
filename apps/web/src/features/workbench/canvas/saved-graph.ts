@@ -11,6 +11,10 @@ import {
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { artifactTypeKey } from "./artifact-type-key";
+import {
+  collectionModesToRepair,
+  type CollectionStepResolver,
+} from "./edge-collection-modes";
 import { connectionRouteForSelection, encodeHandleId } from "./handles";
 import { hydrateNodeLayout } from "./node-layout";
 import { artifactTypeColor } from "./nodes.css";
@@ -551,9 +555,37 @@ export function hydrateSavedGraph(
       }
     }
   }
+  // A connection's collection mode follows the shapes at its ends, and this
+  // graph's own map connections decide those shapes: a step fed one item at a
+  // time offers a sequence from every output, and a step fed a whole input runs
+  // once and offers one value. An edit can leave a step running once while the
+  // connections after it still ask for a list, so those modes are read as the
+  // shapes now allow them rather than as the file first recorded them.
+  const resolveCollectionStep: CollectionStepResolver = (nodeId) => {
+    const node = nodeById.get(nodeId);
+    if (!node || !workflowNodeIsSupported(node.data)) return null;
+    return {
+      inputs: node.data.spec.inputs,
+      outputs: node.data.spec.outputs,
+    };
+  };
+  const collectionModeRepairs = collectionModesToRepair(
+    savedEdges,
+    savedGraph.document.origins,
+    resolveCollectionStep,
+  );
+  const savedEdgesToRead = collectionModeRepairs.size
+    ? savedEdges.map((savedEdge: SavedGraphEdge) => {
+        const collectionMode = collectionModeRepairs.get(savedEdge.id);
+        return collectionMode
+          ? { ...savedEdge, collection_mode: collectionMode }
+          : savedEdge;
+      })
+    : savedEdges;
+
   const mapEdgeByTargetInput = new Map<string, SavedGraphEdge>();
   const mappedNodeIds = new Set<string>();
-  for (const edge of savedEdges) {
+  for (const edge of savedEdgesToRead) {
     if (edge.collection_mode !== "map") continue;
     const targetKey = JSON.stringify([edge.to_node, edge.to_port]);
     const existing = mapEdgeByTargetInput.get(targetKey);
@@ -571,7 +603,7 @@ export function hydrateSavedGraph(
   const edgeIds = new Set<string>();
   const occupiedTargetPlugIds = new Set<string>();
 
-  const edges = savedEdges.map((savedEdge: SavedGraphEdge) => {
+  const edges = savedEdgesToRead.map((savedEdge: SavedGraphEdge) => {
     if (edgeIds.has(savedEdge.id)) {
       throw new SavedGraphHydrationError(
         `Cannot open “${savedGraph.name}”. This file has two connections with the same identity.`,

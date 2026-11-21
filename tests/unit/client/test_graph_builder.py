@@ -1,4 +1,5 @@
-from typing import Annotated, ClassVar, override
+from typing import Annotated, Any, ClassVar, override
+from uuid import UUID
 
 import pytest
 from grafy_client import (
@@ -10,9 +11,9 @@ from grafy_client import (
     GraphBuilderError,
     NodeCatalog,
 )
+from grafy_core.artifact_contracts import MarkdownValue
 from grafy_core.artifacts import (
     ArtifactRef,
-    ArtifactRefSequence,
     ArtifactTypeKey,
     NoConfig,
     NodeConfig,
@@ -25,12 +26,18 @@ from grafy_core.domain.graph_documents import (
 )
 from grafy_core.nodes import (
     ArtifactTypeVariable,
-    InPort,
+    Binds,
     Node,
     NodeExecutionContext,
-    OutPort,
+    Plugs,
     PortShape,
+    Ref,
+    RefSequence,
 )
+
+import grafy_workbench.text.nodes as _text_nodes
+
+_ = _text_nodes.__name__  # notes str before these ports
 
 TEXT = ArtifactTypeKey("scalar.text", 1)
 MARKDOWN = ArtifactTypeKey("text.markdown", 1)
@@ -46,7 +53,7 @@ class EmptyInput(NodeInput):
 
 
 class TextOutput(NodeOutput):
-    text: Annotated[str, OutPort(TEXT)]
+    text: str
 
 
 class TextNode(Node[TextConfig, EmptyInput, TextOutput]):
@@ -70,13 +77,14 @@ class TextNode(Node[TextConfig, EmptyInput, TextOutput]):
 
 class CollectInput(NodeInput):
     items: Annotated[
-        list[ArtifactRef | ArtifactRefSequence],
-        InPort(T, variadic=True, instance_plugs=True),
+        list[Ref[Any] | RefSequence[Any]],
+        Plugs(variadic=True, instance=True),
+        Binds("T"),
     ]
 
 
 class CollectOutput(NodeOutput):
-    items: Annotated[ArtifactRefSequence, OutPort(T)]
+    items: Annotated[RefSequence[Any], Binds("T")]
 
 
 class CollectNode(Node[NoConfig, CollectInput, CollectOutput]):
@@ -99,7 +107,7 @@ class CollectNode(Node[NoConfig, CollectInput, CollectOutput]):
 
 
 class MarkdownInput(NodeInput):
-    markdown: Annotated[str, InPort(MARKDOWN)]
+    markdown: MarkdownValue
 
 
 class EmptyOutput(NodeOutput):
@@ -126,11 +134,11 @@ class MarkdownNode(Node[NoConfig, MarkdownInput, EmptyOutput]):
 
 
 class TransformInput(NodeInput):
-    text: Annotated[str, InPort(TEXT)]
+    text: str
 
 
 class TransformOutput(NodeOutput):
-    text: Annotated[str, OutPort(TEXT)]
+    text: str
 
 
 class TransformNode(Node[NoConfig, TransformInput, TransformOutput]):
@@ -532,3 +540,115 @@ def test_builder_rejects_cycles_before_serialization() -> None:
 
     with pytest.raises(GraphBuilderError, match="Graph contains a cycle"):
         graph.build()
+
+
+TEXT_REF = ArtifactRef(
+    artifact_id=UUID("66666666-6666-4666-8666-666666666666"),
+    artifact_type="scalar.text",
+    schema_version=1,
+    content_hash="a" * 64,
+)
+
+
+def test_builder_keeps_an_explicit_node_id_and_refuses_a_duplicate() -> None:
+    graph = GraphBuilder(_catalog())
+    text = graph.add(TextNode, TextConfig(text="x"), node_id="title")
+
+    with pytest.raises(GraphBuilderError, match="already in this graph"):
+        _ = graph.add(TextNode, TextConfig(text="y"), node_id="title")
+
+    assert text.node_id == "title"
+    assert [node.id for node in graph.build().nodes] == ["title"]
+
+
+def test_a_library_card_placed_on_an_input_owns_the_origin() -> None:
+    graph = GraphBuilder(_catalog())
+    collect = graph.add(CollectNode, NoConfig(), node_id="collect")
+    card = graph.add_artifact_card(TEXT_REF)
+
+    graph.place(collect.input("items"), card)
+    document = graph.build()
+
+    origin = document.origins[0]
+    assert origin.value == TEXT_REF
+    assert origin.to_plug == "plug-0001"
+    assert origin.source_card_ids == (card.card_id,)
+    assert document.presentation.viewers[0].artifact_ref == TEXT_REF
+    assert document.nodes[0].artifact_type_binding_map() == {"T": TEXT}
+
+
+def test_an_origin_of_the_wrong_artifact_type_is_refused() -> None:
+    graph = GraphBuilder(_catalog())
+    markdown = graph.add(MarkdownNode, NoConfig())
+
+    with pytest.raises(GraphBuilderError, match="does not accept scalar.text@1"):
+        graph.place(markdown.input("markdown"), TEXT_REF)
+    graph.place(
+        markdown.input("markdown"),
+        TEXT_REF,
+        conversion_path=(GraphConversion(id="text.to_markdown", version=1),),
+    )
+
+    assert graph.build().origins[0].conversion_path[0].id == "text.to_markdown"
+
+
+def test_an_input_satisfied_by_an_origin_takes_no_edge() -> None:
+    graph = GraphBuilder(_catalog())
+    text = graph.add(TextNode, TextConfig(text="x"))
+    markdown = graph.add(MarkdownNode, NoConfig())
+    graph.place(
+        markdown.input("markdown"),
+        TEXT_REF,
+        conversion_path=(GraphConversion(id="text.to_markdown", version=1),),
+    )
+
+    with pytest.raises(GraphBuilderError, match="accepts at most one edge"):
+        graph.connect(
+            text.output("text"),
+            markdown.input("markdown"),
+            conversion_path=(GraphConversion(id="text.to_markdown", version=1),),
+        )
+
+
+def test_output_cards_follow_a_node_and_bind_to_each_other() -> None:
+    graph = GraphBuilder(_catalog())
+    text = graph.add(TextNode, TextConfig(text="x"), node_id="text")
+    shown = graph.add_output_card(text.output("text"))
+    library = graph.add_artifact_card(TEXT_REF, card_id="artifact-viewer-library")
+
+    binding_id = graph.bind_cards(shown, library, {"site": "site_id"})
+    presentation = graph.build().presentation
+
+    assert [viewer.id for viewer in presentation.viewers] == [
+        shown.card_id,
+        "artifact-viewer-library",
+    ]
+    assert presentation.viewers[0].mode == "artifact"
+    link = presentation.links[0]
+    assert (link.source_node_id, link.source_port_name, link.target_viewer_id) == (
+        "text",
+        "text",
+        shown.card_id,
+    )
+    binding = presentation.bindings[0]
+    assert binding.id == binding_id
+    assert binding.effects == ("highlight", "focus")
+    assert [(item.source_field, item.target_field) for item in binding.mappings] == [
+        ("site", "site_id")
+    ]
+
+
+def test_cards_refuse_unknown_outputs_and_self_bindings() -> None:
+    graph = GraphBuilder(_catalog())
+    text = graph.add(TextNode, TextConfig(text="x"))
+    card = graph.add_artifact_card(TEXT_REF)
+
+    with pytest.raises(GraphBuilderError, match="no output port 'missing'"):
+        _ = graph.add_output_card(text.output("missing"))
+    with pytest.raises(GraphBuilderError, match="cannot target its source"):
+        _ = graph.bind_cards(card, card, {"a": "b"})
+    with pytest.raises(GraphBuilderError, match="follows a node output"):
+        graph.place(
+            graph.add(CollectNode, NoConfig()).input("items"),
+            graph.add_output_card(text.output("text")),
+        )

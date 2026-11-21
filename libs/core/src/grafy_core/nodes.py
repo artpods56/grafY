@@ -10,26 +10,39 @@ from grafy_core.node_context import (
     MAX_NODE_PROGRESS_MESSAGE_LENGTH as MAX_NODE_PROGRESS_MESSAGE_LENGTH,
     NodeExecutionContext as NodeExecutionContext,
     NodeProgressReporter as NodeProgressReporter,
+    NodeSecretRequirementError as NodeSecretRequirementError,
+    NodeSecrets as NodeSecrets,
     UserFacingNodeError as UserFacingNodeError,
+    bind_node_secret_config as bind_node_secret_config,
+    bind_node_secrets as bind_node_secrets,
 )
 from grafy_core.node_derivation import (
     derive_input_contract as derive_input_contract,
     derive_output_contract as derive_output_contract,
+    validate_service_node as validate_service_node,
 )
 from grafy_core.node_ports import (
     ArtifactTypeContract as ArtifactTypeContract,
     ArtifactTypeVariable as ArtifactTypeVariable,
+    Binds as Binds,
     ConfigContract as ConfigContract,
-    InPort as InPort,
     InputContract as InputContract,
     InputPortSpec as InputPortSpec,
     NodeContractError as NodeContractError,
     NodeContractResolutionError as NodeContractResolutionError,
-    OutPort as OutPort,
     OutputContract as OutputContract,
     OutputPortSpec as OutputPortSpec,
+    Plugs as Plugs,
     PortShape as PortShape,
+    Ref as Ref,
+    RefSequence as RefSequence,
     ResolvedNodeContracts as ResolvedNodeContracts,
+    ServiceContractKey as ServiceContractKey,
+)
+from grafy_core.service_contracts import (
+    ServiceContract as ServiceContract,
+    implements_service_contract as implements_service_contract,
+    service_contract as service_contract,
 )
 
 
@@ -68,6 +81,11 @@ class Node[
             cls.config_contract = ConfigContract(model=config_model)
             cls.input_contract = derive_input_contract(input_model)
             cls.output_contract = derive_output_contract(output_model)
+            validate_service_node(
+                cls.__name__,
+                cls.input_contract,
+                cls.output_contract,
+            )
             return
 
     @abstractmethod

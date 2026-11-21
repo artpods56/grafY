@@ -20,6 +20,7 @@ from grafy_api.auth import (
     OidcProtocolError,
     bounded_oidc_failure,
 )
+from grafy_api.auth.service import DEV_LOGIN_DEFAULT_USER
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ async def oidc_login(
     auth: AuthServiceDependency,
     return_path: Annotated[str, Query(max_length=2048)] = "/",
 ) -> Response:
+    if auth.dev_login_enabled:
+        return await _dev_login(request, auth, return_path)
     abuse_keys = auth.browser_abuse_keys(request)
     if not await auth.abuse.allow_login_start(
         abuse_keys.browser_key,
@@ -74,6 +77,31 @@ async def oidc_login(
         raise
     response = RedirectResponse(authorization_url, status_code=307)
     auth.set_transaction_cookie(response, str(transaction_id))
+    return response
+
+
+async def _dev_login(
+    request: Request,
+    auth: AuthServiceDependency,
+    return_path: str,
+) -> Response:
+    # `as` stays out of the route signature so a dev-only switch does not appear
+    # in the published API contract.
+    user_name = request.query_params.get("as", DEV_LOGIN_DEFAULT_USER)
+    try:
+        issued, safe_return_path = await auth.dev_login(
+            user_name=user_name,
+            return_path=return_path,
+            current_session_cookie=request.cookies.get(SESSION_COOKIE),
+        )
+    except OidcProtocolError as error:
+        await auth.audit_unauthenticated_failure(
+            operation="dev.login",
+            error_code=error.code,
+        )
+        raise HTTPException(status_code=400, detail="Dev login failed") from error
+    response = RedirectResponse(safe_return_path, status_code=303)
+    auth.set_session_cookies(response, issued)
     return response
 
 

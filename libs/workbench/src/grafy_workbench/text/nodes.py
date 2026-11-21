@@ -1,4 +1,4 @@
-from typing import Annotated, final
+from typing import Annotated
 
 from pydantic import Field, StrictStr
 
@@ -11,19 +11,19 @@ from grafy_core.artifact_contracts import (
     TextValuePayload,
 )
 from grafy_core.artifacts import (
-    Artifact,
     NodeConfig,
     NodeInput,
     NodeOutput,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.nodes import OutPort
 from grafy_core.plugins import NodeCachePolicy
-from grafy_core.runtime.persistence import InlineModelOutputWriter
-from grafy_core.runtime.resolvers import InlineModelResolver
+from grafy_core.runtime.artifact_values import inline_model_artifact, scalar_artifact
 
 from grafy_workbench.text.declaration import TEXT
-from grafy_workbench.scalar_persistence import ScalarOutputWriter, ScalarResolver
+
+
+TEXT.register(scalar_artifact(TEXT_VALUE, str, TextValuePayload))
+TEXT.register(inline_model_artifact(MARKDOWN, MarkdownValue))
+TEXT.register(inline_model_artifact(HTML_PAGE, HtmlPage))
 
 
 class TextInputConfig(NodeConfig):
@@ -38,11 +38,7 @@ class TextInputInput(NodeInput):
 
 
 class TextInputOutput(NodeOutput):
-    text: Annotated[
-        StrictStr,
-        OutPort(TEXT_VALUE),
-        Field(description="The configured text value."),
-    ]
+    text: Annotated[StrictStr, Field(description="The configured text value.")]
 
 
 @TEXT.function_node(
@@ -59,60 +55,3 @@ async def text_input(
 
 
 TextInputNode = TEXT.nodes[-1].node_class
-
-
-@final
-class TextValueOutputWriter(ScalarOutputWriter):
-    """Keep the existing constructor used by runtime clients."""
-
-    def __init__(self, *, uow: UnitOfWorkPort) -> None:
-        super().__init__(artifact_type=TEXT_VALUE.key, model=TextValuePayload, uow=uow)
-
-
-@final
-class TextValueResolver(ScalarResolver[str]):
-    """Keep the existing constructor used by runtime clients."""
-
-    def __init__(self, *, uow: UnitOfWorkPort) -> None:
-        super().__init__(
-            source=TEXT_VALUE.key, target=str, model=TextValuePayload, uow=uow
-        )
-
-
-TEXT.register(
-    Artifact(
-        spec=TEXT_VALUE,
-        resolver=lambda context: TextValueResolver(uow=context.uow),
-        writer=lambda context: TextValueOutputWriter(uow=context.uow),
-    )
-)
-TEXT.register(
-    Artifact(
-        spec=MARKDOWN,
-        resolver=lambda context: InlineModelResolver(
-            source=MARKDOWN.key,
-            target=MarkdownValue,
-            uow=context.uow,
-        ),
-        writer=lambda context: InlineModelOutputWriter(
-            artifact_type=MARKDOWN.key,
-            model=MarkdownValue,
-            uow=context.uow,
-        ),
-    )
-)
-TEXT.register(
-    Artifact(
-        spec=HTML_PAGE,
-        resolver=lambda context: InlineModelResolver(
-            source=HTML_PAGE.key,
-            target=HtmlPage,
-            uow=context.uow,
-        ),
-        writer=lambda context: InlineModelOutputWriter(
-            artifact_type=HTML_PAGE.key,
-            model=HtmlPage,
-            uow=context.uow,
-        ),
-    )
-)

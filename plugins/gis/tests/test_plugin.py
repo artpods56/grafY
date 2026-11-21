@@ -20,6 +20,7 @@ def test_manifest_loader_target_preserves_system_identity_and_freezes() -> None:
         ("gis.wfs.import", 1),
         ("gis.map.vector_layer", 1),
         ("gis.map.raster_layer", 1),
+        ("gis.map.raster_mosaic", 1),
         ("gis.map.wms_layer", 1),
         ("gis.map.compose", 1),
     }

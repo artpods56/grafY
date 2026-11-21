@@ -14,7 +14,7 @@ From the repository root, run:
 
 ```bash
 uv sync
-uv run python -m grafy_plugin_gis.smoke
+uv run python scripts/smoke_gis.py
 ```
 
 The command creates a small GeoTIFF, persists it as a COG with XYZ tiles,
@@ -27,8 +27,10 @@ To check the production image without starting a server:
 digest="$(git archive HEAD | shasum -a 256 | cut -d ' ' -f 1)"
 docker build --file infra/docker/api.Dockerfile --target api-release \
 	--build-arg GRAFY_BUILD_DIGEST="$digest" --tag grafy-api:gis-check .
-docker run --rm --network=none --entrypoint .venv/bin/python \
-	grafy-api:gis-check -m grafy_plugin_gis.smoke
+docker run --rm --network=none \
+  -v "$PWD/scripts/smoke_gis.py:/smoke_gis.py:ro" \
+  --entrypoint .venv/bin/python \
+  grafy-api:gis-check /smoke_gis.py
 ```
 
 The release target requires the source archive digest. Build from a clean
@@ -52,7 +54,11 @@ checkout so that digest identifies the source copied into the image.
    CRS. Check that the browser's TileJSON and PNG requests succeed.
 6. Add **Raster map layer** (`gis.map.raster_layer`) and **Compose map**
    (`gis.map.compose`), connect the raster through the layer to the map, and
-   execute. Open the map artifact and confirm the raster is visible.
+   execute. Open the map artifact and confirm the raster is visible. The
+   layer also takes the uploaded `file.tiff` directly. To stitch adjacent
+   sheets, connect two or more georeferenced TIFFs or scans to **Raster mosaic
+   layer** (`gis.map.raster_mosaic`) in bottom-to-top order, and confirm the
+   seams show the lower sheet through the upper sheet's transparent border.
 7. Run the unchanged import again. Confirm a cache hit. Change the source name
    and confirm a new execution. A different deployment digest also forces a
    new execution; it leaves historical artifacts and graph checkpoints intact.

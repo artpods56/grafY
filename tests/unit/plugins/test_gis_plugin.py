@@ -14,12 +14,20 @@ import pytest
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeSpec
 from grafy_core.bounded_subprocess import BoundedSubprocessError
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.documents import TiffFile
 from grafy_core.file_contracts import BLOB_FILE, TIFF_FILE
-from grafy_core.nodes import NodeExecutionContext
+from grafy_core.nodes import (
+    NodeExecutionContext,
+    Ref,
+    RefSequence,
+    UserFacingNodeError,
+    derive_input_contract,
+)
 from grafy_core.plugins import (
     NodeHttpEgressInput,
     PluginRegistry,
 )
+from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
@@ -40,14 +48,15 @@ from grafy_plugin_gis.artifacts import (
     GEO_RASTER_SCAN,
 )
 from grafy_plugin_gis.gdal import GdalCli, GdalError
+from grafy_plugin_gis.models import GeoRasterScan, RasterProjectionMetadata
 from grafy_core.spatial_contracts import (
     GeoCategorizedPointStyle,
     GeoFeatureArtifactSource,
     GeoFeatureCollection,
     GeoMapLayer,
+    GeoRasterMosaicSource,
     GeoRasterStyle,
     GeoVectorStyle,
-    RasterProjectionMetadata,
     VectorProjectionMetadata,
 )
 from grafy_plugin_gis.nodes import (
@@ -63,6 +72,8 @@ from grafy_plugin_gis.nodes import (
     ImportWfsNode,
     RasterLayerConfig,
     RasterLayerInput,
+    RasterMosaicConfig,
+    RasterMosaicInput,
     TableToGeoFeaturesConfig,
     TableToGeoFeaturesError,
     TableToGeoFeaturesInput,
@@ -73,6 +84,7 @@ from grafy_plugin_gis.nodes import (
     WmsLayerConfig,
     WmsLayerInput,
     build_raster_layer,
+    build_raster_mosaic,
     build_vector_layer,
     build_wms_layer,
     compose_map,
@@ -80,10 +92,8 @@ from grafy_plugin_gis.nodes import (
     table_to_geo_features,
 )
 from grafy_plugin_gis.persistence import (
-    FeatureCollectionOutputWriter,
-    FeatureCollectionResolver,
-    RasterScanOutputWriter,
-    RasterScanResolver,
+    feature_collection_artifact,
+    raster_scan_artifact,
 )
 from grafy_plugin_gis.plugin import GIS
 from grafy_plugin_gis.wfs import WfsClient, WfsImportError
@@ -97,7 +107,6 @@ from tests.support.egress import (
     resolve_loopback_host,
     trusted_loopback_network,
 )
-from tests.support.file_artifacts import seed_file_artifact
 
 TEST_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000901")
 
@@ -599,6 +608,23 @@ async def test_table_wkt_error_identifies_row_and_column() -> None:
 
 
 @pytest.mark.asyncio
+async def test_table_to_features_refuses_an_ambiguous_column_title() -> None:
+    table = Table(
+        columns=[
+            TableColumn(id="column_1", title="wkt", value_type=TableValueType.TEXT),
+            TableColumn(id="column_2", title="wkt", value_type=TableValueType.TEXT),
+        ],
+        rows=[{"column_1": "POINT (0 0)", "column_2": "POINT (1 1)"}],
+    )
+
+    with pytest.raises(TableToGeoFeaturesError, match="'wkt' is ambiguous"):
+        await table_to_geo_features(
+            TableToGeoFeaturesConfig(geometry_column="wkt", source_crs="EPSG:4326"),
+            TableToGeoFeaturesInput(table=table),
+        )
+
+
+@pytest.mark.asyncio
 async def test_builds_typed_vector_raster_and_wms_layers() -> None:
     features_ref = artifact_ref(GEO_FEATURE_COLLECTION)
     raster_ref = artifact_ref(GEO_RASTER_SCAN)
@@ -614,7 +640,9 @@ async def test_builds_typed_vector_raster_and_wms_layers() -> None:
                 }
             ),
         ),
-        VectorLayerInput(features=features_ref),
+        VectorLayerInput(
+            features=cast(Ref[GeoFeatureCollection], features_ref),
+        ),
     )
     categorized = await build_vector_layer(
         VectorLayerConfig(
@@ -642,7 +670,9 @@ async def test_builds_typed_vector_raster_and_wms_layers() -> None:
                 }
             ),
         ),
-        VectorLayerInput(features=features_ref),
+        VectorLayerInput(
+            features=cast(Ref[GeoFeatureCollection], features_ref),
+        ),
     )
     raster = await build_raster_layer(
         RasterLayerConfig(
@@ -650,7 +680,7 @@ async def test_builds_typed_vector_raster_and_wms_layers() -> None:
             opacity=0.6,
             style=GeoRasterStyle(contrast=0.25, resampling="nearest"),
         ),
-        RasterLayerInput(raster=raster_ref),
+        RasterLayerInput(raster=cast(Ref[GeoRasterScan], raster_ref)),
     )
     wms = await build_wms_layer(
         WmsLayerConfig.model_validate(
@@ -734,18 +764,21 @@ async def test_compose_map_preserves_ordered_layer_refs() -> None:
             basemap="openstreetmap",
             initial_bounds=(13.0, 52.0, 14.0, 53.0),
         ),
-        ComposeMapInput(layers=sequence),
+        ComposeMapInput(layers=cast(RefSequence[GeoMapLayer], sequence)),
     )
     assert result.map.layers == [first, second]
     assert result.map.initial_bounds == (13.0, 52.0, 14.0, 53.0)
 
     with pytest.raises(ValidationError, match="requires an ordered"):
         ComposeMapInput(
-            layers=ArtifactRefSequence(
-                artifact_type=GEO_MAP_LAYER.key.id,
-                schema_version=GEO_MAP_LAYER.key.schema_version,
-                item_refs=[first],
-                ordered=False,
+            layers=cast(
+                RefSequence[GeoMapLayer],
+                ArtifactRefSequence(
+                    artifact_type=GEO_MAP_LAYER.key.id,
+                    schema_version=GEO_MAP_LAYER.key.schema_version,
+                    item_refs=[first],
+                    ordered=False,
+                ),
             )
         )
 
@@ -1078,37 +1111,33 @@ async def test_wfs_import_rejects_oversized_page_with_context(
 
 
 @pytest.mark.asyncio
-async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_tiles(
+async def test_raster_scan_import_and_raster_persistence_produce_only_cog(
     tmp_path: Path,
 ) -> None:
     source_content = write_geotiff(tmp_path / "source.tif")
     uow = InMemoryUnitOfWork()
     object_root = tmp_path / "objects"
     storage = LocalFileObjectStore(object_root)
-    file_ref = await seed_file_artifact(
-        storage,
-        uow,
-        workspace_id=TEST_WORKSPACE_ID,
-        spec=TIFF_FILE,
-        content=source_content,
-        original_filename="historical-map.tif",
-        content_type="image/tiff",
-    )
-    raster = await ImportRasterScanNode(
-        storage=storage,
-        uow=uow,
-    ).run(
+    raster = await ImportRasterScanNode().run(
         NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="raster_scan"),
         GeoRasterScanImportConfig(source_name="Historical map"),
-        GeoRasterScanImportInput(file=file_ref),
+        GeoRasterScanImportInput(
+            file=TiffFile.from_content(
+                source_content,
+                content_type="image/tiff",
+                filename="historical-map.tif",
+            )
+        ),
     )
-    writer = RasterScanOutputWriter(
-        storage=storage,
+    values = ArtifactValues(
+        (raster_scan_artifact(),),
         uow=uow,
+        storage=storage,
         bucket="test",
         storage_backend="local",
     )
-    ref = await writer.write(
+    ref = await values.write(
+        GEO_RASTER_SCAN.key,
         raster.raster,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -1136,17 +1165,17 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
     assert projection.kind == "xyz"
     assert projection.bounds == (13.0, 52.0, 14.0, 53.0)
     assert projection.source_crs == "EPSG:4326"
-    assert projection.min_zoom <= projection.max_zoom
-    assert list((object_root / "test" / projection.prefix).rglob("*.png"))
+    assert (projection.min_zoom, projection.max_zoom) == (5, 6)
+    assert projection.prefix is None
+    assert list(object_root.rglob("*.png")) == []
     portable = PortableArtifactBundleMetadata.model_validate(
         artifact.metadata[PORTABLE_BUNDLE_METADATA_KEY]
     )
     assert portable.files[0].object_key == artifact.object_key
     assert {reference.path for reference in portable.references} == {
         ("raster_projection", "bucket"),
-        ("raster_projection", "prefix"),
     }
-    assert len(portable.files) > 1
+    assert len(portable.files) == 1
 
     cog_path = object_root / "test" / artifact.object_key
     info = subprocess.run(
@@ -1156,10 +1185,8 @@ async def test_raster_scan_import_and_raster_persistence_produce_cog_and_xyz_til
         text=True,
     )
     assert json.loads(info.stdout)["metadata"]["IMAGE_STRUCTURE"]["LAYOUT"] == "COG"
-    resolved = await RasterScanResolver(
-        uow=uow,
-        storage=storage,
-    ).resolve(ref, TEST_WORKSPACE_ID)
+    resolved = await values.resolve(ref, TEST_WORKSPACE_ID)
+    assert isinstance(resolved, GeoRasterScan)
     assert resolved.filename == "historical-map.tif"
     assert sha256(resolved.content).hexdigest() == artifact.sha256
 
@@ -1174,13 +1201,15 @@ async def test_feature_collection_storage_keeps_exact_source_and_pmtiles_sidecar
     )
     uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
-    writer = FeatureCollectionOutputWriter(
-        storage=storage,
+    values = ArtifactValues(
+        (feature_collection_artifact(),),
         uow=uow,
+        storage=storage,
         bucket="test",
         storage_backend="local",
     )
-    ref = await writer.write(
+    ref = await values.write(
+        GEO_FEATURE_COLLECTION.key,
         collection,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -1190,12 +1219,7 @@ async def test_feature_collection_storage_keeps_exact_source_and_pmtiles_sidecar
             provenance=MaterializationProvenance(refs_by_input={}),
         ),
     )
-    resolver = FeatureCollectionResolver(
-        uow=uow,
-        storage=storage,
-    )
-
-    assert await resolver.resolve(ref, TEST_WORKSPACE_ID) == collection
+    assert await values.resolve(ref, TEST_WORKSPACE_ID) == collection
     async with uow as uow:
         artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
     assert artifact is not None
@@ -1243,12 +1267,14 @@ async def test_empty_feature_source_is_exact_without_invalid_pmtiles(
     )
     uow = InMemoryUnitOfWork()
     storage = LocalFileObjectStore(tmp_path / "objects")
-    ref = await FeatureCollectionOutputWriter(
-        storage=storage,
+    ref = await ArtifactValues(
+        (feature_collection_artifact(),),
         uow=uow,
+        storage=storage,
         bucket="test",
         storage_backend="local",
     ).write(
+        GEO_FEATURE_COLLECTION.key,
         collection,
         ArtifactWriteContext(
             node_context=NodeExecutionContext(
@@ -1279,19 +1305,24 @@ async def test_missing_gdal_driver_error_preserves_source_and_node_context(
         feature_collection((13.405, 52.52)),
         "cities.geojson",
     )
-    writer = FeatureCollectionOutputWriter(
-        storage=LocalFileObjectStore(tmp_path / "objects"),
+    values = ArtifactValues(
+        (
+            feature_collection_artifact(
+                gdal=GdalCli(ogr2ogr="missing-grafy-ogr2ogr"),
+            ),
+        ),
         uow=InMemoryUnitOfWork(),
+        storage=LocalFileObjectStore(tmp_path / "objects"),
         bucket="test",
         storage_backend="local",
-        gdal=GdalCli(ogr2ogr="missing-grafy-ogr2ogr"),
     )
 
     with pytest.raises(
         RuntimeError,
         match=r"PMTiles.*cities.geojson.*node 'feature-node'",
     ) as error:
-        await writer.write(
+        await values.write(
+            GEO_FEATURE_COLLECTION.key,
             collection,
             ArtifactWriteContext(
                 node_context=NodeExecutionContext(
@@ -1366,4 +1397,93 @@ def test_wfs_config_rejects_a_bracketed_ipv6_literal_address(service_url: str) -
                 "source_name": "Roads",
                 "max_features": 1,
             }
+        )
+
+
+@pytest.mark.asyncio
+async def test_raster_layer_accepts_a_georeferenced_tiff_directly() -> None:
+    tiff_ref = artifact_ref(TIFF_FILE)
+    contract = derive_input_contract(RasterLayerInput).ports["raster"]
+
+    layer = await build_raster_layer(
+        RasterLayerConfig(title="Sheet"),
+        RasterLayerInput.model_validate({"raster": tiff_ref.model_dump()}),
+    )
+
+    assert contract.accepts == GEO_RASTER_SCAN.key
+    assert contract.also_accepts == (TIFF_FILE.key,)
+    assert layer.layer.source.kind == "raster_scan"
+    assert type(layer.layer.source.artifact) is ArtifactRef
+    assert layer.layer.source.artifact == tiff_ref
+
+
+def _tiff_sequence(*refs: ArtifactRef) -> dict[str, object]:
+    return ArtifactRefSequence.from_key(
+        key=TIFF_FILE.key, item_refs=list(refs)
+    ).model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_raster_mosaic_flattens_refs_and_sequences_bottom_to_top() -> None:
+    bottom = artifact_ref(TIFF_FILE)
+    middle = artifact_ref(GEO_RASTER_SCAN)
+    upper = artifact_ref(TIFF_FILE)
+    top = artifact_ref(TIFF_FILE)
+    contract = derive_input_contract(RasterMosaicInput).ports["rasters"]
+
+    output = await build_raster_mosaic(
+        RasterMosaicConfig(opacity=0.5),
+        RasterMosaicInput.model_validate(
+            {
+                "rasters": [
+                    bottom.model_dump(mode="json"),
+                    middle.model_dump(mode="json"),
+                    _tiff_sequence(upper, top),
+                ]
+            }
+        ),
+    )
+
+    assert contract.instance_plugs is True
+    assert contract.spare_plugs is False
+    assert {contract.accepts, *contract.also_accepts} == {
+        TIFF_FILE.key,
+        GEO_RASTER_SCAN.key,
+    }
+    source = output.layer.source
+    assert isinstance(source, GeoRasterMosaicSource)
+    assert source.artifacts == [bottom, middle, upper, top]
+    assert all(type(ref) is ArtifactRef for ref in source.artifacts)
+    assert output.layer.title == "Raster mosaic"
+    assert output.layer.opacity == 0.5
+    assert output.layer.style.kind == "raster"
+
+
+@pytest.mark.asyncio
+async def test_raster_mosaic_rejects_duplicate_and_too_many_rasters() -> None:
+    sheet = artifact_ref(TIFF_FILE)
+    with pytest.raises(UserFacingNodeError, match="connected more than once"):
+        await build_raster_mosaic(
+            RasterMosaicConfig(),
+            RasterMosaicInput.model_validate(
+                {"rasters": [sheet.model_dump(mode="json"), _tiff_sequence(sheet)]}
+            ),
+        )
+
+    many = [artifact_ref(TIFF_FILE) for _ in range(65)]
+    with pytest.raises(UserFacingNodeError, match="at most 64 rasters, got 65"):
+        await build_raster_mosaic(
+            RasterMosaicConfig(),
+            RasterMosaicInput.model_validate({"rasters": [_tiff_sequence(*many)]}),
+        )
+
+
+def test_raster_mosaic_source_rejects_other_artifact_types() -> None:
+    with pytest.raises(ValidationError, match="geo.raster_scan@1 or file.tiff@1"):
+        GeoRasterMosaicSource(artifacts=[artifact_ref(GEO_FEATURE_COLLECTION)])
+    with pytest.raises(ValidationError, match="raster style"):
+        GeoMapLayer(
+            title="Mosaic",
+            source=GeoRasterMosaicSource(artifacts=[artifact_ref(TIFF_FILE)]),
+            style=GeoVectorStyle(),
         )

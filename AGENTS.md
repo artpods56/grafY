@@ -62,11 +62,27 @@ elsewhere. Walk this list and say which entries applied:
 - **Web traps.** Frontend work follows `apps/web/AGENTS.md`; read it before
   touching `apps/web`, it holds the web-specific hazards.
 
+## Local development
+
+Use `just dev` to start the native stack when its ports are free. Ctrl-C stops
+its native processes. `just keycloak-down` stops the separate Keycloak
+container. For local scripts, `just dev-pat` issues a scoped PAT after the
+imported `owner` signs in once. See [local development](docs/how-to-run-local.md)
+for setup and token revocation.
+
 ## Verifying
 
 - Smallest proof first: `uv run pytest tests/unit/<area>/test_<thing>.py`, or
   `bun run --cwd apps/web --bun test <file>` for the web suite. Architecture
   changes run `tests/unit/architecture/` locally; CI owns everything else.
+- **`apps/tiler` is a second uv project** (Python 3.13, own lock, excluded from
+  the root workspace because `titiler.core` needs `starlette>=1` and the API
+  pins `starlette<1`). Verify it with `just test-tiler`, `just lint-tiler`, and
+  `just typecheck-tiler`, which run in `apps/tiler/.venv` the way the CI `tiler`
+  job does. Root `uv run pytest` and root `basedpyright` do not reach it at all —
+  `apps/tiler` is outside the root `testpaths` and the root pyright `include` —
+  so nothing else you run locally notices a broken tiler. Its `container`-marked
+  tests need Docker and `GRAFY_TEST_TILER_IMAGE`.
 - Do not run repo-wide suites. `just check` and the full matrix in
   `.github/workflows/ci.yml` belong to CI.
 - Persistence tests that need PostgreSQL silently skip unless

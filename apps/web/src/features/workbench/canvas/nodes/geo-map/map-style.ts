@@ -37,6 +37,20 @@ export function pmtilesUrl(workspaceId: string, path: string): string {
   return `pmtiles://${absoluteApiUrl(workspaceId, path)}`;
 }
 
+/**
+ * A MapLibre raster source knows `attribution` as a string or not at all, and a
+ * TileJSON without one reaches us as `null`. Writing the key with `undefined`
+ * type-checks against the optional property but fails style validation when the
+ * map loads (`sources.<id>.attribution: string expected, undefined found`), so a
+ * blank attribution — empty, whitespace, or absent — leaves the key out instead.
+ */
+function rasterAttribution(
+  attribution: string | null | undefined,
+): string | null {
+  const trimmed = attribution?.trim();
+  return trimmed ? trimmed : null;
+}
+
 export function createGeoMapStyle(
   workspaceId: string,
   descriptor: GeoRenderDescriptor,
@@ -243,12 +257,14 @@ export function createGeoMapStyle(
     }
 
     if (layer.source.kind === "raster" && layer.style.kind === "raster") {
-      sources[id] = {
+      const source: maplibregl.RasterSourceSpecification = {
         type: "raster",
         url: absoluteApiUrl(workspaceId, layer.source.tilejson_url),
         tileSize: 256,
-        attribution: layer.source.attribution ?? undefined,
       };
+      const attribution = rasterAttribution(layer.source.attribution);
+      if (attribution !== null) source.attribution = attribution;
+      sources[id] = source;
       renderLayers.push({
         id: layerId(layer, "raster"),
         type: "raster",

@@ -4,10 +4,8 @@ import asyncio
 import io
 import json
 from collections.abc import Callable
-from hashlib import sha256
-from pathlib import Path
 from typing import cast, final
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -15,16 +13,16 @@ from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from grafy_core import egress
 from grafy_core.artifact_contracts import MARKDOWN, RASTER_IMAGE, TEXT_VALUE
-from grafy_core.artifacts import ArtifactObject, ArtifactRef
+from grafy_core.documents import PdfFile, RasterImage
+from grafy_core.file_contracts import PDF_FILE
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressPolicy, PinnedPublicAddressTransport
-from grafy_core.nodes import NodeExecutionContext
-from grafy_core.plugins import (
-    PluginRegistry,
-    PluginRuntimeContext,
-    PluginUnitOfWorkPort,
+from grafy_core.nodes import (
+    NodeExecutionContext,
+    UserFacingNodeError,
+    bind_node_secrets,
 )
-from grafy_core.ports.artifacts import UnitOfWorkPort
+from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.ports.storage import FileStoragePort
 from grafy_core.table_contracts import TABLE_DATA
@@ -120,32 +118,6 @@ class FakeReducto:
 
 
 @final
-class _FakeArtifactRepository:
-    def __init__(self, artifact: ArtifactObject) -> None:
-        self.artifact = artifact
-        self.lookups: list[tuple[UUID, UUID]] = []
-
-    async def get(self, workspace_id: UUID, artifact_id: UUID) -> ArtifactObject | None:
-        self.lookups.append((workspace_id, artifact_id))
-        found = self.artifact
-        if found.id != artifact_id or found.workspace_id != workspace_id:
-            return None
-        return found
-
-
-@final
-class _FakeUnitOfWork:
-    def __init__(self, artifacts: _FakeArtifactRepository) -> None:
-        self.artifacts = artifacts
-
-    async def __aenter__(self) -> "_FakeUnitOfWork":
-        return self
-
-    async def __aexit__(self, *exc_info: object) -> None:
-        return None
-
-
-@final
 class _FakeStorage:
     def __init__(self, content: bytes) -> None:
         self.content = content
@@ -170,19 +142,6 @@ class RecordingSecrets:
         return SecretStr(API_KEY)
 
 
-def raster(workspace_id: UUID) -> ArtifactObject:
-    return ArtifactObject(
-        workspace_id=workspace_id,
-        artifact_type="image.raster",
-        schema_version=1,
-        content_type="image/png",
-        bucket="workbench-artifacts",
-        object_key="objects/raster.png",
-        byte_size=len(RASTER),
-        sha256=sha256(RASTER).hexdigest(),
-    )
-
-
 async def await_event(event: asyncio.Event, *, within: float = 5.0) -> None:
     async with asyncio.timeout(within):
         await event.wait()
@@ -193,28 +152,22 @@ class Env:
     def __init__(self) -> None:
         self.fake = FakeReducto()
         self.workspace_id = uuid4()
-        self.context = NodeExecutionContext(
-            self.workspace_id, uuid4(), "graph-1", "reducto-1"
-        )
-        self.artifact = raster(self.workspace_id)
-        self.artifacts = _FakeArtifactRepository(self.artifact)
-        self.storage = _FakeStorage(RASTER)
         self.secrets = RecordingSecrets()
+        self.context = bind_node_secrets(
+            NodeExecutionContext(self.workspace_id, uuid4(), "graph-1", "reducto-1"),
+            cast(NodeSecretResolverPort, self.secrets),
+            (ocr.API_KEY,),
+        )
         self.use_transport(httpx.MockTransport(self.fake.handle))
 
     def use_transport(self, transport: httpx.AsyncBaseTransport) -> None:
-        self.node = ReductoOcrNode(
-            uow=cast(UnitOfWorkPort, _FakeUnitOfWork(self.artifacts)),
-            storage=cast(FileStoragePort, self.storage),
-            node_secrets=cast(NodeSecretResolverPort, self.secrets),
-            transport_factory=lambda: transport,
-        )
+        self.node = ReductoOcrNode(transport_factory=lambda: transport)
 
     async def run(
         self,
         *,
         url: str | None = DOCUMENT_URL,
-        image: ArtifactRef | None = None,
+        image: RasterImage | PdfFile | None = None,
         config: ReductoOcrConfig | None = None,
     ) -> ReductoOcrOutput:
         return await self.node.run(
@@ -255,13 +208,13 @@ def parse_chunks(*payloads: object) -> list[ParseChunk]:
     return ParseChunkList.validate_python(list(payloads))
 
 
-def test_the_family_installs_with_one_operator() -> None:
+def test_the_family_installs_its_ocr_operators() -> None:
     registry = PluginRegistry()
     registry.install(INSTALLED)
     registry.freeze()
     keys = {registration.key for registration in REDUCTO.nodes}
     assert REDUCTO.slug == "external.reducto"
-    assert keys == {("reducto.ocr.process", 1)}
+    assert keys == {("reducto.ocr.process", 1), ("reducto.ocr.provider", 1)}
 
 
 def test_the_node_declares_exactly_its_ports(env: Env) -> None:
@@ -275,29 +228,29 @@ def test_the_node_declares_exactly_its_ports(env: Env) -> None:
         ("document_url", TEXT_VALUE.key),
         ("image", RASTER_IMAGE.key),
     ]
+    assert took["image"].also_accepts == (PDF_FILE.key,)
+    assert took["document_url"].agent_default == "fill"
+    assert took["image"].agent_default == "fill"
     assert [port.title for port in made.values()] == ["Transcription", "Text blocks"]
-    assert [port.title for port in took.values()] == ["Document link", "Page image"]
+    assert [port.title for port in took.values()] == ["Document link", "Scan or PDF"]
 
 
-def test_the_family_needs_egress_and_secrets_and_owns_the_markdown_writer() -> None:
-    registration = REDUCTO.nodes[0]
+def test_the_family_needs_egress_and_secrets() -> None:
+    registration = next(
+        node for node in REDUCTO.nodes if node.key == ("reducto.ocr.process", 1)
+    )
     assert REDUCTO.capabilities == (
         PluginRuntimeCapability.NETWORK_EGRESS,
         PluginRuntimeCapability.NODE_SECRETS,
     )
     assert registration.required_capabilities == REDUCTO.capabilities
-    runtime = PluginRuntimeContext(
-        Path("/tmp/grafy-reducto-test"),
-        cast(FileStoragePort, object()),
-        cast(PluginUnitOfWorkPort, object()),
-        "workbench-artifacts",
-    )
-    writers = [factory(runtime) for factory in REDUCTO.writer_factories]
-    assert [writer.artifact_type for writer in writers] == [MARKDOWN.key]
+    assert REDUCTO.artifacts == ()
 
 
 def test_the_family_declares_one_secret_and_its_destinations() -> None:
-    registration = REDUCTO.nodes[0]
+    registration = next(
+        node for node in REDUCTO.nodes if node.key == ("reducto.ocr.process", 1)
+    )
     destinations = registration.http_egress
     assert [secret.name for secret in registration.secret_inputs] == ["api_key"]
     assert registration.secret_inputs[0].config_dependencies == ()
@@ -335,7 +288,12 @@ def test_config_pages_are_positive_and_ordered() -> None:
 
 
 async def test_no_inputs_and_both_inputs_are_answered_locally(env: Env) -> None:
-    both = ReductoOcrInput(document_url=DOCUMENT_URL, image=env.artifact.ref())
+    both = ReductoOcrInput(
+        document_url=DOCUMENT_URL,
+        image=RasterImage.from_content(
+            RASTER, content_type="image/png", filename="raster.png"
+        ),
+    )
     for inputs in (ReductoOcrInput(), both):
         with pytest.raises(ReductoOcrError, match="not both, and not neither"):
             await env.node.run(env.context, ReductoOcrConfig(), inputs)
@@ -372,7 +330,7 @@ async def test_the_key_is_resolved_for_the_node_that_asked(env: Env) -> None:
 
 async def test_a_failing_secret_resolver_stops_the_run(env: Env) -> None:
     env.secrets.error = RuntimeError("the secret store is down")
-    with pytest.raises(ReductoOcrError, match="could not resolve"):
+    with pytest.raises(UserFacingNodeError, match="could not resolve"):
         await env.run()
     assert env.fake.requests == []
 
@@ -426,12 +384,29 @@ async def test_a_refusal_is_said_once_without_the_providers_own_words(
     assert "report.pdf" not in message
 
 
+async def test_pdf_is_uploaded_as_a_document(env: Env) -> None:
+    content = b"%PDF-example"
+    await env.run(
+        url=None,
+        image=PdfFile.from_content(
+            content, content_type="application/pdf", filename="report.pdf"
+        ),
+    )
+    body = env.fake.upload_bodies[0]
+    assert b"document.pdf" in body
+    assert b"application/pdf" in body
+    assert content in body
+
+
 async def test_an_uploaded_image_goes_as_its_own_bytes(env: Env) -> None:
     content = b"\x89PNG\r\n\x1a\n marker-bytes"
-    env.storage.content = content
-    env.artifact.sha256 = sha256(content).hexdigest()
     env.fake.upload_file_id = "reducto://file-9"
-    output = await env.run(url=None, image=env.artifact.ref())
+    output = await env.run(
+        url=None,
+        image=RasterImage.from_content(
+            content, content_type="image/png", filename="page.png"
+        ),
+    )
     body = env.fake.upload_bodies[0]
     assert content in body
     assert b'filename="document.png"' in body
@@ -440,21 +415,12 @@ async def test_an_uploaded_image_goes_as_its_own_bytes(env: Env) -> None:
     assert output.markdown.markdown == "document of reducto://file-9"
 
 
-@pytest.mark.parametrize(
-    ("field", "value", "reason"),
-    [
-        ("content_type", "image/gif", "unsupported content type"),
-        ("sha256", "0" * 64, "SHA-256 does not match"),
-        ("workspace_id", uuid4(), "was not found"),
-    ],
-)
-async def test_an_image_that_must_not_be_uploaded_stops_before_any_request(
-    env: Env, field: str, value: object, reason: str
-) -> None:
-    setattr(env.artifact, field, value)
-    with pytest.raises(ReductoOcrError, match=reason):
-        await env.run(url=None, image=env.artifact.ref())
-    assert env.artifacts.lookups == [(env.workspace_id, env.artifact.id)]
+async def test_an_unsupported_image_stops_before_any_request(env: Env) -> None:
+    image = RasterImage.from_content(
+        b"GIF89a", content_type="image/gif", filename="page.gif"
+    )
+    with pytest.raises(ReductoOcrError, match="unsupported content type"):
+        await env.run(url=None, image=image)
     assert env.fake.requests == []
 
 
@@ -462,15 +428,28 @@ async def test_a_source_above_the_product_limit_stops_before_any_request(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(ocr, "MAX_SOURCE_BYTES", 8)
+    image = RasterImage.from_content(
+        RASTER, content_type="image/png", filename="raster.png"
+    )
     with pytest.raises(ReductoOcrError, match="8-byte source limit"):
-        await env.run(url=None, image=env.artifact.ref())
+        await env.run(url=None, image=image)
     assert env.fake.requests == []
 
 
 async def test_an_unreadable_raster_names_no_storage_path(env: Env) -> None:
-    env.storage.error = RuntimeError("no such workbench-artifacts/objects/raster.png")
+    storage = _FakeStorage(RASTER)
+    storage.error = RuntimeError("no such workbench-artifacts/objects/raster.png")
+    image = RasterImage(
+        content_type="image/png",
+        byte_size=None,
+        filename="raster.png",
+        content=None,
+        storage=cast(FileStoragePort, storage),
+        bucket="workbench-artifacts",
+        object_key="objects/raster.png",
+    )
     with pytest.raises(ReductoOcrError, match="could not read") as recorded:
-        await env.run(url=None, image=env.artifact.ref())
+        await env.run(url=None, image=image)
     assert "workbench-artifacts" not in str(recorded.value)
     assert "objects/raster.png" not in str(recorded.value)
     assert env.fake.requests == []

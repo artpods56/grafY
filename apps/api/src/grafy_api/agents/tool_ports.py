@@ -34,6 +34,9 @@ class RegistryNodePorts(NodePorts):
         )
         facts: list[PortFacts] = []
         for name, port in resolved.input_contract.ports.items():
+            if port.kind == "service":
+                # A service input is never a model parameter. The Graph feeds it.
+                continue
             facts.append(
                 PortFacts(
                     name=name,
@@ -64,6 +67,8 @@ class RegistryNodePorts(NodePorts):
         )
         facts: list[PortFacts] = []
         for name, out in resolved.output_contract.ports.items():
+            if out.kind == "service":
+                continue
             facts.append(
                 PortFacts(
                     name=name,

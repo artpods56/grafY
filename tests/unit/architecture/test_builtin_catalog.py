@@ -19,7 +19,24 @@ EXPECTED_BUILTIN_OPERATORS = {
     ("value.integer", 1),
     ("text.input", 1),
     ("schema.builder", 1),
-    ("file.interpret", 1),
+    ("table.transliterate_cyrillic", 1),
+    ("table.concat", 1),
+    ("table.extract_from_markdown", 1),
+    ("table.match_places", 1),
+    ("ocr.read", 1),
+    ("ocr.detect_tiff_text", 1),
+    ("ocr.craft_provider", 1),
+    ("ocr.paddle_cyrillic_provider", 1),
+    ("ocr.recognize_tiff_text", 1),
+    ("ocr.georeference_places", 1),
+    ("ocr.filter_tiff_jev", 1),
+    ("ocr.export_label_studio", 1),
+    ("ocr.import_label_studio", 1),
+    ("ocr.georeference_places", 1),
+    ("ocr.prepare_tiff_labels", 1),
+    ("ocr.filter_tiff_readings", 1),
+    ("ocr.places_table", 1),
+    ("ocr.collect_map_places", 1),
 }
 
 
@@ -27,6 +44,9 @@ def test_builtin_catalog_keeps_artifact_support_without_retired_operators() -> N
     registry = build_builtin_registry()
 
     assert {node.key for node in registry.nodes} == EXPECTED_BUILTIN_OPERATORS
+    transliteration = registry.node_registration("table.transliterate_cyrillic", 1)
+    assert set(transliteration.node_class.input_contract.ports) == {"table"}
+    assert set(transliteration.node_class.output_contract.ports) == {"table"}
     assert {artifact.key for artifact in registry.artifact_types} >= {
         TEXT_VALUE.key,
         HTML_PAGE.key,
@@ -40,7 +60,12 @@ def test_builtin_catalog_keeps_artifact_support_without_retired_operators() -> N
     assert registry.artifact_type_owner(INTEGER_VALUE.key) != "sequence"
     installed_operators = {node.key[0] for node in registry.nodes}
     assert "sequence.collect" in installed_operators
-    assert not installed_operators & {"text.split", "table.text.normalize"}
+    assert not installed_operators & {
+        "text.split",
+        "table.text.normalize",
+        "file.interpret",
+        "image.decode",
+    }
 
 
 def test_file_plugins_install_alongside_builtin_artifact_contracts() -> None:
@@ -49,7 +74,10 @@ def test_file_plugins_install_alongside_builtin_artifact_contracts() -> None:
         registry.install(family)
     registry.freeze()
 
-    assert registry.node_registration("image.decode", 1).plugin_slug == "external.image"
+    assert (
+        registry.node_registration("image.draw_regions", 1).plugin_slug
+        == "external.image"
+    )
     assert registry.node_registration("table.import", 1).plugin_slug == "external.table"
     assert registry.artifact_type_owner(RASTER_IMAGE.key) == "image"
     assert registry.artifact_type_owner(TABLE_DATA.key) == "table"

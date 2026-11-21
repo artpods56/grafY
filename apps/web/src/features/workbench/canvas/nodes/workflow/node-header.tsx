@@ -1,12 +1,17 @@
 "use client";
 
 import * as stylex from "@stylexjs/stylex";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Play, Eye } from "lucide-react";
 
+import { IconButton } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CanvasNodeHeader } from "../CanvasNodeChrome";
-import type { NodeExecutionStatus, WorkflowNodeData } from "../../types";
+import {
+  isServiceProviderNode,
+  type NodeExecutionStatus,
+  type WorkflowNodeData,
+} from "../../types";
 
 import { sharedStyles } from "./styles";
 
@@ -60,7 +65,9 @@ export function NodeHeader({
   selected: boolean;
   onMenuOpenChange?: (open: boolean) => void;
 }) {
+  const isProvider = isServiceProviderNode(data.spec);
   const executionIsBusy =
+    data.execution.status === "queued" ||
     data.execution.status === "running" ||
     data.execution.status === "cancelling";
   const executionWord = EXECUTION_WORDS[data.execution.status] ?? null;
@@ -77,7 +84,7 @@ export function NodeHeader({
       onRemove={() => data.onRemoveNode?.(id)}
       onMenuOpenChange={onMenuOpenChange}
       status={
-        data.execution.status === "idle" ? null : (
+        isProvider || data.execution.status === "idle" ? null : (
           <span
             role="status"
             aria-label={executionName}
@@ -114,6 +121,35 @@ export function NodeHeader({
           </span>
         )
       }
-    />
+    >
+      {!isProvider &&
+      data.onRevealNodeOutput &&
+      !data.hasFollowingOutputCard &&
+      (data.run?.outputs ?? []).some(
+        (output) => output.artifacts.length > 0,
+      ) ? (
+        <IconButton
+          label={`Show output of ${data.spec.title}`}
+          title="Show output"
+          size="xs"
+          shape="round"
+          className="nodrag nowheel"
+          onClick={() => data.onRevealNodeOutput?.(id)}
+        >
+          <Eye size={11} />
+        </IconButton>
+      ) : null}
+      {!isProvider && data.onRunNode && !executionIsBusy ? (
+        <IconButton
+          label={`Run ${data.spec.title}`}
+          size="xs"
+          shape="round"
+          className="nodrag nowheel"
+          onClick={() => data.onRunNode?.(id)}
+        >
+          <Play size={11} />
+        </IconButton>
+      ) : null}
+    </CanvasNodeHeader>
   );
 }
