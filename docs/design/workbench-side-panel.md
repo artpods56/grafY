@@ -311,11 +311,11 @@ graph LR
 
 ## 6. Verification
 
-- `npm --prefix apps/web test` — the refusal codes mapped to the panel's errors,
+- `bun run --cwd apps/web --bun test` — the refusal codes mapped to the panel's errors,
   the recursive projection and filter, the panel (create, rename, fold, move,
   preview, and a delete the server refuses), the shell, and the Generated view
   keeping its last good read through a refresh that fails.
-- `npm --prefix apps/web run typecheck`, `npm --prefix apps/web run lint`.
+- `bun run --cwd apps/web --bun typecheck`, `bun run --cwd apps/web --bun lint`.
 - Visual check at 1600px, 1280px, and 720px: the two columns must read as one
   surface at a glance; the canvas must not sit under the panel. StyleX errors and
   popup stacking only ever show up in a browser, so the browser is part of the

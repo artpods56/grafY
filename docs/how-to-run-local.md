@@ -1,6 +1,6 @@
 # Run Grafy locally
 
-1. Install the Python and web dependencies with `just install`. Start Docker
+1. With Bun 1.4.4 installed, run `just install` for the Python and web dependencies. Start Docker
    for Keycloak. For native GIS tools, see [Run and verify a GIS raster import](how-to-run-gis.md).
 2. Use `.env.example` to configure the worktree's local `.env`. Set
    `GRAFY_COMMAND_HMAC_KEY` and `GRAFY_OIDC_AUTH_WRAPPING_KEY` to separate keys
@@ -70,7 +70,7 @@ API to load the updated list.
 From the second worktree, run:
 
 ```sh
-npm --prefix apps/web run dev -- --port 3001
+just web 3001
 ```
 
 The Next.js rewrite uses the existing API on port 8000 by default. Sign in

@@ -27,8 +27,15 @@ test("sign in, create a Graph, and run a Text input", async ({
     timeout: 120_000,
   });
   await browser.locator(".react-flow__pane").secondaryTap();
-  await screen.getByRole("menuitem", { name: "Add node", exact: true }).hover();
-  await screen.getByRole("menuitem", { name: "Text", exact: true }).hover();
+  const addNode = screen.getByRole("menuitem", {
+    name: "Add node",
+    exact: true,
+  });
+  await expect(addNode).toBeEnabled();
+  await addNode.press("ArrowRight");
+  await screen
+    .getByRole("menuitem", { name: "Text", exact: true })
+    .press("ArrowRight");
   await screen
     .getByRole("menuitem", { name: "Text input", exact: true })
     .click();
@@ -43,7 +50,9 @@ test("sign in, create a Graph, and run a Text input", async ({
   );
   await expect(rail.getByRole("button", { name: /^Save/ })).toHaveText("Saved");
   await node.click();
-  await screen.getByRole("button", { name: "Run", exact: true }).click();
+  await node
+    .getByRole("button", { name: "Run Text input", exact: true })
+    .click();
   await expect(
     node.getByRole("status", { name: "Text input done", exact: true }),
   ).toBeVisible();

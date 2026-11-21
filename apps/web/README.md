@@ -35,7 +35,7 @@ The web transport contract is generated from the canonical FastAPI app:
 
 ```bash
 cd apps/web
-npm run generate:api
+bun --bun run generate:api
 ```
 
 This updates:
@@ -47,7 +47,7 @@ Refresh the OpenAPI JSON and check that the committed TypeScript types are
 current:
 
 ```bash
-npm run check:api
+bun --bun run check:api
 ```
 
 Do not hand-edit the generated TypeScript file. `contract.ts` supplies
@@ -63,14 +63,14 @@ type for every node.
 
 Requirements:
 
-1. Node 20+ and npm.
+1. Bun 1.4.4.
 3. The Grafy API running on `http://127.0.0.1:8000` (the Next.js dev
    server proxies browser `/api` requests to it).
 
 ```bash
 cd apps/web
-npm ci
-npm run dev
+bun ci
+bun --bun run dev
 ```
 
 Open <http://localhost:3000>.
@@ -92,9 +92,9 @@ server-owned. Grafy does not use `sessionStorage` or IndexedDB.
 ## Verification
 
 ```bash
-npm run check:api
-npm test
-npm run lint
-npm run typecheck
-npm run build
+bun --bun run check:api
+bun --bun run test
+bun --bun run lint
+bun --bun run typecheck
+bun --bun run build
 ```

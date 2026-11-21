@@ -3,7 +3,7 @@ import { web } from "@e2e-dev/web";
 
 const url = process.env.E2E_STACK_ORIGIN;
 if (!url)
-  throw new Error("Run npm run test:e2e to start the disposable stack.");
+  throw new Error("Run bun run test:e2e to start the disposable stack.");
 
 export default {
   targets: [

@@ -11,7 +11,7 @@
  * imports it. Keep shared style objects in a module that exports styles, and keep plain
  * constants file-local, which is the convention elsewhere in the app.
  *
- * Run with: npm run check:stylex
+ * Run with: bun --bun run check:stylex
  */
 import * as babel from "@babel/core";
 import { readdirSync, readFileSync, statSync } from "node:fs";

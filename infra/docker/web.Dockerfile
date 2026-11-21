@@ -1,21 +1,21 @@
-FROM node:26-alpine AS dependencies
+ARG BUN_VERSION=1.4.4
+FROM oven/bun:${BUN_VERSION}-slim AS dependencies
 
 WORKDIR /app
 
-COPY apps/web/package.json apps/web/package-lock.json ./
+COPY apps/web/package.json apps/web/bun.lock ./
 COPY apps/web/scripts ./scripts
-RUN npm ci
+RUN bun ci
 
-FROM node:26-alpine AS builder
+FROM dependencies AS builder
 
 WORKDIR /app
 
-COPY --from=dependencies /app/node_modules ./node_modules
 COPY apps/web ./
 
-RUN npm run build
+RUN bun --bun run build
 
-FROM node:26-alpine AS runner
+FROM oven/bun:${BUN_VERSION}-slim AS runner
 
 WORKDIR /app
 
@@ -23,15 +23,12 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-RUN addgroup --system --gid 1001 nodejs \
-    && adduser --system --uid 1001 nextjs
+COPY --from=builder --chown=bun:bun /app/public ./public
+COPY --from=builder --chown=bun:bun /app/.next/standalone ./
+COPY --from=builder --chown=bun:bun /app/.next/static ./.next/static
 
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
+USER bun
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["bun", "server.js"]

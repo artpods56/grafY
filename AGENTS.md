@@ -29,8 +29,8 @@ Single-context: `CONTEXT.md` at the repo root, ADRs in `docs/adr/`. See `docs/ag
    state.
 4. **Hand-editing generated API types.**
    `apps/web/src/lib/api/generated/grafy.ts` is regenerated from the FastAPI
-   schema by `npm run generate:api` in `apps/web`; CI fails on drift via
-   `npm --prefix apps/web run check:api`. Change the route or model and
+   schema by `bun --bun run generate:api` in `apps/web`; CI fails on drift via
+   `bun run --cwd apps/web --bun check:api`. Change the route or model and
    regenerate, don't edit.
 5. **A second API owner.** Collaboration assumes one API process. By default
    (`require_single_api_owner: true` in `libs/shared`) the API holds an
@@ -44,7 +44,7 @@ The commonest defect is a change that works where you tested and is missing
 elsewhere. Walk this list and say which entries applied:
 
 - **Contract.** An API route change also changes the web client: regenerate
-  with `npm run generate:api` in `apps/web`. `check:api` fails when the
+  with `bun --bun run generate:api` in `apps/web`. `check:api` fails when the
   committed file lags the schema.
 - **Builtin families vs Plugins.** A node or artifact behavior may live in
   app-owned builtin families under `apps/api` and in one of `plugins/*` (gis,
@@ -73,7 +73,7 @@ for setup and token revocation.
 ## Verifying
 
 - Smallest proof first: `uv run pytest tests/unit/<area>/test_<thing>.py`, or
-  `npm --prefix apps/web test -- <file>` for the web suite. Architecture
+  `bun run --cwd apps/web --bun test <file>` for the web suite. Architecture
   changes run `tests/unit/architecture/` locally; CI owns everything else.
 - **`apps/tiler` is a second uv project** (Python 3.13, own lock, excluded from
   the root workspace because `titiler.core` needs `starlette>=1` and the API
