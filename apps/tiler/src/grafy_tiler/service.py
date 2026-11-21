@@ -22,9 +22,12 @@ from dataclasses import replace
 from functools import partial
 from typing import Any, Final
 
-from grafy_crypto.grants import Grant
+from grafy_crypto.grants import Grant, MosaicGrant, mosaic_digest
+from morecantile import Tile
 from rasterio.errors import RasterioError
 from rasterio.io import DatasetReader, MemoryFile
+from rio_tiler.constants import WEB_MERCATOR_TMS
+from rio_tiler.errors import TileOutsideBounds
 
 from grafy_tiler.cache import DiskCache
 from grafy_tiler.raster import (
@@ -40,7 +43,14 @@ from grafy_tiler.raster import (
     thumbnail_size,
     tile_window,
 )
-from grafy_tiler.render import render_region
+from grafy_tiler.render import (
+    GEO_TILE_SIZE,
+    GeoMosaicComposer,
+    render_geo_overview,
+    render_geo_tile,
+    render_geo_tile_image,
+    render_region,
+)
 from grafy_tiler.settings import Settings
 from grafy_tiler.window import (
     WindowRead,
@@ -210,6 +220,156 @@ class TileService:
             key,
             partial(self._render_tile, grant, info, level, x, y, key, overview),
         )
+
+    async def geo_tile(
+        self, grant: Grant, z: int, x: int, y: int, tile_format: TileFormat
+    ) -> tuple[bytes, TileFormat]:
+        if not 0 <= z <= 24 or not 0 <= x < 1 << z or not 0 <= y < 1 << z:
+            raise TileNotFound("tile is outside Web Mercator")
+        key = f"geotile:{RENDERER_VERSION}:{grant.sha256}:{grant.page}:{tile_format}:{z}/{x}/{y}"
+        data = await self._flights.do(
+            key, partial(self._render_geo_tile, grant, z, x, y, tile_format, key)
+        )
+        return data, "jpg" if data.startswith(b"\xff\xd8") else "png"
+
+    async def _render_geo_tile(
+        self, grant: Grant, z: int, x: int, y: int, tile_format: TileFormat, key: str
+    ) -> bytes:
+        cached = await asyncio.to_thread(self._cache.get, key)
+        if cached is not None:
+            return cached
+        info = await self.info(grant)
+        if not info.georeferenced:
+            raise SourceError("TIFF page is not georeferenced")
+        overview = await self._geo_overview(grant, info, z, x, y)
+
+        def work() -> bytes:
+            with self._source(grant, info, overview) as (ds, source_info, _):
+                try:
+                    data = render_geo_tile(
+                        ds,
+                        source_info,
+                        z,
+                        x,
+                        y,
+                        tile_format=tile_format,
+                        jpeg_quality=self._settings.jpeg_quality,
+                    )
+                except TileOutsideBounds as error:
+                    raise TileNotFound("tile is outside the image") from error
+            self._cache.put(key, data)
+            return data
+
+        return await self._render(work)
+
+    async def geo_mosaic_tile(
+        self, grant: MosaicGrant, z: int, x: int, y: int, tile_format: TileFormat
+    ) -> tuple[bytes, TileFormat]:
+        """One Web Mercator tile of several sources, stacked bottom to top."""
+        if not 0 <= z <= 24 or not 0 <= x < 1 << z or not 0 <= y < 1 << z:
+            raise TileNotFound("tile is outside Web Mercator")
+        key = (
+            f"geomosaic:{RENDERER_VERSION}:{mosaic_digest(grant.sources)}:"
+            f"{tile_format}:{z}/{x}/{y}"
+        )
+        data = await self._flights.do(
+            key,
+            partial(self._render_geo_mosaic_tile, grant, z, x, y, tile_format, key),
+        )
+        return data, "jpg" if data.startswith(b"\xff\xd8") else "png"
+
+    async def _render_geo_mosaic_tile(
+        self,
+        grant: MosaicGrant,
+        z: int,
+        x: int,
+        y: int,
+        tile_format: TileFormat,
+        key: str,
+    ) -> bytes:
+        cached = await asyncio.to_thread(self._cache.get, key)
+        if cached is not None:
+            return cached
+        source_grants = grant.as_grants()
+        infos = await asyncio.gather(*(self.info(source) for source in source_grants))
+        if not all(info.georeferenced for info in infos):
+            raise SourceError("TIFF page is not georeferenced")
+        covering = [
+            (source, info)
+            for source, info in zip(source_grants, infos, strict=True)
+            if _may_cover_tile(info, z, x, y)
+        ]
+        if not covering:
+            raise TileNotFound("tile is outside the image")
+        overviews = await asyncio.gather(
+            *(self._geo_overview(source, info, z, x, y) for source, info in covering)
+        )
+        layers = [
+            (source, info, overview)
+            for (source, info), overview in zip(covering, overviews, strict=True)
+        ]
+
+        def work() -> bytes:
+            composer = GeoMosaicComposer()
+            # Top sheet first: once the tile is opaque, lower sheets are hidden
+            # and are never opened or decoded.
+            for source, info, overview in reversed(layers):
+                if composer.is_opaque:
+                    break
+                with self._source(source, info, overview) as (ds, source_info, _):
+                    try:
+                        image = render_geo_tile_image(ds, source_info, z, x, y)
+                    except TileOutsideBounds:
+                        continue
+                composer.add_below(image)
+            if composer.is_empty:
+                raise TileNotFound("tile is outside the image")
+            data = composer.encode(
+                tile_format=tile_format, jpeg_quality=self._settings.jpeg_quality
+            )
+            self._cache.put(key, data)
+            return data
+
+        return await self._render(work)
+
+    async def _geo_overview(
+        self, grant: Grant, info: ImageInfo, z: int, x: int, y: int
+    ) -> bytes | None:
+        if info.overview_level is None or info.bounds_wgs84 is None:
+            return None
+        west, south, east, north = info.bounds_wgs84
+        # Crossing the antimeridian needs the original dataset's bounds check.
+        if west > east:
+            return None
+        left, bottom = WEB_MERCATOR_TMS.xy(west, south, truncate=True)
+        right, top = WEB_MERCATOR_TMS.xy(east, north, truncate=True)
+        tile = WEB_MERCATOR_TMS.xy_bounds(Tile(x, y, z))
+        if (
+            tile.right <= left
+            or tile.left >= right
+            or tile.top <= bottom
+            or tile.bottom >= top
+        ):
+            return None
+        width, height = level_size(
+            info.width, info.height, info.max_level, info.overview_level
+        )
+        resolution = (tile.right - tile.left) / GEO_TILE_SIZE
+        if resolution < max((right - left) / width, (top - bottom) / height):
+            return None
+        key = f"geo-overview:{RENDERER_VERSION}:{grant.sha256}:{grant.page}"
+
+        def work() -> bytes:
+            with open_page(source_path(self._settings, grant), grant.page) as ds:
+                data = render_geo_overview(ds, info, width, height)
+            self._cache.put(key, data)
+            return data
+
+        async def load() -> bytes:
+            cached = await asyncio.to_thread(self._cache.get, key)
+            return cached if cached is not None else await self._render(work)
+
+        return await self._flights.do(key, load)
 
     async def thumbnail(self, grant: Grant, edge: int) -> tuple[bytes, TileFormat]:
         info = await self.info(grant)
@@ -400,7 +560,7 @@ class TileService:
         """Open the image, or its cached overview, with the info that describes
         the opened raster and the pyramid level at which it is 1:1."""
         if overview is None:
-            with open_page(source_path(self._settings, grant), info.page) as ds:
+            with open_page(source_path(self._settings, grant), grant.page) as ds:
                 yield ds, info, info.max_level
             return
         assert info.overview_level is not None
@@ -429,6 +589,25 @@ class TileService:
                 ),
                 info.overview_level,
             )
+
+
+def _may_cover_tile(info: ImageInfo, z: int, x: int, y: int) -> bool:
+    """False only when the source's WGS84 bounds clearly miss the tile."""
+    if info.bounds_wgs84 is None:
+        return True
+    west, south, east, north = info.bounds_wgs84
+    # Crossing the antimeridian: let the dataset's own bounds check decide.
+    if west > east:
+        return True
+    left, bottom = WEB_MERCATOR_TMS.xy(west, south, truncate=True)
+    right, top = WEB_MERCATOR_TMS.xy(east, north, truncate=True)
+    tile = WEB_MERCATOR_TMS.xy_bounds(Tile(x, y, z))
+    return not (
+        tile.right <= left
+        or tile.left >= right
+        or tile.top <= bottom
+        or tile.bottom >= top
+    )
 
 
 def _info_key(grant: Grant) -> str:

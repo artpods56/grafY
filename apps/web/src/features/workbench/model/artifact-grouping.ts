@@ -12,8 +12,11 @@ import {
   cardArtifactRefs,
   collectArtifactCardRefs,
   DEFAULT_ARTIFACT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
+  DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
   DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
   DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
+  isGeoMapArtifact,
   isTableArtifact,
   type ArtifactCardValue,
 } from "../canvas/artifact-card";
@@ -154,15 +157,23 @@ export function ungroupArtifactCard({
     return state;
   if (!value.item_refs.length) return state;
   const table = isTableArtifact(value);
+  const map = isGeoMapArtifact(value);
   const width = table
     ? Math.max(
         stack.data.layout?.width ?? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
         DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
       )
-    : (stack.data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH);
+    : map
+      ? Math.max(
+          stack.data.layout?.width ?? DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
+          DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
+        )
+      : (stack.data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH);
   const bodyHeight = table
     ? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT
-    : artifactCardMediaHeight(width);
+    : map
+      ? DEFAULT_ARTIFACT_MAP_BODY_HEIGHT
+      : artifactCardMediaHeight(width);
   const columns = Math.ceil(Math.sqrt(value.item_refs.length));
   const cards = value.item_refs.map((ref, index): ArtifactViewerNode => ({
     id: `artifact-viewer-${createUuid()}`,

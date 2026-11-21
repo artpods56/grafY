@@ -58,6 +58,15 @@ class PaddleCyrillicRecognizer(TextRecognizer):
         self._attempts = max_retries + 1
 
     async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
+        """One reading per crop, in input order.
+
+        Deliberately uncached: the node that cuts a crop already keeps its reading
+        against the crop's digest (see `tiff_recognition._paddle_spec`), so a cache
+        here would hold the same answers under a second key and neither one could be
+        told stale. What this method owns is the shape of the request: batches the
+        route accepts, one of them in flight at a time.
+        """
+
         results: list[TextReading] = []
         batch: list[str] = []
         encoded_size = 0

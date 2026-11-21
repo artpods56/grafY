@@ -37,6 +37,7 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/me/invitations/{invitation_id}/decline",
         "/v1/me/projects",
         "/v1/workspaces",
+        "/v1/workspaces/{workspace_id}/artifacts/geo/render",
         "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/content",
         "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/image/info",
         "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/image/thumbnail",

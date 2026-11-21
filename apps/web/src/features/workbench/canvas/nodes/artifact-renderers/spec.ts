@@ -16,6 +16,7 @@ export interface ArtifactRenderProps {
   mode: string;
   availableHeight?: number;
   interaction?: ArtifactViewerInteractionContext;
+  presentation?: "inspector" | "canvas";
 }
 
 export interface ArtifactRendererInteractionCapabilities {

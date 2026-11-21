@@ -3,6 +3,18 @@ from uuid import UUID
 from grafy_api.services.errors import WorkbenchOperationError
 
 
+class GeoRasterUnavailableError(WorkbenchOperationError):
+    """The artifact cannot be rendered as a georeferenced raster."""
+
+
+class GeoRasterTileNotFoundError(WorkbenchOperationError):
+    """A tile requested from a legacy raster source does not exist."""
+
+
+class GeoRenderArtifactNotFoundError(WorkbenchOperationError):
+    """A requested render artifact is unavailable in the workspace."""
+
+
 class GeoRangeNotSatisfiableError(ValueError):
     def __init__(
         self,
@@ -37,4 +49,7 @@ class ArtifactResponseTooLargeError(WorkbenchOperationError):
 __all__ = [
     "ArtifactResponseTooLargeError",
     "GeoRangeNotSatisfiableError",
+    "GeoRasterTileNotFoundError",
+    "GeoRasterUnavailableError",
+    "GeoRenderArtifactNotFoundError",
 ]

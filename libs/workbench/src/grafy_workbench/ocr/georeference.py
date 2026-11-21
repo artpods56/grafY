@@ -17,8 +17,12 @@ from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
 from grafy_core.text_regions import PixelAffine, PixelPoint, TiffPageOpener
 
+import grafy_workbench.table.plugin as _table_plugin
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.tiff_recognition import TiffRecognizedText
+
+# The table family notes Table as table.data, which the output port derives from.
+_ = _table_plugin.__name__
 
 _COLUMNS = [
     TableColumn(id="region", title="Region", value_type=TableValueType.INTEGER),
@@ -33,8 +37,18 @@ _COLUMNS = [
     TableColumn(id="longitude", title="Longitude", value_type=TableValueType.NUMBER),
     TableColumn(id="latitude", title="Latitude", value_type=TableValueType.NUMBER),
     TableColumn(
+        id="point_wkt",
+        title="WGS84 center (WKT)",
+        value_type=TableValueType.TEXT,
+    ),
+    TableColumn(
         id="geometry_wkt",
         title="WGS84 geometry (WKT)",
+        value_type=TableValueType.TEXT,
+    ),
+    TableColumn(
+        id="source_artifact_id",
+        title="Source TIFF",
         value_type=TableValueType.TEXT,
     ),
 ]
@@ -130,6 +144,7 @@ class GeoreferencePlacesNode(
                 "on the map"
             )
         to_wgs84 = _PageToWgs84(page.affine, page.crs)
+        source_artifact_id = str(recognized.source.artifact_id)
 
         rows: list[dict[str, TableValue]] = []
         for index, region in enumerate(recognized.regions):
@@ -148,7 +163,9 @@ class GeoreferencePlacesNode(
                     "pixel_row": row,
                     "longitude": longitude,
                     "latitude": latitude,
+                    "point_wkt": f"POINT ({longitude} {latitude})",
                     "geometry_wkt": outline.wkt,
+                    "source_artifact_id": source_artifact_id,
                 }
             )
         return GeoreferencePlacesOutput(places=Table(columns=_COLUMNS, rows=rows))

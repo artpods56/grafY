@@ -7,6 +7,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Crop,
+  Image as ImageIcon,
+  Map as MapIcon,
   Maximize,
   Minus,
   Plus,
@@ -26,6 +28,11 @@ import {
   TiffWindowSelector,
   type TiffWindowSelection,
 } from "./TiffWindowSelector";
+import { GeoMapArtifactRenderer } from "./geo-map-artifact-renderer";
+import { mapInteractionProps } from "./geo-map/map-interaction-props";
+
+const CONTROL_HEIGHT = 20; // IconButton's 2xs size.
+const CONTROL_INSET = 4;
 
 const s = stylex.create({
   root: {
@@ -42,6 +49,10 @@ const s = stylex.create({
     zIndex: 0,
     overflow: "hidden",
   },
+  mapViewport: {
+    bottom: CONTROL_HEIGHT + CONTROL_INSET * 2,
+    overflow: "auto",
+  },
   thumbnail: {
     position: "absolute",
     width: "100%",
@@ -51,7 +62,7 @@ const s = stylex.create({
   },
   controls: {
     position: "absolute",
-    bottom: 4,
+    bottom: CONTROL_INSET,
     left: 4,
     right: 4,
     zIndex: 1,
@@ -362,6 +373,7 @@ export function TiffArtifactView({
   return (
     <TiffPage
       key={`${workspaceId}:${artifactId}:${page}:${attempt}`}
+      artifactId={artifactId}
       path={imagePath(workspaceId, artifactId)}
       page={page}
       name={name}
@@ -379,6 +391,7 @@ export function TiffArtifactView({
 }
 
 function TiffPage({
+  artifactId,
   path,
   page,
   name,
@@ -389,6 +402,7 @@ function TiffPage({
   allowPageChange,
   onSize,
 }: {
+  artifactId: string;
   path: string;
   page: number;
   name: string;
@@ -407,6 +421,10 @@ function TiffPage({
   } | null>(null);
   const hasFramedResult = useRef(false);
   const [info, setInfo] = useState<ImageInfo | null>(null);
+  const [showMap, setShowMap] = useState(false);
+  const [mapHeight, setMapHeight] = useState<number>();
+  const canShowMap =
+    info !== null && "georeferenced" in info && info.georeferenced === true;
   const [thumbnailReady, setThumbnailReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -440,7 +458,7 @@ function TiffPage({
   }, [path, page]);
 
   useEffect(() => {
-    if (!info || !thumbnailReady) return;
+    if (showMap || !info || !thumbnailReady) return;
     let disposed = false;
     let surfaceResize: ResizeObserver | undefined;
     import("openseadragon")
@@ -509,7 +527,18 @@ function TiffPage({
       viewer.current?.destroy();
       viewer.current = null;
     };
-  }, [info, thumbnailReady, path, page]);
+  }, [showMap, info, thumbnailReady, path, page]);
+
+  useEffect(() => {
+    if (!showMap || !host.current || typeof ResizeObserver === "undefined")
+      return;
+    const element = host.current;
+    const observer = new ResizeObserver(() =>
+      setMapHeight(element.clientHeight),
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [showMap]);
 
   useEffect(() => {
     if (!opened || !info || !overlay) return;
@@ -547,6 +576,16 @@ function TiffPage({
   const viewport = stylex.props(s.viewport);
   const status = stylex.props(s.status);
   const controls = stylex.props(s.controls);
+  function toggleMap() {
+    setShowMap(!showMap);
+    if (showMap) return;
+    setOpened(null);
+    setLoaded(false);
+    setError(null);
+    setEditing(false);
+    setSelectedReading(null);
+    hasFramedResult.current = false;
+  }
   return (
     <section
       aria-label={`${name} scan`}
@@ -560,7 +599,7 @@ function TiffPage({
         }
       }}
     >
-      {!loaded && (
+      {!showMap && !loaded && (
         <img /* eslint-disable-line @next/next/no-img-element -- authenticated thumbnail */
           src={imageThumbnailUrl(path, page)}
           alt={name}
@@ -569,14 +608,30 @@ function TiffPage({
           onError={() => setThumbnailReady(true)}
         />
       )}
-      <div
-        ref={host}
-        data-tiff-viewport
-        data-page={page}
-        className={viewport.className}
-        style={{ ...viewport.style, zIndex: 0 }}
-      />
-      {editableSelection && info && opened && loaded && (
+      {showMap ? (
+        <div
+          key="map"
+          ref={host}
+          {...mapInteractionProps(stylex.props(s.viewport, s.mapViewport))}
+        >
+          <GeoMapArtifactRenderer
+            artifact={{ artifact_id: artifactId }}
+            mode="map"
+            autoLoad
+            availableHeight={mapHeight}
+          />
+        </div>
+      ) : (
+        <div
+          key="image"
+          ref={host}
+          data-tiff-viewport
+          data-page={page}
+          className={viewport.className}
+          style={{ ...viewport.style, zIndex: 0 }}
+        />
+      )}
+      {!showMap && editableSelection && info && opened && loaded && (
         <TiffWindowSelector
           key={String(editing)}
           viewer={opened.viewer}
@@ -586,7 +641,8 @@ function TiffPage({
           editing={editing}
         />
       )}
-      {loaded &&
+      {!showMap &&
+        loaded &&
         !error &&
         selectedReading &&
         selectedReading.overlay === overlay && (
@@ -594,7 +650,7 @@ function TiffPage({
             {selectedReading.text}
           </div>
         )}
-      {error || !loaded ? (
+      {!showMap && (error || !loaded) ? (
         <div
           role="status"
           className={status.className}
@@ -607,65 +663,79 @@ function TiffPage({
         className={controls.className}
         style={{ ...controls.style, zIndex: 2 }}
       >
-        <IconButton
-          size="2xs"
-          label="Zoom out"
-          onClick={() => viewer.current?.viewport.zoomBy(0.5)}
-        >
-          <Minus size={14} />
-        </IconButton>
-        <IconButton
-          size="2xs"
-          label="Zoom in"
-          onClick={() => viewer.current?.viewport.zoomBy(2)}
-        >
-          <Plus size={14} />
-        </IconButton>
-        <IconButton
-          size="2xs"
-          label="Fit image"
-          onClick={() => viewer.current?.viewport.goHome()}
-        >
-          <Maximize size={14} />
-        </IconButton>
-        {editableSelection && (
+        {canShowMap && (
           <IconButton
             size="2xs"
-            label="Edit detection window"
-            pressed={editing}
-            disabled={!loaded}
-            onClick={() => setEditing(!editing)}
+            label={showMap ? "Show image" : "Show map"}
+            className="nodrag nopan"
+            onClick={toggleMap}
           >
-            <Crop size={14} />
+            {showMap ? <ImageIcon size={14} /> : <MapIcon size={14} />}
           </IconButton>
         )}
-        {allowPageChange && info && info.page_count > 1 && (
+        {!showMap && (
           <>
             <IconButton
               size="2xs"
-              label="Previous page"
-              disabled={page === 0}
-              onClick={() => onPage(page - 1)}
+              label="Zoom out"
+              onClick={() => viewer.current?.viewport.zoomBy(0.5)}
             >
-              <ChevronLeft size={14} />
+              <Minus size={14} />
             </IconButton>
-            <span>
-              Page {page + 1} of {info.page_count}
-            </span>
             <IconButton
               size="2xs"
-              label="Next page"
-              disabled={page + 1 === info.page_count}
-              onClick={() => onPage(page + 1)}
+              label="Zoom in"
+              onClick={() => viewer.current?.viewport.zoomBy(2)}
             >
-              <ChevronRight size={14} />
+              <Plus size={14} />
             </IconButton>
+            <IconButton
+              size="2xs"
+              label="Fit image"
+              onClick={() => viewer.current?.viewport.goHome()}
+            >
+              <Maximize size={14} />
+            </IconButton>
+            {editableSelection && (
+              <IconButton
+                size="2xs"
+                label="Edit detection window"
+                pressed={editing}
+                disabled={!loaded}
+                onClick={() => setEditing(!editing)}
+              >
+                <Crop size={14} />
+              </IconButton>
+            )}
+            {allowPageChange && info && info.page_count > 1 && (
+              <>
+                <IconButton
+                  size="2xs"
+                  label="Previous page"
+                  disabled={page === 0}
+                  onClick={() => onPage(page - 1)}
+                >
+                  <ChevronLeft size={14} />
+                </IconButton>
+                <span>
+                  Page {page + 1} of {info.page_count}
+                </span>
+                <IconButton
+                  size="2xs"
+                  label="Next page"
+                  disabled={page + 1 === info.page_count}
+                  onClick={() => onPage(page + 1)}
+                >
+                  <ChevronRight size={14} />
+                </IconButton>
+              </>
+            )}
+            {error && (
+              <IconButton size="2xs" label="Retry image" onClick={onRetry}>
+                <RotateCw size={14} />
+              </IconButton>
+            )}
           </>
-        )}
-        {error && (
-          <IconButton size="2xs" label="Retry image" onClick={onRetry}>
-            <RotateCw size={14} />
-          </IconButton>
         )}
       </div>
     </section>

@@ -578,6 +578,16 @@ window-relative polygons, optionally with readings. The detection node places
 them in source pixels before persistence. The result references the exact
 Workspace artifact so its card can overlay the polygons on that page as it zooms.
 
+A prepare node joins boxes on one baseline into a span in source pixels. The
+join can cover several words. When the rotated envelope would extend past the
+members' pixel bounds, the span uses their convex hull. Recognition reads the
+span once, stitching native TIFF reads for larger crops. A filter node keeps
+name-like readings. The places table gives each candidate's name, confidence,
+page, and centroid. It strips explicit Cyrillic settlement prefixes and skips
+readings with explicit water-feature prefixes. The collection node combines
+readings from multiple TIFF sheets into one places table. Each row includes
+the source TIFF artifact ID alongside its page and pixel coordinates.
+
 ### OCR node
 
 The app-owned builtin that takes a `RasterImage | PdfFile` document and an

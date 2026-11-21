@@ -200,7 +200,12 @@ def test_table_plugin_registers_chunked_persistence() -> None:
     assert [artifact.spec.key for artifact in registry.artifacts] == [TABLE_DATA.key]
     assert registry.artifacts[0].value_type is Table
     assert sample_table().rows[0]["column_2"] == "19.99"
-    assert registry.nodes == ()
+    assert {node.key for node in registry.nodes} == {
+        ("table.concat", 1),
+        ("table.extract_from_markdown", 1),
+        ("table.match_places", 1),
+        ("table.transliterate_cyrillic", 1),
+    }
 
 
 @pytest.mark.asyncio

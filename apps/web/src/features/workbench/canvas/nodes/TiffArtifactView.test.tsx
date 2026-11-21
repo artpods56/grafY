@@ -4,8 +4,19 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { GeoRenderDescriptor } from "@/lib/api";
 import { TiffTextArtifact } from "./artifact-renderers/tiff-text-renderer";
 import { createTiffOverlay, TiffArtifactView } from "./TiffArtifactView";
+
+vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
+  useWorkspaceContext: () => ({ workspace: { id: "test-space" } }),
+}));
+
+vi.mock("./geo-map/GeoMapPreview", () => ({
+  GeoMapPreview: ({ descriptor }: { descriptor: GeoRenderDescriptor }) => (
+    <div aria-label="Interactive map">{descriptor.artifact_id}</div>
+  ),
+}));
 
 vi.mock("@/components/ui/button", () => ({
   IconButton: ({
@@ -31,6 +42,7 @@ const open = vi.hoisted(() => ({
   }),
   fitBounds: vi.fn(),
   viewerStart: vi.fn(),
+  viewerDestroy: vi.fn(() => open.handlers.clear()),
   options: [] as Record<string, unknown>[],
   viewers: [] as {
     viewport: {
@@ -138,7 +150,7 @@ vi.mock("openseadragon", () => ({
         },
         addOverlay: open.overlay,
         removeOverlay: (element: Element) => element.remove(),
-        destroy: () => open.handlers.clear(),
+        destroy: open.viewerDestroy,
       };
       open.viewers.push(viewer);
       return viewer;
@@ -192,22 +204,32 @@ function sizeTo(element: HTMLElement, width: number, height: number): void {
   });
 }
 
-async function openedTiffView(name = "Scan") {
+async function openedTiffView(georeferenced?: boolean) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () =>
-      Response.json({
-        width: 800,
-        height: 600,
-        page_count: 1,
-        tile_size: 256,
-        min_level: 8,
-        max_level: 10,
-        tile_format: "png",
-      }),
-    ),
-  );
+  const geoRenderUrl =
+    "/api/v1/workspaces/test-space/artifacts/resized-tiff/geo/render";
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === geoRenderUrl) {
+      return Response.json({
+        artifact_id: "resized-tiff",
+        kind: "raster_scan",
+        basemap: "none",
+        initial_bounds: null,
+        layers: [],
+      } satisfies GeoRenderDescriptor);
+    }
+    return Response.json({
+      width: 800,
+      height: 600,
+      page_count: 1,
+      tile_size: 256,
+      min_level: 8,
+      max_level: 10,
+      tile_format: "png",
+      georeferenced,
+    });
+  });
+  vi.stubGlobal("fetch", fetchMock);
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
   document.body.append(host);
   const sizes: [number, number][] = [];
@@ -217,7 +239,7 @@ async function openedTiffView(name = "Scan") {
       <TiffArtifactView
         workspaceId="test-space"
         artifactId="resized-tiff"
-        name={name}
+        name="Scan"
         onSize={(width, height) => sizes.push([width, height])}
       />,
     ),
@@ -233,8 +255,68 @@ async function openedTiffView(name = "Scan") {
   const surface = host.querySelector<HTMLElement>("[data-tiff-viewport]");
   if (!surface) throw new Error("Tile surface missing");
   sizeTo(surface, 240, 180);
-  return { root, surface, sizes };
+  return { root, surface, sizes, fetchMock, geoRenderUrl };
 }
+
+describe("TIFF map mode", () => {
+  it.each([false, undefined])(
+    "only offers image controls when georeferenced is %s",
+    async (georeferenced) => {
+      const { root, fetchMock } = await openedTiffView(georeferenced);
+      try {
+        expect(host.querySelector('[aria-label="Show map"]')).toBeNull();
+        expect(host.querySelector('[aria-label="Zoom in"]')).not.toBeNull();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      } finally {
+        await act(async () => root.unmount());
+      }
+    },
+  );
+
+  it("loads the map immediately and reopens the image when switched back", async () => {
+    const { root, fetchMock, geoRenderUrl } = await openedTiffView(true);
+    const map = () => host.querySelector('[aria-label="Interactive map"]');
+    const toggle = (label: string) => {
+      const button = host.querySelector<HTMLButtonElement>(
+        `button[aria-label="${label}"]`,
+      );
+      if (!button) throw new Error(`Missing ${label} button`);
+      return button;
+    };
+
+    try {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const mapButton = toggle("Show map");
+      expect(mapButton.classList.contains("nodrag")).toBe(true);
+      expect(mapButton.classList.contains("nopan")).toBe(true);
+      await act(async () => mapButton.click());
+
+      expect(open.viewerDestroy).toHaveBeenCalledTimes(1);
+      expect(open.observers[0]?.disconnected).toBe(true);
+      expect(host.querySelector("[data-tiff-viewport]")).toBeNull();
+      expect(host.querySelector('[aria-label="Zoom in"]')).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[1]?.[0]).toBe(geoRenderUrl);
+      await vi.waitFor(() => expect(map()?.textContent).toBe("resized-tiff"));
+      expect(map()?.closest(".nodrag.nowheel.nopan")).not.toBeNull();
+      expect(toggle("Show image")).toBe(mapButton);
+
+      await act(async () => toggle("Show image").click());
+      expect(map()).toBeNull();
+      expect(host.querySelector("[data-tiff-viewport]")).not.toBeNull();
+      expect(toggle("Show map")).toBe(mapButton);
+      await vi.waitFor(() => expect(open.viewerStart).toHaveBeenCalledTimes(2));
+      await act(async () => {
+        open.handlers.get("open")?.();
+        open.handlers.get("tile-loaded")?.();
+      });
+      expect(host.textContent).not.toContain("Loading image");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});
 
 describe("resizing the card", () => {
   it("grows the view rather than the page, and holds it under the top-left", async () => {

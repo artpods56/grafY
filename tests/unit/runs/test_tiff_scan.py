@@ -16,9 +16,7 @@ from grafy_workbench.ocr.tiff_scan import Window, _CRAFT_DEPLOYMENT, detect_area
 class PageReads:
     def __init__(self, width: int, height: int) -> None:
         self.windows: list[Window] = []
-        self.page = TiffPage(
-            width, height, self.read, source_sha256="0" * 64, page=0
-        )
+        self.page = TiffPage(width, height, self.read, source_sha256="0" * 64, page=0)
 
     async def read(self, *, col: int, row: int, width: int, height: int) -> bytes:
         self.windows.append(Window(col, row, width, height))
@@ -190,9 +188,7 @@ async def _cached_scan(
     workspace_id: UUID,
 ) -> NodeExecutionContext:
     context = NodeExecutionContext(workspace_id=workspace_id, node_id="detect")
-    await detect_area(
-        context, source.page, detector, area, single=False, cache=cache
-    )
+    await detect_area(context, source.page, detector, area, single=False, cache=cache)
     return context
 
 
@@ -247,3 +243,49 @@ async def test_a_reupload_with_different_bytes_scans_again():
 
     assert calls > 0
     assert detector.calls == calls * 2
+
+
+class TunedDetector(CountingDetector):
+    def __init__(self, options: dict[str, float]) -> None:
+        super().__init__()
+        self.request_options = options
+
+
+async def test_detector_request_options_are_part_of_the_provider_cache_key():
+    source = _page(1800, 900, "1" * 64)
+    cache = ProviderCache(InMemoryCacheStore())
+    workspace_id = uuid4()
+    area = Window(300, 300, 1200, 100)
+
+    plain = CountingDetector()
+    await _cached_scan(source, plain, area, cache, workspace_id)
+
+    tuned = TunedDetector({"text_threshold": 0.85})
+    context = await _cached_scan(source, tuned, area, cache, workspace_id)
+    assert tuned.calls == plain.calls
+    assert context.output_metadata["tiff_cache_hits"] == 0
+
+    retuned = TunedDetector({"text_threshold": 0.85})
+    context = await _cached_scan(source, retuned, area, cache, workspace_id)
+    assert retuned.calls == 0
+    assert context.output_metadata["tiff_cache_hits"] == tuned.calls
+
+
+async def test_whole_sheet_scan_accepts_the_largest_mohilew_sheet() -> None:
+    source = PageReads(21208, 17752)
+    detector = Labels()
+    detector.labels = []
+
+    assert (
+        await detect_area(
+            NodeExecutionContext(workspace_id=uuid4()),
+            source.page,
+            detector,
+            Window(0, 0, 21208, 17752),
+            single=False,
+        )
+        == []
+    )
+    assert len(source.windows) == 1080
+    assert source.windows[-1].right == 21208
+    assert source.windows[-1].bottom == 17752

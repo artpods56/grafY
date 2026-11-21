@@ -376,6 +376,13 @@ describe("artifact payload loading policy", () => {
     expect(container.querySelector("pre")?.textContent).toBe(
       '{\n  "value": 5\n}',
     );
+    // The row sits on a draggable header, not a draggable body container.
+    const section = container.querySelector("section");
+    expect(section?.draggable).toBe(false);
+    expect((section?.firstElementChild as HTMLElement | null)?.draggable).toBe(
+      true,
+    );
+
     await act(async () => root.unmount());
   });
 });
@@ -432,6 +439,13 @@ describe("the artifact view mode", () => {
     expect(onModeChoiceChange).toHaveBeenCalledWith("pretty");
     expect(pretty.getAttribute("aria-checked")).toBe("true");
     expect(radios[0]?.getAttribute("aria-checked")).toBe("false");
+
+    // The row sits on a draggable header, not a draggable body container.
+    const section = container.querySelector("section");
+    expect(section?.draggable).toBe(false);
+    expect((section?.firstElementChild as HTMLElement | null)?.draggable).toBe(
+      true,
+    );
 
     await act(async () => root.unmount());
   });

@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 import re
-from typing import Annotated, Protocol
+from typing import Annotated, Protocol, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,6 +28,25 @@ class TextDetector(Protocol):
     async def detect(
         self, png: bytes, *, width: int, height: int
     ) -> list[TextRegion]: ...
+
+
+def detector_request_options(detector: TextDetector) -> dict[str, float]:
+    """Tuning parameters a detector sends with every request, e.g. CRAFT thresholds.
+
+    Detectors that accept them expose a ``request_options`` mapping; the scan
+    mirrors it into the provider cache key so two configurations never share
+    cached detections.
+    """
+    options = cast(
+        "dict[str, object] | None", getattr(detector, "request_options", None)
+    )
+    if options is None:
+        return {}
+    cleaned: dict[str, float] = {}
+    for key, value in options.items():
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            cleaned[key] = float(value)
+    return cleaned
 
 
 class TextReading(BaseModel):

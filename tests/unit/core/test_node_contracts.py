@@ -94,6 +94,25 @@ class MultiTypeInput(NodeInput):
     source: ExampleImage | ExampleText
 
 
+class MultiTypeInstancePlugInput(NodeInput):
+    items: Annotated[
+        list[
+            Ref[ExampleText]
+            | Ref[ExampleImage]
+            | RefSequence[ExampleText]
+            | RefSequence[ExampleImage]
+        ],
+        Plugs(variadic=True, instance=True),
+    ]
+
+
+class UnpairedInstancePlugInput(NodeInput):
+    items: Annotated[
+        list[Ref[ExampleImage] | RefSequence[ExampleText]],
+        Plugs(variadic=True, instance=True),
+    ]
+
+
 class NonVariadicInstancePlugInput(NodeInput):
     items: Annotated[
         list[Ref[ExampleImage] | RefSequence[ExampleImage]],
@@ -275,9 +294,23 @@ def test_input_contract_derives_mixed_instance_plug_shapes() -> None:
     assert items.preserves_ref_container is True
 
 
+def test_input_contract_derives_multi_type_instance_plugs_once_per_type() -> None:
+    items = derive_input_contract(MultiTypeInstancePlugInput).ports["items"]
+
+    assert items.shape is PortShape.ONE
+    assert items.accepted_shapes == (PortShape.ONE, PortShape.MANY)
+    assert items.accepts == TEXT_VALUE.key
+    assert items.also_accepts == (RASTER_IMAGE.key,)
+    assert items.instance_plugs is True
+
+
 @pytest.mark.parametrize(
     ("model", "message"),
     [
+        (
+            UnpairedInstancePlugInput,
+            r"UnpairedInstancePlugInput.items must pair each Ref\[T\] with RefSequence",
+        ),
         (
             NonVariadicInstancePlugInput,
             "NonVariadicInstancePlugInput.items.*Plugs instance requires variadic plugs",

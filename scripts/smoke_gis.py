@@ -21,10 +21,9 @@ from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.materialization import MaterializationProvenance
 from grafy_core.runtime.persistence import ArtifactWriteContext
-from grafy_core.spatial_contracts import RasterProjectionMetadata
 from grafy_plugin_gis.artifacts import GEO_RASTER_SCAN
 from grafy_plugin_gis.gdal import GdalCli
-from grafy_plugin_gis.models import GeoRasterScan
+from grafy_plugin_gis.models import GeoRasterScan, RasterProjectionMetadata
 from grafy_plugin_gis.persistence import raster_scan_artifact
 from grafy_storage import LocalFileObjectStore
 
@@ -32,9 +31,7 @@ from grafy_storage import LocalFileObjectStore
 async def main() -> None:
     gdal = GdalCli()
     capabilities = await run_in_thread(gdal.capabilities)
-    if not (
-        capabilities.pmtiles_write and capabilities.cog_write and capabilities.png_write
-    ):
+    if not capabilities.cog_write:
         raise RuntimeError(f"Missing writable GIS drivers: {capabilities}")
     with TemporaryDirectory(prefix="grafy-native-smoke-") as directory:
         root = Path(directory)
@@ -103,11 +100,11 @@ async def main() -> None:
             artifact.metadata["raster_projection"]
         )
         assert projection.bounds == (13.0, 52.0, 14.0, 53.0)
-        assert list((root / "objects" / "smoke" / projection.prefix).rglob("*.png"))
+        assert projection.prefix is None
         resolved = await raster.resolve(await values.open(ref, workspace_id))
         assert resolved.filename == "source.tif" and resolved.content
         print(capabilities.model_dump_json())
-        print("GIS raster persisted as COG, XYZ tiles stored, artifact resolved")
+        print("GIS raster persisted as COG and resolved")
 
 
 if __name__ == "__main__":

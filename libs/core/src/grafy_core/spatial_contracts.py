@@ -17,7 +17,16 @@ from grafy_core.spatial_maps import GeoMapLayer as GeoMapLayer
 from grafy_core.spatial_maps import (
     GeoRasterArtifactSource as GeoRasterArtifactSource,
 )
+from grafy_core.spatial_maps import (
+    GeoRasterMosaicSource as GeoRasterMosaicSource,
+)
 from grafy_core.spatial_maps import GeoWmsSource as GeoWmsSource
+from grafy_core.spatial_maps import (
+    MAX_RASTER_MOSAIC_SOURCES as MAX_RASTER_MOSAIC_SOURCES,
+)
+from grafy_core.spatial_maps import (
+    RASTER_SOURCE_ARTIFACT_TYPES as RASTER_SOURCE_ARTIFACT_TYPES,
+)
 from grafy_core.spatial_maps import WmsImageFormat as WmsImageFormat
 from grafy_core.spatial_maps import WmsVersion as WmsVersion
 from grafy_core.spatial_metadata import (

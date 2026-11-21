@@ -3,6 +3,7 @@
 import { artifactInlineContentUrl, type ArtifactRef } from "@/lib/api";
 
 import {
+  isGeoMapArtifact,
   isImageArtifact,
   isPdfArtifact,
   isTableFileArtifact,
@@ -72,7 +73,8 @@ export function readsAsCardText(
     htmlPage?: boolean;
   } = {},
 ): boolean {
-  if (htmlPage || isImageArtifact(ref, contentType)) return false;
+  if (htmlPage || isGeoMapArtifact(ref) || isImageArtifact(ref, contentType))
+    return false;
   if (isPdfArtifact(ref, { contentType, fileName })) return false;
   if (isTableFileArtifact(ref, { contentType, fileName })) return false;
   return true;
