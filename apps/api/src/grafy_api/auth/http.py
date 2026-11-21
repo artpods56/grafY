@@ -71,11 +71,19 @@ def set_transaction_cookie(
     )
 
 
-def check_cookie_request(request: Request, *, public_origin: str) -> None:
+def require_browser_origin(
+    origin: str | None, trusted_browser_origins: frozenset[str]
+) -> None:
+    if origin is None or origin not in trusted_browser_origins:
+        raise HTTPException(status_code=403, detail="Origin validation failed")
+
+
+def check_cookie_request(
+    request: Request, *, trusted_browser_origins: frozenset[str]
+) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
-    if request.headers.get("origin") != public_origin:
-        raise HTTPException(status_code=403, detail="Origin validation failed")
+    require_browser_origin(request.headers.get("origin"), trusted_browser_origins)
     csrf_cookie = request.cookies.get(CSRF_COOKIE)
     csrf_header = request.headers.get("x-csrf-token")
     if csrf_cookie is None or csrf_header is None:

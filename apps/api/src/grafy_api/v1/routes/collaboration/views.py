@@ -51,6 +51,7 @@ from grafy_core.domain.identity import (
 )
 
 from grafy_api.app_state import get_identity
+from grafy_api.auth.http import require_browser_origin
 from grafy_api.project_contracts import ProjectHeadResponse
 from grafy_api.realtime.hub import (
     CLOSE_ACCESS_REVOKED,
@@ -126,13 +127,8 @@ async def websocket_browser_actor(
 
 
 def _require_websocket_origin(websocket: WebSocket) -> None:
-    origin = websocket.headers.get("origin")
-    public_origin = get_identity(websocket.app).public_origin
-    if origin != public_origin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Origin validation failed",
-        )
+    auth = get_identity(websocket.app).auth_service
+    require_browser_origin(websocket.headers.get("origin"), auth.trusted_browser_origins)
 
 
 @router.websocket("/workspaces/{workspace_id}/projects/{project_id}/room")

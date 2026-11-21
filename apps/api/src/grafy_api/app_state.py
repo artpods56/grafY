@@ -33,9 +33,6 @@ class AppIdentity:
     identity_uow_factory: Callable[[], IdentityUnitOfWorkPort]
     identity_service: IdentityService
     auth_service: AuthService
-    # The one AppConfig value a request handler needs: the Origin header of the
-    # browser this deployment serves. Routes read this instead of app.state.settings.
-    public_origin: str
 
 
 @dataclass(slots=True)

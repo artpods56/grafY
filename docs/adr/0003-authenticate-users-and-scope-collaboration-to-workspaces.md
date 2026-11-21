@@ -134,10 +134,10 @@ state, and revocation state. A production cookie is host-only, `Secure`,
 session id; logout and administrator revocation invalidate it server-side.
 
 Unsafe cookie-authenticated HTTP requests require a session-bound CSRF token
-and an exact allowed `Origin`. The web application, API, SSE endpoints, and
-WebSocket endpoint share one HTTPS origin. OIDC callback URLs and production
-cookies therefore require a valid TLS deployment even when users reach the
-service through an SSH tunnel.
+and an `Origin` that exactly matches `GRAFY_PUBLIC_ORIGIN` or an entry in
+`GRAFY_CORS_ORIGINS`. In the production deployment, the web application, API,
+SSE endpoints, and WebSocket endpoint share one HTTPS origin. OIDC callback
+URLs and production cookies require valid TLS even over an SSH tunnel.
 
 The same-origin gateway exposes public `/api/v1/...` paths by stripping `/api`
 and forwarding to FastAPI `/v1/...`. The registered browser callback is exactly
@@ -175,9 +175,10 @@ never retain command values.
 
 The browser opens a workspace- and graph-scoped WebSocket using its same-origin
 session cookie. Before accepting the connection, the API validates the cookie,
-user status, session expiry, exact WebSocket `Origin`, current workspace
-membership, and graph visibility. Authentication material is never placed in a
-WebSocket URL or client message.
+user status, session expiry, current workspace membership, and graph visibility.
+The WebSocket `Origin` must match the same allowlist as unsafe cookie-authenticated
+HTTP requests. Authentication material is never placed in a WebSocket URL or
+client message.
 
 One collaboration connection has a random connection id distinct from both the
 user id and browser-session id. The server derives bounded participant name and

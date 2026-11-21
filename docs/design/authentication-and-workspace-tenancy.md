@@ -168,11 +168,14 @@ revocation invalidate the database row.
 
 Unsafe cookie-authenticated HTTP requests require both:
 
-- an exact allowed `Origin`; and
+- an `Origin` that exactly matches `GRAFY_PUBLIC_ORIGIN` or an entry in
+  `GRAFY_CORS_ORIGINS`
 - a session-bound CSRF token in `X-CSRF-Token`.
 
-CORS is not CSRF protection. Authentication endpoints and validation errors do
-not echo codes, verifiers, session values, or submitted secrets.
+The API enforces these checks independently of CORS middleware. Project room
+WebSockets use the same origin allowlist. Authentication endpoints and
+validation errors do not echo codes, verifiers, session values, or submitted
+secrets.
 
 ### Public endpoints
 
@@ -275,8 +278,8 @@ not a substitute for the workspace-visible graph history.
 
 ## API and gateway shape
 
-Internal FastAPI routes use `/v1`. The browser sees one HTTPS origin through a
-loopback-bound gateway:
+Internal FastAPI routes use `/v1`. In production the browser sees one HTTPS
+origin through a loopback-bound gateway:
 
 | Public path | Destination |
 | --- | --- |

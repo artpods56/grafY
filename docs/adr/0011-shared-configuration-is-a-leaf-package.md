@@ -73,7 +73,7 @@ Callers name the section they use, or they do not compile.
 
 **`app.state.settings` retained with narrowing at the call sites.** Rejected: keeping the
 whole object reachable from routes is what let new code reach for it. Its three readers
-now take a narrow carrier (`AppIdentity.public_origin`, `GraphRoomHub.heartbeat_seconds`,
+now take a narrow carrier (`AuthService.trusted_browser_origins`, `GraphRoomHub.heartbeat_seconds`,
 `AuthService.pat_max_lifetime_seconds`).
 
 ## Consequences
