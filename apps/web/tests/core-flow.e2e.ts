@@ -50,7 +50,9 @@ test("sign in, create a Graph, and run a Text input", async ({
   );
   await expect(rail.getByRole("button", { name: /^Save/ })).toHaveText("Saved");
   await node.click();
-  await screen.getByRole("button", { name: "Run", exact: true }).click();
+  await node
+    .getByRole("button", { name: "Run Text input", exact: true })
+    .click();
   await expect(
     node.getByRole("status", { name: "Text input done", exact: true }),
   ).toBeVisible();
