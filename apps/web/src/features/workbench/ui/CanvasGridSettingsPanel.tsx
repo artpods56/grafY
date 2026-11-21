@@ -5,11 +5,13 @@ import * as stylex from "@stylexjs/stylex";
 import { ChevronDown, Grid3x3, RotateCcw, X } from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { phoneTouch } from "@/components/ui/touch-target";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { useCanvasGridSettings } from "../canvas/canvas-grid-settings";
+import type { WorkbenchCanvasEngineKind } from "../canvas/canvas-surface-port";
 import {
   GRID_CELL_SIZE_DEFAULT,
   GRID_CELL_SIZE_MAX,
@@ -200,6 +202,8 @@ export function CanvasGridSettingsPanel({
     settings,
     patchSettings,
     resetSettings,
+    canvasEngine,
+    setCanvasEngine,
     bypassSnap,
     panelOpen,
     setPanelOpen,
@@ -238,6 +242,25 @@ export function CanvasGridSettingsPanel({
           <X size={14} />
         </IconButton>
       </header>
+
+      <div {...stylex.props(s.section)}>
+        <span {...stylex.props(s.hint)}>Canvas engine</span>
+        <SegmentedControl<WorkbenchCanvasEngineKind>
+          aria-label="Canvas engine"
+          size="md"
+          value={canvasEngine}
+          onValueChange={setCanvasEngine}
+          options={[
+            { value: "react-flow", label: "React Flow" },
+            { value: "cell-canvas", label: "Cell canvas" },
+          ]}
+        />
+        {canvasEngine === "cell-canvas" ? (
+          <p {...stylex.props(s.hint)}>
+            25px cell-lattice canvas. Switch back to React Flow anytime.
+          </p>
+        ) : null}
+      </div>
 
       <div {...stylex.props(s.section)}>
         <Toggle

@@ -74,6 +74,32 @@ describe("canvasMenuTarget", () => {
     expect(canvasMenuTarget(el(".outside"))).toBeNull();
   });
 
+  it("identifies cards, pills, docked joins, pane, and chrome on the cell canvas", () => {
+    document.body.innerHTML = `
+      <div data-cell-canvas="true">
+        <div data-cell-card="true" data-card-id="card-1"><span class="card-title">OCR</span></div>
+        <div data-edge-selector-pill="edge-1"><span class="pill-text">text</span></div>
+        <button data-docked-join="edge-2"><span class="join-line"></span></button>
+        <div data-cell-canvas-chrome="true"><button class="toolbar-btn">Run</button></div>
+        <div class="cell-empty"></div>
+      </div>`;
+
+    expect(canvasMenuTarget(el(".card-title"))).toEqual({
+      kind: "node",
+      nodeId: "card-1",
+    });
+    expect(canvasMenuTarget(el(".pill-text"))).toEqual({
+      kind: "edge",
+      edgeId: "edge-1",
+    });
+    expect(canvasMenuTarget(el(".join-line"))).toEqual({
+      kind: "edge",
+      edgeId: "edge-2",
+    });
+    expect(canvasMenuTarget(el(".cell-empty"))).toEqual({ kind: "pane" });
+    expect(canvasMenuTarget(el(".toolbar-btn"))).toBeNull();
+  });
+
   it("leaves text fields to the browser's own menu", () => {
     document.body.innerHTML = canvasMarkup();
 

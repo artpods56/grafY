@@ -8,6 +8,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const settingsMocks = vi.hoisted(() => ({
   patchSettings: vi.fn(),
+  setCanvasEngine: vi.fn(),
 }));
 
 vi.mock("../canvas/canvas-grid-settings", () => ({
@@ -25,6 +26,8 @@ vi.mock("../canvas/canvas-grid-settings", () => ({
     },
     patchSettings: settingsMocks.patchSettings,
     resetSettings: vi.fn(),
+    canvasEngine: "react-flow",
+    setCanvasEngine: settingsMocks.setCanvasEngine,
     bypassSnap: false,
     panelOpen: true,
     setPanelOpen: vi.fn(),
@@ -57,6 +60,7 @@ afterEach(() => {
     for (const root of roots.splice(0)) root.unmount();
   });
   settingsMocks.patchSettings.mockReset();
+  settingsMocks.setCanvasEngine.mockReset();
 });
 
 describe("CanvasGridSettingsPanel", () => {
@@ -131,5 +135,31 @@ describe("CanvasGridSettingsPanel", () => {
     });
 
     expect(settingsMocks.patchSettings).toHaveBeenCalledWith({ cellSize: 72 });
+  });
+
+  it("switches the canvas engine when selected in Canvas lab", () => {
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    roots.push(root);
+
+    React.act(() => {
+      root.render(
+        <CanvasGridSettingsPanel
+          selectedCount={0}
+          onSnapSelection={() => undefined}
+        />,
+      );
+    });
+
+    const cellButton = [...container.querySelectorAll('[role="radio"]')].find(
+      (candidate) => candidate.textContent?.trim() === "Cell canvas",
+    );
+    expect(cellButton).toBeDefined();
+
+    React.act(() => {
+      cellButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(settingsMocks.setCanvasEngine).toHaveBeenCalledWith("cell-canvas");
   });
 });

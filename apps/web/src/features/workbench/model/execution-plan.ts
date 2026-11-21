@@ -64,11 +64,16 @@ function originSatisfiesSlot(
 export function selectedNodeAndAncestorIds(
   nodes: readonly WorkflowNode[],
   edges: readonly WorkflowEdge[],
+  explicitSelectedNodeIds?: ReadonlySet<string>,
 ): Set<string> {
   const knownNodeIds = new Set(nodes.map((node) => node.id));
-  const executionNodeIds = new Set(
-    nodes.filter((node) => node.selected).map((node) => node.id),
-  );
+  const executionNodeIds = explicitSelectedNodeIds
+    ? new Set(
+        nodes
+          .filter((node) => explicitSelectedNodeIds.has(node.id))
+          .map((node) => node.id),
+      )
+    : new Set(nodes.filter((node) => node.selected).map((node) => node.id));
   const pendingNodeIds = [...executionNodeIds];
 
   while (pendingNodeIds.length) {
@@ -96,6 +101,7 @@ export function executionSubgraphFor(
   scope: RunScope,
   nodes: readonly WorkflowNode[],
   edges: readonly WorkflowEdge[],
+  explicitSelectedNodeIds?: ReadonlySet<string>,
 ): ExecutionSubgraph {
   const activeEdges = edges.filter((edge) => edge.data?.enabled !== false);
   let nodeIds: Set<string>;
@@ -103,11 +109,19 @@ export function executionSubgraphFor(
   if (scope === "all") {
     nodeIds = new Set(nodes.map((node) => node.id));
   } else if (scope === "selected-with-dependencies") {
-    nodeIds = selectedNodeAndAncestorIds(nodes, activeEdges);
-  } else {
-    nodeIds = new Set(
-      nodes.filter((node) => node.selected).map((node) => node.id),
+    nodeIds = selectedNodeAndAncestorIds(
+      nodes,
+      activeEdges,
+      explicitSelectedNodeIds,
     );
+  } else {
+    nodeIds = explicitSelectedNodeIds
+      ? new Set(
+          nodes
+            .filter((node) => explicitSelectedNodeIds.has(node.id))
+            .map((node) => node.id),
+        )
+      : new Set(nodes.filter((node) => node.selected).map((node) => node.id));
   }
 
   const executionNodes = nodes.filter((node) => nodeIds.has(node.id));
