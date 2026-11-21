@@ -2,6 +2,7 @@
 
 import { act } from "react";
 import * as React from "react";
+import { annotationsFromPresentation } from "../canvas/annotations";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +15,7 @@ import type {
 } from "../canvas/artifact-interactions";
 import {
   useArtifactViewerCommands,
+  useArtifactViewerState,
   type ArtifactViewerRoomSync,
 } from "./workbench-artifact-viewers";
 
@@ -48,7 +50,8 @@ async function mountHarness(options: {
   let harness: Harness | null = null;
 
   function HarnessComponent() {
-    const [artifactViewers, setArtifactViewers] = React.useState(EMPTY_STATE);
+    const [artifactViewers, setArtifactViewers, artifactViewersRef] =
+      useArtifactViewerState(EMPTY_STATE);
     const [, setArtifactViewerSelections] = React.useState({});
     const [fields, setArtifactViewerFields] = React.useState<
       Record<string, ArtifactInteractionField[]>
@@ -71,6 +74,7 @@ async function mountHarness(options: {
 
     const commands = useArtifactViewerCommands({
       artifactViewers,
+      artifactViewersRef,
       artifactViewerActivityRevisionRef,
       applyAuthoringCommands,
       authoredDocumentRef,
@@ -96,7 +100,13 @@ async function mountHarness(options: {
 
   const root = createRoot(document.createElement("div"));
   await act(async () => {
-    root.render(React.createElement(HarnessComponent));
+    root.render(
+      React.createElement(
+        React.StrictMode,
+        null,
+        React.createElement(HarnessComponent),
+      ),
+    );
   });
   return {
     get harness(): Harness {
@@ -130,16 +140,33 @@ describe("useArtifactViewerCommands", () => {
     view.unmount();
   });
 
-  it("publishes the committed state to the room once per edit", async () => {
+  it("submits one presentation edit under Strict Mode", async () => {
     const submitted: ArtifactViewerCanvasState[] = [];
     const view = await mountHarness({ submits: submitted });
 
     await act(async () => {
-      view.harness.commands.updateAnnotationColor("note-1", "amber");
+      const annotations = annotationsFromPresentation({
+        annotations: [
+          {
+            id: "note-1",
+            kind: "text",
+            position: { x: 0, y: 0 },
+            text: "Note",
+            color: "#ffaa33",
+            layout: { width: 240, height: 160 },
+          },
+        ],
+      });
+      view.harness.commands.commitArtifactViewers((current) => ({
+        ...current,
+        annotations,
+      }));
       await Promise.resolve();
     });
 
-    expect(submitted).toEqual([EMPTY_STATE]);
+    expect(submitted).toHaveLength(1);
+    expect(view.harness.annotations).toBe(1);
+    expect(submitted[0]?.annotations[0]?.id).toBe("note-1");
     view.unmount();
   });
 

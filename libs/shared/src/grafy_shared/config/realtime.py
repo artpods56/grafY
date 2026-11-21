@@ -1,4 +1,4 @@
-"""Graph-room presence and heartbeat timing."""
+"""Graph-room presence, heartbeat and checkpoint settings."""
 
 from typing import ClassVar
 
@@ -9,7 +9,7 @@ from grafy_shared.config.base import SECTION_SETTINGS
 
 
 class RealtimeConfig(BaseSettings):
-    """Presence expiry and the WebSocket room heartbeat cadence."""
+    """Realtime room settings for the owning API process."""
 
     model_config: ClassVar[SettingsConfigDict] = SECTION_SETTINGS
 
@@ -25,3 +25,7 @@ class RealtimeConfig(BaseSettings):
         ge=1.0,
         le=60.0,
     )
+    graph_room_auto_checkpoint_idle_seconds: float = Field(
+        default=30.0, ge=0.0, le=3600.0
+    )
+    graph_room_auto_checkpoint_max_commands: int = Field(default=50, ge=0, le=10_000)

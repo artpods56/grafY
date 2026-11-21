@@ -38,6 +38,7 @@ import { useArtifactCardCommands } from "./workbench-artifact-cards";
 import { useCanvasSelection } from "./workbench-canvas-selection";
 import {
   useArtifactViewerCommands,
+  useArtifactViewerState,
   type ArtifactViewerRoomSync,
 } from "./workbench-artifact-viewers";
 import {
@@ -238,7 +239,8 @@ async function mount() {
     React.useLayoutEffect(() => {
       authoredDocumentRef.current = authoring.document;
     }, [authoring.document]);
-    const [viewersState, setArtifactViewers] = React.useState(viewers);
+    const [viewersState, setArtifactViewers, artifactViewersRef] =
+      useArtifactViewerState(viewers);
 
     const roomNodeIds = React.useRef(
       new Set(baseDocument.nodes.map((node) => node.id)),
@@ -306,6 +308,7 @@ async function mount() {
 
     const { commitArtifactViewers } = useArtifactViewerCommands({
       artifactViewers: viewersState,
+      artifactViewersRef,
       artifactViewerActivityRevisionRef,
       applyAuthoringCommands,
       authoredDocumentRef,

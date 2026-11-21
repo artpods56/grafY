@@ -56,6 +56,7 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
 )
 from grafy_core.domain.projects import ProjectCheckpoint
+from grafy_core.domain.security_audit import SecurityAuditActorKind
 from grafy_core.kernel.project import ProjectDocument
 
 HMAC_KEY = b"test-project-command-hmac-key"
@@ -863,6 +864,37 @@ async def test_checkpoint_appends_the_next_immutable_revision(harness: Harness) 
     )
 
 
+async def test_automatic_checkpoint_snapshots_the_live_head_with_system_audit(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    address = {"workspace_id": workspace.id, "project_id": project.id}
+
+    assert await harness.service.checkpoint_head_if_needed(**address) is None
+    submission = await harness.submit(
+        owner, workspace, project.id, [add_node("node-1")]
+    )
+    outcome = await harness.service.checkpoint_head_if_needed(**address)
+
+    assert outcome is not None
+    assert outcome.head.checkpoint_sequence == submission.head.collaboration_sequence
+    assert outcome.revision == 2
+    assert harness.checkpoint_document(project.id, 2) == submission.head.document
+    assert harness.audits[-1].actor_kind == SecurityAuditActorKind.SYSTEM
+    assert harness.audits[-1].user_id is None
+    assert harness.audits[-1].operation == "collaboration.checkpoint.automatic"
+
+    assert await harness.service.checkpoint_head_if_needed(**address) is None
+    assert harness.revisions(project.id) == [1, 2]
+    assert (
+        await harness.service.checkpoint_head_if_needed(
+            workspace_id=workspace.id, project_id=uuid4()
+        )
+        is None
+    )
+
+
 async def test_checkpoint_is_idempotent_for_durable_state(harness: Harness) -> None:
     workspace, owner = harness.workspace(name="Owner", slug="owner")
     project, _, _ = await harness.create(owner, workspace)
@@ -872,6 +904,7 @@ async def test_checkpoint_is_idempotent_for_durable_state(harness: Harness) -> N
     again = await harness.checkpoint(owner, workspace, project.id)
 
     assert again.revision == first.revision == 2
+    assert first.advanced and not again.advanced
     assert harness.revisions(project.id) == [1, 2]
     assert harness.factory.last.commit_count == 0
 

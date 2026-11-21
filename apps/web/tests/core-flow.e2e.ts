@@ -1,7 +1,7 @@
 import { test } from "@e2e-dev/web";
 import { expect } from "e2e";
 
-test("sign in, create a Graph, and run a Text input", async ({
+test("sign in, create a Graph, and run after a live edit", async ({
   app,
   browser,
   screen,
@@ -48,11 +48,20 @@ test("sign in, create a Graph, and run a Text input", async ({
   await expect(browser).toHaveURL(
     /\/workspaces\/[^/]+\/projects\/[0-9a-f-]{36}$/,
   );
-  await expect(rail.getByRole("button", { name: /^Save/ })).toHaveText("Saved");
+  await expect(
+    rail.getByRole("button", { name: "Saved", exact: true }),
+  ).toBeDisabled();
+
   await node.click();
-  await node
-    .getByRole("button", { name: "Run Text input", exact: true })
-    .click();
+  const run = node.getByRole("button", { name: "Run Text input", exact: true });
+  await expect(run).toBeEnabled();
+  const input = node.getByRole("textbox");
+  await input.fill("Hello from the live room");
+  await input.press("Tab");
+  await expect(
+    rail.getByRole("button", { name: "Saved", exact: true }),
+  ).toBeDisabled();
+  await run.click();
   await expect(
     node.getByRole("status", { name: "Text input done", exact: true }),
   ).toBeVisible();

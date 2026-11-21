@@ -35,8 +35,9 @@ the same model; neither changes who owns a result.
 ### A Project is the collaborative document; a Graph is a definition inside it
 
 - A **Project** is the Workspace-owned object, the collaboration room and the unit of
-  append-only checkpoints. It replaces Saved graph in those roles. Folders,
-  archive, starring and last-opened state attach to Projects.
+  append-only checkpoints. Accepted command batches commit directly to the live
+  head. The owning API process takes immutable snapshots for history and restore.
+  Folders, archive, starring and last-opened state attach to Projects.
 - A Project holds named **Graphs**. A Graph is a typed interface (inputs and outputs,
   declared by boundary nodes), nodes, edges and its own canvas layout. Any Graph can be
   run directly.

@@ -81,11 +81,7 @@ export interface UseProjectRoomSessionResult {
   ) => Promise<ProjectRoomSubmitResult>;
   /** Reconcile a full snapshot and return the effective room head. */
   readonly replaceHead: (head: CollaborativeHead) => CollaborativeHead;
-  /** Reconcile a checkpoint only within the epoch of its submitted command. */
-  readonly reconcileCheckpointHead: (
-    head: CollaborativeHead,
-    expectedRoomEpoch: string,
-  ) => CollaborativeHead;
+  readonly hasPendingCommands: boolean;
   readonly publishPresence: (
     update: Omit<PresenceUpdateSubmit, "presence_sequence">,
   ) => boolean;
@@ -101,6 +97,7 @@ interface UseProjectRoomSessionOptions {
   onCommandAccepted?: (
     message: ProjectCommandAcceptedMessage,
     meta: ProjectRoomAcceptedMeta,
+    head: CollaborativeHead,
   ) => void;
   onCommandRejected?: (message: ProjectCommandRejectedMessage) => void;
   onActiveRunsChange?: (runs: readonly ActiveRunSummary[]) => void;
@@ -132,6 +129,7 @@ export function useProjectRoomSession({
   const [terminalReason, setTerminalReason] =
     React.useState<ProjectRoomTerminalReason | null>(null);
   const [failure, setFailure] = React.useState<ProjectRoomFailure | null>(null);
+  const [hasPendingCommands, setHasPendingCommands] = React.useState(false);
   const [head, setHead] = React.useState<CollaborativeHead | null>(null);
   const [capabilities, setCapabilities] = React.useState<
     readonly WorkspaceCapability[]
@@ -225,6 +223,7 @@ export function useProjectRoomSession({
         if (nextStatus !== "connecting") return;
         setFailure(null);
         setHead(null);
+        setHasPendingCommands(false);
         setCapabilities([]);
         setAuthorizationVersion(null);
         setActiveRuns(EMPTY_RUNS);
@@ -248,13 +247,16 @@ export function useProjectRoomSession({
         setNodeProgress(EMPTY_PROGRESS);
         onRehydrateRef.current?.(nextHead);
       },
+      onCheckpointed: setHead,
+      onPendingCommandsChange: setHasPendingCommands,
       onHeadRefreshRequired: () => {
         onHeadRefreshRequiredRef.current?.();
       },
       onCommandAccepted: (message, meta) => {
         const nextHead = session.getHead();
-        if (nextHead) setHead(nextHead);
-        onCommandAcceptedRef.current?.(message, meta);
+        if (!nextHead) return;
+        setHead(nextHead);
+        onCommandAcceptedRef.current?.(message, meta, nextHead);
       },
       onCommandRejected: (message) => {
         const nextHead = session.getHead();
@@ -395,25 +397,6 @@ export function useProjectRoomSession({
     [projectId],
   );
 
-  const reconcileCheckpointHead = React.useCallback(
-    (checkpointHead: CollaborativeHead, expectedRoomEpoch: string) => {
-      if (!projectId) {
-        throw new Error("Project room is not connected.");
-      }
-      const session = sessionRef.current;
-      if (!session) {
-        throw new Error("Project room is not connected.");
-      }
-      const effectiveHead = session.reconcileCheckpointHead(
-        checkpointHead,
-        expectedRoomEpoch,
-      );
-      setHead(effectiveHead);
-      return effectiveHead;
-    },
-    [projectId],
-  );
-
   const publishPresence = React.useCallback(
     (update: Omit<PresenceUpdateSubmit, "presence_sequence">): boolean => {
       if (!projectId) return false;
@@ -458,7 +441,7 @@ export function useProjectRoomSession({
     nodeProgress: stateIsCurrent ? nodeProgress : EMPTY_PROGRESS,
     submitCommands,
     replaceHead,
-    reconcileCheckpointHead,
+    hasPendingCommands: stateIsCurrent && hasPendingCommands,
     publishPresence,
     retry,
   };

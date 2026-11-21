@@ -34,6 +34,7 @@ from grafy_api.agents.turns import AgentService
 from grafy_api.services.families import build_application_registry
 from grafy_api.node_secrets import NodeSecretService
 from grafy_api.realtime.agent_events import ProjectAgentEvents
+from grafy_api.realtime.checkpointing import ProjectAutoCheckpointer
 from grafy_api.realtime.hub import ProjectRoomHub
 from grafy_api.realtime.run_events import ProjectNodeProgress, ProjectRunEvents
 from grafy_api.runs.service import RunService
@@ -159,6 +160,10 @@ async def build_app_resources(
         command_hmac_key=settings.keys.resolved_command_hmac_key(),
         command_hmac_key_version=settings.keys.command_hmac_key_version,
     )
+    auto_checkpointer = ProjectAutoCheckpointer(
+        collaboration, project_room_hub, settings.realtime
+    )
+    project_room_hub.on_room_empty = auto_checkpointer.note_room_empty
     node_secrets = NodeSecretService(
         unit_of_work_factory=new_unit_of_work,
         plugin_registry=registry,
@@ -249,6 +254,7 @@ async def build_app_resources(
         agent_models=agent_models,
         agent_turns=agent_turns,
         project_room_hub=project_room_hub,
+        auto_checkpointer=auto_checkpointer,
     )
     try:
         await _recover(resources, owner_lease=owner_lease)

@@ -20,6 +20,7 @@ import {
   terminalReasonFromClose,
   type ActorPresentation,
   type ProjectCommandAcceptedMessage,
+  type ProjectCheckpointedMessage,
   type ProjectCommandRejectedMessage,
   type ProjectRoomStatus,
   type ProjectRoomFailure,
@@ -72,6 +73,7 @@ const KNOWN_SERVER_MESSAGE_TYPES = new Set([
   "run.finished",
   "instances.changed",
   "node.progress",
+  "project.checkpointed",
   "project.command.accepted",
   "project.command.receipt",
   "project.command.rejected",
@@ -83,7 +85,9 @@ export function shouldReplaceCollaborativeHead(
   incoming: CollaborativeHead,
 ): boolean {
   if (!current) return true;
-  if (current.room_epoch !== incoming.room_epoch) return true;
+  if (current.room_epoch !== incoming.room_epoch) {
+    return incoming.checkpoint_revision > current.checkpoint_revision;
+  }
   return incoming.collaboration_sequence >= current.collaboration_sequence;
 }
 
@@ -96,6 +100,8 @@ export interface ProjectRoomSessionListeners {
   onReady?: (ready: RoomReadyMessage) => void;
   onRehydrate?: (head: CollaborativeHead) => void;
   /** Session paused command drain until replaceHead supplies a full snapshot. */
+  onCheckpointed?: (head: CollaborativeHead) => void;
+  onPendingCommandsChange?: (pending: boolean) => void;
   onHeadRefreshRequired?: () => void;
   onCommandAccepted?: (
     message: ProjectCommandAcceptedMessage,
@@ -152,6 +158,7 @@ export class ProjectRoomSession {
 
   private ready: RoomReadyMessage | null = null;
   private head: CollaborativeHead | null = null;
+  private deferredCheckpoint: ProjectCheckpointedMessage | null = null;
   private capabilities: readonly WorkspaceCapability[] = [];
   private authorizationVersion: number | null = null;
   private readonly presenceStore: ProjectRoomPresenceStore;
@@ -177,6 +184,7 @@ export class ProjectRoomSession {
       onStatusChange: options.onStatusChange,
       onReady: options.onReady,
       onRehydrate: options.onRehydrate,
+      onCheckpointed: options.onCheckpointed,
       onCommandAccepted: options.onCommandAccepted,
       onPresenceChange: options.onPresenceChange,
       onActiveRunsChange: options.onActiveRunsChange,
@@ -194,6 +202,7 @@ export class ProjectRoomSession {
       headPointer: () => this.head,
       canSend: () => this.canSendCommand(),
       onHeadRefreshRequired: options.onHeadRefreshRequired,
+      onPendingCommandsChange: options.onPendingCommandsChange,
       onCommandRejected: options.onCommandRejected,
     });
   }
@@ -348,64 +357,56 @@ export class ProjectRoomSession {
   }
 
   /**
-   * Replace the cached collaborative head (checkpoint or conflict recovery).
-   * Ignores stale same-epoch snapshots so a late HTTP fetch cannot wipe a newer
-   * WebSocket-applied head (e.g. a just-accepted presentation).
+   * Replace the cached head during conflict recovery. Ignore stale snapshots
+   * so a late HTTP fetch cannot wipe a newer WebSocket-applied head.
    */
   replaceHead(head: CollaborativeHead): void {
-    if (!shouldReplaceCollaborativeHead(this.head, head)) {
-      if (!this.outbox.pendingReceiptIsCovered()) return;
-      this.writeSends(this.outbox.finishHeadRehydration());
-      return;
+    if (shouldReplaceCollaborativeHead(this.head, head)) {
+      this.installHead(head);
     }
-    this.head = head;
     this.writeSends(this.outbox.finishHeadRehydration());
   }
 
-  /**
-   * Reconcile a checkpoint response against the epoch of its submitted command.
-   * A later epoch reset is authoritative and must not be reversed by the old
-   * epoch's HTTP continuation.
-   */
-  reconcileCheckpointHead(
-    checkpointHead: CollaborativeHead,
-    expectedRoomEpoch: string,
-  ): CollaborativeHead {
-    const currentHead = this.head;
-    if (!currentHead) {
-      throw new Error(
-        `The Project room head is unavailable while reconciling checkpoint epoch ${expectedRoomEpoch}.`,
-      );
-    }
-    if (currentHead.room_epoch !== expectedRoomEpoch) {
-      return currentHead;
-    }
-    if (checkpointHead.room_epoch !== expectedRoomEpoch) {
-      throw new Error(
-        `Checkpoint response epoch ${checkpointHead.room_epoch} does not match submitted command epoch ${expectedRoomEpoch}.`,
-      );
-    }
-
-    this.replaceHead(checkpointHead);
-    let effectiveHead = this.head;
-    if (!effectiveHead) {
-      throw new Error(
-        `The Project room head is unavailable after reconciling checkpoint epoch ${expectedRoomEpoch}.`,
-      );
-    }
+  private installHead(head: CollaborativeHead): void {
+    const current = this.head;
     if (
-      effectiveHead.collaboration_sequence >
-        checkpointHead.collaboration_sequence &&
-      checkpointHead.checkpoint_sequence > effectiveHead.checkpoint_sequence
+      current?.room_epoch === head.room_epoch &&
+      current.checkpoint_sequence > head.checkpoint_sequence
     ) {
-      effectiveHead = {
-        ...effectiveHead,
-        checkpoint_sequence: checkpointHead.checkpoint_sequence,
-        checkpoint_revision: checkpointHead.checkpoint_revision,
+      head = {
+        ...head,
+        checkpoint_sequence: current.checkpoint_sequence,
+        checkpoint_revision: current.checkpoint_revision,
       };
-      this.replaceHead(effectiveHead);
     }
-    return effectiveHead;
+    if (current?.room_epoch !== head.room_epoch) this.deferredCheckpoint = null;
+    this.head = head;
+    this.applyDeferredCheckpoint();
+  }
+
+  private applyDeferredCheckpoint(): void {
+    const message = this.deferredCheckpoint;
+    const head = this.head;
+    if (
+      !message ||
+      !head ||
+      message.checkpoint_sequence > head.collaboration_sequence
+    ) {
+      return;
+    }
+    this.deferredCheckpoint = null;
+    if (
+      message.checkpoint_sequence < head.checkpoint_sequence ||
+      message.checkpoint_revision <= head.checkpoint_revision
+    ) {
+      return;
+    }
+    this.head = {
+      ...head,
+      checkpoint_sequence: message.checkpoint_sequence,
+      checkpoint_revision: message.checkpoint_revision,
+    };
+    this.listeners.onCheckpointed?.(this.head);
   }
 
   /**
@@ -597,14 +598,25 @@ export class ProjectRoomSession {
       return;
     }
     if (message.type === "room.rehydrate") {
-      const keptCurrentHead = Boolean(
-        this.head && !shouldReplaceCollaborativeHead(this.head, message.head),
-      );
-      const rehydratedHead = keptCurrentHead ? this.head! : message.head;
-      this.head = rehydratedHead;
-      this.listeners.onRehydrate?.(rehydratedHead);
-      if (keptCurrentHead) return;
-      this.writeSends(this.outbox.finishHeadRehydration());
+      if (shouldReplaceCollaborativeHead(this.head, message.head)) {
+        this.installHead(message.head);
+        this.listeners.onRehydrate?.(this.head ?? message.head);
+        this.writeSends(this.outbox.finishHeadRehydration());
+      }
+      return;
+    }
+    if (message.type === "project.checkpointed") {
+      // An explicit HTTP checkpoint can commit before the command's publication
+      // reaches this socket. Apply its metadata after the matching batch arrives.
+      if (
+        message.room_epoch === this.head?.room_epoch &&
+        message.checkpoint_revision >
+          (this.deferredCheckpoint?.checkpoint_revision ??
+            this.head.checkpoint_revision)
+      ) {
+        this.deferredCheckpoint = message;
+        this.applyDeferredCheckpoint();
+      }
       return;
     }
     if (
@@ -687,8 +699,9 @@ export class ProjectRoomSession {
     if (this.head && !shouldReplaceCollaborativeHead(this.head, message.head)) {
       ready = { ...message, head: this.head };
     }
+    this.installHead(ready.head);
+    ready = { ...ready, head: this.head ?? ready.head };
     this.ready = ready;
-    this.head = ready.head;
     this.capabilities = message.capabilities.capabilities;
     this.authorizationVersion = message.capabilities.authorization_version;
     this.presenceStore.replaceParticipants(
@@ -766,6 +779,7 @@ export class ProjectRoomSession {
       this.outbox.requestHeadRefresh();
       return;
     }
+    this.applyDeferredCheckpoint();
     this.listeners.onCommandAccepted?.(message, { local });
     this.writeSends(this.outbox.afterHeadApplied());
   }

@@ -396,6 +396,14 @@ class ProjectCommandRejectedMessage(RoomProtocolModel):
     current_sequence: int | None = Field(default=None, ge=0)
 
 
+class ProjectCheckpointedMessage(RoomProtocolModel):
+    protocol_version: Literal[1] = PROTOCOL_VERSION
+    type: Literal["project.checkpointed"] = "project.checkpointed"
+    room_epoch: UUID
+    checkpoint_sequence: int = Field(ge=0)
+    checkpoint_revision: int = Field(ge=1)
+
+
 class RoomRehydrateMessage(RoomProtocolModel):
     protocol_version: Literal[1] = PROTOCOL_VERSION
     type: Literal["room.rehydrate"] = "room.rehydrate"

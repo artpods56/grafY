@@ -759,7 +759,7 @@ describe("asking for a Run", () => {
     });
 
     expect(setRunError).toHaveBeenCalledWith(
-      "Save the graph before running nodes that use stored secrets.",
+      "Wait for the Project to synchronize before running.",
     );
     expect(api.startRun).not.toHaveBeenCalled();
     await hook.unmount();
@@ -801,7 +801,7 @@ describe("asking for a Run", () => {
     });
 
     expect(setRunError).toHaveBeenCalledWith(
-      "Save the graph before running llm.operator: its API key binding is new or changed.",
+      "Wait for the API key binding to synchronize before running llm.operator.",
     );
     await hook.unmount();
   });

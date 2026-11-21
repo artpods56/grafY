@@ -1127,7 +1127,7 @@ describe("ProjectRoomSession", () => {
     expect(session.getHead()?.document.graphs[0]).toBe(graphsBefore?.[0]);
   });
 
-  it("keeps a rehydrated epoch when an old-epoch checkpoint response arrives late", async () => {
+  it("keeps a rehydrated epoch when an old-epoch checkpoint frame arrives late", async () => {
     const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const { session, socket } = connectReadySession({
       createCommandId: () => commandId,
@@ -1178,19 +1178,88 @@ describe("ProjectRoomSession", () => {
       head: resetHead,
     });
 
-    const effectiveHead = session.reconcileCheckpointHead(
-      projectHead({
-        collaboration_sequence: 5,
-        checkpoint_sequence: 5,
-        checkpoint_revision: 2,
-        name: "Checkpointed in E1",
-        updated_at: "2026-08-07T10:30:00Z",
-      }),
-      ROOM_EPOCH,
-    );
+    socket.emitMessage({
+      protocol_version: 1,
+      type: "project.checkpointed",
+      room_epoch: ROOM_EPOCH,
+      checkpoint_sequence: 5,
+      checkpoint_revision: 2,
+    });
 
-    expect(effectiveHead).toEqual(resetHead);
     expect(session.getHead()).toEqual(resetHead);
+  });
+
+  it("publishes checkpoint metadata without replacing the document", () => {
+    const onCheckpointed = vi.fn();
+    const onRehydrate = vi.fn();
+    const { session, socket } = connectReadySession({
+      onCheckpointed,
+      onRehydrate,
+    });
+    const original = session.getHead();
+    socket.emitMessage({
+      protocol_version: 1,
+      type: "project.checkpointed",
+      room_epoch: ROOM_EPOCH,
+      checkpoint_sequence: 4,
+      checkpoint_revision: 2,
+    });
+    expect(session.getHead()).toMatchObject({
+      checkpoint_sequence: 4,
+      checkpoint_revision: 2,
+    });
+    expect(session.getHead()?.document).toBe(original?.document);
+    expect(onCheckpointed).toHaveBeenCalledTimes(1);
+    expect(onRehydrate).not.toHaveBeenCalled();
+
+    session.replaceHead(roomReady().head);
+    expect(session.getHead()).toMatchObject({
+      checkpoint_sequence: 4,
+      checkpoint_revision: 2,
+    });
+  });
+
+  it("applies a checkpoint that arrives before its accepted command", () => {
+    const onCheckpointed = vi.fn();
+    const { session, socket } = connectReadySession({ onCheckpointed });
+    socket.emitMessage({
+      protocol_version: 1,
+      type: "project.checkpointed",
+      room_epoch: ROOM_EPOCH,
+      checkpoint_sequence: 5,
+      checkpoint_revision: 2,
+    });
+    expect(onCheckpointed).not.toHaveBeenCalled();
+
+    socket.emitMessage(
+      accepted("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", 5, [
+        renameGraph(GRAPH_ID, "Live", "Main"),
+      ]),
+    );
+    expect(session.getHead()).toMatchObject({
+      collaboration_sequence: 5,
+      checkpoint_sequence: 5,
+      checkpoint_revision: 2,
+    });
+    expect(headGraph(session.getHead(), GRAPH_ID)?.name).toBe("Live");
+    expect(onCheckpointed).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports commands pending until the accepted batch and receipt both arrive", async () => {
+    const commandId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const onPendingCommandsChange = vi.fn();
+    const { session, socket } = connectReadySession({
+      createCommandId: () => commandId,
+      onPendingCommandsChange,
+    });
+    const commands = [renameGraph(GRAPH_ID, "Live", "Main")];
+    const promise = session.submitCommands(commands);
+    expect(onPendingCommandsChange.mock.calls).toEqual([[true]]);
+    socket.emitMessage(accepted(commandId, 5, commands));
+    expect(onPendingCommandsChange.mock.calls).toEqual([[true]]);
+    socket.emitMessage(receipt(commandId));
+    await promise;
+    expect(onPendingCommandsChange.mock.calls).toEqual([[true], [false]]);
   });
 
   it("pauses drain on head_conflict until replaceHead, and still applies peer accept", async () => {
@@ -1327,7 +1396,7 @@ describe("ProjectRoomSession", () => {
     expect(headGraph(session.getHead(), GRAPH_ID)?.name).toBe(
       "Accepted after snapshot",
     );
-    expect(onRehydrate).toHaveBeenCalledWith(acceptedHead);
+    expect(onRehydrate).not.toHaveBeenCalled();
   });
 
   it("replaces collaborative head state on room.rehydrate", () => {

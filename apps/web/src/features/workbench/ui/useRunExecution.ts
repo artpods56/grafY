@@ -389,6 +389,10 @@ export function useRunExecution({
         setRunError("Save the graph before running it.");
         return;
       }
+      if (!canRunSavedGraph) {
+        setRunError("Wait for the Project to synchronize before running.");
+        return;
+      }
       const execution = executionSubgraphFor(scope, nodes, edges);
       const validationIssue = executionValidationIssue(
         scope,
@@ -427,12 +431,6 @@ export function useRunExecution({
           inputs: nodeSecretInputs(node.data.spec),
         }))
         .filter(({ inputs }) => inputs.length > 0);
-      if (secretBackedNodes.length && !canRunSavedGraph) {
-        setRunError(
-          "Save the graph before running nodes that use stored secrets.",
-        );
-        return;
-      }
       for (const { node, inputs } of secretBackedNodes) {
         const savedNode = activeGraph.nodes.find(
           (candidate) => candidate.id === node.id,
@@ -452,7 +450,7 @@ export function useRunExecution({
         );
         if (changedInput) {
           setRunError(
-            `Save the graph before running ${node.data.spec.title}: its ${changedInput.title} binding is new or changed.`,
+            `Wait for the ${changedInput.title} binding to synchronize before running ${node.data.spec.title}.`,
           );
           return;
         }

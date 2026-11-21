@@ -40,8 +40,26 @@ export type ArtifactViewerRoomSync = {
   submitReplace: (state: ArtifactViewerCanvasState) => void;
 };
 
+/** Keep queued canvas edits visible to the next gesture in the same event. */
+export function useArtifactViewerState(
+  initial: ArtifactViewerCanvasState | (() => ArtifactViewerCanvasState),
+) {
+  const [state, setState] = React.useState(initial);
+  const stateRef = React.useRef(state);
+  const setArtifactViewers = React.useCallback<
+    React.Dispatch<React.SetStateAction<ArtifactViewerCanvasState>>
+  >((action) => {
+    const next =
+      typeof action === "function" ? action(stateRef.current) : action;
+    stateRef.current = next;
+    setState(next);
+  }, []);
+  return [state, setArtifactViewers, stateRef] as const;
+}
+
 export type ArtifactViewerCommandDeps = {
   artifactViewers: ArtifactViewerCanvasState;
+  artifactViewersRef: React.RefObject<ArtifactViewerCanvasState>;
   /** Only `origins` is read: a removed card takes the constants it fed with it. */
   authoredDocumentRef: React.RefObject<{
     readonly origins: readonly AuthoredGraphOrigin[];
@@ -85,6 +103,7 @@ export type ArtifactViewerCommandDeps = {
 export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
   const {
     artifactViewers,
+    artifactViewersRef,
     artifactViewerActivityRevisionRef,
     applyAuthoringCommands,
     authoredDocumentRef,
@@ -108,16 +127,15 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
         setRunError(localAuthoringBlockedMessageRef.current);
         return false;
       }
-      setArtifactViewers((current) => {
-        const next = updater(current);
-        queueMicrotask(() => {
-          presentationRoomSyncRef.current.submitReplace(next);
-        });
-        return next;
+      const next = updater(artifactViewersRef.current);
+      setArtifactViewers(next);
+      queueMicrotask(() => {
+        presentationRoomSyncRef.current.submitReplace(next);
       });
       return true;
     },
     [
+      artifactViewersRef,
       localAuthoringBlockedMessageRef,
       localAuthoringEnabledRef,
       presentationRoomSyncRef,

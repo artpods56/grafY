@@ -206,6 +206,14 @@ export interface ProjectCommandSubmitMessage {
   readonly commands: readonly RoomProjectCommand[];
 }
 
+export interface ProjectCheckpointedMessage {
+  readonly protocol_version: 1;
+  readonly type: "project.checkpointed";
+  readonly room_epoch: string;
+  readonly checkpoint_sequence: number;
+  readonly checkpoint_revision: number;
+}
+
 export interface ProjectCommandAcceptedMessage {
   readonly protocol_version: 1;
   readonly type: "project.command.accepted";
@@ -257,6 +265,7 @@ export interface RoomHeartbeatMessage {
 export type ServerRoomMessage =
   | RoomReadyMessage
   | ProjectCommandAcceptedMessage
+  | ProjectCheckpointedMessage
   | ProjectCommandReceiptMessage
   | ProjectCommandRejectedMessage
   | RoomRehydrateMessage
@@ -728,6 +737,23 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       changed: changed as RoomInstanceState[],
       removed: removed as RoomInstanceKey[],
       head_sequence: raw.head_sequence,
+    };
+  }
+
+  if (type === "project.checkpointed") {
+    if (
+      !isString(raw.room_epoch) ||
+      !isNonNegativeInt(raw.checkpoint_sequence) ||
+      !isPositiveInt(raw.checkpoint_revision)
+    ) {
+      return null;
+    }
+    return {
+      protocol_version: ROOM_PROTOCOL_VERSION,
+      type,
+      room_epoch: raw.room_epoch,
+      checkpoint_sequence: raw.checkpoint_sequence,
+      checkpoint_revision: raw.checkpoint_revision,
     };
   }
 

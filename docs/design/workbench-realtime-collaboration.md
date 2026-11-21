@@ -44,9 +44,9 @@ owns that.
 
 One Project, one room, one command sequence, many Runs.
 
-1. A Project is the collaborative document. Its **head** is the draft everyone edits;
-   its **checkpoints** are the immutable revisions it is periodically made durable
-   as. Both live in one row set owned by
+1. A Project is the collaborative document. Its **head** is the durable state everyone
+   edits. Its **checkpoints** are immutable snapshots used for history and restore.
+   Both are owned by
    [`CollaborationService`](../../libs/core/src/grafy_core/application/collaboration.py),
    which is the only writer of a head.
 2. Clients submit **semantic command batches** over a workspace-and-project-scoped
@@ -145,7 +145,7 @@ revocation closes that user's rooms
 ## Sequence: two counters on one head
 
 A head carries one monotonic **`collaboration_sequence`** and the **`checkpoint_sequence`
-/ `checkpoint_revision`** pair marking the last durable save
+/ `checkpoint_revision`** pair marking the latest immutable snapshot
 ([`domain/collaboration.py:1178-1242`](../../libs/core/src/grafy_core/domain/collaboration.py)).
 The head's own invariants are the contract: `checkpoint_sequence ≤
 collaboration_sequence`, `checkpoint_revision ≥ 1`, and fully checkpointed means the two
@@ -156,10 +156,10 @@ so a Project's head is born fully checkpointed at revision 1 and its first accep
 lands at sequence 1
 ([`stage_project`, `project_creation.py:43-86`](../../libs/core/src/grafy_core/application/project_creation.py)).
 
-- **`collaboration_sequence`** advances exactly once per accepted batch and implies no
-  durable save. It orders edits.
-- **`checkpoint_revision`** advances only when `checkpoint` is called and marks an
-  immutable `ProjectCheckpoint`. It is what a durable state is addressed by.
+- **`collaboration_sequence`** advances exactly once per accepted batch. The new head
+  and its receipt commit together before the batch is acknowledged.
+- **`checkpoint_revision`** advances when an immutable `ProjectCheckpoint` is
+  appended, including explicit checkpoint, automatic checkpoint and restore.
 
 **What a caller asserts.** Everything that changes the document asserts the
 `collaboration_sequence` it read plus the `room_epoch` it read — never a checkpoint
@@ -185,11 +185,25 @@ read. Two consequences a writer must get right:
 1. A caller editing outside the room must read `GET …/projects/{id}/head` first and
    stamp the submission with *that* sequence, not with whatever the canvas last
    rendered.
-2. The checkpoint that follows must assert the sequence the batch was **accepted at**
-   (`receipt.accepted_sequence`, or the head returned by the submission), never the one
-   it read before submitting — otherwise a peer's interleaved batch makes your own work
-   uncheckpointable. The save path does exactly this
-   ([`useSavedGraphLifecycle.ts:119-151`](../../apps/web/src/features/workbench/ui/useSavedGraphLifecycle.ts)).
+2. A caller requesting an explicit checkpoint asserts the exact sequence and epoch it
+   wants to snapshot. If a peer moves the head before the checkpoint takes its lock,
+   the API returns 409. A repeated request against a fully checkpointed head returns
+   its existing revision.
+
+**Automatic checkpoints.** The owning API process tracks pending edits by Workspace
+and Project after accepted WebSocket and REST batches. It resets a 30-second idle
+timer on each batch and schedules an immediate snapshot at 50 uncheckpointed batches
+or when the last room session leaves. Set
+`graph_room_auto_checkpoint_idle_seconds` or `graph_room_auto_checkpoint_max_commands`
+to zero to disable that trigger. Each Project gets one in-flight snapshot, with
+another pass requested if a flush comes in while newer edits are pending. The service
+locks the current head and appends a checkpoint only if it advanced. The audit
+event uses the system actor. An explicit checkpoint clears covered pending work,
+restore clears the prior epoch, and delete cancels the pending timer.
+
+Shutdown flushes tracked heads within a bounded deadline and cancels remaining
+attempts before database disposal. A delayed or failed checkpoint leaves the committed
+head and command journal available.
 
 High-frequency gestures do not touch either counter until the gesture commits: cursor
 updates are presence, positions under a held pointer are drag previews, and pointer
@@ -222,7 +236,7 @@ flat head or a Graph document without its Graphs rather than papering over them.
 | Direction | Types |
 | --- | --- |
 | client → server | `project.command.submit`, `presence.update` — and nothing else ([`realtime/protocol.py:294-303`](../../apps/api/src/grafy_api/realtime/protocol.py)) |
-| server → client | `room.ready`, `room.rehydrate`, `room.heartbeat`, `project.command.accepted`, `project.command.receipt`, `project.command.rejected`, `presence.join`, `presence.leave`, `presence.update`, `run.started`, `run.finished`, `instances.changed`, `agent.turn.started`, `agent.event.appended`, `agent.delta`, `agent.turn.finished` |
+| server → client | `room.ready`, `room.rehydrate`, `room.heartbeat`, `project.command.accepted`, `project.command.receipt`, `project.command.rejected`, `project.checkpointed`, `presence.join`, `presence.leave`, `presence.update`, `run.started`, `run.finished`, `instances.changed`, `agent.turn.started`, `agent.event.appended`, `agent.delta`, `agent.turn.finished` |
 
 `room.ready` carries workspace id, project id, room session id, actor presentation, the
 capability snapshot with its authorization version, the complete head, the current
@@ -264,15 +278,17 @@ more: resubmitting an already-committed batch is simply a retry, and the server 
 with the original receipt marked `idempotent_replay`
 ([`views.py:519-536`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
 
-**Head replacement is monotone.** A snapshot or accepted batch is applied only when the
-epoch changed or its sequence is not older, so a late HTTP head read cannot wipe a head
-the socket already moved forward
-([`shouldReplaceCollaborativeHead`, `graph-room-session.ts:88`](../../apps/web/src/features/workbench/room/graph-room-session.ts)).
-An epoch change arrives as `room.rehydrate` — a checkpoint restore reopens the room and
-publishes it
-([`projects/views.py:472`](../../apps/api/src/grafy_api/v1/routes/projects/views.py)).
-Full-snapshot recovery is the correctness path; incremental application is the
-optimization.
+**Head replacement is monotone.** A snapshot from the same epoch can replace the
+current head at an equal or newer collaboration sequence. A different epoch must
+carry a newer checkpoint revision. Restore publishes the full new head as
+`room.rehydrate`. Full snapshots recover gaps in the command stream.
+[`graph-room-session.ts`](../../apps/web/src/features/workbench/room/graph-room-session.ts)
+
+An explicit or automatic checkpoint that appends a revision broadcasts
+`project.checkpointed` on the reliable queue with `room_epoch`,
+`checkpoint_sequence` and `checkpoint_revision`. The client applies metadata
+for its current epoch, deferring a checkpoint ahead of its local sequence until
+it receives the matching commands. The canvas document and selection stay in place.
 
 ## Commands and batches
 
@@ -507,7 +523,14 @@ imports canvas helpers), so the ADR's wider extraction stays open.
 - `ui/Workbench.tsx` composes; [`ui/useRunExecution.ts`](../../apps/web/src/features/workbench/ui/useRunExecution.ts)
   is the Run surface (a room push is the event, a REST read is the answer, polling only
   while there is no room); [`ui/useSavedGraphLifecycle.ts`](../../apps/web/src/features/workbench/ui/useSavedGraphLifecycle.ts)
-  is the out-of-room save-and-checkpoint path.
+  creates a Project from a new draft and projects the active Graph from the live head.
+
+The draft at `/projects/new` supports manual Save and a one-second autosave after
+editing pauses. Once the Project exists, canvas edits are live-saved through room commands.
+The rail shows `Saving…` while commands await confirmation and `Saved` when synced.
+For a Project, dirtiness reflects unsynced edits, queued commands, in-flight commands
+and head recovery. Runs can start once the canvas is synced and authorized. They read
+the live head directly, even with an automatic checkpoint still pending.
 
 One rule holds these apart: a durable gesture may act only on a confirmed head. A session
 that is not `ready`, or has no confirmed head, is untrusted
@@ -519,7 +542,7 @@ the build on a module cycle or a feature reaching into a route module.
 
 | State | Owner | Durable | Shared |
 | --- | --- | --- | --- |
-| Project name; each Graph's name, nodes, positions, configuration, plugs, artifact-type bindings, edges, projections, conversions, collection modes, origins, layout; Artifact Viewer structure and annotations | Project head, via accepted batches | On checkpoint | Yes |
+| Project name; each Graph's name, nodes, positions, configuration, plugs, artifact-type bindings, edges, projections, conversions, collection modes, origins, layout; Artifact Viewer structure and annotations | Project head, via accepted batches | On acceptance | Yes |
 | Cursor, remote selection, editing activity, soft claim, drag preview | room session | No; expires | Yes, to room participants |
 | Active Runs, who started each | `RunService` rows; room frames announce | Run records are durable; in-flight scheduling is not | Yes |
 | Node instance state (fresh, queued, running, failed, stale) | derived from document + result store + in-flight set | Never stored | Yes |
@@ -582,19 +605,11 @@ so nobody re-derives them:
    ([`application/collaboration.py:742-790`](../../libs/core/src/grafy_core/application/collaboration.py)).
    The web client encodes this by omitting both parameters unless it holds both
    ([`lib/api/projects.ts:84-102`](../../apps/web/src/lib/api/projects.ts)).
-4. **The head a secret write asserts moves without any checkpoint the client can see.**
-   Every accepted command batch advances the head's `collaboration_sequence`, whether or
-   not the Project has checkpointed, while the web client re-reads the secret listing only
-   when a checkpoint lands or a Graph is opened or saved. So the token from that listing
-   can name a head that one dragged node — or one peer's batch — has already retired, and
-   the exact-sequence assert turns
-   an ordinary edit into a 409. The client recovers by re-reading the listing after that
-   409 and sending the same write once more at the sequence the new answer names; a second
-   conflict is reported with the newer token held rather than chased
-   ([`useNodeSecrets.ts`](../../apps/web/src/features/workbench/ui/useNodeSecrets.ts)).
-   The recovery is the reason the token stays the listing's own: a client that re-addressed
-   a write from a locally guessed sequence would be asserting a head it never read, which
-   is what trap 3 forbids.
+4. **A secret listing's head sequence can go stale between reads and writes.**
+   The client refreshes statuses when the accepted Graph changes a secret binding.
+   Unrelated edits still move the same head sequence. If a write receives a 409,
+   the client re-reads the listing and retries once using the sequence returned by
+   the server. [`useNodeSecrets.ts`](../../apps/web/src/features/workbench/ui/useNodeSecrets.ts)
 
 ## Authorization and sensitive state
 
@@ -680,6 +695,8 @@ keeps the route/execution/realtime seams honest):
 
 - [`tests/unit/application/test_collaboration.py`](../../tests/unit/application/test_collaboration.py)
   — batch acceptance, idempotency, checkpointing, restore, copy, delete.
+- [`tests/unit/api/test_project_auto_checkpointing.py`](../../tests/unit/api/test_project_auto_checkpointing.py)
+  — idle debounce, immediate flushes, cancellation and shutdown.
 - [`tests/unit/api/test_project_head_transport.py`](../../tests/unit/api/test_project_head_transport.py)
   — head transport and command submission shapes.
 - [`tests/unit/api/test_project_node_secrets.py`](../../tests/unit/api/test_project_node_secrets.py)

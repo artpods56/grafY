@@ -46,21 +46,14 @@ export function graphAgeLabel(updatedAt: string, now = Date.now()): string {
   return new Date(updatedAt).toLocaleDateString();
 }
 
-/**
- * The one node/edge summary line every graph discovery surface renders.
- *
- * Counts describe the collaborative draft head, so a head that is ahead of the
- * saved checkpoint is labelled instead of being presented as saved metadata.
- */
+/** Node and edge counts describe the durable live head. */
 export function graphCountLabel(graph: {
   node_count: number;
   edge_count: number;
-  draft_pending?: boolean;
 }): string {
   const nodes = `${graph.node_count} ${graph.node_count === 1 ? "node" : "nodes"}`;
   const edges = `${graph.edge_count} ${graph.edge_count === 1 ? "edge" : "edges"}`;
-  const summary = `${nodes} · ${edges}`;
-  return graph.draft_pending ? `${summary} · unsaved draft` : summary;
+  return `${nodes} · ${edges}`;
 }
 
 export function WorkspaceGraphPanel({

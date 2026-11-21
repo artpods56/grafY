@@ -8,7 +8,9 @@ export interface WorkbenchChromeValue {
   activeGraphId: string | null;
   graphName: string;
   isDirty: boolean;
+  /** First save or a pending room command. */
   saving: boolean;
+  /** Only an unsaved Project has an actionable Save button. */
   canSave: boolean;
   save: () => Promise<void>;
   renameGraph: (graph: SavedGraphSummary, name: string) => Promise<void>;
