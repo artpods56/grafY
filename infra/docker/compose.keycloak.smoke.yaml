@@ -1,5 +1,5 @@
 # Disposable Keycloak for the real-backend e2e pilot
-# (`npm run test:e2e` in apps/web). Not for human use.
+# (`bun run test:e2e` in apps/web). Not for human use.
 #
 # Same provider image and realm shape the repository develops against; see
 # infra/docker/compose.keycloak.yaml and infra/keycloak/README.md. Three things

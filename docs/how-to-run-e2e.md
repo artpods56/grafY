@@ -1,16 +1,17 @@
 # Run the e2e pilot
 
-Use Node.js 24.8 or newer, Python 3.14, uv, and a running Docker daemon.
+Use Bun 1.4.4, Node.js 24.8 or newer for the e2e CLI, Python 3.14, uv, and a
+running Docker daemon.
 Stop this checkout's web dev server first. Run one invocation at a time.
 
 ```sh
 uv sync --locked
-npm --prefix apps/web ci
-npm --prefix apps/web run test:e2e
+bun install --cwd apps/web --frozen-lockfile
+bun run --cwd apps/web test:e2e
 ```
 
 The web engine downloads Chromium on its first run. On Linux, install browser
-system libraries with `cd apps/web && npx e2e-web install chromium --with-deps`.
+system libraries with `cd apps/web && bun --bun run e2e-web install chromium --with-deps`.
 
 The single test signs in through the repository's Keycloak fixture account,
 creates and saves a Project with a Graph, adds a builtin Text input, runs it,
@@ -26,10 +27,10 @@ recordings can contain session cookies. Do not upload runtime data or keys.
 
 ```sh
 # Watch the same flow:
-npm --prefix apps/web run test:e2e -- --headed
+bun run --cwd apps/web test:e2e --headed
 # Five independent runs, each with a new stack, stopping on the first failure:
 for run in 1 2 3 4 5; do
-  npm --prefix apps/web run test:e2e || exit 1
+  bun run --cwd apps/web test:e2e || exit 1
 done
 ```
 
@@ -39,7 +40,7 @@ responsive layouts, gestures, artifact management, and agent interactions need
 manual checks. Unit, backend, lint, type, and API contract checks remain separate.
 
 Framework docs ship in `apps/web/node_modules/e2e/docs`. Run
-`cd apps/web && npx e2e guide` for the installed version's guide.
+`cd apps/web && bun run e2e guide` for the installed version's guide.
 
 ## TIFF canvas verification
 
@@ -59,7 +60,7 @@ uv run python scripts/create_canvas_fixtures.py ../../artifacts/e2e-tiff/fixture
 cd ../..
 E2E_STACK_ORIGIN=http://127.0.0.1:3000 \
 TIFF_FIXTURE_DIR="$PWD/artifacts/e2e-tiff/fixtures" \
-npm --prefix apps/web run test:e2e:tiff
+bun run --cwd apps/web --bun test:e2e:tiff
 ```
 
 The fixtures are a 12032 × 8192 RGB register, 16-bit grayscale, three pages,

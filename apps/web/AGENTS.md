@@ -74,7 +74,7 @@ timing problem.
 So when a route is broken, prove the two things the typecheck cannot:
 
 ```bash
-npx next dev --webpack -p <port> &   # capture $!
+bun --bun run next dev --webpack -p <port> &   # capture $!
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:<port>/workspaces/<slug>/projects/new
 kill <that pid>                    # never a pattern match: several servers run here
 ```
@@ -82,7 +82,7 @@ kill <that pid>                    # never a pattern match: several servers run 
 and read the **browser console** of a failing browser test, which names the
 missing export in one line.
 
-StyleX has the same blind spot: `npm run check:stylex` compiles every module
+StyleX has the same blind spot: `bun --bun run check:stylex` compiles every module
 with the real Babel plugin and catches a cross-module style import the build
 cannot resolve, which `tsc` and Vitest both pass.
 
@@ -174,9 +174,9 @@ cannot resolve, which `tsc` and Vitest both pass.
   the part's props and children). A trigger drawn through a shared component
   takes its accessible name from that element, so a double that ignores
   `render` drops the name.
-- `npm test` runs the Vitest suite (`vitest run`).
+- `bun --bun run test` runs the Vitest suite (`vitest run`).
 - The single real-backend e2e pilot uses a disposable API, Keycloak, and Next
-  server. Run `npm run test:e2e`; see `docs/how-to-run-e2e.md` at the repo root.
+  server. Run `bun run test:e2e`; see `docs/how-to-run-e2e.md` at the repo root.
 - Run it serially and stop this checkout's `just web` first. Never reuse another
   checkout's server or kill processes by pattern.
 

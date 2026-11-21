@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
@@ -139,7 +139,7 @@ async function main() {
   const e2eCli = join(WEB_ROOT, "node_modules", "e2e", "dist", "cli", "bin.js");
   requirePath("API interpreter (run uv sync --locked)", python);
   requirePath("Alembic config", alembicIni);
-  requirePath("e2e CLI (run npm ci in apps/web)", e2eCli);
+  requirePath("e2e CLI (run bun ci in apps/web)", e2eCli);
   const services = [];
   const startService = (command, args, options) => {
     const child = spawn(command, args, {
@@ -383,7 +383,7 @@ async function main() {
     await ready(`${origin}/`, web, 240_000);
 
     testRun = spawn(
-      process.execPath,
+      "node",
       [e2eCli, "run", ...process.argv.slice(2)],
       {
         cwd: WEB_ROOT,

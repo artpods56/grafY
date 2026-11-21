@@ -43,6 +43,6 @@ if command -v just >/dev/null 2>&1; then
     just install
 else
     uv sync
-    npm --prefix apps/web ci
+    bun install --cwd apps/web --frozen-lockfile
     uv run prek install
 fi

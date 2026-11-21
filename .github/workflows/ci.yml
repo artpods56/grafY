@@ -154,18 +154,16 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          bun-version-file: apps/web/package.json
       - name: Install locked Python workspace
         id: python_install
         run: uv sync --locked
       - name: Install locked web workspace
         id: web_install
         if: ${{ !cancelled() }}
-        run: npm --prefix apps/web ci
+        run: bun install --cwd apps/web --frozen-lockfile
       - name: Validate repository hooks
         if: ${{ !cancelled() && steps.python_install.outcome == 'success' && steps.web_install.outcome == 'success' }}
         run: uv run prek run --all-files
@@ -177,17 +175,17 @@ jobs:
         run: uv run pyright libs/client
       - name: Web lint
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        run: npm --prefix apps/web run lint
+        run: bun run --cwd apps/web --bun lint
       - name: Web format
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
         working-directory: apps/web
-        run: npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
+        run: bun --bun run prettier --check "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
       - name: Web typecheck
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        run: npm --prefix apps/web run typecheck
+        run: bun run --cwd apps/web --bun typecheck
       - name: Generated API contract
         if: ${{ !cancelled() && steps.python_install.outcome == 'success' && steps.web_install.outcome == 'success' }}
-        run: npm --prefix apps/web run check:api
+        run: bun run --cwd apps/web --bun check:api
 
   web:
     name: Web tests and production build
@@ -195,28 +193,26 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          bun-version-file: apps/web/package.json
       - name: Install locked web workspace
         id: web_install
-        run: npm --prefix apps/web ci
+        run: bun install --cwd apps/web --frozen-lockfile
       - name: Run web tests
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        run: npm --prefix apps/web test
+        run: bun run --cwd apps/web --bun test
       - name: Cache Next.js build data
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
         uses: actions/cache@v4
         with:
           path: apps/web/.next/cache
-          key: ${{ runner.os }}-${{ runner.arch }}-next-webpack-${{ hashFiles('apps/web/package-lock.json') }}-${{ hashFiles('apps/web/src/**', 'apps/web/public/**', 'apps/web/*config.*', 'apps/web/package.json') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-next-webpack-${{ hashFiles('apps/web/bun.lock') }}-${{ hashFiles('apps/web/src/**', 'apps/web/public/**', 'apps/web/*config.*', 'apps/web/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-next-webpack-${{ hashFiles('apps/web/package-lock.json') }}-
+            ${{ runner.os }}-${{ runner.arch }}-next-webpack-${{ hashFiles('apps/web/bun.lock') }}-
       - name: Build production web application
         if: ${{ !cancelled() && steps.web_install.outcome == 'success' }}
-        run: npm --prefix apps/web run build
+        run: bun run --cwd apps/web --bun build
 
   web-e2e:
     name: Web e2e pilot (real backend)
@@ -230,20 +226,21 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: apps/web/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
       - run: uv sync --locked
-      - name: Install web workspace and Chromium
+      - name: Install locked web workspace
+        run: bun install --cwd apps/web --frozen-lockfile
+      - name: Install Chromium and system libraries
         working-directory: apps/web
-        run: |
-          npm ci
-          npx e2e-web install chromium --with-deps
+        run: bun --bun run e2e-web install chromium --with-deps
       - name: Sign in, create a Graph, and run a builtin node
         working-directory: apps/web
-        run: npm run test:e2e
+        run: bun run test:e2e
 
   deployment-images:
     name: API deployment images

@@ -11,7 +11,7 @@ default:
 # Install the default Python and web workspaces and the Git commit hook.
 install:
     uv sync
-    npm --prefix apps/web ci
+    bun install --cwd apps/web --frozen-lockfile
     uv run prek install
 
 # Start the API with installed application families and native GIS tools.
@@ -28,12 +28,12 @@ tiler:
 
 # Start the web development server.
 web port="":
-    npm --prefix apps/web run dev {{ if port != "" {"--port=" + port} else {""} }}
+    bun run --cwd apps/web --bun dev {{ if port != "" {"--port=" + port} else {""} }}
 
 # Run backend and web tests.
 test:
     uv run pytest
-    npm --prefix apps/web test
+    bun run --cwd apps/web --bun test
 
 # Each line keeps which tests ran it (--cov-context=test), so editor tooling can
 # show the tests covering a function. ctrace: Python 3.14's default sysmon core
@@ -56,15 +56,15 @@ test-storage-gateway:
 # Run Python and web linters.
 lint:
     uv run ruff check apps/api/src libs/client/src libs/crypto/src libs/core/src libs/persistence/src libs/shared/src libs/storage/src plugins/*/src infra/db/migrations scripts tests
-    npm --prefix apps/web run lint
+    bun run --cwd apps/web --bun lint
 
 # Format the web app with Prettier. See apps/web/.prettierrc.
 format:
-    cd apps/web && npm exec prettier -- --write "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
+    cd apps/web && bun --bun run prettier --write "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
 
 # Fail when the web app is not formatted. CI runs this.
 format-check:
-    cd apps/web && npm exec prettier -- --check "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
+    cd apps/web && bun --bun run prettier --check "src/**/*.{ts,tsx,css,md,json}" "tests/**/*.e2e.ts" "e2e.config.ts"
 
 # Validate the hook configuration and run every hook against tracked files.
 hooks-check:
@@ -74,15 +74,15 @@ hooks-check:
 # Run Python and TypeScript type checks.
 typecheck:
     uv run basedpyright
-    npm --prefix apps/web run typecheck
+    bun run --cwd apps/web --bun typecheck
 
 # Verify the generated API client contract.
 contract:
-    npm --prefix apps/web run check:api
+    bun run --cwd apps/web --bun check:api
 
 # Build the production web bundle.
 build:
-    npm --prefix apps/web run build
+    bun run --cwd apps/web --bun build
 
 # Run the complete retained contract.
 check: test lint typecheck contract build
