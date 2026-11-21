@@ -2,11 +2,25 @@ import json
 from collections.abc import Callable
 from typing import Annotated, Self, cast, final, override
 
-from grafy_core.artifacts import JsonObject, NodeConfig, NodeInput, NodeOutput
+from grafy_core.artifacts import (
+    ArtifactRef,
+    ArtifactRefSequence,
+    JsonObject,
+    NodeConfig,
+    NodeInput,
+    NodeOutput,
+)
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import validated_public_destination
 from grafy_core.documents import GeoJsonFile, JsonFile, TiffFile
-from grafy_core.nodes import Node, NodeExecutionContext, Ref, RefSequence
+from grafy_core.nodes import (
+    Node,
+    NodeExecutionContext,
+    Plugs,
+    Ref,
+    RefSequence,
+    UserFacingNodeError,
+)
 from grafy_core.plugins import (
     NodeCachePolicy,
     NodeHttpEgressContract,
@@ -46,6 +60,7 @@ from grafy_plugin_gis.persistence import (
     raster_scan_artifact,
 )
 from grafy_core.spatial_contracts import (
+    MAX_RASTER_MOSAIC_SOURCES,
     BasemapKind,
     Bounds,
     GeoFeatureArtifactSource,
@@ -54,6 +69,7 @@ from grafy_core.spatial_contracts import (
     GeoMapDocument,
     GeoMapLayer,
     GeoRasterArtifactSource,
+    GeoRasterMosaicSource,
     GeoRasterStyle,
     GeoVectorStyle,
     GeoWmsSource,
@@ -706,9 +722,18 @@ class RasterLayerConfig(_CommonLayerConfig):
 
 class RasterLayerInput(NodeInput):
     raster: Annotated[
-        Ref[GeoRasterScan],
-        Field(description="Georeferenced raster scan artifact reference."),
+        Ref[GeoRasterScan] | Ref[TiffFile],
+        Field(description="Georeferenced raster scan or TIFF file artifact reference."),
     ]
+
+
+def _plain_ref(ref: ArtifactRef) -> ArtifactRef:
+    return ArtifactRef(
+        artifact_id=ref.artifact_id,
+        artifact_type=ref.artifact_type,
+        schema_version=ref.schema_version,
+        content_hash=ref.content_hash,
+    )
 
 
 @GIS.function_node(
@@ -721,7 +746,7 @@ async def build_raster_layer(
     config: RasterLayerConfig,
     inputs: RasterLayerInput,
 ) -> MapLayerOutput:
-    """Turn a georeferenced raster scan into a styled map layer."""
+    """Turn a georeferenced raster scan or TIFF into a styled map layer."""
 
     return MapLayerOutput(
         layer=GeoMapLayer(
@@ -730,7 +755,77 @@ async def build_raster_layer(
             opacity=config.opacity,
             min_zoom=config.min_zoom,
             max_zoom=config.max_zoom,
-            source=GeoRasterArtifactSource(artifact=inputs.raster),
+            source=GeoRasterArtifactSource(artifact=_plain_ref(inputs.raster)),
+            style=config.style,
+        )
+    )
+
+
+class RasterMosaicConfig(_CommonLayerConfig):
+    title: StrictStr = Field(default="Raster mosaic", min_length=1, max_length=1_024)
+    style: GeoRasterStyle = Field(default_factory=GeoRasterStyle)
+
+
+class RasterMosaicInput(NodeInput):
+    rasters: Annotated[
+        list[
+            Ref[TiffFile]
+            | Ref[GeoRasterScan]
+            | RefSequence[TiffFile]
+            | RefSequence[GeoRasterScan]
+        ],
+        Plugs(variadic=True, instance=True),
+        Field(
+            min_length=1,
+            title="Rasters",
+            description=(
+                "Georeferenced TIFF files, raster scans, or lists of them, "
+                "stacked bottom to top on the fly by the tiler."
+            ),
+        ),
+    ]
+
+
+@GIS.function_node(
+    operator_id="gis.map.raster_mosaic",
+    version=1,
+    title="Raster mosaic layer",
+    cache_policy=NodeCachePolicy.EXACT,
+)
+async def build_raster_mosaic(
+    config: RasterMosaicConfig,
+    inputs: RasterMosaicInput,
+) -> MapLayerOutput:
+    """Compose georeferenced rasters into one on-the-fly mosaic map layer."""
+
+    refs: list[ArtifactRef] = []
+    seen: set[object] = set()
+    for entry in inputs.rasters:
+        items = entry.item_refs if isinstance(entry, ArtifactRefSequence) else [entry]
+        for item in items:
+            if item.artifact_id in seen:
+                raise UserFacingNodeError(
+                    f"Raster artifact {item.artifact_id} is connected more than once."
+                )
+            seen.add(item.artifact_id)
+            refs.append(_plain_ref(item))
+    if not refs:
+        raise UserFacingNodeError(
+            "Raster mosaic requires at least one georeferenced TIFF or raster scan."
+        )
+    if len(refs) > MAX_RASTER_MOSAIC_SOURCES:
+        raise UserFacingNodeError(
+            f"Raster mosaic supports at most {MAX_RASTER_MOSAIC_SOURCES} rasters, "
+            f"got {len(refs)}."
+        )
+    return MapLayerOutput(
+        layer=GeoMapLayer(
+            title=config.title,
+            visible=config.visible,
+            opacity=config.opacity,
+            min_zoom=config.min_zoom,
+            max_zoom=config.max_zoom,
+            source=GeoRasterMosaicSource(artifacts=refs),
             style=config.style,
         )
     )
@@ -856,6 +951,8 @@ __all__ = [
     "ParseGeoJsonNode",
     "RasterLayerConfig",
     "RasterLayerInput",
+    "RasterMosaicConfig",
+    "RasterMosaicInput",
     "TableToGeoFeaturesConfig",
     "TableToGeoFeaturesError",
     "TableToGeoFeaturesInput",
@@ -867,6 +964,7 @@ __all__ = [
     "WmsLayerConfig",
     "WmsLayerInput",
     "build_raster_layer",
+    "build_raster_mosaic",
     "build_vector_layer",
     "build_wms_layer",
     "compose_map",

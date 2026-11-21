@@ -1,8 +1,10 @@
 """HTTP surface of the tiler. Internal only: the API is the public entry.
 
 Every data route takes exactly one input about what to read, the signed
-``X-Grafy-Grant`` header (see :mod:`grafy_crypto.grants`). There is no URL, path
-or bucket parameter anywhere, so there is nothing to point at another host.
+``X-Grafy-Grant`` header (see :mod:`grafy_crypto.grants`). The mosaic route
+carries its multi-source grant in a JSON body instead, because 64 sources do not
+fit a header. There is no URL, path or bucket parameter anywhere, so there is
+nothing to point at another host.
 """
 
 import faulthandler
@@ -25,8 +27,8 @@ from fastapi import (
     Response,
 )
 from fastapi.responses import JSONResponse
-from grafy_crypto.grants import Grant, GrantError
-from pydantic import BeforeValidator
+from grafy_crypto.grants import Grant, GrantError, MosaicGrant
+from pydantic import BaseModel, BeforeValidator, Field
 from rasterio.errors import NotGeoreferencedWarning
 from rio_tiler.errors import TileOutsideBounds
 from titiler.core.errors import add_exception_handlers
@@ -121,6 +123,64 @@ async def tile(
         raise TileNotFound("unknown tile format")
     tile_format: TileFormat = "jpg" if extension == "jpg" else "png"
     return _image(await service.tile(grant, z, x, y, tile_format), tile_format)
+
+
+@router.get("/geo/tiles/{z}/{x}/{y}.{extension}")
+async def geo_tile(
+    grant: Granted,
+    service: Service,
+    z: str,
+    x: Annotated[int, Path(ge=0)],
+    y: Annotated[int, Path(ge=0)],
+    extension: str,
+) -> Response:
+    if extension not in _MEDIA_TYPES:
+        raise TileNotFound("unknown tile format")
+    try:
+        zoom = int(_integer_query(z))
+    except ValueError as error:
+        raise TileNotFound("invalid Web Mercator zoom") from error
+    requested: TileFormat = "jpg" if extension == "jpg" else "png"
+    data, tile_format = await service.geo_tile(grant, zoom, x, y, requested)
+    return _image(data, tile_format)
+
+
+class MosaicGrantRequest(BaseModel):
+    grant: str = Field(min_length=1, max_length=65_536)
+
+
+@router.post("/geo/mosaic/tiles/{z}/{x}/{y}.{extension}")
+async def geo_mosaic_tile(
+    body: MosaicGrantRequest,
+    request: Request,
+    service: Service,
+    z: str,
+    x: Annotated[int, Path(ge=0)],
+    y: Annotated[int, Path(ge=0)],
+    extension: str,
+) -> Response:
+    config: Settings = request.app.state.settings
+    try:
+        grant = MosaicGrant.verify_grant(
+            body.grant,
+            keys=config.signing_key_values,
+            bucket=config.bucket,
+            now=int(time.time()),
+            skew_seconds=config.grant_clock_skew_seconds,
+            max_source_bytes=config.max_source_bytes,
+        )
+    except GrantError as error:
+        logger.warning("mosaic grant refused: %s", error)
+        raise HTTPException(status_code=403, detail="grant refused") from error
+    if extension not in _MEDIA_TYPES:
+        raise TileNotFound("unknown tile format")
+    try:
+        zoom = int(_integer_query(z))
+    except ValueError as error:
+        raise TileNotFound("invalid Web Mercator zoom") from error
+    requested: TileFormat = "jpg" if extension == "jpg" else "png"
+    data, tile_format = await service.geo_mosaic_tile(grant, zoom, x, y, requested)
+    return _image(data, tile_format)
 
 
 @router.get("/thumbnail")

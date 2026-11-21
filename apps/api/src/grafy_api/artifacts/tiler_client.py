@@ -2,11 +2,12 @@
 
 import asyncio
 import time
+from collections.abc import Sequence
 
 import httpx
 from pydantic import Field, ValidationError
 
-from grafy_crypto.grants import MAX_PAGE, Grant
+from grafy_crypto.grants import MAX_PAGE, Grant, GrantSource, MosaicGrant
 from grafy_shared.config.tiler import TilerConfig
 
 from grafy_api.artifacts.images import (
@@ -70,6 +71,46 @@ class HttpTiler(TilerPort):
         image, _ = await self._get(source, "thumbnail", params={"edge": edge})
         return image
 
+    async def geo_tile(
+        self, source: TiffSource, *, z: int, x: int, y: int, extension: TileExtension
+    ) -> TilerImage:
+        image, _ = await self._get(source, f"geo/tiles/{z}/{x}/{y}.{extension}")
+        return image
+
+    async def geo_mosaic_tile(
+        self,
+        sources: Sequence[TiffSource],
+        *,
+        z: int,
+        x: int,
+        y: int,
+        extension: TileExtension,
+    ) -> TilerImage:
+        if not sources:
+            raise ImageProxyError(422, "A raster mosaic needs at least one source")
+        buckets = {source.bucket for source in sources}
+        if len(buckets) != 1:
+            raise ImageProxyError(422, "Raster mosaic sources must share one bucket")
+        grant = MosaicGrant(
+            bucket=sources[0].bucket,
+            sources=tuple(
+                GrantSource(
+                    key=source.key,
+                    sha256=source.sha256,
+                    byte_size=source.byte_size,
+                    page=source.page,
+                )
+                for source in sources
+            ),
+            expires_at=int(time.time()) + 60,
+        )
+        image, _ = await self._request(
+            "POST",
+            f"geo/mosaic/tiles/{z}/{x}/{y}.{extension}",
+            json_body={"grant": grant.sign_grant(self._signing_key())},
+        )
+        return image
+
     async def read_window(
         self, source: TiffSource, *, col: int, row: int, width: int, height: int
     ) -> TilerWindow:
@@ -110,10 +151,7 @@ class HttpTiler(TilerPort):
         display: bool = True,
         attempts: int = 1,
     ) -> tuple[TilerImage, httpx.Headers]:
-        """GET one tiler path. `content_type=None` accepts PNG or JPEG."""
-        config = self._config
-        assert config.tiler_url is not None
-        assert config.tiler_shared_key is not None
+        """GET one tiler path for one source, granted in the header."""
         grant = Grant(
             bucket=source.bucket,
             key=source.key,
@@ -122,9 +160,36 @@ class HttpTiler(TilerPort):
             page=source.page,
             expires_at=int(time.time()) + 60,
         )
-        token = grant.sign_grant(
-            config.tiler_shared_key.get_secret_value().split(",")[0].strip().encode()
+        return await self._request(
+            "GET",
+            path,
+            headers={"X-Grafy-Grant": grant.sign_grant(self._signing_key())},
+            content_type=content_type,
+            params=params,
+            display=display,
+            attempts=attempts,
         )
+
+    def _signing_key(self) -> bytes:
+        shared_key = self._config.tiler_shared_key
+        assert shared_key is not None
+        return shared_key.get_secret_value().split(",")[0].strip().encode()
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json_body: dict[str, object] | None = None,
+        content_type: str | None = None,
+        params: dict[str, int] | None = None,
+        display: bool = True,
+        attempts: int = 1,
+    ) -> tuple[TilerImage, httpx.Headers]:
+        """Call one tiler path. `content_type=None` accepts PNG or JPEG."""
+        config = self._config
+        assert config.tiler_url is not None
         url = str(config.tiler_url).rstrip("/") + "/" + path
         if path == "info":
             deadline = config.tiler_info_timeout_seconds
@@ -137,9 +202,10 @@ class HttpTiler(TilerPort):
                 async with (
                     asyncio.timeout(deadline),
                     self._client.stream(
-                        "GET",
+                        method,
                         url,
-                        headers={"X-Grafy-Grant": token},
+                        headers=headers,
+                        json=json_body,
                         params=params,
                         follow_redirects=False,
                         timeout=deadline,

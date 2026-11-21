@@ -8,6 +8,14 @@ from pydantic import (
     StrictStr,
     field_validator,
 )
+from grafy_core.spatial_contracts import (
+    RasterProjectionMetadata as StoredRasterProjectionMetadata,
+)
+
+
+class RasterProjectionMetadata(StoredRasterProjectionMetadata):
+    # COG-only projections have no stored tile prefix.
+    prefix: StrictStr | None = Field(default=None, min_length=1)  # pyright: ignore[reportIncompatibleVariableOverride]
 
 
 class GeoRasterScan(BaseModel):

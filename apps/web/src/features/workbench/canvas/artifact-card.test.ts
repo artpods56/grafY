@@ -9,6 +9,7 @@ import {
   canMergeIntoCard,
   cardArtifactRefs,
   collectArtifactCardRefs,
+  isGeoMapArtifact,
   isImageArtifact,
   mergedArtifactCardValue,
   moveArtifactCardRef,
@@ -200,8 +201,26 @@ describe("artifact card value", () => {
 
   it("paints an artifact by its declared type when no content type is known", () => {
     expect(isImageArtifact(ref("aaaa", "file.jpeg"))).toBe(true);
+    expect(isImageArtifact(ref("aaaa", "file.tiff"))).toBe(true);
     expect(isImageArtifact(ref("aaaa", "file.csv"))).toBe(false);
     expect(isImageArtifact(ref("aaaa", "file.csv"), "image/png")).toBe(true);
+    expect(isImageArtifact(ref("aaaa", "geo.raster_scan"))).toBe(false);
+    expect(
+      isImageArtifact(
+        ref("aaaa", "geo.raster_scan"),
+        "image/tiff; application=geotiff",
+      ),
+    ).toBe(false);
+  });
+
+  it("recognizes version 1 GIS artifacts as map cards", () => {
+    expect(isGeoMapArtifact(ref("a1", "geo.map_layer"))).toBe(true);
+    expect(isGeoMapArtifact(ref("a2", "geo.map_document"))).toBe(true);
+    expect(isGeoMapArtifact(ref("a3", "geo.feature_collection"))).toBe(true);
+    expect(isGeoMapArtifact(ref("a4", "geo.raster_scan"))).toBe(true);
+    expect(isGeoMapArtifact(ref("a5", "geo.map_layer", 2))).toBe(false);
+    expect(isGeoMapArtifact(ref("a6", "file.tiff"))).toBe(false);
+    expect(isGeoMapArtifact(ref("a7", "table.data"))).toBe(false);
   });
 
   it("will not merge cards of different artifact types", () => {

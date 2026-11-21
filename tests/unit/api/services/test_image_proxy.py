@@ -27,7 +27,7 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
 )
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
-from grafy_crypto.grants import Grant
+from grafy_crypto.grants import Grant, GrantSource, MosaicGrant
 from grafy_shared.config.tiler import TilerConfig
 
 WS = UUID(int=1)
@@ -485,9 +485,9 @@ async def test_info_returns_a_typed_descriptor(proxy: Harness) -> None:
         "overview_level": None,
         "value_range": None,
         "palette": None,
-        "georeferenced": False,
-        "crs": None,
-        "bounds_wgs84": None,
+        "georeferenced": True,
+        "crs": "EPSG:4326",
+        "bounds_wgs84": [10.0, 10.0, 20.0, 20.0],
     }
     proxy.body = json.dumps(info).encode()
     proxy.content_type = "application/json"
@@ -504,6 +504,8 @@ async def test_info_returns_a_typed_descriptor(proxy: Harness) -> None:
             "min_level",
             "max_level",
             "tile_format",
+            "georeferenced",
+            "bounds_wgs84",
         )
     }
 
@@ -713,3 +715,89 @@ async def test_a_run_page_carries_the_georeference_of_its_origin_pixel(
     assert (page.width, page.height, page.page) == (640, 480, 2)
     assert (page.affine, page.crs) == (affine, crs)
     assert windows == [{"col": "0", "row": "0", "width": "1", "height": "1"}]
+
+
+async def test_mosaic_tile_posts_one_signed_grant_for_every_source(
+    proxy: Harness,
+) -> None:
+    from grafy_api.artifacts.images import TiffSource
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        proxy.requests.append(request)
+        return httpx.Response(
+            200,
+            content=b"mosaic",
+            headers={"Content-Type": "image/png", "X-Grafy-Renderer": "1"},
+        )
+
+    tiler = HttpTiler(
+        proxy.config, client=httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+    )
+    sources = [
+        TiffSource("bucket", "bottom.tif", "a" * 64, 100, 0),
+        TiffSource("bucket", "top.tif", "b" * 64, 200, 1),
+    ]
+    try:
+        image = await tiler.geo_mosaic_tile(sources, z=5, x=3, y=4, extension="png")
+        with pytest.raises(ImageProxyError) as mixed:
+            await tiler.geo_mosaic_tile(
+                [sources[0], replace(sources[1], bucket="other")],
+                z=5,
+                x=3,
+                y=4,
+                extension="png",
+            )
+        with pytest.raises(ImageProxyError):
+            await tiler.geo_mosaic_tile([], z=5, x=3, y=4, extension="png")
+    finally:
+        await tiler.close()
+
+    assert image.body == b"mosaic"
+    assert mixed.value.status == 422
+    assert len(proxy.requests) == 1
+    request = proxy.requests[0]
+    assert request.method == "POST"
+    assert str(request.url) == "http://tiler:8100/geo/mosaic/tiles/5/3/4.png"
+    assert "X-Grafy-Grant" not in request.headers
+    token = json.loads(request.content)["grant"]
+    grant = MosaicGrant.verify_grant(
+        token,
+        keys=[KEY.encode()],
+        bucket="bucket",
+        now=int(time.time()),
+        skew_seconds=0,
+        max_source_bytes=1024,
+    )
+    assert grant.sources == (
+        GrantSource("bottom.tif", "a" * 64, 100, 0),
+        GrantSource("top.tif", "b" * 64, 200, 1),
+    )
+
+
+async def test_mosaic_tile_checks_the_renderer_version(proxy: Harness) -> None:
+    from grafy_api.artifacts.images import TiffSource
+
+    tiler = HttpTiler(
+        proxy.config,
+        client=httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    content=b"mosaic",
+                    headers={"Content-Type": "image/png", "X-Grafy-Renderer": "0"},
+                )
+            )
+        ),
+    )
+    try:
+        with pytest.raises(ImageProxyError, match="renderer version") as raised:
+            await tiler.geo_mosaic_tile(
+                [TiffSource("bucket", "a.tif", "a" * 64, 1, 0)] * 2,
+                z=1,
+                x=0,
+                y=0,
+                extension="png",
+            )
+    finally:
+        await tiler.close()
+    assert raised.value.status == 502

@@ -69,9 +69,7 @@ class ImageInfo:
     value_range: tuple[float, float] | None
     # Palette entries as (r, g, b, a), only for `palette` images.
     palette: tuple[tuple[int, int, int, int], ...] | None
-    # TODO(geo-open-on-map): these three feed a later "open on map" for
-    # georeferenced TIFFs. Nothing renders in map space yet; tiles stay in
-    # pixel space and ignore the georeferencing.
+    # Georeferencing for the map preview and Web Mercator tiles.
     georeferenced: bool
     crs: str | None
     bounds_wgs84: tuple[float, float, float, float] | None

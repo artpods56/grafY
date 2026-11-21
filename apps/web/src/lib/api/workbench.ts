@@ -1,4 +1,5 @@
 import { API_BASE, putUploadBytes, request } from "./client";
+import type { components } from "./generated/grafy";
 import type {
   GeoFeatureQuery,
   GeoRenderDescriptor,
@@ -139,6 +140,22 @@ export function getArtifactGeoRender(
     "GET",
     `/v1/workspaces/${encodeURIComponent(workspaceId)}/artifacts/${encodeURIComponent(artifactId)}/geo/render`,
     { signal },
+  );
+}
+
+type GeoRenderRequest = components["schemas"]["GeoRenderRequest"];
+
+export function renderGeoArtifacts(
+  workspaceId: string,
+  body: Omit<GeoRenderRequest, "basemap"> & {
+    basemap?: GeoRenderRequest["basemap"];
+  },
+  signal?: AbortSignal,
+) {
+  return request<GeoRenderDescriptor>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/artifacts/geo/render`,
+    { body, signal },
   );
 }
 

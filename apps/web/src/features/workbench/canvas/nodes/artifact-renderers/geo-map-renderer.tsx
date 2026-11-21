@@ -1,5 +1,6 @@
 "use client";
 
+import { isGeoMapArtifact } from "../../artifact-card";
 import { GeoMapArtifactRenderer } from "../geo-map-artifact-renderer";
 
 import type { ArtifactRendererSpec } from "./spec";
@@ -11,12 +12,6 @@ export const geoMapRenderer: ArtifactRendererSpec = {
     emits: ["key-selection"],
     accepts: ["filter", "highlight", "focus"],
   },
-  matches: (artifact) =>
-    [
-      "geo.feature_collection",
-      "geo.raster_scan",
-      "geo.map_layer",
-      "geo.map_document",
-    ].includes(artifact.artifact_type) && artifact.schema_version === 1,
+  matches: isGeoMapArtifact,
   Component: GeoMapArtifactRenderer,
 };

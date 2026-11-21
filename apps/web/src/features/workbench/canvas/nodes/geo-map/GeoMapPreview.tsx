@@ -2,7 +2,15 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Layers3, LocateFixed, RotateCcw, X } from "lucide-react";
+import {
+  Compass,
+  Layers3,
+  LocateFixed,
+  Minus,
+  Plus,
+  RotateCcw,
+  X,
+} from "lucide-react";
 import maplibregl from "maplibre-gl";
 import useSWR from "swr";
 
@@ -57,7 +65,7 @@ export function GeoMapPreview({
 }: {
   descriptor: GeoRenderDescriptor;
   availableHeight?: number;
-  onUnload: () => void;
+  onUnload?: () => void;
   interaction?: ArtifactViewerInteractionContext;
 }) {
   const { workspace } = useWorkspaceContext();
@@ -140,7 +148,8 @@ export function GeoMapPreview({
   }, [descriptor.layers, interaction]);
 
   React.useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
     ensurePmtilesProtocol();
     const interactiveLayerIds = descriptor.layers.flatMap((layer) => {
       if (layer.style.kind === "vector") {
@@ -160,9 +169,10 @@ export function GeoMapPreview({
     let map: maplibregl.Map;
     try {
       const mapOptions: maplibregl.MapOptions = {
-        container: containerRef.current,
+        container,
         style: createGeoMapStyle(workspaceId, descriptor, layersRef.current),
-        attributionControl: true,
+        attributionControl: false,
+        trackResize: false,
       };
       const initialBounds = normalizedMapBounds(descriptor.initial_bounds);
       if (initialBounds) {
@@ -182,7 +192,15 @@ export function GeoMapPreview({
       return () => window.clearTimeout(errorTimer);
     }
     mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.addControl(
+      new maplibregl.AttributionControl({ compact: true }),
+      "bottom-right",
+    );
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => map.resize());
+    resizeObserver?.observe(container);
     const renderedFeaturesAt = (event: maplibregl.MapMouseEvent) => {
       const canvas = map.getCanvas();
       const displayedBounds = canvas.getBoundingClientRect();
@@ -327,6 +345,7 @@ export function GeoMapPreview({
       if (message) setMapError(message);
     });
     return () => {
+      resizeObserver?.disconnect();
       mapRef.current = null;
       map.getCanvasContainer().classList.remove("maplibregl-track-pointer");
       map.remove();
@@ -357,10 +376,6 @@ export function GeoMapPreview({
     fitBounds(map, focusResult.bounds, true);
     focusedSelectionRef.current = { map, signature: focusSignature };
   }, [focusResult?.bounds, focusRows.length, focusSignature, mapReady]);
-
-  React.useEffect(() => {
-    mapRef.current?.resize();
-  }, [availableHeight]);
 
   const updateLayer = (index: number, next: GeoRenderLayer) => {
     setSelectedFeature((current) =>
@@ -483,8 +498,10 @@ export function GeoMapPreview({
   return (
     <div
       data-grafy-geo-map="true"
-      {...mapInteractionProps(stylex.props(s.shell))}
-      style={{ height: Math.max(320, availableHeight ?? 420) }}
+      {...mapInteractionProps(
+        stylex.props(s.shell, availableHeight === undefined && s.fillShell),
+      )}
+      style={{ height: availableHeight ?? "100%" }}
     >
       <div
         ref={containerRef}
@@ -496,22 +513,26 @@ export function GeoMapPreview({
         shape="pill"
         className="nodrag nowheel nopan"
         xstyle={s.mapControls}
+        role="group"
+        aria-label="Map controls"
       >
-        <Button
-          size="xs"
-          variant="ghost"
-          aria-expanded={inspectorOpen}
-          aria-controls={inspectorId}
-          onClick={() => {
-            setSelectedFeature(null);
-            setInspectorOpen((open) => !open);
-          }}
+        <IconButton
+          label="Zoom out"
+          size="2xs"
+          onClick={() => mapRef.current?.zoomOut({ duration: 200 })}
         >
-          <Layers3 size={13} aria-hidden="true" />
-          {layers.length} {layers.length === 1 ? "layer" : "layers"}
-        </Button>
+          <Minus size={13} />
+        </IconButton>
+        <IconButton
+          label="Zoom in"
+          size="2xs"
+          onClick={() => mapRef.current?.zoomIn({ duration: 200 })}
+        >
+          <Plus size={13} />
+        </IconButton>
         <IconButton
           label="Fit descriptor bounds"
+          size="2xs"
           title={
             descriptor.initial_bounds
               ? "Fit descriptor bounds"
@@ -525,9 +546,35 @@ export function GeoMapPreview({
         >
           <LocateFixed size={13} />
         </IconButton>
-        <IconButton label="Unload interactive map" onClick={onUnload}>
-          <X size={13} />
+        <IconButton
+          label="Reset orientation"
+          size="2xs"
+          onClick={() => mapRef.current?.resetNorthPitch({ duration: 200 })}
+        >
+          <Compass size={13} />
         </IconButton>
+        <Button
+          size="xs"
+          variant="ghost"
+          aria-expanded={inspectorOpen}
+          aria-controls={inspectorOpen ? inspectorId : undefined}
+          onClick={() => {
+            setSelectedFeature(null);
+            setInspectorOpen((open) => !open);
+          }}
+        >
+          <Layers3 size={13} aria-hidden="true" />
+          {layers.length} {layers.length === 1 ? "layer" : "layers"}
+        </Button>
+        {onUnload ? (
+          <IconButton
+            label="Unload interactive map"
+            size="2xs"
+            onClick={onUnload}
+          >
+            <X size={13} />
+          </IconButton>
+        ) : null}
       </Surface>
       {inspectorOpen ? (
         <div

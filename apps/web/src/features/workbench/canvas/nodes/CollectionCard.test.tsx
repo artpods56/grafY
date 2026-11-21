@@ -9,6 +9,29 @@ import type { NodeSpec, PlacedLibraryItem, Port } from "@/lib/api";
 
 import { createWorkflowNodeData, type WorkflowNodeData } from "../types";
 import { COLLECTION_PORT, type CollectionMember } from "../../model/collection";
+
+vi.mock("./geo-map-artifact-renderer", () => ({
+  GeoMapArtifactRenderer: ({
+    artifact,
+    mode,
+    autoLoad,
+    presentation,
+  }: {
+    artifact: { artifact_id: string };
+    mode: string;
+    autoLoad?: boolean;
+    presentation?: string;
+  }) => (
+    <div
+      data-testid="geo-map-renderer"
+      data-artifact={artifact.artifact_id}
+      data-mode={mode}
+      data-auto-load={String(Boolean(autoLoad))}
+      data-presentation={presentation}
+    />
+  ),
+}));
+
 import { CollectionCard } from "./CollectionCard";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -311,5 +334,35 @@ describe("collection members on the canvas", () => {
     expect(
       container.querySelectorAll("[data-stack-item]").length,
     ).toBeGreaterThan(1);
+  });
+
+  it("renders a collection of geo.map_layer artifacts as a map instead of reading JSON text", () => {
+    mocks.text.layer1 = { text: '{"layers": []}', truncated: false };
+    const container = mount([
+      {
+        plugId: "plug-1",
+        kind: "library",
+        originId: "origin-1",
+        refs: [
+          {
+            artifact_id: "layer1",
+            artifact_type: "geo.map_layer",
+            schema_version: 1,
+          },
+        ],
+      },
+    ]);
+
+    expect(mocks.read).toEqual([]);
+    expect(
+      container.querySelector('[data-artifact-geo-map-body="true"]'),
+    ).not.toBeNull();
+    const renderer = container.querySelector<HTMLElement>(
+      '[data-testid="geo-map-renderer"]',
+    );
+    expect(renderer?.dataset.artifact).toBe("layer1");
+    expect(renderer?.dataset.mode).toBe("map");
+    expect(renderer?.dataset.autoLoad).toBe("true");
+    expect(renderer?.dataset.presentation).toBe("canvas");
   });
 });

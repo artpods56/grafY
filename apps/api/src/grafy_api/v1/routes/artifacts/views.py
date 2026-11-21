@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, get_args
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query
@@ -9,6 +9,7 @@ from grafy_api.artifacts.models import (
     GeoFeatureQueryRequest,
     GeoFeatureQueryResponse,
     GeoRasterTileJsonResponse,
+    GeoRenderRequest,
     GeoRenderResponse,
     TableCellResponse,
     TableColumnResponse,
@@ -28,20 +29,74 @@ from grafy_api.services.errors import (
 from grafy_api.artifacts.errors import (
     ArtifactResponseTooLargeError,
     GeoRangeNotSatisfiableError,
+    GeoRasterTileNotFoundError,
+    GeoRasterUnavailableError,
+    GeoRenderArtifactNotFoundError,
 )
 from grafy_api.artifacts.geo_tiles import IMMUTABLE_CACHE_CONTROL
+from grafy_api.artifacts.images import ImageProxyError
 from .dependencies import (
     ArtifactContentDependency,
     ArtifactGeoDependency,
     ArtifactGeoTileDependency,
     ArtifactTableDependency,
 )
-from grafy_core.domain.identity import WorkspaceCapability
+from grafy_core.domain.identity import WorkspaceAccess, WorkspaceCapability
 
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 
 
 router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workbench"])
+
+
+ViewArtifacts = Annotated[
+    WorkspaceAccess,
+    get_args(require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS))[1],
+]
+
+
+def _geo_error(exc: WorkbenchOperationError | ImageProxyError) -> HTTPException:
+    if isinstance(exc, ImageProxyError):
+        return HTTPException(
+            exc.status,
+            str(exc),
+            headers={"Retry-After": exc.retry_after} if exc.retry_after else None,
+        )
+    if isinstance(exc, GeoRasterUnavailableError):
+        return HTTPException(status_code=422, detail=str(exc))
+    if isinstance(exc, (GeoRenderArtifactNotFoundError, GeoRasterTileNotFoundError)):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, ArtifactContentUnavailableError):
+        return HTTPException(status_code=500, detail=str(exc))
+    return HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post(
+    "/artifacts/geo/render",
+    response_model=GeoRenderResponse,
+    responses={
+        400: {"model": WorkbenchErrorResponse, "description": "Invalid geo request"},
+        404: {"model": WorkbenchErrorResponse, "description": "Artifact not found"},
+        500: {
+            "model": WorkbenchErrorResponse,
+            "description": "Artifact content is unavailable",
+        },
+        503: {"description": "Tiler unavailable or busy"},
+    },
+)
+async def render_geo_artifacts(
+    query: GeoRenderRequest,
+    service: ArtifactGeoDependency,
+    access: ViewArtifacts,
+) -> GeoRenderResponse:
+    try:
+        return await service.load_combined_geo_render(
+            query.artifact_ids,
+            workspace_id=access.workspace_id,
+            basemap=query.basemap,
+        )
+    except (WorkbenchOperationError, ImageProxyError) as exc:
+        raise _geo_error(exc) from exc
 
 
 @router.get(
@@ -54,22 +109,21 @@ router = APIRouter(prefix="/workspaces/{workspace_id}", tags=["workbench"])
             "model": WorkbenchErrorResponse,
             "description": "Artifact content is unavailable",
         },
+        503: {"description": "Tiler unavailable or busy"},
     },
 )
 async def get_geo_render_descriptor(
     artifact_id: UUID,
     service: ArtifactGeoDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
 ) -> GeoRenderResponse:
     artifact = await service.get(access.workspace_id, artifact_id)
     if artifact is None:
         raise HTTPException(status_code=404, detail="Artifact not found")
     try:
         return await service.load_geo_render(artifact, workspace_id=access.workspace_id)
-    except ArtifactContentUnavailableError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except WorkbenchOperationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (WorkbenchOperationError, ImageProxyError) as exc:
+        raise _geo_error(exc) from exc
 
 
 @router.post(
@@ -88,7 +142,7 @@ async def query_geo_features(
     artifact_id: UUID,
     query: GeoFeatureQueryRequest,
     service: ArtifactGeoDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
 ) -> GeoFeatureQueryResponse:
     artifact = await service.get(access.workspace_id, artifact_id)
     if artifact is None:
@@ -99,10 +153,8 @@ async def query_geo_features(
             query.rows,
             workspace_id=access.workspace_id,
         )
-    except ArtifactContentUnavailableError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except WorkbenchOperationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (WorkbenchOperationError, ImageProxyError) as exc:
+        raise _geo_error(exc) from exc
 
 
 @router.get(
@@ -206,12 +258,13 @@ async def get_geo_exact_feature(
             "model": WorkbenchErrorResponse,
             "description": "Raster projection is unavailable",
         },
+        503: {"description": "Tiler unavailable or busy"},
     },
 )
 async def get_geo_raster_tilejson(
     source_id: UUID,
     service: ArtifactGeoTileDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
 ) -> GeoRasterTileJsonResponse:
     artifact = await service.get(access.workspace_id, source_id)
     if artifact is None:
@@ -231,10 +284,8 @@ async def get_geo_raster_tilejson(
                 ]
             }
         )
-    except ArtifactContentUnavailableError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except WorkbenchOperationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (WorkbenchOperationError, ImageProxyError) as exc:
+        raise _geo_error(exc) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -244,19 +295,23 @@ async def get_geo_raster_tilejson(
 
 @router.get(
     "/artifacts/{source_id}/geo/raster/{z}/{x}/{y}.png",
+    response_class=Response,
     responses={
+        200: {"content": {"image/png": {}, "image/jpeg": {}}},
+        204: {"description": "Tile is outside the georeferenced image"},
         400: {"model": WorkbenchErrorResponse, "description": "Invalid raster source"},
         404: {"model": WorkbenchErrorResponse, "description": "Raster tile not found"},
         500: {
             "model": WorkbenchErrorResponse,
             "description": "Raster tile is unavailable",
         },
+        503: {"description": "Tiler unavailable or busy"},
     },
 )
 async def get_geo_raster_tile(
     source_id: UUID,
     service: ArtifactGeoTileDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
     z: Annotated[int, Path(ge=0, le=24)],
     x: Annotated[int, Path(ge=0)],
     y: Annotated[int, Path(ge=0)],
@@ -272,19 +327,20 @@ async def get_geo_raster_tile(
             x=x,
             y=y,
         )
-    except ArtifactContentUnavailableError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except WorkbenchOperationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (WorkbenchOperationError, ImageProxyError) as exc:
+        raise _geo_error(exc) from exc
     if tile is None:
-        raise HTTPException(status_code=404, detail="Raster tile not found")
+        return Response(
+            status_code=204, headers={"Cache-Control": "private, max-age=300"}
+        )
     headers = {
         "Content-Length": str(len(tile.content)),
-        "Cache-Control": "private, max-age=300",
+        "Cache-Control": IMMUTABLE_CACHE_CONTROL
+        if tile.immutable
+        else "private, max-age=300",
     }
     if tile.etag is not None:
         headers["ETag"] = tile.etag
-        headers["Cache-Control"] = IMMUTABLE_CACHE_CONTROL
     return Response(
         content=tile.content,
         media_type=tile.content_type,

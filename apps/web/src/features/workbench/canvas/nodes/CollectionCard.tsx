@@ -33,8 +33,11 @@ import { RemoteSelectionRing } from "../../room/RemoteSelectionRing";
 import { libraryFileDisplayName } from "../../ui/side-panel/library-tree";
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
+  DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
   declaredArtifactContentType,
   artifactTypeFor,
+  isGeoMapArtifact,
   isImageArtifact,
 } from "../artifact-card";
 import { useOptionalCanvasGridSettings } from "../canvas-grid-settings";
@@ -64,6 +67,7 @@ import { artifactRail } from "./ArtifactControls";
 import { ArtifactLabel, ImageArtifactBody } from "./ImageArtifactBody";
 import { NodeMenu, type NodeMenuItem } from "./NodeMenu";
 import { ArtifactStack, SequencePager, stackPlateProps } from "./ArtifactStack";
+import { GeoMapArtifactBody } from "./GeoMapArtifactBody";
 import {
   PortBall,
   PortRevealProvider,
@@ -346,6 +350,7 @@ export function CollectionCard({
       leader,
       itemsById.get(leader.artifact_id)?.artifact.content_type,
     );
+  const maps = leader !== null && isGeoMapArtifact(leader);
   const first = refs[frontIndex] ?? null;
   // What a member's bytes are: what the Library says it stored, or, for one an
   // output produced, what its type declares.
@@ -373,10 +378,11 @@ export function CollectionCard({
     : null;
 
   const width = gridAlignedWidth(
-    data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
+    data.layout?.width ??
+      (maps ? DEFAULT_ARTIFACT_MAP_CARD_WIDTH : DEFAULT_ARTIFACT_CARD_WIDTH),
     grid?.settings,
     grid?.bypassSnap,
-    150,
+    maps ? DEFAULT_ARTIFACT_CARD_WIDTH : 150,
   );
   const stackDepth = Math.min(refs.length, 3);
   const firstSize = first ? imageSizes[first.artifact_id] : undefined;
@@ -411,7 +417,7 @@ export function CollectionCard({
   const plugRevision = members.map((member) => member.plugId).join("|");
   // The body's height is what moves the ports, and reading a member's bytes is
   // async: a tile giving way to its JSON has to republish the handles it moved.
-  const bodyRevision = shownText !== null ? "json" : "tile";
+  const bodyRevision = maps ? "map" : shownText !== null ? "json" : "tile";
   const onHandlesMeasured = data.onHandlesMeasured;
   const measuredBindings = data.artifactTypeBindings;
   React.useLayoutEffect(() => {
@@ -652,6 +658,41 @@ export function CollectionCard({
                   }))
                 }
               />
+            ) : maps && first ? (
+              refs.length > 1 ? (
+                <ArtifactStack
+                  count={refs.length}
+                  index={frontIndex}
+                  overlay={pager}
+                  renderLayer={(slot, place) => {
+                    const front = slot.slot === 0 && !slot.tail;
+                    return (
+                      <div
+                        {...place}
+                        {...(front ? {} : stackPlateProps(slot.tail))}
+                      >
+                        {front ? (
+                          <GeoMapArtifactBody
+                            artifact={first}
+                            height={DEFAULT_ARTIFACT_MAP_BODY_HEIGHT}
+                            selected={Boolean(selected)}
+                            tier={tier}
+                            remoteSelectionColor={data.remoteSelectionColor}
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  }}
+                />
+              ) : (
+                <GeoMapArtifactBody
+                  artifact={first}
+                  height={DEFAULT_ARTIFACT_MAP_BODY_HEIGHT}
+                  selected={Boolean(selected)}
+                  tier={tier}
+                  remoteSelectionColor={data.remoteSelectionColor}
+                />
+              )
             ) : shownText !== null ? (
               <ArtifactStack
                 count={refs.length}

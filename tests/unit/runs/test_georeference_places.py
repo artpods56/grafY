@@ -118,7 +118,9 @@ async def test_projects_region_centres_and_outlines_to_wgs84() -> None:
         "pixel_row",
         "longitude",
         "latitude",
+        "point_wkt",
         "geometry_wkt",
+        "source_artifact_id",
     ]
     label, square = table.rows
     assert {key: label[key] for key in ("region", "text", "confidence")} == {
@@ -128,6 +130,8 @@ async def test_projects_region_centres_and_outlines_to_wgs84() -> None:
     }
     assert (label["recognizer"], label["detection_score"]) == ("paddle", 0.7)
     assert (label["pixel_col"], label["pixel_row"]) == (100.0, 100.0)
+    assert label["source_artifact_id"] == str(artifact_id)
+    assert label["point_wkt"] == f"POINT ({label['longitude']} {label['latitude']})"
     longitude, latitude = label["longitude"], label["latitude"]
     assert isinstance(longitude, float) and isinstance(latitude, float)
     assert _close((longitude, latitude), (1.0, 0.0))

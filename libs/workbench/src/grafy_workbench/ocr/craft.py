@@ -35,11 +35,23 @@ class CraftResponse(BaseModel):
 @final
 class CraftDetector(TextDetector):
     def __init__(
-        self, api_key: SecretStr, *, timeout_ms: int, max_retries: int
+        self,
+        api_key: SecretStr,
+        *,
+        timeout_ms: int,
+        max_retries: int,
+        text_threshold: float,
+        link_threshold: float,
+        low_text: float,
     ) -> None:
         self._api_key = api_key
         self._timeout_seconds = timeout_ms / 1_000
         self._attempts = max_retries + 1
+        self.request_options = {
+            "text_threshold": text_threshold,
+            "link_threshold": link_threshold,
+            "low_text": low_text,
+        }
 
     async def detect(self, png: bytes, *, width: int, height: int) -> list[TextRegion]:
         if (
@@ -52,7 +64,10 @@ class CraftDetector(TextDetector):
             ProviderRequest(
                 service="CRAFT",
                 url=CRAFT_URL,
-                payload={"image_base64": b64encode(png).decode("ascii")},
+                payload={
+                    "image_base64": b64encode(png).decode("ascii"),
+                    **self.request_options,
+                },
                 api_key=self._api_key,
                 attempts=self._attempts,
                 timeout_seconds=self._timeout_seconds,
@@ -98,6 +113,36 @@ class CraftConfig(NodeConfig):
             "retry costs provider time and changes nothing else."
         ),
     )
+    text_threshold: float = Field(
+        title="Text threshold",
+        json_schema_extra={"x-grafy-advanced": True},
+        default=0.7,
+        gt=0,
+        le=1,
+        description=(
+            "Drop any detected region whose peak text score is below this. "
+            "Symbol-dense scans (forest glyphs on old maps) produce weak regions; "
+            "raising this toward 0.85 removes most of them."
+        ),
+    )
+    link_threshold: float = Field(
+        title="Link threshold",
+        json_schema_extra={"x-grafy-advanced": True},
+        default=0.4,
+        gt=0,
+        le=1,
+        description=(
+            "Affinity score a pixel needs to join two character regions into one."
+        ),
+    )
+    low_text: float = Field(
+        title="Low text threshold",
+        json_schema_extra={"x-grafy-advanced": True},
+        default=0.4,
+        gt=0,
+        le=1,
+        description="Text-score floor used while grouping pixels into regions.",
+    )
 
 
 class CraftOutput(NodeOutput):
@@ -132,5 +177,8 @@ class CraftProviderNode(Node[CraftConfig, CraftInput, CraftOutput]):
                 await context.secrets.require("api_key"),
                 timeout_ms=config.timeout_ms,
                 max_retries=config.max_retries,
+                text_threshold=config.text_threshold,
+                link_threshold=config.link_threshold,
+                low_text=config.low_text,
             )
         )
