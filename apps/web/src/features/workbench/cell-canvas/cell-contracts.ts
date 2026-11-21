@@ -223,6 +223,13 @@ export interface OperatorCardSurfaceData {
 export type ArtifactPreviewKind =
   "image" | "table" | "markdown" | "file" | "map";
 
+/** One artifact of a sequence card, as its spread shows it. */
+export interface ArtifactStackItem {
+  artifactId: string;
+  imageUrl?: string | null;
+  label: string;
+}
+
 export interface ArtifactCardSurfaceData {
   kind: "artifact";
   previewKind: ArtifactPreviewKind;
@@ -231,6 +238,18 @@ export interface ArtifactCardSurfaceData {
   filename?: string;
   dimensionsLabel?: string;
   imageUrl?: string | null;
+  /**
+   * The next items' pictures in a sequence, after `imageUrl`: at most two,
+   * shown as the card backs fanned behind the plate.
+   */
+  stackImageUrls?: readonly string[];
+  /** How many artifacts the card holds, when it holds a sequence. */
+  itemCount?: number;
+  /**
+   * Every item of a sequence, in order, for its spread: its
+   * picture when the browser can paint it, and its name.
+   */
+  stackItems?: readonly ArtifactStackItem[];
   previewText?: string | null;
   tableHeaders?: readonly string[];
   tableRows?: readonly (readonly string[])[];
@@ -252,6 +271,8 @@ export interface CollectionCardSurfaceData {
   members: readonly CollectionCardMemberSpec[];
   /** When true, allocates 1 spare plug row at the bottom. */
   showSparePlug?: boolean;
+  /** Unconnected plug id backing the spare drop slot. */
+  sparePlugId?: string | null;
 }
 
 export type AnnotationColorToken =

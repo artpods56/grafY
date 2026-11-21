@@ -4,8 +4,10 @@ import {
   cardWorldRect,
   type CellCardModel,
   type CellPipeModel,
+  type CellPort,
   type RoutedCellPipe,
   type WorldPoint,
+  findPipeEndPort,
 } from "./cell-model";
 
 /** A 150 × 25 box: the 24px capsule with a pixel to spare. */
@@ -153,6 +155,19 @@ function staggerAnchor(
   return candidate.anchor;
 }
 
+function pipeAttachmentLabel(pipe: CellPipeModel): string {
+  if (pipe.incompatible) return "Incompatible";
+  if (pipe.projectionLabel) {
+    return pipe.collectionMode === "map"
+      ? `map · ${pipe.projectionLabel}`
+      : pipe.projectionLabel;
+  }
+  if (pipe.collectionMode === "map") return "each item";
+  if (pipe.conversionLabel) return pipe.conversionLabel;
+  if (pipe.enabled === false) return "Disabled";
+  return pipe.sourcePortLabel ?? "";
+}
+
 export function solvePipeAttachmentAnchors({
   cards,
   pipes,
@@ -160,18 +175,26 @@ export function solvePipeAttachmentAnchors({
   dockedJoins,
   resolveColor,
   includeAll,
+  activePipeIds,
 }: {
   cards: readonly CellCardModel[];
   pipes: readonly CellPipeModel[];
   routedPipes: ReadonlyMap<string, RoutedCellPipe>;
   dockedJoins: readonly CellDockedJoin[];
-  resolveColor: (artifactTypeId: string) => string;
+  resolveColor: (artifactTypeId: string, port?: CellPort) => string;
   includeAll?: boolean;
+  activePipeIds?: ReadonlySet<string>;
 }): CellPipeAttachment[] {
   const eligiblePipes = pipes
     .filter(
       (pipe) =>
-        includeAll === true || pipe.projectionLabel || pipe.conversionLabel,
+        includeAll === true ||
+        pipe.projectionLabel ||
+        pipe.conversionLabel ||
+        pipe.collectionMode === "map" ||
+        pipe.enabled === false ||
+        pipe.incompatible === true ||
+        activePipeIds?.has(pipe.id),
     )
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const cardsById = new Map(cards.map((card) => [card.id, card]));
@@ -189,7 +212,7 @@ export function solvePipeAttachmentAnchors({
       pipeId: pipe.id,
       widthCells: ATTACHMENT_WIDTH_CELLS,
       heightCells: ATTACHMENT_HEIGHT_CELLS,
-      label: pipe.projectionLabel || pipe.conversionLabel || "",
+      label: pipeAttachmentLabel(pipe),
       conversionLabel: pipe.conversionLabel ?? null,
       enabled: pipe.enabled ?? true,
     };
@@ -209,9 +232,9 @@ export function solvePipeAttachmentAnchors({
     const source = points?.[0];
     const target = points?.at(-1);
     const sourceCard = cardsById.get(pipe.sourceCardId);
-    const sourcePort = sourceCard?.ports.find(
-      (port) => port.id === pipe.sourcePortId,
-    );
+    const sourcePort =
+      sourceCard &&
+      findPipeEndPort(sourceCard.ports, pipe.sourcePortId, "output");
     if (!points || !source || !target || !sourcePort) continue;
 
     const ports = [source, target];
@@ -223,7 +246,7 @@ export function solvePipeAttachmentAnchors({
       ...appearance,
       anchor,
       segmentOrientation: candidate.orientation,
-      color: resolveColor(sourcePort.artifactTypeId),
+      color: resolveColor(sourcePort.artifactTypeId, sourcePort),
       isDocked: false,
     });
   }

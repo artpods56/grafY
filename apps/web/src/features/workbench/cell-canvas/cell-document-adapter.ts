@@ -4,9 +4,13 @@ import type {
   NodeSpec,
   Port,
   SavedGraphDocument,
+  ServiceContract,
 } from "@/lib/api";
 
-import { DEFAULT_ARTIFACT_CARD_WIDTH } from "../canvas/artifact-card";
+import {
+  cardArtifactRefs,
+  DEFAULT_ARTIFACT_CARD_WIDTH,
+} from "../canvas/artifact-card";
 import { schemaFields, type SchemaField } from "../canvas/config-schema";
 import {
   DEFAULT_NODE_WIDTH,
@@ -33,6 +37,7 @@ import type {
 import type {
   AnnotationColorToken,
   ArtifactPreviewKind,
+  ArtifactStackItem,
   CellCardSurfaceData,
   CellConfigFieldKind,
   CellConfigFieldSpec,
@@ -45,6 +50,7 @@ import { countConfigShelfCells } from "./cell-card-geometry";
 import {
   CELL_SIZE,
   STRIP_FIRST_PORT_ROW,
+  artifactCardOutputRow,
   FIRST_PORT_ROW,
   PORT_ROW_PITCH,
   cellToWorldOrigin,
@@ -130,6 +136,23 @@ function connectionsByNode(document: AuthoredGraphDocument) {
   return byNode;
 }
 
+function servicePortContractLabel(
+  port: Port,
+  serviceContracts: readonly ServiceContract[] | undefined,
+): string {
+  const contracts = port.service_contracts ?? [];
+  if (contracts.length === 0) return "service";
+  return contracts
+    .map((key) => {
+      const match = serviceContracts?.find(
+        (contract) =>
+          contract.id === key.id && contract.version === key.version,
+      );
+      return match?.title ?? `${key.id}@${key.version}`;
+    })
+    .join(", ");
+}
+
 /**
  * Ports of a node, {@link PORT_ROW_PITCH} rows apart. An operator's fixed
  * ports pair up by row from {@link FIRST_PORT_ROW} and its instance plugs
@@ -142,20 +165,36 @@ function nodePorts(
   spec: NodeSpec | undefined,
   connections: ReadonlyMap<string, PlugConnection> | undefined,
   isCollection: boolean,
+  serviceContracts?: readonly ServiceContract[],
 ) {
   const inputs = spec?.inputs ?? [];
   const fixedInputs = inputs.filter((port) => !port.instance_plugs);
   const outputs = spec?.outputs ?? [];
   const firstRow = isCollection ? STRIP_FIRST_PORT_ROW : FIRST_PORT_ROW;
-  const fixedPort = (port: Port, index: number): CellPort => ({
-    id: port.name,
-    name: port.title || port.name,
-    direction: port.direction,
-    rowOffset: firstRow + index * PORT_ROW_PITCH,
-    artifactTypeId: portTypeId(node, port),
-    shape: port.shape,
-    required: port.required,
-  });
+  const fixedPort = (port: Port, index: number): CellPort => {
+    if (port.kind === "service") {
+      return {
+        id: port.name,
+        name: port.title || port.name,
+        direction: port.direction,
+        rowOffset: firstRow + index * PORT_ROW_PITCH,
+        artifactTypeId: port.service_contracts?.[0]?.id ?? "service",
+        shape: port.shape,
+        required: port.required,
+        kind: "service",
+        serviceContractLabel: servicePortContractLabel(port, serviceContracts),
+      };
+    }
+    return {
+      id: port.name,
+      name: port.title || port.name,
+      direction: port.direction,
+      rowOffset: firstRow + index * PORT_ROW_PITCH,
+      artifactTypeId: portTypeId(node, port),
+      shape: port.shape,
+      required: port.required,
+    };
+  };
   const ports = [...fixedInputs.map(fixedPort), ...outputs.map(fixedPort)];
   const groups: CellInstancePlugGroup[] = [];
   let nextRow =
@@ -309,12 +348,18 @@ function collectionSurface(
       });
     }
   }
+  const sparePlug = node.input_plugs.find(
+    (plug) =>
+      plug.port === COLLECTION_PORT &&
+      !connections?.has(targetPortId(plug.port, plug.id)),
+  );
   return {
     kind: "collection",
     artifactTypeId,
     typeLabel,
     members,
     showSparePlug: true,
+    sparePlugId: sparePlug?.id ?? null,
   };
 }
 
@@ -323,6 +368,23 @@ export interface CellNodeRunState {
   statusLabel?: string;
   runDisabled?: boolean;
   appendix?: CellExecutionAppendixSpec | null;
+}
+
+export interface CellOriginLink {
+  id: string;
+  originId: string;
+  sourceCardId: string;
+  targetCardId: string;
+  targetPortId: string;
+  collectionMode: "direct" | "map";
+  conversionCount?: number;
+}
+
+export interface CellPipeMetadata {
+  projectionLabel?: string | null;
+  conversionLabel?: string | null;
+  sourcePortLabel?: string;
+  incompatible?: boolean;
 }
 
 function annotationColor(color: string): AnnotationColorToken {
@@ -387,6 +449,26 @@ function viewerPreviewKind(artifactTypeId: string): ArtifactPreviewKind {
   return "file";
 }
 
+/** What an artifact card can paint of its current value. */
+export interface CellViewerImages {
+  /** The first item's picture, or null when the browser cannot paint it. */
+  imageUrl: string | null;
+  /** Up to two following items' pictures, for the fanned stack. */
+  stackImageUrls: readonly string[];
+  /** Items the card holds: 1 for a single artifact. */
+  itemCount: number;
+}
+
+/** What the caller knows about an artifact card's file, already worded. */
+export interface CellViewerMetadata {
+  /** The file's name as the Library shows it. */
+  filename?: string | null;
+  /** The file's size, already formatted (`12 KB`). */
+  byteSizeLabel?: string | null;
+  /** Every item of a sequence, named and pictured, for its spread. */
+  stackItems?: readonly ArtifactStackItem[];
+}
+
 export function cellGraphFromAuthoredDocument(
   document: AuthoredGraphDocument,
   registry: NodeRegistry,
@@ -394,6 +476,23 @@ export function cellGraphFromAuthoredDocument(
     presentation?: SavedGraphDocument["presentation"] | null;
     nodeRunState?: Readonly<Record<string, CellNodeRunState>>;
     collapsedAppendices?: ReadonlySet<string>;
+    originLinks?: readonly CellOriginLink[];
+    viewerOutputValues?: ReadonlyMap<
+      string,
+      { artifactTypeId: string; schemaVersion?: number; shape: "one" | "many" }
+    >;
+    pipeMetadataById?: ReadonlyMap<string, CellPipeMetadata>;
+    /**
+     * Pictures resolved for artifact cards, by card id. The caller owns the
+     * URLs, so this adapter never names the API.
+     */
+    viewerImages?: ReadonlyMap<string, CellViewerImages>;
+    /**
+     * File names and sizes for artifact cards, by card id. Like
+     * `viewerImages`, the caller resolves them, so this adapter never reads
+     * the Library.
+     */
+    viewerMetadata?: ReadonlyMap<string, CellViewerMetadata>;
   },
 ): { graph: CellGraph; surfaceById: Record<string, CellCardSurfaceData> } {
   const cards: CellCardModel[] = [];
@@ -422,6 +521,7 @@ export function cellGraphFromAuthoredDocument(
       spec,
       nodeConnections,
       isCollection,
+      registry.service_contracts,
     );
     const collection = isCollection
       ? collectionSurface(
@@ -591,9 +691,17 @@ export function cellGraphFromAuthoredDocument(
     );
     const fallbackType =
       feedNode && feedPort ? portArtifactType(feedNode, feedPort) : undefined;
+    const liveOutput = options?.viewerOutputValues?.get(viewer.id);
+    // A following card shows what its producer last made, which may be
+    // narrower than the port's declared type (a PNG out of an image port).
     const artifactKey: ArtifactTypeKey | null = ref
       ? { id: ref.artifact_type, schema_version: ref.schema_version }
-      : (fallbackType ?? null);
+      : liveOutput?.schemaVersion !== undefined
+        ? {
+            id: liveOutput.artifactTypeId,
+            schema_version: liveOutput.schemaVersion,
+          }
+        : (fallbackType ?? null);
     const artifactTypeId = artifactKey?.id ?? "artifact";
     const typeLabel = collectionTypeLabel(artifactKey, registry.artifact_types);
     const previewKind = viewerPreviewKind(artifactTypeId);
@@ -608,18 +716,35 @@ export function cellGraphFromAuthoredDocument(
         shape: "one",
       });
     }
-    if (ref) {
+    const heightCells = Math.max(
+      6,
+      snapPixelsToCell(viewer.layout?.body_height ?? 150),
+    );
+    if (ref || liveOutput) {
       viewerPorts.push({
         id: "artifact-card-output",
         name: "artifact",
         direction: "output",
-        rowOffset: STRIP_FIRST_PORT_ROW,
-        artifactTypeId,
-        shape: "item_refs" in ref ? "many" : "one",
+        rowOffset: artifactCardOutputRow(heightCells),
+        artifactTypeId: ref
+          ? ref.artifact_type
+          : (liveOutput?.artifactTypeId ?? artifactTypeId),
+        shape: ref
+          ? "item_refs" in ref
+            ? "many"
+            : "one"
+          : (liveOutput?.shape ?? "one"),
       });
     }
+    const images = options?.viewerImages?.get(viewer.id);
+    const metadata = options?.viewerMetadata?.get(viewer.id);
+    const filename = metadata?.filename ?? feedLink?.source_port_name;
+    const itemCount =
+      ref && "item_refs" in ref ? ref.item_refs.length : images?.itemCount;
     const itemCountLabel =
-      ref && "item_refs" in ref ? `${ref.item_refs.length} items` : undefined;
+      itemCount !== undefined && itemCount > 1
+        ? `${itemCount} items`
+        : undefined;
     cards.push({
       id: viewer.id,
       kind: "artifact",
@@ -630,10 +755,7 @@ export function cellGraphFromAuthoredDocument(
         MIN_CARD_WIDTH_CELLS,
         snapPixelsToCell(viewer.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH),
       ),
-      heightCells: Math.max(
-        6,
-        snapPixelsToCell(viewer.layout?.body_height ?? 150),
-      ),
+      heightCells,
       ports: viewerPorts,
       resizable: true,
     });
@@ -643,7 +765,22 @@ export function cellGraphFromAuthoredDocument(
       artifactTypeId,
       typeLabel,
       ...(itemCountLabel ? { dimensionsLabel: itemCountLabel } : {}),
-      ...(feedLink ? { filename: feedLink.source_port_name } : {}),
+      ...(itemCount !== undefined && itemCount > 1 ? { itemCount } : {}),
+      ...(itemCount !== undefined && itemCount > 1 && metadata?.stackItems
+        ? { stackItems: metadata.stackItems }
+        : {}),
+      ...(filename ? { filename } : {}),
+      ...(metadata?.byteSizeLabel
+        ? { byteSizeLabel: metadata.byteSizeLabel }
+        : {}),
+      ...(previewKind === "image" && images
+        ? {
+            imageUrl: images.imageUrl,
+            ...(images.stackImageUrls.length
+              ? { stackImageUrls: images.stackImageUrls }
+              : {}),
+          }
+        : {}),
     });
   }
 
@@ -670,21 +807,103 @@ export function cellGraphFromAuthoredDocument(
   }
 
   const cardIds = new Set(cards.map((card) => card.id));
+  const originPipes: CellPipeModel[] = [];
+  if (options?.originLinks !== undefined) {
+    for (const link of options.originLinks) {
+      if (!cardIds.has(link.sourceCardId) || !cardIds.has(link.targetCardId)) {
+        continue;
+      }
+      originPipes.push({
+        id: link.id,
+        sourceCardId: link.sourceCardId,
+        sourcePortId: "artifact-card-output",
+        targetCardId: link.targetCardId,
+        targetPortId: link.targetPortId,
+        enabled: true,
+        collectionMode: link.collectionMode,
+        sourcePortLabel: "artifact",
+        projectionLabel: null,
+        conversionLabel: link.conversionCount
+          ? `${link.conversionCount} conv`
+          : null,
+      });
+    }
+  } else {
+    for (const origin of document.origins) {
+      const targetPort = targetPortId(origin.to_port, origin.to_plug);
+      if (!cardIds.has(origin.to_node)) continue;
+      const remaining = new Set(
+        cardArtifactRefs(origin.value).map((ref) => ref.artifact_id),
+      );
+      for (const viewer of viewers) {
+        if (!cardIds.has(viewer.id)) continue;
+        if (
+          origin.source_card_ids != null &&
+          !origin.source_card_ids.includes(viewer.id)
+        ) {
+          continue;
+        }
+        const value = viewer.artifact_ref ?? null;
+        const refs = cardArtifactRefs(value);
+        if (
+          !value ||
+          value.artifact_type !== origin.value.artifact_type ||
+          value.schema_version !== origin.value.schema_version ||
+          refs.length === 0 ||
+          !refs.every((ref) => remaining.has(ref.artifact_id))
+        ) {
+          continue;
+        }
+        originPipes.push({
+          id: `artifact-origin:${origin.id}:${viewer.id}`,
+          sourceCardId: viewer.id,
+          sourcePortId: "artifact-card-output",
+          targetCardId: origin.to_node,
+          targetPortId: targetPort,
+          enabled: true,
+          collectionMode: origin.collection_mode,
+          sourcePortLabel: "artifact",
+          projectionLabel: null,
+          conversionLabel: origin.conversion_path.length
+            ? `${origin.conversion_path.length} conv`
+            : null,
+        });
+        if (origin.source_card_ids == null) {
+          for (const ref of refs) remaining.delete(ref.artifact_id);
+          if (remaining.size === 0) break;
+        }
+      }
+    }
+  }
+
   const pipes: CellPipeModel[] = [
-    ...document.edges.map((edge) => ({
-      id: edge.id,
-      sourceCardId: edge.from_node,
-      sourcePortId: edge.from_port,
-      targetCardId: edge.to_node,
-      targetPortId: targetPortId(edge.to_port, edge.to_plug),
-      enabled: edge.enabled,
-      projectionLabel: edge.projection?.path.length
-        ? edge.projection.path.join(".")
-        : null,
-      conversionLabel: edge.conversion_path.length
-        ? `${edge.conversion_path.length} conv`
-        : null,
-    })),
+    ...document.edges.map((edge): CellPipeModel => {
+      const meta = options?.pipeMetadataById?.get(edge.id);
+      return {
+        id: edge.id,
+        sourceCardId: edge.from_node,
+        sourcePortId: edge.from_port,
+        targetCardId: edge.to_node,
+        targetPortId: targetPortId(edge.to_port, edge.to_plug),
+        enabled: edge.enabled,
+        collectionMode: edge.collection_mode,
+        sourcePortLabel: meta?.sourcePortLabel ?? edge.from_port,
+        projectionLabel:
+          meta?.projectionLabel !== undefined
+            ? meta.projectionLabel
+            : edge.projection?.path.length
+              ? edge.projection.path.join(".")
+              : null,
+        conversionLabel:
+          meta?.conversionLabel !== undefined
+            ? meta.conversionLabel
+            : edge.conversion_path.length
+              ? `${edge.conversion_path.length} conv`
+              : null,
+        ...(meta?.incompatible ? { incompatible: true } : {}),
+      };
+    }),
+    ...originPipes,
     ...presentationLinks.flatMap((link): CellPipeModel[] => {
       if (
         !cardIds.has(link.source_node_id) ||
@@ -692,6 +911,7 @@ export function cellGraphFromAuthoredDocument(
       ) {
         return [];
       }
+      const meta = options?.pipeMetadataById?.get(link.id);
       return [
         {
           id: link.id,
@@ -700,9 +920,13 @@ export function cellGraphFromAuthoredDocument(
           targetCardId: link.target_viewer_id,
           targetPortId: "artifact-viewer-input",
           enabled: true,
-          projectionLabel: link.projection?.path.length
-            ? link.projection.path.join(".")
-            : null,
+          sourcePortLabel: meta?.sourcePortLabel ?? link.source_port_name,
+          projectionLabel:
+            meta?.projectionLabel !== undefined
+              ? meta.projectionLabel
+              : link.projection?.path.length
+                ? link.projection.path.join(".")
+                : null,
           conversionLabel: null,
         },
       ];

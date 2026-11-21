@@ -6,8 +6,13 @@ import * as stylex from "@stylexjs/stylex";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { ConnectorFitting } from "./pipe-visuals";
-import type { CellGlassMaterial } from "./cell-glass-stage";
+import { ConnectorFitting, type PipeFamily } from "./pipe-visuals";
+import {
+  cardPlateFill,
+  type CellGlassMaterial,
+  type CellWellStyle,
+} from "./cell-glass-stage";
+import { PUNCHED_LABEL_INSET, PunchedPortSocket } from "./punched-port";
 import {
   CARD_HEADER_HEIGHT,
   CARD_HEADER_TOP,
@@ -15,9 +20,13 @@ import {
   CARD_PLATE_INSET_X,
   CARD_PLATE_TOP,
   CELL_SIZE,
+  punchedPortCardCentre,
   type CellCardModel,
   type CellPort,
   type WorldPoint,
+  cellPortKey,
+  isPortActive,
+  isPortConnected,
 } from "./cell-model";
 
 /**
@@ -31,7 +40,8 @@ import {
  *
  * A connected port's ring and well are drawn by the glass stage under the
  * card; the card draws only the open ring of an unconnected port, with the same
- * Opus fitting, so the two read as one mark.
+ * Opus fitting, so the two read as one mark. With punched wells the card draws
+ * every port itself, in a hole through its plate.
  */
 
 export interface CellCardProps {
@@ -39,6 +49,12 @@ export interface CellCardProps {
   /** Applied only to the dragged/settling card; undefined when resting. */
   visualOffset?: WorldPoint;
   material: CellGlassMaterial;
+  /** `punched` drills each port through the plate; defaults to `recessed`. */
+  well?: CellWellStyle;
+  /** The pipe family a punched port's stub is drawn in. */
+  pipe?: PipeFamily;
+  /** How solid the plate is, 0.2 to 1; undefined keeps it solid. */
+  cardFill?: number;
   selected: boolean;
   dragging: boolean;
   /** Port ids on this card that currently have a pipe (glass stage draws their well + connector fitting). */
@@ -139,8 +155,9 @@ const s = stylex.create({
     backgroundColor: tokens.colorChrome,
     borderColor: tokens.colorBorder,
   },
+  // Cards are solid: a pipe under one is hidden, never seen through it.
   plateLiquid: {
-    backgroundColor: `color-mix(in srgb, ${tokens.colorSurface} 58%, transparent)`,
+    backgroundColor: tokens.colorSurface,
     borderColor: LIQUID_BORDER,
   },
   // Selected or held, the plate takes a very light accent edge and a soft 3px
@@ -227,6 +244,13 @@ const s = stylex.create({
       ":focus-visible": `2px solid ${tokens.colorAccent}`,
     },
   },
+  // A punched port answers the pointer with its ring, not a tinted disc.
+  portPunched: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": "transparent",
+    },
+  },
   portHot: {
     backgroundColor: {
       default: "color-mix(in srgb, var(--cell-port) 30%, transparent)",
@@ -264,18 +288,25 @@ function portLabel(port: CellPort): React.ReactNode {
 }
 
 /** Port centre relative to the card's outer origin. */
-function portCentre(card: CellCardModel, port: CellPort): WorldPoint {
+function portCentre(
+  card: CellCardModel,
+  port: CellPort,
+  punched: boolean,
+): WorldPoint {
+  if (punched) return punchedPortCardCentre(card, port);
   const width = card.widthCells * CELL_SIZE;
-  return {
-    x: port.direction === "input" ? -CELL_SIZE / 2 : width + CELL_SIZE / 2,
-    y: (port.rowOffset + 0.5) * CELL_SIZE,
-  };
+  const input = port.direction === "input";
+  const y = (port.rowOffset + 0.5) * CELL_SIZE;
+  return { x: input ? -CELL_SIZE / 2 : width + CELL_SIZE / 2, y };
 }
 
 function CellCardImpl({
   card,
   visualOffset,
   material,
+  well = "recessed",
+  pipe = "glass",
+  cardFill,
   selected,
   dragging,
   connectedPortIds,
@@ -283,6 +314,8 @@ function CellCardImpl({
   onCardPointerDown,
   onPortPointerDown,
 }: CellCardProps) {
+  const punched = well === "punched";
+  const [hoveredPortId, setHoveredPortId] = React.useState<string | null>(null);
   const width = card.widthCells * CELL_SIZE;
   const height = card.heightCells * CELL_SIZE;
   const x = card.col * CELL_SIZE + (visualOffset?.x ?? 0);
@@ -307,6 +340,7 @@ function CellCardImpl({
       data-cell-card="true"
       data-card-id={card.id}
       data-material={material}
+      data-well={well}
       data-dragging={dragging ? "true" : "false"}
       data-selected={selected ? "true" : "false"}
       {...styled(
@@ -356,6 +390,7 @@ function CellCardImpl({
             height: plateHeight,
             marginInline: CARD_PLATE_INSET_X,
             cursor: dragging ? "grabbing" : "grab",
+            backgroundColor: cardPlateFill(material, cardFill),
           },
           s.plate,
           material === "liquid" ? s.plateLiquid : s.plateFrost,
@@ -386,6 +421,7 @@ function CellCardImpl({
               {
                 top: rowOffset * CELL_SIZE - plateContentTop,
                 height: CELL_SIZE,
+                paddingInline: punched ? PUNCHED_LABEL_INSET : undefined,
               },
               s.portRow,
             )}
@@ -400,9 +436,9 @@ function CellCardImpl({
         ))}
       </article>
       {card.ports.map((port) => {
-        const centre = portCentre(card, port);
-        const connected = connectedPortIds.has(port.id);
-        const hot = activePortKey === `${card.id}:${port.id}`;
+        const centre = portCentre(card, port, punched);
+        const connected = isPortConnected(connectedPortIds, port);
+        const hot = isPortActive(activePortKey, card.id, port);
         const portColor = artifactTypeColor(
           port.artifactTypeId,
           tokens.colorMuted,
@@ -418,24 +454,27 @@ function CellCardImpl({
             ? CARD_PLATE_INSET_X - stemLength
             : width - CARD_PLATE_INSET_X;
         return (
-          <React.Fragment key={port.id}>
-            <span
-              aria-hidden="true"
-              data-port-stem={port.id}
-              {...styled(
-                {
-                  left: stemLeft,
-                  top: centre.y - 0.5,
-                  width: stemLength,
-                  backgroundColor: portColor,
-                },
-                s.stem,
-              )}
-            />
+          <React.Fragment key={cellPortKey(port.direction, port.id)}>
+            {punched ? null : (
+              <span
+                aria-hidden="true"
+                data-port-stem={port.id}
+                {...styled(
+                  {
+                    left: stemLeft,
+                    top: centre.y - 0.5,
+                    width: stemLength,
+                    backgroundColor: portColor,
+                  },
+                  s.stem,
+                )}
+              />
+            )}
             <button
               type="button"
               data-port-id={port.id}
               data-port-direction={port.direction}
+              data-port-well={punched ? "punched" : undefined}
               data-port-connected={connected ? "true" : "false"}
               data-port-card-id={card.id}
               data-port-hot={hot ? "true" : "false"}
@@ -444,6 +483,17 @@ function CellCardImpl({
                 event.stopPropagation();
                 onPortPointerDown(card.id, port, event);
               }}
+              onPointerEnter={
+                punched ? () => setHoveredPortId(port.id) : undefined
+              }
+              onPointerLeave={
+                punched
+                  ? () =>
+                      setHoveredPortId((current) =>
+                        current === port.id ? null : current,
+                      )
+                  : undefined
+              }
               {...styled(
                 {
                   left: centre.x - PORT_HIT_SIZE / 2,
@@ -451,10 +501,21 @@ function CellCardImpl({
                   "--cell-port": portColor,
                 } as React.CSSProperties,
                 s.port,
-                hot && s.portHot,
+                punched ? s.portPunched : hot && s.portHot,
               )}
             >
-              {connected ? null : (
+              {punched ? (
+                <PunchedPortSocket
+                  side={port.direction === "input" ? "left" : "right"}
+                  color={portColor}
+                  sequence={sequence}
+                  connected={connected}
+                  hot={hot}
+                  hovered={hoveredPortId === port.id}
+                  material={material}
+                  pipe={pipe}
+                />
+              ) : connected ? null : (
                 <svg
                   aria-hidden="true"
                   data-port-ring={sequence ? "list" : "single"}

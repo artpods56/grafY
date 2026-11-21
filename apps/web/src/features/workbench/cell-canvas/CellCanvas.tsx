@@ -2,15 +2,20 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
+import { ChevronDown } from "lucide-react";
 
+import { IconButton } from "@/components/ui/button";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CellCanvasProvider, CellViewportLayer } from "./CellCanvasContext";
 import { CellCard } from "./CellCard";
 import {
+  CellArtifactMergeSuggestionOverlay,
+  CellArtifactMergeTargetOverlay,
   CellDockedBridgeLayer,
   CellEdgeSelectorPill,
+  CellLandingOutlines,
   CellMarqueeOverlay,
   CellRemotePresenceLayer,
 } from "./CellGlassOverlays";
@@ -19,10 +24,24 @@ import {
   CellAnnotationCard,
 } from "./cards/CellAnnotationAndAgentCards";
 import { CellArtifactCard, CellCollectionCard } from "./cards/CellArtifactCard";
+import { CellArtifactSequenceSpread } from "./cards/CellArtifactSequenceSpread";
 import { CellOperatorCard } from "./cards/CellOperatorCard";
+import { CellStackTuckLayer, type StackTuck } from "./cards/CellStackTuckLayer";
+import {
+  artifactCardItemCount,
+  computeSequenceSpreadLayout,
+  findArtifactMergeSuggestions,
+  findArtifactMergeTarget,
+  findSpreadInsertTarget,
+  type ArtifactMergeOrder,
+  type ArtifactMergeSuggestion,
+  type OpenSequenceSpreadLayout,
+  type SpreadInsertTarget,
+} from "./cell-artifact-stacking";
 import { plugRowOffset } from "./cell-card-geometry";
 import type {
   AnnotationColorToken,
+  ArtifactCardSurfaceData,
   CellCardSurfaceData,
   CellConnectDropEmptyEvent,
   CellDockedJoin,
@@ -34,6 +53,7 @@ import type {
 } from "./cell-contracts";
 import { detectCellDockedJoins } from "./cell-docking";
 import {
+  CellConnectionPreview,
   CellGlassStage,
   type CellGlassLook,
   type LiveConnectionPreview,
@@ -41,6 +61,7 @@ import {
   type StageViewport,
   type StageWell,
 } from "./cell-glass-stage";
+import { DEFAULT_CELL_GLASS_LOOK, DEFAULT_CELL_ROUTING } from "./cell-look";
 import {
   computeCellResize,
   createGroupDragSession,
@@ -50,12 +71,17 @@ import {
   type GroupDragSession,
 } from "./cell-group-drag";
 import {
+  ARTIFACT_CARD_OUTPUT_PORT_ID,
   CELL_PIPE_STUB_MIN,
   CELL_SIZE,
+  artifactCardOutputRow,
   cardWorldRect,
   cellToWorldOrigin,
+  PUNCHED_PORT_INSET,
+  portAnchorCenter,
   portSide,
   portWorldCenter,
+  punchedPipePoints,
   type CellCardModel,
   type CellCoord,
   type CellDir,
@@ -64,6 +90,7 @@ import {
   type CellRoutingOptions,
   type CellRoutingResult,
   type WorldPoint,
+  cellPortKey,
 } from "./cell-model";
 import { solvePipeAttachmentAnchors } from "./cell-pipe-attachments";
 import { routeCellGraph } from "./cell-router";
@@ -78,10 +105,12 @@ import {
   createCardSettle,
   morphPipePoints,
   retargetCardSettle,
+  shouldAnimateMotion,
   stepCardSettle,
   type CardSettleState,
 } from "./cell-transitions";
 import { useCellViewport, type WorldBounds } from "./use-cell-viewport";
+import { useRemoteCellDrag } from "./use-remote-cell-drag";
 
 export interface CellCanvasStats {
   cards: number;
@@ -165,7 +194,9 @@ export interface CellCanvasProps {
   editable?: boolean;
   selectedCardIds?: ReadonlySet<string>;
   selectedPipeIds?: ReadonlySet<string>;
+  inspectedPipeId?: string | null;
   remotePeers?: readonly CellRemotePeerState[];
+  remoteDragScope?: string | null;
   fitLeftClearance?: number;
   autoFitOnMount?: boolean;
   dataGraph?: string;
@@ -180,7 +211,7 @@ export interface CellCanvasProps {
   onRemovePipes?: (pipeIds: readonly string[]) => void;
   onSelectionChange?: (selection: CellSelectionSnapshot) => void;
   onPaneClick?: () => void;
-  onSelectEdgeAttachment?: (pipeId: string) => void;
+  onSelectEdgeAttachment?: (pipeId: string, anchor?: WorldPoint) => void;
   onOperatorRun?: (cardId: string) => void;
   onOperatorConfigChange?: (
     cardId: string,
@@ -199,6 +230,42 @@ export interface CellCanvasProps {
     color: AnnotationColorToken,
   ) => void;
   onArtifactInspect?: (cardId: string) => void;
+  /** Whether one artifact card's items may join another's sequence. */
+  canMergeArtifactCards?: (
+    sourceCardId: string,
+    targetCardId: string,
+  ) => boolean;
+  /** Joins the source card's items onto the target's sequence; the source goes. */
+  onMergeArtifactCards?: (
+    sourceCardId: string,
+    targetCardId: string,
+    order?: ArtifactMergeOrder,
+  ) => void;
+  onReorderArtifactCardItem?: (
+    cardId: string,
+    fromIndex: number,
+    toIndex: number,
+  ) => void;
+  /** Joins a whole flush run onto one card, in the run's visual order. */
+  onMergeArtifactCardRun?: (
+    cardIds: readonly string[],
+    targetCardId: string,
+  ) => void;
+  /** Inserts a dragged card's items into an open sequence at `insertIndex`. */
+  onInsertArtifactCardIntoSequence?: (
+    sourceCardId: string,
+    targetCardId: string,
+    insertIndex: number,
+  ) => void;
+  /** Pulls one item out of a sequence onto its own card, at `targetCell`. */
+  onExtractArtifactCardItem?: (
+    cardId: string,
+    index: number,
+    targetCell?: CellCoord,
+  ) => void;
+  /** Takes one item out of a sequence and off the canvas. */
+  onRemoveArtifactCardItem?: (cardId: string, index: number) => void;
+  onUngroupArtifactCard?: (cardId: string) => void;
   onCollectionRemoveMember?: (cardId: string, memberId: string) => void;
   onHandleReady?: (handle: CellCanvasHandle | null) => void;
   onViewportZoomChange?: (zoom: number) => void;
@@ -211,21 +278,7 @@ const DRAG_THRESHOLD_PX = 3;
 /** How close, in flow units, the cursor must come to a port to wire to it. */
 const WIRE_SNAP_RADIUS = 22;
 
-export const DEFAULT_CELL_GLASS_LOOK: CellGlassLook = {
-  material: "liquid",
-  well: "recessed",
-  pipe: "glass",
-  corners: "rounded",
-  blur: 0.3,
-  frost: 0.5,
-  grid: true,
-};
-
-export const DEFAULT_CELL_ROUTING: CellRoutingOptions = {
-  exits: "side",
-  underCards: "gaps",
-  depth: true,
-};
+export { DEFAULT_CELL_GLASS_LOOK, DEFAULT_CELL_ROUTING };
 
 const EMPTY_ID_SET: ReadonlySet<string> = new Set();
 const EMPTY_PORT_IDS: ReadonlySet<string> = new Set();
@@ -264,16 +317,6 @@ const s = stylex.create({
     top: 0,
     left: 0,
     pointerEvents: "auto",
-  },
-  ghostCell: {
-    position: "absolute",
-    zIndex: 0,
-    boxSizing: "border-box",
-    borderWidth: "1px",
-    borderStyle: "dashed",
-    borderColor: tokens.colorAccentBorder,
-    borderRadius: tokens.radiusMd,
-    pointerEvents: "none",
   },
 });
 
@@ -326,6 +369,7 @@ interface PipeMotion {
   targetPortId: string;
   color: string;
   sequence: boolean;
+  disabled: boolean;
   fromPoints: WorldPoint[];
   toPoints: WorldPoint[];
   currentPoints: WorldPoint[];
@@ -350,6 +394,8 @@ interface GroupCardDrag {
   attachedPipeIds: ReadonlySet<string>;
   restingWellKeys: ReadonlySet<string>;
   pipes: PipeMotion[];
+  /** Ports are punched holes in the cards: pipes run on into them. */
+  punched: boolean;
 }
 
 interface WireTarget {
@@ -387,7 +433,8 @@ function isUnderCardsFrame(
   return surface?.kind === "annotation" && surface.variant === "frame";
 }
 
-function resolveArtifactColor(artifactTypeId: string): string {
+function resolvePortColor(artifactTypeId: string, port?: CellPort): string {
+  if (port?.kind === "service") return tokens.colorAccent;
   return artifactTypeColor(artifactTypeId, tokens.colorMuted);
 }
 
@@ -449,17 +496,21 @@ function indexGraph(
   for (const card of graph.cards) {
     cardsById.set(card.id, card);
     const ports = allCardPorts(card, surfaceById[card.id]);
-    portsByCardId.set(card.id, new Map(ports.map((p) => [p.id, p])));
+    portsByCardId.set(
+      card.id,
+      new Map(ports.map((p) => [cellPortKey(p.direction, p.id), p])),
+    );
   }
+  // Keyed by `cellPortKey`: an input and an output may share a bare id.
   const connected = new Map<string, Set<string>>();
-  const mark = (cardId: string, portId: string) => {
+  const mark = (cardId: string, key: string) => {
     const ids = connected.get(cardId) ?? new Set<string>();
-    ids.add(portId);
+    ids.add(key);
     connected.set(cardId, ids);
   };
   for (const pipe of graph.pipes) {
-    mark(pipe.sourceCardId, pipe.sourcePortId);
-    mark(pipe.targetCardId, pipe.targetPortId);
+    mark(pipe.sourceCardId, cellPortKey("output", pipe.sourcePortId));
+    mark(pipe.targetCardId, cellPortKey("input", pipe.targetPortId));
   }
   return { cardsById, portsByCardId, connectedPortIdsByCardId: connected };
 }
@@ -468,18 +519,25 @@ function findPort(
   index: GraphIndex,
   cardId: string,
   portId: string,
+  direction: CellPort["direction"],
 ): PortRef | null {
   const card = index.cardsById.get(cardId);
-  const port = index.portsByCardId.get(cardId)?.get(portId);
+  const port = index.portsByCardId
+    .get(cardId)
+    ?.get(cellPortKey(direction, portId));
   return card && port ? { card, port } : null;
 }
 
 function portColor(port: CellPort): string {
-  return resolveArtifactColor(port.artifactTypeId);
+  return resolvePortColor(port.artifactTypeId, port);
 }
 
-function wellKey(cardId: string, portId: string): string {
-  return `${cardId}:${portId}`;
+function wellKey(
+  cardId: string,
+  direction: CellPort["direction"],
+  portId: string,
+): string {
+  return `${cardId}:${cellPortKey(direction, portId)}`;
 }
 
 /** Adds the port's well unless one is already bored there: one per port. */
@@ -493,7 +551,7 @@ function addWell(
   pipeColor: string,
   pipeTwin: boolean,
 ): void {
-  const key = wellKey(ref.card.id, ref.port.id);
+  const key = wellKey(ref.card.id, ref.port.direction, ref.port.id);
   if (keys.has(key) || skip?.has(key)) return;
   keys.add(key);
   wells.push({
@@ -513,6 +571,7 @@ function restingScene(
   layout: CellRoutingResult,
   dockedPipeIds: ReadonlySet<string>,
   movingCardIds: ReadonlySet<string>,
+  punched: boolean,
 ): RestingScene {
   const partition = partitionSceneForMovingCards(graph, movingCardIds);
   const pipes: StagePipe[] = [];
@@ -521,17 +580,34 @@ function restingScene(
   for (const pipe of partition.restingPipes) {
     if (dockedPipeIds.has(pipe.id)) continue;
     const routed = layout.pipes.get(pipe.id);
-    const source = findPort(index, pipe.sourceCardId, pipe.sourcePortId);
-    const target = findPort(index, pipe.targetCardId, pipe.targetPortId);
+    const source = findPort(
+      index,
+      pipe.sourceCardId,
+      pipe.sourcePortId,
+      "output",
+    );
+    const target = findPort(
+      index,
+      pipe.targetCardId,
+      pipe.targetPortId,
+      "input",
+    );
     if (!routed || !source || !target) continue;
     const color = portColor(source.port);
     const sequence = source.port.shape === "many";
     pipes.push({
       id: pipe.id,
-      points: routed.points,
+      points: punched
+        ? punchedPipePoints(
+            routed.points,
+            portAnchorCenter(source.card, source.port, true),
+            portAnchorCenter(target.card, target.port, true),
+          )
+        : routed.points,
       color,
       sequence,
       depth: routed.depth,
+      disabled: pipe.enabled === false || pipe.incompatible === true,
     });
     const sourceCentre = portWorldCenter(source.card, source.port);
     const targetCentre = portWorldCenter(target.card, target.port);
@@ -572,13 +648,19 @@ function previewPoints(
   start: WorldPoint,
   side: CellDir,
   end: WorldPoint,
+  punched: boolean,
 ): WorldPoint[] {
   const out = side === "right" ? 1 : -1;
   const ahead = (end.x - start.x) * out;
-  if (Math.abs(end.y - start.y) < 0.5 && ahead >= CELL_PIPE_STUB_MIN) {
+  // From a punched hole the stub first runs out from under the card to its
+  // gutter cell's centre, then keeps the router's own minimum.
+  const stub = punched
+    ? PUNCHED_PORT_INSET + CELL_SIZE / 2 + CELL_PIPE_STUB_MIN
+    : CELL_PIPE_STUB_MIN;
+  if (Math.abs(end.y - start.y) < 0.5 && ahead >= stub) {
     return [start, end];
   }
-  const reach = start.x + out * CELL_PIPE_STUB_MIN;
+  const reach = start.x + out * stub;
   const halfway = (start.x + end.x) / 2;
   const x = out > 0 ? Math.max(reach, halfway) : Math.min(reach, halfway);
   return [start, { x, y: start.y }, { x, y: end.y }, end];
@@ -589,13 +671,25 @@ function liveCentre(
   index: GraphIndex,
   cardId: string,
   portId: string,
+  direction: CellPort["direction"],
   offset: WorldPoint,
 ): WorldPoint | null {
-  const ref = findPort(index, cardId, portId);
+  const ref = findPort(index, cardId, portId, direction);
   if (!ref) return null;
   return drag.session.movingCardIds.has(cardId)
     ? portWorldCenter(ref.card, ref.port, offset)
     : portWorldCenter(ref.card, ref.port);
+}
+
+/** A punched port's centre where it is drawn now, moving with its card or not. */
+function liveAnchor(
+  drag: GroupCardDrag,
+  ref: PortRef,
+  offset: WorldPoint,
+): WorldPoint {
+  return drag.session.movingCardIds.has(ref.card.id)
+    ? portAnchorCenter(ref.card, ref.port, true, offset)
+    : portAnchorCenter(ref.card, ref.port, true);
 }
 
 /** Steps every attached pipe to `now` and draws the moving scene. */
@@ -630,6 +724,7 @@ function buildDragFrame(
       index,
       motion.sourceCardId,
       motion.sourcePortId,
+      "output",
       visualOffset,
     );
     const targetCentre = liveCentre(
@@ -637,10 +732,21 @@ function buildDragFrame(
       index,
       motion.targetCardId,
       motion.targetPortId,
+      "input",
       visualOffset,
     );
-    const source = findPort(index, motion.sourceCardId, motion.sourcePortId);
-    const target = findPort(index, motion.targetCardId, motion.targetPortId);
+    const source = findPort(
+      index,
+      motion.sourceCardId,
+      motion.sourcePortId,
+      "output",
+    );
+    const target = findPort(
+      index,
+      motion.targetCardId,
+      motion.targetPortId,
+      "input",
+    );
     if (!sourceCentre || !targetCentre || !source || !target) continue;
     const anchored = anchorPipeEndpoints(
       basePoints,
@@ -652,10 +758,17 @@ function buildDragFrame(
     motion.currentPoints = anchored;
     movingPipes.push({
       id: motion.id,
-      points: anchored,
+      points: drag.punched
+        ? punchedPipePoints(
+            anchored,
+            liveAnchor(drag, source, visualOffset),
+            liveAnchor(drag, target, visualOffset),
+          )
+        : anchored,
       color: motion.color,
       sequence: motion.sequence,
       depth: motion.depth,
+      disabled: motion.disabled,
     });
     addWell(
       movingWells,
@@ -715,8 +828,18 @@ function seedPipeMotions(
   const motions: PipeMotion[] = [];
   for (const pipe of graph.pipes) {
     if (!attachedPipeIds.has(pipe.id)) continue;
-    const source = findPort(index, pipe.sourceCardId, pipe.sourcePortId);
-    const target = findPort(index, pipe.targetCardId, pipe.targetPortId);
+    const source = findPort(
+      index,
+      pipe.sourceCardId,
+      pipe.sourcePortId,
+      "output",
+    );
+    const target = findPort(
+      index,
+      pipe.targetCardId,
+      pipe.targetPortId,
+      "input",
+    );
     if (!source || !target) continue;
     const routed = layout.pipes.get(pipe.id);
     const fallbackPoints = [
@@ -732,6 +855,7 @@ function seedPipeMotions(
       targetPortId: pipe.targetPortId,
       color: portColor(source.port),
       sequence: source.port.shape === "many",
+      disabled: pipe.enabled === false || pipe.incompatible === true,
       fromPoints: points,
       toPoints: points,
       currentPoints: points,
@@ -756,7 +880,9 @@ export function CellCanvas({
   editable = true,
   selectedCardIds,
   selectedPipeIds,
+  inspectedPipeId = null,
   remotePeers = EMPTY_REMOTE_PEERS,
+  remoteDragScope,
   fitLeftClearance = 0,
   autoFitOnMount = true,
   dataGraph,
@@ -779,6 +905,14 @@ export function CellCanvas({
   onOperatorToggleAppendix,
   onAnnotationColorChange,
   onArtifactInspect,
+  canMergeArtifactCards,
+  onMergeArtifactCards,
+  onReorderArtifactCardItem,
+  onMergeArtifactCardRun,
+  onInsertArtifactCardIntoSequence,
+  onExtractArtifactCardItem,
+  onRemoveArtifactCardItem,
+  onUngroupArtifactCard,
   onCollectionRemoveMember,
   onHandleReady,
   onViewportZoomChange,
@@ -786,6 +920,7 @@ export function CellCanvas({
   children,
 }: CellCanvasProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const punched = look.well === "punched";
   const {
     viewport,
     panning,
@@ -821,6 +956,31 @@ export function CellCanvas({
   const [wiring, setWiring] = React.useState<WiringState | null>(null);
   const [lastConnectDropEmpty, setLastConnectDropEmpty] =
     React.useState<CellConnectDropEmptyEvent | null>(null);
+  /** The artifact card a dragged card joins if released now. */
+  const [mergeTarget, setMergeTarget] = React.useState<{
+    cardId: string;
+    itemCount: number;
+  } | null>(null);
+  /** Cards sliding under a stack they just joined, drawn until they land. */
+  const [stackTucks, setStackTucks] = React.useState<readonly StackTuck[]>([]);
+  const stackTuckSeqRef = React.useRef(0);
+  /** The open spread slot a dragged canvas card inserts into if released now. */
+  const [spreadInsertTarget, setSpreadInsertTarget] =
+    React.useState<SpreadInsertTarget | null>(null);
+  /** The sequence card laid open in place. */
+  const [expandedSequenceId, setExpandedSequenceId] = React.useState<
+    string | null
+  >(null);
+  /** Current step offset of the open spread, for external card drops. */
+  const [spreadWindowStart, setSpreadWindowStart] = React.useState(0);
+  /** How many cards the open spread shows, once a person resized it. */
+  const [spreadVisibleCount, setSpreadVisibleCount] = React.useState<
+    number | undefined
+  >(undefined);
+  /** The visible canvas width in world units when the spread opened. */
+  const [spreadViewportWidth, setSpreadViewportWidth] = React.useState<
+    number | undefined
+  >(undefined);
 
   const effectiveGraph = React.useMemo<CellGraph>(() => {
     if (!resizePreview) return graph;
@@ -834,14 +994,33 @@ export function CellCanvas({
         return card;
       }
       changed = true;
+      // An artifact card's output rides its bottom-right corner, so its port
+      // and pipe follow the grip while the resize is live.
+      const outputRow = artifactCardOutputRow(resizePreview.heightCells);
       return {
         ...card,
         widthCells: resizePreview.widthCells,
         heightCells: resizePreview.heightCells,
+        ports:
+          card.kind === "artifact"
+            ? card.ports.map((port) =>
+                port.id === ARTIFACT_CARD_OUTPUT_PORT_ID &&
+                port.rowOffset !== outputRow
+                  ? { ...port, rowOffset: outputRow }
+                  : port,
+              )
+            : card.ports,
       };
     });
     return changed ? { ...graph, cards } : graph;
   }, [graph, resizePreview]);
+
+  const remoteCardPositions = useRemoteCellDrag(
+    effectiveGraph.cards,
+    remotePeers,
+    movingCardIds,
+    remoteDragScope,
+  );
 
   const viewportApi = React.useMemo<CellViewportApi>(
     () => ({
@@ -881,9 +1060,10 @@ export function CellCanvas({
     () =>
       detectCellDockedJoins(
         { cards: foregroundCards, pipes: effectiveGraph.pipes },
-        resolveArtifactColor,
+        resolvePortColor,
+        { punched },
       ),
-    [foregroundCards, effectiveGraph.pipes],
+    [foregroundCards, effectiveGraph.pipes, punched],
   );
 
   const restingLayout = React.useMemo(
@@ -908,6 +1088,7 @@ export function CellCanvas({
         restingLayout,
         docking.dockedPipeIds,
         movingCardIds,
+        punched,
       ),
     [
       effectiveGraph,
@@ -915,8 +1096,16 @@ export function CellCanvas({
       restingLayout,
       docking.dockedPipeIds,
       movingCardIds,
+      punched,
     ],
   );
+
+  const activePipeIds = React.useMemo(() => {
+    const ids = new Set<string>(selection.pipeIds);
+    if (hoveredPipeId) ids.add(hoveredPipeId);
+    if (inspectedPipeId) ids.add(inspectedPipeId);
+    return ids;
+  }, [hoveredPipeId, inspectedPipeId, selection.pipeIds]);
 
   const pipeAttachments = React.useMemo(
     () =>
@@ -925,9 +1114,11 @@ export function CellCanvas({
         pipes: effectiveGraph.pipes,
         routedPipes: restingLayout.pipes,
         dockedJoins: docking.dockedJoins,
-        resolveColor: resolveArtifactColor,
+        resolveColor: resolvePortColor,
+        activePipeIds,
       }),
     [
+      activePipeIds,
       foregroundCards,
       effectiveGraph.pipes,
       restingLayout.pipes,
@@ -965,6 +1156,11 @@ export function CellCanvas({
   const draggedRef = React.useRef(draggedCardId);
   const resizePreviewRef = React.useRef(resizePreview);
   const editableRef = React.useRef(editable);
+  const punchedRef = React.useRef(punched);
+  const stackLookRef = React.useRef({
+    stackStyle: look.stackStyle,
+    corners: look.corners,
+  });
   const lastDropEmptyRef = React.useRef(lastConnectDropEmpty);
   const resizeSessionRef = React.useRef<ResizeSession | null>(null);
 
@@ -979,6 +1175,18 @@ export function CellCanvas({
   const onSelectionChangeRef = React.useRef(onSelectionChange);
   const onPaneClickRef = React.useRef(onPaneClick);
   const onSelectEdgeAttachmentRef = React.useRef(onSelectEdgeAttachment);
+  const canMergeArtifactCardsRef = React.useRef(canMergeArtifactCards);
+  const onMergeArtifactCardsRef = React.useRef(onMergeArtifactCards);
+  const onInsertArtifactCardIntoSequenceRef = React.useRef(
+    onInsertArtifactCardIntoSequence,
+  );
+  const expandedSequenceIdRef = React.useRef(expandedSequenceId);
+  const openSpreadRef = React.useRef<{
+    card: CellCardModel;
+    layout: OpenSequenceSpreadLayout;
+    windowStart: number;
+    itemCount: number;
+  } | null>(null);
   const onViewportZoomChangeRef = React.useRef(onViewportZoomChange);
   const onStatsChangeRef = React.useRef(onStatsChange);
 
@@ -995,6 +1203,11 @@ export function CellCanvas({
     draggedRef.current = draggedCardId;
     resizePreviewRef.current = resizePreview;
     editableRef.current = editable;
+    punchedRef.current = punched;
+    stackLookRef.current = {
+      stackStyle: look.stackStyle,
+      corners: look.corners,
+    };
     lastDropEmptyRef.current = lastConnectDropEmpty;
 
     onMoveCardsRef.current = onMoveCards;
@@ -1008,6 +1221,11 @@ export function CellCanvas({
     onSelectionChangeRef.current = onSelectionChange;
     onPaneClickRef.current = onPaneClick;
     onSelectEdgeAttachmentRef.current = onSelectEdgeAttachment;
+    canMergeArtifactCardsRef.current = canMergeArtifactCards;
+    onMergeArtifactCardsRef.current = onMergeArtifactCards;
+    onInsertArtifactCardIntoSequenceRef.current =
+      onInsertArtifactCardIntoSequence;
+    expandedSequenceIdRef.current = expandedSequenceId;
     onViewportZoomChangeRef.current = onViewportZoomChange;
     onStatsChangeRef.current = onStatsChange;
   });
@@ -1201,6 +1419,74 @@ export function CellCanvas({
     [commitSelection, store],
   );
 
+  /**
+   * Starts a tuck for each card that is joining a stack, when motion is on:
+   * each slides from `from` under `target` into back `slot`.
+   */
+  const startStackTucks = React.useCallback(
+    (
+      joins: readonly {
+        card: CellCardModel;
+        from: WorldPoint;
+        target: CellCardModel;
+        slot: number;
+        surface: CellCardSurfaceData | undefined;
+      }[],
+    ) => {
+      if (joins.length === 0 || !shouldAnimateMotion()) return;
+      const { stackStyle, corners } = stackLookRef.current;
+      const next = joins.map((join): StackTuck => {
+        stackTuckSeqRef.current += 1;
+        return {
+          id: `tuck-${stackTuckSeqRef.current}`,
+          cardId: join.card.id,
+          from: join.from,
+          fromWidthCells: join.card.widthCells,
+          fromHeightCells: join.card.heightCells,
+          to: cellToWorldOrigin(join.target.col, join.target.row),
+          toWidthCells: join.target.widthCells,
+          toHeightCells: join.target.heightCells,
+          imageUrl:
+            join.surface?.kind === "artifact"
+              ? (join.surface.imageUrl ?? null)
+              : null,
+          slot: join.slot,
+          stackStyle,
+          corners,
+        };
+      });
+      setStackTucks((current) => [...current, ...next]);
+    },
+    [],
+  );
+  const onStackTuckSettled = React.useCallback((id: string) => {
+    setStackTucks((current) => current.filter((tuck) => tuck.id !== id));
+  }, []);
+  const tuckingCardIds = React.useMemo(
+    () => new Set(stackTucks.map((tuck) => tuck.cardId)),
+    [stackTucks],
+  );
+  /** `Stack N` on a flush run: every card after the first slides under it. */
+  const mergeArtifactRun = (chosen: ArtifactMergeSuggestion) => {
+    const anchor = index.cardsById.get(chosen.cardIds[0] ?? "");
+    if (anchor) {
+      const joins = [];
+      for (const [position, id] of chosen.cardIds.slice(1).entries()) {
+        const card = index.cardsById.get(id);
+        if (!card) continue;
+        joins.push({
+          card,
+          from: cellToWorldOrigin(card.col, card.row),
+          target: anchor,
+          slot: Math.min(position, 1),
+          surface: surfaceById[id],
+        });
+      }
+      startStackTucks(joins);
+    }
+    onMergeArtifactCardRun?.(chosen.cardIds, chosen.targetCardId);
+  };
+
   const onCardPointerDown = React.useCallback(
     (cardId: string, event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
@@ -1259,16 +1545,113 @@ export function CellCanvas({
         attachedPipeIds: EMPTY_ID_SET,
         restingWellKeys: EMPTY_ID_SET,
         pipes: [],
+        punched: punchedRef.current,
       };
       let frame = 0;
+      const openSpreadAtPickup = openSpreadRef.current;
       const foregroundAtPickup = graphAtPickup.cards.filter(
         (c) => !isUnderCardsFrame(c.id, surfacesAtPickup),
       );
+      // While a sequence is spread open, non-inserting drags treat its full
+      // expanded footprint as occupied space so cards never land over it.
+      const obstacleForegroundAtPickup = openSpreadAtPickup
+        ? foregroundAtPickup.map((c) =>
+            c.id === openSpreadAtPickup.card.id
+              ? {
+                  ...c,
+                  col: openSpreadAtPickup.layout.startCol,
+                  row: openSpreadAtPickup.layout.row,
+                  widthCells: openSpreadAtPickup.layout.totalCols,
+                  heightCells: openSpreadAtPickup.layout.heightCells,
+                }
+              : c,
+          )
+        : foregroundAtPickup;
+      // A lone artifact card may be dropped onto another card or directly into
+      // an open sequence spread at a specific slot.
+      const canMergeAtPickup = canMergeArtifactCardsRef.current;
+      const mergeable =
+        effectiveSelection.size === 1 &&
+        canMergeAtPickup !== undefined &&
+        (onMergeArtifactCardsRef.current !== undefined ||
+          onInsertArtifactCardIntoSequenceRef.current !== undefined) &&
+        artifactCardItemCount(surfacesAtPickup[cardId]) !== null;
+      let mergeTargetId: string | null = null;
+      let spreadInsert: SpreadInsertTarget | null = null;
+
+      function trackMergeTarget(at: WorldPoint) {
+        if (!mergeable || !canMergeAtPickup) return;
+        if (
+          openSpreadAtPickup &&
+          openSpreadAtPickup.card.id !== cardId &&
+          onInsertArtifactCardIntoSequenceRef.current !== undefined &&
+          canMergeAtPickup(cardId, openSpreadAtPickup.card.id)
+        ) {
+          // The spread may page (wheel) mid-drag, so read its live window.
+          const current = openSpreadRef.current;
+          const live =
+            current?.card.id === openSpreadAtPickup.card.id
+              ? current
+              : openSpreadAtPickup;
+          const hit = findSpreadInsertTarget({
+            spreadCardId: openSpreadAtPickup.card.id,
+            layout: openSpreadAtPickup.layout,
+            windowStart: live.windowStart,
+            itemCount: live.itemCount,
+            cardWidthCells: openSpreadAtPickup.card.widthCells,
+            point: at,
+          });
+          if (hit) {
+            if (mergeTargetId !== null) {
+              mergeTargetId = null;
+              setMergeTarget(null);
+            }
+            if (
+              spreadInsert?.spreadCardId !== hit.spreadCardId ||
+              spreadInsert.slot !== hit.slot ||
+              spreadInsert.insertIndex !== hit.insertIndex
+            ) {
+              spreadInsert = hit;
+              setSpreadInsertTarget(hit);
+            }
+            return;
+          }
+        }
+        if (spreadInsert !== null) {
+          spreadInsert = null;
+          setSpreadInsertTarget(null);
+        }
+        if (onMergeArtifactCardsRef.current === undefined) return;
+        const mergeCandidates = openSpreadAtPickup
+          ? foregroundAtPickup.filter(
+              (c) => c.id !== openSpreadAtPickup.card.id,
+            )
+          : foregroundAtPickup;
+        const next = findArtifactMergeTarget(
+          mergeCandidates,
+          surfacesAtPickup,
+          cardId,
+          at,
+          canMergeAtPickup,
+        );
+        if (next === mergeTargetId) return;
+        mergeTargetId = next;
+        setMergeTarget(
+          next
+            ? {
+                cardId: next,
+                itemCount:
+                  (artifactCardItemCount(surfacesAtPickup[cardId]) ?? 1) +
+                  (artifactCardItemCount(surfacesAtPickup[next]) ?? 1),
+              }
+            : null,
+        );
+      }
 
       function resolveLanding(delta: CellCoord): CellCoord {
         if (draggingFrame) return delta;
         return resolveNonOverlappingDelta(
-          foregroundAtPickup,
+          obstacleForegroundAtPickup,
           drag.session.movingCardIds,
           delta,
         );
@@ -1329,6 +1712,7 @@ export function CellCanvas({
           layoutRef.current,
           dockingAtPickup.dockedPipeIds,
           drag.session.movingCardIds,
+          drag.punched,
         );
         drag.attachedPipeIds = split.attachedPipeIds;
         drag.restingWellKeys = split.wellKeys;
@@ -1356,6 +1740,7 @@ export function CellCanvas({
         }
         const now = performance.now();
         const at = screenToWorld(move.clientX, move.clientY);
+        trackMergeTarget(at);
         const step = updateGroupDragSession(
           drag.session,
           graphAtPickup.cards,
@@ -1380,7 +1765,8 @@ export function CellCanvas({
           );
           const movedDocking = detectCellDockedJoins(
             { cards: movedForeground, pipes: graphAtPickup.pipes },
-            resolveArtifactColor,
+            resolvePortColor,
+            { punched: punchedRef.current },
           );
           const rerouted = routeCellGraph(
             { cards: movedForeground, pipes: movedDocking.routablePipes },
@@ -1423,6 +1809,42 @@ export function CellCanvas({
           }
           return;
         }
+        if (spreadInsert) {
+          // Released over an open spread: insert at the hovered slot index.
+          const target = spreadInsert;
+          cancel();
+          onInsertArtifactCardIntoSequenceRef.current?.(
+            cardId,
+            target.spreadCardId,
+            target.insertIndex,
+          );
+          return;
+        }
+        if (mergeTargetId) {
+          // Released over a sequence: the card joins it instead of landing,
+          // sliding from where it was let go under the stack's top card.
+          const target = mergeTargetId;
+          const released = stepCardSettle(
+            drag.cellSettle,
+            performance.now(),
+          ).current;
+          const draggedCard = indexAtPickup.cardsById.get(cardId);
+          const targetCard = indexAtPickup.cardsById.get(target);
+          if (draggedCard && targetCard) {
+            startStackTucks([
+              {
+                card: draggedCard,
+                from: released,
+                target: targetCard,
+                slot: 0,
+                surface: surfacesAtPickup[cardId],
+              },
+            ]);
+          }
+          cancel();
+          onMergeArtifactCardsRef.current?.(cardId, target, "target-first");
+          return;
+        }
         const now = performance.now();
         drag.pointerReleased = true;
         const anchorTarget = {
@@ -1450,6 +1872,14 @@ export function CellCanvas({
 
       function cancel() {
         stop();
+        if (spreadInsert) {
+          spreadInsert = null;
+          setSpreadInsertTarget(null);
+        }
+        if (mergeTargetId) {
+          mergeTargetId = null;
+          setMergeTarget(null);
+        }
         if (drag.movedBeyondClick) {
           onDragCardsProgressRef.current?.(null);
           store.setDraggingCards([]);
@@ -1464,7 +1894,13 @@ export function CellCanvas({
       window.addEventListener("pointercancel", onUp);
       cancelGestureRef.current = cancel;
     },
-    [commitSelection, screenToWorld, store, toggleCardSelection],
+    [
+      commitSelection,
+      screenToWorld,
+      startStackTucks,
+      store,
+      toggleCardSelection,
+    ],
   );
 
   const onPortPointerDown = React.useCallback(
@@ -1499,7 +1935,11 @@ export function CellCanvas({
               };
               if (!onCanConnectRef.current(normalized)) continue;
             }
-            const centre = portWorldCenter(other, candidate);
+            const centre = portAnchorCenter(
+              other,
+              candidate,
+              punchedRef.current,
+            );
             const distance = Math.hypot(
               centre.x - cursor.x,
               centre.y - cursor.y,
@@ -1512,7 +1952,9 @@ export function CellCanvas({
         }
         state = { fromCardId: cardId, fromPort: port, cursor, target };
         store.setActivePortKey(
-          target ? wellKey(target.cardId, target.port.id) : null,
+          target
+            ? wellKey(target.cardId, target.port.direction, target.port.id)
+            : null,
         );
         setWiring(state);
       };
@@ -1724,19 +2166,19 @@ export function CellCanvas({
     if (!wiring) return null;
     const from = index.cardsById.get(wiring.fromCardId);
     if (!from) return null;
-    const start = portWorldCenter(from, wiring.fromPort);
+    const start = portAnchorCenter(from, wiring.fromPort, punched);
     const end = wiring.target?.centre ?? wiring.cursor;
     const sourcePort =
       wiring.fromPort.direction === "output"
         ? wiring.fromPort
         : (wiring.target?.port ?? wiring.fromPort);
     return {
-      points: previewPoints(start, portSide(wiring.fromPort), end),
+      points: previewPoints(start, portSide(wiring.fromPort), end, punched),
       color: portColor(sourcePort),
       sequence: sourcePort.shape === "many",
       cursor: end,
     };
-  }, [wiring, index]);
+  }, [wiring, index, punched]);
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1748,6 +2190,11 @@ export function CellCanvas({
         return;
       }
       if (event.key === "Escape") {
+        if (expandedSequenceIdRef.current) {
+          // The open spread closes first; the card stays held.
+          setExpandedSequenceId(null);
+          return;
+        }
         cancelGestureRef.current?.();
         clearSelection();
         return;
@@ -1805,19 +2252,166 @@ export function CellCanvas({
   const wipedPipeId = firstSelectedPipeId ?? hoveredPipeId;
   const wipedIntensity = firstSelectedPipeId ? 1 : hoveredPipeId ? 0.5 : 0;
   const hotPortKey = wiring?.target
-    ? wellKey(wiring.target.cardId, wiring.target.port.id)
+    ? wellKey(
+        wiring.target.cardId,
+        wiring.target.port.direction,
+        wiring.target.port.id,
+      )
     : null;
 
   const dropEmptyAttr = lastConnectDropEmpty
     ? `${lastConnectDropEmpty.sourceCardId}:${lastConnectDropEmpty.sourcePortId}@${lastConnectDropEmpty.targetCell.col},${lastConnectDropEmpty.targetCell.row}`
     : undefined;
 
+  const mergeSuggestionsEnabled =
+    editable &&
+    canMergeArtifactCards !== undefined &&
+    onMergeArtifactCardRun !== undefined;
+  const mergeSuggestions = React.useMemo<readonly ArtifactMergeSuggestion[]>(
+    () =>
+      mergeSuggestionsEnabled && canMergeArtifactCards
+        ? findArtifactMergeSuggestions(
+            foregroundCards,
+            surfaceById,
+            canMergeArtifactCards,
+          )
+        : [],
+    [
+      canMergeArtifactCards,
+      foregroundCards,
+      mergeSuggestionsEnabled,
+      surfaceById,
+    ],
+  );
+  const showMergeSuggestions =
+    movingCardIds.size === 0 && resizePreview === null && wiring === null;
+
+  const mergeTargetCard = mergeTarget
+    ? index.cardsById.get(mergeTarget.cardId)
+    : undefined;
+
+  // Whether each sequence card has the free columns to spread in place.
+  const spreadableById = React.useMemo(() => {
+    const spreadable = new Map<string, boolean>();
+    for (const card of foregroundCards) {
+      const surface = surfaceById[card.id];
+      if (surface?.kind !== "artifact") continue;
+      const itemCount = surface.itemCount ?? 1;
+      if (itemCount < 2) continue;
+      spreadable.set(
+        card.id,
+        computeSequenceSpreadLayout({ card, itemCount, foregroundCards })
+          .canExpand,
+      );
+    }
+    return spreadable;
+  }, [foregroundCards, surfaceById]);
+
+  // The spread closes when its card goes, is left holding one item, or is
+  // boxed in.
+  const expandedCard = expandedSequenceId
+    ? index.cardsById.get(expandedSequenceId)
+    : undefined;
+  const expandedSurface = expandedSequenceId
+    ? surfaceById[expandedSequenceId]
+    : undefined;
+  const expandedItemCount =
+    expandedSurface?.kind === "artifact" ? (expandedSurface.itemCount ?? 1) : 0;
+  const expandedLayout = React.useMemo(
+    () =>
+      expandedCard && expandedItemCount > 1
+        ? computeSequenceSpreadLayout({
+            card: expandedCard,
+            itemCount: expandedItemCount,
+            foregroundCards,
+            viewportWorldWidth: spreadViewportWidth,
+            preferredVisibleCount: spreadVisibleCount,
+          })
+        : null,
+    [
+      expandedCard,
+      expandedItemCount,
+      foregroundCards,
+      spreadViewportWidth,
+      spreadVisibleCount,
+    ],
+  );
+  const openSequence: {
+    card: CellCardModel;
+    surface: ArtifactCardSurfaceData;
+    layout: OpenSequenceSpreadLayout;
+  } | null =
+    expandedCard &&
+    expandedSurface?.kind === "artifact" &&
+    expandedLayout?.canExpand
+      ? { card: expandedCard, surface: expandedSurface, layout: expandedLayout }
+      : null;
+  if (expandedSequenceId !== null && openSequence === null) {
+    setExpandedSequenceId(null);
+  }
+  const spreadOpen =
+    openSequence !== null && !movingCardIds.has(openSequence.card.id);
+
+  React.useLayoutEffect(() => {
+    openSpreadRef.current =
+      spreadOpen && openSequence
+        ? {
+            card: openSequence.card,
+            layout: openSequence.layout,
+            windowStart: spreadWindowStart,
+            itemCount:
+              openSequence.surface.stackItems?.length ??
+              openSequence.surface.itemCount ??
+              0,
+          }
+        : null;
+  });
+
+  const toggleSequence = React.useCallback(
+    (cardId: string) => {
+      const width = containerRef.current?.clientWidth ?? 0;
+      setSpreadViewportWidth(width > 0 ? width / viewport.zoom : undefined);
+      setSpreadVisibleCount(undefined);
+      setSpreadWindowStart(0);
+      setExpandedSequenceId((current) => (current === cardId ? null : cardId));
+    },
+    [viewport.zoom],
+  );
+  const closeSequence = React.useCallback(() => {
+    setSpreadInsertTarget(null);
+    setExpandedSequenceId(null);
+  }, []);
+  const moveSpreadSequence = React.useCallback(
+    (cardId: string, col: number, row: number) => {
+      onMoveCardsRef.current?.([{ cardId, col, row }]);
+    },
+    [],
+  );
+
   const renderCard = (card: CellCardModel) => {
     const isMoving = movingCardIds.has(card.id);
-    const visualOffset = isMoving ? dragFrame?.visualOffset : undefined;
+    const remotePosition = remoteCardPositions.get(card.id);
+    let visualOffset = dragFrame?.visualOffset;
+    if (!isMoving) {
+      visualOffset = remotePosition
+        ? {
+            x: remotePosition.x - card.col * CELL_SIZE,
+            y: remotePosition.y - card.row * CELL_SIZE,
+          }
+        : undefined;
+    }
     const isSelected = selection.cardIds.has(card.id);
-    const connectedPortIds =
+    const laidPortIds =
       index.connectedPortIdsByCardId.get(card.id) ?? EMPTY_PORT_IDS;
+    // Punched, the port a pipe is being wired from already has its pipe in
+    // the hole: the preview runs on from it under the card.
+    const connectedPortIds =
+      punched && wiring?.fromCardId === card.id
+        ? new Set([
+            ...laidPortIds,
+            cellPortKey(wiring.fromPort.direction, wiring.fromPort.id),
+          ])
+        : laidPortIds;
     const activePortKey =
       hotPortKey && hotPortKey.startsWith(`${card.id}:`) ? hotPortKey : null;
     const surface = surfaceById[card.id];
@@ -1830,6 +2424,9 @@ export function CellCanvas({
           card={resolvedCard}
           visualOffset={visualOffset}
           material={look.material}
+          well={look.well}
+          pipe={look.pipe}
+          cardFill={look.cardFill}
           selected={isSelected}
           dragging={isMoving}
           connectedPortIds={connectedPortIds}
@@ -1845,6 +2442,9 @@ export function CellCanvas({
       visualOffset,
       material: look.material,
       corners: look.corners,
+      well: look.well,
+      pipe: look.pipe,
+      cardFill: look.cardFill,
       selected: isSelected,
       dragging: isMoving,
       connectedPortIds,
@@ -1872,12 +2472,23 @@ export function CellCanvas({
           />
         );
       case "artifact":
+        // While it is spread open, its items stand in for it.
+        if (spreadOpen && openSequence?.card.id === card.id) return null;
+        // While it slides under the stack it joined, its tuck stands in.
+        if (tuckingCardIds.has(card.id)) return null;
         return (
           <CellArtifactCard
             key={card.id}
             {...baseProps}
             surface={surface}
+            stackStyle={look.stackStyle}
+            mergeHover={mergeTarget?.cardId === card.id}
+            merging={mergeTarget !== null && draggedCardId === card.id}
             onInspect={onArtifactInspect}
+            onExpandSequence={toggleSequence}
+            onUngroup={editable ? onUngroupArtifactCard : undefined}
+            sequenceExpanded={openSequence?.card.id === card.id}
+            canExpandSequence={spreadableById.get(card.id) ?? true}
           />
         );
       case "collection":
@@ -1923,7 +2534,6 @@ export function CellCanvas({
           movingWells={dragFrame?.movingWells ?? EMPTY_WELLS}
           wipedPipeId={wipedPipeId}
           wipedIntensity={wipedIntensity}
-          connectionPreview={connectionPreview}
           cellSize={CELL_SIZE}
           dragging={movingCardIds.size > 0 || wiring !== null}
           onPipeHover={onPipeHover}
@@ -1934,6 +2544,13 @@ export function CellCanvas({
             {underCardsFrames.map(renderCard)}
           </CellViewportLayer>
         ) : null}
+        {/* After the frames, before the cards: a pipe being wired lies over
+            the frost and any frame, and slides under every card it crosses. */}
+        <CellConnectionPreview
+          viewport={viewport}
+          look={look}
+          preview={connectionPreview}
+        />
         <div
           data-cell-viewport="true"
           {...stylex.props(s.world)}
@@ -1941,35 +2558,41 @@ export function CellCanvas({
             transform: `translate3d(${viewport.x}px, ${viewport.y}px, 0) scale(${viewport.zoom})`,
           }}
         >
-          {dragFrame?.showGhostCells
-            ? dragFrame.ghostBoxes.map((ghost) => (
-                <div
-                  key={ghost.cardId}
-                  aria-hidden="true"
-                  data-cell-ghost={ghost.cardId}
-                  {...stylex.props(s.ghostCell)}
-                  style={{
-                    left: ghost.col * CELL_SIZE,
-                    top: ghost.row * CELL_SIZE,
-                    width: ghost.widthCells * CELL_SIZE,
-                    height: ghost.heightCells * CELL_SIZE,
-                  }}
-                />
-              ))
-            : null}
+          <CellLandingOutlines
+            outlines={
+              // Over a merge or spread drop target the card joins that
+              // sequence, so no grid landing is shown.
+              dragFrame?.showGhostCells &&
+              mergeTarget === null &&
+              spreadInsertTarget === null
+                ? dragFrame.ghostBoxes.map((ghost) => ({
+                    cardId: ghost.cardId,
+                    bounds: ghost,
+                  }))
+                : []
+            }
+          />
           <div {...stylex.props(s.cards)}>
+            <CellStackTuckLayer
+              tucks={stackTucks}
+              onSettled={onStackTuckSettled}
+            />
             {foregroundCards.map(renderCard)}
           </div>
         </div>
         <CellViewportLayer layer="over-cards" viewport={viewport}>
           <CellDockedBridgeLayer
             joins={visibleDockedJoins}
+            punched={punched}
             selectedPipeIds={selection.pipeIds}
             hoveredPipeId={hoveredPipeId}
             onJoinHover={onPipeHover}
             onJoinSelect={(pipeId) => {
               onPipeSelect(pipeId);
-              onSelectEdgeAttachmentRef.current?.(pipeId);
+              const join = visibleDockedJoins.find(
+                (candidate) => candidate.pipeId === pipeId,
+              );
+              onSelectEdgeAttachmentRef.current?.(pipeId, join?.seamPoint);
             }}
           />
           {visiblePipeAttachments.map((attachment) => (
@@ -1981,11 +2604,73 @@ export function CellCanvas({
               onHover={onPipeHover}
               onSelect={(pipeId) => {
                 onPipeSelect(pipeId);
-                onSelectEdgeAttachmentRef.current?.(pipeId);
+                onSelectEdgeAttachmentRef.current?.(pipeId, attachment.anchor);
               }}
               onRemove={editable ? onRemovePipeAttachment : undefined}
-            />
+            >
+              {onSelectEdgeAttachment ? (
+                <IconButton
+                  size="2xs"
+                  variant="ghost"
+                  shape="round"
+                  label="Edit connection"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onPipeSelect(attachment.pipeId);
+                    onSelectEdgeAttachmentRef.current?.(
+                      attachment.pipeId,
+                      attachment.anchor,
+                    );
+                  }}
+                >
+                  <ChevronDown size={11} />
+                </IconButton>
+              ) : null}
+            </CellEdgeSelectorPill>
           ))}
+          {showMergeSuggestions && onMergeArtifactCardRun
+            ? mergeSuggestions.map((suggestion) => (
+                <CellArtifactMergeSuggestionOverlay
+                  key={suggestion.id}
+                  suggestion={suggestion}
+                  onMerge={mergeArtifactRun}
+                />
+              ))
+            : null}
+          {mergeTarget && mergeTargetCard ? (
+            <CellArtifactMergeTargetOverlay
+              card={mergeTargetCard}
+              itemCount={mergeTarget.itemCount}
+            />
+          ) : null}
+          {spreadOpen && openSequence ? (
+            <CellArtifactSequenceSpread
+              key={openSequence.card.id}
+              card={openSequence.card}
+              surface={openSequence.surface}
+              layout={openSequence.layout}
+              foregroundCards={foregroundCards}
+              screenToWorld={screenToWorld}
+              material={look.material}
+              corners={look.corners}
+              stackStyle={look.stackStyle}
+              cardFill={look.cardFill}
+              externalInsertSlot={
+                spreadInsertTarget?.spreadCardId === openSequence.card.id
+                  ? spreadInsertTarget.slot
+                  : null
+              }
+              onWindowStartChange={setSpreadWindowStart}
+              onClose={closeSequence}
+              onPreferredVisibleCountChange={setSpreadVisibleCount}
+              onMove={editable && onMoveCards ? moveSpreadSequence : undefined}
+              onInspect={onArtifactInspect}
+              onReorder={editable ? onReorderArtifactCardItem : undefined}
+              onExtract={editable ? onExtractArtifactCardItem : undefined}
+              onRemoveItem={editable ? onRemoveArtifactCardItem : undefined}
+            />
+          ) : null}
           <CellRemotePresenceLayer
             peers={remotePeers}
             cards={foregroundCards}

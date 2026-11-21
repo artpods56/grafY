@@ -26,7 +26,12 @@ import { pipePath, twinPaths, type Point } from "./pipe-path";
  *   1. floor, then the pipe layers deepest first, then the moving pipes
  *   2. the frosted sheet with the resting wells cut out of it
  *   3. the moving wells drawn over the frost, then the pipe hit targets
- *   5. the pipe being wired, above the cards
+ *
+ * With punched wells the ports are holes in the cards, so the stage bores no
+ * well at all: the frost runs unbroken to every card's edge and the pipes,
+ * already carried on under the cards by the caller, slide out of sight there.
+ *   3. the pipe being wired ({@link CellConnectionPreview}), placed by the
+ *      caller after any under-card frames so it lies over them, under cards
  *
  * Cost model: a drag frame changes only the moving pipes and wells. Every
  * resting plane is a memoised component whose props hold no moving data, and
@@ -35,8 +40,15 @@ import { pipePath, twinPaths, type Point } from "./pipe-path";
  */
 
 export type CellGlassMaterial = "frost" | "liquid";
-export type CellWellStyle = "recessed" | "flat";
+/**
+ * `recessed` and `flat` bore a well in the glass for a port in the gutter
+ * cell; `punched` puts the port inside the card, in a hole the card draws, and
+ * leaves the glass whole.
+ */
+export type CellWellStyle = "recessed" | "flat" | "punched";
 export type CellCorners = "rounded" | "sharp";
+/** How an artifact stack draws the items behind its top: a hole-pinned fan or a straight deck. */
+export type CellStackStyle = "fan" | "deck";
 export type WellDirection = "left" | "right" | "top" | "bottom";
 
 export interface CellGlassLook {
@@ -44,10 +56,16 @@ export interface CellGlassLook {
   well: CellWellStyle;
   pipe: PipeFamily;
   corners: CellCorners;
+  stackStyle: CellStackStyle;
   /** Blur of a pipe seen through the glass, in flow units. */
   blur: number;
   /** How milky the glass is, 0 (clear) to 1 (opaque). */
   frost: number;
+  /**
+   * How solid a card's plate is, from see-through (pipes under the card show
+   * through it, frosted) to 1 (solid).
+   */
+  cardFill: number;
   /** Hairlines on the floor, one per cell. */
   grid: boolean;
 }
@@ -66,6 +84,7 @@ export interface StagePipe {
   sequence: boolean;
   /** 0 is just under the glass; 1 and 2 lie deeper. */
   depth: number;
+  disabled?: boolean;
 }
 
 export interface StageWell {
@@ -96,7 +115,6 @@ export interface CellGlassStageProps {
   wipedPipeId: string | null;
   /** 1 wipes the frost off the pipe, 0.5 thins it, 0 leaves it. */
   wipedIntensity: number;
-  connectionPreview: LiveConnectionPreview | null;
   cellSize: number;
   dragging: boolean;
   onPipeHover?: (id: string | null) => void;
@@ -104,6 +122,21 @@ export interface CellGlassStageProps {
 }
 
 const ROUNDED_CORNER_RADIUS = 12;
+
+/**
+ * A card plate's paint at `cardFill` (see {@link CellGlassLook.cardFill}): the
+ * material's plate colour, mixed toward transparent. Undefined leaves the
+ * plate its solid default.
+ */
+export function cardPlateFill(
+  material: CellGlassMaterial,
+  cardFill: number | undefined,
+): string | undefined {
+  if (cardFill === undefined) return undefined;
+  const base = material === "liquid" ? tokens.colorSurface : tokens.colorChrome;
+  const percent = Math.round(Math.min(1, Math.max(0, cardFill)) * 100);
+  return `color-mix(in srgb, ${base} ${percent}%, transparent)`;
+}
 
 export function cellCornerRadius(corners: CellCorners): number {
   return corners === "rounded" ? ROUNDED_CORNER_RADIUS : 0;
@@ -115,12 +148,16 @@ export function cellCornerRadius(corners: CellCorners): number {
  */
 const WELL_RADIUS = 9.5;
 /** Top-down recessed well: open bore, thick glass wall, and feathered bevel. */
-const RECESSED_INNER_RADIUS = 8.8;
-const RECESSED_OUTER_RADIUS = 11;
+export const RECESSED_INNER_RADIUS = 8.8;
+export const RECESSED_OUTER_RADIUS = 11;
+/** How far a liquid well's meniscus sheen reaches past its outer lip. */
+export const RECESSED_MENISCUS_REACH = 1.4 + 2.4 / 2;
 const RECESSED_WALL_MID_RADIUS =
   (RECESSED_INNER_RADIUS + RECESSED_OUTER_RADIUS) / 2;
 const RECESSED_WALL_THICKNESS = RECESSED_OUTER_RADIUS - RECESSED_INNER_RADIUS;
 const RECESSED_FEATHER_RADIUS = 14;
+/** An open bore's wall: thinner than a floored well's, inside its lip. */
+const OPEN_WALL_THICKNESS = 1.4;
 /** Liquid glass (flat mode): the lip around a well that refracts. */
 const LENS_RADIUS = 16;
 const LENS_ZOOM = 1.4;
@@ -133,6 +170,7 @@ const SHEET = {
   height: SHEET_REACH * 2,
 };
 const HIT_WIDTH = 22;
+const NO_WELLS: readonly StageWell[] = [];
 const PREVIEW_OPACITY = 0.85;
 
 /** One stage per page, so fixed ids are unique; none collides with pipe-layers. */
@@ -156,6 +194,7 @@ const CELL_WELL_INNER_SPEC_ID = "well-inner-spec";
 const CELL_WELL_WALL_FROST_ID = "well-wall-frost";
 const CELL_WELL_WALL_LIQUID_ID = "well-wall-liquid";
 const CELL_WELL_MENISCUS_ID = "well-meniscus";
+const CELL_WELL_WALL_OPEN_ID = "well-wall-open";
 
 /** The glass edge at the bottom of a well catches the light. */
 const WELL_GLINT =
@@ -176,6 +215,15 @@ const WELL_WALL_LIQUID_MID =
   "light-dark(color-mix(in srgb, black 16%, transparent), color-mix(in srgb, black 46%, transparent))";
 const WELL_WALL_LIQUID_BOT =
   "light-dark(color-mix(in srgb, white 72%, transparent), color-mix(in srgb, white 28%, transparent))";
+// An open bore's wall: the cut through a card over whatever it shows. Its
+// upper wall is in soft shade and its lower lip a thin catchlight, both
+// translucent, so it reads on a dark photo and on a white scan alike.
+const WELL_WALL_OPEN_TOP =
+  "light-dark(color-mix(in srgb, black 30%, transparent), color-mix(in srgb, black 55%, transparent))";
+const WELL_WALL_OPEN_MID =
+  "light-dark(color-mix(in srgb, black 8%, transparent), color-mix(in srgb, black 18%, transparent))";
+const WELL_WALL_OPEN_BOT =
+  "light-dark(color-mix(in srgb, white 55%, transparent), color-mix(in srgb, white 22%, transparent))";
 const WELL_MENISCUS_HI =
   "light-dark(color-mix(in srgb, white 52%, transparent), color-mix(in srgb, white 14%, transparent))";
 const WELL_MENISCUS_LO =
@@ -220,6 +268,7 @@ interface DrawnPipe {
   id: string;
   color: string;
   depth: Depth;
+  disabled: boolean;
   paths: PipePaths;
 }
 
@@ -230,6 +279,16 @@ type PipeLayers = readonly [
 ];
 
 const s = stylex.create({
+  // A punched port's glow fades in and out; nothing changes size, so the
+  // small ring stays crisp at any zoom.
+  portGlow: {
+    transitionProperty: "opacity",
+    transitionDuration: {
+      default: "120ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+  },
+  portGlowOff: { opacity: 0 },
   floor: {
     position: "absolute",
     inset: 0,
@@ -260,7 +319,9 @@ const s = stylex.create({
   pipes: { zIndex: 1 },
   glass: { zIndex: 2 },
   movingOver: { zIndex: 3 },
-  preview: { zIndex: 5 },
+  // Over the frost and any under-card frame, under the cards: a pipe being
+  // wired slides under a card it crosses, as a laid pipe does.
+  preview: { zIndex: 3 },
   planeSvg: {
     position: "absolute",
     top: 0,
@@ -321,6 +382,7 @@ function drawPipes(
     id: pipe.id,
     color: pipe.color,
     depth: toDepth(pipe.depth),
+    disabled: pipe.disabled === true,
     paths: pipe.sequence
       ? twinPaths(pipe.points, radius)
       : { path: pipePath(pipe.points, radius) },
@@ -374,7 +436,11 @@ function lensMaskId(wellKey: string): string {
   return `${STAGE_PREFIX}lens-${wellKey.replace(/[^\w-]/g, "_")}`;
 }
 
-function WellGradients({ prefix }: { prefix: string }) {
+/**
+ * The paints a recessed well draws with, under ids starting with `prefix`.
+ * Exported so a punched port, drawn by its card, bores the same well.
+ */
+export function WellGradients({ prefix }: { prefix: string }) {
   return (
     <>
       {/* Deep recessed cavity shadow cast by the overhead glass slab. */}
@@ -428,6 +494,18 @@ function WellGradients({ prefix }: { prefix: string }) {
         <stop offset="0%" style={{ stopColor: WELL_WALL_LIQUID_TOP }} />
         <stop offset="45%" style={{ stopColor: WELL_WALL_LIQUID_MID }} />
         <stop offset="100%" style={{ stopColor: WELL_WALL_LIQUID_BOT }} />
+      </linearGradient>
+      {/* An open bore's thin wall: shade above, a soft catchlight below. */}
+      <linearGradient
+        id={prefix + CELL_WELL_WALL_OPEN_ID}
+        x1="0"
+        y1="0"
+        x2="0"
+        y2="1"
+      >
+        <stop offset="0%" style={{ stopColor: WELL_WALL_OPEN_TOP }} />
+        <stop offset="55%" style={{ stopColor: WELL_WALL_OPEN_MID }} />
+        <stop offset="100%" style={{ stopColor: WELL_WALL_OPEN_BOT }} />
       </linearGradient>
       {/* Outer meniscus bevel sheen for liquid glass. */}
       <linearGradient
@@ -487,25 +565,51 @@ const DragGradients = React.memo(function DragGradients() {
  * as a hole in the same sheet. Bottom to top: an optional opaque floor (only
  * while dragged over intact frost), the cavity shadow, the pipe stub, the
  * port's fitting, then the bore wall, its caustic and its rims.
+ *
+ * A punched port is the same well bored through its card: the card draws it
+ * with its floor, and leaves the stub out (or faint) until a pipe runs in.
+ * An `open` well is bored clean through (the card cuts the hole): it has no
+ * floor, meniscus or bottom step, only a thin shaded wall and a fine lip, so
+ * the canvas and the pipe under the card show through it.
  */
-function RecessedWell({
+export function RecessedWell({
   well,
   liquid,
   design,
   prefix,
   withFloor = false,
+  stubOpacity = 1,
+  stubClipId,
+  glow,
+  open = false,
 }: {
   well: StageWell;
   liquid: boolean;
   design: PipeDesign;
   prefix: string;
   withFloor?: boolean;
+  /** 0 leaves the stub and its caustic out. */
+  stubOpacity?: number;
+  /**
+   * A clip path for the stub. A card's punched well clips it to the well, as
+   * the plate would; in the stage the frost hides the stub's end instead.
+   */
+  stubClipId?: string;
+  /**
+   * A punched port pointed at, or under a connection drag: its floor is lit
+   * from below in the port's colour. Given, the glow's layer is always drawn,
+   * so it fades rather than mounts; left out (the stage's wells) it is not.
+   */
+  glow?: boolean;
+  /** Bored clean through the card: nothing under the hole but the canvas. */
+  open?: boolean;
 }) {
   const { centre, exit } = well;
   return (
     <g data-cell-well={well.key}>
-      {withFloor ? (
+      {withFloor && !open ? (
         <circle
+          data-cell-well-floor="true"
           cx={centre.x}
           cy={centre.y}
           r={RECESSED_INNER_RADIUS}
@@ -515,15 +619,43 @@ function RecessedWell({
       <circle
         cx={centre.x}
         cy={centre.y}
-        r={RECESSED_INNER_RADIUS}
+        r={open ? RECESSED_OUTER_RADIUS : RECESSED_INNER_RADIUS}
         fill={`url(#${prefix}${CELL_WELL_CAVITY_SHADE_ID})`}
+        fillOpacity={open ? 0.55 : undefined}
       />
-      <PipeBody
-        design={design}
-        {...stubPaths(centre, exit, RECESSED_INNER_RADIUS - 1, well.pipeTwin)}
-        color={well.pipeColor}
-        sharp
-      />
+      {glow !== undefined ? (
+        <g
+          data-port-glow={glow ? "on" : "off"}
+          {...stylex.props(s.portGlow, !glow && s.portGlowOff)}
+        >
+          <circle
+            cx={centre.x}
+            cy={centre.y}
+            r={RECESSED_INNER_RADIUS}
+            fillOpacity={0.34}
+            style={{ fill: well.portColor }}
+          />
+        </g>
+      ) : null}
+      {stubOpacity > 0 ? (
+        <g
+          data-cell-well-stub={well.pipeTwin ? "list" : "single"}
+          opacity={stubOpacity < 1 ? stubOpacity : undefined}
+          clipPath={stubClipId ? `url(#${stubClipId})` : undefined}
+        >
+          <PipeBody
+            design={design}
+            {...stubPaths(
+              centre,
+              exit,
+              RECESSED_INNER_RADIUS - 1,
+              well.pipeTwin,
+            )}
+            color={well.pipeColor}
+            sharp
+          />
+        </g>
+      ) : null}
       <ConnectorFitting
         centre={centre}
         color={well.portColor}
@@ -532,7 +664,7 @@ function RecessedWell({
       />
       {/* The bore wall lies above the stub, so the pipe visibly passes under
           the slab's thickness. */}
-      {liquid ? (
+      {liquid && !open ? (
         <circle
           cx={centre.x}
           cy={centre.y}
@@ -542,17 +674,29 @@ function RecessedWell({
           stroke={`url(#${prefix}${CELL_WELL_MENISCUS_ID})`}
         />
       ) : null}
-      <circle
-        cx={centre.x}
-        cy={centre.y}
-        r={RECESSED_WALL_MID_RADIUS}
-        fill="none"
-        strokeWidth={RECESSED_WALL_THICKNESS}
-        stroke={`url(#${prefix}${liquid ? CELL_WELL_WALL_LIQUID_ID : CELL_WELL_WALL_FROST_ID})`}
-      />
+      {open ? (
+        <circle
+          data-cell-well-wall="open"
+          cx={centre.x}
+          cy={centre.y}
+          r={RECESSED_OUTER_RADIUS - OPEN_WALL_THICKNESS / 2}
+          fill="none"
+          strokeWidth={OPEN_WALL_THICKNESS}
+          stroke={`url(#${prefix}${CELL_WELL_WALL_OPEN_ID})`}
+        />
+      ) : (
+        <circle
+          cx={centre.x}
+          cy={centre.y}
+          r={RECESSED_WALL_MID_RADIUS}
+          fill="none"
+          strokeWidth={RECESSED_WALL_THICKNESS}
+          stroke={`url(#${prefix}${liquid ? CELL_WELL_WALL_LIQUID_ID : CELL_WELL_WALL_FROST_ID})`}
+        />
+      )}
       {/* Liquid glass refraction: the cut wall catches a tapered coloured
           caustic where the pipe passes under the lip. */}
-      {liquid ? (
+      {liquid && stubOpacity > 0 ? (
         <>
           <path
             d={causticCrescentPath(
@@ -579,24 +723,27 @@ function RecessedWell({
         </>
       ) : null}
       {/* Inner bottom step of the glass slab. */}
-      <circle
-        cx={centre.x}
-        cy={centre.y}
-        r={RECESSED_INNER_RADIUS}
-        fill="none"
-        strokeWidth={liquid ? 0.9 : 0.8}
-        stroke={
-          liquid ? `url(#${prefix}${CELL_WELL_INNER_SPEC_ID})` : undefined
-        }
-        style={liquid ? undefined : { stroke: WELL_INNER_STEP }}
-      />
+      {open ? null : (
+        <circle
+          cx={centre.x}
+          cy={centre.y}
+          r={RECESSED_INNER_RADIUS}
+          fill="none"
+          strokeWidth={liquid ? 0.9 : 0.8}
+          stroke={
+            liquid ? `url(#${prefix}${CELL_WELL_INNER_SPEC_ID})` : undefined
+          }
+          style={liquid ? undefined : { stroke: WELL_INNER_STEP }}
+        />
+      )}
       {/* Outer top lip of the glass sheet. */}
       <circle
         cx={centre.x}
         cy={centre.y}
         r={RECESSED_OUTER_RADIUS}
         fill="none"
-        strokeWidth={liquid ? 1.25 : 1}
+        strokeWidth={open ? 0.75 : liquid ? 1.25 : 1}
+        strokeOpacity={open ? 0.7 : undefined}
         stroke={`url(#${prefix}${liquid ? CELL_WELL_SPECULAR_ID : CELL_WELL_EDGE_ID})`}
       />
     </g>
@@ -677,7 +824,13 @@ const PipeLayer = React.memo(function PipeLayer({
   return (
     <g>
       {pipes.map((pipe) => (
-        <g key={pipe.id} data-pipe={pipe.id}>
+        <g
+          key={pipe.id}
+          data-pipe={pipe.id}
+          data-pipe-disabled={pipe.disabled ? "true" : undefined}
+          opacity={pipe.disabled ? 0.45 : undefined}
+          strokeDasharray={pipe.disabled ? "7 5" : undefined}
+        >
           <PipeBody
             design={design}
             {...pipe.paths}
@@ -1057,12 +1210,18 @@ const RestingGlassPlane = React.memo(function RestingGlassPlane({
         <g mask={`url(#${CELL_CLEAR_MASK_ID})`}>
           {flat ? <WellStubs wells={wells} design={design} /> : null}
           {wiped ? (
-            <PipeBody
-              design={design}
-              {...wiped.paths}
-              color={wiped.color}
-              sharp
-            />
+            <g
+              data-pipe-disabled={wiped.disabled ? "true" : undefined}
+              opacity={wiped.disabled ? 0.45 : undefined}
+              strokeDasharray={wiped.disabled ? "7 5" : undefined}
+            >
+              <PipeBody
+                design={design}
+                {...wiped.paths}
+                color={wiped.color}
+                sharp
+              />
+            </g>
           ) : null}
         </g>
         <WellArt wells={wells} flat={flat} liquid={liquid} design={design} />
@@ -1146,7 +1305,6 @@ export function CellGlassStage({
   movingWells,
   wipedPipeId,
   wipedIntensity,
-  connectionPreview,
   cellSize,
   dragging,
   onPipeHover,
@@ -1155,6 +1313,10 @@ export function CellGlassStage({
   const { x, y, zoom } = viewport;
   const liquid = look.material === "liquid";
   const flat = look.well === "flat";
+  // Punched ports are the cards' own holes: no well in the glass.
+  const punched = look.well === "punched";
+  const stageRestingWells = punched ? NO_WELLS : restingWells;
+  const stageMovingWells = punched ? NO_WELLS : movingWells;
   const design = pipeDesign(look.pipe, "opus");
   const radius = cellCornerRadius(look.corners);
   const transform = planeTransform(x, y, zoom);
@@ -1216,7 +1378,13 @@ export function CellGlassStage({
             <g
               key={pipe.id}
               data-pipe={pipe.id}
-              opacity={DEPTH_OPACITY[pipe.depth]}
+              data-pipe-disabled={pipe.disabled ? "true" : undefined}
+              opacity={
+                pipe.disabled
+                  ? DEPTH_OPACITY[pipe.depth] * 0.45
+                  : DEPTH_OPACITY[pipe.depth]
+              }
+              strokeDasharray={pipe.disabled ? "7 5" : undefined}
             >
               <PipeBody
                 design={design}
@@ -1237,7 +1405,7 @@ export function CellGlassStage({
         frost={look.frost}
         design={design}
         pipes={restingDrawn}
-        wells={restingWells}
+        wells={stageRestingWells}
         wipedPipeId={wipedPipeId}
         wipedIntensity={wipedIntensity}
       />
@@ -1250,7 +1418,7 @@ export function CellGlassStage({
       >
         <svg {...stylex.props(s.planeSvg)}>
           <DragGradients />
-          {movingWells.map((well) =>
+          {stageMovingWells.map((well) =>
             flat ? (
               <OpenWell key={well.key} well={well} design={design} />
             ) : (
@@ -1275,32 +1443,53 @@ export function CellGlassStage({
         onHover={handleHover}
         onSelect={handleSelect}
       />
-      {connectionPreview ? (
-        <div
-          aria-hidden="true"
-          {...stylex.props(s.plane, s.preview)}
-          style={{ transform }}
-        >
-          <svg {...stylex.props(s.planeSvg)}>
-            <g opacity={PREVIEW_OPACITY}>
-              <PipeBody
-                design={design}
-                {...(connectionPreview.sequence
-                  ? twinPaths(connectionPreview.points, radius)
-                  : { path: pipePath(connectionPreview.points, radius) })}
-                color={connectionPreview.color}
-                sharp
-              />
-              <ConnectorFitting
-                centre={connectionPreview.cursor}
-                color={connectionPreview.color}
-                sequence={connectionPreview.sequence}
-                design="opus"
-              />
-            </g>
-          </svg>
-        </div>
-      ) : null}
     </>
+  );
+}
+
+/**
+ * The pipe being wired: sharp over the frost, under the cards. Render it after
+ * any under-card layer and before the cards, so it lies between the two.
+ */
+export function CellConnectionPreview({
+  viewport,
+  look,
+  preview,
+}: {
+  viewport: StageViewport;
+  look: CellGlassLook;
+  preview: LiveConnectionPreview | null;
+}) {
+  if (!preview) return null;
+  const design = pipeDesign(look.pipe, "opus");
+  const radius = cellCornerRadius(look.corners);
+  return (
+    <div
+      aria-hidden="true"
+      data-cell-connection-preview="true"
+      {...stylex.props(s.plane, s.preview)}
+      style={{
+        transform: planeTransform(viewport.x, viewport.y, viewport.zoom),
+      }}
+    >
+      <svg {...stylex.props(s.planeSvg)}>
+        <g opacity={PREVIEW_OPACITY}>
+          <PipeBody
+            design={design}
+            {...(preview.sequence
+              ? twinPaths(preview.points, radius)
+              : { path: pipePath(preview.points, radius) })}
+            color={preview.color}
+            sharp
+          />
+          <ConnectorFitting
+            centre={preview.cursor}
+            color={preview.color}
+            sequence={preview.sequence}
+            design="opus"
+          />
+        </g>
+      </svg>
+    </div>
   );
 }

@@ -80,6 +80,7 @@ describe("canvasMenuTarget", () => {
         <div data-cell-card="true" data-card-id="card-1"><span class="card-title">OCR</span></div>
         <div data-edge-selector-pill="edge-1"><span class="pill-text">text</span></div>
         <button data-docked-join="edge-2"><span class="join-line"></span></button>
+        <svg><path data-pipe-hit="edge-3" /></svg>
         <div data-cell-canvas-chrome="true"><button class="toolbar-btn">Run</button></div>
         <div class="cell-empty"></div>
       </div>`;
@@ -95,6 +96,10 @@ describe("canvasMenuTarget", () => {
     expect(canvasMenuTarget(el(".join-line"))).toEqual({
       kind: "edge",
       edgeId: "edge-2",
+    });
+    expect(canvasMenuTarget(el('[data-pipe-hit="edge-3"]'))).toEqual({
+      kind: "edge",
+      edgeId: "edge-3",
     });
     expect(canvasMenuTarget(el(".cell-empty"))).toEqual({ kind: "pane" });
     expect(canvasMenuTarget(el(".toolbar-btn"))).toBeNull();

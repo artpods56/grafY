@@ -5,65 +5,342 @@ import * as stylex from "@stylexjs/stylex";
 import {
   FileText,
   ImageIcon,
+  Layers,
   Map as MapIcon,
   Plus,
   ScanSearch,
+  Ungroup,
   X,
 } from "lucide-react";
 
 import { IconButton } from "@/components/ui/button";
 import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
+import { COLLECTION_PORT } from "@/features/workbench/model/collection-spec";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import type {
   ArtifactCardSurfaceData,
   CollectionCardSurfaceData,
 } from "../cell-contracts";
-import { CELL_SIZE, collectionRowOffset } from "../cell-model";
+import { cellCornerRadius, type CellStackStyle } from "../cell-glass-stage";
+import {
+  ARTIFACT_CARD_OUTPUT_PORT_ID,
+  artifactCardOutputRow,
+  CARD_PLATE_BOTTOM_INSET,
+  CARD_PLATE_INSET_X,
+  CARD_PLATE_TOP,
+  CELL_SIZE,
+  collectionRowOffset,
+  punchedPortCardCentre,
+} from "../cell-model";
+import { shouldAnimateMotion } from "../cell-transitions";
+import { PUNCHED_LABEL_INSET } from "../punched-port";
 import {
   CellCardShell,
   cellCardMarks as m,
   plateRowTop,
+  punchedHoleMask,
   stopCardDrag,
   styled,
   useResolvedCardState,
   type CellCardBaseProps,
+  type CellCardMenuItem,
 } from "./CellOperatorCard";
 
 /**
  * Artifact and collection cards on the cell canvas. Both are whole-cell
  * boxes with the shared card shell: their ports sit on the card's own edges,
- * in the glass stage's wells, with no rail floating outside the card.
+ * in the glass stage's wells, with no rail floating outside the card. With
+ * punched wells the shell drills each port through the plate instead: over an
+ * artifact's preview the hole is cut clean through, so the canvas shows in
+ * it, and a collection's rows start past it.
  */
 
 const MONO_FONT =
   "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
 
+/**
+ * Card backs a sequence fans under its plate, pinned through the output's
+ * corner hole like a swatch deck. Each turns counter-clockwise about the hole
+ * by `maxDegrees`, or less on a wide card, so its far corner never swings more
+ * than `swing` px out from under the plate.
+ */
+const STACK_BACKS = [
+  { maxDegrees: 1.8, swing: 6 },
+  { maxDegrees: 3.6, swing: 12 },
+] as const;
+
+/**
+ * Card backs a `deck` stack lays straight under its plate: each steps down
+ * and narrows a little about the plate's bottom centre, so its lower edge
+ * shows below the plate and its sides tuck in.
+ */
+const DECK_BACKS = [
+  { dropY: 6, scale: 0.96 },
+  { dropY: 12, scale: 0.92 },
+] as const;
+
+/** How many backs a stack draws at most. */
+export const STACK_BACK_COUNT = STACK_BACKS.length;
+
+/** How long a back that is no longer needed folds back under the plate. */
+export const STACK_BACK_EXIT_MS = 180;
+
+/** How long a stack that took a card settles. */
+const STACK_REBOUND_MS = 260;
+
+const MOTION_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+const stackBackIn = stylex.keyframes({
+  from: { transform: "none" },
+});
+
+const stackBackOut = stylex.keyframes({
+  to: { transform: "none", opacity: 0 },
+});
+
+const stackRebound = stylex.keyframes({
+  "0%": { transform: "none" },
+  "35%": { transform: "translateY(1.5px) scale(0.992)" },
+  "70%": { transform: "translateY(-0.5px) scale(1.002)" },
+  "100%": { transform: "none" },
+});
+
+interface StackBackGeometry {
+  plateWidth: number;
+  plateHeight: number;
+  /** The output's corner hole, in the plate's own box. */
+  pin: { x: number; y: number };
+}
+
+function stackBackGeometry(
+  card: Pick<CellArtifactCardProps["card"], "widthCells" | "heightCells">,
+): StackBackGeometry {
+  const plateWidth = card.widthCells * CELL_SIZE - CARD_PLATE_INSET_X * 2;
+  const plateHeight =
+    card.heightCells * CELL_SIZE - CARD_PLATE_TOP - CARD_PLATE_BOTTOM_INSET;
+  const hole = punchedPortCardCentre(card, stackOutputPort(card));
+  return {
+    plateWidth,
+    plateHeight,
+    pin: { x: hole.x - CARD_PLATE_INSET_X, y: hole.y - CARD_PLATE_TOP },
+  };
+}
+
+/** The same corner hole the output port is drawn in. */
+function stackOutputPort(
+  card: Pick<CellArtifactCardProps["card"], "heightCells">,
+) {
+  return {
+    id: ARTIFACT_CARD_OUTPUT_PORT_ID,
+    direction: "output",
+    rowOffset: artifactCardOutputRow(card.heightCells),
+  } as const;
+}
+
+/**
+ * Where a card back lies at continuous depth `depth` in `[0, STACK_BACK_COUNT]`
+ * (0 flush behind the top plate, 1 = back #1, 2 = back #2).
+ */
+export function stackDepthTransform(
+  card: Pick<CellArtifactCardProps["card"], "widthCells" | "heightCells">,
+  stackStyle: CellStackStyle,
+  depth: number,
+): { transform: string; transformOrigin: string } {
+  const d = Math.max(0, Math.min(STACK_BACK_COUNT, depth));
+  const geometry = stackBackGeometry(card);
+  if (stackStyle === "deck") {
+    const { dropY, scale } = DECK_BACKS[0];
+    const y = Number((dropY * d).toFixed(2));
+    const k = Number((1 - (1 - scale) * d).toFixed(4));
+    return {
+      transform: `translate3d(0px, ${y}px, 0) scale(${k})`,
+      transformOrigin: "center bottom",
+    };
+  }
+  const { maxDegrees, swing } = STACK_BACKS[0];
+  const unitDegrees = Math.min(
+    maxDegrees,
+    (Math.atan(swing / geometry.plateWidth) * 180) / Math.PI,
+  );
+  return {
+    transform: `rotate(${-Number((unitDegrees * d).toFixed(2))}deg)`,
+    transformOrigin: `${geometry.pin.x}px ${geometry.pin.y}px`,
+  };
+}
+
+/**
+ * Where the `slot`th back (0 nearest the plate) lies under a plate of this
+ * card's size, `progress` of the way out from rest (0) to its place (1): its
+ * transform and the origin it turns or scales about, in the plate's box.
+ */
+export function stackBackTransform(
+  card: Pick<CellArtifactCardProps["card"], "widthCells" | "heightCells">,
+  stackStyle: CellStackStyle,
+  slot: number,
+  progress = 1,
+): { transform: string; transformOrigin: string } {
+  const t = Math.max(0, Math.min(1, progress));
+  const targetDepth = slot <= 0 ? 1 : 2;
+  return stackDepthTransform(card, stackStyle, targetDepth * t);
+}
+
+// StyleX evaluates these at build time, so they are plain strings, not calls.
+const IMAGE_HAIRLINE =
+  "inset 0 0 0 1px light-dark(color-mix(in srgb, black 9%, transparent), color-mix(in srgb, white 10%, transparent))";
+const STACK_BACK_SHADOW =
+  "0 1px 2px light-dark(color-mix(in srgb, black 10%, transparent), color-mix(in srgb, black 45%, transparent))";
+
 const s = stylex.create({
-  headerMeta: {
-    flexShrink: 0,
-    color: tokens.colorSubtle,
-    fontFamily: MONO_FONT,
-    fontSize: "10px",
-    whiteSpace: "nowrap",
-  },
   stripLabel: {
     flexShrink: 0,
     color: tokens.colorMuted,
     fontWeight: 500,
   },
-  stripFilename: {
+  // The file name takes what the type's title leaves, flush right against
+  // the "⋯", and is the one that ellipsizes.
+  headerMeta: {
     flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    overflow: "hidden",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
     textAlign: "right",
+    gap: "5px",
+    paddingInline: "2px 4px",
+    color: tokens.colorSubtle,
+    fontFamily: MONO_FONT,
+    fontSize: "10px",
+    whiteSpace: "nowrap",
   },
-  // Below the 23px strip, to the plate's lower edge.
+  // Every kind fills the plate: no strip sits above it.
   preview: {
     position: "absolute",
-    top: "23px",
-    left: 0,
-    right: 0,
-    bottom: 0,
+    inset: 0,
     overflow: "hidden",
+  },
+  // A frame drawn over the picture, inside the plate's border, so a white
+  // scan on a white plate still has an edge in both themes.
+  imageFrame: {
+    position: "absolute",
+    inset: 0,
+    borderRadius: "inherit",
+    boxShadow: IMAGE_HAIRLINE,
+    pointerEvents: "none",
+  },
+  stackBack: {
+    position: "absolute",
+    boxSizing: "border-box",
+    overflow: "hidden",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    backgroundColor: tokens.colorSurfaceRaised,
+    boxShadow: STACK_BACK_SHADOW,
+    pointerEvents: "none",
+  },
+  stackPeek: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    opacity: 0.55,
+    pointerEvents: "none",
+    userSelect: "none",
+  },
+  // A sequence's count sits in the header's right slot as quiet monospace
+  // typography matching a single card's file name — bare at rest, softly
+  // highlighted on hover when clickable.
+  // A back that came in with a new item swings out from under the plate.
+  stackBackEnter: {
+    animationName: stackBackIn,
+    animationDuration: {
+      default: "200ms",
+      "@media (prefers-reduced-motion: reduce)": "0s",
+    },
+    animationTimingFunction: MOTION_EASE,
+  },
+  // A back the stack no longer needs folds back under the plate and fades.
+  stackBackExit: {
+    animationName: stackBackOut,
+    animationDuration: {
+      default: `${STACK_BACK_EXIT_MS}ms`,
+      "@media (prefers-reduced-motion: reduce)": "0s",
+    },
+    animationTimingFunction: MOTION_EASE,
+    animationFillMode: "forwards",
+  },
+  // The plate lifts and lowers smoothly when a dragged card hovers over it.
+  plateMotion: {
+    transitionProperty: "transform",
+    transitionDuration: {
+      default: "200ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    transitionTimingFunction: MOTION_EASE,
+  },
+  plateRebound: {
+    animationName: stackRebound,
+    animationDuration: {
+      default: `${STACK_REBOUND_MS}ms`,
+      "@media (prefers-reduced-motion: reduce)": "0s",
+    },
+    animationTimingFunction: MOTION_EASE,
+  },
+  stackCount: {
+    flexShrink: 0,
+    display: "inline-flex",
+    alignItems: "center",
+    height: "18px",
+    margin: 0,
+    paddingInline: "5px",
+    boxSizing: "border-box",
+    borderWidth: 0,
+    borderStyle: "none",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: "transparent",
+    color: tokens.colorSubtle,
+    fontFamily: MONO_FONT,
+    fontSize: "10px",
+    fontWeight: 500,
+    lineHeight: 1,
+    whiteSpace: "nowrap",
+  },
+  // The count lays the sequence open, so it takes the pointer as a bare button.
+  stackCountButton: {
+    cursor: {
+      default: "pointer",
+      ":disabled": "not-allowed",
+    },
+    opacity: {
+      default: 1,
+      ":disabled": 0.48,
+    },
+    color: {
+      default: tokens.colorSubtle,
+      ":hover:not(:disabled)": tokens.colorText,
+    },
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorHover,
+    },
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    transitionProperty: "background-color, color",
+    transitionDuration: {
+      default: "120ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+  },
+  stackCountExpanded: {
+    color: tokens.colorText,
+    backgroundColor: tokens.colorAccentSoft,
   },
   checker: {
     display: "flex",
@@ -74,10 +351,12 @@ const s = stylex.create({
     backgroundSize: "14px 14px",
   },
   image: {
+    position: "absolute",
+    inset: 0,
     display: "block",
     width: "100%",
     height: "100%",
-    objectFit: "contain",
+    objectFit: "cover",
     pointerEvents: "none",
     userSelect: "none",
   },
@@ -287,13 +566,68 @@ function TypeDot({ artifactTypeId }: { artifactTypeId: string }) {
 export interface CellArtifactCardProps extends CellCardBaseProps {
   surface: ArtifactCardSurfaceData;
   onInspect?: (cardId: string) => void;
+  /** Lays a sequence open in place, from its count or its menu. */
+  onExpandSequence?: (cardId: string) => void;
+  /** Adds "Ungroup" to a sequence's menu: each item onto its own card. */
+  onUngroup?: (cardId: string) => void;
+  /** The sequence is laid open over this card. */
+  sequenceExpanded?: boolean;
+  /**
+   * False when the card is boxed in too tightly to spread its items: the
+   * count and the menu item stay, disabled, and say why. Defaults to true.
+   */
+  canExpandSequence?: boolean;
+  /** How the stack draws its backs; defaults to `fan`. */
+  stackStyle?: CellStackStyle;
+  /** A dragged card would join this one if released now: its plate lifts. */
+  mergeHover?: boolean;
+  /** This card is held over another it would join: it readies to tuck under. */
+  merging?: boolean;
 }
 
+const BOXED_IN_HINT = "Move card into open space to spread";
+
 function CellArtifactCardImpl(props: CellArtifactCardProps) {
-  const { card, surface, onInspect } = props;
+  const { card, surface, onInspect, onExpandSequence, onUngroup } = props;
+  const sequenceExpanded = props.sequenceExpanded ?? false;
+  const canExpandSequence = props.canExpandSequence ?? true;
   const state = useResolvedCardState(card.id, props);
-  const headerMeta = surface.dimensionsLabel ?? surface.byteSizeLabel;
-  const stripDetail = surface.filename ?? card.subtitle;
+  const image = surface.previewKind === "image";
+  const itemCount = surface.itemCount ?? 1;
+  const sequence = itemCount > 1;
+  const stacked = image && sequence;
+  const stackStyle = props.stackStyle ?? "fan";
+  const rebounding = useStackRebound(itemCount);
+  // The title names the type; the header's right side names the file, or
+  // failing that its one measure. A sequence says its count there instead,
+  // so the picture itself stays clean.
+  const measure = surface.dimensionsLabel ?? surface.byteSizeLabel;
+  const headerLabel = surface.filename ?? measure ?? null;
+
+  let headerMeta: React.ReactNode = null;
+  if (sequence) {
+    headerMeta = (
+      <span data-card-meta="true" {...stylex.props(s.headerMeta)}>
+        <StackCount
+          cardId={card.id}
+          itemCount={itemCount}
+          expanded={sequenceExpanded}
+          canExpand={canExpandSequence}
+          onExpand={onExpandSequence}
+        />
+      </span>
+    );
+  } else if (headerLabel) {
+    headerMeta = (
+      <span
+        data-card-meta="true"
+        title={headerLabel}
+        {...stylex.props(s.headerMeta)}
+      >
+        <span {...stylex.props(m.ellipsis)}>{headerLabel}</span>
+      </span>
+    );
+  }
 
   return (
     <CellCardShell
@@ -301,49 +635,354 @@ function CellArtifactCardImpl(props: CellArtifactCardProps) {
       kind="artifact"
       state={state}
       resizable={card.resizable ?? true}
-      rootData={{ "data-artifact-type": surface.artifactTypeId }}
-      headerExtra={
-        headerMeta ? (
-          <span {...stylex.props(s.headerMeta)}>{headerMeta}</span>
+      headerMeta={headerMeta}
+      plateStyle={plateLift(card, stackStyle, props.mergeHover, props.merging)}
+      plateXstyle={[s.plateMotion, rebounding && s.plateRebound]}
+      rootData={{
+        "data-artifact-type": surface.artifactTypeId,
+        "data-stack-style": stackStyle,
+        "data-merge-hover": props.mergeHover ? "true" : "false",
+        "data-merging": props.merging ? "true" : "false",
+        "data-stack-rebound": rebounding ? "true" : "false",
+      }}
+      behindPlate={
+        // Drawn for every image, so a back that leaves can fold away.
+        image ? (
+          <ArtifactStackBacks
+            card={card}
+            corners={props.corners ?? "rounded"}
+            punched={props.well === "punched"}
+            peeks={surface.stackImageUrls ?? []}
+            backs={stacked ? Math.min(STACK_BACKS.length, itemCount - 1) : 0}
+            stackStyle={stackStyle}
+          />
         ) : null
       }
-      strip={
-        <>
-          <TypeDot artifactTypeId={surface.artifactTypeId} />
-          <span {...stylex.props(s.stripLabel)}>{surface.typeLabel}</span>
-          {stripDetail ? (
-            <span {...stylex.props(m.ellipsis, s.stripFilename)}>
-              {stripDetail}
-            </span>
-          ) : null}
-        </>
-      }
       menuDetail={surface.typeLabel}
-      menuItems={
-        onInspect
-          ? [
-              {
-                id: "inspect",
-                label: "Inspect",
-                icon: <ScanSearch size={13} />,
-                onSelect: () => onInspect(card.id),
-              },
-            ]
-          : undefined
-      }
+      menuItems={artifactMenuItems({
+        cardId: card.id,
+        sequence,
+        canExpandSequence,
+        onInspect,
+        onExpandSequence,
+        onUngroup,
+      })}
     >
       <div
         data-artifact-preview={surface.previewKind}
         {...stylex.props(
           s.preview,
-          surface.previewKind === "image" && s.checker,
+          image && s.checker,
           surface.previewKind === "map" && s.map,
         )}
       >
         <ArtifactPreview card={card} surface={surface} />
       </div>
+      {image && surface.imageUrl ? (
+        <span
+          aria-hidden="true"
+          data-artifact-image-frame="true"
+          {...stylex.props(s.imageFrame)}
+        />
+      ) : null}
     </CellCardShell>
   );
+}
+
+/**
+ * The plate's pose while a drag hovers: lifted as a target (opened about its
+ * pin in a fan, raised off a deck), or drawn in to tuck under as the card
+ * being dropped.
+ */
+function plateLift(
+  card: CellArtifactCardProps["card"],
+  stackStyle: CellStackStyle,
+  mergeHover: boolean | undefined,
+  merging: boolean | undefined,
+): React.CSSProperties | undefined {
+  const { pin } = stackBackGeometry(card);
+  const pinOrigin = `${pin.x}px ${pin.y}px`;
+  if (mergeHover) {
+    return stackStyle === "deck"
+      ? { transform: "translateY(-5px) scale(1.01)" }
+      : {
+          transform: "rotate(1.4deg) translateY(-2px)",
+          transformOrigin: pinOrigin,
+        };
+  }
+  if (merging) {
+    return stackStyle === "deck"
+      ? { transform: "scale(0.95)" }
+      : {
+          transform: "rotate(-1.6deg) scale(0.95)",
+          transformOrigin: pinOrigin,
+        };
+  }
+  return undefined;
+}
+
+/** True for a moment after the stack grows, while its plate settles. */
+function useStackRebound(itemCount: number): boolean {
+  const [seen, setSeen] = React.useState(itemCount);
+  const [rebounding, setRebounding] = React.useState(false);
+  if (itemCount !== seen) {
+    setSeen(itemCount);
+    setRebounding(itemCount > seen && shouldAnimateMotion());
+  }
+  React.useEffect(() => {
+    if (!rebounding) return;
+    const timer = window.setTimeout(
+      () => setRebounding(false),
+      STACK_REBOUND_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [rebounding]);
+  return rebounding;
+}
+
+/**
+ * A sequence's count in the header: the button that lays it open, disabled
+ * with the reason when the card has no room to, or a quiet label when the
+ * canvas offers no spread at all.
+ */
+function StackCount({
+  cardId,
+  itemCount,
+  expanded,
+  canExpand,
+  onExpand,
+}: {
+  cardId: string;
+  itemCount: number;
+  expanded: boolean;
+  canExpand: boolean;
+  onExpand?: (cardId: string) => void;
+}) {
+  if (!onExpand) {
+    return (
+      <span
+        data-artifact-stack-count={itemCount}
+        data-sequence-expanded={expanded ? "true" : "false"}
+        aria-label={`${itemCount} items`}
+        {...stylex.props(s.stackCount)}
+      >
+        {itemCount} items
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-artifact-stack-count={itemCount}
+      data-sequence-expanded={expanded ? "true" : "false"}
+      aria-label={`Expand sequence (${itemCount} items)`}
+      aria-expanded={expanded}
+      disabled={!canExpand}
+      title={
+        canExpand ? "Spread to reorder, pull out or remove" : BOXED_IN_HINT
+      }
+      {...stylex.props(
+        s.stackCount,
+        s.stackCountButton,
+        expanded && s.stackCountExpanded,
+      )}
+      onPointerDown={stopCardDrag}
+      onClick={(event) => {
+        event.stopPropagation();
+        onExpand(cardId);
+      }}
+    >
+      {itemCount} items
+    </button>
+  );
+}
+
+/** What an artifact card's "⋯" menu offers beyond what every card has. */
+function artifactMenuItems({
+  cardId,
+  sequence,
+  canExpandSequence,
+  onInspect,
+  onExpandSequence,
+  onUngroup,
+}: {
+  cardId: string;
+  sequence: boolean;
+  canExpandSequence: boolean;
+  onInspect?: (cardId: string) => void;
+  onExpandSequence?: (cardId: string) => void;
+  onUngroup?: (cardId: string) => void;
+}): CellCardMenuItem[] | undefined {
+  const items: CellCardMenuItem[] = [];
+  if (onInspect) {
+    items.push({
+      id: "inspect",
+      label: "Inspect",
+      icon: <ScanSearch size={13} />,
+      onSelect: () => onInspect(cardId),
+    });
+  }
+  if (sequence && onExpandSequence) {
+    items.push({
+      id: "expand-sequence",
+      label: "Expand sequence",
+      icon: <Layers size={13} />,
+      disabled: !canExpandSequence,
+      onSelect: () => onExpandSequence(cardId),
+    });
+  }
+  if (sequence && onUngroup) {
+    items.push({
+      id: "ungroup",
+      label: "Ungroup",
+      icon: <Ungroup size={13} />,
+      onSelect: () => onUngroup(cardId),
+    });
+  }
+  return items.length ? items : undefined;
+}
+
+/**
+ * The next items of a sequence, as card backs the plate's size under it. In a
+ * `fan` they are pinned through the bottom-right punched hole and turned
+ * counter-clockwise about it, so they peek out along the plate's left and
+ * lower edges while the corner at the hole stays shared. In a `deck` they lie
+ * straight, each a step lower and a little narrower, so their lower edges
+ * show. A back shows a sliver of its own picture when one resolved.
+ *
+ * A back that arrives swings out from rest; one that is no longer needed
+ * folds back under the plate before it goes.
+ */
+export function ArtifactStackBacks({
+  card,
+  corners,
+  punched,
+  peeks,
+  backs,
+  stackStyle = "fan",
+  depthOffset = 0,
+  depthScale = 1,
+}: {
+  card: CellArtifactCardProps["card"];
+  corners: NonNullable<CellArtifactCardProps["corners"]>;
+  /** The hole is real: it goes through every back too, at the pin. */
+  punched: boolean;
+  peeks: readonly string[];
+  backs: number;
+  stackStyle?: CellStackStyle;
+  /** Continuous depth shift during a synced step glide (e.g. `p` or `1 - p`). */
+  depthOffset?: number;
+  /** Continuous depth scale in `[0, 1]` during a synced resize glide. */
+  depthScale?: number;
+}) {
+  // Backs below `enterFrom` were there when the stack mounted: they do not
+  // swing in. One that comes later, or comes back, does.
+  const [enterFrom, setEnterFrom] = React.useState(backs);
+  if (backs < enterFrom) setEnterFrom(backs);
+  const drawn = useLingeringBackCount(backs);
+
+  const springDriven = depthOffset !== 0 || depthScale !== 1;
+  const clampedScale = Math.max(0, Math.min(1, depthScale));
+  const { plateWidth, plateHeight } = stackBackGeometry(card);
+  const output = stackOutputPort(card);
+  const radius = cellCornerRadius(corners);
+  const holeOrigin = { x: CARD_PLATE_INSET_X, y: CARD_PLATE_TOP };
+  // The farthest back paints first, so the nearer one covers it.
+  const slots = Array.from({ length: drawn }, (_, index) => index).reverse();
+  return slots.map((index) => {
+    const rawDepth = (index + 1) * clampedScale + depthOffset;
+    const pose = springDriven
+      ? stackDepthTransform(card, stackStyle, rawDepth)
+      : stackBackTransform(card, stackStyle, index);
+    const overflowOpacity =
+      springDriven && rawDepth > STACK_BACK_COUNT
+        ? Number(Math.max(0, 1 - (rawDepth - STACK_BACK_COUNT)).toFixed(3))
+        : undefined;
+    const exiting = !springDriven && index >= backs;
+    const entering = !springDriven && index >= enterFrom;
+    return (
+      <span
+        key={index}
+        aria-hidden="true"
+        data-artifact-stack-back={index + 1}
+        data-stack-back-state={
+          exiting ? "exiting" : entering ? "entering" : "rest"
+        }
+        {...styled(
+          {
+            top: CARD_PLATE_TOP,
+            left: CARD_PLATE_INSET_X,
+            width: plateWidth,
+            height: plateHeight,
+            borderRadius: radius,
+            ...pose,
+            ...(overflowOpacity !== undefined
+              ? { opacity: overflowOpacity }
+              : null),
+            ...(punched
+              ? punchedHoleMask(
+                  card,
+                  [output],
+                  holeOrigin,
+                  stackStyle === "deck"
+                    ? deckHolePlacement(card, index)
+                    : undefined,
+                )
+              : null),
+          },
+          s.stackBack,
+          exiting ? s.stackBackExit : entering ? s.stackBackEnter : null,
+        )}
+      >
+        {peeks[index] ? (
+          // eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer
+          <img
+            src={peeks[index]}
+            alt=""
+            draggable={false}
+            {...stylex.props(s.stackPeek)}
+          />
+        ) : null}
+      </span>
+    );
+  });
+}
+
+/**
+ * A fan turns each back about the hole, so in its own box the hole stays put.
+ * A deck moves and scales its backs, so the hole is cut where the plate's hole
+ * lands in the back's own (untransformed) box, wider by the scale.
+ */
+function deckHolePlacement(card: CellArtifactCardProps["card"], slot: number) {
+  const { dropY, scale } = slot <= 0 ? DECK_BACKS[0] : DECK_BACKS[1];
+  const { plateWidth, plateHeight } = stackBackGeometry(card);
+  // Card-box coordinates of the deck's origin, the plate's bottom centre.
+  const originX = CARD_PLATE_INSET_X + plateWidth / 2;
+  const originY = CARD_PLATE_TOP + plateHeight;
+  return {
+    scale,
+    centre: (hole: { x: number; y: number }) => ({
+      x: originX + (hole.x - originX) / scale,
+      y: originY + (hole.y - dropY - originY) / scale,
+    }),
+  };
+}
+
+/**
+ * How many backs to draw: `backs`, or for a moment after it drops, the ones
+ * that are leaving too, so they can fold away instead of vanishing.
+ */
+function useLingeringBackCount(backs: number): number {
+  const [drawn, setDrawn] = React.useState(backs);
+  if (backs > drawn || (backs < drawn && !shouldAnimateMotion())) {
+    setDrawn(backs);
+  }
+  React.useEffect(() => {
+    if (drawn <= backs) return;
+    const timer = window.setTimeout(() => setDrawn(backs), STACK_BACK_EXIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [backs, drawn]);
+  return Math.max(backs, drawn);
 }
 
 function ArtifactPreview({
@@ -364,12 +1003,9 @@ function ArtifactPreview({
           {...stylex.props(s.image)}
         />
       ) : (
-        <div {...stylex.props(s.placeholder)}>
+        <div data-artifact-placeholder="image" {...stylex.props(s.placeholder)}>
           <ImageIcon size={18} aria-hidden="true" />
-          {surface.filename ? (
-            <span {...stylex.props(m.ellipsis)}>{surface.filename}</span>
-          ) : null}
-          {surface.dimensionsLabel ? (
+          {surface.dimensionsLabel && (surface.itemCount ?? 1) <= 1 ? (
             <span {...stylex.props(s.placeholderMeta)}>
               {surface.dimensionsLabel}
             </span>
@@ -542,10 +1178,12 @@ function CellCollectionCardImpl(props: CellCollectionCardProps) {
   const state = useResolvedCardState(card.id, props);
   const count = surface.members.length;
   // Each member row is two cells tall, starting cleanly under the 23px strip
-  // on its port's row.
+  // on its port's row. Punched, it runs between the member's hole and the
+  // output's, so every row keeps one column.
   const rowBand = (index: number) => ({
     top: plateRowTop(collectionRowOffset(index)),
     height: CELL_SIZE * 2,
+    paddingInline: props.well === "punched" ? PUNCHED_LABEL_INSET : undefined,
   });
 
   return (
@@ -573,6 +1211,9 @@ function CellCollectionCardImpl(props: CellCollectionCardProps) {
         <div
           key={member.id}
           data-collection-member={member.id}
+          data-input-node-id={card.id}
+          data-input-plug-port={COLLECTION_PORT}
+          data-input-plug-id={member.id}
           {...styled(rowBand(index), m.band, s.memberRow)}
         >
           <span {...stylex.props(m.indexBadge)}>{index + 1}</span>
@@ -604,6 +1245,11 @@ function CellCollectionCardImpl(props: CellCollectionCardProps) {
       {surface.showSparePlug ? (
         <div
           data-collection-spare-plug="true"
+          data-input-node-id={surface.sparePlugId ? card.id : undefined}
+          data-input-plug-port={
+            surface.sparePlugId ? COLLECTION_PORT : undefined
+          }
+          data-input-plug-id={surface.sparePlugId ?? undefined}
           {...styled(rowBand(count), m.band, s.spareRow)}
         >
           <span {...stylex.props(s.spareSlot)}>

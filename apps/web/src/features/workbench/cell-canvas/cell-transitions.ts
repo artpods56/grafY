@@ -37,6 +37,18 @@ export const SETTLE_MAX_DURATION_MS = 1000;
 /** Time a pipe takes to morph from one route to the next. */
 export const MORPH_DURATION_MS = 180;
 
+/**
+ * Whether to play the canvas's own motion. Off under reduced motion, and where
+ * `matchMedia` is missing (a server render, jsdom), so tests see the end state.
+ */
+export function shouldAnimateMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
 const EPSILON = 1e-6;
 const MAX_MORPH_SAMPLES = 24;
 

@@ -5,8 +5,9 @@ import { changeOriginCardReferences } from "../model/origin-card-commands";
 import type { AgentNode } from "../agents/agent-node";
 
 import * as React from "react";
-import { useSWRConfig } from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import {
+  libraryFoldersApi,
   uploadFile,
   saveUploadedArtifactToLibrary,
   type PlacedLibraryItem,
@@ -86,6 +87,7 @@ import {
   ContextualNodeDiscovery,
   type ContextualDiscoverySession,
 } from "./ContextualNodeDiscovery";
+import { CellPipeInspector, type CellInspectedPipe } from "./CellPipeInspector";
 import type {
   ContextualCandidate,
   ContextualRouteChoice,
@@ -148,9 +150,9 @@ import {
   type RoomProjectCommand,
   type TransientNodePosition,
 } from "../room";
+import { checkpointAcceptedHead } from "../room/checkpoint-accepted-head";
 import {
   cancelRun,
-  checkpointProject,
   getCollaborativeHead,
   graphFromProjectHead,
   type CollaborativeHead,
@@ -333,7 +335,6 @@ import {
 } from "./workbench-canvas-selection";
 import {
   CellCanvas,
-  DEFAULT_CELL_GLASS_LOOK,
   type CellCanvasHandle,
   type CellCanvasProps,
 } from "../cell-canvas/CellCanvas";
@@ -345,6 +346,7 @@ import {
   CELL_SIZE,
   cellToWorldOrigin,
   portWorldCenter,
+  type WorldPoint,
 } from "../cell-canvas/cell-model";
 import {
   buildWorkbenchCellScene,
@@ -521,7 +523,13 @@ function PresenceAwareCellCanvas({
       cellRemotePeersFromParticipants(participants, localSessionId, graphId),
     [graphId, localSessionId, participants],
   );
-  return <CellCanvas {...canvasProps} remotePeers={remotePeers} />;
+  return (
+    <CellCanvas
+      {...canvasProps}
+      remotePeers={remotePeers}
+      remoteDragScope={graphId}
+    />
+  );
 }
 
 export function Workbench(props: WorkbenchProps) {
@@ -572,6 +580,8 @@ function WorkbenchBody({
   );
   const {
     settings: canvasGridSettings,
+    cellLook,
+    cellRouting,
     canvasEngine,
     bypassSnap,
     panelOpen: gridPanelOpen,
@@ -873,6 +883,11 @@ function WorkbenchBody({
   );
   const [pendingConnectionRoute, setPendingConnectionRoute] =
     React.useState<PendingConnectionRoute | null>(null);
+  const [inspectedPipe, setInspectedPipe] = React.useState<{
+    graphId: string | null;
+    pipeId: string;
+    anchor: WorldPoint;
+  } | null>(null);
   const [pendingFolderDrop, setPendingFolderDrop] =
     React.useState<PendingFolderDropState | null>(null);
   const [fitRevision, setFitRevision] = React.useState(0);
@@ -883,6 +898,7 @@ function WorkbenchBody({
     setRenderedCanvasEngine(canvasEngine);
     if (cellCanvasActive) setFlow(undefined);
     setContextualDiscovery(null);
+    setInspectedPipe(null);
     setFitRevision((current) => current + 1);
   }
   const executionRunningRef = React.useRef(false);
@@ -1573,12 +1589,9 @@ function WorkbenchBody({
       if (projectId === null) return;
       void submitRoomBatch(commands)
         .then(({ head }) =>
-          checkpointProject(workspaceId, projectId, {
-            expected_room_epoch: head.room_epoch,
-            expected_sequence: head.collaboration_sequence,
-          }),
+          checkpointAcceptedHead(workspaceId, projectId, head),
         )
-        .then(({ head }) => {
+        .then((head) => {
           setUnsyncedRoomEdits(false);
           if (openAfter === null) applyRoomHead(head);
           else openGraphInProject(head, openAfter);
@@ -1764,18 +1777,16 @@ function WorkbenchBody({
         }
         batch.push(toRoomReplaceDocumentCommand(draft, openGraphId));
         const { head: replacedHead } = await submitRoomBatch(batch);
-        const checkpointed = await checkpointProject(workspaceId, projectId, {
-          expected_room_epoch: replacedHead.room_epoch,
-          expected_sequence: replacedHead.collaboration_sequence,
-        });
+        const checkpointHead = await checkpointAcceptedHead(
+          workspaceId,
+          projectId,
+          replacedHead,
+        );
         const currentHead = reconcileCheckpointHead(
-          checkpointed.head,
+          checkpointHead,
           replacedHead.room_epoch,
         );
-        return {
-          checkpointHead: checkpointed.head,
-          currentHead,
-        };
+        return { checkpointHead, currentHead };
       },
     };
   }, [
@@ -2876,7 +2887,14 @@ function WorkbenchBody({
    */
   const {
     addArtifactCards,
+    canMergeArtifactCards,
     collectSelectedArtifacts,
+    extractArtifactCardItem,
+    insertArtifactCardIntoSequence,
+    mergeArtifactCardRun,
+    mergeArtifactCards,
+    removeArtifactCardItem,
+    reorderArtifactCardItem,
     tidySelectedArtifacts,
     ungroupArtifacts,
     ungroupCollection,
@@ -3059,18 +3077,15 @@ function WorkbenchBody({
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer) return;
       if (libraryDragKind(event.dataTransfer) === "upload") {
-        if (
-          !canEditProject ||
-          !canvasAtPoint(event.clientX, event.clientY) ||
-          !flow
-        )
+        if (!canEditProject || !canvasAtPoint(event.clientX, event.clientY))
           return;
-        event.preventDefault();
-        const files = Array.from(event.dataTransfer.files);
-        const point = flow.screenToFlowPosition({
+        const point = screenToCanvasPoint({
           x: event.clientX,
           y: event.clientY,
         });
+        if (!point) return;
+        event.preventDefault();
+        const files = Array.from(event.dataTransfer.files);
         void (async () => {
           const items: PlacedLibraryItem[] = [];
           try {
@@ -3138,10 +3153,10 @@ function WorkbenchBody({
     [
       canEditProject,
       dropArtifactOnCanvas,
-      flow,
       mutateCache,
       placeArtifactGroups,
       placeArtifactOnInput,
+      screenToCanvasPoint,
       setRunError,
       workspaceId,
     ],
@@ -3768,6 +3783,91 @@ function WorkbenchBody({
     ],
   );
 
+  const handleArtifactCardConnectionDrop = React.useCallback(
+    ({
+      cardId,
+      clientPoint,
+      flowPosition,
+    }: {
+      cardId: string;
+      clientPoint: XYPosition;
+      flowPosition: XYPosition;
+    }): boolean => {
+      if (!registry || !canEditProject || running) return false;
+      const card = activeArtifactViewers.nodes.find(
+        (node) => node.id === cardId,
+      );
+      const value =
+        card &&
+        artifactCardConnectionValue(card, activeArtifactViewers.edges, nodes);
+      if (!card || !value || !cardArtifactRefs(value).length) return false;
+      const port = artifactCardOutputPort(value);
+      const candidates = downstreamCandidatesFromOutput({
+        sourcePort: port,
+        sourceHandle: encodeHandleId(portMetaForPort(port, port.shape)),
+        sourceFeed: null,
+        registry,
+        nodes: catalogNodeSpecs(registry, openGraphId),
+      })
+        .map((candidate) => ({
+          ...candidate,
+          choices: candidate.choices.filter((choice) => {
+            if (
+              choice.route.kind === "projection" ||
+              choice.route.kind === "projection-conversion"
+            )
+              return false;
+            const binding = choice.route.artifactTypeBinding;
+            const bindings =
+              binding?.endpoint === "target"
+                ? { [binding.variable]: binding.artifactType }
+                : {};
+            const resolution = resolveArtifactDrop(
+              artifactDropPayload(value),
+              choice.candidatePort,
+              bindings,
+              registry.artifact_conversions,
+            );
+            return (
+              resolution !== null &&
+              resolution.collectionMode === choice.collectionMode &&
+              JSON.stringify(resolution.conversionPath) ===
+                JSON.stringify(
+                  choice.route.conversionPath.map((conversion) => ({
+                    id: conversion.key.id,
+                    version: conversion.key.version,
+                  })),
+                )
+            );
+          }),
+        }))
+        .filter((candidate) => candidate.choices.length > 0);
+      if (!candidates.length) return false;
+      setLibraryOpen(false);
+      setInspectedPipe(null);
+      setContextualDiscovery({
+        graphId: openGraphId,
+        sourceNodeId: card.id,
+        sourceHandle: ARTIFACT_CARD_OUTPUT_HANDLE,
+        sourcePortTitle: port.title ?? port.name,
+        direction: "downstream",
+        clientAnchor: clientPoint,
+        flowPosition,
+        candidates,
+      });
+      return true;
+    },
+    [
+      activeArtifactViewers.edges,
+      activeArtifactViewers.nodes,
+      canEditProject,
+      nodes,
+      openGraphId,
+      registry,
+      running,
+    ],
+  );
+
   const onConnectEnd = React.useCallback<OnConnectEnd>(
     (event, connectionState) => {
       setPointerGestureActive(false);
@@ -3794,13 +3894,6 @@ function WorkbenchBody({
         handleId === ARTIFACT_CARD_OUTPUT_HANDLE &&
         connectionState.fromNode?.type === ARTIFACT_VIEWER_NODE_TYPE
       ) {
-        const card = activeArtifactViewers.nodes.find(
-          (node) => node.id === connectionState.fromNode?.id,
-        );
-        const value =
-          card &&
-          artifactCardConnectionValue(card, activeArtifactViewers.edges, nodes);
-        if (!card || !value || !cardArtifactRefs(value).length) return;
         const clientPoint =
           "changedTouches" in event
             ? {
@@ -3811,58 +3904,10 @@ function WorkbenchBody({
         if (!canvasAtPoint(clientPoint.x, clientPoint.y)) return;
         const flowPosition = screenToCanvasPoint(clientPoint);
         if (!flowPosition) return;
-        const port = artifactCardOutputPort(value);
-        const candidates = downstreamCandidatesFromOutput({
-          sourcePort: port,
-          sourceHandle: encodeHandleId(portMetaForPort(port, port.shape)),
-          sourceFeed: null,
-          registry,
-          nodes: catalogNodeSpecs(registry, openGraphId),
-        })
-          .map((candidate) => ({
-            ...candidate,
-            choices: candidate.choices.filter((choice) => {
-              if (
-                choice.route.kind === "projection" ||
-                choice.route.kind === "projection-conversion"
-              )
-                return false;
-              const binding = choice.route.artifactTypeBinding;
-              const bindings =
-                binding?.endpoint === "target"
-                  ? { [binding.variable]: binding.artifactType }
-                  : {};
-              const resolution = resolveArtifactDrop(
-                artifactDropPayload(value),
-                choice.candidatePort,
-                bindings,
-                registry.artifact_conversions,
-              );
-              return (
-                resolution !== null &&
-                resolution.collectionMode === choice.collectionMode &&
-                JSON.stringify(resolution.conversionPath) ===
-                  JSON.stringify(
-                    choice.route.conversionPath.map((conversion) => ({
-                      id: conversion.key.id,
-                      version: conversion.key.version,
-                    })),
-                  )
-              );
-            }),
-          }))
-          .filter((candidate) => candidate.choices.length > 0);
-        if (!candidates.length) return;
-        setLibraryOpen(false);
-        setContextualDiscovery({
-          graphId: openGraphId,
-          sourceNodeId: card.id,
-          sourceHandle: handleId,
-          sourcePortTitle: port.title ?? port.name,
-          direction: "downstream",
-          clientAnchor: clientPoint,
+        handleArtifactCardConnectionDrop({
+          cardId: connectionState.fromNode.id,
+          clientPoint,
           flowPosition,
-          candidates,
         });
         return;
       }
@@ -3913,12 +3958,10 @@ function WorkbenchBody({
       });
     },
     [
-      activeArtifactViewers.nodes,
-      activeArtifactViewers.edges,
       canEditProject,
+      handleArtifactCardConnectionDrop,
       handleConnectionDrop,
       nodes,
-      openGraphId,
       registry,
       running,
       screenToCanvasPoint,
@@ -4191,11 +4234,18 @@ function WorkbenchBody({
   const removeCellElements = React.useCallback(
     (cardIds: readonly string[], pipeIds: readonly string[]) => {
       if (!localAuthoringEnabled) return;
+      if (pipeIds.length > 0) {
+        const removedPipes = new Set(pipeIds);
+        setInspectedPipe((current) =>
+          current && removedPipes.has(current.pipeId) ? null : current,
+        );
+      }
       const removals = partitionCellRemovals(
         cardIds,
         pipeIds,
         authoredDocumentRef.current,
         artifactViewers,
+        artifactOriginCanvasEdges,
       );
       applyAuthoringCommands(removals.graphCommands);
       for (const id of removals.removedViewerIds) removeArtifactViewer(id);
@@ -4220,6 +4270,7 @@ function WorkbenchBody({
     },
     [
       applyAuthoringCommands,
+      artifactOriginCanvasEdges,
       artifactViewers,
       commitArtifactViewers,
       localAuthoringEnabled,
@@ -5213,10 +5264,24 @@ function WorkbenchBody({
         }
       : null;
 
+  // The Library panel's cached tree names the files artifact cards show.
+  const { data: libraryTree } = useSWR(
+    cellCanvasActive ? ["library-tree", workspaceId] : null,
+    () => libraryFoldersApi.listTree(workspaceId),
+  );
+  const libraryItemsByArtifactId = React.useMemo(() => {
+    const items = new Map<string, PlacedLibraryItem>();
+    for (const item of libraryTree?.items ?? []) {
+      items.set(item.artifact.artifact_id, item);
+    }
+    return items;
+  }, [libraryTree]);
+
   const cellScene = React.useMemo(
     () =>
       cellCanvasActive && registry
         ? buildWorkbenchCellScene({
+            workspaceId,
             document: authoredDocument,
             registry,
             presentation: sharedPresentation,
@@ -5224,19 +5289,30 @@ function WorkbenchBody({
             nodeInstanceStates,
             collapsedAppendices,
             canRun: canStartRun && projectEditsTrusted && !running,
+            canvasEdges,
+            artifactViewerEdges: artifactViewerCanvasEdges,
+            artifactViewerNodes: activeArtifactViewers.nodes,
+            artifactOriginEdges: artifactOriginCanvasEdges,
+            libraryItemsByArtifactId,
           })
         : null,
     [
+      activeArtifactViewers.nodes,
+      artifactOriginCanvasEdges,
+      artifactViewerCanvasEdges,
       authoredDocument,
       canStartRun,
+      canvasEdges,
       cellCanvasActive,
       collapsedAppendices,
+      libraryItemsByArtifactId,
       nodeInstanceStates,
       nodes,
       projectEditsTrusted,
       registry,
       running,
       sharedPresentation,
+      workspaceId,
     ],
   );
 
@@ -5248,6 +5324,7 @@ function WorkbenchBody({
       setShapesMenuOpen(false);
       setGridPanelOpen(false);
       setContextualDiscovery(null);
+      setInspectedPipe(null);
       closeGraphBrowser();
       let { target } = request;
       if (target.kind === "node") {
@@ -5453,10 +5530,7 @@ function WorkbenchBody({
         const { head: renamedHead } = await submitRoomBatch([
           toRoomRenameProjectCommand(name, savedProjectName),
         ]);
-        await checkpointProject(workspaceId, projectId, {
-          expected_room_epoch: renamedHead.room_epoch,
-          expected_sequence: renamedHead.collaboration_sequence,
-        });
+        await checkpointAcceptedHead(workspaceId, projectId, renamedHead);
         void refreshSavedGraphs();
       },
       deleteGraph: async (graph: SavedGraphSummary) => {
@@ -5502,6 +5576,7 @@ function WorkbenchBody({
   const closeCanvasPopovers = () => {
     setLibraryOpen(false);
     setContextualDiscovery(null);
+    setInspectedPipe(null);
     closeGraphBrowser();
     setGridPanelOpen(false);
   };
@@ -5587,6 +5662,7 @@ function WorkbenchBody({
     CellCanvasProps["onConnectDropEmpty"]
   > = (event) => {
     setContextualDiscovery(null);
+    setInspectedPipe(null);
     if (!canEditProject || !localAuthoringEnabledRef.current) return;
     const target = document.elementFromPoint(
       event.clientPoint.x,
@@ -5599,6 +5675,17 @@ function WorkbenchBody({
       )
     )
       return;
+    if (
+      event.direction === "downstream" &&
+      event.sourcePortId === ARTIFACT_CARD_OUTPUT_HANDLE
+    ) {
+      handleArtifactCardConnectionDrop({
+        cardId: event.sourceCardId,
+        clientPoint: event.clientPoint,
+        flowPosition: event.worldPoint,
+      });
+      return;
+    }
     const fromNode = canvasNodes.find((node) => node.id === event.sourceCardId);
     if (!fromNode || !workflowNodeIsSupported(fromNode.data)) return;
     const encoded = encodeCellPortHandleForDiscovery(
@@ -5617,20 +5704,81 @@ function WorkbenchBody({
 
   let discoverySourcePoint: XYPosition | null = null;
   if (cellScene && activeContextualDiscovery) {
-    const decoded = decodeHandleId(activeContextualDiscovery.sourceHandle);
     const card = cellScene.graph.cards.find(
       ({ id }) => id === activeContextualDiscovery.sourceNodeId,
     );
-    if (card && decoded) {
-      const portId = decoded.plugId
-        ? `${decoded.portName}::${decoded.plugId}`
-        : decoded.portName;
-      const port = card.ports.find(
-        ({ id, direction }) => id === portId && direction === decoded.direction,
-      );
-      if (port) discoverySourcePoint = portWorldCenter(card, port);
+    if (card) {
+      if (
+        activeContextualDiscovery.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE
+      ) {
+        const port = card.ports.find(
+          ({ id, direction }) =>
+            id === ARTIFACT_CARD_OUTPUT_HANDLE && direction === "output",
+        );
+        if (port) discoverySourcePoint = portWorldCenter(card, port);
+      } else {
+        const decoded = decodeHandleId(activeContextualDiscovery.sourceHandle);
+        if (decoded) {
+          const portId = decoded.plugId
+            ? `${decoded.portName}::${decoded.plugId}`
+            : decoded.portName;
+          const port = card.ports.find(
+            ({ id, direction }) =>
+              id === portId && direction === decoded.direction,
+          );
+          if (port) discoverySourcePoint = portWorldCenter(card, port);
+        }
+      }
     }
   }
+
+  const activeInspectedPipe = React.useMemo<{
+    pipe: CellInspectedPipe;
+    anchor: WorldPoint;
+  } | null>(() => {
+    if (
+      !cellCanvasActive ||
+      !inspectedPipe ||
+      inspectedPipe.graphId !== openGraphId
+    ) {
+      return null;
+    }
+    const workflowEdge = canvasEdges.find(
+      (edge) => edge.id === inspectedPipe.pipeId,
+    );
+    if (workflowEdge) {
+      return {
+        pipe: { kind: "workflow", edge: workflowEdge },
+        anchor: inspectedPipe.anchor,
+      };
+    }
+    const originEdge = artifactOriginCanvasEdges.find(
+      (edge) => edge.id === inspectedPipe.pipeId,
+    );
+    if (originEdge) {
+      return {
+        pipe: { kind: "origin", edge: originEdge },
+        anchor: inspectedPipe.anchor,
+      };
+    }
+    const viewerEdge = artifactViewerCanvasEdges.find(
+      (edge) => edge.id === inspectedPipe.pipeId,
+    );
+    if (viewerEdge) {
+      return {
+        pipe: { kind: "viewer", edge: viewerEdge },
+        anchor: inspectedPipe.anchor,
+      };
+    }
+    return null;
+  }, [
+    artifactOriginCanvasEdges,
+    artifactViewerCanvasEdges,
+    canvasEdges,
+    cellCanvasActive,
+    inspectedPipe,
+    openGraphId,
+  ]);
 
   // Offered when a dragged output has no compatible node: show its artifacts.
   const placeDiscoveredOutputCard =
@@ -5872,13 +6020,12 @@ function WorkbenchBody({
                 localSessionId={projectRoom.localSessionId}
                 graphId={openGraphId}
                 {...cellScene}
-                look={{
-                  ...DEFAULT_CELL_GLASS_LOOK,
-                  grid: canvasGridSettings.showBackground,
-                }}
+                look={cellLook}
+                routing={cellRouting}
                 editable={localAuthoringEnabled}
                 selectedCardIds={cellSelectedCardIds}
                 selectedPipeIds={selectedEdgeIdSet}
+                inspectedPipeId={activeInspectedPipe?.pipe.edge.id ?? null}
                 autoFitOnMount={false}
                 exposeDebugApi={process.env.NODE_ENV !== "production"}
                 onHandleReady={setCellCanvasHandle}
@@ -5914,6 +6061,19 @@ function WorkbenchBody({
                   )
                 }
                 onPaneClick={closeCanvasPopovers}
+                onSelectEdgeAttachment={(pipeId, anchor) => {
+                  setLibraryOpen(false);
+                  setContextualDiscovery(null);
+                  setInspectedPipe((current) =>
+                    current?.pipeId === pipeId
+                      ? null
+                      : {
+                          graphId: openGraphId,
+                          pipeId,
+                          anchor: anchor ?? canvasCenter({ x: 0, y: 0 }),
+                        },
+                  );
+                }}
                 onOperatorRun={(cardId) => {
                   canvasSelection.selectOnly({ nodeIds: [cardId] });
                   void runWorkflow("selected", [cardId]);
@@ -5938,6 +6098,16 @@ function WorkbenchBody({
                 onAnnotationColorChange={(cardId, color) =>
                   updateAnnotationColor(cardId, annotationHexFromToken(color))
                 }
+                canMergeArtifactCards={canMergeArtifactCards}
+                onMergeArtifactCards={mergeArtifactCards}
+                onReorderArtifactCardItem={reorderArtifactCardItem}
+                onMergeArtifactCardRun={mergeArtifactCardRun}
+                onInsertArtifactCardIntoSequence={
+                  insertArtifactCardIntoSequence
+                }
+                onExtractArtifactCardItem={extractArtifactCardItem}
+                onRemoveArtifactCardItem={removeArtifactCardItem}
+                onUngroupArtifactCard={ungroupArtifacts}
                 onCollectionRemoveMember={(cardId, memberId) =>
                   removeNodeInputPlug(
                     cardId,
@@ -5970,6 +6140,26 @@ function WorkbenchBody({
                     onClose={() => setContextualDiscovery(null)}
                     onConfirm={confirmContextualDiscovery}
                     onPlaceOutputCard={placeDiscoveredOutputCard}
+                  />
+                ) : null}
+                {activeInspectedPipe ? (
+                  <CellPipeInspector
+                    pipe={activeInspectedPipe.pipe}
+                    anchor={activeInspectedPipe.anchor}
+                    editable={localAuthoringEnabled && !running}
+                    onClose={() => setInspectedPipe(null)}
+                    onUpdateWorkflowEdge={updateEdge}
+                    onUpdateOriginCollectionMode={(originId, collectionMode) =>
+                      applyAuthoringCommands([
+                        {
+                          kind: "update_origin",
+                          origin_id: originId,
+                          update: { collection_mode: collectionMode },
+                        },
+                      ])
+                    }
+                    onUpdateViewerEdge={updateArtifactViewerEdge}
+                    onRemovePipe={(pipeId) => removeCellElements([], [pipeId])}
                   />
                 ) : null}
               </PresenceAwareCellCanvas>
@@ -6171,6 +6361,7 @@ function WorkbenchBody({
           onClick={() => {
             closeGraphBrowser();
             setLibraryOpen(false);
+            setInspectedPipe(null);
             setGridPanelOpen((open) => !open);
           }}
         >

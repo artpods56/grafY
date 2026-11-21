@@ -20,6 +20,7 @@ import type {
   CellCorners,
   CellGlassLook,
   CellGlassMaterial,
+  CellStackStyle,
   CellWellStyle,
 } from "@/features/workbench/cell-canvas/cell-glass-stage";
 import type {
@@ -268,6 +269,7 @@ export function CellLookPanel({
           options={[
             { value: "recessed", label: "Recessed" },
             { value: "flat", label: "Flat" },
+            { value: "punched", label: "Punched" },
           ]}
         />
       </Row>
@@ -328,6 +330,18 @@ export function CellLookPanel({
           ]}
         />
       </Row>
+      <Row label="Stack style">
+        <SegmentedControl<CellStackStyle>
+          aria-label="Stack style"
+          size="sm"
+          value={look.stackStyle}
+          onValueChange={(stackStyle) => onLook({ ...look, stackStyle })}
+          options={[
+            { value: "fan", label: "Fan" },
+            { value: "deck", label: "Deck" },
+          ]}
+        />
+      </Row>
       <Row label="Cell grid">
         <SegmentedControl<OnOff>
           aria-label="Cell grid"
@@ -356,6 +370,15 @@ export function CellLookPanel({
         step={0.05}
         value={look.frost}
         onValueChange={(frost) => onLook({ ...look, frost })}
+      />
+      <Slider
+        label="Card fill"
+        min={0.2}
+        max={1}
+        step={0.02}
+        format={(fill) => `${Math.round(fill * 100)}%`}
+        value={look.cardFill}
+        onValueChange={(cardFill) => onLook({ ...look, cardFill })}
       />
       <p {...stylex.props(s.hint)}>
         Drag cards to snap cell by cell; Shift+drag to marquee or group-drag.

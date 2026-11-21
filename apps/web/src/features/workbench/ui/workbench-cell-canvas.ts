@@ -1,18 +1,41 @@
 import type { Connection } from "@xyflow/react";
 
-import type { NodeRegistry } from "@/lib/api";
-import { ARTIFACT_CARD_OUTPUT_HANDLE } from "../canvas/artifact-connections";
+import {
+  artifactInlineContentUrl,
+  type ArtifactRef,
+  type NodeRegistry,
+  type PlacedLibraryItem,
+} from "@/lib/api";
+import {
+  artifactTypeFor,
+  cardArtifactRefs,
+  declaredArtifactContentType,
+  isImageArtifact,
+} from "../canvas/artifact-card";
+import {
+  ARTIFACT_CARD_OUTPUT_HANDLE,
+  artifactCardConnectionValue,
+} from "../canvas/artifact-connections";
+import type { ArtifactOriginEdge } from "../canvas/artifact-origin-edge";
 import {
   ARTIFACT_VIEWER_INPUT_HANDLE,
   type ArtifactViewerCanvasState,
+  type ArtifactViewerEdge,
+  type ArtifactViewerNode,
   type GraphPresentation,
 } from "../canvas/artifact-viewer";
 import { decodeHandleId, encodeHandleId } from "../canvas/handles";
 import {
   effectivePortShape,
+  isServiceProviderNode,
   portMetaForPort,
   workflowNodeIsSupported,
+  type WorkflowEdge,
 } from "../canvas/types";
+import {
+  formatLibraryByteSize,
+  libraryFileDisplayName,
+} from "./side-panel/library-tree";
 import type {
   CellCardMove,
   CellConnectionEnds,
@@ -27,10 +50,15 @@ import {
   graphCommandsFromCellDeleteForDocument,
   graphCommandsFromCellMovesForDocument,
   type CellNodeRunState,
+  type CellOriginLink,
+  type CellPipeMetadata,
+  type CellViewerImages,
+  type CellViewerMetadata,
 } from "../cell-canvas/cell-document-adapter";
 import { CELL_SIZE, cellToWorldOrigin } from "../cell-canvas/cell-model";
 import type { WorkflowNode } from "../model/execution-plan";
 import type { AuthoredGraphDocument } from "../model/graph-document";
+import { changeOriginCardReferences } from "../model/origin-card-commands";
 import type { PresenceParticipant, RoomInstanceState } from "../room/protocol";
 import { actorColor } from "../room/remote-selection";
 import type { CanvasSelection } from "./workbench-canvas-selection";
@@ -39,6 +67,7 @@ function cellNodeStatus(
   node: WorkflowNode,
   instance: RoomInstanceState | undefined,
 ): Pick<CellNodeRunState, "status" | "statusLabel"> {
+  const isProvider = isServiceProviderNode(node.data.spec);
   switch (instance?.state ?? node.data.execution.status) {
     case "running":
     case "cancelling":
@@ -49,11 +78,15 @@ function cellNodeStatus(
       return { status: "error", statusLabel: "Error" };
     case "succeeded":
     case "fresh":
-      return { status: "done", statusLabel: "Fresh" };
+      return isProvider
+        ? { status: "idle" }
+        : { status: "done", statusLabel: "Fresh" };
     case "stale":
-      return { status: "idle", statusLabel: "Stale" };
+      return isProvider
+        ? { status: "idle" }
+        : { status: "idle", statusLabel: "Stale" };
     default:
-      if (!instance && node.data.execution.status === "idle") {
+      if (!instance && node.data.execution.status === "idle" && !isProvider) {
         if (node.data.run?.status === "succeeded")
           return { status: "done", statusLabel: "Fresh" };
         if (node.data.run?.status === "failed")
@@ -63,7 +96,41 @@ function cellNodeStatus(
   }
 }
 
+/** Fanned card backs a sequence shows behind its first picture. */
+const STACK_PEEK_LIMIT = 2;
+
+/**
+ * Whether a card paints this artifact inline. TIFF is an image the browser
+ * cannot decode, so it keeps the placeholder until the canvas renders it.
+ */
+function paintsInline(ref: ArtifactRef, registry: NodeRegistry): boolean {
+  const contentType = declaredArtifactContentType(
+    artifactTypeFor(ref, registry.artifact_types),
+  );
+  if (ref.artifact_type === "file.tiff") return false;
+  if (contentType?.toLowerCase() === "image/tiff") return false;
+  return isImageArtifact(ref, contentType);
+}
+
+function viewerImagesFor(
+  refs: readonly ArtifactRef[],
+  workspaceId: string,
+  registry: NodeRegistry,
+): CellViewerImages {
+  const urls: string[] = [];
+  for (const ref of refs.slice(0, STACK_PEEK_LIMIT + 1)) {
+    if (!paintsInline(ref, registry)) break;
+    urls.push(artifactInlineContentUrl(workspaceId, ref.artifact_id));
+  }
+  return {
+    imageUrl: urls[0] ?? null,
+    stackImageUrls: urls.slice(1),
+    itemCount: refs.length,
+  };
+}
+
 export function buildWorkbenchCellScene({
+  workspaceId,
   document,
   registry,
   presentation,
@@ -71,7 +138,14 @@ export function buildWorkbenchCellScene({
   nodeInstanceStates,
   collapsedAppendices,
   canRun,
+  canvasEdges,
+  artifactViewerEdges,
+  artifactViewerNodes,
+  artifactOriginEdges,
+  libraryItemsByArtifactId,
 }: {
+  /** Names the content route for inline pictures; without it cards stay placeholders. */
+  workspaceId?: string | null;
   document: AuthoredGraphDocument;
   registry: NodeRegistry;
   presentation: GraphPresentation | null;
@@ -79,11 +153,18 @@ export function buildWorkbenchCellScene({
   nodeInstanceStates: Readonly<Record<string, RoomInstanceState>>;
   collapsedAppendices: ReadonlySet<string>;
   canRun: boolean;
+  canvasEdges?: readonly WorkflowEdge[];
+  artifactViewerEdges?: readonly ArtifactViewerEdge[];
+  artifactViewerNodes?: readonly ArtifactViewerNode[];
+  artifactOriginEdges?: readonly ArtifactOriginEdge[];
+  /** The Library's files by artifact id, to name a card's single artifact. */
+  libraryItemsByArtifactId?: ReadonlyMap<string, PlacedLibraryItem>;
 }) {
   const nodeRunState: Record<string, CellNodeRunState> = {};
   for (const node of nodes) {
     const instance = nodeInstanceStates[node.id];
     const { run, execution, layout } = node.data;
+    const isProvider = isServiceProviderNode(node.data.spec);
     const status = cellNodeStatus(node, instance);
     const error =
       status.status === "error"
@@ -103,7 +184,7 @@ export function buildWorkbenchCellScene({
     );
     nodeRunState[node.id] = {
       ...status,
-      runDisabled: !canRun || !workflowNodeIsSupported(node.data),
+      runDisabled: !canRun || !workflowNodeIsSupported(node.data) || isProvider,
       appendix: error
         ? {
             title: "Execution error",
@@ -126,10 +207,140 @@ export function buildWorkbenchCellScene({
           : undefined,
     };
   }
+
+  let viewerOutputValues:
+    | Map<
+        string,
+        { artifactTypeId: string; schemaVersion: number; shape: "one" | "many" }
+      >
+    | undefined;
+  let viewerImages: Map<string, CellViewerImages> | undefined;
+  let viewerMetadata: Map<string, CellViewerMetadata> | undefined;
+  if (artifactViewerNodes) {
+    viewerOutputValues = new Map();
+    viewerImages = new Map();
+    viewerMetadata = new Map();
+    for (const card of artifactViewerNodes) {
+      // The placed artifact, or the one a following card shows from its run.
+      const value = artifactCardConnectionValue(
+        card,
+        artifactViewerEdges ?? [],
+        nodes,
+      );
+      const refs = cardArtifactRefs(value);
+      if (!value || refs.length === 0) continue;
+      viewerOutputValues.set(card.id, {
+        artifactTypeId: value.artifact_type,
+        schemaVersion: value.schema_version,
+        shape: "item_refs" in value ? "many" : "one",
+      });
+      if (workspaceId) {
+        viewerImages.set(card.id, viewerImagesFor(refs, workspaceId, registry));
+      }
+      // A sequence has no one file name; its card says its count instead,
+      // and its spread names every item.
+      if (refs.length > 1) {
+        viewerMetadata.set(card.id, {
+          stackItems: refs.map((ref, index) => {
+            const item = libraryItemsByArtifactId?.get(ref.artifact_id);
+            return {
+              artifactId: ref.artifact_id,
+              imageUrl:
+                workspaceId && paintsInline(ref, registry)
+                  ? artifactInlineContentUrl(workspaceId, ref.artifact_id)
+                  : null,
+              label: item ? libraryFileDisplayName(item) : `#${index + 1}`,
+            };
+          }),
+        });
+        continue;
+      }
+      const libraryItem = refs[0]
+        ? libraryItemsByArtifactId?.get(refs[0].artifact_id)
+        : undefined;
+      if (libraryItem) {
+        viewerMetadata.set(card.id, {
+          filename: libraryFileDisplayName(libraryItem),
+          byteSizeLabel: formatLibraryByteSize(libraryItem.artifact.byte_size),
+        });
+      }
+    }
+  }
+
+  const originsById = new Map(
+    document.origins.map((origin) => [origin.id, origin]),
+  );
+  const originLinks: CellOriginLink[] | undefined = artifactOriginEdges
+    ? artifactOriginEdges.flatMap((edge): CellOriginLink[] => {
+        const decoded = decodeHandleId(edge.targetHandle);
+        if (!decoded) return [];
+        const origin = originsById.get(edge.data.originId);
+        return [
+          {
+            id: edge.id,
+            originId: edge.data.originId,
+            sourceCardId: edge.source,
+            targetCardId: edge.target,
+            targetPortId: decoded.plugId
+              ? `${decoded.portName}::${decoded.plugId}`
+              : decoded.portName,
+            collectionMode: edge.data.collectionMode ?? "direct",
+            conversionCount: origin?.conversion_path.length ?? 0,
+          },
+        ];
+      })
+    : undefined;
+
+  let pipeMetadataById: Map<string, CellPipeMetadata> | undefined;
+  if (canvasEdges || artifactViewerEdges) {
+    pipeMetadataById = new Map();
+    for (const edge of canvasEdges ?? []) {
+      const projection = edge.data?.projection;
+      const activeProjectionTitle = projection
+        ? edge.data?.routeOptions?.find(
+            (route) =>
+              route.projection?.path.length === projection.path.length &&
+              route.projection?.path.every(
+                (segment, index) => segment === projection.path[index],
+              ),
+          )?.projectionTitle
+        : undefined;
+      const projectionLabel = projection
+        ? (activeProjectionTitle ?? projection.path.join("."))
+        : null;
+      const conversionLabel = edge.data?.conversionTitles?.length
+        ? edge.data.conversionTitles.join(" → ")
+        : edge.data?.conversionPath?.length
+          ? `${edge.data.conversionPath.length} conv`
+          : null;
+      pipeMetadataById.set(edge.id, {
+        projectionLabel,
+        conversionLabel,
+        sourcePortLabel: edge.data?.sourcePortName,
+        incompatible: Boolean(edge.data?.compatibilityIssues?.length),
+      });
+    }
+    for (const edge of artifactViewerEdges ?? []) {
+      const projection = edge.data?.projection;
+      pipeMetadataById.set(edge.id, {
+        projectionLabel: projection
+          ? (edge.data?.projectionTitle ?? projection.path.join("."))
+          : null,
+        conversionLabel: null,
+        sourcePortLabel: edge.data?.sourcePortName,
+      });
+    }
+  }
+
   return cellGraphFromAuthoredDocument(document, registry, {
     presentation,
     nodeRunState,
     collapsedAppendices,
+    originLinks,
+    viewerOutputValues,
+    pipeMetadataById,
+    viewerImages,
+    viewerMetadata,
   });
 }
 
@@ -272,6 +483,10 @@ export function partitionCellRemovals(
   pipeIds: readonly string[],
   document: AuthoredGraphDocument,
   artifactViewers: ArtifactViewerCanvasState,
+  artifactOriginEdges: readonly Pick<
+    ArtifactOriginEdge,
+    "id" | "source" | "target" | "data"
+  >[] = [],
 ) {
   const cards = new Set(cardIds);
   const pipes = new Set(pipeIds);
@@ -290,12 +505,27 @@ export function partitionCellRemovals(
         pipes.has(id) || cards.has(source) || cards.has(target),
     )
     .map(({ id }) => id);
+  const originEdgesById = new Map(
+    artifactOriginEdges.map((edge) => [edge.id, edge]),
+  );
+  const removedOriginSources = new Map<string, Set<string>>();
+  for (const pipeId of pipes) {
+    const edge = originEdgesById.get(pipeId);
+    if (!edge || cards.has(edge.source) || cards.has(edge.target)) continue;
+    const sources =
+      removedOriginSources.get(edge.data.originId) ?? new Set<string>();
+    sources.add(edge.source);
+    removedOriginSources.set(edge.data.originId, sources);
+  }
+  const originCommands = document.origins.flatMap((origin) => {
+    const sources = removedOriginSources.get(origin.id);
+    return sources ? changeOriginCardReferences(origin, sources) : [];
+  });
   return {
-    graphCommands: graphCommandsFromCellDeleteForDocument(
-      document,
-      cardIds,
-      pipeIds,
-    ),
+    graphCommands: [
+      ...graphCommandsFromCellDeleteForDocument(document, cardIds, pipeIds),
+      ...originCommands,
+    ],
     removedWorkflowNodeIds,
     removedViewerIds,
     removedAnnotationIds,

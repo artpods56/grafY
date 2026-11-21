@@ -8,9 +8,17 @@ import type { NodeSpec } from "@/lib/api";
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
   artifactCardMediaHeight,
+  artifactCardValue,
+  canMergeIntoCard,
+  cardArtifactRefs,
   originBelongsToCard,
   type ArtifactCardValue,
 } from "../canvas/artifact-card";
+import {
+  CELL_SIZE,
+  cellToWorldOrigin,
+  type CellCoord,
+} from "../cell-canvas/cell-model";
 import {
   ARTIFACT_VIEWER_EDGE_TYPE,
   ARTIFACT_VIEWER_INPUT_HANDLE,
@@ -327,15 +335,341 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
     ],
   );
 
+  /**
+   * A card that holds its own artifacts: not one following a producer's
+   * output, whose value is the producer's to change.
+   */
+  const standaloneCard = React.useCallback(
+    (cardId: string) => {
+      const card = artifactViewers.nodes.find((node) => node.id === cardId);
+      if (!card?.data.artifactRef) return null;
+      if (artifactViewers.edges.some((edge) => edge.target === cardId)) {
+        return null;
+      }
+      return card;
+    },
+    [artifactViewers.edges, artifactViewers.nodes],
+  );
+
+  /**
+   * Whether one card's artifacts can join another's sequence. The card that
+   * goes away must not be passed into an input: its wire would be lost with it.
+   */
+  const canMergeArtifactCards = React.useCallback(
+    (sourceCardId: string, targetCardId: string) => {
+      if (!localAuthoringEnabled || sourceCardId === targetCardId) return false;
+      const source = standaloneCard(sourceCardId);
+      const target = standaloneCard(targetCardId);
+      if (!source || !target) return false;
+      if (!canMergeIntoCard(target.data.artifactRef, source.data.artifactRef)) {
+        return false;
+      }
+      const wired = authoredDocumentRef.current.origins.some((origin) =>
+        originBelongsToCard(origin, source.id, source.data.artifactRef),
+      );
+      return !wired;
+    },
+    [authoredDocumentRef, localAuthoringEnabled, standaloneCard],
+  );
+
+  /**
+   * Several cards become one sequence on `targetCardId`: their artifacts in
+   * the order the cards are given, each artifact once. Every other card goes,
+   * the target is what a person holds, and whatever the target was passed
+   * into now carries the whole sequence. One commit and one origin rewrite,
+   * however many cards join.
+   */
+  const mergeArtifactCardRun = React.useCallback(
+    (cardIds: readonly string[], targetCardId: string) => {
+      if (!localAuthoringEnabled || !cardIds.includes(targetCardId)) return;
+      const target = standaloneCard(targetCardId);
+      if (!target) return;
+      const sources = cardIds.filter((id) => id !== targetCardId);
+      if (sources.length === 0) return;
+      const cards: ArtifactViewerNode[] = [];
+      for (const id of cardIds) {
+        if (id !== targetCardId && !canMergeArtifactCards(id, targetCardId)) {
+          return;
+        }
+        const card = standaloneCard(id);
+        if (!card) return;
+        cards.push(card);
+      }
+      const targetValue = target.data.artifactRef;
+      const seen = new Set<string>();
+      const refs: ReturnType<typeof cardArtifactRefs> = [];
+      for (const card of cards) {
+        for (const ref of cardArtifactRefs(card.data.artifactRef)) {
+          if (seen.has(ref.artifact_id)) continue;
+          seen.add(ref.artifact_id);
+          refs.push(ref);
+        }
+      }
+      // Nothing new would join: the cards would go for no change.
+      if (refs.length <= cardArtifactRefs(targetValue).length) return;
+      const merged = artifactCardValue(refs, targetValue, { asSequence: true });
+      if (!merged) return;
+      const anchor = cards[0];
+      if (!anchor) return;
+      const removed = new Set(sources);
+      const carried = authoredDocumentRef.current.origins.filter((origin) =>
+        originBelongsToCard(origin, target.id, targetValue),
+      );
+      const committed = commitArtifactViewers((current) => {
+        const cleared = withoutPresentationSelection(current);
+        return {
+          ...cleared,
+          nodes: cleared.nodes
+            .filter((node) => !removed.has(node.id))
+            .map((node) =>
+              node.id === targetCardId
+                ? {
+                    ...node,
+                    position: { ...anchor.position },
+                    selected: true,
+                    data: {
+                      ...node.data,
+                      layout: anchor.data.layout ?? node.data.layout,
+                      artifactRef: merged,
+                    },
+                  }
+                : node,
+            ),
+          edges: cleared.edges.filter(
+            (edge) => !removed.has(edge.source) && !removed.has(edge.target),
+          ),
+        };
+      });
+      if (!committed) return;
+      selection.clearWorkflowSelection();
+      if (!carried.length) return;
+      applyAuthoringCommands(
+        carried.flatMap((origin) =>
+          changeOriginCardReferences(origin, new Set([targetCardId]), merged),
+        ),
+      );
+    },
+    [
+      applyAuthoringCommands,
+      authoredDocumentRef,
+      canMergeArtifactCards,
+      commitArtifactViewers,
+      localAuthoringEnabled,
+      selection,
+      standaloneCard,
+    ],
+  );
+
+  /**
+   * One card dropped onto another: the target's artifacts then the source's,
+   * or the source's first when it sits to the target's left.
+   */
+  const mergeArtifactCards = React.useCallback(
+    (
+      sourceCardId: string,
+      targetCardId: string,
+      order: "target-first" | "source-first" = "target-first",
+    ) => {
+      mergeArtifactCardRun(
+        order === "target-first"
+          ? [targetCardId, sourceCardId]
+          : [sourceCardId, targetCardId],
+        targetCardId,
+      );
+    },
+    [mergeArtifactCardRun],
+  );
+
+  /**
+   * A compatible unwired card dragged from the canvas into an open spread at a
+   * specific slot index: splices its artifacts in at `insertIndex` (deduping
+   * already-present artifacts) and removes the source card in one commit.
+   */
+  const insertArtifactCardIntoSequence = React.useCallback(
+    (sourceCardId: string, targetCardId: string, insertIndex: number) => {
+      if (!canMergeArtifactCards(sourceCardId, targetCardId)) return;
+      const source = standaloneCard(sourceCardId);
+      const target = standaloneCard(targetCardId);
+      if (!source || !target) return;
+      const targetValue = target.data.artifactRef;
+      const targetRefs = cardArtifactRefs(targetValue);
+      const existing = new Set(targetRefs.map((ref) => ref.artifact_id));
+      const addedRefs = cardArtifactRefs(source.data.artifactRef).filter(
+        (ref) => !existing.has(ref.artifact_id),
+      );
+      if (addedRefs.length === 0) return;
+      const at = Math.max(0, Math.min(targetRefs.length, insertIndex));
+      const nextRefs = [...targetRefs];
+      nextRefs.splice(at, 0, ...addedRefs);
+      const merged = artifactCardValue(nextRefs, targetValue, {
+        asSequence: true,
+      });
+      if (!merged) return;
+      const carried = authoredDocumentRef.current.origins.filter((origin) =>
+        originBelongsToCard(origin, target.id, targetValue),
+      );
+      const committed = commitArtifactViewers((current) => {
+        const cleared = withoutPresentationSelection(current);
+        return {
+          ...cleared,
+          nodes: cleared.nodes
+            .filter((node) => node.id !== sourceCardId)
+            .map((node) =>
+              node.id === targetCardId
+                ? {
+                    ...node,
+                    selected: true,
+                    data: { ...node.data, artifactRef: merged },
+                  }
+                : node,
+            ),
+          edges: cleared.edges.filter(
+            (edge) =>
+              edge.source !== sourceCardId && edge.target !== sourceCardId,
+          ),
+        };
+      });
+      if (!committed) return;
+      selection.clearWorkflowSelection();
+      if (!carried.length) return;
+      applyAuthoringCommands(
+        carried.flatMap((origin) =>
+          changeOriginCardReferences(origin, new Set([targetCardId]), merged),
+        ),
+      );
+    },
+    [
+      applyAuthoringCommands,
+      authoredDocumentRef,
+      canMergeArtifactCards,
+      commitArtifactViewers,
+      selection,
+      standaloneCard,
+    ],
+  );
+
+  /** One artifact moved to another place in the card's sequence. */
+  const reorderArtifactCardItem = React.useCallback(
+    (cardId: string, fromIndex: number, toIndex: number) => {
+      const card = standaloneCard(cardId);
+      if (!card || !localAuthoringEnabled) return;
+      const refs = cardArtifactRefs(card.data.artifactRef);
+      if (
+        fromIndex === toIndex ||
+        fromIndex < 0 ||
+        fromIndex >= refs.length ||
+        toIndex < 0 ||
+        toIndex >= refs.length
+      ) {
+        return;
+      }
+      const next = [...refs];
+      const [moved] = next.splice(fromIndex, 1);
+      if (!moved) return;
+      next.splice(toIndex, 0, moved);
+      const value = artifactCardValue(next, card.data.artifactRef);
+      if (value) updateArtifactCardRefs(cardId, value);
+    },
+    [localAuthoringEnabled, standaloneCard, updateArtifactCardRefs],
+  );
+
+  /**
+   * One artifact taken out of a sequence onto its own card: at `targetCell`
+   * when it was dropped there, otherwise a cell to the right. What is left
+   * stays a sequence, or a single card when one remains.
+   */
+  const extractArtifactCardItem = React.useCallback(
+    (cardId: string, index: number, targetCell?: CellCoord) => {
+      const card = standaloneCard(cardId);
+      if (!card || !localAuthoringEnabled) return;
+      const refs = cardArtifactRefs(card.data.artifactRef);
+      const extracted = refs[index];
+      if (!extracted || refs.length < 2) return;
+      const remaining = refs.filter((_, at) => at !== index);
+      const kept = artifactCardValue(
+        remaining,
+        remaining.length > 1 ? card.data.artifactRef : null,
+      );
+      if (!kept) return;
+      updateArtifactCardRefs(cardId, kept);
+      if (targetCell) {
+        addArtifactCard(
+          extracted,
+          cellToWorldOrigin(targetCell.col, targetCell.row),
+        );
+        return;
+      }
+      const footprint = artifactCardFootprint(card);
+      addArtifactCard(extracted, {
+        x: card.position.x + footprint.width + CELL_SIZE,
+        y: card.position.y,
+      });
+    },
+    [
+      addArtifactCard,
+      localAuthoringEnabled,
+      standaloneCard,
+      updateArtifactCardRefs,
+    ],
+  );
+
+  /**
+   * One artifact taken out of a sequence and off the canvas. One left makes
+   * a single card again; none left removes the card.
+   */
+  const removeArtifactCardItem = React.useCallback(
+    (cardId: string, index: number) => {
+      const card = standaloneCard(cardId);
+      if (!card || !localAuthoringEnabled) return;
+      const refs = cardArtifactRefs(card.data.artifactRef);
+      if (index < 0 || index >= refs.length) return;
+      const remaining = refs.filter((_, at) => at !== index);
+      const kept = artifactCardValue(
+        remaining,
+        remaining.length > 1 ? card.data.artifactRef : null,
+      );
+      updateArtifactCardRefs(cardId, kept);
+    },
+    [localAuthoringEnabled, standaloneCard, updateArtifactCardRefs],
+  );
+
   return {
     addArtifactCard,
     addArtifactCards,
+    canMergeArtifactCards,
+    extractArtifactCardItem,
+    insertArtifactCardIntoSequence,
+    mergeArtifactCardRun,
+    mergeArtifactCards,
+    removeArtifactCardItem,
+    reorderArtifactCardItem,
     collectSelectedArtifacts,
     tidySelectedArtifacts,
     ungroupArtifacts,
     ungroupCollection,
     updateArtifactCardRefs,
   };
+}
+
+/**
+ * The canvas box a card takes, as the cell canvas lays it out: at least eight
+ * cells wide and six tall, each side snapped to whole cells.
+ */
+export function artifactCardFootprint(card: Pick<ArtifactViewerNode, "data">): {
+  width: number;
+  height: number;
+} {
+  const widthCells = Math.max(
+    8,
+    Math.round(
+      (card.data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH) / CELL_SIZE,
+    ),
+  );
+  const heightCells = Math.max(
+    6,
+    Math.round((card.data.layout?.bodyHeight ?? 150) / CELL_SIZE),
+  );
+  return { width: widthCells * CELL_SIZE, height: heightCells * CELL_SIZE };
 }
 
 /** Where a dropped card lands: centred on the cursor, taller when it carries a set. */

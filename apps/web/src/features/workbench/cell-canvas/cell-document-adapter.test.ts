@@ -456,6 +456,7 @@ describe("cell document adapter", () => {
         },
       ],
       showSparePlug: true,
+      sparePlugId: "spare",
     });
     expect(agent).toMatchObject({
       id: "agent",
@@ -519,6 +520,8 @@ describe("cell document adapter", () => {
         targetCardId: "collection",
         targetPortId: "items::wired",
         enabled: false,
+        collectionMode: "direct",
+        sourcePortLabel: "result",
         projectionLabel: "data.title",
         conversionLabel: "2 conv",
       },
@@ -529,6 +532,8 @@ describe("cell document adapter", () => {
         targetCardId: "source",
         targetPortId: "incoming::plug-a",
         enabled: false,
+        collectionMode: "direct",
+        sourcePortLabel: "sequence",
         projectionLabel: null,
         conversionLabel: null,
       },
@@ -680,6 +685,7 @@ describe("cell document adapter", () => {
     expect(result.surfaceById.collection).toMatchObject({
       kind: "collection",
       showSparePlug: true,
+      sparePlugId: "spare",
     });
   });
 
@@ -889,8 +895,231 @@ describe("cell document adapter", () => {
       targetCardId: "viewer-1",
       targetPortId: "artifact-viewer-input",
       enabled: true,
+      sourcePortLabel: "result",
       projectionLabel: "preview",
       conversionLabel: null,
+    });
+  });
+
+  it("extracts service-contract ports, origin pipes, and following-card output ports", () => {
+    const providerSpec: NodeSpec = {
+      ...baseSpec,
+      operator_id: "llm.provider",
+      operator_version: 1,
+      title: "LLM Provider",
+      inputs: [],
+      outputs: [
+        port("chat_service", {
+          title: "Chat",
+          kind: "service",
+          direction: "output",
+          artifact_type: null,
+          service_contracts: [{ id: "llm.chat", version: 1 }],
+        }),
+      ],
+    };
+    const consumerSpec: NodeSpec = {
+      ...baseSpec,
+      operator_id: "llm.ask",
+      operator_version: 1,
+      title: "Ask",
+      inputs: [
+        port("service", {
+          title: "Service",
+          kind: "service",
+          direction: "input",
+          artifact_type: null,
+          service_contracts: [{ id: "llm.chat", version: 1 }],
+        }),
+      ],
+      outputs: [],
+    };
+    const serviceRegistry: NodeRegistry = {
+      ...registry,
+      nodes: [baseSpec, providerSpec, consumerSpec],
+      service_contracts: [
+        {
+          id: "llm.chat",
+          version: 1,
+          title: "Chat Model Service",
+        },
+      ],
+    };
+    const origin: AuthoredGraphOrigin = {
+      id: "origin-1",
+      to_node: "source",
+      to_port: "incoming",
+      to_plug: "plug-a",
+      source_card_ids: ["viewer-src"],
+      value: {
+        artifact_id: "a1",
+        artifact_type: textType.id,
+        schema_version: textType.schema_version,
+      },
+      collection_mode: "map",
+      conversion_path: [{ id: "conv.text", version: 1 }],
+    };
+    const doc: AuthoredGraphDocument = {
+      name: "Services & Origins",
+      nodes: [
+        {
+          ...source,
+          position: { x: 200, y: 0 },
+          layout: null,
+          config: {},
+          input_plugs: [{ port: "incoming", id: "plug-a" }],
+        },
+        {
+          id: "provider",
+          kind: "builtin",
+          operator_id: "llm.provider",
+          operator_version: 1,
+          position: { x: 0, y: 200 },
+          layout: null,
+          config: {},
+          input_plugs: [],
+          artifact_type_bindings: [],
+        },
+        {
+          id: "consumer",
+          kind: "builtin",
+          operator_id: "llm.ask",
+          operator_version: 1,
+          position: { x: 300, y: 200 },
+          layout: null,
+          config: {},
+          input_plugs: [],
+          artifact_type_bindings: [],
+        },
+      ],
+      edges: [
+        {
+          id: "svc-edge",
+          from_node: "provider",
+          from_port: "chat_service",
+          to_node: "consumer",
+          to_port: "service",
+          to_plug: null,
+          enabled: true,
+          collection_mode: "direct",
+          conversion_path: [],
+        },
+      ],
+      origins: [origin],
+      agents: [],
+    };
+    const docPresentation: SavedGraphDocument["presentation"] = {
+      annotations: [],
+      viewers: [
+        {
+          id: "viewer-src",
+          position: { x: 0, y: 0 },
+          artifact_ref: {
+            artifact_id: "a1",
+            artifact_type: textType.id,
+            schema_version: textType.schema_version,
+          },
+          mode: "artifact",
+        },
+        {
+          id: "viewer-follow",
+          position: { x: 0, y: 400 },
+          artifact_ref: null,
+          mode: "artifact",
+        },
+      ],
+      links: [
+        {
+          id: "follow-link",
+          source_node_id: "source",
+          source_port_name: "result",
+          target_viewer_id: "viewer-follow",
+        },
+      ],
+      bindings: [],
+    };
+
+    const fallbackScene = cellGraphFromAuthoredDocument(doc, serviceRegistry, {
+      presentation: docPresentation,
+      viewerOutputValues: new Map([
+        ["viewer-follow", { artifactTypeId: "scalar.text", shape: "many" }],
+      ]),
+    });
+
+    const providerCard = fallbackScene.graph.cards.find(
+      (c) => c.id === "provider",
+    );
+    expect(providerCard?.ports).toMatchObject([
+      {
+        id: "chat_service",
+        kind: "service",
+        serviceContractLabel: "Chat Model Service",
+        artifactTypeId: "llm.chat",
+      },
+    ]);
+    const followCard = fallbackScene.graph.cards.find(
+      (c) => c.id === "viewer-follow",
+    );
+    expect(followCard?.ports.map((p) => p.id)).toEqual([
+      "artifact-viewer-input",
+      "artifact-card-output",
+    ]);
+    expect(followCard?.ports[1]).toMatchObject({
+      id: "artifact-card-output",
+      artifactTypeId: "scalar.text",
+      shape: "many",
+    });
+    expect(
+      fallbackScene.graph.pipes.find(
+        (p) => p.id === "artifact-origin:origin-1:viewer-src",
+      ),
+    ).toEqual({
+      id: "artifact-origin:origin-1:viewer-src",
+      sourceCardId: "viewer-src",
+      sourcePortId: "artifact-card-output",
+      targetCardId: "source",
+      targetPortId: "incoming::plug-a",
+      enabled: true,
+      collectionMode: "map",
+      sourcePortLabel: "artifact",
+      projectionLabel: null,
+      conversionLabel: "1 conv",
+    });
+
+    const explicitScene = cellGraphFromAuthoredDocument(doc, serviceRegistry, {
+      presentation: docPresentation,
+      originLinks: [
+        {
+          id: "explicit-origin-edge",
+          originId: "origin-1",
+          sourceCardId: "viewer-src",
+          targetCardId: "source",
+          targetPortId: "incoming::plug-a",
+          collectionMode: "direct",
+          conversionCount: 2,
+        },
+      ],
+      pipeMetadataById: new Map([
+        [
+          "svc-edge",
+          {
+            sourcePortLabel: "Chat",
+            incompatible: true,
+          },
+        ],
+      ]),
+    });
+    expect(
+      explicitScene.graph.pipes.find((p) => p.id === "explicit-origin-edge"),
+    ).toMatchObject({
+      collectionMode: "direct",
+      conversionLabel: "2 conv",
+    });
+    expect(
+      explicitScene.graph.pipes.find((p) => p.id === "svc-edge"),
+    ).toMatchObject({
+      sourcePortLabel: "Chat",
+      incompatible: true,
     });
   });
 
@@ -985,5 +1214,117 @@ describe("cell document adapter", () => {
     expect(afterDel.nodes.map((n) => n.id)).toEqual(["source"]);
     expect(afterDel.agents.map((a) => a.id)).toEqual(["default-agent"]);
     expect(afterDel.edges).toEqual([]);
+  });
+});
+
+describe("artifact card pictures and output corner", () => {
+  const ref = (id: string, type = "file.png") => ({
+    artifact_id: id,
+    artifact_type: type,
+    schema_version: 1,
+  });
+  function viewerScene(
+    artifactRef: NonNullable<
+      SavedGraphDocument["presentation"]
+    >["viewers"][number]["artifact_ref"],
+    options: Omit<
+      NonNullable<Parameters<typeof cellGraphFromAuthoredDocument>[2]>,
+      "presentation"
+    > = {},
+    bodyHeight = 150,
+  ) {
+    return cellGraphFromAuthoredDocument(
+      authoredGraphDocument(savedDocument()),
+      registry,
+      {
+        ...options,
+        presentation: {
+          ...presentation,
+          viewers: [
+            {
+              id: "card",
+              position: { x: 0, y: 0 },
+              layout: {
+                width: 250,
+                body_height: bodyHeight,
+                appendix_height: null,
+              },
+              mode: "artifact",
+              artifact_ref: artifactRef,
+            },
+          ],
+        },
+      },
+    );
+  }
+
+  it("reads PNG, JPEG and TIFF files as pictures", () => {
+    for (const type of ["file.png", "file.jpeg", "file.jpg", "file.tiff"]) {
+      expect(viewerScene(ref("a", type)).surfaceById.card).toMatchObject({
+        previewKind: "image",
+      });
+    }
+  });
+
+  it("puts the output on the bottom-right row, one row clear of the edge", () => {
+    const small = viewerScene(ref("a")).graph.cards.find(
+      (c) => c.id === "card",
+    );
+    expect(small?.heightCells).toBe(6);
+    expect(small?.ports).toEqual([
+      expect.objectContaining({ id: "artifact-card-output", rowOffset: 4 }),
+    ]);
+    const tall = viewerScene(ref("a"), {}, 300).graph.cards.find(
+      (c) => c.id === "card",
+    );
+    expect(tall?.heightCells).toBe(12);
+    expect(tall?.ports[0]).toMatchObject({ rowOffset: 10 });
+  });
+
+  it("takes the resolved picture and a sequence's next two from the caller", () => {
+    const single = viewerScene(ref("a"), {
+      viewerImages: new Map([
+        ["card", { imageUrl: "/a", stackImageUrls: [], itemCount: 1 }],
+      ]),
+    });
+    expect(single.surfaceById.card).toMatchObject({ imageUrl: "/a" });
+    expect(single.surfaceById.card).not.toHaveProperty("stackImageUrls");
+    expect(single.surfaceById.card).not.toHaveProperty("itemCount");
+
+    const sequence = viewerScene(
+      {
+        artifact_type: "file.png",
+        schema_version: 1,
+        index_key: "order_index",
+        ordered: true,
+        item_refs: [ref("a"), ref("b"), ref("c"), ref("d")],
+      },
+      {
+        viewerImages: new Map([
+          [
+            "card",
+            { imageUrl: "/a", stackImageUrls: ["/b", "/c"], itemCount: 4 },
+          ],
+        ]),
+      },
+    );
+    expect(sequence.surfaceById.card).toMatchObject({
+      imageUrl: "/a",
+      stackImageUrls: ["/b", "/c"],
+      itemCount: 4,
+      dimensionsLabel: "4 items",
+    });
+  });
+
+  it("leaves a picture without a resolved URL on its placeholder", () => {
+    const tiff = viewerScene(ref("t", "file.tiff"), {
+      viewerImages: new Map([
+        ["card", { imageUrl: null, stackImageUrls: [], itemCount: 1 }],
+      ]),
+    });
+    expect(tiff.surfaceById.card).toMatchObject({
+      previewKind: "image",
+      imageUrl: null,
+    });
   });
 });

@@ -43,9 +43,11 @@ import type {
   OperatorCardSurfaceData,
 } from "../cell-contracts";
 import {
+  cardPlateFill,
   cellCornerRadius,
   type CellCorners,
   type CellGlassMaterial,
+  type CellWellStyle,
 } from "../cell-glass-stage";
 import {
   CARD_HEADER_HEIGHT,
@@ -54,12 +56,21 @@ import {
   CARD_HEADER_TOP,
   CARD_PLATE_TOP,
   CELL_SIZE,
+  punchedPortCardCentre,
   type CellCardKind,
   type CellCardModel,
   type CellPort,
   type WorldPoint,
+  cellPortKey,
+  isPortActive,
+  isPortConnected,
 } from "../cell-model";
-import { ConnectorFitting } from "../pipe-visuals";
+import { ConnectorFitting, type PipeFamily } from "../pipe-visuals";
+import {
+  PUNCH_OUTER_RADIUS,
+  PUNCHED_LABEL_INSET,
+  PunchedPortSocket,
+} from "../punched-port";
 
 /**
  * The operator card, and the card shell every real card on the cell canvas is
@@ -88,6 +99,15 @@ export interface CellCardBaseProps {
   visualOffset?: WorldPoint;
   material?: CellGlassMaterial;
   corners?: CellCorners;
+  /**
+   * `punched` puts each port in a hole through the plate and moves the labels
+   * in past it; the other styles keep the port in the gutter cell.
+   */
+  well?: CellWellStyle;
+  /** The pipe family a punched port's stub is drawn in. */
+  pipe?: PipeFamily;
+  /** How solid the plate is, 0.2 to 1; undefined keeps it solid. */
+  cardFill?: number;
   /** Overrides the interaction store, for a card rendered on its own. */
   selected?: boolean;
   dragging?: boolean;
@@ -199,6 +219,12 @@ const s = stylex.create({
       "@media (prefers-reduced-motion: reduce)": "0ms",
     },
   },
+  // An artifact's title names its type and is short: it keeps its whole
+  // width, and the file name beside it gives way instead.
+  titleFixed: {
+    flexShrink: 0,
+    maxWidth: "100%",
+  },
   titleSelected: {
     opacity: 1,
     backgroundColor: tokens.colorAccent,
@@ -263,8 +289,9 @@ const s = stylex.create({
     backgroundColor: tokens.colorChrome,
     borderColor: tokens.colorBorder,
   },
+  // Cards are solid: a pipe under one is hidden, never seen through it.
   plateLiquid: {
-    backgroundColor: `color-mix(in srgb, ${tokens.colorSurface} 58%, transparent)`,
+    backgroundColor: tokens.colorSurface,
     borderColor: LIQUID_BORDER,
   },
   // Selected or held, the plate takes a very light accent edge and a soft 3px
@@ -278,6 +305,15 @@ const s = stylex.create({
   frostShadowActive: { boxShadow: `${SELECTION_HALO}, ${REST_SHADOW}` },
   liquidShadowActive: {
     boxShadow: `${LIQUID_SPECULAR}, ${SELECTION_HALO}, ${REST_SHADOW}`,
+  },
+  // An artifact's plate under punched wells: the fill and the preview sit on
+  // this layer, which the shell cuts the holes out of, so the canvas shows
+  // through them. The plate itself keeps its border and its drop shadow.
+  plateInterior: {
+    position: "absolute",
+    inset: 0,
+    borderRadius: "inherit",
+    overflow: "hidden",
   },
   strip: {
     boxSizing: "border-box",
@@ -322,6 +358,13 @@ const s = stylex.create({
     outline: {
       default: "none",
       ":focus-visible": `2px solid ${tokens.colorAccent}`,
+    },
+  },
+  // A punched port answers the pointer with its ring, not a tinted disc.
+  portPunched: {
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": "transparent",
     },
   },
   portHot: {
@@ -398,9 +441,11 @@ const s = stylex.create({
     pointerEvents: "none",
   },
   portSlot: { minWidth: 0, display: "flex" },
+  portSlotInputDrop: { pointerEvents: "auto" },
   portSlotOutput: { justifyContent: "flex-end" },
   // A port's name sits in a tab flush with the plate's edge, square on the
-  // side its stem leaves from, so tab, stem and ring read as one line.
+  // side its stem leaves from, so tab, stem and ring read as one line. With
+  // punched wells there is no stem: the tab is a pill beside the hole.
   portTab: {
     boxSizing: "border-box",
     minWidth: 0,
@@ -420,6 +465,11 @@ const s = stylex.create({
   portTabOutput: {
     paddingInline: "8px 10px",
     borderRadius: "4px 0 0 4px",
+  },
+  portTabPunched: {
+    height: "18px",
+    paddingInline: "7px",
+    borderRadius: "9999px",
   },
   portName: {
     minWidth: 0,
@@ -556,6 +606,22 @@ export const cellCardMarks = {
   status: s.status,
   indexBadge: s.indexBadge,
   band: s.band,
+  // A sequence's spread draws real card plates and headers from these.
+  header: s.header,
+  title: s.title,
+  titleFixed: s.titleFixed,
+  titleSelected: s.titleSelected,
+  headerActions: s.headerActions,
+  menuSlot: s.menuSlot,
+  menuReveal: s.menuReveal,
+  plate: s.plate,
+  plateFrost: s.plateFrost,
+  plateLiquid: s.plateLiquid,
+  plateActive: s.plateActive,
+  frostShadow: s.frostShadow,
+  liquidShadow: s.liquidShadow,
+  frostShadowActive: s.frostShadowActive,
+  liquidShadowActive: s.liquidShadowActive,
 };
 
 /** StyleX classes plus per-card geometry, which changes with every card. */
@@ -632,8 +698,12 @@ export interface CellCardShellProps extends CellCardBaseProps {
   state: CellCardState;
   /** Defaults to `card.ports`; the operator adds its instance plugs. */
   ports?: readonly CellPort[];
-  /** Marks after the title in the floating header. */
+  /** Marks after the title in the floating header, shown while selected. */
   headerExtra?: React.ReactNode;
+  /** Quiet facts after the title in the floating header, always shown. */
+  headerMeta?: React.ReactNode;
+  /** Painted under the plate inside the card box, e.g. a sequence's card backs. */
+  behindPlate?: React.ReactNode;
   /** The plate's 23px top strip, under the plate's top edge. */
   strip?: React.ReactNode;
   resizable: boolean;
@@ -645,6 +715,8 @@ export interface CellCardShellProps extends CellCardBaseProps {
   menuDetail?: React.ReactNode;
   /** Inline plate paint, e.g. an annotation's tint. */
   plateStyle?: React.CSSProperties;
+  /** Plate styles applied after the shell's own, e.g. a lift's transition. */
+  plateXstyle?: stylex.StyleXStyles;
   /** Extra `data-*` attributes on the outer box. */
   rootData?: Record<`data-${string}`, string>;
   children?: React.ReactNode;
@@ -659,6 +731,9 @@ export function CellCardShell({
   visualOffset,
   material = "frost",
   corners = "rounded",
+  well = "recessed",
+  pipe = "glass",
+  cardFill,
   connectedPortIds = NO_CONNECTED_PORTS,
   activePortKey,
   onCardPointerDown,
@@ -668,12 +743,15 @@ export function CellCardShell({
   onResizeEnd,
   onRemove,
   headerExtra,
+  headerMeta,
+  behindPlate,
   strip,
   resizable,
   toolbar,
   menuItems = NO_MENU_ITEMS,
   menuDetail = card.subtitle,
   plateStyle,
+  plateXstyle,
   rootData,
   children,
 }: CellCardShellProps) {
@@ -685,6 +763,9 @@ export function CellCardShell({
   const x = card.col * CELL_SIZE + (visualOffset?.x ?? 0);
   const y = card.row * CELL_SIZE + (visualOffset?.y ?? 0);
   const active = selected || dragging;
+  // Over an artifact's preview a punched port is a real hole through the card.
+  const seeThrough = well === "punched" && kind === "artifact";
+  const plateFill = cardPlateFill(material, cardFill);
   const showHeaderActions = (selected && !dragging) || menuOpen;
   const items: CellCardMenuItem[] = [...menuItems];
   if (onRemove) {
@@ -705,6 +786,7 @@ export function CellCardShell({
       data-card-id={card.id}
       data-card-kind={kind}
       data-material={material}
+      data-well={well}
       data-selected={selected ? "true" : "false"}
       data-dragging={dragging ? "true" : "false"}
       {...rootData}
@@ -737,10 +819,15 @@ export function CellCardShell({
         <span
           data-card-title={active ? "selected" : "rest"}
           title={card.title}
-          {...stylex.props(s.title, active && s.titleSelected)}
+          {...stylex.props(
+            s.title,
+            kind === "artifact" && s.titleFixed,
+            active && s.titleSelected,
+          )}
         >
           {card.title}
         </span>
+        {headerMeta}
         {showHeaderActions ? (
           <span
             data-card-header-actions="true"
@@ -765,6 +852,7 @@ export function CellCardShell({
           </span>
         ) : null}
       </div>
+      {behindPlate}
       <article
         onPointerDown={handleCardPointerDown}
         {...styled(
@@ -773,6 +861,7 @@ export function CellCardShell({
             marginInline: CARD_PLATE_INSET_X,
             borderRadius: cellCornerRadius(corners),
             cursor: dragging ? "grabbing" : "grab",
+            backgroundColor: seeThrough ? "transparent" : plateFill,
             ...plateStyle,
           },
           s.plate,
@@ -785,6 +874,7 @@ export function CellCardShell({
             : active
               ? s.frostShadowActive
               : s.frostShadow,
+          plateXstyle,
         )}
       >
         {strip != null ? (
@@ -800,16 +890,38 @@ export function CellCardShell({
             {strip}
           </div>
         ) : null}
-        {children}
+        {seeThrough ? (
+          <div
+            data-plate-interior="punched"
+            {...styled(
+              {
+                backgroundColor: plateFill,
+                ...punchedHoleMask(card, ports, {
+                  x: CARD_PLATE_INSET_X + PLATE_BORDER,
+                  y: CARD_PLATE_TOP + PLATE_BORDER,
+                }),
+              },
+              s.plateInterior,
+            )}
+          >
+            {children}
+          </div>
+        ) : (
+          children
+        )}
       </article>
       {ports.map((port) => (
         <CellCardPort
-          key={port.id}
+          key={cellPortKey(port.direction, port.id)}
           card={card}
           port={port}
           width={width}
-          connected={connectedPortIds.has(port.id)}
-          hot={activePortKey === `${card.id}:${port.id}`}
+          connected={isPortConnected(connectedPortIds, port)}
+          hot={isPortActive(activePortKey, card.id, port)}
+          punched={well === "punched"}
+          open={seeThrough}
+          material={material}
+          pipe={pipe}
           onPortPointerDown={onPortPointerDown}
         />
       ))}
@@ -829,10 +941,44 @@ export function CellCardShell({
 }
 
 /**
+ * A mask that cuts each punched port's hole out of a layer whose top-left
+ * corner sits at `origin` in the card's box: one clear disc the well's lip
+ * wide per port, intersected, everything else kept.
+ */
+export function punchedHoleMask(
+  card: Pick<CellCardModel, "widthCells" | "heightCells">,
+  ports: readonly Pick<CellPort, "id" | "direction" | "rowOffset">[],
+  origin: { x: number; y: number },
+  /**
+   * Maps a hole's centre in the card's box to the layer's own box, for a
+   * layer drawn under a transform; its `scale` widens the disc to match.
+   */
+  place?: {
+    centre: (centre: { x: number; y: number }) => { x: number; y: number };
+    scale: number;
+  },
+): React.CSSProperties {
+  if (ports.length === 0) return {};
+  const scale = place?.scale ?? 1;
+  const layers = ports.map((port) => {
+    const cardCentre = punchedPortCardCentre(card, port);
+    const centre = place ? place.centre(cardCentre) : cardCentre;
+    return `radial-gradient(circle at ${centre.x - origin.x}px ${centre.y - origin.y}px, transparent ${(PUNCH_OUTER_RADIUS - 0.25) / scale}px, black ${(PUNCH_OUTER_RADIUS + 0.25) / scale}px)`;
+  });
+  const image = layers.join(", ");
+  return {
+    maskImage: image,
+    WebkitMaskImage: image,
+    maskComposite: "intersect",
+    WebkitMaskComposite: "source-in",
+  };
+}
+
+/**
  * The card's one "⋯": what the card is, then what can be done with it, the
  * way the workbench node's menu reads.
  */
-function CellCardMenu({
+export function CellCardMenu({
   title,
   detail,
   items,
@@ -885,7 +1031,9 @@ function CellCardMenu({
 
 /**
  * A port's stem and hit target. A connected port's ring and well are the glass
- * stage's; an open port draws its own Opus ring.
+ * stage's; an open port draws its own Opus ring. A punched port has no stem:
+ * it sits in a hole through the plate, which this draws whether a pipe runs
+ * into it or not.
  */
 function CellCardPort({
   card,
@@ -893,6 +1041,10 @@ function CellCardPort({
   width,
   connected,
   hot,
+  punched,
+  open,
+  material,
+  pipe,
   onPortPointerDown,
 }: {
   card: CellCardModel;
@@ -900,14 +1052,40 @@ function CellCardPort({
   width: number;
   connected: boolean;
   hot: boolean;
+  punched: boolean;
+  open: boolean;
+  material: CellGlassMaterial;
+  pipe: PipeFamily;
   onPortPointerDown: CellCardBaseProps["onPortPointerDown"];
 }) {
-  const centre = {
-    x: port.direction === "input" ? -CELL_SIZE / 2 : width + CELL_SIZE / 2,
-    y: (port.rowOffset + 0.5) * CELL_SIZE,
-  };
-  const portColor = artifactTypeColor(port.artifactTypeId, tokens.colorMuted);
+  const [hovered, setHovered] = React.useState(false);
+  const input = port.direction === "input";
+  const centre = punched
+    ? punchedPortCardCentre(card, port)
+    : {
+        x: input ? -CELL_SIZE / 2 : width + CELL_SIZE / 2,
+        y: (port.rowOffset + 0.5) * CELL_SIZE,
+      };
+  const isService = port.kind === "service";
+  const portColor = isService
+    ? tokens.colorAccent
+    : artifactTypeColor(port.artifactTypeId, tokens.colorMuted);
   const sequence = port.shape === "many";
+  const plugSplitIndex =
+    port.direction === "input" ? port.id.indexOf("::") : -1;
+  const dropInputAttrs =
+    port.direction === "input" && !isService
+      ? plugSplitIndex >= 0
+        ? {
+            "data-input-node-id": card.id,
+            "data-input-plug-port": port.id.slice(0, plugSplitIndex),
+            "data-input-plug-id": port.id.slice(plugSplitIndex + 2),
+          }
+        : {
+            "data-input-node-id": card.id,
+            "data-input-port-name": port.id,
+          }
+      : undefined;
   // The stem runs from the plate's outer edge to the well's or ring's rim.
   const stemLength =
     CELL_SIZE / 2 +
@@ -919,31 +1097,42 @@ function CellCardPort({
       : width - CARD_PLATE_INSET_X;
   return (
     <>
-      <span
-        aria-hidden="true"
-        data-port-stem={port.id}
-        {...styled(
-          {
-            left: stemLeft,
-            top: centre.y - 0.5,
-            width: stemLength,
-            backgroundColor: portColor,
-          },
-          s.stem,
-        )}
-      />
+      {punched ? null : (
+        <span
+          aria-hidden="true"
+          data-port-stem={port.id}
+          {...styled(
+            {
+              left: stemLeft,
+              top: centre.y - 0.5,
+              width: stemLength,
+              backgroundColor: portColor,
+            },
+            s.stem,
+          )}
+        />
+      )}
       <button
         type="button"
         data-port-id={port.id}
         data-port-direction={port.direction}
+        data-port-well={punched ? "punched" : undefined}
+        data-port-kind={port.kind ?? "artifact"}
         data-port-connected={connected ? "true" : "false"}
         data-port-card-id={card.id}
         data-port-hot={hot ? "true" : "false"}
-        aria-label={`${card.title} ${port.direction} ${port.name} (${sequence ? "list" : "single"} ${port.artifactTypeId})`}
+        {...dropInputAttrs}
+        aria-label={`${card.title} ${port.direction} ${port.name} (${
+          isService
+            ? `service ${port.serviceContractLabel ?? port.artifactTypeId}`
+            : `${sequence ? "list" : "single"} ${port.artifactTypeId}`
+        })`}
         onPointerDown={(event) => {
           event.stopPropagation();
           onPortPointerDown?.(card.id, port, event);
         }}
+        onPointerEnter={punched ? () => setHovered(true) : undefined}
+        onPointerLeave={punched ? () => setHovered(false) : undefined}
         {...styled(
           {
             left: centre.x - PORT_HIT_SIZE / 2,
@@ -951,10 +1140,22 @@ function CellCardPort({
             "--cell-port": portColor,
           } as React.CSSProperties,
           s.port,
-          hot && s.portHot,
+          punched ? s.portPunched : hot && s.portHot,
         )}
       >
-        {connected ? null : (
+        {punched ? (
+          <PunchedPortSocket
+            side={input ? "left" : "right"}
+            color={portColor}
+            sequence={sequence}
+            connected={connected}
+            hot={hot}
+            hovered={hovered}
+            open={open}
+            material={material}
+            pipe={pipe}
+          />
+        ) : connected ? null : (
           <svg
             aria-hidden="true"
             data-port-ring={sequence ? "list" : "single"}
@@ -998,18 +1199,29 @@ const STATUS_TEXT = {
   error: "Error",
 } as const;
 
-function CellPortTab({ port }: { port: CellPort }) {
+function CellPortTab({ port, punched }: { port: CellPort; punched: boolean }) {
   const output = port.direction === "output";
+  const isService = port.kind === "service";
   return (
     <span
       data-port-tab={port.id}
-      {...stylex.props(s.portTab, output && s.portTabOutput)}
+      data-port-kind={port.kind ?? "artifact"}
+      title={
+        isService ? port.serviceContractLabel : punched ? port.name : undefined
+      }
+      {...stylex.props(
+        s.portTab,
+        output && s.portTabOutput,
+        punched && s.portTabPunched,
+      )}
     >
       <span {...stylex.props(s.portName)}>{port.name}</span>
       {!output && port.required ? (
         <span {...stylex.props(s.portMeta)}>*</span>
       ) : null}
-      {port.shape === "many" ? (
+      {isService ? (
+        <span {...stylex.props(s.portMeta)}>· service</span>
+      ) : port.shape === "many" ? (
         <span {...stylex.props(s.portMeta)}>· list</span>
       ) : null}
     </span>
@@ -1028,6 +1240,9 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
     onToggleAppendix,
   } = props;
   const state = useResolvedCardState(card.id, props);
+  const punched = props.well === "punched";
+  // Punched, every row's content starts past the hole in the plate.
+  const punchedInset = punched ? PUNCHED_LABEL_INSET : undefined;
   const layout = computeOperatorCardLayout(card, surface);
   const groups = surface.instancePlugGroups ?? [];
   const configFields = surface.configFields ?? [];
@@ -1041,9 +1256,16 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
   const connected = new Set(connectedPortIds);
   for (const group of groups) {
     group.plugs.forEach((plug, index) => {
+      const compositeId = `${group.portName}::${plug.plugId}`;
       plugIds.add(plug.plugId);
-      if (plug.connected) connected.add(plug.plugId);
-      if (listedPortIds.has(plug.plugId)) return;
+      plugIds.add(compositeId);
+      if (plug.connected) {
+        connected.add(cellPortKey("input", plug.plugId));
+        connected.add(cellPortKey("input", compositeId));
+      }
+      if (listedPortIds.has(plug.plugId) || listedPortIds.has(compositeId)) {
+        return;
+      }
       ports.push({
         id: plug.plugId,
         name: plug.label,
@@ -1070,10 +1292,20 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
   }
 
   const statusText = surface.statusLabel ?? STATUS_TEXT[card.status ?? "idle"];
+  const statusAriaWord =
+    card.status === "done"
+      ? "done"
+      : card.status === "working"
+        ? "working"
+        : card.status === "error"
+          ? "failed"
+          : (statusText ?? "").toLowerCase();
   const headerExtra = (
     <>
       {statusText ? (
         <span
+          role="status"
+          aria-label={`${card.title} ${statusAriaWord}`}
           data-card-status={card.status ?? "idle"}
           {...stylex.props(s.status)}
         >
@@ -1125,59 +1357,83 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
             {
               top: plateRowTop(rowOffset),
               height: CELL_SIZE,
+              paddingInline: punchedInset,
             },
             s.band,
             s.portRow,
           )}
         >
-          <span {...stylex.props(s.portSlot)}>
-            {input ? <CellPortTab port={input} /> : null}
+          <span
+            data-input-node-id={
+              input && input.kind !== "service" ? card.id : undefined
+            }
+            data-input-port-name={
+              input && input.kind !== "service" ? input.id : undefined
+            }
+            {...stylex.props(
+              s.portSlot,
+              input && input.kind !== "service" && s.portSlotInputDrop,
+            )}
+          >
+            {input ? <CellPortTab port={input} punched={punched} /> : null}
           </span>
           <span {...stylex.props(s.portSlot, s.portSlotOutput)}>
-            {output ? <CellPortTab port={output} /> : null}
+            {output ? <CellPortTab port={output} punched={punched} /> : null}
           </span>
         </div>
       ))}
 
       {groups.map((group) => (
         <React.Fragment key={`plugs:${group.portName}`}>
-          {group.plugs.map((plug, index) => (
-            <div
-              key={plug.plugId}
-              data-instance-plug-row={plug.plugId}
-              data-plug-port={group.portName}
-              {...styled(
-                {
-                  top: plateRowTop(plugRowOffset(group, index)),
-                  height: CELL_SIZE,
-                },
-                s.band,
-                s.plugRow,
-              )}
-            >
-              <span title={group.title} {...stylex.props(s.portTab)}>
-                <span {...stylex.props(s.plugIndex)}>#{index + 1}</span>
-                <span {...stylex.props(s.portName)}>{plug.label}</span>
-              </span>
-              <span {...stylex.props(s.grow)} />
-              {plug.connectionMeta ? (
-                <span {...stylex.props(s.chip)}>{plug.connectionMeta}</span>
-              ) : null}
-              {onRemovePlug ? (
-                <IconButton
-                  size="2xs"
-                  variant="ghost"
-                  label={`Remove ${plug.label}`}
-                  onPointerDown={stopCardDrag}
-                  onClick={() =>
-                    onRemovePlug(card.id, group.portName, plug.plugId)
-                  }
+          {group.plugs.map((plug, index) => {
+            const rawPlugId = plug.plugId.startsWith(`${group.portName}::`)
+              ? plug.plugId.slice(group.portName.length + 2)
+              : plug.plugId;
+            return (
+              <div
+                key={plug.plugId}
+                data-instance-plug-row={plug.plugId}
+                data-plug-port={group.portName}
+                data-input-node-id={card.id}
+                data-input-plug-port={group.portName}
+                data-input-plug-id={rawPlugId}
+                {...styled(
+                  {
+                    top: plateRowTop(plugRowOffset(group, index)),
+                    height: CELL_SIZE,
+                    paddingLeft: punchedInset,
+                  },
+                  s.band,
+                  s.plugRow,
+                )}
+              >
+                <span
+                  title={group.title}
+                  {...stylex.props(s.portTab, punched && s.portTabPunched)}
                 >
-                  <X size={11} />
-                </IconButton>
-              ) : null}
-            </div>
-          ))}
+                  <span {...stylex.props(s.plugIndex)}>#{index + 1}</span>
+                  <span {...stylex.props(s.portName)}>{plug.label}</span>
+                </span>
+                <span {...stylex.props(s.grow)} />
+                {plug.connectionMeta ? (
+                  <span {...stylex.props(s.chip)}>{plug.connectionMeta}</span>
+                ) : null}
+                {onRemovePlug ? (
+                  <IconButton
+                    size="2xs"
+                    variant="ghost"
+                    label={`Remove ${plug.label}`}
+                    onPointerDown={stopCardDrag}
+                    onClick={() =>
+                      onRemovePlug(card.id, group.portName, plug.plugId)
+                    }
+                  >
+                    <X size={11} />
+                  </IconButton>
+                ) : null}
+              </div>
+            );
+          })}
           {group.canAdd ? (
             <div
               data-instance-plug-add={group.portName}
@@ -1185,6 +1441,7 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
                 {
                   top: plateRowTop(plugRowOffset(group, group.plugs.length)),
                   height: CELL_SIZE,
+                  paddingLeft: punchedInset,
                 },
                 s.band,
                 s.addRow,

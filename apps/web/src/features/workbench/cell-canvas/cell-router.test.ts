@@ -591,3 +591,39 @@ describe("speed", () => {
     );
   });
 });
+
+describe("ports that share an id across directions", () => {
+  it("routes each pipe end from the port on its own side of the card", () => {
+    // An operator that takes an `image` and gives one back.
+    const editor = card("editor", 10, 0, 6, 4, [
+      port("image", "input", 1),
+      port("image", "output", 2),
+    ]);
+    const graph: CellGraph = {
+      cards: [
+        card("source", 0, 0, 6, 4, [port("out", "output", 1)]),
+        editor,
+        card("sink", 22, 0, 6, 4, [port("in", "input", 2)]),
+      ],
+      pipes: [
+        pipe("into", "source.out", "editor.image"),
+        pipe("outof", "editor.image", "sink.in"),
+      ],
+    };
+    const result = routeCellGraph(graph, {
+      exits: "side",
+      underCards: "gaps",
+      depth: true,
+    });
+    const into = result.pipes.get("into");
+    const outof = result.pipes.get("outof");
+    expect(into && outof).toBeTruthy();
+    const input = editor.ports[0]!;
+    const output = editor.ports[1]!;
+    expect(into!.points.at(-1)).toEqual(portWorldCenter(editor, input));
+    expect(outof!.points[0]).toEqual(portWorldCenter(editor, output));
+    // The two ends sit on opposite sides of the card.
+    expect(portCell(editor, input).col).toBeLessThan(editor.col);
+    expect(portCell(editor, output).col).toBe(editor.col + editor.widthCells);
+  });
+});

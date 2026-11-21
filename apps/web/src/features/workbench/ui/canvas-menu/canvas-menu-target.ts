@@ -47,6 +47,11 @@ export function canvasMenuTarget(element: Element): CanvasMenuTarget | null {
       const edgeId = join.getAttribute("data-docked-join");
       return edgeId ? { kind: "edge", edgeId } : null;
     }
+    const pipeHit = element.closest<HTMLElement>("[data-pipe-hit]");
+    if (pipeHit) {
+      const edgeId = pipeHit.getAttribute("data-pipe-hit");
+      return edgeId ? { kind: "edge", edgeId } : null;
+    }
     return { kind: "pane" };
   }
   if (!element.closest(".react-flow")) return null;

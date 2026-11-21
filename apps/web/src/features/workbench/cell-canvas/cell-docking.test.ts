@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { detectCellDockedJoins, isPortPairDocked } from "./cell-docking";
-import type { CellCardModel, CellPipeModel, CellPort } from "./cell-model";
+import {
+  ARTIFACT_CARD_OUTPUT_PORT_ID,
+  type CellCardModel,
+  type CellPipeModel,
+  type CellPort,
+} from "./cell-model";
 
 const output: CellPort = {
   id: "out",
@@ -100,5 +105,62 @@ describe("detectCellDockedJoins", () => {
       routablePipes: [gapped, missingPort],
       dockedPipeIds: new Set(["pipe"]),
     });
+  });
+
+  it("leaves an artifact's punched corner output to route, not dock, on a flush neighbour", () => {
+    const corner: CellPort = { ...output, id: ARTIFACT_CARD_OUTPUT_PORT_ID };
+    const artifact = { ...source, ports: [corner] };
+    const fromCorner = { ...pipe, sourcePortId: corner.id };
+    const graph = { cards: [artifact, target], pipes: [fromCorner] };
+
+    // In the gutter the port is on its row: it docks.
+    expect(detectCellDockedJoins(graph, () => "c").dockedPipeIds).toEqual(
+      new Set(["pipe"]),
+    );
+    // Punched, it sits in the corner off the row's midline: it routes.
+    const punched = detectCellDockedJoins(graph, () => "c", { punched: true });
+    expect(punched.dockedJoins).toEqual([]);
+    expect(punched.routablePipes).toEqual([fromCorner]);
+  });
+
+  it("still docks a punched port that sits on its row's midline", () => {
+    const graph = { cards: [source, target], pipes: [pipe] };
+    expect(
+      detectCellDockedJoins(graph, () => "c", { punched: true }).dockedPipeIds,
+    ).toEqual(new Set(["pipe"]));
+  });
+});
+
+describe("ports that share an id across directions", () => {
+  it("docks the input and output named alike on their own sides", () => {
+    const imageIn: CellPort = { ...input, id: "image" };
+    const imageOut: CellPort = { ...output, id: "image", rowOffset: 1 };
+    const editor: CellCardModel = {
+      ...target,
+      id: "editor",
+      // Input listed after the output, so a bare-id lookup finds the output.
+      ports: [imageOut, imageIn],
+    };
+    const sink: CellCardModel = {
+      ...target,
+      id: "sink",
+      col: editor.col + editor.widthCells + 2,
+      ports: [{ ...input, rowOffset: 1 }],
+    };
+    const into = { ...pipe, targetCardId: "editor", targetPortId: "image" };
+    const outof = {
+      ...pipe,
+      id: "outof",
+      sourceCardId: "editor",
+      sourcePortId: "image",
+      targetCardId: "sink",
+    };
+    const result = detectCellDockedJoins(
+      { cards: [source, editor, sink], pipes: [into, outof] },
+      () => "c",
+    );
+    // `source`'s output meets `editor`'s input flush; `sink` is two cells off.
+    expect(result.dockedPipeIds).toEqual(new Set(["pipe"]));
+    expect(result.routablePipes).toEqual([outof]);
   });
 });

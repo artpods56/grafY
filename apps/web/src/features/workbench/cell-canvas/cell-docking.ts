@@ -5,6 +5,8 @@ import {
   type CellGraph,
   type CellPipeModel,
   type CellPort,
+  punchedPortCardCentre,
+  findPipeEndPort,
 } from "./cell-model";
 
 function pipeEndpoints(
@@ -15,11 +17,15 @@ function pipeEndpoints(
   const targetCard = cardsById.get(pipe.targetCardId);
   if (!sourceCard || !targetCard) return null;
 
-  const sourcePort = sourceCard.ports.find(
-    (port) => port.id === pipe.sourcePortId,
+  const sourcePort = findPipeEndPort(
+    sourceCard.ports,
+    pipe.sourcePortId,
+    "output",
   );
-  const targetPort = targetCard.ports.find(
-    (port) => port.id === pipe.targetPortId,
+  const targetPort = findPipeEndPort(
+    targetCard.ports,
+    pipe.targetPortId,
+    "input",
   );
   if (sourcePort?.direction !== "output" || targetPort?.direction !== "input") {
     return null;
@@ -42,9 +48,20 @@ export function isPortPairDocked(
   );
 }
 
+/**
+ * A punched hole off its row's midline, as the artifact card's corner output
+ * is: a flush seam bridges midline to midline, so it cannot dock there and the
+ * pipe routes into the hole instead.
+ */
+function isPunchedOffMidline(card: CellCardModel, port: CellPort): boolean {
+  const midline = (port.rowOffset + 0.5) * CELL_SIZE;
+  return Math.abs(punchedPortCardCentre(card, port).y - midline) >= 0.5;
+}
+
 export function detectCellDockedJoins(
   graph: CellGraph,
-  resolveColor: (artifactTypeId: string) => string,
+  resolveColor: (artifactTypeId: string, port?: CellPort) => string,
+  { punched = false }: { punched?: boolean } = {},
 ): {
   dockedJoins: CellDockedJoin[];
   routablePipes: CellPipeModel[];
@@ -64,7 +81,10 @@ export function detectCellDockedJoins(
         ends.sourcePort,
         ends.targetCard,
         ends.targetPort,
-      )
+      ) ||
+      (punched &&
+        (isPunchedOffMidline(ends.sourceCard, ends.sourcePort) ||
+          isPunchedOffMidline(ends.targetCard, ends.targetPort)))
     ) {
       routablePipes.push(pipe);
       continue;
@@ -83,7 +103,7 @@ export function detectCellDockedJoins(
       seamCol,
       row,
       seamPoint: { x: seamCol * CELL_SIZE, y: (row + 0.5) * CELL_SIZE },
-      color: resolveColor(sourcePort.artifactTypeId),
+      color: resolveColor(sourcePort.artifactTypeId, sourcePort),
       sequence: sourcePort.shape === "many" || targetPort.shape === "many",
       enabled: pipe.enabled ?? true,
       projectionLabel: pipe.projectionLabel ?? null,

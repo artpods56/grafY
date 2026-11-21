@@ -26,7 +26,7 @@ test("sign in, create a Graph, and run a Text input", async ({
   await expect(browser).toHaveURL(/\/workspaces\/[^/]+\/projects\/new$/, {
     timeout: 120_000,
   });
-  await browser.locator(".react-flow__pane").secondaryTap();
+  await browser.locator('[data-cell-canvas="true"]').secondaryTap();
   const addNode = screen.getByRole("menuitem", {
     name: "Add node",
     exact: true,
@@ -40,7 +40,7 @@ test("sign in, create a Graph, and run a Text input", async ({
     .getByRole("menuitem", { name: "Text input", exact: true })
     .click();
   const node = browser
-    .locator(".react-flow__node")
+    .locator('[data-cell-card="true"]')
     .filter({ hasText: "Text input" });
   await expect(node).toHaveCount(1);
   await node.getByRole("textbox").fill("Hello from e2e");

@@ -1,13 +1,26 @@
 import { assert, describe, expect, it } from "vitest";
 
-import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+import {
+  artifactInlineContentUrl,
+  type NodeRegistry,
+  type NodeSpec,
+  type PlacedLibraryItem,
+  type Port,
+} from "@/lib/api";
 import { ARTIFACT_CARD_OUTPUT_HANDLE } from "../canvas/artifact-connections";
 import {
+  ARTIFACT_ORIGIN_EDGE_TYPE,
+  type ArtifactOriginEdge,
+} from "../canvas/artifact-origin-edge";
+import {
+  ARTIFACT_VIEWER_EDGE_TYPE,
   ARTIFACT_VIEWER_INPUT_HANDLE,
   artifactViewersFromPresentation,
+  type ArtifactViewerEdge,
   type GraphPresentation,
 } from "../canvas/artifact-viewer";
 import { hydrateAuthoredGraphDocument } from "../canvas/saved-graph";
+import { WORKFLOW_EDGE_TYPE, type WorkflowEdge } from "../canvas/types";
 import type {
   AuthoredGraphDocument,
   AuthoredGraphNode,
@@ -417,4 +430,464 @@ it("partitions removals and includes links incident to removed cards", () => {
   expect(
     partitionCellRemovals([], ["link"], graph, viewers).removedViewerEdgeIds,
   ).toEqual(["link"]);
+});
+
+it("wires workflow metadata, live viewer outputs, origin edges, service providers, and origin deletions", () => {
+  const serviceOutput: Port = {
+    name: "service",
+    kind: "service",
+    direction: "output",
+    artifact_type: null,
+    service_contracts: [{ id: "llm.chat", version: 1 }],
+    accepted_shapes: ["one"],
+    shape: "one",
+    required: false,
+    variadic: false,
+    instance_plugs: false,
+  };
+  const providerSpec: NodeSpec = {
+    ...spec,
+    operator_id: "test.provider",
+    operator_version: 1,
+    title: "Provider",
+    inputs: [],
+    outputs: [serviceOutput],
+  };
+  const serviceRegistry: NodeRegistry = {
+    ...registry,
+    nodes: [spec, providerSpec],
+    service_contracts: [
+      {
+        id: "llm.chat",
+        version: 1,
+        title: "Chat Service",
+      },
+    ],
+  };
+  const providerDocNode: AuthoredGraphNode = {
+    ...source,
+    id: "provider",
+    operator_id: "test.provider",
+    operator_version: 1,
+  };
+  const followingDoc: AuthoredGraphDocument = {
+    ...graph,
+    nodes: [...graph.nodes, providerDocNode],
+    origins: [
+      {
+        id: "origin-1",
+        to_node: "target",
+        to_port: "items",
+        to_plug: "plug-a",
+        source_card_ids: ["card"],
+        value: artifact,
+        collection_mode: "direct",
+        conversion_path: [],
+      },
+    ],
+  };
+  const followingPresentation: GraphPresentation = {
+    ...presentation,
+    viewers: [
+      {
+        id: "card",
+        position: { x: 0, y: 300 },
+        artifact_ref: null,
+        mode: "artifact",
+      },
+      {
+        id: "card-proj",
+        position: { x: 300, y: 300 },
+        artifact_ref: artifact,
+        mode: "artifact",
+      },
+    ],
+    links: [
+      ...presentation.links,
+      {
+        id: "link-proj",
+        source_node_id: "source",
+        source_port_name: "result",
+        target_viewer_id: "card-proj",
+      },
+    ],
+  };
+  const { nodes: hydratedNodes } = hydrateAuthoredGraphDocument(
+    followingDoc,
+    serviceRegistry,
+  );
+  const [hydratedSource, hydratedTarget, hydratedProvider] = hydratedNodes;
+  assert(hydratedSource && hydratedTarget && hydratedProvider);
+  const sourceWithRun = {
+    ...hydratedSource,
+    data: {
+      ...hydratedSource.data,
+      run: {
+        node_id: "source",
+        status: "succeeded" as const,
+        error: null,
+        outputs: [
+          {
+            port: "result",
+            kind: "single" as const,
+            artifacts: [{ ...artifact, content_hash: null }],
+            value: artifact,
+          },
+        ],
+        result_fingerprint: "res",
+        created_at: null,
+      },
+    },
+  };
+  const hydratedViewers = artifactViewersFromPresentation(
+    followingPresentation,
+  );
+  const canvasEdges: WorkflowEdge[] = [
+    {
+      id: "edge",
+      type: WORKFLOW_EDGE_TYPE,
+      source: "source",
+      target: "target",
+      data: {
+        enabled: true,
+        collectionMode: "direct",
+        sourcePortName: "result",
+        projection: { path: ["text"] },
+        conversionTitles: ["CSV → Table"],
+        compatibilityIssues: ["Incompatible output"],
+        routeOptions: [
+          {
+            projection: { path: ["text"] },
+            projectionTitle: "Text body",
+            conversionPath: [],
+            conversionTitles: ["CSV → Table"],
+          },
+        ],
+      },
+    },
+  ];
+  const viewerEdges: ArtifactViewerEdge[] = [
+    {
+      id: "link",
+      type: ARTIFACT_VIEWER_EDGE_TYPE,
+      source: "source",
+      target: "card",
+      data: {
+        sourcePortName: "result",
+      },
+    },
+    {
+      id: "link-proj",
+      type: ARTIFACT_VIEWER_EDGE_TYPE,
+      source: "source",
+      target: "card-proj",
+      data: {
+        sourcePortName: "result",
+        projection: { path: ["body"] },
+        projectionTitle: "Body",
+      },
+    },
+  ];
+  const originEdges: ArtifactOriginEdge[] = [
+    {
+      id: "artifact-origin:origin-1:card",
+      type: ARTIFACT_ORIGIN_EDGE_TYPE,
+      source: "card",
+      sourceHandle: ARTIFACT_CARD_OUTPUT_HANDLE,
+      target: "target",
+      targetHandle: "items::scalar.text::2::one::input::plug-a",
+      data: {
+        originId: "origin-1",
+        collectionMode: "map",
+      },
+    },
+  ];
+
+  const built = buildWorkbenchCellScene({
+    document: followingDoc,
+    registry: serviceRegistry,
+    presentation: followingPresentation,
+    nodes: [sourceWithRun, hydratedTarget, hydratedProvider],
+    nodeInstanceStates: {},
+    collapsedAppendices: new Set(),
+    canRun: true,
+    canvasEdges,
+    artifactViewerEdges: viewerEdges,
+    artifactViewerNodes: hydratedViewers.nodes,
+    artifactOriginEdges: originEdges,
+  });
+
+  expect(built.graph.cards.find((c) => c.id === "provider")?.status).toBe(
+    "idle",
+  );
+  expect(built.surfaceById.provider).toMatchObject({
+    runDisabled: true,
+  });
+  expect(
+    built.graph.cards.find((c) => c.id === "card")?.ports.map((p) => p.id),
+  ).toEqual([ARTIFACT_VIEWER_INPUT_HANDLE, ARTIFACT_CARD_OUTPUT_HANDLE]);
+  expect(built.graph.pipes.find((p) => p.id === "edge")).toMatchObject({
+    projectionLabel: "Text body",
+    conversionLabel: "CSV → Table",
+    incompatible: true,
+  });
+  expect(built.graph.pipes.find((p) => p.id === "link-proj")).toMatchObject({
+    projectionLabel: "Body",
+  });
+  expect(
+    built.graph.pipes.find((p) => p.id === "artifact-origin:origin-1:card"),
+  ).toMatchObject({
+    collectionMode: "map",
+    sourcePortLabel: "artifact",
+  });
+
+  const removal = partitionCellRemovals(
+    [],
+    ["artifact-origin:origin-1:card"],
+    followingDoc,
+    hydratedViewers,
+    originEdges,
+  );
+  expect(removal.graphCommands).toEqual([
+    { kind: "remove_origins", origin_ids: ["origin-1"] },
+  ]);
+});
+
+describe("artifact card pictures", () => {
+  const png = (id: string) => ({
+    artifact_id: id,
+    artifact_type: "file.png",
+    schema_version: 1,
+  });
+  const pictures: GraphPresentation = {
+    viewers: [
+      {
+        id: "png",
+        position: { x: 0, y: 300 },
+        artifact_ref: png("p 1"),
+        mode: "artifact",
+      },
+      {
+        id: "jpeg",
+        position: { x: 300, y: 300 },
+        artifact_ref: {
+          artifact_id: "j",
+          artifact_type: "file.jpeg",
+          schema_version: 1,
+        },
+        mode: "artifact",
+      },
+      {
+        id: "tiff",
+        position: { x: 600, y: 300 },
+        artifact_ref: {
+          artifact_id: "t",
+          artifact_type: "file.tiff",
+          schema_version: 1,
+        },
+        mode: "artifact",
+      },
+      {
+        id: "pages",
+        position: { x: 900, y: 300 },
+        artifact_ref: {
+          artifact_type: "file.png",
+          schema_version: 1,
+          index_key: "order_index",
+          ordered: true,
+          item_refs: [png("s1"), png("s2"), png("s3"), png("s4")],
+        },
+        mode: "artifact",
+      },
+      {
+        id: "follow",
+        position: { x: 0, y: 600 },
+        artifact_ref: null,
+        mode: "artifact",
+      },
+    ],
+    links: [
+      {
+        id: "follow-link",
+        source_node_id: "source",
+        source_port_name: "result",
+        target_viewer_id: "follow",
+      },
+    ],
+    annotations: [],
+    bindings: [],
+  };
+  const pictureViewers = artifactViewersFromPresentation(pictures);
+  const produced = png("live");
+  const run = {
+    node_id: "source",
+    status: "succeeded",
+    error: null,
+    outputs: [
+      {
+        port: "result",
+        kind: "single",
+        artifacts: [{ ...produced, content_hash: null }],
+        value: produced,
+      },
+    ],
+    result_fingerprint: "result",
+    created_at: null,
+  } satisfies NonNullable<typeof sourceNode.data.run>;
+  const build = (
+    workspaceId: string | null,
+    libraryItemsByArtifactId?: ReadonlyMap<string, PlacedLibraryItem>,
+  ) =>
+    buildWorkbenchCellScene({
+      libraryItemsByArtifactId,
+      workspaceId,
+      document: graph,
+      registry,
+      presentation: pictures,
+      nodes: [{ ...sourceNode, data: { ...sourceNode.data, run } }, targetNode],
+      nodeInstanceStates: {},
+      collapsedAppendices: new Set(),
+      canRun: true,
+      artifactViewerEdges: pictureViewers.edges,
+      artifactViewerNodes: pictureViewers.nodes,
+    });
+  const url = (id: string) => artifactInlineContentUrl("ws", id);
+
+  it("names each PNG and JPEG card's bytes through the workspace", () => {
+    const { surfaceById } = build("ws");
+    expect(surfaceById.png).toMatchObject({
+      previewKind: "image",
+      imageUrl: url("p 1"),
+    });
+    expect(surfaceById.jpeg).toMatchObject({
+      imageUrl: url("j"),
+    });
+  });
+
+  it("leaves a TIFF on its placeholder", () => {
+    expect(build("ws").surfaceById.tiff).toMatchObject({
+      previewKind: "image",
+      imageUrl: null,
+    });
+  });
+
+  it("shows what a following card's run produced", () => {
+    expect(build("ws").surfaceById.follow).toMatchObject({
+      previewKind: "image",
+      artifactTypeId: "file.png",
+      imageUrl: url("live"),
+    });
+  });
+
+  it("gives a sequence its first picture and the next two", () => {
+    const pages = build("ws").surfaceById.pages;
+    expect(pages).toMatchObject({
+      imageUrl: url("s1"),
+      stackImageUrls: [url("s2"), url("s3")],
+      itemCount: 4,
+    });
+  });
+
+  it("names a single artifact's card after its Library file", () => {
+    const libraryItem = (
+      id: string,
+      name: string,
+      originalFilename: string | null,
+      byteSize: number,
+    ): PlacedLibraryItem => ({
+      artifact: {
+        artifact_id: id,
+        artifact_type: "file.jpeg",
+        schema_version: 1,
+        sha256: `hash-${id}`,
+        content_url: `/v1/artifacts/${id}/content`,
+        content_type: "image/jpeg",
+        byte_size: byteSize,
+        download_formats: [],
+        metadata: {},
+      },
+      name,
+      provenance: {
+        source: "upload",
+        call_path: [],
+        saved_at: "2026-11-20T12:00:00Z",
+        original_filename: originalFilename,
+      },
+      folder_id: null,
+    });
+    const library = new Map([
+      ["j", libraryItem("j", "Amalfi", "amalfi.jpg", 248_000)],
+      ["p 1", libraryItem("p 1", "harbour", null, 900)],
+      ["s1", libraryItem("s1", "page-1", "page-1.png", 10)],
+    ]);
+    const { surfaceById } = build("ws", library);
+    expect(surfaceById.jpeg).toMatchObject({
+      filename: "amalfi.jpg",
+      byteSizeLabel: "242 KB",
+    });
+    // Without an upload's original filename, the Library's own name.
+    expect(surfaceById.png).toMatchObject({
+      filename: "harbour",
+      byteSizeLabel: "900 B",
+    });
+    // A sequence has no one file name, so it keeps its count.
+    expect(surfaceById.pages).not.toHaveProperty("filename");
+    // A file the Library does not hold keeps the feed's port name.
+    expect(surfaceById.follow).toMatchObject({ filename: "result" });
+    expect(build("ws").surfaceById.jpeg).not.toHaveProperty("filename");
+  });
+
+  it("lists every item of a sequence for its spread", () => {
+    const library = new Map<string, PlacedLibraryItem>([
+      [
+        "s2",
+        {
+          artifact: {
+            artifact_id: "s2",
+            artifact_type: "file.png",
+            schema_version: 1,
+            sha256: "hash-s2",
+            content_url: "/v1/artifacts/s2/content",
+            content_type: "image/png",
+            byte_size: 10,
+            download_formats: [],
+            metadata: {},
+          },
+          name: "page-2",
+          provenance: {
+            source: "upload",
+            call_path: [],
+            saved_at: "2026-11-20T12:00:00Z",
+            original_filename: "page-2.png",
+          },
+          folder_id: null,
+        },
+      ],
+    ]);
+    expect(build("ws", library).surfaceById.pages).toMatchObject({
+      stackItems: [
+        { artifactId: "s1", imageUrl: url("s1"), label: "#1" },
+        { artifactId: "s2", imageUrl: url("s2"), label: "page-2.png" },
+        { artifactId: "s3", imageUrl: url("s3"), label: "#3" },
+        { artifactId: "s4", imageUrl: url("s4"), label: "#4" },
+      ],
+    });
+    // Without a workspace the tiles keep their names and drop the pictures.
+    expect(build(null).surfaceById.pages).toMatchObject({
+      stackItems: [
+        { artifactId: "s1", imageUrl: null, label: "#1" },
+        { artifactId: "s2", imageUrl: null, label: "#2" },
+        { artifactId: "s3", imageUrl: null, label: "#3" },
+        { artifactId: "s4", imageUrl: null, label: "#4" },
+      ],
+    });
+    // A single card has no spread.
+    expect(build("ws").surfaceById.png).not.toHaveProperty("stackItems");
+  });
+
+  it("paints nothing without a workspace to ask", () => {
+    const { surfaceById } = build(null);
+    expect(surfaceById.png).not.toHaveProperty("imageUrl");
+    expect(surfaceById.follow).not.toHaveProperty("imageUrl");
+  });
 });

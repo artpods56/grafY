@@ -18,6 +18,7 @@ import {
   type RoutedCellPipe,
   type UnderCardsMode,
   type WorldPoint,
+  findPipeEndPort,
 } from "./cell-model";
 
 /**
@@ -775,12 +776,11 @@ function endpointsOf(
 ): Endpoints | null {
   const sourceCard = cardsById.get(pipe.sourceCardId);
   const targetCard = cardsById.get(pipe.targetCardId);
-  const sourcePort = sourceCard?.ports.find(
-    (port) => port.id === pipe.sourcePortId,
-  );
-  const targetPort = targetCard?.ports.find(
-    (port) => port.id === pipe.targetPortId,
-  );
+  const sourcePort =
+    sourceCard &&
+    findPipeEndPort(sourceCard.ports, pipe.sourcePortId, "output");
+  const targetPort =
+    targetCard && findPipeEndPort(targetCard.ports, pipe.targetPortId, "input");
   if (!sourceCard || !targetCard || !sourcePort || !targetPort) return null;
   return {
     source: portCell(sourceCard, sourcePort),

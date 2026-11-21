@@ -38,6 +38,16 @@ export const FIRST_PORT_ROW = 2;
  * right on row 2's upper edge.
  */
 export const STRIP_FIRST_PORT_ROW = 2;
+/** The artifact card's output port id. */
+export const ARTIFACT_CARD_OUTPUT_PORT_ID = "artifact-card-output";
+/**
+ * The artifact card's output row: on the bottom-right corner, one row clear
+ * of the plate's lower edge so its punched well keeps the 12px corner.
+ */
+export function artifactCardOutputRow(heightCells: number): number {
+  return Math.max(STRIP_FIRST_PORT_ROW, heightCells - 2);
+}
+
 export const CARD_PLATE_INSET_X = 4;
 export const CARD_HEADER_HEIGHT = 24;
 export const CARD_PLATE_BOTTOM_INSET = 4;
@@ -104,6 +114,8 @@ export interface CellPort {
   artifactTypeId: string;
   shape: PortShape;
   required?: boolean;
+  kind?: "artifact" | "service";
+  serviceContractLabel?: string;
 }
 
 export interface CellCardModel {
@@ -130,6 +142,10 @@ export interface CellPipeModel {
   projectionLabel?: string | null;
   conversionLabel?: string | null;
   enabled?: boolean;
+  collectionMode?: "direct" | "map";
+  /** Port label fallback shown on hover/selection when no projection/conversion label exists. */
+  sourcePortLabel?: string;
+  incompatible?: boolean;
 }
 
 export interface CellGraph {
@@ -213,6 +229,62 @@ export function cardCellRect(card: CellCardModel): CellRect {
   };
 }
 
+/**
+ * A port's identity on its card. An operator may name an input and an output
+ * alike (`image` in, `image` out), so the bare id is not unique on a card.
+ */
+export function cellPortKey(
+  direction: CellPort["direction"],
+  portId: string,
+): string {
+  return `${direction}:${portId}`;
+}
+
+/**
+ * Whether a pipe holds the port. The canvas marks `cellPortKey`s; a bare id
+ * still counts, for a caller that has only one port of that name.
+ */
+export function isPortConnected(
+  connectedPortIds: ReadonlySet<string>,
+  port: CellPort,
+): boolean {
+  return (
+    connectedPortIds.has(cellPortKey(port.direction, port.id)) ||
+    connectedPortIds.has(port.id)
+  );
+}
+
+/** Whether a connection drag is over this port (`${cardId}:${cellPortKey}`). */
+export function isPortActive(
+  activePortKey: string | null | undefined,
+  cardId: string,
+  port: CellPort,
+): boolean {
+  if (!activePortKey) return false;
+  return (
+    activePortKey === `${cardId}:${cellPortKey(port.direction, port.id)}` ||
+    activePortKey === `${cardId}:${port.id}`
+  );
+}
+
+/**
+ * The port a pipe end names: the one on the pipe's side of the card, else
+ * (for a fixture that leaves direction out) the first with that id.
+ */
+export function findPipeEndPort(
+  ports: readonly CellPort[],
+  portId: string,
+  direction: CellPort["direction"],
+): CellPort | undefined {
+  let fallback: CellPort | undefined;
+  for (const port of ports) {
+    if (port.id !== portId) continue;
+    if (port.direction === direction) return port;
+    fallback ??= port;
+  }
+  return fallback;
+}
+
 /** The cell just outside the card that holds the port. */
 export function portCell(card: CellCardModel, port: CellPort): CellCoord {
   return port.direction === "input"
@@ -246,6 +318,132 @@ export function portWorldCenter(
   const centre = cellCenter(cell.col, cell.row);
   if (!offset) return centre;
   return { x: centre.x + offset.x, y: centre.y + offset.y };
+}
+
+/**
+ * Punched wells: a port sits inside its card's plate, this far in from the
+ * card's outer edge, like a hole drilled through the card down to the pipe
+ * bed. Its 11px well (and a liquid well's sheen) keeps a clear band of plate
+ * between it and the plate's 4px inset edge.
+ */
+export const PUNCHED_PORT_INSET = 22;
+
+/**
+ * A punched port's centre relative to the card's outer origin: the single
+ * source of truth for the hole the card draws, the hit test, and the pipe's
+ * lead-in. A port sits `PUNCHED_PORT_INSET` in from its side, on its row's
+ * midline, except the artifact card's output, which is pinned to the
+ * bottom-right corner the same inset in from both edges (18px inside the 4px
+ * plate border on each), so its two gaps match.
+ */
+export function punchedPortCardCentre(
+  card: Pick<CellCardModel, "widthCells" | "heightCells">,
+  port: Pick<CellPort, "id" | "direction" | "rowOffset">,
+): WorldPoint {
+  const width = card.widthCells * CELL_SIZE;
+  if (port.id === ARTIFACT_CARD_OUTPUT_PORT_ID) {
+    return {
+      x: width - PUNCHED_PORT_INSET,
+      y: card.heightCells * CELL_SIZE - PUNCHED_PORT_INSET,
+    };
+  }
+  return {
+    x:
+      port.direction === "input"
+        ? PUNCHED_PORT_INSET
+        : width - PUNCHED_PORT_INSET,
+    y: (port.rowOffset + 0.5) * CELL_SIZE,
+  };
+}
+
+/** A punched port's centre in world coordinates. */
+export function punchedPortWorldCenter(
+  card: CellCardModel,
+  port: CellPort,
+  offset?: WorldPoint,
+): WorldPoint {
+  const local = punchedPortCardCentre(card, port);
+  return {
+    x: card.col * CELL_SIZE + local.x + (offset?.x ?? 0),
+    y: card.row * CELL_SIZE + local.y + (offset?.y ?? 0),
+  };
+}
+
+/** Where a pipe meets the port: its gutter cell, or its punched hole. */
+export function portAnchorCenter(
+  card: CellCardModel,
+  port: CellPort,
+  punched: boolean,
+  offset?: WorldPoint,
+): WorldPoint {
+  return punched
+    ? punchedPortWorldCenter(card, port, offset)
+    : portWorldCenter(card, port, offset);
+}
+
+function sameRow(a: WorldPoint, b: WorldPoint): boolean {
+  return Math.abs(a.y - b.y) < 0.5;
+}
+
+function sameColumn(a: WorldPoint, b: WorldPoint): boolean {
+  return Math.abs(a.x - b.x) < 0.5;
+}
+
+/**
+ * Carries the route's start on into `anchor`, horizontally. `route` is
+ * changed in place and always keeps at least its first point's gutter column.
+ *
+ * - Leaving sideways on the anchor's row, the first run just grows.
+ * - Leaving sideways off the anchor's row (the artifact output's corner hole
+ *   sits below its gutter row) into a vertical turn, the whole first run slides
+ *   onto the anchor's row and the turn absorbs the difference.
+ * - Leaving sideways with no turn to absorb it, the run gains a step in the
+ *   gutter column, outside the card.
+ * - Leaving up or down, the vertical run stretches to the anchor's row and a
+ *   horizontal lead-in joins it.
+ */
+function leadIntoAnchor(route: WorldPoint[], anchor: WorldPoint): void {
+  const first = route[0];
+  const second = route[1];
+  if (!first || !second) return;
+  if (sameRow(first, second)) {
+    if (sameRow(first, anchor)) {
+      route[0] = { ...anchor };
+      return;
+    }
+    const third = route[2];
+    if (third && sameColumn(second, third)) {
+      route[0] = { ...anchor };
+      route[1] = { x: second.x, y: anchor.y };
+      return;
+    }
+    route.unshift({ ...anchor }, { x: first.x, y: anchor.y });
+    return;
+  }
+  if (sameColumn(first, second)) {
+    route[0] = { x: first.x, y: anchor.y };
+  }
+  route.unshift({ ...anchor });
+}
+
+/**
+ * A pipe routed between gutter cells, carried on into the punched holes. The
+ * router's route is kept; each end runs straight on, horizontally, under the
+ * card's edge to the hole's centre, so no segment turns inside a card's plate.
+ * See {@link leadIntoAnchor} for how an end meets a hole off its gutter row.
+ */
+export function punchedPipePoints(
+  points: readonly WorldPoint[],
+  source: WorldPoint,
+  target: WorldPoint,
+): WorldPoint[] {
+  if (points.length < 2) return [{ ...source }, { ...target }];
+  const result = points.map((point) => ({ ...point }));
+  leadIntoAnchor(result, source);
+  result.reverse();
+  leadIntoAnchor(result, target);
+  result.reverse();
+  return result;
 }
 
 /**

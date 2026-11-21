@@ -8,6 +8,9 @@ import type { GraphCommand } from "../model/graph-document";
 
 export type WorkbenchCanvasEngineKind = "react-flow" | "cell-canvas";
 
+export const DEFAULT_WORKBENCH_CANVAS_ENGINE: WorkbenchCanvasEngineKind =
+  "cell-canvas";
+
 export const WORKBENCH_CANVAS_ENGINE_STORAGE_KEY =
   "grafy.workbench.canvasEngine";
 
@@ -31,7 +34,7 @@ export function readCanvasEnginePreference(
   } catch {
     // The browser can restrict access to device-local preferences.
   }
-  return "react-flow";
+  return DEFAULT_WORKBENCH_CANVAS_ENGINE;
 }
 
 export function writeCanvasEnginePreference(
@@ -65,7 +68,7 @@ export interface WorkbenchCanvasSurfaceCapabilities {
 export interface WorkbenchCanvasSurfaceCallbacks {
   onCommitCommands?: (commands: readonly GraphCommand[]) => void;
   onConnectDropEmpty?: (event: CellConnectDropEmptyEvent) => void;
-  onSelectEdgeAttachment?: (pipeId: string) => void;
+  onSelectEdgeAttachment?: (pipeId: string, anchor?: WorldPoint) => void;
   onRemoveEdgeAttachment?: (pipeId: string) => void;
   onRunNode?: (cardId: string) => void;
 }

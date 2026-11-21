@@ -264,4 +264,57 @@ describe("solvePipeAttachmentAnchors", () => {
       ).toMatchObject(expected);
     }
   });
+
+  it("includes map, disabled, incompatible, and active pipes with concise labels", () => {
+    const start = { x: 125, y: 75 };
+    const end = { x: 675, y: 75 };
+    const mapped: CellPipeModel = {
+      ...pipe,
+      id: "mapped",
+      projectionLabel: null,
+      collectionMode: "map",
+    };
+    const disabled: CellPipeModel = {
+      ...pipe,
+      id: "disabled",
+      projectionLabel: null,
+      enabled: false,
+    };
+    const incompatible: CellPipeModel = {
+      ...pipe,
+      id: "incompatible",
+      projectionLabel: null,
+      incompatible: true,
+    };
+    const hovered: CellPipeModel = {
+      ...pipe,
+      id: "hovered",
+      projectionLabel: null,
+      sourcePortLabel: "text_out",
+    };
+    const attachments = solvePipeAttachmentAnchors({
+      ...baseParams,
+      pipes: [mapped, disabled, incompatible, hovered],
+      routedPipes: new Map([
+        [mapped.id, routed(mapped.id, [start, end])],
+        [disabled.id, routed(disabled.id, [start, end])],
+        [incompatible.id, routed(incompatible.id, [start, end])],
+        [hovered.id, routed(hovered.id, [start, end])],
+      ]),
+      activePipeIds: new Set(["hovered"]),
+    });
+
+    expect(
+      attachments.map(({ pipeId, label, enabled }) => ({
+        pipeId,
+        label,
+        enabled,
+      })),
+    ).toEqual([
+      { pipeId: "disabled", label: "Disabled", enabled: false },
+      { pipeId: "hovered", label: "text_out", enabled: true },
+      { pipeId: "incompatible", label: "Incompatible", enabled: true },
+      { pipeId: "mapped", label: "each item", enabled: true },
+    ]);
+  });
 });

@@ -23,8 +23,8 @@ describe("canvas engine preference", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   function expectStorageFallback() {
-    expect(readCanvasEnginePreference()).toBe("react-flow");
-    expect(() => writeCanvasEnginePreference("cell-canvas")).not.toThrow();
+    expect(readCanvasEnginePreference()).toBe("cell-canvas");
+    expect(() => writeCanvasEnginePreference("react-flow")).not.toThrow();
   }
 
   it("falls back outside the browser", () => {
@@ -56,20 +56,23 @@ describe("canvas engine preference", () => {
       },
     };
 
-    expect(readCanvasEnginePreference(storage)).toBe("react-flow");
+    expect(readCanvasEnginePreference(storage)).toBe("cell-canvas");
     expect(() =>
-      writeCanvasEnginePreference("cell-canvas", storage),
+      writeCanvasEnginePreference("react-flow", storage),
     ).not.toThrow();
   });
 
   it("roundtrips a preference through injected storage", () => {
     const storage = memoryStorage();
+    expect(readCanvasEnginePreference(storage)).toBe("cell-canvas");
+
+    writeCanvasEnginePreference("react-flow", storage);
+    expect(storage.getItem(WORKBENCH_CANVAS_ENGINE_STORAGE_KEY)).toBe(
+      "react-flow",
+    );
     expect(readCanvasEnginePreference(storage)).toBe("react-flow");
 
     writeCanvasEnginePreference("cell-canvas", storage);
-    expect(storage.getItem(WORKBENCH_CANVAS_ENGINE_STORAGE_KEY)).toBe(
-      "cell-canvas",
-    );
     expect(readCanvasEnginePreference(storage)).toBe("cell-canvas");
   });
 
@@ -77,30 +80,30 @@ describe("canvas engine preference", () => {
     const storage = memoryStorage();
     vi.stubGlobal("window", { localStorage: storage });
 
-    writeCanvasEnginePreference("cell-canvas");
-    expect(readCanvasEnginePreference()).toBe("cell-canvas");
-
     writeCanvasEnginePreference("react-flow");
-    expect(storage.getItem(WORKBENCH_CANVAS_ENGINE_STORAGE_KEY)).toBe(
-      "react-flow",
-    );
     expect(readCanvasEnginePreference()).toBe("react-flow");
+
+    writeCanvasEnginePreference("cell-canvas");
+    expect(storage.getItem(WORKBENCH_CANVAS_ENGINE_STORAGE_KEY)).toBe(
+      "cell-canvas",
+    );
+    expect(readCanvasEnginePreference()).toBe("cell-canvas");
   });
 
   it("honors explicit null storage", () => {
     const storage = memoryStorage();
     vi.stubGlobal("window", { localStorage: storage });
-    writeCanvasEnginePreference("cell-canvas");
+    writeCanvasEnginePreference("react-flow");
 
-    expect(readCanvasEnginePreference(null)).toBe("react-flow");
-    writeCanvasEnginePreference("react-flow", null);
-    expect(readCanvasEnginePreference()).toBe("cell-canvas");
+    expect(readCanvasEnginePreference(null)).toBe("cell-canvas");
+    writeCanvasEnginePreference("cell-canvas", null);
+    expect(readCanvasEnginePreference()).toBe("react-flow");
   });
 
   it("falls back when storage contains an unknown engine", () => {
     const storage = memoryStorage();
     storage.setItem(WORKBENCH_CANVAS_ENGINE_STORAGE_KEY, "unknown-engine");
-    expect(readCanvasEnginePreference(storage)).toBe("react-flow");
+    expect(readCanvasEnginePreference(storage)).toBe("cell-canvas");
   });
 });
 

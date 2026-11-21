@@ -26,13 +26,20 @@ import type {
   CollectionCardSurfaceData,
   OperatorCardSurfaceData,
 } from "../cell-contracts";
-import type { CellCardModel, CellPort } from "../cell-model";
+import {
+  ARTIFACT_CARD_OUTPUT_PORT_ID,
+  artifactCardOutputRow,
+  type CellCardModel,
+  type CellPort,
+} from "../cell-model";
 import {
   CellAgentCard,
   CellAnnotationCard,
 } from "./CellAnnotationAndAgentCards";
 import { CellArtifactCard, CellCollectionCard } from "./CellArtifactCard";
 import { CellOperatorCard } from "./CellOperatorCard";
+import { CellCard } from "../CellCard";
+import { PUNCHED_LABEL_INSET } from "../punched-port";
 
 // --- Helpers ---------------------------------------------------------------
 
@@ -458,6 +465,84 @@ describe("CellOperatorCard", () => {
     expect(rest).not.toContain("data-cell-resize-grip");
     expect(selected).toContain('data-cell-resize-grip="se"');
   });
+
+  it("emits drop attrs on non-service inputs, status semantics, and avoids composite plug duplicates", () => {
+    const servicePort: CellPort = {
+      id: "service",
+      name: "Service",
+      direction: "input",
+      rowOffset: 3,
+      artifactTypeId: "llm.chat",
+      shape: "one",
+      kind: "service",
+      serviceContractLabel: "Chat Model Service",
+    };
+    const compositeCard: CellCardModel = {
+      id: "merge",
+      title: "Merge",
+      subtitle: "table.merge",
+      kind: "operator",
+      status: "done",
+      col: 6,
+      row: 4,
+      widthCells: 12,
+      heightCells: 14,
+      ports: [
+        OPERATOR_PORTS[0]!,
+        servicePort,
+        {
+          id: "incoming::plug-a",
+          name: "Plug 1",
+          direction: "input",
+          rowOffset: 5,
+          artifactTypeId: "image.raster",
+          shape: "one",
+        },
+      ],
+    };
+    const surface = operatorSurface({
+      instancePlugGroups: [
+        {
+          portName: "incoming",
+          title: "Incoming",
+          artifactTypeId: "image.raster",
+          shape: "one",
+          startRowOffset: 5,
+          plugs: [{ plugId: "plug-a", label: "Plug 1", connected: true }],
+          canAdd: false,
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <CellOperatorCard
+        card={compositeCard}
+        surface={surface}
+        selected
+        dragging={false}
+        onRun={() => {}}
+      />,
+    );
+
+    const statusBadge = tagWith(html, "data-card-status", "done");
+    expect(statusBadge).toContain('role="status"');
+    expect(statusBadge).toContain('aria-label="Merge done"');
+
+    const fixedDropPort = portTag(html, "source");
+    expect(fixedDropPort).toContain('data-input-node-id="merge"');
+    expect(fixedDropPort).toContain('data-input-port-name="source"');
+
+    const svcPort = portTag(html, "service");
+    expect(svcPort).toContain('data-port-kind="service"');
+    expect(svcPort).not.toContain("data-input-node-id");
+    expect(html).toContain("· service");
+
+    expect(count(html, /data-port-id="incoming::plug-a"/)).toBe(1);
+    expect(count(html, /data-port-id="plug-a"/)).toBe(0);
+    const plugRow = tagWith(html, "data-instance-plug-row", "plug-a");
+    expect(plugRow).toContain('data-input-node-id="merge"');
+    expect(plugRow).toContain('data-input-plug-port="incoming"');
+    expect(plugRow).toContain('data-input-plug-id="plug-a"');
+  });
 });
 
 // --- Artifact and collection cards -----------------------------------------
@@ -568,7 +653,6 @@ describe("CellArtifactCard", () => {
       expectExactBox(html, 10, 8);
       expect(html).toContain('data-card-kind="artifact"');
       expect(html).toContain(`data-artifact-preview="${kind}"`);
-      expect(html).toContain(PREVIEWS[kind].typeLabel);
       for (const text of PREVIEW_TEXT[kind]) expect(html).toContain(text);
       expect(html).not.toMatch(/canvasCardRail|card-rail|data-rail/i);
     });
@@ -582,6 +666,203 @@ describe("CellArtifactCard", () => {
     }
     expect(stemTag(html, "in")).toContain("width:11.5px");
     expect(stemTag(html, "out")).toContain("width:5.5px");
+  });
+
+  it("has no inner strip and names its file in the floating header", () => {
+    const html = renderArtifact(PREVIEWS.image);
+    expect(html).not.toContain("data-card-strip");
+    const header = /<div data-card-header="true"[\s\S]*?<\/div><article/.exec(
+      html,
+    )?.[0];
+    expect(header).toContain(">Photo<");
+    expect(header).toContain('<span data-card-meta="true" title="cover.png"');
+    expect(header).toContain(">cover.png</span>");
+    // No type dot: the title names the type, the filename names the file.
+    expect(header).not.toMatch(/class="[^"]*dot/i);
+    expect(header).not.toContain("640×480");
+    expect(header).not.toContain("Raster image");
+  });
+
+  it("keeps the whole type title and ellipsizes a long file name beside it", () => {
+    const filename = "887ACF23-B925-4963-9A2F-0C1D2E3F4A5B.jpeg";
+    const html = renderArtifact({ ...PREVIEWS.image, filename });
+    const header = /<div data-card-header="true"[\s\S]*?<\/div><article/.exec(
+      html,
+    )?.[0];
+    // The title never shrinks: the file name takes what is left and gives way.
+    expect(tagWith(header ?? "", "data-card-title", "rest")).toContain(
+      'class="title titleFixed"',
+    );
+    expect(header).toContain(">Photo<");
+    const meta = tagWith(header ?? "", "data-card-meta", "true");
+    expect(meta).toContain('class="headerMeta"');
+    expect(meta).toContain(`title="${filename}"`);
+    expect(header).toContain(`<span class="ellipsis">${filename}</span>`);
+    // An operator's long title still ellipsizes in a narrow card.
+    const { html: operator } = renderOperator(operatorSurface());
+    expect(tagWith(operator, "data-card-title", "rest")).toContain(
+      'class="title"',
+    );
+  });
+
+  it("falls back to its one measure, or leaves the header slot empty", () => {
+    const { filename: _filename, ...unnamed } = PREVIEWS.image;
+    const measured = renderArtifact(unnamed);
+    expect(measured).toContain('<span data-card-meta="true" title="640×480"');
+    const sized = renderArtifact({
+      ...unnamed,
+      dimensionsLabel: undefined,
+      byteSizeLabel: "12 KB",
+    });
+    expect(sized).toContain('<span data-card-meta="true" title="12 KB"');
+    const bare = renderArtifact({ ...unnamed, dimensionsLabel: undefined });
+    expect(bare).not.toContain("data-card-meta");
+  });
+
+  it("paints a picture edge to edge over the checkerboard, framed by a hairline", () => {
+    const html = renderArtifact(PREVIEWS.image);
+    expect(html).toContain('data-artifact-preview="image"');
+    expect(html).toContain('data-artifact-image-frame="true"');
+    expect(html).not.toContain("data-artifact-stack-back");
+    expect(html).not.toContain("data-artifact-stack-count");
+  });
+
+  it("keeps a TIFF on its placeholder icon", () => {
+    const html = renderArtifact({
+      ...PREVIEWS.image,
+      artifactTypeId: "file.tiff",
+      imageUrl: null,
+    });
+    expect(html).toContain('data-artifact-placeholder="image"');
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("data-artifact-image-frame");
+  });
+
+  it("fans a sequence's next items behind the plate with one count", () => {
+    const html = renderArtifact({
+      ...PREVIEWS.image,
+      dimensionsLabel: "3 items",
+      itemCount: 3,
+      stackImageUrls: [
+        "https://example.test/2.png",
+        "https://example.test/3.png",
+      ],
+    });
+    expect(html).toContain('data-artifact-stack-back="1"');
+    expect(html).toContain('data-artifact-stack-back="2"');
+    expect(html).toContain('src="https://example.test/2.png"');
+    expect(html).toContain('src="https://example.test/3.png"');
+    expect(html).toContain('data-artifact-stack-count="3"');
+    // The count is said once in the header as bare text (no pill icon or
+    // duplicate measure).
+    expect(html.match(/>3 items</g)).toHaveLength(1);
+    expect(html).not.toContain('data-artifact-stack-count="3"><svg');
+    // The backs paint under the plate: before the <article> in the box.
+    expect(html.indexOf("data-artifact-stack-back")).toBeLessThan(
+      html.indexOf("<article"),
+    );
+  });
+
+  it("makes a sequence's count in the header the button that lays it open", () => {
+    const surface = { ...PREVIEWS.image, itemCount: 3, stackImageUrls: [] };
+    const html = renderArtifact(surface, { onExpandSequence: () => {} });
+    const count = tagWith(html, "data-artifact-stack-count", "3");
+    expect(count.startsWith("<button")).toBe(true);
+    expect(count).toContain('aria-label="Expand sequence (3 items)"');
+    expect(count).toContain('aria-expanded="false"');
+    expect(count).toContain('data-sequence-expanded="false"');
+    expect(count).not.toContain("disabled");
+    // In the header's right slot, in place of the file name, and nowhere on
+    // the picture: the header comes before the plate.
+    const header = html.slice(
+      html.indexOf('data-card-header="true"'),
+      html.indexOf("<article"),
+    );
+    expect(header).toContain('data-artifact-stack-count="3"');
+    expect(header).toContain('data-card-meta="true"');
+    expect(header).not.toContain(PREVIEWS.image.filename ?? "\u0000");
+    const plate = html.slice(html.indexOf("<article"));
+    expect(plate).not.toContain("data-artifact-stack-count");
+    const open = renderArtifact(surface, {
+      onExpandSequence: () => {},
+      sequenceExpanded: true,
+    });
+    expect(tagWith(open, "data-artifact-stack-count", "3")).toContain(
+      'aria-expanded="true"',
+    );
+    // Without the command it stays a quiet label.
+    expect(
+      tagWith(
+        renderArtifact(surface),
+        "data-artifact-stack-count",
+        "3",
+      ).startsWith("<span"),
+    ).toBe(true);
+  });
+
+  it("disables the count of a stack boxed in too tightly to spread", () => {
+    const surface = { ...PREVIEWS.image, itemCount: 3, stackImageUrls: [] };
+    const count = tagWith(
+      renderArtifact(surface, {
+        onExpandSequence: () => {},
+        canExpandSequence: false,
+      }),
+      "data-artifact-stack-count",
+      "3",
+    );
+    expect(count).toContain('disabled=""');
+    expect(count).toContain('title="Move card into open space to spread"');
+  });
+
+  it("keeps a single card's file name in the header", () => {
+    const html = renderArtifact(PREVIEWS.image, { onExpandSequence: () => {} });
+    expect(html).not.toContain("data-artifact-stack-count");
+    expect(html).toContain(`title="${PREVIEWS.image.filename}"`);
+  });
+
+  it("draws one back for a two-item sequence", () => {
+    const html = renderArtifact({
+      ...PREVIEWS.image,
+      itemCount: 2,
+      stackImageUrls: ["https://example.test/2.png"],
+    });
+    expect(html).toContain('data-artifact-stack-back="1"');
+    expect(html).not.toContain('data-artifact-stack-back="2"');
+  });
+
+  it("pins the fanned backs through the corner hole and turns them counter-clockwise", () => {
+    const html = renderArtifact({
+      ...PREVIEWS.image,
+      itemCount: 3,
+      stackImageUrls: [],
+    });
+    const first = tagWith(html, "data-artifact-stack-back", "1");
+    const second = tagWith(html, "data-artifact-stack-back", "2");
+    // Each back is the plate's own box (4px in, 26px down, 242×170)...
+    for (const back of [first, second]) {
+      expect(back).toContain("top:26px");
+      expect(back).toContain("left:4px");
+      expect(back).toContain("width:242px");
+      expect(back).toContain("height:170px");
+      // ...pivoting on the output hole at (250-22, 200-22) in card space.
+      expect(back).toContain("transform-origin:224px 152px");
+    }
+    // A 242px plate keeps its far corners within 6px / 12px of the plate.
+    expect(first).toContain("transform:rotate(-1.42deg)");
+    expect(second).toContain("transform:rotate(-2.84deg)");
+  });
+
+  it("caps the fan's turn on a narrow card", () => {
+    const html = renderArtifact(
+      { ...PREVIEWS.image, itemCount: 3 },
+      { card: { ...ARTIFACT_CARD, widthCells: 6 } },
+    );
+    expect(tagWith(html, "data-artifact-stack-back", "1")).toContain(
+      "transform:rotate(-1.8deg)",
+    );
+    expect(tagWith(html, "data-artifact-stack-back", "2")).toContain(
+      "transform:rotate(-3.6deg)",
+    );
   });
 
   it("shows its ⋯ menu and grip only while selected and at rest", () => {
@@ -716,6 +997,24 @@ describe("CellCollectionCard", () => {
       />,
     );
     expect(html).not.toContain("data-collection-spare-plug");
+  });
+
+  it("annotates member rows and spare plug rows with artifact drop target attributes", () => {
+    const html = renderToStaticMarkup(
+      <CellCollectionCard
+        card={COLLECTION_CARD}
+        surface={{ ...COLLECTION_SURFACE, sparePlugId: "spare-1" }}
+      />,
+    );
+    const firstMember = tagWith(html, "data-collection-member", "m1");
+    expect(firstMember).toContain('data-input-node-id="shots"');
+    expect(firstMember).toContain('data-input-plug-port="items"');
+    expect(firstMember).toContain('data-input-plug-id="m1"');
+
+    const spareRow = tagWith(html, "data-collection-spare-plug", "true");
+    expect(spareRow).toContain('data-input-node-id="shots"');
+    expect(spareRow).toContain('data-input-plug-port="items"');
+    expect(spareRow).toContain('data-input-plug-id="spare-1"');
   });
 });
 
@@ -1119,6 +1418,20 @@ describe("CellEdgeSelectorPill", () => {
     );
     expect(html).toContain('data-test-menu="true"');
   });
+
+  it("omits the duplicate conversion chip when the pill label already names the conversion", () => {
+    const html = renderToStaticMarkup(
+      <CellEdgeSelectorPill
+        attachment={{
+          ...ATTACHMENT,
+          label: "csv → table",
+          conversionLabel: "csv → table",
+        }}
+      />,
+    );
+    expect(html).toContain("csv → table");
+    expect(html).not.toContain("data-edge-selector-conversion");
+  });
 });
 
 describe("CellMarqueeOverlay", () => {
@@ -1162,20 +1475,20 @@ describe("CellRemotePresenceLayer", () => {
       />,
     );
     const known = tagWith(html, "data-remote-drag-ghost", "ada:merge");
-    expect(known).toContain("left:350px");
-    expect(known).toContain("top:200px");
-    expect(known).toContain("width:300px");
-    expect(known).toContain("height:450px");
-    expect(known).toContain("border-color:var(--peer-ada)");
+    expect(known).toContain("transform:translate3d(346px, 196px, 0)");
+    expect(known).toContain("width:308px");
+    expect(known).toContain("height:458px");
     expect(known).toContain(
-      "background-color:color-mix(in srgb, var(--peer-ada) 10%, transparent)",
+      "border-color:color-mix(in srgb, var(--peer-ada) 65%, transparent)",
+    );
+    expect(known).toContain(
+      "background-color:color-mix(in srgb, var(--peer-ada) 6%, transparent)",
     );
     // A card the layer was not told about takes the standard 12 × 6 size.
     const unknown = tagWith(html, "data-remote-drag-ghost", "ada:ghost");
-    expect(unknown).toContain("left:50px");
-    expect(unknown).toContain("top:450px");
-    expect(unknown).toContain("width:300px");
-    expect(unknown).toContain("height:150px");
+    expect(unknown).toContain("transform:translate3d(46px, 446px, 0)");
+    expect(unknown).toContain("width:308px");
+    expect(unknown).toContain("height:158px");
 
     const cursor = tagWith(html, "data-remote-peer-cursor", "ada");
     expect(cursor).toContain("transform:translate3d(410px, 220px, 0)");
@@ -1224,6 +1537,296 @@ describe("CellViewportLayer", () => {
   });
 });
 
+// --- Punched wells ----------------------------------------------------------
+
+/** Where a punched port's 30px hit target sits: 22px inside its card's edge. */
+function expectPortPunched(html: string, port: CellPort, widthCells: number) {
+  const centreX = port.direction === "input" ? 22 : widthCells * 25 - 22;
+  const centreY = (port.rowOffset + 0.5) * 25;
+  const tag = portTag(html, port.id);
+  expect(tag).toContain('data-port-well="punched"');
+  expect(tag).toContain(`left:${centreX - 15}px`);
+  expect(tag).toContain(`top:${centreY - 15}px`);
+}
+
+/** The punched socket drawn inside a port's button. */
+function socketOf(html: string, portId: string): string {
+  const start = html.indexOf(`data-port-id="${portId}"`);
+  expect(start, portId).toBeGreaterThanOrEqual(0);
+  const end = html.indexOf("</button>", start);
+  return html.slice(start, end);
+}
+
+describe("punched wells", () => {
+  it("pins an artifact card's punched output 22px in from its right and bottom edges", () => {
+    const card: CellCardModel = {
+      ...ARTIFACT_CARD,
+      ports: [
+        ARTIFACT_CARD.ports[0]!,
+        {
+          id: ARTIFACT_CARD_OUTPUT_PORT_ID,
+          name: "artifact",
+          direction: "output",
+          rowOffset: artifactCardOutputRow(ARTIFACT_CARD.heightCells),
+          artifactTypeId: "image.raster",
+          shape: "one",
+        },
+      ],
+    };
+    const punched = renderArtifact(PREVIEWS.image, { card, well: "punched" });
+    const hole = portTag(punched, ARTIFACT_CARD_OUTPUT_PORT_ID);
+    expect(hole).toContain('data-port-well="punched"');
+    // (250 - 22, 200 - 22), less half the 30px hit target.
+    expect(hole).toContain("left:213px");
+    expect(hole).toContain("top:163px");
+    // The input keeps its row midline.
+    expectPortPunched(punched, card.ports[0]!, 10);
+    // Recessed, the output stays on its row's gutter cell.
+    const recessed = renderArtifact(PREVIEWS.image, { card });
+    expectPortPinned(recessed, card.ports[1]!, 10);
+  });
+
+  it("drills every operator port through the plate, with no stem", () => {
+    const { html } = renderOperator(operatorSurface(), { well: "punched" });
+    expect(tagWith(html, "data-cell-card", "true")).toContain(
+      'data-well="punched"',
+    );
+    for (const port of OPERATOR_PORTS) expectPortPunched(html, port, 12);
+    expect(html).not.toContain("data-port-stem");
+    // Synthesized plugs are punched too.
+    expect(portTag(html, "images:1")).toContain('data-port-well="punched"');
+  });
+
+  it("runs a connected pipe into its hole and leaves an open hole empty", () => {
+    const { html } = renderOperator(operatorSurface(), { well: "punched" });
+    const connected = socketOf(html, "result");
+    expect(connected).toContain('data-punched-socket="connected"');
+    expect(connected).toContain('data-punched-floor="true"');
+    expect(connected).toContain('data-cell-well-stub="list"');
+    expect(connected).toContain('data-port-ring="list"');
+    // The stage's own recessed well, bored through the plate.
+    expect(connected).toContain('data-cell-well="punched"');
+    expect(connected).toContain("well-wall-frost");
+    // An output's stub runs out to the card's right edge.
+    expect(connected).toMatch(/d="M0,0 L7\.8/);
+    // ...clipped to the well's lip, so its end never shows on the plate.
+    expect(connected).toMatch(
+      /<clipPath id="(punch-[^"]+bore)"><circle r="11">/,
+    );
+    expect(connected).toMatch(
+      /data-cell-well-stub="list" clip-path="url\(#punch-[^"]+bore\)"/,
+    );
+    const open = socketOf(html, "report");
+    expect(open).toContain('data-punched-socket="open"');
+    expect(open).toContain('data-punched-floor="true"');
+    expect(open).not.toContain("data-cell-well-stub");
+    expect(open).toContain('data-port-ring="single"');
+    // The glow's layer is drawn unlit, so it fades in rather than mounts.
+    expect(open).toContain('data-port-glow="off"');
+  });
+
+  it("previews the pipe in a hot open hole, running in from the card's left edge", () => {
+    const { html } = renderOperator(operatorSurface(), {
+      well: "punched",
+      activePortKey: "merge:source",
+      connectedPortIds: new Set(),
+    });
+    const hot = socketOf(html, "source");
+    expect(hot).toContain('data-punched-socket="open"');
+    expect(hot).toContain('data-cell-well-stub="list"');
+    expect(hot).toMatch(/d="M0,0 L-7\.8/);
+    expect(hot).toContain('opacity="0.6"');
+    expect(hot).toContain('data-port-glow="on"');
+    // No tinted disc behind the hole: the hole glows instead.
+    expect(portTag(html, "source")).not.toMatch(/class="[^"]*portHot/);
+  });
+
+  it("moves port labels, plug rows and the add button in past the holes", () => {
+    expect(PUNCHED_LABEL_INSET).toBe(34);
+    const { html } = renderOperator(operatorSurface(), { well: "punched" });
+    expect(tagWith(html, "data-port-row", "2")).toContain(
+      "padding-inline:34px",
+    );
+    expect(tagWith(html, "data-instance-plug-row", "images:0")).toContain(
+      "padding-left:34px",
+    );
+    expect(tagWith(html, "data-instance-plug-row", "images:1")).toContain(
+      "padding-left:34px",
+    );
+    expect(tagWith(html, "data-instance-plug-add", "images")).toContain(
+      "padding-left:34px",
+    );
+    // A long label truncates; its tab names it in full.
+    expect(tagWith(html, "data-port-tab", "report")).toContain(
+      'title="report"',
+    );
+  });
+
+  it("draws a liquid card's punched well with the liquid glass paints", () => {
+    const { html } = renderOperator(operatorSurface(), {
+      well: "punched",
+      material: "liquid",
+    });
+    const connected = socketOf(html, "result");
+    expect(connected).toContain("well-wall-liquid");
+    expect(connected).toContain("well-meniscus");
+    expect(connected).toContain("well-specular");
+    // Each socket's paints have ids of their own.
+    const ids = [...html.matchAll(/id="(punch-[^"]+-well-edge)"/g)].map(
+      (match) => match[1],
+    );
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.length).toBeGreaterThan(1);
+  });
+
+  it("paints the plate at the look's card fill, or solid without one", () => {
+    const liquid = renderOperator(operatorSurface(), {
+      material: "liquid",
+      cardFill: 0.4,
+    }).html;
+    expect(liquid).toMatch(
+      /<article[^>]*background-color:color-mix\(in srgb, [^;]* 40%, transparent\)/,
+    );
+    const frost = renderOperator(operatorSurface(), { cardFill: 1 }).html;
+    expect(frost).toMatch(/<article[^>]*100%, transparent\)/);
+    const solid = renderOperator(operatorSurface()).html;
+    expect(solid).not.toMatch(/<article[^>]*background-color/);
+  });
+
+  it("leaves the recessed card exactly as it was", () => {
+    const { html } = renderOperator(operatorSurface());
+    expect(tagWith(html, "data-cell-card", "true")).toContain(
+      'data-well="recessed"',
+    );
+    for (const port of OPERATOR_PORTS) expectPortPinned(html, port, 12);
+    expect(html).not.toContain("data-punched-socket");
+    expect(html).not.toContain("data-port-well");
+    expect(html).not.toContain("padding-inline:34px");
+    expect(stemTag(html, "source")).toContain("width:11.5px");
+  });
+
+  it("cuts an artifact card's holes clean through its preview, with no collar", () => {
+    const html = renderArtifact(PREVIEWS.image, { well: "punched" });
+    for (const port of ARTIFACT_CARD.ports) expectPortPunched(html, port, 10);
+    expect(html).not.toContain("data-port-stem");
+    expect(html).not.toContain("data-punched-collar");
+    for (const id of ["in", "out"]) {
+      const socket = socketOf(html, id);
+      expect(socket).toContain('data-punched-bore="through"');
+      // No floor under the hole, only a thin open wall: the canvas shows.
+      expect(socket).toContain('data-cell-well-wall="open"');
+      expect(socket).not.toContain("data-cell-well-floor");
+    }
+    expect(socketOf(html, "out")).toContain('data-punched-socket="connected"');
+    expect(socketOf(html, "in")).toContain('data-punched-socket="open"');
+
+    // The plate keeps its border and shadow but paints no fill of its own...
+    expect(/<article[^>]*>/.exec(html)?.[0]).toContain(
+      "background-color:transparent",
+    );
+    // ...its fill and the preview sit on a layer the holes are cut out of, in
+    // its own box: 5px (4 inset + 1 border) in, 27px (26 + 1) down.
+    const interior = tagWith(html, "data-plate-interior", "punched");
+    expect(interior).toContain(
+      "mask-image:radial-gradient(circle at 17px 35.5px, transparent 10.75px, black 11.25px), radial-gradient(circle at 223px 85.5px, transparent 10.75px, black 11.25px)",
+    );
+    expect(interior).toContain("mask-composite:intersect");
+    expect(html.indexOf("data-plate-interior")).toBeLessThan(
+      html.indexOf('data-artifact-preview="image"'),
+    );
+  });
+
+  it("cuts the corner hole through a punched sequence's backs at the pin", () => {
+    const card: CellCardModel = {
+      ...ARTIFACT_CARD,
+      ports: [
+        {
+          id: ARTIFACT_CARD_OUTPUT_PORT_ID,
+          name: "artifact",
+          direction: "output",
+          rowOffset: artifactCardOutputRow(ARTIFACT_CARD.heightCells),
+          artifactTypeId: "image.raster",
+          shape: "many",
+        },
+      ],
+    };
+    const surface = { ...PREVIEWS.image, itemCount: 3, stackImageUrls: [] };
+    const html = renderArtifact(surface, { card, well: "punched" });
+    // The hole is (228, 178) in the card, (224, 152) in a back's own box.
+    expect(tagWith(html, "data-artifact-stack-back", "1")).toContain(
+      "mask-image:radial-gradient(circle at 224px 152px, transparent 10.75px, black 11.25px)",
+    );
+    // In the gutter the backs are whole.
+    expect(
+      tagWith(
+        renderArtifact(surface, { card }),
+        "data-artifact-stack-back",
+        "1",
+      ),
+    ).not.toContain("mask-image");
+  });
+
+  it("runs a collection's member and spare rows between the holes", () => {
+    const html = renderToStaticMarkup(
+      <CellCollectionCard
+        card={COLLECTION_CARD}
+        surface={COLLECTION_SURFACE}
+        selected={false}
+        dragging={false}
+        well="punched"
+        onRemoveMember={() => {}}
+      />,
+    );
+    for (const port of COLLECTION_CARD.ports) expectPortPunched(html, port, 10);
+    for (const member of COLLECTION_SURFACE.members) {
+      expect(tagWith(html, "data-collection-member", member.id)).toContain(
+        "padding-inline:34px",
+      );
+    }
+    expect(tagWith(html, "data-collection-spare-plug", "true")).toContain(
+      "padding-inline:34px",
+    );
+    // Only an artifact's preview is cut through; a collection's holes keep
+    // their floor in the plate.
+    expect(html).not.toContain("data-plate-interior");
+    expect(html).toContain('data-punched-bore="floored"');
+    expect(html).toContain('data-cell-well-floor="true"');
+    expect(html).not.toContain('data-punched-bore="through"');
+  });
+
+  it("punches the demo card's ports and insets its labels", () => {
+    const card = operatorCard(operatorSurface());
+    const html = renderToStaticMarkup(
+      <CellCard
+        card={card}
+        material="frost"
+        well="punched"
+        selected={false}
+        dragging={false}
+        connectedPortIds={new Set(["result"])}
+        onCardPointerDown={() => {}}
+        onPortPointerDown={() => {}}
+      />,
+    );
+    for (const port of OPERATOR_PORTS) expectPortPunched(html, port, 12);
+    expect(html).not.toContain("data-port-stem");
+    expect(tagWith(html, "data-port-row", "2")).toContain(
+      "padding-inline:34px",
+    );
+    expect(socketOf(html, "result")).toContain(
+      'data-punched-socket="connected"',
+    );
+  });
+
+  it("bridges a docked seam from one hole's mouth to the other's", () => {
+    const html = renderToStaticMarkup(
+      <CellDockedBridgeLayer joins={[dockedJoin()]} punched />,
+    );
+    expect(html).toContain('x1="-13" y1="0" x2="13" y2="0"');
+    expect(tagWith(html, "data-docked-join", "p1")).toContain("width:30px");
+  });
+});
+
 // --- Static source guardrails ----------------------------------------------
 
 const CELL_CANVAS_DIR = path.resolve(
@@ -1237,11 +1840,17 @@ const LANE_SOURCES = [
   "cards/CellOperatorCard.tsx",
   "cards/CellArtifactCard.tsx",
   "cards/CellAnnotationAndAgentCards.tsx",
+  "cards/CellArtifactSequenceSpread.tsx",
+  "cell-artifact-stacking.ts",
   "CellGlassOverlays.tsx",
+  "CellCard.tsx",
+  "punched-port.tsx",
 ] as const;
 const LANE_TESTS = [
   "cell-card-geometry.test.ts",
   "cards/CellRealCards.test.tsx",
+  "cards/CellArtifactSequenceSpread.test.tsx",
+  "cell-artifact-stacking.test.ts",
 ] as const;
 
 // Built from parts so this file does not contain the strings it bans.
@@ -1269,4 +1878,159 @@ describe("lane 2 source guardrails", () => {
       expect(readLaneFile(file)).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     });
   }
+});
+
+// --- Ports that share an id across directions -------------------------------
+
+describe("an operator whose input and output are both named image", () => {
+  const IMAGE_PORTS: readonly CellPort[] = [
+    {
+      id: "image",
+      name: "image",
+      direction: "input",
+      rowOffset: 2,
+      artifactTypeId: "image.raster",
+      shape: "one",
+    },
+    {
+      id: "image",
+      name: "image",
+      direction: "output",
+      rowOffset: 2,
+      artifactTypeId: "image.raster",
+      shape: "one",
+    },
+  ];
+  const surface = operatorSurface({
+    instancePlugGroups: [],
+    configFields: [],
+    appendix: null,
+  });
+  const card = { ...operatorCard(surface), ports: IMAGE_PORTS };
+
+  function render(extra: Partial<ComponentProps<typeof CellOperatorCard>>) {
+    return renderToStaticMarkup(
+      <CellOperatorCard
+        card={card}
+        surface={surface}
+        selected={false}
+        dragging={false}
+        {...extra}
+      />,
+    );
+  }
+  const imagePort = (html: string, direction: "input" | "output") =>
+    tagWith(html, "data-port-direction", direction);
+
+  it("draws both ports, one on each side", () => {
+    const html = render({});
+    expect(count(html, /data-port-id="image"/)).toBe(2);
+    expect(imagePort(html, "input")).toContain('data-port-id="image"');
+    expect(imagePort(html, "output")).toContain('data-port-id="image"');
+  });
+
+  it("marks each side connected on its own", () => {
+    const html = render({ connectedPortIds: new Set(["output:image"]) });
+    expect(imagePort(html, "output")).toContain('data-port-connected="true"');
+    expect(imagePort(html, "input")).toContain('data-port-connected="false"');
+    // A bare id still reads as connected, for callers with one port per name.
+    const bare = render({ connectedPortIds: new Set(["image"]) });
+    expect(imagePort(bare, "input")).toContain('data-port-connected="true"');
+  });
+
+  it("lights only the side a connection drag is over", () => {
+    const html = render({ activePortKey: "merge:input:image" });
+    expect(imagePort(html, "input")).toContain('data-port-hot="true"');
+    expect(imagePort(html, "output")).toContain('data-port-hot="false"');
+  });
+
+  it("keys the generic card's ports apart too", () => {
+    const html = renderToStaticMarkup(
+      <CellCard
+        card={card}
+        material="frost"
+        selected={false}
+        dragging={false}
+        connectedPortIds={new Set(["input:image"])}
+        activePortKey="merge:output:image"
+        onCardPointerDown={() => {}}
+        onPortPointerDown={() => {}}
+      />,
+    );
+    expect(imagePort(html, "input")).toContain('data-port-connected="true"');
+    expect(imagePort(html, "output")).toContain('data-port-connected="false"');
+    expect(imagePort(html, "output")).toContain('data-port-hot="true"');
+    expect(imagePort(html, "input")).toContain('data-port-hot="false"');
+  });
+});
+
+// --- Stack style -----------------------------------------------------------
+
+describe("CellArtifactCard stack style", () => {
+  const stacked = { ...PREVIEWS.image, itemCount: 3, stackImageUrls: [] };
+
+  it("fans by default and lays a deck straight when asked", () => {
+    const fan = renderArtifact(stacked);
+    expect(tagWith(fan, "data-cell-card", "true")).toContain(
+      'data-stack-style="fan"',
+    );
+    expect(tagWith(fan, "data-artifact-stack-back", "1")).toContain(
+      "transform:rotate(",
+    );
+
+    const deck = renderArtifact(stacked, { stackStyle: "deck" });
+    const first = tagWith(deck, "data-artifact-stack-back", "1");
+    const second = tagWith(deck, "data-artifact-stack-back", "2");
+    expect(first).toContain("transform:translate3d(0px, 6px, 0) scale(0.96)");
+    expect(second).toContain("transform:translate3d(0px, 12px, 0) scale(0.92)");
+    for (const back of [first, second]) {
+      expect(back).toContain("transform-origin:center bottom");
+      expect(back).not.toContain("rotate(");
+    }
+  });
+
+  it("cuts the corner hole through a deck's backs where the plate's hole lands", () => {
+    const html = renderArtifact(stacked, {
+      stackStyle: "deck",
+      well: "punched",
+    });
+    const first = tagWith(html, "data-artifact-stack-back", "1");
+    // Plate 242×170 at (4, 26); the hole at (228, 178) in the card box. The
+    // back scales 0.96 about (125, 196) and drops 6: in its own box the hole
+    // is at 125 + 103/0.96 - 4 and 196 + (178 - 6 - 196)/0.96 - 26.
+    expect(first).toContain("mask-image:radial-gradient(circle at 228.29");
+    expect(first).toContain("px 145px");
+    expect(first).toContain("mask-composite:intersect");
+  });
+
+  it("does not swing in the backs a stack mounts with", () => {
+    const html = renderArtifact(stacked);
+    expect(tagWith(html, "data-artifact-stack-back", "1")).toContain(
+      'data-stack-back-state="rest"',
+    );
+  });
+
+  it("lifts its plate as a merge target and readies the dragged card to tuck", () => {
+    const fanHover = renderArtifact(PREVIEWS.image, { mergeHover: true });
+    expect(tagWith(fanHover, "data-cell-card", "true")).toContain(
+      'data-merge-hover="true"',
+    );
+    expect(fanHover).toContain("transform:rotate(1.4deg) translateY(-2px)");
+    const deckHover = renderArtifact(PREVIEWS.image, {
+      mergeHover: true,
+      stackStyle: "deck",
+    });
+    expect(deckHover).toContain("transform:translateY(-5px) scale(1.01)");
+    const merging = renderArtifact(PREVIEWS.image, { merging: true });
+    expect(merging).toContain("transform:rotate(-1.6deg) scale(0.95)");
+    const deckMerging = renderArtifact(PREVIEWS.image, {
+      merging: true,
+      stackStyle: "deck",
+    });
+    expect(deckMerging).toContain("transform:scale(0.95)");
+    // At rest the plate carries no transform.
+    expect(renderArtifact(PREVIEWS.image)).not.toMatch(
+      /<article[^>]*transform:/,
+    );
+  });
 });
