@@ -74,7 +74,6 @@ dev = [
     "ruff>=0.14.6",
     "prek==0.5.4",
     "types-jsonschema>=4.26.0.20261006",
-    "pytest-xdist>=3.8.0",
 ]
 
 [tool.pyright]
