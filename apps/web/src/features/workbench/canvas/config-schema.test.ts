@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { schemaFields, validateConfig } from "./config-schema";
+import {
+  buildDefaultForField,
+  evaluateVisibleWhen,
+  schemaFields,
+  validateConfig,
+  visibleSchemaFields,
+  type VisibleWhenPredicate,
+} from "./config-schema";
 
 const boundsItems = [
   {
@@ -87,6 +94,7 @@ describe("schemaFields", () => {
       {
         name: "initial_bounds",
         title: "Initial Bounds",
+        defaultValue: null,
         description: boundsDescription,
         type: "number-tuple",
         items: boundsItems,
@@ -343,9 +351,13 @@ describe("validateConfig", () => {
     ).toEqual([
       { fieldName: "policy", message: "Use the required literal value." },
     ]);
+    // A nested problem belongs to the top-level field the card can show it on.
     expect(
       validateConfig(unionSchema, { policy: { kind: "fast", extra: true } }),
-    ).toEqual([{ fieldName: "extra", message: "This key is not allowed." }]);
+    ).toEqual([{ fieldName: "policy", message: "This key is not allowed." }]);
+    expect(validateConfig(unionSchema, { policy: {} })).toEqual([
+      { fieldName: "policy", message: "This field is required." },
+    ]);
   });
 
   it("distinguishes optional omission, explicit null, and required nullable fields", () => {
@@ -396,5 +408,435 @@ describe("validateConfig", () => {
       { fieldName: "choice", message: "Choose one of the allowed values." },
       { fieldName: "extra", message: "Expected string." },
     ]);
+  });
+});
+
+describe("config schema metadata", () => {
+  it("merges ref siblings with inherited constraints and honors explicit hiding", () => {
+    const schema = {
+      $defs: {
+        Limit: {
+          type: "integer",
+          title: "Inherited",
+          minimum: 10,
+          maximum: 128,
+        },
+        Alias: { $ref: "#/$defs/Limit", description: "Maximum output length" },
+        Secret: { type: "string", "x-grafy-hidden": true },
+      },
+      properties: {
+        max_completion_tokens: {
+          $ref: "#/$defs/Alias",
+          title: "Output tokens",
+          minimum: 1,
+          default: 16,
+          examples: [24],
+          "x-grafy-widget": "slider",
+          "x-grafy-group": "Generation",
+        },
+        credential: { $ref: "#/$defs/Secret" },
+        ignored: { $ref: "#/$defs/Limit", "x-grafy-hidden": true },
+        resolution: {
+          type: "string",
+          enum: ["nearest", "linear"],
+          "x-grafy-enum-labels": { nearest: "Nearest", linear: "Linear" },
+          "x-grafy-widget": "segmented",
+        },
+      },
+    };
+
+    expect(schemaFields(schema)).toEqual([
+      expect.objectContaining({
+        name: "max_completion_tokens",
+        type: "integer",
+        title: "Output tokens",
+        description: "Maximum output length",
+        defaultValue: 16,
+        examples: [24],
+        minimum: 1,
+        maximum: 128,
+        widget: "slider",
+        group: "Generation",
+      }),
+      expect.objectContaining({
+        name: "resolution",
+        enumLabels: { nearest: "Nearest", linear: "Linear" },
+        widget: "segmented",
+      }),
+    ]);
+    expect(validateConfig(schema, { max_completion_tokens: 3 })).toEqual([]);
+    expect(validateConfig(schema, { max_completion_tokens: 0 })).toEqual([
+      { fieldName: "max_completion_tokens", message: "Must be at least 1." },
+    ]);
+  });
+
+  it("bounds parsing of recursive objects and reference chains", () => {
+    const schema = {
+      $defs: {
+        A: { $ref: "#/$defs/B" },
+        B: { $ref: "#/$defs/A", type: "string" },
+        Tree: {
+          type: "object",
+          properties: { child: { $ref: "#/$defs/Tree" } },
+        },
+      },
+      properties: {
+        alias: { $ref: "#/$defs/A" },
+        tree: { $ref: "#/$defs/Tree" },
+      },
+    };
+
+    const [alias, tree] = schemaFields(schema);
+    expect(alias?.type).toBe("string");
+    expect(validateConfig(schema, { alias: 7 })).toEqual([
+      { fieldName: "alias", message: "Expected string." },
+    ]);
+    let depth = 0;
+    let current = tree;
+    while (current?.type === "object") {
+      depth += 1;
+      current = current.fields[0];
+    }
+    expect(depth).toBe(8);
+  });
+
+  it("ignores malformed visibility and presentation metadata", () => {
+    const [field] = schemaFields({
+      properties: {
+        sample: {
+          type: "integer",
+          "x-grafy-widget": "unknown",
+          "x-grafy-group": " ",
+          "x-grafy-enum-labels": { one: 1 },
+          "x-grafy-visible-when": {
+            all: [
+              { field: "enabled", truthy: true },
+              { portArtifactType: { port: "input", in: [8] } },
+            ],
+          },
+        },
+      },
+    });
+    expect(field).toMatchObject({ name: "sample", type: "integer" });
+    for (const key of ["widget", "group", "enumLabels", "visibleWhen"]) {
+      expect(field).not.toHaveProperty(key);
+    }
+  });
+});
+
+describe("config field visibility", () => {
+  const context = {
+    config: {
+      mode: { b: [1, false], a: "x" },
+      disabled: false,
+      empty: [],
+      unset: null,
+    },
+    connectedPorts: {
+      input: { connected: true, artifactTypeKey: "geo.vector@2" },
+      unknown: { connected: true, artifactTypeKey: null },
+      missing: { connected: false, artifactTypeKey: "geo.vector@2" },
+    },
+  };
+  const mode = { a: "x", b: [1, false] };
+  const cases: [VisibleWhenPredicate, boolean][] = [
+    [{ field: "mode", eq: mode }, true],
+    [{ field: "mode", neq: mode }, false],
+    [{ field: "mode", in: [false, mode] }, true],
+    [{ field: "unset", eq: null }, true],
+    [{ field: "defaulted", eq: "fallback" }, true],
+    [{ field: "empty", truthy: false }, true],
+    [{ field: "missing", truthy: true }, false],
+    [{ field: "disabled", truthy: false }, true],
+    [{ field: "mode", truthy: true }, true],
+    [{ portConnected: "input" }, true],
+    [{ portConnected: "unknown" }, true],
+    [{ portConnected: "unlisted", is: false }, true],
+    [
+      {
+        portArtifactType: {
+          port: "input",
+          in: ["geo.vector@2"],
+          notIn: ["geo.vector@1"],
+        },
+      },
+      true,
+    ],
+    [
+      {
+        portArtifactType: {
+          port: "input",
+          in: ["geo.vector@2"],
+          notIn: ["geo.vector@2"],
+        },
+      },
+      false,
+    ],
+    [{ portArtifactType: { port: "input", in: ["geo.vector@1"] } }, false],
+    [{ portArtifactType: { port: "unknown", in: ["geo.vector@2"] } }, false],
+    [{ portArtifactType: { port: "missing", notIn: ["geo.vector@2"] } }, true],
+    [
+      {
+        portArtifactType: {
+          port: "missing",
+          notIn: ["geo.vector@2"],
+          whenUnconnected: "hide",
+        },
+      },
+      false,
+    ],
+    [
+      {
+        portArtifactType: {
+          port: "missing",
+          in: ["geo.vector@2"],
+          whenUnconnected: "show",
+        },
+      },
+      true,
+    ],
+    [
+      {
+        all: [
+          { portConnected: "input" },
+          { not: { field: "disabled", truthy: true } },
+        ],
+      },
+      true,
+    ],
+    [
+      {
+        any: [{ portConnected: "missing" }, { field: "empty", truthy: false }],
+      },
+      true,
+    ],
+    [
+      { any: [{ portConnected: "missing" }, { field: "empty", truthy: true }] },
+      false,
+    ],
+  ];
+  it.each(cases)("evaluates %j as %s", (predicate, expected) => {
+    expect(
+      evaluateVisibleWhen(predicate, context, {
+        unset: "fallback",
+        defaulted: "fallback",
+      }),
+    ).toBe(expected);
+  });
+
+  it("uses sibling defaults and reveals hidden fields with validation errors", () => {
+    const schema = {
+      properties: {
+        mode: { type: "string", default: "manual" },
+        count: {
+          type: "integer",
+          minimum: 1,
+          "x-grafy-visible-when": {
+            all: [
+              { field: "mode", eq: "manual" },
+              { not: { portConnected: "upstream" } },
+            ],
+          },
+        },
+      },
+    };
+    const fields = schemaFields(schema);
+    expect(
+      visibleSchemaFields(fields, { config: {} }).map(({ name }) => name),
+    ).toEqual(["mode", "count"]);
+    const config = { mode: "automatic", count: 0 };
+    expect(
+      visibleSchemaFields(fields, { config }).map(({ name }) => name),
+    ).toEqual(["mode"]);
+    expect(
+      visibleSchemaFields(
+        fields,
+        { config },
+        validateConfig(schema, config),
+      ).map(({ name }) => name),
+    ).toEqual(["mode", "count"]);
+  });
+});
+
+describe("recursive config fields", () => {
+  const schema = {
+    $defs: {
+      GeoRasterStyle: {
+        type: "object",
+        title: "GeoRasterStyle",
+        properties: {
+          kind: { const: "raster", type: "string" },
+          opacity: {
+            type: "number",
+            exclusiveMinimum: 0,
+            exclusiveMaximum: 1,
+            examples: [0.75],
+          },
+          resampling: { type: "string", enum: ["linear", "nearest"] },
+        },
+        required: ["kind", "opacity", "resampling"],
+      },
+      GeoFeatureStyle: {
+        discriminator: { propertyName: "kind" },
+        oneOf: [
+          { $ref: "#/$defs/GeoCategorizedPointStyle" },
+          { $ref: "#/$defs/GeoVectorStyle" },
+        ],
+        "x-grafy-enum-labels": { categorized_points: "By category" },
+      },
+      GeoVectorStyle: {
+        type: "object",
+        title: "Vector",
+        properties: { kind: { const: "vector" } },
+        required: ["kind"],
+      },
+      GeoCategorizedPointStyle: {
+        type: "object",
+        properties: {
+          kind: { const: "categorized_points" },
+          categories: {
+            type: "array",
+            items: { $ref: "#/$defs/GeoPointCategory" },
+            minItems: 2,
+            maxItems: 128,
+          },
+        },
+        required: ["kind", "categories"],
+      },
+      GeoPointCategory: {
+        type: "object",
+        title: "Category",
+        properties: {
+          id: {
+            type: "string",
+            pattern: "^[A-Za-z][A-Za-z0-9_-]*$",
+            "x-grafy-auto-id": true,
+          },
+          enabled: { const: true },
+          title: { type: "string", minLength: 1 },
+          values: {
+            type: "array",
+            items: { $ref: "#/$defs/GeoCategoryValue" },
+            minItems: 1,
+          },
+        },
+        required: ["id", "enabled", "title", "values"],
+      },
+      GeoCategoryValue: {
+        anyOf: [
+          { type: "string" },
+          { type: "integer" },
+          { type: "number" },
+          { type: "boolean" },
+        ],
+      },
+    },
+    properties: {
+      raster: { $ref: "#/$defs/GeoRasterStyle" },
+      features: { $ref: "#/$defs/GeoFeatureStyle" },
+    },
+  };
+
+  it("retains literals, auto IDs, and recursive field kinds", () => {
+    expect(schemaFields(schema)).toMatchObject([
+      {
+        type: "object",
+        constFields: { kind: "raster" },
+        fields: [
+          {
+            name: "opacity",
+            exclusiveMinimum: 0,
+            exclusiveMaximum: 1,
+            examples: [0.75],
+          },
+          { name: "resampling", enumValues: ["linear", "nearest"] },
+        ],
+      },
+      {
+        type: "discriminated-union",
+        discriminator: "kind",
+        branches: [
+          {
+            tag: "categorized_points",
+            label: "By category",
+            constFields: { kind: "categorized_points" },
+            fields: [
+              {
+                type: "object-list",
+                itemTitle: "Category",
+                itemAutoIdFields: ["id"],
+                itemConstFields: { enabled: true },
+                minItems: 2,
+                maxItems: 128,
+                itemFields: [
+                  { name: "title", type: "string" },
+                  {
+                    name: "values",
+                    type: "primitive-list",
+                    minItems: 1,
+                    allowedTypes: ["string", "integer", "number", "boolean"],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            tag: "vector",
+            label: "Vector",
+            constFields: { kind: "vector" },
+            fields: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("infers the discriminator from distinct string const properties", () => {
+    expect(
+      schemaFields({
+        properties: {
+          features: { anyOf: schema.$defs.GeoFeatureStyle.oneOf },
+        },
+        $defs: schema.$defs,
+      }),
+    ).toMatchObject([{ type: "discriminated-union", discriminator: "kind" }]);
+  });
+
+  it("builds schema-valid nested defaults with distinct generated IDs", () => {
+    const ids = ["12345678abcd", "87654321abcd"];
+    const config = Object.fromEntries(
+      schemaFields(schema).map((field) => [
+        field.name,
+        buildDefaultForField(field, { generateId: () => ids.shift() ?? "" }),
+      ]),
+    );
+    expect(config).toEqual({
+      raster: { kind: "raster", opacity: 0.75, resampling: "linear" },
+      features: {
+        kind: "categorized_points",
+        categories: [
+          { id: "item_1_12345678", enabled: true, title: "a", values: [""] },
+          { id: "item_2_87654321", enabled: true, title: "a", values: [""] },
+        ],
+      },
+    });
+    expect(validateConfig(schema, config)).toEqual([]);
+  });
+
+  it("uses explicit defaults before examples and returns fresh arrays", () => {
+    const [field] = schemaFields({
+      properties: {
+        names: {
+          type: "array",
+          items: { type: "string" },
+          default: ["default"],
+          examples: [["example"]],
+        },
+      },
+    });
+    if (!field) throw new Error("Expected a names field");
+    const value = buildDefaultForField(field);
+    expect(value).toEqual(["default"]);
+    expect(value).not.toBe(field.defaultValue);
   });
 });

@@ -23,6 +23,7 @@ import type { WorkflowNodeLayout } from "./node-layout";
 import type { SchemaBuilderField } from "./schema-builder";
 import type { WorkflowNodeSecretStatuses } from "./node-secrets";
 import type { CollectionMember } from "./collection-member";
+import type { ConnectedInputPortMap } from "./config-schema";
 
 export type {
   WorkflowInputPlug,
@@ -215,6 +216,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   inputPlugBindings: Readonly<Record<string, WorkflowInputPlugBinding>>;
   /** Derived from incoming map edges; never persisted as node configuration. */
   mappedInputPorts: readonly string[];
+  connectedInputPorts?: ConnectedInputPortMap;
   /** Server-reported write-only state; never persisted with the graph. */
   secretStatuses: WorkflowNodeSecretStatuses;
   /** Per-input match against its saved operator and declared config dependencies. */
@@ -281,7 +283,6 @@ export interface WorkflowNodeData extends Record<string, unknown> {
 export const WORKFLOW_NODE_TYPE = "grafyWorkflowNode";
 export const WORKFLOW_EDGE_TYPE = "grafyWorkflowEdge";
 export const GIS_COMPOSE_MAP_OPERATOR_ID = "gis.map.compose";
-export const GIS_VECTOR_LAYER_OPERATOR_ID = "gis.map.vector_layer";
 export const TIFF_TEXT_DETECTOR_OPERATOR_ID = "ocr.detect_tiff_text";
 
 export function workflowNodeIsSupported(data: WorkflowNodeData): boolean {

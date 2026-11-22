@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from grafy_core.artifact_contracts import IMAGE_REGIONS, ImageRegionSet
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.config_ui import field_ui
 from grafy_core.documents import RasterImage
 from grafy_core.nodes import Node, NodeExecutionContext, UserFacingNodeError
 from grafy_core.runtime.artifact_values import inline_model_artifact
@@ -88,10 +89,14 @@ class DrawRegionsConfig(NodeConfig):
         ge=0.0,
         le=1.0,
         description="Opacity of the translucent box fill. 0 draws outlines only.",
+        json_schema_extra=field_ui(widget="slider"),
     )
     label_text: Literal["kind", "label", "none"] = Field(
         default="kind",
         description="Text drawn above each box: the region kind, its label, or nothing.",
+        json_schema_extra=field_ui(
+            enum_labels={"kind": "Region kind", "label": "Region label", "none": "None"}
+        ),
     )
 
 

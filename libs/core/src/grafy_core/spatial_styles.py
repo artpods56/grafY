@@ -14,6 +14,8 @@ from pydantic import (
     model_validator,
 )
 
+from grafy_core.config_ui import field_ui
+
 HexColor = Annotated[StrictStr, Field(pattern=r"^#[0-9a-fA-F]{6}$")]
 
 
@@ -23,28 +25,42 @@ RasterResampling = Literal["linear", "nearest"]
 class GeoFillStyle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = True
-    color: HexColor = "#2563eb"
-    opacity: float = Field(default=0.45, ge=0.0, le=1.0)
+    enabled: bool = Field(default=True, json_schema_extra=field_ui(widget="switch"))
+    color: HexColor = Field(
+        default="#2563eb", json_schema_extra=field_ui(widget="color")
+    )
+    opacity: float = Field(
+        default=0.45, ge=0.0, le=1.0, json_schema_extra=field_ui(widget="slider")
+    )
 
 
 class GeoLineStyle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = True
-    color: HexColor = "#1d4ed8"
-    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    enabled: bool = Field(default=True, json_schema_extra=field_ui(widget="switch"))
+    color: HexColor = Field(
+        default="#1d4ed8", json_schema_extra=field_ui(widget="color")
+    )
+    opacity: float = Field(
+        default=1.0, ge=0.0, le=1.0, json_schema_extra=field_ui(widget="slider")
+    )
     width: float = Field(default=1.5, ge=0.0, le=64.0)
 
 
 class GeoPointStyle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = True
-    color: HexColor = "#dc2626"
-    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    enabled: bool = Field(default=True, json_schema_extra=field_ui(widget="switch"))
+    color: HexColor = Field(
+        default="#dc2626", json_schema_extra=field_ui(widget="color")
+    )
+    opacity: float = Field(
+        default=1.0, ge=0.0, le=1.0, json_schema_extra=field_ui(widget="slider")
+    )
     radius: float = Field(default=5.0, ge=0.0, le=128.0)
-    stroke_color: HexColor = "#ffffff"
+    stroke_color: HexColor = Field(
+        default="#ffffff", json_schema_extra=field_ui(widget="color")
+    )
     stroke_width: float = Field(default=1.0, ge=0.0, le=32.0)
 
 
@@ -58,9 +74,10 @@ class GeoPointCategory(BaseModel):
         min_length=1,
         max_length=64,
         pattern=r"^[A-Za-z][A-Za-z0-9_-]*$",
+        json_schema_extra=field_ui(auto_id=True),
     )
-    title: StrictStr = Field(min_length=1, max_length=1_024)
-    values: list[GeoCategoryValue] = Field(min_length=1, max_length=128)
+    title: StrictStr = Field(min_length=1, max_length=1_024, examples=["Category 1"])
+    values: list[GeoCategoryValue] = Field(min_length=1, max_length=128, examples=[[1]])
     point: GeoPointStyle = Field(default_factory=GeoPointStyle)
     min_zoom: StrictInt = Field(default=0, ge=0, le=24)
     max_zoom: StrictInt = Field(default=22, ge=0, le=24)
@@ -85,10 +102,14 @@ class GeoPointCategory(BaseModel):
 class GeoLabelStyle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    property: StrictStr = Field(min_length=1, max_length=1_024)
-    color: HexColor = "#111827"
+    property: StrictStr = Field(min_length=1, max_length=1_024, examples=["name"])
+    color: HexColor = Field(
+        default="#111827", json_schema_extra=field_ui(widget="color")
+    )
     size: float = Field(default=12.0, ge=6.0, le=72.0)
-    halo_color: HexColor = "#ffffff"
+    halo_color: HexColor = Field(
+        default="#ffffff", json_schema_extra=field_ui(widget="color")
+    )
     halo_width: float = Field(default=1.0, ge=0.0, le=16.0)
 
     @field_validator("property")
@@ -114,7 +135,9 @@ class GeoCategorizedPointStyle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["categorized_points"] = "categorized_points"
-    category_property: StrictStr = Field(min_length=1, max_length=1_024)
+    category_property: StrictStr = Field(
+        min_length=1, max_length=1_024, examples=["type"]
+    )
     categories: list[GeoPointCategory] = Field(min_length=1, max_length=128)
     label: GeoLabelStyle | None = None
 
@@ -152,13 +175,30 @@ class GeoRasterStyle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["raster"] = "raster"
-    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
-    brightness_min: float = Field(default=0.0, ge=0.0, le=1.0)
-    brightness_max: float = Field(default=1.0, ge=0.0, le=1.0)
-    contrast: float = Field(default=0.0, ge=-1.0, le=1.0)
-    saturation: float = Field(default=0.0, ge=-1.0, le=1.0)
-    hue: float = Field(default=0.0, ge=0.0, le=359.0)
-    resampling: RasterResampling = "linear"
+    opacity: float = Field(
+        default=1.0, ge=0.0, le=1.0, json_schema_extra=field_ui(widget="slider")
+    )
+    brightness_min: float = Field(
+        default=0.0, ge=0.0, le=1.0, json_schema_extra=field_ui(widget="slider")
+    )
+    brightness_max: float = Field(
+        default=1.0, ge=0.0, le=1.0, json_schema_extra=field_ui(widget="slider")
+    )
+    contrast: float = Field(
+        default=0.0, ge=-1.0, le=1.0, json_schema_extra=field_ui(widget="slider")
+    )
+    saturation: float = Field(
+        default=0.0, ge=-1.0, le=1.0, json_schema_extra=field_ui(widget="slider")
+    )
+    hue: float = Field(
+        default=0.0, ge=0.0, le=359.0, json_schema_extra=field_ui(widget="slider")
+    )
+    resampling: RasterResampling = Field(
+        default="linear",
+        json_schema_extra=field_ui(
+            widget="segmented", enum_labels={"linear": "Smooth", "nearest": "Crisp"}
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_brightness_range(self) -> Self:

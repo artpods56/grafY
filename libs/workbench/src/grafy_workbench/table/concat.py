@@ -5,6 +5,7 @@ from typing import Annotated, final, override
 from pydantic import Field, StringConstraints
 
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.config_ui import field_ui, when_field_eq
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
@@ -33,10 +34,14 @@ class ConcatTablesConfig(NodeConfig):
         default=False,
         title="Add source index column",
         description="Record the 1-based index of the input table each row came from.",
+        json_schema_extra=field_ui(widget="switch"),
     )
     source_index_column: ColumnId = Field(
         default="source_index",
         title="Source index column ID",
+        json_schema_extra=field_ui(
+            visible_when=when_field_eq("add_source_index", True)
+        ),
     )
 
 

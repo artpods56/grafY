@@ -6,7 +6,11 @@ import * as stylex from "@stylexjs/stylex";
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import type { SchemaField } from "../canvas/config-schema";
+import {
+  fieldDisplayTitle,
+  visibleSchemaFields,
+  type SchemaField,
+} from "../canvas/config-schema";
 import { PORT_RING_REACH, portMarkStyle } from "../canvas/handle-style";
 import { artifactTypeColor } from "../canvas/nodes.css";
 import {
@@ -45,12 +49,27 @@ export function artifactTitleFor(registry: NodeRegistry, port: Port): string {
 }
 
 export function fieldTypeLabel(field: SchemaField): string {
-  if (field.enumValues?.length) return "choice";
-  if (field.format === "textarea") return "multiline text";
-  if (field.type === "number-tuple") {
-    return `${field.items.length}-number tuple`;
+  switch (field.type) {
+    case "number-tuple":
+      return `${field.items.length}-number tuple`;
+    case "string-list":
+      return "text list";
+    case "primitive-list":
+      return "value list";
+    case "object":
+      return "settings group";
+    case "discriminated-union":
+      return "mode";
+    case "object-list":
+      return "item list";
   }
-  if (field.type === "string-list") return "text list";
+  if (field.widget === "color") return "color";
+  if (field.widget === "slider") return "range";
+  if (field.widget === "switch") return "toggle";
+  if (field.enumValues?.length) return "choice";
+  if (field.format === "textarea" || field.widget === "textarea") {
+    return "multiline text";
+  }
   return field.type;
 }
 
@@ -391,7 +410,12 @@ export function CatalogNodePreview({
   selectedPortKey,
   onSelectPort,
 }: CatalogNodePreviewProps) {
-  const visibleFields = fields.slice(0, 4);
+  // What a fresh card shows: defaults decide conditional fields, and advanced
+  // ones wait behind the card's options toggle.
+  const visibleFields = visibleSchemaFields(
+    fields.filter((field) => !field.advanced),
+    { config: {} },
+  ).slice(0, 4);
   const rowCount = Math.max(spec.inputs.length, spec.outputs.length, 1);
   const inputCountLabel = `${spec.inputs.length} ${spec.inputs.length === 1 ? "input" : "inputs"}`;
   const outputCountLabel = `${spec.outputs.length} ${spec.outputs.length === 1 ? "output" : "outputs"}`;
@@ -444,7 +468,7 @@ export function CatalogNodePreview({
           <div {...stylex.props(s.previewBody)}>
             {visibleFields.map((field) => (
               <div key={field.name} {...stylex.props(s.previewField)}>
-                <span>{field.title}</span>
+                <span>{fieldDisplayTitle(field)}</span>
                 <span {...stylex.props(s.previewFieldMeta)}>
                   {fieldTypeLabel(field)}
                 </span>

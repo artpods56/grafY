@@ -13,6 +13,7 @@ import {
   type WorkflowNodeData,
 } from "../../types";
 
+import { CredentialsPopover } from "./credentials-popover";
 import { sharedStyles } from "./styles";
 
 const s = stylex.create({
@@ -122,6 +123,7 @@ export function NodeHeader({
         )
       }
     >
+      <CredentialsPopover id={id} data={data} onOpenChange={onMenuOpenChange} />
       {!isProvider &&
       data.onRevealNodeOutput &&
       !data.hasFollowingOutputCard &&

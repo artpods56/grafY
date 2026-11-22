@@ -194,3 +194,95 @@ describe("config field packing", () => {
     });
   });
 });
+
+describe("schema-driven control footprints", () => {
+  const base = {
+    name: "field",
+    title: "Field",
+    required: false,
+    nullable: false,
+  };
+  const fields: [SchemaField, string, number, number][] = [
+    [
+      { ...base, type: "number", widget: "slider", minimum: 0, maximum: 1 },
+      "slider",
+      HALF_WIDTH_CELLS,
+      1,
+    ],
+    [
+      { ...base, type: "string", widget: "color" },
+      "color",
+      HALF_WIDTH_CELLS,
+      1,
+    ],
+    [
+      { ...base, type: "boolean", widget: "switch" },
+      "switch",
+      HALF_WIDTH_CELLS,
+      1,
+    ],
+    [
+      { ...base, type: "string", widget: "segmented", enumValues: ["a", "b"] },
+      "segmented",
+      STANDARD_NODE_WIDTH_CELLS,
+      1,
+    ],
+    [
+      { ...base, type: "primitive-list", allowedTypes: ["string", "number"] },
+      "primitive-list",
+      STANDARD_NODE_WIDTH_CELLS,
+      1,
+    ],
+    [
+      { ...base, type: "object", fields: [] },
+      "object",
+      STANDARD_NODE_WIDTH_CELLS,
+      2,
+    ],
+    [
+      {
+        ...base,
+        type: "discriminated-union",
+        discriminator: "kind",
+        branches: [],
+      },
+      "discriminated-union",
+      STANDARD_NODE_WIDTH_CELLS,
+      2,
+    ],
+    [
+      { ...base, type: "object-list", itemTitle: "Item", itemFields: [] },
+      "object-list",
+      STANDARD_NODE_WIDTH_CELLS,
+      2,
+    ],
+  ];
+  it.each(fields)(
+    "uses the requested footprint for %j",
+    (field, kind, columns, rows) => {
+      expect(configControlKind(field)).toBe(kind);
+      expect(fieldFootprint(field)).toEqual({ columns, rows, growX: true });
+    },
+  );
+
+  it("requires finite slider bounds and recognizes the textarea widget", () => {
+    expect(
+      configControlKind(
+        scalarField({ type: "number", widget: "slider", minimum: 0 }),
+      ),
+    ).toBe("number");
+    expect(
+      configControlKind(
+        scalarField({
+          type: "number",
+          widget: "slider",
+          minimum: 0,
+          maximum: Infinity,
+        }),
+      ),
+    ).toBe("number");
+    expect(
+      configControlKind(scalarField({ type: "string", widget: "textarea" })),
+    ).toBe("textarea");
+  });
+});

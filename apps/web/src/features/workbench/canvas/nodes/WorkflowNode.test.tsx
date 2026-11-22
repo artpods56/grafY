@@ -174,28 +174,82 @@ vi.mock("@base-ui/react/menu", () => {
   };
 });
 
-vi.mock("@base-ui/react/popover", () => ({
-  Popover: {
-    Root: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    Trigger: ({
-      children,
-      ...props
-    }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-      children: React.ReactNode;
-    }) => (
-      <button type="button" {...props}>
-        {children}
-      </button>
-    ),
-    Portal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    Positioner: ({ children }: { children: React.ReactNode }) => (
-      <>{children}</>
-    ),
-    Popup: ({ children }: { children: React.ReactNode }) => (
-      <div>{children}</div>
-    ),
-  },
-}));
+vi.mock("@base-ui/react/popover", () => {
+  // Like Base UI's: the root owns open state (controlled when given `open`),
+  // the trigger toggles it and honours `render`, and the popup only mounts
+  // while open. A trigger outside any root (a port's inspector, whose root is
+  // mocked away below) stays a plain button.
+  const popover = React.createContext<{
+    open: boolean;
+    setOpen: (open: boolean) => void;
+  } | null>(null);
+  return {
+    Popover: {
+      Root: ({
+        children,
+        open,
+        onOpenChange,
+      }: {
+        children: React.ReactNode;
+        open?: boolean;
+        onOpenChange?: (open: boolean) => void;
+      }) => {
+        const [localOpen, setLocalOpen] = React.useState(false);
+        const current = open ?? localOpen;
+        return (
+          <popover.Provider
+            value={{
+              open: current,
+              setOpen: (next) => {
+                setLocalOpen(next);
+                onOpenChange?.(next);
+              },
+            }}
+          >
+            {children}
+          </popover.Provider>
+        );
+      },
+      Trigger: ({
+        children,
+        render,
+        ...props
+      }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+        render?: React.ReactElement<Record<string, unknown>>;
+      }) => {
+        const state = React.useContext(popover);
+        const triggerProps = {
+          ...props,
+          ...(state
+            ? {
+                "aria-expanded": state.open,
+                onClick: () => state.setOpen(!state.open),
+              }
+            : {}),
+        };
+        return render ? (
+          React.cloneElement(render, triggerProps, children)
+        ) : (
+          <button type="button" {...triggerProps}>
+            {children}
+          </button>
+        );
+      },
+      Portal: ({ children }: { children: React.ReactNode }) => {
+        const state = React.useContext(popover);
+        return state && !state.open ? null : <>{children}</>;
+      },
+      Positioner: ({ children }: { children: React.ReactNode }) => (
+        <>{children}</>
+      ),
+      Popup: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+        <div role="dialog" {...props}>
+          {children}
+        </div>
+      ),
+    },
+  };
+});
 
 vi.mock("./type-inspector", () => ({
   PortTypePopover: ({ children }: { children: React.ReactNode }) => children,
@@ -220,6 +274,11 @@ import {
   type ConfigBrick,
 } from "./workflow/config-fields";
 import { fieldFootprint } from "./field-footprints";
+import { CredentialsPopover } from "./workflow/credentials-popover";
+import {
+  RASTER_LAYER_CONFIG_SCHEMA,
+  VECTOR_LAYER_CONFIG_SCHEMA,
+} from "./workflow/geo-layer-schemas.fixture";
 
 function unavailableSpec(): NodeSpec {
   return nodeSpecFixture({
@@ -898,8 +957,9 @@ describe("WorkflowNode config lattice", () => {
       '[data-testid="config-board"]',
     );
     expect(board?.style.gridTemplateColumns).toBe("repeat(6, minmax(0, 1fr))");
-    // 2 shelves of paired fields, a boolean shelf, then the 2-cell secret.
-    expect(board?.style.gridTemplateRows).toBe("repeat(5, minmax(50px, auto))");
+    // 2 shelves of paired fields, then a boolean shelf. The API key lives in
+    // the header's credentials popover, not on the board.
+    expect(board?.style.gridTemplateRows).toBe("repeat(3, minmax(50px, auto))");
     expect(brickAreas(container)).toEqual([
       "1 / span 3 | 1 / span 1",
       "4 / span 3 | 1 / span 1",
@@ -907,7 +967,6 @@ describe("WorkflowNode config lattice", () => {
       "4 / span 3 | 2 / span 1",
       // Compact 3×1 checkbox grows into the leftover half of its shelf.
       "1 / span 6 | 3 / span 1",
-      "1 / span 6 | 4 / span 2",
     ]);
     // Schema order is preserved across the board.
     const labels = [
@@ -915,14 +974,8 @@ describe("WorkflowNode config lattice", () => {
         '[data-testid="config-brick"]',
       ),
     ].map((brick) => brick.textContent?.slice(0, 5));
-    expect(labels).toEqual([
-      "Base ",
-      "Model",
-      "Tempe",
-      "Timeo",
-      "Stric",
-      "API k",
-    ]);
+    expect(labels).toEqual(["Base ", "Model", "Tempe", "Timeo", "Stric"]);
+    expect(board?.querySelector('input[type="password"]')).toBeNull();
 
     React.act(() => root.unmount());
   });
@@ -938,14 +991,13 @@ describe("WorkflowNode config lattice", () => {
     // 600px is still below 3× comfortable half-brick — packer stays at 6 cols
     // and the 1fr tracks do the growing (labels get more characters).
     expect(board?.style.gridTemplateColumns).toBe("repeat(6, minmax(0, 1fr))");
-    expect(board?.style.gridTemplateRows).toBe("repeat(5, minmax(50px, auto))");
+    expect(board?.style.gridTemplateRows).toBe("repeat(3, minmax(50px, auto))");
     expect(brickAreas(container)).toEqual([
       "1 / span 3 | 1 / span 1",
       "4 / span 3 | 1 / span 1",
       "1 / span 3 | 2 / span 1",
       "4 / span 3 | 2 / span 1",
       "1 / span 6 | 3 / span 1",
-      "1 / span 6 | 4 / span 2",
     ]);
 
     React.act(() => root.unmount());
@@ -968,7 +1020,6 @@ describe("WorkflowNode config lattice", () => {
       "7 / span 3 | 1 / span 1",
       "1 / span 5 | 2 / span 1",
       "6 / span 4 | 2 / span 1",
-      "1 / span 9 | 3 / span 2",
     ]);
 
     React.act(() => root.unmount());
@@ -1703,25 +1754,30 @@ describe("WorkflowNode shared field wiring", () => {
     const { container, root } = renderNode("chat", data);
 
     const fieldNames = [
-      ...container.querySelectorAll<HTMLInputElement>("input"),
+      ...container.querySelectorAll<HTMLInputElement>(
+        'input:not([aria-hidden="true"])',
+      ),
     ].map(
       (input) =>
         input.labels?.[0]?.textContent ?? input.getAttribute("aria-label"),
     );
+    // The API key is not a config brick: it waits behind the header trigger.
     expect(fieldNames).toEqual([
       "Base Url",
       "Model",
       "Temperature",
       "Timeout Ms",
-      "Strict",
-      "API key",
     ]);
-    // A boolean stays a checkbox the schema names, not a pressed button.
-    const strict = container.querySelector<HTMLInputElement>(
-      'input[type="checkbox"]',
-    );
-    expect(strict?.getAttribute("aria-label")).toBe("Strict");
-    expect(strict?.checked).toBe(false);
+    // A boolean is the kit's checkbox, named by its label through
+    // aria-labelledby because a role="checkbox" is not labelable.
+    const strict = container.querySelector<HTMLElement>('[role="checkbox"]');
+    expect(
+      strict?.parentElement?.querySelector(
+        `[id="${strict.getAttribute("aria-labelledby")}"]`,
+      )?.textContent,
+    ).toBe("Strict");
+    expect(strict?.getAttribute("aria-checked")).toBe("false");
+    expect(strict?.closest(".nodrag.nopan.nowheel")).not.toBeNull();
 
     React.act(() => root.unmount());
   });
@@ -1780,48 +1836,130 @@ describe("WorkflowNode shared field wiring", () => {
   });
 });
 
-describe("WorkflowNode secret input brick", () => {
-  function renderSecretBrick() {
+describe("WorkflowNode credentials popover", () => {
+  const TRIGGER = 'button[aria-label^="Credentials for OpenAI-compatible"]';
+
+  function renderCredentials(
+    statuses: WorkflowNodeData["secretStatuses"] = {
+      api_key: { state: "configured" },
+    },
+    readiness: Record<string, boolean> = { api_key: true },
+  ) {
     const onApplyNodeSecret = vi.fn().mockResolvedValue(true);
     const onRemoveNodeSecret = vi.fn().mockResolvedValue(true);
     const data = createWorkflowNodeData(chatCompletionSpec());
-    data.secretInputReadiness = { api_key: true };
-    data.secretStatuses = { api_key: { state: "configured" } };
+    data.secretInputReadiness = readiness;
+    data.secretStatuses = statuses;
     data.onApplyNodeSecret = onApplyNodeSecret;
     data.onRemoveNodeSecret = onRemoveNodeSecret;
     const rendered = renderNode("chat", data);
-    const brick = rendered.container.querySelector<HTMLInputElement>(
-      'input[aria-label="API key"]',
-    );
-    return { ...rendered, brick, onApplyNodeSecret, onRemoveNodeSecret };
+    const trigger = () =>
+      rendered.container.querySelector<HTMLButtonElement>(TRIGGER);
+    const open = () => React.act(() => trigger()?.click());
+    return {
+      ...rendered,
+      trigger,
+      open,
+      onApplyNodeSecret,
+      onRemoveNodeSecret,
+    };
   }
 
-  it("applies a typed secret through the form's submit button", async () => {
-    const { container, root, onApplyNodeSecret } = renderSecretBrick();
-    expect(container.textContent).toContain("Configured");
+  it("keeps keys off the config board and behind a header trigger", () => {
+    const { container, root, trigger, open } = renderCredentials();
+    const board = container.querySelector('[data-testid="config-board"]');
+    expect(board?.textContent).not.toContain("API key");
     expect(container.querySelector('input[type="password"]')).toBeNull();
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+
+    // A configured, ready key is a quiet icon in the header.
+    expect(trigger()?.closest("header")).not.toBeNull();
+    expect(trigger()?.getAttribute("aria-label")).toBe(
+      "Credentials for OpenAI-compatible Chat Completion",
+    );
+    expect(trigger()?.getAttribute("title")).toBe("Credentials configured");
+    expect(trigger()?.textContent).toBe("");
+
+    open();
+    const popup = container.querySelector('[role="dialog"]');
+    expect(popup?.classList.contains("nodrag")).toBe(true);
+    expect(popup?.classList.contains("nopan")).toBe(true);
+    expect(popup?.classList.contains("nowheel")).toBe(true);
+    expect(popup?.textContent).toContain("Credentials");
+    expect(popup?.textContent).toContain("API key · Key saved");
+
+    React.act(() => root.unmount());
+  });
+
+  it.each([
+    [{ api_key: { state: "unconfigured" as const } }, true, "Key needed"],
+    [{ api_key: { state: "configured" as const } }, false, "Key out of date"],
+    [{ api_key: { state: "error" as const } }, true, "Key error"],
+    [{ api_key: { state: "loading" as const } }, true, "Credentials"],
+  ])(
+    "names a key that needs attention on the card (%o)",
+    (statuses, ready, label) => {
+      const { root, trigger } = renderCredentials(statuses, { api_key: ready });
+      expect(trigger()?.textContent).toBe(label);
+      expect(trigger()?.getAttribute("aria-label")).toBe(
+        `Credentials for OpenAI-compatible Chat Completion: ${label}`,
+      );
+      React.act(() => root.unmount());
+    },
+  );
+
+  it("reports open and close so the shell keeps the ports revealed", () => {
+    const data = createWorkflowNodeData(chatCompletionSpec());
+    data.secretInputReadiness = { api_key: true };
+    data.secretStatuses = { api_key: { state: "configured" } };
+    const onOpenChange = vi.fn();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    React.act(() =>
+      root.render(
+        <CredentialsPopover
+          id="chat"
+          data={data}
+          onOpenChange={onOpenChange}
+        />,
+      ),
+    );
+    const trigger = container.querySelector<HTMLButtonElement>(TRIGGER);
+    React.act(() => trigger?.click());
+    expect(onOpenChange).toHaveBeenLastCalledWith(true);
+    expect(trigger?.getAttribute("aria-expanded")).toBe("true");
+    React.act(() => trigger?.click());
+    expect(onOpenChange).toHaveBeenLastCalledWith(false);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    React.act(() => root.unmount());
+  });
+
+  it("applies a typed key through the form's submit button", async () => {
+    const { container, root, onApplyNodeSecret, open } = renderCredentials();
+    open();
     React.act(() =>
       [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Change")
+        .find((button) => button.textContent === "Replace")
         ?.click(),
     );
-    const brick = container.querySelector<HTMLInputElement>(
+    const input = container.querySelector<HTMLInputElement>(
       'input[aria-label="API key"]',
     );
     // jsdom only runs a form's submit while the form is attached to a document.
     document.body.append(container);
-    const form = brick?.closest("form");
+    const form = input?.closest("form");
     const apply = form?.querySelector<HTMLButtonElement>(
       'button[type="submit"]',
     );
 
-    expect(brick?.getAttribute("placeholder")).toBe("Replace secret");
-    expect(brick?.disabled).toBe(false);
+    expect(input?.type).toBe("password");
+    expect(input?.getAttribute("placeholder")).toBe("Replace key");
+    expect(input?.disabled).toBe(false);
     expect(apply?.textContent).toBe("Apply");
     // Nothing typed yet: the write stays gated the same way it was.
     expect(apply?.disabled).toBe(true);
 
-    React.act(() => enterInputValue(brick!, "sk-test"));
+    React.act(() => enterInputValue(input!, "sk-test"));
     expect(apply?.disabled).toBe(false);
 
     React.act(() => apply?.click());
@@ -1832,22 +1970,42 @@ describe("WorkflowNode secret input brick", () => {
         "sk-test",
       ),
     );
-    await vi.waitFor(() => expect(brick?.value).toBe(""));
+    // A replaced key folds back to the saved summary.
+    await vi.waitFor(() =>
+      expect(container.querySelector('input[aria-label="API key"]')).toBeNull(),
+    );
+    expect(container.textContent).toContain("API key · Key saved");
 
     React.act(() => root.unmount());
     container.remove();
   });
 
-  it("keeps the status line and the remove action named as they were", async () => {
-    const { container, root, onRemoveNodeSecret } = renderSecretBrick();
+  it("asks for a key when none is saved yet", () => {
+    const { container, root, open } = renderCredentials({
+      api_key: { state: "unconfigured" },
+    });
+    open();
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="API key"]',
+    );
+    expect(input?.getAttribute("placeholder")).toBe("Paste key");
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+      "No key",
+    );
+    React.act(() => root.unmount());
+  });
+
+  it("removes a saved key from the popover", async () => {
+    const { container, root, onRemoveNodeSecret, open } = renderCredentials();
+    open();
     React.act(() =>
       [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Change")
+        .find((button) => button.textContent === "Replace")
         ?.click(),
     );
     const form = container.querySelector("form");
 
-    expect(form?.textContent).toContain("Configured");
+    expect(form?.textContent).toContain("Key saved");
     const remove = [
       ...(form?.querySelectorAll<HTMLButtonElement>("button") ?? []),
     ].find((button) => button.textContent === "Remove");
@@ -1858,6 +2016,20 @@ describe("WorkflowNode secret input brick", () => {
       expect(onRemoveNodeSecret).toHaveBeenCalledWith("chat", "api_key"),
     );
 
+    React.act(() => root.unmount());
+  });
+
+  it("gives a key-only node its trigger without an empty config body", () => {
+    const spec: NodeSpec = {
+      ...chatCompletionSpec(),
+      config_schema: { type: "object", properties: {} },
+    };
+    const data = createWorkflowNodeData(spec);
+    data.secretStatuses = { api_key: { state: "unconfigured" } };
+    const { container, root } = renderNode("chat", data);
+
+    expect(container.querySelector(TRIGGER)?.textContent).toBe("Key needed");
+    expect(container.querySelector('[data-testid="config-board"]')).toBeNull();
     React.act(() => root.unmount());
   });
 });
@@ -2254,6 +2426,685 @@ describe("WorkflowNode provider-dependent OCR outputs", () => {
       "No result saved for this step yet",
     );
 
+    React.act(() => root.unmount());
+  });
+});
+
+describe("WorkflowNode dynamic config fields", () => {
+  function rerender(
+    root: ReturnType<typeof createRoot>,
+    id: string,
+    data: WorkflowNodeData,
+  ) {
+    React.act(() =>
+      root.render(
+        <WorkflowNodeCard
+          {...({
+            id,
+            data,
+            selected: false,
+            dragging: false,
+          } as React.ComponentProps<typeof WorkflowNodeCard>)}
+        />,
+      ),
+    );
+  }
+
+  function dynamicSpec(
+    configSchema: Record<string, unknown>,
+    extra: Partial<NodeSpec> = {},
+  ): NodeSpec {
+    return nodeSpecFixture({
+      operator_id: "test.dynamic",
+      title: "Dynamic step",
+      config_schema: configSchema,
+      ...extra,
+    });
+  }
+
+  function brickFields(container: HTMLElement): (string | undefined)[] {
+    return [
+      ...container.querySelectorAll<HTMLElement>(
+        '[data-testid="config-brick"]',
+      ),
+    ].map((brick) => brick.dataset.configField);
+  }
+
+  function radio(scope: ParentNode, name: string): HTMLElement | undefined {
+    return [...scope.querySelectorAll<HTMLElement>('[role="radio"]')].find(
+      (element) => element.textContent === name,
+    );
+  }
+
+  function group(scope: ParentNode, name: string): HTMLElement | null {
+    return scope.querySelector<HTMLElement>(
+      `[role="group"][aria-label="${name}"]`,
+    );
+  }
+
+  function pressEnter(input: HTMLInputElement) {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  }
+
+  const AREA = { field: "scope", eq: "Selected area" };
+  const DETECT_TEXT_SCHEMA = {
+    type: "object",
+    properties: {
+      scope: {
+        type: "string",
+        title: "Scan area",
+        enum: ["Selected area", "Whole TIFF page"],
+        default: "Selected area",
+        "x-grafy-widget": "segmented",
+      },
+      col: {
+        type: "integer",
+        title: "Left pixel",
+        minimum: 0,
+        default: 0,
+        "x-grafy-visible-when": AREA,
+      },
+      row: {
+        type: "integer",
+        title: "Top pixel",
+        minimum: 0,
+        default: 0,
+        "x-grafy-visible-when": AREA,
+      },
+      width: {
+        type: "integer",
+        title: "Width in pixels",
+        exclusiveMinimum: 0,
+        default: 512,
+        "x-grafy-visible-when": AREA,
+      },
+      height: {
+        type: "integer",
+        title: "Height in pixels",
+        exclusiveMinimum: 0,
+        default: 512,
+        "x-grafy-visible-when": AREA,
+      },
+    },
+  };
+
+  it("hides area fields for a whole page and brings back their saved values", () => {
+    const onConfigChange = vi.fn();
+    const data = createWorkflowNodeData(dynamicSpec(DETECT_TEXT_SCHEMA));
+    data.config = {
+      scope: "Selected area",
+      col: 40,
+      row: 8,
+      width: 256,
+      height: 128,
+    };
+    data.onConfigChange = onConfigChange;
+    const { container, root } = renderNode("detect", data);
+    expect(brickFields(container)).toEqual([
+      "scope",
+      "col",
+      "row",
+      "width",
+      "height",
+    ]);
+
+    React.act(() => radio(container, "Whole TIFF page")?.click());
+    expect(onConfigChange).toHaveBeenCalledWith(
+      "detect",
+      "scope",
+      "Whole TIFF page",
+    );
+
+    xyflowMocks.updateNodeInternals.mockClear();
+    const whole = {
+      ...data,
+      config: { ...data.config, scope: "Whole TIFF page" },
+    };
+    rerender(root, "detect", whole);
+    expect(brickFields(container)).toEqual(["scope"]);
+    // Hiding a field never writes it away.
+    expect(onConfigChange).toHaveBeenCalledTimes(1);
+    expect(whole.config).toMatchObject({ col: 40, row: 8, width: 256 });
+    // The board changed height under the handles, so they are re-measured.
+    expect(xyflowMocks.updateNodeInternals).toHaveBeenCalledWith("detect");
+
+    rerender(root, "detect", data);
+    const left = container.querySelector<HTMLInputElement>(
+      '[data-config-field="col"] input',
+    );
+    expect(left?.value).toBe("40");
+
+    React.act(() => root.unmount());
+  });
+
+  const CHAT_SCHEMA = {
+    type: "object",
+    properties: {
+      model: { type: "string", title: "Model", default: "gpt-test" },
+      max_completion_tokens: {
+        type: "integer",
+        title: "Max Completion Tokens",
+        minimum: 1,
+        maximum: 1_000_000,
+        default: 2048,
+        "x-grafy-advanced": true,
+      },
+      json_schema_name: {
+        type: "string",
+        title: "Schema name",
+        default: "response",
+        "x-grafy-visible-when": { portConnected: "json_schema" },
+      },
+      strict: {
+        type: "boolean",
+        title: "Strict",
+        default: true,
+        "x-grafy-widget": "switch",
+        "x-grafy-visible-when": { portConnected: "json_schema" },
+      },
+    },
+  };
+
+  it("shows schema options only while the schema input has a wire", () => {
+    const data = createWorkflowNodeData(dynamicSpec(CHAT_SCHEMA));
+    data.connectedInputPorts = {
+      json_schema: { connected: false, artifactTypeKey: null },
+    };
+    const { container, root } = renderNode("chat", data);
+    expect(brickFields(container)).toEqual(["model"]);
+
+    rerender(root, "chat", {
+      ...data,
+      connectedInputPorts: {
+        json_schema: { connected: true, artifactTypeKey: "json.schema@1" },
+      },
+    });
+    expect(brickFields(container)).toEqual([
+      "model",
+      "json_schema_name",
+      "strict",
+    ]);
+    const strict = container.querySelector('[role="switch"]');
+    // An unset boolean draws its schema default.
+    expect(strict?.getAttribute("aria-checked")).toBe("true");
+
+    React.act(() => root.unmount());
+  });
+
+  it("reads a wire from the canvas edges when Workbench has not derived one", () => {
+    const port = artifactPortFixture({
+      name: "json_schema",
+      title: "JSON schema",
+      direction: "input",
+    });
+    const data = createWorkflowNodeData(
+      dynamicSpec(CHAT_SCHEMA, { inputs: [port] }),
+    );
+    xyflowMocks.edges = [
+      {
+        id: "schema-to-chat",
+        source: "schema",
+        target: "chat",
+        targetHandle: encodeHandleId(portMetaForPort(port)),
+        data: { enabled: true, collectionMode: "direct" },
+      } as WorkflowEdge,
+    ];
+    const { container, root } = renderNode("chat", data);
+    expect(brickFields(container)).toContain("strict");
+    React.act(() => root.unmount());
+    xyflowMocks.edges = [];
+  });
+
+  it("keeps token limits behind options until they leave the default", () => {
+    const data = createWorkflowNodeData(dynamicSpec(CHAT_SCHEMA));
+    const { container, root } = renderNode("chat", data);
+    const options = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.startsWith("Options"),
+    );
+    expect(options?.textContent).toBe("Options (1)");
+    React.act(() => options?.click());
+    const tokens = container.querySelector<HTMLInputElement>(
+      '[data-config-field="max_completion_tokens"] input',
+    );
+    expect(tokens?.value).toBe("2048");
+    expect(tokens?.min).toBe("1");
+    expect(tokens?.max).toBe("1000000");
+    React.act(() => root.unmount());
+
+    const tuned = createWorkflowNodeData(dynamicSpec(CHAT_SCHEMA));
+    tuned.config = { ...tuned.config, max_completion_tokens: 4096 };
+    const rendered = renderNode("chat", tuned);
+    expect(brickFields(rendered.container)).toContain("max_completion_tokens");
+    React.act(() => rendered.root.unmount());
+  });
+
+  it("chooses delimiter or sheet from the file type on the wire", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        delimiter: {
+          type: "string",
+          title: "Delimiter",
+          default: ",",
+          "x-grafy-visible-when": {
+            portArtifactType: { port: "file", notIn: ["file.xlsx@1"] },
+          },
+        },
+        sheet: {
+          type: "string",
+          title: "Sheet",
+          "x-grafy-visible-when": {
+            portArtifactType: { port: "file", notIn: ["file.csv@1"] },
+          },
+        },
+      },
+    };
+    const wired = (artifactTypeKey: string | null) => ({
+      file: { connected: artifactTypeKey !== null, artifactTypeKey },
+    });
+    const data = createWorkflowNodeData(dynamicSpec(schema));
+    data.connectedInputPorts = wired(null);
+    const { container, root } = renderNode("table", data);
+    expect(brickFields(container)).toEqual(["delimiter", "sheet"]);
+
+    rerender(root, "table", {
+      ...data,
+      connectedInputPorts: wired("file.csv@1"),
+    });
+    expect(brickFields(container)).toEqual(["delimiter"]);
+    rerender(root, "table", {
+      ...data,
+      connectedInputPorts: wired("file.xlsx@1"),
+    });
+    expect(brickFields(container)).toEqual(["sheet"]);
+
+    React.act(() => root.unmount());
+  });
+
+  it("reveals a hidden or advanced field that holds an invalid value", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        mode: { type: "string", enum: ["auto", "custom"], default: "auto" },
+        area: {
+          type: "integer",
+          title: "Area",
+          maximum: 3,
+          "x-grafy-visible-when": { field: "mode", eq: "custom" },
+        },
+        retries: {
+          type: "integer",
+          title: "Retries",
+          minimum: 0,
+          default: 2,
+          "x-grafy-advanced": true,
+        },
+      },
+    };
+    const data = createWorkflowNodeData(dynamicSpec(schema));
+    data.config = { mode: "auto", area: 9, retries: -1 };
+    const { container, root } = renderNode("fix", data);
+
+    expect(brickFields(container)).toEqual(["mode", "area", "retries"]);
+    expect(
+      container.querySelector('[data-config-field="area"]')?.textContent,
+    ).toContain("Must be at most 3.");
+    expect(
+      container.querySelector('[data-config-field="retries"]')?.textContent,
+    ).toContain("Must be at least 0.");
+    expect(container.textContent).not.toContain("Options (");
+    React.act(() => root.unmount());
+  });
+
+  it("prints enum labels while writing the wire value", () => {
+    const onConfigChange = vi.fn();
+    const data = createWorkflowNodeData(
+      dynamicSpec({
+        type: "object",
+        properties: {
+          resampling: {
+            type: "string",
+            title: "Resampling",
+            enum: ["linear", "nearest"],
+            default: "linear",
+            "x-grafy-enum-labels": { linear: "Smooth", nearest: "Crisp" },
+          },
+        },
+      }),
+    );
+    data.onConfigChange = onConfigChange;
+    const { container, root } = renderNode("enum", data);
+    const select = container.querySelector<HTMLSelectElement>("select");
+    expect(
+      [...(select?.options ?? [])].map((option) => [
+        option.value,
+        option.textContent,
+      ]),
+    ).toEqual([
+      ["linear", "Smooth"],
+      ["nearest", "Crisp"],
+    ]);
+    React.act(() => {
+      select!.value = "nearest";
+      select!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onConfigChange).toHaveBeenCalledWith(
+      "enum",
+      "resampling",
+      "nearest",
+    );
+    React.act(() => root.unmount());
+  });
+
+  it("shows a zero-based index the way a person counts", () => {
+    const onConfigChange = vi.fn();
+    const data = createWorkflowNodeData(
+      dynamicSpec({
+        type: "object",
+        properties: {
+          page_index: {
+            type: "integer",
+            title: "Page",
+            minimum: 0,
+            maximum: 9,
+            default: 0,
+            "x-grafy-widget": "one-based-integer",
+          },
+        },
+      }),
+    );
+    data.onConfigChange = onConfigChange;
+    const { container, root } = renderNode("page", data);
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-config-field="page_index"] input',
+    );
+    expect(input?.value).toBe("1");
+    expect(input?.min).toBe("1");
+    expect(input?.max).toBe("10");
+    React.act(() => enterInputValue(input!, "3"));
+    expect(onConfigChange).toHaveBeenLastCalledWith("page", "page_index", 2);
+    React.act(() => root.unmount());
+  });
+
+  it("folds named groups behind a header that counts their fields", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        batch_size: { type: "integer", title: "Batch size", default: 8 },
+        url: {
+          type: "string",
+          title: "Url",
+          default: "http://label-studio",
+          "x-grafy-group": "Label Studio",
+        },
+        project: {
+          type: "string",
+          title: "Project",
+          default: "OCR",
+          "x-grafy-group": "Label Studio",
+        },
+        bucket: {
+          type: "string",
+          title: "Bucket",
+          default: "grafy-ocr",
+          "x-grafy-group": "Storage",
+        },
+      },
+    };
+    const data = createWorkflowNodeData(dynamicSpec(schema));
+    const { container, root } = renderNode("studio", data);
+    const sections = [
+      ...container.querySelectorAll<HTMLElement>("[data-config-group]"),
+    ];
+    expect(sections.map((section) => section.dataset.configGroup)).toEqual([
+      "Label Studio",
+      "Storage",
+    ]);
+    // Schema order: the ungrouped field first, then each group's fields.
+    expect(brickFields(container)).toEqual([
+      "batch_size",
+      "url",
+      "project",
+      "bucket",
+    ]);
+    const storageToggle = sections[1]?.querySelector("button");
+    expect(storageToggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(storageToggle?.textContent).toBe("Storage1");
+
+    xyflowMocks.updateNodeInternals.mockClear();
+    React.act(() => storageToggle?.click());
+    expect(storageToggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(brickFields(container)).toEqual(["batch_size", "url", "project"]);
+    expect(xyflowMocks.updateNodeInternals).toHaveBeenCalledWith("studio");
+    React.act(() => root.unmount());
+  });
+
+  it("edits a raster style as one folded settings group", () => {
+    const onConfigChange = vi.fn();
+    const data = createWorkflowNodeData(
+      dynamicSpec(RASTER_LAYER_CONFIG_SCHEMA, { title: "Raster layer" }),
+    );
+    data.config = { ...data.config, title: "Scan" };
+    data.onConfigChange = onConfigChange;
+    const { container, root } = renderNode("raster", data);
+
+    expect(brickFields(container)).toEqual([
+      "title",
+      "visible",
+      "opacity",
+      "style",
+    ]);
+    const style = group(container, "style");
+    const toggle = style?.querySelector<HTMLButtonElement>("[aria-expanded]");
+    // Seven controls a layer rarely needs stay folded until asked for.
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(radio(style!, "Crisp")).toBeUndefined();
+
+    xyflowMocks.updateNodeInternals.mockClear();
+    React.act(() => toggle?.click());
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(xyflowMocks.updateNodeInternals).toHaveBeenCalledWith("raster");
+    expect(
+      [...style!.querySelectorAll("[data-config-field]")].map(
+        (cell) => (cell as HTMLElement).dataset.configField,
+      ),
+    ).toEqual([
+      "opacity",
+      "brightness_min",
+      "brightness_max",
+      "contrast",
+      "saturation",
+      "hue",
+      "resampling",
+    ]);
+
+    React.act(() => radio(style!, "Crisp")?.click());
+    expect(onConfigChange).toHaveBeenLastCalledWith("raster", "style", {
+      kind: "raster",
+      opacity: 1,
+      brightness_min: 0,
+      brightness_max: 1,
+      contrast: 0,
+      saturation: 0,
+      hue: 0,
+      resampling: "nearest",
+    });
+    React.act(() => root.unmount());
+  });
+
+  function vectorLayer(config: Record<string, unknown> = {}) {
+    const onConfigChange = vi.fn();
+    const data = createWorkflowNodeData(
+      dynamicSpec(VECTOR_LAYER_CONFIG_SCHEMA, { title: "Vector layer" }),
+    );
+    data.config = { ...data.config, title: "Parcels", ...config };
+    data.onConfigChange = onConfigChange;
+    return { data, onConfigChange, ...renderNode("vector", data) };
+  }
+
+  it("draws the vector style union through the generic body", () => {
+    const { container, root, onConfigChange } = vectorLayer();
+    expect(brickFields(container)).toEqual([
+      "title",
+      "visible",
+      "opacity",
+      "style",
+    ]);
+    const style = group(container, "Style")!;
+    expect(radio(style, "Uniform")?.getAttribute("aria-checked")).toBe("true");
+    expect(
+      [...style.querySelectorAll('[role="group"]')].map((section) =>
+        section.getAttribute("aria-label"),
+      ),
+    ).toEqual(["fill", "line", "outline", "point", "label"]);
+
+    // Fill unfolds to its own switch, colour, and opacity.
+    const fill = group(style, "fill")!;
+    React.act(() =>
+      fill.querySelector<HTMLButtonElement>("[aria-expanded]")?.click(),
+    );
+    const color = fill.querySelector<HTMLInputElement>('input[type="color"]');
+    expect(color?.value).toBe("#2563eb");
+    React.act(() => enterInputValue(color!, "#ff0000"));
+    expect(onConfigChange).toHaveBeenLastCalledWith(
+      "vector",
+      "style",
+      expect.objectContaining({
+        kind: "vector",
+        fill: { enabled: true, color: "#ff0000", opacity: 0.45 },
+        label: null,
+      }),
+    );
+
+    // An optional label is a switch that writes a whole label style.
+    const useLabel = group(style, "label")?.querySelector<HTMLElement>(
+      '[role="switch"]',
+    );
+    expect(useLabel?.getAttribute("aria-label")).toBe("Use label");
+    React.act(() => useLabel?.click());
+    expect(onConfigChange).toHaveBeenLastCalledWith(
+      "vector",
+      "style",
+      expect.objectContaining({
+        label: {
+          property: "name",
+          color: "#111827",
+          size: 12,
+          halo_color: "#ffffff",
+          halo_width: 1,
+        },
+      }),
+    );
+
+    React.act(() => radio(style, "Categories")?.click());
+    expect(onConfigChange).toHaveBeenLastCalledWith("vector", "style", {
+      kind: "categorized_points",
+      category_property: "type",
+      categories: [
+        {
+          id: expect.stringMatching(/^item_1_[0-9a-f]{8}$/),
+          title: "Category 1",
+          values: [1],
+          point: {
+            enabled: true,
+            color: "#dc2626",
+            opacity: 1,
+            radius: 5,
+            stroke_color: "#ffffff",
+            stroke_width: 1,
+          },
+          min_zoom: 0,
+          max_zoom: 22,
+        },
+      ],
+      label: null,
+    });
+    React.act(() => root.unmount());
+  });
+
+  const CATEGORIZED = {
+    kind: "categorized_points",
+    category_property: "type",
+    categories: [
+      {
+        id: "category_1",
+        title: "Wells",
+        values: [1],
+        point: {
+          enabled: true,
+          color: "#dc2626",
+          opacity: 1,
+          radius: 5,
+          stroke_color: "#ffffff",
+          stroke_width: 1,
+        },
+        min_zoom: 0,
+        max_zoom: 22,
+      },
+    ],
+    label: null,
+  };
+
+  it("edits categories as item cards with typed value lists", () => {
+    const { container, root, onConfigChange } = vectorLayer({
+      style: CATEGORIZED,
+    });
+    const style = group(container, "Style")!;
+    expect(radio(style, "Categories")?.getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    const card = group(style, "Category 1")!;
+    const title = card.querySelector<HTMLInputElement>(
+      'input[aria-label="Category 1 title"]',
+    );
+    expect(title?.value).toBe("Wells");
+    // The only category cannot be removed: the schema needs at least one.
+    expect(
+      card.querySelector<HTMLButtonElement>(
+        'button[aria-label="Remove category 1"]',
+      )?.disabled,
+    ).toBe(true);
+
+    const valueType = card.querySelector<HTMLSelectElement>(
+      'select[aria-label="Values value type"]',
+    );
+    expect(valueType?.value).toBe("number");
+    const values = card.querySelector<HTMLInputElement>(
+      '[data-config-field="values"] input:not([aria-hidden="true"])',
+    );
+    expect(values?.value).toBe("1");
+    React.act(() => enterInputValue(values!, "1, 2"));
+    React.act(() => pressEnter(values!));
+    expect(onConfigChange).toHaveBeenLastCalledWith(
+      "vector",
+      "style",
+      expect.objectContaining({
+        categories: [
+          expect.objectContaining({ id: "category_1", values: [1, 2] }),
+        ],
+      }),
+    );
+
+    React.act(() => enterInputValue(values!, "one"));
+    React.act(() => pressEnter(values!));
+    expect(card.querySelector('[role="alert"]')?.textContent).toBe(
+      "Enter at least one comma-separated value of the selected type.",
+    );
+
+    const add = [...style.querySelectorAll("button")].find(
+      (button) => button.textContent === "Add category",
+    );
+    React.act(() => add?.click());
+    const next = onConfigChange.mock.lastCall?.[2] as typeof CATEGORIZED;
+    expect(next.categories).toHaveLength(2);
+    expect(next.categories[0]).toEqual(CATEGORIZED.categories[0]);
+    expect(next.categories[1]).toMatchObject({
+      id: expect.stringMatching(/^item_2_[0-9a-f]{8}$/),
+      title: "Category 2",
+      values: [1],
+    });
     React.act(() => root.unmount());
   });
 });

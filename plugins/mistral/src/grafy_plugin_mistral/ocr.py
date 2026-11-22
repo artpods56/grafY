@@ -26,6 +26,7 @@ from grafy_core.table_contracts import (
     TableValueType,
 )
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.config_ui import field_ui
 from grafy_core.declared_values import note_declaration
 from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
@@ -61,31 +62,35 @@ ConfidenceGranularity = Literal["page", "block"]
 class MistralOcrConfig(NodeConfig):
     table_format: TableFormat | None = Field(
         title="Table format",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(
+            advanced=True, enum_labels={"markdown": "Markdown", "html": "HTML"}
+        ),
         default=None,
         description="Render extracted tables as Markdown or HTML.",
     )
     extract_header: bool = Field(
         title="Separate headers",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(advanced=True),
         default=False,
         description="Move page headers out of the markdown into the header field.",
     )
     extract_footer: bool = Field(
         title="Separate footers",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(advanced=True),
         default=False,
         description="Move page footers out of the markdown into the footer field.",
     )
     confidence_scores_granularity: ConfidenceGranularity | None = Field(
         title="Confidence detail",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(
+            advanced=True, enum_labels={"page": "Per page", "block": "Per region"}
+        ),
         default=None,
         description="Attach page or block confidence scores.",
     )
     timeout_ms: int = Field(
         title="Time limit (ms)",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(advanced=True),
         default=120_000,
         ge=1_000,
         le=900_000,
@@ -93,7 +98,7 @@ class MistralOcrConfig(NodeConfig):
     )
     max_retries: int = Field(
         title="Max retries",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(advanced=True),
         default=0,
         ge=0,
         le=5,

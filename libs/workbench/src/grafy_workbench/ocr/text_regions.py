@@ -13,6 +13,7 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
+from grafy_core.config_ui import field_ui, when_field_eq
 from grafy_core.documents import TiffFile
 from grafy_core.file_contracts import TIFF_FILE
 from grafy_core.node_context import UserFacingNodeError
@@ -35,11 +36,47 @@ class TiffPixelWindow(BaseModel):
 
 
 class DetectTextConfig(TiffPixelWindow, NodeConfig):
+    col: int = Field(
+        default=0,
+        ge=0,
+        title="Left pixel",
+        json_schema_extra=field_ui(
+            visible_when=when_field_eq("scope", "Selected area")
+        ),
+    )
+    row: int = Field(
+        default=0,
+        ge=0,
+        title="Top pixel",
+        json_schema_extra=field_ui(
+            visible_when=when_field_eq("scope", "Selected area")
+        ),
+    )
+    width: int = Field(
+        default=512,
+        gt=0,
+        title="Width in pixels",
+        json_schema_extra=field_ui(
+            visible_when=when_field_eq("scope", "Selected area")
+        ),
+    )
+    height: int = Field(
+        default=512,
+        gt=0,
+        title="Height in pixels",
+        json_schema_extra=field_ui(
+            visible_when=when_field_eq("scope", "Selected area")
+        ),
+    )
     scope: Literal["Selected area", "Whole TIFF page"] = Field(
-        default="Selected area", title="Scan area"
+        default="Selected area",
+        title="Scan area",
+        json_schema_extra=field_ui(widget="segmented"),
     )
     strategy: Literal["Automatic", "Single crop"] = Field(
-        default="Automatic", title="Window strategy"
+        default="Automatic",
+        title="Window strategy",
+        json_schema_extra=field_ui(widget="segmented"),
     )
 
 

@@ -206,6 +206,7 @@ import {
   artifactOriginConnections,
   resolveArtifactCardConnection,
 } from "../canvas/artifact-connections";
+import { connectedInputPortsForNode } from "../canvas/connected-inputs";
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
   DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
@@ -4272,6 +4273,16 @@ function WorkbenchBody({
             false,
             authoredDocument.origins,
           ),
+          // Config fields that depend on a wire read what each input receives.
+          connectedInputPorts: connectedInputPortsForNode({
+            nodeId: node.id,
+            spec: node.data.spec,
+            edges,
+            nodes,
+            origins: authoredDocument.origins,
+            conversions: registry?.artifact_conversions ?? [],
+            artifactTypes: registry?.artifact_types ?? [],
+          }),
           inputPlugBindings: inputPlugBindingsForNode(
             node,
             nodes,
