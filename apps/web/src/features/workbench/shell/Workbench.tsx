@@ -2887,6 +2887,8 @@ function WorkbenchBody({
 
   const openCanvasMenu = React.useCallback(
     (request: CanvasMenuRequest) => {
+      onCloseGraphBrowser();
+      closeGridPanel();
       let { target } = request;
       if (target.kind === "node") {
         const nodeId = target.nodeId;
@@ -2910,7 +2912,14 @@ function WorkbenchBody({
         returnFocus: focused instanceof HTMLElement ? focused : null,
       });
     },
-    [artifactViewers, authoredDocumentRef, canvasSelection, openContextMenu],
+    [
+      artifactViewers,
+      authoredDocumentRef,
+      canvasSelection,
+      closeGridPanel,
+      onCloseGraphBrowser,
+      openContextMenu,
+    ],
   );
   const canvasMenuTrigger = useCanvasMenuTrigger(openCanvasMenu);
   const canvasMenuPoint = canvasMenu
@@ -3538,7 +3547,11 @@ function WorkbenchBody({
                   ),
                 )
               }
-              onPaneClick={closeCanvasPopovers}
+              onPaneClick={() => {
+                onCloseGraphBrowser();
+                closeGridPanel();
+                closeCanvasPopovers(false);
+              }}
               onSelectEdgeAttachment={(pipeId, anchor) =>
                 toggleInspectedPipe(
                   openGraphId,

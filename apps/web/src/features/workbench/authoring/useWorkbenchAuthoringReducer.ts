@@ -264,12 +264,20 @@ export function useWorkbenchAuthoringReducer<
         onCloseGraphBrowser,
         onCloseGridPanel,
       };
-      dispatch(action);
-      if (action.kind === "applyCommands") {
-        // A gesture can submit graph commands and then presentation changes.
-        // Submit the graph batch before control returns to that gesture.
-        const effects = commandEffectsRef.current.splice(0);
-        for (const effect of effects) {
+      let commandEffects: WorkbenchAuthoringUiEffect[] = [];
+      let dispatched = false;
+      try {
+        dispatch(action);
+        dispatched = true;
+      } finally {
+        if (action.kind === "applyCommands") {
+          // A gesture can submit graph commands and then presentation changes.
+          // Submit the graph batch before control returns to that gesture.
+          commandEffects = commandEffectsRef.current.splice(0);
+        }
+      }
+      if (dispatched && commandEffects.length > 0) {
+        for (const effect of commandEffects) {
           runAuthoringEffect(effect, liveDepsRef.current);
         }
       }

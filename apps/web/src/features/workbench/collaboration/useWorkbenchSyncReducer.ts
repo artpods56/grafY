@@ -407,6 +407,7 @@ export function useWorkbenchSyncReducer({
   >(() => undefined);
   const openGraphIdRef = React.useRef<string | null>(null);
   const selectedNodeIdsRef = React.useRef(selectedNodeIds);
+  const applyAuthoringCommandsRef = React.useRef(applyAuthoringCommands);
   const presenceCursorRef = React.useRef<{ x: number; y: number } | null>(null);
   const presenceClientPointRef = React.useRef<{ x: number; y: number } | null>(
     null,
@@ -645,7 +646,9 @@ export function useWorkbenchSyncReducer({
     openGraphInProjectRef.current = lifecycle.openGraphInProject;
     openGraphIdRef.current = openGraphId;
     selectedNodeIdsRef.current = selectedNodeIds;
+    applyAuthoringCommandsRef.current = applyAuthoringCommands;
   }, [
+    applyAuthoringCommands,
     lifecycle.openGraphInProject,
     lifecycle.purgeLocalGraphState,
     lifecycle.syncFromCollaborativeHead,
@@ -704,21 +707,16 @@ export function useWorkbenchSyncReducer({
             (candidate) => candidate.id === rename.graph_id,
           );
           if (!graph) return;
-          applyAuthoringCommands([{ kind: "rename_graph", name: graph.name }], {
-            syncRoom: false,
-          });
+          applyAuthoringCommandsRef.current(
+            [{ kind: "rename_graph", name: graph.name }],
+            { syncRoom: false },
+          );
         })
         .catch((error: unknown) => {
           setRunError(error instanceof Error ? error.message : fallback);
         });
     },
-    [
-      applyAuthoringCommands,
-      dispatch,
-      refreshSavedGraphs,
-      setRunError,
-      submitRoomBatch,
-    ],
+    [dispatch, refreshSavedGraphs, setRunError, submitRoomBatch],
   );
   const addProjectGraph = React.useCallback(() => {
     const graphs = projectRoom.head?.document.graphs ?? [];
