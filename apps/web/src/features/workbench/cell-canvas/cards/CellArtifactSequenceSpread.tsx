@@ -451,6 +451,7 @@ interface SpreadMoveView {
 /** A card a narrowing resize retired, for as long as it glides away. */
 interface ResizeTuck {
   key: string;
+  index: number;
   item: ArtifactStackItem;
 }
 
@@ -672,6 +673,7 @@ export function CellArtifactSequenceSpread({
   /** Middle cards a multi-slot step retired into the covered stack. */
   const [stepTucks, setStepTucks] = React.useState<readonly StepTuck[]>([]);
   /** Cards a narrowing resize retired, gliding under the new right stack. */
+  const resizeTucksRef = React.useRef<readonly ResizeTuck[]>([]);
   const [resizeTucks, setResizeTucks] = React.useState<readonly ResizeTuck[]>(
     [],
   );
@@ -766,6 +768,7 @@ export function CellArtifactSequenceSpread({
         setMotionX(new Map());
         setUnderCard(null);
         setStepTucks([]);
+        resizeTucksRef.current = [];
         setResizeTucks([]);
         setResizeBackSync(null);
         setFoldBackSync(null);
@@ -850,6 +853,7 @@ export function CellArtifactSequenceSpread({
     setClosePhase("folding");
     setUnderCard(null);
     setStepTucks([]);
+    resizeTucksRef.current = [];
     setResizeTucks([]);
     setResizeBackSync(null);
     setFoldBackSync(driver);
@@ -925,6 +929,8 @@ export function CellArtifactSequenceSpread({
         }
         motionSettlesRef.current = nextSettles;
         setMotionX(snapshotMotion());
+        resizeTucksRef.current = [];
+        setResizeTucks([]);
         setResizeBackSync(null);
         setFoldBackSync(null);
         if (anyActive) {
@@ -1521,60 +1527,122 @@ export function CellArtifactSequenceSpread({
     } = windowRef.current;
     // The window the parent will draw for that count, clamped as above.
     const nextCount = Math.min(nextVisibleCount, list.length);
-    const nextStart = layout.windowed
-      ? clamp(seenStart, 0, Math.max(0, list.length - nextCount))
-      : 0;
+    const nextStart =
+      nextCount < list.length
+        ? clamp(seenStart, 0, Math.max(0, list.length - nextCount))
+        : 0;
     if (nextCount === seenCount) return;
     const now = performance.now();
-    const settles = motionSettlesRef.current;
+    const prevSettles = motionSettlesRef.current;
+    const nextSettles = new Map<string, CardSettleState>();
     let anyActive = false;
-    const glide = (key: string, fromX: number, toX: number) => {
-      const from = settles.get(key) ?? createCardSettle({ x: fromX, y: 0 });
+
+    const takePreviousSettle = (
+      item: ArtifactStackItem,
+      index: number,
+      fallbackX: number,
+    ): CardSettleState =>
+      prevSettles.get(`${item.artifactId}:${index}`) ??
+      prevSettles.get(`resize-tuck:${item.artifactId}:${index}`) ??
+      createCardSettle({ x: fallbackX, y: 0 });
+
+    const glide = (key: string, from: CardSettleState, toX: number) => {
       const settle = retargetCardSettle(from, { x: toX, y: 0 }, now);
-      settles.set(key, settle);
+      nextSettles.set(key, settle);
       if (settle.active) anyActive = true;
+      return settle;
     };
-    // Every card still open comes from where the old row drew it: its old
-    // slot, or for one just revealed, the end of the old row it came out of.
+
+    const nextOpenIndices = new Set<number>();
+    // Every card still open comes from where the old row (or an in-flight
+    // tuck) drew it: its live settle, its old slot, or the end of the old row.
     for (let slot = 0; slot < nextCount; slot += 1) {
       const index = nextStart + slot;
       const item = list[index];
       if (!item) continue;
+      nextOpenIndices.add(index);
       const key = `${item.artifactId}:${index}`;
       const seenSlot = index - seenStart;
       const fromSlot = seenSlot < 0 ? 0 : Math.min(seenSlot, seenCount - 1);
-      if (fromSlot === slot && !settles.has(key)) continue;
-      glide(key, fromSlot * cw, slot * cw);
+      const hasPrior =
+        prevSettles.has(key) ||
+        prevSettles.has(`resize-tuck:${item.artifactId}:${index}`);
+      if (fromSlot === slot && !hasPrior) continue;
+      glide(key, takePreviousSettle(item, index, fromSlot * cw), slot * cw);
     }
-    const retired: ResizeTuck[] = [];
+
+    const rightEdgeX = (nextCount - 1) * cw;
+    const nextTucksByIndex = new Map<number, ResizeTuck>();
+    const newlyRetired: ResizeTuck[] = [];
+
+    // Retire cards leaving the right side of the row into the new right edge.
     for (let slot = nextCount; slot < seenCount; slot += 1) {
       const index = seenStart + slot;
-      if (index >= nextStart && index < nextStart + nextCount) continue;
+      if (nextOpenIndices.has(index)) continue;
       const item = list[index];
       if (!item) continue;
       const key = `resize-tuck:${item.artifactId}:${index}`;
-      glide(key, slot * cw, (nextCount - 1) * cw);
-      retired.push({ key, item });
+      const from = takePreviousSettle(item, index, slot * cw);
+      glide(key, from, rightEdgeX);
+      const tuck: ResizeTuck = { key, index, item };
+      nextTucksByIndex.set(index, tuck);
+      newlyRetired.push(tuck);
     }
+
+    // Retarget any already-tucking cards to the new right edge so rapid
+    // narrowing never strands them outside the frame, and drop any that were
+    // re-opened or are already behind the widened right edge.
+    if (nextStart + nextCount < list.length) {
+      for (const existing of resizeTucksRef.current) {
+        if (
+          nextOpenIndices.has(existing.index) ||
+          nextTucksByIndex.has(existing.index)
+        ) {
+          continue;
+        }
+        const live = prevSettles.get(existing.key);
+        if (!live || live.current.x <= rightEdgeX + 0.5) continue;
+        glide(existing.key, live, rightEdgeX);
+        nextTucksByIndex.set(existing.index, existing);
+      }
+    }
+
+    const nextTucks = [...nextTucksByIndex.values()].sort(
+      (a, b) => b.index - a.index,
+    );
+
     windowRef.current = {
       ...windowRef.current,
       windowStart: nextStart,
       visibleCount: nextCount,
     };
-    if (!anyActive) return;
-    if (retired.length > 0) {
-      const keys = new Set(retired.map((tuck) => tuck.key));
-      setResizeTucks((current) => [
-        ...current.filter((tuck) => !keys.has(tuck.key)),
-        ...retired,
-      ]);
-      const driver = retired[0];
-      const driverSettle = driver ? settles.get(driver.key) : undefined;
-      if (driver && driverSettle) {
+    motionSettlesRef.current = nextSettles;
+    resizeTucksRef.current = anyActive ? nextTucks : [];
+    setUnderCard(null);
+    setStepTucks([]);
+    setResizeTucks(resizeTucksRef.current);
+
+    if (!anyActive) {
+      setMotionX(new Map());
+      setResizeBackSync(null);
+      return;
+    }
+
+    if (newlyRetired.length > 0) {
+      let driver: { key: string; startX: number; span: number } | null = null;
+      for (const tuck of nextTucks) {
+        const tuckSettle = nextSettles.get(tuck.key);
+        if (!tuckSettle) continue;
+        const span = Math.abs(tuckSettle.current.x - rightEdgeX);
+        if (!driver || span > driver.span) {
+          driver = { key: tuck.key, startX: tuckSettle.current.x, span };
+        }
+      }
+      if (driver) {
         setResizeBackSync({
           driverKey: driver.key,
-          startX: driverSettle.current.x,
-          targetX: (nextCount - 1) * cw,
+          startX: driver.startX,
+          targetX: rightEdgeX,
           itemCount: list.length,
           visibleCount: nextCount,
         });
@@ -1583,12 +1651,12 @@ export function CellArtifactSequenceSpread({
       const endIndex = nextStart + nextCount - 1;
       const endItem = list[endIndex];
       const driverKey = endItem ? `${endItem.artifactId}:${endIndex}` : "";
-      const driverSettle = driverKey ? settles.get(driverKey) : undefined;
+      const driverSettle = driverKey ? nextSettles.get(driverKey) : undefined;
       if (driverKey && driverSettle) {
         setResizeBackSync({
           driverKey,
           startX: driverSettle.current.x,
-          targetX: (nextCount - 1) * cw,
+          targetX: rightEdgeX,
           itemCount: list.length,
           visibleCount: nextCount,
         });
@@ -2170,9 +2238,11 @@ export function CellArtifactSequenceSpread({
   };
 
   const renderResizeTuck = (tuck: ResizeTuck) => {
-    const x = motionX.get(tuck.key);
-    if (x === undefined) return null;
-    const dist = Math.max(0, x - (visibleCount - 1) * cardWidth);
+    const rawX = motionX.get(tuck.key);
+    if (rawX === undefined) return null;
+    const minX = (visibleCount - 1) * cardWidth;
+    const x = Math.max(minX, rawX);
+    const dist = x - minX;
     const tuckHeaderOpacity = clamp(
       (dist - cardWidth * 0.2) / (cardWidth * 0.5),
       0,

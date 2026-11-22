@@ -781,21 +781,73 @@ describe("CellArtifactSequenceSpread", () => {
     pointer("pointermove", handle, x - 2 * cw - 10, 100);
     render({ layout: open(20, 4) });
     const tucks = all(container, "[data-sequence-resize-tuck]");
-    // Old slots 4 and 5 (items 4, 5) glide in under the new last slot (3).
+    // Old slots 4 and 5 (items 4, 5) glide in under the new last slot (3),
+    // ordered deeper-index first so closer cards paint above farther ones.
     expect(tucks.map((tuck) => tuck.dataset.sequenceResizeTuck)).toEqual([
-      "a4",
       "a5",
+      "a4",
     ]);
     for (const tuck of tucks) {
       expect(tuck.getAttribute("aria-hidden")).toBe("true");
       expect(tuck.style.zIndex).toBe("1");
       expect(tuck.style.pointerEvents).toBe("none");
     }
-    expect(translateX(tucks[0]!)).toBe(4 * cw);
-    expect(translateX(tucks[1]!)).toBe(5 * cw);
+    expect(translateX(tucks[0]!)).toBe(5 * cw);
+    expect(translateX(tucks[1]!)).toBe(4 * cw);
     frame(2000);
     expect(all(container, "[data-sequence-resize-tuck]")).toHaveLength(0);
     pointer("pointerup", handle, x - 2 * cw - 10, 100);
+  });
+
+  it("retargets earlier tucking cards on a fast leftward yank and avoids duplicates on reversal", () => {
+    const frame = animateFrames();
+    const layout6 = open(6, 6);
+    const { container, render } = mount(6, { layout: layout6 });
+    frame(2000);
+    const cw = CARD.widthCells * CELL_SIZE;
+    const handle = q(container, '[data-sequence-resize="true"]')!;
+    const startX = (layout6.startCol + layout6.totalCols) * CELL_SIZE;
+
+    // Yank left across three slots (6 -> 5 -> 4 -> 3) while earlier tucks are still mid-flight.
+    pointer("pointerdown", handle, startX, 100);
+    pointer("pointermove", handle, startX - cw, 100);
+    render({ layout: open(6, 5) });
+    frame(24);
+    pointer("pointermove", handle, startX - 2 * cw, 100);
+    render({ layout: open(6, 4) });
+    frame(24);
+    pointer("pointermove", handle, startX - 3 * cw, 100);
+    render({ layout: open(6, 3) });
+
+    // All three retired cards (a5, a4, a3) are now gliding toward the new right edge (2 * cw).
+    const tucks = all(container, "[data-sequence-resize-tuck]");
+    expect(tucks.map((t) => t.dataset.sequenceResizeTuck)).toEqual([
+      "a5",
+      "a4",
+      "a3",
+    ]);
+    // Advance midway: every tuck must have moved past the old 3 * cw / 4 * cw edges toward 2 * cw.
+    frame(140);
+    const midA5 = translateX(q(container, '[data-sequence-resize-tuck="a5"]')!);
+    const midA4 = translateX(q(container, '[data-sequence-resize-tuck="a4"]')!);
+    const midA3 = translateX(q(container, '[data-sequence-resize-tuck="a3"]')!);
+    expect(midA5).toBeLessThan(3 * cw);
+    expect(midA4).toBeLessThan(2.5 * cw);
+    expect(midA3).toBeGreaterThanOrEqual(2 * cw);
+
+    // Bounce back right (3 -> 4) mid-flight: a3 leaves resizeTucks (no duplicate)
+    // and continues smoothly from its in-flight tuck x rather than teleporting.
+    pointer("pointermove", handle, startX - 2 * cw, 100);
+    render({ layout: open(6, 4) });
+    expect(q(container, '[data-sequence-resize-tuck="a3"]')).toBeNull();
+    const reopenedA3 = q(container, '[data-sequence-stack="right"]')!;
+    expect(reopenedA3.dataset.sequenceStackTop).toBe("a3");
+    // Slot 3 baseLeft is 3 * cw, so its translateX should keep its live offset (midA3 - 3 * cw).
+    expect(translateX(reopenedA3)).toBeCloseTo(midA3 - 3 * cw, 1);
+
+    frame(2000);
+    expect(all(container, "[data-sequence-resize-tuck]")).toHaveLength(0);
+    pointer("pointerup", handle, startX - 2 * cw, 100);
   });
 
   it("resizes with no glide when motion is reduced", () => {
