@@ -2490,3 +2490,15 @@ body.grafy-rail-resizing .grafy-workspace-settings {
   .maplibregl-canvas-container.maplibregl-interactive:active {
   cursor: grabbing;
 }
+
+[data-canvas-lab-frozen="true"],
+[data-canvas-lab-frozen="true"] * {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (max-width: 620px), (pointer: coarse) {
+  [data-canvas-lab-panel="true"] :is([role="radio"], select, summary) {
+    min-height: 44px;
+  }
+}

@@ -23,17 +23,10 @@ const s = stylex.create({
     textTransform: "uppercase",
   },
   title: {
-    marginBottom: "8px",
+    marginBottom: "24px",
     fontSize: tokens.fontSizeLg,
     fontWeight: 600,
     letterSpacing: "-0.02em",
-  },
-  lead: {
-    maxWidth: "42rem",
-    marginBottom: "24px",
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeSm,
-    lineHeight: 1.5,
   },
   list: {
     display: "grid",
@@ -69,11 +62,6 @@ export function SandboxIndex() {
     <div {...stylex.props(s.page)}>
       <div {...stylex.props(s.kicker)}>Development only</div>
       <h1 {...stylex.props(s.title)}>Sandbox</h1>
-      <p {...stylex.props(s.lead)}>
-        Spikes against real Grafy chrome. Nothing here is a product surface. Add
-        a folder under <code>src/sandbox/spikes</code> and register it in the
-        catalog.
-      </p>
       <div {...stylex.props(s.list)}>
         {SPIKES.map((spike) => (
           <Link
@@ -82,7 +70,7 @@ export function SandboxIndex() {
             {...stylex.props(s.row)}
           >
             <span {...stylex.props(s.rowTitle)}>{spike.title}</span>
-            <span {...stylex.props(s.rowSummary)}>{spike.summary}</span>
+            <span {...stylex.props(s.rowSummary)}>{spike.question}</span>
           </Link>
         ))}
       </div>

@@ -3,6 +3,19 @@ import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 export const workbenchStyles = stylex.create({
+  canvasLabDock: {
+    position: "absolute",
+    zIndex: 40,
+    top: "calc(70px + env(safe-area-inset-top, 0px))",
+    left: "calc(16px + env(safe-area-inset-left, 0px))",
+    width: {
+      default: "244px",
+      "@media (max-width: 620px)": "min(244px, calc(100% - 48px))",
+    },
+    maxHeight: "calc(100% - 110px - env(safe-area-inset-bottom, 0px))",
+    padding: "12px",
+    backgroundColor: tokens.colorBg,
+  },
   /*
    * Sits beside the two docked sidebar panes — the workspace rail and the workbench
    * side panel — and gives up exactly their width, so the canvas is never covered.

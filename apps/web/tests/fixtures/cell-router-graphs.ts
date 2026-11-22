@@ -5,11 +5,11 @@ import {
   type CellGraph,
   type CellPipeModel,
   type CellPort,
-} from "./cell-model";
+} from "@/features/workbench/cell-canvas/cell-model";
 
 /**
- * Graphs for the cell canvas spike: a small demo that shows each routing
- * option at work, and a 60-card grid to feel the router's speed.
+ * Graph data for router regression tests: a small graph that exercises each routing
+ * option, and a 60-card grid for dense routing cases.
  */
 
 const FILE_CSV = "file.csv";

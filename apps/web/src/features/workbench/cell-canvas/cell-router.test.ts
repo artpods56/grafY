@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createDemoCellGraph, createStressCellGraph } from "./cell-graphs";
+import {
+  createDemoCellGraph,
+  createStressCellGraph,
+} from "../../../../tests/fixtures/cell-router-graphs";
 import {
   CELL_PIPE_LANE_MIN,
   CELL_PIPE_MAX_DEPTH,

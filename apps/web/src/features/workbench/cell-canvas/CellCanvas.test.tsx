@@ -406,8 +406,10 @@ describe("CellCanvas", () => {
     expect(handle?.viewportHandle.getViewport().zoom).toBe(0.75);
   });
 
-  it("leaves recessed wells in the glass by default", () => {
-    const { container } = mountCanvas();
+  it("leaves recessed wells in the glass when selected", () => {
+    const { container } = mountCanvas({
+      look: { ...DEFAULT_CELL_GLASS_LOOK, well: "recessed" },
+    });
     expect(container.querySelector("[data-cell-well]")).not.toBeNull();
     expect(
       container
@@ -416,10 +418,8 @@ describe("CellCanvas", () => {
     ).toBeNull();
   });
 
-  it("punches ports into the cards, bores no well and runs pipes into the holes", () => {
-    const { container } = mountCanvas({
-      look: { ...DEFAULT_CELL_GLASS_LOOK, well: "punched" },
-    });
+  it("punches ports into the cards and runs pipes into the holes by default", () => {
+    const { container } = mountCanvas();
     // The frost runs unbroken: the only wells are the cards' own holes.
     const wells = [...container.querySelectorAll("[data-cell-well]")];
     expect(wells).toHaveLength(2);
@@ -474,7 +474,10 @@ describe("CellCanvas", () => {
     const pipeId = flush.pipes[0]!.id;
 
     // In the gutter the two ports share a row, so the seam bridges them.
-    const recessed = mountCanvas({ graph: flush });
+    const recessed = mountCanvas({
+      graph: flush,
+      look: { ...DEFAULT_CELL_GLASS_LOOK, well: "recessed" },
+    });
     expect(
       recessed.container.querySelector(`[data-docked-join="${pipeId}"]`),
     ).not.toBeNull();

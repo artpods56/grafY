@@ -1,15 +1,13 @@
 export const SPIKES = [
   {
-    id: "port-types",
-    title: "Port types",
-    summary:
-      "Where a generic port's type lives: six approaches on the same nodes, from a caption to a function signature.",
+    id: "cell-canvas",
+    title: "Canvas lab",
+    question: "How does the workbench card render with these canvas settings?",
   },
   {
-    id: "cell-canvas",
-    title: "Cell-based canvas",
-    summary:
-      "Cards, ports, gutters, and pipes on one shared 50px cell grid with snapping drag and track-capacity routing.",
+    id: "port-types",
+    title: "Port types",
+    question: "Where should a generic port show its resolved type?",
   },
 ] as const;
 

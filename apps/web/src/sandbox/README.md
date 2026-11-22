@@ -1,27 +1,12 @@
 # Web sandbox
 
-A **development-only** place to spike UI against real Grafy chrome (StyleX
-tokens, overlay, catalog node preview, port marks) without touching workbench
-feature code.
+A spike exists to make a design question answerable by looking at it, and to be deleted.
 
-- URL: [http://127.0.0.1:3000/sandbox](http://127.0.0.1:3000/sandbox)
-- Production: the route `notFound()`s. Do not link it from product navigation.
-- Auth: still behind the normal session boundary (same as the rest of the app).
-- Direction: sandbox may import `features/`, `components/`, `lib/`. **Never**
-  import sandbox from those trees.
+- Keep the question in `catalog.ts` and record its answer in the owning issue or domain docs.
+- Put fixture data in `fixtures/` and authored graphs in `fixtures/graphs/`. Capture registry data from the API when the fixture needs operator specs.
+- Render through product components and adapters. Keep feature imports pointing from the sandbox into the app.
+- Put render options in the URL. Keep experiments read-only against live Workspace data.
+- Keep routing stress cases in automated tests. Remove a spike when its question is answered.
 
-## Add a spike
-
-1. Create `src/sandbox/spikes/<id>/<Name>Spike.tsx` (client component).
-2. Register it in `catalog.ts`.
-3. Reuse fixtures under `src/sandbox/fixtures/` instead of inventing a second
-   node language. Import `CatalogNodePreview`, `overlay`, `tokens`,
-   `portMarkStyle` — do not restyle a fake node.
-4. Keep variants inside the spike. Do not patch `WorkflowNode`,
-   `type-inspector`, or other product files “to make the spike work”.
-
-## This folder vs Cursor canvases
-
-Cursor `.canvas.tsx` files cannot import Grafy. Use this sandbox when the
-question is shape, chrome, or type color. Use a Cursor canvas for tables,
-copy decks, or anything that does not need to look like the workbench.
+The sandbox is available in development at `/sandbox`. Use `just lab-web` to
+start it with a stand-in session. See the [Canvas lab reference](../../../../docs/agents/web-canvas.md).

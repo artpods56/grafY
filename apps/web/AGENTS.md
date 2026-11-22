@@ -45,6 +45,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
   files to make a spike render. Sandbox may import `features/`; never the reverse.
 - Register spikes in `src/sandbox/catalog.ts` and `src/sandbox/SpikeHost.tsx`.
   See `src/sandbox/README.md`.
+- Run `just lab-web` for render fixtures without an API or Keycloak. See the
+  [Canvas lab reference](../../docs/agents/web-canvas.md) for URL options and geometry hooks.
 
 ## Routing
 

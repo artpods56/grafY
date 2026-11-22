@@ -2,809 +2,419 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
-import { useOptionalAuthSession } from "@/features/auth/AuthSessionBoundary";
-import { sandboxSession } from "@/features/auth/dev-session";
-import type { GraphPresentation } from "@/features/workbench/artifacts/artifact-viewer";
-import { defaultNodeConfig } from "@/features/workbench/authoring/types";
+import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   CellCanvas,
-  DEFAULT_CELL_GLASS_LOOK,
-  DEFAULT_CELL_ROUTING,
+  cellGraphBounds,
   type CellCanvasHandle,
-  type CellCanvasStats,
-  type CellCardMove,
-  type CellConnectionEnds,
 } from "@/features/workbench/cell-canvas/CellCanvas";
-import { plugRowOffset } from "@/features/workbench/cell-canvas/cell-card-geometry";
-import type {
-  AnnotationColorToken,
-  CellCardSurfaceData,
-  CellResizeCommit,
-  CellSelectionSnapshot,
-  OperatorCardSurfaceData,
-} from "@/features/workbench/cell-canvas/cell-contracts";
 import {
-  annotationHexFromToken,
-  cellGraphFromAuthoredDocument,
-  graphCommandsFromCellAddPlug,
-  graphCommandsFromCellConfigChange,
-  graphCommandsFromCellConnect,
-  graphCommandsFromCellDeleteForDocument,
-  graphCommandsFromCellMovesForDocument,
-  graphCommandsFromCellRemovePlug,
-  graphCommandsFromCellResizeForDocument,
-  type CellNodeRunState,
-} from "@/features/workbench/cell-canvas/cell-document-adapter";
-import type { CellGlassLook } from "@/features/workbench/cell-canvas/cell-glass-stage";
+  CanvasLabPanel,
+  CanvasLabRow,
+} from "@/features/workbench/cell-canvas/CanvasLabPanel";
 import {
-  createDemoCellGraph,
-  createStressCellGraph,
-} from "@/features/workbench/cell-canvas/cell-graphs";
-import { computeOperatorCardLayout } from "@/features/workbench/cell-canvas/cell-card-geometry";
-import {
-  CELL_SIZE,
-  cellToWorldOrigin,
-  type CellGraph,
-  type CellPort,
-  type CellRoutingOptions,
-} from "@/features/workbench/cell-canvas/cell-model";
-import { COLLECTION_PORT } from "@/features/workbench/authoring/collection-spec";
-import { newNodeKind } from "@/features/workbench/authoring/project-graphs";
-import {
-  applyGraphCommandNormalized,
-  type AuthoredGraphDocument,
-} from "@/features/workbench/authoring/graph-document";
-import { useNodeRegistry, useWorkspaces } from "@/hooks/use-api";
+  CanvasLabProvider,
+  replaceLabQuery,
+  useCanvasLab,
+} from "@/features/workbench/cell-canvas/CanvasLabProvider";
+import { cellGraphFromAuthoredDocument } from "@/features/workbench/cell-canvas/cell-document-adapter";
+import { cellPortKey } from "@/features/workbench/cell-canvas/cell-model";
 
 import {
-  CellLookPanel,
-  CellZoomBar,
-  type CellGraphKind,
-  type ShowcaseOperatorOption,
-} from "./CellLookPanel";
+  ASK_A_MODEL_CARD_ID,
+  ASK_A_MODEL_FIXTURE,
+} from "../../fixtures/graphs/ask-a-model";
 import {
-  createShowcaseAuthoredDocument,
-  mergeShowcaseRegistry,
-} from "./cell-showcase-graphs";
+  canvasNodesDocument,
+  nodeFixtureRegistry,
+  readNodeIds,
+} from "../../fixtures/graphs/canvas-nodes";
+import { inspectCards } from "./canvas-inspection";
+import { cardPortAddress, NodeLabControls } from "./NodeLabControls";
 
-const ZOOM_STEP = 1.2;
+const NARROW = "(max-width: 620px)";
+const PANEL_ID = "canvas-lab-panel";
 
-const EMPTY_ID_SET: ReadonlySet<string> = new Set();
-const EMPTY_SURFACES: Record<string, CellCardSurfaceData> = {};
-const EMPTY_SELECTION: CellSelectionSnapshot = {
-  cardIds: new Set(),
-  pipeIds: new Set(),
-};
-
+/*
+ * The canvas is the page: it fills the viewport and the scene fits its whole
+ * box, so the lab panel floats over it instead of taking a column. On a narrow
+ * screen the panel starts closed behind a labelled button and opens over the
+ * canvas, never in a row of its own.
+ */
 const s = stylex.create({
-  host: {
+  page: {
     position: "relative",
-    width: "100%",
     height: "100svh",
     overflow: "hidden",
+    backgroundColor: tokens.colorBg,
+    color: tokens.colorText,
   },
-  lookPanel: {
+  stage: { position: "absolute", inset: 0 },
+  panel: {
     position: "absolute",
-    top: "16px",
-    left: "16px",
-    zIndex: 30,
+    zIndex: 10,
+    top: "calc(12px + env(safe-area-inset-top, 0px))",
+    left: "calc(12px + env(safe-area-inset-left, 0px))",
+    width: {
+      default: "252px",
+      "@media (max-width: 620px)":
+        "calc(100% - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))",
+    },
+    maxWidth: { default: null, "@media (max-width: 620px)": "360px" },
+    maxHeight:
+      "calc(100% - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))",
+    display: { default: "flex", "@media (max-width: 620px)": "none" },
   },
-  zoomBar: {
+  panelOpen: { display: "flex" },
+  toggle: {
     position: "absolute",
-    bottom: "16px",
-    left: "16px",
-    zIndex: 30,
+    zIndex: 10,
+    top: "calc(12px + env(safe-area-inset-top, 0px))",
+    left: "calc(12px + env(safe-area-inset-left, 0px))",
+    display: { default: "none", "@media (max-width: 620px)": "inline-flex" },
+    minHeight: "44px",
+    paddingInline: "14px",
+    border: `1px solid ${tokens.colorBorder}`,
+    borderRadius: "12px",
+    backgroundColor: tokens.colorChrome,
+    boxShadow: "0 4px 16px rgba(0, 0, 0, 0.16)",
   },
+  toggleHidden: { display: "none" },
+  stageNote: {
+    position: "absolute",
+    right: "calc(12px + env(safe-area-inset-right, 0px))",
+    bottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+    pointerEvents: "none",
+    margin: 0,
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeXs,
+  },
+  notice: {
+    position: "absolute",
+    inset: 0,
+    display: "grid",
+    placeItems: "center",
+    margin: 0,
+    padding: "16px",
+    color: tokens.colorMuted,
+    pointerEvents: "none",
+  },
+  noticeLink: { pointerEvents: "auto" },
 });
 
-const LookPanel = React.memo(CellLookPanel);
-const ZoomBar = React.memo(CellZoomBar);
-
-function useFrameRate(): number | null {
-  const [rate, setRate] = React.useState<number | null>(null);
-  React.useEffect(() => {
-    let frames = 0;
-    let since = performance.now();
-    let handle = 0;
-    const tick = (now: number) => {
-      frames += 1;
-      if (now - since >= 500) {
-        setRate(Math.round((frames * 1000) / (now - since)));
-        frames = 0;
-        since = now;
-      }
-      handle = requestAnimationFrame(tick);
-    };
-    handle = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(handle);
-  }, []);
-  return rate;
+function setOption(key: string, value: string | null) {
+  replaceLabQuery((query) => {
+    if (value === null) query.delete(key);
+    else query.set(key, value);
+  });
 }
 
-function specOptionKey(operatorId: string, version: number): string {
-  return `${operatorId}@${version}`;
+function CardLab() {
+  const params = useSearchParams();
+  const { settings, routing } = useCanvasLab();
+  const fixture = params.get("fixture") ?? ASK_A_MODEL_FIXTURE;
+  const available = fixture === ASK_A_MODEL_FIXTURE;
+  const nodeQuery = params.get("nodes");
+  const scene = React.useMemo(
+    () =>
+      cellGraphFromAuthoredDocument(
+        canvasNodesDocument(readNodeIds(nodeQuery)),
+        nodeFixtureRegistry,
+      ),
+    [nodeQuery],
+  );
+  const bounds = React.useMemo(
+    () => cellGraphBounds(scene.graph.cards),
+    [scene],
+  );
+  const selection = params.get("sel");
+  const selectedId = scene.graph.cards.some((card) => card.id === selection)
+    ? selection
+    : null;
+  const selectedIds = React.useMemo(
+    () => new Set(selectedId ? [selectedId] : []),
+    [selectedId],
+  );
+  const hotAddress = params.get("hot") ?? params.get("hover");
+  const previewPortKey = scene.graph.cards.flatMap((card) =>
+    card.ports
+      .filter((port) => cardPortAddress(card.id, port) === hotAddress)
+      .map((port) => `${card.id}:${cellPortKey(port.direction, port.id)}`),
+  )[0];
+  const tab = params.get("tab") === "nodes" ? "nodes" : "canvas";
+  const requestedZoom = Number(params.get("zoom"));
+  const zoom =
+    Number.isFinite(requestedZoom) &&
+    requestedZoom >= 0.15 &&
+    requestedZoom <= 2
+      ? requestedZoom
+      : null;
+  const freeze = params.get("freeze") === "1";
+  const inspect = params.get("inspect") === "1";
+  const theme = params.get("theme");
+  const colorScheme = theme === "light" || theme === "dark" ? theme : undefined;
+
+  const narrow = useMediaQuery(NARROW);
+  const [panelOpen, setPanelOpen] = React.useState(false);
+  const toggle = React.useRef<HTMLButtonElement>(null);
+  const panelVisible = !narrow || panelOpen;
+
+  // Opening on a narrow screen moves focus into the panel; closing hands it back.
+  const openPanel = () => {
+    setPanelOpen(true);
+    requestAnimationFrame(() =>
+      document
+        .getElementById(PANEL_ID)
+        ?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+        ?.focus(),
+    );
+  };
+  const closePanel = () => {
+    setPanelOpen(false);
+    requestAnimationFrame(() => toggle.current?.focus());
+  };
+
+  const stage = React.useRef<HTMLDivElement>(null);
+  const [canvas, setCanvas] = React.useState<CellCanvasHandle | null>(null);
+  const [actualZoom, setActualZoom] = React.useState(1);
+
+  React.useLayoutEffect(() => {
+    const element = stage.current;
+    if (!canvas || !element || scene.graph.cards.length === 0) return;
+    const fit = () => {
+      if (zoom === null) canvas.viewportHandle.fitBounds(bounds, 0.18, 1);
+      else
+        canvas.viewAt(
+          bounds.x + bounds.width / 2,
+          bounds.y + bounds.height / 2,
+          zoom,
+        );
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [bounds, canvas, scene.graph.cards.length, zoom]);
+
+  React.useEffect(() => {
+    const element = stage.current;
+    if (!inspect || !available || !element || !canvas) return;
+    const {
+      exits: _exits,
+      underCards: _underCards,
+      depth: _depth,
+      ...look
+    } = settings;
+    const inspection = {
+      look,
+      routing,
+      get cards() {
+        return inspectCards(element);
+      },
+    };
+    window.__grafy = inspection;
+    console.table(
+      inspection.cards.map(({ id, rect, ports, tabs }) => ({
+        id,
+        width: rect.width,
+        height: rect.height,
+        ports: ports.length,
+        tabs: tabs.length,
+      })),
+    );
+    return () => {
+      if (window.__grafy === inspection) delete window.__grafy;
+    };
+  }, [
+    available,
+    canvas,
+    inspect,
+    settings,
+    routing,
+    scene,
+    selectedId,
+    previewPortKey,
+    zoom,
+  ]);
+
+  return (
+    <div {...stylex.props(s.page)} style={{ colorScheme }}>
+      <Button
+        ref={toggle}
+        variant="secondary"
+        size="sm"
+        aria-expanded={panelVisible}
+        aria-controls={PANEL_ID}
+        xstyle={[s.toggle, panelVisible && s.toggleHidden]}
+        onClick={openPanel}
+      >
+        Lab settings
+      </Button>
+      <CanvasLabPanel
+        id={PANEL_ID}
+        xstyle={[s.panel, panelOpen && s.panelOpen]}
+        close={narrow ? closePanel : undefined}
+        reset={() =>
+          replaceLabQuery((query) => {
+            for (const key of [
+              "lab",
+              "fixture",
+              "nodes",
+              "tab",
+              "sel",
+              "hover",
+              "hot",
+              "zoom",
+              "freeze",
+              "inspect",
+              "theme",
+            ]) {
+              query.delete(key);
+            }
+          })
+        }
+        help={
+          <p>
+            <code>
+              fixture={ASK_A_MODEL_FIXTURE} ·
+              nodes=ask-model,schema-builder,text-input · tab=nodes · sel=
+              {ASK_A_MODEL_CARD_ID} · hot=port:ask-model/input:messages ·
+              zoom=0.15–2 · freeze=1 · inspect=1 · theme=light|dark
+            </code>
+          </p>
+        }
+        tabs={{
+          value: tab,
+          onChange: (value) =>
+            setOption("tab", value === "nodes" ? value : null),
+          nodes: (
+            <NodeLabControls
+              cards={scene.graph.cards}
+              selectedId={selectedId}
+              hotAddress={hotAddress}
+            />
+          ),
+        }}
+        canvasControls={
+          <>
+            <CanvasLabRow label="Theme">
+              <SegmentedControl
+                aria-label="Theme"
+                value={colorScheme ?? "app"}
+                options={[
+                  { value: "app", label: "App" },
+                  { value: "light", label: "Light" },
+                  { value: "dark", label: "Dark" },
+                ]}
+                onValueChange={(value) =>
+                  setOption("theme", value === "app" ? null : value)
+                }
+              />
+            </CanvasLabRow>
+            <CanvasLabRow label="Zoom">
+              <Select
+                aria-label="Zoom"
+                size="sm"
+                value={zoom ?? ""}
+                onChange={(event) =>
+                  setOption("zoom", event.currentTarget.value || null)
+                }
+              >
+                <option value="">Fit</option>
+                {[
+                  ...new Set([
+                    0.5,
+                    0.75,
+                    1,
+                    1.5,
+                    2,
+                    ...(zoom === null ? [] : [zoom]),
+                  ]),
+                ]
+                  .sort((a, b) => a - b)
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {Math.round(value * 100)}%
+                    </option>
+                  ))}
+              </Select>
+            </CanvasLabRow>
+            <Switch
+              label="Freeze motion"
+              checked={freeze}
+              phoneTouch
+              onCheckedChange={(on) => setOption("freeze", on ? "1" : null)}
+            />
+            <Switch
+              label="Inspect geometry"
+              checked={inspect}
+              phoneTouch
+              onCheckedChange={(on) => setOption("inspect", on ? "1" : null)}
+            />
+          </>
+        }
+      />
+      <div
+        ref={stage}
+        {...stylex.props(s.stage)}
+        data-canvas-lab-frozen={freeze ? "true" : undefined}
+      >
+        {available ? (
+          <>
+            <CellCanvas
+              {...scene}
+              look={settings}
+              routing={routing}
+              editable={false}
+              autoFitOnMount={false}
+              selectedCardIds={selectedIds}
+              onSelectionChange={(selection) =>
+                setOption("sel", [...selection.cardIds].at(-1) ?? null)
+              }
+              previewPortKey={previewPortKey}
+              onHandleReady={setCanvas}
+              onViewportZoomChange={setActualZoom}
+            />
+            {scene.graph.cards.length === 0 && (
+              <p {...stylex.props(s.notice)}>Choose a node in the Nodes tab.</p>
+            )}
+            <p {...stylex.props(s.stageNote)}>
+              {scene.graph.cards.length}{" "}
+              {scene.graph.cards.length === 1 ? "card" : "cards"} ·{" "}
+              {scene.graph.pipes.length}{" "}
+              {scene.graph.pipes.length === 1 ? "pipe" : "pipes"} ·{" "}
+              {Math.round(actualZoom * 100)}%
+            </p>
+          </>
+        ) : (
+          <p {...stylex.props(s.notice)}>
+            <span>
+              Unknown fixture.{" "}
+              <Link href="/sandbox/cell-canvas" {...stylex.props(s.noticeLink)}>
+                Load Ask a model
+              </Link>
+            </span>
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function CellCanvasSpike() {
-  const authSession = useOptionalAuthSession();
-  const devBypass = sandboxSession() !== null;
-  const liveUserId = !devBypass ? authSession?.session.user_id : undefined;
-  const { data: workspaces } = useWorkspaces(liveUserId);
-  const { data: liveRegistry } = useNodeRegistry(
-    !devBypass ? workspaces?.[0]?.id : undefined,
-  );
-
-  const effectiveRegistry = React.useMemo(
-    () => mergeShowcaseRegistry(liveRegistry),
-    [liveRegistry],
-  );
-
-  const showcaseOptions = React.useMemo<ShowcaseOperatorOption[]>(() => {
-    return effectiveRegistry.nodes
-      .filter((spec) => spec.catalog_visible !== false)
-      .map((spec) => ({
-        key: specOptionKey(spec.operator_id, spec.operator_version),
-        label: spec.title || spec.operator_id,
-      }));
-  }, [effectiveRegistry.nodes]);
-
-  const [pickedOperatorKey, setSelectedOperatorKey] = React.useState("");
-  // A pick the registry no longer offers falls back to its first operator.
-  const selectedOperatorKey = showcaseOptions.some(
-    (opt) => opt.key === pickedOperatorKey,
-  )
-    ? pickedOperatorKey
-    : (showcaseOptions[0]?.key ?? "");
-
-  const [graphKind, setGraphKind] = React.useState<CellGraphKind>("demo");
-  const [mockGraph, setMockGraph] =
-    React.useState<CellGraph>(createDemoCellGraph);
-  const [mockSurfaces, setMockSurfaces] =
-    React.useState<Record<string, CellCardSurfaceData>>(EMPTY_SURFACES);
-
-  const initialShowcase = React.useMemo(
-    () => createShowcaseAuthoredDocument(mergeShowcaseRegistry(null)),
-    [],
-  );
-  const [showcaseDoc, setShowcaseDoc] = React.useState<AuthoredGraphDocument>(
-    initialShowcase.document,
-  );
-  const [showcasePresentation, setShowcasePresentation] =
-    React.useState<GraphPresentation>(initialShowcase.presentation);
-  const [showcaseRunState, setShowcaseRunState] = React.useState<
-    Readonly<Record<string, CellNodeRunState>>
-  >(initialShowcase.nodeRunState);
-  const [collapsedAppendices, setCollapsedAppendices] =
-    React.useState<ReadonlySet<string>>(EMPTY_ID_SET);
-  const [configSections, setConfigSections] = React.useState<
-    Readonly<Record<string, Readonly<Record<string, boolean>>>>
-  >({});
-
-  const [selection, setSelection] =
-    React.useState<CellSelectionSnapshot>(EMPTY_SELECTION);
-  const [look, setLook] = React.useState<CellGlassLook>(
-    DEFAULT_CELL_GLASS_LOOK,
-  );
-  const [routing, setRouting] =
-    React.useState<CellRoutingOptions>(DEFAULT_CELL_ROUTING);
-  const [zoom, setZoom] = React.useState(1);
-  const [stats, setStats] = React.useState<CellCanvasStats>({
-    cards: 0,
-    pipes: 0,
-    deepCount: 0,
-    reroutes: 0,
-    draggedCardId: null,
-  });
-  const fps = useFrameRate();
-
-  const canvasHandleRef = React.useRef<CellCanvasHandle | null>(null);
-  const pendingFitRef = React.useRef(false);
-  const serialRef = React.useRef(1);
-
-  const showcaseScene = React.useMemo(
-    () =>
-      cellGraphFromAuthoredDocument(showcaseDoc, effectiveRegistry, {
-        presentation: showcasePresentation,
-        nodeRunState: showcaseRunState,
-        collapsedAppendices,
-        configSections,
-      }),
-    [
-      collapsedAppendices,
-      configSections,
-      effectiveRegistry,
-      showcaseDoc,
-      showcasePresentation,
-      showcaseRunState,
-    ],
-  );
-
-  const activeGraph =
-    graphKind === "showcase" ? showcaseScene.graph : mockGraph;
-  const activeSurfaces =
-    graphKind === "showcase" ? showcaseScene.surfaceById : mockSurfaces;
-
-  const showcaseDocRef = React.useRef(showcaseDoc);
-  const showcasePresentationRef = React.useRef(showcasePresentation);
-  const effectiveRegistryRef = React.useRef(effectiveRegistry);
-  const graphKindRef = React.useRef(graphKind);
-
-  React.useLayoutEffect(() => {
-    showcaseDocRef.current = showcaseDoc;
-    showcasePresentationRef.current = showcasePresentation;
-    effectiveRegistryRef.current = effectiveRegistry;
-    graphKindRef.current = graphKind;
-  });
-
-  React.useLayoutEffect(() => {
-    if (!pendingFitRef.current || !canvasHandleRef.current) return;
-    pendingFitRef.current = false;
-    canvasHandleRef.current.fitGraph();
-  }, [graphKind, activeGraph]);
-
-  const onHandleReady = React.useCallback((handle: CellCanvasHandle | null) => {
-    canvasHandleRef.current = handle;
-    if (handle && pendingFitRef.current) {
-      pendingFitRef.current = false;
-      handle.fitGraph();
-    }
-  }, []);
-
-  const commitShowcaseCommands = React.useCallback(
-    (
-      commands: readonly ReturnType<
-        typeof graphCommandsFromCellMovesForDocument
-      >[number][],
-    ) => {
-      if (commands.length === 0) return;
-      setShowcaseDoc((current) =>
-        commands.reduce(applyGraphCommandNormalized, current),
-      );
-    },
-    [],
-  );
-
-  const onGraph = React.useCallback((kind: CellGraphKind) => {
-    canvasHandleRef.current?.cancelGesture();
-    setGraphKind(kind);
-    pendingFitRef.current = true;
-    if (kind === "showcase") {
-      const fresh = createShowcaseAuthoredDocument(
-        effectiveRegistryRef.current,
-      );
-      setShowcaseDoc(fresh.document);
-      setShowcasePresentation(fresh.presentation);
-      setShowcaseRunState(fresh.nodeRunState);
-      setCollapsedAppendices(EMPTY_ID_SET);
-      setSelection({ cardIds: new Set(["ocr-extract"]), pipeIds: new Set() });
-      return;
-    }
-    if (kind === "stress") {
-      setMockGraph(createStressCellGraph());
-    } else {
-      setMockGraph(createDemoCellGraph());
-    }
-    setMockSurfaces(EMPTY_SURFACES);
-    setSelection(EMPTY_SELECTION);
-  }, []);
-
-  const onMoveCards = React.useCallback(
-    (moves: readonly CellCardMove[]) => {
-      if (graphKindRef.current !== "showcase") {
-        const byId = new Map(moves.map((m) => [m.cardId, m]));
-        setMockGraph((current) => ({
-          ...current,
-          cards: current.cards.map((card) => {
-            const moved = byId.get(card.id);
-            return moved ? { ...card, col: moved.col, row: moved.row } : card;
-          }),
-        }));
-        return;
-      }
-
-      const doc = showcaseDocRef.current;
-      const docCommands = graphCommandsFromCellMovesForDocument(doc, moves);
-      commitShowcaseCommands(docCommands);
-
-      const moveById = new Map(moves.map((m) => [m.cardId, m]));
-      setShowcasePresentation((current) => {
-        const hasViewerMove = current.viewers.some((v) => moveById.has(v.id));
-        const hasAnnotationMove = current.annotations.some((a) =>
-          moveById.has(a.id),
-        );
-        if (!hasViewerMove && !hasAnnotationMove) return current;
-        return {
-          ...current,
-          viewers: current.viewers.map((v) => {
-            const moved = moveById.get(v.id);
-            return moved
-              ? { ...v, position: cellToWorldOrigin(moved.col, moved.row) }
-              : v;
-          }),
-          annotations: current.annotations.map((a) => {
-            const moved = moveById.get(a.id);
-            return moved
-              ? { ...a, position: cellToWorldOrigin(moved.col, moved.row) }
-              : a;
-          }),
-        };
-      });
-    },
-    [commitShowcaseCommands],
-  );
-
-  const onResizeCard = React.useCallback(
-    (commit: CellResizeCommit) => {
-      if (graphKindRef.current !== "showcase") {
-        setMockGraph((current) => ({
-          ...current,
-          cards: current.cards.map((card) =>
-            card.id === commit.cardId
-              ? {
-                  ...card,
-                  widthCells: commit.widthCells,
-                  heightCells: commit.heightCells,
-                }
-              : card,
-          ),
-        }));
-        return;
-      }
-
-      const doc = showcaseDocRef.current;
-      const docCommands = graphCommandsFromCellResizeForDocument(doc, commit);
-      if (docCommands.length > 0) {
-        commitShowcaseCommands(docCommands);
-        return;
-      }
-      setShowcasePresentation((current) => ({
-        ...current,
-        viewers: current.viewers.map((v) =>
-          v.id === commit.cardId
-            ? {
-                ...v,
-                layout: {
-                  width: commit.widthCells * CELL_SIZE,
-                  body_height: commit.heightCells * CELL_SIZE,
-                  appendix_height: null,
-                },
-              }
-            : v,
-        ),
-        annotations: current.annotations.map((a) =>
-          a.id === commit.cardId
-            ? {
-                ...a,
-                layout: {
-                  width: commit.widthCells * CELL_SIZE,
-                  height: commit.heightCells * CELL_SIZE,
-                },
-              }
-            : a,
-        ),
-      }));
-    },
-    [commitShowcaseCommands],
-  );
-
-  const onConnect = React.useCallback(
-    (ends: CellConnectionEnds) => {
-      if (graphKindRef.current !== "showcase") {
-        setMockGraph((current) => {
-          const duplicate = current.pipes.some(
-            (pipe) =>
-              pipe.sourceCardId === ends.sourceCardId &&
-              pipe.sourcePortId === ends.sourcePortId &&
-              pipe.targetCardId === ends.targetCardId &&
-              pipe.targetPortId === ends.targetPortId,
-          );
-          if (duplicate) return current;
-          const ids = new Set(current.pipes.map((pipe) => pipe.id));
-          let serial = current.pipes.length + 1;
-          while (ids.has(`wire-${serial}`)) serial += 1;
-          return {
-            ...current,
-            pipes: [
-              ...current.pipes,
-              { id: `wire-${serial}`, ...ends, enabled: true },
-            ],
-          };
-        });
-        return;
-      }
-
-      const doc = showcaseDocRef.current;
-      const nodeIds = new Set(doc.nodes.map((n) => n.id));
-      if (!nodeIds.has(ends.sourceCardId) || !nodeIds.has(ends.targetCardId)) {
-        return;
-      }
-      const edgeId = `wire-${++serialRef.current}`;
-      const cmds = graphCommandsFromCellConnect({
-        edgeId,
-        sourceCardId: ends.sourceCardId,
-        sourcePortName: ends.sourcePortId,
-        targetCardId: ends.targetCardId,
-        targetPortName: ends.targetPortId,
-      });
-      commitShowcaseCommands(cmds);
-    },
-    [commitShowcaseCommands],
-  );
-
-  const onRemoveCards = React.useCallback(
-    (cardIds: readonly string[]) => {
-      const removed = new Set(cardIds);
-      if (graphKindRef.current !== "showcase") {
-        setMockGraph((current) => ({
-          cards: current.cards.filter((c) => !removed.has(c.id)),
-          pipes: current.pipes.filter(
-            (p) => !removed.has(p.sourceCardId) && !removed.has(p.targetCardId),
-          ),
-        }));
-        setSelection((current) => ({
-          cardIds: new Set(
-            [...current.cardIds].filter((id) => !removed.has(id)),
-          ),
-          pipeIds: current.pipeIds,
-        }));
-        return;
-      }
-
-      commitShowcaseCommands(
-        graphCommandsFromCellDeleteForDocument(
-          showcaseDocRef.current,
-          cardIds,
-          [],
-        ),
-      );
-      setShowcasePresentation((current) => ({
-        ...current,
-        viewers: current.viewers.filter((v) => !removed.has(v.id)),
-        links: current.links.filter(
-          (l) =>
-            !removed.has(l.source_node_id) && !removed.has(l.target_viewer_id),
-        ),
-        annotations: current.annotations.filter((a) => !removed.has(a.id)),
-      }));
-      setSelection((current) => ({
-        cardIds: new Set([...current.cardIds].filter((id) => !removed.has(id))),
-        pipeIds: current.pipeIds,
-      }));
-    },
-    [commitShowcaseCommands],
-  );
-
-  const onRemovePipes = React.useCallback(
-    (pipeIds: readonly string[]) => {
-      const removed = new Set(pipeIds);
-      if (graphKindRef.current !== "showcase") {
-        setMockGraph((current) => ({
-          ...current,
-          pipes: current.pipes.filter((p) => !removed.has(p.id)),
-        }));
-        setSelection((current) => ({
-          cardIds: current.cardIds,
-          pipeIds: new Set(
-            [...current.pipeIds].filter((id) => !removed.has(id)),
-          ),
-        }));
-        return;
-      }
-
-      commitShowcaseCommands(
-        graphCommandsFromCellDeleteForDocument(
-          showcaseDocRef.current,
-          [],
-          pipeIds,
-        ),
-      );
-      setShowcasePresentation((current) => ({
-        ...current,
-        links: current.links.filter((l) => !removed.has(l.id)),
-      }));
-      setSelection((current) => ({
-        cardIds: current.cardIds,
-        pipeIds: new Set([...current.pipeIds].filter((id) => !removed.has(id))),
-      }));
-    },
-    [commitShowcaseCommands],
-  );
-
-  const onOperatorConfigChange = React.useCallback(
-    (cardId: string, fieldId: string, value: unknown) => {
-      if (graphKindRef.current !== "showcase") {
-        // Mock surfaces hold plain fields only, so only a primitive lands.
-        if (
-          typeof value !== "string" &&
-          typeof value !== "number" &&
-          typeof value !== "boolean"
-        ) {
-          return;
-        }
-        setMockSurfaces((current) => {
-          const surface = current[cardId];
-          if (surface?.kind !== "operator" || !surface.configFields) {
-            return current;
-          }
-          return {
-            ...current,
-            [cardId]: {
-              ...surface,
-              configFields: surface.configFields.map((field) =>
-                field.id === fieldId ? { ...field, value } : field,
-              ),
-            },
-          };
-        });
-        return;
-      }
-      commitShowcaseCommands(
-        graphCommandsFromCellConfigChange(cardId, fieldId, value),
-      );
-    },
-    [commitShowcaseCommands],
-  );
-
-  const onOperatorAddPlug = React.useCallback(
-    (cardId: string, portName: string) => {
-      if (graphKindRef.current !== "showcase") {
-        setMockSurfaces((current) => {
-          const surface = current[cardId];
-          const card = mockGraph.cards.find((c) => c.id === cardId);
-          if (
-            surface?.kind !== "operator" ||
-            !surface.instancePlugGroups ||
-            !card
-          ) {
-            return current;
-          }
-          let addedPort: CellPort | null = null;
-          const nextGroups = surface.instancePlugGroups.map((group) => {
-            if (group.portName !== portName) return group;
-            const nextIndex = group.plugs.length + 1;
-            const plugId = `${portName}::plug-${Date.now()}-${nextIndex}`;
-            const label = `Hint ${nextIndex}`;
-            addedPort = {
-              id: plugId,
-              name: label,
-              direction: "input",
-              rowOffset: plugRowOffset(group, group.plugs.length),
-              artifactTypeId: group.artifactTypeId,
-              shape: group.shape,
-            };
-            return {
-              ...group,
-              plugs: [...group.plugs, { plugId, label, connected: false }],
-            };
-          });
-          if (!addedPort) return current;
-          const nextSurface: OperatorCardSurfaceData = {
-            ...surface,
-            instancePlugGroups: nextGroups,
-          };
-          const nextHeight = computeOperatorCardLayout(
-            { ...card, heightCells: 2, ports: [...card.ports, addedPort] },
-            nextSurface,
-          ).totalHeightCells;
-          setMockGraph((g) => ({
-            ...g,
-            cards: g.cards.map((c) =>
-              c.id === cardId
-                ? {
-                    ...c,
-                    ports: [...c.ports, addedPort!],
-                    heightCells: nextHeight,
-                  }
-                : c,
-            ),
-          }));
-          return { ...current, [cardId]: nextSurface };
-        });
-        return;
-      }
-      const node = showcaseDocRef.current.nodes.find((n) => n.id === cardId);
-      if (!node) return;
-      commitShowcaseCommands(
-        graphCommandsFromCellAddPlug(cardId, portName, node.input_plugs),
-      );
-    },
-    [commitShowcaseCommands, mockGraph.cards],
-  );
-
-  const onOperatorRemovePlug = React.useCallback(
-    (cardId: string, portName: string, plugId: string) => {
-      if (graphKindRef.current !== "showcase") return;
-      commitShowcaseCommands(
-        graphCommandsFromCellRemovePlug(cardId, portName, plugId),
-      );
-    },
-    [commitShowcaseCommands],
-  );
-
-  const onCollectionRemoveMember = React.useCallback(
-    (cardId: string, memberId: string) => {
-      if (graphKindRef.current !== "showcase") return;
-      commitShowcaseCommands(
-        graphCommandsFromCellRemovePlug(cardId, COLLECTION_PORT, memberId),
-      );
-    },
-    [commitShowcaseCommands],
-  );
-
-  const onOperatorToggleAppendix = React.useCallback((cardId: string) => {
-    setCollapsedAppendices((current) => {
-      const next = new Set(current);
-      if (next.has(cardId)) next.delete(cardId);
-      else next.add(cardId);
-      return next;
-    });
-  }, []);
-
-  const onOperatorToggleConfigSection = React.useCallback(
-    (cardId: string, sectionKey: string, open: boolean) => {
-      setConfigSections((current) => ({
-        ...current,
-        [cardId]: { ...current[cardId], [sectionKey]: open },
-      }));
-    },
-    [],
-  );
-
-  const onOperatorRun = React.useCallback((cardId: string) => {
-    if (graphKindRef.current !== "showcase") {
-      setMockGraph((current) => ({
-        ...current,
-        cards: current.cards.map((c) =>
-          c.id === cardId
-            ? { ...c, status: c.status === "working" ? "done" : "working" }
-            : c,
-        ),
-      }));
-      return;
-    }
-    setShowcaseRunState((current) => {
-      const prev = current[cardId];
-      const nextStatus = prev?.status === "working" ? "done" : "working";
-      return {
-        ...current,
-        [cardId]: {
-          ...prev,
-          status: nextStatus,
-          statusLabel: nextStatus === "working" ? "Running" : "120 ms",
-        },
-      };
-    });
-  }, []);
-
-  const onAnnotationColorChange = React.useCallback(
-    (cardId: string, color: AnnotationColorToken) => {
-      if (graphKindRef.current !== "showcase") return;
-      const hex = annotationHexFromToken(color);
-      setShowcasePresentation((current) => ({
-        ...current,
-        annotations: current.annotations.map((ann) =>
-          ann.id === cardId ? { ...ann, color: hex } : ann,
-        ),
-      }));
-    },
-    [],
-  );
-
-  const onAddShowcaseOperator = React.useCallback(() => {
-    const spec =
-      effectiveRegistryRef.current.nodes.find(
-        (n) =>
-          specOptionKey(n.operator_id, n.operator_version) ===
-          selectedOperatorKey,
-      ) ?? effectiveRegistryRef.current.nodes[0];
-    if (!spec) return;
-    const id = `node-${++serialRef.current}`;
-    const maxCol = showcaseScene.graph.cards.reduce(
-      (max, card) => Math.max(max, card.col + card.widthCells),
-      2,
-    );
-    const col = Math.min(maxCol + 3, 66);
-    const row = 24;
-    commitShowcaseCommands([
-      {
-        kind: "add_node",
-        node: {
-          id,
-          kind: newNodeKind(spec),
-          operator_id: spec.operator_id,
-          operator_version: spec.operator_version,
-          position: cellToWorldOrigin(col, row),
-          layout: null,
-          config: defaultNodeConfig(spec),
-          input_plugs: spec.inputs
-            .filter((p) => p.instance_plugs)
-            .map((p) => ({ id: `${p.name}-plug-1`, port: p.name })),
-          artifact_type_bindings: [],
-        },
-      },
-    ]);
-    setSelection({ cardIds: new Set([id]), pipeIds: new Set() });
-  }, [commitShowcaseCommands, selectedOperatorKey, showcaseScene.graph.cards]);
-
-  const onZoomIn = React.useCallback(
-    () => canvasHandleRef.current?.zoomBy(ZOOM_STEP),
-    [],
-  );
-  const onZoomOut = React.useCallback(
-    () => canvasHandleRef.current?.zoomBy(1 / ZOOM_STEP),
-    [],
-  );
-  const onZoomPreset = React.useCallback(
-    (preset: number) => canvasHandleRef.current?.zoomAtCenter(preset),
-    [],
-  );
-  const onFit = React.useCallback(
-    () => canvasHandleRef.current?.fitGraph(),
-    [],
-  );
-
   return (
-    <div {...stylex.props(s.host)}>
-      <CellCanvas
-        graph={activeGraph}
-        surfaceById={activeSurfaces}
-        look={look}
-        routing={routing}
-        selectedCardIds={selection.cardIds}
-        selectedPipeIds={selection.pipeIds}
-        fitLeftClearance={270}
-        dataGraph={graphKind}
-        exposeDebugApi
-        onMoveCards={onMoveCards}
-        onResizeCard={onResizeCard}
-        onConnect={onConnect}
-        onRemoveCards={onRemoveCards}
-        onRemovePipes={onRemovePipes}
-        onSelectionChange={setSelection}
-        onOperatorRun={onOperatorRun}
-        onOperatorConfigChange={onOperatorConfigChange}
-        onOperatorAddPlug={onOperatorAddPlug}
-        onOperatorRemovePlug={onOperatorRemovePlug}
-        onOperatorToggleAppendix={onOperatorToggleAppendix}
-        onOperatorToggleConfigSection={onOperatorToggleConfigSection}
-        onCollectionRemoveMember={onCollectionRemoveMember}
-        onAnnotationColorChange={onAnnotationColorChange}
-        onHandleReady={onHandleReady}
-        onViewportZoomChange={setZoom}
-        onStatsChange={setStats}
-      />
-      <div {...stylex.props(s.lookPanel)}>
-        <LookPanel
-          graph={graphKind}
-          onGraph={onGraph}
-          counts={{
-            cards: stats.cards,
-            pipes: stats.pipes,
-            deepCount: stats.deepCount,
-            reroutes: stats.reroutes,
-          }}
-          fps={fps}
-          look={look}
-          onLook={setLook}
-          routing={routing}
-          onRouting={setRouting}
-          showcaseRegistrySource={liveRegistry ? "live" : "fixture"}
-          showcaseOperators={showcaseOptions}
-          selectedOperatorKey={selectedOperatorKey}
-          onSelectedOperatorKeyChange={setSelectedOperatorKey}
-          onAddShowcaseOperator={onAddShowcaseOperator}
-        />
-      </div>
-      <div {...stylex.props(s.zoomBar)}>
-        <ZoomBar
-          zoom={zoom}
-          onZoomIn={onZoomIn}
-          onZoomOut={onZoomOut}
-          onZoomPreset={onZoomPreset}
-          onFit={onFit}
-        />
-      </div>
-    </div>
+    <React.Suspense fallback={null}>
+      <CanvasLabProvider sandbox>
+        <CardLab />
+      </CanvasLabProvider>
+    </React.Suspense>
   );
 }

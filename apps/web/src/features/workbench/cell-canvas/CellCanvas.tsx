@@ -9,7 +9,6 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import { useEffectReducer } from "@/lib/state/use-effect-reducer";
 
 import { CellCanvasProvider, CellViewportLayer } from "./CellCanvasContext";
-import { CellCard } from "./CellCard";
 import {
   CellArtifactMergeSuggestionOverlay,
   CellArtifactMergeTargetOverlay,
@@ -164,7 +163,9 @@ export interface CellCanvasHandle {
 
 export interface CellCanvasProps {
   graph: CellGraph;
-  surfaceById?: Readonly<Record<string, CellCardSurfaceData>>;
+  surfaceById: Readonly<Record<string, CellCardSurfaceData>>;
+  /** A port to light in a render fixture, using the same key as a wiring target. */
+  previewPortKey?: string | null;
   look?: CellGlassLook;
   routing?: CellRoutingOptions;
   editable?: boolean;
@@ -273,7 +274,6 @@ const EMPTY_ID_SET: ReadonlySet<string> = new Set();
 const EMPTY_PORT_IDS: ReadonlySet<string> = new Set();
 const EMPTY_PIPES: readonly StagePipe[] = [];
 const EMPTY_WELLS: readonly StageWell[] = [];
-const EMPTY_SURFACES: Readonly<Record<string, CellCardSurfaceData>> = {};
 const EMPTY_REMOTE_PEERS: readonly CellRemotePeerState[] = [];
 
 const s = stylex.create({
@@ -370,7 +370,8 @@ function cancelDragFrame(frameRef: { current: number }): void {
 
 export function CellCanvas({
   graph,
-  surfaceById = EMPTY_SURFACES,
+  surfaceById,
+  previewPortKey = null,
   look = DEFAULT_CELL_GLASS_LOOK,
   routing = DEFAULT_CELL_ROUTING,
   editable = true,
@@ -1469,7 +1470,7 @@ export function CellCanvas({
         wiring.target.port.direction,
         wiring.target.port.id,
       )
-    : null;
+    : previewPortKey;
 
   const dropEmptyAttr = lastConnectDropEmpty
     ? `${lastConnectDropEmpty.sourceCardId}:${lastConnectDropEmpty.sourcePortId}@${lastConnectDropEmpty.targetCell.col},${lastConnectDropEmpty.targetCell.row}`
@@ -1628,25 +1629,7 @@ export function CellCanvas({
     const surface = surfaceById[card.id];
     const resolvedCard = editable ? card : { ...card, resizable: false };
 
-    if (!surface) {
-      return (
-        <CellCard
-          key={card.id}
-          card={resolvedCard}
-          visualOffset={visualOffset}
-          material={look.material}
-          well={look.well}
-          pipe={look.pipe}
-          cardFill={look.cardFill}
-          selected={isSelected}
-          dragging={isMoving}
-          connectedPortIds={connectedPortIds}
-          activePortKey={activePortKey}
-          onCardPointerDown={onCardPointerDown}
-          onPortPointerDown={onPortPointerDown}
-        />
-      );
-    }
+    if (!surface) return null;
 
     const baseProps = {
       card: resolvedCard,

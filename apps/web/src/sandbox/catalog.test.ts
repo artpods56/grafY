@@ -1,14 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
+import { SPIKES, getSpike } from "./catalog";
 
-import { getSpike } from "./catalog";
-
-describe("sandbox catalog", () => {
-  it("registers the port types spike", () => {
-    expect(getSpike("port-types")?.title).toBe("Port types");
-    expect(getSpike("missing")).toBeUndefined();
-  });
-
-  it("registers the cell canvas spike", () => {
-    expect(getSpike("cell-canvas")?.title).toBe("Cell-based canvas");
-  });
+it("registers each sandbox experiment under a unique id with a design question", () => {
+  expect(new Set(SPIKES.map(({ id }) => id)).size).toBe(SPIKES.length);
+  for (const entry of SPIKES) {
+    expect(entry.question.trim()).toMatch(/\?$/);
+    expect(getSpike(entry.id)).toBe(entry);
+  }
+  expect(getSpike("missing")).toBeUndefined();
 });
