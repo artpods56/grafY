@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { NodeSpec } from "@/lib/api";
 import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
-import { decodeHandleId, encodeHandleId } from "./handles";
 import {
   createWorkflowNodeData,
   portMetaForPort,
@@ -43,21 +42,12 @@ describe("generic artifact type bindings", () => {
       T: { id: "scalar.text", schema_version: 1 },
     };
 
-    const handles = [...data.spec.inputs, ...data.spec.outputs].map((port) =>
-      decodeHandleId(
-        encodeHandleId(
-          portMetaForPort(
-            port,
-            port.shape,
-            undefined,
-            data.artifactTypeBindings,
-          ),
-        ),
-      ),
+    const metas = [...data.spec.inputs, ...data.spec.outputs].map((port) =>
+      portMetaForPort(port, port.shape, undefined, data.artifactTypeBindings),
     );
 
-    expect(handles).toHaveLength(2);
-    expect(handles).toEqual([
+    expect(metas).toHaveLength(2);
+    expect(metas).toEqual([
       {
         portName: "items",
         artifactTypeId: "scalar.text",
@@ -78,27 +68,26 @@ describe("generic artifact type bindings", () => {
   it("preserves instance-plug identity when T binds to a raster image", () => {
     const input = genericNodeSpec.inputs[0]!;
     const plugId = "image-input-1";
-    const genericHandle = decodeHandleId(
-      encodeHandleId(portMetaForPort(input, input.shape, plugId)),
-    );
+    const genericMeta = portMetaForPort(input, input.shape, plugId);
     const data = createWorkflowNodeData(genericNodeSpec);
     data.artifactTypeBindings = {
       T: { id: "image.raster", schema_version: 1 },
     };
-    const concreteHandle = decodeHandleId(
-      encodeHandleId(
-        portMetaForPort(input, input.shape, plugId, data.artifactTypeBindings),
-      ),
+    const concreteMeta = portMetaForPort(
+      input,
+      input.shape,
+      plugId,
+      data.artifactTypeBindings,
     );
 
-    expect(genericHandle).toEqual({
+    expect(genericMeta).toEqual({
       portName: "items",
       artifactTypeVariable: "T",
       shape: "one",
       direction: "input",
       plugId,
     });
-    expect(concreteHandle).toEqual({
+    expect(concreteMeta).toEqual({
       portName: "items",
       artifactTypeId: "image.raster",
       schemaVersion: 1,
@@ -110,17 +99,13 @@ describe("generic artifact type bindings", () => {
 });
 
 describe("run node serialization", () => {
-  it("sends ordinary config while omitting all write-only secret UI state", () => {
+  it("sends ordinary config while omitting ephemeral progress state", () => {
     const data = createWorkflowNodeData(genericNodeSpec);
     data.config = {
       base_url: "https://api.openai.com/v1",
       model: "gpt-5-mini",
       bounds: [19.75, 49.97, 19.82, 50.03],
     };
-    data.secretStatuses = { api_key: { state: "configured" } };
-    data.secretInputReadiness = { api_key: true };
-    data.secretInputScope = "graph-1:2";
-    data.onApplyNodeSecret = async () => true;
     data.progress = {
       omittedCount: 0,
       entries: [
@@ -139,10 +124,6 @@ describe("run node serialization", () => {
     const request = serializeRunNode("llm-node", data);
 
     expect(request.config).toEqual(data.config);
-    expect(request).not.toHaveProperty("secretStatuses");
-    expect(request).not.toHaveProperty("secretInputReadiness");
-    expect(request).not.toHaveProperty("secretInputScope");
-    expect(request).not.toHaveProperty("onApplyNodeSecret");
     expect(request).not.toHaveProperty("progress");
     expect(JSON.stringify(request)).not.toContain("api_key");
   });

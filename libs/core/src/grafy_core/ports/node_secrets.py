@@ -8,6 +8,10 @@ from grafy_core.domain.node_secrets import (
     EncryptedNodeSecret,
     JsonValue,
 )
+from grafy_core.ports.credentials import (
+    CredentialRepositoryPort,
+    NodeCredentialSelectionRepositoryPort,
+)
 from grafy_core.ports.transactions import TransactionPort
 
 if TYPE_CHECKING:
@@ -35,6 +39,7 @@ class NodeSecretResolverPort(Protocol):
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
+        actor_user_id: UUID | None = None,
     ) -> SecretStr: ...
 
     async def cache_revision(
@@ -59,8 +64,17 @@ class UnavailableNodeSecretResolver(NodeSecretResolverPort):
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
+        actor_user_id: UUID | None = None,
     ) -> SecretStr:
-        del workspace_id, project_id, graph_id, node_id, name, dependencies
+        del (
+            workspace_id,
+            project_id,
+            graph_id,
+            node_id,
+            name,
+            dependencies,
+            actor_user_id,
+        )
         raise NodeSecretUnavailableError("Node secrets are unavailable in this runtime")
 
     async def cache_revision(
@@ -115,3 +129,9 @@ class NodeSecretUnitOfWorkPort(TransactionPort, Protocol):
 
     @property
     def node_secrets(self) -> NodeSecretRepositoryPort: ...
+
+    @property
+    def credentials(self) -> CredentialRepositoryPort: ...
+
+    @property
+    def node_credential_selections(self) -> NodeCredentialSelectionRepositoryPort: ...

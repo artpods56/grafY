@@ -8,7 +8,7 @@ from starlette.testclient import TestClient
 
 from grafy_api.v1.routes.node_secrets.models import (
     ConfigureNodeSecretRequest,
-    NodeSecretStatusResponse,
+    ConfigureNodeSecretResponse,
     ProjectNodeSecretsResponse,
 )
 from tests.support.clients._http import _expect, _parse
@@ -93,9 +93,9 @@ class NodeSecretsApi:
         payload: ConfigureNodeSecretRequest,
         *,
         headers: Mapping[str, str] | None = None,
-    ) -> NodeSecretStatusResponse:
+    ) -> ConfigureNodeSecretResponse:
         return _parse(
-            NodeSecretStatusResponse,
+            ConfigureNodeSecretResponse,
             _expect(
                 self.configure_secret(
                     project_id, graph_id, node_id, name, payload, headers=headers

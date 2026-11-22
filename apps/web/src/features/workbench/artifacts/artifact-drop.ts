@@ -6,16 +6,15 @@ import type {
 } from "@/lib/api";
 import { artifactCardValue, cardArtifactRefs } from "./artifact-card";
 import { artifactTypeKey } from "./artifact-type-key";
-import {
-  decodeHandleId,
-  shortestConversionPathsToAny,
-} from "../authoring/handles";
+import { shortestConversionPathsToAny } from "../authoring/connection-routes";
 import {
   acceptedPortShapes,
-  portHasInstancePlugs,
+  originCollectionModes,
   resolvedPortArtifactType,
   type WorkflowEdge,
 } from "../authoring/types";
+
+export { originCollectionModes };
 import type { GraphCommand } from "../authoring/graph-document";
 import { createUuid } from "../authoring/uuid";
 
@@ -238,33 +237,6 @@ export function resolveArtifactDrop(
   };
 }
 
-/**
- * Collection modes an artifact input may use, the default first. A many-only
- * port takes one artifact by holding it as a sequence of one. A sequence on a
- * port that takes one item maps the node over its items; on a port that takes
- * a sequence it may also be mapped, one sequence of one per item.
- */
-export function originCollectionModes(
-  port: Port,
-  shape: ArtifactDropPayload["shape"],
-): SavedGraphOrigin["collection_mode"][] {
-  const accepted = acceptedPortShapes(port);
-  const modes: SavedGraphOrigin["collection_mode"][] = [];
-  if (
-    accepted.includes(shape) ||
-    (shape === "one" && accepted.includes("many"))
-  )
-    modes.push("direct");
-  if (
-    shape === "many" &&
-    !port.variadic &&
-    !portHasInstancePlugs(port) &&
-    (port.shape === "many" || !accepted.includes("many"))
-  )
-    modes.push("map");
-  return modes;
-}
-
 function dropCollectionMode(
   port: Port,
   shape: ArtifactDropPayload["shape"],
@@ -408,10 +380,9 @@ export function artifactDropCommands(
       if (edge.data?.enabled === false || edge.target !== target.nodeId) {
         return false;
       }
-      const handle = decodeHandleId(edge.targetHandle);
       return (
-        handle?.portName === target.portName &&
-        (handle.plugId ?? null) === target.plugId
+        edge.targetPort === target.portName &&
+        (edge.targetPlug ?? null) === target.plugId
       );
     })
     .map((edge) => edge.id);

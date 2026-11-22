@@ -633,13 +633,25 @@ describe("sequence authoring", () => {
   });
 
   it("leaves a single card when the second to last item is removed", async () => {
-    const view = await mount({ nodes: [placedCard("s", ["s1", "s2"])] });
+    const view = await mount({
+      nodes: [placedCard("s", ["s1", "s2"])],
+      origins: [origin("wired", ["s", "s"], cardValue(["s1", "s2"]))],
+    });
     await act(async () => {
       view.read().removeArtifactCardItem("s", 0);
       view.read().removeArtifactCardItem("s", 9);
     });
     expect(view.committed).toHaveLength(1);
     expect(view.committed[0]?.nodes[0]?.data.artifactRef).toEqual(single("s2"));
+    const [command] = view.commands[0] ?? [];
+    expect(command).toEqual({
+      kind: "update_origin",
+      origin_id: "wired",
+      update: {
+        value: single("s2"),
+        source_card_ids: ["s"],
+      },
+    });
     view.unmount();
   });
 

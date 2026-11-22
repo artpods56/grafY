@@ -223,9 +223,9 @@ function routeFixture(): PendingConnectionRoute {
   return {
     connection: {
       source: "alpha",
+      sourcePort: "out",
       target: "beta",
-      sourceHandle: "out",
-      targetHandle: "in",
+      targetPort: "in",
     },
     collectionMode: "direct",
     candidates: [],
@@ -469,6 +469,155 @@ describe("workbenchAuthoringUiReducer", () => {
               kind: "update_edge",
               edge_id: "reading",
               update: { collection_mode: "direct" },
+            },
+          ],
+          before,
+        },
+      ]);
+    });
+
+    it("propagates map across origins and downstream edges when an origin value becomes a sequence", () => {
+      const singleScan = {
+        artifact_id: "scan-1",
+        artifact_type: "page" as const,
+        schema_version: 1,
+      };
+      const twoScans = {
+        artifact_type: "page" as const,
+        schema_version: 1,
+        item_refs: [
+          singleScan,
+          {
+            artifact_id: "scan-2",
+            artifact_type: "page" as const,
+            schema_version: 1,
+          },
+        ],
+        ordered: true,
+        index_key: "order_index",
+        sequence_id: "seq-scans",
+      };
+      const before = documentWith({
+        nodes: [
+          {
+            id: "ocr",
+            kind: "builtin",
+            operator_id: "test.ocr",
+            operator_version: 1,
+            config: {},
+            input_plugs: [],
+            artifact_type_bindings: [],
+            position: { x: 200, y: 0 },
+          },
+          {
+            id: "boxes",
+            kind: "builtin",
+            operator_id: "test.boxes",
+            operator_version: 1,
+            config: {},
+            input_plugs: [],
+            artifact_type_bindings: [],
+            position: { x: 400, y: 0 },
+          },
+        ],
+        edges: [
+          {
+            ...savedConnection(
+              "reading",
+              "ocr",
+              "markdown",
+              "boxes",
+              "regions",
+            ),
+            collection_mode: "direct",
+          },
+        ],
+        origins: [
+          {
+            id: "ocr-scan",
+            to_node: "ocr",
+            to_port: "document",
+            to_plug: null,
+            value: singleScan,
+            source_card_ids: ["card-a"],
+            collection_mode: "direct",
+            conversion_path: [],
+          },
+          {
+            id: "boxes-scan",
+            to_node: "boxes",
+            to_port: "image",
+            to_plug: null,
+            value: singleScan,
+            source_card_ids: ["card-a"],
+            collection_mode: "direct",
+            conversion_path: [],
+          },
+        ],
+      });
+      const state = freshState({ document: before });
+      const commands: GraphCommand[] = [
+        {
+          kind: "update_origin",
+          origin_id: "ocr-scan",
+          update: {
+            value: twoScans,
+            source_card_ids: ["card-a", "card-a"],
+          },
+        },
+        {
+          kind: "update_origin",
+          origin_id: "boxes-scan",
+          update: {
+            value: twoScans,
+            source_card_ids: ["card-a", "card-a"],
+          },
+        },
+      ];
+      const result = transition(
+        state,
+        applyAction(commands, { nodeRegistry: mappedStepRegistry() }),
+      );
+      expect(
+        result.state.document.origins.map((origin) => [
+          origin.id,
+          origin.collection_mode,
+        ]),
+      ).toEqual([
+        ["ocr-scan", "map"],
+        ["boxes-scan", "map"],
+      ]);
+      expect(
+        result.state.document.edges.find((edge) => edge.id === "reading")
+          ?.collection_mode,
+      ).toBe("map");
+      expect(result.effects).toEqual([
+        { kind: "clearRunError" },
+        {
+          kind: "syncRoomCommands",
+          commands: [
+            {
+              kind: "update_origin",
+              origin_id: "ocr-scan",
+              update: {
+                value: twoScans,
+                source_card_ids: ["card-a", "card-a"],
+                collection_mode: "map",
+              },
+            },
+            {
+              kind: "update_origin",
+              origin_id: "boxes-scan",
+              update: {
+                value: twoScans,
+                source_card_ids: ["card-a", "card-a"],
+                collection_mode: "map",
+              },
+            },
+            {
+              kind: "update_edge",
+              edge_id: "reading",
+              update: { collection_mode: "map" },
             },
           ],
           before,

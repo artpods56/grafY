@@ -1403,6 +1403,30 @@
         "title": "ConfigureNodeSecretRequest",
         "type": "object"
       },
+      "ConfigureNodeSecretResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "name",
+          "configured"
+        ],
+        "title": "ConfigureNodeSecretResponse",
+        "type": "object"
+      },
       "ConfirmationRequestedPayload": {
         "additionalProperties": false,
         "description": "The turn stopped before a further tool call, and asks a person to go on.\n\nThe model wanted more calls than a turn may make unprompted. The call it asked\nfor is not stored and not run; a person's reply is a new turn, which carries on\nfrom the results already in the conversation.",
@@ -1514,6 +1538,50 @@
           "command_id"
         ],
         "title": "CopyExactHeadRequest",
+        "type": "object"
+      },
+      "CreateCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "provider_kind": {
+            "pattern": "^[a-z][a-z0-9_]{0,127}$",
+            "title": "Provider Kind",
+            "type": "string"
+          },
+          "save_if_unverified": {
+            "default": false,
+            "title": "Save If Unverified",
+            "type": "boolean"
+          },
+          "value": {
+            "format": "password",
+            "title": "Value",
+            "type": "string",
+            "writeOnly": true
+          },
+          "verify": {
+            "default": true,
+            "title": "Verify",
+            "type": "boolean"
+          },
+          "verify_config": {
+            "additionalProperties": true,
+            "title": "Verify Config",
+            "type": "object"
+          }
+        },
+        "required": [
+          "provider_kind",
+          "label",
+          "value"
+        ],
+        "title": "CreateCredentialRequest",
         "type": "object"
       },
       "CreateLibraryFolderRequest": {
@@ -1641,6 +1709,208 @@
         ],
         "title": "CreateUploadRequest",
         "type": "object"
+      },
+      "CredentialListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialResponse"
+            },
+            "title": "Credentials",
+            "type": "array"
+          }
+        },
+        "required": [
+          "credentials"
+        ],
+        "title": "CredentialListResponse",
+        "type": "object"
+      },
+      "CredentialResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Hint"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "provider_kind": {
+            "title": "Provider Kind",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CredentialScope"
+          },
+          "supports_verification": {
+            "title": "Supports Verification",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "usable": {
+            "title": "Usable",
+            "type": "boolean"
+          },
+          "verification_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Hint"
+          },
+          "verification_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Message"
+          },
+          "verification_status": {
+            "$ref": "#/components/schemas/CredentialVerificationStatus"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "provider_kind",
+          "label",
+          "key_hint",
+          "usable",
+          "supports_verification",
+          "verification_status",
+          "verification_message",
+          "verification_hint",
+          "verified_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CredentialResponse",
+        "type": "object"
+      },
+      "CredentialScope": {
+        "enum": [
+          "personal",
+          "shared"
+        ],
+        "title": "CredentialScope",
+        "type": "string"
+      },
+      "CredentialVerificationFailureDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "can_save_unverified": {
+            "title": "Can Save Unverified",
+            "type": "boolean"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/CredentialVerificationResponse"
+          }
+        },
+        "required": [
+          "verification",
+          "can_save_unverified"
+        ],
+        "title": "CredentialVerificationFailureDetail",
+        "type": "object"
+      },
+      "CredentialVerificationFailureResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/CredentialVerificationFailureDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "CredentialVerificationFailureResponse",
+        "type": "object"
+      },
+      "CredentialVerificationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "account_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Hint"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CredentialVerificationStatus"
+          }
+        },
+        "required": [
+          "status",
+          "message",
+          "account_hint"
+        ],
+        "title": "CredentialVerificationResponse",
+        "type": "object"
+      },
+      "CredentialVerificationStatus": {
+        "enum": [
+          "unverified",
+          "valid",
+          "invalid",
+          "unreachable",
+          "egress_blocked",
+          "unsupported"
+        ],
+        "title": "CredentialVerificationStatus",
+        "type": "string"
       },
       "CustomAgentModel": {
         "additionalProperties": false,
@@ -4590,6 +4860,14 @@
             "title": "Name",
             "type": "string"
           },
+          "provider_kind": {
+            "title": "Provider Kind",
+            "type": "string"
+          },
+          "supports_verification": {
+            "title": "Supports Verification",
+            "type": "boolean"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -4598,6 +4876,8 @@
         "required": [
           "name",
           "config_dependencies",
+          "provider_kind",
+          "supports_verification",
           "title"
         ],
         "title": "NodeSecretInputResponse",
@@ -4635,12 +4915,64 @@
         "title": "NodeSecretResolutionResponse",
         "type": "object"
       },
+      "NodeSecretSource": {
+        "enum": [
+          "personal_credential",
+          "shared_credential",
+          "deployment_default",
+          "inline_legacy",
+          "none"
+        ],
+        "type": "string"
+      },
       "NodeSecretStatusResponse": {
         "additionalProperties": false,
         "properties": {
           "configured": {
             "title": "Configured",
             "type": "boolean"
+          },
+          "deployment_default_available": {
+            "default": false,
+            "title": "Deployment Default Available",
+            "type": "boolean"
+          },
+          "effective_credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Credential Id"
+          },
+          "effective_credential_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Credential Label"
+          },
+          "effective_source": {
+            "$ref": "#/components/schemas/NodeSecretSource",
+            "default": "none"
+          },
+          "effective_verification_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CredentialVerificationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
             "title": "Name",
@@ -4649,6 +4981,93 @@
           "node_id": {
             "title": "Node Id",
             "type": "string"
+          },
+          "personal_credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personal Credential Id"
+          },
+          "personal_credential_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personal Credential Label"
+          },
+          "personal_override_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserCredentialOverrideMode"
+              },
+              {
+                "const": "none",
+                "type": "string"
+              }
+            ],
+            "default": "none",
+            "title": "Personal Override Mode"
+          },
+          "provider_kind": {
+            "default": "generic",
+            "title": "Provider Kind",
+            "type": "string"
+          },
+          "shared_binding_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SharedCredentialBindingMode"
+              },
+              {
+                "const": "none",
+                "type": "string"
+              }
+            ],
+            "default": "none",
+            "title": "Shared Binding Mode"
+          },
+          "shared_credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shared Credential Id"
+          },
+          "shared_credential_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shared Credential Label"
+          },
+          "shared_credential_missing": {
+            "default": false,
+            "title": "Shared Credential Missing",
+            "type": "boolean"
+          },
+          "supports_verification": {
+            "default": false,
+            "title": "Supports Verification",
+            "type": "boolean"
           }
         },
         "required": [
@@ -4955,6 +5374,40 @@
         ],
         "title": "PersonalAccessTokenScope",
         "type": "string"
+      },
+      "PersonalCredentialSelectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Id"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserCredentialOverrideMode"
+              },
+              {
+                "const": "none",
+                "type": "string"
+              }
+            ],
+            "title": "Mode"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "PersonalCredentialSelectionRequest",
+        "type": "object"
       },
       "PluginSpecResponse": {
         "properties": {
@@ -6533,6 +6986,55 @@
         "title": "SetNodeInputPlugsCommand",
         "type": "object"
       },
+      "SharedCredentialBindingMode": {
+        "enum": [
+          "credential",
+          "personal",
+          "deployment_default"
+        ],
+        "title": "SharedCredentialBindingMode",
+        "type": "string"
+      },
+      "SharedCredentialBindingRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Id"
+          },
+          "expected_head_sequence": {
+            "minimum": 0.0,
+            "title": "Expected Head Sequence",
+            "type": "integer"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SharedCredentialBindingMode"
+              },
+              {
+                "const": "none",
+                "type": "string"
+              }
+            ],
+            "title": "Mode"
+          }
+        },
+        "required": [
+          "mode",
+          "expected_head_sequence"
+        ],
+        "title": "SharedCredentialBindingRequest",
+        "type": "object"
+      },
       "StartAgentConversationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -7272,6 +7774,61 @@
         "title": "TurnOutcomePayload",
         "type": "object"
       },
+      "UpdateCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "save_if_unverified": {
+            "default": false,
+            "title": "Save If Unverified",
+            "type": "boolean"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "verify": {
+            "default": true,
+            "title": "Verify",
+            "type": "boolean"
+          },
+          "verify_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verify Config"
+          }
+        },
+        "title": "UpdateCredentialRequest",
+        "type": "object"
+      },
       "UpdateEdgeCommand": {
         "additionalProperties": false,
         "properties": {
@@ -7465,6 +8022,15 @@
         ],
         "title": "UploadTargetResponse"
       },
+      "UserCredentialOverrideMode": {
+        "enum": [
+          "credential",
+          "shared",
+          "deployment_default"
+        ],
+        "title": "UserCredentialOverrideMode",
+        "type": "string"
+      },
       "UserMessagePayload": {
         "additionalProperties": false,
         "properties": {
@@ -7595,6 +8161,65 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VerifyCandidateCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "provider_kind": {
+            "pattern": "^[a-z][a-z0-9_]{0,127}$",
+            "title": "Provider Kind",
+            "type": "string"
+          },
+          "value": {
+            "format": "password",
+            "title": "Value",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "provider_kind",
+          "value"
+        ],
+        "title": "VerifyCandidateCredentialRequest",
+        "type": "object"
+      },
+      "VerifyNodeSecretRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "title": "VerifyNodeSecretRequest",
+        "type": "object"
+      },
+      "VerifySavedCredentialRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          }
+        },
+        "title": "VerifySavedCredentialRequest",
         "type": "object"
       },
       "WorkbenchErrorResponse": {
@@ -8352,6 +8977,312 @@
         "summary": "Revoke Session",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/v1/me/credentials": {
+      "get": {
+        "operationId": "list_personal_credentials_v1_me_credentials_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Personal Credentials",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "post": {
+        "operationId": "create_personal_credential_v1_me_credentials_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialVerificationFailureResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Create Personal Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/v1/me/credentials/verify": {
+      "post": {
+        "operationId": "verify_personal_candidate_v1_me_credentials_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyCandidateCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialVerificationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Verify Personal Candidate",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/v1/me/credentials/{credential_id}": {
+      "delete": {
+        "operationId": "delete_personal_credential_v1_me_credentials__credential_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Delete Personal Credential",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "patch": {
+        "operationId": "update_personal_credential_v1_me_credentials__credential_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialVerificationFailureResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Update Personal Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/v1/me/credentials/{credential_id}/verify": {
+      "post": {
+        "operationId": "verify_saved_personal_credential_v1_me_credentials__credential_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/VerifySavedCredentialRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Verify Saved Personal Credential",
+        "tags": [
+          "credentials"
         ]
       }
     },
@@ -10467,6 +11398,394 @@
         "summary": "Get Geo Vector Pmtiles",
         "tags": [
           "workbench"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/credentials": {
+      "get": {
+        "operationId": "list_shared_credentials_v1_workspaces__workspace_id__credentials_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Shared Credentials",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "post": {
+        "operationId": "create_shared_credential_v1_workspaces__workspace_id__credentials_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialVerificationFailureResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Shared Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/credentials/verify": {
+      "post": {
+        "operationId": "verify_shared_candidate_v1_workspaces__workspace_id__credentials_verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyCandidateCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialVerificationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Verify Shared Candidate",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/credentials/{credential_id}": {
+      "delete": {
+        "operationId": "delete_shared_credential_v1_workspaces__workspace_id__credentials__credential_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Shared Credential",
+        "tags": [
+          "credentials"
+        ]
+      },
+      "patch": {
+        "operationId": "update_shared_credential_v1_workspaces__workspace_id__credentials__credential_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCredentialRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialVerificationFailureResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Shared Credential",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/credentials/{credential_id}/verify": {
+      "post": {
+        "operationId": "verify_saved_shared_credential_v1_workspaces__workspace_id__credentials__credential_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/VerifySavedCredentialRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Verify Saved Shared Credential",
+        "tags": [
+          "credentials"
         ]
       }
     },
@@ -14002,7 +15321,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NodeSecretStatusResponse"
+                  "$ref": "#/components/schemas/ConfigureNodeSecretResponse"
                 }
               }
             },
@@ -14028,6 +15347,307 @@
           }
         ],
         "summary": "Configure Node Secret",
+        "tags": [
+          "node secrets"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}/personal-selection": {
+      "put": {
+        "operationId": "set_personal_selection_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__personal_selection_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonalCredentialSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeSecretStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Personal Selection",
+        "tags": [
+          "node secrets"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}/shared-binding": {
+      "put": {
+        "operationId": "set_shared_binding_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__shared_binding_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedCredentialBindingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeSecretStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Shared Binding",
+        "tags": [
+          "node secrets"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}/verify": {
+      "post": {
+        "operationId": "verify_node_secret_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/VerifyNodeSecretRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialVerificationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Verify Node Secret",
         "tags": [
           "node secrets"
         ]

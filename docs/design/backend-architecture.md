@@ -266,3 +266,19 @@ private model server works because it is a trusted destination, and an Agent's o
 endpoint is refused if its name resolves to a private address the operator did not grant.
 Falling back to the deployment key for an Agent with its own endpoint is refused rather
 than quietly taken.
+### Provider credential vault
+
+The API seals Personal and Shared credentials using the deployment encryption key
+and authenticates the record ID, provider kind, and ownership scope as AAD. Where
+a provider declares a configurable endpoint, the encrypted payload carries the
+approved endpoint. Node resolution requires the saved node configuration to
+match before releasing the key. A Graph editor can select a Shared credential
+without being able to redirect it. Verification callbacks receive a pinned
+HTTP client that enforces deployment egress policy and refuses redirects.
+
+The node secret resolver applies the Run starter's selection, then the Graph
+binding, then the inline legacy secret or deployment default. Graph bindings
+and selections stay outside the collaborative document. Deleting a Shared
+credential leaves its Graph binding visibly unresolved. Deleting a credential
+clears personal selections that reference it. Legacy Label Studio inline tokens
+retain the encryption binding they were originally sealed with.

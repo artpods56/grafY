@@ -80,6 +80,7 @@ class NodeComputationRunner:
         instance = request.instance
         upstream = await self._read_upstream(request)
         context = NodeExecutionContext(
+            actor_user_id=request.actor_user_id,
             workspace_id=self._workspace_id,
             project_id=self._project_id,
             graph_id=instance.key.graph_id,
@@ -158,7 +159,7 @@ class NodeComputationRunner:
         who left the port empty.
         """
 
-        from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence
+        from grafy_core.artifacts import ArtifactRefSequence
 
         found: dict[InstanceKey, dict[str, str]] = {}
         for key, outputs in upstream.items():
@@ -166,7 +167,7 @@ class NodeComputationRunner:
                 raw: object | None = None
                 if isinstance(value, ArtifactRefSequence):
                     raw = value.metadata.get("unsupported_outputs")
-                elif isinstance(value, ArtifactRef):
+                else:
                     stored = await self._edge_values.values.open(
                         value, self._workspace_id
                     )
@@ -175,7 +176,7 @@ class NodeComputationRunner:
                     continue
                 mapping = {
                     str(port): str(provider)
-                    for port, provider in raw.items()
+                    for port, provider in cast(dict[object, object], raw).items()
                     if isinstance(port, str) and isinstance(provider, str)
                 }
                 if mapping:
@@ -262,6 +263,7 @@ class NodeComputationRunner:
         context = bind_node_secret_config(
             bind_node_secrets(
                 NodeExecutionContext(
+                    actor_user_id=request.actor_user_id,
                     workspace_id=self._workspace_id,
                     project_id=self._project_id,
                     graph_id=source.key.graph_id,

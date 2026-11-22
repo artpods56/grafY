@@ -121,3 +121,8 @@ from .runs import (
 from .runs import (
     project_runs as project_runs,
 )
+from .credentials import (
+    credentials as credentials,
+    node_shared_credential_bindings as node_shared_credential_bindings,
+    node_user_credential_overrides as node_user_credential_overrides,
+)

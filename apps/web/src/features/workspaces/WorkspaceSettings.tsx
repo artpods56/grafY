@@ -29,6 +29,7 @@ import {
   workspaceCanManageMembers,
   workspaceDisplayName,
 } from "./WorkspaceLayout";
+import { WorkspaceCredentials } from "./WorkspaceCredentials";
 import { WorkspaceMembersDialog } from "./WorkspaceMembersDialog";
 
 type ExpiryDays = "1" | "7" | "30";
@@ -433,6 +434,11 @@ export function WorkspaceSettings() {
           )}
         </div>
       </section>
+      <WorkspaceCredentials
+        workspaceId={workspace.id}
+        canManageShared={workspace.capabilities.includes("manage_secrets")}
+        canViewShared={workspace.capabilities.includes("view_project")}
+      />
     </main>
   );
 }

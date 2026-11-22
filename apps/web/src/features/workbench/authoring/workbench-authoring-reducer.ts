@@ -8,7 +8,10 @@ import {
   type AuthoringCommandOptions,
 } from "./authoring-command-guard";
 import type { PendingConnectionRoute } from "./ConnectionRouteDialog";
-import { collectionModeRepairCommands } from "./edge-collection-modes";
+import {
+  collectionModeRepairCommands,
+  foldCollectionModeRepairs,
+} from "./edge-collection-modes";
 import type { AuthoredGraphDocument, GraphCommand } from "./graph-document";
 import {
   reduceWorkbenchAuthoringState,
@@ -404,10 +407,7 @@ function applyCommands<TDiscovery, TContextMenu>(
   if (action.options?.syncRoom !== false) {
     exec({
       kind: "syncRoomCommands",
-      commands:
-        repairs.length > 0
-          ? [...action.commands, ...repairs]
-          : [...action.commands],
+      commands: foldCollectionModeRepairs(action.commands, repairs),
       before: state.document,
     });
   }

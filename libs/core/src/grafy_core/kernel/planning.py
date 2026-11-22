@@ -19,6 +19,7 @@ never enter it, and neither does the computation's own fingerprint.
 """
 
 from collections import deque
+from uuid import UUID
 from collections.abc import Collection, Mapping, Sequence
 
 from grafy_core.kernel.instances import ExpandedGraph, ExpandedInstance, InstanceKey
@@ -43,6 +44,7 @@ async def plan_run(
     targets: Sequence[InstanceKey],
     store: ResultStore,
     service_operators: Collection[tuple[str, int]] = (),
+    actor_user_id: UUID | None = None,
 ) -> RunPlan:
     """Plan the stale computations a Run needs for ``targets``.
 
@@ -165,6 +167,7 @@ async def plan_run(
             depends_on=frozenset(depends_on),
             upstream_fingerprints=upstream_fingerprints,
             service_sources=service_sources,
+            actor_user_id=actor_user_id,
         )
 
     for fingerprint, computation in computations.items():

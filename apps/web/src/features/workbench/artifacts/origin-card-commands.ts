@@ -14,8 +14,13 @@ export function changeOriginCardReferences(
 ): GraphCommand[] {
   const owners = origin.source_card_ids;
   const replacementRefs = cardArtifactRefs(replacement);
+  const replacedWithSingle =
+    replacement !== null && !("item_refs" in replacement);
   if (owners == null) {
-    const value = artifactCardValue(replacementRefs, origin.value);
+    const value = artifactCardValue(
+      replacementRefs,
+      replacedWithSingle && replacementRefs.length === 1 ? null : origin.value,
+    );
     return value
       ? [{ kind: "update_origin", origin_id: origin.id, update: { value } }]
       : [{ kind: "remove_origins", origin_ids: [origin.id] }];
@@ -40,7 +45,10 @@ export function changeOriginCardReferences(
     }
   }
   if (!replaced) return [];
-  const value = artifactCardValue(nextRefs, origin.value);
+  const value = artifactCardValue(
+    nextRefs,
+    replacedWithSingle && nextRefs.length === 1 ? null : origin.value,
+  );
   return value
     ? [
         {

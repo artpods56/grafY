@@ -443,6 +443,8 @@ describe("useSavedGraphLifecycle document ownership", () => {
           name: "api_key",
           title: "API key",
           config_dependencies: ["base_url"],
+          provider_kind: "openai_compatible",
+          supports_verification: true,
         },
       ],
     });

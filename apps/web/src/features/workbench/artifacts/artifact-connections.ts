@@ -1,4 +1,3 @@
-import type { CanvasConnection } from "../authoring/types";
 import type {
   ArtifactConversionSpec,
   SavedGraphOrigin,
@@ -21,15 +20,20 @@ import type {
   ArtifactViewerNode,
   CanvasWorkflowNode,
 } from "./artifact-viewer";
-import { decodeHandleId, encodeHandleId } from "../authoring/handles";
+import type { ResolvedGraphSemantics } from "../authoring/graph-semantics";
 import {
-  effectivePortShape,
   portHasInstancePlugs,
-  portMetaForPort,
   workflowNodeIsSupported,
 } from "../authoring/types";
 
 export const ARTIFACT_CARD_OUTPUT_HANDLE = "artifact-card-output";
+
+export interface ArtifactCardConnection {
+  readonly sourceCardId: string;
+  readonly targetNodeId: string;
+  readonly targetPort: string;
+  readonly targetPlug?: string | null;
+}
 
 /**
  * Releasing an output wire on empty canvas.
@@ -119,28 +123,20 @@ export function artifactCardConnectionValue(
 
 /** Resolve real canvas endpoints before applying the normal artifact-input rules. */
 export function resolveArtifactCardConnection(
-  connection: CanvasConnection,
+  connection: ArtifactCardConnection,
   cards: readonly ArtifactViewerNode[],
   feeds: readonly ArtifactViewerEdge[],
   nodes: readonly CanvasWorkflowNode[],
   conversions: readonly ArtifactConversionSpec[],
 ) {
-  if (connection.sourceHandle !== ARTIFACT_CARD_OUTPUT_HANDLE) return null;
-  const card = cards.find((card) => card.id === connection.source);
-  const node = nodes.find((node) => node.id === connection.target);
-  const handle = decodeHandleId(connection.targetHandle);
-  if (
-    !card ||
-    !node ||
-    !workflowNodeIsSupported(node.data) ||
-    handle?.direction !== "input"
-  )
-    return null;
+  const card = cards.find((card) => card.id === connection.sourceCardId);
+  const node = nodes.find((node) => node.id === connection.targetNodeId);
+  if (!card || !node || !workflowNodeIsSupported(node.data)) return null;
   const port = node.data.spec.inputs.find(
-    (port) => port.name === handle.portName,
+    (port) => port.name === connection.targetPort,
   );
-  if (!port) return null;
-  const plugId = handle.plugId ?? null;
+  if (!port || port.direction !== "input") return null;
+  const plugId = connection.targetPlug ?? null;
   if (
     portHasInstancePlugs(port)
       ? !node.data.inputPlugs.some(
@@ -185,6 +181,7 @@ export function artifactOriginConnections(
   feeds: readonly ArtifactViewerEdge[],
   nodes: readonly CanvasWorkflowNode[],
   origins: readonly SavedGraphOrigin[],
+  semantics?: ResolvedGraphSemantics | null,
 ): ArtifactOriginEdge[] {
   const edges: ArtifactOriginEdge[] = [];
   for (const origin of origins) {
@@ -193,6 +190,7 @@ export function artifactOriginConnections(
       (port) => port.name === origin.to_port,
     );
     if (!target || !port) continue;
+    const resolvedOrigin = semantics?.origins.get(origin.id);
     const remaining = new Set(
       cardArtifactRefs(origin.value).map((ref) => ref.artifact_id),
     );
@@ -216,23 +214,19 @@ export function artifactOriginConnections(
         id: `artifact-origin:${origin.id}:${card.id}`,
         type: ARTIFACT_ORIGIN_EDGE_TYPE,
         source: card.id,
-        sourceHandle: ARTIFACT_CARD_OUTPUT_HANDLE,
         target: target.id,
-        targetHandle: encodeHandleId(
-          portMetaForPort(
-            port,
-            effectivePortShape(target.data, port),
-            origin.to_plug ?? undefined,
-            target.data.artifactTypeBindings,
-          ),
-        ),
+        targetPort: origin.to_port,
+        targetPlug: origin.to_plug ?? null,
         data: {
           originId: origin.id,
-          collectionMode: origin.collection_mode,
-          allowedCollectionModes: originCollectionModes(
-            port,
-            artifactDropPayload(origin.value).shape,
-          ),
+          collectionMode:
+            resolvedOrigin?.collectionMode ?? origin.collection_mode,
+          allowedCollectionModes: resolvedOrigin
+            ? [...resolvedOrigin.allowedCollectionModes]
+            : originCollectionModes(
+                port,
+                artifactDropPayload(origin.value).shape,
+              ),
         },
       });
       if (origin.source_card_ids == null) {

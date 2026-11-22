@@ -112,8 +112,6 @@ import {
 import {
   ARTIFACT_VIEWER_EDGE_TYPE,
   ARTIFACT_VIEWER_INPUT_HANDLE,
-  ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE,
-  ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE,
   ARTIFACT_VIEWER_NODE_TYPE,
   artifactViewersFromPresentation,
   presentationFromArtifactViewers,
@@ -146,24 +144,20 @@ import {
   hydrateAuthoredGraphDocument,
   savedGraphExecutionFingerprint,
 } from "../authoring/saved-graph";
+import { resolveGraphSemantics } from "../authoring/graph-semantics";
 import {
   type ArtifactInteractionField,
   type ArtifactKeySelection,
   type ArtifactViewerActivity,
-  type ArtifactViewerBinding,
 } from "../artifacts/artifact-interactions";
 import {
-  canonicalHandleId,
-  connectionRouteDeliveredArtifactType,
-  connectionRouteForSelection,
+  connectionRouteForPortSelection,
   connectionRouteMatchesSelection,
   connectionRouteSelection,
-  connectionRoutesFor,
-  decodedHandleArtifactType,
-  decodeHandleId,
-  encodeHandleId,
+  connectionRoutesForPorts,
+  portMetaArtifactType,
   type ConnectionRoute,
-} from "../authoring/handles";
+} from "../authoring/connection-routes";
 import {
   COLLECTION_PORT,
   collectDisabledReason,
@@ -171,20 +165,20 @@ import {
   isCollectionSpec,
   type CollectionSource,
 } from "../authoring/collection";
-import { artifactTypeColor } from "../config-ui/nodes.css";
 import {
-  WORKFLOW_EDGE_TYPE,
   createWorkflowNodeData,
+  portArtifactTypeVariable,
+  portMetaForPort,
   resolvedPortArtifactType,
-  type CanvasConnection,
+  workflowNodeIsSupported,
   type CanvasFitViewOptions,
-  type XYPosition,
+  type GraphConnection,
+  type PortMeta,
   type WorkflowEdge,
   type WorkflowEdgeRouteOption,
   type WorkflowEdgeUpdate,
   type WorkflowNodeConfig,
-  portMetaForPort,
-  workflowNodeIsSupported,
+  type XYPosition,
 } from "../authoring/types";
 import {
   orderFeedRoutes,
@@ -205,9 +199,8 @@ import {
 } from "../artifacts/artifact-drop";
 import {
   collectionModeForConnection,
-  collectionModesForConnection,
   isConnectionAccepted,
-  renderedOutputHandleId,
+  resolveConnectionPortMeta,
   workflowEdgeRouteOption,
 } from "../authoring/graph-authoring";
 import {
@@ -259,10 +252,11 @@ import {
   buildWorkbenchCellScene,
   cellConnectionToWorkbenchConnection,
   cellRemotePeersFromParticipants,
-  encodeCellPortHandleForDiscovery,
   partitionCellMoves,
   partitionCellRemovals,
   partitionCellSelection,
+  resolveCellPortEndpoint,
+  type CellResolvedConnection,
 } from "./workbench-cell-canvas";
 import { useNodeCommands } from "../authoring/workbench-node-commands";
 import {
@@ -416,6 +410,7 @@ function WorkbenchBody({
   } = useCanvasGridSettings();
   const { workspace } = useWorkspaceContext();
   const canCreateProject = workspace.capabilities.includes("create_project");
+  const canManageSecrets = workspace.capabilities.includes("manage_secrets");
   const canEditProject = workspace.capabilities.includes("edit_project");
   const canStartRun = workspace.capabilities.includes("start_run");
   const canCancelRun = workspace.capabilities.includes("cancel_run");
@@ -525,12 +520,21 @@ function WorkbenchBody({
     setPendingFolderDrop,
     requestCanvasRefit,
   } = authoring;
+  const graphSemantics = React.useMemo(
+    () => (registry ? resolveGraphSemantics(authoredDocument, registry) : null),
+    [authoredDocument, registry],
+  );
   const hydratedDocument = React.useMemo(
     () =>
       registry
-        ? hydrateAuthoredGraphDocument(authoredDocument, registry)
+        ? hydrateAuthoredGraphDocument(
+            authoredDocument,
+            registry,
+            [],
+            graphSemantics ?? undefined,
+          )
         : { nodes: [], edges: [] },
-    [authoredDocument, registry],
+    [authoredDocument, graphSemantics, registry],
   );
   const nodesRef = React.useRef<WorkflowNode[]>([]);
   const edgesRef = React.useRef<WorkflowEdge[]>([]);
@@ -544,10 +548,13 @@ function WorkbenchBody({
           data: {
             ...node.data,
             ...(nodeOverlays[node.id] ?? {}),
+            mappedInputPorts:
+              graphSemantics?.nodes.get(node.id)?.mappedInputPorts ?? [],
           },
         };
       }),
     [
+      graphSemantics,
       hydratedDocument.nodes,
       nodeOverlays,
       positionOverrides,
@@ -620,6 +627,10 @@ function WorkbenchBody({
   const artifactViewerActivityRevisionRef = React.useRef(0);
   const {
     nodeSecretStatuses,
+    credentials,
+    refreshCredentials,
+    selectCredential,
+    verifyCredential,
     refreshNodeSecretStatuses,
     applyConfiguredNodeSecret,
     removeConfiguredNodeSecret,
@@ -1184,6 +1195,7 @@ function WorkbenchBody({
         activeArtifactViewers.edges,
         nodes,
         authoredDocument.origins,
+        graphSemantics,
       ).map((edge) => ({
         ...edge,
         selected: selectedEdgeIdSet.has(edge.id),
@@ -1193,6 +1205,7 @@ function WorkbenchBody({
       activeArtifactViewers.edges,
       nodes,
       authoredDocument.origins,
+      graphSemantics,
       selectedEdgeIdSet,
     ],
   );
@@ -1546,28 +1559,34 @@ function WorkbenchBody({
 
   const addWorkflowEdge = React.useCallback(
     (
-      connection: CanvasConnection,
+      connection: GraphConnection,
       collectionMode: RunEdgeCollectionMode,
       route: ConnectionRoute,
     ): string | null => {
-      let committedConnection = connection;
       let newlyBoundNodeId: string | null = null;
       const binding = route.artifactTypeBinding;
       if (binding) {
-        const handleId =
-          binding.endpoint === "source"
-            ? connection.sourceHandle
-            : connection.targetHandle;
-        const handle = decodeHandleId(handleId);
         const nodeId =
           binding.endpoint === "source" ? connection.source : connection.target;
+        const portName =
+          binding.endpoint === "source"
+            ? connection.sourcePort
+            : connection.targetPort;
         const node = nodes.find((candidate) => candidate.id === nodeId);
+        const port =
+          binding.endpoint === "source"
+            ? node?.data.spec.outputs.find(
+                (candidate) => candidate.name === portName,
+              )
+            : node?.data.spec.inputs.find(
+                (candidate) => candidate.name === portName,
+              );
         const existingBinding =
           node?.data.artifactTypeBindings[binding.variable];
         if (
-          !handle ||
-          handle.artifactTypeVariable !== binding.variable ||
           !node ||
+          !port ||
+          portArtifactTypeVariable(port) !== binding.variable ||
           (existingBinding &&
             (existingBinding.id !== binding.artifactType.id ||
               existingBinding.schema_version !==
@@ -1575,19 +1594,6 @@ function WorkbenchBody({
         ) {
           return null;
         }
-
-        const concreteHandleId = encodeHandleId({
-          portName: handle.portName,
-          artifactTypeId: binding.artifactType.id,
-          schemaVersion: binding.artifactType.schema_version,
-          shape: handle.shape,
-          direction: handle.direction,
-          ...(handle.plugId ? { plugId: handle.plugId } : {}),
-        });
-        committedConnection =
-          binding.endpoint === "source"
-            ? { ...connection, sourceHandle: concreteHandleId }
-            : { ...connection, targetHandle: concreteHandleId };
         if (!existingBinding) newlyBoundNodeId = nodeId;
       }
 
@@ -1605,7 +1611,7 @@ function WorkbenchBody({
       }
       commands.push(
         addEdgeCommand(
-          committedConnection,
+          connection,
           {
             enabled: true,
             collectionMode,
@@ -1628,8 +1634,8 @@ function WorkbenchBody({
   );
 
   const isValidConnection = React.useCallback(
-    (candidate: CanvasConnection) => {
-      if (candidate.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE) {
+    (candidate: CellResolvedConnection) => {
+      if (candidate.kind === "artifact-card") {
         const resolved = resolveArtifactCardConnection(
           candidate,
           activeArtifactViewers.nodes,
@@ -1639,39 +1645,16 @@ function WorkbenchBody({
         );
         return resolved !== null;
       }
-      if (
-        candidate.sourceHandle === ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE ||
-        candidate.targetHandle === ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE
-      ) {
-        return (
-          candidate.sourceHandle ===
-            ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE &&
-          candidate.targetHandle === ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE &&
-          candidate.source !== candidate.target &&
-          activeArtifactViewers.nodes.some(
-            (node) => node.id === candidate.source,
-          ) &&
-          activeArtifactViewers.nodes.some(
-            (node) => node.id === candidate.target,
-          ) &&
-          !activeArtifactViewers.bindings.some(
-            (binding) =>
-              binding.sourceViewerId === candidate.source &&
-              binding.targetViewerId === candidate.target,
-          )
+      if (candidate.kind === "artifact-viewer") {
+        const sourceNode = nodes.find(
+          (node) => node.id === candidate.sourceNodeId,
         );
-      }
-      if (
-        candidate.targetHandle === ARTIFACT_VIEWER_INPUT_HANDLE &&
-        activeArtifactViewers.nodes.some((node) => node.id === candidate.target)
-      ) {
-        const source = decodeHandleId(candidate.sourceHandle);
-        const sourceNode = nodes.find((node) => node.id === candidate.source);
         return Boolean(
-          source &&
-          source.direction === "output" &&
+          activeArtifactViewers.nodes.some(
+            (node) => node.id === candidate.targetViewerId,
+          ) &&
           sourceNode?.data.spec.outputs.some(
-            (port) => port.name === source.portName,
+            (port) => port.name === candidate.sourcePort,
           ),
         );
       }
@@ -1689,7 +1672,6 @@ function WorkbenchBody({
       authoredDocument.origins,
       activeArtifactViewers.nodes,
       activeArtifactViewers.edges,
-      activeArtifactViewers.bindings,
       edges,
       nodes,
       registry?.artifact_conversions,
@@ -1698,9 +1680,9 @@ function WorkbenchBody({
   );
 
   const onConnect = React.useCallback(
-    (connection: CanvasConnection) => {
+    (connection: CellResolvedConnection) => {
       if (!isValidConnection(connection)) return;
-      if (connection.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE) {
+      if (connection.kind === "artifact-card") {
         const resolved = resolveArtifactCardConnection(
           connection,
           activeArtifactViewers.nodes,
@@ -1721,7 +1703,7 @@ function WorkbenchBody({
             origins: authoredDocumentRef.current.origins,
             conversions: registry?.artifact_conversions ?? [],
           },
-          connection.source,
+          connection.sourceCardId,
         );
         if (!commands) return;
         if (resolved.binding) {
@@ -1737,41 +1719,20 @@ function WorkbenchBody({
         setPendingConnectionRoute(null);
         return;
       }
-      if (
-        connection.sourceHandle === ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE &&
-        connection.targetHandle === ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE
-      ) {
-        const binding: ArtifactViewerBinding = {
-          id: `artifact-viewer-binding-${createUuid()}`,
-          sourceViewerId: connection.source,
-          targetViewerId: connection.target,
-          mappings: [{ sourceField: "", targetField: "" }],
-          effects: ["highlight", "focus"],
-          emptySelection: "show_all",
-        };
-        commitArtifactViewers((current) => ({
-          ...current,
-          bindings: [...current.bindings, binding],
-        }));
-        setPendingConnectionRoute(null);
-        return;
-      }
-      if (connection.targetHandle === ARTIFACT_VIEWER_INPUT_HANDLE) {
-        const source = decodeHandleId(connection.sourceHandle);
-        if (!source || source.direction !== "output") return;
+      if (connection.kind === "artifact-viewer") {
         const edge: ArtifactViewerEdge = {
           id: `artifact-viewer-edge-${createUuid()}`,
           type: ARTIFACT_VIEWER_EDGE_TYPE,
-          source: connection.source,
-          target: connection.target,
+          source: connection.sourceNodeId,
+          target: connection.targetViewerId,
           targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
-          data: { sourcePortName: source.portName },
+          data: { sourcePortName: connection.sourcePort },
         };
         commitArtifactViewers((current) => ({
           ...current,
           edges: [
             ...current.edges.filter(
-              (candidate) => candidate.target !== connection.target,
+              (candidate) => candidate.target !== connection.targetViewerId,
             ),
             edge,
           ],
@@ -1787,70 +1748,70 @@ function WorkbenchBody({
       );
       if (!collectionMode) return;
 
-      const source = decodeHandleId(connection.sourceHandle);
-      const target = decodeHandleId(connection.targetHandle);
-      const canonicalConnection: CanvasConnection = {
-        ...connection,
-        sourceHandle: canonicalHandleId(connection.sourceHandle),
-        targetHandle: canonicalHandleId(connection.targetHandle),
-      };
-      const allCandidates = connectionRoutesFor(
-        canonicalConnection,
+      const endpoints = resolveConnectionPortMeta(
+        connection,
+        nodes,
+        edges,
+        authoredDocument.origins,
+      );
+      if (!endpoints) return;
+
+      const allCandidates = connectionRoutesForPorts(
+        endpoints.source,
+        endpoints.target,
         registry?.artifact_types ?? [],
         registry?.artifact_conversions ?? [],
       );
       const candidates = orderFeedRoutes(
-        routesForHandleFeed(allCandidates, source?.feed),
+        routesForHandleFeed(allCandidates, endpoints.source.feed),
       );
       const preferred = preferredWholeFeedRoute(candidates);
-      if (!preferred || !source || !target) return;
+      if (!preferred) return;
 
       // Connect first with the whole output (or sole route), then offer fields.
-      const edgeId = addWorkflowEdge(
-        canonicalConnection,
-        collectionMode,
-        preferred,
-      );
+      const edgeId = addWorkflowEdge(connection, collectionMode, preferred);
       if (!edgeId || candidates.length <= 1) return;
 
       const sourceNode = nodes.find((node) => node.id === connection.source);
       const targetNode = nodes.find((node) => node.id === connection.target);
       if (!sourceNode || !targetNode) return;
-      const sourceArtifactType = decodedHandleArtifactType(source);
-      const targetArtifactType = decodedHandleArtifactType(target);
+      const sourceArtifactType = portMetaArtifactType(endpoints.source);
+      const targetArtifactType = portMetaArtifactType(endpoints.target);
 
       const sourcePort = sourceNode.data.spec.outputs.find(
-        (port) => port.name === source.portName,
+        (port) => port.name === endpoints.source.portName,
       );
       const targetPort = targetNode.data.spec.inputs.find(
-        (port) => port.name === target.portName,
+        (port) => port.name === endpoints.target.portName,
       );
       setPendingConnectionRoute({
-        connection: canonicalConnection,
+        connection,
         collectionMode,
         candidates,
         refineEdgeId: edgeId,
         preferredProjectionPath:
-          source?.feed?.kind === "projection" ? source.feed.path : undefined,
+          endpoints.source.feed?.kind === "projection"
+            ? endpoints.source.feed.path
+            : undefined,
         source: {
           nodeTitle: sourceNode.data.spec.title,
-          portName: sourcePort?.title ?? source.portName,
+          portName: sourcePort?.title ?? endpoints.source.portName,
           artifactType: sourceArtifactType
             ? formatArtifactTypeLabel(
                 sourceArtifactType,
                 registry?.artifact_types ?? null,
               )
-            : `Any artifact · ${source.artifactTypeVariable}`,
+            : `Any artifact · ${endpoints.source.artifactTypeVariable}`,
         },
         target: {
           nodeTitle: targetNode.data.spec.title,
-          portName: targetPort?.title ?? target.portName,
+          portName: targetPort?.title ?? endpoints.target.portName,
           artifactType: targetArtifactType
             ? formatArtifactTypeLabel(
                 targetArtifactType,
                 registry?.artifact_types ?? null,
               )
-            : `Any artifact · ${target.artifactTypeVariable}`,
+            : `Any artifact · ${endpoints.target.artifactTypeVariable}`,
         },
       });
     },
@@ -2011,20 +1972,22 @@ function WorkbenchBody({
     ({
       fromNode,
       port,
-      handleId,
-      decoded,
+      portName,
+      plugId,
+      meta,
       clientPoint,
       flowPosition,
     }: {
       fromNode: WorkflowNode;
       port: Port;
-      handleId: string;
-      decoded: NonNullable<ReturnType<typeof decodeHandleId>>;
+      portName: string;
+      plugId?: string;
+      meta: PortMeta;
       clientPoint: XYPosition;
       flowPosition: XYPosition;
     }) => {
       if (!registry) return;
-      const upstream = decoded.direction === "input";
+      const upstream = meta.direction === "input";
       const materializedOutput =
         !upstream && fromNode.data.run?.status === "succeeded"
           ? fromNode.data.run.outputs.find(
@@ -2038,7 +2001,7 @@ function WorkbenchBody({
           onCanvas: canvasAtPoint(clientPoint.x, clientPoint.y),
           // The released handle is the ball on screen. A mapped output is a
           // sequence ball even when the stored port shape is still one.
-          portShape: decoded.shape,
+          portShape: meta.shape,
           hasMaterializedArtifacts: Boolean(materializedOutput),
         })
       ) {
@@ -2082,14 +2045,18 @@ function WorkbenchBody({
         port.direction === "input"
           ? upstreamCandidatesFromInput({
               targetPort: { ...port, direction: "input" },
-              targetHandle: handleId,
+              targetMeta: meta,
               registry,
               nodes: catalogNodes,
             })
           : downstreamCandidatesFromOutput({
-              sourcePort: { ...port, direction: "output" },
-              sourceHandle: handleId,
-              sourceFeed: decoded.feed ?? null,
+              sourcePort: {
+                ...port,
+                shape: meta.shape,
+                direction: "output",
+              },
+              sourceMeta: meta,
+              sourceFeed: meta.feed ?? null,
               registry,
               nodes: catalogNodes,
             });
@@ -2102,7 +2069,13 @@ function WorkbenchBody({
       openContextualDiscovery({
         graphId: openGraphId,
         sourceNodeId: fromNode.id,
-        sourceHandle: handleId,
+        sourceEndpoint: {
+          kind: "port",
+          portName,
+          plugId,
+          direction: meta.direction,
+          meta,
+        },
         sourcePortTitle: port.title ?? port.name,
         direction: upstream ? "upstream" : "downstream",
         clientAnchor: clientPoint,
@@ -2142,7 +2115,7 @@ function WorkbenchBody({
       const port = artifactCardOutputPort(value);
       const candidates = downstreamCandidatesFromOutput({
         sourcePort: port,
-        sourceHandle: encodeHandleId(portMetaForPort(port, port.shape)),
+        sourceMeta: portMetaForPort(port, port.shape),
         sourceFeed: null,
         registry,
         nodes: catalogNodeSpecs(registry, openGraphId),
@@ -2184,7 +2157,7 @@ function WorkbenchBody({
       openContextualDiscovery({
         graphId: openGraphId,
         sourceNodeId: card.id,
-        sourceHandle: ARTIFACT_CARD_OUTPUT_HANDLE,
+        sourceEndpoint: { kind: "artifact-card" },
         sourcePortTitle: port.title ?? port.name,
         direction: "downstream",
         clientAnchor: clientPoint,
@@ -2233,30 +2206,6 @@ function WorkbenchBody({
           : undefined;
       if (!upstream && choice.usesInstancePlug && !plugId) return;
 
-      const candidateHandle = encodeHandleId(
-        portMetaForPort(
-          choice.candidatePort,
-          choice.candidatePort.shape,
-          upstream ? undefined : plugId,
-          data.artifactTypeBindings,
-        ),
-      );
-      const existingHandle = canonicalHandleId(
-        contextualDiscovery.sourceHandle,
-      );
-      const edgeConnection = upstream
-        ? {
-            source: id,
-            sourceHandle: candidateHandle,
-            target: contextualDiscovery.sourceNodeId,
-            targetHandle: existingHandle,
-          }
-        : {
-            source: contextualDiscovery.sourceNodeId,
-            sourceHandle: existingHandle,
-            target: id,
-            targetHandle: candidateHandle,
-          };
       const edgeId = `edge-${createUuid()}`;
       const selection = connectionRouteSelection(choice.route);
       const nodeCommand = addNodeCommand(id, data, {
@@ -2266,7 +2215,7 @@ function WorkbenchBody({
           DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
       });
 
-      if (contextualDiscovery.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE) {
+      if (contextualDiscovery.sourceEndpoint.kind === "artifact-card") {
         const card = activeArtifactViewers.nodes.find(
           (node) => node.id === contextualDiscovery.sourceNodeId,
         );
@@ -2292,6 +2241,7 @@ function WorkbenchBody({
             origins: authoredDocumentRef.current.origins,
             conversions: registry.artifact_conversions,
           },
+          card.id,
         );
         if (!commands) return;
         applyAuthoringCommands([nodeCommand, ...commands]);
@@ -2300,6 +2250,23 @@ function WorkbenchBody({
         clearRunError();
         return;
       }
+
+      const existingPort = contextualDiscovery.sourceEndpoint;
+      const edgeConnection: GraphConnection = upstream
+        ? {
+            source: id,
+            sourcePort: choice.candidatePort.name,
+            target: contextualDiscovery.sourceNodeId,
+            targetPort: existingPort.portName,
+            targetPlug: existingPort.plugId ?? null,
+          }
+        : {
+            source: contextualDiscovery.sourceNodeId,
+            sourcePort: existingPort.portName,
+            target: id,
+            targetPort: choice.candidatePort.name,
+            targetPlug: plugId ?? null,
+          };
 
       if (
         !isConnectionAccepted(
@@ -2533,28 +2500,50 @@ function WorkbenchBody({
   const canvasEdges = React.useMemo<WorkflowEdge[]>(
     () =>
       edges.map((edge) => {
-        const connection: CanvasConnection = {
-          source: edge.source,
-          sourceHandle: edge.sourceHandle ?? null,
-          target: edge.target,
-          targetHandle: edge.targetHandle ?? null,
-        };
-        const source = decodeHandleId(edge.sourceHandle);
+        const resolvedEdge = graphSemantics?.edges.get(edge.id);
+        const sourceNode = graphSemantics?.nodes.get(edge.source);
+        const targetNode = graphSemantics?.nodes.get(edge.target);
+        const sourceMeta =
+          resolvedEdge?.sourcePort && sourceNode
+            ? portMetaForPort(
+                resolvedEdge.sourcePort,
+                resolvedEdge.sourceShape,
+                undefined,
+                sourceNode.artifactTypeBindings,
+              )
+            : null;
+        const targetMeta =
+          resolvedEdge?.targetPort && targetNode
+            ? portMetaForPort(
+                resolvedEdge.targetPort,
+                resolvedEdge.targetPort.shape,
+                edge.targetPlug ?? undefined,
+                targetNode.artifactTypeBindings,
+              )
+            : null;
         const activeSelection = {
           projection: edge.data?.projection,
           conversionPath: edge.data?.conversionPath ?? [],
         };
-        const routes = connectionRoutesFor(
-          connection,
-          registry?.artifact_types ?? [],
-          registry?.artifact_conversions ?? [],
-        );
-        const activeRoute = connectionRouteForSelection(
-          connection,
-          registry?.artifact_types ?? [],
-          registry?.artifact_conversions ?? [],
-          activeSelection,
-        );
+        const routes =
+          sourceMeta && targetMeta
+            ? connectionRoutesForPorts(
+                sourceMeta,
+                targetMeta,
+                registry?.artifact_types ?? [],
+                registry?.artifact_conversions ?? [],
+              )
+            : [];
+        const activeRoute =
+          sourceMeta && targetMeta
+            ? connectionRouteForPortSelection(
+                sourceMeta,
+                targetMeta,
+                registry?.artifact_types ?? [],
+                registry?.artifact_conversions ?? [],
+                activeSelection,
+              )
+            : null;
         if (
           activeRoute &&
           !routes.some((route) =>
@@ -2564,9 +2553,6 @@ function WorkbenchBody({
           routes.push(activeRoute);
         }
         const routeOptions = routes.map(workflowEdgeRouteOption);
-        const deliveredArtifactType = activeRoute
-          ? connectionRouteDeliveredArtifactType(activeRoute)
-          : null;
         const conversionTitles = activeSelection.conversionPath.map(
           (requestedConversion) =>
             registry?.artifact_conversions.find(
@@ -2576,27 +2562,14 @@ function WorkbenchBody({
             )?.title ??
             `${requestedConversion.id}@${requestedConversion.version}`,
         );
-        const otherEdges = edges.filter(
-          (candidate) => candidate.id !== edge.id,
-        );
-        const validModes = collectionModesForConnection(
-          connection,
-          nodes,
-          otherEdges,
-          authoredDocument.origins,
-        );
+        const validModes = [...(resolvedEdge?.allowedCollectionModes ?? [])];
         return {
           ...edge,
-          type: WORKFLOW_EDGE_TYPE,
           data: {
             ...edge.data,
             enabled: edge.data?.enabled ?? true,
             collectionMode: edge.data?.collectionMode ?? "direct",
-            sourcePortName: source?.portName ?? edge.data?.sourcePortName,
             conversionTitles,
-            targetStroke: deliveredArtifactType
-              ? artifactTypeColor(deliveredArtifactType.id, tokens.colorAccent)
-              : undefined,
             routeOptions,
             allowedCollectionModes: edge.data?.compatibilityIssues?.length
               ? []
@@ -2605,9 +2578,8 @@ function WorkbenchBody({
         };
       }),
     [
-      authoredDocument.origins,
       edges,
-      nodes,
+      graphSemantics,
       registry?.artifact_conversions,
       registry?.artifact_types,
     ],
@@ -2674,19 +2646,9 @@ function WorkbenchBody({
                 segment === edge.data?.projection?.path[index],
             ),
         )?.projectionTitle;
-        const sourceHandle =
-          sourceNode && sourcePort && workflowNodeIsSupported(sourceNode.data)
-            ? renderedOutputHandleId({
-                node: sourceNode,
-                port: sourcePort,
-                edges,
-                origins: authoredDocument.origins,
-              })
-            : null;
         return {
           ...edge,
           type: ARTIFACT_VIEWER_EDGE_TYPE,
-          sourceHandle,
           targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
           data: {
             ...edge.data,
@@ -2694,22 +2656,9 @@ function WorkbenchBody({
             projectionTitle: activeProjectionTitle,
             routeOptions,
           },
-          style: {
-            ...edge.style,
-            stroke: sourceArtifactTypeKey
-              ? artifactTypeColor(sourceArtifactTypeKey.id, tokens.colorAccent)
-              : tokens.colorAccent,
-            strokeWidth: 2,
-          },
         };
       }),
-    [
-      activeArtifactViewers.edges,
-      authoredDocument.origins,
-      edges,
-      nodes,
-      registry?.artifact_types,
-    ],
+    [activeArtifactViewers.edges, nodes, registry?.artifact_types],
   );
 
   const latestArtifactViewerActivity = React.useMemo(() => {
@@ -2852,6 +2801,7 @@ function WorkbenchBody({
             workspaceId,
             document: authoredDocument,
             registry,
+            semantics: graphSemantics,
             presentation: sharedPresentation,
             nodes,
             nodeInstanceStates,
@@ -2859,6 +2809,16 @@ function WorkbenchBody({
             configSections,
             secrets: {
               statuses: nodeSecretStatuses,
+              vault: {
+                workspaceId,
+                canManageShared: canManageSecrets,
+                canEditShared: canEditProject,
+                canSelectPersonal: canStartRun,
+                credentials,
+                refreshCredentials,
+                selectCredential,
+                verifyCredential,
+              },
               savedNodes: activeGraph?.nodes ?? null,
               scope: `${openGraphId ?? "unsaved"}:${activeGraph?.roomEpoch ?? "none"}`,
             },
@@ -2880,11 +2840,18 @@ function WorkbenchBody({
       artifactOriginCanvasEdges,
       artifactViewerCanvasEdges,
       authoredDocument,
+      canEditProject,
+      canManageSecrets,
       canStartRun,
+      credentials,
+      refreshCredentials,
+      selectCredential,
+      verifyCredential,
       canvasEdges,
       cellImageNaturalSizes,
       collapsedAppendices,
       configSections,
+      graphSemantics,
       libraryItemsByArtifactId,
       localAuthoringEnabled,
       nodeInstanceStates,
@@ -3212,15 +3179,15 @@ function WorkbenchBody({
     }
     const fromNode = nodes.find((node) => node.id === event.sourceCardId);
     if (!fromNode || !workflowNodeIsSupported(fromNode.data)) return;
-    const encoded = encodeCellPortHandleForDiscovery(
+    const resolved = resolveCellPortEndpoint(
       fromNode,
       event.sourcePortId,
       event.direction === "upstream" ? "input" : "output",
     );
-    if (!encoded) return;
+    if (!resolved) return;
     handleConnectionDrop({
       fromNode,
-      ...encoded,
+      ...resolved,
       clientPoint: event.clientPoint,
       flowPosition: event.worldPoint,
     });
@@ -3232,26 +3199,22 @@ function WorkbenchBody({
       ({ id }) => id === activeContextualDiscovery.sourceNodeId,
     );
     if (card) {
-      if (
-        activeContextualDiscovery.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE
-      ) {
+      if (activeContextualDiscovery.sourceEndpoint.kind === "artifact-card") {
         const port = card.ports.find(
           ({ id, direction }) =>
             id === ARTIFACT_CARD_OUTPUT_HANDLE && direction === "output",
         );
         if (port) discoverySourcePoint = portWorldCenter(card, port);
       } else {
-        const decoded = decodeHandleId(activeContextualDiscovery.sourceHandle);
-        if (decoded) {
-          const portId = decoded.plugId
-            ? `${decoded.portName}::${decoded.plugId}`
-            : decoded.portName;
-          const port = card.ports.find(
-            ({ id, direction }) =>
-              id === portId && direction === decoded.direction,
-          );
-          if (port) discoverySourcePoint = portWorldCenter(card, port);
-        }
+        const endpoint = activeContextualDiscovery.sourceEndpoint;
+        const portId = endpoint.plugId
+          ? `${endpoint.portName}::${endpoint.plugId}`
+          : endpoint.portName;
+        const port = card.ports.find(
+          ({ id, direction }) =>
+            id === portId && direction === endpoint.direction,
+        );
+        if (port) discoverySourcePoint = portWorldCenter(card, port);
       }
     }
   }
@@ -3303,15 +3266,15 @@ function WorkbenchBody({
   // Offered when a dragged output has no compatible node: show its artifacts.
   const placeDiscoveredOutputCard =
     activeContextualDiscovery?.direction === "downstream" &&
-    activeContextualDiscovery.sourceHandle !== ARTIFACT_CARD_OUTPUT_HANDLE
+    activeContextualDiscovery.sourceEndpoint.kind === "port"
       ? () => {
-          const handle = decodeHandleId(activeContextualDiscovery.sourceHandle);
-          if (handle)
+          if (activeContextualDiscovery.sourceEndpoint.kind === "port") {
             placeOutputCard(
               activeContextualDiscovery.sourceNodeId,
-              handle.portName,
+              activeContextualDiscovery.sourceEndpoint.portName,
               activeContextualDiscovery.flowPosition,
             );
+          }
         }
       : undefined;
 
@@ -3582,8 +3545,12 @@ function WorkbenchBody({
               }}
               onOperatorConfigChange={updateConfig}
               onOperatorToggleConfigSection={setConfigSection}
-              onOperatorApplySecret={applyConfiguredNodeSecret}
-              onOperatorRemoveSecret={removeConfiguredNodeSecret}
+              onOperatorApplySecret={
+                canManageSecrets ? applyConfiguredNodeSecret : undefined
+              }
+              onOperatorRemoveSecret={
+                canManageSecrets ? removeConfiguredNodeSecret : undefined
+              }
               onOperatorAddPlug={addNodeInputPlug}
               onOperatorRemovePlug={(cardId, portName, plugId) =>
                 removeNodeInputPlug(
@@ -3626,7 +3593,7 @@ function WorkbenchBody({
               ) : null}
               {registry && activeContextualDiscovery ? (
                 <CellContextualNodeDiscovery
-                  key={`${activeContextualDiscovery.sourceNodeId}:${activeContextualDiscovery.sourceHandle}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
+                  key={`${activeContextualDiscovery.sourceNodeId}:${JSON.stringify(activeContextualDiscovery.sourceEndpoint)}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
                   session={activeContextualDiscovery}
                   registry={registry}
                   sourcePoint={discoverySourcePoint}

@@ -2200,7 +2200,7 @@ describe("CellOperatorCard schema config fields", () => {
     );
     expect(html).toContain('data-card-credentials="true"');
     expect(html).toContain(
-      'aria-label="Credentials for Ask a model: key needed"',
+      'aria-label="Credentials for Ask a model: needs attention"',
     );
     expect(html).toContain('aria-haspopup="dialog"');
     expect(html).not.toContain('type="password"');

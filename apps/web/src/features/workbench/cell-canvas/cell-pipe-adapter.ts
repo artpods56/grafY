@@ -14,6 +14,7 @@ import type {
   AuthoredGraphDocument,
   GraphCommand,
 } from "../authoring/graph-document";
+import type { ResolvedGraphSemantics } from "../authoring/graph-semantics";
 
 import type { CellPipeModel } from "./cell-model";
 import { PLUG_SEPARATOR, targetPortId } from "./cell-adapter-shared";
@@ -56,6 +57,7 @@ export function buildCellPipes(
   presentationLinks: PresentationLinks,
   cardIds: ReadonlySet<string>,
   options?: {
+    semantics?: ResolvedGraphSemantics;
     originLinks?: readonly CellOriginLink[];
     pipeMetadataById?: ReadonlyMap<string, CellPipeMetadata>;
   },
@@ -114,7 +116,9 @@ export function buildCellPipes(
           targetCardId: origin.to_node,
           targetPortId: targetPort,
           enabled: true,
-          collectionMode: origin.collection_mode,
+          collectionMode:
+            options?.semantics?.origins.get(origin.id)?.collectionMode ??
+            origin.collection_mode,
           sourcePortLabel: "artifact",
           projectionLabel: null,
           conversionLabel: origin.conversion_path.length
@@ -139,7 +143,9 @@ export function buildCellPipes(
         targetCardId: edge.to_node,
         targetPortId: targetPortId(edge.to_port, edge.to_plug),
         enabled: edge.enabled,
-        collectionMode: edge.collection_mode,
+        collectionMode:
+          options?.semantics?.edges.get(edge.id)?.collectionMode ??
+          edge.collection_mode,
         sourcePortLabel: meta?.sourcePortLabel ?? edge.from_port,
         projectionLabel:
           meta?.projectionLabel !== undefined

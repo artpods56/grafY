@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ConnectionRoute } from "./handles";
+import type { ConnectionRoute } from "./connection-routes";
 import {
   connectionRouteFeedDescription,
   connectionRouteFeedTitle,

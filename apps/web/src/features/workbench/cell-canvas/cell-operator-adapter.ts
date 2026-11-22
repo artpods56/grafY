@@ -25,6 +25,10 @@ import {
   serializeNodeLayout,
 } from "../authoring/node-layout";
 import {
+  resolveGraphSemantics,
+  type ResolvedGraphSemantics,
+} from "../authoring/graph-semantics";
+import {
   COLLECTION_OPERATOR_ID,
   COLLECTION_PORT,
   isCollectionSpec,
@@ -40,6 +44,7 @@ import {
   nodeSecretBindingReady,
   nodeSecretDependencyRevision,
   nodeSecretInputs,
+  type NodeCredentialController,
   type WorkflowNodeSecretStatuses,
 } from "../authoring/node-secrets";
 import { schemaFields, validateConfig } from "../config-ui/config-schema";
@@ -63,7 +68,6 @@ import {
   PLUG_SEPARATOR,
   collectionTypeLabel,
   cellOriginFromWorld,
-  nodeSpec,
   portArtifactType,
   portTypeId,
   snapPixelsToCell,
@@ -101,6 +105,12 @@ export interface CellNodeSecretState {
   savedNodes: readonly SavedGraphNode[] | null;
   /** Names the graph and room epoch a key was written for. */
   scope: string;
+  vault?: NodeCredentialController & {
+    workspaceId: string;
+    canManageShared: boolean;
+    canEditShared: boolean;
+    canSelectPersonal: boolean;
+  };
 }
 
 /**
@@ -116,6 +126,7 @@ function nodeSecretSurface(
   const savedNode = secrets?.savedNodes?.find(
     (candidate) => candidate.id === node.id,
   );
+  const vault = secrets?.vault;
   return nodeSecretInputs(spec).map((input) => {
     const stored = secrets?.statuses[node.id]?.[input.name] ?? {
       state: "unknown" as const,
@@ -132,6 +143,49 @@ function nodeSecretSurface(
       state: status.state,
       ...(status.message ? { message: status.message } : {}),
       ready,
+      ...(vault && stored.remote && input.providerKind
+        ? {
+            vault: {
+              workspaceId: vault.workspaceId,
+              canManageShared: vault.canManageShared,
+              canEditShared: vault.canEditShared,
+              canSelectPersonal: vault.canSelectPersonal,
+              credentials: vault.credentials.filter(
+                (credential) => credential.provider_kind === input.providerKind,
+              ),
+              status: stored.remote,
+              provider: {
+                kind: input.providerKind,
+                fields: input.configDependencies,
+                defaults: Object.fromEntries(
+                  input.configDependencies.flatMap((name) => {
+                    const value: unknown = savedNode?.config?.[name];
+                    const properties = spec.config_schema.properties;
+                    const schema: unknown =
+                      properties && typeof properties === "object"
+                        ? Object.getOwnPropertyDescriptor(properties, name)
+                            ?.value
+                        : undefined;
+                    const defaultValue =
+                      schema &&
+                      typeof schema === "object" &&
+                      "default" in schema
+                        ? schema.default
+                        : undefined;
+                    if (typeof value === "string") return [[name, value]];
+                    return typeof defaultValue === "string"
+                      ? [[name, defaultValue]]
+                      : [];
+                  }),
+                ),
+              },
+              select: (selection) =>
+                vault.selectCredential(node.id, input.name, selection),
+              verify: () => vault.verifyCredential(node.id, input.name),
+              refresh: vault.refreshCredentials,
+            },
+          }
+        : {}),
       revision: `${secrets?.scope ?? "unsaved"}:${nodeSecretDependencyRevision(input, node.config ?? {})}`,
     };
   });
@@ -183,6 +237,7 @@ function nodePorts(
   spec: NodeSpec | undefined,
   connections: ReadonlyMap<string, PlugConnection> | undefined,
   isCollection: boolean,
+  effectiveOutputShapes: ReadonlyMap<string, Port["shape"]> | undefined,
   serviceContracts?: readonly ServiceContract[],
 ) {
   const inputs = spec?.inputs ?? [];
@@ -209,7 +264,10 @@ function nodePorts(
       direction: port.direction,
       rowOffset: firstRow + index * PORT_ROW_PITCH,
       artifactTypeId: portTypeId(node, port),
-      shape: port.shape,
+      shape:
+        port.direction === "output"
+          ? (effectiveOutputShapes?.get(port.name) ?? port.shape)
+          : port.shape,
       required: port.required,
     };
   };
@@ -331,6 +389,7 @@ export function buildOperatorCardsAndSurfaces(
   document: AuthoredGraphDocument,
   registry: NodeRegistry,
   options?: {
+    semantics?: ResolvedGraphSemantics;
     nodeRunState?: Readonly<Record<string, CellNodeRunState>>;
     collapsedAppendices?: ReadonlySet<string>;
     /** Config sections opened or closed, by node id, then by section key. */
@@ -344,10 +403,15 @@ export function buildOperatorCardsAndSurfaces(
   surfaces: Map<string, CellCardSurfaceData>;
   specsByNode: Map<string, NodeSpec | undefined>;
 } {
+  const semantics =
+    options?.semantics ?? resolveGraphSemantics(document, registry);
   const cards: CellCardModel[] = [];
   const surfaces = new Map<string, CellCardSurfaceData>();
   const specsByNode = new Map(
-    document.nodes.map((node) => [node.id, nodeSpec(node, registry)]),
+    document.nodes.map((node) => [
+      node.id,
+      semantics.nodes.get(node.id)?.displaySpec ?? undefined,
+    ]),
   );
   const connections = connectionsByNode(document);
   const sources = new Map(
@@ -358,6 +422,7 @@ export function buildOperatorCardsAndSurfaces(
   );
 
   for (const node of document.nodes) {
+    const nodeSemantics = semantics.nodes.get(node.id);
     const spec = specsByNode.get(node.id);
     const runState = options?.nodeRunState?.[node.id];
     const isCollection =
@@ -376,6 +441,7 @@ export function buildOperatorCardsAndSurfaces(
       spec,
       nodeConnections,
       isCollection,
+      isCollection ? undefined : nodeSemantics?.effectiveOutputShapes,
       registry.service_contracts,
     );
     const collection = isCollection

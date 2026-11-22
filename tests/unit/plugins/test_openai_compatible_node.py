@@ -55,6 +55,7 @@ class FakeNodeSecrets:
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
+        actor_user_id: UUID | None = None,
     ) -> SecretStr:
         self.project_id = project_id
         assert workspace_id == WORKSPACE_ID

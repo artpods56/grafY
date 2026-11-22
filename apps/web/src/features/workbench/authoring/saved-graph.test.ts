@@ -13,7 +13,6 @@ import type {
 } from "@/lib/api";
 import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { registryWithProjectGraphs } from "./project-graphs";
-import { decodeHandleId } from "./handles";
 import {
   hydrateSavedGraph,
   savedGraphExecutionFingerprint,
@@ -230,12 +229,15 @@ describe("unavailable saved operators", () => {
       "Operator python.transform@1 is unavailable. This saved node is preserved but cannot run.",
     );
     expect(sourceNode?.data.layout).toBeNull();
-    expect(edge?.sourceHandle).toContain("$compatibility::output");
-    expect(decodeHandleId(edge?.sourceHandle)).toBeNull();
-    expect(decodeHandleId(edge?.targetHandle)).toMatchObject({
-      portName: "input",
-      direction: "input",
-    });
+    expect(sourceNode?.data.spec.outputs).toEqual([]);
+    expect(edge?.sourcePort).toBe("output");
+    expect(edge?.targetPort).toBe("input");
+    expect(edge?.targetPlug).toBeNull();
+    expect(
+      hydrated.nodes
+        .find((node) => node.id === "target-node")
+        ?.data.spec.inputs.find((port) => port.name === edge?.targetPort),
+    ).toMatchObject({ name: "input", direction: "input" });
     expect(edge?.data?.compatibilityIssues).toHaveLength(1);
   });
 });
@@ -354,8 +356,16 @@ describe("saved collection modes", () => {
       registry("many", "one", ["one", "many"]),
     );
 
-    expect(hydrated.edges[0]?.data?.collectionMode).toBe("direct");
-    expect(decodeHandleId(hydrated.edges[0]?.sourceHandle)?.shape).toBe("many");
+    const edge = hydrated.edges[0];
+    const sourceNode = hydrated.nodes.find((node) => node.id === edge?.source);
+
+    expect(edge?.data?.collectionMode).toBe("direct");
+    expect(edge?.sourcePort).toBe("output");
+    expect(
+      sourceNode?.data.spec.outputs.find(
+        (port) => port.name === edge?.sourcePort,
+      )?.shape,
+    ).toBe("many");
   });
 
   it("hydrates a map edge from a many source into a one target", () => {
@@ -364,9 +374,24 @@ describe("saved collection modes", () => {
       registry("many", "one"),
     );
 
-    expect(hydrated.edges[0]?.data?.collectionMode).toBe("map");
-    expect(decodeHandleId(hydrated.edges[0]?.sourceHandle)?.shape).toBe("many");
-    expect(decodeHandleId(hydrated.edges[0]?.targetHandle)?.shape).toBe("one");
+    const edge = hydrated.edges[0];
+    const sourceNode = hydrated.nodes.find((node) => node.id === edge?.source);
+    const targetNode = hydrated.nodes.find((node) => node.id === edge?.target);
+
+    expect(edge?.data?.collectionMode).toBe("map");
+    expect(edge?.sourcePort).toBe("output");
+    expect(edge?.targetPort).toBe("input");
+    expect(edge?.targetPlug).toBeNull();
+    expect(
+      sourceNode?.data.spec.outputs.find(
+        (port) => port.name === edge?.sourcePort,
+      )?.shape,
+    ).toBe("many");
+    expect(
+      targetNode?.data.spec.inputs.find(
+        (port) => port.name === edge?.targetPort,
+      )?.shape,
+    ).toBe("one");
   });
 
   it("hydrates a map edge from a many source into a many target", () => {
@@ -375,8 +400,17 @@ describe("saved collection modes", () => {
       registry("many", "many"),
     );
 
-    expect(hydrated.edges[0]?.data?.collectionMode).toBe("map");
-    expect(decodeHandleId(hydrated.edges[0]?.targetHandle)?.shape).toBe("many");
+    const edge = hydrated.edges[0];
+    const targetNode = hydrated.nodes.find((node) => node.id === edge?.target);
+
+    expect(edge?.data?.collectionMode).toBe("map");
+    expect(edge?.targetPort).toBe("input");
+    expect(edge?.targetPlug).toBeNull();
+    expect(
+      targetNode?.data.spec.inputs.find(
+        (port) => port.name === edge?.targetPort,
+      )?.shape,
+    ).toBe("many");
   });
 
   it("hydrates map edges on different inputs and rejects duplicate drivers", () => {
@@ -514,8 +548,26 @@ describe("saved collection modes", () => {
       const downstream = hydrated.edges.find(
         (edge) => edge.id === "downstream",
       );
-      expect(decodeHandleId(downstream?.sourceHandle)?.shape).toBe("many");
+      const producer = hydrated.nodes.find(
+        (node) => node.id === downstream?.source,
+      );
+      const sink = hydrated.nodes.find(
+        (node) => node.id === downstream?.target,
+      );
+      expect(downstream?.sourcePort).toBe("output");
+      expect(downstream?.targetPort).toBe("input");
+      expect(downstream?.targetPlug).toBeNull();
       expect(downstream?.data?.collectionMode).toBe("direct");
+      expect(
+        producer?.data.spec.outputs.find(
+          (port) => port.name === downstream?.sourcePort,
+        ),
+      ).toMatchObject({ direction: "output", shape: "one" });
+      expect(
+        sink?.data.spec.inputs.find(
+          (port) => port.name === downstream?.targetPort,
+        )?.shape,
+      ).toBe("many");
     },
   );
 
@@ -567,8 +619,15 @@ describe("saved collection modes", () => {
 
     const hydrated = hydrateSavedGraph(graph, mappedStepRegistry());
     const reading = hydrated.edges.find((edge) => edge.id === "reading");
+    const ocr = hydrated.nodes.find((node) => node.id === reading?.source);
     expect(reading?.data?.collectionMode).toBe("direct");
-    expect(decodeHandleId(reading?.sourceHandle)?.shape).toBe("one");
+    expect(reading?.sourcePort).toBe("regions");
+    expect(reading?.targetPort).toBe("regions");
+    expect(reading?.targetPlug).toBeNull();
+    expect(
+      ocr?.data.spec.outputs.find((port) => port.name === reading?.sourcePort)
+        ?.shape,
+    ).toBe("one");
     const page = hydrated.edges.find((edge) => edge.id === "page");
     expect(page?.data?.collectionMode).toBe("map");
   });
@@ -590,9 +649,61 @@ describe("saved collection modes", () => {
       ["reading", "map"],
     ]);
   });
+
+  it("repairs a direct origin and its downstream edges when the origin holds a sequence on a single-item port", () => {
+    const base = mappedStepGraph([
+      { ...ocrReadingEdge(), collection_mode: "direct" },
+    ]);
+    const graph: SavedGraph = {
+      ...base,
+      document: {
+        ...base.document,
+        origins: [
+          {
+            id: "ocr-scan",
+            to_node: "ocr",
+            to_port: "document",
+            to_plug: null,
+            value: {
+              artifact_type: "page",
+              schema_version: 1,
+              item_refs: [
+                {
+                  artifact_id: "scan-1",
+                  artifact_type: "page",
+                  schema_version: 1,
+                },
+                {
+                  artifact_id: "scan-2",
+                  artifact_type: "page",
+                  schema_version: 1,
+                },
+              ],
+              ordered: true,
+              index_key: "order_index",
+              sequence_id: "seq-1",
+            },
+            collection_mode: "direct",
+            conversion_path: [],
+          },
+        ],
+      },
+    };
+
+    const hydrated = hydrateSavedGraph(graph, mappedStepRegistry());
+    const reading = hydrated.edges.find((edge) => edge.id === "reading");
+    const ocr = hydrated.nodes.find((node) => node.id === reading?.source);
+    expect(reading?.data?.collectionMode).toBe("map");
+    expect(reading?.sourcePort).toBe("regions");
+    expect(reading?.targetPort).toBe("regions");
+    expect(reading?.targetPlug).toBeNull();
+    expect(
+      ocr?.data.spec.outputs.find((port) => port.name === reading?.sourcePort),
+    ).toMatchObject({ direction: "output", shape: "one" });
+  });
 });
 
-/** A port that says what it carries, which the handle of a connection needs. */
+/** A named port with the artifact type a saved connection addresses. */
 function portSpec(
   direction: "input" | "output",
   name: string,
@@ -829,7 +940,9 @@ describe("saved instance plugs", () => {
       { id: "plug-first", portName: "items" },
       { id: "plug-second", portName: "items" },
     ]);
-    expect(decodeHandleId(edge?.targetHandle)?.plugId).toBe("plug-second");
+    expect(edge?.sourcePort).toBe("output");
+    expect(edge?.targetPort).toBe("items");
+    expect(edge?.targetPlug).toBe("plug-second");
   });
 
   it("rejects a node with two plugs of one id without naming either", () => {
@@ -988,7 +1101,7 @@ function graphWithGenericCollectBinding(): SavedGraph {
 }
 
 describe("saved generic artifact type bindings", () => {
-  it("hydrates bound handles", () => {
+  it("hydrates the bound type on the targeted plug", () => {
     const hydrated = hydrateSavedGraph(
       graphWithGenericCollectBinding(),
       genericCollectRegistry(),
@@ -1001,11 +1114,14 @@ describe("saved generic artifact type bindings", () => {
     expect(collectNode?.data.artifactTypeBindings).toEqual({
       T: { id: "scalar.integer", schema_version: 1 },
     });
-    expect(decodeHandleId(edge?.targetHandle)).toMatchObject({
-      artifactTypeId: "scalar.integer",
-      schemaVersion: 1,
-      plugId: "plug-1",
-    });
+    expect(edge?.sourcePort).toBe("output");
+    expect(edge?.targetPort).toBe("items");
+    expect(edge?.targetPlug).toBe("plug-1");
+    expect(
+      collectNode?.data.spec.inputs.find(
+        (port) => port.name === edge?.targetPort,
+      ),
+    ).toMatchObject({ artifact_type_variable: "T" });
   });
 
   it("marks a binding for an undeclared variable invalid without rejecting the graph", () => {
@@ -1193,7 +1309,11 @@ describe("saved Module nodes", () => {
     );
     expect(moduleNode?.data.spec.runnable).toBe(false);
     expect(moduleNode?.data.spec.origin).toBe("builtin");
-    expect(edge?.targetHandle).toContain("$compatibility::input");
+    expect(moduleNode?.data.spec.inputs).toEqual([]);
+    expect(edge?.sourcePort).toBe("output");
+    expect(edge?.targetPort).toBe("image");
+    expect(edge?.targetPlug).toBeNull();
+    expect(edge?.data?.compatibilityIssues).toHaveLength(1);
 
     // Preserved means preserved: it cannot be sent to execution.
     expect(() => serializeRunNode("extract", moduleNode!.data)).toThrow(

@@ -7,9 +7,10 @@ import type {
   AppliedNodeSecret,
   NodeSpec,
   ProjectNodeSecrets,
+  NodeSecretStatus,
   SavedGraphNode,
 } from "@/lib/api";
-import { WORKFLOW_NODE_TYPE, createWorkflowNodeData } from "../authoring/types";
+import { createWorkflowNodeData } from "../authoring/types";
 import type { WorkflowNode } from "./execution-plan";
 import { deferred } from "../test/deferred";
 import { renderHook } from "../test/renderHook";
@@ -56,6 +57,8 @@ function secretNodeSpec(): NodeSpec {
         title: "API key",
         description: "OpenAI-compatible bearer credential.",
         config_dependencies: ["base_url"],
+        provider_kind: "openai_compatible",
+        supports_verification: true,
       },
     ],
   };
@@ -64,7 +67,6 @@ function secretNodeSpec(): NodeSpec {
 function workflowNode(baseUrl = savedBaseUrl, id = nodeId): WorkflowNode {
   return {
     id,
-    type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
     data: {
       ...createWorkflowNodeData(secretNodeSpec()),
@@ -96,6 +98,21 @@ function graph(
   return { id: projectId, graphId, revision, nodes };
 }
 
+function statusRow(id: string, configured: boolean): NodeSecretStatus {
+  return {
+    node_id: id,
+    name: secretName,
+    configured,
+    deployment_default_available: false,
+    effective_source: configured ? "inline_legacy" : "none",
+    personal_override_mode: "none",
+    provider_kind: "openai_compatible",
+    shared_binding_mode: "none",
+    shared_credential_missing: false,
+    supports_verification: true,
+  };
+}
+
 function projectSecrets(
   activeGraph: NodeSecretGraph,
   configured: boolean,
@@ -106,7 +123,7 @@ function projectSecrets(
     graph_id: activeGraph.graphId,
     head_sequence: headSequence,
     unresolved_nodes: [],
-    secrets: [{ node_id: nodeId, name: secretName, configured }],
+    secrets: [statusRow(nodeId, configured)],
   };
 }
 
@@ -228,7 +245,7 @@ describe("useNodeSecrets", () => {
       newerRefreshed = await newerRefresh;
     });
     expect(newerRefreshed).toBe(true);
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "configured" } },
     });
 
@@ -238,7 +255,7 @@ describe("useNodeSecrets", () => {
       olderRefreshed = await olderRefresh;
     });
     expect(olderRefreshed).toBe(false);
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "configured" } },
     });
   });
@@ -261,7 +278,7 @@ describe("useNodeSecrets", () => {
       ).resolves.toBe(false);
     });
 
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: {
         [secretName]: {
           state: "error",
@@ -289,7 +306,7 @@ describe("useNodeSecrets", () => {
       ).resolves.toBe(false);
     });
 
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: {
         [secretName]: {
           state: "error",
@@ -316,7 +333,7 @@ describe("useNodeSecrets", () => {
         node,
       ]);
     });
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "loading" } },
     });
 
@@ -373,10 +390,7 @@ describe("useNodeSecrets", () => {
         graph_id: activeGraph.graphId,
         head_sequence: activeGraph.revision,
         unresolved_nodes: [],
-        secrets: [
-          { node_id: nodeId, name: secretName, configured: false },
-          { node_id: otherNodeId, name: secretName, configured: false },
-        ],
+        secrets: [statusRow(nodeId, false), statusRow(otherNodeId, false)],
       })
       .mockReturnValueOnce(refreshResponse.promise);
     api.applyNodeSecret.mockReturnValue(applyResponse.promise);
@@ -441,10 +455,7 @@ describe("useNodeSecrets", () => {
         graph_id: activeGraph.graphId,
         head_sequence: activeGraph.revision,
         unresolved_nodes: [],
-        secrets: [
-          { node_id: nodeId, name: secretName, configured: false },
-          { node_id: otherNodeId, name: secretName, configured: true },
-        ],
+        secrets: [statusRow(nodeId, false), statusRow(otherNodeId, true)],
       });
       refreshed = await refresh;
     });
@@ -492,7 +503,7 @@ describe("useNodeSecrets", () => {
       secretName,
       { value: plaintext, expected_head_sequence: activeGraph.revision },
     );
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "applying" } },
     });
     expect(
@@ -509,7 +520,7 @@ describe("useNodeSecrets", () => {
       applied = await applying;
     });
     expect(applied).toBe(true);
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "configured" } },
     });
     expect(
@@ -541,7 +552,7 @@ describe("useNodeSecrets", () => {
     ).resolves.toBe(false);
 
     expect(api.applyNodeSecret).not.toHaveBeenCalled();
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "configured" } },
     });
   });
@@ -581,7 +592,7 @@ describe("useNodeSecrets", () => {
       secretName,
       9,
     );
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "removing" } },
     });
 
@@ -589,7 +600,7 @@ describe("useNodeSecrets", () => {
       removal.resolve(undefined);
       await expect(removing).resolves.toBe(true);
     });
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "unconfigured" } },
     });
   });
@@ -647,7 +658,7 @@ describe("useNodeSecrets", () => {
     // The retry's token came from a listing the server answered at 7 — the only
     // source this hook will take a head from.
     expect(api.getProjectNodeSecrets).toHaveBeenCalledTimes(2);
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "configured" } },
     });
   });
@@ -697,7 +708,7 @@ describe("useNodeSecrets", () => {
       secretName,
       10,
     );
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "unconfigured" } },
     });
   });
@@ -737,7 +748,7 @@ describe("useNodeSecrets", () => {
     expect(appliedResult).toBe(false);
     expect(api.applyNodeSecret).toHaveBeenCalledTimes(1);
     expect(api.getProjectNodeSecrets).toHaveBeenCalledTimes(1);
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: {
         [secretName]: {
           state: "error",
@@ -787,7 +798,7 @@ describe("useNodeSecrets", () => {
       secretName,
       { value: "sk-conflicted", expected_head_sequence: 4 },
     );
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: {
         [secretName]: {
           state: "error",
@@ -817,7 +828,7 @@ describe("useNodeSecrets", () => {
       { value: "sk-conflicted", expected_head_sequence: 4 },
     );
     expect(api.getProjectNodeSecrets).toHaveBeenCalledTimes(2);
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: { [secretName]: { state: "configured" } },
     });
   });
@@ -836,7 +847,7 @@ describe("useNodeSecrets", () => {
         hook.result.current.refreshNodeSecretStatuses(activeGraph, [node]),
       ).resolves.toBe(false);
     });
-    expect(hook.result.current.nodeSecretStatuses).toEqual({
+    expect(hook.result.current.nodeSecretStatuses).toMatchObject({
       [nodeId]: {
         [secretName]: {
           state: "error",

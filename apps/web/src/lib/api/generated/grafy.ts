@@ -141,6 +141,76 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/me/credentials": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Personal Credentials */
+        readonly get: operations["list_personal_credentials_v1_me_credentials_get"];
+        readonly put?: never;
+        /** Create Personal Credential */
+        readonly post: operations["create_personal_credential_v1_me_credentials_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/me/credentials/{credential_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** Delete Personal Credential */
+        readonly delete: operations["delete_personal_credential_v1_me_credentials__credential_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        /** Update Personal Credential */
+        readonly patch: operations["update_personal_credential_v1_me_credentials__credential_id__patch"];
+        readonly trace?: never;
+    };
+    readonly "/v1/me/credentials/{credential_id}/verify": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Verify Saved Personal Credential */
+        readonly post: operations["verify_saved_personal_credential_v1_me_credentials__credential_id__verify_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/me/credentials/verify": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Verify Personal Candidate */
+        readonly post: operations["verify_personal_candidate_v1_me_credentials_verify_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/me/invitations": {
         readonly parameters: {
             readonly query?: never;
@@ -517,6 +587,76 @@ export interface paths {
         readonly put?: never;
         /** Render Geo Artifacts */
         readonly post: operations["render_geo_artifacts_v1_workspaces__workspace_id__artifacts_geo_render_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/credentials": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Shared Credentials */
+        readonly get: operations["list_shared_credentials_v1_workspaces__workspace_id__credentials_get"];
+        readonly put?: never;
+        /** Create Shared Credential */
+        readonly post: operations["create_shared_credential_v1_workspaces__workspace_id__credentials_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/credentials/{credential_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        readonly post?: never;
+        /** Delete Shared Credential */
+        readonly delete: operations["delete_shared_credential_v1_workspaces__workspace_id__credentials__credential_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        /** Update Shared Credential */
+        readonly patch: operations["update_shared_credential_v1_workspaces__workspace_id__credentials__credential_id__patch"];
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/credentials/{credential_id}/verify": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Verify Saved Shared Credential */
+        readonly post: operations["verify_saved_shared_credential_v1_workspaces__workspace_id__credentials__credential_id__verify_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/credentials/verify": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Verify Shared Candidate */
+        readonly post: operations["verify_shared_candidate_v1_workspaces__workspace_id__credentials_verify_post"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -1266,6 +1406,57 @@ export interface paths {
         readonly post?: never;
         /** Delete Node Secret */
         readonly delete: operations["delete_node_secret_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}/personal-selection": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Set Personal Selection */
+        readonly put: operations["set_personal_selection_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__personal_selection_put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}/shared-binding": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Set Shared Binding */
+        readonly put: operations["set_shared_binding_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__shared_binding_put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}/verify": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Verify Node Secret */
+        readonly post: operations["verify_node_secret_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__verify_post"];
+        readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -2102,6 +2293,15 @@ export interface components {
              */
             readonly value: string;
         };
+        /** ConfigureNodeSecretResponse */
+        readonly ConfigureNodeSecretResponse: {
+            /** Configured */
+            readonly configured: boolean;
+            /** Name */
+            readonly name: string;
+            /** Node Id */
+            readonly node_id: string;
+        };
         /**
          * ConfirmationRequestedPayload
          * @description The turn stopped before a further tool call, and asks a person to go on.
@@ -2164,6 +2364,32 @@ export interface components {
              */
             readonly source_workspace_id: string;
         };
+        /** CreateCredentialRequest */
+        readonly CreateCredentialRequest: {
+            /** Label */
+            readonly label: string;
+            /** Provider Kind */
+            readonly provider_kind: string;
+            /**
+             * Save If Unverified
+             * @default false
+             */
+            readonly save_if_unverified: boolean;
+            /**
+             * Value
+             * Format: password
+             */
+            readonly value: string;
+            /**
+             * Verify
+             * @default true
+             */
+            readonly verify: boolean;
+            /** Verify Config */
+            readonly verify_config?: {
+                readonly [key: string]: unknown;
+            };
+        };
         /**
          * CreateLibraryFolderRequest
          * @description Make a folder. ``parent_id: null`` makes it a root folder.
@@ -2206,6 +2432,75 @@ export interface components {
             /** Filename */
             readonly filename: string;
         };
+        /** CredentialListResponse */
+        readonly CredentialListResponse: {
+            /** Credentials */
+            readonly credentials: readonly components["schemas"]["CredentialResponse"][];
+        };
+        /** CredentialResponse */
+        readonly CredentialResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Key Hint */
+            readonly key_hint: string | null;
+            /** Label */
+            readonly label: string;
+            /** Provider Kind */
+            readonly provider_kind: string;
+            readonly scope: components["schemas"]["CredentialScope"];
+            /** Supports Verification */
+            readonly supports_verification: boolean;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            readonly updated_at: string;
+            /** Usable */
+            readonly usable: boolean;
+            /** Verification Hint */
+            readonly verification_hint: string | null;
+            /** Verification Message */
+            readonly verification_message: string | null;
+            readonly verification_status: components["schemas"]["CredentialVerificationStatus"];
+            /** Verified At */
+            readonly verified_at: string | null;
+        };
+        /**
+         * CredentialScope
+         * @enum {string}
+         */
+        readonly CredentialScope: "personal" | "shared";
+        /** CredentialVerificationFailureDetail */
+        readonly CredentialVerificationFailureDetail: {
+            /** Can Save Unverified */
+            readonly can_save_unverified: boolean;
+            readonly verification: components["schemas"]["CredentialVerificationResponse"];
+        };
+        /** CredentialVerificationFailureResponse */
+        readonly CredentialVerificationFailureResponse: {
+            readonly detail: components["schemas"]["CredentialVerificationFailureDetail"];
+        };
+        /** CredentialVerificationResponse */
+        readonly CredentialVerificationResponse: {
+            /** Account Hint */
+            readonly account_hint: string | null;
+            /** Message */
+            readonly message: string;
+            readonly status: components["schemas"]["CredentialVerificationStatus"];
+        };
+        /**
+         * CredentialVerificationStatus
+         * @enum {string}
+         */
+        readonly CredentialVerificationStatus: "unverified" | "valid" | "invalid" | "unreachable" | "egress_blocked" | "unsupported";
         /** CustomAgentModel */
         readonly CustomAgentModel: {
             /** Endpoint */
@@ -3183,6 +3478,10 @@ export interface components {
             readonly description?: string | null;
             /** Name */
             readonly name: string;
+            /** Provider Kind */
+            readonly provider_kind: string;
+            /** Supports Verification */
+            readonly supports_verification: boolean;
             /** Title */
             readonly title: string;
         };
@@ -3202,14 +3501,61 @@ export interface components {
              */
             readonly status: "unresolved";
         };
+        /** @enum {string} */
+        readonly NodeSecretSource: "personal_credential" | "shared_credential" | "deployment_default" | "inline_legacy" | "none";
         /** NodeSecretStatusResponse */
         readonly NodeSecretStatusResponse: {
             /** Configured */
             readonly configured: boolean;
+            /**
+             * Deployment Default Available
+             * @default false
+             */
+            readonly deployment_default_available: boolean;
+            /** Effective Credential Id */
+            readonly effective_credential_id?: string | null;
+            /** Effective Credential Label */
+            readonly effective_credential_label?: string | null;
+            /** @default none */
+            readonly effective_source: components["schemas"]["NodeSecretSource"];
+            readonly effective_verification_status?: components["schemas"]["CredentialVerificationStatus"] | null;
             /** Name */
             readonly name: string;
             /** Node Id */
             readonly node_id: string;
+            /** Personal Credential Id */
+            readonly personal_credential_id?: string | null;
+            /** Personal Credential Label */
+            readonly personal_credential_label?: string | null;
+            /**
+             * Personal Override Mode
+             * @default none
+             */
+            readonly personal_override_mode: components["schemas"]["UserCredentialOverrideMode"] | "none";
+            /**
+             * Provider Kind
+             * @default generic
+             */
+            readonly provider_kind: string;
+            /**
+             * Shared Binding Mode
+             * @default none
+             */
+            readonly shared_binding_mode: components["schemas"]["SharedCredentialBindingMode"] | "none";
+            /** Shared Credential Id */
+            readonly shared_credential_id?: string | null;
+            /** Shared Credential Label */
+            readonly shared_credential_label?: string | null;
+            /**
+             * Shared Credential Missing
+             * @default false
+             */
+            readonly shared_credential_missing: boolean;
+            /**
+             * Supports Verification
+             * @default false
+             */
+            readonly supports_verification: boolean;
         };
         /** NodeSpecResponse */
         readonly NodeSpecResponse: {
@@ -3347,6 +3693,13 @@ export interface components {
          * @enum {string}
          */
         readonly PersonalAccessTokenScope: "view_project" | "view_artifacts" | "view_runs" | "create_project" | "edit_project" | "checkpoint_project" | "start_run" | "cancel_run" | "manage_secrets";
+        /** PersonalCredentialSelectionRequest */
+        readonly PersonalCredentialSelectionRequest: {
+            /** Credential Id */
+            readonly credential_id?: string | null;
+            /** Mode */
+            readonly mode: components["schemas"]["UserCredentialOverrideMode"] | "none";
+        };
         /** PluginSpecResponse */
         readonly PluginSpecResponse: {
             /**
@@ -4034,6 +4387,20 @@ export interface components {
             /** Node Id */
             readonly node_id: string;
         };
+        /**
+         * SharedCredentialBindingMode
+         * @enum {string}
+         */
+        readonly SharedCredentialBindingMode: "credential" | "personal" | "deployment_default";
+        /** SharedCredentialBindingRequest */
+        readonly SharedCredentialBindingRequest: {
+            /** Credential Id */
+            readonly credential_id?: string | null;
+            /** Expected Head Sequence */
+            readonly expected_head_sequence: number;
+            /** Mode */
+            readonly mode: components["schemas"]["SharedCredentialBindingMode"] | "none";
+        };
         /** StartAgentConversationRequest */
         readonly StartAgentConversationRequest: {
             /**
@@ -4319,6 +4686,27 @@ export interface components {
             readonly kind: "turn_outcome";
             readonly outcome: components["schemas"]["AgentConversationTurnOutcome"];
         };
+        /** UpdateCredentialRequest */
+        readonly UpdateCredentialRequest: {
+            /** Label */
+            readonly label?: string | null;
+            /**
+             * Save If Unverified
+             * @default false
+             */
+            readonly save_if_unverified: boolean;
+            /** Value */
+            readonly value?: string | null;
+            /**
+             * Verify
+             * @default true
+             */
+            readonly verify: boolean;
+            /** Verify Config */
+            readonly verify_config?: {
+                readonly [key: string]: unknown;
+            } | null;
+        };
         /** UpdateEdgeCommand */
         readonly UpdateEdgeCommand: {
             readonly edge: components["schemas"]["GraphEdge"];
@@ -4397,6 +4785,11 @@ export interface components {
          * @description Discriminated upload target returned by reserve.
          */
         readonly UploadTargetResponse: components["schemas"]["ApiUploadTargetResponse"] | components["schemas"]["StorageUploadTargetResponse"];
+        /**
+         * UserCredentialOverrideMode
+         * @enum {string}
+         */
+        readonly UserCredentialOverrideMode: "credential" | "shared" | "deployment_default";
         /** UserMessagePayload */
         readonly UserMessagePayload: {
             /**
@@ -4440,6 +4833,32 @@ export interface components {
             readonly msg: string;
             /** Error Type */
             readonly type: string;
+        };
+        /** VerifyCandidateCredentialRequest */
+        readonly VerifyCandidateCredentialRequest: {
+            /** Config */
+            readonly config?: {
+                readonly [key: string]: unknown;
+            };
+            /** Provider Kind */
+            readonly provider_kind: string;
+            /**
+             * Value
+             * Format: password
+             */
+            readonly value: string;
+        };
+        /** VerifyNodeSecretRequest */
+        readonly VerifyNodeSecretRequest: {
+            /** Value */
+            readonly value?: string | null;
+        };
+        /** VerifySavedCredentialRequest */
+        readonly VerifySavedCredentialRequest: {
+            /** Config */
+            readonly config?: {
+                readonly [key: string]: unknown;
+            };
         };
         /** WorkbenchErrorResponse */
         readonly WorkbenchErrorResponse: {
@@ -4820,6 +5239,202 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_personal_credentials_v1_me_credentials_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly provider_kind?: string | null;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly create_personal_credential_v1_me_credentials_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateCredentialRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialVerificationFailureResponse"];
+                };
+            };
+        };
+    };
+    readonly delete_personal_credential_v1_me_credentials__credential_id__delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly credential_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly update_personal_credential_v1_me_credentials__credential_id__patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly credential_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["UpdateCredentialRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialVerificationFailureResponse"];
+                };
+            };
+        };
+    };
+    readonly verify_saved_personal_credential_v1_me_credentials__credential_id__verify_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly credential_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["VerifySavedCredentialRequest"] | null;
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly verify_personal_candidate_v1_me_credentials_verify_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["VerifyCandidateCredentialRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialVerificationResponse"];
+                };
             };
             /** @description Validation Error */
             readonly 422: {
@@ -6221,6 +6836,211 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    readonly list_shared_credentials_v1_workspaces__workspace_id__credentials_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly provider_kind?: string | null;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly create_shared_credential_v1_workspaces__workspace_id__credentials_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateCredentialRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialVerificationFailureResponse"];
+                };
+            };
+        };
+    };
+    readonly delete_shared_credential_v1_workspaces__workspace_id__credentials__credential_id__delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly credential_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly update_shared_credential_v1_workspaces__workspace_id__credentials__credential_id__patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly credential_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["UpdateCredentialRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialVerificationFailureResponse"];
+                };
+            };
+        };
+    };
+    readonly verify_saved_shared_credential_v1_workspaces__workspace_id__credentials__credential_id__verify_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly credential_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["VerifySavedCredentialRequest"] | null;
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly verify_shared_candidate_v1_workspaces__workspace_id__credentials_verify_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["VerifyCandidateCredentialRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialVerificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -7908,7 +8728,7 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content: {
-                    readonly "application/json": components["schemas"]["NodeSecretStatusResponse"];
+                    readonly "application/json": components["schemas"]["ConfigureNodeSecretResponse"];
                 };
             };
             /** @description Validation Error */
@@ -7945,6 +8765,123 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly set_personal_selection_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__personal_selection_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly graph_id: string;
+                readonly name: string;
+                readonly node_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["PersonalCredentialSelectionRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["NodeSecretStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly set_shared_binding_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__shared_binding_put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly graph_id: string;
+                readonly name: string;
+                readonly node_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SharedCredentialBindingRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["NodeSecretStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly verify_node_secret_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__verify_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly graph_id: string;
+                readonly name: string;
+                readonly node_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["VerifyNodeSecretRequest"] | null;
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CredentialVerificationResponse"];
+                };
             };
             /** @description Validation Error */
             readonly 422: {

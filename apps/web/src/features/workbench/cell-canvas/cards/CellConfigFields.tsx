@@ -186,6 +186,13 @@ const s = stylex.create({
    */
   selector: { flexShrink: 0, maxWidth: "62%" },
   selectorSegmented: { padding: 0 },
+  /** A segment's label: truncates inside its segment instead of spilling. */
+  segmentLabel: {
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   latticeSingle: { gridTemplateColumns: "minmax(0, 1fr)" },
   summary: {
     flexShrink: 0,
@@ -1251,6 +1258,26 @@ function ObjectControl({
   );
 }
 
+/**
+ * Whether a union's branch titles fit as segments in the header row's picker,
+ * which has 62% of a 300px card. A schema's `$defs` title is often a class name
+ * (`GeoCategorizedPointStyle`), and two of those collide in one segmented
+ * track, so a long title set draws the dense select instead — whatever widget
+ * the schema asked for.
+ */
+export function unionBranchesFitSegments(labels: readonly string[]): boolean {
+  if (labels.length < 2 || labels.length > 3) return false;
+  let total = 0;
+  for (const label of labels) {
+    if (label.length > UNION_SEGMENT_MAX_CHARS) return false;
+    total += label.length;
+  }
+  return total <= UNION_SEGMENTS_MAX_CHARS;
+}
+
+const UNION_SEGMENT_MAX_CHARS = 12;
+const UNION_SEGMENTS_MAX_CHARS = 20;
+
 function UnionControl({
   field,
   value,
@@ -1273,7 +1300,9 @@ function UnionControl({
     if (!next || next.tag === branch.tag) return;
     onChange(titledBranchValue(next, branchDefault(field, next, createUuid)));
   };
-  const segmented = field.widget === "segmented" || field.branches.length <= 3;
+  const segmented = unionBranchesFitSegments(
+    field.branches.map((option) => option.label),
+  );
   return (
     <div
       role="group"
@@ -1297,7 +1326,11 @@ function UnionControl({
             value={branch.tag}
             options={field.branches.map((option) => ({
               value: option.tag,
-              label: option.label,
+              label: (
+                <span title={option.label} {...stylex.props(s.segmentLabel)}>
+                  {option.label}
+                </span>
+              ),
             }))}
             xstyle={[s.selector, s.selectorSegmented]}
             onValueChange={selectBranch}
@@ -1307,7 +1340,9 @@ function UnionControl({
             size="dense"
             aria-label={`${title} mode`}
             disabled={context.readOnly}
+            block={false}
             value={branch.tag}
+            title={branch.label}
             xstyle={s.selector}
             onChange={(event) => selectBranch(event.currentTarget.value)}
           >

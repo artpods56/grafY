@@ -1,6 +1,5 @@
 import type { Port } from "@/lib/api";
 
-import { decodeHandleId } from "../authoring/handles";
 import {
   portIsService,
   type WorkflowEdge,
@@ -47,14 +46,13 @@ export function connectedServiceProvider(
       (candidate) =>
         candidate.data?.enabled !== false &&
         candidate.target === nodeId &&
-        decodeHandleId(candidate.targetHandle)?.portName === port.name,
+        candidate.targetPort === port.name,
     );
     if (!edge) continue;
     const provider = nodes.find((candidate) => candidate.id === edge.source);
     if (!provider) continue;
-    const sourceHandle = decodeHandleId(edge.sourceHandle);
     const output = provider.data.spec.outputs.find(
-      (candidate) => candidate.name === sourceHandle?.portName,
+      (candidate) => candidate.name === edge.sourcePort,
     );
     if (!output || !portIsService(output)) continue;
     return {
@@ -105,14 +103,11 @@ export function notProducedInputReasons(
   const reasons: { portName: string; message: string }[] = [];
   for (const edge of edges) {
     if (edge.data?.enabled === false || edge.target !== nodeId) continue;
-    const targetHandle = decodeHandleId(edge.targetHandle);
-    const sourceHandle = decodeHandleId(edge.sourceHandle);
-    if (!targetHandle || !sourceHandle) continue;
 
     const source = nodes.find((candidate) => candidate.id === edge.source);
     if (!source) continue;
     const sourcePort = source.data.spec.outputs.find(
-      (port) => port.name === sourceHandle.portName,
+      (port) => port.name === edge.sourcePort,
     );
     if (!sourcePort) continue;
 
@@ -121,11 +116,11 @@ export function notProducedInputReasons(
     if (!unsupported) continue;
 
     const targetPort = node.data.spec.inputs.find(
-      (port) => port.name === targetHandle.portName,
+      (port) => port.name === edge.targetPort,
     );
-    const label = targetPort ? portWords(targetPort) : targetHandle.portName;
+    const label = targetPort ? portWords(targetPort) : edge.targetPort;
     reasons.push({
-      portName: targetHandle.portName,
+      portName: edge.targetPort,
       message: `${label} are not produced by ${unsupported.providerTitle}`,
     });
   }

@@ -869,13 +869,16 @@ def test_node_secret_routes_scope_to_the_project_and_never_leak_values(
             assert plaintext not in invalid.text
 
             status = secrets.list_secrets_ok(project_id)
-            assert status.model_dump(mode="json") == {
+            assert [
+                (row.node_id, row.name, row.configured, row.effective_source)
+                for row in status.secrets
+            ] == [
+                ("llm", "api_key", True, "inline_legacy"),
+            ]
+            assert status.model_dump(mode="json", exclude={"secrets"}) == {
                 "project_id": str(project_id),
                 "graph_id": MAIN_GRAPH_ID,
                 "head_sequence": 0,
-                "secrets": [
-                    {"node_id": "llm", "name": "api_key", "configured": True},
-                ],
                 "unresolved_nodes": [
                     {
                         "node_id": "invalid-text",

@@ -10,9 +10,19 @@ import {
   type SavedGraphNode,
 } from "@/lib/api";
 import {
+  listCredentials,
+  setSharedBinding,
+  setPersonalSelection,
+  verifyNodeSecret,
+  type Credential,
+  type CredentialVerification,
+} from "@/lib/api/credentials";
+import {
   nodeSecretBindingReady,
   nodeSecretInputs,
   reconciledNodeSecretStatuses,
+  type NodeCredentialController,
+  type NodeCredentialSelection,
   type WorkflowNodeSecretStatus,
   type WorkflowNodeSecretStatuses,
 } from "../authoring/node-secrets";
@@ -36,6 +46,8 @@ export interface NodeSecretGraph {
   roomEpoch?: string;
   nodes: readonly SavedGraphNode[];
 }
+
+const EMPTY_CREDENTIALS: readonly Credential[] = [];
 
 export type NodeSecretStatusesByNode = Readonly<
   Record<string, WorkflowNodeSecretStatuses>
@@ -98,7 +110,7 @@ function headMovedUnderTheWrite(error: unknown): boolean {
   );
 }
 
-export interface UseNodeSecretsResult {
+export interface UseNodeSecretsResult extends NodeCredentialController {
   nodeSecretStatuses: NodeSecretStatusesByNode;
   refreshNodeSecretStatuses: (
     graph: NodeSecretGraph,
@@ -228,12 +240,16 @@ function mergeRefreshStatuses(
             preserveExistingWrites &&
             (currentStatus?.state === "applying" ||
               currentStatus?.state === "removing");
-          return [
-            name,
-            currentStatus && (writeChanged || writeInProgress)
-              ? currentStatus
-              : nextStatus,
-          ];
+          if (currentStatus && (writeChanged || writeInProgress))
+            return [name, currentStatus];
+          if (
+            preserveExistingWrites &&
+            nextStatus.state === "loading" &&
+            currentStatus?.remote
+          ) {
+            return [name, { ...nextStatus, remote: currentStatus.remote }];
+          }
+          return [name, nextStatus];
         }),
       ),
     ]),
@@ -247,6 +263,26 @@ export function useNodeSecrets(
 ): UseNodeSecretsResult {
   const [nodeSecretStatuses, setNodeSecretStatuses] =
     React.useState<NodeSecretStatusesByNode>({});
+  const [loadedCredentials, setLoadedCredentials] = React.useState<{
+    workspaceId: string;
+    rows: readonly Credential[];
+  }>();
+  const credentialsGeneration = React.useRef(0);
+  const refreshCredentials = React.useCallback(async () => {
+    const generation = ++credentialsGeneration.current;
+    const results = await Promise.allSettled([
+      listCredentials({ scope: "personal" }),
+      listCredentials({ scope: "shared", workspaceId }),
+    ]);
+    if (credentialsGeneration.current === generation) {
+      setLoadedCredentials({
+        workspaceId,
+        rows: results.flatMap((result) =>
+          result.status === "fulfilled" ? result.value : [],
+        ),
+      });
+    }
+  }, [workspaceId]);
   const activeGraphRef = React.useRef<NodeSecretGraph | null>(null);
   const headRef = React.useRef<NodeSecretHead | null>(null);
   const refreshGenerationRef = React.useRef(0);
@@ -264,6 +300,7 @@ export function useNodeSecrets(
       graph: NodeSecretGraph,
       graphNodes: readonly WorkflowNode[],
       signal?: AbortSignal,
+      background = false,
     ): Promise<boolean> => {
       const refreshGeneration = refreshGenerationRef.current + 1;
       refreshGenerationRef.current = refreshGeneration;
@@ -321,16 +358,19 @@ export function useNodeSecrets(
         graphNodes,
         "loading",
       );
-      setNodeSecretStatuses((current) =>
-        mergeRefreshStatuses(
-          loadingStatuses,
-          current,
-          continuesActiveGraph,
-          refreshWriteVersions,
-          writeVersionsRef.current,
-        ),
-      );
+      if (!background) {
+        setNodeSecretStatuses((current) =>
+          mergeRefreshStatuses(
+            loadingStatuses,
+            current,
+            continuesActiveGraph,
+            refreshWriteVersions,
+            writeVersionsRef.current,
+          ),
+        );
+      }
       try {
+        if (!background) void refreshCredentials();
         const response = await getProjectNodeSecrets(
           workspaceId,
           graph.id,
@@ -396,7 +436,7 @@ export function useNodeSecrets(
         return false;
       }
     },
-    [workspaceId],
+    [workspaceId, refreshCredentials],
   );
 
   /**
@@ -507,6 +547,76 @@ export function useNodeSecrets(
       }
     },
     [rereadHeadAfterConflict],
+  );
+
+  const selectCredential = React.useCallback(
+    async (
+      nodeId: string,
+      name: string,
+      selection: NodeCredentialSelection,
+    ) => {
+      const target = prepareSecretWrite(nodeId, name);
+      if (!target)
+        throw new Error("Save this node before changing its credential.");
+      const { graph, headSequence, writeVersion } = target;
+      const address = {
+        workspaceId,
+        projectId: graph.id,
+        graphId: graph.graphId,
+        nodeId,
+        name,
+      };
+      const stillCurrent = () =>
+        sameNodeSecretGraph(graph, activeGraphRef.current) &&
+        nodeSecretWriteVersion(writeVersionsRef.current, nodeId, name) ===
+          writeVersion;
+      let updated: NodeSecretStatus | undefined;
+      if (selection.scope === "shared") {
+        await sendWithOneHeadRetry(
+          graph,
+          headSequence,
+          async (sequence) => {
+            updated = await setSharedBinding(address, {
+              ...selection.binding,
+              expected_head_sequence: sequence,
+            });
+          },
+          stillCurrent,
+        );
+      } else {
+        updated = await setPersonalSelection(address, selection.binding);
+      }
+      if (!stillCurrent() || !updated) return;
+      const remote = updated;
+      advanceNodeSecretWriteVersion(writeVersionsRef.current, nodeId, name);
+      setNodeSecretStatuses((current) => ({
+        ...current,
+        [nodeId]: {
+          ...current[nodeId],
+          [name]: {
+            state: remote.configured ? "configured" : "unconfigured",
+            remote,
+          },
+        },
+      }));
+    },
+    [prepareSecretWrite, sendWithOneHeadRetry, workspaceId],
+  );
+
+  const verifyCredential = React.useCallback(
+    async (nodeId: string, name: string) => {
+      const graph = activeGraphRef.current;
+      if (!graph)
+        throw new Error("Save this node before verifying its credential.");
+      return verifyNodeSecret({
+        workspaceId,
+        projectId: graph.id,
+        graphId: graph.graphId,
+        nodeId,
+        name,
+      });
+    },
+    [workspaceId],
   );
 
   const applyConfiguredNodeSecret = React.useCallback(
@@ -681,8 +791,32 @@ export function useNodeSecrets(
     );
   }, []);
 
+  const refreshVault = React.useCallback(async () => {
+    const graph = activeGraphRef.current;
+    if (!graph) {
+      await refreshCredentials();
+      return;
+    }
+    await Promise.all([
+      refreshCredentials(),
+      refreshNodeSecretStatuses(
+        graph,
+        [...nodesByIdRef.current.values()],
+        undefined,
+        true,
+      ),
+    ]);
+  }, [refreshCredentials, refreshNodeSecretStatuses]);
+
   return {
     nodeSecretStatuses,
+    credentials:
+      loadedCredentials?.workspaceId === workspaceId
+        ? loadedCredentials.rows
+        : EMPTY_CREDENTIALS,
+    refreshCredentials: refreshVault,
+    selectCredential,
+    verifyCredential,
     refreshNodeSecretStatuses,
     applyConfiguredNodeSecret,
     removeConfiguredNodeSecret,

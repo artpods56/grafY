@@ -189,7 +189,7 @@ async def listing_principal(
         raise
 
 
-def require_workspace_capability(capability: WorkspaceCapability):
+def require_workspace_capability_dependency(capability: WorkspaceCapability):
     async def dependency(
         workspace_id: UUID,
         workspace_principal: Annotated[
@@ -209,7 +209,13 @@ def require_workspace_capability(capability: WorkspaceCapability):
             capability=capability,
         )
 
-    return Annotated[WorkspaceAccess, Depends(dependency)]
+    return Depends(dependency)
+
+
+def require_workspace_capability(capability: WorkspaceCapability):
+    return Annotated[
+        WorkspaceAccess, require_workspace_capability_dependency(capability)
+    ]
 
 
 __all__ = [

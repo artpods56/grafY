@@ -7,18 +7,13 @@ import {
   servicePortFixture,
 } from "../test-fixtures";
 
-import { encodeHandleId } from "../authoring/handles";
 import {
   connectedServiceProvider,
   notProducedInputReasons,
   unsupportedOutputForPort,
   unsupportedOutputLabel,
 } from "./provider-outputs";
-import {
-  createWorkflowNodeData,
-  portMetaForPort,
-  type WorkflowEdge,
-} from "../authoring/types";
+import { createWorkflowNodeData, type WorkflowEdge } from "../authoring/types";
 
 function servicePort(
   name: string,
@@ -72,9 +67,10 @@ function edge(
   return {
     id,
     source,
+    sourcePort: sourcePort.name,
     target,
-    sourceHandle: encodeHandleId(portMetaForPort(sourcePort)),
-    targetHandle: encodeHandleId(portMetaForPort(targetPort)),
+    targetPort: targetPort.name,
+    targetPlug: null,
     data: { enabled: true, collectionMode: "direct" },
   };
 }

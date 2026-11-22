@@ -6,6 +6,7 @@ import { SWRConfig } from "swr";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  Credential,
   PersonalAccessToken,
   PersonalAccessTokenCreated,
   Workspace,
@@ -14,6 +15,10 @@ import type {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const mocks = vi.hoisted(() => ({
+  listCredentials: vi.fn(),
+  deleteCredential: vi.fn(),
+  reverifyCredential: vi.fn(),
+  updateCredential: vi.fn(),
   createToken: vi.fn(),
   listTokens: vi.fn(),
   revokeToken: vi.fn(),
@@ -22,6 +27,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api", () => ({
+  listCredentials: mocks.listCredentials,
+  deleteCredential: mocks.deleteCredential,
+  reverifyCredential: mocks.reverifyCredential,
+  updateCredential: mocks.updateCredential,
   createPersonalAccessToken: mocks.createToken,
   listPersonalAccessTokens: mocks.listTokens,
   revokePersonalAccessToken: mocks.revokeToken,
@@ -85,6 +94,25 @@ function token(
   };
 }
 
+function credential(overrides: Partial<Credential> = {}): Credential {
+  return {
+    id: "team-key",
+    scope: "shared",
+    provider_kind: "openai_compatible",
+    label: "Team key",
+    key_hint: "••••abcd",
+    usable: true,
+    supports_verification: true,
+    verification_status: "valid",
+    verification_message: null,
+    verification_hint: null,
+    verified_at: null,
+    created_at: "2026-09-01T10:00:00Z",
+    updated_at: "2026-09-01T10:00:00Z",
+    ...overrides,
+  };
+}
+
 async function renderSettings() {
   const container = document.createElement("div");
   document.body.append(container);
@@ -128,6 +156,7 @@ afterEach(async () => {
 beforeEach(() => {
   mocks.workspace = workspace();
   mocks.listTokens.mockResolvedValue([token()]);
+  mocks.listCredentials.mockResolvedValue([]);
   mocks.revokeToken.mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -137,6 +166,148 @@ beforeEach(() => {
 });
 
 describe("WorkspaceSettings", () => {
+  it("lists a Personal credential and re-verifies it from Settings", async () => {
+    const row: Credential = {
+      id: "provider-key",
+      scope: "personal",
+      provider_kind: "mistral",
+      label: "My OCR key",
+      key_hint: "••••1234",
+      usable: true,
+      supports_verification: true,
+      verification_status: "unverified",
+      verification_message: null,
+      verification_hint: null,
+      verified_at: null,
+      created_at: "2026-09-01T10:00:00Z",
+      updated_at: "2026-09-01T10:00:00Z",
+    };
+    mocks.listCredentials.mockImplementation(
+      ({ scope }: { scope: Credential["scope"] }) =>
+        Promise.resolve(scope === "personal" ? [row] : []),
+    );
+    mocks.reverifyCredential.mockResolvedValue({
+      ...row,
+      verification_status: "valid",
+      verification_message: "Verified Mistral key.",
+    });
+    const container = await renderSettings();
+    const panel = container.querySelector(
+      '[aria-labelledby="credentials-personal-heading"]',
+    );
+    expect(panel?.textContent).toContain("My OCR key");
+    expect(panel?.textContent).toContain("Mistral");
+    expect(panel?.textContent).toContain("••••1234");
+    expect(panel?.textContent).toContain("Unverified");
+    const reverify = panel?.querySelector<HTMLButtonElement>(
+      '[aria-label="Re-verify My OCR key"]',
+    );
+    expect(reverify).not.toBeNull();
+    await React.act(async () => reverify?.click());
+    expect(mocks.reverifyCredential).toHaveBeenCalledWith(
+      { scope: "personal" },
+      "provider-key",
+    );
+    expect(panel?.textContent).toContain("Verified Mistral key.");
+  });
+
+  it("deletes a credential only after an inline confirm", async () => {
+    mocks.listCredentials.mockImplementation(
+      ({ scope }: { scope: Credential["scope"] }) =>
+        Promise.resolve(scope === "shared" ? [credential()] : []),
+    );
+    mocks.deleteCredential.mockResolvedValue(undefined);
+    const container = await renderSettings();
+    const panel = container.querySelector(
+      '[aria-labelledby="credentials-shared-heading"]',
+    )!;
+    expect(panel.textContent).toContain("Owners manage these keys.");
+    await React.act(async () =>
+      panel
+        .querySelector<HTMLButtonElement>('[aria-label="Delete Team key"]')
+        ?.click(),
+    );
+    expect(mocks.deleteCredential).not.toHaveBeenCalled();
+    const cancel = [...panel.querySelectorAll("button")].find(
+      (button) => button.textContent === "Cancel",
+    );
+    await React.act(async () => cancel?.click());
+    expect(panel.textContent).not.toContain("Confirm delete");
+    await React.act(async () =>
+      panel
+        .querySelector<HTMLButtonElement>('[aria-label="Delete Team key"]')
+        ?.click(),
+    );
+    const confirm = [...panel.querySelectorAll("button")].find(
+      (button) => button.textContent === "Confirm delete",
+    );
+    await React.act(async () => confirm?.click());
+    expect(mocks.deleteCredential).toHaveBeenCalledWith(
+      { scope: "shared", workspaceId: "workspace-1" },
+      "team-key",
+    );
+  });
+
+  it("renames and rotates a credential inline", async () => {
+    mocks.listCredentials.mockImplementation(
+      ({ scope }: { scope: Credential["scope"] }) =>
+        Promise.resolve(scope === "shared" ? [credential()] : []),
+    );
+    mocks.updateCredential.mockResolvedValue(
+      credential({
+        label: "Ops key",
+        verification_message: "Rotated and verified.",
+      }),
+    );
+    const container = await renderSettings();
+    const panel = container.querySelector(
+      '[aria-labelledby="credentials-shared-heading"]',
+    )!;
+    await React.act(async () =>
+      panel
+        .querySelector<HTMLButtonElement>('[aria-label="Edit Team key"]')
+        ?.click(),
+    );
+    const form = panel.querySelector<HTMLFormElement>(
+      'form[aria-label="Edit Team key"]',
+    )!;
+    expect(form).not.toBeNull();
+    await React.act(async () => {
+      setInputValue(
+        form.querySelector<HTMLInputElement>('input[name="label"]')!,
+        "Ops key",
+      );
+      setInputValue(
+        form.querySelector<HTMLInputElement>('input[name="value"]')!,
+        "new-secret",
+      );
+    });
+    await React.act(async () =>
+      form.querySelector<HTMLButtonElement>('button[type="submit"]')?.click(),
+    );
+    expect(mocks.updateCredential).toHaveBeenCalledWith(
+      { scope: "shared", workspaceId: "workspace-1" },
+      "team-key",
+      {
+        label: "Ops key",
+        value: "new-secret",
+        verify: true,
+        save_if_unverified: false,
+      },
+    );
+    expect(panel.textContent).toContain("Rotated and verified.");
+    expect(panel.querySelector('form[aria-label="Edit Team key"]')).toBeNull();
+  });
+
+  it("says so when no credential is saved yet", async () => {
+    const container = await renderSettings();
+    expect(
+      container.querySelector(
+        '[aria-labelledby="credentials-personal-heading"]',
+      )?.textContent,
+    ).toContain("No personal keys yet.");
+  });
+
   it("creates, reveals, copies, and revokes a graph automation PAT", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-02T12:00:00Z"));

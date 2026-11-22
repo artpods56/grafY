@@ -224,16 +224,12 @@ export function tidyArtifactCards(
   const top = Math.min(...selected.map((node) => node.position.y));
   const width = Math.max(
     ...selected.map(
-      (node) =>
-        node.measured?.width ??
-        node.data.layout?.width ??
-        DEFAULT_ARTIFACT_CARD_WIDTH,
+      (node) => node.data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
     ),
   );
   const height = Math.max(
     ...selected.map(
       (node) =>
-        node.measured?.height ??
         artifactCardMediaHeight(
           node.data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
         ) + 24,

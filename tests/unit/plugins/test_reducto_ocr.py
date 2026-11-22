@@ -324,6 +324,7 @@ async def test_the_key_is_resolved_for_the_node_that_asked(env: Env) -> None:
             "node_id": env.context.node_id,
             "name": "api_key",
             "dependencies": {},
+            "actor_user_id": env.context.actor_user_id,
         }
     ]
 

@@ -1,20 +1,15 @@
+from collections.abc import Mapping
 from ipaddress import ip_address
-from typing import Annotated, Protocol, final, override
+from typing import Annotated, Protocol, cast, final, override
 from uuid import UUID
 
-from pydantic import (
-    AnyHttpUrl,
-    BaseModel,
-    ConfigDict,
-    Field,
-    SecretStr,
-    StrictStr,
-    TypeAdapter,
-    field_validator,
-)
-
+import grafy_workbench.schema.nodes as _schema_nodes
+import httpx
 from grafy_core.artifacts import JsonObject, NodeConfig, NodeInput, NodeOutput
 from grafy_core.config_ui import field_ui, when_port_connected
+from grafy_core.credential_verification import UNREACHABLE, verify_http_credential
+from grafy_core.domain.credentials import CredentialVerificationResult
+from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     Node,
@@ -30,12 +25,21 @@ from grafy_core.plugins import (
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.prompt_contracts import PromptMessage
 from grafy_core.runtime.artifact_values import inline_model_artifact
+from grafy_workbench.schema.values import JsonSchemaText
+from pydantic import (
+    AnyHttpUrl,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StrictStr,
+    TypeAdapter,
+    field_validator,
+)
 
 import grafy_plugin_llm.prompt as _prompt
-import grafy_workbench.schema.nodes as _schema_nodes
 from grafy_plugin_llm.artifacts import COMPLETION, CompletionPayload
 from grafy_plugin_llm.declaration import LLM
-from grafy_workbench.schema.values import JsonSchemaText
 
 _ = (_prompt.__name__, _schema_nodes.__name__)  # notes classes before these ports
 
@@ -207,6 +211,34 @@ def build_openai_compatible_node(
     )
 
 
+def _model_count(body: object) -> str | None:
+    if isinstance(body, dict):
+        models = cast(dict[str, object], body).get("data")
+        if isinstance(models, list):
+            return f"{len(cast(list[object], models))} models available"
+    return None
+
+
+async def _verify_api_key(
+    key: SecretStr, config: Mapping[str, JsonValue], client: httpx.AsyncClient
+) -> CredentialVerificationResult:
+    base_url = config.get("base_url", "https://api.openai.com/v1")
+    if not isinstance(base_url, str):
+        return UNREACHABLE
+    try:
+        base_url = OpenAICompatibleConfig.validate_base_url(base_url)
+    except ValueError:
+        return UNREACHABLE
+    return await verify_http_credential(
+        client,
+        f"{base_url.rstrip('/')}/models",
+        f"Bearer {key.get_secret_value()}",
+        message="Verified OpenAI-compatible key.",
+        account_hint=_model_count,
+        missing_endpoint_message="Endpoint did not expose /models for verification.",
+    )
+
+
 @LLM.node(
     operator_id="llm.openai_compatible.chat_completion",
     version=1,
@@ -224,6 +256,8 @@ def build_openai_compatible_node(
                 "Write-only bearer credential for the configured API base URL."
             ),
             config_dependencies=("base_url",),
+            provider_kind="openai_compatible",
+            verifier=_verify_api_key,
         ),
     ),
     http_egress=NodeHttpEgressContract(
@@ -258,14 +292,18 @@ class OpenAICompatibleNode(
         /,
     ) -> OpenAICompatibleOutput:
         try:
-            api_key = await self._node_secrets.resolve_secret(
-                workspace_id=context.workspace_id,
-                project_id=context.project_id,
-                graph_id=context.graph_id,
-                node_id=context.node_id,
-                name="api_key",
-                dependencies={"base_url": config.base_url},
-            )
+            if context.secrets.workspace_id is not None:
+                api_key = await context.secrets.require("api_key")
+            else:
+                api_key = await self._node_secrets.resolve_secret(
+                    workspace_id=context.workspace_id,
+                    project_id=context.project_id,
+                    graph_id=context.graph_id,
+                    node_id=context.node_id,
+                    name="api_key",
+                    dependencies={"base_url": config.base_url},
+                    actor_user_id=context.actor_user_id,
+                )
         except Exception as exc:
             raise OpenAICompatibleExecutionError(
                 "OpenAI-compatible completion could not resolve its API key for "

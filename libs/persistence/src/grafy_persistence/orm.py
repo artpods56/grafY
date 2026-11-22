@@ -13,6 +13,11 @@ from grafy_core.domain.identity import (
     WorkspaceInvitation,
     WorkspaceMembership,
 )
+from grafy_core.domain.credentials import (
+    EncryptedCredential,
+    NodeSharedCredentialBinding,
+    NodeUserCredentialOverride,
+)
 from grafy_core.domain.node_secrets import EncryptedNodeSecret
 from grafy_core.domain.projects import (
     Project,
@@ -54,6 +59,13 @@ def start_mappers() -> None:
     mapper_registry.map_imperatively(
         EncryptedAgentKey,
         schema.agent_keys,
+    )
+    mapper_registry.map_imperatively(EncryptedCredential, schema.credentials)
+    mapper_registry.map_imperatively(
+        NodeSharedCredentialBinding, schema.node_shared_credential_bindings
+    )
+    mapper_registry.map_imperatively(
+        NodeUserCredentialOverride, schema.node_user_credential_overrides
     )
     mapper_registry.map_imperatively(User, schema.users)
     mapper_registry.map_imperatively(OidcIdentity, schema.oidc_identities)

@@ -17,12 +17,10 @@ import type {
 } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
 import {
-  WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
   type WorkflowEdge,
   type WorkflowNodeCompatibility,
 } from "../authoring/types";
-import { encodeHandleId } from "../authoring/handles";
 import type { WorkflowNode } from "./execution-plan";
 import { deferred } from "../test/deferred";
 import { renderHook } from "../test/renderHook";
@@ -113,40 +111,20 @@ function workflowNode(
   }
   return {
     id,
-    type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
     selected: options.selected ?? false,
     data: { ...data, config: options.config ?? {} },
   };
 }
 
-function outputHandle(): string {
-  return encodeHandleId({
-    portName: "result",
-    artifactTypeId: "test.artifact",
-    schemaVersion: 1,
-    shape: "one",
-    direction: "output",
-  });
-}
-
-function inputHandle(): string {
-  return encodeHandleId({
-    portName: "input",
-    artifactTypeId: "test.artifact",
-    schemaVersion: 1,
-    shape: "one",
-    direction: "input",
-  });
-}
-
 function workflowEdge(source: string, target: string): WorkflowEdge {
   return {
     id: `${source}-${target}`,
     source,
-    sourceHandle: outputHandle(),
+    sourcePort: "result",
     target,
-    targetHandle: inputHandle(),
+    targetPort: "input",
+    targetPlug: null,
     data: { enabled: true, collectionMode: "direct", conversionPath: [] },
   };
 }
@@ -556,19 +534,10 @@ describe("asking for a Run", () => {
     const connection: WorkflowEdge = {
       id: "reader",
       source: "mistral",
+      sourcePort: "reader",
       target: "ocr",
-      sourceHandle: encodeHandleId({
-        portName: "reader",
-        direction: "output",
-        shape: "one",
-        serviceContracts: reader.service_contracts ?? [],
-      }),
-      targetHandle: encodeHandleId({
-        portName: "reader",
-        direction: "input",
-        shape: "one",
-        serviceContracts: reader.service_contracts ?? [],
-      }),
+      targetPort: "reader",
+      targetPlug: null,
       data: { enabled: true, collectionMode: "direct" },
     };
     api.getRun.mockResolvedValue(run("running"));
@@ -763,7 +732,13 @@ describe("asking for a Run", () => {
     const setRunError = vi.fn();
     const spec = nodeSpec("llm.operator", {
       secretInputs: [
-        { name: "api_key", config_dependencies: ["model"], title: "API key" },
+        {
+          name: "api_key",
+          config_dependencies: ["model"],
+          title: "API key",
+          provider_kind: "generic",
+          supports_verification: false,
+        },
       ],
     });
     const canvas = canvasState([workflowNode("a", { spec })]);
@@ -794,7 +769,13 @@ describe("asking for a Run", () => {
     const setRunError = vi.fn();
     const spec = nodeSpec("llm.operator", {
       secretInputs: [
-        { name: "api_key", config_dependencies: ["model"], title: "API key" },
+        {
+          name: "api_key",
+          config_dependencies: ["model"],
+          title: "API key",
+          provider_kind: "generic",
+          supports_verification: false,
+        },
       ],
     });
     const canvas = canvasState([
@@ -833,7 +814,13 @@ describe("asking for a Run", () => {
     const setRunError = vi.fn();
     const spec = nodeSpec("llm.operator", {
       secretInputs: [
-        { name: "api_key", config_dependencies: ["model"], title: "API key" },
+        {
+          name: "api_key",
+          config_dependencies: ["model"],
+          title: "API key",
+          provider_kind: "generic",
+          supports_verification: false,
+        },
       ],
     });
     const canvas = canvasState([
