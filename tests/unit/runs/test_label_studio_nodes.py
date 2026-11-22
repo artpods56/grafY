@@ -59,6 +59,7 @@ class _Credentials(UnavailableNodeSecretResolver):
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, object],
+        actor_user_id: UUID | None = None,
     ) -> SecretStr:
         return SecretStr(
             {"label_studio_token": self.token, "s3_secret_key": "example-secret"}[name]

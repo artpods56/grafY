@@ -1,34 +1,26 @@
 import logging
+from collections.abc import Mapping
 from ipaddress import ip_address
 from typing import Annotated, ClassVar, Literal, Protocol, final, override
 from uuid import UUID
 
-from pydantic import (
-    AnyHttpUrl,
-    Field,
-    SecretStr,
-    TypeAdapter,
-)
-
-from mistralai.client.models.ocrresponse import OCRResponse
-
+import grafy_workbench.table.plugin as _table_plugin
+import grafy_workbench.text.nodes as _text_nodes
+import httpx
 from grafy_core.artifact_contracts import (
     IMAGE_REGIONS,
-    MarkdownValue,
+    ImagePage,
     ImageRegion,
     ImageRegionSet,
-    ImagePage,
-)
-from grafy_core.table_contracts import (
-    Table,
-    TableColumn,
-    TableValue,
-    TableValueType,
+    MarkdownValue,
 )
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.config_ui import field_ui
+from grafy_core.credential_verification import verify_http_credential
 from grafy_core.declared_values import note_declaration
 from grafy_core.documents import PdfFile, RasterImage
+from grafy_core.domain.credentials import CredentialVerificationResult
+from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     Node,
@@ -37,14 +29,25 @@ from grafy_core.nodes import (
     UserFacingNodeError,
 )
 from grafy_core.ocr_contracts import OcrFeature, OcrReader, OcrResult
-
-import grafy_workbench.table.plugin as _table_plugin
-import grafy_workbench.text.nodes as _text_nodes
 from grafy_core.plugins import (
     NodeHttpEgressContract,
     NodeSecretInput,
     PluginRuntimeContext,
 )
+from grafy_core.table_contracts import (
+    Table,
+    TableColumn,
+    TableValue,
+    TableValueType,
+)
+from mistralai.client.models.ocrresponse import OCRResponse
+from pydantic import (
+    AnyHttpUrl,
+    Field,
+    SecretStr,
+    TypeAdapter,
+)
+
 from grafy_plugin_mistral.declaration import MISTRAL
 from grafy_plugin_mistral.response import OcrPage
 
@@ -272,12 +275,25 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+async def _verify_api_key(
+    key: SecretStr, config: Mapping[str, JsonValue], client: httpx.AsyncClient
+) -> CredentialVerificationResult:
+    return await verify_http_credential(
+        client,
+        "https://api.mistral.ai/v1/models",
+        f"Bearer {key.get_secret_value()}",
+        message="Verified Mistral key.",
+    )
+
+
 #: The credential this node reads with `context.secrets.require(API_KEY.name)`.
 API_KEY = NodeSecretInput(
     name="api_key",
     title="API key",
     description="Write-only bearer credential for the configured API origin.",
     config_dependencies=(),
+    provider_kind="mistral",
+    verifier=_verify_api_key,
 )
 
 

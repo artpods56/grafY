@@ -201,6 +201,8 @@ export const askModelSpec = spec({
       title: "API key",
       description: "Bearer key for the configured base URL.",
       config_dependencies: ["base_url"],
+      provider_kind: "openai_compatible",
+      supports_verification: true,
     },
   ],
 });

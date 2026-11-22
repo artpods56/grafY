@@ -4,7 +4,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { NodeSpec } from "@/lib/api";
+import type { Credential, CredentialVerification, NodeSpec } from "@/lib/api";
 
 import {
   askModelSpec,
@@ -186,6 +186,140 @@ describe("CellOperatorCard credentials popover", () => {
     expect(popup).not.toBeNull();
     return { container, popup: popup as HTMLElement };
   }
+
+  it("lets an editor bind a Shared key and save an unreachable Personal key", async () => {
+    const select = vi.fn(async () => {});
+    const shared: Credential = {
+      id: "vault-key",
+      scope: "shared",
+      provider_kind: "openai_compatible",
+      label: "Team gateway",
+      key_hint: "••••1234",
+      usable: true,
+      supports_verification: true,
+      verification_status: "valid",
+      verification_message: "Verified OpenAI-compatible key.",
+      verification_hint: null,
+      verified_at: "2026-09-01T10:00:00Z",
+      created_at: "2026-09-01T10:00:00Z",
+      updated_at: "2026-09-01T10:00:00Z",
+    };
+    const { popup } = openPopover([
+      {
+        ...configured,
+        vault: {
+          workspaceId: "workspace",
+          canEditShared: true,
+          canSelectPersonal: true,
+          canManageShared: false,
+          credentials: [shared],
+          provider: { kind: "openai_compatible", fields: ["base_url"] },
+          select,
+          verify: vi.fn(async (): Promise<CredentialVerification> => ({
+            status: "valid",
+            message: "Verified.",
+            account_hint: null,
+          })),
+          refresh: vi.fn(async () => {}),
+          status: {
+            node_id: "node",
+            name: "api_key",
+            configured: true,
+            provider_kind: "openai_compatible",
+            supports_verification: true,
+            effective_source: "shared_credential",
+            effective_credential_id: shared.id,
+            effective_verification_status: "valid",
+            shared_binding_mode: "credential",
+            shared_credential_id: shared.id,
+            shared_credential_missing: false,
+            personal_override_mode: "none",
+            deployment_default_available: false,
+          },
+        },
+      },
+    ]);
+    expect(popup.textContent).toContain("Team gateway");
+    expect(popup.textContent).toContain("Verified");
+    const graphBinding = popup.querySelector<HTMLSelectElement>(
+      '[aria-label="API key graph binding"]',
+    );
+    expect(graphBinding?.value).toBe("credential:vault-key");
+    if (!graphBinding) throw new Error("Graph binding picker is missing");
+    await React.act(async () => {
+      graphBinding.value = "personal";
+      graphBinding.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(select).toHaveBeenCalledWith({
+      scope: "shared",
+      binding: { mode: "personal" },
+    });
+    const addButton = [...popup.querySelectorAll("button")].find(
+      (button) => button.textContent === "+ Add credential",
+    );
+    click(addButton ?? null);
+    expect(popup.querySelector('[aria-label="Credential scope"]')).toBeNull();
+    const key = popup.querySelector<HTMLInputElement>(
+      '[aria-label="Credential key"]',
+    );
+    type(key, "synthetic-personal-key");
+    type(popup.querySelector('[aria-label="Credential label"]'), "My key");
+
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            detail: {
+              can_save_unverified: true,
+              verification: {
+                status: "unreachable",
+                message: "Provider unreachable.",
+                account_hint: null,
+              },
+            },
+          },
+          { status: 422 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            ...shared,
+            id: "my-key",
+            label: "My key",
+            scope: "personal",
+            verification_status: "unreachable",
+            verification_message: "Saved without verification.",
+          },
+          { status: 201 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      await React.act(async () => {
+        popup
+          .querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.click();
+      });
+      expect(popup.textContent).toContain("Provider unreachable.");
+      const saveAnyway = [...popup.querySelectorAll("button")].find(
+        (button) => button.textContent === "Save anyway",
+      );
+      expect(saveAnyway).toBeDefined();
+      await React.act(async () => saveAnyway?.click());
+      expect(fetcher).toHaveBeenLastCalledWith(
+        "/api/v1/me/credentials",
+        expect.objectContaining({
+          body: expect.stringContaining('"save_if_unverified":true'),
+        }),
+      );
+      expect(popup.textContent).toContain("Saved without verification.");
+      expect(popup.querySelector('[aria-label="Credential key"]')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it("opens from the header key and lists each key with its status", () => {
     const { container, popup } = openPopover([configured]);

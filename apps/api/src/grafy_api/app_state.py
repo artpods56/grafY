@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from grafy_api.agents.keys import AgentKeyService
     from grafy_api.agents.models import AgentModelResolver
     from grafy_api.agents.turns import AgentService
+    from grafy_api.credentials import CredentialService
     from grafy_api.node_secrets import NodeSecretService
     from grafy_api.realtime.checkpointing import ProjectAutoCheckpointer
     from grafy_api.realtime.hub import ProjectRoomHub
@@ -46,6 +47,7 @@ class AppResources:
     runs: RunService
     collaboration: CollaborationService
     node_secrets: NodeSecretService
+    credentials: CredentialService
     # Agent history, its write-only key, and the model its next turn will dial. The
     # send/cancel routes and the room frames own everything above these three.
     agent_keys: AgentKeyService

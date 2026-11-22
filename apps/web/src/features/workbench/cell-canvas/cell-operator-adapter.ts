@@ -44,6 +44,7 @@ import {
   nodeSecretBindingReady,
   nodeSecretDependencyRevision,
   nodeSecretInputs,
+  type NodeCredentialController,
   type WorkflowNodeSecretStatuses,
 } from "../authoring/node-secrets";
 import { schemaFields, validateConfig } from "../config-ui/config-schema";
@@ -104,6 +105,12 @@ export interface CellNodeSecretState {
   savedNodes: readonly SavedGraphNode[] | null;
   /** Names the graph and room epoch a key was written for. */
   scope: string;
+  vault?: NodeCredentialController & {
+    workspaceId: string;
+    canManageShared: boolean;
+    canEditShared: boolean;
+    canSelectPersonal: boolean;
+  };
 }
 
 /**
@@ -119,6 +126,7 @@ function nodeSecretSurface(
   const savedNode = secrets?.savedNodes?.find(
     (candidate) => candidate.id === node.id,
   );
+  const vault = secrets?.vault;
   return nodeSecretInputs(spec).map((input) => {
     const stored = secrets?.statuses[node.id]?.[input.name] ?? {
       state: "unknown" as const,
@@ -135,6 +143,49 @@ function nodeSecretSurface(
       state: status.state,
       ...(status.message ? { message: status.message } : {}),
       ready,
+      ...(vault && stored.remote && input.providerKind
+        ? {
+            vault: {
+              workspaceId: vault.workspaceId,
+              canManageShared: vault.canManageShared,
+              canEditShared: vault.canEditShared,
+              canSelectPersonal: vault.canSelectPersonal,
+              credentials: vault.credentials.filter(
+                (credential) => credential.provider_kind === input.providerKind,
+              ),
+              status: stored.remote,
+              provider: {
+                kind: input.providerKind,
+                fields: input.configDependencies,
+                defaults: Object.fromEntries(
+                  input.configDependencies.flatMap((name) => {
+                    const value: unknown = savedNode?.config?.[name];
+                    const properties = spec.config_schema.properties;
+                    const schema: unknown =
+                      properties && typeof properties === "object"
+                        ? Object.getOwnPropertyDescriptor(properties, name)
+                            ?.value
+                        : undefined;
+                    const defaultValue =
+                      schema &&
+                      typeof schema === "object" &&
+                      "default" in schema
+                        ? schema.default
+                        : undefined;
+                    if (typeof value === "string") return [[name, value]];
+                    return typeof defaultValue === "string"
+                      ? [[name, defaultValue]]
+                      : [];
+                  }),
+                ),
+              },
+              select: (selection) =>
+                vault.selectCredential(node.id, input.name, selection),
+              verify: () => vault.verifyCredential(node.id, input.name),
+              refresh: vault.refreshCredentials,
+            },
+          }
+        : {}),
       revision: `${secrets?.scope ?? "unsaved"}:${nodeSecretDependencyRevision(input, node.config ?? {})}`,
     };
   });

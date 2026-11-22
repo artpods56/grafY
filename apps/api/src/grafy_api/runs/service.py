@@ -215,6 +215,7 @@ class RunService:
             targets=keys,
             store=runtime.store,
             service_operators=self._service_operators,
+            actor_user_id=started_by_user_id,
         )
         run = Run(
             workspace_id=workspace_id,

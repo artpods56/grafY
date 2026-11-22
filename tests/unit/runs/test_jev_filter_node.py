@@ -41,6 +41,7 @@ class _Secrets:
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
+        actor_user_id: UUID | None = None,
     ) -> SecretStr:
         assert name == "api_key"
         return SecretStr("test-key")

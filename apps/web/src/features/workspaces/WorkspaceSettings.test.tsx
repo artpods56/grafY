@@ -6,6 +6,7 @@ import { SWRConfig } from "swr";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  Credential,
   PersonalAccessToken,
   PersonalAccessTokenCreated,
   Workspace,
@@ -14,6 +15,9 @@ import type {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const mocks = vi.hoisted(() => ({
+  listCredentials: vi.fn(),
+  deleteCredential: vi.fn(),
+  reverifyCredential: vi.fn(),
   createToken: vi.fn(),
   listTokens: vi.fn(),
   revokeToken: vi.fn(),
@@ -22,6 +26,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api", () => ({
+  listCredentials: mocks.listCredentials,
+  deleteCredential: mocks.deleteCredential,
+  reverifyCredential: mocks.reverifyCredential,
   createPersonalAccessToken: mocks.createToken,
   listPersonalAccessTokens: mocks.listTokens,
   revokePersonalAccessToken: mocks.revokeToken,
@@ -128,6 +135,7 @@ afterEach(async () => {
 beforeEach(() => {
   mocks.workspace = workspace();
   mocks.listTokens.mockResolvedValue([token()]);
+  mocks.listCredentials.mockResolvedValue([]);
   mocks.revokeToken.mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
@@ -137,6 +145,47 @@ beforeEach(() => {
 });
 
 describe("WorkspaceSettings", () => {
+  it("lists a Personal credential and re-verifies it from Settings", async () => {
+    const row: Credential = {
+      id: "provider-key",
+      scope: "personal",
+      provider_kind: "mistral",
+      label: "My OCR key",
+      key_hint: "••••1234",
+      usable: true,
+      supports_verification: true,
+      verification_status: "unverified",
+      verification_message: null,
+      verification_hint: null,
+      verified_at: null,
+      created_at: "2026-09-01T10:00:00Z",
+      updated_at: "2026-09-01T10:00:00Z",
+    };
+    mocks.listCredentials.mockImplementation(
+      ({ scope }: { scope: Credential["scope"] }) =>
+        Promise.resolve(scope === "personal" ? [row] : []),
+    );
+    mocks.reverifyCredential.mockResolvedValue({
+      ...row,
+      verification_status: "valid",
+      verification_message: "Verified Mistral key.",
+    });
+    const container = await renderSettings();
+    const panel = container.querySelector('[aria-label="Credentials"]');
+    expect(panel?.textContent).toContain("My OCR key");
+    expect(panel?.textContent).toContain("Unverified");
+    const reverify = panel?.querySelector<HTMLButtonElement>(
+      '[aria-label="Re-verify My OCR key"]',
+    );
+    expect(reverify).not.toBeNull();
+    await React.act(async () => reverify?.click());
+    expect(mocks.reverifyCredential).toHaveBeenCalledWith(
+      { scope: "personal" },
+      "provider-key",
+    );
+    expect(panel?.textContent).toContain("Verified Mistral key.");
+  });
+
   it("creates, reveals, copies, and revokes a graph automation PAT", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-02T12:00:00Z"));

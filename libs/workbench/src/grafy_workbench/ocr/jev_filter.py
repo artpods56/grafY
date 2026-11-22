@@ -21,6 +21,7 @@ from pydantic import (
     model_validator,
 )
 
+from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
@@ -53,6 +54,7 @@ _ADVANCED: dict[str, JsonValue] = {"x-grafy-advanced": True}
 def _cached_progress(message: str, hits: list[bool]) -> str:
     cached = sum(hits)
     return message if cached == 0 else f"{message} · {cached} cached"
+
 
 type _Kind = Literal[
     "settlement_or_place_name",
@@ -368,7 +370,16 @@ def _score_region(
         PluginRuntimeCapability.NODE_SECRETS,
     ),
     http_egress=NodeHttpEgressContract(fixed_destinations=("https://api.typesafe.ai",)),
-    secret_inputs=(NodeSecretInput(name="api_key", title="TypeSafe AI (Jev) API key"),),
+    secret_inputs=(
+        NodeSecretInput(
+            name="api_key",
+            title="TypeSafe AI (Jev) API key",
+            provider_kind="jev",
+            verifier=unsupported_credential_verifier(
+                "This key will be checked on first run."
+            ),
+        ),
+    ),
     factory=lambda context: FilterTiffJevNode(
         context.open_tiff_page,
         cache=context.provider_cache,

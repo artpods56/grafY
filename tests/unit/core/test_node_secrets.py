@@ -72,6 +72,7 @@ class RecordingSecrets:
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, object],
+        actor_user_id: UUID | None = None,
     ) -> SecretStr:
         self.lookups.append(
             {

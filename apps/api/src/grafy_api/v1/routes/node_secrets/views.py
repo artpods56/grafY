@@ -9,16 +9,23 @@ from grafy_core.domain.errors import (
     NotFoundError,
     CollaborationHeadConflictError,
 )
-from grafy_core.domain.identity import WorkspaceCapability
+from grafy_core.domain.identity import WorkspaceAccess, WorkspaceCapability
 
 from grafy_api.realtime.publish import rederive_instances
-from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
+from grafy_api.v1.routes.auth.dependencies import (
+    require_workspace_capability_dependency,
+)
 from grafy_api.v1.routes.node_secrets.dependencies import (
     NodeSecretDependency,
     RunDependency,
 )
+from grafy_api.v1.routes.credentials.models import CredentialVerificationResponse
 from grafy_api.v1.routes.node_secrets.models import (
+    PersonalCredentialSelectionRequest,
+    SharedCredentialBindingRequest,
+    VerifyNodeSecretRequest,
     ConfigureNodeSecretRequest,
+    ConfigureNodeSecretResponse,
     NodeSecretStatusResponse,
     ProjectNodeSecretsResponse,
 )
@@ -41,7 +48,10 @@ router = APIRouter(
 async def get_node_secret_status(
     project_id: UUID,
     service: NodeSecretDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
+    access: Annotated[
+        WorkspaceAccess,
+        require_workspace_capability_dependency(WorkspaceCapability.VIEW_PROJECT),
+    ],
     graph_id: Annotated[str, Query()] = MAIN_GRAPH_ID,
 ) -> ProjectNodeSecretsResponse:
     """Secret status for one Graph of the Project's live head.
@@ -52,7 +62,12 @@ async def get_node_secret_status(
     """
 
     try:
-        state = await service.status(access.workspace_id, project_id, graph_id)
+        state = await service.status(
+            access.workspace_id,
+            project_id,
+            graph_id,
+            actor_user_id=access.actor.user_id,
+        )
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ProjectNodeSecretsResponse.from_state(state)
@@ -60,7 +75,7 @@ async def get_node_secret_status(
 
 @router.put(
     "/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
-    response_model=NodeSecretStatusResponse,
+    response_model=ConfigureNodeSecretResponse,
 )
 async def configure_node_secret(
     project_id: UUID,
@@ -70,8 +85,11 @@ async def configure_node_secret(
     request: ConfigureNodeSecretRequest,
     service: NodeSecretDependency,
     runs: RunDependency,
-    access: require_workspace_capability(WorkspaceCapability.MANAGE_SECRETS),
-) -> NodeSecretStatusResponse:
+    access: Annotated[
+        WorkspaceAccess,
+        require_workspace_capability_dependency(WorkspaceCapability.MANAGE_SECRETS),
+    ],
+) -> ConfigureNodeSecretResponse:
     try:
         state = await service.configure(
             project_id=project_id,
@@ -98,7 +116,7 @@ async def configure_node_secret(
     await rederive_instances(
         runs, workspace_id=access.workspace_id, project_id=project_id
     )
-    return NodeSecretStatusResponse.from_state(state)
+    return ConfigureNodeSecretResponse.model_validate(state)
 
 
 @router.delete(
@@ -112,7 +130,10 @@ async def delete_node_secret(
     name: str,
     service: NodeSecretDependency,
     runs: RunDependency,
-    access: require_workspace_capability(WorkspaceCapability.MANAGE_SECRETS),
+    access: Annotated[
+        WorkspaceAccess,
+        require_workspace_capability_dependency(WorkspaceCapability.MANAGE_SECRETS),
+    ],
     expected_head_sequence: Annotated[int, Query(ge=0)],
 ) -> Response:
     try:
@@ -136,3 +157,88 @@ async def delete_node_secret(
         runs, workspace_id=access.workspace_id, project_id=project_id
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put("/graphs/{graph_id}/nodes/{node_id}/secrets/{name}/shared-binding")
+async def set_shared_binding(
+    project_id: UUID,
+    graph_id: str,
+    node_id: str,
+    name: str,
+    request: SharedCredentialBindingRequest,
+    service: NodeSecretDependency,
+    runs: RunDependency,
+    access: Annotated[
+        WorkspaceAccess,
+        require_workspace_capability_dependency(WorkspaceCapability.EDIT_PROJECT),
+    ],
+) -> NodeSecretStatusResponse:
+    try:
+        state = await service.set_shared_binding(
+            workspace_id=access.workspace_id,
+            project_id=project_id,
+            graph_id=graph_id,
+            node_id=node_id,
+            name=name,
+            mode=request.mode,
+            credential_id=request.credential_id,
+            expected_head_sequence=request.expected_head_sequence,
+            actor_user_id=access.actor.user_id,
+        )
+    except CollaborationHeadConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await rederive_instances(
+        runs, workspace_id=access.workspace_id, project_id=project_id
+    )
+    return NodeSecretStatusResponse.from_state(state)
+
+
+@router.put("/graphs/{graph_id}/nodes/{node_id}/secrets/{name}/personal-selection")
+async def set_personal_selection(
+    project_id: UUID,
+    graph_id: str,
+    node_id: str,
+    name: str,
+    request: PersonalCredentialSelectionRequest,
+    service: NodeSecretDependency,
+    access: Annotated[
+        WorkspaceAccess,
+        require_workspace_capability_dependency(WorkspaceCapability.START_RUN),
+    ],
+) -> NodeSecretStatusResponse:
+    state = await service.set_personal_override(
+        workspace_id=access.workspace_id,
+        project_id=project_id,
+        graph_id=graph_id,
+        node_id=node_id,
+        name=name,
+        mode=request.mode,
+        credential_id=request.credential_id,
+        actor_user_id=access.actor.user_id,
+    )
+    return NodeSecretStatusResponse.from_state(state)
+
+
+@router.post("/graphs/{graph_id}/nodes/{node_id}/secrets/{name}/verify")
+async def verify_node_secret(
+    project_id: UUID,
+    graph_id: str,
+    node_id: str,
+    name: str,
+    service: NodeSecretDependency,
+    access: Annotated[
+        WorkspaceAccess,
+        require_workspace_capability_dependency(WorkspaceCapability.START_RUN),
+    ],
+    request: VerifyNodeSecretRequest | None = None,
+) -> CredentialVerificationResponse:
+    result = await service.verify(
+        workspace_id=access.workspace_id,
+        project_id=project_id,
+        graph_id=graph_id,
+        node_id=node_id,
+        name=name,
+        actor_user_id=access.actor.user_id,
+        value=request.value if request else None,
+    )
+    return CredentialVerificationResponse.model_validate(result)

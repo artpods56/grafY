@@ -10,6 +10,7 @@ import { TextInput } from "@/components/ui/field";
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
+import { CellVaultCredential } from "./CellVaultCredential";
 import type { CellSecretInputSpec } from "../cell-contracts";
 
 /**
@@ -396,20 +397,42 @@ export function CellCredentialsPopover({
           >
             <header {...stylex.props(s.header)}>
               <h3 {...stylex.props(s.title)}>Credentials</h3>
-              <p {...stylex.props(s.subtitle)}>
-                Saved write-only for this node. A saved key cannot be read back.
-              </p>
+              {inputs.every((input) => !input.vault) && (
+                <p {...stylex.props(s.subtitle)}>
+                  Saved write-only for this node. A saved key cannot be read
+                  back.
+                </p>
+              )}
             </header>
             <div {...stylex.props(s.inputs)}>
-              {inputs.map((input) => (
-                <SecretInputRow
-                  key={`${input.name}:${input.revision}`}
-                  cardId={cardId}
-                  input={input}
-                  onApply={onApply}
-                  onRemove={onRemove}
-                />
-              ))}
+              {inputs.map((input) =>
+                input.vault ? (
+                  <React.Fragment key={`${input.name}:${input.revision}`}>
+                    <CellVaultCredential input={input} />
+                    {input.vault.canManageShared &&
+                      input.vault.status.effective_source ===
+                        "inline_legacy" && (
+                        <details>
+                          <summary>Manage inline key</summary>
+                          <SecretInputRow
+                            cardId={cardId}
+                            input={input}
+                            onApply={onApply}
+                            onRemove={onRemove}
+                          />
+                        </details>
+                      )}
+                  </React.Fragment>
+                ) : (
+                  <SecretInputRow
+                    key={`${input.name}:${input.revision}`}
+                    cardId={cardId}
+                    input={input}
+                    onApply={onApply}
+                    onRemove={onRemove}
+                  />
+                ),
+              )}
             </div>
           </Popover.Popup>
         </Popover.Positioner>

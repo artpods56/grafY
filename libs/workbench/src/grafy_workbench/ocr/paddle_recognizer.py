@@ -8,6 +8,7 @@ from weakref import WeakValueDictionary
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
+from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
@@ -157,7 +158,16 @@ class PaddleOutput(NodeOutput):
     http_egress=NodeHttpEgressContract(
         fixed_destinations=("https://ai-test.ihpan.edu.pl",)
     ),
-    secret_inputs=(NodeSecretInput(name="api_key", title="LiteLLM API key"),),
+    secret_inputs=(
+        NodeSecretInput(
+            name="api_key",
+            title="LiteLLM API key",
+            provider_kind="litellm",
+            verifier=unsupported_credential_verifier(
+                "This key will be checked on first run."
+            ),
+        ),
+    ),
 )
 @final
 class PaddleProviderNode(Node[PaddleConfig, PaddleInput, PaddleOutput]):

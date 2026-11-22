@@ -92,6 +92,8 @@ const apiKeyInput = {
   title: "API key",
   description: "Write-only bearer credential for the configured API base URL.",
   config_dependencies: ["base_url"],
+  provider_kind: "openai_compatible",
+  supports_verification: true,
 };
 const registry: NodeRegistry = {
   nodes: [

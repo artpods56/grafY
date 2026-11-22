@@ -395,6 +395,8 @@ class PortResponse(ApiResponse):
 class NodeSecretInputResponse(ApiResponse):
     name: str
     config_dependencies: list[str]
+    provider_kind: str
+    supports_verification: bool
     title: str
     description: str | None = None
 
@@ -403,6 +405,8 @@ class NodeSecretInputResponse(ApiResponse):
         return cls(
             name=spec.name,
             config_dependencies=list(spec.config_dependencies),
+            provider_kind=spec.provider_kind,
+            supports_verification=spec.verifier is not None,
             title=spec.title,
             description=spec.description,
         )

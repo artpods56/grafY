@@ -2,7 +2,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 from uuid import UUID, uuid4
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import structlog
 from fastapi import FastAPI, HTTPException, Request
@@ -24,6 +24,15 @@ from grafy_api.agents.turns import (
     AgentTurnRequestError,
     AgentTurnStoppingError,
 )
+from grafy_api.credential_keys import CredentialKeyConfigurationError
+from grafy_api.credentials import (
+    CredentialChangedError,
+    CredentialRateLimitError,
+    CredentialValueError,
+    CredentialVerificationFailedError,
+)
+from grafy_api.node_secrets import NodeSecretDeclarationError
+from grafy_core.ports.node_secrets import NodeSecretUnavailableError
 from grafy_api.runs.ports import RunNotFoundError, RunRejectedError
 from grafy_api.node_secrets import NodeSecretValueError
 from grafy_api.services.errors import ArtifactContentUnavailableError
@@ -457,6 +466,19 @@ _HTTP_MAPPINGS: dict[type[Exception], _HttpMapping] = {
     UploadTooLargeError: _HttpMapping(413),
     ArtifactContentUnavailableError: _HttpMapping(500),
     NodeSecretValueError: _HttpMapping(422),
+    NodeSecretDeclarationError: _HttpMapping(404),
+    NodeSecretUnavailableError: _HttpMapping(422),
+    CredentialKeyConfigurationError: _HttpMapping(503),
+    CredentialChangedError: _HttpMapping(409),
+    CredentialRateLimitError: _HttpMapping(429),
+    CredentialValueError: _HttpMapping(422),
+    CredentialVerificationFailedError: _HttpMapping(
+        422,
+        lambda error: {
+            "verification": asdict(error.result),
+            "can_save_unverified": error.can_save_unverified,
+        },
+    ),
     RunRejectedError: _HttpMapping(422),
     RunNotFoundError: _HttpMapping(404),
     # An Agent send that was not admitted. The distinction each one carries is the client's:

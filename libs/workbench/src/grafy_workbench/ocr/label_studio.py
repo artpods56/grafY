@@ -1,7 +1,7 @@
 """Exchange source-page TIFF regions with Label Studio."""
 
 from asyncio import AbstractEventLoop, Lock, get_running_loop
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,27 +11,22 @@ from io import BytesIO
 from itertools import count
 from json import dumps
 from math import ceil, cos, floor, radians, sin
-from typing import Annotated, Literal, final, override
+from typing import Annotated, Literal, cast, final, override
 from urllib.parse import quote
 from weakref import WeakValueDictionary
 
 import httpx
-from PIL import Image, ImageDraw
-from pydantic import (
-    AliasChoices,
-    AnyHttpUrl,
-    AwareDatetime,
-    BaseModel,
-    Field,
-    SecretStr,
-    TypeAdapter,
-    ValidationError,
-    field_validator,
-)
-
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.config_ui import field_ui, when_field_eq
+from grafy_core.credential_verification import (
+    UNREACHABLE,
+    unsupported_credential_verifier,
+    verification_endpoint,
+    verify_http_credential,
+)
 from grafy_core.documents import TiffFile
+from grafy_core.domain.credentials import CredentialVerificationResult
+from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressRejectedError, PinnedPublicAddressTransport
 from grafy_core.node_context import UserFacingNodeError
@@ -51,6 +46,19 @@ from grafy_core.text_regions import (
     TiffPage,
     TiffPageOpener,
 )
+from PIL import Image, ImageDraw
+from pydantic import (
+    AliasChoices,
+    AnyHttpUrl,
+    AwareDatetime,
+    BaseModel,
+    Field,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
+
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
 from grafy_workbench.ocr.tiff_scan import Window
@@ -94,8 +102,48 @@ _CAPABILITIES = (
     PluginRuntimeCapability.NETWORK_EGRESS,
     PluginRuntimeCapability.NODE_SECRETS,
 )
-_LS_TOKEN = NodeSecretInput(name="label_studio_token", title="Label Studio API token")
-_S3_SECRET = NodeSecretInput(name="s3_secret_key", title="MinIO / S3 secret access key")
+
+
+def _label_studio_account(body: object) -> str | None:
+    if isinstance(body, dict):
+        for field in ("username", "email"):
+            hint = cast(dict[str, object], body).get(field)
+            if isinstance(hint, str) and hint.isprintable() and 0 < len(hint) <= 255:
+                return hint
+    return None
+
+
+async def _verify_label_studio_token(
+    key: SecretStr, config: Mapping[str, JsonValue], client: httpx.AsyncClient
+) -> CredentialVerificationResult:
+    try:
+        base = verification_endpoint(config.get("label_studio_url"))
+    except ValueError:
+        return UNREACHABLE
+    return await verify_http_credential(
+        client,
+        f"{base}/api/current-user/whoami",
+        f"Token {key.get_secret_value()}",
+        message="Verified Label Studio token.",
+        account_hint=_label_studio_account,
+    )
+
+
+_LS_TOKEN = NodeSecretInput(
+    name="label_studio_token",
+    title="Label Studio API token",
+    provider_kind="label_studio",
+    config_dependencies=("label_studio_url",),
+    verifier=_verify_label_studio_token,
+)
+_S3_SECRET = NodeSecretInput(
+    name="s3_secret_key",
+    title="MinIO / S3 secret access key",
+    provider_kind="s3",
+    verifier=unsupported_credential_verifier(
+        "S3 secret verification requires an access key and bucket at run time."
+    ),
+)
 _PROJECT_TITLE = "Grafy Map OCR Triage"
 _PAGE_SIZE = 100
 _PROJECT_LOCKS: WeakValueDictionary[tuple[AbstractEventLoop, str, str], Lock] = (
