@@ -499,9 +499,10 @@ Presence explains collaborators without becoming a second document.
 
 ## Where it lives in the web client
 
-The authored document and the rendered scene have separate types. Model modules
-can still import shared canvas contracts and helpers, as described in
-[ADR 0001](../adr/0001-workbench-feature-architecture.md).
+The authored document and the rendered scene have separate types. Each vertical
+slice under `features/workbench/` keeps its allowed import boundaries as
+described in [ADR 0001](../adr/0001-workbench-feature-architecture.md) and
+enforced by `apps/web/src/architecture.test.ts`.
 
 - [`authoring/graph-document.ts`](../../apps/web/src/features/workbench/authoring/graph-document.ts)
   owns the graph document as a value: pure application of commands
@@ -510,7 +511,7 @@ can still import shared canvas contracts and helpers, as described in
 - [`cell-canvas/cell-document-adapter.ts`](../../apps/web/src/features/workbench/cell-canvas/cell-document-adapter.ts)
   derives the CellCanvas scene from the authored document and maps canvas moves,
   resizes, and removals to graph commands. Execution overlays stay in view state.
-- [`room/`](../../apps/web/src/features/workbench/room) is the collaboration seam:
+- [`collaboration/`](../../apps/web/src/features/workbench/collaboration) is the collaboration seam:
   `protocol.ts` (wire types and the strict parser), `graph-room-session.ts` (socket,
   confirmed head, presence throttle, reconnect and terminal states), `command-outbox.ts`
   (single in-flight batch, queue cap, head-rehydration gate), `room-command-bridge.ts`

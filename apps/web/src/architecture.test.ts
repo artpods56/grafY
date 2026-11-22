@@ -12,8 +12,8 @@ import { describe, expect, it } from "vitest";
  *    host that may borrow product code, never the other way round.
  * 3. The generated OpenAPI types are reachable only through `lib/api/contract.ts`, so
  *    the wire shape is named in exactly one place.
- * 4. `features/workbench` is a set of vertical slices with a one-way import order, so a
- *    card change cannot reach into the collaboration transport.
+ * 4. `features/workbench` is a set of vertical slices with an explicit allowed-import
+ *    matrix, so a card change cannot reach into the collaboration transport.
  * 5. An extracted `*-reducer.ts` state machine stays framework-free, so it is testable
  *    without a renderer and reusable from another host.
  */
@@ -170,13 +170,13 @@ const WORKBENCH_SLICES = [
 ];
 
 /**
- * Which slices each slice may import, besides itself. The order is one-way on purpose:
- * only `shell` composes, so it is the sole slice allowed to reach `cell-canvas` (the
- * canvas engine) or another slice's `shell`. `test` is shared test support and imports
- * no product code at all.
+ * Which slices each slice may import, besides itself. Only `shell` composes,
+ * so it is the sole slice allowed to reach `cell-canvas` (the canvas engine),
+ * and nothing imports `shell` or `test`. `test` is shared test support and
+ * imports no product code at all.
  */
 const SLICE_IMPORTS: Record<string, string[]> = {
-  shell: WORKBENCH_SLICES,
+  shell: WORKBENCH_SLICES.filter((slice) => slice !== "test"),
   "cell-canvas": ["cell-canvas", "artifacts", "authoring", "config-ui"],
   artifacts: ["artifacts", "authoring", "config-ui", "agents"],
   authoring: ["authoring", "artifacts", "config-ui"],
@@ -292,7 +292,7 @@ describe("module architecture", () => {
     expect(folders).toEqual([...WORKBENCH_SLICES].sort());
   });
 
-  it("keeps workbench slice imports pointing one way down the slices", () => {
+  it("keeps workbench slice imports within their allowed slice boundaries", () => {
     const offenders: string[] = [];
     for (const [from, targets] of graph) {
       const slice = workbenchSlice(from);

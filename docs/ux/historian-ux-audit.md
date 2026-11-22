@@ -333,16 +333,16 @@ Tests: `apps/web/src/features/workbench/execution/useNodeSecrets.test.ts` if it 
 
 Current:
 
-- Header rule `` `${acceptedShapeLabel} · plug order` ``. `acceptedShapeLabel` is `sequence` or `single`, joined by `or`.
+- Header rule `` `${acceptedShapeLabel} · plug order` ``. `acceptedShapeLabel` is `sequence` or `single`, joined by ` or `.
 - Row meta joins `sequence` or `single`, `` `feed ${binding.conversionLabel}` ``, and `binding.contributionLabel`. Empty rows say `` `Accepts ${acceptedShapeLabel}` ``.
 - Button text `Add input`.
 - Accessible names already say `input`.
 
 New:
 
-- Map `many` → `a list` and `one` → `one item` before joining with `or`.
+- Map `many` → `a list` and `one` → `one item` before joining with ` or `.
 - Header rule: `In this order`. Drop `plug`.
-- Row meta: drop the word `feed`. Show `a list` or `one item`, then the conversion label only when it exists, then the contribution label. Join with `·`. Empty row: `Nothing connected yet`.
+- Row meta: drop the word `feed`. Show `a list` or `one item`, then the conversion label only when it exists, then the contribution label. Join with ` · `. Empty row: `Nothing connected yet`.
 - Button: `Add another`.
 - Accessible names stay specific (`Documents input 1`). Do not put the word `plug` in a string a person can read, including `title` and `aria-label`.
 
@@ -658,7 +658,7 @@ New:
 
 Do not retitle the product objects Project and Graph in the shell navigation. This task is the workbench dock only.
 
-Tests: search `Canvas lab` and `With dependencies` in `apps/web/src/features/workbench/ui`.
+Tests: search `Canvas lab` and `With dependencies` in `apps/web/src/features/workbench/cell-canvas/CanvasGridSettingsPanel.tsx` and `apps/web/src/features/workbench/shell/Workbench.tsx`.
 
 ## HX-18 — Connection loss and “bind the type”
 
