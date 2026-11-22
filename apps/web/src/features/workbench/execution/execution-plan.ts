@@ -1,4 +1,3 @@
-import { decodeHandleId } from "../authoring/handles";
 import { inputPlugsForPort } from "../authoring/input-plugs";
 import { isCollectionNode } from "../authoring/collection-spec";
 import { validateConfig } from "../config-ui/config-schema";
@@ -167,7 +166,7 @@ export function missingRequiredInputsFor(
               (edge) =>
                 edge.data?.enabled !== false &&
                 edge.target === node.id &&
-                decodeHandleId(edge.targetHandle)?.plugId === plug.id,
+                (edge.targetPlug ?? null) === plug.id,
             ) ||
             origins.some((origin) =>
               originSatisfiesSlot(origin, node.id, port.name, plug.id),
@@ -205,7 +204,7 @@ export function missingRequiredInputsFor(
         (edge) =>
           edge.data?.enabled !== false &&
           edge.target === node.id &&
-          decodeHandleId(edge.targetHandle)?.portName === port.name,
+          edge.targetPort === port.name,
       ) ||
         origins.some((origin) =>
           originSatisfiesSlot(origin, node.id, port.name, null),

@@ -8,186 +8,80 @@ import type {
 import {
   MAX_CONVERSION_PATH_CANDIDATES,
   MAX_CONVERSION_PATH_LENGTH,
-  canonicalHandleId,
-  connectionIsValid,
+  acceptedPortMetaArtifactTypes,
   connectionRouteDeliveredArtifactType,
-  connectionRouteForSelection,
+  connectionRouteForPortSelection,
   connectionRouteSelection,
-  connectionRoutesFor,
-  decodeHandleId,
-  encodeHandleId,
-} from "./handles";
-
-describe("typed handle ids", () => {
-  it("keeps the plain five-part port handle unchanged", () => {
-    const id = encodeHandleId({
-      portName: "input",
-      artifactTypeId: "text",
-      schemaVersion: 2,
-      shape: "one",
-      direction: "input",
-    });
-
-    expect(id).toBe("input::text::2::one::input");
-    expect(decodeHandleId(id)).toEqual({
-      portName: "input",
-      artifactTypeId: "text",
-      schemaVersion: 2,
-      shape: "one",
-      direction: "input",
-    });
-  });
-
-  it("round-trips an instance plug without changing its stable id", () => {
-    const id = encodeHandleId({
-      portName: "items",
-      artifactTypeId: "text",
-      schemaVersion: 1,
-      shape: "many",
-      direction: "input",
-      plugId: "00000000-0000-4000-8000-000000000042",
-    });
-
-    expect(decodeHandleId(id)).toEqual({
-      portName: "items",
-      artifactTypeId: "text",
-      schemaVersion: 1,
-      shape: "many",
-      direction: "input",
-      plugId: "00000000-0000-4000-8000-000000000042",
-    });
-  });
-
-  it("round-trips an explicit unbound type variable without changing concrete ids", () => {
-    const id = encodeHandleId({
-      portName: "items",
-      artifactTypeVariable: "Artifact::T",
-      shape: "many",
-      direction: "input",
-      plugId: "plug-1",
-    });
-
-    expect(id).toBe("items::Artifact%3A%3AT::$generic::many::input::plug-1");
-    expect(decodeHandleId(id)).toEqual({
-      portName: "items",
-      artifactTypeVariable: "Artifact::T",
-      shape: "many",
-      direction: "input",
-      plugId: "plug-1",
-    });
-  });
-
-  it("round-trips catalog feed intent and strips it for canonical ids", () => {
-    const withFeed = encodeHandleId({
-      portName: "result",
-      artifactTypeId: "doc.ocr",
-      schemaVersion: 1,
-      shape: "one",
-      direction: "output",
-      feed: { kind: "projection", path: ["body", "text"] },
-    });
-
-    expect(decodeHandleId(withFeed)).toEqual({
-      portName: "result",
-      artifactTypeId: "doc.ocr",
-      schemaVersion: 1,
-      shape: "one",
-      direction: "output",
-      feed: { kind: "projection", path: ["body", "text"] },
-    });
-    expect(canonicalHandleId(withFeed)).toBe("result::doc.ocr::1::one::output");
-  });
-
-  it("round-trips a service contract handle", () => {
-    const id = encodeHandleId({
-      portName: "reader",
-      shape: "one",
-      direction: "output",
-      serviceContracts: [{ id: "ocr.reader", version: 1 }],
-    });
-
-    expect(id).toBe(
-      "reader::$service::$service::one::output::svc=ocr.reader%401",
-    );
-    expect(decodeHandleId(id)).toEqual({
-      portName: "reader",
-      shape: "one",
-      direction: "output",
-      serviceContracts: [{ id: "ocr.reader", version: 1 }],
-    });
-  });
-});
+  connectionRoutesForPorts,
+  portsCanConnect,
+} from "./connection-routes";
+import type { PortMeta } from "./types";
 
 describe("service contract routes", () => {
-  it("accepts a matching service contract and rejects a mismatched one", () => {
-    const matching = {
-      sourceHandle: encodeHandleId({
-        portName: "reader",
-        shape: "one",
-        direction: "output",
-        serviceContracts: [{ id: "ocr.reader", version: 1 }],
-      }),
-      targetHandle: encodeHandleId({
-        portName: "reader",
-        shape: "one",
-        direction: "input",
-        serviceContracts: [{ id: "ocr.reader", version: 1 }],
-      }),
-    };
-    const mismatched = {
-      ...matching,
-      targetHandle: encodeHandleId({
-        portName: "reader",
-        shape: "one",
-        direction: "input",
-        serviceContracts: [{ id: "other.service", version: 1 }],
-      }),
-    };
+  const readerOutput: PortMeta = {
+    portName: "reader",
+    shape: "one",
+    direction: "output",
+    serviceContracts: [{ id: "ocr.reader", version: 1 }],
+  };
+  const readerInput: PortMeta = {
+    portName: "reader",
+    shape: "one",
+    direction: "input",
+    serviceContracts: [{ id: "ocr.reader", version: 1 }],
+  };
+  const mismatchedInput: PortMeta = {
+    portName: "reader",
+    shape: "one",
+    direction: "input",
+    serviceContracts: [{ id: "other.service", version: 1 }],
+  };
 
-    expect(connectionRoutesFor(matching, [], [])).toEqual([
-      { kind: "exact", conversionPath: [] },
-    ]);
-    expect(connectionIsValid(matching)).toBe(true);
+  it("accepts a matching service contract and rejects a mismatched one", () => {
+    expect(connectionRoutesForPorts(readerOutput, readerInput, [], [])).toEqual(
+      [{ kind: "exact", conversionPath: [] }],
+    );
+    expect(portsCanConnect(readerOutput, readerInput)).toBe(true);
     expect(
-      connectionRouteForSelection(matching, [], [], { conversionPath: [] }),
+      connectionRouteForPortSelection(readerOutput, readerInput, [], [], {
+        conversionPath: [],
+      }),
     ).toEqual({ kind: "exact", conversionPath: [] });
     expect(
-      connectionRouteForSelection(mismatched, [], [], { conversionPath: [] }),
+      connectionRouteForPortSelection(readerOutput, mismatchedInput, [], [], {
+        conversionPath: [],
+      }),
     ).toBeNull();
     expect(
-      connectionRouteForSelection(matching, [], [], {
+      connectionRouteForPortSelection(readerOutput, readerInput, [], [], {
         conversionPath: [{ id: "not-a-service-conversion", version: 1 }],
       }),
     ).toBeNull();
     expect(
-      connectionRouteForSelection(matching, [], [], {
+      connectionRouteForPortSelection(readerOutput, readerInput, [], [], {
         projection: { path: ["reader"] },
         conversionPath: [],
       }),
     ).toBeNull();
-    expect(connectionRoutesFor(mismatched, [], [])).toEqual([]);
-    expect(connectionIsValid(mismatched)).toBe(false);
+    expect(
+      connectionRoutesForPorts(readerOutput, mismatchedInput, [], []),
+    ).toEqual([]);
+    expect(portsCanConnect(readerOutput, mismatchedInput)).toBe(false);
   });
 
-  it("does not mix a service handle with an artifact handle", () => {
-    const mixed = {
-      sourceHandle: encodeHandleId({
-        portName: "reader",
-        shape: "one",
-        direction: "output",
-        serviceContracts: [{ id: "ocr.reader", version: 1 }],
-      }),
-      targetHandle: encodeHandleId({
-        portName: "text",
-        artifactTypeId: "scalar.text",
-        schemaVersion: 1,
-        shape: "one",
-        direction: "input",
-      }),
+  it("does not mix a service port with an artifact port", () => {
+    const textInput: PortMeta = {
+      portName: "text",
+      artifactTypeId: "scalar.text",
+      schemaVersion: 1,
+      shape: "one",
+      direction: "input",
     };
 
-    expect(connectionRoutesFor(mixed, [], [])).toEqual([]);
-    expect(connectionIsValid(mixed)).toBe(false);
+    expect(connectionRoutesForPorts(readerOutput, textInput, [], [])).toEqual(
+      [],
+    );
+    expect(portsCanConnect(readerOutput, textInput)).toBe(false);
   });
 });
 
@@ -217,22 +111,23 @@ function conversion(
   };
 }
 
-function connection(source: string, target: string) {
+function sourcePort(id: string): PortMeta {
   return {
-    sourceHandle: encodeHandleId({
-      portName: "output",
-      artifactTypeId: source,
-      schemaVersion: 1,
-      shape: "one",
-      direction: "output",
-    }),
-    targetHandle: encodeHandleId({
-      portName: "input",
-      artifactTypeId: target,
-      schemaVersion: 1,
-      shape: "one",
-      direction: "input",
-    }),
+    portName: "output",
+    artifactTypeId: id,
+    schemaVersion: 1,
+    shape: "one",
+    direction: "output",
+  };
+}
+
+function targetPort(id: string): PortMeta {
+  return {
+    portName: "input",
+    artifactTypeId: id,
+    schemaVersion: 1,
+    shape: "one",
+    direction: "input",
   };
 }
 
@@ -245,8 +140,9 @@ describe("registry field projection routes", () => {
     };
 
     expect(
-      connectionRoutesFor(
-        connection("customer.record", "scalar.text"),
+      connectionRoutesForPorts(
+        sourcePort("customer.record"),
+        targetPort("scalar.text"),
         [artifactType("customer.record", [displayName])],
         [],
       ),
@@ -272,8 +168,9 @@ describe("registry field projection routes", () => {
     );
 
     expect(
-      connectionRoutesFor(
-        connection("customer.record", "scalar.text"),
+      connectionRoutesForPorts(
+        sourcePort("customer.record"),
+        targetPort("scalar.text"),
         [artifactType("customer.record", [age])],
         [integerToText],
       ),
@@ -298,8 +195,9 @@ describe("registry field projection routes", () => {
       title: "City",
     };
 
-    const routes = connectionRoutesFor(
-      connection("customer.record", "scalar.text"),
+    const routes = connectionRoutesForPorts(
+      sourcePort("customer.record"),
+      targetPort("scalar.text"),
       [artifactType("customer.record", [displayName, city])],
       [],
     );
@@ -337,8 +235,9 @@ describe("registry field projection routes", () => {
       conversionPath: [],
     };
 
-    const replayed = connectionRouteForSelection(
-      connection("customer.record", "scalar.text"),
+    const replayed = connectionRouteForPortSelection(
+      sourcePort("customer.record"),
+      targetPort("scalar.text"),
       artifactTypes,
       [],
       persistedSelection,
@@ -351,8 +250,9 @@ describe("registry field projection routes", () => {
     });
     expect(connectionRouteSelection(replayed!)).toEqual(persistedSelection);
     expect(
-      connectionRouteForSelection(
-        connection("customer.record", "scalar.text"),
+      connectionRouteForPortSelection(
+        sourcePort("customer.record"),
+        targetPort("scalar.text"),
         artifactTypes,
         [],
         {
@@ -371,21 +271,19 @@ describe("conversion route discovery", () => {
       "scalar.integer",
       "scalar.text",
     );
-    const routes = connectionRoutesFor(
+    const routes = connectionRoutesForPorts(
       {
-        sourceHandle: encodeHandleId({
-          portName: "value",
-          artifactTypeId: "scalar.integer",
-          schemaVersion: 1,
-          shape: "one",
-          direction: "output",
-        }),
-        targetHandle: encodeHandleId({
-          portName: "items",
-          artifactTypeVariable: "T",
-          shape: "one",
-          direction: "input",
-        }),
+        portName: "value",
+        artifactTypeId: "scalar.integer",
+        schemaVersion: 1,
+        shape: "one",
+        direction: "output",
+      },
+      {
+        portName: "items",
+        artifactTypeVariable: "T",
+        shape: "one",
+        direction: "input",
       },
       [],
       [integerToText],
@@ -414,26 +312,22 @@ describe("conversion route discovery", () => {
   });
 
   it("binds an unbound generic source to a concrete target and rejects variable-to-variable", () => {
-    const genericSource = encodeHandleId({
+    const genericSource: PortMeta = {
       portName: "items",
       artifactTypeVariable: "T",
       shape: "many",
       direction: "output",
-    });
-    const concreteTarget = encodeHandleId({
+    };
+    const concreteTarget: PortMeta = {
       portName: "items",
       artifactTypeId: "scalar.text",
       schemaVersion: 1,
       shape: "many",
       direction: "input",
-    });
+    };
 
     expect(
-      connectionRoutesFor(
-        { sourceHandle: genericSource, targetHandle: concreteTarget },
-        [],
-        [],
-      ),
+      connectionRoutesForPorts(genericSource, concreteTarget, [], []),
     ).toEqual([
       {
         kind: "exact",
@@ -446,15 +340,13 @@ describe("conversion route discovery", () => {
       },
     ]);
     expect(
-      connectionRoutesFor(
+      connectionRoutesForPorts(
+        genericSource,
         {
-          sourceHandle: genericSource,
-          targetHandle: encodeHandleId({
-            portName: "other",
-            artifactTypeVariable: "U",
-            shape: "many",
-            direction: "input",
-          }),
+          portName: "other",
+          artifactTypeVariable: "U",
+          shape: "many",
+          direction: "input",
         },
         [],
         [],
@@ -463,8 +355,9 @@ describe("conversion route discovery", () => {
   });
 
   it("discovers and orders a transitive x to y to z path", () => {
-    const routes = connectionRoutesFor(
-      connection("x", "z"),
+    const routes = connectionRoutesForPorts(
+      sourcePort("x"),
+      targetPort("z"),
       [],
       [conversion("y-to-z", "y", "z"), conversion("x-to-y", "x", "y")],
     );
@@ -478,8 +371,9 @@ describe("conversion route discovery", () => {
   });
 
   it("retains equal-depth alternatives in stable id order", () => {
-    const routes = connectionRoutesFor(
-      connection("x", "z"),
+    const routes = connectionRoutesForPorts(
+      sourcePort("x"),
+      targetPort("z"),
       [],
       [
         conversion("x-to-b", "x", "b"),
@@ -503,8 +397,9 @@ describe("conversion route discovery", () => {
       target_artifact_type: { id: "projected", schema_version: 1 },
       title: "Value",
     };
-    const routes = connectionRoutesFor(
-      connection("x", "z"),
+    const routes = connectionRoutesForPorts(
+      sourcePort("x"),
+      targetPort("z"),
       [artifactType("x", [projection])],
       [
         conversion("x-to-z", "x", "z"),
@@ -520,8 +415,9 @@ describe("conversion route discovery", () => {
   });
 
   it("rejects cycles, overlong paths, and overflowing candidate sets", () => {
-    const cyclicRoutes = connectionRoutesFor(
-      connection("x", "z"),
+    const cyclicRoutes = connectionRoutesForPorts(
+      sourcePort("x"),
+      targetPort("z"),
       [],
       [
         conversion("x-to-a", "x", "a"),
@@ -544,8 +440,12 @@ describe("conversion route discovery", () => {
         ),
     );
     expect(
-      connectionRoutesFor(connection("x", "z"), [], withinBound)[0]
-        ?.conversionPath,
+      connectionRoutesForPorts(
+        sourcePort("x"),
+        targetPort("z"),
+        [],
+        withinBound,
+      )[0]?.conversionPath,
     ).toHaveLength(MAX_CONVERSION_PATH_LENGTH);
 
     const beyondBound = [
@@ -557,17 +457,27 @@ describe("conversion route discovery", () => {
       ),
       conversion("step-to-z", "last", "z"),
     ];
-    expect(connectionRoutesFor(connection("x", "z"), [], beyondBound)).toEqual(
-      [],
-    );
+    expect(
+      connectionRoutesForPorts(
+        sourcePort("x"),
+        targetPort("z"),
+        [],
+        beyondBound,
+      ),
+    ).toEqual([]);
 
     const overflowing = Array.from(
       { length: MAX_CONVERSION_PATH_CANDIDATES + 1 },
       (_, index) => conversion(`parallel-${index}`, "x", "z"),
     );
-    expect(connectionRoutesFor(connection("x", "z"), [], overflowing)).toEqual(
-      [],
-    );
+    expect(
+      connectionRoutesForPorts(
+        sourcePort("x"),
+        targetPort("z"),
+        [],
+        overflowing,
+      ),
+    ).toEqual([]);
 
     const overflowingProjections = Array.from(
       { length: MAX_CONVERSION_PATH_CANDIDATES + 1 },
@@ -578,43 +488,11 @@ describe("conversion route discovery", () => {
       }),
     );
     expect(
-      connectionRoutesFor(
-        connection("x", "z"),
+      connectionRoutesForPorts(
+        sourcePort("x"),
+        targetPort("z"),
         [artifactType("x", overflowingProjections)],
         [],
-      ),
-    ).toEqual([]);
-
-    const overflowingProjection: FieldProjection = {
-      path: ["value"],
-      target_artifact_type: { id: "projected", schema_version: 1 },
-      title: "Value",
-    };
-    expect(
-      connectionRoutesFor(
-        connection("x", "z"),
-        [artifactType("x", [overflowingProjection])],
-        [
-          conversion("x-to-z", "x", "z"),
-          ...Array.from(
-            { length: MAX_CONVERSION_PATH_CANDIDATES + 1 },
-            (_, index) =>
-              conversion(`projected-parallel-${index}`, "projected", "z"),
-          ),
-        ],
-      ),
-    ).toEqual([]);
-
-    const singleProjection: FieldProjection = {
-      path: ["value"],
-      target_artifact_type: { id: "projected", schema_version: 1 },
-      title: "Value",
-    };
-    expect(
-      connectionRoutesFor(
-        connection("x", "z"),
-        [artifactType("x", [singleProjection])],
-        [...overflowing, conversion("projected-to-z", "projected", "z")],
       ),
     ).toEqual([]);
   });
@@ -625,17 +503,9 @@ describe("conversion route discovery", () => {
       conversion("x-to-y", "x", "y"),
       conversion("y-to-z", "y", "z"),
     ];
-    const discovered = connectionRoutesFor(
-      connection("x", "z"),
-      [],
-      conversions,
-    );
-    expect(discovered[0]?.conversionPath.map((step) => step.key.id)).toEqual([
-      "x-to-z",
-    ]);
-
-    const replayed = connectionRouteForSelection(
-      connection("x", "z"),
+    const replayed = connectionRouteForPortSelection(
+      sourcePort("x"),
+      targetPort("z"),
       [],
       conversions,
       {
@@ -658,8 +528,9 @@ describe("conversion route discovery", () => {
       target_artifact_type: { id: "x", schema_version: 1 },
       title: "Value",
     };
-    const routes = connectionRoutesFor(
-      connection("x", "x"),
+    const routes = connectionRoutesForPorts(
+      sourcePort("x"),
+      targetPort("x"),
       [artifactType("x", [projection])],
       [conversion("x-to-x", "x", "x")],
     );
@@ -669,91 +540,47 @@ describe("conversion route discovery", () => {
 });
 
 describe("multi-type input ports", () => {
-  const multiTypeTarget = encodeHandleId({
+  const multiTypeTarget: PortMeta = {
     portName: "file",
     artifactTypeId: "file.csv",
     schemaVersion: 1,
     shape: "one",
     direction: "input",
     alsoAccepts: [{ id: "file.xlsx", schema_version: 1 }],
+  };
+
+  it("lists primary and additional accepted artifact types without duplicates", () => {
+    expect(acceptedPortMetaArtifactTypes(multiTypeTarget)).toEqual([
+      { id: "file.csv", schema_version: 1 },
+      { id: "file.xlsx", schema_version: 1 },
+    ]);
   });
 
-  function source(id: string): string {
-    return encodeHandleId({
-      portName: "output",
-      artifactTypeId: id,
-      schemaVersion: 1,
-      shape: "one",
-      direction: "output",
-    });
-  }
-
-  it("round-trips the additional accepted artifact types", () => {
-    const decoded = decodeHandleId(multiTypeTarget);
-
-    expect(decoded).toMatchObject({
-      artifactTypeId: "file.csv",
-      alsoAccepts: [{ id: "file.xlsx", schema_version: 1 }],
-    });
-    expect(encodeHandleId(decoded!)).toBe(multiTypeTarget);
-  });
-
-  it("accepts an edge of either declared artifact type", () => {
+  it("accepts an edge of either declared artifact type and converts into either", () => {
     expect(
-      connectionRoutesFor(
-        { sourceHandle: source("file.csv"), targetHandle: multiTypeTarget },
+      connectionRoutesForPorts(sourcePort("file.csv"), multiTypeTarget, [], []),
+    ).toEqual([{ kind: "exact", conversionPath: [] }]);
+    expect(
+      connectionRoutesForPorts(
+        sourcePort("file.xlsx"),
+        multiTypeTarget,
         [],
         [],
       ),
     ).toEqual([{ kind: "exact", conversionPath: [] }]);
-    expect(
-      connectionRoutesFor(
-        { sourceHandle: source("file.xlsx"), targetHandle: multiTypeTarget },
-        [],
-        [],
-      ),
-    ).toEqual([{ kind: "exact", conversionPath: [] }]);
-  });
-
-  it("refuses a third artifact type", () => {
-    expect(
-      connectionRoutesFor(
-        { sourceHandle: source("file.pdf"), targetHandle: multiTypeTarget },
-        [],
-        [],
-      ),
-    ).toEqual([]);
-  });
-
-  it("accepts a declared conversion to a member of the set", () => {
-    const pdfToXlsx = conversion(
-      "builtin.file.pdf_to_xlsx",
-      "file.pdf",
-      "file.xlsx",
+    expect(portsCanConnect(sourcePort("file.xlsx"), multiTypeTarget)).toBe(
+      true,
     );
 
+    const toXlsx = conversion("to-xlsx", "raw.sheet", "file.xlsx");
     expect(
-      connectionRoutesFor(
-        { sourceHandle: source("file.pdf"), targetHandle: multiTypeTarget },
+      connectionRoutesForPorts(
+        sourcePort("raw.sheet"),
+        multiTypeTarget,
         [],
-        [pdfToXlsx],
+        [toXlsx],
       ),
-    ).toEqual([{ kind: "conversion", conversionPath: [pdfToXlsx] }]);
-  });
-
-  it("validates a drag connection against any member of the set", () => {
-    expect(
-      connectionIsValid({
-        sourceHandle: source("file.xlsx"),
-        targetHandle: multiTypeTarget,
-      }),
-    ).toBe(true);
-    expect(
-      connectionIsValid({
-        sourceHandle: source("file.pdf"),
-        targetHandle: multiTypeTarget,
-      }),
-    ).toBe(false);
+    ).toEqual([{ kind: "conversion", conversionPath: [toXlsx] }]);
   });
 });
 
@@ -775,8 +602,9 @@ describe("delivered artifact type", () => {
   );
 
   it("is null when the route feeds the output unchanged", () => {
-    const [route] = connectionRoutesFor(
-      connection("scalar.text", "scalar.text"),
+    const [route] = connectionRoutesForPorts(
+      sourcePort("scalar.text"),
+      targetPort("scalar.text"),
       [],
       [],
     );
@@ -785,8 +613,9 @@ describe("delivered artifact type", () => {
   });
 
   it("is the projected field's type", () => {
-    const [route] = connectionRoutesFor(
-      connection("ocr.page_result", "scalar.text"),
+    const [route] = connectionRoutesForPorts(
+      sourcePort("ocr.page_result"),
+      targetPort("scalar.text"),
       [artifactType("ocr.page_result", [text])],
       [],
     );
@@ -798,8 +627,9 @@ describe("delivered artifact type", () => {
   });
 
   it("is the last conversion's target, after any projection", () => {
-    const route = connectionRouteForSelection(
-      connection("ocr.page_result", "table.data"),
+    const route = connectionRouteForPortSelection(
+      sourcePort("ocr.page_result"),
+      targetPort("table.data"),
       [artifactType("ocr.page_result", [text])],
       [textToMarkdown, markdownToTable],
       {

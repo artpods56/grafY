@@ -20,7 +20,7 @@ import {
   type GraphPresentation,
 } from "../artifacts/artifact-viewer";
 import { hydrateAuthoredGraphDocument } from "../authoring/saved-graph";
-import { WORKFLOW_EDGE_TYPE, type WorkflowEdge } from "../authoring/types";
+import type { WorkflowEdge } from "../authoring/types";
 import type {
   AuthoredGraphDocument,
   AuthoredGraphNode,
@@ -33,7 +33,7 @@ import {
   buildWorkbenchCellScene,
   cellConnectionToWorkbenchConnection,
   cellRemotePeersFromParticipants,
-  encodeCellPortHandleForDiscovery,
+  resolveCellPortEndpoint,
   partitionCellMoves,
   partitionCellRemovals,
   partitionCellSelection,
@@ -296,21 +296,24 @@ it("maps only remote sessions on the open graph", () => {
   ]);
 });
 
-it("encodes the discovery port with its resolved type and plug id", () => {
+it("resolves a cell port endpoint with its type and plug id", () => {
   expect(
-    encodeCellPortHandleForDiscovery(targetNode, "items::plug-a", "input"),
+    resolveCellPortEndpoint(targetNode, "items::plug-a", "input"),
   ).toMatchObject({
     port: { name: "items" },
-    handleId: "items::scalar.text::2::one::input::plug-a",
-    decoded: {
+    portName: "items",
+    plugId: "plug-a",
+    meta: {
       portName: "items",
       plugId: "plug-a",
       artifactTypeId: "scalar.text",
       schemaVersion: 2,
+      direction: "input",
+      shape: "one",
     },
   });
   expect(
-    encodeCellPortHandleForDiscovery(targetNode, "items::plug-a", "output"),
+    resolveCellPortEndpoint(targetNode, "items::plug-a", "output"),
   ).toBeNull();
 });
 
@@ -319,12 +322,11 @@ it("uses the rendered shape for mapped outputs and the declared shape for inputs
     ...targetNode,
     data: { ...targetNode.data, mappedInputPorts: ["items"] },
   };
+  expect(resolveCellPortEndpoint(mapped, "result", "output")?.meta.shape).toBe(
+    "many",
+  );
   expect(
-    encodeCellPortHandleForDiscovery(mapped, "result", "output")?.decoded.shape,
-  ).toBe("many");
-  expect(
-    encodeCellPortHandleForDiscovery(mapped, "items::plug-a", "input")?.decoded
-      .shape,
+    resolveCellPortEndpoint(mapped, "items::plug-a", "input")?.meta.shape,
   ).toBe("one");
 });
 
@@ -332,10 +334,12 @@ it("translates workflow connections and rejects a missing port", () => {
   expect(
     cellConnectionToWorkbenchConnection(nodes, viewers.nodes, candidate),
   ).toEqual({
+    kind: "workflow",
     source: "source",
-    sourceHandle: "result::scalar.text::2::one::output",
+    sourcePort: "result",
     target: "target",
-    targetHandle: "items::scalar.text::2::one::input::plug-a",
+    targetPort: "items",
+    targetPlug: "plug-a",
   });
   expect(
     cellConnectionToWorkbenchConnection(nodes, viewers.nodes, {
@@ -345,16 +349,19 @@ it("translates workflow connections and rejects a missing port", () => {
   ).toBeNull();
 });
 
-it("preserves the dedicated artifact card and viewer handles", () => {
+it("translates artifact card and viewer connections", () => {
   expect(
     cellConnectionToWorkbenchConnection(nodes, viewers.nodes, {
       ...candidate,
       sourceCardId: "card",
       sourcePortId: ARTIFACT_CARD_OUTPUT_HANDLE,
     }),
-  ).toMatchObject({
-    source: "card",
-    sourceHandle: ARTIFACT_CARD_OUTPUT_HANDLE,
+  ).toEqual({
+    kind: "artifact-card",
+    sourceCardId: "card",
+    targetNodeId: "target",
+    targetPort: "items",
+    targetPlug: "plug-a",
   });
   expect(
     cellConnectionToWorkbenchConnection(nodes, viewers.nodes, {
@@ -362,9 +369,11 @@ it("preserves the dedicated artifact card and viewer handles", () => {
       targetCardId: "card",
       targetPortId: ARTIFACT_VIEWER_INPUT_HANDLE,
     }),
-  ).toMatchObject({
-    target: "card",
-    targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+  ).toEqual({
+    kind: "artifact-viewer",
+    sourceNodeId: "source",
+    sourcePort: "result",
+    targetViewerId: "card",
   });
 });
 
@@ -548,13 +557,14 @@ it("wires workflow metadata, live viewer outputs, origin edges, service provider
   const canvasEdges: WorkflowEdge[] = [
     {
       id: "edge",
-      type: WORKFLOW_EDGE_TYPE,
       source: "source",
+      sourcePort: "result",
       target: "target",
+      targetPort: "items",
+      targetPlug: "plug-a",
       data: {
         enabled: true,
         collectionMode: "direct",
-        sourcePortName: "result",
         projection: { path: ["text"] },
         conversionTitles: ["CSV → Table"],
         compatibilityIssues: ["Incompatible output"],
@@ -596,9 +606,9 @@ it("wires workflow metadata, live viewer outputs, origin edges, service provider
       id: "artifact-origin:origin-1:card",
       type: ARTIFACT_ORIGIN_EDGE_TYPE,
       source: "card",
-      sourceHandle: ARTIFACT_CARD_OUTPUT_HANDLE,
       target: "target",
-      targetHandle: "items::scalar.text::2::one::input::plug-a",
+      targetPort: "items",
+      targetPlug: "plug-a",
       data: {
         originId: "origin-1",
         collectionMode: "map",

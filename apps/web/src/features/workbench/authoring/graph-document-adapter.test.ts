@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   addNodeCommand,
-  graphCommandsFromNodeChanges,
   reduceWorkbenchAuthoringState,
   type WorkbenchAuthoringState,
 } from "./graph-document-adapter";
@@ -119,64 +118,6 @@ describe("Workbench authored document adapter", () => {
         position: { x: 80, y: 120 },
       },
     });
-  });
-
-  it("does not author a move while dragging", () => {
-    expect(
-      graphCommandsFromNodeChanges([
-        {
-          id: "source",
-          type: "position",
-          position: { x: 40, y: 50 },
-          dragging: true,
-        },
-      ]),
-    ).toEqual([]);
-  });
-
-  it("authors the final position when dragging stops", () => {
-    expect(
-      graphCommandsFromNodeChanges([
-        {
-          id: "source",
-          type: "position",
-          position: { x: 40, y: 50 },
-          dragging: false,
-        },
-      ]),
-    ).toEqual([
-      {
-        kind: "move_nodes",
-        positions: [{ node_id: "source", x: 40, y: 50 }],
-      },
-    ]);
-  });
-
-  it("authors one durable command when a multi-node drag stops", () => {
-    expect(
-      graphCommandsFromNodeChanges([
-        {
-          id: "source",
-          type: "position",
-          position: { x: 40, y: 50 },
-          dragging: false,
-        },
-        {
-          id: "target",
-          type: "position",
-          position: { x: 340, y: 50 },
-          dragging: false,
-        },
-      ]),
-    ).toEqual([
-      {
-        kind: "move_nodes",
-        positions: [
-          { node_id: "source", x: 40, y: 50 },
-          { node_id: "target", x: 340, y: 50 },
-        ],
-      },
-    ]);
   });
 
   it("keeps move overlays and scopes config invalidation", () => {

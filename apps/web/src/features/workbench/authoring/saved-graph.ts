@@ -1,5 +1,3 @@
-import type { CanvasNodeBase } from "./types";
-
 import {
   type GraphDraft,
   type NodeRegistry,
@@ -9,35 +7,26 @@ import {
   type SavedGraphEdge,
   type SavedGraphNode,
 } from "@/lib/api";
-import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   operatorSpecKey,
   resolveGraphSemantics,
   type ResolvedGraphSemantics,
 } from "./graph-semantics";
-import { connectionRouteForSelection, encodeHandleId } from "./handles";
+import { connectionRouteForPortSelection } from "./connection-routes";
 import { hydrateNodeLayout } from "./node-layout";
-import { artifactTypeColor } from "../config-ui/nodes.css";
 import {
-  WORKFLOW_EDGE_TYPE,
-  WORKFLOW_NODE_TYPE,
   collectionModesForShapes,
-  compatibilityHandleId,
   createWorkflowNodeData,
   defaultNodeLayout,
   portHasInstancePlugs,
   portMetaForPort,
-  resolvedPortArtifactType,
   type WorkflowEdge,
-  type WorkflowNodeData,
+  type WorkflowNode,
   workflowNodeIsSupported,
 } from "./types";
 import { createGraphDraft, type AuthoredGraphDocument } from "./graph-document";
 
-export type SavedGraphWorkflowNode = CanvasNodeBase<
-  WorkflowNodeData,
-  typeof WORKFLOW_NODE_TYPE
->;
+export type SavedGraphWorkflowNode = WorkflowNode;
 
 export interface HydratedSavedGraph {
   nodes: SavedGraphWorkflowNode[];
@@ -226,27 +215,20 @@ function connectionRouteIsValid(
   );
   if (!sourcePort || !targetPort) return false;
 
-  const connection = {
-    sourceHandle: encodeHandleId(
+  return (
+    connectionRouteForPortSelection(
       portMetaForPort(
         sourcePort,
         sourcePort.shape,
         undefined,
         sourceNode.data.artifactTypeBindings,
       ),
-    ),
-    targetHandle: encodeHandleId(
       portMetaForPort(
         targetPort,
         targetPort.shape,
         edge.to_plug ?? undefined,
         targetNode.data.artifactTypeBindings,
       ),
-    ),
-  };
-  return (
-    connectionRouteForSelection(
-      connection,
       registry.artifact_types,
       registry.artifact_conversions,
       {
@@ -293,7 +275,6 @@ export function hydrateSavedGraph(
           : hydrateNodeLayout(savedNode.layout);
       return {
         id: savedNode.id,
-        type: WORKFLOW_NODE_TYPE,
         position: {
           x: savedNode.position.x,
           y: savedNode.position.y,
@@ -365,9 +346,6 @@ export function hydrateSavedGraph(
       );
     }
 
-    let sourceHandle: string;
-    let targetHandle: string;
-    let color: string = tokens.colorMuted;
     const compatibilityIssues: string[] = [];
     if (!sourceSupported || !targetSupported) {
       if (sourceNode.data.compatibility.status !== "supported") {
@@ -383,45 +361,6 @@ export function hydrateSavedGraph(
             (issue) => `${targetNode.id}: ${issue}`,
           ),
         );
-      }
-      const sourceShape = sourcePort
-        ? mappedNodeIds.has(sourceNode.id)
-          ? "many"
-          : sourcePort.shape
-        : "one";
-      sourceHandle = sourcePort
-        ? encodeHandleId(
-            portMetaForPort(
-              sourcePort,
-              sourceShape,
-              undefined,
-              sourceNode.data.artifactTypeBindings,
-            ),
-          )
-        : compatibilityHandleId("output", {
-            portName: savedEdge.from_port,
-          });
-      targetHandle = targetPort
-        ? encodeHandleId(
-            portMetaForPort(
-              targetPort,
-              targetPort.shape,
-              savedEdge.to_plug ?? undefined,
-              targetNode.data.artifactTypeBindings,
-            ),
-          )
-        : compatibilityHandleId("input", {
-            portName: savedEdge.to_port,
-            ...(savedEdge.to_plug ? { plugId: savedEdge.to_plug } : {}),
-          });
-      if (sourcePort) {
-        const sourceArtifactType = resolvedPortArtifactType(
-          sourcePort,
-          sourceNode.data.artifactTypeBindings,
-        );
-        color = sourceArtifactType
-          ? artifactTypeColor(sourceArtifactType.id, tokens.colorMuted)
-          : tokens.colorMuted;
       }
     } else {
       if (!sourcePort || !targetPort) {
@@ -483,47 +422,18 @@ export function hydrateSavedGraph(
           `Cannot open “${savedGraph.name}”. A connection joins two kinds of document that do not fit.`,
         );
       }
-
-      const sourceArtifactType = resolvedPortArtifactType(
-        sourcePort,
-        sourceNode.data.artifactTypeBindings,
-      );
-      color = sourceArtifactType
-        ? artifactTypeColor(sourceArtifactType.id, tokens.colorAccent)
-        : tokens.colorAccent;
-      sourceHandle = encodeHandleId(
-        portMetaForPort(
-          sourcePort,
-          sourceShape,
-          undefined,
-          sourceNode.data.artifactTypeBindings,
-        ),
-      );
-      targetHandle = encodeHandleId(
-        portMetaForPort(
-          targetPort,
-          targetPort.shape,
-          savedEdge.to_plug ?? undefined,
-          targetNode.data.artifactTypeBindings,
-        ),
-      );
     }
 
-    const enabled = savedEdge.enabled;
     return {
       id: savedEdge.id,
       source: savedEdge.from_node,
-      sourceHandle,
+      sourcePort: savedEdge.from_port,
       target: savedEdge.to_node,
-      targetHandle,
-      type: WORKFLOW_EDGE_TYPE,
-      animated: false,
+      targetPort: savedEdge.to_port,
+      targetPlug: savedEdge.to_plug ?? null,
       data: {
-        enabled,
+        enabled: savedEdge.enabled,
         collectionMode: savedEdge.collection_mode,
-        sourcePortName: savedEdge.from_port,
-        targetPortName: savedEdge.to_port,
-        targetPlugId: savedEdge.to_plug ?? null,
         ...(compatibilityIssues.length ? { compatibilityIssues } : {}),
         ...(savedEdge.projection
           ? { projection: { path: [...savedEdge.projection.path] } }
@@ -539,13 +449,6 @@ export function hydrateSavedGraph(
                 y: savedEdge.route_offset.y,
               },
             }
-          : {}),
-      },
-      style: {
-        stroke: color,
-        strokeWidth: 2,
-        ...(compatibilityIssues.length
-          ? { strokeDasharray: "7 5", opacity: 0.68 }
           : {}),
       },
     } satisfies WorkflowEdge;

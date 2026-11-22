@@ -1,32 +1,25 @@
 import type {
   ArtifactConversionSpec,
-  ArtifactTypeKey,
   ArtifactTypeSpec,
   SavedGraphOrigin,
 } from "@/lib/api";
 
 import {
-  connectionRoutesFor,
+  connectionRoutesForPorts,
   connectionRouteSelection,
-  decodeHandleId,
-  decodedHandleArtifactType,
-  encodeHandleId,
   type ConnectionRoute,
-} from "./handles";
+} from "./connection-routes";
 import {
   formatArtifactTypeLabel,
   type ArtifactTypeCatalog,
 } from "../artifacts/artifact-type-label";
 import {
-  collectContributionLabel,
-  inputPlugsForPort,
-  type WorkflowInputPlugBinding,
-} from "./input-plugs";
-import {
   collectionModesForShapes,
   effectivePortShape,
   portHasInstancePlugs,
   portMetaForPort,
+  type GraphConnection,
+  type PortMeta,
   type WorkflowEdge,
   type WorkflowEdgeRouteOption,
   type WorkflowNodeData,
@@ -36,13 +29,6 @@ import {
 export interface GraphAuthoringNode {
   id: string;
   data: WorkflowNodeData;
-}
-
-export interface GraphAuthoringConnection {
-  source: string;
-  sourceHandle: string | null;
-  target: string;
-  targetHandle: string | null;
 }
 
 export interface GraphAuthoringConversion {
@@ -103,10 +89,10 @@ export function mappedInputPortsForNode(
         edge.target !== nodeId ||
         (!includeDisabledEdges && edge.data?.enabled === false) ||
         edge.data?.collectionMode !== "map"
-      )
+      ) {
         return [];
-      const portName = decodeHandleId(edge.targetHandle)?.portName;
-      return portName ? [portName] : [];
+      }
+      return edge.targetPort ? [edge.targetPort] : [];
     }),
     ...origins
       .filter(
@@ -115,34 +101,6 @@ export function mappedInputPortsForNode(
       )
       .map((origin) => origin.to_port),
   ];
-}
-
-/**
- * Output handle id as the canvas draws that port.
- *
- * Callers pass the stored node. Its `mappedInputPorts` stays empty; the
- * canvas fills that list from map edges and map origins before it draws the
- * ball. Encoding the stored shape names a handle that is not on the node.
- */
-export function renderedOutputHandleId({
-  node,
-  port,
-  edges,
-  origins = [],
-}: {
-  node: GraphAuthoringNode;
-  port: WorkflowPort;
-  edges: readonly WorkflowEdge[];
-  origins?: readonly SavedGraphOrigin[];
-}): string {
-  return encodeHandleId(
-    portMetaForPort(
-      port,
-      effectiveShapeForPort(node, port, edges, false, origins),
-      undefined,
-      node.data.artifactTypeBindings,
-    ),
-  );
 }
 
 function effectiveShapeForPort(
@@ -166,8 +124,49 @@ function effectiveShapeForPort(
   );
 }
 
+/** Resolve the two structured port descriptors for a connection between workflow nodes. */
+export function resolveConnectionPortMeta(
+  connection: GraphConnection,
+  nodes: readonly GraphAuthoringNode[],
+  edges: readonly WorkflowEdge[],
+  origins: readonly SavedGraphOrigin[] = [],
+): { source: PortMeta; target: PortMeta } | null {
+  const sourceNode = nodes.find((node) => node.id === connection.source);
+  const targetNode = nodes.find((node) => node.id === connection.target);
+  if (
+    !sourceNode ||
+    !targetNode ||
+    !workflowNodeIsSupported(sourceNode.data) ||
+    !workflowNodeIsSupported(targetNode.data)
+  ) {
+    return null;
+  }
+  const sourcePort = sourceNode.data.spec.outputs.find(
+    (port) => port.name === connection.sourcePort,
+  );
+  const targetPort = targetNode.data.spec.inputs.find(
+    (port) => port.name === connection.targetPort,
+  );
+  if (!sourcePort || !targetPort) return null;
+
+  return {
+    source: portMetaForPort(
+      sourcePort,
+      effectiveShapeForPort(sourceNode, sourcePort, edges, true, origins),
+      undefined,
+      sourceNode.data.artifactTypeBindings,
+    ),
+    target: portMetaForPort(
+      targetPort,
+      effectiveShapeForPort(targetNode, targetPort, edges, true, origins),
+      connection.targetPlug ?? undefined,
+      targetNode.data.artifactTypeBindings,
+    ),
+  };
+}
+
 export function collectionModeForConnection(
-  connection: GraphAuthoringConnection,
+  connection: GraphConnection,
   nodes: readonly GraphAuthoringNode[],
   edges: readonly WorkflowEdge[],
   origins: readonly SavedGraphOrigin[] = [],
@@ -178,13 +177,11 @@ export function collectionModeForConnection(
 }
 
 export function collectionModesForConnection(
-  connection: GraphAuthoringConnection,
+  connection: GraphConnection,
   nodes: readonly GraphAuthoringNode[],
   edges: readonly WorkflowEdge[],
   origins: readonly SavedGraphOrigin[] = [],
 ): CollectionMode[] {
-  const sourceHandle = decodeHandleId(connection.sourceHandle);
-  const targetHandle = decodeHandleId(connection.targetHandle);
   const sourceNode = nodes.find((node) => node.id === connection.source);
   const targetNode = nodes.find((node) => node.id === connection.target);
   if (
@@ -195,11 +192,11 @@ export function collectionModesForConnection(
   ) {
     return [];
   }
-  const sourcePort = sourceNode?.data.spec.outputs.find(
-    (port) => port.name === sourceHandle?.portName,
+  const sourcePort = sourceNode.data.spec.outputs.find(
+    (port) => port.name === connection.sourcePort,
   );
-  const targetPort = targetNode?.data.spec.inputs.find(
-    (port) => port.name === targetHandle?.portName,
+  const targetPort = targetNode.data.spec.inputs.find(
+    (port) => port.name === connection.targetPort,
   );
   if (!sourcePort || !targetPort) return [];
 
@@ -221,7 +218,7 @@ export function collectionModesForConnection(
 }
 
 export function isConnectionAccepted(
-  connection: GraphAuthoringConnection,
+  connection: GraphConnection,
   nodes: readonly GraphAuthoringNode[],
   edges: readonly WorkflowEdge[],
   artifactTypes: readonly ArtifactTypeSpec[],
@@ -235,30 +232,43 @@ export function isConnectionAccepted(
     edges,
     origins,
   );
+  if (!collectionMode) return false;
+
+  const endpoints = resolveConnectionPortMeta(
+    connection,
+    nodes,
+    edges,
+    origins,
+  );
   if (
-    !collectionMode ||
-    !connectionRoutesFor(connection, artifactTypes, artifactConversions).length
+    !endpoints ||
+    !connectionRoutesForPorts(
+      endpoints.source,
+      endpoints.target,
+      artifactTypes,
+      artifactConversions,
+    ).length
   ) {
     return false;
   }
 
-  const target = decodeHandleId(connection.targetHandle);
   const targetNode = nodes.find((node) => node.id === connection.target);
   const input = targetNode?.data.spec.inputs.find(
-    (port) => port.name === target?.portName,
+    (port) => port.name === connection.targetPort,
   );
-  if (!target || !targetNode || !input) return false;
+  if (!targetNode || !input) return false;
 
+  const targetPlug = connection.targetPlug ?? null;
   if (portHasInstancePlugs(input)) {
     if (
-      !target.plugId ||
+      !targetPlug ||
       !targetNode.data.inputPlugs.some(
-        (plug) => plug.id === target.plugId && plug.portName === input.name,
+        (plug) => plug.id === targetPlug && plug.portName === input.name,
       )
     ) {
       return false;
     }
-  } else if (target.plugId) {
+  } else if (targetPlug) {
     return false;
   }
 
@@ -268,7 +278,7 @@ export function isConnectionAccepted(
       (edge) =>
         edge.id !== existingEdgeId &&
         edge.target === connection.target &&
-        decodeHandleId(edge.targetHandle)?.portName === target.portName &&
+        edge.targetPort === connection.targetPort &&
         edge.data?.collectionMode === "map",
     )
   ) {
@@ -294,7 +304,7 @@ export function isConnectionAccepted(
       (edge) =>
         edge.id !== existingEdgeId &&
         edge.target === connection.target &&
-        decodeHandleId(edge.targetHandle)?.plugId === target.plugId,
+        (edge.targetPlug ?? null) === targetPlug,
     );
   }
   if (input.variadic) return true;
@@ -302,90 +312,6 @@ export function isConnectionAccepted(
     (edge) =>
       edge.id !== existingEdgeId &&
       edge.target === connection.target &&
-      decodeHandleId(edge.targetHandle)?.portName === target.portName,
+      edge.targetPort === connection.targetPort,
   );
-}
-
-function projectionTitleForEdge(
-  edge: WorkflowEdge,
-  sourceHandleArtifactType: ArtifactTypeKey | null,
-  artifactTypes: readonly ArtifactTypeSpec[],
-): string | undefined {
-  const path = edge.data?.projection?.path;
-  if (!path?.length) return undefined;
-  if (!sourceHandleArtifactType) return path.join(".");
-  const sourceArtifact = artifactTypes.find(
-    (artifact) =>
-      artifact.key.id === sourceHandleArtifactType.id &&
-      artifact.key.schema_version === sourceHandleArtifactType.schema_version,
-  );
-  return (
-    sourceArtifact?.field_projections.find(
-      (projection) =>
-        projection.path.length === path.length &&
-        projection.path.every((segment, index) => segment === path[index]),
-    )?.title ?? path.join(".")
-  );
-}
-
-export function inputPlugBindingsForNode(
-  node: GraphAuthoringNode,
-  nodes: readonly GraphAuthoringNode[],
-  edges: readonly WorkflowEdge[],
-  artifactConversions: readonly GraphAuthoringConversion[],
-  artifactTypes: readonly ArtifactTypeSpec[] = [],
-): Readonly<Record<string, WorkflowInputPlugBinding>> {
-  if (!workflowNodeIsSupported(node.data)) return {};
-  const bindings: Record<string, WorkflowInputPlugBinding> = {};
-  for (const port of node.data.spec.inputs.filter(portHasInstancePlugs)) {
-    const portPlugs = inputPlugsForPort(node.data.inputPlugs, port.name);
-    portPlugs.forEach((plug, inputIndex) => {
-      const edge = edges.find(
-        (candidate) =>
-          candidate.data?.enabled !== false &&
-          candidate.target === node.id &&
-          decodeHandleId(candidate.targetHandle)?.plugId === plug.id,
-      );
-      if (!edge) return;
-
-      const sourceHandle = decodeHandleId(edge.sourceHandle);
-      const sourceNode = nodes.find(
-        (candidate) => candidate.id === edge.source,
-      );
-      if (sourceNode && !workflowNodeIsSupported(sourceNode.data)) return;
-      const sourcePort = sourceNode?.data.spec.outputs.find(
-        (candidate) => candidate.name === sourceHandle?.portName,
-      );
-      if (!sourceHandle || !sourceNode || !sourcePort) return;
-
-      const projectionTitle = projectionTitleForEdge(
-        edge,
-        decodedHandleArtifactType(sourceHandle),
-        artifactTypes,
-      );
-      const conversionLabels = (edge.data?.conversionPath ?? []).map(
-        (requestedConversion) =>
-          artifactConversions.find(
-            (conversion) =>
-              conversion.key.id === requestedConversion.id &&
-              conversion.key.version === requestedConversion.version,
-          )?.title ??
-          `${requestedConversion.id}@${requestedConversion.version}`,
-      );
-      const feedLabel = [projectionTitle, ...conversionLabels]
-        .filter((label): label is string => Boolean(label))
-        .join(" → ");
-      const contributionLabel = collectContributionLabel(
-        node.data.run,
-        inputIndex,
-      );
-      bindings[plug.id] = {
-        sourceLabel: `${sourceNode.data.spec.title} · ${sourcePort.title ?? sourcePort.name}`,
-        sourceShape: effectiveShapeForPort(sourceNode, sourcePort, edges),
-        ...(feedLabel ? { conversionLabel: feedLabel } : {}),
-        ...(contributionLabel ? { contributionLabel } : {}),
-      };
-    });
-  }
-  return bindings;
 }

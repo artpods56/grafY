@@ -17,11 +17,8 @@ import {
   isCollectionNode,
   isCollectionSpec,
 } from "./collection-spec";
-import { decodeHandleId, encodeHandleId } from "./handles";
 import { inputPlugsForPort } from "./input-plugs";
 import {
-  effectivePortShape,
-  portMetaForPort,
   resolvedPortArtifactType,
   type WorkflowEdge,
   type WorkflowNodeData,
@@ -77,11 +74,9 @@ export function collectionMembers(
       const edge = edges.find(
         (candidate) =>
           candidate.target === node.id &&
-          decodeHandleId(candidate.targetHandle)?.plugId === plug.id,
+          (candidate.targetPlug ?? null) === plug.id,
       );
-      const sourcePortName =
-        edge?.data?.sourcePortName ??
-        decodeHandleId(edge?.sourceHandle)?.portName;
+      const sourcePortName = edge?.sourcePort;
       const source = edge
         ? nodes.find((candidate) => candidate.id === edge.source)
         : undefined;
@@ -264,9 +259,6 @@ export function collectCardsCommands({
     }),
   ];
   for (const { source, plugId } of members) {
-    const targetHandle = encodeHandleId(
-      portMetaForPort(itemsPort, itemsPort.shape, plugId, bindings),
-    );
     if (source.kind === "library") {
       commands.push({
         kind: "add_origin",
@@ -291,16 +283,10 @@ export function collectCardsCommands({
       addEdgeCommand(
         {
           source: producer.id,
-          sourceHandle: encodeHandleId(
-            portMetaForPort(
-              port,
-              effectivePortShape(producer.data, port),
-              undefined,
-              producer.data.artifactTypeBindings,
-            ),
-          ),
+          sourcePort: port.name,
           target: collectionId,
-          targetHandle,
+          targetPort: COLLECTION_PORT,
+          targetPlug: plugId,
         },
         { enabled: true, collectionMode: "direct", conversionPath: [] },
         `edge-${createUuid()}`,

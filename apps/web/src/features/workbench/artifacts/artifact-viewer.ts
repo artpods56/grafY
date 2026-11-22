@@ -1,7 +1,3 @@
-import type { AgentNode } from "../agents/agent-node";
-import type { ArtifactOriginEdge } from "./artifact-origin-edge";
-import type { CanvasNodeBase, CanvasEdgeBase } from "../authoring/types";
-
 import type { SavedGraphDocument } from "@/lib/api";
 
 import {
@@ -14,116 +10,63 @@ import {
   serializeNodeLayout,
   type WorkflowNodeLayout,
 } from "../authoring/node-layout";
-import {
-  WORKFLOW_NODE_TYPE,
-  type WorkflowEdge,
-  type WorkflowEdgeProjection,
-  type WorkflowEdgeRouteOffset,
-  type WorkflowEdgeRouteOption,
-  type WorkflowNodeData,
+import type {
+  WorkflowEdgeProjection,
+  WorkflowEdgeRouteOffset,
+  WorkflowEdgeRouteOption,
+  WorkflowNode,
+  XYPosition,
 } from "../authoring/types";
 import {
   ARTIFACT_CARD_LAYOUT_BOUNDS,
   type ArtifactCardValue,
 } from "./artifact-card";
-import type {
-  ArtifactInteractionField,
-  ArtifactKeySelection,
-  ArtifactViewerActivity,
-  ArtifactViewerBinding,
-  ArtifactViewerIncomingBinding,
-} from "./artifact-interactions";
+import type { ArtifactViewerBinding } from "./artifact-interactions";
 
 export type GraphPresentation = NonNullable<SavedGraphDocument["presentation"]>;
 
 export const ARTIFACT_VIEWER_NODE_TYPE = "grafyArtifactViewerNode";
 export const ARTIFACT_VIEWER_EDGE_TYPE = "grafyArtifactViewerEdge";
-export const ARTIFACT_VIEWER_INTERACTION_EDGE_TYPE =
-  "grafyArtifactViewerInteractionEdge";
 export const ARTIFACT_VIEWER_INPUT_HANDLE = "artifact-viewer-input";
-export const ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE =
-  "artifact-viewer-interaction-input";
-export const ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE =
-  "artifact-viewer-interaction-output";
 
-export interface ArtifactViewerNodeData extends Record<string, unknown> {
+export interface ArtifactViewerNodeData {
   layout: WorkflowNodeLayout | null;
   mode: string | null;
   /** A node-less card: the artifacts it presents, in the order it passes them. */
   artifactRef?: ArtifactCardValue | null;
-  outgoingFields?: string[];
-  selection?: ArtifactKeySelection;
-  incomingBindings?: ArtifactViewerIncomingBinding[];
-  fields?: ArtifactInteractionField[];
-  onLayoutChange?: (nodeId: string, layout: WorkflowNodeLayout | null) => void;
-  onModeChange?: (nodeId: string, mode: string) => void;
-  onSelectionChange?: (nodeId: string, selection: ArtifactKeySelection) => void;
-  onFieldsChange?: (nodeId: string, fields: ArtifactInteractionField[]) => void;
-  onActivityChange?: (
-    nodeId: string,
-    activity: ArtifactViewerActivity | null,
-  ) => void;
-  onRefsChange?: (nodeId: string, value: ArtifactCardValue | null) => void;
-  onRemoveNode?: (nodeId: string) => void;
-  onUngroup?: (nodeId: string) => void;
-  ungroupDisabledReason?: string | null;
-  /** Ephemeral collaborator selection tint; never persisted. */
-  remoteSelectionColor?: string | null;
 }
 
-export type ArtifactViewerNode = CanvasNodeBase<
-  ArtifactViewerNodeData,
-  typeof ARTIFACT_VIEWER_NODE_TYPE
->;
+export interface ArtifactViewerNode {
+  id: string;
+  type?: typeof ARTIFACT_VIEWER_NODE_TYPE;
+  position: XYPosition;
+  selected?: boolean;
+  data: ArtifactViewerNodeData;
+}
 
 export interface ArtifactViewerEdgeUpdate {
   projection?: WorkflowEdgeProjection | null;
 }
 
-export interface ArtifactViewerEdgeData extends Record<string, unknown> {
+export interface ArtifactViewerEdgeData {
   sourcePortName: string;
   projection?: WorkflowEdgeProjection;
   projectionTitle?: string;
   routeOffset?: WorkflowEdgeRouteOffset;
   routeOptions?: readonly WorkflowEdgeRouteOption[];
-  onUpdate?: (edgeId: string, update: ArtifactViewerEdgeUpdate) => void;
-  onRouteOffsetChange?: (
-    edgeId: string,
-    offset: WorkflowEdgeRouteOffset,
-  ) => void;
 }
 
-export type ArtifactViewerEdge = CanvasEdgeBase<
-  ArtifactViewerEdgeData,
-  typeof ARTIFACT_VIEWER_EDGE_TYPE
->;
-
-export interface ArtifactViewerInteractionEdgeData extends Record<
-  string,
-  unknown
-> {
-  binding: ArtifactViewerBinding;
-  sourceFields?: ArtifactInteractionField[];
-  targetFields?: ArtifactInteractionField[];
-  onBindingChange?: (bindingId: string, binding: ArtifactViewerBinding) => void;
+export interface ArtifactViewerEdge {
+  id: string;
+  type?: typeof ARTIFACT_VIEWER_EDGE_TYPE;
+  source: string;
+  target: string;
+  targetHandle?: string | null;
+  selected?: boolean;
+  data?: ArtifactViewerEdgeData;
 }
 
-export type ArtifactViewerInteractionEdge = CanvasEdgeBase<
-  ArtifactViewerInteractionEdgeData,
-  typeof ARTIFACT_VIEWER_INTERACTION_EDGE_TYPE
->;
-
-export type CanvasWorkflowNode = CanvasNodeBase<
-  WorkflowNodeData,
-  typeof WORKFLOW_NODE_TYPE
->;
-export type CanvasNode =
-  CanvasWorkflowNode | ArtifactViewerNode | AnnotationNode | AgentNode;
-export type CanvasEdge =
-  | ArtifactOriginEdge
-  | WorkflowEdge
-  | ArtifactViewerEdge
-  | ArtifactViewerInteractionEdge;
+export type CanvasWorkflowNode = WorkflowNode;
 
 /**
  * The artifact cards on the canvas. Whose cards they are is not recorded here: the

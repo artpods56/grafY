@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
-import { encodeHandleId } from "./handles";
 import { portMetaForPort } from "./types";
 import {
   artifactFilterId,
@@ -348,7 +347,7 @@ describe("artifact catalog filters", () => {
 describe("downstream candidates", () => {
   it("lists compatible nodes once and excludes optional instance-plug-only targets", () => {
     const source = port("text", "output");
-    const sourceHandle = encodeHandleId(portMetaForPort(source));
+    const sourceMeta = portMetaForPort(source);
     const nodes = [
       nodeSpec("text.transform", "builtin", 1, true, {
         title: "Transform text",
@@ -379,7 +378,7 @@ describe("downstream candidates", () => {
 
     const candidates = downstreamCandidatesFromOutput({
       sourcePort: source as Port & { readonly direction: "output" },
-      sourceHandle,
+      sourceMeta,
       registry: { ...registry(), nodes },
       nodes,
     });
@@ -395,7 +394,7 @@ describe("downstream candidates", () => {
 describe("upstream candidates", () => {
   it("lists nodes whose outputs can feed the input", () => {
     const target = port("text", "input");
-    const targetHandle = encodeHandleId(portMetaForPort(target));
+    const targetMeta = portMetaForPort(target);
     const nodes = [
       nodeSpec("text.transform", "builtin", 1, true, {
         title: "Transform text",
@@ -425,7 +424,7 @@ describe("upstream candidates", () => {
 
     const candidates = upstreamCandidatesFromInput({
       targetPort: target as Port & { readonly direction: "input" },
-      targetHandle,
+      targetMeta,
       registry: { ...registry(), nodes },
       nodes,
     });
@@ -495,13 +494,13 @@ it("keeps unlisted nodes out of the library and both discovery directions", () =
   expect(listed.map((node) => node.operator_id)).toEqual(["text.visible"]);
   const downstream = downstreamCandidatesFromOutput({
     sourcePort: output,
-    sourceHandle: encodeHandleId(portMetaForPort(output)),
+    sourceMeta: portMetaForPort(output),
     registry: catalog,
     nodes,
   });
   const upstream = upstreamCandidatesFromInput({
     targetPort: input,
-    targetHandle: encodeHandleId(portMetaForPort(input)),
+    targetMeta: portMetaForPort(input),
     registry: catalog,
     nodes,
   });

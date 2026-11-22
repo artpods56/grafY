@@ -9,7 +9,6 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 import type { NodeSpec, Port } from "@/lib/api";
 import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
-import { encodeHandleId } from "../authoring/handles";
 import { useWorkbenchAuthoringReducer } from "../authoring/useWorkbenchAuthoringReducer";
 import {
   ARTIFACT_VIEWER_EDGE_TYPE,
@@ -19,12 +18,7 @@ import {
   type ArtifactViewerEdge,
   type ArtifactViewerNode,
 } from "../artifacts/artifact-viewer";
-import {
-  WORKFLOW_NODE_TYPE,
-  createWorkflowNodeData,
-  portMetaForPort,
-  type WorkflowEdge,
-} from "../authoring/types";
+import { createWorkflowNodeData, type WorkflowEdge } from "../authoring/types";
 import {
   authoredGraphDocument,
   createSavedGraphRequest,
@@ -112,7 +106,6 @@ function collectionNode(): WorkflowNode {
   data.artifactTypeBindings = { T: IMAGE };
   return {
     id: "collection",
-    type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
     data,
   };
@@ -121,7 +114,6 @@ function collectionNode(): WorkflowNode {
 function producerNode(): WorkflowNode {
   return {
     id: "resize",
-    type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 300 },
     data: createWorkflowNodeData(resizeSpec, []),
   };
@@ -130,14 +122,14 @@ function producerNode(): WorkflowNode {
 /** A member of the collection, fed by `resize`'s output into one of its plugs. */
 function memberEdge(plugId: string): WorkflowEdge {
   const itemsPort = collectSpec.inputs[0]!;
+  const sourcePort = resizeSpec.outputs[0]!;
   return {
     id: `resize->${plugId}`,
     source: "resize",
-    sourceHandle: encodeHandleId(portMetaForPort(resizeSpec.outputs[0]!)),
+    sourcePort: sourcePort.name,
     target: "collection",
-    targetHandle: encodeHandleId(
-      portMetaForPort(itemsPort, itemsPort.shape, plugId, { T: IMAGE }),
-    ),
+    targetPort: itemsPort.name,
+    targetPlug: plugId,
     data: { enabled: true, collectionMode: "direct", conversionPath: [] },
   };
 }

@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 
 import type { ArtifactConversionSpec, Port, SavedGraphOrigin } from "@/lib/api";
 import { artifactPortFixture } from "../test-fixtures";
-import { encodeHandleId } from "../authoring/handles";
 import type { WorkflowEdge } from "../authoring/types";
 import {
   ARTIFACT_DROP_DATA_TYPE,
@@ -102,21 +101,10 @@ function edge(overrides: Partial<WorkflowEdge> = {}): WorkflowEdge {
   return {
     id: "edge-1",
     source: "node-b",
+    sourcePort: "output",
     target: "node-a",
-    sourceHandle: encodeHandleId({
-      portName: "output",
-      artifactTypeId: "table",
-      schemaVersion: 1,
-      shape: "one",
-      direction: "output",
-    }),
-    targetHandle: encodeHandleId({
-      portName: "input",
-      artifactTypeId: "table",
-      schemaVersion: 1,
-      shape: "one",
-      direction: "input",
-    }),
+    targetPort: "input",
+    targetPlug: null,
     data: { enabled: true, collectionMode: "direct" },
     ...overrides,
   };
@@ -437,13 +425,7 @@ describe("artifact drop commands", () => {
       state({
         edges: [
           edge({
-            targetHandle: encodeHandleId({
-              portName: "other",
-              artifactTypeId: "table",
-              schemaVersion: 1,
-              shape: "one",
-              direction: "input",
-            }),
+            targetPort: "other",
           }),
         ],
       }),
@@ -471,14 +453,8 @@ describe("artifact drop commands", () => {
       state({
         edges: [
           edge({
-            targetHandle: encodeHandleId({
-              portName: "items",
-              artifactTypeId: "table",
-              schemaVersion: 1,
-              shape: "many",
-              direction: "input",
-              plugId: "plug-2",
-            }),
+            targetPort: "items",
+            targetPlug: "plug-2",
           }),
         ],
       }),

@@ -9,10 +9,7 @@ import type {
   NodeSpec,
 } from "@/lib/api";
 import type { WorkflowNode } from "../execution-plan";
-import {
-  WORKFLOW_NODE_TYPE,
-  createWorkflowNodeData,
-} from "../../authoring/types";
+import { createWorkflowNodeData } from "../../authoring/types";
 import {
   IDLE_OVERLAY,
   instanceStateByNodeId,
@@ -55,7 +52,6 @@ function nodeSpec(): NodeSpec {
 function workflowNode(id: string): WorkflowNode {
   return {
     id,
-    type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
     data: { ...createWorkflowNodeData(nodeSpec()), run: null },
   };

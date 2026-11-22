@@ -12,7 +12,7 @@ import {
   ARTIFACT_VIEWER_EDGE_TYPE,
   type ArtifactViewerEdge,
 } from "../artifacts/artifact-viewer";
-import { WORKFLOW_EDGE_TYPE, type WorkflowEdge } from "../authoring/types";
+import type { WorkflowEdge } from "../authoring/types";
 import { CellCanvasProvider } from "./CellCanvasContext";
 import type { CellViewportApi } from "./cell-contracts";
 import { CellPipeInspector, type CellInspectedPipe } from "./CellPipeInspector";
@@ -73,13 +73,13 @@ describe("CellPipeInspector", () => {
   it("edits workflow enabled state, collection mode, feed routes, and removal", () => {
     const workflowEdge: WorkflowEdge = {
       id: "edge-1",
-      type: WORKFLOW_EDGE_TYPE,
       source: "n1",
+      sourcePort: "document",
       target: "n2",
+      targetPort: "input",
       data: {
         enabled: true,
         collectionMode: "direct",
-        sourcePortName: "document",
         projection: undefined,
         conversionPath: [],
         allowedCollectionModes: ["direct", "map"],
@@ -144,13 +144,13 @@ describe("CellPipeInspector", () => {
   it("shows compatibility issues and disables route controls while allowing removal", () => {
     const workflowEdge: WorkflowEdge = {
       id: "edge-bad",
-      type: WORKFLOW_EDGE_TYPE,
       source: "n1",
+      sourcePort: "document",
       target: "n2",
+      targetPort: "input",
       data: {
         enabled: true,
         collectionMode: "direct",
-        sourcePortName: "document",
         allowedCollectionModes: ["direct", "map"],
         compatibilityIssues: ["Target port missing"],
       },
@@ -179,6 +179,7 @@ describe("CellPipeInspector", () => {
       type: ARTIFACT_ORIGIN_EDGE_TYPE,
       source: "v1",
       target: "n1",
+      targetPort: "input",
       data: {
         originId: "o1",
         collectionMode: "direct",
@@ -250,6 +251,7 @@ describe("CellPipeInspector", () => {
       type: ARTIFACT_ORIGIN_EDGE_TYPE,
       source: "v1",
       target: "n1",
+      targetPort: "input",
       data: { originId: "o1" },
     };
     const viewportApi: CellViewportApi = {

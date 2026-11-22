@@ -223,9 +223,9 @@ function routeFixture(): PendingConnectionRoute {
   return {
     connection: {
       source: "alpha",
+      sourcePort: "out",
       target: "beta",
-      sourceHandle: "out",
-      targetHandle: "in",
+      targetPort: "in",
     },
     collectionMode: "direct",
     candidates: [],

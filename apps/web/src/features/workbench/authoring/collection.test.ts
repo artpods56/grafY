@@ -9,13 +9,7 @@ import type {
   SavedGraphOrigin,
 } from "@/lib/api";
 import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
-import { encodeHandleId } from "./handles";
-import {
-  WORKFLOW_NODE_TYPE,
-  createWorkflowNodeData,
-  portMetaForPort,
-  type WorkflowEdge,
-} from "./types";
+import { createWorkflowNodeData, type WorkflowEdge } from "./types";
 import {
   COLLECTION_OPERATOR_ID,
   COLLECTION_PORT,
@@ -110,7 +104,6 @@ function node(
   if (nodeSpec === collectSpec) data.artifactTypeBindings = { T: IMAGE };
   return {
     id,
-    type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
     data,
   };
@@ -127,11 +120,10 @@ function plugEdge(
   return {
     id: `${source}->${plugId}`,
     source,
-    sourceHandle: encodeHandleId(portMetaForPort(resizeOut)),
+    sourcePort: resizeOut.name,
     target,
-    targetHandle: encodeHandleId(
-      portMetaForPort(itemsPort, itemsPort.shape, plugId, { T: IMAGE }),
-    ),
+    targetPort: itemsPort.name,
+    targetPlug: plugId,
     data: { enabled: true, collectionMode: "direct", conversionPath: [] },
   };
 }
@@ -370,9 +362,9 @@ describe("ungrouping a collection", () => {
     const downstream: WorkflowEdge = {
       id: "out",
       source: "collection",
+      sourcePort: COLLECTION_PORT,
       target: "sink",
-      sourceHandle: null,
-      targetHandle: null,
+      targetPort: "items",
     };
     expect(ungroupCollectionDisabledReason("collection", [downstream])).toMatch(
       /Disconnect/,

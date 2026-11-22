@@ -1,5 +1,5 @@
 import { createUuid } from "@/features/workbench/authoring/uuid";
-import type { CanvasNodeBase } from "./types";
+import type { XYPosition } from "./types";
 
 export type AnnotationKind = "text" | "rectangle" | "ellipse";
 /** `#RRGGBB` stroke/text color for an annotation. */
@@ -44,23 +44,21 @@ export interface SerializedAnnotation {
   color: AnnotationColor;
 }
 
-export interface AnnotationNodeData extends Record<string, unknown> {
+export interface AnnotationNodeData {
   kind: AnnotationKind;
   layout: AnnotationLayout;
   text: string;
   color: AnnotationColor;
-  onLayoutChange?: (nodeId: string, layout: AnnotationLayout) => void;
-  onTextChange?: (nodeId: string, text: string) => void;
-  onColorChange?: (nodeId: string, color: AnnotationColor) => void;
-  onRemoveNode?: (nodeId: string) => void;
-  /** Ephemeral collaborator selection tint; never persisted. */
-  remoteSelectionColor?: string | null;
 }
 
-export type AnnotationNode = CanvasNodeBase<
-  AnnotationNodeData,
-  typeof ANNOTATION_NODE_TYPE
->;
+export interface AnnotationNode {
+  id: string;
+  type?: typeof ANNOTATION_NODE_TYPE;
+  position: XYPosition;
+  zIndex?: number;
+  selected?: boolean;
+  data: AnnotationNodeData;
+}
 
 export const DEFAULT_ANNOTATION_LAYOUT: Record<
   AnnotationKind,

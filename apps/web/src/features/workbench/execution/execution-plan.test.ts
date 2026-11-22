@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { encodeHandleId } from "../authoring/handles";
 import {
-  WORKFLOW_NODE_TYPE,
   createWorkflowNodeData,
   type WorkflowEdge,
   type WorkflowInputPlug,
@@ -114,7 +112,6 @@ function workflowNode(
   data.compatibility = options.compatibility ?? data.compatibility;
   return {
     id,
-    type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
     selected: options.selected ?? false,
     data,
@@ -125,34 +122,11 @@ interface WorkflowEdgeOptions {
   id?: string;
   sourcePort?: string;
   targetPort?: string;
-  targetPlug?: string;
+  targetPlug?: string | null;
   enabled?: boolean;
   collectionMode?: "direct" | "map";
-  sourceHandle?: string | null;
-  targetHandle?: string | null;
   projection?: { path: readonly string[] };
   conversionPath?: readonly { id: string; version: number }[];
-}
-
-function outputHandle(portName: string): string {
-  return encodeHandleId({
-    portName,
-    artifactTypeId: "test.artifact",
-    schemaVersion: 1,
-    shape: "one",
-    direction: "output",
-  });
-}
-
-function inputHandle(portName: string, plugId?: string): string {
-  return encodeHandleId({
-    portName,
-    artifactTypeId: "test.artifact",
-    schemaVersion: 1,
-    shape: "one",
-    direction: "input",
-    ...(plugId ? { plugId } : {}),
-  });
 }
 
 function workflowEdge(
@@ -162,20 +136,13 @@ function workflowEdge(
 ): WorkflowEdge {
   const sourcePort = options.sourcePort ?? "result";
   const targetPort = options.targetPort ?? "input";
-  const sourceHandle =
-    "sourceHandle" in options
-      ? (options.sourceHandle ?? null)
-      : outputHandle(sourcePort);
-  const targetHandle =
-    "targetHandle" in options
-      ? (options.targetHandle ?? null)
-      : inputHandle(targetPort, options.targetPlug);
   return {
     id: options.id ?? `${source}-${sourcePort}-${target}-${targetPort}`,
     source,
-    sourceHandle,
+    sourcePort,
     target,
-    targetHandle,
+    targetPort,
+    targetPlug: options.targetPlug ?? null,
     data: {
       enabled: options.enabled ?? true,
       collectionMode: options.collectionMode ?? "direct",

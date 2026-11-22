@@ -254,15 +254,22 @@ describe("module architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps the web app free of React Flow", () => {
+  it("keeps the web app free of React Flow and its handle/node shims", () => {
+    const retiredShims =
+      /\b(?:encodeHandleId|decodeHandleId|canonicalHandleId|CanvasNodeBase|CanvasEdgeBase|CanvasConnection|CanvasNodeChange|CanvasEdgeChange|WORKFLOW_NODE_TYPE|WORKFLOW_EDGE_TYPE)\b/;
     const offenders: string[] = [];
     for (const file of allSourceFiles(SRC_ROOT)) {
-      for (const [, specifier] of readFileSync(file, "utf8").matchAll(
-        IMPORT_SPECIFIER,
-      )) {
+      const rel = relative(file);
+      if (rel === "architecture.test.ts") continue;
+      const source = readFileSync(file, "utf8");
+      for (const [, specifier] of source.matchAll(IMPORT_SPECIFIER)) {
         if (specifier?.startsWith("@xyflow/")) {
-          offenders.push(`${relative(file)} -> ${specifier}`);
+          offenders.push(`${rel} -> ${specifier}`);
         }
+      }
+      const shimMatch = source.match(retiredShims);
+      if (shimMatch) {
+        offenders.push(`${rel} (${shimMatch[0]})`);
       }
     }
     expect(offenders).toEqual([]);

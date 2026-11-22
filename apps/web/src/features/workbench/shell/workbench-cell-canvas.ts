@@ -13,6 +13,7 @@ import {
 import {
   ARTIFACT_CARD_OUTPUT_HANDLE,
   artifactCardConnectionValue,
+  type ArtifactCardConnection,
 } from "../artifacts/artifact-connections";
 import type { ArtifactOriginEdge } from "../artifacts/artifact-origin-edge";
 import {
@@ -22,13 +23,12 @@ import {
   type ArtifactViewerNode,
   type GraphPresentation,
 } from "../artifacts/artifact-viewer";
-import { decodeHandleId, encodeHandleId } from "../authoring/handles";
 import {
   effectivePortShape,
   isServiceProviderNode,
   portMetaForPort,
   workflowNodeIsSupported,
-  type CanvasConnection,
+  type GraphConnection,
   type WorkflowEdge,
   type WorkflowNode,
 } from "../authoring/types";
@@ -293,8 +293,7 @@ export function buildWorkbenchCellScene({
   );
   const originLinks: CellOriginLink[] | undefined = artifactOriginEdges
     ? artifactOriginEdges.flatMap((edge): CellOriginLink[] => {
-        const decoded = decodeHandleId(edge.targetHandle);
-        if (!decoded) return [];
+        if (!edge.targetPort) return [];
         const origin = originsById.get(edge.data.originId);
         return [
           {
@@ -302,9 +301,9 @@ export function buildWorkbenchCellScene({
             originId: edge.data.originId,
             sourceCardId: edge.source,
             targetCardId: edge.target,
-            targetPortId: decoded.plugId
-              ? `${decoded.portName}::${decoded.plugId}`
-              : decoded.portName,
+            targetPortId: edge.targetPlug
+              ? `${edge.targetPort}::${edge.targetPlug}`
+              : edge.targetPort,
             collectionMode:
               semantics?.origins.get(edge.data.originId)?.collectionMode ??
               edge.data.collectionMode ??
@@ -340,7 +339,7 @@ export function buildWorkbenchCellScene({
       pipeMetadataById.set(edge.id, {
         projectionLabel,
         conversionLabel,
-        sourcePortLabel: edge.data?.sourcePortName,
+        sourcePortLabel: edge.sourcePort,
         incompatible: Boolean(edge.data?.compatibilityIssues?.length),
       });
     }
@@ -400,7 +399,17 @@ export function cellRemotePeersFromParticipants(
     }));
 }
 
-export function encodeCellPortHandleForDiscovery(
+export type CellResolvedConnection =
+  | ({ readonly kind: "workflow" } & GraphConnection)
+  | ({ readonly kind: "artifact-card" } & ArtifactCardConnection)
+  | {
+      readonly kind: "artifact-viewer";
+      readonly sourceNodeId: string;
+      readonly sourcePort: string;
+      readonly targetViewerId: string;
+    };
+
+export function resolveCellPortEndpoint(
   node: WorkflowNode,
   portId: string,
   direction: "input" | "output",
@@ -412,16 +421,13 @@ export function encodeCellPortHandleForDiscovery(
     direction === "input" ? node.data.spec.inputs : node.data.spec.outputs;
   const port = ports.find((candidate) => candidate.name === portName);
   if (!port || port.direction !== direction) return null;
-  const handleId = encodeHandleId(
-    portMetaForPort(
-      port,
-      direction === "input" ? port.shape : effectivePortShape(node.data, port),
-      plugId,
-      node.data.artifactTypeBindings,
-    ),
+  const meta = portMetaForPort(
+    port,
+    direction === "input" ? port.shape : effectivePortShape(node.data, port),
+    plugId,
+    node.data.artifactTypeBindings,
   );
-  const decoded = decodeHandleId(handleId);
-  return decoded ? { port, handleId, decoded } : null;
+  return { port, portName, plugId, meta };
 }
 
 export function cellConnectionToWorkbenchConnection(
@@ -433,26 +439,54 @@ export function cellConnectionToWorkbenchConnection(
     targetCardId,
     targetPortId,
   }: CellConnectionEnds,
-): CanvasConnection | null {
+): CellResolvedConnection | null {
   const sourceNode = nodes.find((node) => node.id === sourceCardId);
   const targetNode = nodes.find((node) => node.id === targetCardId);
-  const sourceHandle = sourceNode
-    ? encodeCellPortHandleForDiscovery(sourceNode, sourcePortId, "output")
-        ?.handleId
-    : sourcePortId === ARTIFACT_CARD_OUTPUT_HANDLE &&
-        viewers.some((viewer) => viewer.id === sourceCardId)
-      ? ARTIFACT_CARD_OUTPUT_HANDLE
-      : null;
-  const targetHandle = targetNode
-    ? encodeCellPortHandleForDiscovery(targetNode, targetPortId, "input")
-        ?.handleId
-    : targetPortId === ARTIFACT_VIEWER_INPUT_HANDLE &&
-        viewers.some((viewer) => viewer.id === targetCardId)
-      ? ARTIFACT_VIEWER_INPUT_HANDLE
-      : null;
-  return sourceHandle && targetHandle
-    ? { source: sourceCardId, target: targetCardId, sourceHandle, targetHandle }
+  const sourceEndpoint = sourceNode
+    ? resolveCellPortEndpoint(sourceNode, sourcePortId, "output")
     : null;
+  const targetEndpoint = targetNode
+    ? resolveCellPortEndpoint(targetNode, targetPortId, "input")
+    : null;
+
+  if (sourceEndpoint && targetEndpoint) {
+    return {
+      kind: "workflow",
+      source: sourceCardId,
+      sourcePort: sourceEndpoint.portName,
+      target: targetCardId,
+      targetPort: targetEndpoint.portName,
+      targetPlug: targetEndpoint.plugId ?? null,
+    };
+  }
+  if (
+    !sourceNode &&
+    sourcePortId === ARTIFACT_CARD_OUTPUT_HANDLE &&
+    viewers.some((viewer) => viewer.id === sourceCardId) &&
+    targetEndpoint
+  ) {
+    return {
+      kind: "artifact-card",
+      sourceCardId,
+      targetNodeId: targetCardId,
+      targetPort: targetEndpoint.portName,
+      targetPlug: targetEndpoint.plugId ?? null,
+    };
+  }
+  if (
+    sourceEndpoint &&
+    !targetNode &&
+    targetPortId === ARTIFACT_VIEWER_INPUT_HANDLE &&
+    viewers.some((viewer) => viewer.id === targetCardId)
+  ) {
+    return {
+      kind: "artifact-viewer",
+      sourceNodeId: sourceCardId,
+      sourcePort: sourceEndpoint.portName,
+      targetViewerId: targetCardId,
+    };
+  }
+  return null;
 }
 
 export function partitionCellSelection(

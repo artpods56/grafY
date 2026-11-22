@@ -9,7 +9,7 @@ import type {
   ProjectNodeSecrets,
   SavedGraphNode,
 } from "@/lib/api";
-import { WORKFLOW_NODE_TYPE, createWorkflowNodeData } from "../authoring/types";
+import { createWorkflowNodeData } from "../authoring/types";
 import type { WorkflowNode } from "./execution-plan";
 import { deferred } from "../test/deferred";
 import { renderHook } from "../test/renderHook";
@@ -64,7 +64,6 @@ function secretNodeSpec(): NodeSpec {
 function workflowNode(baseUrl = savedBaseUrl, id = nodeId): WorkflowNode {
   return {
     id,
-    type: WORKFLOW_NODE_TYPE,
     position: { x: 0, y: 0 },
     data: {
       ...createWorkflowNodeData(secretNodeSpec()),
