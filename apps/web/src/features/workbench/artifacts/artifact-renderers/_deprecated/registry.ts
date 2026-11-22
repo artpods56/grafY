@@ -1,5 +1,11 @@
 "use client";
 
+/**
+ * Retired type-id picker. Nothing in the app imports this.
+ * A canvas card hooks a preview kind in `ArtifactPreview`. `image` is the
+ * reference: `ImageCardPreview`.
+ */
+
 import * as React from "react";
 
 import type { ArtifactSummary } from "@/lib/api";
@@ -16,7 +22,7 @@ import {
 import { markdownRenderer } from "./markdown-renderer";
 import { PrettyValue } from "./pretty-value";
 import type { ArtifactRendererSpec } from "./spec";
-import { tableRenderer } from "./table-renderer";
+import { tableRenderer } from "./table-spec";
 
 export const META_ARTIFACT_RENDERER: ArtifactRendererSpec = {
   id: "meta",

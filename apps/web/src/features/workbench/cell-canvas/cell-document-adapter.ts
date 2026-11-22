@@ -9,7 +9,7 @@
  * face, so callers keep importing one module whatever the split looks like
  * inside.
  */
-import type { NodeRegistry, SavedGraphDocument } from "@/lib/api";
+import type { ArtifactRef, NodeRegistry, SavedGraphDocument } from "@/lib/api";
 
 import type { AuthoredGraphDocument } from "../authoring/graph-document";
 import {
@@ -17,7 +17,10 @@ import {
   type ResolvedGraphSemantics,
 } from "../authoring/graph-semantics";
 
-import type { CellCardSurfaceData } from "./cell-contracts";
+import type {
+  ArtifactCardSurfaceData,
+  CellCardSurfaceData,
+} from "./cell-contracts";
 import type { CellGraph } from "./cell-model";
 import {
   buildAgentCardsAndSurfaces,
@@ -66,6 +69,17 @@ export function cellGraphFromAuthoredDocument(
      * the Library.
      */
     viewerMetadata?: ReadonlyMap<string, CellViewerMetadata>;
+    /** Workspace the live artifact renderers read, with `viewerArtifacts`. */
+    workspaceId?: string;
+    viewerArtifacts?: ReadonlyMap<string, ArtifactRef>;
+    viewerTiffWindows?: ReadonlyMap<
+      string,
+      NonNullable<ArtifactCardSurfaceData["tiffWindow"]>
+    >;
+    viewerTiffTexts?: ReadonlyMap<
+      string,
+      NonNullable<ArtifactCardSurfaceData["tiffText"]>
+    >;
   },
 ): { graph: CellGraph; surfaceById: Record<string, CellCardSurfaceData> } {
   const semantics =
@@ -91,6 +105,10 @@ export function cellGraphFromAuthoredDocument(
       viewerOutputValues: options?.viewerOutputValues,
       viewerImages: options?.viewerImages,
       viewerMetadata: options?.viewerMetadata,
+      workspaceId: options?.workspaceId,
+      viewerArtifacts: options?.viewerArtifacts,
+      viewerTiffWindows: options?.viewerTiffWindows,
+      viewerTiffTexts: options?.viewerTiffTexts,
     },
   );
   const annotations = buildAnnotationCardsAndSurfaces(

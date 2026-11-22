@@ -19,6 +19,7 @@ from pydantic import (
 from grafy_core.artifacts import (
     ArtifactBundleContract,
     ArtifactExportFormat,
+    ArtifactPreviewKind,
     ArtifactTypeKey,
     ArtifactTypeSpec,
     JsonObject,
@@ -239,6 +240,7 @@ TABLE_DATA = ArtifactTypeSpec(
             filename="table.csv",
         ),
     ),
+    preview_kind=ArtifactPreviewKind.TABLE,
 )
 
 

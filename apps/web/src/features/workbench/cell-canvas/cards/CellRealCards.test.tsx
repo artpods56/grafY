@@ -635,6 +635,35 @@ const PREVIEWS: Record<ArtifactPreviewKind, ArtifactCardSurfaceData> = {
     previewText: "Parcels",
     dimensionsLabel: "EPSG:4326",
   },
+  tiff: {
+    kind: "artifact",
+    previewKind: "tiff",
+    artifactTypeId: "file.tiff",
+    typeLabel: "TIFF",
+    filename: "scan.tif",
+    imageUrl: "https://example.test/scan.png",
+  },
+  "tiff-text": {
+    kind: "artifact",
+    previewKind: "tiff-text",
+    artifactTypeId: "ocr.tiff_text_regions",
+    typeLabel: "TIFF text",
+    filename: "regions.json",
+  },
+  "html-page": {
+    kind: "artifact",
+    previewKind: "html-page",
+    artifactTypeId: "html.page",
+    typeLabel: "HTML page",
+    filename: "page.html",
+  },
+  text: {
+    kind: "artifact",
+    previewKind: "text",
+    artifactTypeId: "scalar.text",
+    typeLabel: "Text",
+    previewText: "plain words",
+  },
 };
 
 const PREVIEW_TEXT: Record<ArtifactPreviewKind, readonly string[]> = {
@@ -643,6 +672,10 @@ const PREVIEW_TEXT: Record<ArtifactPreviewKind, readonly string[]> = {
   markdown: ["Summary", "• first point", "plain line"],
   file: ["report.pdf", "PDF · 1.2 MB"],
   map: ["Parcels", "Vector layer", "EPSG:4326"],
+  tiff: ['src="https://example.test/scan.png"', 'alt="scan.tif"'],
+  "tiff-text": ["regions.json", "TIFF text"],
+  "html-page": ["page.html", "HTML page"],
+  text: ["plain words"],
 };
 
 function renderArtifact(
@@ -742,12 +775,12 @@ describe("CellArtifactCard", () => {
     expect(html).not.toContain("data-artifact-stack-count");
   });
 
-  it("keeps a TIFF on its placeholder icon", () => {
+  it("keeps a TIFF without a picture on its placeholder", () => {
     const html = renderArtifact({
-      ...PREVIEWS.image,
-      artifactTypeId: "file.tiff",
+      ...PREVIEWS.tiff,
       imageUrl: null,
     });
+    expect(html).toContain('data-artifact-preview="tiff"');
     expect(html).toContain('data-artifact-placeholder="image"');
     expect(html).not.toContain("<img");
     expect(html).not.toContain("data-artifact-image-frame");

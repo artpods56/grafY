@@ -1,7 +1,7 @@
 "use client";
 
-import { isGeoMapArtifact } from "../artifact-card";
-import { GeoMapArtifactRenderer } from "../geo-map-artifact-renderer";
+import { isGeoMapArtifact } from "../../artifact-card";
+import { GeoMapArtifactRenderer } from "../../geo-map-artifact-renderer";
 
 import type { ArtifactRendererSpec } from "./spec";
 

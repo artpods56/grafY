@@ -4,6 +4,7 @@ import {
   type NodeRegistry,
   type PlacedLibraryItem,
 } from "@/lib/api";
+import { imagePath, imageThumbnailUrl } from "@/lib/api/images";
 import {
   artifactTypeFor,
   cardArtifactRefs,
@@ -24,13 +25,20 @@ import {
   type GraphPresentation,
 } from "../artifacts/artifact-viewer";
 import {
+  readTiffWindow,
+  type TiffWindow,
+  type TiffWindowSelection,
+} from "../artifacts/TiffWindowSelector";
+import {
   effectivePortShape,
   isServiceProviderNode,
+  portArtifactType,
   portMetaForPort,
   workflowNodeIsSupported,
   type GraphConnection,
   type WorkflowEdge,
   type WorkflowNode,
+  type WorkflowNodeConfig,
 } from "../authoring/types";
 import {
   formatLibraryByteSize,
@@ -41,6 +49,7 @@ import type {
   CellConnectionEnds,
 } from "../cell-canvas/CellCanvas";
 import type {
+  ArtifactCardSurfaceData,
   CellRemotePeerState,
   CellSelectionSnapshot,
 } from "../cell-canvas/cell-contracts";
@@ -103,17 +112,75 @@ function cellNodeStatus(
 /** Fanned card backs a sequence shows behind its first picture. */
 const STACK_PEEK_LIMIT = 2;
 
+/** First-page PNG the fanned backs and the sequence spread show for a TIFF. Pages are 0-based. */
+function tiffThumbnailUrl(workspaceId: string, artifactId: string): string {
+  return imageThumbnailUrl(imagePath(workspaceId, artifactId), 0);
+}
+
 /**
- * Whether a card paints this artifact inline. TIFF is an image the browser
- * cannot decode, so it keeps the placeholder until the canvas renders it.
+ * The catalog's preview kind when it lists types. `null` means the catalog is
+ * empty, so the caller keeps the unit-test fallback. A listed catalog that
+ * omits this type is `file`.
+ */
+function catalogPreviewKind(
+  ref: Pick<ArtifactRef, "artifact_type" | "schema_version">,
+  registry: NodeRegistry,
+): "image" | "tiff" | "tiff-text" | "file" | "other" | null {
+  if (registry.artifact_types.length === 0) return null;
+  const kind =
+    artifactTypeFor(ref, registry.artifact_types)?.preview_kind ?? "file";
+  if (
+    kind === "image" ||
+    kind === "tiff" ||
+    kind === "tiff-text" ||
+    kind === "file"
+  ) {
+    return kind;
+  }
+  return "other";
+}
+
+function isTiffRef(ref: ArtifactRef, registry: NodeRegistry): boolean {
+  const kind = catalogPreviewKind(ref, registry);
+  if (kind !== null) return kind === "tiff";
+  return ref.artifact_type === "file.tiff";
+}
+
+function isTiffTextRef(ref: ArtifactRef, registry: NodeRegistry): boolean {
+  const kind = catalogPreviewKind(ref, registry);
+  if (kind !== null) return kind === "tiff-text";
+  return (
+    ref.artifact_type === "ocr.tiff_text_regions" ||
+    ref.artifact_type === "ocr.tiff_recognized_text"
+  );
+}
+
+/**
+ * Whether a card paints this artifact's bytes as an image. A TIFF is a scan
+ * the browser cannot decode, so its card uses a PNG thumbnail instead.
  */
 function paintsInline(ref: ArtifactRef, registry: NodeRegistry): boolean {
+  if (isTiffRef(ref, registry)) return false;
+  const kind = catalogPreviewKind(ref, registry);
+  if (kind === "image") return true;
+  if (kind !== null) return false;
   const contentType = declaredArtifactContentType(
     artifactTypeFor(ref, registry.artifact_types),
   );
-  if (ref.artifact_type === "file.tiff") return false;
   if (contentType?.toLowerCase() === "image/tiff") return false;
   return isImageArtifact(ref, contentType);
+}
+
+function stackImageUrl(
+  ref: ArtifactRef,
+  workspaceId: string,
+  registry: NodeRegistry,
+): string | null {
+  if (isTiffRef(ref, registry)) {
+    return tiffThumbnailUrl(workspaceId, ref.artifact_id);
+  }
+  if (!paintsInline(ref, registry)) return null;
+  return artifactInlineContentUrl(workspaceId, ref.artifact_id);
 }
 
 function viewerImagesFor(
@@ -124,16 +191,95 @@ function viewerImagesFor(
 ): CellViewerImages {
   const urls: string[] = [];
   for (const ref of refs.slice(0, STACK_PEEK_LIMIT + 1)) {
+    if (isTiffRef(ref, registry)) {
+      urls.push(tiffThumbnailUrl(workspaceId, ref.artifact_id));
+      continue;
+    }
     if (!paintsInline(ref, registry)) break;
     urls.push(artifactInlineContentUrl(workspaceId, ref.artifact_id));
   }
   const imageUrl = urls[0] ?? null;
+  const lead = refs[0];
+  const naturalSize =
+    imageUrl == null
+      ? null
+      : (imageNaturalSizes?.get(imageUrl) ??
+        (lead && isTiffRef(lead, registry)
+          ? (imageNaturalSizes?.get(lead.artifact_id) ?? null)
+          : null));
   return {
     imageUrl,
     stackImageUrls: urls.slice(1),
     itemCount: refs.length,
-    naturalSize: imageUrl ? (imageNaturalSizes?.get(imageUrl) ?? null) : null,
+    naturalSize,
   };
+}
+
+type ConfigPatch = (nodeId: string, patch: WorkflowNodeConfig) => void;
+
+function tiffSelectionFor(
+  node: WorkflowNode,
+  onOperatorConfigChange: ConfigPatch,
+): TiffWindowSelection | null {
+  if (!workflowNodeIsSupported(node.data)) return null;
+  const window = readTiffWindow(node.data.config);
+  if (!window) return null;
+  const { scope, strategy } = node.data.config;
+  return {
+    window,
+    ...(scope === "Whole TIFF page" ? { wholePage: true } : {}),
+    ...(strategy === "Single crop" ? { singleCrop: true } : {}),
+    onChange: (next: TiffWindow) => {
+      onOperatorConfigChange(node.id, {
+        page: next.page,
+        col: next.col,
+        row: next.row,
+        width: next.width,
+        height: next.height,
+      });
+    },
+  };
+}
+
+/** The one node whose `tiff` input this card feeds, or null when it is not exactly one. */
+function singleTiffConsumer(
+  cardId: string,
+  edges: readonly ArtifactOriginEdge[],
+): string | null {
+  const targets = new Set<string>();
+  for (const edge of edges) {
+    if (edge.source !== cardId || edge.targetPort !== "tiff") continue;
+    targets.add(edge.target);
+  }
+  if (targets.size !== 1) return null;
+  return [...targets][0] ?? null;
+}
+
+function linkedTiffWindow(
+  cardId: string,
+  edges: readonly ArtifactViewerEdge[],
+  nodesById: ReadonlyMap<string, WorkflowNode>,
+  document: AuthoredGraphDocument,
+  registry: NodeRegistry,
+  onOperatorConfigChange: ConfigPatch,
+): { artifactId: string; selection: TiffWindowSelection } | undefined {
+  const producers = new Set(
+    edges.filter((edge) => edge.target === cardId).map((edge) => edge.source),
+  );
+  if (producers.size !== 1) return undefined;
+  const producerId = [...producers][0];
+  if (!producerId) return undefined;
+  const producer = nodesById.get(producerId);
+  if (!producer) return undefined;
+  const selection = tiffSelectionFor(producer, onOperatorConfigChange);
+  if (!selection) return undefined;
+  const origin = document.origins.find(
+    (item) => item.to_node === producerId && item.to_port === "tiff",
+  );
+  const fed = origin ? cardArtifactRefs(origin.value) : [];
+  const lead = fed.length === 1 ? fed[0] : undefined;
+  if (!lead || !isTiffRef(lead, registry)) return undefined;
+  return { artifactId: lead.artifact_id, selection };
 }
 
 export function buildWorkbenchCellScene({
@@ -154,6 +300,7 @@ export function buildWorkbenchCellScene({
   artifactOriginEdges,
   libraryItemsByArtifactId,
   imageNaturalSizes,
+  onOperatorConfigChange,
 }: {
   /** Names the content route for inline pictures; without it cards stay placeholders. */
   workspaceId?: string | null;
@@ -177,6 +324,8 @@ export function buildWorkbenchCellScene({
   libraryItemsByArtifactId?: ReadonlyMap<string, PlacedLibraryItem>;
   /** Decoded natural pixel dimensions by image content URL, for auto-fit cards. */
   imageNaturalSizes?: ReadonlyMap<string, { width: number; height: number }>;
+  /** Writes the TIFF window fields as one configuration patch. */
+  onOperatorConfigChange?: ConfigPatch;
 }) {
   const nodeRunState: Record<string, CellNodeRunState> = {};
   for (const node of nodes) {
@@ -234,10 +383,67 @@ export function buildWorkbenchCellScene({
     | undefined;
   let viewerImages: Map<string, CellViewerImages> | undefined;
   let viewerMetadata: Map<string, CellViewerMetadata> | undefined;
+  let viewerArtifacts: Map<string, ArtifactRef> | undefined;
+  let viewerTiffWindows:
+    Map<string, NonNullable<ArtifactCardSurfaceData["tiffWindow"]>> | undefined;
+  let viewerTiffTexts:
+    Map<string, NonNullable<ArtifactCardSurfaceData["tiffText"]>> | undefined;
   if (artifactViewerNodes) {
     viewerOutputValues = new Map();
     viewerImages = new Map();
     viewerMetadata = new Map();
+    viewerArtifacts = new Map();
+    viewerTiffWindows = new Map();
+    viewerTiffTexts = new Map();
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    const rememberWaitingTiffText = (cardId: string) => {
+      if (!workspaceId || !onOperatorConfigChange || !artifactViewerEdges) {
+        return;
+      }
+      const feed = artifactViewerEdges.find((edge) => edge.target === cardId);
+      const producer = feed ? nodesById.get(feed.source) : undefined;
+      const port = producer?.data.spec.outputs.find(
+        (item) => item.name === feed?.data?.sourcePortName,
+      );
+      const key = port ? portArtifactType(port) : null;
+      if (
+        !key ||
+        !isTiffTextRef(
+          {
+            artifact_id: "",
+            artifact_type: key.id,
+            schema_version: key.schema_version,
+          },
+          registry,
+        )
+      ) {
+        return;
+      }
+      const linkedWindow = linkedTiffWindow(
+        cardId,
+        artifactViewerEdges,
+        nodesById,
+        document,
+        registry,
+        onOperatorConfigChange,
+      );
+      if (!linkedWindow) return;
+      const thumb = tiffThumbnailUrl(workspaceId, linkedWindow.artifactId);
+      viewerTiffTexts?.set(cardId, {
+        url: null,
+        recognized: key.id === "ocr.tiff_recognized_text",
+        linkedWindow,
+      });
+      viewerImages?.set(cardId, {
+        imageUrl: null,
+        stackImageUrls: [],
+        itemCount: 0,
+        naturalSize:
+          imageNaturalSizes?.get(thumb) ??
+          imageNaturalSizes?.get(linkedWindow.artifactId) ??
+          null,
+      });
+    };
     for (const card of artifactViewerNodes) {
       // The placed artifact, or the one a following card shows from its run.
       const value = artifactCardConnectionValue(
@@ -246,7 +452,10 @@ export function buildWorkbenchCellScene({
         nodes,
       );
       const refs = cardArtifactRefs(value);
-      if (!value || refs.length === 0) continue;
+      if (!value || refs.length === 0) {
+        rememberWaitingTiffText(card.id);
+        continue;
+      }
       viewerOutputValues.set(card.id, {
         artifactTypeId: value.artifact_type,
         schemaVersion: value.schema_version,
@@ -257,6 +466,62 @@ export function buildWorkbenchCellScene({
           card.id,
           viewerImagesFor(refs, workspaceId, registry, imageNaturalSizes),
         );
+        const lead = refs[0];
+        if (lead) {
+          viewerArtifacts.set(card.id, lead);
+          if (
+            refs.length === 1 &&
+            isTiffRef(lead, registry) &&
+            onOperatorConfigChange &&
+            artifactOriginEdges
+          ) {
+            const consumerId = singleTiffConsumer(card.id, artifactOriginEdges);
+            const consumer = consumerId ? nodesById.get(consumerId) : undefined;
+            const selection = consumer
+              ? tiffSelectionFor(consumer, onOperatorConfigChange)
+              : null;
+            if (selection) {
+              viewerTiffWindows.set(card.id, {
+                artifactId: lead.artifact_id,
+                selection,
+              });
+            }
+          }
+          if (isTiffTextRef(lead, registry)) {
+            const linkedWindow =
+              onOperatorConfigChange && artifactViewerEdges
+                ? linkedTiffWindow(
+                    card.id,
+                    artifactViewerEdges,
+                    nodesById,
+                    document,
+                    registry,
+                    onOperatorConfigChange,
+                  )
+                : undefined;
+            viewerTiffTexts.set(card.id, {
+              url: artifactInlineContentUrl(workspaceId, lead.artifact_id),
+              recognized: lead.artifact_type === "ocr.tiff_recognized_text",
+              ...(linkedWindow ? { linkedWindow } : {}),
+            });
+            if (linkedWindow) {
+              const thumb = tiffThumbnailUrl(
+                workspaceId,
+                linkedWindow.artifactId,
+              );
+              const images = viewerImages.get(card.id);
+              if (images && images.naturalSize == null) {
+                viewerImages.set(card.id, {
+                  ...images,
+                  naturalSize:
+                    imageNaturalSizes?.get(thumb) ??
+                    imageNaturalSizes?.get(linkedWindow.artifactId) ??
+                    null,
+                });
+              }
+            }
+          }
+        }
       }
       // A sequence has no one file name; its card says its count instead,
       // and its spread names every item.
@@ -266,10 +531,9 @@ export function buildWorkbenchCellScene({
             const item = libraryItemsByArtifactId?.get(ref.artifact_id);
             return {
               artifactId: ref.artifact_id,
-              imageUrl:
-                workspaceId && paintsInline(ref, registry)
-                  ? artifactInlineContentUrl(workspaceId, ref.artifact_id)
-                  : null,
+              imageUrl: workspaceId
+                ? stackImageUrl(ref, workspaceId, registry)
+                : null,
               label: item ? libraryFileDisplayName(item) : `#${index + 1}`,
             };
           }),
@@ -367,6 +631,10 @@ export function buildWorkbenchCellScene({
     pipeMetadataById,
     viewerImages,
     viewerMetadata,
+    workspaceId: workspaceId ?? undefined,
+    viewerArtifacts,
+    viewerTiffWindows,
+    viewerTiffTexts,
   });
 }
 

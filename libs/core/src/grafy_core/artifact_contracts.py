@@ -14,6 +14,7 @@ from pydantic import (
 from grafy_core.artifacts import (
     ArtifactExportFormat,
     ArtifactBundleContract,
+    ArtifactPreviewKind,
     ArtifactTypeKey,
     ArtifactTypeSpec,
     JsonObject,
@@ -24,6 +25,7 @@ RASTER_IMAGE = ArtifactTypeSpec(
     key=ArtifactTypeKey("image.raster", 1),
     title="Image",
     bundle=ArtifactBundleContract(format="binary-file", version=1),
+    preview_kind=ArtifactPreviewKind.IMAGE,
 )
 
 
@@ -91,6 +93,7 @@ IMAGE_REGIONS = ArtifactTypeSpec(
     key=ArtifactTypeKey("image.regions", 1),
     title="Boxes on the page",
     payload_schema=cast(JsonObject, ImageRegionSet.model_json_schema()),
+    preview_kind=ArtifactPreviewKind.TEXT,
 )
 
 
@@ -105,6 +108,7 @@ INTEGER_VALUE = ArtifactTypeSpec(
     title="Number",
     payload_schema=cast(JsonObject, IntegerValuePayload.model_json_schema()),
     materialized_json_type="integer",
+    preview_kind=ArtifactPreviewKind.TEXT,
 )
 
 
@@ -129,6 +133,7 @@ TEXT_VALUE = ArtifactTypeSpec(
             filename="text.txt",
         ),
     ),
+    preview_kind=ArtifactPreviewKind.TEXT,
 )
 
 
@@ -151,6 +156,7 @@ MARKDOWN = ArtifactTypeSpec(
             filename="markdown.txt",
         ),
     ),
+    preview_kind=ArtifactPreviewKind.MARKDOWN,
 )
 
 
@@ -202,6 +208,7 @@ HTML_PAGE = ArtifactTypeSpec(
     key=ArtifactTypeKey("html.page", 1),
     title="Web page",
     payload_schema=cast(JsonObject, HtmlPage.model_json_schema()),
+    preview_kind=ArtifactPreviewKind.HTML_PAGE,
 )
 
 

@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, model_validator
 
 from grafy_core.artifacts import (
+    ArtifactPreviewKind,
     ArtifactTypeKey,
     ArtifactTypeSpec,
     JsonObject,
@@ -73,4 +74,5 @@ COMPLETION = ArtifactTypeSpec(
         JsonObject,
         CompletionPayload.model_json_schema(),
     ),
+    preview_kind=ArtifactPreviewKind.TEXT,
 )

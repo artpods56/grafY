@@ -5,6 +5,7 @@ from typing import cast
 import pytest
 from grafy_core.artifacts import (
     ArtifactConfirmationRule,
+    ArtifactPreviewKind,
     ArtifactTypeKey,
     ArtifactTypeSpec,
     ConfirmationRule,
@@ -134,3 +135,36 @@ def test_builtin_file_formats_cross_plugin_boundaries_as_bytes() -> None:
         spec.bundle.format == "binary-file" and spec.bundle.version == 1
         for spec in BUILTIN_FILE_FORMATS
     )
+
+
+@pytest.mark.parametrize(
+    ("artifact_type_id", "preview_kind"),
+    [
+        ("file.png", ArtifactPreviewKind.IMAGE),
+        ("file.jpeg", ArtifactPreviewKind.IMAGE),
+        ("file.tiff", ArtifactPreviewKind.TIFF),
+        ("file.webp", ArtifactPreviewKind.IMAGE),
+        ("file.bmp", ArtifactPreviewKind.IMAGE),
+        ("file.pdf", ArtifactPreviewKind.FILE),
+        ("file.xlsx", ArtifactPreviewKind.FILE),
+        ("file.geojson", ArtifactPreviewKind.TEXT),
+        ("file.json", ArtifactPreviewKind.TEXT),
+        ("file.csv", ArtifactPreviewKind.FILE),
+        ("file.txt", ArtifactPreviewKind.TEXT),
+        ("file.blob", ArtifactPreviewKind.FILE),
+    ],
+)
+def test_builtin_file_formats_declare_a_preview_kind(
+    artifact_type_id: str,
+    preview_kind: ArtifactPreviewKind,
+) -> None:
+    assert _spec(artifact_type_id).preview_kind is preview_kind
+
+
+def test_preview_kind_must_be_the_enum() -> None:
+    with pytest.raises(ValueError, match="Unsupported artifact preview kind"):
+        ArtifactTypeSpec(
+            key=ArtifactTypeKey("file.png", 1),
+            title="PNG",
+            preview_kind=cast(ArtifactPreviewKind, "image"),
+        )

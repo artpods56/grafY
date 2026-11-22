@@ -92,6 +92,7 @@ function artifactType(
   return {
     key: { id, schema_version: 1 },
     title: id,
+    preview_kind: "file",
     bundle: { format: "inline-json", version: 1 },
     payload_schema: {},
     field_projections: fieldProjections,

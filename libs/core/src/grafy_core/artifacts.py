@@ -2,6 +2,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from typing import (
     Literal,
     Self,
@@ -195,6 +196,20 @@ class ArtifactConfirmationRule:
         return isinstance(document, (dict, list))
 
 
+class ArtifactPreviewKind(StrEnum):
+    """Which canvas card preview renderer presents an artifact of this type."""
+
+    IMAGE = "image"
+    TIFF = "tiff"
+    TIFF_TEXT = "tiff-text"
+    TABLE = "table"
+    MAP = "map"
+    HTML_PAGE = "html-page"
+    MARKDOWN = "markdown"
+    TEXT = "text"
+    FILE = "file"
+
+
 @dataclass(frozen=True, slots=True)
 class ArtifactTypeSpec:
     key: ArtifactTypeKey
@@ -210,6 +225,7 @@ class ArtifactTypeSpec:
     )
     extensions: tuple[str, ...] = ()
     confirmation_rule: ArtifactConfirmationRule = ArtifactConfirmationRule()
+    preview_kind: ArtifactPreviewKind = ArtifactPreviewKind.FILE
 
     def __post_init__(self) -> None:
         paths = [reference.path for reference in self.references]
@@ -220,6 +236,10 @@ class ArtifactTypeSpec:
                 "Artifact references currently require the inline-json bundle"
             )
         validate_extension_claims(self.key.id, self.extensions)
+        if not isinstance(self.preview_kind, ArtifactPreviewKind):
+            raise ValueError(
+                f"Unsupported artifact preview kind {self.preview_kind!r}"
+            )
 
 
 class ArtifactRef(BaseModel):
@@ -474,6 +494,7 @@ __all__ = [
     "ArtifactExportFormat",
     "ArtifactFieldProjection",
     "ArtifactObject",
+    "ArtifactPreviewKind",
     "ArtifactRef",
     "ArtifactRefSequence",
     "ArtifactReferenceContract",

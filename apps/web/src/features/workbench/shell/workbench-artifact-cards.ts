@@ -7,10 +7,16 @@ import type { NodeSpec } from "@/lib/api";
 
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
+  DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
+  DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
   artifactCardMediaHeight,
   artifactCardValue,
   canMergeIntoCard,
   cardArtifactRefs,
+  isGeoMapArtifact,
+  isTableArtifact,
   originBelongsToCard,
   type ArtifactCardValue,
 } from "../artifacts/artifact-card";
@@ -664,6 +670,25 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
   };
 }
 
+/** Pixel size an unsized card opens at, matching the cell canvas defaults. */
+function unsizedArtifactCardPixels(
+  value: ArtifactCardValue | null | undefined,
+): { width: number; height: number } {
+  if (value && isTableArtifact(value)) {
+    return {
+      width: DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
+      height: DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
+    };
+  }
+  if (value && isGeoMapArtifact(value)) {
+    return {
+      width: DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
+      height: DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
+    };
+  }
+  return { width: DEFAULT_ARTIFACT_CARD_WIDTH, height: 150 };
+}
+
 /**
  * The canvas box a card takes, as the cell canvas lays it out: at least eight
  * cells wide and six tall, each side snapped to whole cells.
@@ -672,15 +697,14 @@ export function artifactCardFootprint(card: Pick<ArtifactViewerNode, "data">): {
   width: number;
   height: number;
 } {
+  const fallback = unsizedArtifactCardPixels(card.data.artifactRef);
   const widthCells = Math.max(
     8,
-    Math.round(
-      (card.data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH) / CELL_SIZE,
-    ),
+    Math.round((card.data.layout?.width ?? fallback.width) / CELL_SIZE),
   );
   const heightCells = Math.max(
     6,
-    Math.round((card.data.layout?.bodyHeight ?? 150) / CELL_SIZE),
+    Math.round((card.data.layout?.bodyHeight ?? fallback.height) / CELL_SIZE),
   );
   return { width: widthCells * CELL_SIZE, height: heightCells * CELL_SIZE };
 }

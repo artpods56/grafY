@@ -3,7 +3,12 @@
 import pytest
 
 from grafy_api.catalog import CatalogSnapshot
-from grafy_core.artifacts import ArtifactTypeKey, ArtifactTypeSpec
+from grafy_api.v1.routes.catalog.models import ArtifactTypeSpecResponse
+from grafy_core.artifacts import (
+    ArtifactPreviewKind,
+    ArtifactTypeKey,
+    ArtifactTypeSpec,
+)
 from grafy_core.file_contracts import ExtensionClaimCollisionError
 from grafy_core.plugins import Plugin, PluginRegistry
 
@@ -66,6 +71,37 @@ def test_an_extension_already_claimed_by_an_installed_format_is_refused() -> Non
         match=r"file\.txt@1 and file\.las@1 both claim extension 'txt'",
     ):
         _snapshot(_registry_with(("file.las", ("txt",))))
+
+
+def test_catalog_artifact_types_declare_preview_kinds() -> None:
+    snapshot = _snapshot()
+    kinds = {spec.key.id: spec.preview_kind for spec in snapshot.artifact_types}
+
+    assert kinds["file.png"] is ArtifactPreviewKind.IMAGE
+    assert kinds["file.jpeg"] is ArtifactPreviewKind.IMAGE
+    assert kinds["file.tiff"] is ArtifactPreviewKind.TIFF
+    assert kinds["file.webp"] is ArtifactPreviewKind.IMAGE
+    assert kinds["file.bmp"] is ArtifactPreviewKind.IMAGE
+    assert kinds["file.pdf"] is ArtifactPreviewKind.FILE
+    assert kinds["file.xlsx"] is ArtifactPreviewKind.FILE
+    assert kinds["file.geojson"] is ArtifactPreviewKind.TEXT
+    assert kinds["file.json"] is ArtifactPreviewKind.TEXT
+    assert kinds["file.csv"] is ArtifactPreviewKind.FILE
+    assert kinds["file.txt"] is ArtifactPreviewKind.TEXT
+    assert kinds["file.blob"] is ArtifactPreviewKind.FILE
+
+    response = ArtifactTypeSpecResponse.from_spec(_spec_for(snapshot, "file.tiff"))
+    assert response.preview_kind is ArtifactPreviewKind.TIFF
+
+
+def test_an_installed_format_keeps_the_file_preview_kind_by_default() -> None:
+    snapshot = _snapshot(_registry_with(("file.laz", ("laz",))))
+
+    assert _spec_for(snapshot, "file.laz").preview_kind is ArtifactPreviewKind.FILE
+    assert (
+        ArtifactTypeSpecResponse.from_spec(_spec_for(snapshot, "file.laz")).preview_kind
+        is ArtifactPreviewKind.FILE
+    )
 
 
 def test_two_installed_families_colliding_on_one_extension_are_refused() -> None:

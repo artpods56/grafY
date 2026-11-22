@@ -10,12 +10,12 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import { artifactMeta } from "./artifact-meta";
 import { PrettyValue } from "./pretty-value";
 import type { ArtifactRendererSpec } from "./spec";
-import { sharedStyles } from "./styles";
+import { sharedStyles } from "../styles";
 import {
   formatTextHead,
   readTextHead,
   TEXT_HEAD_BYTE_LIMIT,
-} from "./text-head";
+} from "../text-head";
 
 const s = stylex.create({
   notice: {

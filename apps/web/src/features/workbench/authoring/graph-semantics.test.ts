@@ -20,6 +20,7 @@ function registryWith(nodes: NodeRegistry["nodes"]): NodeRegistry {
       {
         key: { id: "image.jpeg", schema_version: 1 },
         title: "JPEG image",
+        preview_kind: "image",
         bundle: { format: "binary-file", version: 1 },
         field_projections: [],
         payload_schema: {},
@@ -27,6 +28,7 @@ function registryWith(nodes: NodeRegistry["nodes"]): NodeRegistry {
       {
         key: { id: "document.regions", schema_version: 1 },
         title: "Regions",
+        preview_kind: "file",
         bundle: { format: "inline-json", version: 1 },
         field_projections: [],
         payload_schema: {},
@@ -34,6 +36,7 @@ function registryWith(nodes: NodeRegistry["nodes"]): NodeRegistry {
       {
         key: { id: "scalar.text", schema_version: 1 },
         title: "Text",
+        preview_kind: "text",
         bundle: { format: "inline-json", version: 1 },
         field_projections: [],
         payload_schema: {},
