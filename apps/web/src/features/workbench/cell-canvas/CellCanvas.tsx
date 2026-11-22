@@ -5,7 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { ChevronDown } from "lucide-react";
 
 import { IconButton } from "@/components/ui/button";
-import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
+import { artifactTypeColor } from "@/features/workbench/config-ui/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CellCanvasProvider, CellViewportLayer } from "./CellCanvasContext";

@@ -14,8 +14,8 @@ import {
 } from "lucide-react";
 
 import { IconButton } from "@/components/ui/button";
-import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
-import { COLLECTION_PORT } from "@/features/workbench/model/collection-spec";
+import { artifactTypeColor } from "@/features/workbench/config-ui/nodes.css";
+import { COLLECTION_PORT } from "@/features/workbench/authoring/collection-spec";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import type {

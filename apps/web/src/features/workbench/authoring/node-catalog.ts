@@ -1,0 +1,597 @@
+import type {
+  ArtifactTypeKey,
+  ArtifactTypeSpec,
+  NodeRegistry,
+  NodeSpec,
+  Port,
+} from "@/lib/api";
+
+import {
+  connectionRoutesFor,
+  encodeHandleId,
+  type ConnectionRoute,
+  type HandleFeedIntent,
+} from "./handles";
+import { artifactTypeKey } from "../artifacts/artifact-type-key";
+import { schemaFields } from "../config-ui/config-schema";
+import {
+  acceptedPortShapes,
+  portArtifactType,
+  portArtifactTypeVariable,
+  portHasInstancePlugs,
+  portMetaForPort,
+} from "./types";
+import { routesForHandleFeed } from "./connection-feeds";
+
+export type CatalogFilterKind =
+  | "all"
+  | "artifact"
+  | "single"
+  | "sequence"
+  | "any-artifact"
+  | "source"
+  | "input-nodes";
+
+export type CatalogFilterId =
+  | "all"
+  | "single"
+  | "sequence"
+  | "any-artifact"
+  | "input-nodes"
+  | `artifact:${string}@${number}`
+  | `source:${string}`;
+
+export interface CatalogFilter {
+  id: CatalogFilterId;
+  kind: CatalogFilterKind;
+  title: string;
+  artifactKey?: ArtifactTypeKey;
+  /** Provider plugin slug, set for `source` filters. */
+  sourceKey?: string;
+}
+
+export interface ContextualRouteChoice {
+  /** Port on the candidate (new) node that participates in the edge. */
+  candidatePort: Port;
+  route: ConnectionRoute;
+  collectionMode: "direct" | "map";
+  /** True when the candidate node's input needs an ordered instance plug (downstream inserts). */
+  usesInstancePlug: boolean;
+}
+
+export interface ContextualCandidate {
+  spec: NodeSpec;
+  choices: readonly ContextualRouteChoice[];
+}
+
+export function catalogNodeKey(spec: NodeSpec): string {
+  return `${spec.operator_id}@${spec.operator_version}`;
+}
+
+export function artifactFilterId(key: ArtifactTypeKey): CatalogFilterId {
+  return `artifact:${artifactTypeKey(key)}`;
+}
+
+export function sourceFilterId(slug: string): CatalogFilterId {
+  return `source:${slug}`;
+}
+
+/** Restricts results to nodes that take no inputs because they are inputs themselves. */
+export const INPUT_NODES_FILTER: CatalogFilter = {
+  id: "input-nodes",
+  kind: "input-nodes",
+  title: "Input nodes",
+};
+
+/** The plugin a node ships in. The registry always lists it; a miss is a bug. */
+export function catalogPlugin(
+  registry: NodeRegistry,
+  slug: string,
+): NodeRegistry["plugins"][number] {
+  const plugin = registry.plugins.find((candidate) => candidate.slug === slug);
+  if (!plugin) {
+    throw new Error(`Node registry is missing owner plugin "${slug}".`);
+  }
+  return plugin;
+}
+
+function portDeclaresArtifact(port: Port, key: ArtifactTypeKey): boolean {
+  const artifactType = portArtifactType(port);
+  return (
+    artifactType?.id === key.id &&
+    artifactType.schema_version === key.schema_version
+  );
+}
+
+function portIsAnyArtifact(port: Port): boolean {
+  return (
+    portArtifactTypeVariable(port) != null && portArtifactType(port) == null
+  );
+}
+
+function nodeDeclaresArtifact(spec: NodeSpec, key: ArtifactTypeKey): boolean {
+  return [...spec.inputs, ...spec.outputs].some((port) =>
+    portDeclaresArtifact(port, key),
+  );
+}
+
+function nodeMatchesShapeFilter(spec: NodeSpec, shape: Port["shape"]): boolean {
+  if (spec.outputs.some((port) => port.shape === shape)) return true;
+  return spec.inputs.some((port) => acceptedPortShapes(port).includes(shape));
+}
+
+function nodeMatchesAnyArtifact(spec: NodeSpec): boolean {
+  return [...spec.inputs, ...spec.outputs].some(portIsAnyArtifact);
+}
+
+function artifactTitle(registry: NodeRegistry, key: ArtifactTypeKey): string {
+  return (
+    registry.artifact_types.find(
+      (artifact) =>
+        artifact.key.id === key.id &&
+        artifact.key.schema_version === key.schema_version,
+    )?.title ?? key.id
+  );
+}
+
+/** Build the source categories: every provider plugin that ships nodes. */
+export function buildSourceFilters(
+  registry: NodeRegistry,
+): readonly CatalogFilter[] {
+  const slugsWithNodes = new Set(
+    registry.nodes.map((spec) => spec.plugin_slug),
+  );
+  const sources = registry.plugins
+    .filter((plugin) => slugsWithNodes.has(plugin.slug))
+    .slice()
+    .sort(
+      (left, right) =>
+        left.title.localeCompare(right.title) ||
+        left.slug.localeCompare(right.slug),
+    );
+
+  return [
+    { id: "all", kind: "all", title: "All" },
+    ...sources.map((plugin): CatalogFilter => ({
+      id: sourceFilterId(plugin.slug),
+      kind: "source",
+      title: plugin.title || "System",
+      sourceKey: plugin.slug,
+    })),
+  ];
+}
+
+/** Build browse filters from registered artifact types plus fixed shape filters. */
+export function buildCatalogFilters(
+  registry: NodeRegistry,
+): readonly CatalogFilter[] {
+  const titleCounts = new Map<string, number>();
+  for (const artifact of registry.artifact_types) {
+    titleCounts.set(artifact.title, (titleCounts.get(artifact.title) ?? 0) + 1);
+  }
+
+  const artifactFilters = [...registry.artifact_types]
+    .slice()
+    .sort((left, right) => {
+      const byTitle = left.title.localeCompare(right.title);
+      if (byTitle !== 0) return byTitle;
+      return artifactTypeKey(left.key).localeCompare(
+        artifactTypeKey(right.key),
+      );
+    })
+    .map((artifact): CatalogFilter => {
+      const showVersion = (titleCounts.get(artifact.title) ?? 0) > 1;
+      return {
+        id: artifactFilterId(artifact.key),
+        kind: "artifact",
+        title: showVersion
+          ? `${artifact.title} · v${artifact.key.schema_version}`
+          : artifact.title,
+        artifactKey: artifact.key,
+      };
+    });
+
+  return [
+    { id: "all", kind: "all", title: "All steps" },
+    ...artifactFilters,
+    { id: "single", kind: "single", title: "One item" },
+    { id: "sequence", kind: "sequence", title: "Lists" },
+    { id: "any-artifact", kind: "any-artifact", title: "Any kind" },
+  ];
+}
+
+export function catalogNodesForFilter(
+  nodes: readonly NodeSpec[],
+  filter: CatalogFilter,
+): readonly NodeSpec[] {
+  switch (filter.kind) {
+    case "all":
+      return nodes;
+    case "artifact":
+      return filter.artifactKey
+        ? nodes.filter((spec) =>
+            nodeDeclaresArtifact(spec, filter.artifactKey!),
+          )
+        : [];
+    case "single":
+      return nodes.filter((spec) => nodeMatchesShapeFilter(spec, "one"));
+    case "sequence":
+      return nodes.filter((spec) => nodeMatchesShapeFilter(spec, "many"));
+    case "any-artifact":
+      return nodes.filter(nodeMatchesAnyArtifact);
+    case "source":
+      return filter.sourceKey
+        ? nodes.filter((spec) => spec.plugin_slug === filter.sourceKey)
+        : [];
+    case "input-nodes":
+      return nodes.filter((spec) => spec.inputs.length === 0);
+  }
+}
+
+export function sortCatalogNodes(nodes: readonly NodeSpec[]): NodeSpec[] {
+  return nodes.slice().sort((left, right) => {
+    const byTitle = left.title.localeCompare(right.title);
+    if (byTitle !== 0) return byTitle;
+    const byOperator = left.operator_id.localeCompare(right.operator_id);
+    if (byOperator !== 0) return byOperator;
+    return left.operator_version - right.operator_version;
+  });
+}
+
+export function nodeCatalogSearchText(
+  spec: NodeSpec,
+  registry: NodeRegistry,
+): string {
+  const plugin = catalogPlugin(registry, spec.plugin_slug);
+  const fields = schemaFields(spec.config_schema);
+  return [
+    spec.title,
+    spec.operator_id,
+    spec.description,
+    spec.plugin_slug,
+    plugin.title,
+    plugin.entry_kind,
+    plugin.origin,
+    ...spec.inputs.flatMap((port) => portSearchTerms(port, registry)),
+    ...spec.outputs.flatMap((port) => portSearchTerms(port, registry)),
+    ...fields.flatMap((field) => [
+      field.name,
+      field.title,
+      field.description ?? "",
+      ...(field.enumValues?.map(String) ?? []),
+    ]),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function portSearchTerms(port: Port, registry: NodeRegistry): string[] {
+  const artifactType = portArtifactType(port);
+  return [
+    port.name,
+    port.title ?? "",
+    port.description ?? "",
+    artifactType ? artifactTitle(registry, artifactType) : "any artifact",
+    artifactType?.id ?? "any artifact generic",
+    portArtifactTypeVariable(port) ?? "",
+    port.instance_plugs ? "collect ordered input plugs" : "",
+    ...(port.accepted_shapes ?? []).map((shape) =>
+      shape === "many" ? "sequence" : "single",
+    ),
+  ];
+}
+
+function searchTerms(query: string): string[] {
+  return query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Every word of the query appears somewhere the node is described. */
+export function searchCatalogNodes(
+  nodes: readonly NodeSpec[],
+  query: string,
+  registry: NodeRegistry,
+): readonly NodeSpec[] {
+  const terms = searchTerms(query);
+  if (terms.length === 0) return nodes;
+  return nodes.filter((spec) => {
+    const text = nodeCatalogSearchText(spec, registry);
+    return terms.every((term) => text.includes(term));
+  });
+}
+
+/** Babel here cannot compile Unicode property escapes, so this is spelled out. */
+const TITLE_WORD_SEPARATOR = /[\s\-_.,:;/\\()[\]{}"'`+*&|<>]+/;
+
+/**
+ * How well a node's title answers the query; lower is better. A node is found
+ * by anything it declares, but the ones named for the query come first:
+ * "add" puts Add integers above every node that merely mentions adding.
+ */
+export function catalogSearchRank(spec: NodeSpec, query: string): number {
+  const phrase = query.trim().toLowerCase();
+  const title = spec.title.toLowerCase();
+  if (title === phrase) return 0;
+  if (title.startsWith(phrase)) return 1;
+  // Spaces and punctuation separate words; letters of any script do not.
+  const words = title.split(TITLE_WORD_SEPARATOR);
+  if (words.some((word) => word.startsWith(phrase))) return 2;
+  if (title.includes(phrase)) return 3;
+  const terms = searchTerms(query);
+  const inTitle = terms.filter((term) =>
+    words.some((word) => word.startsWith(term)),
+  ).length;
+  if (inTitle === terms.length) return 4;
+  if (inTitle > 0) return 5;
+  if (spec.operator_id.toLowerCase().includes(phrase)) return 6;
+  return 7;
+}
+
+export function filterAndSearchCatalogNodes(
+  nodes: readonly NodeSpec[],
+  filters: readonly CatalogFilter[],
+  query: string,
+  registry: NodeRegistry,
+): readonly NodeSpec[] {
+  const filtered = filters.reduce(
+    (acc, filter) =>
+      filter.kind === "all" ? acc : catalogNodesForFilter(acc, filter),
+    nodes,
+  );
+  const found = sortCatalogNodes(searchCatalogNodes(filtered, query, registry));
+  if (searchTerms(query).length === 0) return found;
+  // A stable sort keeps title order among nodes that rank the same.
+  return found
+    .map((spec) => ({ spec, rank: catalogSearchRank(spec, query) }))
+    .sort((left, right) => left.rank - right.rank)
+    .map(({ spec }) => spec);
+}
+
+/**
+ * The catalog listings a picker may place.
+ *
+ * `activeGraphId` is retained for existing call sites: hiding the graph being
+ * edited was a Module concern, and Modules are gone (ADR 0020).
+ */
+export function catalogNodeSpecs(
+  registry: NodeRegistry,
+  _activeGraphId?: string | null,
+): readonly NodeSpec[] {
+  return registry.nodes.filter((spec) => spec.catalog_visible !== false);
+}
+
+/** Compact purpose-oriented port summary for result rows. */
+export function catalogNodePortSummary(
+  spec: NodeSpec,
+  registry: NodeRegistry,
+): string {
+  const inputLabels = spec.inputs.map((port) => portLabel(port, registry));
+  const outputLabels = spec.outputs.map((port) => portLabel(port, registry));
+  const inputs =
+    inputLabels.length === 0
+      ? "—"
+      : inputLabels.length <= 2
+        ? inputLabels.join(", ")
+        : `${inputLabels.slice(0, 2).join(", ")} +${inputLabels.length - 2}`;
+  const outputs =
+    outputLabels.length === 0
+      ? "—"
+      : outputLabels.length <= 2
+        ? outputLabels.join(", ")
+        : `${outputLabels.slice(0, 2).join(", ")} +${outputLabels.length - 2}`;
+  return `${inputs} → ${outputs}`;
+}
+
+function portLabel(port: Port, registry: NodeRegistry): string {
+  const artifactType = portArtifactType(port);
+  if (!artifactType) return "Any";
+  return artifactTitle(registry, artifactType);
+}
+
+export function catalogNodeProviderLabel(
+  spec: NodeSpec,
+  registry: NodeRegistry,
+): string {
+  const plugin = catalogPlugin(registry, spec.plugin_slug);
+  if (plugin.origin === "builtin") return plugin.title || "Built-in";
+  return plugin.title || "Plugin";
+}
+
+function shapesAreCompatible(source: Port, target: Port): boolean {
+  const acceptedShapes = acceptedPortShapes(target);
+  return (
+    acceptedShapes.includes(source.shape) ||
+    (!portHasInstancePlugs(target) &&
+      source.shape === "many" &&
+      acceptedShapes.includes("one"))
+  );
+}
+
+function collectionModeForPorts(
+  source: Port,
+  target: Port,
+): "direct" | "map" | null {
+  const acceptedShapes = acceptedPortShapes(target);
+  if (acceptedShapes.includes(source.shape)) return "direct";
+  if (
+    !portHasInstancePlugs(target) &&
+    source.shape === "many" &&
+    acceptedShapes.includes("one")
+  ) {
+    return "map";
+  }
+  return null;
+}
+
+const DISCOVERY_INSTANCE_PLUG_ID = "discovery-instance-plug";
+
+function targetHandleForRoute(
+  target: Port,
+  plugId: string | undefined,
+): string {
+  return encodeHandleId(portMetaForPort(target, target.shape, plugId));
+}
+
+/**
+ * Downstream nodes with at least one valid typed route from an exact source
+ * output handle. Uses existing connection route calculation.
+ */
+export function downstreamCandidatesFromOutput(options: {
+  sourcePort: Port & { readonly direction: "output" };
+  sourceHandle: string;
+  sourceFeed?: HandleFeedIntent | null;
+  registry: NodeRegistry;
+  nodes: readonly NodeSpec[];
+  artifactTypes?: readonly ArtifactTypeSpec[];
+}): ContextualCandidate[] {
+  const {
+    sourcePort,
+    sourceHandle,
+    sourceFeed = null,
+    registry,
+    nodes,
+  } = options;
+  const artifactTypes = options.artifactTypes ?? registry.artifact_types;
+  const conversions = registry.artifact_conversions;
+  const candidates: ContextualCandidate[] = [];
+
+  for (const spec of sortCatalogNodes(
+    nodes.filter((node) => node.catalog_visible !== false),
+  )) {
+    const choices: ContextualRouteChoice[] = [];
+
+    for (const input of spec.inputs) {
+      if (input.direction !== "input") continue;
+      if (!shapesAreCompatible(sourcePort, input)) continue;
+
+      const collectionMode = collectionModeForPorts(sourcePort, input);
+      if (!collectionMode) continue;
+
+      const usesInstancePlug = portHasInstancePlugs(input);
+      // Optional instance-plug inputs get no initial plug on a newly created node.
+      if (usesInstancePlug && !input.required) continue;
+
+      const allRoutes = connectionRoutesFor(
+        {
+          sourceHandle,
+          targetHandle: targetHandleForRoute(
+            input,
+            usesInstancePlug ? DISCOVERY_INSTANCE_PLUG_ID : undefined,
+          ),
+        },
+        artifactTypes,
+        conversions,
+      );
+      const routes = routesForHandleFeed(allRoutes, sourceFeed ?? undefined);
+      for (const route of routes) {
+        choices.push({
+          candidatePort: input as Port & { readonly direction: "input" },
+          route,
+          collectionMode,
+          usesInstancePlug,
+        });
+      }
+    }
+
+    if (choices.length) {
+      candidates.push({ spec, choices });
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * Upstream nodes with at least one valid typed route into an exact input
+ * handle. Mirrors {@link downstreamCandidatesFromOutput} for the reverse
+ * direction: drag from an input port and drop on the canvas.
+ */
+export function upstreamCandidatesFromInput(options: {
+  targetPort: Port & { readonly direction: "input" };
+  targetHandle: string;
+  registry: NodeRegistry;
+  nodes: readonly NodeSpec[];
+}): ContextualCandidate[] {
+  const { targetPort, targetHandle, registry, nodes } = options;
+  const artifactTypes = registry.artifact_types;
+  const conversions = registry.artifact_conversions;
+  const candidates: ContextualCandidate[] = [];
+
+  for (const spec of sortCatalogNodes(
+    nodes.filter((node) => node.catalog_visible !== false),
+  )) {
+    const choices: ContextualRouteChoice[] = [];
+
+    for (const output of spec.outputs) {
+      if (output.direction !== "output") continue;
+      if (!shapesAreCompatible(output, targetPort)) continue;
+
+      const collectionMode = collectionModeForPorts(output, targetPort);
+      if (!collectionMode) continue;
+
+      const allRoutes = connectionRoutesFor(
+        {
+          sourceHandle: encodeHandleId(portMetaForPort(output)),
+          targetHandle,
+        },
+        artifactTypes,
+        conversions,
+      );
+      for (const route of allRoutes) {
+        choices.push({
+          candidatePort: output as Port & { readonly direction: "output" },
+          route,
+          collectionMode,
+          usesInstancePlug: false,
+        });
+      }
+    }
+
+    if (choices.length) {
+      candidates.push({ spec, choices });
+    }
+  }
+
+  return candidates;
+}
+
+export function nodesCompatibleWithPort(
+  nodes: readonly NodeSpec[],
+  compatibility: {
+    direction: "upstream" | "downstream";
+    port: Port;
+  },
+  registry: NodeRegistry,
+): readonly NodeSpec[] {
+  return nodes.filter((spec) => {
+    if (compatibility.direction === "upstream") {
+      return spec.outputs.some((output) =>
+        portsCanConnect(output, compatibility.port, registry),
+      );
+    }
+    return spec.inputs.some((input) =>
+      portsCanConnect(compatibility.port, input, registry),
+    );
+  });
+}
+
+function portsCanConnect(
+  source: Port,
+  target: Port,
+  registry: NodeRegistry,
+): boolean {
+  if (!shapesAreCompatible(source, target)) return false;
+  if (portHasInstancePlugs(target) && !target.required) return false;
+  const plugId = portHasInstancePlugs(target) ? "discovery-plug" : undefined;
+  return (
+    connectionRoutesFor(
+      {
+        sourceHandle: encodeHandleId(portMetaForPort(source)),
+        targetHandle: encodeHandleId(
+          portMetaForPort(target, target.shape, plugId),
+        ),
+      },
+      registry.artifact_types,
+      registry.artifact_conversions,
+    ).length > 0
+  );
+}

@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 import type { components } from "@/lib/api/generated/grafy";
-import { ARTIFACT_DROP_DATA_TYPE } from "../model/artifact-drop";
+import { ARTIFACT_DROP_DATA_TYPE } from "../artifacts/artifact-drop";
 
 import {
   ArtifactChip,

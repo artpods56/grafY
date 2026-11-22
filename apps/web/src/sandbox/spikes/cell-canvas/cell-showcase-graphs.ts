@@ -1,6 +1,6 @@
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
-import type { GraphPresentation } from "@/features/workbench/canvas/artifact-viewer";
-import { defaultNodeConfig } from "@/features/workbench/canvas/types";
+import type { GraphPresentation } from "@/features/workbench/artifacts/artifact-viewer";
+import { defaultNodeConfig } from "@/features/workbench/authoring/types";
 import type { CellCardSurfaceData } from "@/features/workbench/cell-canvas/cell-contracts";
 import {
   cellGraphFromAuthoredDocument,
@@ -19,8 +19,8 @@ import {
 import {
   COLLECTION_OPERATOR_ID,
   COLLECTION_PORT,
-} from "@/features/workbench/model/collection-spec";
-import type { AuthoredGraphDocument } from "@/features/workbench/model/graph-document";
+} from "@/features/workbench/authoring/collection-spec";
+import type { AuthoredGraphDocument } from "@/features/workbench/authoring/graph-document";
 
 import {
   ASK_A_MODEL_OPERATOR_ID,

@@ -3,7 +3,7 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 
-import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
+import { artifactTypeColor } from "@/features/workbench/config-ui/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { ConnectorFitting, type PipeFamily } from "./pipe-visuals";

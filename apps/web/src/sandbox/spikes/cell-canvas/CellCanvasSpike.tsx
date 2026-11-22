@@ -5,8 +5,8 @@ import * as stylex from "@stylexjs/stylex";
 
 import { useOptionalAuthSession } from "@/features/auth/AuthSessionBoundary";
 import { sandboxSession } from "@/features/auth/dev-session";
-import type { GraphPresentation } from "@/features/workbench/canvas/artifact-viewer";
-import { defaultNodeConfig } from "@/features/workbench/canvas/types";
+import type { GraphPresentation } from "@/features/workbench/artifacts/artifact-viewer";
+import { defaultNodeConfig } from "@/features/workbench/authoring/types";
 import {
   CellCanvas,
   DEFAULT_CELL_GLASS_LOOK,
@@ -49,12 +49,12 @@ import {
   type CellPort,
   type CellRoutingOptions,
 } from "@/features/workbench/cell-canvas/cell-model";
-import { COLLECTION_PORT } from "@/features/workbench/model/collection-spec";
-import { newNodeKind } from "@/features/workbench/model/project-graphs";
+import { COLLECTION_PORT } from "@/features/workbench/authoring/collection-spec";
+import { newNodeKind } from "@/features/workbench/authoring/project-graphs";
 import {
   applyGraphCommandNormalized,
   type AuthoredGraphDocument,
-} from "@/features/workbench/model/graph-document";
+} from "@/features/workbench/authoring/graph-document";
 import { useNodeRegistry, useWorkspaces } from "@/hooks/use-api";
 
 import {

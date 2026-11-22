@@ -1,0 +1,879 @@
+"use client";
+
+import * as React from "react";
+import * as stylex from "@stylexjs/stylex";
+import { X } from "lucide-react";
+import useSWR from "swr";
+
+import {
+  artifactContentUrl,
+  getArtifactTableCell,
+  getArtifactTablePage,
+  getArtifactTableSchema,
+  queryArtifactTablePage,
+  type ArtifactSummary,
+  type TablePage,
+  type TableQueryInput,
+} from "@/lib/api";
+import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
+import { Button, ButtonLink, IconButton } from "@/components/ui/button";
+import { TextArea } from "@/components/ui/field";
+import { Notice } from "@/components/ui/notice";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+
+import { isTableArtifact } from "../artifact-card";
+import { SafeMarkdown } from "../safe-markdown";
+import {
+  interactionScalarFromIntegerEncoding,
+  interactionScalarFromTableCell,
+  type ArtifactViewerInteractionContext,
+} from "../artifact-interactions";
+
+import type { ArtifactRendererSpec } from "./spec";
+import { sharedStyles } from "./styles";
+import {
+  CELL_VIEW_LABEL,
+  cellViews,
+  prettyCellJson,
+  type CellView,
+} from "./table/cell-views";
+import { TableColumnPicker } from "./table/column-picker";
+import { HtmlView } from "./table/html-view";
+import { DEFAULT_VISIBLE_COLUMN_COUNT } from "./table/constants";
+import { TablePageNavigation } from "./table/page-navigation";
+import { s } from "./table/styles";
+
+const DEFAULT_TABLE_PAGE_SIZE = 50;
+
+const TABLE_CELL_PREVIEW_CHARACTERS = 256;
+
+const TABLE_SELECTION_ACTIVITY_DELAY_MS = 200;
+
+/**
+ * The full value is read in a box the reader resizes: the kit's `<TextArea>`
+ * draws it, and these only keep the room it takes in each surface.
+ */
+const cellValueStyles = stylex.create({
+  inspector: {
+    minHeight: "100px",
+    resize: "vertical",
+  },
+  canvas: {
+    height: "100%",
+    minHeight: "0px",
+    resize: "none",
+  },
+  rendered: {
+    minHeight: "100px",
+    maxHeight: "420px",
+    overflow: "auto",
+    padding: "8px",
+  },
+  renderedCanvas: {
+    height: "100%",
+    minHeight: "0px",
+    maxHeight: "none",
+  },
+  /**
+   * The kit's text Button already borrows the cell's type; this only keeps the
+   * preview clipped to the cell, which is what made it read as truncated.
+   */
+  truncatedCellButton: {
+    width: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    textAlign: "inherit",
+  },
+});
+
+function tableCellText(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "[unavailable value]";
+  }
+}
+
+interface TableCellSelection {
+  rowIndex: number;
+  columnId: string;
+  columnTitle: string;
+}
+
+/** Which sticky edges have rows or columns scrolled beneath them. */
+const UNSCROLLED = { top: false, left: false };
+
+interface TableArtifactRendererProps {
+  artifact: Pick<ArtifactSummary, "artifact_id" | "content_url">;
+  mode: string;
+  availableHeight?: number;
+  interaction?: ArtifactViewerInteractionContext;
+  presentation?: "inspector" | "canvas";
+}
+
+function TableArtifactRendererState({
+  artifact,
+  mode,
+  availableHeight,
+  interaction,
+  presentation = "inspector",
+}: TableArtifactRendererProps) {
+  const canvas = presentation === "canvas";
+  const { workspace } = useWorkspaceContext();
+  const [requestedPage, setRequestedPage] = React.useState({
+    filterSignature: "",
+    offset: 0,
+  });
+  const [pageSize, setPageSize] = React.useState(DEFAULT_TABLE_PAGE_SIZE);
+  const [visibleColumnIds, setVisibleColumnIds] = React.useState<
+    readonly string[] | null
+  >(null);
+  const [selectedCell, setSelectedCell] =
+    React.useState<TableCellSelection | null>(null);
+  const [requestedCellView, setRequestedCellView] =
+    React.useState<CellView>("text");
+  const [selectingRowIndex, setSelectingRowIndex] = React.useState<
+    number | null
+  >(null);
+  const selectionRequestRef = React.useRef<AbortController | null>(null);
+  const selectionActivityTimerRef = React.useRef<number | null>(null);
+  const activityChangeRef = React.useRef(interaction?.onActivityChange);
+  const cellDetailId = React.useId();
+  const cellTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const [scrolled, setScrolled] = React.useState(UNSCROLLED);
+  // On the canvas the value opens over the rows, so focusing it must not
+  // scroll the card's clipped ancestors; in a panel it scrolls into view.
+  const focusCellValue = React.useCallback(
+    (element: HTMLTextAreaElement | null) =>
+      element?.focus({ preventScroll: canvas }),
+    [canvas],
+  );
+  const {
+    data: tableSchema,
+    error: tableSchemaError,
+    mutate: retryTableSchema,
+  } = useSWR(
+    ["table-artifact-schema", workspace.id, artifact.artifact_id] as const,
+    ([, workspaceId, artifactId]) =>
+      getArtifactTableSchema(workspaceId, artifactId),
+  );
+  const selectedColumnIds = React.useMemo(() => {
+    if (!tableSchema) return [];
+    const availableColumnIds = new Set(
+      tableSchema.columns.map((column) => column.id),
+    );
+    const retainedColumnIds = visibleColumnIds?.filter((columnId) =>
+      availableColumnIds.has(columnId),
+    );
+    if (retainedColumnIds?.length) return retainedColumnIds;
+    return tableSchema.columns
+      .slice(0, DEFAULT_VISIBLE_COLUMN_COUNT)
+      .map((column) => column.id);
+  }, [tableSchema, visibleColumnIds]);
+  const selectedColumnSignature = selectedColumnIds.join("\u0000");
+  const filterGroups =
+    interaction?.incoming.flatMap((binding) =>
+      binding.effects.includes("filter") && binding.rows.length
+        ? [{ rows: binding.rows.map((values) => ({ values })) }]
+        : [],
+    ) ?? [];
+  const highlightGroups =
+    interaction?.incoming.flatMap((binding) =>
+      binding.effects.includes("highlight") && binding.rows.length
+        ? [{ rows: binding.rows.map((values) => ({ values })) }]
+        : [],
+    ) ?? [];
+  const filterSignature = JSON.stringify(filterGroups);
+  const offset =
+    requestedPage.filterSignature === filterSignature
+      ? requestedPage.offset
+      : 0;
+  const interactionQuery: TableQueryInput | null =
+    filterGroups.length || highlightGroups.length
+      ? {
+          filter_groups: filterGroups,
+          highlight_groups: highlightGroups,
+          offset,
+          limit: pageSize,
+          ...(selectedColumnIds.length
+            ? { column_ids: [...selectedColumnIds] }
+            : {}),
+          max_cell_characters: TABLE_CELL_PREVIEW_CHARACTERS,
+        }
+      : null;
+  const interactionQuerySignature = JSON.stringify({
+    filter_groups: filterGroups,
+    highlight_groups: highlightGroups,
+  });
+  const pageKey = [
+    interactionQuery ? "table-artifact-query" : "table-artifact-page",
+    workspace.id,
+    artifact.artifact_id,
+    offset,
+    pageSize,
+    selectedColumnSignature,
+    interactionQuerySignature,
+  ] as const;
+  const {
+    data: page,
+    error: pageError,
+    isValidating: pageLoading,
+    mutate: retryPage,
+  } = useSWR(
+    tableSchema ? pageKey : null,
+    ([, workspaceId, artifactId, pageOffset]) =>
+      interactionQuery
+        ? queryArtifactTablePage(workspaceId, artifactId, interactionQuery)
+        : getArtifactTablePage(
+            workspaceId,
+            artifactId,
+            pageOffset,
+            pageSize,
+            selectedColumnIds,
+            TABLE_CELL_PREVIEW_CHARACTERS,
+          ),
+    { keepPreviousData: true },
+  );
+  const cellKey = selectedCell
+    ? ([
+        "table-artifact-cell",
+        workspace.id,
+        artifact.artifact_id,
+        selectedCell.rowIndex,
+        selectedCell.columnId,
+      ] as const)
+    : null;
+  const {
+    data: fullCell,
+    error: fullCellError,
+    isLoading: fullCellLoading,
+  } = useSWR(cellKey, ([, workspaceId, artifactId, rowIndex, columnId]) =>
+    getArtifactTableCell(workspaceId, artifactId, rowIndex, columnId),
+  );
+
+  React.useEffect(() => {
+    if (!interaction || !tableSchema) return;
+    interaction.onFieldsChange(
+      tableSchema.columns.map((column) => ({
+        id: column.id,
+        title: column.title || column.id,
+        valueType: column.value_type,
+      })),
+    );
+  }, [interaction, tableSchema]);
+
+  React.useEffect(() => {
+    activityChangeRef.current = interaction?.onActivityChange;
+  }, [interaction?.onActivityChange]);
+
+  // A new page or filter starts at its first row, not where the last one was
+  // left.
+  const shownOffset = page?.offset;
+  React.useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewport) viewport.scrollTop = 0;
+  }, [shownOffset, pageSize, filterSignature]);
+
+  React.useEffect(
+    () => () => {
+      const request = selectionRequestRef.current;
+      selectionRequestRef.current = null;
+      request?.abort();
+      if (selectionActivityTimerRef.current !== null) {
+        window.clearTimeout(selectionActivityTimerRef.current);
+        selectionActivityTimerRef.current = null;
+      }
+      activityChangeRef.current?.(null);
+    },
+    [],
+  );
+
+  if (!page) {
+    const loadFailed = Boolean(tableSchemaError || pageError);
+    return (
+      <div
+        {...stylex.props(s.tablePreview, canvas ? s.tableCanvasLoading : null)}
+      >
+        <Notice
+          tone={loadFailed ? "danger" : "neutral"}
+          action={
+            loadFailed ? (
+              <Button
+                size="xs"
+                variant="secondary"
+                className="nodrag"
+                onClick={() =>
+                  void (tableSchemaError ? retryTableSchema() : retryPage())
+                }
+              >
+                Retry
+              </Button>
+            ) : null
+          }
+        >
+          {tableSchemaError
+            ? "Could not load the table columns."
+            : pageError
+              ? "Could not load this table page."
+              : "Loading table page…"}
+        </Notice>
+      </div>
+    );
+  }
+
+  const viewportHeight = availableHeight
+    ? Math.max(120, availableHeight - 92)
+    : undefined;
+  const contentUrl = artifactContentUrl(workspace.id, artifact.content_url);
+  const fullCellText = fullCell ? tableCellText(fullCell.value) : "";
+  const availableCellViews = fullCell ? cellViews(fullCell.value) : [];
+  const cellView = availableCellViews.includes(requestedCellView)
+    ? requestedCellView
+    : "text";
+  const selectedSourceIndices = new Set(
+    interaction?.selection.items.flatMap((item) =>
+      item.sourceIndex === undefined ? [] : [item.sourceIndex],
+    ) ?? [],
+  );
+  const highlightedSourceIndices = new Set(page.highlighted_row_indices);
+  const selectRow = async (
+    rowIndex: number,
+    visibleRow: TablePage["rows"][number],
+  ) => {
+    if (!interaction) return;
+    if (selectedSourceIndices.has(rowIndex)) {
+      const previousRequest = selectionRequestRef.current;
+      selectionRequestRef.current = null;
+      previousRequest?.abort();
+      if (selectionActivityTimerRef.current !== null) {
+        window.clearTimeout(selectionActivityTimerRef.current);
+        selectionActivityTimerRef.current = null;
+      }
+      setSelectingRowIndex(null);
+      interaction.onActivityChange(null);
+      interaction.onSelectionChange({
+        kind: "key-selection",
+        items: [],
+      });
+      return;
+    }
+    const requestedFields = interaction.outgoingFields.length
+      ? interaction.outgoingFields
+      : page.columns.map((column) => column.id);
+    if (!requestedFields.length) {
+      interaction.onActivityChange({
+        state: "warning",
+        title: "Row cannot be linked",
+        message: "This table has no fields available for selection.",
+      });
+      return;
+    }
+    selectionRequestRef.current?.abort();
+    if (selectionActivityTimerRef.current !== null) {
+      window.clearTimeout(selectionActivityTimerRef.current);
+      selectionActivityTimerRef.current = null;
+    }
+    interaction.onActivityChange(null);
+    const request = new AbortController();
+    selectionRequestRef.current = request;
+    setSelectingRowIndex(rowIndex);
+    selectionActivityTimerRef.current = window.setTimeout(() => {
+      if (selectionRequestRef.current !== request) return;
+      selectionActivityTimerRef.current = null;
+      interaction.onActivityChange({
+        state: "working",
+        title: "Reading selected row",
+        message: `Loading mapped values from row ${rowIndex + 1}.`,
+      });
+    }, TABLE_SELECTION_ACTIVITY_DELAY_MS);
+    let selectionFailed = false;
+    try {
+      const cells = await Promise.all(
+        requestedFields.map((fieldName) =>
+          getArtifactTableCell(
+            workspace.id,
+            artifact.artifact_id,
+            rowIndex,
+            fieldName,
+            request.signal,
+          ),
+        ),
+      );
+      if (selectionRequestRef.current !== request) return;
+      const values = Object.fromEntries(
+        cells.flatMap((cell) => {
+          const value = interactionScalarFromTableCell(cell);
+          return value === undefined ? [] : [[cell.column_id, value]];
+        }),
+      );
+      for (const column of page.columns) {
+        const cell = visibleRow[column.id];
+        if (
+          !(column.id in values) &&
+          cell &&
+          !cell.truncated &&
+          (cell.display === null ||
+            typeof cell.display === "string" ||
+            typeof cell.display === "number" ||
+            typeof cell.display === "boolean")
+        ) {
+          values[column.id] =
+            column.value_type === "integer"
+              ? interactionScalarFromIntegerEncoding(cell.display)
+              : cell.display;
+        }
+      }
+      interaction.onSelectionChange({
+        kind: "key-selection",
+        items: [{ values, sourceIndex: rowIndex }],
+      });
+    } catch (error) {
+      if (request.signal.aborted || selectionRequestRef.current !== request) {
+        return;
+      }
+      selectionFailed = true;
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not read the selected row.";
+      interaction.onActivityChange({
+        state: "error",
+        title: "Could not read selected row",
+        message,
+        retry: () => void selectRow(rowIndex, visibleRow),
+      });
+    } finally {
+      if (selectionRequestRef.current === request) {
+        if (selectionActivityTimerRef.current !== null) {
+          window.clearTimeout(selectionActivityTimerRef.current);
+          selectionActivityTimerRef.current = null;
+        }
+        selectionRequestRef.current = null;
+        setSelectingRowIndex(null);
+        if (!selectionFailed) interaction.onActivityChange(null);
+      }
+    }
+  };
+  const closeCellDetail = () => {
+    const trigger = cellTriggerRef.current;
+    setSelectedCell(null);
+    window.requestAnimationFrame(() =>
+      trigger?.focus({ preventScroll: canvas }),
+    );
+  };
+  const cellDetail =
+    mode !== "raw" && selectedCell ? (
+      <div
+        id={cellDetailId}
+        role="region"
+        aria-label="Full table cell value"
+        {...stylex.props(
+          s.tableCellDetail,
+          canvas ? s.tableCanvasCellDetail : null,
+        )}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.preventDefault();
+          event.stopPropagation();
+          closeCellDetail();
+        }}
+      >
+        <div {...stylex.props(s.tableCellDetailHeader)}>
+          <span {...stylex.props(s.tableCellDetailTitle)}>
+            <span>Row {selectedCell.rowIndex + 1}</span>
+            <span aria-hidden="true" {...stylex.props(s.tableSummaryDivider)}>
+              ·
+            </span>
+            <span {...stylex.props(s.tableCellDetailName)}>
+              {selectedCell.columnTitle}
+            </span>
+            {fullCell ? (
+              <span {...stylex.props(s.tableCellDetailLength)}>
+                {fullCellText.length.toLocaleString()}{" "}
+                {fullCellText.length === 1 ? "character" : "characters"}
+              </span>
+            ) : null}
+          </span>
+          {availableCellViews.length > 1 ? (
+            <SegmentedControl
+              aria-label="Read this cell as"
+              size="sm"
+              className="nodrag nowheel"
+              value={cellView}
+              options={availableCellViews.map((view) => ({
+                value: view,
+                label: CELL_VIEW_LABEL[view],
+              }))}
+              onValueChange={setRequestedCellView}
+            />
+          ) : null}
+          <IconButton
+            label="Close full cell value"
+            title="Close (Esc)"
+            variant="soft"
+            className="nodrag"
+            onClick={closeCellDetail}
+          >
+            <X size={13} />
+          </IconButton>
+        </div>
+        {fullCellLoading ? (
+          <Notice tone="neutral">Loading full cell…</Notice>
+        ) : fullCellError ? (
+          <Notice tone="danger">Could not load the full cell value.</Notice>
+        ) : fullCell && cellView === "markdown" ? (
+          <div
+            aria-label="Full cell value, rendered"
+            tabIndex={0}
+            className="nodrag nowheel"
+            {...stylex.props(
+              cellValueStyles.rendered,
+              canvas ? cellValueStyles.renderedCanvas : null,
+            )}
+          >
+            <SafeMarkdown>{fullCellText}</SafeMarkdown>
+          </div>
+        ) : fullCell && cellView === "html" ? (
+          <div
+            aria-label="Full cell value, rendered"
+            tabIndex={0}
+            className="nodrag nowheel"
+            {...stylex.props(
+              cellValueStyles.rendered,
+              canvas ? cellValueStyles.renderedCanvas : null,
+            )}
+          >
+            <HtmlView html={fullCellText} height={canvas ? "100%" : 320} />
+          </div>
+        ) : fullCell ? (
+          <TextArea
+            ref={focusCellValue}
+            readOnly
+            mono
+            aria-label="Full cell value"
+            value={
+              cellView === "json"
+                ? (prettyCellJson(fullCell.value) ?? fullCellText)
+                : fullCellText
+            }
+            className="nodrag nowheel"
+            xstyle={canvas ? cellValueStyles.canvas : cellValueStyles.inspector}
+          />
+        ) : null}
+      </div>
+    ) : null;
+  // The cell detail covers the rows on the canvas, so they leave the tab order.
+  const rowsCovered = canvas && cellDetail !== null;
+  return (
+    <div
+      aria-busy={pageLoading || selectingRowIndex !== null}
+      {...stylex.props(s.tablePreview, canvas ? s.tableCanvas : null)}
+    >
+      {pageError ? (
+        <Notice
+          tone="danger"
+          action={
+            <Button
+              size="xs"
+              variant="secondary"
+              className="nodrag"
+              onClick={() => void retryPage()}
+            >
+              Retry
+            </Button>
+          }
+        >
+          Could not load the requested table page. The previous page is still
+          available.
+        </Notice>
+      ) : null}
+      <div
+        {...stylex.props(s.tableSummary, canvas ? s.tableCanvasToolbar : null)}
+      >
+        <span {...stylex.props(s.tableSummaryMeta)}>
+          <span {...stylex.props(s.tableSummaryStrong)}>{page.total_rows}</span>
+          <span>{page.total_rows === 1 ? "row" : "rows"}</span>
+          <span aria-hidden="true" {...stylex.props(s.tableSummaryDivider)}>
+            ·
+          </span>
+          <span>
+            {page.total_columns}{" "}
+            {page.total_columns === 1 ? "column" : "columns"}
+          </span>
+        </span>
+        <span {...stylex.props(s.tableToolbarActions)}>
+          {contentUrl ? (
+            <ButtonLink
+              href={contentUrl}
+              download
+              prefetch={false}
+              variant="ghost"
+              size="xs"
+              title="Download the complete table as JSON"
+              className="nodrag"
+            >
+              Download JSON
+            </ButtonLink>
+          ) : null}
+          {tableSchema?.columns.length ? (
+            <TableColumnPicker
+              columns={tableSchema.columns}
+              visibleColumnIds={selectedColumnIds}
+              onVisibleColumnIdsChange={(columnIds) => {
+                setSelectedCell(null);
+                setVisibleColumnIds(columnIds);
+              }}
+            />
+          ) : null}
+        </span>
+      </div>
+      <div {...stylex.props(s.tableStage, canvas ? s.tableCanvasStage : null)}>
+        {mode === "raw" ? (
+          <pre {...stylex.props(sharedStyles.jsonCode)}>
+            {JSON.stringify(page, null, 2)}
+          </pre>
+        ) : (
+          <div
+            ref={viewportRef}
+            role="region"
+            aria-label="Table preview"
+            tabIndex={0}
+            inert={rowsCovered}
+            className="nodrag nowheel"
+            {...stylex.props(
+              s.tableViewport,
+              canvas ? s.tableCanvasViewport : null,
+            )}
+            style={{ maxHeight: canvas ? undefined : viewportHeight }}
+            onScroll={(event) => {
+              const { scrollTop, scrollLeft } = event.currentTarget;
+              const top = scrollTop > 0;
+              const left = scrollLeft > 0;
+              setScrolled((current) =>
+                current.top === top && current.left === left
+                  ? current
+                  : { top, left },
+              );
+            }}
+          >
+            <table {...stylex.props(s.dataTable)}>
+              <thead>
+                <tr>
+                  <th
+                    scope="col"
+                    {...stylex.props(
+                      s.tableIndexHeader,
+                      scrolled.top && scrolled.left
+                        ? s.tableIndexHeaderScrolled
+                        : scrolled.top
+                          ? s.tableHeaderScrolled
+                          : scrolled.left
+                            ? s.tableIndexCellScrolled
+                            : null,
+                    )}
+                  >
+                    #
+                  </th>
+                  {page.columns.map((column) => (
+                    <th
+                      key={column.id}
+                      scope="col"
+                      title={`${column.title || column.id} · ${column.value_type}`}
+                      {...stylex.props(
+                        s.tableHeader,
+                        scrolled.top ? s.tableHeaderScrolled : null,
+                      )}
+                    >
+                      <span {...stylex.props(s.tableHeaderTitle)}>
+                        {column.title || column.id}
+                      </span>
+                      <span {...stylex.props(s.tableHeaderType)}>
+                        {column.value_type}
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {page.rows.map((row, pageRowIndex) => {
+                  const rowIndex =
+                    page.row_indices?.[pageRowIndex] ??
+                    page.offset + pageRowIndex;
+                  const selected = selectedSourceIndices.has(rowIndex);
+                  const highlighted = highlightedSourceIndices.has(rowIndex);
+                  return (
+                    <tr
+                      key={rowIndex}
+                      tabIndex={interaction ? 0 : undefined}
+                      aria-selected={interaction ? selected : undefined}
+                      {...stylex.props(
+                        s.tableRow,
+                        selected
+                          ? s.tableRowSelected
+                          : highlighted
+                            ? s.tableRowHighlighted
+                            : null,
+                        interaction ? s.tableRowInteractive : null,
+                      )}
+                      onClick={() => void selectRow(rowIndex, row)}
+                      onKeyDown={(event) => {
+                        if (
+                          interaction &&
+                          (event.key === "Enter" || event.key === " ")
+                        ) {
+                          event.preventDefault();
+                          void selectRow(rowIndex, row);
+                        }
+                      }}
+                    >
+                      <th
+                        scope="row"
+                        {...stylex.props(
+                          s.tableIndexCell,
+                          selected && scrolled.left
+                            ? s.tableIndexCellSelectedScrolled
+                            : selected
+                              ? s.tableIndexCellSelected
+                              : scrolled.left
+                                ? s.tableIndexCellScrolled
+                                : null,
+                        )}
+                      >
+                        {rowIndex + 1}
+                      </th>
+                      {page.columns.map((column) => {
+                        // A page row may omit a column it was asked for; an
+                        // absent cell reads as an empty one so the columns
+                        // stay aligned instead of dropping a table cell.
+                        const cell = row[column.id] ?? {
+                          display: null,
+                          truncated: false,
+                        };
+                        const text = tableCellText(cell.display);
+                        const numeric =
+                          column.value_type === "integer" ||
+                          column.value_type === "number" ||
+                          column.value_type === "decimal";
+                        const code =
+                          column.value_type !== "text" &&
+                          column.value_type !== "boolean";
+                        return (
+                          <td
+                            key={column.id}
+                            title={
+                              cell.truncated
+                                ? "Preview truncated; click to inspect"
+                                : undefined
+                            }
+                            {...stylex.props(
+                              s.tableCell,
+                              code ? s.tableCellCode : null,
+                              numeric ? s.tableCellNumeric : null,
+                              cell.display === null ? s.tableCellNull : null,
+                            )}
+                          >
+                            {cell.truncated ? (
+                              /* A cell's preview is text the reader expands:
+                                 kit's text Button borrows the cell's baseline. */
+                              <Button
+                                type="button"
+                                size="text"
+                                variant="plain"
+                                aria-expanded={
+                                  selectedCell?.rowIndex === rowIndex &&
+                                  selectedCell.columnId === column.id
+                                }
+                                aria-controls={cellDetailId}
+                                xstyle={cellValueStyles.truncatedCellButton}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  cellTriggerRef.current = event.currentTarget;
+                                  setRequestedCellView("text");
+                                  setSelectedCell({
+                                    rowIndex,
+                                    columnId: column.id,
+                                    columnTitle: column.title || column.id,
+                                  });
+                                }}
+                              >
+                                {text}
+                              </Button>
+                            ) : (
+                              text
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {!page.rows.length ? (
+                  <tr>
+                    <td
+                      colSpan={Math.max(1, page.columns.length + 1)}
+                      {...stylex.props(s.tableEmpty)}
+                    >
+                      <div {...stylex.props(s.tableEmptyMessage)}>
+                        {page.columns.length
+                          ? "This table has no rows"
+                          : "This table has no columns or rows"}
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {canvas ? cellDetail : null}
+      </div>
+      <TablePageNavigation
+        canvas={canvas}
+        page={page}
+        requestedOffset={offset}
+        pageSize={pageSize}
+        onOffsetChange={(nextOffset) => {
+          setSelectedCell(null);
+          setRequestedPage({ filterSignature, offset: nextOffset });
+        }}
+        onPageSizeChange={(nextPageSize) => {
+          setSelectedCell(null);
+          setRequestedPage({ filterSignature, offset: 0 });
+          setPageSize(nextPageSize);
+        }}
+      />
+      {canvas ? null : cellDetail}
+    </div>
+  );
+}
+
+export function TableArtifactRenderer(props: TableArtifactRendererProps) {
+  return (
+    <TableArtifactRendererState key={props.artifact.artifact_id} {...props} />
+  );
+}
+
+export const tableRenderer: ArtifactRendererSpec = {
+  id: "table",
+  modes: ["table", "raw"],
+  interaction: {
+    emits: ["key-selection"],
+    accepts: ["filter", "highlight"],
+  },
+  matches: isTableArtifact,
+  Component: ({ artifact, mode, availableHeight, interaction }) => (
+    <TableArtifactRenderer
+      artifact={artifact}
+      mode={mode}
+      availableHeight={availableHeight}
+      interaction={interaction}
+    />
+  ),
+};

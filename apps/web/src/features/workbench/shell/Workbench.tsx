@@ -1,0 +1,4729 @@
+"use client";
+
+import { duplicateArtifactViewers } from "../artifacts/artifact-viewer-edits";
+
+import * as React from "react";
+import useSWR, { useSWRConfig } from "swr";
+import {
+  libraryFoldersApi,
+  uploadFile,
+  saveUploadedArtifactToLibrary,
+  type PlacedLibraryItem,
+} from "@/lib/api";
+import {
+  artifactDropGroups,
+  libraryDragKind,
+} from "../artifacts/side-panel/library-drag";
+import { useRouter } from "next/navigation";
+import * as stylex from "@stylexjs/stylex";
+import { Toast } from "@base-ui/react/toast";
+import {
+  Bot,
+  Circle,
+  Copy,
+  Grid3x3,
+  History,
+  Layers,
+  LoaderCircle,
+  Maximize2,
+  Play,
+  Plus,
+  Square,
+  Trash2,
+  Type,
+  Workflow,
+} from "lucide-react";
+
+import { ExecutionHistoryDrawer } from "../execution/ExecutionHistoryDrawer";
+import { WorkbenchSidePanel } from "../artifacts/side-panel/WorkbenchSidePanel";
+import {
+  useWorkbenchSidePanel,
+  type SidePanelViewId,
+} from "../artifacts/side-panel/workbench-side-panel-state";
+import { GraphRoomRecoveryNotice } from "../collaboration/GraphRoomRecoveryNotice";
+import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
+import {
+  WorkbenchActivityBar,
+  type WorkbenchActivity,
+} from "./WorkbenchActivityBar";
+import {
+  ArtifactFolderDropDialog,
+  type PendingFolderDrop,
+} from "../artifacts/ArtifactFolderDropDialog";
+import {
+  ConnectionRouteDialog,
+  type PendingConnectionRoute,
+} from "../authoring/ConnectionRouteDialog";
+import { CanvasGridSettingsPanel } from "../cell-canvas/CanvasGridSettingsPanel";
+import { workbenchStyles as s } from "./Workbench.styles";
+import { NodeSelector } from "../config-ui/NodeSelector";
+import {
+  CanvasContextMenu,
+  type CanvasMenuActions,
+  type CanvasMenuSelection,
+} from "./canvas-menu/CanvasContextMenu";
+import type { CanvasMenuRequest } from "./canvas-menu/canvas-menu-target";
+import { useCanvasMenuTrigger } from "./canvas-menu/useCanvasMenuTrigger";
+import {
+  NodeMenuRegistry,
+  NodeMenuRegistryContext,
+} from "./node-menu-registry";
+import {
+  CellContextualNodeDiscovery,
+  type ContextualDiscoverySession,
+} from "../cell-canvas/ContextualNodeDiscovery";
+import {
+  CellPipeInspector,
+  type CellInspectedPipe,
+} from "../cell-canvas/CellPipeInspector";
+import type {
+  ContextualCandidate,
+  ContextualRouteChoice,
+} from "../authoring/node-catalog";
+import { Button, IconButton } from "@/components/ui/button";
+import { phoneTouch } from "@/components/ui/touch-target";
+import { createUuid } from "@/features/workbench/authoring/uuid";
+import { artifactGroupingDisabledReason } from "../artifacts/artifact-grouping";
+import { useWorkspaceContext } from "@/features/workspaces/WorkspaceLayout";
+import { usePublishWorkbenchChrome } from "./WorkbenchChromeContext";
+import { renameProjectRemote } from "@/features/workspaces/graph-actions";
+import type { Port, SavedGraphSummary } from "@/lib/api";
+import {
+  CanvasGridSettingsProvider,
+  useCanvasGridSettings,
+} from "../cell-canvas/canvas-grid-settings";
+import { validateConfig } from "../config-ui/config-schema";
+import { DEFAULT_NODE_PLACEMENT_HEIGHT } from "../authoring/node-layout";
+import { useNodeSecrets } from "../execution/useNodeSecrets";
+import { useGraphAutosave } from "../collaboration/useGraphAutosave";
+import { useSavedGraphLifecycle } from "../collaboration/useSavedGraphLifecycle";
+import { useRunExecution } from "../execution/useRunExecution";
+import {
+  useWorkbenchAuthoringCommands,
+  type WorkbenchRoomCommandSync,
+} from "../authoring/workbench-authoring-commands";
+import {
+  PRESENCE_CLIENT_MIN_INTERVAL_MS,
+  PresenceOverlay,
+  ProjectRoomCommandError,
+  defaultGraphId,
+  graphReadiness,
+  instanceKeyText,
+  toLocalGraphCommand,
+  toRoomGraphCommand,
+  toRoomRenameGraphCommand,
+  toRoomRenameProjectCommand,
+  useProjectRoomSession,
+  type ProjectRoomPresenceStore,
+  type RoomGraphBodyCommand,
+  type RoomInstanceState,
+  type RoomProjectCommand,
+  type TransientNodePosition,
+} from "../collaboration";
+import {
+  cancelRun,
+  getCollaborativeHead,
+  type CollaborativeHead,
+} from "@/lib/api";
+import {
+  addNodeCommand,
+  addEdgeCommand,
+  nodeOverlaysFromNodes,
+  reduceWorkbenchAuthoringState,
+} from "../authoring/graph-document-adapter";
+import {
+  createAnnotationNode,
+  type AnnotationKind,
+} from "../authoring/annotations";
+import {
+  ARTIFACT_VIEWER_EDGE_TYPE,
+  ARTIFACT_VIEWER_INPUT_HANDLE,
+  ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE,
+  ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE,
+  ARTIFACT_VIEWER_NODE_TYPE,
+  artifactViewersFromPresentation,
+  presentationFromArtifactViewers,
+  type ArtifactViewerCanvasState,
+  type ArtifactViewerEdge,
+  type ArtifactViewerNode,
+  type GraphPresentation,
+} from "../artifacts/artifact-viewer";
+import {
+  ARTIFACT_CARD_OUTPUT_HANDLE,
+  artifactCardConnectionValue,
+  artifactCardOutputPort,
+  outputReleasePlacesArtifactCard,
+  artifactOriginConnections,
+  resolveArtifactCardConnection,
+} from "../artifacts/artifact-connections";
+import {
+  DEFAULT_ARTIFACT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
+  artifactCardContract,
+  cardArtifactRefs,
+  collectArtifactCardRefs,
+  originBelongsToCard,
+  selectionCollectsIntoSequence,
+  isGeoMapArtifact,
+  isTableArtifact,
+} from "../artifacts/artifact-card";
+import { formatArtifactTypeLabel } from "../artifacts/artifact-type-label";
+import {
+  hydrateAuthoredGraphDocument,
+  savedGraphExecutionFingerprint,
+} from "../authoring/saved-graph";
+import {
+  type ArtifactInteractionField,
+  type ArtifactKeySelection,
+  type ArtifactViewerActivity,
+  type ArtifactViewerBinding,
+} from "../artifacts/artifact-interactions";
+import {
+  canonicalHandleId,
+  connectionRouteDeliveredArtifactType,
+  connectionRouteForSelection,
+  connectionRouteMatchesSelection,
+  connectionRouteSelection,
+  connectionRoutesFor,
+  decodedHandleArtifactType,
+  decodeHandleId,
+  encodeHandleId,
+  type ConnectionRoute,
+} from "../authoring/handles";
+import {
+  COLLECTION_PORT,
+  collectDisabledReason,
+  collectionsWithoutSpare,
+  isCollectionSpec,
+  type CollectionSource,
+} from "../authoring/collection";
+import { artifactTypeColor } from "../config-ui/nodes.css";
+import {
+  WORKFLOW_EDGE_TYPE,
+  createWorkflowNodeData,
+  resolvedPortArtifactType,
+  type CanvasConnection,
+  type CanvasFitViewOptions,
+  type XYPosition,
+  type WorkflowEdge,
+  type WorkflowEdgeRouteOption,
+  type WorkflowEdgeUpdate,
+  type WorkflowNodeConfig,
+  portMetaForPort,
+  workflowNodeIsSupported,
+} from "../authoring/types";
+import {
+  orderFeedRoutes,
+  preferredWholeFeedRoute,
+  routesForHandleFeed,
+} from "../authoring/connection-feeds";
+import {
+  artifactDropPayload,
+  artifactDropCommands,
+  artifactDropTargetFromRow,
+  isArtifactDrop,
+  readArtifactDrop,
+  readArtifactDropFolder,
+  readArtifactDropGroups,
+  resolveArtifactDrop,
+  type ArtifactDropPayload,
+  type ArtifactDropTarget,
+} from "../artifacts/artifact-drop";
+import {
+  collectionModeForConnection,
+  collectionModesForConnection,
+  isConnectionAccepted,
+  renderedOutputHandleId,
+  workflowEdgeRouteOption,
+} from "../authoring/graph-authoring";
+import {
+  createGraphDraft,
+  type AuthoredGraphDocument,
+  type GraphCommand,
+} from "../authoring/graph-document";
+import {
+  selectedNodeAndAncestorIds,
+  type WorkflowNode,
+} from "../execution/execution-plan";
+import {
+  catalogNodeSpecs,
+  downstreamCandidatesFromOutput,
+  upstreamCandidatesFromInput,
+} from "../authoring/node-catalog";
+import { workbenchProjectPath } from "../routes";
+import { useNodeRegistry } from "@/hooks/use-api";
+import {
+  artifactDropRowAt,
+  artifactDropTargetFitsNode,
+  canvasAtPoint,
+} from "../artifacts/artifact-drop-hit-test";
+import { GraphSwitcher } from "../authoring/GraphSwitcher";
+import {
+  useArtifactViewerCommands,
+  useArtifactViewerState,
+} from "./workbench-artifact-viewers";
+import {
+  useCanvasSelection,
+  withoutPresentationSelection,
+} from "../authoring/workbench-canvas-selection";
+import {
+  CellCanvas,
+  type CellCanvasHandle,
+  type CellCanvasProps,
+} from "../cell-canvas/CellCanvas";
+import {
+  annotationHexFromToken,
+  graphCommandsFromCellResizeForDocument,
+} from "../cell-canvas/cell-document-adapter";
+import {
+  CELL_SIZE,
+  cellToWorldOrigin,
+  portWorldCenter,
+  type WorldPoint,
+} from "../cell-canvas/cell-model";
+import {
+  buildWorkbenchCellScene,
+  cellConnectionToWorkbenchConnection,
+  cellRemotePeersFromParticipants,
+  encodeCellPortHandleForDiscovery,
+  partitionCellMoves,
+  partitionCellRemovals,
+  partitionCellSelection,
+} from "./workbench-cell-canvas";
+import { useNodeCommands } from "../authoring/workbench-node-commands";
+import {
+  artifactCardDropPositions,
+  useArtifactCardCommands,
+} from "./workbench-artifact-cards";
+import {
+  callableGraphs,
+  GRAPH_INPUT_OPERATOR_ID,
+  GRAPH_OUTPUT_OPERATOR_ID,
+  graphInterface,
+  newNodeKind,
+  nextBoundaryName,
+  registryWithProjectGraphs,
+} from "../authoring/project-graphs";
+import {
+  type GraphDefinition,
+  type NodeSpec,
+  type RunEdgeCollectionMode,
+} from "@/lib/api";
+import { tokens } from "@/lib/stylex/tokens.stylex";
+
+const NO_GRAPHS: readonly GraphDefinition[] = [];
+
+/** What a Project with no Graph in it shows where the canvas would be. */
+const emptyProjectStyles = stylex.create({
+  panel: {
+    position: "absolute",
+    zIndex: 20,
+    inset: 0,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "24px",
+    textAlign: "center",
+    backgroundColor: tokens.colorBg,
+    color: tokens.colorText,
+  },
+  title: { fontSize: "15px", fontWeight: 600 },
+  body: {
+    fontSize: "13px",
+    lineHeight: 1.5,
+    maxWidth: "380px",
+    color: tokens.colorMuted,
+  },
+});
+
+const WORKBENCH_FIT_VIEW: CanvasFitViewOptions = {
+  padding: 0.25,
+  maxZoom: 0.88,
+};
+
+interface WorkbenchProps {
+  workspaceId: string;
+  workspaceSlug: string;
+  /**
+   * The Project this address names, or null on the `/projects/new` route, where
+   * the canvas holds a draft until the first save makes it a Project. The Graphs
+   * the person can open are inside the Project, so the address never names one.
+   */
+  initialProjectId: string | null;
+}
+
+/** A mixed folder waiting on the user's choice, and where it was dropped. */
+interface PendingFolderDropState {
+  drop: PendingFolderDrop;
+  destination:
+    | { kind: "canvas"; point: XYPosition }
+    | { kind: "input"; target: ArtifactDropTarget };
+}
+
+interface ActiveArtifactViewerActivity {
+  activity: ArtifactViewerActivity;
+  revision: number;
+}
+
+interface PresenceAwareCellCanvasProps extends Omit<
+  CellCanvasProps,
+  "remotePeers"
+> {
+  presenceStore: ProjectRoomPresenceStore;
+  localSessionId: string | null;
+  graphId: string | null;
+}
+
+/** Subscribes to room presence without re-rendering the workbench. */
+function PresenceAwareCellCanvas({
+  presenceStore,
+  localSessionId,
+  graphId,
+  ...canvasProps
+}: PresenceAwareCellCanvasProps) {
+  const participants = React.useSyncExternalStore(
+    presenceStore.subscribe,
+    () => presenceStore.getParticipants(),
+    () => presenceStore.getParticipants(),
+  );
+  const remotePeers = React.useMemo(
+    () =>
+      cellRemotePeersFromParticipants(participants, localSessionId, graphId),
+    [graphId, localSessionId, participants],
+  );
+  return (
+    <CellCanvas
+      {...canvasProps}
+      remotePeers={remotePeers}
+      remoteDragScope={graphId}
+    />
+  );
+}
+
+export function Workbench(props: WorkbenchProps) {
+  return (
+    <CanvasGridSettingsProvider>
+      <WorkbenchBody {...props} />
+    </CanvasGridSettingsProvider>
+  );
+}
+
+function WorkbenchBody({
+  workspaceId,
+  workspaceSlug,
+  initialProjectId,
+}: WorkbenchProps) {
+  // The address names a Project; the Graphs live inside it.
+  const projectId = initialProjectId;
+  const { mutate: mutateCache } = useSWRConfig();
+  const [canvasUpload, setCanvasUpload] = React.useState<string | null>(null);
+  const {
+    data: apiRegistry,
+    error: registryError,
+    mutate: refreshNodeRegistry,
+  } = useNodeRegistry(workspaceId);
+  /**
+   * What the open Project adds to the node catalog: its boundary operators and
+   * one call node per sibling Graph. Nothing here is a registered operator, so
+   * the registry the canvas hydrates against is the API's plus this. It is held
+   * as state because the Project head is read further down, and it only moves
+   * when the catalog entries move, not on every accepted command.
+   */
+  const [projectCatalog, setProjectCatalog] = React.useState<{
+    key: string;
+    graphs: readonly GraphDefinition[];
+    openGraphId: string | null;
+  }>({ key: "", graphs: [], openGraphId: null });
+  const registry = React.useMemo(
+    () =>
+      apiRegistry
+        ? registryWithProjectGraphs(
+            apiRegistry,
+            projectCatalog.graphs,
+            projectCatalog.openGraphId,
+          )
+        : apiRegistry,
+    [apiRegistry, projectCatalog],
+  );
+  const {
+    cellLook,
+    cellRouting,
+    panelOpen: gridPanelOpen,
+    setPanelOpen: setGridPanelOpen,
+  } = useCanvasGridSettings();
+  const [authoringState, dispatchAuthoringState] = React.useReducer(
+    reduceWorkbenchAuthoringState,
+    {
+      document: {
+        name: "Untitled workflow",
+        nodes: [],
+        edges: [],
+        origins: [],
+        agents: [],
+      },
+      nodeOverlays: {},
+      error: null,
+    },
+  );
+  const authoredDocument = authoringState.document;
+  const nodeOverlays = authoringState.nodeOverlays;
+  const authoredDocumentRef = React.useRef(authoredDocument);
+  const nodeOverlaysRef = React.useRef(nodeOverlays);
+  React.useLayoutEffect(() => {
+    nodeOverlaysRef.current = nodeOverlays;
+  }, [nodeOverlays]);
+  const [selectedNodeIdSet, setSelectedNodeIdSet] = React.useState<
+    ReadonlySet<string>
+  >(new Set());
+  const [selectedEdgeIdSet, setSelectedEdgeIdSet] = React.useState<
+    ReadonlySet<string>
+  >(new Set());
+  const [positionOverrides, setPositionOverrides] = React.useState<
+    Record<string, { x: number; y: number }>
+  >({});
+  const hydratedDocument = React.useMemo(
+    () =>
+      registry
+        ? hydrateAuthoredGraphDocument(authoredDocument, registry)
+        : { nodes: [], edges: [] },
+    [authoredDocument, registry],
+  );
+  const nodesRef = React.useRef<WorkflowNode[]>([]);
+  const edgesRef = React.useRef<WorkflowEdge[]>([]);
+  const nodes = React.useMemo<WorkflowNode[]>(
+    () =>
+      hydratedDocument.nodes.map((node) => {
+        return {
+          ...node,
+          position: positionOverrides[node.id] ?? node.position,
+          selected: selectedNodeIdSet.has(node.id),
+          data: {
+            ...node.data,
+            ...(nodeOverlays[node.id] ?? {}),
+          },
+        };
+      }),
+    [
+      hydratedDocument.nodes,
+      nodeOverlays,
+      positionOverrides,
+      selectedNodeIdSet,
+    ],
+  );
+  const edges = React.useMemo<WorkflowEdge[]>(
+    () =>
+      hydratedDocument.edges.map((edge) => ({
+        ...edge,
+        selected: selectedEdgeIdSet.has(edge.id),
+      })),
+    [hydratedDocument.edges, selectedEdgeIdSet],
+  );
+  React.useLayoutEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [edges, nodes]);
+  const setNodes = React.useCallback<
+    React.Dispatch<React.SetStateAction<WorkflowNode[]>>
+  >(
+    (action) => {
+      const currentNodes = nodesRef.current;
+      const nextNodes =
+        typeof action === "function" ? action(currentNodes) : action;
+      nodesRef.current = nextNodes;
+      setSelectedNodeIdSet(
+        new Set(
+          nextNodes.filter((node) => node.selected).map((node) => node.id),
+        ),
+      );
+      setPositionOverrides(() => {
+        const next: Record<string, { x: number; y: number }> = {};
+        const authoredNodesById = new Map(
+          authoredDocumentRef.current.nodes.map((node) => [node.id, node]),
+        );
+        for (const node of nextNodes) {
+          const authoredNode = authoredNodesById.get(node.id);
+          if (
+            authoredNode &&
+            (authoredNode.position.x !== node.position.x ||
+              authoredNode.position.y !== node.position.y)
+          ) {
+            next[node.id] = { x: node.position.x, y: node.position.y };
+          }
+        }
+        return next;
+      });
+      dispatchAuthoringState({
+        kind: "update_overlays",
+        update: nodeOverlaysFromNodes(nextNodes),
+      });
+    },
+    [dispatchAuthoringState],
+  );
+  const [artifactViewers, setArtifactViewers, artifactViewersRef] =
+    useArtifactViewerState({
+      nodes: [],
+      edges: [],
+      bindings: [],
+      annotations: [],
+    });
+  // The canvas draws nodes, cards, and annotations out of three stores, and one
+  // gesture can hold any mix of them. Anything that moves what is held goes
+  // through here so no layer is left holding what the person already let go.
+  const [selectedAgentIds, setSelectedAgentIds] = React.useState<
+    ReadonlySet<string>
+  >(new Set());
+  const canvasSelection = useCanvasSelection({
+    setSelectedAgentIds,
+    setArtifactViewers,
+    setSelectedEdgeIdSet,
+    setSelectedNodeIdSet,
+  });
+  const [shapesMenuOpen, setShapesMenuOpen] = React.useState(false);
+  const [canvasMenu, setCanvasMenu] = React.useState<CanvasMenuRequest | null>(
+    null,
+  );
+  const [nodeMenus] = React.useState(() => new NodeMenuRegistry());
+  const canvasSectionRef = React.useRef<HTMLElement>(null);
+  /** Where the Add node picker inserts when the canvas menu opened it. */
+  const pickerInsertAtRef = React.useRef<{ x: number; y: number } | null>(null);
+  const [, setArtifactViewerSelections] = React.useState<
+    Record<string, ArtifactKeySelection>
+  >({});
+  const [, setArtifactViewerFields] = React.useState<
+    Record<string, ArtifactInteractionField[]>
+  >({});
+  const [artifactViewerActivities, setArtifactViewerActivities] =
+    React.useState<Record<string, ActiveArtifactViewerActivity>>({});
+  const artifactViewerActivityRevisionRef = React.useRef(0);
+  const {
+    nodeSecretStatuses,
+    refreshNodeSecretStatuses,
+    clearGraphSecretStatuses,
+    forgetNodeSecretStatuses,
+  } = useNodeSecrets(workspaceId, nodes);
+  const [cellCanvasHandle, setCellCanvasHandle] =
+    React.useState<CellCanvasHandle | null>(null);
+  const [collapsedAppendices, setCollapsedAppendices] = React.useState<
+    ReadonlySet<string>
+  >(new Set());
+  const canvasReady = cellCanvasHandle !== null;
+  const screenToCanvasPoint = React.useCallback(
+    (point: XYPosition) =>
+      cellCanvasHandle?.viewportHandle.screenToWorld(point.x, point.y),
+    [cellCanvasHandle],
+  );
+  const fitCanvasView = React.useCallback(
+    ({ nodes, padding, maxZoom }: CanvasFitViewOptions) => {
+      if (nodes) {
+        cellCanvasHandle?.fitCards(
+          nodes.map(({ id }) => id),
+          padding,
+          maxZoom,
+        );
+      } else {
+        cellCanvasHandle?.fitGraph(padding, maxZoom);
+      }
+    },
+    [cellCanvasHandle],
+  );
+  const { workspace } = useWorkspaceContext();
+  const [libraryOpen, setLibraryOpen] = React.useState(false);
+  const sidePanel = useWorkbenchSidePanel();
+  const [contextualDiscovery, setContextualDiscovery] =
+    React.useState<ContextualDiscoverySession | null>(null);
+  const canCreateProject = workspace.capabilities.includes("create_project");
+  const canEditProject = workspace.capabilities.includes("edit_project");
+  const canStartRun = workspace.capabilities.includes("start_run");
+  const canCancelRun = workspace.capabilities.includes("cancel_run");
+  const canDeleteProject = workspace.capabilities.includes("delete_project");
+  const localAuthoringEnabledRef = React.useRef(
+    initialProjectId === null && canCreateProject,
+  );
+  const localAuthoringBlockedMessageRef = React.useRef(
+    "Editing is unavailable until this Project is synchronized.",
+  );
+  const [executionHistoryTarget, setExecutionHistoryTarget] = React.useState<{
+    nodeId: string | null;
+    executionId: string | null;
+  } | null>(null);
+  const executionHistoryReturnFocusRef = React.useRef<HTMLElement | null>(null);
+  const [transientRunError, setRunError] = React.useState<string | null>(null);
+  const runError = authoringState.error ?? transientRunError;
+  const clearRunError = React.useCallback(() => {
+    setRunError(null);
+    dispatchAuthoringState({ kind: "clear_error" });
+  }, [dispatchAuthoringState]);
+  const dismissRunError = React.useCallback(
+    (message: string) => {
+      setRunError((current) => (current === message ? null : current));
+      if (authoringState.error === message) {
+        dispatchAuthoringState({ kind: "clear_error" });
+      }
+    },
+    [authoringState.error, dispatchAuthoringState],
+  );
+  const [pendingConnectionRoute, setPendingConnectionRoute] =
+    React.useState<PendingConnectionRoute | null>(null);
+  const [inspectedPipe, setInspectedPipe] = React.useState<{
+    graphId: string | null;
+    pipeId: string;
+    anchor: WorldPoint;
+  } | null>(null);
+  const [pendingFolderDrop, setPendingFolderDrop] =
+    React.useState<PendingFolderDropState | null>(null);
+  const [fitRevision, setFitRevision] = React.useState(0);
+  const executionRunningRef = React.useRef(false);
+  const isExecutionRunning = React.useCallback(
+    () => executionRunningRef.current,
+    [],
+  );
+
+  const roomCommandSyncRef = React.useRef<WorkbenchRoomCommandSync>({
+    submitLocal: () => undefined,
+  });
+
+  const { applyAuthoringCommands } = useWorkbenchAuthoringCommands({
+    authoredDocument,
+    authoredDocumentRef,
+    dispatchAuthoringState,
+    localAuthoringBlockedMessageRef,
+    localAuthoringEnabledRef,
+    nodeRegistry: registry ?? null,
+    roomCommandSyncRef,
+    setArtifactViewers,
+    setPendingConnectionRoute,
+    setPositionOverrides,
+    setRunError,
+    setSelectedEdgeIdSet,
+    setSelectedNodeIdSet,
+  });
+
+  React.useLayoutEffect(() => {
+    authoredDocumentRef.current = authoredDocument;
+  }, [authoredDocument]);
+
+  const updateConfigPatch = React.useCallback(
+    (nodeId: string, patch: WorkflowNodeConfig) => {
+      applyAuthoringCommands(
+        Object.entries(patch).map(([field, value]) => ({
+          kind: "update_node_configuration",
+          node_id: nodeId,
+          field,
+          value,
+        })),
+      );
+    },
+    [applyAuthoringCommands],
+  );
+  const updateConfig = React.useCallback(
+    (nodeId: string, name: string, value: unknown) =>
+      updateConfigPatch(nodeId, { [name]: value }),
+    [updateConfigPatch],
+  );
+
+  const presentationRoomSyncRef = React.useRef<{
+    submitReplace: (state: ArtifactViewerCanvasState) => void;
+    submitMove: (
+      positions: readonly { viewer_id: string; x: number; y: number }[],
+    ) => void;
+    submitMoveAnnotations: (
+      positions: readonly { annotation_id: string; x: number; y: number }[],
+    ) => void;
+  }>({
+    submitReplace: () => undefined,
+    submitMove: () => undefined,
+    submitMoveAnnotations: () => undefined,
+  });
+
+  const {
+    commitArtifactViewers,
+    removeAnnotation,
+    removeArtifactViewer,
+    updateAnnotationColor,
+    updateAnnotationLayout,
+    updateArtifactViewerEdge,
+    updateArtifactViewerLayout,
+  } = useArtifactViewerCommands({
+    artifactViewers,
+    artifactViewersRef,
+    artifactViewerActivityRevisionRef,
+    applyAuthoringCommands,
+    authoredDocumentRef,
+    localAuthoringBlockedMessageRef,
+    localAuthoringEnabledRef,
+    presentationRoomSyncRef,
+    setArtifactViewerActivities,
+    setArtifactViewerFields,
+    setArtifactViewerSelections,
+    setArtifactViewers,
+    setRunError,
+  });
+
+  const { addNodeInputPlug, removeNodeInputPlug } = useNodeCommands({
+    applyAuthoringCommands,
+    edges,
+    forgetNodeSecretStatuses,
+    nodes,
+    setPendingConnectionRoute,
+    setRunError,
+  });
+
+  const openProjectInNewTab = React.useCallback(() => {
+    if (!projectId) return;
+    // Internal route: workbenchProjectPath() returns a same-origin path from encoded params.
+    // pi-lens-ignore: no-open-redirect
+    window.open(
+      workbenchProjectPath(workspaceSlug, projectId),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  }, [projectId, workspaceSlug]);
+
+  const replaceDocument = React.useCallback(
+    (
+      nextDocument: AuthoredGraphDocument,
+      overlayNodes?: readonly WorkflowNode[],
+    ) => {
+      authoredDocumentRef.current = nextDocument;
+      const nextNodeIds = new Set(nextDocument.nodes.map((node) => node.id));
+      const nextOverlays =
+        overlayNodes === undefined
+          ? Object.fromEntries(
+              Object.entries(nodeOverlaysRef.current).filter(([nodeId]) =>
+                nextNodeIds.has(nodeId),
+              ),
+            )
+          : nodeOverlaysFromNodes(overlayNodes);
+      // Keep nodesRef aligned for callers that read overlays immediately after replace.
+      nodesRef.current =
+        overlayNodes === undefined
+          ? nodesRef.current.filter((node) => nextNodeIds.has(node.id))
+          : [...overlayNodes];
+      edgesRef.current = [];
+      dispatchAuthoringState({
+        kind: "replace_document",
+        document: nextDocument,
+        nodeOverlays: nextOverlays,
+      });
+      setSelectedNodeIdSet(new Set());
+      setSelectedEdgeIdSet(new Set());
+      setPositionOverrides({});
+    },
+    [dispatchAuthoringState],
+  );
+  const replacePresentation = React.useCallback(
+    (presentation: GraphPresentation) => {
+      setArtifactViewers(artifactViewersFromPresentation(presentation));
+    },
+    [setArtifactViewers],
+  );
+  /**
+   * The artifact-card layer is replaced whole whenever the active graph changes, and both
+   * the canvas and the save body read this one value, so they cannot disagree about whose
+   * cards are current and a graph opened earlier in the session cannot ride into this
+   * save. A presentation that still reached the request holding references the document
+   * dropped is filtered in `createGraphDraft`.
+   */
+  const activeArtifactViewers = artifactViewers;
+  const sharedPresentation = React.useMemo(
+    () => presentationFromArtifactViewers(activeArtifactViewers),
+    [activeArtifactViewers],
+  );
+  const currentExecutionFingerprint = React.useMemo(
+    () =>
+      savedGraphExecutionFingerprint(
+        createGraphDraft(authoredDocument, sharedPresentation),
+      ),
+    [authoredDocument, sharedPresentation],
+  );
+  const updateDocumentName = React.useCallback(
+    (name: string) => {
+      applyAuthoringCommands([{ kind: "rename_graph", name }]);
+    },
+    [applyAuthoringCommands],
+  );
+  const clearPendingConnectionRoute = React.useCallback(() => {
+    setPendingConnectionRoute(null);
+  }, []);
+  const closeNodeLibrary = React.useCallback(() => {
+    setLibraryOpen(false);
+  }, []);
+  const requestCanvasRefit = React.useCallback(() => {
+    setFitRevision((current) => current + 1);
+  }, []);
+  const requestNodeRegistryRefresh = React.useCallback(() => {
+    void refreshNodeRegistry();
+  }, [refreshNodeRegistry]);
+  /**
+   * Canvas edits applied while the room would not take commands. They live only
+   * in this tab, which is the one case a reload can actually lose work.
+   */
+  const [unsyncedRoomEdits, setUnsyncedRoomEdits] = React.useState(false);
+  const router = useRouter();
+  // The room holds one head for the whole Project; every Graph the person can
+  // open is inside it, and the canvas shows one of them at a time.
+  const openGraphIdRef = React.useRef<string | null>(null);
+  const syncFromCollaborativeHeadRef = React.useRef<
+    (head: CollaborativeHead) => void
+  >(() => undefined);
+  const purgeLocalGraphStateRef = React.useRef<() => void>(() => undefined);
+  const roomCommandsPendingRef = React.useRef(false);
+  const replayingCanvasProjectRef = React.useRef<string | null>(null);
+  /**
+   * Applying an authoritative head means the room took the commands or
+   * reconciled with another writer, so the canvas holds nothing the server
+   * does not already have.
+   */
+  const applyRoomHead = React.useCallback((head: CollaborativeHead) => {
+    openGraphIdRef.current = head.document.graphs.some(
+      (graph) => graph.id === openGraphIdRef.current,
+    )
+      ? openGraphIdRef.current
+      : defaultGraphId(head);
+    syncFromCollaborativeHeadRef.current(head);
+    setUnsyncedRoomEdits(false);
+  }, []);
+  const recoverRoomCanvas = React.useCallback(
+    (head: CollaborativeHead) => {
+      // A snapshot can replace optimistic edits that the outbox is still replaying.
+      // When the last receipt lands, project the confirmed head once more.
+      replayingCanvasProjectRef.current = roomCommandsPendingRef.current
+        ? head.project_id
+        : null;
+      applyRoomHead(head);
+    },
+    [applyRoomHead],
+  );
+  const applyAuthoringCommandsRef = React.useRef(applyAuthoringCommands);
+  React.useLayoutEffect(() => {
+    applyAuthoringCommandsRef.current = applyAuthoringCommands;
+  }, [applyAuthoringCommands]);
+  const replaceHeadRef = React.useRef<
+    (head: CollaborativeHead) => CollaborativeHead
+  >((head) => head);
+  const projectRoomHeadRef = React.useRef<CollaborativeHead | null>(null);
+  const refreshCollaborativeHeadRef = React.useRef<
+    (options?: { errorMessage?: string | null }) => void
+  >(() => undefined);
+  const headRefreshRetryRef = React.useRef<number | null>(null);
+  React.useLayoutEffect(() => {
+    const roomProjectId = projectId;
+    if (!roomProjectId) return;
+    let controller: AbortController | null = null;
+
+    const refreshHead = (options?: { errorMessage?: string | null }) => {
+      controller?.abort();
+      const request = new AbortController();
+      controller = request;
+      void getCollaborativeHead(workspaceId, roomProjectId, request.signal)
+        .then((head) => {
+          if (request.signal.aborted) return;
+          if (headRefreshRetryRef.current !== null) {
+            window.clearTimeout(headRefreshRetryRef.current);
+            headRefreshRetryRef.current = null;
+          }
+          recoverRoomCanvas(replaceHeadRef.current(head));
+        })
+        .catch((error: unknown) => {
+          if (request.signal.aborted) return;
+          const message =
+            options?.errorMessage ??
+            (error instanceof Error
+              ? error.message
+              : "The Project head could not be refreshed.");
+          setRunError(message);
+          if (headRefreshRetryRef.current === null) {
+            headRefreshRetryRef.current = window.setTimeout(() => {
+              headRefreshRetryRef.current = null;
+              refreshHead({ errorMessage: message });
+            }, 1000);
+          }
+        });
+    };
+
+    refreshCollaborativeHeadRef.current = refreshHead;
+    return () => {
+      controller?.abort();
+      refreshCollaborativeHeadRef.current = () => undefined;
+      if (headRefreshRetryRef.current !== null) {
+        window.clearTimeout(headRefreshRetryRef.current);
+        headRefreshRetryRef.current = null;
+      }
+    };
+  }, [projectId, recoverRoomCanvas, workspaceId]);
+
+  const projectRoom = useProjectRoomSession({
+    workspaceId,
+    projectId,
+    onReady: (ready) => {
+      // Durable editing is disabled while disconnected, so reconnect always
+      // restores the authoritative room snapshot before authoring resumes.
+      recoverRoomCanvas(ready.head);
+    },
+    onRehydrate: recoverRoomCanvas,
+    onPendingCommandsChange: (pending) => {
+      roomCommandsPendingRef.current = pending;
+    },
+    onHeadRefreshRequired: () => {
+      refreshCollaborativeHeadRef.current({ errorMessage: null });
+    },
+    onCommandAccepted: (message, meta, head) => {
+      // A gesture that reached the room already changed this tab's canvas, and
+      // the room applied the same commands to its own head.
+      const structural = message.commands.some(
+        (command) =>
+          command.kind === "add_graph" || command.kind === "remove_graph",
+      );
+      if (
+        structural &&
+        !head.document.graphs.some(
+          (graph) => graph.id === openGraphIdRef.current,
+        )
+      ) {
+        applyRoomHead(head);
+        return;
+      }
+      if (meta.local) return;
+      const graphId = openGraphIdRef.current;
+      const localCommands: GraphCommand[] = [];
+      for (const entry of message.commands) {
+        // A batch may address any Graph of this Project. Another Graph's
+        // commands change nothing here: the room's head moved, this canvas did
+        // not need to.
+        if (entry.kind === "in_graph" && entry.graph_id !== graphId) continue;
+        if (
+          entry.kind === "rename_project" ||
+          entry.kind === "add_graph" ||
+          entry.kind === "remove_graph" ||
+          entry.kind === "refresh_node"
+        ) {
+          // These changes are reflected in the live head without a canvas edit.
+          continue;
+        }
+        if (entry.kind === "rename_graph") {
+          if (entry.graph_id !== graphId) continue;
+          localCommands.push({ kind: "rename_graph", name: entry.name });
+          continue;
+        }
+        if (entry.kind !== "in_graph") {
+          // A new Call node needs hydration against the Project's Graph interfaces.
+          refreshCollaborativeHeadRef.current();
+          return;
+        }
+        const body = entry.command;
+        if (body.kind === "replace_presentation") {
+          replacePresentation(body.presentation);
+          continue;
+        }
+        if (body.kind === "move_artifact_viewers") {
+          const positions = new Map(
+            body.positions.map((position) => [
+              position.viewer_id,
+              { x: position.x, y: position.y },
+            ]),
+          );
+          setArtifactViewers((current) => ({
+            ...current,
+            nodes: current.nodes.map((node) => {
+              const position = positions.get(node.id);
+              return position ? { ...node, position } : node;
+            }),
+          }));
+          continue;
+        }
+        if (body.kind === "move_annotations") {
+          const positions = new Map(
+            body.positions.map((position) => [
+              position.annotation_id,
+              { x: position.x, y: position.y },
+            ]),
+          );
+          setArtifactViewers((current) => ({
+            ...current,
+            annotations: current.annotations.map((annotation) => {
+              const position = positions.get(annotation.id);
+              return position ? { ...annotation, position } : annotation;
+            }),
+          }));
+          continue;
+        }
+        if (
+          body.kind === "replace_document" &&
+          body.document.presentation &&
+          graphId !== null
+        ) {
+          // The document rewrite carries the card layout with it.
+          replacePresentation(body.document.presentation);
+        }
+        const localCommand = toLocalGraphCommand(
+          entry,
+          authoredDocumentRef.current,
+          graphId ?? undefined,
+        );
+        if (!localCommand) {
+          refreshCollaborativeHeadRef.current();
+          return;
+        }
+        localCommands.push(localCommand);
+      }
+      if (localCommands.length) {
+        applyAuthoringCommandsRef.current(localCommands, { syncRoom: false });
+      }
+    },
+    onCommandRejected: (message) => {
+      const isHeadConflict = message.error_code === "head_conflict";
+      if (!isHeadConflict) {
+        setRunError(message.detail || "A collaborative edit was rejected.");
+      }
+      refreshCollaborativeHeadRef.current({
+        errorMessage: isHeadConflict
+          ? null
+          : message.detail || "A collaborative edit was rejected.",
+      });
+    },
+    onTerminalClose: (reason) => {
+      if (reason === "access_revoked" || reason === "project_deleted") {
+        purgeLocalGraphStateRef.current();
+        router.replace(`/workspaces/${encodeURIComponent(workspaceSlug)}`);
+        return;
+      }
+    },
+  });
+  const {
+    activeGraph,
+    graphName,
+    setGraphName,
+    currentFingerprint,
+    isDirty,
+    saving,
+    openingGraphId,
+    deletingGraphId,
+    persistenceError,
+    dismissPersistenceError,
+    persistenceOperationBusy,
+    closeGraphBrowser,
+    refreshSavedGraphs,
+    saveCurrentGraph,
+    removeSavedGraph,
+    syncFromCollaborativeHead,
+    openGraphId: lifecycleOpenGraphId,
+    openGraphInProject,
+    purgeLocalGraphState,
+  } = useSavedGraphLifecycle({
+    workspaceId,
+    workspaceSlug,
+    // The lifecycle hook follows the Workbench address, and a Workbench address
+    // names a Project. Which Graph to project out of it is the head's business.
+    initialGraphId: projectId,
+    registry,
+    document: authoredDocument,
+    presentation: sharedPresentation,
+    isExecutionRunning,
+    replaceDocument,
+    replacePresentation,
+    updateDocumentName,
+    refreshNodeSecretStatuses,
+    clearGraphSecretStatuses,
+    clearPendingConnectionRoute,
+    clearRunError,
+    closeNodeLibrary,
+    requestCanvasRefit,
+    refreshNodeRegistry: requestNodeRegistryRefresh,
+    roomHead:
+      projectRoom.terminalReason === "access_revoked" ||
+      projectRoom.terminalReason === "project_deleted"
+        ? null
+        : projectRoom.head,
+    roomSessionId: projectRoom.localSessionId,
+    hasPendingRoomCommands: projectRoom.hasPendingCommands,
+    hasUnsyncedRoomEdits: unsyncedRoomEdits,
+  });
+  React.useLayoutEffect(() => {
+    syncFromCollaborativeHeadRef.current = syncFromCollaborativeHead;
+    purgeLocalGraphStateRef.current = purgeLocalGraphState;
+  }, [purgeLocalGraphState, syncFromCollaborativeHead]);
+
+  /**
+   * The Graph this canvas shows, read out of the room's head: it is a projection
+   * of the one Project document, never a second copy of it. The Project's first
+   * Graph is the one a person lands on; naming another Graph of the same Project
+   * is the picker that #197 will bring.
+   */
+  const openGraphId = React.useMemo(() => {
+    const head = projectRoom.head;
+    if (!head) return null;
+    // The lifecycle hook remembers the choice; a Graph another writer removed
+    // falls back to the Project's first until the next sync repoints it.
+    return lifecycleOpenGraphId !== null &&
+      head.document.graphs.some((graph) => graph.id === lifecycleOpenGraphId)
+      ? lifecycleOpenGraphId
+      : defaultGraphId(head);
+  }, [lifecycleOpenGraphId, projectRoom.head]);
+  // Adjusting state while rendering is React's way to derive it from another
+  // hook's result without a frame that paints the old catalog.
+  const projectGraphs = projectRoom.head?.document.graphs ?? NO_GRAPHS;
+  // This projection walks every Graph of the Project — an interface port per
+  // boundary node, and a cycle check that rebuilds the whole call graph per
+  // candidate — and a pointer gesture changes none of that. Written in the render
+  // body it ran on every render, so dragging a node paid for it at pointer-sample
+  // rate; it is now remembered until the Project head moves.
+  const projectCatalogKey = React.useMemo(
+    () =>
+      JSON.stringify([
+        openGraphId,
+        projectGraphs.map((graph) => [
+          graph.id,
+          graph.name,
+          graphInterface(graph),
+        ]),
+        openGraphId === null
+          ? []
+          : callableGraphs(projectGraphs, openGraphId).map((graph) => graph.id),
+      ]),
+    [openGraphId, projectGraphs],
+  );
+  if (projectCatalog.key !== projectCatalogKey) {
+    setProjectCatalog({
+      key: projectCatalogKey,
+      graphs: projectGraphs,
+      openGraphId,
+    });
+  }
+  /**
+   * A Project with no Graph has nothing to draw. Saying so beats a blank canvas
+   * that looks like the author's own unsaved work.
+   */
+  const projectHasNoGraph =
+    projectRoom.head !== null && projectRoom.status === "ready" && !openGraphId;
+  React.useLayoutEffect(() => {
+    openGraphIdRef.current = openGraphId;
+    replaceHeadRef.current = projectRoom.replaceHead;
+    projectRoomHeadRef.current = projectRoom.head;
+  }, [openGraphId, projectRoom.head, projectRoom.replaceHead]);
+
+  React.useLayoutEffect(() => {
+    const head = projectRoom.head;
+    if (
+      !projectRoom.hasPendingCommands &&
+      projectRoom.status === "ready" &&
+      head !== null &&
+      replayingCanvasProjectRef.current === head.project_id
+    ) {
+      replayingCanvasProjectRef.current = null;
+      applyRoomHead(head);
+    }
+  }, [
+    applyRoomHead,
+    projectRoom.hasPendingCommands,
+    projectRoom.head,
+    projectRoom.status,
+  ]);
+
+  const projectReadiness = graphReadiness(
+    projectRoom.status,
+    projectRoom.head !== null,
+  );
+  const projectEditsTrusted = projectId === null || projectReadiness.trusted;
+  const canRunSavedGraph =
+    activeGraph !== null && canStartRun && projectEditsTrusted && !isDirty;
+  const canSubmitRoomCommands = projectRoom.canSubmitCommands;
+  // Stable per Project: the chrome below is published to the rail, and a value
+  // that changed identity every render would wake the rail on every keystroke.
+  const submitRoomBatch = projectRoom.submitCommands;
+  const savedProjectName = projectRoom.head?.name ?? "";
+  /**
+   * The room refused a batch because another writer moved the head first: the
+   * next snapshot carries the truth, so that is not worth interrupting anyone
+   * with. Anything else is.
+   */
+  const reportCommandFailure = React.useCallback(
+    (error: unknown, fallback: string) => {
+      if (
+        error instanceof ProjectRoomCommandError &&
+        (error.errorCode === "superseded" ||
+          error.errorCode === "head_conflict")
+      ) {
+        return;
+      }
+      setRunError(error instanceof Error ? error.message : fallback);
+    },
+    [setRunError],
+  );
+  /** One gesture, one batch: the room accepts a batch or refuses the whole of it. */
+  const submitRoomCommands = React.useCallback(
+    (commands: readonly RoomProjectCommand[], fallback: string) => {
+      if (projectId === null) return;
+      void submitRoomBatch(commands).catch((error: unknown) => {
+        if (
+          error instanceof ProjectRoomCommandError &&
+          (error.errorCode === "queue_full" ||
+            error.errorCode === "not_ready" ||
+            error.errorCode === "send_failed" ||
+            error.errorCode === "reconnect_exhausted")
+        ) {
+          setUnsyncedRoomEdits(true);
+          if (error.errorCode === "queue_full")
+            refreshCollaborativeHeadRef.current();
+        }
+        reportCommandFailure(error, fallback);
+      });
+    },
+    [projectId, reportCommandFailure, submitRoomBatch],
+  );
+  /** Address a Graph-body command at the Graph this canvas shows. */
+  const inOpenGraph = React.useCallback(
+    (command: RoomGraphBodyCommand): RoomProjectCommand | null => {
+      const graphId = openGraphIdRef.current;
+      if (graphId === null) return null;
+      return { kind: "in_graph", graph_id: graphId, command };
+    },
+    [],
+  );
+  const commitProjectBatch = React.useCallback(
+    (
+      commands: readonly RoomProjectCommand[],
+      fallback: string,
+      openAfter: string | null = null,
+    ) => {
+      void submitRoomBatch(commands)
+        .then(({ head }) => {
+          refreshSavedGraphs();
+          if (openAfter !== null) {
+            openGraphInProject(head, openAfter);
+            return;
+          }
+          const rename = commands.find(
+            (command) => command.kind === "rename_graph",
+          );
+          if (rename && rename.graph_id === openGraphIdRef.current) {
+            const graph = head.document.graphs.find(
+              (graph) => graph.id === rename.graph_id,
+            );
+            if (!graph) return;
+            applyAuthoringCommandsRef.current(
+              [{ kind: "rename_graph", name: graph.name }],
+              { syncRoom: false },
+            );
+          }
+        })
+        .catch((error: unknown) => {
+          setRunError(error instanceof Error ? error.message : fallback);
+        });
+    },
+    [openGraphInProject, refreshSavedGraphs, setRunError, submitRoomBatch],
+  );
+  /**
+   * A Project arrives holding Graphs, and one with none has nothing for the
+   * canvas to show. The way in is the same command any other writer would send.
+   * Graph names are unique in a Project, so a further Graph gets the next free
+   * "Graph N".
+   */
+  const addProjectGraph = React.useCallback(() => {
+    const graphs = projectRoomHeadRef.current?.document.graphs ?? [];
+    const taken = new Set(graphs.map((graph) => graph.name.toLowerCase()));
+    let name = authoredDocumentRef.current.name.trim() || "Untitled workflow";
+    if (graphs.length > 0) {
+      let n = graphs.length + 1;
+      while (taken.has(`graph ${n}`)) n += 1;
+      name = `Graph ${n}`;
+    }
+    const graphId = createUuid();
+    commitProjectBatch(
+      [{ kind: "add_graph", graph_id: graphId, name }],
+      "The Graph could not be added to this Project.",
+      graphId,
+    );
+  }, [commitProjectBatch]);
+  const renameProjectGraph = React.useCallback(
+    (graphId: string, name: string) => {
+      const current = projectRoomHeadRef.current?.document.graphs.find(
+        (graph) => graph.id === graphId,
+      );
+      if (!current) return;
+      commitProjectBatch(
+        [toRoomRenameGraphCommand(graphId, name, current.name)],
+        "The Graph could not be renamed.",
+      );
+    },
+    [commitProjectBatch],
+  );
+  const removeProjectGraph = React.useCallback(
+    (graphId: string) => {
+      commitProjectBatch(
+        [{ kind: "remove_graph", graph_id: graphId }],
+        "The Graph could not be deleted.",
+      );
+    },
+    [commitProjectBatch],
+  );
+  /**
+   * The Graphs this canvas was reached through by opening a call, outermost
+   * first. Empty when a Graph was opened directly. What the canvas shows for a
+   * node is its instance under exactly this call path.
+   */
+  const [callTrail, setCallTrail] = React.useState<
+    readonly { graphId: string; nodeId: string; name: string }[]
+  >([]);
+  /** Switching is a projection of the head the room already holds. */
+  const switchProjectGraph = React.useCallback(
+    (graphId: string, trail: typeof callTrail): boolean => {
+      const head = projectRoomHeadRef.current;
+      if (!head || graphId === openGraphIdRef.current) return false;
+      if (isExecutionRunning() || isDirty) {
+        setRunError(
+          "Finish or wait for the current run and sync before switching Graphs.",
+        );
+        return false;
+      }
+      setCallTrail(trail);
+      openGraphInProject(head, graphId);
+      return true;
+    },
+    [isDirty, isExecutionRunning, openGraphInProject, setRunError],
+  );
+  const openProjectGraph = React.useCallback(
+    (graphId: string) => {
+      switchProjectGraph(graphId, []);
+    },
+    [switchProjectGraph],
+  );
+  /** Open the Graph a call node places, remembering where it was called from. */
+  const openCall = React.useCallback(
+    (nodeId: string, calleeGraphId: string) => {
+      const callerId = openGraphIdRef.current;
+      const caller = projectRoomHeadRef.current?.document.graphs.find(
+        (graph) => graph.id === callerId,
+      );
+      if (callerId === null || !caller) return;
+      switchProjectGraph(calleeGraphId, [
+        ...callTrail,
+        { graphId: callerId, nodeId, name: caller.name },
+      ]);
+    },
+    [callTrail, switchProjectGraph],
+  );
+  const backFromCall = React.useCallback(() => {
+    const last = callTrail[callTrail.length - 1];
+    if (last) switchProjectGraph(last.graphId, callTrail.slice(0, -1));
+  }, [callTrail, switchProjectGraph]);
+  React.useEffect(() => {
+    roomCommandSyncRef.current = {
+      submitLocal: (commands, before) => {
+        const graphId = openGraphIdRef.current;
+        if (graphId === null) return;
+        const batch = commands
+          .map((command) => toRoomGraphCommand(command, before, graphId))
+          .filter((command): command is RoomProjectCommand => command !== null);
+        if (!batch.length) return;
+        submitRoomCommands(batch, "Collaborative sync failed.");
+      },
+    };
+  }, [submitRoomCommands]);
+  React.useEffect(() => {
+    presentationRoomSyncRef.current = {
+      submitReplace: (state) => {
+        const command = inOpenGraph({
+          kind: "replace_presentation",
+          presentation: presentationFromArtifactViewers(state),
+        });
+        if (!command) return;
+        submitRoomCommands([command], "Presentation sync failed.");
+      },
+      submitMove: (positions) => {
+        if (!positions.length) return;
+        const command = inOpenGraph({
+          kind: "move_artifact_viewers",
+          positions: [...positions],
+        });
+        if (!command) return;
+        submitRoomCommands([command], "Presentation sync failed.");
+      },
+      submitMoveAnnotations: (positions) => {
+        if (!positions.length) return;
+        const command = inOpenGraph({
+          kind: "move_annotations",
+          positions: [...positions],
+        });
+        if (!command) return;
+        submitRoomCommands([command], "Presentation sync failed.");
+      },
+    };
+  }, [inOpenGraph, submitRoomCommands]);
+  const {
+    running,
+    runningScope,
+    announcement: executionAnnouncement,
+    runWorkflow,
+  } = useRunExecution({
+    workspaceId,
+    registryAvailable: Boolean(registry),
+    nodes,
+    edges,
+    origins: authoredDocument.origins,
+    projectId,
+    activeGraph,
+    currentExecutionFingerprint,
+    canRunSavedGraph,
+    nodeSecretStatuses,
+    roomConnected: projectRoom.status === "ready",
+    roomActiveRuns: projectRoom.activeRuns,
+    roomRunsRevision: projectRoom.runsRevision,
+    roomInstancesRevision: projectRoom.instancesRevision,
+    setNodes,
+    setRunError,
+  });
+  React.useEffect(() => {
+    executionRunningRef.current = running;
+  }, [running]);
+  /**
+   * Every Run the room believes is open on the Graph this canvas shows, other
+   * people's included. A Run is one demand for freshness, and a Project is
+   * answering several at once, so nothing here picks a "current" one.
+   */
+  const openGraphRuns = React.useMemo(
+    () =>
+      openGraphId
+        ? projectRoom.activeRuns.filter((run) => run.graph_id === openGraphId)
+        : [],
+    [openGraphId, projectRoom.activeRuns],
+  );
+  /**
+   * Freshness of each node's own instance, read by the instance the canvas is
+   * drawing rather than by whichever Run last touched the Graph.
+   */
+  const nodeInstanceStates = React.useMemo(() => {
+    const states: Record<string, RoomInstanceState> = {};
+    if (openGraphId === null || projectId === null) return states;
+    for (const node of nodes) {
+      const instance = projectRoom.instances.get(
+        instanceKeyText({
+          project_id: projectId,
+          graph_id: openGraphId,
+          call_path: callTrail.map((entry) => entry.nodeId),
+          node_id: node.id,
+          map_index: null,
+        }),
+      );
+      if (instance) states[node.id] = instance;
+    }
+    return states;
+  }, [callTrail, nodes, openGraphId, projectId, projectRoom.instances]);
+
+  /** The call node a person could step into: exactly one node is selected and it is a call. */
+  const selectedCall = React.useMemo(() => {
+    const chosen = nodes.filter((node) => node.selected);
+    const [only] = chosen;
+    if (chosen.length !== 1 || !only) return null;
+    if (newNodeKind(only.data.spec) !== "call") return null;
+    return {
+      nodeId: only.id,
+      calleeGraphId: only.data.spec.operator_id,
+      calleeName: only.data.spec.title,
+    };
+  }, [nodes]);
+
+  const graphOperationBusy = persistenceOperationBusy || running;
+  const localAuthoringEnabled =
+    !graphOperationBusy &&
+    (projectId
+      ? canEditProject && projectEditsTrusted && projectRoom.canSubmitCommands
+      : canCreateProject && activeGraph === null);
+  useGraphAutosave({
+    enabled:
+      projectId === null && activeGraph === null && localAuthoringEnabled,
+    dirty: isDirty,
+    fingerprint: currentFingerprint,
+    save: saveCurrentGraph,
+  });
+  const localAuthoringBlockedMessage = !(projectId
+    ? canEditProject
+    : canCreateProject)
+    ? "You do not have permission to edit this Project."
+    : graphOperationBusy
+      ? "Editing is paused while another Project operation is in progress."
+      : "Editing is paused until the Project room is ready.";
+  React.useLayoutEffect(() => {
+    localAuthoringEnabledRef.current = localAuthoringEnabled;
+    localAuthoringBlockedMessageRef.current = localAuthoringBlockedMessage;
+  }, [localAuthoringBlockedMessage, localAuthoringEnabled]);
+
+  React.useEffect(() => {
+    if (executionHistoryTarget) closeGraphBrowser();
+  }, [closeGraphBrowser, executionHistoryTarget]);
+
+  React.useEffect(() => {
+    // Refit when the graph or canvas changes, leaving the camera alone during edits.
+    if (!canvasReady) return;
+    const frame = window.requestAnimationFrame(() =>
+      fitCanvasView(WORKBENCH_FIT_VIEW),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [canvasReady, fitCanvasView, fitRevision]);
+
+  const selectedNodeIds = React.useMemo(
+    () => [
+      ...nodes.flatMap((node) => (node.selected ? [node.id] : [])),
+      ...selectedAgentIds,
+      ...artifactViewers.nodes.flatMap((node) =>
+        node.selected ? [node.id] : [],
+      ),
+      ...artifactViewers.annotations.flatMap((node) =>
+        node.selected ? [node.id] : [],
+      ),
+    ],
+    [
+      artifactViewers.annotations,
+      artifactViewers.nodes,
+
+      nodes,
+      selectedAgentIds,
+    ],
+  );
+  const selectedNodeIdsRef = React.useRef(selectedNodeIds);
+  React.useLayoutEffect(() => {
+    selectedNodeIdsRef.current = selectedNodeIds;
+  }, [selectedNodeIds]);
+  // Last on-canvas pointer in flow coords. Presence replaces the whole snapshot,
+  // so selection/keepalive publishes must resend this or peers see cursor: null.
+  const presenceCursorRef = React.useRef<{ x: number; y: number } | null>(null);
+  const presenceClientPointRef = React.useRef<{ x: number; y: number } | null>(
+    null,
+  );
+  const presenceClientPointDirtyRef = React.useRef(false);
+  const presenceOverCanvasRef = React.useRef(false);
+  const presenceDragRef = React.useRef<{
+    positions: TransientNodePosition[];
+    targetIds: string[];
+  } | null>(null);
+  const presencePublishTimerRef = React.useRef<number | null>(null);
+  const lastPresencePublishAtRef = React.useRef(0);
+  const canPublishRoomPresence = projectRoom.canPublishPresence;
+  const publishRoomPresence = projectRoom.publishPresence;
+  const schedulePresenceSnapshot = React.useCallback(() => {
+    if (!canPublishRoomPresence) return;
+    if (presencePublishTimerRef.current !== null) return;
+
+    const elapsed = Date.now() - lastPresencePublishAtRef.current;
+    const delay = Math.max(0, PRESENCE_CLIENT_MIN_INTERVAL_MS - elapsed);
+    presencePublishTimerRef.current = window.setTimeout(() => {
+      presencePublishTimerRef.current = null;
+      if (!canPublishRoomPresence) return;
+
+      const clientPoint = presenceClientPointRef.current;
+      if (presenceClientPointDirtyRef.current && clientPoint) {
+        presenceCursorRef.current = screenToCanvasPoint(clientPoint) ?? null;
+        presenceClientPointDirtyRef.current = false;
+      }
+
+      const drag = presenceDragRef.current;
+      const published = publishRoomPresence({
+        graph_id: openGraphIdRef.current,
+        cursor: presenceCursorRef.current,
+        selected_node_ids: selectedNodeIdsRef.current,
+        activity: drag ? "moving_nodes" : null,
+        activity_target_ids: drag?.targetIds ?? [],
+        transient_node_positions: drag?.positions ?? [],
+      });
+      if (published) lastPresencePublishAtRef.current = Date.now();
+    }, delay);
+  }, [canPublishRoomPresence, screenToCanvasPoint, publishRoomPresence]);
+  React.useEffect(() => {
+    if (projectRoom.canPublishPresence) return;
+    if (presencePublishTimerRef.current !== null) {
+      window.clearTimeout(presencePublishTimerRef.current);
+      presencePublishTimerRef.current = null;
+    }
+    lastPresencePublishAtRef.current = 0;
+  }, [projectRoom.canPublishPresence]);
+  React.useEffect(
+    () => () => {
+      if (presencePublishTimerRef.current !== null) {
+        window.clearTimeout(presencePublishTimerRef.current);
+      }
+    },
+    [],
+  );
+  const presenceSelectionKey = selectedNodeIds.join("\0");
+  React.useEffect(() => {
+    schedulePresenceSnapshot();
+  }, [presenceSelectionKey, schedulePresenceSnapshot]);
+  React.useEffect(() => {
+    presenceCursorRef.current = null;
+    presenceClientPointDirtyRef.current = true;
+    schedulePresenceSnapshot();
+  }, [openGraphId, schedulePresenceSnapshot]);
+  // Server clears idle cursors after ~5s without updates; keepalives while parked.
+  React.useEffect(() => {
+    if (!projectRoom.canPublishPresence) return;
+    const timer = window.setInterval(() => {
+      if (!presenceOverCanvasRef.current || !presenceCursorRef.current) return;
+      schedulePresenceSnapshot();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [projectRoom.canPublishPresence, schedulePresenceSnapshot]);
+  const selectedNodeCount = selectedNodeIds.length;
+  // What the selection permits is a walk over the graph, and a drag re-renders
+  // this body sixty times a second without moving the selection. Each derivation
+  // below is cached against what it actually reads, so a gesture costs a
+  // dependency check instead of a validation pass over every node.
+  const selectedNodesAreRunnable = React.useMemo(
+    () =>
+      nodes.every(
+        (node) =>
+          !node.selected ||
+          (workflowNodeIsSupported(node.data) &&
+            validateConfig(node.data.spec.config_schema, node.data.config)
+              .length === 0),
+      ),
+    [nodes],
+  );
+  const nodeTitles = React.useMemo(
+    () =>
+      Object.fromEntries(nodes.map((node) => [node.id, node.data.spec.title])),
+    [nodes],
+  );
+  const selectedWithDependencyIds = React.useMemo(
+    () => selectedNodeAndAncestorIds(nodes, edges),
+    [nodes, edges],
+  );
+  const selectedWithDependenciesCount = selectedWithDependencyIds.size;
+  const selectedWithDependenciesAreRunnable = React.useMemo(
+    () =>
+      nodes.every(
+        (node) =>
+          !selectedWithDependencyIds.has(node.id) ||
+          (workflowNodeIsSupported(node.data) &&
+            validateConfig(node.data.spec.config_schema, node.data.config)
+              .length === 0),
+      ),
+    [nodes, selectedWithDependencyIds],
+  );
+  const selectedWorkflowCount = React.useMemo(
+    () => nodes.filter((node) => node.selected).length,
+    [nodes],
+  );
+  const selectedViewerCount = React.useMemo(
+    () => artifactViewers.nodes.filter((node) => node.selected).length,
+    [artifactViewers.nodes],
+  );
+  const selectedArtifactCards = React.useMemo(
+    () =>
+      artifactViewers.nodes.flatMap((node) => {
+        if (!node.selected) return [];
+        const value = artifactCardConnectionValue(
+          node,
+          artifactViewers.edges,
+          nodes,
+        );
+        return value ? [{ node, value }] : [];
+      }),
+    [artifactViewers.edges, artifactViewers.nodes, nodes],
+  );
+  const collectedArtifactRefs = React.useMemo(
+    () =>
+      collectArtifactCardRefs(
+        selectedArtifactCards.map(({ node, value }) => ({
+          position: node.position,
+          value,
+        })),
+      ),
+    [selectedArtifactCards],
+  );
+  const selectedViewerCards = React.useMemo(
+    () => artifactViewers.nodes.filter((node) => node.selected),
+    [artifactViewers.nodes],
+  );
+  const collectCardValues = React.useMemo(
+    () =>
+      Object.fromEntries(
+        selectedArtifactCards.map(({ node, value }) => [node.id, value]),
+      ),
+    [selectedArtifactCards],
+  );
+  const collectsIntoSequence = React.useMemo(
+    () =>
+      selectionCollectsIntoSequence(
+        selectedArtifactCards.map(({ value }) => value),
+      ),
+    [selectedArtifactCards],
+  );
+  const groupingDisabledReason = React.useMemo(
+    () =>
+      selectedNodeCount !== selectedViewerCards.length
+        ? "Select only artifacts to collect."
+        : selectedViewerCards.length > 0 &&
+            selectedArtifactCards.length !== selectedViewerCards.length
+          ? "Run the producing node first, so its artifact is known."
+          : artifactGroupingDisabledReason({
+              cards: selectedArtifactCards.map(({ node }) => node),
+              state: artifactViewers,
+              origins: authoredDocument.origins,
+              values: collectCardValues,
+              allowProducerFeeds: true,
+            }),
+    [
+      artifactViewers,
+      authoredDocument.origins,
+      collectCardValues,
+      selectedArtifactCards,
+      selectedNodeCount,
+      selectedViewerCards,
+    ],
+  );
+  // With the collection operator available, "Collect" makes a collection: it
+  // can gather Library cards and cards on a node's output alike.
+  const collectSpec = React.useMemo(
+    () => registry?.nodes.find((spec) => isCollectionSpec(spec)) ?? null,
+    [registry],
+  );
+  const selectedCollectionSources = React.useMemo(
+    () =>
+      artifactViewers.nodes.flatMap((node): CollectionSource[] => {
+        if (!node.selected) return [];
+        const feed = artifactViewers.edges.find(
+          (edge) =>
+            edge.type === ARTIFACT_VIEWER_EDGE_TYPE &&
+            edge.target === node.id &&
+            edge.targetHandle === ARTIFACT_VIEWER_INPUT_HANDLE,
+        );
+        if (feed && node.data.mode === "artifact") {
+          return [
+            {
+              kind: "output",
+              cardId: node.id,
+              position: node.position,
+              sourceNodeId: feed.source,
+              sourcePortName: feed.data?.sourcePortName ?? "",
+            },
+          ];
+        }
+        if (!feed && node.data.artifactRef) {
+          return [
+            {
+              kind: "library",
+              cardId: node.id,
+              position: node.position,
+              value: node.data.artifactRef,
+            },
+          ];
+        }
+        return [];
+      }),
+    [artifactViewers.edges, artifactViewers.nodes],
+  );
+  const collectionDisabledReason = (() => {
+    if (!collectSpec) return null;
+    if (selectedNodeCount !== selectedCollectionSources.length) {
+      return "Select only artifacts to collect.";
+    }
+    const cardIds = new Set(
+      selectedCollectionSources.map((source) => source.cardId),
+    );
+    const carried = authoredDocument.origins.some((origin) =>
+      selectedCollectionSources.some(
+        (source) =>
+          source.kind === "library" &&
+          originBelongsToCard(origin, source.cardId, source.value),
+      ),
+    );
+    if (
+      carried ||
+      artifactViewers.bindings.some(
+        (binding) =>
+          cardIds.has(binding.sourceViewerId) ||
+          cardIds.has(binding.targetViewerId),
+      )
+    ) {
+      return "Disconnect what these artifacts feed before collecting them.";
+    }
+    return collectDisabledReason(selectedCollectionSources, nodes);
+  })();
+
+  const runSelectionBusy = !registry || running || selectedWorkflowCount === 0;
+  const runSelectedDisabled =
+    !canRunSavedGraph || runSelectionBusy || !selectedNodesAreRunnable;
+  const runSelectedWithDependenciesDisabled =
+    !canRunSavedGraph ||
+    runSelectionBusy ||
+    !selectedWithDependenciesAreRunnable;
+  const globalIssues = React.useMemo<GlobalIssue[]>(() => {
+    const issues: GlobalIssue[] = [];
+    if (registryError) {
+      issues.push({
+        id: "registry",
+        title: "Registry",
+        message:
+          registryError instanceof Error
+            ? registryError.message
+            : "The live node registry is unavailable.",
+      });
+    }
+    if (persistenceError) {
+      issues.push({
+        // The id is the toast's, whose owner still names this channel "graph".
+        id: "graph",
+        title: "Save",
+        message: persistenceError,
+      });
+    }
+    if (runError) {
+      issues.push({
+        id: "run",
+        title: "Run",
+        message: runError,
+      });
+    }
+    return issues;
+  }, [persistenceError, registryError, runError]);
+  const dismissGlobalIssue = React.useCallback(
+    (issue: GlobalIssue) => {
+      if (issue.id === "graph") {
+        dismissPersistenceError(issue.message);
+      }
+      if (issue.id === "run") {
+        dismissRunError(issue.message);
+      }
+    },
+    [dismissPersistenceError, dismissRunError],
+  );
+  const artifactOriginCanvasEdges = React.useMemo(
+    () =>
+      artifactOriginConnections(
+        activeArtifactViewers.nodes,
+        activeArtifactViewers.edges,
+        nodes,
+        authoredDocument.origins,
+      ).map((edge) => ({
+        ...edge,
+        selected: selectedEdgeIdSet.has(edge.id),
+      })),
+    [
+      activeArtifactViewers.nodes,
+      activeArtifactViewers.edges,
+      nodes,
+      authoredDocument.origins,
+      selectedEdgeIdSet,
+    ],
+  );
+
+  const updateEdge = React.useCallback(
+    (edgeId: string, update: WorkflowEdgeUpdate) => {
+      const changedEdge = edges.find((edge) => edge.id === edgeId);
+      if (!changedEdge) return;
+      applyAuthoringCommands([
+        {
+          kind: "update_edge",
+          edge_id: edgeId,
+          update: {
+            enabled: update.enabled ?? changedEdge.data?.enabled ?? true,
+            collection_mode:
+              update.collectionMode ??
+              changedEdge.data?.collectionMode ??
+              "direct",
+            projection: update.route
+              ? update.route.projection
+                ? { path: [...update.route.projection.path] }
+                : null
+              : changedEdge.data?.projection
+                ? { path: [...changedEdge.data.projection.path] }
+                : null,
+            conversion_path: update.route
+              ? update.route.conversionPath.map((conversion) => ({
+                  id: conversion.id,
+                  version: conversion.version,
+                }))
+              : (changedEdge.data?.conversionPath ?? []).map((conversion) => ({
+                  id: conversion.id,
+                  version: conversion.version,
+                })),
+          },
+        },
+      ]);
+    },
+    [applyAuthoringCommands, edges],
+  );
+
+  const {
+    addArtifactCards,
+    canMergeArtifactCards,
+    collectSelectedArtifacts,
+    extractArtifactCardItem,
+    insertArtifactCardIntoSequence,
+    mergeArtifactCardRun,
+    mergeArtifactCards,
+    removeArtifactCardItem,
+    reorderArtifactCardItem,
+    tidySelectedArtifacts,
+    ungroupArtifacts,
+  } = useArtifactCardCommands({
+    applyAuthoringCommands,
+    artifactViewers,
+    authoredDocumentRef,
+    commitArtifactViewers,
+    collection: {
+      spec: collectSpec,
+      disabledReason: collectionDisabledReason,
+      sources: selectedCollectionSources,
+      nodes,
+      edges,
+      onCollected: (collectionId) => {
+        canvasSelection.selectOnly({ nodeIds: [collectionId] });
+      },
+    },
+    groupingDisabledReason,
+    localAuthoringEnabled,
+    resolveCardValue: (node) =>
+      artifactCardConnectionValue(node, artifactViewers.edges, nodes),
+    selection: canvasSelection,
+  });
+
+  // A collection always keeps one spare plug, the one its next member lands
+  // on. Filling it (a wire, a card, a Library drop) is followed by a new spare.
+  React.useEffect(() => {
+    if (!localAuthoringEnabled) return;
+    const missing = collectionsWithoutSpare(
+      nodes,
+      edges,
+      authoredDocument.origins,
+    );
+    if (!missing.length) return;
+    applyAuthoringCommands(
+      missing.map((nodeId) => ({
+        kind: "add_input_plug" as const,
+        node_id: nodeId,
+        plug: { id: createUuid(), port: COLLECTION_PORT },
+      })),
+    );
+  }, [
+    applyAuthoringCommands,
+    authoredDocument.origins,
+    edges,
+    localAuthoringEnabled,
+    nodes,
+  ]);
+
+  /** One card per group, laid side by side from `point` in one commit. */
+  const placeArtifactGroups = React.useCallback(
+    (groups: readonly ArtifactDropPayload[], point: XYPosition) => {
+      const positions = artifactCardDropPositions(
+        point,
+        groups.map((group) => ({
+          artifactCount: cardArtifactRefs(group.value).length,
+          width:
+            !("item_refs" in group.value) && isTableArtifact(group.value)
+              ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
+              : !("item_refs" in group.value) && isGeoMapArtifact(group.value)
+                ? DEFAULT_ARTIFACT_MAP_CARD_WIDTH
+                : DEFAULT_ARTIFACT_CARD_WIDTH,
+        })),
+      );
+      addArtifactCards(
+        groups.map((group, index) => ({
+          value: group.value,
+          position: positions[index] ?? point,
+        })),
+      );
+    },
+    [addArtifactCards],
+  );
+
+  /**
+   * Drop the carried artifacts on empty canvas: one card per group they form.
+   *
+   * A Library drag of several artifacts arrives as one group per artifact type,
+   * so a same-type selection lands as one sequence card and a mixed selection as
+   * several cards laid side by side. A drop that asks for more than one card and
+   * lands on empty canvas is still one drop: one commit places all of them. A
+   * whole folder holding several types is the exception: it asks first, because
+   * the user dragged one thing and may want only one of its groups.
+   */
+  const dropArtifactOnCanvas = React.useCallback(
+    (event: DragEvent | React.DragEvent<HTMLElement>) => {
+      if (!event.dataTransfer || !canvasAtPoint(event.clientX, event.clientY)) {
+        return;
+      }
+      const groups = readArtifactDropGroups(event.dataTransfer);
+      if (groups.length === 0) return;
+      event.preventDefault();
+      const point = screenToCanvasPoint({
+        x: event.clientX,
+        y: event.clientY,
+      }) ?? { x: 0, y: 0 };
+      const folder = readArtifactDropFolder(event.dataTransfer);
+      if (folder && groups.length > 1) {
+        setPendingFolderDrop({
+          drop: { folderName: folder.name, groups, canPlaceAll: true },
+          destination: { kind: "canvas", point },
+        });
+        return;
+      }
+      placeArtifactGroups(groups, point);
+    },
+    [screenToCanvasPoint, placeArtifactGroups],
+  );
+
+  /**
+   * The card owns the order its artifacts are passed in, and an origin carries
+   * what it was handed, so a reorder rewrites the origin beside the card.
+   */
+  const dragOverArtifactDrop = React.useCallback(
+    (event: DragEvent | React.DragEvent<HTMLElement>) => {
+      if (!event.dataTransfer) return;
+      if (libraryDragKind(event.dataTransfer) === "upload") {
+        if (canEditProject && canvasAtPoint(event.clientX, event.clientY)) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }
+        return;
+      }
+      if (!isArtifactDrop(event.dataTransfer)) return;
+      if (artifactDropRowAt(event.clientX, event.clientY)) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        return;
+      }
+      if (!canvasAtPoint(event.clientX, event.clientY)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    [canEditProject],
+  );
+
+  /** Put one artifact value on an input row, or say why the input refuses it. */
+  const placeArtifactOnInput = React.useCallback(
+    (payload: ArtifactDropPayload, target: ArtifactDropTarget) => {
+      // Read the graph at drop time: a drag captures its state when it starts,
+      // so acting on that snapshot would miss an earlier drop.
+      const node = nodesRef.current.find(
+        (candidate) => candidate.id === target.nodeId,
+      );
+      if (!node || !workflowNodeIsSupported(node.data)) return;
+      const port = node.data.spec.inputs.find(
+        (candidate) => candidate.name === target.portName,
+      );
+      if (!port || !artifactDropTargetFitsNode(target, node.data, port)) return;
+      const commands = artifactDropCommands(
+        payload,
+        target,
+        port,
+        node.data.artifactTypeBindings,
+        {
+          edges: edgesRef.current,
+          origins: authoredDocumentRef.current.origins,
+          conversions: registry?.artifact_conversions ?? [],
+        },
+      );
+      if (commands?.length) {
+        applyAuthoringCommands(commands);
+        return;
+      }
+      setRunError(
+        `That input will not take ${artifactCardContract(payload.value, registry?.artifact_types ?? null)}: the port refuses the type, or two conversions tie.`,
+      );
+    },
+    [
+      applyAuthoringCommands,
+      registry?.artifact_conversions,
+      registry?.artifact_types,
+      setRunError,
+    ],
+  );
+
+  const dropArtifact = React.useCallback(
+    (event: DragEvent | React.DragEvent<HTMLElement>) => {
+      if (!event.dataTransfer) return;
+      if (libraryDragKind(event.dataTransfer) === "upload") {
+        if (!canEditProject || !canvasAtPoint(event.clientX, event.clientY))
+          return;
+        const point = screenToCanvasPoint({
+          x: event.clientX,
+          y: event.clientY,
+        });
+        if (!point) return;
+        event.preventDefault();
+        const files = Array.from(event.dataTransfer.files);
+        void (async () => {
+          const items: PlacedLibraryItem[] = [];
+          try {
+            for (const [index, file] of files.entries()) {
+              setCanvasUpload(`Uploading ${index + 1} of ${files.length}…`);
+              const uploaded = await uploadFile(workspaceId, file);
+              if (!uploaded.artifact_id)
+                throw new Error(
+                  `Upload of ${file.name} completed without an artifact.`,
+                );
+              const item = await saveUploadedArtifactToLibrary(workspaceId, {
+                artifact_id: uploaded.artifact_id,
+                original_filename: uploaded.filename || file.name,
+              });
+              items.push({ ...item, folder_id: null });
+              void mutateCache(["library-tree", workspaceId]);
+            }
+          } catch (error) {
+            setRunError(
+              error instanceof Error ? error.message : "Upload failed.",
+            );
+          } finally {
+            if (items.length)
+              placeArtifactGroups(
+                artifactDropGroups(items).map(artifactDropPayload),
+                point,
+              );
+            setCanvasUpload(null);
+          }
+        })();
+        return;
+      }
+      if (!isArtifactDrop(event.dataTransfer)) return;
+      const row = artifactDropRowAt(event.clientX, event.clientY);
+      if (!row) {
+        dropArtifactOnCanvas(event);
+        return;
+      }
+      event.preventDefault();
+      const groups = readArtifactDropGroups(event.dataTransfer);
+      const target = artifactDropTargetFromRow(row);
+      // One input row takes one artifact value. A whole folder of several types
+      // asks which group to place; any other drag of several types has no
+      // honest reading here — filling the row with the first group and silently
+      // dropping the rest would lose what the user picked up — so it is refused
+      // and said.
+      if (groups.length > 1) {
+        const folder = readArtifactDropFolder(event.dataTransfer);
+        if (folder && target) {
+          setPendingFolderDrop({
+            drop: { folderName: folder.name, groups, canPlaceAll: false },
+            destination: { kind: "input", target },
+          });
+          return;
+        }
+        setRunError(
+          `Drop one artifact type at a time onto an input: this drag carries ${groups.length} kinds of artifact.`,
+        );
+        return;
+      }
+      const payload = readArtifactDrop(event.dataTransfer);
+      if (!payload || !target) return;
+      placeArtifactOnInput(payload, target);
+    },
+    [
+      canEditProject,
+      dropArtifactOnCanvas,
+      mutateCache,
+      placeArtifactGroups,
+      placeArtifactOnInput,
+      screenToCanvasPoint,
+      setRunError,
+      workspaceId,
+    ],
+  );
+
+  const placeFolderDropGroups = React.useCallback(
+    (groups: readonly ArtifactDropPayload[]) => {
+      const pending = pendingFolderDrop;
+      setPendingFolderDrop(null);
+      if (!pending) return;
+      if (pending.destination.kind === "canvas") {
+        placeArtifactGroups(groups, pending.destination.point);
+        return;
+      }
+      if (groups.length === 1) {
+        const [only] = groups;
+        if (only) placeArtifactOnInput(only, pending.destination.target);
+      }
+    },
+    [pendingFolderDrop, placeArtifactGroups, placeArtifactOnInput],
+  );
+
+  React.useEffect(() => {
+    const onDragOver = (event: DragEvent) => dragOverArtifactDrop(event);
+    const onDrop = (event: DragEvent) => dropArtifact(event);
+    document.addEventListener("dragover", onDragOver);
+    document.addEventListener("drop", onDrop);
+    return () => {
+      document.removeEventListener("dragover", onDragOver);
+      document.removeEventListener("drop", onDrop);
+    };
+  }, [dragOverArtifactDrop, dropArtifact]);
+
+  const addWorkflowEdge = React.useCallback(
+    (
+      connection: CanvasConnection,
+      collectionMode: RunEdgeCollectionMode,
+      route: ConnectionRoute,
+    ): string | null => {
+      let committedConnection = connection;
+      let newlyBoundNodeId: string | null = null;
+      const binding = route.artifactTypeBinding;
+      if (binding) {
+        const handleId =
+          binding.endpoint === "source"
+            ? connection.sourceHandle
+            : connection.targetHandle;
+        const handle = decodeHandleId(handleId);
+        const nodeId =
+          binding.endpoint === "source" ? connection.source : connection.target;
+        const node = nodes.find((candidate) => candidate.id === nodeId);
+        const existingBinding =
+          node?.data.artifactTypeBindings[binding.variable];
+        if (
+          !handle ||
+          handle.artifactTypeVariable !== binding.variable ||
+          !node ||
+          (existingBinding &&
+            (existingBinding.id !== binding.artifactType.id ||
+              existingBinding.schema_version !==
+                binding.artifactType.schema_version))
+        ) {
+          return null;
+        }
+
+        const concreteHandleId = encodeHandleId({
+          portName: handle.portName,
+          artifactTypeId: binding.artifactType.id,
+          schemaVersion: binding.artifactType.schema_version,
+          shape: handle.shape,
+          direction: handle.direction,
+          ...(handle.plugId ? { plugId: handle.plugId } : {}),
+        });
+        committedConnection =
+          binding.endpoint === "source"
+            ? { ...connection, sourceHandle: concreteHandleId }
+            : { ...connection, targetHandle: concreteHandleId };
+        if (!existingBinding) newlyBoundNodeId = nodeId;
+      }
+
+      const edgeId = `edge-${createUuid()}`;
+      const selection = connectionRouteSelection(route);
+      const commands: GraphCommand[] = [];
+      if (binding && newlyBoundNodeId) {
+        // The port and pipe are both derived from the same document update.
+        commands.push({
+          kind: "bind_artifact_type",
+          node_id: newlyBoundNodeId,
+          variable: binding.variable,
+          artifact_type: binding.artifactType,
+        });
+      }
+      commands.push(
+        addEdgeCommand(
+          committedConnection,
+          {
+            enabled: true,
+            collectionMode,
+            projection: selection.projection
+              ? { path: [...selection.projection.path] }
+              : undefined,
+            conversionPath: selection.conversionPath.map((conversion) => ({
+              id: conversion.id,
+              version: conversion.version,
+            })),
+          },
+          edgeId,
+        ),
+      );
+      applyAuthoringCommands(commands);
+      clearRunError();
+      return edgeId;
+    },
+    [applyAuthoringCommands, clearRunError, nodes],
+  );
+
+  const isValidConnection = React.useCallback(
+    (candidate: CanvasConnection) => {
+      if (candidate.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE) {
+        const resolved = resolveArtifactCardConnection(
+          candidate,
+          activeArtifactViewers.nodes,
+          activeArtifactViewers.edges,
+          nodes,
+          registry?.artifact_conversions ?? [],
+        );
+        return resolved !== null;
+      }
+      if (
+        candidate.sourceHandle === ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE ||
+        candidate.targetHandle === ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE
+      ) {
+        return (
+          candidate.sourceHandle ===
+            ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE &&
+          candidate.targetHandle === ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE &&
+          candidate.source !== candidate.target &&
+          activeArtifactViewers.nodes.some(
+            (node) => node.id === candidate.source,
+          ) &&
+          activeArtifactViewers.nodes.some(
+            (node) => node.id === candidate.target,
+          ) &&
+          !activeArtifactViewers.bindings.some(
+            (binding) =>
+              binding.sourceViewerId === candidate.source &&
+              binding.targetViewerId === candidate.target,
+          )
+        );
+      }
+      if (
+        candidate.targetHandle === ARTIFACT_VIEWER_INPUT_HANDLE &&
+        activeArtifactViewers.nodes.some((node) => node.id === candidate.target)
+      ) {
+        const source = decodeHandleId(candidate.sourceHandle);
+        const sourceNode = nodes.find((node) => node.id === candidate.source);
+        return Boolean(
+          source &&
+          source.direction === "output" &&
+          sourceNode?.data.spec.outputs.some(
+            (port) => port.name === source.portName,
+          ),
+        );
+      }
+      return isConnectionAccepted(
+        candidate,
+        nodes,
+        edges,
+        registry?.artifact_types ?? [],
+        registry?.artifact_conversions ?? [],
+        null,
+        authoredDocument.origins,
+      );
+    },
+    [
+      authoredDocument.origins,
+      activeArtifactViewers.nodes,
+      activeArtifactViewers.edges,
+      activeArtifactViewers.bindings,
+      edges,
+      nodes,
+      registry?.artifact_conversions,
+      registry?.artifact_types,
+    ],
+  );
+
+  const onConnect = React.useCallback(
+    (connection: CanvasConnection) => {
+      if (!isValidConnection(connection)) return;
+      if (connection.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE) {
+        const resolved = resolveArtifactCardConnection(
+          connection,
+          activeArtifactViewers.nodes,
+          activeArtifactViewers.edges,
+          nodes,
+          registry?.artifact_conversions ?? [],
+        );
+        if (!resolved) {
+          return;
+        }
+        const commands = artifactDropCommands(
+          resolved.payload,
+          resolved.target,
+          resolved.port,
+          resolved.bindings,
+          {
+            edges,
+            origins: authoredDocumentRef.current.origins,
+            conversions: registry?.artifact_conversions ?? [],
+          },
+          connection.source,
+        );
+        if (!commands) return;
+        if (resolved.binding) {
+          commands.unshift({
+            kind: "bind_artifact_type",
+            node_id: resolved.target.nodeId,
+            variable: resolved.binding.variable,
+            artifact_type: resolved.binding.artifactType,
+          });
+        }
+        applyAuthoringCommands(commands);
+        clearRunError();
+        setPendingConnectionRoute(null);
+        return;
+      }
+      if (
+        connection.sourceHandle === ARTIFACT_VIEWER_INTERACTION_OUTPUT_HANDLE &&
+        connection.targetHandle === ARTIFACT_VIEWER_INTERACTION_INPUT_HANDLE
+      ) {
+        const binding: ArtifactViewerBinding = {
+          id: `artifact-viewer-binding-${createUuid()}`,
+          sourceViewerId: connection.source,
+          targetViewerId: connection.target,
+          mappings: [{ sourceField: "", targetField: "" }],
+          effects: ["highlight", "focus"],
+          emptySelection: "show_all",
+        };
+        commitArtifactViewers((current) => ({
+          ...current,
+          bindings: [...current.bindings, binding],
+        }));
+        setPendingConnectionRoute(null);
+        return;
+      }
+      if (connection.targetHandle === ARTIFACT_VIEWER_INPUT_HANDLE) {
+        const source = decodeHandleId(connection.sourceHandle);
+        if (!source || source.direction !== "output") return;
+        const edge: ArtifactViewerEdge = {
+          id: `artifact-viewer-edge-${createUuid()}`,
+          type: ARTIFACT_VIEWER_EDGE_TYPE,
+          source: connection.source,
+          target: connection.target,
+          targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+          data: { sourcePortName: source.portName },
+        };
+        commitArtifactViewers((current) => ({
+          ...current,
+          edges: [
+            ...current.edges.filter(
+              (candidate) => candidate.target !== connection.target,
+            ),
+            edge,
+          ],
+        }));
+        setPendingConnectionRoute(null);
+        return;
+      }
+      const collectionMode = collectionModeForConnection(
+        connection,
+        nodes,
+        edges,
+        authoredDocument.origins,
+      );
+      if (!collectionMode) return;
+
+      const source = decodeHandleId(connection.sourceHandle);
+      const target = decodeHandleId(connection.targetHandle);
+      const canonicalConnection: CanvasConnection = {
+        ...connection,
+        sourceHandle: canonicalHandleId(connection.sourceHandle),
+        targetHandle: canonicalHandleId(connection.targetHandle),
+      };
+      const allCandidates = connectionRoutesFor(
+        canonicalConnection,
+        registry?.artifact_types ?? [],
+        registry?.artifact_conversions ?? [],
+      );
+      const candidates = orderFeedRoutes(
+        routesForHandleFeed(allCandidates, source?.feed),
+      );
+      const preferred = preferredWholeFeedRoute(candidates);
+      if (!preferred || !source || !target) return;
+
+      // Connect first with the whole output (or sole route), then offer fields.
+      const edgeId = addWorkflowEdge(
+        canonicalConnection,
+        collectionMode,
+        preferred,
+      );
+      if (!edgeId || candidates.length <= 1) return;
+
+      const sourceNode = nodes.find((node) => node.id === connection.source);
+      const targetNode = nodes.find((node) => node.id === connection.target);
+      if (!sourceNode || !targetNode) return;
+      const sourceArtifactType = decodedHandleArtifactType(source);
+      const targetArtifactType = decodedHandleArtifactType(target);
+
+      const sourcePort = sourceNode.data.spec.outputs.find(
+        (port) => port.name === source.portName,
+      );
+      const targetPort = targetNode.data.spec.inputs.find(
+        (port) => port.name === target.portName,
+      );
+      setPendingConnectionRoute({
+        connection: canonicalConnection,
+        collectionMode,
+        candidates,
+        refineEdgeId: edgeId,
+        preferredProjectionPath:
+          source?.feed?.kind === "projection" ? source.feed.path : undefined,
+        source: {
+          nodeTitle: sourceNode.data.spec.title,
+          portName: sourcePort?.title ?? source.portName,
+          artifactType: sourceArtifactType
+            ? formatArtifactTypeLabel(
+                sourceArtifactType,
+                registry?.artifact_types ?? null,
+              )
+            : `Any artifact · ${source.artifactTypeVariable}`,
+        },
+        target: {
+          nodeTitle: targetNode.data.spec.title,
+          portName: targetPort?.title ?? target.portName,
+          artifactType: targetArtifactType
+            ? formatArtifactTypeLabel(
+                targetArtifactType,
+                registry?.artifact_types ?? null,
+              )
+            : `Any artifact · ${target.artifactTypeVariable}`,
+        },
+      });
+    },
+    [
+      authoredDocument.origins,
+      activeArtifactViewers.nodes,
+      activeArtifactViewers.edges,
+      applyAuthoringCommands,
+      clearRunError,
+      addWorkflowEdge,
+      commitArtifactViewers,
+      edges,
+      isValidConnection,
+      nodes,
+      registry?.artifact_conversions,
+      registry?.artifact_types,
+    ],
+  );
+
+  /**
+   * The middle of the canvas, in flow coordinates: where new things land when
+   * nothing says where. The canvas, not the window — the rail and the side
+   * panel take the window's left.
+   */
+  const canvasCenter = React.useCallback(
+    (fallback: { x: number; y: number }) => {
+      const box = canvasSectionRef.current?.getBoundingClientRect();
+      const client =
+        box && box.width > 0
+          ? { x: box.left + box.width / 2, y: box.top + box.height / 2 }
+          : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+      return screenToCanvasPoint(client) ?? fallback;
+    },
+    [screenToCanvasPoint],
+  );
+
+  /**
+   * The data a freshly placed catalog node starts with. A Graph's boundary node
+   * is addressed by its public name, which must be unique among its siblings, so
+   * a new one takes the next free name instead of one every other would share.
+   */
+  const newCatalogNodeData = React.useCallback((spec: NodeSpec) => {
+    const data = createWorkflowNodeData(spec);
+    const graph = projectRoomHeadRef.current?.document.graphs.find(
+      (candidate) => candidate.id === openGraphIdRef.current,
+    );
+    if (graph && spec.operator_id === GRAPH_INPUT_OPERATOR_ID) {
+      data.config = {
+        ...data.config,
+        public_name: nextBoundaryName(graph, "input"),
+      };
+    }
+    if (graph && spec.operator_id === GRAPH_OUTPUT_OPERATOR_ID) {
+      data.config = {
+        ...data.config,
+        public_name: nextBoundaryName(graph, "output"),
+      };
+    }
+    return data;
+  }, []);
+
+  /** Adds a node with its corner at `at`, else centred on the canvas. */
+  const addCatalogNode = React.useCallback(
+    (spec: NodeSpec, at?: { x: number; y: number }) => {
+      const id = `node-${createUuid()}`;
+      const place = at ?? pickerInsertAtRef.current;
+      pickerInsertAtRef.current = null;
+      const center = canvasCenter({ x: 600, y: 280 });
+      const data = newCatalogNodeData(spec);
+      applyAuthoringCommands([
+        addNodeCommand(
+          id,
+          data,
+          place ?? { x: center.x - 140, y: center.y - 110 },
+        ),
+      ]);
+      canvasSelection.selectOnly({ nodeIds: [id] });
+      setLibraryOpen(false);
+      setContextualDiscovery(null);
+    },
+    [applyAuthoringCommands, canvasCenter, canvasSelection, newCatalogNodeData],
+  );
+
+  const placeOutputCard = React.useCallback(
+    (
+      sourceNodeId: string,
+      portName: string,
+      flowPosition: XYPosition,
+      avoidDuplicate = false,
+      avoidWorkflowEdges = false,
+    ) => {
+      const viewerId = `artifact-viewer-${createUuid()}`;
+      const link: ArtifactViewerEdge = {
+        id: `artifact-viewer-edge-${createUuid()}`,
+        type: ARTIFACT_VIEWER_EDGE_TYPE,
+        source: sourceNodeId,
+        target: viewerId,
+        targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+        data: { sourcePortName: portName },
+      };
+      const placedCard: ArtifactViewerNode = {
+        id: viewerId,
+        type: ARTIFACT_VIEWER_NODE_TYPE,
+        position: flowPosition,
+        selected: true,
+        data: {
+          layout: null,
+          mode: "artifact",
+          artifactRef: null,
+        },
+      };
+      const committed = commitArtifactViewers((current) => {
+        if (
+          avoidDuplicate &&
+          (current.edges.some((edge) => edge.source === sourceNodeId) ||
+            (avoidWorkflowEdges &&
+              edgesRef.current.some(
+                (edge) =>
+                  edge.source === sourceNodeId && edge.data?.enabled !== false,
+              )))
+        )
+          return current;
+        const cleared = withoutPresentationSelection(current);
+        return {
+          ...cleared,
+          nodes: [...cleared.nodes, placedCard],
+          edges: [...cleared.edges, link],
+        };
+      });
+      // The card the person just pulled out is what they hold next, not the
+      // node it came from.
+      if (committed) canvasSelection.clearWorkflowSelection();
+      setLibraryOpen(false);
+      setContextualDiscovery(null);
+    },
+    [canvasSelection, commitArtifactViewers],
+  );
+
+  const handleConnectionDrop = React.useCallback(
+    ({
+      fromNode,
+      port,
+      handleId,
+      decoded,
+      clientPoint,
+      flowPosition,
+    }: {
+      fromNode: WorkflowNode;
+      port: Port;
+      handleId: string;
+      decoded: NonNullable<ReturnType<typeof decodeHandleId>>;
+      clientPoint: XYPosition;
+      flowPosition: XYPosition;
+    }) => {
+      if (!registry) return;
+      const upstream = decoded.direction === "input";
+      const materializedOutput =
+        !upstream && fromNode.data.run?.status === "succeeded"
+          ? fromNode.data.run.outputs.find(
+              (output) =>
+                output.port === port.name && output.artifacts.length > 0,
+            )
+          : null;
+      if (
+        !upstream &&
+        outputReleasePlacesArtifactCard({
+          onCanvas: canvasAtPoint(clientPoint.x, clientPoint.y),
+          // The released handle is the ball on screen. A mapped output is a
+          // sequence ball even when the stored port shape is still one.
+          portShape: decoded.shape,
+          hasMaterializedArtifacts: Boolean(materializedOutput),
+        })
+      ) {
+        const viewerId = `artifact-viewer-${createUuid()}`;
+        const link: ArtifactViewerEdge = {
+          id: `artifact-viewer-edge-${createUuid()}`,
+          type: ARTIFACT_VIEWER_EDGE_TYPE,
+          source: fromNode.id,
+          target: viewerId,
+          targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+          data: { sourcePortName: port.name },
+        };
+        const placedCard: ArtifactViewerNode = {
+          id: viewerId,
+          type: ARTIFACT_VIEWER_NODE_TYPE,
+          position: flowPosition,
+          selected: true,
+          data: {
+            layout: null,
+            mode: "artifact",
+            artifactRef: null,
+          },
+        };
+        const committed = commitArtifactViewers((current) => {
+          const cleared = withoutPresentationSelection(current);
+          return {
+            ...cleared,
+            nodes: [...cleared.nodes, placedCard],
+            edges: [...cleared.edges, link],
+          };
+        });
+        // The card the person just pulled out is what they hold next, not the
+        // node it came from.
+        if (committed) canvasSelection.clearWorkflowSelection();
+        setLibraryOpen(false);
+        return;
+      }
+
+      const catalogNodes = catalogNodeSpecs(registry, openGraphId);
+      const candidates =
+        port.direction === "input"
+          ? upstreamCandidatesFromInput({
+              targetPort: { ...port, direction: "input" },
+              targetHandle: handleId,
+              registry,
+              nodes: catalogNodes,
+            })
+          : downstreamCandidatesFromOutput({
+              sourcePort: { ...port, direction: "output" },
+              sourceHandle: handleId,
+              sourceFeed: decoded.feed ?? null,
+              registry,
+              nodes: catalogNodes,
+            });
+      if (!canvasAtPoint(clientPoint.x, clientPoint.y)) return;
+      if (!candidates.length) {
+        if (!upstream) placeOutputCard(fromNode.id, port.name, flowPosition);
+        return;
+      }
+
+      setLibraryOpen(false);
+      setContextualDiscovery({
+        graphId: openGraphId,
+        sourceNodeId: fromNode.id,
+        sourceHandle: handleId,
+        sourcePortTitle: port.title ?? port.name,
+        direction: upstream ? "upstream" : "downstream",
+        clientAnchor: clientPoint,
+        flowPosition,
+        candidates,
+      });
+    },
+    [
+      canvasSelection,
+      commitArtifactViewers,
+      openGraphId,
+      placeOutputCard,
+      registry,
+    ],
+  );
+
+  const handleArtifactCardConnectionDrop = React.useCallback(
+    ({
+      cardId,
+      clientPoint,
+      flowPosition,
+    }: {
+      cardId: string;
+      clientPoint: XYPosition;
+      flowPosition: XYPosition;
+    }): boolean => {
+      if (!registry || !canEditProject || running) return false;
+      const card = activeArtifactViewers.nodes.find(
+        (node) => node.id === cardId,
+      );
+      const value =
+        card &&
+        artifactCardConnectionValue(card, activeArtifactViewers.edges, nodes);
+      if (!card || !value || !cardArtifactRefs(value).length) return false;
+      const port = artifactCardOutputPort(value);
+      const candidates = downstreamCandidatesFromOutput({
+        sourcePort: port,
+        sourceHandle: encodeHandleId(portMetaForPort(port, port.shape)),
+        sourceFeed: null,
+        registry,
+        nodes: catalogNodeSpecs(registry, openGraphId),
+      })
+        .map((candidate) => ({
+          ...candidate,
+          choices: candidate.choices.filter((choice) => {
+            if (
+              choice.route.kind === "projection" ||
+              choice.route.kind === "projection-conversion"
+            )
+              return false;
+            const binding = choice.route.artifactTypeBinding;
+            const bindings =
+              binding?.endpoint === "target"
+                ? { [binding.variable]: binding.artifactType }
+                : {};
+            const resolution = resolveArtifactDrop(
+              artifactDropPayload(value),
+              choice.candidatePort,
+              bindings,
+              registry.artifact_conversions,
+            );
+            return (
+              resolution !== null &&
+              resolution.collectionMode === choice.collectionMode &&
+              JSON.stringify(resolution.conversionPath) ===
+                JSON.stringify(
+                  choice.route.conversionPath.map((conversion) => ({
+                    id: conversion.key.id,
+                    version: conversion.key.version,
+                  })),
+                )
+            );
+          }),
+        }))
+        .filter((candidate) => candidate.choices.length > 0);
+      if (!candidates.length) return false;
+      setLibraryOpen(false);
+      setInspectedPipe(null);
+      setContextualDiscovery({
+        graphId: openGraphId,
+        sourceNodeId: card.id,
+        sourceHandle: ARTIFACT_CARD_OUTPUT_HANDLE,
+        sourcePortTitle: port.title ?? port.name,
+        direction: "downstream",
+        clientAnchor: clientPoint,
+        flowPosition,
+        candidates,
+      });
+      return true;
+    },
+    [
+      activeArtifactViewers.edges,
+      activeArtifactViewers.nodes,
+      canEditProject,
+      nodes,
+      openGraphId,
+      registry,
+      running,
+    ],
+  );
+
+  const confirmContextualDiscovery = React.useCallback(
+    (candidate: ContextualCandidate, choice: ContextualRouteChoice) => {
+      if (!contextualDiscovery || !registry || !canEditProject || running)
+        return;
+
+      const upstream = contextualDiscovery.direction === "upstream";
+      const id = `node-${createUuid()}`;
+      const data = newCatalogNodeData(candidate.spec);
+      const binding = choice.route.artifactTypeBinding;
+      // Bind the artifact type variable on whichever endpoint lives on the new node.
+      if (
+        (upstream && binding?.endpoint === "source") ||
+        (!upstream && binding?.endpoint === "target")
+      ) {
+        data.artifactTypeBindings = {
+          ...data.artifactTypeBindings,
+          [binding.variable]: binding.artifactType,
+        };
+      }
+
+      const plugId =
+        !upstream && choice.usesInstancePlug
+          ? data.inputPlugs.find(
+              (plug) => plug.portName === choice.candidatePort.name,
+            )?.id
+          : undefined;
+      if (!upstream && choice.usesInstancePlug && !plugId) return;
+
+      const candidateHandle = encodeHandleId(
+        portMetaForPort(
+          choice.candidatePort,
+          choice.candidatePort.shape,
+          upstream ? undefined : plugId,
+          data.artifactTypeBindings,
+        ),
+      );
+      const existingHandle = canonicalHandleId(
+        contextualDiscovery.sourceHandle,
+      );
+      const edgeConnection = upstream
+        ? {
+            source: id,
+            sourceHandle: candidateHandle,
+            target: contextualDiscovery.sourceNodeId,
+            targetHandle: existingHandle,
+          }
+        : {
+            source: contextualDiscovery.sourceNodeId,
+            sourceHandle: existingHandle,
+            target: id,
+            targetHandle: candidateHandle,
+          };
+      const edgeId = `edge-${createUuid()}`;
+      const selection = connectionRouteSelection(choice.route);
+      const nodeCommand = addNodeCommand(id, data, {
+        x: contextualDiscovery.flowPosition.x,
+        y:
+          contextualDiscovery.flowPosition.y -
+          DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
+      });
+
+      if (contextualDiscovery.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE) {
+        const card = activeArtifactViewers.nodes.find(
+          (node) => node.id === contextualDiscovery.sourceNodeId,
+        );
+        const value =
+          card &&
+          artifactCardConnectionValue(
+            card,
+            activeArtifactViewers.edges,
+            nodesRef.current,
+          );
+        if (!value) return;
+        const commands = artifactDropCommands(
+          artifactDropPayload(value),
+          {
+            nodeId: id,
+            portName: choice.candidatePort.name,
+            plugId: plugId ?? null,
+          },
+          choice.candidatePort,
+          data.artifactTypeBindings,
+          {
+            edges: edgesRef.current,
+            origins: authoredDocumentRef.current.origins,
+            conversions: registry.artifact_conversions,
+          },
+        );
+        if (!commands) return;
+        applyAuthoringCommands([nodeCommand, ...commands]);
+        canvasSelection.selectOnly({ nodeIds: [id] });
+        setContextualDiscovery(null);
+        clearRunError();
+        return;
+      }
+
+      if (
+        !isConnectionAccepted(
+          edgeConnection,
+          [...nodesRef.current, { id, data }],
+          edgesRef.current,
+          registry.artifact_types,
+          registry.artifact_conversions,
+          null,
+          authoredDocumentRef.current.origins,
+        )
+      ) {
+        setContextualDiscovery(null);
+        setRunError(
+          "This input is already connected or no longer accepts this connection.",
+        );
+        return;
+      }
+
+      const edgeCommand = addEdgeCommand(
+        edgeConnection,
+        {
+          enabled: true,
+          collectionMode: choice.collectionMode,
+          projection: selection.projection
+            ? { path: [...selection.projection.path] }
+            : undefined,
+          conversionPath: selection.conversionPath.map((conversion) => ({
+            id: conversion.id,
+            version: conversion.version,
+          })),
+        },
+        edgeId,
+      );
+
+      applyAuthoringCommands([nodeCommand, edgeCommand]);
+      canvasSelection.selectOnly({ nodeIds: [id] });
+      setContextualDiscovery(null);
+      clearRunError();
+    },
+    [
+      activeArtifactViewers.nodes,
+      activeArtifactViewers.edges,
+      applyAuthoringCommands,
+      canvasSelection,
+      canEditProject,
+      clearRunError,
+      contextualDiscovery,
+      newCatalogNodeData,
+      registry,
+      running,
+      setRunError,
+    ],
+  );
+
+  const activeContextualDiscovery =
+    canEditProject && !running && contextualDiscovery?.graphId === openGraphId
+      ? contextualDiscovery
+      : null;
+
+  /** Adds an annotation with its corner at `at`, else mid-canvas. */
+  const addAnnotation = React.useCallback(
+    (kind: AnnotationKind, at?: { x: number; y: number }) => {
+      const center = canvasCenter({ x: 480, y: 240 });
+      const annotation = createAnnotationNode(
+        kind,
+        at ?? { x: center.x - 80, y: center.y - 60 },
+      );
+      const committed = commitArtifactViewers((current) => {
+        const cleared = withoutPresentationSelection(current);
+        return {
+          ...cleared,
+          annotations: [...cleared.annotations, annotation],
+        };
+      });
+      if (committed) canvasSelection.clearWorkflowSelection();
+      setShapesMenuOpen(false);
+      setLibraryOpen(false);
+      closeGraphBrowser();
+    },
+    [canvasCenter, canvasSelection, closeGraphBrowser, commitArtifactViewers],
+  );
+
+  const duplicateSelectedNodes = React.useCallback(() => {
+    const selectedNodes = nodes.filter((node) => node.selected);
+    const selectedViewers = artifactViewers.nodes.filter(
+      (node) => node.selected,
+    );
+    if ((!selectedNodes.length && !selectedViewers.length) || running) return;
+
+    const duplicates = selectedNodes.map((node) => ({
+      node,
+      id: `node-${createUuid()}`,
+    }));
+    const duplicatedNodeIds = new Map(
+      duplicates.map(({ node, id }) => [node.id, id]),
+    );
+    const duplicatedNodes = duplicates.flatMap(({ node, id }) => {
+      const authoredNode = authoredDocument.nodes.find(
+        (candidate) => candidate.id === node.id,
+      );
+      return authoredNode
+        ? [
+            {
+              ...structuredClone(authoredNode),
+              id,
+              position: { x: node.position.x + 36, y: node.position.y + 36 },
+            },
+          ]
+        : [];
+    });
+    const duplicatedEdges = authoredDocument.edges.flatMap((edge) => {
+      const source = duplicatedNodeIds.get(edge.from_node);
+      const target = duplicatedNodeIds.get(edge.to_node);
+      if (!source || !target) return [];
+      return [
+        {
+          ...structuredClone(edge),
+          id: `edge-${createUuid()}`,
+          from_node: source,
+          to_node: target,
+        },
+      ];
+    });
+    const commands: GraphCommand[] = [
+      ...duplicatedNodes.map((node) => ({
+        kind: "add_node" as const,
+        node,
+      })),
+      ...duplicatedEdges.map((edge) => ({
+        kind: "add_edge" as const,
+        edge,
+      })),
+    ];
+    if (commands.length) applyAuthoringCommands(commands);
+    const duplicatedViewerIds = new Map(
+      selectedViewers.map((node) => [
+        node.id,
+        `artifact-viewer-${createUuid()}`,
+      ]),
+    );
+    if (selectedViewers.length) {
+      commitArtifactViewers((current) =>
+        duplicateArtifactViewers(
+          withoutPresentationSelection(current),
+          duplicatedViewerIds,
+          duplicatedNodeIds,
+        ),
+      );
+    }
+    // The copies are what a person holds after duplicating, in whichever layer
+    // they were copied from.
+    canvasSelection.selectOnly({
+      nodeIds: duplicatedNodes.map((node) => node.id),
+      viewerIds: [...duplicatedViewerIds.values()],
+    });
+    setPendingConnectionRoute(null);
+    setRunError(null);
+  }, [
+    applyAuthoringCommands,
+    artifactViewers.nodes,
+    authoredDocument,
+    canvasSelection,
+    commitArtifactViewers,
+    nodes,
+    running,
+  ]);
+
+  const removeCellElements = React.useCallback(
+    (cardIds: readonly string[], pipeIds: readonly string[]) => {
+      if (!localAuthoringEnabled) return;
+      if (pipeIds.length > 0) {
+        const removedPipes = new Set(pipeIds);
+        setInspectedPipe((current) =>
+          current && removedPipes.has(current.pipeId) ? null : current,
+        );
+      }
+      const removals = partitionCellRemovals(
+        cardIds,
+        pipeIds,
+        authoredDocumentRef.current,
+        artifactViewers,
+        artifactOriginCanvasEdges,
+      );
+      applyAuthoringCommands(removals.graphCommands);
+      for (const id of removals.removedViewerIds) removeArtifactViewer(id);
+      for (const id of removals.removedAnnotationIds) removeAnnotation(id);
+      if (removals.removedViewerEdgeIds.length) {
+        const removed = new Set(removals.removedViewerEdgeIds);
+        commitArtifactViewers((current) => {
+          const edges = current.edges.filter((edge) => !removed.has(edge.id));
+          return edges.length === current.edges.length
+            ? current
+            : { ...current, edges };
+        });
+      }
+    },
+    [
+      applyAuthoringCommands,
+      artifactOriginCanvasEdges,
+      artifactViewers,
+      commitArtifactViewers,
+      localAuthoringEnabled,
+      removeAnnotation,
+      removeArtifactViewer,
+    ],
+  );
+
+  const deleteSelectedNodes = React.useCallback(() => {
+    if (!canvasReady || !selectedNodeIds.length || running) return;
+    setPendingConnectionRoute(null);
+    setRunError(null);
+    removeCellElements(selectedNodeIds, []);
+  }, [canvasReady, removeCellElements, running, selectedNodeIds]);
+
+  const canvasEdges = React.useMemo<WorkflowEdge[]>(
+    () =>
+      edges.map((edge) => {
+        const connection: CanvasConnection = {
+          source: edge.source,
+          sourceHandle: edge.sourceHandle ?? null,
+          target: edge.target,
+          targetHandle: edge.targetHandle ?? null,
+        };
+        const source = decodeHandleId(edge.sourceHandle);
+        const activeSelection = {
+          projection: edge.data?.projection,
+          conversionPath: edge.data?.conversionPath ?? [],
+        };
+        const routes = connectionRoutesFor(
+          connection,
+          registry?.artifact_types ?? [],
+          registry?.artifact_conversions ?? [],
+        );
+        const activeRoute = connectionRouteForSelection(
+          connection,
+          registry?.artifact_types ?? [],
+          registry?.artifact_conversions ?? [],
+          activeSelection,
+        );
+        if (
+          activeRoute &&
+          !routes.some((route) =>
+            connectionRouteMatchesSelection(route, activeSelection),
+          )
+        ) {
+          routes.push(activeRoute);
+        }
+        const routeOptions = routes.map(workflowEdgeRouteOption);
+        const deliveredArtifactType = activeRoute
+          ? connectionRouteDeliveredArtifactType(activeRoute)
+          : null;
+        const conversionTitles = activeSelection.conversionPath.map(
+          (requestedConversion) =>
+            registry?.artifact_conversions.find(
+              (conversion) =>
+                conversion.key.id === requestedConversion.id &&
+                conversion.key.version === requestedConversion.version,
+            )?.title ??
+            `${requestedConversion.id}@${requestedConversion.version}`,
+        );
+        const otherEdges = edges.filter(
+          (candidate) => candidate.id !== edge.id,
+        );
+        const validModes = collectionModesForConnection(
+          connection,
+          nodes,
+          otherEdges,
+          authoredDocument.origins,
+        );
+        return {
+          ...edge,
+          type: WORKFLOW_EDGE_TYPE,
+          data: {
+            ...edge.data,
+            enabled: edge.data?.enabled ?? true,
+            collectionMode: edge.data?.collectionMode ?? "direct",
+            sourcePortName: source?.portName ?? edge.data?.sourcePortName,
+            conversionTitles,
+            targetStroke: deliveredArtifactType
+              ? artifactTypeColor(deliveredArtifactType.id, tokens.colorAccent)
+              : undefined,
+            routeOptions,
+            allowedCollectionModes: edge.data?.compatibilityIssues?.length
+              ? []
+              : validModes,
+          },
+        };
+      }),
+    [
+      authoredDocument.origins,
+      edges,
+      nodes,
+      registry?.artifact_conversions,
+      registry?.artifact_types,
+    ],
+  );
+
+  const artifactViewerCanvasEdges = React.useMemo<ArtifactViewerEdge[]>(
+    () =>
+      activeArtifactViewers.edges.map((edge) => {
+        const sourceNode = nodes.find((node) => node.id === edge.source);
+        const sourcePort = sourceNode?.data.spec.outputs.find(
+          (port) => port.name === edge.data?.sourcePortName,
+        );
+        const sourceArtifactTypeKey =
+          sourceNode && sourcePort
+            ? resolvedPortArtifactType(
+                sourcePort,
+                sourceNode.data.artifactTypeBindings,
+              )
+            : null;
+        const sourceArtifactType = sourceArtifactTypeKey
+          ? registry?.artifact_types.find(
+              (candidate) =>
+                candidate.key.id === sourceArtifactTypeKey.id &&
+                candidate.key.schema_version ===
+                  sourceArtifactTypeKey.schema_version,
+            )
+          : undefined;
+        const projections = [
+          ...(sourceArtifactType?.field_projections ?? []),
+        ].sort((left, right) => left.title.localeCompare(right.title));
+        const routeOptions: WorkflowEdgeRouteOption[] = [
+          { conversionPath: [], conversionTitles: [] },
+          ...projections.map((projection) => ({
+            projection: { path: [...projection.path] },
+            projectionTitle: projection.title,
+            conversionPath: [],
+            conversionTitles: [],
+          })),
+        ];
+        if (
+          edge.data?.projection?.path.length &&
+          !routeOptions.some(
+            (route) =>
+              route.projection?.path.length ===
+                edge.data?.projection?.path.length &&
+              route.projection?.path.every(
+                (segment, index) =>
+                  segment === edge.data?.projection?.path[index],
+              ),
+          )
+        ) {
+          routeOptions.push({
+            projection: { path: [...edge.data.projection.path] },
+            conversionPath: [],
+            conversionTitles: [],
+          });
+        }
+        const activeProjectionTitle = routeOptions.find(
+          (route) =>
+            route.projection?.path.length ===
+              edge.data?.projection?.path.length &&
+            route.projection?.path.every(
+              (segment, index) =>
+                segment === edge.data?.projection?.path[index],
+            ),
+        )?.projectionTitle;
+        const sourceHandle =
+          sourceNode && sourcePort && workflowNodeIsSupported(sourceNode.data)
+            ? renderedOutputHandleId({
+                node: sourceNode,
+                port: sourcePort,
+                edges,
+                origins: authoredDocument.origins,
+              })
+            : null;
+        return {
+          ...edge,
+          type: ARTIFACT_VIEWER_EDGE_TYPE,
+          sourceHandle,
+          targetHandle: ARTIFACT_VIEWER_INPUT_HANDLE,
+          data: {
+            ...edge.data,
+            sourcePortName: edge.data?.sourcePortName ?? "",
+            projectionTitle: activeProjectionTitle,
+            routeOptions,
+          },
+          style: {
+            ...edge.style,
+            stroke: sourceArtifactTypeKey
+              ? artifactTypeColor(sourceArtifactTypeKey.id, tokens.colorAccent)
+              : tokens.colorAccent,
+            strokeWidth: 2,
+          },
+        };
+      }),
+    [
+      activeArtifactViewers.edges,
+      authoredDocument.origins,
+      edges,
+      nodes,
+      registry?.artifact_types,
+    ],
+  );
+
+  const latestArtifactViewerActivity = React.useMemo(() => {
+    let latest: {
+      nodeId: string;
+      value: ActiveArtifactViewerActivity;
+    } | null = null;
+    for (const [nodeId, value] of Object.entries(artifactViewerActivities)) {
+      if (!latest || value.revision > latest.value.revision) {
+        latest = { nodeId, value };
+      }
+    }
+    return latest;
+  }, [artifactViewerActivities]);
+
+  const dismissArtifactViewerActivity = React.useCallback(
+    (nodeId: string, revision: number) => {
+      setArtifactViewerActivities((current) => {
+        if (current[nodeId]?.revision !== revision) return current;
+        const next = { ...current };
+        delete next[nodeId];
+        return next;
+      });
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    if (
+      !latestArtifactViewerActivity ||
+      latestArtifactViewerActivity.value.activity.state !== "success"
+    ) {
+      return;
+    }
+    const { nodeId, value } = latestArtifactViewerActivity;
+    const timeout = window.setTimeout(
+      () => dismissArtifactViewerActivity(nodeId, value.revision),
+      4000,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [dismissArtifactViewerActivity, latestArtifactViewerActivity]);
+
+  // Firefox uses autocomplete to control restored dynamic button state, but
+  // React's button typings omit that browser-specific attribute.
+  const firefoxDynamicButtonProps: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    autoComplete: "off";
+  } = { autoComplete: "off" };
+  // The activity bar answers one question: what is this Graph busy with? The
+  // room's open Runs are the answer — this tab's own included, and no more
+  // privileged than anyone else's. A Project answers several demands at once, so
+  // there is no "current execution" to name.
+  const [cancellingRunId, setCancellingRunId] = React.useState<string | null>(
+    null,
+  );
+  const cancelGraphRun = React.useCallback(
+    (runId: string) => {
+      if (!projectId) return;
+      setCancellingRunId(runId);
+      void cancelRun(workspaceId, projectId, runId)
+        .catch((error: unknown) => {
+          setRunError(
+            error instanceof Error
+              ? error.message
+              : "The Run could not be cancelled.",
+          );
+        })
+        .finally(() => setCancellingRunId(null));
+    },
+    [projectId, setRunError, workspaceId],
+  );
+  // Newest last, as the room publishes them: the newest is what a person is
+  // watching, and the count beside it says how many more are open.
+  const newestRun = openGraphRuns.length
+    ? openGraphRuns[openGraphRuns.length - 1]
+    : null;
+  const newestRunTitle = (() => {
+    if (!newestRun || newestRun.targets.length === 0) return null;
+    const target = newestRun.targets[0];
+    if (!target) return null;
+    const first = nodes.find((node) => node.id === target.node_id);
+    const title = first ? first.data.spec.title : "A node";
+    const rest = newestRun.targets.length - 1;
+    return rest > 0 ? `${title} and ${rest} more` : title;
+  })();
+  const runActivity: WorkbenchActivity | null =
+    ((): WorkbenchActivity | null => {
+      if (!newestRun) {
+        // This tab asked for a Run the room has not published yet.
+        if (!running) return null;
+        return {
+          eyebrow: "Run",
+          title: runningScope === "all" ? "The whole graph" : "The selection",
+          message: "Starting",
+          tone: "working",
+        };
+      }
+      const cancelling = cancellingRunId === newestRun.run_id;
+      return {
+        eyebrow:
+          openGraphRuns.length > 1 ? `Runs · ${openGraphRuns.length}` : "Run",
+        title: newestRunTitle ?? "Running",
+        message: cancelling
+          ? "Waiting for the computation to stop"
+          : newestRun.starter
+            ? `Started by ${newestRun.starter.display_name}`
+            : "Running",
+        tone: cancelling ? "cancelling" : "working",
+        action: {
+          kind: "cancel",
+          label: cancelling ? "Cancelling" : "Cancel",
+          ariaLabel: cancelling
+            ? "Cancelling this Run"
+            : "Cancel this Run for everyone",
+          disabled:
+            !canCancelRun || !newestRun.cancellable || cancellingRunId !== null,
+          onInvoke: () => cancelGraphRun(newestRun.run_id),
+        },
+      };
+    })();
+  const viewerActivity = latestArtifactViewerActivity?.value.activity ?? null;
+  let viewerActivityAction: WorkbenchActivity["action"];
+  if (latestArtifactViewerActivity && viewerActivity?.retry) {
+    viewerActivityAction = {
+      kind: "retry",
+      label: "Retry",
+      ariaLabel: `Retry ${viewerActivity.title}`,
+      onInvoke: viewerActivity.retry,
+    };
+  } else if (
+    latestArtifactViewerActivity &&
+    (viewerActivity?.state === "warning" || viewerActivity?.state === "error")
+  ) {
+    viewerActivityAction = {
+      kind: "dismiss",
+      label: "Dismiss",
+      ariaLabel: `Dismiss ${viewerActivity.title}`,
+      onInvoke: () =>
+        dismissArtifactViewerActivity(
+          latestArtifactViewerActivity.nodeId,
+          latestArtifactViewerActivity.value.revision,
+        ),
+    };
+  }
+  const workbenchActivity: WorkbenchActivity | null = runActivity
+    ? runActivity
+    : viewerActivity
+      ? {
+          eyebrow: "Linked view",
+          title: viewerActivity.title,
+          message: viewerActivity.message,
+          tone: viewerActivity.state,
+          action: viewerActivityAction,
+        }
+      : null;
+
+  // The Library panel's cached tree names the files artifact cards show.
+  const { data: libraryTree } = useSWR(["library-tree", workspaceId], () =>
+    libraryFoldersApi.listTree(workspaceId),
+  );
+  const libraryItemsByArtifactId = React.useMemo(() => {
+    const items = new Map<string, PlacedLibraryItem>();
+    for (const item of libraryTree?.items ?? []) {
+      items.set(item.artifact.artifact_id, item);
+    }
+    return items;
+  }, [libraryTree]);
+
+  const [cellImageNaturalSizes, setCellImageNaturalSizes] = React.useState<
+    ReadonlyMap<string, { width: number; height: number }>
+  >(() => new Map());
+  const onCellArtifactImageLoad = React.useCallback(
+    (imageUrl: string, size: { width: number; height: number }) => {
+      setCellImageNaturalSizes((current) => {
+        const existing = current.get(imageUrl);
+        if (
+          existing &&
+          existing.width === size.width &&
+          existing.height === size.height
+        ) {
+          return current;
+        }
+        const next = new Map(current);
+        next.set(imageUrl, size);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const cellScene = React.useMemo(
+    () =>
+      registry
+        ? buildWorkbenchCellScene({
+            workspaceId,
+            document: authoredDocument,
+            registry,
+            presentation: sharedPresentation,
+            nodes,
+            nodeInstanceStates,
+            collapsedAppendices,
+            canRun: canStartRun && projectEditsTrusted && !running,
+            canvasEdges,
+            artifactViewerEdges: artifactViewerCanvasEdges,
+            artifactViewerNodes: activeArtifactViewers.nodes,
+            artifactOriginEdges: artifactOriginCanvasEdges,
+            libraryItemsByArtifactId,
+            imageNaturalSizes: cellImageNaturalSizes,
+          })
+        : null,
+    [
+      activeArtifactViewers.nodes,
+      artifactOriginCanvasEdges,
+      artifactViewerCanvasEdges,
+      authoredDocument,
+      canStartRun,
+      canvasEdges,
+
+      cellImageNaturalSizes,
+      collapsedAppendices,
+      libraryItemsByArtifactId,
+      nodeInstanceStates,
+      nodes,
+      projectEditsTrusted,
+      registry,
+      running,
+      sharedPresentation,
+      workspaceId,
+    ],
+  );
+
+  // --- The canvas right-click menu --------------------------------------------
+
+  const openCanvasMenu = React.useCallback(
+    (request: CanvasMenuRequest) => {
+      setLibraryOpen(false);
+      setShapesMenuOpen(false);
+      setGridPanelOpen(false);
+      setContextualDiscovery(null);
+      setInspectedPipe(null);
+      closeGraphBrowser();
+      let { target } = request;
+      if (target.kind === "node") {
+        const nodeId = target.nodeId;
+        const selection = selectedNodeIdsRef.current;
+        if (selection.length > 1 && selection.includes(nodeId)) {
+          target = { kind: "selection" };
+        } else {
+          canvasSelection.selectOnly(
+            partitionCellSelection(
+              { cardIds: new Set([nodeId]), pipeIds: new Set() },
+              authoredDocumentRef.current,
+              artifactViewers,
+            ),
+          );
+        }
+      }
+      const focused = document.activeElement;
+      setCanvasMenu({
+        ...request,
+        target,
+        returnFocus: focused instanceof HTMLElement ? focused : null,
+      });
+    },
+    [artifactViewers, canvasSelection, closeGraphBrowser, setGridPanelOpen],
+  );
+  const canvasMenuTrigger = useCanvasMenuTrigger(openCanvasMenu);
+  const canvasMenuPoint = canvasMenu
+    ? (screenToCanvasPoint(canvasMenu.point) ?? null)
+    : null;
+  const canvasMenuSelection: CanvasMenuSelection = {
+    count: selectedNodeCount,
+    workflowCount: selectedWorkflowCount,
+    canRun: !runSelectedDisabled,
+    canDuplicate:
+      Boolean(selectedWorkflowCount || selectedViewerCount) &&
+      localAuthoringEnabled,
+    canDelete: canvasReady && selectedNodeCount > 0 && localAuthoringEnabled,
+    collect: collectSpec
+      ? selectedCollectionSources.length > 1
+        ? {
+            disabled:
+              !localAuthoringEnabled || Boolean(collectionDisabledReason),
+            title: collectionDisabledReason ?? undefined,
+          }
+        : null
+      : collectsIntoSequence
+        ? {
+            disabled:
+              !collectedArtifactRefs ||
+              !localAuthoringEnabled ||
+              Boolean(groupingDisabledReason),
+            title:
+              groupingDisabledReason ??
+              (collectedArtifactRefs
+                ? selectedArtifactCards.length === 1
+                  ? "Put this artifact in a sequence"
+                  : `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
+                : "Select artifacts of the same type to collect"),
+          }
+        : null,
+    canTidy:
+      !selectedWorkflowCount &&
+      selectedArtifactCards.length > 1 &&
+      localAuthoringEnabled,
+  };
+  const canvasMenuActions: CanvasMenuActions = {
+    searchNodes: () => {
+      pickerInsertAtRef.current = canvasMenuPoint;
+      setLibraryOpen(true);
+    },
+    addNodeHere: (spec) => addCatalogNode(spec, canvasMenuPoint ?? undefined),
+    addAnnotationHere: (kind) =>
+      addAnnotation(kind, canvasMenuPoint ?? undefined),
+    selectAll: () => {
+      if (!cellScene) return;
+      canvasSelection.selectOnly(
+        partitionCellSelection(
+          {
+            cardIds: new Set(cellScene.graph.cards.map(({ id }) => id)),
+            pipeIds: selectedEdgeIdSet,
+          },
+          authoredDocumentRef.current,
+          artifactViewers,
+        ),
+      );
+    },
+    fitView: () => fitCanvasView(WORKBENCH_FIT_VIEW),
+    openCanvasSettings: () => setGridPanelOpen(true),
+    runSelection: () => void runWorkflow("selected"),
+    collect: collectSelectedArtifacts,
+    tidy: tidySelectedArtifacts,
+    duplicate: duplicateSelectedNodes,
+    remove: deleteSelectedNodes,
+    fitSelection: () =>
+      fitCanvasView({
+        nodes: selectedNodeIds.map((id) => ({ id })),
+        padding: 0.3,
+        maxZoom: 1.2,
+      }),
+    deleteEdge: (edgeId) => {
+      if (!canvasReady || !localAuthoringEnabled || running) return;
+      removeCellElements([], [edgeId]);
+    },
+  };
+
+  const sidePanelView = sidePanel.view;
+  const setSidePanelOpen = sidePanel.setOpen;
+  const setSidePanelView = sidePanel.setView;
+  const sidePanelIsOpen = sidePanel.open;
+  const chromeValue = React.useMemo(() => {
+    // The rail's item opens its view, or closes the panel when that view is
+    // already the one showing.
+    const toggleSidePanelView = (view: SidePanelViewId) => {
+      closeGraphBrowser();
+      setLibraryOpen(false);
+      setGridPanelOpen(false);
+      if (sidePanelIsOpen && sidePanelView === view) {
+        setSidePanelOpen(false);
+        return;
+      }
+      setSidePanelView(view);
+      setSidePanelOpen(true);
+    };
+    return {
+      sidePanelOpen: sidePanelIsOpen && sidePanelView === "artifacts",
+      toggleSidePanel: () => toggleSidePanelView("artifacts"),
+      generatedPanelOpen: sidePanelIsOpen && sidePanelView === "generated",
+      toggleGeneratedPanel: () => toggleSidePanelView("generated"),
+      activeGraphId: projectId,
+      graphName,
+      isDirty,
+      saving: saving || projectRoom.hasPendingCommands,
+      canSave:
+        projectId === null &&
+        activeGraph === null &&
+        localAuthoringEnabled &&
+        !saving &&
+        !running &&
+        !openingGraphId &&
+        !deletingGraphId,
+      save: async () => {
+        if (projectId !== null || activeGraph !== null) return;
+        let name = graphName.trim();
+        if (!name || name === "Untitled workflow") {
+          const next = window.prompt("Name this graph", name || "");
+          if (!next?.trim()) return;
+          name = next.trim().slice(0, 160);
+          setGraphName(name);
+        }
+        await saveCurrentGraph(name);
+      },
+      renameGraph: async (graph: SavedGraphSummary, name: string) => {
+        // A row in the rail or the browser is a Project. Renaming it is a
+        // different act from naming the Graph the canvas shows, which the name
+        // field above does with the document.
+        if (!canEditProject) {
+          throw new Error("You do not have permission to rename Projects.");
+        }
+        if (graph.id !== projectId || !canSubmitRoomCommands) {
+          await renameProjectRemote(workspaceId, graph, name);
+          void refreshSavedGraphs();
+          return;
+        }
+        await submitRoomBatch([
+          toRoomRenameProjectCommand(name, savedProjectName),
+        ]);
+        void refreshSavedGraphs();
+      },
+      deleteGraph: async (graph: SavedGraphSummary) => {
+        if (!canDeleteProject) {
+          throw new Error("You do not have permission to delete Projects.");
+        }
+        await removeSavedGraph(graph);
+      },
+    };
+  }, [
+    activeGraph,
+    canDeleteProject,
+    canEditProject,
+    canSubmitRoomCommands,
+    closeGraphBrowser,
+    deletingGraphId,
+    graphName,
+    isDirty,
+    localAuthoringEnabled,
+    openingGraphId,
+    projectId,
+    projectRoom.hasPendingCommands,
+    refreshSavedGraphs,
+    removeSavedGraph,
+    running,
+    saveCurrentGraph,
+    savedProjectName,
+    saving,
+    setGraphName,
+    setGridPanelOpen,
+    setSidePanelOpen,
+    setSidePanelView,
+    sidePanelIsOpen,
+    sidePanelView,
+    submitRoomBatch,
+    workspaceId,
+  ]);
+  usePublishWorkbenchChrome(chromeValue);
+
+  const cellSelectedCardIds = React.useMemo(
+    () => new Set(selectedNodeIds),
+    [selectedNodeIds],
+  );
+  const closeCanvasPopovers = () => {
+    setLibraryOpen(false);
+    setContextualDiscovery(null);
+    setInspectedPipe(null);
+    closeGraphBrowser();
+    setGridPanelOpen(false);
+  };
+
+  const moveCellCards: NonNullable<CellCanvasProps["onMoveCards"]> = (
+    moves,
+  ) => {
+    if (!localAuthoringEnabledRef.current) return;
+    const { graphCommands, viewerPositions, annotationPositions } =
+      partitionCellMoves(moves, authoredDocumentRef.current, artifactViewers);
+    applyAuthoringCommands(graphCommands);
+    if (viewerPositions.length || annotationPositions.length) {
+      const viewers = new Map(
+        viewerPositions.map(({ viewer_id, x, y }) => [viewer_id, { x, y }]),
+      );
+      const annotations = new Map(
+        annotationPositions.map(({ annotation_id, x, y }) => [
+          annotation_id,
+          { x, y },
+        ]),
+      );
+      setArtifactViewers((current) => ({
+        ...current,
+        nodes: current.nodes.map((node) => {
+          const position = viewers.get(node.id);
+          return position ? { ...node, position } : node;
+        }),
+        annotations: current.annotations.map((node) => {
+          const position = annotations.get(node.id);
+          return position ? { ...node, position } : node;
+        }),
+      }));
+      if (viewerPositions.length)
+        presentationRoomSyncRef.current.submitMove(viewerPositions);
+      if (annotationPositions.length)
+        presentationRoomSyncRef.current.submitMoveAnnotations(
+          annotationPositions,
+        );
+    }
+  };
+
+  const resizeCellCard: NonNullable<CellCanvasProps["onResizeCard"]> = (
+    commit,
+  ) => {
+    const { cardId, widthCells, heightCells } = commit;
+    const width = widthCells * CELL_SIZE;
+    const height = heightCells * CELL_SIZE;
+    const viewer = artifactViewers.nodes.find((node) => node.id === cardId);
+    if (viewer) {
+      updateArtifactViewerLayout(cardId, {
+        ...viewer.data.layout,
+        width,
+        bodyHeight: height,
+      });
+    } else if (artifactViewers.annotations.some((node) => node.id === cardId)) {
+      updateAnnotationLayout(cardId, { width, height });
+    } else {
+      applyAuthoringCommands(
+        graphCommandsFromCellResizeForDocument(
+          authoredDocumentRef.current,
+          commit,
+        ),
+      );
+    }
+  };
+
+  const onCellDragProgress: NonNullable<
+    CellCanvasProps["onDragCardsProgress"]
+  > = (moves) => {
+    presenceDragRef.current = moves?.length
+      ? {
+          targetIds: moves.map(({ cardId }) => cardId),
+          positions: moves.map(({ cardId, col, row }) => ({
+            node_id: cardId,
+            ...cellToWorldOrigin(col, row),
+          })),
+        }
+      : null;
+    schedulePresenceSnapshot();
+  };
+
+  const onCellConnectDropEmpty: NonNullable<
+    CellCanvasProps["onConnectDropEmpty"]
+  > = (event) => {
+    setContextualDiscovery(null);
+    setInspectedPipe(null);
+    if (!canEditProject || !localAuthoringEnabledRef.current) return;
+    const target = document.elementFromPoint(
+      event.clientPoint.x,
+      event.clientPoint.y,
+    );
+    if (
+      !target?.closest('[data-cell-canvas="true"]') ||
+      target.closest(
+        '[data-cell-card="true"], [data-cell-canvas-chrome="true"]',
+      )
+    )
+      return;
+    if (
+      event.direction === "downstream" &&
+      event.sourcePortId === ARTIFACT_CARD_OUTPUT_HANDLE
+    ) {
+      handleArtifactCardConnectionDrop({
+        cardId: event.sourceCardId,
+        clientPoint: event.clientPoint,
+        flowPosition: event.worldPoint,
+      });
+      return;
+    }
+    const fromNode = nodes.find((node) => node.id === event.sourceCardId);
+    if (!fromNode || !workflowNodeIsSupported(fromNode.data)) return;
+    const encoded = encodeCellPortHandleForDiscovery(
+      fromNode,
+      event.sourcePortId,
+      event.direction === "upstream" ? "input" : "output",
+    );
+    if (!encoded) return;
+    handleConnectionDrop({
+      fromNode,
+      ...encoded,
+      clientPoint: event.clientPoint,
+      flowPosition: event.worldPoint,
+    });
+  };
+
+  let discoverySourcePoint: XYPosition | null = null;
+  if (cellScene && activeContextualDiscovery) {
+    const card = cellScene.graph.cards.find(
+      ({ id }) => id === activeContextualDiscovery.sourceNodeId,
+    );
+    if (card) {
+      if (
+        activeContextualDiscovery.sourceHandle === ARTIFACT_CARD_OUTPUT_HANDLE
+      ) {
+        const port = card.ports.find(
+          ({ id, direction }) =>
+            id === ARTIFACT_CARD_OUTPUT_HANDLE && direction === "output",
+        );
+        if (port) discoverySourcePoint = portWorldCenter(card, port);
+      } else {
+        const decoded = decodeHandleId(activeContextualDiscovery.sourceHandle);
+        if (decoded) {
+          const portId = decoded.plugId
+            ? `${decoded.portName}::${decoded.plugId}`
+            : decoded.portName;
+          const port = card.ports.find(
+            ({ id, direction }) =>
+              id === portId && direction === decoded.direction,
+          );
+          if (port) discoverySourcePoint = portWorldCenter(card, port);
+        }
+      }
+    }
+  }
+
+  const activeInspectedPipe = React.useMemo<{
+    pipe: CellInspectedPipe;
+    anchor: WorldPoint;
+  } | null>(() => {
+    if (!inspectedPipe || inspectedPipe.graphId !== openGraphId) {
+      return null;
+    }
+    const workflowEdge = canvasEdges.find(
+      (edge) => edge.id === inspectedPipe.pipeId,
+    );
+    if (workflowEdge) {
+      return {
+        pipe: { kind: "workflow", edge: workflowEdge },
+        anchor: inspectedPipe.anchor,
+      };
+    }
+    const originEdge = artifactOriginCanvasEdges.find(
+      (edge) => edge.id === inspectedPipe.pipeId,
+    );
+    if (originEdge) {
+      return {
+        pipe: { kind: "origin", edge: originEdge },
+        anchor: inspectedPipe.anchor,
+      };
+    }
+    const viewerEdge = artifactViewerCanvasEdges.find(
+      (edge) => edge.id === inspectedPipe.pipeId,
+    );
+    if (viewerEdge) {
+      return {
+        pipe: { kind: "viewer", edge: viewerEdge },
+        anchor: inspectedPipe.anchor,
+      };
+    }
+    return null;
+  }, [
+    artifactOriginCanvasEdges,
+    artifactViewerCanvasEdges,
+    canvasEdges,
+
+    inspectedPipe,
+    openGraphId,
+  ]);
+
+  // Offered when a dragged output has no compatible node: show its artifacts.
+  const placeDiscoveredOutputCard =
+    activeContextualDiscovery?.direction === "downstream" &&
+    activeContextualDiscovery.sourceHandle !== ARTIFACT_CARD_OUTPUT_HANDLE
+      ? () => {
+          const handle = decodeHandleId(activeContextualDiscovery.sourceHandle);
+          if (handle)
+            placeOutputCard(
+              activeContextualDiscovery.sourceNodeId,
+              handle.portName,
+              activeContextualDiscovery.flowPosition,
+            );
+        }
+      : undefined;
+
+  const selectionToolbar =
+    selectedWorkflowCount ||
+    collectsIntoSequence ||
+    selectedArtifactCards.length > 1 ||
+    selectedCollectionSources.length > 1 ? (
+      <>
+        <span {...stylex.props(s.selectionLabel)}>
+          {selectedNodeCount} selected
+        </span>
+        <span {...stylex.props(s.selectionDivider)} />
+        {collectSpec ? (
+          selectedCollectionSources.length > 1 ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={
+                !localAuthoringEnabled || Boolean(collectionDisabledReason)
+              }
+              title={
+                collectionDisabledReason ??
+                `Collect ${selectedCollectionSources.length} selected artifacts into one collection`
+              }
+              xstyle={phoneTouch.rail}
+              onClick={collectSelectedArtifacts}
+            >
+              <Layers size={13} />
+              Collect
+            </Button>
+          ) : null
+        ) : collectsIntoSequence ? (
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={
+              !collectedArtifactRefs ||
+              !localAuthoringEnabled ||
+              Boolean(groupingDisabledReason)
+            }
+            title={
+              groupingDisabledReason ??
+              (collectedArtifactRefs
+                ? selectedArtifactCards.length === 1
+                  ? "Put this artifact in a sequence"
+                  : `Collect ${selectedArtifactCards.length} selected artifacts into an ordered sequence`
+                : "Select artifacts of the same type to collect")
+            }
+            xstyle={phoneTouch.rail}
+            onClick={collectSelectedArtifacts}
+          >
+            <Layers size={13} />
+            Collect
+          </Button>
+        ) : null}
+        {!selectedWorkflowCount && selectedArtifactCards.length > 1 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={!localAuthoringEnabled}
+            xstyle={phoneTouch.rail}
+            onClick={tidySelectedArtifacts}
+          >
+            Tidy-up
+          </Button>
+        ) : null}
+        {selectedWorkflowCount ? (
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            disabled={runSelectedDisabled}
+            title={
+              !projectEditsTrusted
+                ? "Run is unavailable until the displayed graph is current"
+                : selectedNodesAreRunnable
+                  ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
+                  : "Unavailable or invalid selected nodes cannot run"
+            }
+            xstyle={phoneTouch.rail}
+            onClick={() => void runWorkflow("selected")}
+          >
+            {runningScope === "selected" ? (
+              <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+            ) : (
+              <Play size={13} />
+            )}
+            {runningScope === "selected" ? "Running…" : "Run"}
+          </Button>
+        ) : null}
+        {selectedWorkflowCount ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={runSelectedWithDependenciesDisabled}
+            title={
+              !projectEditsTrusted
+                ? "Run is unavailable until the displayed graph is current"
+                : selectedWithDependenciesAreRunnable
+                  ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
+                  : "Unavailable or invalid upstream dependencies cannot run"
+            }
+            xstyle={phoneTouch.rail}
+            onClick={() => void runWorkflow("selected-with-dependencies")}
+          >
+            {runningScope === "selected-with-dependencies" ? (
+              <LoaderCircle size={13} {...stylex.props(s.spinner)} />
+            ) : (
+              <Workflow size={13} />
+            )}
+            {runningScope === "selected-with-dependencies"
+              ? "Running…"
+              : "With dependencies"}
+          </Button>
+        ) : null}
+      </>
+    ) : null;
+
+  return (
+    <main {...stylex.props(s.shell)}>
+      <span
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        {...stylex.props(s.visuallyHidden)}
+      >
+        {executionAnnouncement}
+      </span>
+      {projectId ? (
+        <GraphRoomRecoveryNotice
+          readiness={projectReadiness.state}
+          status={projectRoom.status}
+          failure={projectRoom.failure}
+          terminalReason={projectRoom.terminalReason}
+          onRetry={projectRoom.retry}
+          onReload={() => window.location.reload()}
+        />
+      ) : null}
+      <section
+        ref={canvasSectionRef}
+        {...stylex.props(s.canvas)}
+        aria-label="Workflow canvas"
+        onPointerDownCapture={canvasMenuTrigger.onPointerDownCapture}
+        onContextMenu={canvasMenuTrigger.onContextMenu}
+        onKeyDown={canvasMenuTrigger.onKeyDown}
+        onPointerMove={(event) => {
+          if (!projectRoom.canPublishPresence || !canvasReady) return;
+          presenceOverCanvasRef.current = true;
+          presenceClientPointRef.current = {
+            x: event.clientX,
+            y: event.clientY,
+          };
+          presenceClientPointDirtyRef.current = true;
+          schedulePresenceSnapshot();
+        }}
+        onPointerLeave={() => {
+          presenceOverCanvasRef.current = false;
+          presenceClientPointRef.current = null;
+          presenceClientPointDirtyRef.current = false;
+          presenceCursorRef.current = null;
+          schedulePresenceSnapshot();
+        }}
+      >
+        {projectHasNoGraph ? (
+          <div role="status" {...stylex.props(emptyProjectStyles.panel)}>
+            <p {...stylex.props(emptyProjectStyles.title)}>
+              This Project holds no Graphs.
+            </p>
+            <p {...stylex.props(emptyProjectStyles.body)}>
+              A Graph is the canvas of nodes you compute with. Add one to start
+              building here.
+            </p>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={!canSubmitRoomCommands}
+              title={
+                canSubmitRoomCommands
+                  ? "Add a Graph to this Project"
+                  : "Editing is paused until the Project room is ready."
+              }
+              xstyle={phoneTouch.rail}
+              onClick={addProjectGraph}
+            >
+              <Plus size={13} />
+              Add a Graph
+            </Button>
+          </div>
+        ) : null}
+        {projectRoom.head && projectRoom.head.document.graphs.length > 0 ? (
+          <GraphSwitcher
+            graphs={projectRoom.head.document.graphs}
+            openGraphId={openGraphId}
+            canEdit={canSubmitRoomCommands && !running}
+            onOpen={openProjectGraph}
+            onAdd={addProjectGraph}
+            onRename={renameProjectGraph}
+            onDelete={removeProjectGraph}
+            selectedCall={selectedCall}
+            onOpenCall={openCall}
+            callTrail={callTrail}
+            onBackFromCall={backFromCall}
+          />
+        ) : null}
+        <NodeMenuRegistryContext.Provider value={nodeMenus}>
+          {canEditProject && !cellScene?.graph.cards.length ? (
+            <div {...stylex.props(s.emptyCanvas)}>
+              {canvasUpload ??
+                "Drop scans or files here, or press + to add a step"}
+            </div>
+          ) : canvasUpload ? (
+            <div {...stylex.props(s.emptyCanvas)} role="status">
+              {canvasUpload}
+            </div>
+          ) : null}
+          {cellScene && (
+            <PresenceAwareCellCanvas
+              presenceStore={projectRoom.presenceStore}
+              localSessionId={projectRoom.localSessionId}
+              graphId={openGraphId}
+              {...cellScene}
+              look={cellLook}
+              routing={cellRouting}
+              editable={localAuthoringEnabled}
+              selectedCardIds={cellSelectedCardIds}
+              selectedPipeIds={selectedEdgeIdSet}
+              inspectedPipeId={activeInspectedPipe?.pipe.edge.id ?? null}
+              autoFitOnMount={false}
+              exposeDebugApi={process.env.NODE_ENV !== "production"}
+              onHandleReady={setCellCanvasHandle}
+              onMoveCards={moveCellCards}
+              onDragCardsProgress={onCellDragProgress}
+              onResizeCard={resizeCellCard}
+              onCanConnect={(candidate) => {
+                const connection = cellConnectionToWorkbenchConnection(
+                  nodes,
+                  artifactViewers.nodes,
+                  candidate,
+                );
+                return connection !== null && isValidConnection(connection);
+              }}
+              onConnect={(candidate) => {
+                const connection = cellConnectionToWorkbenchConnection(
+                  nodes,
+                  artifactViewers.nodes,
+                  candidate,
+                );
+                if (connection) onConnect(connection);
+              }}
+              onConnectDropEmpty={onCellConnectDropEmpty}
+              onRemoveCards={(ids) => removeCellElements(ids, [])}
+              onRemovePipes={(ids) => removeCellElements([], ids)}
+              onSelectionChange={(selection) =>
+                canvasSelection.selectOnly(
+                  partitionCellSelection(
+                    selection,
+                    authoredDocumentRef.current,
+                    artifactViewers,
+                  ),
+                )
+              }
+              onPaneClick={closeCanvasPopovers}
+              onSelectEdgeAttachment={(pipeId, anchor) => {
+                setLibraryOpen(false);
+                setContextualDiscovery(null);
+                setInspectedPipe((current) =>
+                  current?.pipeId === pipeId
+                    ? null
+                    : {
+                        graphId: openGraphId,
+                        pipeId,
+                        anchor: anchor ?? canvasCenter({ x: 0, y: 0 }),
+                      },
+                );
+              }}
+              onOperatorRun={(cardId) => {
+                canvasSelection.selectOnly({ nodeIds: [cardId] });
+                void runWorkflow("selected", [cardId]);
+              }}
+              onOperatorConfigChange={updateConfig}
+              onOperatorAddPlug={addNodeInputPlug}
+              onOperatorRemovePlug={(cardId, portName, plugId) =>
+                removeNodeInputPlug(
+                  cardId,
+                  plugId.startsWith(`${portName}::`)
+                    ? plugId.slice(portName.length + 2)
+                    : plugId,
+                )
+              }
+              onOperatorToggleAppendix={(cardId) =>
+                setCollapsedAppendices((current) => {
+                  const next = new Set(current);
+                  if (!next.delete(cardId)) next.add(cardId);
+                  return next;
+                })
+              }
+              onAnnotationColorChange={(cardId, color) =>
+                updateAnnotationColor(cardId, annotationHexFromToken(color))
+              }
+              canMergeArtifactCards={canMergeArtifactCards}
+              onMergeArtifactCards={mergeArtifactCards}
+              onReorderArtifactCardItem={reorderArtifactCardItem}
+              onMergeArtifactCardRun={mergeArtifactCardRun}
+              onInsertArtifactCardIntoSequence={insertArtifactCardIntoSequence}
+              onExtractArtifactCardItem={extractArtifactCardItem}
+              onRemoveArtifactCardItem={removeArtifactCardItem}
+              onUngroupArtifactCard={ungroupArtifacts}
+              onArtifactImageLoad={onCellArtifactImageLoad}
+              onCollectionRemoveMember={(cardId, memberId) =>
+                removeNodeInputPlug(
+                  cardId,
+                  memberId.startsWith(`${COLLECTION_PORT}::`)
+                    ? memberId.slice(COLLECTION_PORT.length + 2)
+                    : memberId,
+                )
+              }
+            >
+              {selectionToolbar ? (
+                <div
+                  data-cell-canvas-chrome="true"
+                  {...stylex.props(s.selectionToolbar, s.cellSelectionToolbar)}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  {selectionToolbar}
+                </div>
+              ) : null}
+              {registry && activeContextualDiscovery ? (
+                <CellContextualNodeDiscovery
+                  key={`${activeContextualDiscovery.sourceNodeId}:${activeContextualDiscovery.sourceHandle}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
+                  session={activeContextualDiscovery}
+                  registry={registry}
+                  sourcePoint={discoverySourcePoint}
+                  canInsert={localAuthoringEnabled}
+                  insertDisabledReason={localAuthoringBlockedMessage}
+                  onClose={() => setContextualDiscovery(null)}
+                  onConfirm={confirmContextualDiscovery}
+                  onPlaceOutputCard={placeDiscoveredOutputCard}
+                />
+              ) : null}
+              {activeInspectedPipe ? (
+                <CellPipeInspector
+                  pipe={activeInspectedPipe.pipe}
+                  anchor={activeInspectedPipe.anchor}
+                  editable={localAuthoringEnabled && !running}
+                  onClose={() => setInspectedPipe(null)}
+                  onUpdateWorkflowEdge={updateEdge}
+                  onUpdateOriginCollectionMode={(originId, collectionMode) =>
+                    applyAuthoringCommands([
+                      {
+                        kind: "update_origin",
+                        origin_id: originId,
+                        update: { collection_mode: collectionMode },
+                      },
+                    ])
+                  }
+                  onUpdateViewerEdge={updateArtifactViewerEdge}
+                  onRemovePipe={(pipeId) => removeCellElements([], [pipeId])}
+                />
+              ) : null}
+            </PresenceAwareCellCanvas>
+          )}
+          <PresenceOverlay
+            store={projectRoom.presenceStore}
+            graphId={openGraphId}
+          />
+        </NodeMenuRegistryContext.Provider>
+      </section>
+
+      {workbenchActivity ? (
+        <WorkbenchActivityBar activity={workbenchActivity} />
+      ) : null}
+
+      <CanvasGridSettingsPanel />
+
+      <aside aria-label="Canvas actions" {...stylex.props(s.toolDock)}>
+        <IconButton
+          size="lg"
+          variant="accent"
+          label="Add node"
+          disabled={!registry || !localAuthoringEnabled}
+          xstyle={phoneTouch.rail}
+          {...firefoxDynamicButtonProps}
+          onClick={() => {
+            closeGraphBrowser();
+            setGridPanelOpen(false);
+            pickerInsertAtRef.current = null;
+            setLibraryOpen((open) => !open);
+          }}
+        >
+          <Plus size={14} />
+        </IconButton>
+        <div {...stylex.props(s.shapesMenuWrap)}>
+          <IconButton
+            size="lg"
+            variant={shapesMenuOpen ? "accent" : "ghost"}
+            label="Add shape or text"
+            title="Add documentation shapes"
+            disabled={!localAuthoringEnabled}
+            aria-expanded={shapesMenuOpen}
+            aria-haspopup="menu"
+            xstyle={phoneTouch.rail}
+            onClick={() => {
+              closeGraphBrowser();
+              setLibraryOpen(false);
+              setGridPanelOpen(false);
+              setShapesMenuOpen((open) => !open);
+            }}
+          >
+            <Type size={14} />
+          </IconButton>
+          {shapesMenuOpen ? (
+            <div role="menu" {...stylex.props(s.shapesMenu)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                role="menuitem"
+                xstyle={s.railMenuButton}
+                onClick={() => addAnnotation("text")}
+              >
+                <Type size={14} />
+                Text
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                role="menuitem"
+                xstyle={s.railMenuButton}
+                onClick={() => addAnnotation("rectangle")}
+              >
+                <Square size={14} />
+                Square
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                role="menuitem"
+                xstyle={s.railMenuButton}
+                onClick={() => addAnnotation("ellipse")}
+              >
+                <Circle size={14} />
+                Circle
+              </Button>
+            </div>
+          ) : null}
+        </div>
+        <IconButton
+          size="lg"
+          variant="ghost"
+          label="Add Agent"
+          title="Add an Agent to chat with on the canvas"
+          disabled={!canEditProject}
+          xstyle={phoneTouch.rail}
+          {...firefoxDynamicButtonProps}
+          onClick={() => {
+            const id = createUuid();
+            applyAuthoringCommands([
+              {
+                kind: "add_agent",
+                agent: {
+                  id,
+                  name: "Agent",
+                  instructions: "",
+                  model: { kind: "deployment" },
+                  context: [],
+                  tools: [],
+                  position: canvasCenter({ x: 480, y: 240 }),
+                  width: 360,
+                  height: 480,
+                },
+              },
+            ]);
+            canvasSelection.selectOnly({ agentIds: [id] });
+          }}
+        >
+          <Bot size={14} />
+        </IconButton>
+        <IconButton
+          size="lg"
+          label="Fit"
+          title="Fit workflow"
+          disabled={!canvasReady}
+          xstyle={phoneTouch.rail}
+          {...firefoxDynamicButtonProps}
+          onClick={() => fitCanvasView(WORKBENCH_FIT_VIEW)}
+        >
+          <Maximize2 size={14} />
+        </IconButton>
+        <IconButton
+          size="lg"
+          variant="accent"
+          label="Canvas lab"
+          pressed={gridPanelOpen}
+          title="Experiment with canvas behavior"
+          xstyle={phoneTouch.rail}
+          onClick={() => {
+            closeGraphBrowser();
+            setLibraryOpen(false);
+            setInspectedPipe(null);
+            setGridPanelOpen((open) => !open);
+          }}
+        >
+          <Grid3x3 size={14} />
+        </IconButton>
+        <span {...stylex.props(s.railDivider)} />
+        <IconButton
+          size="lg"
+          label="Runs"
+          title={
+            projectId
+              ? "Browse this Project's Runs"
+              : "Save the Project to browse its Runs"
+          }
+          disabled={!projectId}
+          xstyle={phoneTouch.rail}
+          onClick={(event) => {
+            closeGraphBrowser();
+            setLibraryOpen(false);
+            setGridPanelOpen(false);
+            executionHistoryReturnFocusRef.current = event.currentTarget;
+            setExecutionHistoryTarget({ nodeId: null, executionId: null });
+          }}
+        >
+          <History size={14} />
+        </IconButton>
+        <span {...stylex.props(s.railDivider)} />
+        <IconButton
+          size="lg"
+          label="Duplicate"
+          title={
+            selectedWorkflowCount || selectedViewerCount
+              ? `Duplicate ${selectedWorkflowCount + selectedViewerCount} selected node${selectedWorkflowCount + selectedViewerCount === 1 ? "" : "s"}`
+              : "Select one or more nodes to duplicate"
+          }
+          disabled={
+            (!selectedWorkflowCount && !selectedViewerCount) ||
+            !localAuthoringEnabled
+          }
+          xstyle={phoneTouch.rail}
+          onClick={duplicateSelectedNodes}
+        >
+          <Copy size={14} />
+        </IconButton>
+        <IconButton
+          size="lg"
+          variant="danger"
+          label="Delete"
+          title={
+            selectedNodeCount
+              ? `Delete ${selectedNodeCount} selected node${selectedNodeCount === 1 ? "" : "s"}`
+              : "Select one or more nodes to delete"
+          }
+          disabled={
+            !canvasReady || !selectedNodeCount || !localAuthoringEnabled
+          }
+          xstyle={phoneTouch.rail}
+          onClick={deleteSelectedNodes}
+        >
+          <Trash2 size={14} />
+        </IconButton>
+      </aside>
+
+      <Toast.Provider timeout={8000} limit={3}>
+        <GlobalIssueToastList
+          issues={globalIssues}
+          onDismiss={dismissGlobalIssue}
+        />
+      </Toast.Provider>
+
+      {executionHistoryTarget ? (
+        <ExecutionHistoryDrawer
+          key={`${projectId ?? "unsaved"}:${executionHistoryTarget.nodeId ?? "all"}:${executionHistoryTarget.executionId ?? "latest"}`}
+          workspaceId={workspaceId}
+          // A Run is a demand inside a Project: without this the drawer's read key
+          // never resolves and it can only ever say "open a saved project", which
+          // made the way to see Runs unreachable from the product while its own
+          // tests kept passing a projectId the caller never sent.
+          projectId={projectId}
+          graphId={openGraphId}
+          returnFocusRef={executionHistoryReturnFocusRef}
+          onClose={() => setExecutionHistoryTarget(null)}
+        />
+      ) : null}
+
+      <CanvasContextMenu
+        request={canvasMenu}
+        registry={registry ?? null}
+        activeGraphId={openGraphId}
+        canEdit={localAuthoringEnabled}
+        selection={canvasMenuSelection}
+        nodeMenus={nodeMenus}
+        actions={canvasMenuActions}
+        onClose={() => setCanvasMenu(null)}
+      />
+
+      <WorkbenchSidePanel
+        workspaceId={workspaceId}
+        sidePanel={sidePanel}
+        projectId={projectId}
+        graphId={openGraphId}
+        nodeTitles={nodeTitles}
+        registry={registry ?? null}
+        canSave={canEditProject}
+        // A stored result belongs to an instance, and the room is what says one
+        // landed; that push is the panel's cue to read the list again.
+        generatedRefreshToken={projectRoom.instancesRevision}
+        onOpenInstance={(graphId) => {
+          if (graphId !== openGraphId) {
+            // A saved artifact can come from another Graph, and every Graph of
+            // this Project lives behind this address.
+            openProjectInNewTab();
+            return;
+          }
+          executionHistoryReturnFocusRef.current = null;
+          setExecutionHistoryTarget({ nodeId: null, executionId: null });
+        }}
+      />
+
+      {registry ? (
+        <NodeSelector
+          open={libraryOpen}
+          registry={registry}
+          activeGraphId={openGraphId}
+          canInsert={localAuthoringEnabled}
+          insertDisabledReason={localAuthoringBlockedMessage}
+          onOpenChange={(open) => {
+            if (!open) pickerInsertAtRef.current = null;
+            setLibraryOpen(open);
+          }}
+          onAddNode={(spec) => addCatalogNode(spec)}
+        />
+      ) : null}
+
+      <ArtifactFolderDropDialog
+        pending={pendingFolderDrop?.drop ?? null}
+        onPlaceAll={() =>
+          placeFolderDropGroups(pendingFolderDrop?.drop.groups ?? [])
+        }
+        onPlaceGroup={(group) => placeFolderDropGroups([group])}
+        onClose={() => setPendingFolderDrop(null)}
+      />
+
+      <ConnectionRouteDialog
+        pendingRoute={pendingConnectionRoute}
+        onSelect={(route) => {
+          if (!pendingConnectionRoute) return;
+          const refineEdgeId = pendingConnectionRoute.refineEdgeId;
+          if (refineEdgeId) {
+            const selection = connectionRouteSelection(route);
+            updateEdge(refineEdgeId, {
+              route: {
+                projection: selection.projection
+                  ? { path: [...selection.projection.path] }
+                  : undefined,
+                conversionPath: selection.conversionPath.map((conversion) => ({
+                  id: conversion.id,
+                  version: conversion.version,
+                })),
+              },
+            });
+            return;
+          }
+          addWorkflowEdge(
+            pendingConnectionRoute.connection,
+            pendingConnectionRoute.collectionMode,
+            route,
+          );
+        }}
+        onClose={() => setPendingConnectionRoute(null)}
+      />
+    </main>
+  );
+}

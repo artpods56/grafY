@@ -6,7 +6,7 @@ import type {
 } from "@/features/workbench/cell-canvas/cell-model";
 import { routeCellGraph } from "@/features/workbench/cell-canvas/cell-router";
 import { cellGraphFromAuthoredDocument } from "@/features/workbench/cell-canvas/cell-document-adapter";
-import { applyGraphCommandNormalized } from "@/features/workbench/model/graph-document";
+import { applyGraphCommandNormalized } from "@/features/workbench/authoring/graph-document";
 
 import {
   createRealAnatomyShowcaseGraph,

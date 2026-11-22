@@ -15,7 +15,7 @@ import {
   type AuthoredGraphEdge,
   type AuthoredGraphNode,
   type AuthoredGraphOrigin,
-} from "../model/graph-document";
+} from "../authoring/graph-document";
 import {
   annotationHexFromToken,
   cellArtifactImageCells,

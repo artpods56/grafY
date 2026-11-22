@@ -5,13 +5,13 @@ import * as stylex from "@stylexjs/stylex";
 import type { components } from "@/lib/api/generated/grafy";
 import { Button } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { ArtifactPicker, hasPickableParts } from "../canvas/ArtifactPicker";
-import { writeArtifactDrop } from "../model/artifact-drop";
+import { ArtifactPicker, hasPickableParts } from "../artifacts/ArtifactPicker";
+import { writeArtifactDrop } from "../artifacts/artifact-drop";
 import {
   formatArtifactTypeLabel,
   formatArtifactTypeSequence,
   type ArtifactTypeCatalog,
-} from "../canvas/artifact-type-label";
+} from "../artifacts/artifact-type-label";
 
 type S = components["schemas"];
 

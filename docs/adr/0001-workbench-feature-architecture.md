@@ -25,7 +25,8 @@ Clean Architecture or Feature-Sliced Design taxonomy.
 ## Decision
 
 Organize Workbench code as one feature-first vertical slice under
-`src/features/workbench`.
+`src/features/workbench`, split inside into vertical slices that each own one
+capability end to end.
 
 ```text
 src/
@@ -34,10 +35,15 @@ src/
     workbench/
       index.ts                 # Public client feature API
       routes.ts                # Public server-safe route API
-      ui/                      # Workbench composition and user-facing regions
-      model/                   # Graph policies and state transitions
-      canvas/                  # Canvas contracts, document adapters, and artifact renderers
-      cell-canvas/             # Workbench renderer and pointer gestures
+      shell/                   # Workbench composition, chrome, and menus
+      cell-canvas/             # Canvas engine, cards, and pointer gestures
+      artifacts/               # Artifact cards, viewers, renderers, and the library panel
+      authoring/               # Graph document, authoring commands, and layout contracts
+      config-ui/               # Node configuration surfaces: selector, schema, handles
+      execution/               # Run planning, execution, and history
+      collaboration/           # Rooms, presence, autosave, and saved-graph lifecycle
+      agents/                  # Agent links, tool events, and agent chat
+      test/                    # Feature-local test support (no product code)
   components/                  # Reusable, feature-agnostic UI and providers
   lib/
     api/                       # Generated contracts and concrete HTTP adapter
@@ -52,15 +58,17 @@ hydration boundaries.
 ```mermaid
 flowchart LR
     App["app routes"] --> Public["features/workbench public entry points"]
-    Public --> UI["workbench UI"]
-    UI --> Renderer["canvas renderer"]
-    UI --> Model["workbench policies"]
-    Model --> Graph["canvas graph contracts"]
-    Renderer --> Graph
-    UI --> Shared["shared components"]
-    Renderer --> Shared
-    UI --> API["lib/api"]
-    Model -. "type-only contract imports when needed" .-> API
+    Public --> Shell["shell"]
+    Shell --> Slices["cell-canvas, execution, collaboration, agents"]
+    Shell --> Artifacts["artifacts"]
+    Slices --> Artifacts
+    Slices --> Authoring["authoring"]
+    Artifacts --> Authoring
+    Artifacts --> Config["config-ui"]
+    Authoring --> Config
+    Config --> Artifacts
+    Slices --> Shared["shared components"]
+    Slices --> API["lib/api"]
 ```
 
 Imports follow these rules:
@@ -72,20 +80,23 @@ Imports follow these rules:
    only `Workbench`. `routes.ts` is a second, deliberately named public entry
    point so server-only route code does not evaluate the client bundle. Neither
    entry point wildcard-exports feature internals.
-3. `ui` owns feature composition, browser-facing effects, view state, navigation,
-   and calls to the concrete API adapter. It may import `canvas`, `model`, shared
-   components, and `lib/api`.
-4. `canvas` owns the graph view contracts in `handles.ts`, `input-plugs.ts`,
-   and `types.ts`. `cell-canvas` owns the renderer and its pointer gestures.
-   The renderer imports graph contracts and shared components. The architecture
-   test enforces acyclic imports and keeps route and sandbox code out of features.
-5. `model` owns deterministic Workbench policies and state transitions. During
-   this migration it may import non-rendering graph contract functions and
-   types from `canvas`, but it does not import canvas components or styles,
-   React hooks, Next.js, StyleX, or the concrete HTTP client. Type-only imports
-   from stable API contract aliases are allowed when duplicating the contract
-   would be worse. Move the canonical graph contract inward only when that work
-   can migrate the existing callers together.
+3. `shell` is the composition slice and the only one that may reach every other
+   slice, including `cell-canvas`. No other slice imports `shell`, so wiring the
+   editor together stays a single place and a card change cannot pull in the chrome.
+4. The domain slices import downward: `cell-canvas` over `artifacts`, `authoring`,
+   and `config-ui`; `artifacts` over `authoring`, `config-ui`, and `agents`;
+   `authoring` and `config-ui` over each other's published modules and `artifacts`;
+   `execution` over `authoring`, `collaboration`, and `config-ui`; `collaboration`
+   over `agents`, `artifacts`, `authoring`, and `execution`; `agents` over
+   `artifacts` and `authoring`. `routes.ts` is a leaf the slices that build links
+   may read. The architecture test enforces this matrix, acyclic imports, and a
+   fixed set of slice directories, and keeps route and sandbox code out of features.
+5. A slice owns its own rendering and its own policy. Deterministic policy that no
+   component renders stays in a plain module the slice can test without jsdom, and
+   imports no React hook, Next.js, StyleX, or the concrete HTTP client. Type-only
+   imports from stable API contract aliases are allowed when duplicating the
+   contract would be worse. Move the canonical graph contract inward only when that
+   work can migrate the existing callers together.
 6. Shared components and `lib/api` never import from `features/workbench`.
    Code becomes shared only after an independent consumer needs the same
    responsibility.
@@ -119,7 +130,7 @@ module or network boundary when an API dependency is involved. Test convenience
 alone does not justify another production abstraction.
 
 Hook lifecycle tests opt into jsdom per test file and use the feature-local,
-test-only renderer under `ui/test`. They control promises and timers explicitly,
+test-only renderer under `test/`. They control promises and timers explicitly,
 mock the concrete API and router module boundaries, and exercise the hook's
 public callbacks and observable state. Production hooks do not gain injection
 parameters or interfaces solely for tests.
@@ -143,8 +154,9 @@ parameters or interfaces solely for tests.
 
 - Route code sees a small, stable feature API.
 - Graph and execution policies can be tested without rendering the full editor.
-- Canvas view contracts live in `canvas`. The authored graph document lives in
-  `model`. The architecture test checks imports across those modules for cycles.
+- Canvas view contracts live in `authoring`, alongside the authored graph document.
+  The architecture test checks imports across the slices for cycles and for a
+  violation of the one-way slice matrix.
 - The refactor can move one responsibility at a time while preserving behavior.
 - The Workbench remains one client bundle and one coordinated interaction
   boundary; this decision does not promise independent hydration.
@@ -171,4 +183,4 @@ without an actual substitution requirement.
 Rejected for now. The repository has one active frontend product slice, so global
 `widgets`, `entities`, `features`, and `shared` layers would cause broad movement
 without clarifying Workbench ownership. This decision borrows the useful
-feature-first boundary and local `ui` and `model` segments instead.
+feature-first boundary and vertical slices inside the feature instead.

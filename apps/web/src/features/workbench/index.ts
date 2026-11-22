@@ -1,1 +1,1 @@
-export { Workbench } from "./ui/Workbench";
+export { Workbench } from "./shell/Workbench";

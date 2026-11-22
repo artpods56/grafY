@@ -37,8 +37,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
-import { useWorkbenchChrome } from "@/features/workbench/ui/WorkbenchChromeContext";
-import { SIDE_PANEL_ELEMENT_ID } from "@/features/workbench/ui/side-panel/workbench-side-panel-state";
+import { useWorkbenchChrome } from "@/features/workbench/shell/WorkbenchChromeContext";
+import { SIDE_PANEL_ELEMENT_ID } from "@/features/workbench/artifacts/side-panel/workbench-side-panel-state";
 import {
   NEW_PROJECT_ROUTE_ID,
   workbenchProjectPath,

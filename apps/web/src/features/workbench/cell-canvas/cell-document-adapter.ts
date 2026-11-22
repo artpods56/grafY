@@ -14,30 +14,30 @@ import {
   ARTIFACT_CARD_WIDTH_MIN,
   cardArtifactRefs,
   DEFAULT_ARTIFACT_CARD_WIDTH,
-} from "../canvas/artifact-card";
-import { schemaFields, type SchemaField } from "../canvas/config-schema";
+} from "../artifacts/artifact-card";
+import { schemaFields, type SchemaField } from "../config-ui/config-schema";
 import {
   DEFAULT_NODE_WIDTH,
   type SavedNodeLayout,
-} from "../canvas/node-layout";
+} from "../authoring/node-layout";
 import {
   configControlKind,
   fieldFootprint,
   type ConfigControlKind,
   type FieldFootprint,
-} from "../canvas/nodes/field-footprints";
+} from "../config-ui/field-footprints";
 import {
   COLLECTION_OPERATOR_ID,
   COLLECTION_PORT,
   isCollectionSpec,
-} from "../model/collection-spec";
+} from "../authoring/collection-spec";
 import type {
   AuthoredGraphDocument,
   AuthoredGraphEdge,
   AuthoredGraphNode,
   AuthoredGraphOrigin,
   GraphCommand,
-} from "../model/graph-document";
+} from "../authoring/graph-document";
 import type {
   AnnotationColorToken,
   ArtifactPreviewKind,

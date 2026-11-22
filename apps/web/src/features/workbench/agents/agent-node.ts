@@ -1,4 +1,4 @@
-import type { CanvasNodeBase } from "../canvas/types";
+import type { CanvasNodeBase } from "../authoring/types";
 import type { NodeRegistry, SavedGraphAgent } from "@/lib/api/contract";
 import type { LinkableDocument } from "./agent-links";
 import type { AgentScope } from "@/lib/api/agents";

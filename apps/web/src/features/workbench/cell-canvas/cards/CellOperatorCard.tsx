@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/menu";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
+import { artifactTypeColor } from "@/features/workbench/config-ui/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import {

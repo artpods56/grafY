@@ -100,7 +100,7 @@ The socket is
 `/v1/workspaces/{workspace_id}/projects/{project_id}/room`
 ([`collaboration/views.py:138`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py),
 built by
-[`project-room-url.ts`](../../apps/web/src/features/workbench/room/project-room-url.ts)).
+[`project-room-url.ts`](../../apps/web/src/features/workbench/collaboration/project-room-url.ts)).
 There is no graph id in the address: a participant is in the Project's room, and names a
 Graph in each command or presence frame that needs one.
 
@@ -119,15 +119,15 @@ Capability names are the ones in
 **Commands carry a Graph id when they act inside one.** The command union is
 [`domain/collaboration.py:306-366`](../../libs/core/src/grafy_core/domain/collaboration.py):
 
-| Level | Kinds |
-| --- | --- |
-| Project | `rename_project`, `add_graph`, `rename_graph`, `remove_graph`, `refresh_node`, `add_call_node` |
+| Level            | Kinds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Project          | `rename_project`, `add_graph`, `rename_graph`, `remove_graph`, `refresh_node`, `add_call_node`                                                                                                                                                                                                                                                                                                                                                                                       |
 | Inside one Graph | `in_graph(graph_id, command)` wrapping `add_node`, `duplicate_node`, `remove_nodes`, `move_nodes`, `update_node_configuration`, `update_node_layout`, `set_node_input_plugs`, `update_node_configuration_and_input_plugs`, `set_node_artifact_type_binding`, `clear_node_artifact_type_binding`, `add_edge`, `update_edge`, `remove_edges`, `add_origin`, `update_origin`, `remove_origins`, `replace_document`, `replace_presentation`, `move_artifact_viewers`, `move_annotations` |
 
 `rename_graph` and `rename_project` are Project-level commands, not bodies of a Graph
 document: a Graph's name is not inside its document, so a save that carries a new name
 submits `[rename_graph, in_graph(replace_document)]` as one batch
-([`Workbench.tsx:1346-1362`](../../apps/web/src/features/workbench/ui/Workbench.tsx)).
+([`Workbench.tsx:1346-1362`](../../apps/web/src/features/workbench/shell/Workbench.tsx)).
 `rename_project` and `rename_graph` both carry the name they expect to replace, which is
 where their conflict policy lives.
 
@@ -165,17 +165,17 @@ lands at sequence 1
 `collaboration_sequence` it read plus the `room_epoch` it read — never a checkpoint
 revision:
 
-| Operation | Asserts | On mismatch | Ref |
-| --- | --- | --- | --- |
-| Submit a batch | `room_epoch`, `observed_sequence` | head conflict, if the epoch differs or the head has already passed what you read | [`application/collaboration.py:360-385`](../../libs/core/src/grafy_core/application/collaboration.py) |
-| Submit a batch containing `in_graph(replace_document)` or `in_graph(replace_presentation)` | the **exact** current sequence | head conflict | [`command_requires_exact_sequence`, `domain/collaboration.py:426`](../../libs/core/src/grafy_core/domain/collaboration.py) |
-| Checkpoint | exact `collaboration_sequence` and epoch | head conflict; already-checkpointed heads replay their revision | [`application/collaboration.py:419-470`](../../libs/core/src/grafy_core/application/collaboration.py) |
-| Configure or remove a node secret | exact `collaboration_sequence` | `409` before secret storage is touched | [`node_secrets.py:206,263`](../../apps/api/src/grafy_api/node_secrets.py) |
-| Delete or copy a Project | exact `collaboration_sequence` and epoch when supplied; without them, an uncheckpointed head is refused | head conflict / uncheckpointed | [`application/collaboration.py:624-741,742-790`](../../libs/core/src/grafy_core/application/collaboration.py) |
-| Start a Run | nothing | — a Run is planned against the live head document as it reads it | [`runs/service.py:174`](../../apps/api/src/grafy_api/runs/service.py) |
+| Operation                                                                                  | Asserts                                                                                                 | On mismatch                                                                      | Ref                                                                                                                        |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Submit a batch                                                                             | `room_epoch`, `observed_sequence`                                                                       | head conflict, if the epoch differs or the head has already passed what you read | [`application/collaboration.py:360-385`](../../libs/core/src/grafy_core/application/collaboration.py)                      |
+| Submit a batch containing `in_graph(replace_document)` or `in_graph(replace_presentation)` | the **exact** current sequence                                                                          | head conflict                                                                    | [`command_requires_exact_sequence`, `domain/collaboration.py:426`](../../libs/core/src/grafy_core/domain/collaboration.py) |
+| Checkpoint                                                                                 | exact `collaboration_sequence` and epoch                                                                | head conflict; already-checkpointed heads replay their revision                  | [`application/collaboration.py:419-470`](../../libs/core/src/grafy_core/application/collaboration.py)                      |
+| Configure or remove a node secret                                                          | exact `collaboration_sequence`                                                                          | `409` before secret storage is touched                                           | [`node_secrets.py:206,263`](../../apps/api/src/grafy_api/node_secrets.py)                                                  |
+| Delete or copy a Project                                                                   | exact `collaboration_sequence` and epoch when supplied; without them, an uncheckpointed head is refused | head conflict / uncheckpointed                                                   | [`application/collaboration.py:624-741,742-790`](../../libs/core/src/grafy_core/application/collaboration.py)              |
+| Start a Run                                                                                | nothing                                                                                                 | — a Run is planned against the live head document as it reads it                 | [`runs/service.py:174`](../../apps/api/src/grafy_api/runs/service.py)                                                      |
 
 **Why the number the canvas holds is not automatically the right one.** A batch is
-accepted against the *latest* head, not against the sequence you stamped: ordinary
+accepted against the _latest_ head, not against the sequence you stamped: ordinary
 commands carry their own compare-and-set (`expected_name`, `expected_generation`,
 plug membership), so a stale-but-lower `observed_sequence` rebases rather than fails.
 That is exactly why a whole-document or whole-presentation replace, which carries no
@@ -183,7 +183,7 @@ prior value to compare, is refused unless it arrives at the exact sequence its a
 read. Two consequences a writer must get right:
 
 1. A caller editing outside the room must read `GET …/projects/{id}/head` first and
-   stamp the submission with *that* sequence, not with whatever the canvas last
+   stamp the submission with _that_ sequence, not with whatever the canvas last
    rendered.
 2. A caller requesting an explicit checkpoint asserts the exact sequence and epoch it
    wants to snapshot. If a peer moves the head before the checkpoint takes its lock,
@@ -218,7 +218,7 @@ needs it) are one batch.
 the head, writes `room.ready` straight to the socket, and only then activates it
 ([`views.py:211-236`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
 Between registration and activation the hub buffers the session's outbound queue, so a
-batch committed while the head was being read arrives *after* the head it moved past,
+batch committed while the head was being read arrives _after_ the head it moved past,
 never instead of it.
 
 **One writer after activation.** Every frame a session receives goes through one sender
@@ -231,12 +231,12 @@ buffering. Presence frames are dropped at a queue depth of 48 before that point.
 
 **The message set** is versioned by `protocol_version: 1`, and both sides validate
 strictly — server models are `extra="forbid"`, and the TypeScript parser in
-[`room/protocol.ts`](../../apps/web/src/features/workbench/room/protocol.ts) rejects a
+[`collaboration/protocol.ts`](../../apps/web/src/features/workbench/collaboration/protocol.ts) rejects a
 flat head or a Graph document without its Graphs rather than papering over them.
 
-| Direction | Types |
-| --- | --- |
-| client → server | `project.command.submit`, `presence.update` — and nothing else ([`realtime/protocol.py:294-303`](../../apps/api/src/grafy_api/realtime/protocol.py)) |
+| Direction       | Types                                                                                                                                                                                                                                                                                                                                                     |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| client → server | `project.command.submit`, `presence.update` — and nothing else ([`realtime/protocol.py:294-303`](../../apps/api/src/grafy_api/realtime/protocol.py))                                                                                                                                                                                                      |
 | server → client | `room.ready`, `room.rehydrate`, `room.heartbeat`, `project.command.accepted`, `project.command.receipt`, `project.command.rejected`, `project.checkpointed`, `presence.join`, `presence.leave`, `presence.update`, `run.started`, `run.finished`, `instances.changed`, `agent.turn.started`, `agent.event.appended`, `agent.delta`, `agent.turn.finished` |
 
 `room.ready` carries workspace id, project id, room session id, actor presentation, the
@@ -256,17 +256,17 @@ access_revoked`, a changed authorization version closes with `4003 / permissions
 It is a timer rather than a receive timeout because the ASGI receive is an anyio
 checkpoint, and a chatty client cannot starve the revalidation. This is also the safety
 net for a lost post-commit invalidation, which is why permission changes are handled by
-*closing* a session rather than by pushing a new capability snapshot into it.
+_closing_ a session rather than by pushing a new capability snapshot into it.
 
 **Close codes** are shared between hub and client
 ([`hub.py:30-34`](../../apps/api/src/grafy_api/realtime/hub.py),
-[`room/protocol.ts:12-16`](../../apps/web/src/features/workbench/room/protocol.ts)):
+[`collaboration/protocol.ts:12-16`](../../apps/web/src/features/workbench/collaboration/protocol.ts)):
 `4003` permissions changed, `4004` access revoked, `4008` protocol error, `4009` slow
 consumer, `4010` project deleted.
 
 **The client's states** are `idle`, `connecting`, `ready`, `reconnecting`,
 `unsynchronized`, `stopped`
-([`graph-room-session.ts`](../../apps/web/src/features/workbench/room/graph-room-session.ts)).
+([`graph-room-session.ts`](../../apps/web/src/features/workbench/collaboration/graph-room-session.ts)).
 A recovery reason (`connection_lost`, `permissions_changed`, `protocol_error`,
 `slow_consumer`) keeps the session and retries; a terminal reason (`access_revoked`,
 `project_deleted`, `protocol_incompatible`, `reconnect_exhausted`) stops it and drops
@@ -283,7 +283,7 @@ with the original receipt marked `idempotent_replay`
 current head at an equal or newer collaboration sequence. A different epoch must
 carry a newer checkpoint revision. Restore publishes the full new head as
 `room.rehydrate`. Full snapshots recover gaps in the command stream.
-[`graph-room-session.ts`](../../apps/web/src/features/workbench/room/graph-room-session.ts)
+[`graph-room-session.ts`](../../apps/web/src/features/workbench/collaboration/graph-room-session.ts)
 
 An explicit or automatic checkpoint that appends a revision broadcasts
 `project.checkpointed` on the reliable queue with `room_epoch`,
@@ -305,7 +305,7 @@ signature, so the same commands in another order are a different batch
 ([`command_hmac_digest`, `domain/collaboration.py:390-424`](../../libs/core/src/grafy_core/domain/collaboration.py)).
 The same id with the same signature replays the original receipt and moves nothing; the
 same id with a different signature is `idempotency_mismatch`. The receipt is re-read
-*under the head lock* so two simultaneous submissions of one id cannot both insert a
+_under the head lock_ so two simultaneous submissions of one id cannot both insert a
 receipt ([`application/collaboration.py:340-365`](../../libs/core/src/grafy_core/application/collaboration.py)).
 
 **Receipt and broadcast are separate.** Peers get `project.command.accepted`; the
@@ -316,7 +316,7 @@ republish, because it moved no document
 They may arrive in either order, so the client correlates by command id and mutates the
 confirmed document only from the ordered broadcast. An accepted frame whose sequence is
 not `head + 1` in the same epoch pauses sending and asks the driver for a full head
-snapshot ([`graph-room-session.ts:726-760`](../../apps/web/src/features/workbench/room/graph-room-session.ts)).
+snapshot ([`graph-room-session.ts:726-760`](../../apps/web/src/features/workbench/collaboration/graph-room-session.ts)).
 
 **Conflict behavior belongs to each command**, not to a universal rule. Removing an
 absent node is a no-op; a move is revalidated against the latest document; a rename or a
@@ -339,7 +339,7 @@ unsupported node survives until its registration returns or a user removes it.
 of 32 batches, stamps each frame from the confirmed head, pauses sending while a head
 refresh is outstanding, and replaces a queued snapshot-style batch with a newer one of
 the same kind rather than sending both
-([`command-outbox.ts`](../../apps/web/src/features/workbench/room/command-outbox.ts)).
+([`command-outbox.ts`](../../apps/web/src/features/workbench/collaboration/command-outbox.ts)).
 Reaching the cap pauses durable authoring and shows a waiting state; offline editing
 beyond it is not supported and the UI must not imply it is. A private field draft stays
 browser-private: a remote accepted value never silently erases an active draft, and a
@@ -366,25 +366,25 @@ deployment does not register — the room opens with **no** instances rather tha
 a participant out of the only room that could repair the document
 ([`views.py:337-363`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
 
-**Frames are events, not answers.** A delta says *read the results again*; REST is the
+**Frames are events, not answers.** A delta says _read the results again_; REST is the
 source of truth: `GET …/projects/{id}/runs`, `GET …/runs/{run_id}`, `POST …/runs`,
 `POST …/runs/{run_id}/cancel`, `GET …/graphs/{graph_id}/instances`, and
 `GET …/instance-result`
 ([`runs/views.py`](../../apps/api/src/grafy_api/v1/routes/runs/views.py)). The surface
 turns each room push into exactly one read
-([`useRunExecution.ts:352-364`](../../apps/web/src/features/workbench/ui/useRunExecution.ts)).
+([`useRunExecution.ts:352-364`](../../apps/web/src/features/workbench/execution/useRunExecution.ts)).
 Because a listener cannot tell "the room pushed" from "the list looks the same as last
 time", a revision counter travels beside each list: `runsRevision` bumps on
 `room.ready`, `run.started` and `run.finished`, `instancesRevision` bumps on
 `instances.changed`
-([`useProjectRoomSession.ts:49-56,124-143`](../../apps/web/src/features/workbench/room/useProjectRoomSession.ts)).
+([`useProjectRoomSession.ts:49-56,124-143`](../../apps/web/src/features/workbench/collaboration/useProjectRoomSession.ts)).
 A push whose list happens to be identical still has to trigger a re-read, which is why
 identity of the array is not stood in for the fact that the room spoke. Without a room,
 the surface polls, and only while something could still move.
 
 **There is no SSE endpoint.** This is a decision, not an oversight: the per-execution
 event journal, its replay window, its heartbeat and its polling fallback all existed to
-follow *one* execution that a client had to discover first. With results owned by
+follow _one_ execution that a client had to discover first. With results owned by
 instances, that stream would have to be one subscription per Run and would still not
 tell you why a node you never ran is stale. What replaced it is the room's three Run and
 instance frames plus re-reads of the Run and instance REST collections; instance state
@@ -404,14 +404,14 @@ empty for a Graph run directly; `map_index` is reserved for MAP items and stays 
 until that decision is taken. Over the wire the client keys its instance map with
 `instanceKeyText`, which joins `graph_id`, `call_path` joined by `/`, `node_id` and
 `map_index` (empty when `null`) with U+0000
-([`room/protocol.ts:798`](../../apps/web/src/features/workbench/room/protocol.ts)).
+([`collaboration/protocol.ts:798`](../../apps/web/src/features/workbench/collaboration/protocol.ts)).
 The composed text deliberately omits `project_id`, which every frame still carries: the
 map belongs to one room for one Project, so the Project is already implied.
 
 State is looked up **by instance and never by Run**. The canvas asks for the instance of
 the node it is drawing — `(project, open graph, [], node id, null)` — and paints what
 that instance's fingerprint holds
-([`Workbench.tsx:1425-1441`](../../apps/web/src/features/workbench/ui/Workbench.tsx)).
+([`Workbench.tsx:1425-1441`](../../apps/web/src/features/workbench/shell/Workbench.tsx)).
 A Run is a demand that has come and gone; several Runs may have touched one Graph, one
 Run may span several Graphs through call nodes, and two calls of the same Graph with the
 same inputs share one result. Reading state off a Run would resurrect the behaviour the
@@ -454,7 +454,7 @@ the `agent.event.appended` that carries it replaces the streamed text.
 **The order is the contract** ([`agents/publishing.py`](../../apps/api/src/grafy_api/agents/publishing.py)):
 `turn.started`, then the question's `event.appended`, then deltas, then the answer's
 `event.appended`, then any outcome event, then `turn.finished`. Telling a stored event
-*after* its flushed text is deliberate — a reader that saw the whole message and then a
+_after_ its flushed text is deliberate — a reader that saw the whole message and then a
 partial would put a fragment back over an answer it already had. A delta longer than
 `agent_delta_max_text_chars` is discarded rather than truncated: half a message spliced
 to the next is worse than none, and the whole message follows as a stored event anyway.
@@ -503,7 +503,7 @@ The authored document and the rendered scene have separate types. Model modules
 can still import shared canvas contracts and helpers, as described in
 [ADR 0001](../adr/0001-workbench-feature-architecture.md).
 
-- [`model/graph-document.ts`](../../apps/web/src/features/workbench/model/graph-document.ts)
+- [`authoring/graph-document.ts`](../../apps/web/src/features/workbench/authoring/graph-document.ts)
   owns the graph document as a value: pure application of commands
   (`applyGraphCommandNormalized`), the authored document a save serializes to, and the
   nodes an execution change invalidates. It imports no renderer type.
@@ -518,9 +518,9 @@ can still import shared canvas contracts and helpers, as described in
   surface: head, capability gates, participants, Runs with `runsRevision`, instances with
   `instancesRevision`), `graph-readiness.ts` (one trust policy for every consumer of the
   displayed document) and `project-room-url.ts`.
-- `ui/Workbench.tsx` composes; [`ui/useRunExecution.ts`](../../apps/web/src/features/workbench/ui/useRunExecution.ts)
+- `shell/Workbench.tsx` composes; [`execution/useRunExecution.ts`](../../apps/web/src/features/workbench/execution/useRunExecution.ts)
   is the Run surface (a room push is the event, a REST read is the answer, polling only
-  while there is no room); [`ui/useSavedGraphLifecycle.ts`](../../apps/web/src/features/workbench/ui/useSavedGraphLifecycle.ts)
+  while there is no room); [`collaboration/useSavedGraphLifecycle.ts`](../../apps/web/src/features/workbench/collaboration/useSavedGraphLifecycle.ts)
   creates a Project from a new draft and projects the active Graph from the live head.
 
 The draft at `/projects/new` supports manual Save and a one-second autosave after
@@ -534,22 +534,22 @@ the live head directly, even with an automatic checkpoint still pending.
 
 One rule holds these apart: a durable gesture may act only on a confirmed head. A session
 that is not `ready`, or has no confirmed head, is untrusted
-([`graph-readiness.ts:12`](../../apps/web/src/features/workbench/room/graph-readiness.ts)),
+([`graph-readiness.ts:12`](../../apps/web/src/features/workbench/collaboration/graph-readiness.ts)),
 and [`apps/web/src/architecture.test.ts`](../../apps/web/src/architecture.test.ts) fails
 the build on a module cycle or a feature reaching into a route module.
 
 ## State ownership
 
-| State | Owner | Durable | Shared |
-| --- | --- | --- | --- |
-| Project name; each Graph's name, nodes, positions, configuration, plugs, artifact-type bindings, edges, projections, conversions, collection modes, origins, layout; Artifact Viewer structure and annotations | Project head, via accepted batches | On acceptance | Yes |
-| Cursor, remote selection, editing activity, soft claim, drag preview | room session | No; expires | Yes, to room participants |
-| Active Runs, who started each | `RunService` rows; room frames announce | Run records are durable; in-flight scheduling is not | Yes |
-| Node instance state (fresh, queued, running, failed, stale) | derived from document + result store + in-flight set | Never stored | Yes |
-| Last result and last failure pointer per instance | result store plus the per-instance pointer | Yes (append-only, no GC yet) | Yes |
-| Viewport, zoom, local selection, open drawers, field drafts, outbox, private viewer interaction | browser | No | No |
-| Secret values | encrypted node-secret store | Yes | Never |
-| Secret configured/unconfigured metadata | node-secret module over protected HTTP | Yes | Refetched per Graph by authorized clients |
+| State                                                                                                                                                                                                          | Owner                                                | Durable                                              | Shared                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------- |
+| Project name; each Graph's name, nodes, positions, configuration, plugs, artifact-type bindings, edges, projections, conversions, collection modes, origins, layout; Artifact Viewer structure and annotations | Project head, via accepted batches                   | On acceptance                                        | Yes                                       |
+| Cursor, remote selection, editing activity, soft claim, drag preview                                                                                                                                           | room session                                         | No; expires                                          | Yes, to room participants                 |
+| Active Runs, who started each                                                                                                                                                                                  | `RunService` rows; room frames announce              | Run records are durable; in-flight scheduling is not | Yes                                       |
+| Node instance state (fresh, queued, running, failed, stale)                                                                                                                                                    | derived from document + result store + in-flight set | Never stored                                         | Yes                                       |
+| Last result and last failure pointer per instance                                                                                                                                                              | result store plus the per-instance pointer           | Yes (append-only, no GC yet)                         | Yes                                       |
+| Viewport, zoom, local selection, open drawers, field drafts, outbox, private viewer interaction                                                                                                                | browser                                              | No                                                   | No                                        |
+| Secret values                                                                                                                                                                                                  | encrypted node-secret store                          | Yes                                                  | Never                                     |
+| Secret configured/unconfigured metadata                                                                                                                                                                        | node-secret module over protected HTTP               | Yes                                                  | Refetched per Graph by authorized clients |
 
 Nothing Project-scoped is persisted in the browser today: the local keys that exist
 (`grafy-theme`, `grafy-side-panel-*`, the canvas grid setting) are device-wide
@@ -609,7 +609,7 @@ so nobody re-derives them:
    The client refreshes statuses when the accepted Graph changes a secret binding.
    Unrelated edits still move the same head sequence. If a write receives a 409,
    the client re-reads the listing and retries once using the sequence returned by
-   the server. [`useNodeSecrets.ts`](../../apps/web/src/features/workbench/ui/useNodeSecrets.ts)
+   the server. [`useNodeSecrets.ts`](../../apps/web/src/features/workbench/execution/useNodeSecrets.ts)
 
 ## Authorization and sensitive state
 
@@ -650,22 +650,22 @@ collaboration:
 
 ## Failure behavior
 
-| Failure | Required behavior |
-| --- | --- |
-| Socket interruption | Keep the confirmed head visible, mark the session `unsynchronized`, expire remote presence, drop the active-Run view, reconnect with a full snapshot, replay unacknowledged batches under their original ids. |
-| Reconnect attempts exhausted | Stop with `reconnect_exhausted`, reject queued batches, and offer an explicit retry rather than an infinite loop. |
-| Auth session expired | Stop commands and observation, re-authenticate, rejoin. Resolve pending ids only for the same actor; purge rather than replay after an actor change. |
-| Role or capabilities changed | Close with `4003`; rebuild from the newly authorized head without unsent optimistic commands; retain at most explicitly copyable draft text while view remains. |
-| View capability revoked | Close with `4004`; clear presence and all actor/workspace/Project-sensitive client state and navigate away. Do not leave the Project visible. |
-| Project deleted (locally or remotely) | Close with `4010`; the remote delete already committed and cannot wait for local confirmation. |
-| Batch acknowledgement lost | Resubmit the same command id; a committed batch returns its original receipt as `idempotent_replay` and moves nothing. |
-| Batch rejected | Restore confirmed server state, keep unrelated pending batches, show the operation and the index that failed. |
-| Head sequence gap | Pause sending, request a full head snapshot, resume once it lands. |
-| Presence update dropped | Nothing to do; a later update supersedes it. |
-| Slow collaborator | Drop presence at depth 48, close at depth 64 with `4009`, recover from a snapshot. |
-| Instance derivation fails for the document | Open the room with no instances and log it; the room is the way to fix the document. |
-| API restart | Heads, receipts and checkpoints survive. Unfinished Runs are marked `interrupted`, stored results stay fresh, so a rerun resumes from the fresh frontier. All presence disappears. |
-| Graph edited while a Run is active | No lock. Affected instances go stale; computations in flight still store under their original fingerprint. |
+| Failure                                    | Required behavior                                                                                                                                                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Socket interruption                        | Keep the confirmed head visible, mark the session `unsynchronized`, expire remote presence, drop the active-Run view, reconnect with a full snapshot, replay unacknowledged batches under their original ids. |
+| Reconnect attempts exhausted               | Stop with `reconnect_exhausted`, reject queued batches, and offer an explicit retry rather than an infinite loop.                                                                                             |
+| Auth session expired                       | Stop commands and observation, re-authenticate, rejoin. Resolve pending ids only for the same actor; purge rather than replay after an actor change.                                                          |
+| Role or capabilities changed               | Close with `4003`; rebuild from the newly authorized head without unsent optimistic commands; retain at most explicitly copyable draft text while view remains.                                               |
+| View capability revoked                    | Close with `4004`; clear presence and all actor/workspace/Project-sensitive client state and navigate away. Do not leave the Project visible.                                                                 |
+| Project deleted (locally or remotely)      | Close with `4010`; the remote delete already committed and cannot wait for local confirmation.                                                                                                                |
+| Batch acknowledgement lost                 | Resubmit the same command id; a committed batch returns its original receipt as `idempotent_replay` and moves nothing.                                                                                        |
+| Batch rejected                             | Restore confirmed server state, keep unrelated pending batches, show the operation and the index that failed.                                                                                                 |
+| Head sequence gap                          | Pause sending, request a full head snapshot, resume once it lands.                                                                                                                                            |
+| Presence update dropped                    | Nothing to do; a later update supersedes it.                                                                                                                                                                  |
+| Slow collaborator                          | Drop presence at depth 48, close at depth 64 with `4009`, recover from a snapshot.                                                                                                                            |
+| Instance derivation fails for the document | Open the room with no instances and log it; the room is the way to fix the document.                                                                                                                          |
+| API restart                                | Heads, receipts and checkpoints survive. Unfinished Runs are marked `interrupted`, stored results stay fresh, so a rerun resumes from the fresh frontier. All presence disappears.                            |
+| Graph edited while a Run is active         | No lock. Affected instances go stale; computations in flight still store under their original fingerprint.                                                                                                    |
 
 ## Operational hazards
 
@@ -709,8 +709,8 @@ keeps the route/execution/realtime seams honest):
 - [`tests/integration/node_secrets/test_node_secrets.py`](../../tests/integration/node_secrets/test_node_secrets.py)
   — a secret is addressed by Project and Graph, only writes are head-gated, and an
   unavailable operator leaves a secret dormant rather than dropping it.
-- [`room/graph-room-session.test.ts`](../../apps/web/src/features/workbench/room/graph-room-session.test.ts),
-  [`command-outbox.ts`](../../apps/web/src/features/workbench/room/command-outbox.ts)
+- [`collaboration/graph-room-session.test.ts`](../../apps/web/src/features/workbench/collaboration/graph-room-session.test.ts),
+  [`command-outbox.ts`](../../apps/web/src/features/workbench/collaboration/command-outbox.ts)
   tests — reconnect, replay, queue caps, head replacement.
 - [`tests/fixtures/project_room_ready.v1.json`](../../tests/fixtures/project_room_ready.v1.json)
   keeps the Python and TypeScript protocol shapes compatible.
@@ -722,12 +722,12 @@ recorded here rather than written down as intended behavior:
 
 1. **The client's `room.heartbeat` handling is unreachable.** `handleMessage` returns
    early for any frame whose `type` is `room.heartbeat` before parsing
-   ([`graph-room-session.ts:525-532`](../../apps/web/src/features/workbench/room/graph-room-session.ts)),
+   ([`graph-room-session.ts:525-532`](../../apps/web/src/features/workbench/collaboration/graph-room-session.ts)),
    so the handler that would update `authorizationVersion` and fire
    `onAuthorizationVersionChange`
-   ([`graph-room-session.ts:628-634`](../../apps/web/src/features/workbench/room/graph-room-session.ts))
+   ([`graph-room-session.ts:628-634`](../../apps/web/src/features/workbench/collaboration/graph-room-session.ts))
    never runs, and no consumer passes that listener anyway — the hook's options do not
-   offer it. The heartbeat's *server* half is load-bearing (it is what re-authorizes and
+   offer it. The heartbeat's _server_ half is load-bearing (it is what re-authorizes and
    closes), so the frame is not dead; the client half is. Authorization changes reach the
    client through the close it triggers, never through the frame. The dead branch, the
    listener and the `authorizationVersion` field it would be the only writer of after
@@ -740,6 +740,7 @@ recorded here rather than written down as intended behavior:
    that joined after can see the two in the opposite order. Nothing may depend on it: the
    activity bar filters by Graph and counts, and a Run is addressed by its id. A surface that
    ever wants "the newest Run" must sort on `created_at` rather than trust the list.
+
 ## Gone
 
 Removed from this document rather than kept beside the new text, because ADR 0020 removed

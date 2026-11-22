@@ -14,35 +14,35 @@ Execute every task whose class is `mechanical`. Leave every `needs-design` task 
 
 ## Task index
 
-| Id | Severity | Type | Class |
-| --- | --- | --- | --- |
-| HX-01 | high | copy-only | mechanical |
-| HX-02 | high | copy-only | mechanical |
-| HX-03 | high | copy-only | mechanical |
-| HX-04 | high | copy-only | mechanical |
-| HX-05 | medium | copy-only | mechanical |
-| HX-06 | high | hide-or-default | mechanical |
-| HX-07 | high | copy-only | mechanical |
-| HX-08 | high | copy-only | mechanical |
-| HX-09 | high | copy-only | mechanical |
-| HX-10 | high | copy-only | mechanical |
-| HX-11 | high | copy-only | mechanical |
-| HX-12 | high | copy-only | mechanical |
-| HX-13 | medium | copy-only | mechanical |
-| HX-14 | medium | copy-only | mechanical |
-| HX-15 | medium | copy-only | mechanical |
-| HX-16 | medium | copy-only | mechanical |
-| HX-17 | medium | copy-only | mechanical |
-| HX-18 | medium | copy-only | mechanical |
-| HX-19 | medium | copy-only | mechanical |
-| HX-20 | medium | visual | mechanical |
-| HX-21 | low | copy-only | mechanical |
-| HX-22 | medium | copy-only | mechanical |
-| HX-23 | medium | behavior | needs-design |
-| HX-24 | high | behavior | needs-design |
-| HX-25 | medium | behavior | needs-design |
-| HX-26 | medium | behavior | needs-design |
-| HX-27 | medium | behavior | needs-design |
+| Id    | Severity | Type            | Class        |
+| ----- | -------- | --------------- | ------------ |
+| HX-01 | high     | copy-only       | mechanical   |
+| HX-02 | high     | copy-only       | mechanical   |
+| HX-03 | high     | copy-only       | mechanical   |
+| HX-04 | high     | copy-only       | mechanical   |
+| HX-05 | medium   | copy-only       | mechanical   |
+| HX-06 | high     | hide-or-default | mechanical   |
+| HX-07 | high     | copy-only       | mechanical   |
+| HX-08 | high     | copy-only       | mechanical   |
+| HX-09 | high     | copy-only       | mechanical   |
+| HX-10 | high     | copy-only       | mechanical   |
+| HX-11 | high     | copy-only       | mechanical   |
+| HX-12 | high     | copy-only       | mechanical   |
+| HX-13 | medium   | copy-only       | mechanical   |
+| HX-14 | medium   | copy-only       | mechanical   |
+| HX-15 | medium   | copy-only       | mechanical   |
+| HX-16 | medium   | copy-only       | mechanical   |
+| HX-17 | medium   | copy-only       | mechanical   |
+| HX-18 | medium   | copy-only       | mechanical   |
+| HX-19 | medium   | copy-only       | mechanical   |
+| HX-20 | medium   | visual          | mechanical   |
+| HX-21 | low      | copy-only       | mechanical   |
+| HX-22 | medium   | copy-only       | mechanical   |
+| HX-23 | medium   | behavior        | needs-design |
+| HX-24 | high     | behavior        | needs-design |
+| HX-25 | medium   | behavior        | needs-design |
+| HX-26 | medium   | behavior        | needs-design |
+| HX-27 | medium   | behavior        | needs-design |
 
 Mechanical: 22. Needs design: 5.
 
@@ -52,7 +52,7 @@ Mechanical: 22. Needs design: 5.
 - Type: copy-only
 - Class: mechanical
 - Files:
-  - `formatArtifactTypeSequence` and `formatArtifactTypeSequenceTooltip` in `apps/web/src/features/workbench/canvas/artifact-type-label.ts`
+  - `formatArtifactTypeSequence` and `formatArtifactTypeSequenceTooltip` in `apps/web/src/features/workbench/artifacts/artifact-type-label.ts`
   - `PortTab` and `usePortBallTypeProps` in `apps/web/src/features/workbench/canvas/nodes/workflow/ports.tsx`
   - `PortTypePopover` in `apps/web/src/features/workbench/canvas/nodes/type-inspector.tsx`
   - The artifact-type label bullet in `apps/web/AGENTS.md`
@@ -61,9 +61,9 @@ Current:
 
 - `formatArtifactTypeSequence` returns `` `Sequence<${label}>` ``. With the catalog title this is `Sequence<Markdown>` and `Sequence<Text value>`.
 - `PortTab` shows `· many` when `shape === "many"`.
-- The same function builds the accessible name with `` shape === "many" ? `list[${artifactContract}]` : artifactContract ``.
-- `usePortBallTypeProps` builds the ball tip with `` shape === "many" ? `Sequence<${inner}>` : ... `` and uses the word `any` when the type is unset (`inner` is `"any"`).
-- `PortTypePopover` shows `` shape === "many" ? `list[${contract}]` : contract ``.
+- The same function builds the accessible name with ``shape === "many" ? `list[${artifactContract}]` : artifactContract``.
+- `usePortBallTypeProps` builds the ball tip with ``shape === "many" ? `Sequence<${inner}>` : ...`` and uses the word `any` when the type is unset (`inner` is `"any"`).
+- `PortTypePopover` shows ``shape === "many" ? `list[${contract}]` : contract``.
 
 New:
 
@@ -81,10 +81,10 @@ Acceptance:
 
 Tests:
 
-- Update `apps/web/src/features/workbench/canvas/artifact-type-label.test.ts` (`Sequence<Text value>` → `List of Text value`, and the `Table · v2` and `scalar.text@1` sequence cases).
-- Update `apps/web/src/features/workbench/canvas/artifact-card.test.ts` (`Sequence<file.jpg@1>`).
+- Update `apps/web/src/features/workbench/artifacts/artifact-type-label.test.ts` (`Sequence<Text value>` → `List of Text value`, and the `Table · v2` and `scalar.text@1` sequence cases).
+- Update `apps/web/src/features/workbench/artifacts/artifact-card.test.ts` (`Sequence<file.jpg@1>`).
 - Update `apps/web/src/features/workbench/canvas/nodes/ArtifactCardBody.test.tsx` (`Sequence<file.jpeg@1>`, `Sequence<file.csv@1>`).
-- Update `apps/web/src/features/workbench/ui/ArtifactFolderDropDialog.test.tsx` (`Place Sequence<file.csv@1>`).
+- Update `apps/web/src/features/workbench/artifacts/ArtifactFolderDropDialog.test.tsx` (`Place Sequence<file.csv@1>`).
 - Update `apps/web/src/features/workbench/agents/ToolEvents.test.tsx` (`Sequence<scalar.text@2>`).
 - Add an assertion in `apps/web/src/features/workbench/canvas/nodes/type-inspector.test.tsx` that a `many` port header renders `List of`, not `list[`.
 
@@ -95,23 +95,23 @@ Tests:
 - Class: mechanical
 - Files: the `title=` on each `ArtifactTypeSpec` below. Do not change `key` ids.
 
-| File | Current title | New title |
-| --- | --- | --- |
-| `libs/core/src/grafy_core/artifact_contracts.py` `MARKDOWN` | `Markdown` | `Transcribed text` |
-| same file, text value spec | `Text value` | `Text` |
-| same file, integer spec | `Integer value` | `Number` |
-| same file, `RASTER_IMAGE` | `Raster image` | `Image` |
-| same file, image regions spec | `Image regions` | `Boxes on the page` |
-| same file, HTML page spec | `HTML page` | `Web page` |
-| `libs/core/src/grafy_core/file_contracts.py` blob spec | `Binary blob` | `Unrecognized file` |
-| `libs/core/src/grafy_core/prompt_contracts.py` `PROMPT_MESSAGE` | `Prompt message` | `Instruction` |
-| `libs/core/src/grafy_core/schema_contracts.py` | `JSON Schema` | `Answer format` |
+| File                                                            | Current title    | New title           |
+| --------------------------------------------------------------- | ---------------- | ------------------- |
+| `libs/core/src/grafy_core/artifact_contracts.py` `MARKDOWN`     | `Markdown`       | `Transcribed text`  |
+| same file, text value spec                                      | `Text value`     | `Text`              |
+| same file, integer spec                                         | `Integer value`  | `Number`            |
+| same file, `RASTER_IMAGE`                                       | `Raster image`   | `Image`             |
+| same file, image regions spec                                   | `Image regions`  | `Boxes on the page` |
+| same file, HTML page spec                                       | `HTML page`      | `Web page`          |
+| `libs/core/src/grafy_core/file_contracts.py` blob spec          | `Binary blob`    | `Unrecognized file` |
+| `libs/core/src/grafy_core/prompt_contracts.py` `PROMPT_MESSAGE` | `Prompt message` | `Instruction`       |
+| `libs/core/src/grafy_core/schema_contracts.py`                  | `JSON Schema`    | `Answer format`     |
 
 Leave file titles that already name a format (`PNG image`, `CSV file`, `Excel workbook`, `Text file`, `JSON document`, `GeoJSON document`, `TIFF image`). Leave `Table`.
 
 Acceptance: the registry title for `text.markdown@1` is `Transcribed text`. The id stays `text.markdown`. Cards that already use `formatArtifactTypeLabel` pick the new title up with no extra mapping.
 
-Tests: grep the old titles. Update assertions that read these registry titles. Do not edit fixture catalogs inside web unit tests unless that fixture is asserting the registry title itself. `apps/web/src/features/workbench/canvas/artifact-type-label.test.ts` builds its own catalog and can keep `Text value` as fixture input.
+Tests: grep the old titles. Update assertions that read these registry titles. Do not edit fixture catalogs inside web unit tests unless that fixture is asserting the registry title itself. `apps/web/src/features/workbench/artifacts/artifact-type-label.test.ts` builds its own catalog and can keep `Text value` as fixture input.
 
 ## HX-03 — Name ports in plain language
 
@@ -124,33 +124,32 @@ Set `title` and replace `description` on these fields. Do not rename the Python 
 
 `plugins/reducto/src/grafy_plugin_reducto/ocr.py` and the matching fields in `plugins/mistral/src/grafy_plugin_mistral/ocr.py`:
 
-| Field | New title | New description |
-| --- | --- | --- |
-| `document_url` | Document link | Web address of the PDF or scan. Leave empty when a page image is connected. |
-| `image` | Page image | One scanned page. Leave empty when a document link is connected. |
-| `markdown` | Transcription | The reading, with pages kept in order. |
-| `blocks` | Text blocks | One row per piece the reader found: page, kind of region, text, and box. |
-| `regions` (Mistral only) | Boxes on the page | Where each region sits on the page, in pixels. |
+| Field                    | New title         | New description                                                             |
+| ------------------------ | ----------------- | --------------------------------------------------------------------------- |
+| `document_url`           | Document link     | Web address of the PDF or scan. Leave empty when a page image is connected. |
+| `image`                  | Page image        | One scanned page. Leave empty when a document link is connected.            |
+| `markdown`               | Transcription     | The reading, with pages kept in order.                                      |
+| `blocks`                 | Text blocks       | One row per piece the reader found: page, kind of region, text, and box.    |
+| `regions` (Mistral only) | Boxes on the page | Where each region sits on the page, in pixels.                              |
 
 `libs/workbench/src/grafy_workbench/sequence/nodes.py`:
 
-| Field | New title | New description |
-| --- | --- | --- |
-| `CollectInput.items` | Documents | Pages or files, in the order you add them. |
-| `CollectOutput.items` | List | Everything above, as one list. |
-| `CountInput.items` | List | The list to count. |
-| `CountOutput.count` | How many | How many items are in the list. |
-| `SliceInput.items` / `SliceOutput.items` | List | The list to take a range from. / The items you kept. |
-| `ItemAtInput.items` | List | The list to pick from. |
-| `ItemAtOutput.item` | Item | The one item at that position. |
+| Field                                    | New title | New description                                      |
+| ---------------------------------------- | --------- | ---------------------------------------------------- |
+| `CollectInput.items`                     | Documents | Pages or files, in the order you add them.           |
+| `CollectOutput.items`                    | List      | Everything above, as one list.                       |
+| `CountInput.items`                       | List      | The list to count.                                   |
+| `CountOutput.count`                      | How many  | How many items are in the list.                      |
+| `SliceInput.items` / `SliceOutput.items` | List      | The list to take a range from. / The items you kept. |
+| `ItemAtInput.items`                      | List      | The list to pick from.                               |
+| `ItemAtOutput.item`                      | Item      | The one item at that position.                       |
 
 `libs/workbench/src/grafy_workbench/file/nodes.py`:
 
 | Field | New title | New description |
-| --- | --- | --- |
+| ----- | --------- | --------------- |
 
 `plugins/table/src/grafy_plugin_table/nodes.py`: input title `Spreadsheet`, description `A CSV or Excel file.`; output title `Table`, description `The rows and columns from that file.`
-
 
 `plugins/llm/src/grafy_plugin_llm/prompt.py`: text input title `Words`, image input title `Pictures`, output title `Instruction`.
 
@@ -169,19 +168,19 @@ Tests: extend `apps/web/src/features/workbench/canvas/nodes/WorkflowNode.test.ts
 
 Change `title=` and the docstring only. Leave `operator_id` and `version` as they are.
 
-| File | Current title | Current docstring (first line) | New title | New docstring |
-| --- | --- | --- | --- | --- |
-| `plugins/reducto/src/grafy_plugin_reducto/ocr.py` `ReductoOcrNode` | `Reducto OCR` | `Parses a document URL or raster image with the Reducto Parse API.` | `Read with Reducto` | `Reads a PDF or a scanned page into text. You need a Reducto key.` |
-| `plugins/mistral/src/grafy_plugin_mistral/ocr.py` `MistralOcrNode` | `Mistral OCR` | `Recognizes a document URL or raster image with Mistral OCR.` | `Read with Mistral` | `Reads a PDF or a scanned page into text. You need a Mistral key.` |
-| `libs/workbench/src/grafy_workbench/sequence/nodes.py` `collect` | `Collect` | `Collects homogeneous artifact refs without rewriting their payloads.` | `Group into a list` | `Keeps pages or files together, in the order you add them. Every item has to be the same kind of thing.` |
-| same file `count` | `Count` | `Counts the refs in an artifact sequence.` | `Count items` | `Counts how many items are in a list.` |
-| same file `slice_sequence` | `Slice` | `Selects a contiguous range from an ordered artifact sequence.` | `Take a range` | `Keeps a stretch of items from a list. The first item is number 0.` |
-| same file `item_at` | `Pick item` | `Picks one artifact ref from an ordered artifact sequence.` | `Pick one` | `Picks one item from a list. The first item is number 0.` |
-| `plugins/llm/src/grafy_plugin_llm/openai_compatible.py` | `OpenAI-compatible Chat Completion` | `Calls a saved graph's OpenAI-compatible Chat Completions endpoint.` | `Ask a model` | `Sends the instructions to a chat model and keeps the answer.` |
-| `plugins/llm/src/grafy_plugin_llm/prompt.py` | `Create prompt message` | (use the current docstring’s first line if you need to find it) | `Write an instruction` | `The words, and any pictures, you want the model to read.` |
-| same file | `Draw regions` | | `Draw boxes` | `Draws the boxes from a reading onto the page.` |
-| same file | `Crop regions` | | `Crop boxes` | `Cuts out each box as its own picture.` |
-| `plugins/table/src/grafy_plugin_table/nodes.py` | `Import table` | `Import one persisted CSV or XLSX file artifact as a table.` | `Read a spreadsheet` | `Reads a CSV or Excel file into a table.` |
+| File                                                               | Current title                       | Current docstring (first line)                                         | New title              | New docstring                                                                                            |
+| ------------------------------------------------------------------ | ----------------------------------- | ---------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| `plugins/reducto/src/grafy_plugin_reducto/ocr.py` `ReductoOcrNode` | `Reducto OCR`                       | `Parses a document URL or raster image with the Reducto Parse API.`    | `Read with Reducto`    | `Reads a PDF or a scanned page into text. You need a Reducto key.`                                       |
+| `plugins/mistral/src/grafy_plugin_mistral/ocr.py` `MistralOcrNode` | `Mistral OCR`                       | `Recognizes a document URL or raster image with Mistral OCR.`          | `Read with Mistral`    | `Reads a PDF or a scanned page into text. You need a Mistral key.`                                       |
+| `libs/workbench/src/grafy_workbench/sequence/nodes.py` `collect`   | `Collect`                           | `Collects homogeneous artifact refs without rewriting their payloads.` | `Group into a list`    | `Keeps pages or files together, in the order you add them. Every item has to be the same kind of thing.` |
+| same file `count`                                                  | `Count`                             | `Counts the refs in an artifact sequence.`                             | `Count items`          | `Counts how many items are in a list.`                                                                   |
+| same file `slice_sequence`                                         | `Slice`                             | `Selects a contiguous range from an ordered artifact sequence.`        | `Take a range`         | `Keeps a stretch of items from a list. The first item is number 0.`                                      |
+| same file `item_at`                                                | `Pick item`                         | `Picks one artifact ref from an ordered artifact sequence.`            | `Pick one`             | `Picks one item from a list. The first item is number 0.`                                                |
+| `plugins/llm/src/grafy_plugin_llm/openai_compatible.py`            | `OpenAI-compatible Chat Completion` | `Calls a saved graph's OpenAI-compatible Chat Completions endpoint.`   | `Ask a model`          | `Sends the instructions to a chat model and keeps the answer.`                                           |
+| `plugins/llm/src/grafy_plugin_llm/prompt.py`                       | `Create prompt message`             | (use the current docstring’s first line if you need to find it)        | `Write an instruction` | `The words, and any pictures, you want the model to read.`                                               |
+| same file                                                          | `Draw regions`                      |                                                                        | `Draw boxes`           | `Draws the boxes from a reading onto the page.`                                                          |
+| same file                                                          | `Crop regions`                      |                                                                        | `Crop boxes`           | `Cuts out each box as its own picture.`                                                                  |
+| `plugins/table/src/grafy_plugin_table/nodes.py`                    | `Import table`                      | `Import one persisted CSV or XLSX file artifact as a table.`           | `Read a spreadsheet`   | `Reads a CSV or Excel file into a table.`                                                                |
 
 Acceptance: Add node and the card menu show the new title and the new sentence. They do not show `blob`, `artifact ref`, `raster`, or `operator`.
 
@@ -194,15 +193,15 @@ Tests: any catalog test that asserts these titles. Search `Reducto OCR`, `OpenAI
 - Class: mechanical
 - Files: `title=` on the plugin object.
 
-| File | Current | New |
-| --- | --- | --- |
-| `plugins/llm/src/grafy_plugin_llm/declaration.py` | `LLM` | `Language model` |
-| `plugins/gis/src/grafy_plugin_gis/declaration.py` | `GIS` | `Maps` |
-| `libs/workbench/src/grafy_workbench/sequence/declaration.py` | `Sequence` | `Lists` |
+| File                                                         | Current    | New              |
+| ------------------------------------------------------------ | ---------- | ---------------- |
+| `plugins/llm/src/grafy_plugin_llm/declaration.py`            | `LLM`      | `Language model` |
+| `plugins/gis/src/grafy_plugin_gis/declaration.py`            | `GIS`      | `Maps`           |
+| `libs/workbench/src/grafy_workbench/sequence/declaration.py` | `Sequence` | `Lists`          |
 
 Leave `Reducto`, `Mistral`, `Image`, `Table`, `Text`, `File`, `Schema`, `Value`. Those are either product names or already plain.
 
-`buildSourceFilters` in `apps/web/src/features/workbench/model/node-catalog.ts` shows `plugin.title` in the canvas menu (`CanvasContextMenu` submenu labels). No web change if the plugin title changes.
+`buildSourceFilters` in `apps/web/src/features/workbench/authoring/node-catalog.ts` shows `plugin.title` in the canvas menu (`CanvasContextMenu` submenu labels). No web change if the plugin title changes.
 
 Tests: update a test that asserts the plugin title `LLM`, `GIS`, or `Sequence` as a menu label.
 
@@ -212,10 +211,10 @@ Tests: update a test that asserts the plugin title `LLM`, `GIS`, or `Sequence` a
 - Type: hide-or-default
 - Class: mechanical
 - Files:
-  - `apps/web/src/features/workbench/canvas/config-schema.ts` (`SchemaField`, `schemaFields`)
+  - `apps/web/src/features/workbench/config-ui/config-schema.ts` (`SchemaField`, `schemaFields`)
   - `apps/web/src/features/workbench/canvas/nodes/workflow/config-fields.tsx` (`ConfigField`)
   - `apps/web/src/features/workbench/canvas/nodes/workflow/generic-body.tsx` (`GenericBody`)
-  - `apps/web/src/features/workbench/ui/CatalogNodePreview.tsx`
+  - `apps/web/src/features/workbench/config-ui/CatalogNodePreview.tsx`
   - The node config classes named below
 
 Do not change defaults. `tests/unit/plugins/test_reducto_ocr.py` asserts `(config.model, config.table_format, config.timeout_s) == ("r-1", "md", 300)`. That assertion stays.
@@ -233,24 +232,24 @@ Python: add `title`, `description`, and `json_schema_extra` on the existing fiel
 
 `ReductoOcrConfig` in `plugins/reducto/src/grafy_plugin_reducto/ocr.py`. All four fields are advanced.
 
-| Field | Title | Description | Extra |
-| --- | --- | --- | --- |
-| `model` | Reading model | Standard reads most documents. Faster does not read spreadsheets. | `{"x-grafy-ui": "advanced", "x-grafy-enum-labels": {"r-1": "Standard", "r-1-mini": "Faster (not for spreadsheets)"}}` |
-| `page_start` | First page | Leave empty to start at the first page. Page 1 is the first page. | `{"x-grafy-ui": "advanced"}` |
-| `page_end` | Last page | Leave empty to read through the last page. | `{"x-grafy-ui": "advanced"}` |
-| `table_format` | Tables | Use HTML when a table has merged cells. | `{"x-grafy-ui": "advanced", "x-grafy-enum-labels": {"md": "Markdown", "html": "HTML"}}` |
-| `timeout_s` | Time limit (seconds) | How long to wait for the reader. The default is 300. | `{"x-grafy-ui": "advanced"}` |
+| Field          | Title                | Description                                                       | Extra                                                                                                                 |
+| -------------- | -------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `model`        | Reading model        | Standard reads most documents. Faster does not read spreadsheets. | `{"x-grafy-ui": "advanced", "x-grafy-enum-labels": {"r-1": "Standard", "r-1-mini": "Faster (not for spreadsheets)"}}` |
+| `page_start`   | First page           | Leave empty to start at the first page. Page 1 is the first page. | `{"x-grafy-ui": "advanced"}`                                                                                          |
+| `page_end`     | Last page            | Leave empty to read through the last page.                        | `{"x-grafy-ui": "advanced"}`                                                                                          |
+| `table_format` | Tables               | Use HTML when a table has merged cells.                           | `{"x-grafy-ui": "advanced", "x-grafy-enum-labels": {"md": "Markdown", "html": "HTML"}}`                               |
+| `timeout_s`    | Time limit (seconds) | How long to wait for the reader. The default is 300.              | `{"x-grafy-ui": "advanced"}`                                                                                          |
 
 `MistralOcrConfig` in `plugins/mistral/src/grafy_plugin_mistral/ocr.py`. All of these are advanced.
 
-| Field | Title | Enum labels |
-| --- | --- | --- |
-| `table_format` | Tables | `markdown` → `Markdown`, `html` → `HTML` |
-| `extract_header` | Pull headers out of the text | |
-| `extract_footer` | Pull footers out of the text | |
-| `confidence_scores_granularity` | Confidence | `page` → `One score per page`, `block` → `One score per region` |
-| `timeout_ms` | Time limit (milliseconds) | |
-| `max_retries` | Extra attempts | |
+| Field                           | Title                        | Enum labels                                                     |
+| ------------------------------- | ---------------------------- | --------------------------------------------------------------- |
+| `table_format`                  | Tables                       | `markdown` → `Markdown`, `html` → `HTML`                        |
+| `extract_header`                | Pull headers out of the text |                                                                 |
+| `extract_footer`                | Pull footers out of the text |                                                                 |
+| `confidence_scores_granularity` | Confidence                   | `page` → `One score per page`, `block` → `One score per region` |
+| `timeout_ms`                    | Time limit (milliseconds)    |                                                                 |
+| `max_retries`                   | Extra attempts               |                                                                 |
 
 Descriptions: replace the current ones with one short sentence that matches the title. Do not mention `provider`, `SDK`, or `HTTP status`.
 
@@ -280,7 +279,7 @@ Acceptance:
 
 Tests:
 
-- Add a case in `apps/web/src/features/workbench/canvas/config-schema.test.ts` that a property with `x-grafy-ui: "advanced"` and `x-grafy-enum-labels` becomes `advanced: true` and the label map.
+- Add a case in `apps/web/src/features/workbench/config-ui/config-schema.test.ts` that a property with `x-grafy-ui: "advanced"` and `x-grafy-enum-labels` becomes `advanced: true` and the label map.
 - Add a render assertion in `apps/web/src/features/workbench/canvas/nodes/WorkflowNode.test.tsx` that a config schema marked advanced is inside a closed `details` whose summary is `Advanced`, and that the option label is the mapped word while the value attribute is the stored token.
 - Do not change `tests/unit/plugins/test_reducto_ocr.py` default tuple.
 
@@ -315,15 +314,15 @@ New:
 
 Secret descriptions:
 
-| Current | New |
-| --- | --- |
-| `Write-only bearer credential for the Reducto platform API.` | `The key from your Reducto account.` |
-| `Write-only bearer credential for the configured API origin.` | `The key from your Mistral account.` |
-| `Write-only bearer credential for the configured API base URL.` | `The key for this service address.` |
+| Current                                                         | New                                  |
+| --------------------------------------------------------------- | ------------------------------------ |
+| `Write-only bearer credential for the Reducto platform API.`    | `The key from your Reducto account.` |
+| `Write-only bearer credential for the configured API origin.`   | `The key from your Mistral account.` |
+| `Write-only bearer credential for the configured API base URL.` | `The key for this service address.`  |
 
 Acceptance: the Reducto card does not contain the word `secret` or `bearer`.
 
-Tests: `apps/web/src/features/workbench/ui/useNodeSecrets.test.ts` if it asserts those sentences. Otherwise add one assertion on `SecretInputField` in `WorkflowNode.test.tsx` for the unconfigured placeholder `Paste key`.
+Tests: `apps/web/src/features/workbench/execution/useNodeSecrets.test.ts` if it asserts those sentences. Otherwise add one assertion on `SecretInputField` in `WorkflowNode.test.tsx` for the unconfigured placeholder `Paste key`.
 
 ## HX-08 — Multi-input rows
 
@@ -334,16 +333,16 @@ Tests: `apps/web/src/features/workbench/ui/useNodeSecrets.test.ts` if it asserts
 
 Current:
 
-- Header rule `` `${acceptedShapeLabel} · plug order` ``. `acceptedShapeLabel` is `sequence` or `single`, joined by ` or `.
+- Header rule `` `${acceptedShapeLabel} · plug order` ``. `acceptedShapeLabel` is `sequence` or `single`, joined by `or`.
 - Row meta joins `sequence` or `single`, `` `feed ${binding.conversionLabel}` ``, and `binding.contributionLabel`. Empty rows say `` `Accepts ${acceptedShapeLabel}` ``.
 - Button text `Add input`.
 - Accessible names already say `input`.
 
 New:
 
-- Map `many` → `a list` and `one` → `one item` before joining with ` or `.
+- Map `many` → `a list` and `one` → `one item` before joining with `or`.
 - Header rule: `In this order`. Drop `plug`.
-- Row meta: drop the word `feed`. Show `a list` or `one item`, then the conversion label only when it exists, then the contribution label. Join with ` · `. Empty row: `Nothing connected yet`.
+- Row meta: drop the word `feed`. Show `a list` or `one item`, then the conversion label only when it exists, then the contribution label. Join with `·`. Empty row: `Nothing connected yet`.
 - Button: `Add another`.
 - Accessible names stay specific (`Documents input 1`). Do not put the word `plug` in a string a person can read, including `title` and `aria-label`.
 
@@ -378,13 +377,13 @@ New header: keep the dot or spinner, and add a visible word next to it: `Waiting
 
 New appendix copy:
 
-| State | Label | Explanation |
-| --- | --- | --- |
-| fresh | Up to date | This is the result for the documents and settings connected now. |
-| stale | Out of date | Something changed after this result. Run it again. |
-| queued | Waiting | It will start when the current run reaches it. |
-| running | Working | This step is running. |
-| failed | Failed | The last run stopped. The message below says why. |
+| State   | Label       | Explanation                                                      |
+| ------- | ----------- | ---------------------------------------------------------------- |
+| fresh   | Up to date  | This is the result for the documents and settings connected now. |
+| stale   | Out of date | Something changed after this result. Run it again.               |
+| queued  | Waiting     | It will start when the current run reaches it.                   |
+| running | Working     | This step is running.                                            |
+| failed  | Failed      | The last run stopped. The message below says why.                |
 
 - Footprint: `Up to date · 3 results` (use `result` / `results`, not `artifact`).
 - `Not run yet.`
@@ -400,8 +399,8 @@ Tests: `apps/web/src/features/workbench/canvas/nodes/NodeExecutionAppendix.test.
 - Severity: high
 - Type: copy-only
 - Class: mechanical
-- File: `executionValidationIssue` and the missing-input message in `apps/web/src/features/workbench/model/execution-plan.ts`
-- Also `runRejectionMessage` in `apps/web/src/features/workbench/ui/useRunExecution.ts`
+- File: `executionValidationIssue` and the missing-input message in `apps/web/src/features/workbench/execution/execution-plan.ts`
+- Also `runRejectionMessage` in `apps/web/src/features/workbench/execution/useRunExecution.ts`
 
 Current:
 
@@ -427,7 +426,7 @@ New:
 
 Acceptance: the blocked-run sentence does not contain a UUID or `nodeTitle.portName`.
 
-Tests: `apps/web/src/features/workbench/model/execution-plan.test.ts` and `apps/web/src/features/workbench/ui/useRunExecution.test.ts`.
+Tests: `apps/web/src/features/workbench/execution/execution-plan.test.ts` and `apps/web/src/features/workbench/execution/useRunExecution.test.ts`.
 
 ## HX-11 — Failure sentences from the readers
 
@@ -436,16 +435,16 @@ Tests: `apps/web/src/features/workbench/model/execution-plan.test.ts` and `apps/
 - Class: mechanical
 - The card prints `execution.error` and `run.error` unchanged (`NodeExecutionAppendix`, `CollectionCard`). Change the sentence at the source.
 
-| File | Current | New |
-| --- | --- | --- |
-| `plugins/reducto/src/grafy_plugin_reducto/ocr.py` | `Reducto OCR requires exactly one of a document URL or a raster image on node {id!r}` | `Connect either a document link or a page image, not both, and not neither.` |
-| same | `document_url must use HTTPS` | `The document link has to start with https://.` |
-| `plugins/mistral/src/grafy_plugin_mistral/ocr.py` and `ocr_sdk.py` | `Mistral OCR requires exactly one of a document URL or a raster image` | `Connect either a document link or a page image, not both, and not neither.` |
-| `libs/workbench/src/grafy_workbench/sequence/nodes.py` `collect` | `Collect inputs must share one artifact type; expected {id}@{version}, got {id}@{version} at input {index}` | `Every item in the group has to be the same kind. Item {index + 1} does not match the first item.` Do not print type ids. |
-| same, slice | `Cannot slice unordered sequence {sequence_id}` | `This list has no order, so a range cannot be taken from it.` |
-| same, pick | `Cannot pick an item from unordered sequence {sequence_id}` | `This list has no order, so one item cannot be picked by position.` |
-| same, pick | `Cannot pick index {index} from sequence {sequence_id} with length {length}` | `There is no item at position {index}. This list has {length} items, and 0 is the first.` |
-| `plugins/reducto/.../ocr.py` `validate_page_range` | `page_end must not precede page_start` | `The last page cannot come before the first page.` |
+| File                                                               | Current                                                                                                     | New                                                                                                                       |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `plugins/reducto/src/grafy_plugin_reducto/ocr.py`                  | `Reducto OCR requires exactly one of a document URL or a raster image on node {id!r}`                       | `Connect either a document link or a page image, not both, and not neither.`                                              |
+| same                                                               | `document_url must use HTTPS`                                                                               | `The document link has to start with https://.`                                                                           |
+| `plugins/mistral/src/grafy_plugin_mistral/ocr.py` and `ocr_sdk.py` | `Mistral OCR requires exactly one of a document URL or a raster image`                                      | `Connect either a document link or a page image, not both, and not neither.`                                              |
+| `libs/workbench/src/grafy_workbench/sequence/nodes.py` `collect`   | `Collect inputs must share one artifact type; expected {id}@{version}, got {id}@{version} at input {index}` | `Every item in the group has to be the same kind. Item {index + 1} does not match the first item.` Do not print type ids. |
+| same, slice                                                        | `Cannot slice unordered sequence {sequence_id}`                                                             | `This list has no order, so a range cannot be taken from it.`                                                             |
+| same, pick                                                         | `Cannot pick an item from unordered sequence {sequence_id}`                                                 | `This list has no order, so one item cannot be picked by position.`                                                       |
+| same, pick                                                         | `Cannot pick index {index} from sequence {sequence_id} with length {length}`                                | `There is no item at position {index}. This list has {length} items, and 0 is the first.`                                 |
+| `plugins/reducto/.../ocr.py` `validate_page_range`                 | `page_end must not precede page_start`                                                                      | `The last page cannot come before the first page.`                                                                        |
 
 Do not change `tests/integration/uploads/test_uploads.py`. That test asserts an API error code `file_format_mismatch` on upload, which is a different path.
 
@@ -469,18 +468,18 @@ Also the messages in that function that include `input plug`, `instance plugs`, 
 
 New sentences, still raised as `NodeComputationError`, with no node id and no plug id:
 
-| Situation | New message |
-| --- | --- |
-| Duplicate plug id | `This step has two slots with the same identity. Remove the extra slot and add it again.` |
-| Plug references an unknown port | `A slot on this step points at an input that no longer exists. Remove the step and add it again.` |
-| Port does not accept plugs | `This input cannot take more than one connection.` |
-| Required plug port has no plugs | `Add at least one slot on “{port.title or port name}”.` |
-| Item declares a plug on a port that does not accept them | `That connection was aimed at a slot this input does not have.` |
-| Map mode on a plug input | `This input takes slots one by one. It cannot take a mapped list.` |
-| Missing plug target | `This connection is not aimed at a slot.` |
-| Unknown plug | `This connection points at a slot that was removed.` |
-| Plug belongs to another port | `This connection is aimed at a slot on a different input.` |
-| Plug does not have exactly one connection | `Each slot needs exactly one connection. An empty extra slot, or two connections into one slot, blocks the run.` |
+| Situation                                                | New message                                                                                                      |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Duplicate plug id                                        | `This step has two slots with the same identity. Remove the extra slot and add it again.`                        |
+| Plug references an unknown port                          | `A slot on this step points at an input that no longer exists. Remove the step and add it again.`                |
+| Port does not accept plugs                               | `This input cannot take more than one connection.`                                                               |
+| Required plug port has no plugs                          | `Add at least one slot on “{port.title or port name}”.`                                                          |
+| Item declares a plug on a port that does not accept them | `That connection was aimed at a slot this input does not have.`                                                  |
+| Map mode on a plug input                                 | `This input takes slots one by one. It cannot take a mapped list.`                                               |
+| Missing plug target                                      | `This connection is not aimed at a slot.`                                                                        |
+| Unknown plug                                             | `This connection points at a slot that was removed.`                                                             |
+| Plug belongs to another port                             | `This connection is aimed at a slot on a different input.`                                                       |
+| Plug does not have exactly one connection                | `Each slot needs exactly one connection. An empty extra slot, or two connections into one slot, blocks the run.` |
 
 Use the port title when `InputPortSpec.title` is set, otherwise the port name with underscores turned into spaces. Never interpolate `graph_node.id` or `plug.id`.
 
@@ -493,7 +492,7 @@ Tests: search `requires exactly one incoming`. No test asserts that sentence tod
 - Severity: medium
 - Type: copy-only
 - Class: mechanical
-- File: `apps/web/src/features/workbench/canvas/saved-graph.ts`, every `SavedGraphHydrationError` message, plus the in-card issue `` `Saved connection ${savedEdge.id} references removed input ${savedEdge.to_port}.` ``
+- File: `apps/web/src/features/workbench/authoring/saved-graph.ts`, every `SavedGraphHydrationError` message, plus the in-card issue `` `Saved connection ${savedEdge.id} references removed input ${savedEdge.to_port}.` ``
 
 Current messages include `node ${savedNode.id}`, `input plug ${plug.id}`, `edge ${savedEdge.id}`, `collection mode`, `artifact type variable`, and `operator_id`.
 
@@ -514,7 +513,7 @@ Do not include ids. Keep the throw. Change only the string.
 
 The in-card issue becomes `A saved connection points at an input this step no longer has.`
 
-Tests: `apps/web/src/features/workbench/canvas/saved-graph.test.ts`. Update assertions that match the old sentences. Add one assertion that a duplicate plug throws a message containing `same identity` and not the plug id, if that case is not already covered.
+Tests: `apps/web/src/features/workbench/authoring/saved-graph.test.ts`. Update assertions that match the old sentences. Add one assertion that a duplicate plug throws a message containing `same identity` and not the plug id, if that case is not already covered.
 
 ## HX-14 — Reader cards and lists of files
 
@@ -523,7 +522,7 @@ Tests: `apps/web/src/features/workbench/canvas/saved-graph.test.ts`. Update asse
 - Class: mechanical
 - Files:
   - `apps/web/src/features/workbench/canvas/nodes/ArtifactCardBody.tsx`
-  - `CELL_VIEW_LABEL` in `apps/web/src/features/workbench/canvas/nodes/artifact-renderers/table/cell-views.ts`
+  - `CELL_VIEW_LABEL` in `apps/web/src/features/workbench/artifacts/artifact-renderers/table/cell-views.ts`
 
 Current:
 
@@ -545,7 +544,7 @@ New:
 
 Acceptance: a markdown card’s switch says `Formatted text`. A sequence of files is not titled `File sequence`.
 
-Tests: `ArtifactCardBody.test.tsx` and `apps/web/src/features/workbench/canvas/nodes/artifact-renderers.test.tsx` if they assert `Markdown` or `File sequence`.
+Tests: `ArtifactCardBody.test.tsx` and `apps/web/src/features/workbench/artifacts/artifact-renderers.test.tsx` if they assert `Markdown` or `File sequence`.
 
 ## HX-15 — Collections and a dropped folder
 
@@ -554,8 +553,8 @@ Tests: `ArtifactCardBody.test.tsx` and `apps/web/src/features/workbench/canvas/n
 - Class: mechanical
 - Files:
   - `apps/web/src/features/workbench/canvas/nodes/CollectionCard.tsx`
-  - `apps/web/src/features/workbench/ui/ArtifactFolderDropDialog.tsx`
-  - Collect strings in `apps/web/src/features/workbench/ui/Workbench.tsx` (`Put this artifact in a sequence`, `ordered sequence`, `Collect ${n} selected artifacts into an ordered sequence`)
+  - `apps/web/src/features/workbench/artifacts/ArtifactFolderDropDialog.tsx`
+  - Collect strings in `apps/web/src/features/workbench/shell/Workbench.tsx` (`Put this artifact in a sequence`, `ordered sequence`, `Collect ${n} selected artifacts into an ordered sequence`)
 
 Current collection card:
 
@@ -598,7 +597,7 @@ Selection toolbar and context menu, same Workbench strings:
 
 Acceptance: the empty collection does not say `Wire` or `artifact`.
 
-Tests: `apps/web/src/features/workbench/ui/ArtifactFolderDropDialog.test.tsx`, collection card tests if they assert the empty string. Search `Wire outputs`.
+Tests: `apps/web/src/features/workbench/artifacts/ArtifactFolderDropDialog.test.tsx`, collection card tests if they assert the empty string. Search `Wire outputs`.
 
 ## HX-16 — Add node
 
@@ -606,9 +605,9 @@ Tests: `apps/web/src/features/workbench/ui/ArtifactFolderDropDialog.test.tsx`, c
 - Type: copy-only
 - Class: mechanical
 - Files:
-  - `buildCatalogFilters` in `apps/web/src/features/workbench/model/node-catalog.ts`
-  - `NodeInspector` and `PortChips` in `apps/web/src/features/workbench/ui/node-selector/NodeInspector.tsx`
-  - Empty copy in `apps/web/src/features/workbench/ui/NodeSelector.tsx`
+  - `buildCatalogFilters` in `apps/web/src/features/workbench/authoring/node-catalog.ts`
+  - `NodeInspector` and `PortChips` in `apps/web/src/features/workbench/config-ui/node-selector/NodeInspector.tsx`
+  - Empty copy in `apps/web/src/features/workbench/config-ui/NodeSelector.tsx`
   - `ContextualNodeDiscovery.tsx` strings `No description is available.`, `Choose which output feeds this input`, `Choose how this output arrives`
 
 Current filters: `All nodes`, `Single value`, `Sequence`, `Any artifact`.
@@ -629,14 +628,14 @@ New:
 
 Acceptance: the filter row does not say `Sequence` or `artifact`.
 
-Tests: `apps/web/src/features/workbench/ui/NodeSelector.test.tsx`.
+Tests: `apps/web/src/features/workbench/config-ui/NodeSelector.test.tsx`.
 
 ## HX-17 — Canvas dock and the selection toolbar
 
 - Severity: medium
 - Type: copy-only
 - Class: mechanical
-- File: `apps/web/src/features/workbench/ui/Workbench.tsx`
+- File: `apps/web/src/features/workbench/shell/Workbench.tsx`
 
 Current:
 
@@ -667,7 +666,7 @@ Tests: search `Canvas lab` and `With dependencies` in `apps/web/src/features/wor
 - Type: copy-only
 - Class: mechanical
 - Files:
-  - `apps/web/src/features/workbench/ui/GraphRoomRecoveryNotice.tsx`
+  - `apps/web/src/features/workbench/collaboration/GraphRoomRecoveryNotice.tsx`
   - `GenericArtifactTypeState` in `apps/web/src/features/workbench/canvas/nodes/workflow/generic-body.tsx`
 
 Current recovery:
@@ -698,7 +697,7 @@ New: label `Kind of file` (when there is one variable) or `Kind ${variable}` (wh
 
 Acceptance: the recovery banner does not say `protocol` or `graph operations`. The type row does not say `Bind` or `artifact type`.
 
-Tests: `apps/web/src/features/workbench/ui/GraphRoomRecoveryNotice.test.tsx`.
+Tests: `apps/web/src/features/workbench/collaboration/GraphRoomRecoveryNotice.test.tsx`.
 
 ## HX-19 — A step the server no longer knows
 
@@ -794,7 +793,7 @@ Tests: add a case in `WorkflowNode.test.tsx` if an optional port is already rend
 - Class: needs-design
 - Do not implement in the mechanical pass.
 
-Desired behavior, for a later change in `apps/web/src/features/workbench/ui/Workbench.tsx`: when the canvas has no workflow nodes, no artifact cards, no collection cards, and no annotations, and the project room is not in a loading or recovery state, show one centered note: `Drop files on the canvas, or use + to add a step.` Right-click still opens the canvas menu. The note is not a hit target and disappears as soon as any of those objects exist. It must not appear over a canvas that failed to load (HX-18’s banner covers that).
+Desired behavior, for a later change in `apps/web/src/features/workbench/shell/Workbench.tsx`: when the canvas has no workflow nodes, no artifact cards, no collection cards, and no annotations, and the project room is not in a loading or recovery state, show one centered note: `Drop files on the canvas, or use + to add a step.` Right-click still opens the canvas menu. The note is not a hit target and disappears as soon as any of those objects exist. It must not appear over a canvas that failed to load (HX-18’s banner covers that).
 
 ## HX-24 — The spare slot on a group
 
@@ -841,7 +840,7 @@ Desired behavior: while the registry request is in flight, cards and ports show 
 From `apps/web`:
 
 ```
-npx vitest run src/features/workbench/canvas/artifact-type-label.test.ts src/features/workbench/canvas/artifact-card.test.ts src/features/workbench/canvas/config-schema.test.ts src/features/workbench/canvas/nodes/WorkflowNode.test.tsx src/features/workbench/canvas/nodes/NodeExecutionAppendix.test.tsx src/features/workbench/canvas/nodes/ArtifactCardBody.test.tsx src/features/workbench/canvas/nodes/type-inspector.test.tsx src/features/workbench/canvas/saved-graph.test.ts src/features/workbench/model/execution-plan.test.ts src/features/workbench/ui/NodeSelector.test.tsx src/features/workbench/ui/ArtifactFolderDropDialog.test.tsx src/features/workbench/ui/GraphRoomRecoveryNotice.test.tsx src/features/workbench/ui/useRunExecution.test.ts src/features/workbench/agents/ToolEvents.test.tsx
+npx vitest run src/features/workbench/artifacts/artifact-type-label.test.ts src/features/workbench/artifacts/artifact-card.test.ts src/features/workbench/config-ui/config-schema.test.ts src/features/workbench/canvas/nodes/WorkflowNode.test.tsx src/features/workbench/canvas/nodes/NodeExecutionAppendix.test.tsx src/features/workbench/canvas/nodes/ArtifactCardBody.test.tsx src/features/workbench/canvas/nodes/type-inspector.test.tsx src/features/workbench/authoring/saved-graph.test.ts src/features/workbench/execution/execution-plan.test.ts src/features/workbench/config-ui/NodeSelector.test.tsx src/features/workbench/artifacts/ArtifactFolderDropDialog.test.tsx src/features/workbench/collaboration/GraphRoomRecoveryNotice.test.tsx src/features/workbench/execution/useRunExecution.test.ts src/features/workbench/agents/ToolEvents.test.tsx
 ```
 
 From the repo root, the Python tests named in HX-11 and HX-12, plus `tests/unit/plugins/test_reducto_ocr.py` to prove defaults did not move.

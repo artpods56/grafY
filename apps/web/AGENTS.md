@@ -19,7 +19,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - A gesture that places a node, card, or annotation hands the new thing the whole
   selection. Selection has four writers — node ids, edge ids, each card's
   `selected`, each annotation's `selected` — so write them through
-  `useCanvasSelection` (`ui/workbench-canvas-selection.ts`) and verify with a real
+  `useCanvasSelection` (`authoring/workbench-canvas-selection.ts`) and verify with a real
   pointer drag that the thing held before the drop gave up its plate.
 - After changing node dimensions, handles, edge SVG styles, or canvas layout,
   verify at least one real pointer-drag connection in the rendered workbench.
@@ -146,7 +146,7 @@ cannot resolve, which `tsc` and Vitest both pass.
 
 ## Artifact type labels
 
-- `features/workbench/canvas/artifact-type-label.ts` is the single place that
+- `features/workbench/artifacts/artifact-type-label.ts` is the single place that
   names an artifact type for a person: the catalog title (`Text value`,
   `List of Text value`), with the schema version inline as `Text value · v2`
   — the node catalog's separator — only once it is past `@1`. Keep the full
@@ -156,7 +156,7 @@ cannot resolve, which `tsc` and Vitest both pass.
   purpose, and reads back the full identity (`scalar.text@1`) — never a bare
   id. Omitting the catalog is a type error, so a surface cannot quietly degrade
   to raw ids.
-- `artifactTypeKey` in `canvas/artifact-type-key.ts` is identity, not a label:
+- `artifactTypeKey` in `artifacts/artifact-type-key.ts` is identity, not a label:
   port compatibility, handle ids, saved bindings, and API payloads compare it.
   Never swap a label into one of those, and never print one as a card or port
   caption.
@@ -206,7 +206,7 @@ cannot resolve, which `tsc` and Vitest both pass.
 ## Browser APIs and storage
 
 - Workbench IDs must support plain HTTP LAN origins used for mobile testing.
-  Use `createUuid` from `features/workbench/model/uuid.ts`; it uses
+  Use `createUuid` from `features/workbench/authoring/uuid.ts`; it uses
   `crypto.getRandomValues` when the secure-context-only `crypto.randomUUID`
   API is unavailable.
 
