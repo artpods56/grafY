@@ -934,4 +934,21 @@ describe("exclusive gestures", () => {
       }).state,
     ).toBe(initial);
   });
+
+  it("ignores dragTick before pointer movement crosses the drag threshold", () => {
+    const solo = sceneOf([card("loose", 4, 2)]);
+    const pressed = act(initial, press(solo, "loose"));
+    expect(pressed.state.phase).toMatchObject({
+      kind: "draggingCards",
+      movedBeyondClick: false,
+    });
+    const ticked = act(pressed.state, {
+      kind: "dragTick",
+      now: 16,
+      index: solo.index,
+    });
+    expect(ticked.state).toBe(pressed.state);
+    expect(ticked.state.dragFrame).toBeNull();
+    expect(ticked.effects).toEqual([]);
+  });
 });

@@ -1619,7 +1619,9 @@ function onDragTick(
   action: Extract<CellCanvasInteractionAction, { kind: "dragTick" }>,
   exec: Exec,
 ): State {
-  if (state.phase.kind !== "draggingCards") return state;
+  if (state.phase.kind !== "draggingCards" || !state.phase.movedBeyondClick) {
+    return state;
+  }
   const cellSettle = stepCardSettle(state.phase.cellSettle, action.now);
   const built = buildDragFrame(
     { ...state.phase, cellSettle },

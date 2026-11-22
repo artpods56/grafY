@@ -118,7 +118,15 @@ function mountCanvas(
     });
   };
   render(props);
-  return { container, render };
+  return {
+    container,
+    render,
+    unmount: () => {
+      React.act(() => {
+        root.unmount();
+      });
+    },
+  };
 }
 
 describe("CellCanvas", () => {
@@ -602,6 +610,297 @@ describe("CellCanvas", () => {
     });
     expect(onConnect).toHaveBeenCalledTimes(1);
   });
+
+  it("completes synchronous port wiring within one tick without staying armed", () => {
+    const onConnect = vi.fn();
+    const graph: CellGraph = { ...TEST_GRAPH, pipes: [] };
+    const { container } = mountCanvas({
+      graph,
+      look: { ...DEFAULT_CELL_GLASS_LOOK, well: "punched" },
+      onConnect,
+    });
+    const canvas = container.querySelector<HTMLElement>(
+      '[data-cell-canvas="true"]',
+    )!;
+    canvas.getBoundingClientRect = () => new DOMRect(0, 0, 1000, 600);
+    const out = container.querySelector<HTMLElement>('[data-port-id="out"]')!;
+    const viewport = container.querySelector<HTMLElement>(
+      '[data-cell-viewport="true"]',
+    )!;
+    const match =
+      /translate3d\((-?[\d.]+)px, (-?[\d.]+)px, 0\) scale\(([\d.]+)\)/.exec(
+        viewport.style.transform,
+      )!;
+    const [vx, vy, zoom] = [
+      Number(match[1]),
+      Number(match[2]),
+      Number(match[3]),
+    ];
+    const toClient = (x: number, y: number) => ({
+      clientX: vx + x * zoom,
+      clientY: vy + y * zoom,
+    });
+
+    React.act(() => {
+      out.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          pointerId: 21,
+          ...toClient(328, 112.5),
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          pointerId: 21,
+          ...toClient(470, 114),
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          pointerId: 21,
+          ...toClient(470, 114),
+        }),
+      );
+    });
+
+    expect(onConnect).toHaveBeenCalledTimes(1);
+    expect(onConnect).toHaveBeenCalledWith({
+      sourceCardId: "source",
+      sourcePortId: "out",
+      targetCardId: "sink",
+      targetPortId: "in",
+    });
+    expect(
+      container.querySelector('[data-cell-connection-preview="true"]'),
+    ).toBeNull();
+  });
+
+  it("updates lastConnectDropEmpty synchronously when a wire drops on empty space", () => {
+    const onConnectDropEmpty = vi.fn();
+    const { container } = mountCanvas({
+      graph: { ...TEST_GRAPH, pipes: [] },
+      autoFitOnMount: false,
+      exposeDebugApi: true,
+      onConnectDropEmpty,
+    });
+    const out = container.querySelector<HTMLElement>('[data-port-id="out"]')!;
+
+    React.act(() => {
+      out.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          pointerId: 22,
+          clientX: 350,
+          clientY: 112.5,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          pointerId: 22,
+          clientX: 700,
+          clientY: 400,
+        }),
+      );
+      expect(window.__cellCanvas?.lastConnectDropEmpty).toMatchObject({
+        sourceCardId: "source",
+        sourcePortId: "out",
+        clientPoint: { x: 700, y: 400 },
+      });
+      expect(onConnectDropEmpty).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("does not restore selection if Escape arrives immediately after card press", () => {
+    const onSelectionChange = vi.fn();
+    const { container } = mountCanvas({ onSelectionChange });
+    const sinkHeader = container.querySelector<HTMLElement>(
+      '[data-card-id="sink"] [data-card-header="true"]',
+    )!;
+
+    React.act(() => {
+      sinkHeader.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          pointerId: 23,
+        }),
+      );
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+
+    expect(
+      container
+        .querySelector('[data-card-id="sink"]')
+        ?.getAttribute("data-selected"),
+    ).toBe("false");
+    const lastSelection = onSelectionChange.mock.calls.at(-1)?.[0];
+    expect([...lastSelection.cardIds]).toEqual([]);
+  });
+
+  it("applies pan offset before a wheel zoom that arrives ahead of the animation frame", () => {
+    vi.useFakeTimers({
+      toFake: ["requestAnimationFrame", "cancelAnimationFrame"],
+    });
+    try {
+      const { container } = mountCanvas({
+        autoFitOnMount: false,
+        exposeDebugApi: true,
+      });
+      const canvas = container.querySelector<HTMLElement>(
+        '[data-cell-canvas="true"]',
+      )!;
+      canvas.getBoundingClientRect = () => new DOMRect(0, 0, 1000, 600);
+
+      React.act(() => {
+        canvas.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            button: 0,
+            pointerId: 24,
+            clientX: 0,
+            clientY: 0,
+          }),
+        );
+        window.dispatchEvent(
+          new PointerEvent("pointermove", {
+            pointerId: 24,
+            clientX: 40,
+            clientY: 0,
+          }),
+        );
+        canvas.dispatchEvent(
+          new WheelEvent("wheel", {
+            ctrlKey: true,
+            deltaY: -20,
+            clientX: 200,
+            clientY: 150,
+            cancelable: true,
+          }),
+        );
+      });
+
+      const afterZoom = window.__cellCanvas!.getViewport();
+      const expectedZoom = Math.exp(20 * 0.01);
+      expect(afterZoom.zoom).toBeCloseTo(expectedZoom, 6);
+      expect(afterZoom.x).toBeCloseTo(200 - ((200 - 40) / 1) * expectedZoom, 6);
+
+      React.act(() => {
+        vi.advanceTimersToNextFrame();
+      });
+      expect(window.__cellCanvas!.getViewport()).toEqual(afterZoom);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels card drag and resize on pointercancel without committing", () => {
+    const onMoveCards = vi.fn();
+    const onResizeCard = vi.fn();
+    const { container } = mountCanvas({
+      autoFitOnMount: false,
+      selectedCardIds: new Set(["source"]),
+      onMoveCards,
+      onResizeCard,
+    });
+    const sinkHeader = container.querySelector<HTMLElement>(
+      '[data-card-id="sink"] [data-card-header="true"]',
+    )!;
+
+    React.act(() => {
+      sinkHeader.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          pointerId: 25,
+          clientX: 500,
+          clientY: 80,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent("pointermove", {
+          pointerId: 25,
+          clientX: 600,
+          clientY: 180,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent("pointercancel", { pointerId: 25 }),
+      );
+    });
+    expect(onMoveCards).not.toHaveBeenCalled();
+
+    const grip = container.querySelector<HTMLElement>(
+      '[data-resize-grip="se"][data-resize-card-id="sink"]',
+    )!;
+    React.act(() => {
+      grip.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          pointerId: 26,
+          clientX: 350,
+          clientY: 200,
+        }),
+      );
+      grip.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          pointerId: 26,
+          clientX: 450,
+          clientY: 250,
+        }),
+      );
+      grip.dispatchEvent(
+        new PointerEvent("pointercancel", {
+          bubbles: true,
+          pointerId: 26,
+          clientX: 450,
+          clientY: 250,
+        }),
+      );
+    });
+    expect(onResizeCard).not.toHaveBeenCalled();
+  });
+
+  it("clears drag progress when unmounted mid-drag", () => {
+    const onDragCardsProgress = vi.fn();
+    const { container, unmount } = mountCanvas({
+      autoFitOnMount: false,
+      onDragCardsProgress,
+    });
+    const sinkHeader = container.querySelector<HTMLElement>(
+      '[data-card-id="sink"] [data-card-header="true"]',
+    )!;
+
+    React.act(() => {
+      sinkHeader.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          pointerId: 27,
+          clientX: 500,
+          clientY: 80,
+        }),
+      );
+      window.dispatchEvent(
+        new PointerEvent("pointermove", {
+          pointerId: 27,
+          clientX: 550,
+          clientY: 130,
+        }),
+      );
+    });
+    expect(onDragCardsProgress).toHaveBeenCalledWith(expect.any(Array));
+
+    onDragCardsProgress.mockClear();
+    unmount();
+    expect(onDragCardsProgress).toHaveBeenCalledWith(null);
+  });
 });
 
 describe("CellCanvas artifact sequences", () => {
@@ -695,6 +994,78 @@ describe("CellCanvas artifact sequences", () => {
       container.querySelector("[data-artifact-sequence-spread]"),
     ).toBeNull();
     expect(container.querySelector('[data-card-id="stack"]')).not.toBeNull();
+  });
+
+  it("cancels an active resize when Escape closes an open sequence spread", () => {
+    const onResizeCard = vi.fn();
+    const spreadWithResizable: CellGraph = {
+      cards: [
+        artifactCard("stack", 12, 2),
+        {
+          id: "other",
+          title: "Other",
+          subtitle: "test.other",
+          kind: "operator",
+          col: 12,
+          row: 20,
+          widthCells: 12,
+          heightCells: 6,
+          resizable: true,
+          ports: [],
+        },
+      ],
+      pipes: [],
+    };
+    const { container } = mountCanvas({
+      graph: spreadWithResizable,
+      surfaceById: {
+        stack: image(3),
+        other: { kind: "operator", configFields: [] },
+      },
+      selectedCardIds: new Set(["other"]),
+      autoFitOnMount: false,
+      onResizeCard,
+    });
+    React.act(() =>
+      container
+        .querySelector<HTMLElement>('[data-artifact-stack-count="3"]')
+        ?.click(),
+    );
+    const grip = container.querySelector<HTMLElement>(
+      '[data-resize-grip="se"][data-resize-card-id="other"]',
+    )!;
+    React.act(() => {
+      grip.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          pointerId: 31,
+          clientX: 550,
+          clientY: 700,
+        }),
+      );
+      grip.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          pointerId: 31,
+          clientX: 650,
+          clientY: 750,
+        }),
+      );
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      grip.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          pointerId: 31,
+          clientX: 650,
+          clientY: 750,
+        }),
+      );
+    });
+    expect(
+      container.querySelector("[data-artifact-sequence-spread]"),
+    ).toBeNull();
+    expect(onResizeCard).not.toHaveBeenCalled();
   });
 
   it("stays open when the canvas background is clicked and closes via the Stack button", () => {

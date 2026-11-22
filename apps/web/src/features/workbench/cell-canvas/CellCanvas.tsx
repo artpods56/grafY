@@ -338,12 +338,6 @@ type GestureListeners = {
   up: (event: PointerEvent) => void;
 };
 
-type PanPending = {
-  dx: number;
-  dy: number;
-  frame: number | null;
-};
-
 function detachGestureListeners(slot: {
   current: GestureListeners | null;
 }): void {
@@ -353,28 +347,6 @@ function detachGestureListeners(slot: {
   window.removeEventListener("pointerup", listeners.up);
   window.removeEventListener("pointercancel", listeners.up);
   slot.current = null;
-}
-
-function flushPan(
-  pendingRef: { current: PanPending },
-  setViewport: (action: React.SetStateAction<StageViewport>) => void,
-  commit: boolean,
-): void {
-  const pending = pendingRef.current;
-  if (pending.frame !== null) {
-    cancelAnimationFrame(pending.frame);
-    pending.frame = null;
-  }
-  const dx = pending.dx;
-  const dy = pending.dy;
-  pending.dx = 0;
-  pending.dy = 0;
-  if (!commit || (dx === 0 && dy === 0)) return;
-  setViewport((viewport) => ({
-    ...viewport,
-    x: viewport.x + dx,
-    y: viewport.y + dy,
-  }));
 }
 
 function cancelDragFrame(frameRef: { current: number }): void {
@@ -435,7 +407,8 @@ export function CellCanvas({
   const punched = look.well === "punched";
   const {
     viewport,
-    setViewport,
+    panBy,
+    flushPan,
     zoomAtCenter,
     zoomBy,
     fitRect,
@@ -516,7 +489,9 @@ export function CellCanvas({
   const openSpreadRef = React.useRef<OpenSpreadSnapshot | null>(null);
   const onViewportZoomChangeRef = React.useRef(onViewportZoomChange);
   const onStatsChangeRef = React.useRef(onStatsChange);
-  const setViewportRef = React.useRef(setViewport);
+  const panByRef = React.useRef(panBy);
+  const flushPanRef = React.useRef(flushPan);
+  const dragProgressActiveRef = React.useRef(false);
   const screenToWorldRef = React.useRef(screenToWorld);
   const commitSelectionRef = React.useRef<
     (next: { cardIds?: Iterable<string>; pipeIds?: Iterable<string> }) => void
@@ -529,7 +504,6 @@ export function CellCanvas({
     (joins: readonly StackTuckJoin[]) => void
   >(() => {});
   const gestureListenersRef = React.useRef<GestureListeners | null>(null);
-  const panPendingRef = React.useRef<PanPending>({ dx: 0, dy: 0, frame: null });
   const dragFrameRef = React.useRef(0);
   const mountedRef = React.useRef(true);
 
@@ -597,6 +571,10 @@ export function CellCanvas({
               return;
             }
             if (effect.gesture === "drag") {
+              if (event.type === "pointercancel") {
+                dispatchAction({ kind: "cancelGesture" });
+                return;
+              }
               dispatchAction({
                 kind: "dragUp",
                 pointerId,
@@ -619,7 +597,7 @@ export function CellCanvas({
         }
         case "detachWindowGesture":
           detachGestureListeners(gestureListenersRef);
-          flushPan(panPendingRef, setViewportRef.current, true);
+          flushPanRef.current(true);
           return;
         case "scheduleDragFrame": {
           if (dragFrameRef.current !== 0) return;
@@ -639,26 +617,9 @@ export function CellCanvas({
         case "cancelDragFrame":
           cancelDragFrame(dragFrameRef);
           return;
-        case "panViewportBy": {
-          const pending = panPendingRef.current;
-          pending.dx += effect.dx;
-          pending.dy += effect.dy;
-          if (pending.frame !== null) return;
-          pending.frame = requestAnimationFrame(() => {
-            pending.frame = null;
-            const dx = pending.dx;
-            const dy = pending.dy;
-            pending.dx = 0;
-            pending.dy = 0;
-            if (!mountedRef.current || (dx === 0 && dy === 0)) return;
-            setViewportRef.current((next) => ({
-              ...next,
-              x: next.x + dx,
-              y: next.y + dy,
-            }));
-          });
+        case "panViewportBy":
+          panByRef.current(effect.dx, effect.dy);
           return;
-        }
         case "setStoreMarquee":
           store.setMarquee(effect.rect);
           return;
@@ -678,6 +639,7 @@ export function CellCanvas({
           store.setDraggingCards(effect.cardIds);
           return;
         case "notifyDragProgress":
+          dragProgressActiveRef.current = effect.moves !== null;
           onDragCardsProgressRef.current?.(effect.moves);
           return;
         case "commitMoveCards":
@@ -735,6 +697,7 @@ export function CellCanvas({
     cellCanvasInteractionReducer,
     createInitialCellCanvasInteractionState,
     runEffect,
+    { flush: "sync" },
   );
 
   const phase = interaction.phase;
@@ -950,7 +913,8 @@ export function CellCanvas({
       corners: look.corners,
     };
     lastDropEmptyRef.current = lastConnectDropEmpty;
-    setViewportRef.current = setViewport;
+    panByRef.current = panBy;
+    flushPanRef.current = flushPan;
     screenToWorldRef.current = screenToWorld;
 
     onMoveCardsRef.current = onMoveCards;
@@ -978,8 +942,12 @@ export function CellCanvas({
     return () => {
       mountedRef.current = false;
       detachGestureListeners(gestureListenersRef);
-      flushPan(panPendingRef, setViewportRef.current, false);
+      flushPanRef.current(false);
       cancelDragFrame(dragFrameRef);
+      if (dragProgressActiveRef.current) {
+        dragProgressActiveRef.current = false;
+        onDragCardsProgressRef.current?.(null);
+      }
     };
   }, []);
 
@@ -1349,6 +1317,10 @@ export function CellCanvas({
       edge: CellResizeEdge,
       event: React.PointerEvent<HTMLDivElement>,
     ) => {
+      if (event.type === "pointercancel") {
+        dispatch({ kind: "cancelGesture" });
+        return;
+      }
       dispatch({
         kind: "resizeEnd",
         cardId,
@@ -1414,12 +1386,12 @@ export function CellCanvas({
         return;
       }
       if (event.key === "Escape") {
+        dispatch({ kind: "cancelGesture" });
         if (expandedSequenceIdRef.current) {
           // The open spread closes first; the card stays held.
           setExpandedSequenceId(null);
           return;
         }
-        dispatch({ kind: "cancelGesture" });
         clearSelection();
         return;
       }

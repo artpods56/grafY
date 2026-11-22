@@ -5,7 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EffectReducer } from "./effect-reducer";
-import { useEffectReducer, type EffectHandler } from "./use-effect-reducer";
+import {
+  useEffectReducer,
+  type EffectHandler,
+  type UseEffectReducerOptions,
+} from "./use-effect-reducer";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -64,10 +68,12 @@ describe("useEffectReducer", () => {
     initialFactory = () => ({ value: 10, log: [] }),
     onEffect,
     strict = false,
+    options,
   }: {
     initialFactory?: () => TestState;
     onEffect: EffectHandler<TestEffect, TestAction>;
     strict?: boolean;
+    options?: UseEffectReducerOptions;
   }) {
     let latestState: TestState | null = null;
     let latestDispatch: React.Dispatch<TestAction> | null = null;
@@ -81,6 +87,7 @@ describe("useEffectReducer", () => {
         testReducer,
         initialFactory,
         handler,
+        options,
       );
       React.useEffect(() => {
         latestState = state;
@@ -234,5 +241,53 @@ describe("useEffectReducer", () => {
 
     expect(harness.getState()).toEqual({ value: 17, log: ["add:7"] });
     expect(seen).toEqual([{ kind: "record", label: "add", value: 17 }]);
+  });
+
+  it("flushes effects synchronously before dispatch returns when flush is sync", () => {
+    const seen: TestEffect[] = [];
+    const harness = mountHarness({
+      options: { flush: "sync" },
+      onEffect: (effect) => {
+        seen.push(effect);
+      },
+    });
+
+    React.act(() => {
+      harness.dispatch({ kind: "add", amount: 4 });
+      expect(seen).toEqual([{ kind: "record", label: "add", value: 14 }]);
+    });
+
+    expect(harness.getState()).toEqual({ value: 14, log: ["add:4"] });
+  });
+
+  it("preserves FIFO order for re-entrant dispatches when flush is sync", () => {
+    const seen: TestEffect[] = [];
+    const harness = mountHarness({
+      strict: true,
+      options: { flush: "sync" },
+      onEffect: (effect, dispatch) => {
+        seen.push(effect);
+        if (effect.kind === "follow_up") {
+          dispatch({ kind: "reentrant_done" });
+          dispatch({ kind: "ping", note: "after-done" });
+        }
+      },
+    });
+
+    React.act(() => {
+      harness.dispatch({ kind: "trigger_reentrant" });
+      harness.dispatch({ kind: "add", amount: 2 });
+      expect(seen).toEqual([
+        { kind: "follow_up" },
+        { kind: "record", label: "done", value: 10 },
+        { kind: "record", label: "after-done", value: 10 },
+        { kind: "record", label: "add", value: 12 },
+      ]);
+    });
+
+    expect(harness.getState()).toEqual({
+      value: 12,
+      log: ["triggered", "done", "add:2"],
+    });
   });
 });

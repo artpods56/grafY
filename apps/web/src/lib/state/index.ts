@@ -5,4 +5,8 @@ export {
   type EffectTransition,
   type ExecEffect,
 } from "./effect-reducer";
-export { useEffectReducer, type EffectHandler } from "./use-effect-reducer";
+export {
+  useEffectReducer,
+  type EffectHandler,
+  type UseEffectReducerOptions,
+} from "./use-effect-reducer";
