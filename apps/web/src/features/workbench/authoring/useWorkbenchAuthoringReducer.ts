@@ -126,9 +126,9 @@ export interface WorkbenchAuthoringReducerApi<
   readonly closeContextMenu: () => void;
   readonly closeCanvasPopovers: (closeExternal?: boolean) => void;
   readonly pendingConnectionRoute: PendingConnectionRoute | null;
-  readonly setPendingConnectionRoute: (
-    route: PendingConnectionRoute | null,
-  ) => void;
+  readonly setPendingConnectionRoute: React.Dispatch<
+    React.SetStateAction<PendingConnectionRoute | null>
+  >;
   readonly pendingFolderDrop: PendingFolderDropState | null;
   readonly setPendingFolderDrop: (drop: PendingFolderDropState | null) => void;
   readonly clearAuthoringError: () => void;
@@ -207,6 +207,7 @@ export function useWorkbenchAuthoringReducer<
   const stateRef = React.useRef(initialState);
   const authoredDocumentRef = React.useRef(initialState.document);
   const nodeOverlaysRef = React.useRef(initialState.nodeOverlays);
+  const commandEffectsRef = React.useRef<WorkbenchAuthoringUiEffect[]>([]);
   const liveDepsRef = React.useRef<LiveAuthoringDeps>({
     localAuthoringEnabledRef,
     localAuthoringBlockedMessageRef,
@@ -231,7 +232,9 @@ export function useWorkbenchAuthoringReducer<
       const next = workbenchAuthoringUiReducer<TDiscovery, TContextMenu>(
         state,
         action,
-        exec,
+        action.kind === "applyCommands"
+          ? (effect) => commandEffectsRef.current.push(effect)
+          : exec,
       );
       stateRef.current = next;
       authoredDocumentRef.current = next.document;
@@ -262,6 +265,14 @@ export function useWorkbenchAuthoringReducer<
         onCloseGridPanel,
       };
       dispatch(action);
+      if (action.kind === "applyCommands") {
+        // A gesture can submit graph commands and then presentation changes.
+        // Submit the graph batch before control returns to that gesture.
+        const effects = commandEffectsRef.current.splice(0);
+        for (const effect of effects) {
+          runAuthoringEffect(effect, liveDepsRef.current);
+        }
+      }
     },
     [
       dispatch,
@@ -464,9 +475,14 @@ export function useWorkbenchAuthoringReducer<
     [dispatchAction],
   );
 
-  const setPendingConnectionRoute = React.useCallback(
-    (route: PendingConnectionRoute | null) => {
-      dispatchAction({ kind: "setPendingConnectionRoute", route });
+  const setPendingConnectionRoute = React.useCallback<
+    React.Dispatch<React.SetStateAction<PendingConnectionRoute | null>>
+  >(
+    (update) => {
+      dispatchAction({
+        kind: "setPendingConnectionRoute",
+        route: resolveSetState(update, stateRef.current.pendingConnectionRoute),
+      });
     },
     [dispatchAction],
   );

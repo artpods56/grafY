@@ -10,7 +10,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 import type { NodeSpec, Port } from "@/lib/api";
 import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { encodeHandleId } from "../authoring/handles";
-import { reduceWorkbenchAuthoringState } from "../authoring/graph-document-adapter";
+import { useWorkbenchAuthoringReducer } from "../authoring/useWorkbenchAuthoringReducer";
 import {
   ARTIFACT_VIEWER_EDGE_TYPE,
   ARTIFACT_VIEWER_NODE_TYPE,
@@ -18,7 +18,6 @@ import {
   type ArtifactViewerCanvasState,
   type ArtifactViewerEdge,
   type ArtifactViewerNode,
-  type GraphPresentation,
 } from "../artifacts/artifact-viewer";
 import {
   WORKFLOW_NODE_TYPE,
@@ -44,12 +43,10 @@ import {
   useArtifactViewerState,
   type ArtifactViewerRoomSync,
 } from "./workbench-artifact-viewers";
-import {
-  useWorkbenchAuthoringCommands,
-  type WorkbenchRoomCommandSync,
-} from "../authoring/workbench-authoring-commands";
+import type { WorkbenchRoomCommandSync } from "../authoring/workbench-authoring-commands";
 
 const IMAGE = { id: "file.png", schema_version: 1 };
+const closePanel = () => {};
 
 function spec(
   operator_id: string,
@@ -214,7 +211,7 @@ type Harness = {
   /** Links the room refused because their source node was gone from its head. */
   refused: string[];
   document: AuthoredGraphDocument;
-  published: GraphPresentation[];
+  roomNodeIdsAtPublication: string[][];
   /** The nodes the canvas still holds, so a selection hand-off is visible. */
   selectedNodeIds: string[];
   ungroupCollection: (nodeId: string) => void;
@@ -229,19 +226,11 @@ type Harness = {
  */
 async function mount() {
   const refused: string[] = [];
-  const published: GraphPresentation[] = [];
+  const roomNodeIdsAtPublication: string[][] = [];
   const baseDocument = initialDocument();
   let latest: Harness | null = null;
 
   function HarnessComponent() {
-    const [authoring, dispatchAuthoringState] = React.useReducer(
-      reduceWorkbenchAuthoringState,
-      { document: baseDocument, nodeOverlays: {}, error: null },
-    );
-    const authoredDocumentRef = React.useRef(authoring.document);
-    React.useLayoutEffect(() => {
-      authoredDocumentRef.current = authoring.document;
-    }, [authoring.document]);
     const [viewersState, setArtifactViewers, artifactViewersRef] =
       useArtifactViewerState(viewers);
 
@@ -254,16 +243,6 @@ async function mount() {
     );
     const artifactViewerActivityRevisionRef = React.useRef(0);
     const [, setRunErrorState] = React.useState<string | null>(null);
-    // The collection's own node starts out the thing a person holds.
-    const [selectedNodeIdSet, setSelectedNodeIdSet] = React.useState<
-      ReadonlySet<string>
-    >(new Set(["collection"]));
-    const [, setSelectedEdgeIdSet] = React.useState<ReadonlySet<string>>(
-      new Set(),
-    );
-    const [, setPositionOverrides] = React.useState<
-      Record<string, { x: number; y: number }>
-    >({});
     const [, setArtifactViewerSelections] = React.useState({});
     const [, setArtifactViewerFields] = React.useState({});
     const [, setArtifactViewerActivities] = React.useState({});
@@ -281,8 +260,8 @@ async function mount() {
     });
     const presentationRoomSyncRef = React.useRef<ArtifactViewerRoomSync>({
       submitReplace: (state) => {
+        roomNodeIdsAtPublication.push([...roomNodeIds.current]);
         const presentation = presentationFromArtifactViewers(state);
-        published.push(presentation);
         for (const link of presentation.links) {
           if (!roomNodeIds.current.has(link.source_node_id)) {
             refused.push(link.source_node_id);
@@ -291,23 +270,27 @@ async function mount() {
       },
     });
 
-    const { applyAuthoringCommands } = useWorkbenchAuthoringCommands({
-      authoredDocument: authoring.document,
+    const {
+      applyAuthoringCommands,
+      authoredDocument,
       authoredDocumentRef,
-      dispatchAuthoringState,
+      replaceDocument,
+      selectedNodeIdSet,
+      setSelectedNodeIdSet,
+      setSelectedEdgeIdSet,
+    } = useWorkbenchAuthoringReducer({
       localAuthoringBlockedMessageRef,
       localAuthoringEnabledRef,
-      // This harness is about card links, not collection modes: it says nothing
-      // about the node types, so the command batch carries no mode repairs.
-      nodeRegistry: null,
       roomCommandSyncRef,
       setArtifactViewers,
-      setPendingConnectionRoute: () => undefined,
-      setPositionOverrides,
       setRunError: setRunErrorState,
-      setSelectedEdgeIdSet,
-      setSelectedNodeIdSet,
+      onCloseGraphBrowser: closePanel,
+      onCloseGridPanel: closePanel,
     });
+    React.useLayoutEffect(() => {
+      replaceDocument(baseDocument);
+      setSelectedNodeIdSet(new Set(["collection"]));
+    }, [replaceDocument, setSelectedNodeIdSet]);
 
     const { commitArtifactViewers } = useArtifactViewerCommands({
       artifactViewers: viewersState,
@@ -349,8 +332,8 @@ async function mount() {
 
     latest = {
       refused,
-      document: authoring.document,
-      published,
+      document: authoredDocument,
+      roomNodeIdsAtPublication,
       selectedNodeIds: [...selectedNodeIdSet],
       ungroupCollection,
       viewers: viewersState,
@@ -389,7 +372,7 @@ describe("ungrouping a collection that feeds a card", () => {
     );
     // Every presentation the room was handed named only nodes its head still held.
     expect(harness.refused).toEqual([]);
-    expect(harness.published.length).toBeGreaterThan(0);
+    expect(harness.roomNodeIdsAtPublication).toEqual([["resize"]]);
     view.unmount();
   });
 
