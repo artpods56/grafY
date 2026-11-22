@@ -487,8 +487,13 @@ describe("sequence authoring", () => {
     view.unmount();
   });
 
-  it("lands a pulled-out item on the cell it was dropped on", async () => {
-    const view = await mount({ nodes: [placedCard("s", ["s1", "s2", "s3"])] });
+  it("lands a pulled-out item on the cell it was dropped on and inherits the sequence's layout", async () => {
+    const resized = placedCard("s", ["s1", "s2", "s3"]);
+    resized.data = {
+      ...resized.data,
+      layout: { width: 250, bodyHeight: 375 },
+    };
+    const view = await mount({ nodes: [resized] });
     await act(async () => {
       view.read().extractArtifactCardItem("s", 2, { col: 30, row: 12 });
     });
@@ -496,6 +501,7 @@ describe("sequence authoring", () => {
     expect(refIds(kept?.nodes[0]?.data.artifactRef)).toEqual(["s1", "s2"]);
     const extracted = added?.nodes.at(-1);
     expect(extracted?.data.artifactRef).toEqual(single("s3"));
+    expect(extracted?.data.layout).toEqual({ width: 250, bodyHeight: 375 });
     expect(extracted?.position).toEqual({
       x: 30 * CELL_SIZE,
       y: 12 * CELL_SIZE,

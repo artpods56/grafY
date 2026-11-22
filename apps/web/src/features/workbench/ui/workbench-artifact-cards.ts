@@ -116,23 +116,27 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
       cards: readonly {
         value: ArtifactCardValue;
         position: { x: number; y: number };
+        layout?: ArtifactViewerNode["data"]["layout"];
       }[],
     ) => {
       if (cards.length === 0) return;
       // One commit, so a drop of several cards is one change to the canvas and
       // one presentation sync rather than a cascade the room replays.
-      const added: ArtifactViewerNode[] = cards.map(({ value, position }) => ({
-        id: `artifact-viewer-${createUuid()}`,
-        type: ARTIFACT_VIEWER_NODE_TYPE,
-        position,
-        selected: true,
-        data: {
-          // No width: the card takes the one that suits its artifact.
-          layout: null,
-          mode: null,
-          artifactRef: value,
-        },
-      }));
+      const added: ArtifactViewerNode[] = cards.map(
+        ({ value, position, layout }) => ({
+          id: `artifact-viewer-${createUuid()}`,
+          type: ARTIFACT_VIEWER_NODE_TYPE,
+          position,
+          selected: true,
+          data: {
+            // No width unless inherited from a parent sequence: the card takes
+            // the one that suits its artifact.
+            layout: layout ? { ...layout } : null,
+            mode: null,
+            artifactRef: value,
+          },
+        }),
+      );
       const committed = commitArtifactViewers((current) => {
         const cleared = withoutPresentationSelection(current);
         return { ...cleared, nodes: [...cleared.nodes, ...added] };
@@ -145,8 +149,12 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
   );
 
   const addArtifactCard = React.useCallback(
-    (value: ArtifactCardValue, position: { x: number; y: number }) => {
-      addArtifactCards([{ value, position }]);
+    (
+      value: ArtifactCardValue,
+      position: { x: number; y: number },
+      layout?: ArtifactViewerNode["data"]["layout"],
+    ) => {
+      addArtifactCards([{ value, position, layout }]);
     },
     [addArtifactCards],
   );
@@ -592,18 +600,24 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
       );
       if (!kept) return;
       updateArtifactCardRefs(cardId, kept);
+      const inheritedLayout = card.data.layout ? { ...card.data.layout } : null;
       if (targetCell) {
         addArtifactCard(
           extracted,
           cellToWorldOrigin(targetCell.col, targetCell.row),
+          inheritedLayout,
         );
         return;
       }
       const footprint = artifactCardFootprint(card);
-      addArtifactCard(extracted, {
-        x: card.position.x + footprint.width + CELL_SIZE,
-        y: card.position.y,
-      });
+      addArtifactCard(
+        extracted,
+        {
+          x: card.position.x + footprint.width + CELL_SIZE,
+          y: card.position.y,
+        },
+        inheritedLayout,
+      );
     },
     [
       addArtifactCard,

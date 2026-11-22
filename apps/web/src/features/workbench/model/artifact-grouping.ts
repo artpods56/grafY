@@ -112,6 +112,13 @@ export function collectArtifactCards({
   if (!refs) return state;
   const value = artifactCardValue(refs, null, { asSequence: true });
   if (!value) return state;
+  const leadLayout = selected[0]?.data.layout;
+  const stackLayout = leadLayout
+    ? {
+        ...leadLayout,
+        width: leadLayout.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
+      }
+    : { width: DEFAULT_ARTIFACT_CARD_WIDTH };
   const stack: ArtifactViewerNode = {
     id: `artifact-viewer-${createUuid()}`,
     type: ARTIFACT_VIEWER_NODE_TYPE,
@@ -121,7 +128,7 @@ export function collectArtifactCards({
     },
     selected: true,
     data: {
-      layout: { width: DEFAULT_ARTIFACT_CARD_WIDTH },
+      layout: stackLayout,
       mode: null,
       artifactRef: value,
     },
@@ -169,11 +176,18 @@ export function ungroupArtifactCard({
           DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
         )
       : (stack.data.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH);
-  const bodyHeight = table
-    ? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT
-    : map
-      ? DEFAULT_ARTIFACT_MAP_BODY_HEIGHT
-      : artifactCardMediaHeight(width);
+  const savedBodyHeight = stack.data.layout?.bodyHeight;
+  const bodyHeight =
+    savedBodyHeight ??
+    (table
+      ? DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT
+      : map
+        ? DEFAULT_ARTIFACT_MAP_BODY_HEIGHT
+        : artifactCardMediaHeight(width));
+  const inheritedLayout =
+    savedBodyHeight !== undefined
+      ? { width, bodyHeight: savedBodyHeight }
+      : { width };
   const columns = Math.ceil(Math.sqrt(value.item_refs.length));
   const cards = value.item_refs.map((ref, index): ArtifactViewerNode => ({
     id: `artifact-viewer-${createUuid()}`,
@@ -183,7 +197,7 @@ export function ungroupArtifactCard({
       x: stack.position.x + (index % columns) * (Math.max(width, 300) + 64),
       y: stack.position.y + Math.floor(index / columns) * (bodyHeight + 88),
     },
-    data: { layout: { width }, mode: null, artifactRef: ref },
+    data: { layout: { ...inheritedLayout }, mode: null, artifactRef: ref },
   }));
   return {
     ...state,

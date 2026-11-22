@@ -278,4 +278,49 @@ describe("card resize", () => {
       computeCellResize(lowCap, "s", start, { x: 100, y: -100 }).heightCells,
     ).toBe(7);
   });
+
+  it("lets a tall artifact card shrink to its 6×3 floor and stops at its ceiling", () => {
+    const portrait: CellCardModel = {
+      ...card("img", 0, 0),
+      widthCells: 10,
+      heightCells: 14,
+      kind: "artifact",
+      resizeBounds: {
+        minWidthCells: 6,
+        maxWidthCells: 48,
+        minHeightCells: 3,
+        maxHeightCells: 48,
+      },
+      ports: [
+        {
+          id: "artifact-card-output",
+          name: "artifact",
+          direction: "output",
+          rowOffset: 12,
+          artifactTypeId: "file.png",
+          shape: "one",
+        },
+      ],
+    };
+    expect(minCardHeightCellsForPorts(portrait)).toBe(0);
+    expect(
+      computeCellResize(portrait, "se", { x: 250, y: 350 }, { x: 0, y: 0 }),
+    ).toEqual({
+      cardId: "img",
+      widthCells: 6,
+      heightCells: 3,
+    });
+    expect(
+      computeCellResize(
+        portrait,
+        "se",
+        { x: 250, y: 350 },
+        { x: 3000, y: 3000 },
+      ),
+    ).toEqual({
+      cardId: "img",
+      widthCells: 48,
+      heightCells: 48,
+    });
+  });
 });

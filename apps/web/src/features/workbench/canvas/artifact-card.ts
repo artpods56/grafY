@@ -10,6 +10,7 @@ import {
   formatArtifactTypeTooltip,
   type ArtifactTypeCatalog,
 } from "./artifact-type-label";
+import type { LayoutClampBounds } from "./node-layout";
 
 /**
  * What one canvas artifact card presents: a single artifact, or an ordered run
@@ -41,11 +42,21 @@ export const DEFAULT_ARTIFACT_MAP_BODY_HEIGHT = 340;
 export const DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH = 200;
 
 /**
- * Narrowest a card may be snapped. Workflow nodes floor at `NODE_WIDTH_MIN`,
- * which would bump the five-cell card default up to six, so a card declares
- * its own narrower lattice floor.
+ * Artifact card resize floor and ceiling in flow pixels (25px per cell):
+ * 6 × 3 cells (150 × 75px) up to 48 × 48 cells (1200 × 1200px).
+ * Workflow nodes keep their own wider floor (`NODE_WIDTH_MIN`, `BODY_HEIGHT_MIN`).
  */
 export const ARTIFACT_CARD_WIDTH_MIN = 150;
+export const ARTIFACT_CARD_HEIGHT_MIN = 75;
+export const ARTIFACT_CARD_WIDTH_MAX = 1200;
+export const ARTIFACT_CARD_HEIGHT_MAX = 1200;
+
+export const ARTIFACT_CARD_LAYOUT_BOUNDS: LayoutClampBounds = {
+  minWidth: ARTIFACT_CARD_WIDTH_MIN,
+  maxWidth: ARTIFACT_CARD_WIDTH_MAX,
+  minBodyHeight: ARTIFACT_CARD_HEIGHT_MIN,
+  maxBodyHeight: ARTIFACT_CARD_HEIGHT_MAX,
+};
 
 /** A card's media box is 4:3 until the operator shapes it. */
 export const ARTIFACT_CARD_MEDIA_ASPECT = 3 / 4;

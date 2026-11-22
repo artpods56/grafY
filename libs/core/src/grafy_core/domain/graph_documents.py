@@ -91,6 +91,25 @@ class GraphNodeLayout(GraphValue):
         return self
 
 
+class GraphPresentationViewerLayout(GraphValue):
+    """Canvas chrome sizes for a presentation viewer / artifact card."""
+
+    width: float | None = Field(default=None, ge=150, le=GRAPH_LAYOUT_DIMENSION_MAX)
+    body_height: float | None = Field(
+        default=None, ge=75, le=GRAPH_LAYOUT_DIMENSION_MAX
+    )
+    appendix_height: float | None = Field(
+        default=None, ge=120, le=GRAPH_LAYOUT_DIMENSION_MAX
+    )
+
+    @model_validator(mode="after")
+    def require_at_least_one_dimension(self) -> Self:
+        validate_graph_layout_dimensions(
+            self.width, self.body_height, self.appendix_height
+        )
+        return self
+
+
 def _freeze_json(value: object) -> object:
     if value is None or isinstance(value, (str, bool, int)):
         return value
@@ -296,7 +315,7 @@ def graph_input_slot(
 class GraphPresentationViewer(GraphValue):
     id: GraphIdentifier
     position: GraphPoint
-    layout: GraphNodeLayout | None = None
+    layout: GraphPresentationViewerLayout | None = None
     mode: str | None = Field(default=None, max_length=255)
     # A node-less card: it presents persisted artifacts and executes nothing.
     # One reference shows one artifact; a sequence shows them in the order the

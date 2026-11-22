@@ -583,6 +583,11 @@ export interface CellArtifactCardProps extends CellCardBaseProps {
   mergeHover?: boolean;
   /** This card is held over another it would join: it readies to tuck under. */
   merging?: boolean;
+  /** Reports an image's natural pixel dimensions once decoded, for auto-fit sizing. */
+  onImageLoad?: (
+    imageUrl: string,
+    size: { width: number; height: number },
+  ) => void;
 }
 
 const BOXED_IN_HINT = "Move card into open space to spread";
@@ -676,7 +681,11 @@ function CellArtifactCardImpl(props: CellArtifactCardProps) {
           surface.previewKind === "map" && s.map,
         )}
       >
-        <ArtifactPreview card={card} surface={surface} />
+        <ArtifactPreview
+          card={card}
+          surface={surface}
+          onImageLoad={props.onImageLoad}
+        />
       </div>
       {image && surface.imageUrl ? (
         <span
@@ -988,18 +997,43 @@ function useLingeringBackCount(backs: number): number {
 function ArtifactPreview({
   card,
   surface,
+  onImageLoad,
 }: {
   card: CellArtifactCardProps["card"];
   surface: ArtifactCardSurfaceData;
+  onImageLoad?: (
+    imageUrl: string,
+    size: { width: number; height: number },
+  ) => void;
 }) {
   switch (surface.previewKind) {
-    case "image":
-      return surface.imageUrl ? (
+    case "image": {
+      const imageUrl = surface.imageUrl;
+      const reportSize = (img: HTMLImageElement | null) => {
+        if (
+          !img ||
+          !imageUrl ||
+          !onImageLoad ||
+          img.naturalWidth <= 0 ||
+          img.naturalHeight <= 0
+        ) {
+          return;
+        }
+        onImageLoad(imageUrl, {
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+        });
+      };
+      return imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer
         <img
-          src={surface.imageUrl}
+          ref={(img) => {
+            if (img?.complete) reportSize(img);
+          }}
+          src={imageUrl}
           alt={surface.filename ?? card.title}
           draggable={false}
+          onLoad={(event) => reportSize(event.currentTarget)}
           {...stylex.props(s.image)}
         />
       ) : (
@@ -1012,6 +1046,7 @@ function ArtifactPreview({
           ) : null}
         </div>
       );
+    }
     case "table": {
       const headers = surface.tableHeaders ?? [];
       const rows = surface.tableRows ?? [];

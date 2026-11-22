@@ -258,6 +258,30 @@ describe("artifact grouping", () => {
     expect(grouped.edges).toEqual([]);
   });
 
+  it("preserves custom width and bodyHeight when grouping and ungrouping a resized sequence", () => {
+    const state = canvas();
+    const first = state.nodes[0];
+    if (!first) throw new Error("expected first card");
+    first.data = {
+      ...first.data,
+      layout: { width: 275, bodyHeight: 400 },
+    };
+    const grouped = collectArtifactCards({ state, origins: [] });
+    const stack = grouped.nodes.find((node) => node.selected);
+    expect(stack?.data.layout).toEqual({ width: 275, bodyHeight: 400 });
+
+    const ungrouped = ungroupArtifactCard({
+      state: grouped,
+      origins: [],
+      nodeId: stack!.id,
+    });
+    const restored = ungrouped.nodes.filter((node) => node.selected);
+    expect(restored.map((node) => node.data.layout)).toEqual([
+      { width: 275, bodyHeight: 400 },
+      { width: 275, bodyHeight: 400 },
+    ]);
+  });
+
   it("tidies only selected cards and keeps values and connections unchanged", () => {
     const state = canvas();
     const moved = state.nodes[0];

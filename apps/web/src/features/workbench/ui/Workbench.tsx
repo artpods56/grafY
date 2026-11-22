@@ -211,6 +211,7 @@ import {
   resolveArtifactCardConnection,
 } from "../canvas/artifact-connections";
 import {
+  ARTIFACT_CARD_LAYOUT_BOUNDS,
   DEFAULT_ARTIFACT_CARD_WIDTH,
   DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
   DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
@@ -5098,6 +5099,7 @@ function WorkbenchBody({
             seed,
             ["width", "bodyHeight", "appendixHeight"],
             cellSize,
+            ARTIFACT_CARD_LAYOUT_BOUNDS,
           );
           updateArtifactViewerLayout(node.id, snapped);
         }
@@ -5277,6 +5279,28 @@ function WorkbenchBody({
     return items;
   }, [libraryTree]);
 
+  const [cellImageNaturalSizes, setCellImageNaturalSizes] = React.useState<
+    ReadonlyMap<string, { width: number; height: number }>
+  >(() => new Map());
+  const onCellArtifactImageLoad = React.useCallback(
+    (imageUrl: string, size: { width: number; height: number }) => {
+      setCellImageNaturalSizes((current) => {
+        const existing = current.get(imageUrl);
+        if (
+          existing &&
+          existing.width === size.width &&
+          existing.height === size.height
+        ) {
+          return current;
+        }
+        const next = new Map(current);
+        next.set(imageUrl, size);
+        return next;
+      });
+    },
+    [],
+  );
+
   const cellScene = React.useMemo(
     () =>
       cellCanvasActive && registry
@@ -5294,6 +5318,7 @@ function WorkbenchBody({
             artifactViewerNodes: activeArtifactViewers.nodes,
             artifactOriginEdges: artifactOriginCanvasEdges,
             libraryItemsByArtifactId,
+            imageNaturalSizes: cellImageNaturalSizes,
           })
         : null,
     [
@@ -5304,6 +5329,7 @@ function WorkbenchBody({
       canStartRun,
       canvasEdges,
       cellCanvasActive,
+      cellImageNaturalSizes,
       collapsedAppendices,
       libraryItemsByArtifactId,
       nodeInstanceStates,
@@ -6108,6 +6134,7 @@ function WorkbenchBody({
                 onExtractArtifactCardItem={extractArtifactCardItem}
                 onRemoveArtifactCardItem={removeArtifactCardItem}
                 onUngroupArtifactCard={ungroupArtifacts}
+                onArtifactImageLoad={onCellArtifactImageLoad}
                 onCollectionRemoveMember={(cardId, memberId) =>
                   removeNodeInputPlug(
                     cardId,

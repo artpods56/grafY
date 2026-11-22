@@ -116,16 +116,19 @@ function viewerImagesFor(
   refs: readonly ArtifactRef[],
   workspaceId: string,
   registry: NodeRegistry,
+  imageNaturalSizes?: ReadonlyMap<string, { width: number; height: number }>,
 ): CellViewerImages {
   const urls: string[] = [];
   for (const ref of refs.slice(0, STACK_PEEK_LIMIT + 1)) {
     if (!paintsInline(ref, registry)) break;
     urls.push(artifactInlineContentUrl(workspaceId, ref.artifact_id));
   }
+  const imageUrl = urls[0] ?? null;
   return {
-    imageUrl: urls[0] ?? null,
+    imageUrl,
     stackImageUrls: urls.slice(1),
     itemCount: refs.length,
+    naturalSize: imageUrl ? (imageNaturalSizes?.get(imageUrl) ?? null) : null,
   };
 }
 
@@ -143,6 +146,7 @@ export function buildWorkbenchCellScene({
   artifactViewerNodes,
   artifactOriginEdges,
   libraryItemsByArtifactId,
+  imageNaturalSizes,
 }: {
   /** Names the content route for inline pictures; without it cards stay placeholders. */
   workspaceId?: string | null;
@@ -159,6 +163,8 @@ export function buildWorkbenchCellScene({
   artifactOriginEdges?: readonly ArtifactOriginEdge[];
   /** The Library's files by artifact id, to name a card's single artifact. */
   libraryItemsByArtifactId?: ReadonlyMap<string, PlacedLibraryItem>;
+  /** Decoded natural pixel dimensions by image content URL, for auto-fit cards. */
+  imageNaturalSizes?: ReadonlyMap<string, { width: number; height: number }>;
 }) {
   const nodeRunState: Record<string, CellNodeRunState> = {};
   for (const node of nodes) {
@@ -235,7 +241,10 @@ export function buildWorkbenchCellScene({
         shape: "item_refs" in value ? "many" : "one",
       });
       if (workspaceId) {
-        viewerImages.set(card.id, viewerImagesFor(refs, workspaceId, registry));
+        viewerImages.set(
+          card.id,
+          viewerImagesFor(refs, workspaceId, registry, imageNaturalSizes),
+        );
       }
       // A sequence has no one file name; its card says its count instead,
       // and its spread names every item.

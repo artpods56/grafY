@@ -266,6 +266,11 @@ export interface CellCanvasProps {
   /** Takes one item out of a sequence and off the canvas. */
   onRemoveArtifactCardItem?: (cardId: string, index: number) => void;
   onUngroupArtifactCard?: (cardId: string) => void;
+  /** Reports a decoded image artifact's natural pixel dimensions. */
+  onArtifactImageLoad?: (
+    imageUrl: string,
+    size: { width: number; height: number },
+  ) => void;
   onCollectionRemoveMember?: (cardId: string, memberId: string) => void;
   onHandleReady?: (handle: CellCanvasHandle | null) => void;
   onViewportZoomChange?: (zoom: number) => void;
@@ -913,6 +918,7 @@ export function CellCanvas({
   onExtractArtifactCardItem,
   onRemoveArtifactCardItem,
   onUngroupArtifactCard,
+  onArtifactImageLoad,
   onCollectionRemoveMember,
   onHandleReady,
   onViewportZoomChange,
@@ -2487,6 +2493,7 @@ export function CellCanvas({
             onInspect={onArtifactInspect}
             onExpandSequence={toggleSequence}
             onUngroup={editable ? onUngroupArtifactCard : undefined}
+            onImageLoad={onArtifactImageLoad}
             sequenceExpanded={openSequence?.card.id === card.id}
             canExpandSequence={spreadableById.get(card.id) ?? true}
           />

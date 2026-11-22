@@ -8,6 +8,10 @@ import type {
 } from "@/lib/api";
 
 import {
+  ARTIFACT_CARD_HEIGHT_MAX,
+  ARTIFACT_CARD_HEIGHT_MIN,
+  ARTIFACT_CARD_WIDTH_MAX,
+  ARTIFACT_CARD_WIDTH_MIN,
   cardArtifactRefs,
   DEFAULT_ARTIFACT_CARD_WIDTH,
 } from "../canvas/artifact-card";
@@ -48,6 +52,9 @@ import type {
 } from "./cell-contracts";
 import { countConfigShelfCells } from "./cell-card-geometry";
 import {
+  CARD_PLATE_BOTTOM_INSET,
+  CARD_PLATE_INSET_X,
+  CARD_PLATE_TOP,
   CELL_SIZE,
   STRIP_FIRST_PORT_ROW,
   artifactCardOutputRow,
@@ -77,10 +84,117 @@ const MIN_OPERATOR_HEIGHT_CELLS = 4;
 const MIN_CARD_WIDTH_CELLS = 8;
 const MAX_CARD_WIDTH_CELLS = 48;
 const MAX_CARD_HEIGHT_CELLS = 60;
+/** Artifact card bounds derived directly from the shared pixel floor/ceiling (6×3..48×48 cells). */
+const MIN_ARTIFACT_WIDTH_CELLS = Math.ceil(ARTIFACT_CARD_WIDTH_MIN / CELL_SIZE);
+const MAX_ARTIFACT_WIDTH_CELLS = Math.floor(
+  ARTIFACT_CARD_WIDTH_MAX / CELL_SIZE,
+);
+const MIN_ARTIFACT_HEIGHT_CELLS = Math.ceil(
+  ARTIFACT_CARD_HEIGHT_MIN / CELL_SIZE,
+);
+const MAX_ARTIFACT_HEIGHT_CELLS = Math.floor(
+  ARTIFACT_CARD_HEIGHT_MAX / CELL_SIZE,
+);
+/** Default height for unsized artifact cards when natural dimensions are unknown. */
+const DEFAULT_ARTIFACT_HEIGHT_CELLS = 6;
+/** Tall unsized portraits cap at 350px (14 cells) so they stay thumbnail-sized. */
+const MAX_AUTO_ARTIFACT_HEIGHT_CELLS = 14;
+const DEFAULT_ARTIFACT_WIDTH_CELLS = Math.max(
+  MIN_ARTIFACT_WIDTH_CELLS,
+  Math.round(DEFAULT_ARTIFACT_CARD_WIDTH / CELL_SIZE),
+);
 
 export function snapPixelsToCell(px: number): number {
   const cells = Math.round(px / CELL_SIZE);
   return Object.is(cells, -0) ? 0 : cells;
+}
+
+/**
+ * Grid footprint for an image artifact card from its natural pixel size,
+ * honouring any explicit width/body_height the user already saved.
+ */
+export function cellArtifactImageCells(
+  natural: { width: number; height: number } | null | undefined,
+  layout?: { width?: number | null; body_height?: number | null } | null,
+): { widthCells: number; heightCells: number } {
+  const savedWidth =
+    layout?.width != null && layout.width > 0
+      ? Math.min(
+          MAX_ARTIFACT_WIDTH_CELLS,
+          Math.max(MIN_ARTIFACT_WIDTH_CELLS, snapPixelsToCell(layout.width)),
+        )
+      : null;
+  const savedHeight =
+    layout?.body_height != null && layout.body_height > 0
+      ? Math.min(
+          MAX_ARTIFACT_HEIGHT_CELLS,
+          Math.max(
+            MIN_ARTIFACT_HEIGHT_CELLS,
+            snapPixelsToCell(layout.body_height),
+          ),
+        )
+      : null;
+
+  if (
+    !natural ||
+    natural.width <= 0 ||
+    natural.height <= 0 ||
+    (savedWidth !== null && savedHeight !== null)
+  ) {
+    return {
+      widthCells: savedWidth ?? DEFAULT_ARTIFACT_WIDTH_CELLS,
+      heightCells: savedHeight ?? DEFAULT_ARTIFACT_HEIGHT_CELLS,
+    };
+  }
+
+  const aspect = natural.width / natural.height;
+  const insetX = CARD_PLATE_INSET_X * 2;
+  const insetY = CARD_PLATE_TOP + CARD_PLATE_BOTTOM_INSET;
+
+  if (savedWidth !== null) {
+    const plateW = savedWidth * CELL_SIZE - insetX;
+    const heightCells = Math.min(
+      MAX_ARTIFACT_HEIGHT_CELLS,
+      Math.max(
+        MIN_ARTIFACT_HEIGHT_CELLS,
+        snapPixelsToCell(plateW / aspect + insetY),
+      ),
+    );
+    return { widthCells: savedWidth, heightCells };
+  }
+
+  if (savedHeight !== null) {
+    const plateH = savedHeight * CELL_SIZE - insetY;
+    const widthCells = Math.min(
+      MAX_ARTIFACT_WIDTH_CELLS,
+      Math.max(
+        MIN_ARTIFACT_WIDTH_CELLS,
+        snapPixelsToCell(plateH * aspect + insetX),
+      ),
+    );
+    return { widthCells, heightCells: savedHeight };
+  }
+
+  const defaultPlateW = DEFAULT_ARTIFACT_WIDTH_CELLS * CELL_SIZE - insetX;
+  const rawHeightCells = snapPixelsToCell(defaultPlateW / aspect + insetY);
+  if (rawHeightCells <= MAX_AUTO_ARTIFACT_HEIGHT_CELLS) {
+    return {
+      widthCells: DEFAULT_ARTIFACT_WIDTH_CELLS,
+      heightCells: Math.max(MIN_ARTIFACT_HEIGHT_CELLS, rawHeightCells),
+    };
+  }
+  const cappedPlateH = MAX_AUTO_ARTIFACT_HEIGHT_CELLS * CELL_SIZE - insetY;
+  const widthCells = Math.min(
+    DEFAULT_ARTIFACT_WIDTH_CELLS,
+    Math.max(
+      MIN_ARTIFACT_WIDTH_CELLS,
+      snapPixelsToCell(cappedPlateH * aspect + insetX),
+    ),
+  );
+  return {
+    widthCells,
+    heightCells: MAX_AUTO_ARTIFACT_HEIGHT_CELLS,
+  };
 }
 
 export function cellOriginFromWorld(pos: { x: number; y: number }): CellCoord {
@@ -457,6 +571,8 @@ export interface CellViewerImages {
   stackImageUrls: readonly string[];
   /** Items the card holds: 1 for a single artifact. */
   itemCount: number;
+  /** Natural pixel dimensions of the lead image once decoded, for auto-fit sizing. */
+  naturalSize?: { width: number; height: number } | null;
 }
 
 /** What the caller knows about an artifact card's file, already worded. */
@@ -716,10 +832,33 @@ export function cellGraphFromAuthoredDocument(
         shape: "one",
       });
     }
-    const heightCells = Math.max(
-      6,
-      snapPixelsToCell(viewer.layout?.body_height ?? 150),
-    );
+    const images = options?.viewerImages?.get(viewer.id);
+    const minHeightCells = feedLink
+      ? STRIP_FIRST_PORT_ROW + 2
+      : MIN_ARTIFACT_HEIGHT_CELLS;
+    const rawCells =
+      previewKind === "image"
+        ? cellArtifactImageCells(images?.naturalSize, viewer.layout)
+        : {
+            widthCells: Math.min(
+              MAX_ARTIFACT_WIDTH_CELLS,
+              Math.max(
+                MIN_ARTIFACT_WIDTH_CELLS,
+                snapPixelsToCell(
+                  viewer.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
+                ),
+              ),
+            ),
+            heightCells: Math.min(
+              MAX_ARTIFACT_HEIGHT_CELLS,
+              Math.max(
+                minHeightCells,
+                snapPixelsToCell(viewer.layout?.body_height ?? 150),
+              ),
+            ),
+          };
+    const widthCells = rawCells.widthCells;
+    const heightCells = Math.max(minHeightCells, rawCells.heightCells);
     if (ref || liveOutput) {
       viewerPorts.push({
         id: "artifact-card-output",
@@ -736,7 +875,6 @@ export function cellGraphFromAuthoredDocument(
           : (liveOutput?.shape ?? "one"),
       });
     }
-    const images = options?.viewerImages?.get(viewer.id);
     const metadata = options?.viewerMetadata?.get(viewer.id);
     const filename = metadata?.filename ?? feedLink?.source_port_name;
     const itemCount =
@@ -751,13 +889,16 @@ export function cellGraphFromAuthoredDocument(
       title: typeLabel,
       subtitle: itemCountLabel ?? (feedLink ? "From output" : typeLabel),
       ...cellOriginFromWorld(viewer.position),
-      widthCells: Math.max(
-        MIN_CARD_WIDTH_CELLS,
-        snapPixelsToCell(viewer.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH),
-      ),
+      widthCells,
       heightCells,
       ports: viewerPorts,
       resizable: true,
+      resizeBounds: {
+        minWidthCells: MIN_ARTIFACT_WIDTH_CELLS,
+        maxWidthCells: MAX_ARTIFACT_WIDTH_CELLS,
+        minHeightCells,
+        maxHeightCells: MAX_ARTIFACT_HEIGHT_CELLS,
+      },
     });
     surfaces.set(viewer.id, {
       kind: "artifact",

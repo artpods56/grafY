@@ -77,4 +77,26 @@ describe("node layout", () => {
       appendixHeight: 400,
     });
   });
+
+  it("supports custom bounds when clamping, serializing, and hydrating", () => {
+    const bounds = {
+      minWidth: 150,
+      maxWidth: 1200,
+      minBodyHeight: 75,
+      maxBodyHeight: 1200,
+    };
+    expect(serializeNodeLayout({ width: 150, bodyHeight: 75 }, bounds)).toEqual(
+      {
+        width: 150,
+        body_height: 75,
+        appendix_height: null,
+      },
+    );
+    expect(hydrateNodeLayout({ width: 80, body_height: 2000 }, bounds)).toEqual(
+      {
+        width: 150,
+        bodyHeight: 1200,
+      },
+    );
+  });
 });

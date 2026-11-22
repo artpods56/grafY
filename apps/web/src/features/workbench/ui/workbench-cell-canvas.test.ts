@@ -737,9 +737,11 @@ describe("artifact card pictures", () => {
   const build = (
     workspaceId: string | null,
     libraryItemsByArtifactId?: ReadonlyMap<string, PlacedLibraryItem>,
+    imageNaturalSizes?: ReadonlyMap<string, { width: number; height: number }>,
   ) =>
     buildWorkbenchCellScene({
       libraryItemsByArtifactId,
+      imageNaturalSizes,
       workspaceId,
       document: graph,
       registry,
@@ -762,6 +764,17 @@ describe("artifact card pictures", () => {
     expect(surfaceById.jpeg).toMatchObject({
       imageUrl: url("j"),
     });
+  });
+
+  it("auto-fits an unsized PNG card to its decoded natural aspect ratio", () => {
+    const { graph: fitted } = build(
+      "ws",
+      undefined,
+      new Map([[url("p 1"), { width: 1200, height: 1600 }]]),
+    );
+    const pngCard = fitted.cards.find((card) => card.id === "png");
+    expect(pngCard?.widthCells).toBe(10);
+    expect(pngCard?.heightCells).toBe(14);
   });
 
   it("leaves a TIFF on its placeholder", () => {

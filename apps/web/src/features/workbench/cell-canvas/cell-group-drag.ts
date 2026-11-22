@@ -1,5 +1,6 @@
 import type { CellResizeCommit, CellResizeEdge } from "./cell-contracts";
 import {
+  ARTIFACT_CARD_OUTPUT_PORT_ID,
   CELL_SIZE,
   cellToWorldOrigin,
   type CellCardModel,
@@ -221,9 +222,14 @@ export function minCardHeightCellsForPorts(
   card: Pick<CellCardModel, "ports">,
 ): number {
   return card.ports.reduce(
-    // A port's row, then a row the plate's bottom inset may take.
-    (height, port) => Math.max(height, port.rowOffset + 2),
-    4,
+    // A fixed port's row, then a row the plate's bottom inset may take.
+    // An artifact card's corner output moves with the bottom edge, so it
+    // never pins the card's minimum height to its current height.
+    (height, port) =>
+      port.id === ARTIFACT_CARD_OUTPUT_PORT_ID
+        ? height
+        : Math.max(height, port.rowOffset + 2),
+    0,
   );
 }
 

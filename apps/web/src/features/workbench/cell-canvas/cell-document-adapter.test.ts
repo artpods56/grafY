@@ -18,6 +18,7 @@ import {
 } from "../model/graph-document";
 import {
   annotationHexFromToken,
+  cellArtifactImageCells,
   cellGraphFromAuthoredDocument,
   cellOriginFromWorld,
   graphCommandsFromCellAddPlug,
@@ -1231,7 +1232,7 @@ describe("artifact card pictures and output corner", () => {
       NonNullable<Parameters<typeof cellGraphFromAuthoredDocument>[2]>,
       "presentation"
     > = {},
-    bodyHeight = 150,
+    bodyHeight: number | null = 150,
   ) {
     return cellGraphFromAuthoredDocument(
       authoredGraphDocument(savedDocument()),
@@ -1244,11 +1245,14 @@ describe("artifact card pictures and output corner", () => {
             {
               id: "card",
               position: { x: 0, y: 0 },
-              layout: {
-                width: 250,
-                body_height: bodyHeight,
-                appendix_height: null,
-              },
+              layout:
+                bodyHeight === null
+                  ? null
+                  : {
+                      width: 250,
+                      body_height: bodyHeight,
+                      appendix_height: null,
+                    },
               mode: "artifact",
               artifact_ref: artifactRef,
             },
@@ -1326,5 +1330,79 @@ describe("artifact card pictures and output corner", () => {
       previewKind: "image",
       imageUrl: null,
     });
+  });
+
+  it("fits unsized image cards to their natural aspect ratio on the cell grid while honouring saved layout", () => {
+    // 16:9 landscape, 3:4 portrait, 9:16 tall portrait, and unknown size.
+    expect(cellArtifactImageCells({ width: 1920, height: 1080 })).toEqual({
+      widthCells: 10,
+      heightCells: 7,
+    });
+    expect(cellArtifactImageCells({ width: 1200, height: 1600 })).toEqual({
+      widthCells: 10,
+      heightCells: 14,
+    });
+    expect(cellArtifactImageCells({ width: 1080, height: 1920 })).toEqual({
+      widthCells: 8,
+      heightCells: 14,
+    });
+    expect(cellArtifactImageCells(null)).toEqual({
+      widthCells: 10,
+      heightCells: 6,
+    });
+    // Explicit saved width and height always win over natural size.
+    expect(
+      cellArtifactImageCells(
+        { width: 1200, height: 1600 },
+        { width: 350, body_height: 200 },
+      ),
+    ).toEqual({ widthCells: 14, heightCells: 8 });
+    // Partial saved width derives height from natural aspect.
+    expect(
+      cellArtifactImageCells({ width: 1200, height: 1600 }, { width: 350 }),
+    ).toEqual({ widthCells: 14, heightCells: 19 });
+
+    // End-to-end through the adapter: unsized portrait photo adjusts heightCells and its output port row.
+    const portrait = viewerScene(
+      ref("p", "file.png"),
+      {
+        viewerImages: new Map([
+          [
+            "card",
+            {
+              imageUrl: "/p",
+              stackImageUrls: [],
+              itemCount: 1,
+              naturalSize: { width: 1200, height: 1600 },
+            },
+          ],
+        ]),
+      },
+      null,
+    );
+    const card = portrait.graph.cards.find((c) => c.id === "card")!;
+    expect(card.widthCells).toBe(10);
+    expect(card.heightCells).toBe(14);
+    expect(card.ports[0]?.rowOffset).toBe(12);
+    expect(card.resizeBounds).toEqual({
+      minWidthCells: 6,
+      maxWidthCells: 48,
+      minHeightCells: 3,
+      maxHeightCells: 48,
+    });
+
+    // Saved compact (6×3) and oversized (>48×48) artifact layouts clamp cleanly to the shared bounds.
+    expect(
+      cellArtifactImageCells(
+        { width: 1200, height: 1600 },
+        { width: 150, body_height: 75 },
+      ),
+    ).toEqual({ widthCells: 6, heightCells: 3 });
+    expect(
+      cellArtifactImageCells(
+        { width: 1200, height: 1600 },
+        { width: 3000, body_height: 3000 },
+      ),
+    ).toEqual({ widthCells: 48, heightCells: 48 });
   });
 });
