@@ -132,7 +132,6 @@ function settleX(
   state: SequenceSpreadState,
   key: string,
 ): { x: number; vx: number; active: boolean } | undefined {
-  if (state.phase.kind === "movingSpread") return undefined;
   const settle = state.phase.motionSettles.get(key);
   if (!settle) return undefined;
   return { x: settle.current.x, vx: settle.velocity.x, active: settle.active };
@@ -850,5 +849,169 @@ describe("keyboard reorder and syncProps", () => {
     });
     expect(grown.state.windowStart).toBe(1);
     expect(grown.effects).toEqual([]);
+  });
+
+  it("preserves in-flight step and resize springs across sub-threshold move grip presses", () => {
+    let state = boot(6, 4, false).state;
+    state = act(state, { kind: "step", by: 1, ...clock(1000, true) }).state;
+    state = act(state, { kind: "motionTick", nowMs: 1016 }).state;
+    const beforePress = settleX(state, "a2:2");
+    expect(beforePress?.active).toBe(true);
+
+    const pressed = act(state, {
+      kind: "movePointerDown",
+      pointerId: 8,
+      button: 0,
+      clientX: 100,
+      clientY: 20,
+      world: { x: 100, y: 20 },
+    });
+    expect(phaseKind(pressed.state)).toBe("movingSpread");
+    expect(settleX(pressed.state, "a2:2")).toEqual(beforePress);
+
+    const ticked = act(pressed.state, { kind: "motionTick", nowMs: 1032 });
+    expect(kinds(ticked.effects)).toContain("scheduleMotionFrame");
+    expect(settleX(ticked.state, "a2:2")?.x).not.toBe(beforePress?.x);
+
+    const released = act(ticked.state, {
+      kind: "movePointerEnd",
+      pointerId: 8,
+      world: { x: 100, y: 20 },
+      cancelled: false,
+      cardId: "pages",
+      scene: scene(),
+    });
+    expect(phaseKind(released.state)).toBe("stepping");
+    expect(settleX(released.state, "a2:2")?.active).toBe(true);
+
+    let resizeState = boot(8, 6, false).state;
+    resizeState = act(resizeState, {
+      kind: "resizePointerDown",
+      pointerId: 9,
+      button: 0,
+      startX: 6 * CARD_WIDTH,
+    }).state;
+    resizeState = act(resizeState, {
+      kind: "resizePointerMove",
+      pointerId: 9,
+      worldX: 4 * CARD_WIDTH,
+      minVisibleCount: 1,
+      maxVisibleCount: 8,
+      ...clock(2000, true),
+    }).state;
+    resizeState = act(resizeState, {
+      kind: "resizePointerEnd",
+      pointerId: 9,
+    }).state;
+    const midResize = act(resizeState, {
+      kind: "motionTick",
+      nowMs: 2016,
+    }).state;
+    expect(phaseKind(midResize)).toBe("resizing");
+
+    const gripPress = act(midResize, {
+      kind: "movePointerDown",
+      pointerId: 10,
+      button: 0,
+      clientX: 100,
+      clientY: 20,
+      world: { x: 100, y: 20 },
+    }).state;
+    const gripRelease = act(gripPress, {
+      kind: "movePointerEnd",
+      pointerId: 10,
+      world: { x: 100, y: 20 },
+      cancelled: false,
+      cardId: "pages",
+      scene: scene({ frameWidth: 4 * CARD_WIDTH }),
+    }).state;
+    expect(phaseKind(gripRelease)).toBe("resizing");
+    if (gripRelease.phase.kind !== "resizing") return;
+    expect(gripRelease.phase.resizeTucks.length).toBeGreaterThan(0);
+  });
+
+  it("preserves resize tucks across sub-threshold card pointer press and release", () => {
+    let state = boot(8, 6, false).state;
+    state = act(state, {
+      kind: "resizePointerDown",
+      pointerId: 11,
+      button: 0,
+      startX: 6 * CARD_WIDTH,
+    }).state;
+    state = act(state, {
+      kind: "resizePointerMove",
+      pointerId: 11,
+      worldX: 4 * CARD_WIDTH,
+      minVisibleCount: 1,
+      maxVisibleCount: 8,
+      ...clock(1000, true),
+    }).state;
+    state = act(state, { kind: "resizePointerEnd", pointerId: 11 }).state;
+    state = act(state, { kind: "motionTick", nowMs: 1016 }).state;
+    expect(phaseKind(state)).toBe("resizing");
+
+    const cardDown = act(state, {
+      kind: "itemPointerDown",
+      pointerId: 12,
+      button: 0,
+      editable: true,
+      index: 1,
+      slot: 1,
+      clientX: CARD_WIDTH + 20,
+      clientY: 40,
+      world: { x: CARD_WIDTH + 20, y: 40 },
+      originX: 0,
+      originY: 0,
+      cardWidth: CARD_WIDTH,
+    }).state;
+    expect(phaseKind(cardDown)).toBe("draggingItem");
+
+    const cardUp = act(cardDown, {
+      kind: "itemPointerEnd",
+      pointerId: 12,
+      clientX: CARD_WIDTH + 20,
+      clientY: 40,
+      world: { x: CARD_WIDTH + 20, y: 40 },
+      cancelled: false,
+      cardId: "pages",
+      scene: scene(),
+    }).state;
+    expect(phaseKind(cardUp)).toBe("resizing");
+    if (cardUp.phase.kind !== "resizing") return;
+    expect(
+      cardUp.phase.resizeTucks.map((tuck) => tuck.item.artifactId),
+    ).toEqual(["a5", "a4"]);
+  });
+
+  it("resets windowStart when spread stops being windowed so fold targets mounted slots", () => {
+    let state = boot(6, 4, false).state;
+    state = act(state, { kind: "step", by: 2, ...clock(1000, false) }).state;
+    expect(state.windowStart).toBe(2);
+
+    const unwindowed = act(state, {
+      kind: "syncProps",
+      items: items(4),
+      windowed: false,
+      previousWindowed: true,
+      layoutVisibleCount: 4,
+    });
+    expect(unwindowed.state.windowStart).toBe(0);
+    expect(unwindowed.effects).toContainEqual({
+      kind: "notifyWindowStartChange",
+      windowStart: 0,
+    });
+
+    const closing = act(unwindowed.state, {
+      kind: "requestClose",
+      ...clock(1200, true, false),
+    });
+    expect(phaseKind(closing.state)).toBe("folding");
+    if (closing.state.phase.kind !== "folding") return;
+    expect([...closing.state.phase.motionSettles.keys()]).toEqual([
+      "a0:0",
+      "a1:1",
+      "a2:2",
+      "a3:3",
+    ]);
   });
 });

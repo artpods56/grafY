@@ -184,10 +184,17 @@ export type SequenceSpreadPhase =
       motionSettles: ReadonlyMap<string, CardSettleState>;
       underCard: UnderCard | null;
       stepTucks: readonly StepTuck[];
+      resizeTucks: readonly ResizeTuck[];
+      resizeBackSync: ResizeBackSync | null;
     }
   | {
       kind: "movingSpread";
       move: SpreadMoveData;
+      motionSettles: ReadonlyMap<string, CardSettleState>;
+      underCard: UnderCard | null;
+      stepTucks: readonly StepTuck[];
+      resizeTucks: readonly ResizeTuck[];
+      resizeBackSync: ResizeBackSync | null;
     };
 
 export interface SequenceSpreadState {
@@ -401,21 +408,7 @@ function settlesActive(settles: ReadonlyMap<string, CardSettleState>): boolean {
 function motionSettlesOf(
   phase: SequenceSpreadPhase,
 ): ReadonlyMap<string, CardSettleState> {
-  switch (phase.kind) {
-    case "movingSpread":
-      return EMPTY_MOTION;
-    case "idle":
-    case "stepping":
-    case "resizing":
-    case "rewinding":
-    case "folding":
-    case "draggingItem":
-      return phase.motionSettles;
-    default: {
-      const exhaustive: never = phase;
-      return exhaustive;
-    }
-  }
+  return phase.motionSettles;
 }
 
 function underCardOf(phase: SequenceSpreadPhase): UnderCard | null {
@@ -423,11 +416,11 @@ function underCardOf(phase: SequenceSpreadPhase): UnderCard | null {
     case "stepping":
     case "rewinding":
     case "draggingItem":
+    case "movingSpread":
       return phase.underCard;
     case "idle":
     case "resizing":
     case "folding":
-    case "movingSpread":
       return null;
     default: {
       const exhaustive: never = phase;
@@ -441,12 +434,48 @@ function stepTucksOf(phase: SequenceSpreadPhase): readonly StepTuck[] {
     case "stepping":
     case "rewinding":
     case "draggingItem":
+    case "movingSpread":
       return phase.stepTucks;
     case "idle":
     case "resizing":
     case "folding":
-    case "movingSpread":
       return [];
+    default: {
+      const exhaustive: never = phase;
+      return exhaustive;
+    }
+  }
+}
+
+function resizeTucksOf(phase: SequenceSpreadPhase): readonly ResizeTuck[] {
+  switch (phase.kind) {
+    case "resizing":
+    case "draggingItem":
+    case "movingSpread":
+      return phase.resizeTucks;
+    case "idle":
+    case "stepping":
+    case "rewinding":
+    case "folding":
+      return [];
+    default: {
+      const exhaustive: never = phase;
+      return exhaustive;
+    }
+  }
+}
+
+function resizeBackSyncOf(phase: SequenceSpreadPhase): ResizeBackSync | null {
+  switch (phase.kind) {
+    case "resizing":
+    case "draggingItem":
+    case "movingSpread":
+      return phase.resizeBackSync;
+    case "idle":
+    case "stepping":
+    case "rewinding":
+    case "folding":
+      return null;
     default: {
       const exhaustive: never = phase;
       return exhaustive;
@@ -607,16 +636,14 @@ export function stepTucksFromPhase(
 export function resizeTucksFromPhase(
   phase: SequenceSpreadPhase,
 ): readonly ResizeTuck[] {
-  if (phase.kind !== "resizing") return [];
   if (dragViewFromPhase(phase) !== null || isClosingPhase(phase)) return [];
-  return phase.resizeTucks;
+  return resizeTucksOf(phase);
 }
 
 export function resizeBackSyncFromState(
   state: SequenceSpreadState,
 ): ResizeBackSync | null {
-  if (state.phase.kind !== "resizing") return null;
-  const sync = state.phase.resizeBackSync;
+  const sync = resizeBackSyncOf(state.phase);
   if (!sync) return null;
   if (
     sync.itemCount !== state.items.length ||
@@ -711,8 +738,7 @@ function reconcilePhase(
 ): SequenceSpreadPhase {
   switch (phase.kind) {
     case "stepping":
-    case "rewinding":
-    case "draggingItem": {
+    case "rewinding": {
       const under = phase.underCard;
       const nextUnder =
         under && under.items === items && under.visibleCount === visibleCount
@@ -720,6 +746,23 @@ function reconcilePhase(
           : null;
       if (nextUnder === under) return phase;
       return { ...phase, underCard: nextUnder };
+    }
+    case "draggingItem":
+    case "movingSpread": {
+      const under = phase.underCard;
+      const nextUnder =
+        under && under.items === items && under.visibleCount === visibleCount
+          ? under
+          : null;
+      const sync = phase.resizeBackSync;
+      const nextSync =
+        sync &&
+        sync.itemCount === items.length &&
+        sync.visibleCount === visibleCount
+          ? sync
+          : null;
+      if (nextUnder === under && nextSync === sync) return phase;
+      return { ...phase, underCard: nextUnder, resizeBackSync: nextSync };
     }
     case "resizing": {
       const sync = phase.resizeBackSync;
@@ -734,7 +777,6 @@ function reconcilePhase(
     }
     case "idle":
     case "folding":
-    case "movingSpread":
       return phase;
     default: {
       const exhaustive: never = phase;
@@ -749,14 +791,13 @@ function onSyncProps(
   exec: Exec,
 ): SequenceSpreadState {
   const visibleCount = Math.min(action.layoutVisibleCount, action.items.length);
-  let windowStart = state.windowStart;
-  if (action.windowed) {
-    windowStart = clamp(
-      windowStart,
-      0,
-      Math.max(0, action.items.length - visibleCount),
-    );
-  }
+  const windowStart = action.windowed
+    ? clamp(
+        state.windowStart,
+        0,
+        Math.max(0, action.items.length - visibleCount),
+      )
+    : 0;
   const oldDisplayed = displayedWindowStart(
     state.windowStart,
     action.previousWindowed,
@@ -899,6 +940,31 @@ function buildStepMotion(
   };
 }
 
+function restoreMotionPhase(
+  motionSettles: ReadonlyMap<string, CardSettleState>,
+  underCard: UnderCard | null,
+  stepTucks: readonly StepTuck[],
+  resizeTucks: readonly ResizeTuck[],
+  resizeBackSync: ResizeBackSync | null,
+): SequenceSpreadPhase {
+  if (motionSettles.size === 0 || !settlesActive(motionSettles)) {
+    return { kind: "idle", motionSettles: EMPTY_MOTION };
+  }
+  if (resizeTucks.length > 0 || resizeBackSync !== null) {
+    return {
+      kind: "resizing",
+      pointer: null,
+      motionSettles,
+      resizeTucks,
+      resizeBackSync,
+    };
+  }
+  if (underCard !== null || stepTucks.length > 0) {
+    return { kind: "stepping", motionSettles, underCard, stepTucks };
+  }
+  return { kind: "idle", motionSettles };
+}
+
 function phaseAfterStep(
   previous: SequenceSpreadPhase,
   motionSettles: ReadonlyMap<string, CardSettleState>,
@@ -913,6 +979,8 @@ function phaseAfterStep(
       motionSettles,
       underCard,
       stepTucks,
+      resizeTucks: [],
+      resizeBackSync: null,
     };
   }
   if (previous.kind === "rewinding") {
@@ -1002,8 +1070,12 @@ function startFold(
   cardWidth: number,
   exec: Exec,
 ): SequenceSpreadState {
-  const start = state.windowStart;
   const open = state.visibleCount;
+  const start = clamp(
+    state.windowStart,
+    0,
+    Math.max(0, state.items.length - open),
+  );
   const previous = motionSettlesOf(state.phase);
   const settles = new Map<string, CardSettleState>();
   let anyActive = false;
@@ -1050,6 +1122,9 @@ function onRequestClose(
   if (isClosingPhase(state.phase)) return state;
   cancelGestures(state, exec);
   if (!action.animateMotion) {
+    if (motionSettlesOf(state.phase).size > 0) {
+      exec({ kind: "cancelMotionFrame" });
+    }
     exec({ kind: "notifyClose" });
     return state.phase.kind === "idle"
       ? state
@@ -1106,12 +1181,26 @@ function finishMotion(
           motionSettles: EMPTY_MOTION,
           underCard: null,
           stepTucks: [],
+          resizeTucks: [],
+          resizeBackSync: null,
+        },
+      };
+    case "movingSpread":
+      return {
+        ...state,
+        phase: {
+          kind: "movingSpread",
+          move: phase.move,
+          motionSettles: EMPTY_MOTION,
+          underCard: null,
+          stepTucks: [],
+          resizeTucks: [],
+          resizeBackSync: null,
         },
       };
     case "idle":
     case "stepping":
     case "folding":
-    case "movingSpread":
       return { ...state, phase: { kind: "idle", motionSettles: EMPTY_MOTION } };
     case "rewinding":
       return state;
@@ -1127,7 +1216,6 @@ function onMotionTick(
   nowMs: number,
   exec: Exec,
 ): SequenceSpreadState {
-  if (state.phase.kind === "movingSpread") return state;
   const settles = state.phase.motionSettles;
   if (settles.size === 0) {
     if (state.phase.kind === "folding") {
@@ -1313,6 +1401,8 @@ function onItemPointerDown(
       motionSettles: motionSettlesOf(state.phase),
       underCard: underCardOf(state.phase),
       stepTucks: stepTucksOf(state.phase),
+      resizeTucks: resizeTucksOf(state.phase),
+      resizeBackSync: resizeBackSyncOf(state.phase),
     },
   };
 }
@@ -1407,16 +1497,18 @@ function onItemPointerMove(
 
 function exitDrag(state: SequenceSpreadState): SequenceSpreadState {
   if (state.phase.kind !== "draggingItem") return state;
-  const { motionSettles, underCard, stepTucks } = state.phase;
-  if (underCard || stepTucks.length > 0 || settlesActive(motionSettles)) {
-    if (underCard || stepTucks.length > 0) {
-      return {
-        ...state,
-        phase: { kind: "stepping", motionSettles, underCard, stepTucks },
-      };
-    }
-  }
-  return { ...state, phase: { kind: "idle", motionSettles } };
+  const { motionSettles, underCard, stepTucks, resizeTucks, resizeBackSync } =
+    state.phase;
+  return {
+    ...state,
+    phase: restoreMotionPhase(
+      motionSettles,
+      underCard,
+      stepTucks,
+      resizeTucks,
+      resizeBackSync,
+    ),
+  };
 }
 
 function onItemPointerEnd(
@@ -1560,6 +1652,11 @@ function onMovePointerDown(
         landingDelta: { col: 0, row: 0 },
         settle: createCardSettle({ x: 0, y: 0 }),
       },
+      motionSettles: motionSettlesOf(state.phase),
+      underCard: underCardOf(state.phase),
+      stepTucks: stepTucksOf(state.phase),
+      resizeTucks: resizeTucksOf(state.phase),
+      resizeBackSync: resizeBackSyncOf(state.phase),
     },
   };
 }
@@ -1603,7 +1700,10 @@ function onMovePointerMove(
   if (settle.active) exec({ kind: "scheduleMoveFrame" });
   return {
     ...state,
-    phase: { kind: "movingSpread", move: { ...move, landingDelta, settle } },
+    phase: {
+      ...state.phase,
+      move: { ...move, landingDelta, settle },
+    },
   };
 }
 
@@ -1614,13 +1714,26 @@ function onMovePointerEnd(
 ): SequenceSpreadState {
   if (state.phase.kind !== "movingSpread") return state;
   if (state.phase.move.pointerId !== action.pointerId) return state;
-  const move = state.phase.move;
+  const {
+    move,
+    motionSettles,
+    underCard,
+    stepTucks,
+    resizeTucks,
+    resizeBackSync,
+  } = state.phase;
   exec({ kind: "cancelMoveFrame" });
-  const idle: SequenceSpreadState = {
+  const restored: SequenceSpreadState = {
     ...state,
-    phase: { kind: "idle", motionSettles: EMPTY_MOTION },
+    phase: restoreMotionPhase(
+      motionSettles,
+      underCard,
+      stepTucks,
+      resizeTucks,
+      resizeBackSync,
+    ),
   };
-  if (!move.active || action.cancelled) return idle;
+  if (!move.active || action.cancelled) return restored;
   const rawDelta: CellCoord = {
     col: Math.round((action.world.x - move.startWorld.x) / CELL_SIZE),
     row: Math.round((action.world.y - move.startWorld.y) / CELL_SIZE),
@@ -1634,7 +1747,7 @@ function onMovePointerEnd(
       row: action.scene.card.row + delta.row,
     });
   }
-  return idle;
+  return restored;
 }
 
 function onDragTick(
@@ -1675,7 +1788,7 @@ function onMoveTick(
   if (settle.active) exec({ kind: "scheduleMoveFrame" });
   return {
     ...state,
-    phase: { kind: "movingSpread", move: { ...state.phase.move, settle } },
+    phase: { ...state.phase, move: { ...state.phase.move, settle } },
   };
 }
 

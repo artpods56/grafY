@@ -4463,7 +4463,6 @@ function WorkbenchBody({
                 variant="ghost"
                 size="sm"
                 role="menuitem"
-                className="nodrag nopan"
                 xstyle={s.railMenuButton}
                 onClick={() => addAnnotation("text")}
               >
@@ -4475,7 +4474,6 @@ function WorkbenchBody({
                 variant="ghost"
                 size="sm"
                 role="menuitem"
-                className="nodrag nopan"
                 xstyle={s.railMenuButton}
                 onClick={() => addAnnotation("rectangle")}
               >
@@ -4487,7 +4485,6 @@ function WorkbenchBody({
                 variant="ghost"
                 size="sm"
                 role="menuitem"
-                className="nodrag nopan"
                 xstyle={s.railMenuButton}
                 onClick={() => addAnnotation("ellipse")}
               >
