@@ -45,9 +45,10 @@ export interface CellPipeMetadata {
 }
 
 /**
- * Every pipe in the scene. Origins become artifact-card-to-plug pipes unless
- * the caller named its own links; edges and presentation links only survive
- * when both of their ends are cards on the canvas.
+ * Every pipe in the scene. Document edges are always mapped; origins become
+ * artifact-card-to-plug pipes unless the caller named its own links, and
+ * origin pipes and presentation links only survive when both of their ends are
+ * cards on the canvas.
  */
 export function buildCellPipes(
   document: AuthoredGraphDocument,

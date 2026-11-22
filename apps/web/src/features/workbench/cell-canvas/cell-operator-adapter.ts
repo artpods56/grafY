@@ -521,10 +521,27 @@ export function graphCommandsFromCellResize(
   commit: CellResizeCommit,
   existingLayout?: SavedNodeLayout | null,
 ): GraphCommand[] {
+  const rawWidth = Number.isFinite(commit.widthCells)
+    ? commit.widthCells * CELL_SIZE
+    : existingLayout?.width != null && Number.isFinite(existingLayout.width)
+      ? existingLayout.width
+      : NODE_WIDTH_MIN;
+  const rawBodyHeight = Number.isFinite(commit.heightCells)
+    ? commit.heightCells * CELL_SIZE
+    : existingLayout?.body_height != null &&
+        Number.isFinite(existingLayout.body_height)
+      ? existingLayout.body_height
+      : BODY_HEIGHT_MIN;
+  const rawAppendixHeight =
+    existingLayout?.appendix_height != null &&
+    Number.isFinite(existingLayout.appendix_height) &&
+    existingLayout.appendix_height > 0
+      ? existingLayout.appendix_height
+      : undefined;
   const layout = serializeNodeLayout({
-    width: commit.widthCells * CELL_SIZE,
-    bodyHeight: commit.heightCells * CELL_SIZE,
-    appendixHeight: existingLayout?.appendix_height ?? undefined,
+    width: rawWidth,
+    bodyHeight: rawBodyHeight,
+    appendixHeight: rawAppendixHeight,
   });
   return [
     {
@@ -638,9 +655,17 @@ export function graphCommandsFromCellMovesForDocument(
 }
 
 /** An agent's box is bounded by `GraphAgent`, which has no appendix to carry. */
-function clampAgentDimension(value: number, min: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(LAYOUT_DIMENSION_MAX, Math.max(min, value));
+function clampAgentDimension(
+  value: number,
+  fallback: number,
+  min: number,
+): number {
+  const candidate = Number.isFinite(value)
+    ? value
+    : Number.isFinite(fallback)
+      ? fallback
+      : min;
+  return Math.min(LAYOUT_DIMENSION_MAX, Math.max(min, candidate));
 }
 
 export function graphCommandsFromCellResizeForDocument(
@@ -664,10 +689,12 @@ export function graphCommandsFromCellResizeForDocument(
           ...agent,
           width: clampAgentDimension(
             commit.widthCells * CELL_SIZE,
+            agent.width,
             NODE_WIDTH_MIN,
           ),
           height: clampAgentDimension(
             commit.heightCells * CELL_SIZE,
+            agent.height,
             BODY_HEIGHT_MIN,
           ),
         },

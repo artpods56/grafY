@@ -24,6 +24,7 @@ import {
   type CellCardModel,
   type CellResizeBounds,
 } from "./cell-model";
+import { computeCellResize } from "./cell-group-drag";
 import {
   cellArtifactImageCells,
   cellGraphFromAuthoredDocument,
@@ -330,13 +331,15 @@ describe("cell adapter resize bounds match OpenAPI layout contracts", () => {
     for (const kind of CARD_KINDS) {
       const bounds = cardOfKind(document, kind).resizeBounds;
       assert(bounds, `the ${kind} card offers no resize bounds`);
+      expect(bounds.maxWidthCells).toBeDefined();
+      expect(bounds.maxHeightCells).toBeDefined();
       const { schema, width, height } = KIND_SCHEMA[kind];
       expectWithin(
         bounds.minWidthCells * CELL_SIZE,
         numericBounds(schema, width),
       );
       expectWithin(
-        (bounds.maxWidthCells ?? bounds.minWidthCells) * CELL_SIZE,
+        bounds.maxWidthCells! * CELL_SIZE,
         numericBounds(schema, width),
       );
       expectWithin(
@@ -344,7 +347,7 @@ describe("cell adapter resize bounds match OpenAPI layout contracts", () => {
         numericBounds(schema, height),
       );
       expectWithin(
-        (bounds.maxHeightCells ?? bounds.minHeightCells) * CELL_SIZE,
+        bounds.maxHeightCells! * CELL_SIZE,
         numericBounds(schema, height),
       );
     }
@@ -373,8 +376,11 @@ describe("cell adapter resize bounds match OpenAPI layout contracts", () => {
           layout.body_height!,
           numericBounds("GraphNodeLayout", "body_height"),
         );
-        if (layout.appendix_height !== null) {
+        if (kind === "operator") {
+          expect(layout.appendix_height).toBe(120);
           expectWithin(layout.appendix_height!, appendixBounds);
+        } else {
+          expect(layout.appendix_height).toBeNull();
         }
 
         const roundTripped = cardOfKind(
@@ -439,18 +445,128 @@ describe("cell adapter resize bounds match OpenAPI layout contracts", () => {
           height: bounds.minHeightCells * CELL_SIZE,
         },
         {
-          width: (bounds.maxWidthCells ?? bounds.minWidthCells) * CELL_SIZE,
-          height: (bounds.maxHeightCells ?? bounds.minHeightCells) * CELL_SIZE,
+          width: bounds.maxWidthCells! * CELL_SIZE,
+          height: bounds.maxHeightCells! * CELL_SIZE,
         },
       ]) {
         const graph = readScene(
           document,
           presentationSavedAt(kind, saved.width, saved.height),
         );
-        expectBoxWithinSchema(kind, cardById(graph.cards, cardId));
+        const card = cardById(graph.cards, cardId);
+        expectBoxWithinSchema(kind, card);
+        expect(card.widthCells).toBe(saved.width / CELL_SIZE);
+        expect(card.heightCells).toBe(saved.height / CELL_SIZE);
       }
     },
   );
+
+  it("preserves large saved agent and annotation sizes on zero-movement grip release", () => {
+    const base = scene();
+    const document: AuthoredGraphDocument = {
+      ...base,
+      agents: base.agents.map((agent) => ({
+        ...agent,
+        width: 1500,
+        height: 1600,
+      })),
+    };
+    const presentation: Presentation = {
+      ...SCENE_PRESENTATION,
+      annotations: SCENE_PRESENTATION.annotations.map((annotation) => ({
+        ...annotation,
+        layout: { width: 1500, height: 1600 },
+      })),
+    };
+    const graph = readScene(document, presentation);
+    const agent = cardById(graph.cards, "agent");
+    const annotation = cardById(graph.cards, "note");
+
+    expect(
+      computeCellResize(agent, "se", { x: 0, y: 0 }, { x: 0, y: 0 }),
+    ).toEqual({
+      cardId: "agent",
+      widthCells: 60,
+      heightCells: 64,
+    });
+    expect(
+      computeCellResize(annotation, "se", { x: 0, y: 0 }, { x: 0, y: 0 }),
+    ).toEqual({
+      cardId: "note",
+      widthCells: 60,
+      heightCells: 64,
+    });
+  });
+
+  it("round-trips agent resize at its offered minimum height without jumping", () => {
+    const document = scene();
+    const bounds = cardOfKind(document, "agent").resizeBounds;
+    assert(bounds);
+    expect(bounds.minHeightCells).toBe(8);
+
+    const commands = graphCommandsFromCellResizeForDocument(document, {
+      cardId: "agent",
+      widthCells: bounds.minWidthCells,
+      heightCells: bounds.minHeightCells,
+    });
+    const updated = commands.reduce(applyGraphCommandNormalized, document);
+    const roundTripped = cardOfKind(updated, "agent");
+    expect(roundTripped.widthCells).toBe(bounds.minWidthCells);
+    expect(roundTripped.heightCells).toBe(bounds.minHeightCells);
+  });
+
+  it("preserves valid saved dimensions on non-finite resize commits and keeps non-positive appendix_height null", () => {
+    const base = scene();
+    const document: AuthoredGraphDocument = {
+      ...base,
+      nodes: base.nodes.map((candidate) =>
+        candidate.id === "node"
+          ? {
+              ...candidate,
+              layout: { width: 650, body_height: 325, appendix_height: 0 },
+            }
+          : candidate,
+      ),
+      agents: base.agents.map((agent) => ({
+        ...agent,
+        width: 650,
+        height: 400,
+      })),
+    };
+
+    for (const nonFinite of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ]) {
+      const [nodeCommand] = graphCommandsFromCellResize(
+        { cardId: "node", widthCells: nonFinite, heightCells: 12 },
+        { width: 650, body_height: 325, appendix_height: 0 },
+      );
+      assert(nodeCommand?.kind === "update_node_layout");
+      expect(nodeCommand.layout).toEqual({
+        width: 650,
+        body_height: 300,
+        appendix_height: null,
+      });
+
+      const [negativeAppendixCommand] = graphCommandsFromCellResize(
+        { cardId: "node", widthCells: 12, heightCells: 12 },
+        { width: 650, body_height: 325, appendix_height: -10 },
+      );
+      assert(negativeAppendixCommand?.kind === "update_node_layout");
+      expect(negativeAppendixCommand.layout?.appendix_height).toBeNull();
+
+      const [agentCommand] = graphCommandsFromCellResizeForDocument(document, {
+        cardId: "agent",
+        widthCells: nonFinite,
+        heightCells: 14,
+      });
+      assert(agentCommand?.kind === "configure_agent");
+      expect(agentCommand.agent.width).toBe(650);
+      expect(agentCommand.agent.height).toBe(350);
+    }
+  });
 
   it("keeps a measured image footprint inside GraphPresentationViewerLayout", () => {
     const widthBounds = numericBounds("GraphPresentationViewerLayout", "width");

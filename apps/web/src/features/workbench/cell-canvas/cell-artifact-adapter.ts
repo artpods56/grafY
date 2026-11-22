@@ -26,17 +26,17 @@ import type {
 import {
   DEFAULT_ARTIFACT_HEIGHT_CELLS,
   DEFAULT_ARTIFACT_WIDTH_CELLS,
+  DEFAULT_FREE_MAX_CELLS,
   MAX_ARTIFACT_HEIGHT_CELLS,
   MAX_ARTIFACT_WIDTH_CELLS,
   MAX_AUTO_ARTIFACT_HEIGHT_CELLS,
-  MAX_CARD_HEIGHT_CELLS,
-  MAX_CARD_WIDTH_CELLS,
+  MAX_SCHEMA_LAYOUT_CELLS,
+  MIN_AGENT_HEIGHT_CELLS,
   MIN_ARTIFACT_HEIGHT_CELLS,
   MIN_ARTIFACT_WIDTH_CELLS,
   MIN_ANNOTATION_HEIGHT_CELLS,
   MIN_ANNOTATION_WIDTH_CELLS,
   MIN_CARD_WIDTH_CELLS,
-  MIN_OPERATOR_HEIGHT_CELLS,
   cellOriginFromWorld,
   collectionTypeLabel,
   portArtifactType,
@@ -245,24 +245,35 @@ export function buildAgentCardsAndSurfaces(document: AuthoredGraphDocument): {
   for (const agent of document.agents) {
     const modelLabel =
       agent.model?.kind === "custom" ? agent.model.model : "Deployment model";
+    const widthCells = Math.max(
+      MIN_CARD_WIDTH_CELLS,
+      snapPixelsToCell(agent.width || 360),
+    );
+    const heightCells = Math.max(
+      MIN_AGENT_HEIGHT_CELLS,
+      snapPixelsToCell(agent.height || 200),
+    );
     cards.push({
       id: agent.id,
       kind: "agent",
       title: agent.name || "Agent",
       subtitle: modelLabel,
       ...cellOriginFromWorld(agent.position ?? { x: 0, y: 0 }),
-      widthCells: Math.max(
-        MIN_CARD_WIDTH_CELLS,
-        snapPixelsToCell(agent.width || 360),
-      ),
-      heightCells: Math.max(8, snapPixelsToCell(agent.height || 200)),
+      widthCells,
+      heightCells,
       ports: [],
       resizable: true,
       resizeBounds: {
         minWidthCells: MIN_CARD_WIDTH_CELLS,
-        maxWidthCells: MAX_CARD_WIDTH_CELLS,
-        minHeightCells: MIN_OPERATOR_HEIGHT_CELLS,
-        maxHeightCells: MAX_CARD_HEIGHT_CELLS,
+        maxWidthCells: Math.min(
+          MAX_SCHEMA_LAYOUT_CELLS,
+          Math.max(DEFAULT_FREE_MAX_CELLS, widthCells),
+        ),
+        minHeightCells: MIN_AGENT_HEIGHT_CELLS,
+        maxHeightCells: Math.min(
+          MAX_SCHEMA_LAYOUT_CELLS,
+          Math.max(DEFAULT_FREE_MAX_CELLS, heightCells),
+        ),
       },
     });
     surfaces.set(agent.id, {
@@ -448,27 +459,35 @@ export function buildAnnotationCardsAndSurfaces(
   const surfaces = new Map<string, CellCardSurfaceData>();
   for (const annotation of annotations) {
     const isNote = annotation.kind === "text";
+    const widthCells = Math.max(
+      MIN_ANNOTATION_WIDTH_CELLS,
+      snapPixelsToCell(annotation.layout.width),
+    );
+    const heightCells = Math.max(
+      MIN_ANNOTATION_HEIGHT_CELLS,
+      snapPixelsToCell(annotation.layout.height),
+    );
     cards.push({
       id: annotation.id,
       kind: "annotation",
       title: isNote ? "Note" : "Frame",
       subtitle: annotation.kind,
       ...cellOriginFromWorld(annotation.position),
-      widthCells: Math.max(
-        MIN_ANNOTATION_WIDTH_CELLS,
-        snapPixelsToCell(annotation.layout.width),
-      ),
-      heightCells: Math.max(
-        MIN_ANNOTATION_HEIGHT_CELLS,
-        snapPixelsToCell(annotation.layout.height),
-      ),
+      widthCells,
+      heightCells,
       ports: [],
       resizable: true,
       resizeBounds: {
         minWidthCells: MIN_ANNOTATION_WIDTH_CELLS,
-        maxWidthCells: MAX_CARD_WIDTH_CELLS,
+        maxWidthCells: Math.min(
+          MAX_SCHEMA_LAYOUT_CELLS,
+          Math.max(DEFAULT_FREE_MAX_CELLS, widthCells),
+        ),
         minHeightCells: MIN_ANNOTATION_HEIGHT_CELLS,
-        maxHeightCells: MAX_CARD_HEIGHT_CELLS,
+        maxHeightCells: Math.min(
+          MAX_SCHEMA_LAYOUT_CELLS,
+          Math.max(DEFAULT_FREE_MAX_CELLS, heightCells),
+        ),
       },
     });
     surfaces.set(annotation.id, {

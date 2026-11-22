@@ -16,7 +16,11 @@ import {
   ARTIFACT_CARD_WIDTH_MIN,
   DEFAULT_ARTIFACT_CARD_WIDTH,
 } from "../artifacts/artifact-card";
-import { BODY_HEIGHT_MIN, NODE_WIDTH_MIN } from "../authoring/node-layout";
+import {
+  BODY_HEIGHT_MIN,
+  LAYOUT_DIMENSION_MAX,
+  NODE_WIDTH_MIN,
+} from "../authoring/node-layout";
 import type { AuthoredGraphNode } from "../authoring/graph-document";
 
 import { CELL_SIZE, type CellCoord } from "./cell-model";
@@ -33,6 +37,14 @@ export const MIN_CARD_WIDTH_CELLS = Math.ceil(NODE_WIDTH_MIN / CELL_SIZE);
 export const MAX_CARD_WIDTH_CELLS = 48;
 /** An operator never shrinks below its header and one port row. */
 export const MIN_OPERATOR_HEIGHT_CELLS = Math.ceil(BODY_HEIGHT_MIN / CELL_SIZE);
+/** Agent cards always render at least 8 cells tall (200px). */
+export const MIN_AGENT_HEIGHT_CELLS = 8;
+/** Default drag ceiling (2000px) matching the free-resize canvas cap. */
+export const DEFAULT_FREE_MAX_CELLS = 80;
+/** Schema ceiling in whole cells (`Math.floor(16384 / 25) = 655`). */
+export const MAX_SCHEMA_LAYOUT_CELLS = Math.floor(
+  LAYOUT_DIMENSION_MAX / CELL_SIZE,
+);
 /** 1500px of port rows, config shelves and appendix: a node at its tallest useful. */
 export const MAX_CARD_HEIGHT_CELLS = 60;
 /** Annotation floors a note stays readable at; the ceiling is a node's. */
