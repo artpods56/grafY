@@ -61,6 +61,14 @@ export interface WorkbenchAuthoringUiState<
   readonly selectedAgentIds: ReadonlySet<string>;
   readonly positionOverrides: Readonly<Record<string, XYPosition>>;
   readonly collapsedAppendices: ReadonlySet<string>;
+  /**
+   * Config sections a person opened or closed on a card — a group, the
+   * advanced fold, a nested object — by node id, then by section key. Only a
+   * view of the card: it never reaches the document.
+   */
+  readonly configSections: Readonly<
+    Record<string, Readonly<Record<string, boolean>>>
+  >;
   readonly fitRevision: number;
   readonly canvasUpload: string | null;
   readonly popover: CanvasPopoverState<TDiscovery, TContextMenu>;
@@ -100,6 +108,12 @@ export type WorkbenchAuthoringUiAction<
       readonly overrides: Readonly<Record<string, XYPosition>>;
     }
   | { readonly kind: "toggleAppendix"; readonly cardId: string }
+  | {
+      readonly kind: "setConfigSection";
+      readonly cardId: string;
+      readonly sectionKey: string;
+      readonly open: boolean;
+    }
   | { readonly kind: "requestCanvasRefit" }
   | { readonly kind: "setCanvasUpload"; readonly status: string | null }
   | {
@@ -164,6 +178,7 @@ export const DEFAULT_AUTHORED_DOCUMENT: AuthoredGraphDocument = {
 };
 
 const EMPTY_IDS: ReadonlySet<string> = new Set();
+const EMPTY_CONFIG_SECTIONS: WorkbenchAuthoringUiState["configSections"] = {};
 const EMPTY_OVERRIDES: Readonly<Record<string, XYPosition>> = {};
 const EMPTY_OVERLAYS: NodeOverlays = {};
 const CLOSED_POPOVER: { readonly kind: "none" } = { kind: "none" };
@@ -182,6 +197,7 @@ export function initialWorkbenchAuthoringUiState<
     selectedAgentIds: EMPTY_IDS,
     positionOverrides: EMPTY_OVERRIDES,
     collapsedAppendices: EMPTY_IDS,
+    configSections: EMPTY_CONFIG_SECTIONS,
     fitRevision: 0,
     canvasUpload: null,
     popover: CLOSED_POPOVER,
@@ -242,6 +258,17 @@ export function workbenchAuthoringUiReducer<
           action.cardId,
         ),
       };
+    case "setConfigSection": {
+      const card = state.configSections[action.cardId];
+      if (card?.[action.sectionKey] === action.open) return state;
+      return {
+        ...state,
+        configSections: {
+          ...state.configSections,
+          [action.cardId]: { ...card, [action.sectionKey]: action.open },
+        },
+      };
+    }
     case "requestCanvasRefit":
       return { ...state, fitRevision: state.fitRevision + 1 };
     case "setCanvasUpload":

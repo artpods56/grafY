@@ -25,6 +25,7 @@ import {
 import {
   buildOperatorCardsAndSurfaces,
   type CellNodeRunState,
+  type CellNodeSecretState,
 } from "./cell-operator-adapter";
 import {
   buildCellPipes,
@@ -39,6 +40,10 @@ export function cellGraphFromAuthoredDocument(
     presentation?: SavedGraphDocument["presentation"] | null;
     nodeRunState?: Readonly<Record<string, CellNodeRunState>>;
     collapsedAppendices?: ReadonlySet<string>;
+    configSections?: Readonly<
+      Record<string, Readonly<Record<string, boolean>>>
+    >;
+    secrets?: CellNodeSecretState;
     originLinks?: readonly CellOriginLink[];
     viewerOutputValues?: ReadonlyMap<
       string,
@@ -61,6 +66,8 @@ export function cellGraphFromAuthoredDocument(
   const operators = buildOperatorCardsAndSurfaces(document, registry, {
     nodeRunState: options?.nodeRunState,
     collapsedAppendices: options?.collapsedAppendices,
+    configSections: options?.configSections,
+    secrets: options?.secrets,
   });
   const agents = buildAgentCardsAndSurfaces(document);
   const presentation = options?.presentation ?? null;
@@ -135,5 +142,8 @@ export type {
   CellViewerImages,
   CellViewerMetadata,
 } from "./cell-artifact-adapter";
-export type { CellNodeRunState } from "./cell-operator-adapter";
+export type {
+  CellNodeRunState,
+  CellNodeSecretState,
+} from "./cell-operator-adapter";
 export type { CellOriginLink, CellPipeMetadata } from "./cell-pipe-adapter";

@@ -18,7 +18,10 @@ import {
   type ArtifactViewerNode,
   type CanvasWorkflowNode,
 } from "../artifacts/artifact-viewer";
-import { connectedInputPortsForNode } from "./connected-inputs";
+import {
+  connectedInputPortsForDocumentNode,
+  connectedInputPortsForNode,
+} from "./connected-inputs";
 import { encodeHandleId } from "../authoring/handles";
 import {
   createWorkflowNodeData,
@@ -250,5 +253,83 @@ describe("connectedInputPortsForNode", () => {
     expect(
       connectedInputPortsForNode({ ...cardOptions, origins: [] }).input,
     ).toEqual({ connected: false, artifactTypeKey: null });
+  });
+});
+
+describe("connectedInputPortsForDocumentNode", () => {
+  const sources = new Map([
+    [
+      "source",
+      {
+        node: {
+          artifact_type_bindings: [{ variable: "T", artifact_type: document }],
+        },
+        spec: sourceSpec,
+      },
+    ],
+  ]);
+  const documentEdge = {
+    id: "edge",
+    from_node: "source",
+    from_port: "output",
+    to_node: "target",
+    to_port: "input",
+    to_plug: "plug-1",
+    collection_mode: "direct" as const,
+    conversion_path: [],
+    enabled: true,
+  };
+  const base = {
+    nodeId: "target",
+    spec,
+    origins: [],
+    sources,
+    conversions,
+    artifactTypes,
+  };
+
+  it("types an edge by its source's bound port, projection, or conversion", () => {
+    expect(
+      connectedInputPortsForDocumentNode({ ...base, edges: [documentEdge] }),
+    ).toEqual({
+      input: { connected: true, artifactTypeKey: "document.json@1" },
+      other: { connected: false, artifactTypeKey: null },
+    });
+    expect(
+      connectedInputPortsForDocumentNode({
+        ...base,
+        edges: [{ ...documentEdge, projection: { path: ["content", "text"] } }],
+      }).input,
+    ).toEqual({ connected: true, artifactTypeKey: "scalar.text@2" });
+    expect(
+      connectedInputPortsForDocumentNode({
+        ...base,
+        edges: [
+          {
+            ...documentEdge,
+            conversion_path: [
+              { id: "document-to-text", version: 1 },
+              { id: "text-to-vector", version: 2 },
+            ],
+          },
+        ],
+      }).input,
+    ).toEqual({ connected: true, artifactTypeKey: "geo.vector@3" });
+  });
+
+  it("ignores disabled edges and reads origins by their value", () => {
+    expect(
+      connectedInputPortsForDocumentNode({
+        ...base,
+        edges: [{ ...documentEdge, enabled: false }],
+      }).input,
+    ).toEqual({ connected: false, artifactTypeKey: null });
+    expect(
+      connectedInputPortsForDocumentNode({
+        ...base,
+        edges: [],
+        origins: [savedOrigin(ref)],
+      }).input,
+    ).toEqual({ connected: true, artifactTypeKey: "scalar.text@2" });
   });
 });

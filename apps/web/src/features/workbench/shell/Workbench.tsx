@@ -498,6 +498,8 @@ function WorkbenchBody({
     setCanvasUpload,
     collapsedAppendices,
     toggleAppendix,
+    configSections,
+    setConfigSection,
     fitRevision,
     libraryOpen,
     libraryInsertAt,
@@ -619,6 +621,8 @@ function WorkbenchBody({
   const {
     nodeSecretStatuses,
     refreshNodeSecretStatuses,
+    applyConfiguredNodeSecret,
+    removeConfiguredNodeSecret,
     clearGraphSecretStatuses,
     forgetNodeSecretStatuses,
   } = useNodeSecrets(workspaceId, nodes);
@@ -2853,6 +2857,12 @@ function WorkbenchBody({
             nodes,
             nodeInstanceStates,
             collapsedAppendices,
+            configSections,
+            secrets: {
+              statuses: nodeSecretStatuses,
+              savedNodes: activeGraph?.nodes ?? null,
+              scope: `${openGraphId ?? "unsaved"}:${activeGraph?.roomEpoch ?? "none"}`,
+            },
             canRun: canStartRun && projectEditsTrusted && !running,
             canvasEdges,
             artifactViewerEdges: artifactViewerCanvasEdges,
@@ -2864,17 +2874,20 @@ function WorkbenchBody({
         : null,
     [
       activeArtifactViewers.nodes,
+      activeGraph,
       artifactOriginCanvasEdges,
       artifactViewerCanvasEdges,
       authoredDocument,
       canStartRun,
       canvasEdges,
-
       cellImageNaturalSizes,
       collapsedAppendices,
+      configSections,
       libraryItemsByArtifactId,
       nodeInstanceStates,
+      nodeSecretStatuses,
       nodes,
+      openGraphId,
       projectEditsTrusted,
       registry,
       running,
@@ -3564,6 +3577,9 @@ function WorkbenchBody({
                 void runWorkflow("selected", [cardId]);
               }}
               onOperatorConfigChange={updateConfig}
+              onOperatorToggleConfigSection={setConfigSection}
+              onOperatorApplySecret={applyConfiguredNodeSecret}
+              onOperatorRemoveSecret={removeConfiguredNodeSecret}
               onOperatorAddPlug={addNodeInputPlug}
               onOperatorRemovePlug={(cardId, portName, plugId) =>
                 removeNodeInputPlug(

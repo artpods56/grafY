@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
-import { Field, TextArea, TextInput } from "@/components/ui/field";
 import {
   Menu,
   MenuContent,
@@ -23,8 +22,6 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
-import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { artifactTypeColor } from "@/features/workbench/config-ui/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
@@ -38,7 +35,6 @@ import {
   plugRowOffset,
 } from "../cell-card-geometry";
 import type {
-  CellConfigFieldSpec,
   CellResizeEdge,
   OperatorCardSurfaceData,
 } from "../cell-contracts";
@@ -71,6 +67,9 @@ import {
   PUNCHED_LABEL_INSET,
   PunchedPortSocket,
 } from "../punched-port";
+
+import { CellConfigBand } from "./CellConfigFields";
+import { CellCredentialsPopover } from "./CellCredentialsPopover";
 
 /**
  * The operator card, and the card shell every real card on the cell canvas is
@@ -511,44 +510,6 @@ const s = stylex.create({
     display: "flex",
     alignItems: "center",
     paddingInline: "10px",
-  },
-  configGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-    // One dense row is 25px, one cell, as the band's height counts.
-    gridAutoRows: "25px",
-    rowGap: 0,
-    columnGap: "8px",
-    alignItems: "center",
-    paddingInline: "10px",
-    overflow: "hidden",
-  },
-  configCell: { minWidth: 0, minHeight: 0 },
-  // A field given one dense row keeps its label beside the control; given a
-  // whole cell, the label sits above it, as on the workbench node.
-  inlineField: {
-    gridTemplateColumns: "minmax(0, 2fr) minmax(0, 3fr)",
-    alignItems: "center",
-    columnGap: "6px",
-  },
-  secretField: { alignContent: "start" },
-  secretControl: {
-    display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto",
-    gap: "5px",
-  },
-  secretFooter: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: "8px",
-  },
-  secretHint: {
-    minWidth: 0,
-    margin: 0,
-    color: tokens.colorSubtle,
-    fontSize: "9.5px",
-    lineHeight: 1.35,
   },
   appendix: {
     display: "flex",
@@ -1184,11 +1145,20 @@ export interface CellOperatorCardProps extends CellCardBaseProps {
   onRun?: (cardId: string) => void;
   onAddPlug?: (cardId: string, portName: string) => void;
   onRemovePlug?: (cardId: string, portName: string, plugId: string) => void;
-  onConfigChange?: (
+  /** A field's new value: a primitive, or a whole object or list. */
+  onConfigChange?: (cardId: string, fieldId: string, value: unknown) => void;
+  /** Opens or closes a config section: a group, the advanced fold, an object. */
+  onToggleConfigSection?: (
     cardId: string,
-    fieldId: string,
-    value: string | number | boolean,
+    sectionKey: string,
+    open: boolean,
   ) => void;
+  onApplySecret?: (
+    cardId: string,
+    name: string,
+    value: string,
+  ) => Promise<boolean>;
+  onRemoveSecret?: (cardId: string, name: string) => Promise<boolean>;
   onToggleAppendix?: (cardId: string) => void;
 }
 
@@ -1237,6 +1207,9 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
     onAddPlug,
     onRemovePlug,
     onConfigChange,
+    onToggleConfigSection,
+    onApplySecret,
+    onRemoveSecret,
     onToggleAppendix,
   } = props;
   const state = useResolvedCardState(card.id, props);
@@ -1246,6 +1219,7 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
   const layout = computeOperatorCardLayout(card, surface);
   const groups = surface.instancePlugGroups ?? [];
   const configFields = surface.configFields ?? [];
+  const secretInputs = surface.secretInputs ?? [];
   const appendix = surface.appendix ?? null;
 
   // Every instance plug is an input port on its own row: one the model already
@@ -1300,6 +1274,26 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
         : card.status === "error"
           ? "failed"
           : (statusText ?? "").toLowerCase();
+  // Always shown, not only while selected: a card that still needs a key
+  // says so at rest.
+  const headerMeta =
+    secretInputs.length > 0 ? (
+      <span data-card-credentials="true" onPointerDown={stopCardDrag}>
+        <CellCredentialsPopover
+          cardId={card.id}
+          cardTitle={card.title}
+          inputs={secretInputs}
+          onApply={
+            onApplySecret
+              ? (name, value) => onApplySecret(card.id, name, value)
+              : undefined
+          }
+          onRemove={
+            onRemoveSecret ? (name) => onRemoveSecret(card.id, name) : undefined
+          }
+        />
+      </span>
+    ) : null;
   const headerExtra = (
     <>
       {statusText ? (
@@ -1347,6 +1341,7 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
       ports={ports}
       connectedPortIds={connected}
       headerExtra={headerExtra}
+      headerMeta={headerMeta}
       resizable={card.resizable === true}
     >
       {[...portRows].map(([rowOffset, { input, output }]) => (
@@ -1462,37 +1457,27 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
       ))}
 
       {layout.configBand && configFields.length > 0 ? (
-        <div
-          data-config-band="true"
-          onPointerDown={stopCardDrag}
-          {...styled(
-            bandStyle(
-              layout.configBand.startRow,
-              layout.configBand.heightCells,
-            ),
-            s.band,
-            s.configGrid,
+        <CellConfigBand
+          fields={configFields}
+          sections={surface.configSections}
+          connectedPorts={surface.connectedInputPorts}
+          style={bandStyle(
+            layout.configBand.startRow,
+            layout.configBand.heightCells,
           )}
-        >
-          {configFields.map((field) => (
-            <div
-              key={field.id}
-              data-config-field={field.id}
-              {...styled(
-                {
-                  gridColumn: field.span === 1 ? "span 1" : "1 / -1",
-                  gridRow: `span ${fieldDenseRows(field)}`,
-                },
-                s.configCell,
-              )}
-            >
-              <ConfigFieldControl
-                field={field}
-                onChange={(value) => onConfigChange?.(card.id, field.id, value)}
-              />
-            </div>
-          ))}
-        </div>
+          className={stylex.props(s.band).className}
+          onPointerDown={stopCardDrag}
+          onChange={
+            onConfigChange
+              ? (fieldId, value) => onConfigChange(card.id, fieldId, value)
+              : undefined
+          }
+          onToggleSection={
+            onToggleConfigSection
+              ? (key, open) => onToggleConfigSection(card.id, key, open)
+              : undefined
+          }
+        />
       ) : null}
 
       {layout.appendixBand && appendix ? (
@@ -1565,129 +1550,6 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
         </section>
       ) : null}
     </CellCardShell>
-  );
-}
-
-/** Dense rows a field takes on the shelf grid, as `countConfigShelfCells` counts them. */
-function fieldDenseRows(field: CellConfigFieldSpec): number {
-  return Math.max(1, field.denseRows ?? (field.kind === "multiline" ? 3 : 1));
-}
-
-function ConfigFieldControl({
-  field,
-  onChange,
-}: {
-  field: CellConfigFieldSpec;
-  onChange: (value: string | number | boolean) => void;
-}) {
-  const text = String(field.value ?? "");
-  const labelStyle = fieldDenseRows(field) < 2 ? s.inlineField : null;
-  switch (field.kind) {
-    case "toggle":
-      return (
-        <Switch
-          size="dense"
-          checked={Boolean(field.value)}
-          label={field.label}
-          onCheckedChange={onChange}
-        />
-      );
-    case "multiline":
-      return (
-        <Field size="dense" label={field.label}>
-          <TextArea
-            size="dense"
-            rows={2}
-            value={text}
-            placeholder={field.placeholder}
-            onChange={(event) => onChange(event.target.value)}
-          />
-        </Field>
-      );
-    case "select":
-      return (
-        <Field size="dense" label={field.label} xstyle={labelStyle}>
-          <Select
-            size="dense"
-            value={text}
-            onChange={(event) => onChange(event.target.value)}
-          >
-            {(field.options ?? []).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      );
-    case "number":
-      return (
-        <Field size="dense" label={field.label} xstyle={labelStyle}>
-          <TextInput
-            size="dense"
-            type="number"
-            mono
-            value={text}
-            placeholder={field.placeholder}
-            onChange={(event) => onChange(Number(event.target.value))}
-          />
-        </Field>
-      );
-    case "text":
-      return (
-        <Field size="dense" label={field.label} xstyle={labelStyle}>
-          <TextInput
-            size="dense"
-            value={text}
-            placeholder={field.placeholder}
-            onChange={(event) => onChange(event.target.value)}
-          />
-        </Field>
-      );
-    case "secret":
-      return <CellSecretField field={field} />;
-  }
-}
-
-/**
- * A node secret, drawn the way the workbench draws one on a node that has not
- * been saved yet: the cell canvas has no secret store, so the field shows its
- * shape and takes no value. A secret never reaches `onConfigChange`.
- */
-function CellSecretField({ field }: { field: CellConfigFieldSpec }) {
-  return (
-    <Field
-      size="dense"
-      label={field.label}
-      aside="Status unavailable"
-      xstyle={s.secretField}
-    >
-      <div {...stylex.props(s.secretControl)}>
-        <TextInput
-          size="dense"
-          mono
-          type="password"
-          value=""
-          readOnly
-          disabled
-          autoComplete="off"
-          aria-label={field.label}
-          title={field.description}
-          placeholder="Enter secret"
-        />
-        <Button type="button" size="xs" variant="soft" disabled>
-          Apply
-        </Button>
-      </div>
-      <div {...stylex.props(s.secretFooter)}>
-        <p {...stylex.props(s.secretHint)}>
-          Save this node before configuring this secret.
-        </p>
-        <Button type="button" size="xs" variant="danger" disabled>
-          Remove
-        </Button>
-      </div>
-    </Field>
   );
 }
 

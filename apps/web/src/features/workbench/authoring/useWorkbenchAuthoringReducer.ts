@@ -96,6 +96,12 @@ export interface WorkbenchAuthoringReducerApi<
   >;
   readonly collapsedAppendices: ReadonlySet<string>;
   readonly toggleAppendix: (cardId: string) => void;
+  readonly configSections: WorkbenchAuthoringUiState["configSections"];
+  readonly setConfigSection: (
+    cardId: string,
+    sectionKey: string,
+    open: boolean,
+  ) => void;
   readonly fitRevision: number;
   readonly requestCanvasRefit: () => void;
   readonly canvasUpload: string | null;
@@ -395,6 +401,13 @@ export function useWorkbenchAuthoringReducer<
     [dispatchAction],
   );
 
+  const setConfigSection = React.useCallback(
+    (cardId: string, sectionKey: string, open: boolean) => {
+      dispatchAction({ kind: "setConfigSection", cardId, sectionKey, open });
+    },
+    [dispatchAction],
+  );
+
   const requestCanvasRefit = React.useCallback(() => {
     dispatchAction({ kind: "requestCanvasRefit" });
   }, [dispatchAction]);
@@ -539,6 +552,8 @@ export function useWorkbenchAuthoringReducer<
     setPositionOverrides,
     collapsedAppendices: state.collapsedAppendices,
     toggleAppendix,
+    configSections: state.configSections,
+    setConfigSection,
     fitRevision: state.fitRevision,
     requestCanvasRefit,
     canvasUpload: state.canvasUpload,

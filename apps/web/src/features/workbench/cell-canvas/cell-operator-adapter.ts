@@ -7,7 +7,13 @@
  * command this module emits is clamped through the shared layout serializer
  * before it reaches the wire.
  */
-import type { NodeRegistry, NodeSpec, Port, ServiceContract } from "@/lib/api";
+import type {
+  NodeRegistry,
+  NodeSpec,
+  Port,
+  SavedGraphNode,
+  ServiceContract,
+} from "@/lib/api";
 
 import { DEFAULT_ARTIFACT_CARD_WIDTH } from "../artifacts/artifact-card";
 import {
@@ -30,22 +36,23 @@ import type {
   AuthoredGraphOrigin,
   GraphCommand,
 } from "../authoring/graph-document";
-import { schemaFields, type SchemaField } from "../config-ui/config-schema";
 import {
-  configControlKind,
-  fieldFootprint,
-  type ConfigControlKind,
-  type FieldFootprint,
-} from "../config-ui/field-footprints";
+  nodeSecretBindingReady,
+  nodeSecretDependencyRevision,
+  nodeSecretInputs,
+  type WorkflowNodeSecretStatuses,
+} from "../authoring/node-secrets";
+import { schemaFields, validateConfig } from "../config-ui/config-schema";
+import { connectedInputPortsForDocumentNode } from "../config-ui/connected-inputs";
 
 import { countConfigShelfCells } from "./cell-card-geometry";
+import { buildSchemaConfigEntries } from "./cell-config-plan";
 import type {
   CellCardSurfaceData,
-  CellConfigFieldKind,
-  CellConfigFieldSpec,
   CellExecutionAppendixSpec,
   CellInstancePlugGroup,
   CellResizeCommit,
+  CellSecretInputSpec,
   CollectionCardSurfaceData,
 } from "./cell-contracts";
 import {
@@ -73,13 +80,6 @@ import {
   collectionHeightCells,
 } from "./cell-model";
 
-/** A config footprint row is 50px: two 25px dense rows, two cells. */
-const CELLS_PER_FOOTPRINT_ROW = 2;
-/**
- * A node secret's label, input and save hint fit three dense rows; its
- * two-row footprint would leave a dense row empty under the hint.
- */
-const SECRET_DENSE_ROWS = 3;
 /** An expanded execution appendix is never shorter than four cells. */
 const MIN_APPENDIX_CELLS = 4;
 
@@ -88,6 +88,53 @@ export interface CellNodeRunState {
   statusLabel?: string;
   runDisabled?: boolean;
   appendix?: CellExecutionAppendixSpec | null;
+}
+
+/**
+ * What the secret store knows about a graph's write-only keys. The caller owns
+ * the store, so this adapter only reads statuses and the saved nodes a key is
+ * bound to.
+ */
+export interface CellNodeSecretState {
+  statuses: Readonly<Record<string, WorkflowNodeSecretStatuses>>;
+  /** The nodes as last saved; `null` while the graph has never been saved. */
+  savedNodes: readonly SavedGraphNode[] | null;
+  /** Names the graph and room epoch a key was written for. */
+  scope: string;
+}
+
+/**
+ * Each key a node declares, with its status. A key saved for settings that
+ * have since changed cannot be trusted, so a configured status only counts
+ * while the binding it was saved for still holds.
+ */
+function nodeSecretSurface(
+  node: AuthoredGraphNode,
+  spec: NodeSpec,
+  secrets: CellNodeSecretState | undefined,
+): CellSecretInputSpec[] {
+  const savedNode = secrets?.savedNodes?.find(
+    (candidate) => candidate.id === node.id,
+  );
+  return nodeSecretInputs(spec).map((input) => {
+    const stored = secrets?.statuses[node.id]?.[input.name] ?? {
+      state: "unknown" as const,
+    };
+    const ready = nodeSecretBindingReady(input, node, savedNode);
+    const status =
+      !ready && stored.state === "configured"
+        ? { state: "stale" as const }
+        : stored;
+    return {
+      name: input.name,
+      title: input.title,
+      ...(input.description ? { description: input.description } : {}),
+      state: status.state,
+      ...(status.message ? { message: status.message } : {}),
+      ready,
+      revision: `${secrets?.scope ?? "unsaved"}:${nodeSecretDependencyRevision(input, node.config ?? {})}`,
+    };
+  });
 }
 
 type PlugConnection = AuthoredGraphEdge | AuthoredGraphOrigin;
@@ -216,59 +263,6 @@ function nodePorts(
   return { ports, groups, nextRow };
 }
 
-const FIELD_KINDS: Record<ConfigControlKind, CellConfigFieldKind> = {
-  text: "text",
-  number: "number",
-  select: "select",
-  checkbox: "toggle",
-  textarea: "multiline",
-  slider: "number",
-  color: "text",
-  segmented: "select",
-  switch: "toggle",
-  "number-tuple": "text",
-  "string-list": "multiline",
-  "primitive-list": "multiline",
-  object: "multiline",
-  "discriminated-union": "multiline",
-  "object-list": "multiline",
-  secret: "text",
-};
-
-function configField(
-  node: AuthoredGraphNode,
-  field: SchemaField,
-  footprint: FieldFootprint,
-): CellConfigFieldSpec {
-  const kind = FIELD_KINDS[configControlKind(field)];
-  const saved = node.config?.[field.name];
-  const fallback = kind === "toggle" ? false : kind === "number" ? 0 : "";
-  const value =
-    typeof saved === "string" ||
-    typeof saved === "number" ||
-    typeof saved === "boolean"
-      ? saved
-      : saved !== null && typeof saved === "object"
-        ? JSON.stringify(saved)
-        : fallback;
-  return {
-    id: field.name,
-    label: field.title,
-    kind,
-    value,
-    options: field.enumValues?.map((option) => ({
-      value: String(option),
-      label: field.enumLabels?.[String(option)] ?? String(option),
-    })),
-    span: footprint.columns >= 6 ? 2 : 1,
-    // A switch carries its label beside it, so it never needs a label row.
-    denseRows:
-      kind === "toggle"
-        ? footprint.rows * CELLS_PER_FOOTPRINT_ROW - 1
-        : footprint.rows * CELLS_PER_FOOTPRINT_ROW,
-  };
-}
-
 function collectionSurface(
   node: AuthoredGraphNode,
   spec: NodeSpec | undefined,
@@ -339,6 +333,11 @@ export function buildOperatorCardsAndSurfaces(
   options?: {
     nodeRunState?: Readonly<Record<string, CellNodeRunState>>;
     collapsedAppendices?: ReadonlySet<string>;
+    /** Config sections opened or closed, by node id, then by section key. */
+    configSections?: Readonly<
+      Record<string, Readonly<Record<string, boolean>>>
+    >;
+    secrets?: CellNodeSecretState;
   },
 ): {
   cards: CellCardModel[];
@@ -351,6 +350,12 @@ export function buildOperatorCardsAndSurfaces(
     document.nodes.map((node) => [node.id, nodeSpec(node, registry)]),
   );
   const connections = connectionsByNode(document);
+  const sources = new Map(
+    document.nodes.map((node) => [
+      node.id,
+      { node, spec: specsByNode.get(node.id) },
+    ]),
+  );
 
   for (const node of document.nodes) {
     const spec = specsByNode.get(node.id);
@@ -383,27 +388,34 @@ export function buildOperatorCardsAndSurfaces(
         )
       : null;
 
-    const fields = schemaFields(spec?.config_schema).map((field) => ({
-      field,
-      footprint: fieldFootprint(field),
-    }));
-    const secretInputs = isCollection ? [] : (spec?.secret_inputs ?? []);
-    const configFields: CellConfigFieldSpec[] = [
-      ...fields.map(({ field, footprint }) =>
-        configField(node, field, footprint),
-      ),
-      ...secretInputs.map((input): CellConfigFieldSpec => ({
-        id: input.name,
-        label: input.title || input.name,
-        kind: "secret",
-        value: "",
-        span: 2,
-        denseRows: SECRET_DENSE_ROWS,
-        ...(input.description == null
-          ? {}
-          : { description: input.description }),
-      })),
-    ];
+    const configSections = options?.configSections?.[node.id];
+    const connectedInputPorts =
+      spec && !isCollection
+        ? connectedInputPortsForDocumentNode({
+            nodeId: node.id,
+            spec,
+            edges: document.edges,
+            origins: document.origins,
+            sources,
+            conversions: registry.artifact_conversions,
+            artifactTypes: registry.artifact_types,
+          })
+        : undefined;
+    const config = node.config ?? {};
+    const configFields = isCollection
+      ? []
+      : buildSchemaConfigEntries({
+          fields: schemaFields(spec?.config_schema),
+          config,
+          issues: validateConfig(spec?.config_schema, config),
+          connectedPorts: connectedInputPorts,
+          sections: configSections,
+        });
+    // Keys live behind the header's key button, so they cost the band nothing.
+    const secretInputs =
+      spec && !isCollection
+        ? nodeSecretSurface(node, spec, options?.secrets)
+        : [];
     const appendixHeight = node.layout?.appendix_height ?? 0;
     const savedAppendixCells =
       appendixHeight > 0
@@ -487,6 +499,9 @@ export function buildOperatorCardsAndSurfaces(
           ? { runDisabled: runState.runDisabled }
           : {}),
         configFields,
+        ...(configSections ? { configSections } : {}),
+        ...(connectedInputPorts ? { connectedInputPorts } : {}),
+        ...(secretInputs.length > 0 ? { secretInputs } : {}),
         instancePlugGroups: groups,
         appendix,
       },

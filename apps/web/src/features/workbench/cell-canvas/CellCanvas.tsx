@@ -189,11 +189,24 @@ export interface CellCanvasProps {
   onPaneClick?: () => void;
   onSelectEdgeAttachment?: (pipeId: string, anchor?: WorldPoint) => void;
   onOperatorRun?: (cardId: string) => void;
+  /** A field's new value: a primitive, or a whole object or list. */
   onOperatorConfigChange?: (
     cardId: string,
     fieldId: string,
-    value: string | number | boolean,
+    value: unknown,
   ) => void;
+  /** Opens or closes one config section of a card. */
+  onOperatorToggleConfigSection?: (
+    cardId: string,
+    sectionKey: string,
+    open: boolean,
+  ) => void;
+  onOperatorApplySecret?: (
+    cardId: string,
+    name: string,
+    value: string,
+  ) => Promise<boolean>;
+  onOperatorRemoveSecret?: (cardId: string, name: string) => Promise<boolean>;
   onOperatorAddPlug?: (cardId: string, portName: string) => void;
   onOperatorRemovePlug?: (
     cardId: string,
@@ -383,6 +396,9 @@ export function CellCanvas({
   onSelectEdgeAttachment,
   onOperatorRun,
   onOperatorConfigChange,
+  onOperatorToggleConfigSection,
+  onOperatorApplySecret,
+  onOperatorRemoveSecret,
   onOperatorAddPlug,
   onOperatorRemovePlug,
   onOperatorToggleAppendix,
@@ -1663,6 +1679,9 @@ export function CellCanvas({
             onAddPlug={editable ? onOperatorAddPlug : undefined}
             onRemovePlug={editable ? onOperatorRemovePlug : undefined}
             onConfigChange={editable ? onOperatorConfigChange : undefined}
+            onToggleConfigSection={onOperatorToggleConfigSection}
+            onApplySecret={editable ? onOperatorApplySecret : undefined}
+            onRemoveSecret={editable ? onOperatorRemoveSecret : undefined}
             onToggleAppendix={onOperatorToggleAppendix}
           />
         );

@@ -549,7 +549,7 @@ describe("cell document adapter", () => {
     ).toEqual(["source", "collection", "agent", "default-agent"]);
   });
 
-  it("appends a secret config field and adds its packed rows to the operator height", () => {
+  it("moves secret inputs off the config band and costs the card no rows", () => {
     const document = {
       ...authoredGraphDocument(savedDocument()),
       nodes: [{ ...source, layout: null }],
@@ -566,20 +566,21 @@ describe("cell document adapter", () => {
     assert(operator?.kind === "operator");
     assert(baselineCard);
 
-    expect(operator.configFields).toStrictEqual([
-      ...baseline.configFields,
+    expect(operator.configFields).toStrictEqual(baseline.configFields);
+    expect(operator.secretInputs).toStrictEqual([
       {
-        id: "api_key",
-        label: "API key",
-        kind: "secret",
-        value: "",
-        span: 2,
-        denseRows: 3,
+        name: "api_key",
+        title: "API key",
         description: apiKeyInput.description,
+        state: "unknown",
+        // Never saved, so a key has nothing to be bound to yet.
+        ready: false,
+        revision: 'unsaved:[["base_url",null]]',
       },
     ]);
+    expect(baseline.secretInputs).toBeUndefined();
     expect(withSecret.graph.cards[0]?.heightCells).toBe(
-      baselineCard.heightCells + 3,
+      baselineCard.heightCells,
     );
   });
 
@@ -598,7 +599,7 @@ describe("cell document adapter", () => {
     ]);
   });
 
-  it("leaves the secret field blank when saved config contains the same name", () => {
+  it("never reads a secret out of saved config with the same name", () => {
     const document = {
       ...authoredGraphDocument(savedDocument()),
       nodes: [
@@ -617,14 +618,17 @@ describe("cell document adapter", () => {
     const operator = surfaceById.source;
     assert(operator?.kind === "operator");
 
-    expect(operator.configFields?.at(-1)).toStrictEqual({
-      id: "api_key",
-      label: "api_key",
-      kind: "secret",
-      value: "",
-      span: 2,
-      denseRows: 3,
-    });
+    expect(operator.secretInputs).toStrictEqual([
+      {
+        name: "api_key",
+        title: "api key",
+        state: "unknown",
+        ready: false,
+        revision: 'unsaved:[["base_url",null]]',
+      },
+    ]);
+    expect(JSON.stringify(operator.secretInputs)).not.toContain("saved value");
+    expect(operator.configFields?.map(({ id }) => id)).not.toContain("api_key");
   });
 
   it("describes an operator in plain words, falling back to its id", () => {

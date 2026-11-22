@@ -622,6 +622,41 @@ describe("workbenchAuthoringUiReducer", () => {
       expect(result.effects).toEqual([]);
     });
 
+    it("opens and closes one card's config section without touching another's", () => {
+      const opened = transition(freshState(), {
+        kind: "setConfigSection",
+        cardId: "card-1",
+        sectionKey: "advanced",
+        open: true,
+      });
+      expect(opened.state.configSections).toEqual({
+        "card-1": { advanced: true },
+      });
+      const nested = transition(opened.state, {
+        kind: "setConfigSection",
+        cardId: "card-1",
+        sectionKey: "object:style",
+        open: true,
+      });
+      const closed = transition(nested.state, {
+        kind: "setConfigSection",
+        cardId: "card-1",
+        sectionKey: "advanced",
+        open: false,
+      });
+      expect(closed.state.configSections).toEqual({
+        "card-1": { advanced: false, "object:style": true },
+      });
+      const same = transition(closed.state, {
+        kind: "setConfigSection",
+        cardId: "card-1",
+        sectionKey: "advanced",
+        open: false,
+      });
+      expect(same.state).toBe(closed.state);
+      expect(same.effects).toEqual([]);
+    });
+
     it("toggles appendix membership and bumps the fit revision", () => {
       const once = transition(freshState(), {
         kind: "toggleAppendix",

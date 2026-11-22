@@ -50,6 +50,7 @@ import {
   graphCommandsFromCellDeleteForDocument,
   graphCommandsFromCellMovesForDocument,
   type CellNodeRunState,
+  type CellNodeSecretState,
   type CellOriginLink,
   type CellPipeMetadata,
   type CellViewerImages,
@@ -142,6 +143,8 @@ export function buildWorkbenchCellScene({
   nodes,
   nodeInstanceStates,
   collapsedAppendices,
+  configSections,
+  secrets,
   canRun,
   canvasEdges,
   artifactViewerEdges,
@@ -158,6 +161,10 @@ export function buildWorkbenchCellScene({
   nodes: readonly WorkflowNode[];
   nodeInstanceStates: Readonly<Record<string, RoomInstanceState>>;
   collapsedAppendices: ReadonlySet<string>;
+  /** Config sections the person opened or closed, by node, then by key. */
+  configSections?: Readonly<Record<string, Readonly<Record<string, boolean>>>>;
+  /** Key statuses and the saved nodes they are bound to. */
+  secrets?: CellNodeSecretState;
   canRun: boolean;
   canvasEdges?: readonly WorkflowEdge[];
   artifactViewerEdges?: readonly ArtifactViewerEdge[];
@@ -347,6 +354,8 @@ export function buildWorkbenchCellScene({
     presentation,
     nodeRunState,
     collapsedAppendices,
+    configSections,
+    secrets,
     originLinks,
     viewerOutputValues,
     pipeMetadataById,

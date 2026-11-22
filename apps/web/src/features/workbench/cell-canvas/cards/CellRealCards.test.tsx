@@ -38,6 +38,14 @@ import {
 } from "./CellAnnotationAndAgentCards";
 import { CellArtifactCard, CellCollectionCard } from "./CellArtifactCard";
 import { CellOperatorCard } from "./CellOperatorCard";
+import { buildOperatorCardsAndSurfaces } from "../cell-operator-adapter";
+import {
+  askModelSpec,
+  fixtureDocument,
+  fixtureNode,
+  richRegistry,
+  vectorLayerSpec,
+} from "../cell-config-fixtures.test-support";
 import { CellCard } from "../CellCard";
 import { PUNCHED_LABEL_INSET } from "../punched-port";
 
@@ -396,9 +404,16 @@ describe("CellOperatorCard", () => {
       expect(html).toContain(`data-config-field="${field.id}"`);
       expect(html).toContain(field.label);
     }
-    expect(html).toMatch(/data-config-field="prefix"[^>]*grid-column:span 1/);
+    // Each field is pinned to the shelf row and column its rows were counted
+    // for: Prefix and Limit share shelf 1, Mode and Dedupe take a shelf each.
+    expect(html).toMatch(
+      /data-config-field="prefix"[^>]*grid-row:1 \/ span 1;grid-column:1 \/ span 1/,
+    );
+    expect(html).toMatch(
+      /data-config-field="limit"[^>]*grid-row:1 \/ span 1;grid-column:2 \/ span 1/,
+    );
     expect(html).toMatch(/data-config-field="mode"[^>]*grid-column:1 \/ -1/);
-    expect(html).toMatch(/data-config-field="notes"[^>]*grid-row:span 3/);
+    expect(html).toMatch(/data-config-field="notes"[^>]*grid-row:4 \/ span 3/);
     expect(html).toContain('value="out_"');
     expect(html).toContain('type="number"');
     expect(html).toContain("<select");
@@ -2032,5 +2047,135 @@ describe("CellArtifactCard stack style", () => {
     expect(renderArtifact(PREVIEWS.image)).not.toMatch(
       /<article[^>]*transform:/,
     );
+  });
+});
+
+// --- Schema-driven config fields ---------------------------------------------
+
+function renderRichOperator(
+  config: Record<string, unknown>,
+  options: Parameters<typeof buildOperatorCardsAndSurfaces>[2] = {},
+  spec = vectorLayerSpec,
+) {
+  const id = "node";
+  const { cards, surfaces } = buildOperatorCardsAndSurfaces(
+    fixtureDocument([fixtureNode(id, spec, config)]),
+    richRegistry,
+    options,
+  );
+  const card = cards[0]!;
+  const surface = surfaces.get(id);
+  if (surface?.kind !== "operator") throw new Error("operator surface");
+  const html = renderToStaticMarkup(
+    <CellOperatorCard
+      card={card}
+      surface={surface}
+      selected
+      dragging={false}
+      onConfigChange={() => {}}
+      onToggleConfigSection={() => {}}
+    />,
+  );
+  return { html, card, surface };
+}
+
+describe("CellOperatorCard schema config fields", () => {
+  it("draws a slider with a tabular readout, a colour well with its hex, a segmented choice and a switch", () => {
+    const { html } = renderRichOperator({ title: "Roads", opacity: 0.4 });
+    // Opacity: the kit's range input and its printed value.
+    expect(html).toMatch(/type="range"[^>]*value="0.4"/);
+    expect(html).toContain(">0.40</output>");
+    // Visible: a dense switch, named by its label.
+    expect(html).toMatch(
+      /role="switch"[^>]*aria-checked="true"[^>]*aria-labelledby/,
+    );
+    // Blend: segments with the schema's labels.
+    expect(html).toContain('role="radiogroup" aria-label="Blend"');
+    expect(html).toContain(">Multiply<");
+    // Style › Fill: the swatch and the exact hex beside it.
+    expect(html).toContain('type="color" aria-label="Fill"');
+    expect(html).toMatch(/aria-label="Fill hex"[^>]*value="#3366ff"/);
+  });
+
+  it("draws the `Style` union with its branch picker and only the active branch's fields", () => {
+    const simple = renderRichOperator({ title: "Roads" }).html;
+    expect(simple).toContain(
+      'data-config-union="style" data-config-branch="simple"',
+    );
+    expect(simple).toContain('aria-label="Style mode"');
+    expect(simple).toContain('data-config-field="style.fill"');
+    expect(simple).not.toContain('data-config-list="style.categories"');
+
+    const categorized = renderRichOperator({
+      title: "Roads",
+      style: {
+        kind: "categorized_points",
+        categories: [{ id: "c1", title: "Roads", color: "#ff0000" }],
+      },
+    }).html;
+    expect(categorized).toContain('data-config-branch="categorized_points"');
+    expect(categorized).not.toContain('data-config-field="style.fill"');
+    expect(categorized).toContain('data-config-list="style.categories"');
+    expect(categorized).toContain('aria-label="Category 1 title"');
+    expect(categorized).toContain(">Add category<");
+    expect(categorized).toContain('aria-label="Remove category 1"');
+  });
+
+  it("places nested rows inside the rows the band was sized for", () => {
+    const { html, surface } = renderRichOperator({ title: "Roads" });
+    const style = surface.configFields?.find(({ id }) => id === "style");
+    expect(style?.denseRows).toBe(3);
+    // The union's frame is its header row plus a 2-row shelf of children.
+    expect(html).toMatch(
+      /data-config-field="style"[^>]*grid-row:[0-9]+ \/ span 3/,
+    );
+    expect(html).toMatch(
+      /data-config-field="style.fill"[^>]*grid-row:1 \/ span 2;grid-column:1 \/ span 1/,
+    );
+    expect(html).toMatch(
+      /data-config-field="style.stroke_width"[^>]*grid-row:1 \/ span 2;grid-column:2 \/ span 1/,
+    );
+    // Ten rows of band: nothing in it is clipped by the plate.
+    expect(html).toMatch(/data-config-band="true"[^>]*height:250px/);
+  });
+
+  it("folds untouched advanced fields behind a toggle, and opens them in place", () => {
+    const folded = renderRichOperator({ title: "Roads" });
+    expect(folded.html).toMatch(
+      /aria-expanded="false" data-config-section="advanced"[^>]*>[\s\S]*Advanced[\s\S]*2 hidden/,
+    );
+    expect(folded.html).not.toContain('data-config-field="min_zoom"');
+
+    const opened = renderRichOperator(
+      { title: "Roads" },
+      { configSections: { node: { advanced: true } } },
+    );
+    expect(opened.html).toMatch(
+      /aria-expanded="true" data-config-section="advanced"/,
+    );
+    expect(opened.html).toContain("Hide advanced");
+    expect(opened.html).toContain('data-config-field="min_zoom"');
+    expect(opened.html).toContain('data-config-field="max_zoom"');
+    expect(opened.card.heightCells).toBe(folded.card.heightCells + 2);
+  });
+
+  it("puts the API key behind a header key button instead of in the band", () => {
+    const { html } = renderRichOperator(
+      { base_url: "https://api.example.test" },
+      {},
+      askModelSpec,
+    );
+    expect(html).toContain('data-card-credentials="true"');
+    expect(html).toContain(
+      'aria-label="Credentials for Ask a model: key needed"',
+    );
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain('data-config-field="api_key"');
+  });
+
+  it("shows no key button on a card without secret inputs", () => {
+    const { html } = renderRichOperator({ title: "Roads" });
+    expect(html).not.toContain("data-card-credentials");
   });
 });

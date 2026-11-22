@@ -6,6 +6,7 @@ import type {
   CellInstancePlugGroup,
   OperatorCardSurfaceData,
 } from "./cell-contracts";
+import { placeShelves, type ShelfPlacement } from "./cell-config-plan";
 import {
   CELL_SIZE,
   FIRST_PORT_ROW,
@@ -38,8 +39,6 @@ export interface OperatorCardLayoutPlan {
   portYOffsets: Record<string, number>;
 }
 
-/** A cell is one dense 25px control row. */
-const DENSE_ROWS_PER_CELL = 1;
 /** The empty cell row between two bands, and under the last one. */
 const BAND_GAP_CELLS = 1;
 /** An expanded appendix is never shorter than its header and two lines. */
@@ -55,9 +54,25 @@ export function plugRowOffset(
   return group.startRowOffset + index * PORT_ROW_PITCH;
 }
 
-function fieldDenseRows(field: CellConfigFieldSpec): number {
+export function fieldDenseRows(field: CellConfigFieldSpec): number {
   const fallback = field.kind === "multiline" ? 3 : 1;
   return Math.max(1, field.denseRows ?? fallback);
+}
+
+/**
+ * Where each config field sits on the band's two-column shelves, in dense
+ * rows from the band's top. A cell is one dense 25px row, so rows are cells.
+ */
+export function configShelfPlacements(fields: readonly CellConfigFieldSpec[]): {
+  placements: ShelfPlacement[];
+  totalRows: number;
+} {
+  return placeShelves(
+    fields.map((field) => ({
+      span: field.span === 1 ? 1 : 2,
+      rows: fieldDenseRows(field),
+    })),
+  );
 }
 
 /**
@@ -70,27 +85,7 @@ export function countConfigShelfCells(
   fields: readonly CellConfigFieldSpec[],
 ): number {
   if (fields.length === 0) return 0;
-  let totalDenseRows = 0;
-  let pendingHalfRows: number | null = null;
-  for (const field of fields) {
-    const rows = fieldDenseRows(field);
-    if (field.span === 1) {
-      if (pendingHalfRows === null) {
-        pendingHalfRows = rows;
-      } else {
-        totalDenseRows += Math.max(pendingHalfRows, rows);
-        pendingHalfRows = null;
-      }
-      continue;
-    }
-    if (pendingHalfRows !== null) {
-      totalDenseRows += pendingHalfRows;
-      pendingHalfRows = null;
-    }
-    totalDenseRows += rows;
-  }
-  if (pendingHalfRows !== null) totalDenseRows += pendingHalfRows;
-  return Math.max(1, Math.ceil(totalDenseRows / DENSE_ROWS_PER_CELL));
+  return Math.max(1, configShelfPlacements(fields).totalRows);
 }
 
 function portCentreY(rowOffset: number): number {
