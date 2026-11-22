@@ -164,6 +164,22 @@ cannot resolve, which `tsc` and Vitest both pass.
   Never swap a label into one of those, and never print one as a card or port
   caption.
 
+## State machines and reducers
+
+- Interactive surfaces with multiple phases, async flows, or gesture interrupts
+  belong in a pure TypeScript reducer (`(state, action, exec) => nextState`),
+  not a bag of interdependent `useState`/`useRef` flags inside a `.tsx` file.
+- Define `State`, `Action`, and `Effect` as discriminated unions in a sibling
+  pure module (zero React, zero DOM, zero `fetch`, zero `requestAnimationFrame`).
+  Model mutually exclusive phases as union variants so illegal flag combinations
+  cannot compile, and declare side effects as plain data via `exec(...)` so both
+  state transitions and emitted effects are unit-tested directly without jsdom.
+- Keep the React component thin: render from `state`, translate UI events into
+  `dispatch(action)`, and run declared effects in one adapter hook.
+- Keep layout/sizing bounds in one canonical module and derive grid-cell bounds
+  from it; do not repeat floor/ceiling magic numbers across drag math, adapters,
+  and serializers.
+
 ## Tests
 
 - `@testing-library/react` is **not** installed. Tests use
