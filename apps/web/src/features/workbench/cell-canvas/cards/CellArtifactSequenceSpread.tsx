@@ -454,6 +454,22 @@ interface ResizeTuck {
   item: ArtifactStackItem;
 }
 
+/** A middle card a multi-slot step retired into the covered side stack. */
+interface StepTuck {
+  key: string;
+  item: ArtifactStackItem;
+  targetX: number;
+}
+
+type ClosePhase = "idle" | "rewinding" | "folding";
+
+/** Syncs slot 0's collapsed stack backs to the fold glide into `x = 0`. */
+type FoldBackSync = {
+  driverKey: string;
+  startX: number;
+  targetX: number;
+};
+
 function fallbackItems(count: number): ArtifactStackItem[] {
   return Array.from({ length: count }, (_, index) => ({
     artifactId: `item-${index}`,
@@ -629,7 +645,9 @@ export function CellArtifactSequenceSpread({
   const moveFrameRef = React.useRef(0);
   const [moveView, setMoveView] = React.useState<SpreadMoveView | null>(null);
   const [resizing, setResizing] = React.useState(false);
-  const [closing, setClosing] = React.useState(false);
+  const [closePhase, setClosePhase] = React.useState<ClosePhase>("idle");
+  const closing = closePhase !== "idle";
+  const folding = closePhase === "folding";
   const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
   const [menuIndex, setMenuIndex] = React.useState<number | null>(null);
@@ -647,15 +665,21 @@ export function CellArtifactSequenceSpread({
     new Map(),
   );
   const motionFrameRef = React.useRef(0);
-  const closingRef = React.useRef(false);
+  const closePhaseRef = React.useRef<ClosePhase>("idle");
+  const startFoldRef = React.useRef<() => void>(() => {});
   const onCloseRef = React.useRef(onClose);
   const [underCardState, setUnderCard] = React.useState<UnderCard | null>(null);
+  /** Middle cards a multi-slot step retired into the covered stack. */
+  const [stepTucks, setStepTucks] = React.useState<readonly StepTuck[]>([]);
   /** Cards a narrowing resize retired, gliding under the new right stack. */
   const [resizeTucks, setResizeTucks] = React.useState<readonly ResizeTuck[]>(
     [],
   );
   const [resizeBackSyncState, setResizeBackSync] =
     React.useState<ResizeBackSync | null>(null);
+  const [foldBackSync, setFoldBackSync] = React.useState<FoldBackSync | null>(
+    null,
+  );
   const [motionX, setMotionX] = React.useState<ReadonlyMap<string, number>>(
     () => {
       const initial = new Map<string, number>();
@@ -732,15 +756,19 @@ export function CellArtifactSequenceSpread({
       setMotionX(snapshotMotion());
       if (anyActive) {
         motionFrameRef.current = requestAnimationFrame(tick);
-      } else if (closingRef.current) {
-        closingRef.current = false;
+      } else if (closePhaseRef.current === "rewinding") {
+        startFoldRef.current();
+      } else if (closePhaseRef.current === "folding") {
+        closePhaseRef.current = "idle";
         onCloseRef.current();
       } else {
         motionSettlesRef.current.clear();
         setMotionX(new Map());
         setUnderCard(null);
+        setStepTucks([]);
         setResizeTucks([]);
         setResizeBackSync(null);
+        setFoldBackSync(null);
       }
     };
     motionFrameRef.current = requestAnimationFrame(tick);
@@ -785,12 +813,7 @@ export function CellArtifactSequenceSpread({
     [],
   );
 
-  const requestClose = React.useCallback(() => {
-    if (closingRef.current) return;
-    if (!shouldAnimateMotion()) {
-      onCloseRef.current();
-      return;
-    }
+  const startFold = React.useCallback(() => {
     const {
       windowStart: start,
       visibleCount: open,
@@ -800,6 +823,7 @@ export function CellArtifactSequenceSpread({
     const now = performance.now();
     const settles = new Map<string, CardSettleState>();
     let anyActive = false;
+    let driver: FoldBackSync | null = null;
     for (let slot = 0; slot < open; slot += 1) {
       const item = list[start + slot];
       if (!item) continue;
@@ -809,24 +833,37 @@ export function CellArtifactSequenceSpread({
         createCardSettle({ x: slot * cw, y: 0 });
       const settle = retargetCardSettle(current, { x: 0, y: 0 }, now);
       settles.set(key, settle);
-      if (settle.active) anyActive = true;
+      if (settle.active) {
+        anyActive = true;
+        if (slot > 0 && driver === null) {
+          driver = { driverKey: key, startX: settle.current.x, targetX: 0 };
+        }
+      }
     }
     if (!anyActive) {
+      closePhaseRef.current = "idle";
+      setClosePhase("idle");
       onCloseRef.current();
       return;
     }
-    closingRef.current = true;
-    setClosing(true);
+    closePhaseRef.current = "folding";
+    setClosePhase("folding");
     setUnderCard(null);
+    setStepTucks([]);
+    setResizeTucks([]);
     setResizeBackSync(null);
+    setFoldBackSync(driver);
     motionSettlesRef.current = settles;
     setMotionX(snapshotMotion());
     scheduleMotionTick();
   }, [scheduleMotionTick]);
 
-  const step = React.useCallback(
-    (by: number) => {
-      if (closingRef.current) return;
+  React.useLayoutEffect(() => {
+    startFoldRef.current = startFold;
+  }, [startFold]);
+
+  const performStep = React.useCallback(
+    (by: number): boolean => {
       const {
         windowStart: current,
         maxStart: last,
@@ -835,12 +872,13 @@ export function CellArtifactSequenceSpread({
         cardWidth: cw,
       } = windowRef.current;
       const next = clamp(current + by, 0, last);
-      if (next === current) return;
+      if (next === current) return false;
       const delta = next - current;
       windowRef.current = { ...windowRef.current, windowStart: next };
       // A card held over a side stack steps the window mid-drag; its siblings'
       // settles were in the old window's slots, so they hand over to motion.
       const held = dragRef.current?.active ? dragRef.current : null;
+      let startedMotion = false;
 
       if (shouldAnimateMotion()) {
         const now = performance.now();
@@ -859,24 +897,49 @@ export function CellArtifactSequenceSpread({
           nextSettles.set(key, settle);
           if (settle.active) anyActive = true;
         }
+        const side = delta > 0 ? "left" : "right";
+        const underIndex = delta > 0 ? current : current + open - 1;
+        const coverSlot = side === "left" ? 0 : open - 1;
+        const nextStepTucks: StepTuck[] = [];
+        for (let oldSlot = 0; oldSlot < open; oldSlot += 1) {
+          const oldIndex = current + oldSlot;
+          if (
+            (oldIndex >= next && oldIndex < next + open) ||
+            oldIndex === underIndex
+          ) {
+            continue;
+          }
+          const oldItem = list[oldIndex];
+          if (!oldItem) continue;
+          const oldKey = `${oldItem.artifactId}:${oldIndex}`;
+          const from =
+            motionSettlesRef.current.get(oldKey) ??
+            held?.siblingSettles.get(oldIndex) ??
+            createCardSettle({ x: oldSlot * cw, y: 0 });
+          const tuckKey = `step-tuck:${oldItem.artifactId}:${oldIndex}`;
+          const targetX = coverSlot * cw;
+          const settle = retargetCardSettle(from, { x: targetX, y: 0 }, now);
+          nextSettles.set(tuckKey, settle);
+          if (settle.active) anyActive = true;
+          nextStepTucks.push({ key: tuckKey, item: oldItem, targetX });
+        }
         motionSettlesRef.current = nextSettles;
         setMotionX(snapshotMotion());
         setResizeBackSync(null);
+        setFoldBackSync(null);
         if (anyActive) {
+          startedMotion = true;
           // The end slot the incoming card glides onto keeps its old card
           // beneath until the step lands: slot 0 stepping ->, S-1 stepping <-.
-          const side = delta > 0 ? "left" : "right";
-          const index = delta > 0 ? current : current + open - 1;
           const stackCount =
             delta > 0
               ? current > 0
                 ? current + 1
                 : 0
               : current < last
-                ? list.length - index
+                ? list.length - underIndex
                 : 0;
           const shift = Math.min(STACK_BACK_COUNT, Math.abs(delta));
-          const coverSlot = side === "left" ? 0 : open - 1;
           const coverItem = list[next + coverSlot];
           const coverKey = coverItem
             ? `${coverItem.artifactId}:${next + coverSlot}`
@@ -893,9 +956,10 @@ export function CellArtifactSequenceSpread({
                 shift,
               }
             : null;
+          setStepTucks(nextStepTucks);
           setUnderCard({
             side,
-            index,
+            index: underIndex,
             stackCount,
             shift,
             coverKey,
@@ -908,6 +972,7 @@ export function CellArtifactSequenceSpread({
           scheduleMotionTick();
         } else {
           setUnderCard(null);
+          setStepTucks([]);
         }
       }
       if (held) {
@@ -916,8 +981,32 @@ export function CellArtifactSequenceSpread({
       }
 
       setWindowStart(next);
+      return startedMotion;
     },
     [scheduleMotionTick],
+  );
+
+  const requestClose = React.useCallback(() => {
+    if (closePhaseRef.current !== "idle") return;
+    if (!shouldAnimateMotion()) {
+      onCloseRef.current();
+      return;
+    }
+    const { windowStart: start } = windowRef.current;
+    if (start > 0) {
+      closePhaseRef.current = "rewinding";
+      setClosePhase("rewinding");
+      if (performStep(-start)) return;
+    }
+    startFold();
+  }, [performStep, startFold]);
+
+  const step = React.useCallback(
+    (by: number) => {
+      if (closePhaseRef.current !== "idle") return;
+      performStep(by);
+    },
+    [performStep],
   );
 
   // A horizontal swipe over the spread pages it instead of panning the
@@ -1080,7 +1169,7 @@ export function CellArtifactSequenceSpread({
 
   const onItemPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
-    if (closingRef.current) return;
+    if (closePhaseRef.current !== "idle") return;
     const index = Number(event.currentTarget.dataset.sequenceItem);
     const slot = Number(event.currentTarget.dataset.sequenceSlot);
     setActiveIndex(index);
@@ -1228,7 +1317,8 @@ export function CellArtifactSequenceSpread({
   // the cell grid using the same settle physics and non-overlapping placement.
   const onMovePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
-    if (event.button !== 0 || !onMove || closingRef.current) return;
+    if (event.button !== 0 || !onMove || closePhaseRef.current !== "idle")
+      return;
     const world = screenToWorld(event.clientX, event.clientY);
     moveRef.current = {
       pointerId: event.pointerId,
@@ -1408,7 +1498,7 @@ export function CellArtifactSequenceSpread({
   } | null>(null);
   const onResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
-    if (event.button !== 0 || closingRef.current) return;
+    if (event.button !== 0 || closePhaseRef.current !== "idle") return;
     resizeRef.current = {
       pointerId: event.pointerId,
       startX: screenToWorld(event.clientX, event.clientY).x,
@@ -1422,7 +1512,7 @@ export function CellArtifactSequenceSpread({
   // out from the old right edge; when it narrows, the cards it retires glide
   // in under the new right stack before they go.
   const glideResize = (nextVisibleCount: number) => {
-    if (closingRef.current || !shouldAnimateMotion()) return;
+    if (closePhaseRef.current !== "idle" || !shouldAnimateMotion()) return;
     const {
       windowStart: seenStart,
       visibleCount: seenCount,
@@ -1555,7 +1645,7 @@ export function CellArtifactSequenceSpread({
   /** Fades tucked cards' headers & drop shadows while overlapping slot 0. */
   const tuckedHeaderOpacity = (slot: number, currentX: number) => {
     if (slot === 0) return 1;
-    if (!closing && currentX >= cardWidth) return 1;
+    if (!folding && currentX >= cardWidth) return 1;
     return clamp((currentX - cardWidth * 0.25) / (cardWidth * 0.55), 0, 1);
   };
   const tuckedPlateShadow = (
@@ -1565,7 +1655,7 @@ export function CellArtifactSequenceSpread({
   ) => {
     if (liftDepth > 0.5) return false;
     if (slot === 0) return true;
-    if (closing) return false;
+    if (folding) return false;
     return currentX >= cardWidth * 0.55;
   };
   const plateBox: React.CSSProperties = {
@@ -1636,14 +1726,14 @@ export function CellArtifactSequenceSpread({
     if (slot >= visibleCount) return frameWidth - EXTERNAL_EDGE_SHIFT / 2;
     return slotLeft(slot);
   };
-  // A drag, a resize, a collapse, or a new list or row drops the under-card.
+  // A drag, a resize, a fold, or a new list or row drops the under-card.
   const underCard =
     underCardState &&
     underCardState.items === items &&
     underCardState.visibleCount === visibleCount &&
     !drag &&
     !resizing &&
-    !closing
+    !folding
       ? underCardState
       : null;
   const coveringSlot =
@@ -1685,6 +1775,14 @@ export function CellArtifactSequenceSpread({
         resizeBackSync.targetX,
       )
     : 1;
+  const foldProgress =
+    folding && foldBackSync !== null
+      ? progressFor(
+          foldBackSync.driverKey,
+          foldBackSync.startX,
+          foldBackSync.targetX,
+        )
+      : 0;
 
   const depthPlateBox = (depth: number): React.CSSProperties =>
     depth > 0.001
@@ -1805,10 +1903,15 @@ export function CellArtifactSequenceSpread({
       underCard?.reveal?.side === side
         ? (1 - stepProgress) * underCard.reveal.shift
         : 0;
-    const resizeDepthScale =
-      side === "right" && resizeBackSync !== null && coveringSlot !== slot
-        ? resizeBackProgress
-        : 1;
+    const stackDepthScale =
+      folding && side === "right"
+        ? clamp(1 - foldProgress * 2.5, 0, 1)
+        : side === "right" && resizeBackSync !== null && coveringSlot !== slot
+          ? resizeBackProgress
+          : 1;
+    const hideStackBacks =
+      coveringSlot === slot ||
+      (folding && side === "right" && stackDepthScale <= 0.01);
     const currentX = animatedX ?? baseLeft;
     const stackHeaderOpacity = tuckedHeaderOpacity(slot, currentX);
     const stackShadow = tuckedPlateShadow(slot, currentX, liftDepth);
@@ -1831,7 +1934,7 @@ export function CellArtifactSequenceSpread({
             width: cardWidth,
             height: cardHeight,
             transform,
-            zIndex: closing
+            zIndex: folding
               ? visibleCount - slot
               : coveringSlot === slot
                 ? 4
@@ -1866,7 +1969,7 @@ export function CellArtifactSequenceSpread({
         </div>
         {/* Its backs wait at the slot until the card lands on them, so
             they never sweep sideways across the row. */}
-        {coveringSlot === slot ? null : (
+        {hideStackBacks ? null : (
           <ArtifactStackBacks
             card={card}
             corners={corners}
@@ -1875,7 +1978,7 @@ export function CellArtifactSequenceSpread({
             backs={Math.min(2, count - 1)}
             stackStyle={stackStyle}
             depthOffset={liftDepth}
-            depthScale={resizeDepthScale}
+            depthScale={stackDepthScale}
           />
         )}
         <article
@@ -1975,7 +2078,7 @@ export function CellArtifactSequenceSpread({
             transform,
             zIndex: lifted
               ? 10
-              : closing
+              : folding
                 ? visibleCount - slot
                 : coveringSlot === slot
                   ? 4
@@ -2040,6 +2143,17 @@ export function CellArtifactSequenceSpread({
             </span>
           ) : null}
         </div>
+        {folding && slot === 0 && windowStart === 0 && items.length > 1 ? (
+          <ArtifactStackBacks
+            card={card}
+            corners={corners}
+            punched={false}
+            peeks={[items[1]?.imageUrl ?? "", items[2]?.imageUrl ?? ""]}
+            backs={Math.min(STACK_BACK_COUNT, items.length - 1)}
+            stackStyle={stackStyle}
+            depthScale={foldProgress}
+          />
+        ) : null}
         <article
           data-plate-shadow={openShadow ? "rest" : "none"}
           {...styled(
@@ -2103,9 +2217,60 @@ export function CellArtifactSequenceSpread({
     );
   };
 
+  const renderStepTuck = (tuck: StepTuck) => {
+    const x = motionX.get(tuck.key);
+    if (x === undefined) return null;
+    const dist = Math.abs(x - tuck.targetX);
+    const tuckHeaderOpacity = clamp(
+      (dist - cardWidth * 0.2) / (cardWidth * 0.5),
+      0,
+      1,
+    );
+    return (
+      <div
+        key={tuck.key}
+        aria-hidden="true"
+        data-sequence-step-tuck={tuck.item.artifactId}
+        {...styled(
+          {
+            left: 0,
+            width: cardWidth,
+            height: cardHeight,
+            transform: `translate3d(${x}px, 0px, 0)`,
+            zIndex: 2,
+            pointerEvents: "none",
+          },
+          s.slot,
+          s.resizeTuck,
+        )}
+      >
+        <div
+          data-card-header="true"
+          {...styled(headerBoxWithOpacity(tuckHeaderOpacity), m.header)}
+        >
+          <span data-card-title="rest" {...stylex.props(m.title, m.titleFixed)}>
+            {surface.typeLabel}
+          </span>
+          <span data-card-meta="true" {...stylex.props(s.headerMeta)}>
+            <span {...stylex.props(m.ellipsis)}>{tuck.item.label}</span>
+          </span>
+        </div>
+        <article
+          data-plate-shadow="none"
+          {...styled(plateBox, ...plateLook(false, false))}
+        >
+          {renderPicture(tuck.item)}
+        </article>
+      </div>
+    );
+  };
+
   const renderedSlots: React.ReactNode[] = [];
   if (!closing && !drag) {
     for (const tuck of resizeTucks) renderedSlots.push(renderResizeTuck(tuck));
+  }
+  if (!folding && !drag) {
+    for (const tuck of stepTucks) renderedSlots.push(renderStepTuck(tuck));
   }
   if (underCard) renderedSlots.push(renderUnderCard(underCard));
   for (let slot = 0; slot < visibleCount; slot += 1) {
@@ -2169,7 +2334,7 @@ export function CellArtifactSequenceSpread({
               height: cardHeight + FRAME_OUTSET * 2,
             },
             s.frame,
-            closing && s.fadingOut,
+            folding && s.fadingOut,
           )}
         />
         <div

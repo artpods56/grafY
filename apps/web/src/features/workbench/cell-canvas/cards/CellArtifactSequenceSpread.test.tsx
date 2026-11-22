@@ -307,8 +307,13 @@ describe("CellArtifactSequenceSpread", () => {
     );
     flushSettle();
 
-    // Clicking Stack begins collapse animation back to x = 0 and closes once settled.
+    // Clicking Stack from windowStart = 1 first rewinds back to slot 0 (card 1),
+    // then folds all cards to x = 0 and closes once settled.
     React.act(() => q(container, '[data-sequence-collapse="true"]')!.click());
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    expect(q(container, "[data-sequence-range]")?.textContent).toBe("1–4 / 6");
+    flushSettle();
+    // Rewind finished and handed straight off to fold; still open until fold lands.
     expect(handlers.onClose).not.toHaveBeenCalled();
     flushSettle();
     expect(handlers.onClose).toHaveBeenCalledTimes(1);
@@ -421,7 +426,14 @@ describe("CellArtifactSequenceSpread", () => {
     const under = q(container, '[data-sequence-under-card="right"]')!;
     expect(under.dataset.sequenceUnderCardTop).toBe("a5");
 
+    // Collapsing from windowStart = 1 rewinds through the carousel under-card,
+    // then drops it when folding into slot 0.
     React.act(() => q(container, '[data-sequence-collapse="true"]')!.click());
+    expect(
+      q(container, '[data-sequence-under-card="right"]')?.dataset
+        .sequenceUnderCardTop,
+    ).toBe("a4");
+    frame(2000);
     expect(q(container, "[data-sequence-under-card]")).toBeNull();
   });
 
@@ -1034,8 +1046,11 @@ describe("CellArtifactSequenceSpread", () => {
     pointer("pointerup", handle, x - 2 * cw - 10, 100);
     frame(2000);
 
-    // Collapse: trailing slots immediately drop their shadows so closing onto slot 0 never stacks halos.
+    // Collapse from windowStart = 1: rewinds first (slot 0 rises without shadow
+    // while covered), then folds (slot 0 holds the rest shadow while trailing
+    // slots suppress theirs so closing onto slot 0 never stacks halos).
     React.act(() => q(container, '[data-sequence-collapse="true"]')!.click());
+    frame(2000);
     expect(
       q(q(container, '[data-sequence-slot="0"]')!, "article")!.dataset
         .plateShadow,
@@ -1045,6 +1060,69 @@ describe("CellArtifactSequenceSpread", () => {
         .plateShadow,
     ).toBe("none");
     frame(2000);
+  });
+
+  it("rewinds to card 1 with synced depth & middle-card tuck before folding backs out on collapse", () => {
+    const parseDropY = (el: HTMLElement) =>
+      Number(
+        /translate3d\(0px,\s*(-?[\d.]+)px/.exec(el.style.transform)?.[1] ?? 0,
+      );
+    const frame = animateFrames();
+    const layout = open(5, 3);
+    const { container, handlers } = mount(5, { layout, stackStyle: "deck" });
+    frame(2000);
+
+    // Step to the end: 3–5 / 5 -> [1–3][4][5].
+    React.act(() => q(container, '[data-sequence-step="1"]')!.click());
+    frame(2000);
+    React.act(() => q(container, '[data-sequence-step="1"]')!.click());
+    frame(2000);
+    expect(q(container, "[data-sequence-range]")?.textContent).toBe("3–5 / 5");
+
+    // Clicking Stack rewinds to 1–3 / 5:
+    // - card 1 (a0) rises from depth 2 in slot 0,
+    // - card 4 (a3) tucks smoothly from slot 1 to slot 2 instead of vanishing,
+    // - card 5 (a4) stays as the sinking under-card on the right.
+    React.act(() => q(container, '[data-sequence-collapse="true"]')!.click());
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    expect(q(container, "[data-sequence-range]")?.textContent).toBe("1–3 / 5");
+    const slot0Start = q(container, '[data-sequence-slot="0"]')!;
+    expect(slot0Start.dataset.artifactId).toBe("a0");
+    expect(parseDropY(q(slot0Start, "article")!)).toBeCloseTo(12, 2);
+    const stepTuck = q(container, '[data-sequence-step-tuck="a3"]')!;
+    expect(stepTuck).not.toBeNull();
+    expect(translateX(stepTuck)).toBe(CARD.widthCells * CELL_SIZE);
+    const under = q(container, '[data-sequence-under-card="right"]')!;
+    expect(under.dataset.sequenceUnderCardTop).toBe("a4");
+
+    // Rewind settles -> transitions straight into fold onto card 1 with backs
+    // starting at 0 depth and fanning out in sync as cards 2 and 3 tuck under.
+    frame(2000);
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    expect(q(container, "[data-sequence-under-card]")).toBeNull();
+    expect(q(container, "[data-sequence-step-tuck]")).toBeNull();
+    const slot0FoldStart = q(container, '[data-sequence-slot="0"]')!;
+    const backsStart = all(slot0FoldStart, "[data-artifact-stack-back]");
+    expect(backsStart).toHaveLength(2);
+    expect(parseDropY(backsStart[0]!)).toBeCloseTo(0, 2);
+
+    // Mid-fold: backs fan partway out while trailing cards glide to x = 0.
+    frame(60);
+    const slot0FoldMid = q(container, '[data-sequence-slot="0"]')!;
+    const back1MidY = parseDropY(
+      q(slot0FoldMid, '[data-artifact-stack-back="1"]')!,
+    );
+    const back2MidY = parseDropY(
+      q(slot0FoldMid, '[data-artifact-stack-back="2"]')!,
+    );
+    expect(back1MidY).toBeGreaterThan(0);
+    expect(back1MidY).toBeLessThan(6);
+    expect(back2MidY).toBeGreaterThan(back1MidY);
+    expect(back2MidY).toBeLessThan(12);
+
+    // Fold settles -> closes cleanly once card 1's backs reach rest depth.
+    frame(2000);
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
   });
 
   it("closes on Escape and via the Stack button", () => {
