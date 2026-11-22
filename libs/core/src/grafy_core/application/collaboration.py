@@ -2,7 +2,7 @@
 
 One Project, one room, one command sequence. This service is the only writer of a
 Project head: it opens rooms (``create_project``, ``copy_project``), accepts command
-batches (``submit_commands``), makes draft state durable (``checkpoint``), brings a
+batches (``submit_commands``), records immutable snapshots (``checkpoint``), brings a
 retained checkpoint back as the current state (``restore_checkpoint``) and closes rooms
 (``delete_project``).
 
@@ -14,18 +14,17 @@ Three rules hold throughout:
 * **A command id is a promise.** The same id, re-submitted with the same signed batch,
   returns the same outcome and does not move the head again. The same id with a
   different batch is an idempotency mismatch, not a retry.
-* **Nothing is durable until it is checkpointed.** The head carries the draft; a
-  ``ProjectCheckpoint`` is an immutable revision of it, and the way back from an
-  accepted change is a restore, which is itself a new checkpoint.
+* **Accepted batches are durable.** A ``ProjectCheckpoint`` preserves an immutable
+  revision of the head. Restoring a revision records a new checkpoint.
 
-There is no execution lock anywhere here: a run reads a checkpoint and never holds the
+There is no execution lock anywhere here: a run reads the live head and never holds the
 document, so an edit is never refused because something is computing.
 """
 
 import hmac
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import NamedTuple
+from typing import NamedTuple, override
 from uuid import UUID, uuid4
 
 from grafy_core.application.identity import authorize_workspace
@@ -45,7 +44,6 @@ from grafy_core.domain.collaboration import (
     apply_project_commands,
     command_hmac_digest,
     command_requires_exact_sequence,
-    empty_project_document,
     sanitize_project_for_cross_workspace_copy,
 )
 from grafy_core.domain.errors import (
@@ -60,6 +58,7 @@ from grafy_core.domain.errors import (
     ProjectCheckpointConflictError,
     UserDisabledError,
 )
+from grafy_core.domain.graph_documents import GraphDocument
 from grafy_core.domain.identity import (
     ActorContext,
     WorkspaceAccess,
@@ -76,6 +75,9 @@ from grafy_core.domain.security_audit import (
     SecurityAuditOutcome,
 )
 from grafy_core.ports.collaboration import CollaborationUnitOfWorkPort
+
+
+from grafy_core.kernel.project import ProjectDocument
 
 
 def _utc_now() -> datetime:
@@ -106,6 +108,20 @@ class CheckpointOutcome(NamedTuple):
 
     head: ProjectHead
     revision: int
+
+    @property
+    def advanced(self) -> bool:
+        """Whether this operation appended a checkpoint."""
+        return False
+
+
+class _AppendedCheckpoint(CheckpointOutcome):
+    __slots__ = ()
+
+    @property
+    @override
+    def advanced(self) -> bool:
+        return True
 
 
 class ProjectCopy(NamedTuple):
@@ -146,10 +162,11 @@ class CollaborationService:
         name: str,
         graph_id: str = MAIN_GRAPH_ID,
         graph_name: str = MAIN_GRAPH_NAME,
+        graph_document: GraphDocument | None = None,
         project_id: UUID | None = None,
         command_id: UUID | None = None,
     ) -> ProjectCreation:
-        """Open a Project with one empty Graph, its checkpoint 1 and its head.
+        """Open a Project with one Graph, its checkpoint 1 and its head.
 
         Pass ``project_id`` and ``command_id`` together to make creation replayable:
         a second call with the same pair and the same payload returns the Project that
@@ -163,9 +180,12 @@ class CollaborationService:
             created_by_user_id=actor.user_id,
             id=uuid4() if project_id is None else project_id,
         )
-        document = empty_project_document(graph_id, graph_name)
         opening_batch: tuple[ProjectCommand, ...] = (
-            AddGraphCommand(graph_id=graph_id, name=graph_name),
+            AddGraphCommand(
+                graph_id=graph_id,
+                name=graph_name,
+                document=graph_document or GraphDocument(),
+            ),
         )
         async with self._uow_factory() as uow:
             access = await self._authorize(
@@ -202,6 +222,11 @@ class CollaborationService:
             if replay is not None:
                 return replay
 
+            _, document = apply_project_commands(
+                name=project.name,
+                document=ProjectDocument(graphs=()),
+                commands=opening_batch,
+            )
             staged = await stage_project(
                 project,
                 document,
@@ -425,9 +450,9 @@ class CollaborationService:
         expected_sequence: int,
         expected_room_epoch: UUID,
     ) -> CheckpointOutcome:
-        """Make the head durable as the next immutable Project checkpoint.
+        """Snapshot the head as the next immutable Project checkpoint.
 
-        Checkpointing is idempotent for a state already made durable: an already
+        Checkpointing is idempotent for a state already snapshotted: an already
         fully-checkpointed head returns the revision it is level with rather than
         appending a second copy of the same document.
         """
@@ -474,29 +499,8 @@ class CollaborationService:
                 return CheckpointOutcome(head=head, revision=revision)
 
             revision = head.checkpoint_revision + 1
-            checkpoint = ProjectCheckpoint(
-                workspace_id=workspace_id,
-                project_id=project_id,
-                revision=revision,
-                name=head.name,
-                document=head.document,
-                created_at=_utc_now(),
-            )
-            mapping = ProjectCheckpointMapping(
-                workspace_id=workspace_id,
-                project_id=project_id,
-                room_epoch=head.room_epoch,
-                collaboration_sequence=head.collaboration_sequence,
-                checkpoint_revision=revision,
-            )
-            head.record_checkpoint(
-                sequence=head.collaboration_sequence,
-                revision=revision,
-            )
             try:
-                await uow.projects.add_checkpoint(checkpoint)
-                await uow.collaboration.add_checkpoint_mapping(mapping)
-                await uow.collaboration.save_head(head)
+                await self._append_checkpoint(uow, head)
                 await self._success(
                     uow,
                     actor=actor,
@@ -511,7 +515,57 @@ class CollaborationService:
                     expected_revision=revision,
                     actual_revision=None,
                 ) from exc
-        return CheckpointOutcome(head=head, revision=revision)
+        return _AppendedCheckpoint(head=head, revision=revision)
+
+    async def checkpoint_head_if_needed(
+        self, *, workspace_id: UUID, project_id: UUID
+    ) -> CheckpointOutcome | None:
+        """Snapshot the current authoritative head for the owning server."""
+
+        async with self._uow_factory() as uow:
+            head = await uow.collaboration.lock_head(workspace_id, project_id)
+            if head is None or head.is_fully_checkpointed:
+                return None
+
+            await self._append_checkpoint(uow, head)
+            await uow.security_audit.add(
+                SecurityAuditEvent(
+                    actor_kind=SecurityAuditActorKind.SYSTEM,
+                    operation="collaboration.checkpoint.automatic",
+                    outcome=SecurityAuditOutcome.SUCCESS,
+                    workspace_id=workspace_id,
+                    resource_type="project",
+                    resource_id=str(project_id),
+                )
+            )
+            await uow.commit()
+        return _AppendedCheckpoint(head=head, revision=head.checkpoint_revision)
+
+    async def _append_checkpoint(
+        self, uow: CollaborationUnitOfWorkPort, head: ProjectHead
+    ) -> None:
+        revision = head.checkpoint_revision + 1
+        await uow.projects.add_checkpoint(
+            ProjectCheckpoint(
+                workspace_id=head.workspace_id,
+                project_id=head.project_id,
+                revision=revision,
+                name=head.name,
+                document=head.document,
+                created_at=_utc_now(),
+            )
+        )
+        await uow.collaboration.add_checkpoint_mapping(
+            ProjectCheckpointMapping(
+                workspace_id=head.workspace_id,
+                project_id=head.project_id,
+                room_epoch=head.room_epoch,
+                collaboration_sequence=head.collaboration_sequence,
+                checkpoint_revision=revision,
+            )
+        )
+        head.record_checkpoint(sequence=head.collaboration_sequence, revision=revision)
+        await uow.collaboration.save_head(head)
 
     async def restore_checkpoint(
         self,
@@ -619,7 +673,7 @@ class CollaborationService:
                     expected_revision=restored_revision,
                     actual_revision=None,
                 ) from exc
-        return CheckpointOutcome(head=reopened, revision=restored_revision)
+        return _AppendedCheckpoint(head=reopened, revision=restored_revision)
 
     async def copy_project(
         self,
@@ -655,9 +709,7 @@ class CollaborationService:
                 operation="collaboration.project.copy",
                 resource_id=str(source_project_id),
             )
-            await self._project_or_raise(
-                uow, source_workspace_id, source_project_id
-            )
+            await self._project_or_raise(uow, source_workspace_id, source_project_id)
             source_head = await uow.collaboration.lock_head(
                 source_workspace_id,
                 source_project_id,

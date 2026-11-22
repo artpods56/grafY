@@ -400,11 +400,16 @@ describe("useNodeSecrets", () => {
         "sk-concurrent-write",
       );
     });
+    const nextUrl = "https://provider.example/v2";
+    const acceptedGraph = graph(projectId, graphId, 7, savedBaseUrl, [
+      savedNode(),
+      savedNode(nextUrl, otherNodeId),
+    ]);
     let refresh!: Promise<boolean>;
     await React.act(() => {
-      refresh = hook.result.current.refreshNodeSecretStatuses(activeGraph, [
+      refresh = hook.result.current.refreshNodeSecretStatuses(acceptedGraph, [
         firstNode,
-        otherNode,
+        workflowNode(nextUrl, otherNodeId),
       ]);
     });
     expect(

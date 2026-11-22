@@ -33,6 +33,7 @@ export interface NodeSecretGraph {
   graphId: string;
   /** The Project head's collaboration_sequence this Graph was read at. */
   revision: number;
+  roomEpoch?: string;
   nodes: readonly SavedGraphNode[];
 }
 
@@ -66,7 +67,7 @@ function sameNodeSecretGraph(
     active !== null &&
     graph.id === active.id &&
     graph.graphId === active.graphId &&
-    graph.revision === active.revision
+    graph.roomEpoch === active.roomEpoch
   );
 }
 
@@ -268,11 +269,36 @@ export function useNodeSecrets(
       refreshGenerationRef.current = refreshGeneration;
       const previousGraph = activeGraphRef.current;
       // A Graph switch inside the same Project keeps the Project id, so identity
-      // has to read all three: Project, Graph, and the head it was opened at.
+      // includes the room epoch, which changes when a checkpoint is restored.
       const continuesActiveGraph = sameNodeSecretGraph(graph, previousGraph);
       if (!continuesActiveGraph) {
         invalidateNodeSecretWrites(writeVersionsRef.current);
         headRef.current = null;
+      }
+      if (continuesActiveGraph && previousGraph) {
+        const previousNodes = new Map(
+          previousGraph.nodes.map((node) => [node.id, node]),
+        );
+        const nextNodes = new Map(graph.nodes.map((node) => [node.id, node]));
+        const inputsByNode = new Map(
+          graphNodes.map((node) => [node.id, nodeSecretInputs(node.data.spec)]),
+        );
+        for (const [nodeId, versions] of writeVersionsRef.current) {
+          const next = nextNodes.get(nodeId);
+          const before = previousNodes.get(nodeId);
+          for (const [name, version] of versions) {
+            const input = inputsByNode
+              .get(nodeId)
+              ?.find((candidate) => candidate.name === name);
+            if (
+              !input ||
+              !next ||
+              !nodeSecretBindingReady(input, next, before)
+            ) {
+              versions.set(name, version + 1);
+            }
+          }
+        }
       }
       activeGraphRef.current = graph;
       nodesByIdRef.current = new Map(graphNodes.map((node) => [node.id, node]));
@@ -433,8 +459,9 @@ export function useNodeSecrets(
    */
   const rereadHeadAfterConflict = React.useCallback(
     async (graph: NodeSecretGraph): Promise<number | null> => {
-      if (!sameNodeSecretGraph(graph, activeGraphRef.current)) return null;
-      const refreshed = await refreshNodeSecretStatuses(graph, [
+      const current = activeGraphRef.current;
+      if (!current || !sameNodeSecretGraph(graph, current)) return null;
+      const refreshed = await refreshNodeSecretStatuses(current, [
         ...nodesByIdRef.current.values(),
       ]);
       if (!refreshed || !sameNodeSecretGraph(graph, activeGraphRef.current)) {
@@ -461,6 +488,7 @@ export function useNodeSecrets(
       graph: NodeSecretGraph,
       headSequence: number,
       send: (expectedHeadSequence: number) => Promise<void>,
+      bindingStillCurrent: () => boolean,
     ): Promise<void> => {
       try {
         await send(headSequence);
@@ -468,7 +496,11 @@ export function useNodeSecrets(
       } catch (error) {
         if (!headMovedUnderTheWrite(error)) throw error;
         const retrySequence = await rereadHeadAfterConflict(graph);
-        if (retrySequence === null || retrySequence === headSequence) {
+        if (
+          retrySequence === null ||
+          retrySequence === headSequence ||
+          !bindingStillCurrent()
+        ) {
           throw error;
         }
         await send(retrySequence);
@@ -510,7 +542,14 @@ export function useNodeSecrets(
         }
       };
       try {
-        await sendWithOneHeadRetry(graph, headSequence, send);
+        await sendWithOneHeadRetry(
+          graph,
+          headSequence,
+          send,
+          () =>
+            nodeSecretWriteVersion(writeVersionsRef.current, nodeId, name) ===
+            writeVersion,
+        );
         if (
           !sameNodeSecretGraph(graph, activeGraphRef.current) ||
           nodeSecretWriteVersion(writeVersionsRef.current, nodeId, name) !==
@@ -574,7 +613,14 @@ export function useNodeSecrets(
         );
       };
       try {
-        await sendWithOneHeadRetry(graph, headSequence, send);
+        await sendWithOneHeadRetry(
+          graph,
+          headSequence,
+          send,
+          () =>
+            nodeSecretWriteVersion(writeVersionsRef.current, nodeId, name) ===
+            writeVersion,
+        );
         if (
           !sameNodeSecretGraph(graph, activeGraphRef.current) ||
           nodeSecretWriteVersion(writeVersionsRef.current, nodeId, name) !==

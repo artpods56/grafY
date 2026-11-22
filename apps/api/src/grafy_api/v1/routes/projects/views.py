@@ -20,7 +20,7 @@ Four rules hold on every route here:
   neither outcome is renegotiated once the write committed.
 """
 
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
@@ -36,7 +36,11 @@ from grafy_core.domain.errors import (
     ProjectCheckpointConflictError,
     ProjectFolderNameConflictError,
 )
-from grafy_core.domain.identity import ActorContext, WorkspaceCapability
+from grafy_core.domain.identity import (
+    ActorContext,
+    WorkspaceAccess,
+    WorkspaceCapability,
+)
 
 from grafy_api.app_state import get_resources
 from grafy_api.project_contracts import (
@@ -197,6 +201,7 @@ async def create_project(
             name=request.name,
             graph_id=request.graph_id,
             graph_name=request.graph_name,
+            graph_document=request.graph_document,
             project_id=request.project_id,
             command_id=request.command_id,
         )
@@ -288,10 +293,12 @@ async def delete_project(
                 "for collaboration-aware delete"
             ),
         )
+    authorized = cast(WorkspaceAccess, access)
+    workspace_id = authorized.workspace_id
     try:
         await collaboration.delete_project(
-            actor=access.actor,
-            workspace_id=access.workspace_id,
+            actor=authorized.actor,
+            workspace_id=workspace_id,
             project_id=project_id,
             expected_room_epoch=expected_room_epoch,
             expected_sequence=expected_sequence,
@@ -303,9 +310,11 @@ async def delete_project(
         CollaborationHeadConflictError,
     ) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    resources = get_resources(http_request.app)
+    resources.auto_checkpointer.cancel(workspace_id, project_id)
     await close_project_room(
-        get_resources(http_request.app).project_room_hub,
-        workspace_id=access.workspace_id,
+        resources.project_room_hub,
+        workspace_id=workspace_id,
         project_id=project_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -363,6 +372,7 @@ async def submit_project_commands(
     # Idempotent retries return the original receipt over HTTP and must not
     # rebroadcast a batch that peers already applied.
     if submission.receipt.outcome is not CommandReceiptOutcome.IDEMPOTENT_REPLAY:
+        resources.auto_checkpointer.note_head_advanced(submission.head)
         await publish_accepted_command(
             resources.project_room_hub,
             actor=access.actor,
@@ -390,6 +400,7 @@ async def submit_project_commands(
 async def checkpoint_project(
     project_id: UUID,
     request: CheckpointProjectRequest,
+    http_request: Request,
     collaboration: CollaborationDependency,
     access: require_workspace_capability(WorkspaceCapability.CHECKPOINT_PROJECT),
 ) -> CheckpointProjectResponse:
@@ -408,6 +419,10 @@ async def checkpoint_project(
         ProjectCheckpointConflictError,
     ) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    resources = get_resources(http_request.app)
+    resources.auto_checkpointer.note_checkpointed(outcome.head)
+    if outcome.advanced:
+        await resources.project_room_hub.publish_checkpointed(outcome.head)
     return CheckpointProjectResponse(
         head=ProjectHeadResponse.from_head(outcome.head),
         checkpoint_revision=outcome.revision,
@@ -499,6 +514,7 @@ async def restore_project_checkpoint(
     ) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     resources = get_resources(http_request.app)
+    resources.auto_checkpointer.note_restored(outcome.head)
     await publish_epoch_reset(
         resources.project_room_hub,
         workspace_id=access.workspace_id,

@@ -139,12 +139,6 @@ describe("workspace graph panel listing", () => {
       "2 nodes · 1 edge",
     );
   });
-
-  it("labels a draft head that is ahead of the saved checkpoint", () => {
-    expect(
-      graphCountLabel({ node_count: 0, edge_count: 0, draft_pending: true }),
-    ).toBe("0 nodes · 0 edges · unsaved draft");
-  });
 });
 
 describe("workspace graph panel interactions", () => {
@@ -216,15 +210,13 @@ describe("workspace graph panel interactions", () => {
     expect(status?.textContent).toBe("Refreshing…");
   });
 
-  it("labels a project whose live draft is ahead of its saved checkpoint", async () => {
+  it("shows live counts while a checkpoint is pending", async () => {
     panelState.projects = [
       {
         id: "graph-draft",
-        name: "Draft ahead",
+        name: "Live graph",
         node_count: 0,
         edge_count: 0,
-        // Two Graphs in one Project: the row's counts describe the draft head of
-        // whichever Graph, never the number of Graphs the Project holds.
         graph_count: 2,
         revision: 1,
         updated_at: "2026-08-10T12:00:00Z",
@@ -235,7 +227,8 @@ describe("workspace graph panel interactions", () => {
 
     expect(
       container.querySelector(".grafy-graph-panel__row-meta")?.textContent,
-    ).toContain("0 nodes · 0 edges · unsaved draft");
+    ).toContain("0 nodes · 0 edges");
+    expect(container.textContent).not.toContain("unsaved draft");
   });
 
   it("names projects, not graphs, in the states that hold no row", async () => {

@@ -446,6 +446,29 @@ describe("reading what a Graph's node instances hold", () => {
     await hook.unmount();
   });
 
+  it("keeps loaded Run results when only the live head revision changes", async () => {
+    api.listGraphInstances.mockResolvedValue({
+      instances: [instanceState("a", "fresh")],
+    });
+    const canvas = canvasState([workflowNode("a")]);
+    const options = hookOptions(canvas);
+    const hook = await renderHook(useRunExecution, options);
+    await settle();
+
+    await hook.rerender({
+      ...options,
+      activeGraph: activeSavedGraph({ revision: 10 }),
+    });
+    await settle();
+
+    expect(api.listGraphInstances).toHaveBeenCalledTimes(1);
+    expect(api.getInstanceResult).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.resultByNodeId.a?.result_fingerprint).toBe(
+      "result-a",
+    );
+    await hook.unmount();
+  });
+
   it("reads a result again the moment its instance points at a new fingerprint", async () => {
     api.listGraphInstances.mockResolvedValue({
       instances: [instanceState("a", "fresh")],
@@ -759,7 +782,7 @@ describe("asking for a Run", () => {
     });
 
     expect(setRunError).toHaveBeenCalledWith(
-      "Save the graph before running nodes that use stored secrets.",
+      "Wait for the Project to synchronize before running.",
     );
     expect(api.startRun).not.toHaveBeenCalled();
     await hook.unmount();
@@ -801,7 +824,7 @@ describe("asking for a Run", () => {
     });
 
     expect(setRunError).toHaveBeenCalledWith(
-      "Save the graph before running llm.operator: its API key binding is new or changed.",
+      "Wait for the API key binding to synchronize before running llm.operator.",
     );
     await hook.unmount();
   });

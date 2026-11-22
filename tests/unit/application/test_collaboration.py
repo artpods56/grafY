@@ -56,6 +56,7 @@ from grafy_core.domain.identity import (
     WorkspaceRole,
 )
 from grafy_core.domain.projects import ProjectCheckpoint
+from grafy_core.domain.security_audit import SecurityAuditActorKind
 from grafy_core.kernel.project import ProjectDocument
 
 HMAC_KEY = b"test-project-command-hmac-key"
@@ -353,6 +354,37 @@ async def test_create_project_replays_the_same_command_id(harness: Harness) -> N
     assert replayed.receipt.command_hmac == created.receipt.command_hmac
     assert list(harness.store.projects) == [project_id]
     assert harness.revisions(project_id) == [1]
+
+
+async def test_create_project_checkpoints_its_initial_document_and_replays(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project_id, command_id = uuid4(), uuid4()
+    graph_document = GraphDocument(nodes=(node("draft-node"),))
+
+    def create(document: GraphDocument):
+        return harness.service.create_project(
+            actor=owner,
+            workspace_id=workspace.id,
+            name="Field survey",
+            project_id=project_id,
+            command_id=command_id,
+            graph_document=document,
+        )
+
+    created = await create(graph_document)
+    replay = await create(graph_document)
+    assert replay.head == created.head
+    assert replay.receipt is not None
+    assert replay.receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
+    assert harness.revisions(project_id) == [1]
+    assert (
+        harness.checkpoint_document(project_id, 1).graphs[0].document == graph_document
+    )
+
+    with pytest.raises(CollaborationIdempotencyMismatchError):
+        await create(GraphDocument())
 
 
 async def test_reused_command_id_with_another_name_is_refused(harness: Harness) -> None:
@@ -863,6 +895,37 @@ async def test_checkpoint_appends_the_next_immutable_revision(harness: Harness) 
     )
 
 
+async def test_automatic_checkpoint_snapshots_the_live_head_with_system_audit(
+    harness: Harness,
+) -> None:
+    workspace, owner = harness.workspace(name="Owner", slug="owner")
+    project, _, _ = await harness.create(owner, workspace)
+    address = {"workspace_id": workspace.id, "project_id": project.id}
+
+    assert await harness.service.checkpoint_head_if_needed(**address) is None
+    submission = await harness.submit(
+        owner, workspace, project.id, [add_node("node-1")]
+    )
+    outcome = await harness.service.checkpoint_head_if_needed(**address)
+
+    assert outcome is not None
+    assert outcome.head.checkpoint_sequence == submission.head.collaboration_sequence
+    assert outcome.revision == 2
+    assert harness.checkpoint_document(project.id, 2) == submission.head.document
+    assert harness.audits[-1].actor_kind == SecurityAuditActorKind.SYSTEM
+    assert harness.audits[-1].user_id is None
+    assert harness.audits[-1].operation == "collaboration.checkpoint.automatic"
+
+    assert await harness.service.checkpoint_head_if_needed(**address) is None
+    assert harness.revisions(project.id) == [1, 2]
+    assert (
+        await harness.service.checkpoint_head_if_needed(
+            workspace_id=workspace.id, project_id=uuid4()
+        )
+        is None
+    )
+
+
 async def test_checkpoint_is_idempotent_for_durable_state(harness: Harness) -> None:
     workspace, owner = harness.workspace(name="Owner", slug="owner")
     project, _, _ = await harness.create(owner, workspace)
@@ -872,6 +935,7 @@ async def test_checkpoint_is_idempotent_for_durable_state(harness: Harness) -> N
     again = await harness.checkpoint(owner, workspace, project.id)
 
     assert again.revision == first.revision == 2
+    assert first.advanced and not again.advanced
     assert harness.revisions(project.id) == [1, 2]
     assert harness.factory.last.commit_count == 0
 

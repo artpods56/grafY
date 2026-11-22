@@ -17,6 +17,7 @@ from grafy_core.domain.projects import (
     ProjectOrganization,
     UserProjectState,
 )
+from grafy_core.domain.graph_documents import GraphDocument
 from grafy_core.kernel.project import ProjectDocument
 from pydantic import (
     BaseModel,
@@ -38,6 +39,7 @@ class CreateProjectRequest(ProjectApiModel):
     name: str = Field(min_length=1, max_length=160)
     graph_id: str = Field(default="main", min_length=1)
     graph_name: str = Field(default="Main", min_length=1)
+    graph_document: GraphDocument | None = None
     project_id: UUID | None = None
     command_id: UUID | None = None
 

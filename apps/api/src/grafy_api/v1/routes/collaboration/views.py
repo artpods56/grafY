@@ -50,9 +50,10 @@ from grafy_core.domain.identity import (
     WorkspaceCapability,
 )
 
-from grafy_api.app_state import get_identity
+from grafy_api.app_state import get_identity, get_resources
 from grafy_api.auth.http import require_browser_origin
 from grafy_api.project_contracts import ProjectHeadResponse
+from grafy_api.realtime.checkpointing import ProjectAutoCheckpointer
 from grafy_api.realtime.hub import (
     CLOSE_ACCESS_REVOKED,
     CLOSE_PERMISSIONS_CHANGED,
@@ -128,7 +129,9 @@ async def websocket_browser_actor(
 
 def _require_websocket_origin(websocket: WebSocket) -> None:
     auth = get_identity(websocket.app).auth_service
-    require_browser_origin(websocket.headers.get("origin"), auth.trusted_browser_origins)
+    require_browser_origin(
+        websocket.headers.get("origin"), auth.trusted_browser_origins
+    )
 
 
 @router.websocket("/workspaces/{workspace_id}/projects/{project_id}/room")
@@ -144,6 +147,7 @@ async def join_project_room(
     actor: Annotated[ActorContext, Depends(websocket_browser_actor)],
 ) -> None:
     _require_websocket_origin(websocket)
+    auto_checkpointer = get_resources(websocket.app).auto_checkpointer
     try:
         access = await _authorize_room(identity, actor=actor, workspace_id=workspace_id)
         presentation = await actor_presentation_for(uow_factory, actor)
@@ -268,6 +272,7 @@ async def join_project_room(
                         runs=runs,
                         hub=hub,
                         message=message,
+                        auto_checkpointer=auto_checkpointer,
                     )
                 else:
                     await _handle_presence_update(
@@ -498,6 +503,7 @@ async def _handle_command_submit(
     runs: RunService,
     hub: ProjectRoomHub,
     message: ProjectCommandSubmitMessage,
+    auto_checkpointer: ProjectAutoCheckpointer,
 ) -> None:
     try:
         head, receipt = await collaboration.submit_commands(
@@ -560,6 +566,7 @@ async def _handle_command_submit(
         await hub.deliver_private(session, receipt_message)
         return
 
+    auto_checkpointer.note_head_advanced(head)
     accepted = ProjectCommandAcceptedMessage(
         command_id=message.command_id,
         room_epoch=receipt.room_epoch,

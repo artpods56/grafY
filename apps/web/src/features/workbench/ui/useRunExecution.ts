@@ -174,16 +174,18 @@ export function useRunExecution({
       ? `${projectId}\u0000${activeGraph.graphId}`
       : null;
 
+  const graphId = activeGraph?.graphId;
+  const instanceRequestRef = React.useRef(0);
   const publishInstances = React.useCallback(
     async (options: { onlyNodeIds?: ReadonlySet<string> } = {}) => {
-      if (!projectId || !activeGraph) return;
-      const requestGraph = activeGraph;
+      if (!projectId || !graphId) return;
+      const request = ++instanceRequestRef.current;
       const generation = generationRef.current;
       const stillCurrent = () =>
         mountedRef.current &&
         generation === generationRef.current &&
-        snapshotRef.current.activeGraph?.graphId === requestGraph.graphId &&
-        snapshotRef.current.activeGraph?.revision === requestGraph.revision;
+        snapshotRef.current.activeGraph?.graphId === graphId &&
+        request === instanceRequestRef.current;
 
       const loaded = loadedFingerprintsRef.current;
       // The state list is read first and tells us which results moved, so a room
@@ -191,7 +193,7 @@ export function useRunExecution({
       const snapshot = await loadInstanceSnapshot(
         workspaceId,
         projectId,
-        requestGraph.graphId,
+        graphId,
         // The fingerprints already held are always offered: a refresh that finds
         // an instance pointing at the result it pointed at last time has nothing
         // new to show, and re-reading it would make the surface's read rate grow
@@ -201,7 +203,7 @@ export function useRunExecution({
           loadedFingerprints: loaded,
         },
       ).catch((error: unknown) => {
-        if (mountedRef.current && generation === generationRef.current) {
+        if (stillCurrent()) {
           setRunError(
             error instanceof Error
               ? error.message
@@ -243,7 +245,7 @@ export function useRunExecution({
         withInstanceResults(withInstanceStates(current, byNodeId), results),
       );
     },
-    [projectId, activeGraph, setNodes, setRunError, workspaceId],
+    [projectId, graphId, setNodes, setRunError, workspaceId],
   );
 
   const refreshActiveRuns = React.useCallback(async () => {
@@ -389,6 +391,10 @@ export function useRunExecution({
         setRunError("Save the graph before running it.");
         return;
       }
+      if (!canRunSavedGraph) {
+        setRunError("Wait for the Project to synchronize before running.");
+        return;
+      }
       const execution = executionSubgraphFor(
         scope,
         nodes,
@@ -432,12 +438,6 @@ export function useRunExecution({
           inputs: nodeSecretInputs(node.data.spec),
         }))
         .filter(({ inputs }) => inputs.length > 0);
-      if (secretBackedNodes.length && !canRunSavedGraph) {
-        setRunError(
-          "Save the graph before running nodes that use stored secrets.",
-        );
-        return;
-      }
       for (const { node, inputs } of secretBackedNodes) {
         const savedNode = activeGraph.nodes.find(
           (candidate) => candidate.id === node.id,
@@ -457,7 +457,7 @@ export function useRunExecution({
         );
         if (changedInput) {
           setRunError(
-            `Save the graph before running ${node.data.spec.title}: its ${changedInput.title} binding is new or changed.`,
+            `Wait for the ${changedInput.title} binding to synchronize before running ${node.data.spec.title}.`,
           );
           return;
         }

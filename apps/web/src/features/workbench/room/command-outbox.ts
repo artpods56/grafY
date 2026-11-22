@@ -71,6 +71,7 @@ export interface ProjectRoomCommandOutboxOptions {
   readonly canSend?: () => boolean;
   readonly createCommandId?: () => string;
   readonly onHeadRefreshRequired?: () => void;
+  readonly onPendingCommandsChange?: (pending: boolean) => void;
   readonly onCommandRejected?: (message: ProjectCommandRejectedMessage) => void;
 }
 
@@ -89,6 +90,8 @@ export class ProjectRoomCommandOutbox {
   private readonly canSend: () => boolean;
   private readonly createCommandId: () => string;
   private readonly onHeadRefreshRequired: (() => void) | undefined;
+  private readonly onPendingCommandsChange:
+    ((pending: boolean) => void) | undefined;
   private readonly onCommandRejected:
     ((message: ProjectCommandRejectedMessage) => void) | undefined;
 
@@ -97,6 +100,7 @@ export class ProjectRoomCommandOutbox {
   private readonly localCommandIds = new Set<string>();
   /** When true, do not send queued commands until a full snapshot lands. */
   private awaitingHeadRehydration = false;
+  private reportedPending = false;
 
   constructor(options: ProjectRoomCommandOutboxOptions = {}) {
     this.headPointer = options.headPointer ?? (() => null);
@@ -104,6 +108,22 @@ export class ProjectRoomCommandOutbox {
     this.createCommandId = options.createCommandId ?? createUuid;
     this.onHeadRefreshRequired = options.onHeadRefreshRequired;
     this.onCommandRejected = options.onCommandRejected;
+    this.onPendingCommandsChange = options.onPendingCommandsChange;
+  }
+
+  pendingCount(): number {
+    return this.queue.length + (this.inFlight ? 1 : 0);
+  }
+
+  isAwaitingHeadRehydration(): boolean {
+    return this.awaitingHeadRehydration;
+  }
+
+  private notifyPendingCommands(): void {
+    const pending = this.pendingCount() > 0 || this.isAwaitingHeadRehydration();
+    if (pending === this.reportedPending) return;
+    this.reportedPending = pending;
+    this.onPendingCommandsChange?.(pending);
   }
 
   /**
@@ -114,7 +134,7 @@ export class ProjectRoomCommandOutbox {
     commands: readonly RoomProjectCommand[],
   ): ProjectRoomCommandSubmission {
     this.supersedeQueuedSnapshotCommand(commands);
-    if (this.queue.length + (this.inFlight ? 1 : 0) >= ROOM_COMMAND_QUEUE_CAP) {
+    if (this.pendingCount() >= ROOM_COMMAND_QUEUE_CAP) {
       return {
         promise: Promise.reject(
           new ProjectRoomCommandError(
@@ -142,6 +162,7 @@ export class ProjectRoomCommandOutbox {
         receipt: null,
       });
     });
+    this.notifyPendingCommands();
     return { promise, sends: this.drainQueue() };
   }
 
@@ -173,6 +194,7 @@ export class ProjectRoomCommandOutbox {
       return [];
     }
     this.resolveInFlightReceipt(pending);
+    this.notifyPendingCommands();
     return this.drainQueue();
   }
 
@@ -198,13 +220,13 @@ export class ProjectRoomCommandOutbox {
     const pending = this.inFlight;
     if (pending?.receipt !== null && pending?.receipt !== undefined) {
       if (!this.headCoversReceipt(pending.receipt)) {
-        this.awaitingHeadRehydration = true;
-        this.onHeadRefreshRequired?.();
+        this.requestHeadRefresh();
         return [];
       }
       this.resolveInFlightReceipt(pending);
     }
     this.awaitingHeadRehydration = false;
+    this.notifyPendingCommands();
     return this.drainQueue();
   }
 
@@ -222,6 +244,7 @@ export class ProjectRoomCommandOutbox {
     // Pause drain until Workbench replaceHead() restores a full snapshot.
     this.awaitingHeadRehydration = true;
     this.inFlight = null;
+    this.notifyPendingCommands();
     this.onCommandRejected?.(message);
     pending.reject(
       new ProjectRoomCommandError(
@@ -235,6 +258,7 @@ export class ProjectRoomCommandOutbox {
   /** Pause the drain and ask the driver for a full snapshot. */
   requestHeadRefresh(): void {
     this.awaitingHeadRehydration = true;
+    this.notifyPendingCommands();
     this.onHeadRefreshRequired?.();
   }
 
@@ -262,14 +286,16 @@ export class ProjectRoomCommandOutbox {
     const pending = this.inFlight;
     if (!pending || pending.commandId !== commandId) return;
     this.inFlight = null;
+    this.localCommandIds.delete(commandId);
+    this.requestHeadRefresh();
     pending.reject(
-      error instanceof Error
-        ? error
-        : new ProjectRoomCommandError(
-            commandId,
-            "send_failed",
-            "Failed to send the command batch.",
-          ),
+      new ProjectRoomCommandError(
+        commandId,
+        "send_failed",
+        error instanceof Error
+          ? error.message
+          : "Failed to send the command batch.",
+      ),
     );
   }
 
@@ -284,6 +310,8 @@ export class ProjectRoomCommandOutbox {
     for (const item of queued) {
       item.reject(error);
     }
+    this.awaitingHeadRehydration = false;
+    this.notifyPendingCommands();
   }
 
   /** Forget which command ids were locally originated. */

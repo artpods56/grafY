@@ -914,7 +914,9 @@ export function WorkspaceRail({
                 chrome.saving
                   ? "Saving graph…"
                   : chrome.isDirty || !chrome.activeGraphId
-                    ? "Save graph"
+                    ? chrome.activeGraphId
+                      ? "Graph changes are unsynchronized"
+                      : "Save graph"
                     : "All changes are saved"
               }
               disabled={!chrome.canSave}
@@ -933,7 +935,9 @@ export function WorkspaceRail({
                 {chrome.saving
                   ? "Saving…"
                   : chrome.isDirty || !chrome.activeGraphId
-                    ? "Save"
+                    ? chrome.activeGraphId
+                      ? "Unsynced"
+                      : "Save"
                     : "Saved"}
               </span>
             </button>

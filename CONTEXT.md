@@ -736,9 +736,9 @@ Image cards keep the filename and artifact contract above the image, dimmed
 when unselected. Info and action controls sit outside the image. Single values
 use one connector ring; sequences use two, including a sequence of one item.
 
-Project commands are validated batches applied against the live head; a batch is
-accepted or rejected as a whole and a checkpoint restore is the way back from any
-accepted change.
+Project commands are validated batches applied against the live head. An accepted
+batch is durable as soon as it commits. Checkpoints are immutable snapshots of the
+live head that can be restored as a new revision.
 
 ### Workbench
 

@@ -2,16 +2,19 @@ import asyncio
 import contextlib
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
 from fastapi import WebSocket
+from grafy_core.domain.collaboration import ProjectHead
 from grafy_shared.config import RealtimeConfig
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from grafy_api.realtime.protocol import (
     ActorPresentation,
+    ProjectCheckpointedMessage,
     ProjectCommandAcceptedMessage,
     ProjectCommandReceiptMessage,
     PresenceJoinMessage,
@@ -103,6 +106,7 @@ class ProjectRoomHub:
             else 1.0 / presence_max_updates_per_second
         )
         self._heartbeat_seconds = heartbeat_seconds
+        self.on_room_empty: Callable[[UUID, UUID], None] | None = None
 
     @classmethod
     def from_settings(cls, cfg: RealtimeConfig) -> "ProjectRoomHub":
@@ -357,6 +361,17 @@ class ProjectRoomHub:
         """Deliver a private message (e.g. idempotent receipt) without fanout."""
 
         await self._enqueue(session, message)
+
+    async def publish_checkpointed(self, head: ProjectHead) -> None:
+        await self.publish_model(
+            workspace_id=head.workspace_id,
+            project_id=head.project_id,
+            message=ProjectCheckpointedMessage(
+                room_epoch=head.room_epoch,
+                checkpoint_sequence=head.checkpoint_sequence,
+                checkpoint_revision=head.checkpoint_revision,
+            ),
+        )
 
     async def publish_rehydrate(
         self,
@@ -685,6 +700,8 @@ class ProjectRoomHub:
                             self._offer(peer.session, leave_message)
             if not room:
                 self._rooms.pop(key, None)
+                if self.on_room_empty is not None:
+                    self.on_room_empty(*key)
         return already_closed
 
     async def _close_session(

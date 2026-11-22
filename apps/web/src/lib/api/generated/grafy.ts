@@ -2170,6 +2170,7 @@ export interface components {
         readonly CreateProjectRequest: {
             /** Command Id */
             readonly command_id?: string | null;
+            readonly graph_document?: components["schemas"]["GraphDocument"] | null;
             /**
              * Graph Id
              * @default main

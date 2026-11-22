@@ -2,12 +2,9 @@
 
 import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Mock } from "vitest";
 
 import type {
   CollaborativeHead,
-  GraphCommandInput,
-  GraphDraft,
   NodeRegistry,
   NodeSpec,
   SavedGraph,
@@ -18,11 +15,7 @@ import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
 import { deferred } from "./test/deferred";
 import { renderHook } from "./test/renderHook";
 import { useGraphAutosave } from "./useGraphAutosave";
-import {
-  useSavedGraphLifecycle,
-  type GraphRoomPersistenceAdapter,
-  type GraphRoomPersistenceResult,
-} from "./useSavedGraphLifecycle";
+import { useSavedGraphLifecycle } from "./useSavedGraphLifecycle";
 
 const router = vi.hoisted(() => ({
   push: vi.fn(),
@@ -38,7 +31,7 @@ const graphSummaryRefresh = vi.hoisted(() => vi.fn());
 /**
  * The Project endpoints the lifecycle touches. A canvas is one Graph inside one
  * Project, so opening reads the Project head, saving writes the document as a
- * Project command and checkpoints it, and deleting retires the whole Project.
+ * Project command, and deleting retires the whole Project.
  * `graphFromProjectHead` stays the real projection: a mock that reimplemented it
  * could pass while the client projected a different Graph than the canvas shows.
  */
@@ -166,61 +159,6 @@ function projectHead(
   };
 }
 
-/**
- * A head whose document is given directly, for the room cases that are not a
- * saved Graph — a peer's edit, or a journal write no checkpoint has caught.
- */
-function headWithDocument(
-  projectId: string,
-  document: SavedGraphDocument,
-  sequences: { collaboration: number; checkpoint: number },
-  name = "Room head",
-): CollaborativeHead {
-  return {
-    project_id: projectId,
-    name,
-    room_epoch: ROOM_EPOCH,
-    collaboration_sequence: sequences.collaboration,
-    checkpoint_sequence: sequences.checkpoint,
-    checkpoint_revision: sequences.checkpoint,
-    updated_at: "2026-08-13T12:00:00Z",
-    document: { graphs: [{ id: projectId, name, document }] },
-  };
-}
-
-/**
- * What a room save reports back when it wrote exactly the draft it was handed:
- * one head, checkpointed at the sequence the write landed at, holding that
- * draft's document.
- */
-/**
- * A save whose completion the test decides, typed so the draft it was handed can
- * be read back out of the mock rather than assumed.
- */
-type DraftPersist = Mock<GraphRoomPersistenceAdapter["persistDocument"]>;
-
-function submittedDraft(
-  calls: readonly (readonly unknown[])[],
-  index: number,
-): GraphDraft {
-  const draft = calls[index]?.[0] as GraphDraft | undefined;
-  if (!draft) throw new Error(`write ${index + 1} submitted no draft`);
-  return draft;
-}
-
-function roomEcho(
-  draft: GraphDraft,
-  sequence: number,
-): GraphRoomPersistenceResult {
-  const head = headWithDocument(
-    GRAPH_A_ID,
-    draft.document,
-    { collaboration: sequence, checkpoint: sequence },
-    draft.name,
-  );
-  return { checkpointHead: head, currentHead: head };
-}
-
 /** The open path: a Project whose head holds this Graph. */
 function stubOpen(graph: SavedGraph): void {
   api.getCollaborativeHead.mockImplementation((_workspaceId, projectId) =>
@@ -234,85 +172,25 @@ function stubOpen(graph: SavedGraph): void {
   );
 }
 
-/** The create path: a new Project, then its first Graph's document. */
-function stubCreate(
-  projectId: string,
-  graph: SavedGraph,
-  options: { holdCheckpoint?: boolean } = {},
-) {
+/** A first save copies the authored draft into a newly created Project. */
+function stubCreate(projectId: string, graph: SavedGraph) {
   api.createProject.mockResolvedValue({
     id: projectId,
     name: graph.name,
     created_at: graph.created_at,
     updated_at: graph.updated_at,
   });
-  return stubRoomlessSave(projectId, graph, options);
-}
-
-/** The document a save submitted, as the Project command carried it. */
-function submittedDocuments(): Extract<
-  GraphCommandInput,
-  { kind: "replace_document" }
->["document"][] {
-  return api.submitProjectCommand.mock.calls.map((call) => {
-    const body = call[2] as { commands: { command: GraphCommandInput }[] };
-    const command = body.commands[0]?.command;
-    if (command?.kind !== "replace_document") {
-      throw new Error("Expected the save to submit a replace_document command");
-    }
-    return command.document;
-  });
-}
-
-/**
- * The roomless save path: read the head, accept the document command, then
- * checkpoint. The checkpointed head is what a save reports back, and its
- * collaboration sequence is the revision the canvas then holds.
- */
-function stubRoomlessSave(
-  projectId: string,
-  graph: SavedGraph,
-  options: { holdCheckpoint?: boolean } = {},
-) {
-  // A save reads the head of the Project it is writing to. A test that also
-  // opened another Project keeps its own head reader: the two are addressed
-  // apart, and an open must not start answering for a save.
   const previousHeadRead = api.getCollaborativeHead.getMockImplementation();
   api.getCollaborativeHead.mockImplementation(
-    (_workspaceId: string, requestedProjectId: string) =>
-      requestedProjectId === projectId
-        ? Promise.resolve(
-            projectHead(
-              savedGraph(projectId, "Before the save", graph.revision),
-            ),
-          )
-        : previousHeadRead !== undefined
-          ? previousHeadRead(_workspaceId, requestedProjectId)
-          : Promise.resolve(projectHead(graph)),
+    (workspaceId: string, requestedProjectId: string) =>
+      requestedProjectId === projectId || !previousHeadRead
+        ? Promise.resolve(projectHead(graph))
+        : previousHeadRead(workspaceId, requestedProjectId),
   );
-  api.submitProjectCommand.mockResolvedValue({
-    head: projectHead(graph),
-    receipt: {
-      accepted_sequence: graph.revision,
-      command_id: "00000000-0000-4000-8000-0000000000cc",
-      deduplicated: false,
-      outcome: "applied",
-      room_epoch: ROOM_EPOCH,
-    },
-  });
-  const response = deferred<{
-    head: CollaborativeHead;
-    checkpoint_revision: number;
-  }>();
-  if (options.holdCheckpoint) {
-    api.checkpointProject.mockReturnValue(response.promise);
-    return response;
-  }
-  api.checkpointProject.mockResolvedValue({
-    head: projectHead(graph),
-    checkpoint_revision: graph.revision,
-  });
-  return response;
+}
+
+function submittedDocuments(): SavedGraphDocument[] {
+  return api.createProject.mock.calls.map((call) => call[1].graph_document);
 }
 
 type LifecycleOptions = Parameters<typeof useSavedGraphLifecycle>[0];
@@ -376,7 +254,6 @@ function lifecycleOptions(
       initialGraphId,
       registry,
       document,
-      nodes: [],
       isExecutionRunning: () => false,
       replaceDocument: callbacks.replaceDocument,
       replacePresentation: callbacks.replacePresentation,
@@ -430,7 +307,7 @@ afterEach(() => {
 });
 
 describe("useSavedGraphLifecycle document ownership", () => {
-  it("autosaves a new draft through Project creation and checkpointing", async () => {
+  it("autosaves a new draft through Project creation and command acceptance", async () => {
     vi.useFakeTimers();
     try {
       const graph = savedGraph(GRAPH_A_ID, "My draft");
@@ -455,7 +332,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
       expect(api.createProject).not.toHaveBeenCalled();
       await React.act(async () => vi.advanceTimersByTimeAsync(1000));
       expect(api.createProject).toHaveBeenCalledTimes(1);
-      expect(api.checkpointProject).toHaveBeenCalledTimes(1);
+      expect(api.checkpointProject).not.toHaveBeenCalled();
       expect(submittedDocuments()).toHaveLength(1);
       expect(hook.result.current.activeGraph?.id).toBe(GRAPH_A_ID);
       expect(hook.result.current.persistenceError).toBeNull();
@@ -465,185 +342,49 @@ describe("useSavedGraphLifecycle document ownership", () => {
     }
   });
 
-  it("leaves the canvas alone when a background save wrote what it already shows", async () => {
-    const graph = savedGraph(GRAPH_A_ID, "Autosave me", 2);
-    const write = deferred<GraphRoomPersistenceResult>();
-    const persistDocument: DraftPersist = vi.fn(() => write.promise);
-    stubOpen(graph);
-    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
-    options.roomPersistence = { canPersist: true, persistDocument };
+  it("pauses editing and prevents duplicate creation during a first save", async () => {
+    const graph = savedGraph(GRAPH_A_ID, "First save");
+    stubCreate(GRAPH_A_ID, graph);
+    const submitted = deferred<CollaborativeHead>();
+    api.getCollaborativeHead.mockReturnValue(submitted.promise);
+    const { options } = lifecycleOptions(null);
     const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
 
-    // The edit an autosave follows: a rename the canvas holds and the server
-    // does not.
+    let save!: Promise<void>;
     await React.act(async () => {
-      await hook.rerender({
-        ...options,
-        document: { ...options.document, name: "Autosaved" },
-      });
-    });
-    expect(hook.result.current.isDirty).toBe(true);
-    const replacements = callbacks.replaceDocument.mock.calls.length;
-    const presentationReplacements =
-      callbacks.replacePresentation.mock.calls.length;
-    const secretRefreshes = vi.mocked(callbacks.refreshNodeSecretStatuses).mock
-      .calls.length;
-
-    let inFlight!: Promise<void>;
-    await React.act(async () => {
-      inFlight = hook.result.current.saveCurrentGraph(undefined, {
-        background: true,
-      });
-      await Promise.resolve();
-    });
-    expect(persistDocument).toHaveBeenCalledOnce();
-    // Writing in the background means the person is not locked out of the
-    // canvas, and is not told the canvas is busy with something they did not
-    // ask for.
-    expect(hook.result.current.persistenceOperationBusy).toBe(false);
-
-    await React.act(async () => {
-      write.resolve(roomEcho(submittedDraft(persistDocument.mock.calls, 0), 3));
-      await inFlight;
-    });
-
-    // The room sent back the document this tab had just written, so there is
-    // nothing for the canvas to learn: no replacement means no node loses its
-    // measured size, its dragged position, or the selection.
-    expect(callbacks.replaceDocument).toHaveBeenCalledTimes(replacements);
-    expect(callbacks.replacePresentation).toHaveBeenCalledTimes(
-      presentationReplacements,
-    );
-    expect(callbacks.refreshNodeRegistry).not.toHaveBeenCalled();
-    expect(callbacks.refreshNodeSecretStatuses).toHaveBeenCalledTimes(
-      secretRefreshes,
-    );
-    expect(hook.result.current.isDirty).toBe(false);
-    expect(hook.result.current.activeGraph).toMatchObject({
-      id: GRAPH_A_ID,
-      revision: 3,
-    });
-  });
-
-  it("rebuilds the canvas when a background save came back saying something else", async () => {
-    const graph = savedGraph(GRAPH_A_ID, "Autosave me", 2);
-    const persistDocument = vi
-      .fn()
-      .mockImplementation((draft: GraphDraft) =>
-        Promise.resolve(
-          roomEcho({ ...draft, name: "Named by another writer" }, 3),
-        ),
-      );
-    stubOpen(graph);
-    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
-    options.roomPersistence = { canPersist: true, persistDocument };
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
-    await React.act(async () => {
-      await hook.rerender({
-        ...options,
-        document: { ...options.document, name: "Autosaved" },
-      });
-    });
-
-    const replacements = callbacks.replaceDocument.mock.calls.length;
-
-    await React.act(async () => {
-      await hook.result.current.saveCurrentGraph(undefined, {
-        background: true,
-      });
-    });
-
-    // The accepted head is not the canvas: it carries another writer's name, so
-    // the canvas takes the head rather than being told it is saved.
-    expect(callbacks.replaceDocument).toHaveBeenCalledTimes(replacements + 1);
-  });
-
-  it("carries an edit made during a background save into the next write", async () => {
-    const graph = savedGraph(GRAPH_A_ID, "Queue", 2);
-    const firstWrite = deferred<GraphRoomPersistenceResult>();
-    const persistDocument = vi
-      .fn()
-      .mockReturnValueOnce(firstWrite.promise)
-      .mockImplementation((draft: GraphDraft) =>
-        Promise.resolve(roomEcho(draft, 4)),
-      );
-    stubOpen(graph);
-    const { options } = lifecycleOptions(GRAPH_A_ID);
-    options.roomPersistence = { canPersist: true, persistDocument };
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
-    await React.act(async () => {
-      await hook.rerender({
-        ...options,
-        document: { ...options.document, name: "Queue first" },
-      });
-    });
-
-    let first!: Promise<void>;
-    let second!: Promise<void>;
-    await React.act(async () => {
-      first = hook.result.current.saveCurrentGraph(undefined, {
-        background: true,
-      });
-      await Promise.resolve();
-    });
-    // The next edit lands while the first write is still out there.
-    await React.act(async () => {
-      await hook.rerender({
-        ...options,
-        document: { ...options.document, name: "Queue last" },
-      });
-    });
-    await React.act(async () => {
-      second = hook.result.current.saveCurrentGraph(undefined, {
-        background: true,
-      });
-      await Promise.resolve();
-    });
-    expect(persistDocument).toHaveBeenCalledOnce();
-
-    await React.act(async () => {
-      firstWrite.resolve(
-        roomEcho(submittedDraft(persistDocument.mock.calls, 0), 3),
-      );
-      await first;
-    });
-    await React.act(async () => {
-      await second;
-    });
-
-    // Dropping the queued write would lose the only copy of the newer edit.
-    expect(persistDocument).toHaveBeenCalledTimes(2);
-    expect(submittedDraft(persistDocument.mock.calls, 1).name).toBe(
-      "Queue last",
-    );
-    expect(hook.result.current.isDirty).toBe(false);
-  });
-
-  it("still holds the canvas busy for the Save a person asked for", async () => {
-    const graph = savedGraph(GRAPH_A_ID, "Explicit", 2);
-    const write = deferred<GraphRoomPersistenceResult>();
-    const persistDocument: DraftPersist = vi.fn(() => write.promise);
-    stubOpen(graph);
-    const { options } = lifecycleOptions(GRAPH_A_ID);
-    options.roomPersistence = { canPersist: true, persistDocument };
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
-
-    let inFlight!: Promise<void>;
-    await React.act(async () => {
-      inFlight = hook.result.current.saveCurrentGraph("Explicit save");
-      await Promise.resolve();
+      save = hook.result.current.saveCurrentGraph("First save");
+      await hook.result.current.saveCurrentGraph("Duplicate");
     });
     expect(hook.result.current.persistenceOperationBusy).toBe(true);
+    expect(api.createProject).toHaveBeenCalledTimes(1);
 
     await React.act(async () => {
-      write.resolve(roomEcho(submittedDraft(persistDocument.mock.calls, 0), 3));
-      await inFlight;
+      submitted.resolve(projectHead(graph));
+      await save;
     });
+    expect(hook.result.current.activeGraph?.id).toBe(GRAPH_A_ID);
     expect(hook.result.current.persistenceOperationBusy).toBe(false);
+  });
+
+  it("reuses the first-save identity after a response is lost", async () => {
+    const graph = savedGraph(GRAPH_A_ID, "First save");
+    stubCreate(GRAPH_A_ID, graph);
+    api.createProject.mockRejectedValueOnce(new Error("Connection lost"));
+    const { options } = lifecycleOptions(null);
+    const hook = await renderHook(useSavedGraphLifecycle, options);
+
+    await React.act(async () =>
+      hook.result.current.saveCurrentGraph("First save"),
+    );
+    expect(hook.result.current.persistenceError).toBe("Connection lost");
+
+    await React.act(async () =>
+      hook.result.current.saveCurrentGraph("First save"),
+    );
+    expect(api.createProject.mock.calls[1]).toEqual(
+      api.createProject.mock.calls[0],
+    );
+    expect(hook.result.current.activeGraph?.id).toBe(GRAPH_A_ID);
   });
 
   it("submits the canonical final drag position", async () => {
@@ -695,291 +436,121 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(callbacks.replaceDocument).not.toHaveBeenCalled();
   });
 
-  it("keeps an active canvas intact while room persistence is synchronizing", async () => {
-    const graph = savedGraph(GRAPH_A_ID, "Graph awaiting sync", 3);
-    const persistDocument = vi.fn();
-    stubOpen(graph);
-    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
-    options.roomPersistence = {
-      canPersist: false,
-      persistDocument,
-    };
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
-    const canvasReplacementCount = callbacks.replaceDocument.mock.calls.length;
-
-    await React.act(async () => {
-      await hook.result.current.saveCurrentGraph();
-    });
-
-    expect(persistDocument).not.toHaveBeenCalled();
-    expect(api.submitProjectCommand).not.toHaveBeenCalled();
-    expect(callbacks.replaceDocument).toHaveBeenCalledTimes(
-      canvasReplacementCount,
-    );
-    expect(hook.result.current.activeGraph).toMatchObject({
-      id: GRAPH_A_ID,
-      revision: 3,
-    });
-    expect(hook.result.current.persistenceError).toBe(
-      "Graph synchronization is unavailable while the collaboration room connects or reconnects. Your canvas is unchanged; wait for synchronization to finish, then try saving again.",
-    );
-  });
-
-  it("keeps an uncheckpointed collaborative head dirty and non-materializable", async () => {
-    const checkpointNode = {
-      id: "llm",
-      kind: "builtin" as const,
-      operator_id: "llm.openai.completion",
-      operator_version: 1,
-      position: { x: 0, y: 0 },
-      config: { base_url: "https://api.openai.com/v1" },
-    };
-    const graph = {
-      ...savedGraph(GRAPH_A_ID, "Checkpoint", 3),
-      document: {
-        ...savedGraph(GRAPH_A_ID, "Checkpoint", 3).document,
-        nodes: [
-          {
-            ...checkpointNode,
-            input_plugs: [],
-            artifact_type_bindings: [],
-          },
-        ],
-      },
-    };
-    stubOpen(graph);
-    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
-    const liveHead = headWithDocument(
-      GRAPH_A_ID,
-      {
-        schema_version: 7,
-        origins: [],
-        agents: [],
-        nodes: [
-          {
-            ...checkpointNode,
-            input_plugs: [],
-            artifact_type_bindings: [],
-            config: { base_url: "https://openrouter.ai/api/v1" },
-          },
-        ],
-        edges: [],
-      },
-      { collaboration: 4, checkpoint: 3 },
-      "Live room edit",
-    );
-
-    React.act(() => {
-      hook.result.current.syncFromCollaborativeHead(liveHead);
-    });
-
-    expect(hook.result.current.activeGraph).toMatchObject({
-      id: GRAPH_A_ID,
-      revision: 3,
-      nodes: [checkpointNode],
-    });
-    expect(hook.result.current.isDirty).toBe(true);
-    expect(hook.result.current.canMaterializeSavedGraph).toBe(false);
-    expect(callbacks.replaceDocument).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        name: "Live room edit",
-        nodes: [
-          expect.objectContaining({
-            id: "llm",
-            config: { base_url: "https://openrouter.ai/api/v1" },
-          }),
-        ],
-        edges: [],
-      }),
-    );
-  });
-
-  it("marks the reconciled room head saved when checkpoint catches up", async () => {
-    const graph = savedGraph(GRAPH_A_ID, "Checkpoint", 1);
-    stubOpen(graph);
-    const { options } = lifecycleOptions(GRAPH_A_ID);
-    const checkpointHead = headWithDocument(
-      GRAPH_A_ID,
-      { schema_version: 7, origins: [], nodes: [], edges: [], agents: [] },
-      { collaboration: 4, checkpoint: 4 },
-      "Checkpoint",
-    );
-    options.roomPersistence = {
-      canPersist: true,
-      persistDocument: vi.fn().mockResolvedValue({
-        checkpointHead,
-        currentHead: checkpointHead,
-      }),
-    };
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
-
-    await React.act(async () => {
-      await hook.result.current.saveCurrentGraph();
-    });
-
-    expect(hook.result.current.activeGraph).toMatchObject({
-      id: GRAPH_A_ID,
-      // The Project head's collaboration sequence is the number the next save
-      // is compared against; a checkpoint at that sequence is what made the
-      // canvas clean.
-      revision: 4,
-    });
-    expect(hook.result.current.isDirty).toBe(false);
-    expect(hook.result.current.canMaterializeSavedGraph).toBe(true);
-  });
-
-  it("refreshes the secret binding snapshot from a checkpointed room head", async () => {
-    const checkpointNode = {
-      id: "llm",
-      kind: "builtin" as const,
-      operator_id: "llm.openai.completion",
-      operator_version: 1,
-      position: { x: 0, y: 0 },
-      config: { base_url: "https://api.openai.com/v1" },
-    };
-    const graph = {
-      ...savedGraph(GRAPH_A_ID, "Checkpoint", 1),
-      document: {
-        ...savedGraph(GRAPH_A_ID, "Checkpoint", 1).document,
-        nodes: [
-          {
-            ...checkpointNode,
-            input_plugs: [],
-            artifact_type_bindings: [],
-          },
-        ],
-      },
-    };
-    const refreshNodeSecretStatuses = vi.fn().mockResolvedValue(true);
-    stubOpen(graph);
-    const { options } = lifecycleOptions(GRAPH_A_ID, refreshNodeSecretStatuses);
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
-    refreshNodeSecretStatuses.mockClear();
-    const checkpointedNode = {
-      ...checkpointNode,
-      input_plugs: [],
-      artifact_type_bindings: [],
-      config: { base_url: "https://openrouter.ai/api/v1" },
-    };
-
-    React.act(() => {
-      hook.result.current.syncFromCollaborativeHead(
-        headWithDocument(
-          GRAPH_A_ID,
-          {
-            schema_version: 7,
-            origins: [],
-            agents: [],
-            nodes: [checkpointedNode],
-            edges: [],
-          },
-          { collaboration: 4, checkpoint: 4 },
-          "Checkpoint",
-        ),
-      );
-    });
-
-    expect(hook.result.current.activeGraph).toMatchObject({
-      id: GRAPH_A_ID,
-      revision: 4,
-      nodes: [checkpointedNode],
-    });
-    expect(refreshNodeSecretStatuses).toHaveBeenCalledOnce();
-    expect(refreshNodeSecretStatuses).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: GRAPH_A_ID,
-        revision: 4,
-        nodes: [expect.objectContaining(checkpointedNode)],
-      }),
-      expect.any(Array),
-    );
-  });
-
-  it("keeps a peer head dirty when it advances during checkpoint continuation", async () => {
-    const graph = savedGraph(GRAPH_A_ID, "Checkpoint", 1);
-    const checkpointContinuation = deferred<GraphRoomPersistenceResult>();
-    const persistDocument = vi.fn(() => checkpointContinuation.promise);
-    stubOpen(graph);
-    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
-    options.roomPersistence = {
-      canPersist: true,
-      persistDocument,
-    };
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_A_ID);
-
-    let savePromise!: Promise<void>;
-    await React.act(async () => {
-      savePromise = hook.result.current.saveCurrentGraph();
-      await Promise.resolve();
-    });
-    expect(persistDocument).toHaveBeenCalledOnce();
-
-    const peerPresentation = {
-      viewers: [
+  it("uses the accepted live head for active nodes and refreshes changed secret bindings", async () => {
+    const spec = nodeSpecFixture({
+      operator_id: "llm.example",
+      secret_inputs: [
         {
-          id: "peer-viewer",
-          position: { x: 80, y: 120 },
-          layout: null,
-          mode: null,
+          name: "api_key",
+          title: "API key",
+          config_dependencies: ["base_url"],
         },
       ],
-      links: [],
-      bindings: [],
-      annotations: [],
+    });
+    const node = {
+      id: "llm",
+      kind: "builtin" as const,
+      operator_id: spec.operator_id,
+      operator_version: spec.operator_version,
+      config: { base_url: "https://first.example" },
+      position: { x: 0, y: 0 },
+      input_plugs: [],
+      artifact_type_bindings: [],
     };
-    const peerHeadBeforeCheckpoint = headWithDocument(
-      GRAPH_A_ID,
-      {
-        schema_version: 7,
-        origins: [],
-        agents: [],
-        nodes: [],
-        edges: [],
-        presentation: peerPresentation,
-      },
-      { collaboration: 5, checkpoint: 1 },
-      "Peer presentation",
+    const graph = savedGraph(GRAPH_A_ID, "Live graph", 1);
+    const original = {
+      ...graph,
+      document: { ...graph.document, nodes: [node] },
+    };
+    const originalHead = projectHead(original);
+    const refresh = vi.fn().mockResolvedValue(true);
+    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID, refresh);
+    options.registry = { ...registry, nodes: [spec] };
+    const hook = await renderHook(useSavedGraphLifecycle, {
+      ...options,
+      roomHead: originalHead,
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    const changedNode = {
+      ...node,
+      config: { base_url: "https://second.example" },
+    };
+    const acceptedHead = projectHead(
+      { ...original, document: { ...original.document, nodes: [changedNode] } },
+      { collaborationSequence: 2, checkpointSequence: 1 },
     );
-    React.act(() => {
-      hook.result.current.syncFromCollaborativeHead(peerHeadBeforeCheckpoint);
+    await hook.rerender({
+      ...options,
+      roomHead: acceptedHead,
+      hasPendingRoomCommands: true,
+    });
+    expect(hook.result.current.isDirty).toBe(true);
+    expect(hook.result.current.activeGraph).toMatchObject({
+      revision: 2,
+      nodes: [changedNode],
+    });
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenLastCalledWith(
+      expect.objectContaining({ revision: 2, nodes: [changedNode] }),
+      [expect.objectContaining({ id: "llm" })],
+      expect.any(AbortSignal),
+    );
+
+    await hook.rerender({ ...options, roomHead: acceptedHead });
+    expect(hook.result.current.isDirty).toBe(false);
+
+    await hook.rerender({
+      ...options,
+      roomHead: {
+        ...acceptedHead,
+        checkpoint_sequence: 2,
+        checkpoint_revision: 2,
+      },
+    });
+    expect(callbacks.replaceDocument).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a transient secret status failure without an edit", async () => {
+    vi.useFakeTimers();
+    try {
+      const graph = savedGraph(GRAPH_A_ID, "Live graph");
+      const refresh = vi
+        .fn()
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
+      const { options } = lifecycleOptions(GRAPH_A_ID, refresh);
+      const hook = await renderHook(useSavedGraphLifecycle, {
+        ...options,
+        roomHead: projectHead(graph),
+      });
+
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await React.act(async () => vi.advanceTimersByTimeAsync(1000));
+      expect(refresh).toHaveBeenCalledTimes(2);
+      await hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never submits a save for an existing Project", async () => {
+    const graph = savedGraph(GRAPH_A_ID, "Saved graph", 3);
+    const { options } = lifecycleOptions(GRAPH_A_ID);
+    const hook = await renderHook(useSavedGraphLifecycle, {
+      ...options,
+      roomHead: projectHead(graph, { checkpointSequence: 1 }),
     });
 
     await React.act(async () => {
-      const checkpointHead = headWithDocument(
-        GRAPH_A_ID,
-        { schema_version: 7, origins: [], nodes: [], edges: [], agents: [] },
-        { collaboration: 4, checkpoint: 4 },
-        "Checkpoint",
-      );
-      checkpointContinuation.resolve({
-        checkpointHead,
-        currentHead: {
-          ...peerHeadBeforeCheckpoint,
-          checkpoint_sequence: 4,
-          checkpoint_revision: 4,
-        },
-      });
-      await savePromise;
+      await hook.result.current.saveCurrentGraph("New name");
     });
 
-    expect(hook.result.current.activeGraph).toMatchObject({
-      id: GRAPH_A_ID,
-      // The peer's newer sequence is not a save, so the canvas still holds the
-      // checkpointed sequence the save reported.
-      revision: 4,
-    });
-    expect(hook.result.current.graphName).toBe("Peer presentation");
-    expect(hook.result.current.isDirty).toBe(true);
-    expect(hook.result.current.canMaterializeSavedGraph).toBe(false);
-    expect(callbacks.replacePresentation).toHaveBeenLastCalledWith(
-      peerPresentation,
-    );
+    expect(api.createProject).not.toHaveBeenCalled();
+    expect(api.submitProjectCommand).not.toHaveBeenCalled();
+    expect(api.checkpointProject).not.toHaveBeenCalled();
+    expect(hook.result.current.isDirty).toBe(false);
   });
 
   it("restores the canonical final drag position when opening", async () => {
@@ -1075,10 +646,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     });
 
     expect(hook.result.current.graphName).toBe("Graph B");
-    expect(callbacks.clearPendingConnectionRoute).toHaveBeenCalledTimes(1);
-    expect(callbacks.clearRunError).toHaveBeenCalledTimes(1);
-    expect(callbacks.closeNodeLibrary).toHaveBeenCalledTimes(1);
-    expect(callbacks.requestCanvasRefit).toHaveBeenCalledTimes(1);
+    expect(callbacks.requestCanvasRefit).toHaveBeenCalledTimes(2);
   });
 
   it("marks a graph switch busy before the route reaches the loading effect", async () => {
@@ -1124,9 +692,9 @@ describe("useSavedGraphLifecycle document ownership", () => {
   it("does not let a late create response replace a graph opened by navigation", async () => {
     const graphB = savedGraph(GRAPH_B_ID, "Graph B");
     const created = savedGraph(GRAPH_A_ID, "Local draft");
-    const createResponse = stubCreate(GRAPH_A_ID, created, {
-      holdCheckpoint: true,
-    });
+    stubCreate(GRAPH_A_ID, created);
+    const createResponse = deferred<{ id: string }>();
+    api.createProject.mockReturnValue(createResponse.promise);
     api.getCollaborativeHead.mockImplementation((_workspaceId, projectId) =>
       Promise.resolve(projectHead(projectId === GRAPH_A_ID ? created : graphB)),
     );
@@ -1146,10 +714,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     await waitFor(() => hook.result.current.activeGraph?.id === GRAPH_B_ID);
 
     await React.act(async () => {
-      createResponse.resolve({
-        head: projectHead(created),
-        checkpoint_revision: created.revision,
-      });
+      createResponse.resolve({ id: created.id });
       await savePromise;
     });
 
@@ -1157,7 +722,6 @@ describe("useSavedGraphLifecycle document ownership", () => {
     expect(hook.result.current.graphName).toBe("Graph B");
     expect(router.replace).not.toHaveBeenCalled();
     expect(graphSummaryRefresh).toHaveBeenCalledWith(options.workspaceId);
-    expect(options.refreshNodeRegistry).toHaveBeenCalledOnce();
   });
 
   it("does not let a late active-delete response clear a graph opened by navigation", async () => {
@@ -1201,71 +765,26 @@ describe("useSavedGraphLifecycle document ownership", () => {
   });
 
   it("aborts an in-flight open and skips its trailing mutations on unmount", async () => {
-    const graphA = savedGraph(GRAPH_A_ID, "Graph A");
-    const secretRefresh = deferred<boolean>();
+    const graph = savedGraph(GRAPH_A_ID, "Graph A");
+    const response = deferred<CollaborativeHead>();
     let requestSignal: AbortSignal | undefined;
     api.getCollaborativeHead.mockImplementation(
       (_workspaceId, _projectId, signal) => {
         requestSignal = signal;
-        return Promise.resolve(projectHead(graphA));
+        return response.promise;
       },
     );
-    const refreshSecrets = vi.fn(() => secretRefresh.promise);
-    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID, refreshSecrets);
+    const { options, callbacks } = lifecycleOptions(GRAPH_A_ID);
     const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(() => refreshSecrets.mock.calls.length === 1);
+    expect(hook.result.current.openingGraphId).toBe(GRAPH_A_ID);
 
     await hook.unmount();
     expect(requestSignal?.aborted).toBe(true);
 
-    secretRefresh.resolve(true);
-    await secretRefresh.promise;
+    response.resolve(projectHead(graph));
     await flushAsyncWork();
-
-    expect(callbacks.clearPendingConnectionRoute).not.toHaveBeenCalled();
-    expect(callbacks.clearRunError).not.toHaveBeenCalled();
-    expect(callbacks.closeNodeLibrary).not.toHaveBeenCalled();
+    expect(callbacks.replaceDocument).not.toHaveBeenCalled();
     expect(callbacks.requestCanvasRefit).not.toHaveBeenCalled();
-  });
-
-  it("accepts a same-document save revision while keeping newer edits dirty", async () => {
-    const submitted = savedGraph(GRAPH_A_ID, "Submitted name", 4);
-    const createResponse = stubCreate(GRAPH_A_ID, submitted, {
-      holdCheckpoint: true,
-    });
-    const { options } = lifecycleOptions(null);
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-
-    await React.act(async () => {
-      hook.result.current.setGraphName("Submitted name");
-    });
-    let savePromise!: Promise<void>;
-    await React.act(async () => {
-      savePromise = hook.result.current.saveCurrentGraph();
-      await Promise.resolve();
-    });
-    await React.act(async () => {
-      hook.result.current.setGraphName("Newer local name");
-    });
-
-    await React.act(async () => {
-      createResponse.resolve({
-        head: projectHead(submitted),
-        checkpoint_revision: submitted.revision,
-      });
-      await savePromise;
-    });
-
-    expect(hook.result.current.activeGraph).toMatchObject({
-      id: GRAPH_A_ID,
-      revision: 4,
-    });
-    expect(hook.result.current.graphName).toBe("Newer local name");
-    expect(hook.result.current.isDirty).toBe(true);
-    expect(router.replace).toHaveBeenCalledWith(
-      `/workspaces/team/projects/${GRAPH_A_ID}`,
-      { scroll: false },
-    );
   });
 
   it("routes a newly created graph before secret refresh finishes", async () => {
@@ -1280,7 +799,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
     });
     let savePromise!: Promise<void>;
     await React.act(async () => {
-      savePromise = hook.result.current.saveCurrentGraph();
+      savePromise = hook.result.current.saveCurrentGraph("Created graph");
       await Promise.resolve();
     });
     await waitFor(() => refreshSecrets.mock.calls.length === 1);
@@ -1337,7 +856,7 @@ describe("useSavedGraphLifecycle document ownership", () => {
         });
       });
 
-      expect(hook.result.current.isDirty).toBe(true);
+      expect(hook.result.current.isDirty).toBe(false);
       expect(fireBeforeUnload()).toBe(false);
     });
 
@@ -1502,111 +1021,6 @@ describe("useSavedGraphLifecycle Graphs inside one Project", () => {
     });
     expect(callbacks.replaceDocument).toHaveBeenLastCalledWith(
       expect.objectContaining({ name: "First" }),
-    );
-  });
-
-  it("writes a save into the Graph the canvas shows, not the Project's first", async () => {
-    const opened = headWithGraphs(
-      [
-        graphDefinition(GRAPH_A_ID, "First"),
-        graphDefinition(GRAPH_B_ID, "Second"),
-      ],
-      { collaboration: 6 },
-    );
-    // The head a save reads and checkpoints lists the canvas's Graph second, so
-    // a write that picked "the first Graph" would land on the other Graph.
-    const reordered = headWithGraphs(
-      [
-        graphDefinition(GRAPH_B_ID, "Second"),
-        graphDefinition(GRAPH_A_ID, "First"),
-      ],
-      { collaboration: 7 },
-    );
-    api.getCollaborativeHead.mockResolvedValueOnce(opened);
-    api.getCollaborativeHead.mockResolvedValue(reordered);
-    api.submitProjectCommand.mockResolvedValue({
-      head: reordered,
-      receipt: {
-        accepted_sequence: 7,
-        command_id: "00000000-0000-4000-8000-0000000000cc",
-        deduplicated: false,
-        outcome: "applied",
-        room_epoch: ROOM_EPOCH,
-      },
-    });
-    api.checkpointProject.mockResolvedValue({
-      head: reordered,
-      checkpoint_revision: 7,
-    });
-    const { options } = lifecycleOptions(SHARED_PROJECT_ID);
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(
-      () => hook.result.current.activeGraph?.graphId === GRAPH_A_ID,
-    );
-
-    await React.act(async () => {
-      await hook.result.current.saveCurrentGraph();
-    });
-
-    // The command is addressed to the Project, and the Graph it edits is the one
-    // on the canvas.
-    expect(api.submitProjectCommand).toHaveBeenCalledWith(
-      "workspace-1",
-      SHARED_PROJECT_ID,
-      expect.objectContaining({
-        observed_sequence: 7,
-        commands: [
-          expect.objectContaining({
-            kind: "in_graph",
-            graph_id: GRAPH_A_ID,
-            command: expect.objectContaining({ kind: "replace_document" }),
-          }),
-        ],
-      }),
-    );
-    expect(api.checkpointProject).toHaveBeenCalledWith(
-      "workspace-1",
-      SHARED_PROJECT_ID,
-      { expected_room_epoch: ROOM_EPOCH, expected_sequence: 7 },
-    );
-    // The head the save read back lists the other Graph first; that is still not
-    // a reason to move the canvas off the one it was editing.
-    expect(hook.result.current.activeGraph).toMatchObject({
-      id: SHARED_PROJECT_ID,
-      graphId: GRAPH_A_ID,
-      revision: 7,
-    });
-  });
-
-  it("pairs a room save with the Graph it writes", async () => {
-    const head = headWithGraphs(
-      [
-        graphDefinition(GRAPH_A_ID, "First"),
-        graphDefinition(GRAPH_B_ID, "Second"),
-      ],
-      { collaboration: 6 },
-    );
-    const persistDocument = vi.fn().mockResolvedValue({
-      checkpointHead: head,
-      currentHead: head,
-    });
-    api.getCollaborativeHead.mockResolvedValue(head);
-    const { options } = lifecycleOptions(SHARED_PROJECT_ID);
-    options.roomPersistence = { canPersist: true, persistDocument };
-    const hook = await renderHook(useSavedGraphLifecycle, options);
-    await waitFor(
-      () => hook.result.current.activeGraph?.graphId === GRAPH_A_ID,
-    );
-
-    await React.act(async () => {
-      await hook.result.current.saveCurrentGraph();
-    });
-
-    // A draft on its own cannot say which Graph of the Project to replace: the
-    // bridge needs the id beside it.
-    expect(persistDocument).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "First" }),
-      GRAPH_A_ID,
     );
   });
 

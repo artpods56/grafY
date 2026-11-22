@@ -47,12 +47,15 @@ from grafy_api.realtime.protocol import (
 
 from grafy_api.settings import Settings
 from grafy_persistence.adapters.repositories.projects import SqlCollaborationRepository
+from grafy_core.application.collaboration import CheckpointOutcome, CollaborationService
 from grafy_core.domain.collaboration import (
     InGraphCommand,
     RenameProjectCommand,
     UpdateNodeConfigurationCommand,
 )
 from grafy_core.domain.identity import ActorContext, WorkspaceRole
+
+from tests.testkit import with_setting_values
 
 from tests.integration.runs.support import (
     FLOW_GRAPH_ID,
@@ -242,6 +245,120 @@ def test_two_sessions_converge_on_the_accepted_sequence_and_head(
     head = _head_of(harness, project_id)
     assert head["collaboration_sequence"] == expected
     assert head["name"] == "Renamed live"
+
+
+def test_explicit_checkpoint_broadcasts_metadata_to_every_room_member(
+    harness: RoomHarness,
+) -> None:
+    project_id = harness.project_id
+    url = f"/v1/workspaces/{harness.workspace_id}/projects/{project_id}/checkpoints"
+    with harness.open_room(project_id) as author:
+        head = author.expect("room.ready")["head"]
+        with harness.open_room(project_id) as peer:
+            peer.expect("room.ready")
+            author.send(rename({"head": head}, "Ready to snapshot"))
+            accepted = author.until("project.command.accepted")
+            body = {
+                "expected_room_epoch": accepted["room_epoch"],
+                "expected_sequence": accepted["sequence"],
+            }
+
+            stale = harness.client.post(url, json={**body, "expected_sequence": 0})
+            assert stale.status_code == 409, stale.text
+            response = harness.client.post(url, json=body)
+            assert response.status_code == 200, response.text
+            frame = {
+                "type": "project.checkpointed",
+                "protocol_version": 1,
+                "room_epoch": head["room_epoch"],
+                "checkpoint_sequence": accepted["sequence"],
+                "checkpoint_revision": 2,
+            }
+            assert author.until("project.checkpointed") == frame
+            assert peer.until("project.checkpointed") == frame
+
+            repeat = harness.client.post(url, json=body)
+            assert repeat.json() == response.json()
+
+
+@pytest.mark.parametrize("transport", ["websocket", "rest"])
+def test_automatic_checkpoint_broadcasts_after_command_acceptance(
+    tmp_path: Path, settings: Settings, transport: str
+) -> None:
+    configured = with_setting_values(
+        settings,
+        graph_room_auto_checkpoint_idle_seconds=0,
+        graph_room_auto_checkpoint_max_commands=1,
+    )
+    with room_harness(tmp_path, configured) as harness:
+        project_id = harness.project_id
+        with harness.open_room(project_id) as room:
+            ready = room.expect("room.ready")
+            batch = rename(ready, "Live saved")
+            if transport == "websocket":
+                room.send(batch)
+            else:
+                url = f"/v1/workspaces/{harness.workspace_id}/projects/{project_id}/commands"
+                response = harness.client.post(
+                    url,
+                    json={
+                        key: value
+                        for key, value in batch.items()
+                        if key not in ("type", "protocol_version")
+                    },
+                )
+                assert response.status_code == 200, response.text
+
+            frame = room.until("project.checkpointed")
+            assert frame["room_epoch"] == ready["head"]["room_epoch"]
+            assert (
+                frame["checkpoint_sequence"]
+                == ready["head"]["collaboration_sequence"] + 1
+            )
+            assert frame["checkpoint_revision"] == 2
+            head = _head_of(harness, project_id)
+            assert head["name"] == "Live saved"
+            assert head["checkpoint_sequence"] == head["collaboration_sequence"]
+
+
+def test_last_room_departure_checkpoints_pending_edits(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    persisted = threading.Event()
+    checkpoint = CollaborationService.checkpoint_head_if_needed
+
+    async def checkpoint_and_signal(
+        self: CollaborationService, *, workspace_id: UUID, project_id: UUID
+    ) -> CheckpointOutcome | None:
+        outcome = await checkpoint(
+            self, workspace_id=workspace_id, project_id=project_id
+        )
+        if outcome is not None:
+            persisted.set()
+        return outcome
+
+    monkeypatch.setattr(
+        CollaborationService, "checkpoint_head_if_needed", checkpoint_and_signal
+    )
+    configured = with_setting_values(
+        settings,
+        graph_room_auto_checkpoint_idle_seconds=0,
+        graph_room_auto_checkpoint_max_commands=0,
+    )
+    with room_harness(tmp_path, configured) as harness:
+        project_id = harness.project_id
+        with harness.open_room(project_id) as room:
+            ready = room.expect("room.ready")
+            room.send(rename(ready, "Last participant"))
+            accepted = room.until("project.command.accepted")
+            room.until("project.command.receipt")
+            assert _head_of(harness, project_id)["checkpoint_sequence"] == 0
+            assert not persisted.is_set()
+
+        assert persisted.wait(20), "leaving the room did not persist its checkpoint"
+        head = _head_of(harness, project_id)
+        assert head["name"] == "Last participant"
+        assert head["checkpoint_sequence"] == accepted["sequence"]
 
 
 def test_a_command_the_document_refuses_is_answered_without_closing_the_room(
@@ -906,7 +1023,7 @@ def test_a_room_abandoned_inside_a_transaction_returns_its_connection(
 
     Hold a real read open after command acceptance, then abandon the socket. The
     room must return while publication remains in flight. Release the read and
-    await the service-owned task before checking that its connection is back.
+    await the service-owned tasks before checking that their connections are back.
     """
 
     database = harness.resources.database
@@ -970,6 +1087,8 @@ def test_a_room_abandoned_inside_a_transaction_returns_its_connection(
         abandoned.set()
         if publishing is not None:
             await publishing
+        # Room departure also starts a checkpoint that may still own a connection.
+        await harness.resources.auto_checkpointer.shutdown()
         await database.cleanups.settle()
         here = asyncio.current_task()
         lingering = [

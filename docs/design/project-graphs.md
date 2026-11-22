@@ -23,13 +23,13 @@ them, and that choice is a projection of the head, never a second copy:
 fetches nothing and does not change the address.
 
 - Switching is refused while a Run is active or the canvas holds edits the room
-  has not taken yet; the person is told why instead of losing the edit.
+  has not confirmed yet.
 - A Graph another writer removes falls back to the Project's first Graph on the
   next sync.
 - The Graph switcher (`ui/GraphSwitcher.tsx`) is a controlled component. The
   Workbench stays the only writer: add, rename and delete are Project commands
-  (`add_graph`, `rename_graph`, `remove_graph`) submitted as one batch and
-  checkpointed, so a refusal reaches the person in the room's own words.
+  (`add_graph`, `rename_graph`, `remove_graph`). The room persists each accepted
+  batch and reports any refusal to the person who submitted it.
 - Graph names are unique in a Project, case-insensitively. A new Graph is named
   "Graph N" for the next free N.
 
