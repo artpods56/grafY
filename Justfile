@@ -12,6 +12,7 @@ default:
 install:
     uv sync
     bun install --cwd apps/web --frozen-lockfile
+    cd apps/web && bun run next typegen
     uv run prek install
 
 # Start Keycloak as needed and supervise the native development services.

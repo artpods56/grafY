@@ -2842,10 +2842,22 @@ export interface components {
             readonly artifact_ref?: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"] | null;
             /** Id */
             readonly id: string;
-            readonly layout?: components["schemas"]["GraphNodeLayout"] | null;
+            readonly layout?: components["schemas"]["GraphPresentationViewerLayout"] | null;
             /** Mode */
             readonly mode?: string | null;
             readonly position: components["schemas"]["GraphPoint"];
+        };
+        /**
+         * GraphPresentationViewerLayout
+         * @description Canvas chrome sizes for a presentation viewer / artifact card.
+         */
+        readonly GraphPresentationViewerLayout: {
+            /** Appendix Height */
+            readonly appendix_height?: number | null;
+            /** Body Height */
+            readonly body_height?: number | null;
+            /** Width */
+            readonly width?: number | null;
         };
         /** GraphProjection */
         readonly GraphProjection: {

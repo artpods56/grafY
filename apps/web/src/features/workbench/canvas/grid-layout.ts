@@ -4,6 +4,7 @@ import {
   LAYOUT_DIMENSION_MAX,
   NODE_WIDTH_MIN,
   clampNodeLayout,
+  type LayoutClampBounds,
   type WorkflowNodeLayout,
 } from "./node-layout";
 
@@ -241,23 +242,35 @@ export function snapNodeLayout(
   layout: WorkflowNodeLayout | null | undefined,
   axes: readonly GridResizeAxis[],
   cellSize: number,
+  bounds?: LayoutClampBounds,
 ): WorkflowNodeLayout | null {
   if (!layout) return null;
   const next: WorkflowNodeLayout = { ...layout };
   if (axes.includes("width") && next.width !== undefined) {
-    next.width = snapLength(next.width, cellSize, NODE_WIDTH_MIN);
+    next.width = snapLength(
+      next.width,
+      cellSize,
+      bounds?.minWidth ?? NODE_WIDTH_MIN,
+      bounds?.maxWidth ?? LAYOUT_DIMENSION_MAX,
+    );
   }
   if (axes.includes("bodyHeight") && next.bodyHeight !== undefined) {
-    next.bodyHeight = snapLength(next.bodyHeight, cellSize, BODY_HEIGHT_MIN);
+    next.bodyHeight = snapLength(
+      next.bodyHeight,
+      cellSize,
+      bounds?.minBodyHeight ?? BODY_HEIGHT_MIN,
+      bounds?.maxBodyHeight ?? LAYOUT_DIMENSION_MAX,
+    );
   }
   if (axes.includes("appendixHeight") && next.appendixHeight !== undefined) {
     next.appendixHeight = snapLength(
       next.appendixHeight,
       cellSize,
-      APPENDIX_HEIGHT_MIN,
+      bounds?.minAppendixHeight ?? APPENDIX_HEIGHT_MIN,
+      bounds?.maxAppendixHeight ?? LAYOUT_DIMENSION_MAX,
     );
   }
-  return clampNodeLayout(next);
+  return clampNodeLayout(next, bounds);
 }
 
 /** Axes present on a layout blob — used when snapping an existing card. */

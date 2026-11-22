@@ -385,7 +385,7 @@ export function useRunExecution({
   }, [ownRun, roomRunsRevision, settleOwnRun]);
 
   const runWorkflow = React.useCallback(
-    async (scope: RunScope) => {
+    async (scope: RunScope, explicitNodeIds?: readonly string[]) => {
       if (!registryAvailable || ownRunRef.current !== null) return;
       if (!projectId || !activeGraph) {
         setRunError("Save the graph before running it.");
@@ -395,7 +395,12 @@ export function useRunExecution({
         setRunError("Wait for the Project to synchronize before running.");
         return;
       }
-      const execution = executionSubgraphFor(scope, nodes, edges);
+      const execution = executionSubgraphFor(
+        scope,
+        nodes,
+        edges,
+        explicitNodeIds ? new Set(explicitNodeIds) : undefined,
+      );
       const validationIssue = executionValidationIssue(
         scope,
         execution.nodes,

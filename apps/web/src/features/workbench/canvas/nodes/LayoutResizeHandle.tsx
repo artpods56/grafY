@@ -16,6 +16,7 @@ import {
   DEFAULT_BODY_HEIGHT,
   DEFAULT_NODE_WIDTH,
   clampNodeLayout,
+  type LayoutClampBounds,
   type WorkflowNodeLayout,
 } from "../node-layout";
 
@@ -72,12 +73,14 @@ function nodeInteractionProps(props: ReturnType<typeof stylex.props>) {
 export function LayoutResizeHandle({
   layout,
   axes,
+  bounds,
   ariaLabel,
   onDraft,
   onCommit,
 }: {
   layout: WorkflowNodeLayout | null;
   axes: readonly GridResizeAxis[];
+  bounds?: LayoutClampBounds;
   ariaLabel: string;
   onDraft: (layout: WorkflowNodeLayout | null) => void;
   onCommit: (layout: WorkflowNodeLayout | null) => void;
@@ -96,14 +99,16 @@ export function LayoutResizeHandle({
 
   const resolveLayout = React.useCallback(
     (next: WorkflowNodeLayout | null, drafting: boolean, bypass: boolean) => {
-      const clamped = clampNodeLayout(next);
+      const clamped = clampNodeLayout(next, bounds);
       const settings = grid?.settings;
       if (!settings || !shouldSnapSize(settings, { drafting, bypass })) {
         return clamped;
       }
-      return snapNodeLayout(clamped, axes, settings.cellSize) ?? clamped;
+      return (
+        snapNodeLayout(clamped, axes, settings.cellSize, bounds) ?? clamped
+      );
     },
-    [axes, grid?.settings],
+    [axes, bounds, grid?.settings],
   );
 
   return (

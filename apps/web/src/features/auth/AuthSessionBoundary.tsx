@@ -160,6 +160,10 @@ export function useAuthSession(): AuthSessionContextValue {
   return context;
 }
 
+export function useOptionalAuthSession(): AuthSessionContextValue | null {
+  return React.useContext(AuthSessionContext);
+}
+
 export function AuthSessionBoundary({
   children,
 }: {

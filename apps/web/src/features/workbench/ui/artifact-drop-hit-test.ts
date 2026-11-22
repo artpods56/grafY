@@ -22,7 +22,7 @@ export function canvasAtPoint(clientX: number, clientY: number): boolean {
   for (const element of document.elementsFromPoint(clientX, clientY)) {
     if (!(element instanceof Element)) continue;
     if (element.closest("[data-base-ui-portal]")) continue;
-    if (element.closest(".react-flow")) return true;
+    if (element.closest('.react-flow, [data-cell-canvas="true"]')) return true;
   }
   return false;
 }

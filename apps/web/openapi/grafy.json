@@ -3435,7 +3435,7 @@
           "layout": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/GraphNodeLayout"
+                "$ref": "#/components/schemas/GraphPresentationViewerLayout"
               },
               {
                 "type": "null"
@@ -3463,6 +3463,53 @@
           "position"
         ],
         "title": "GraphPresentationViewer",
+        "type": "object"
+      },
+      "GraphPresentationViewerLayout": {
+        "additionalProperties": false,
+        "description": "Canvas chrome sizes for a presentation viewer / artifact card.",
+        "properties": {
+          "appendix_height": {
+            "anyOf": [
+              {
+                "maximum": 16384.0,
+                "minimum": 120.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appendix Height"
+          },
+          "body_height": {
+            "anyOf": [
+              {
+                "maximum": 16384.0,
+                "minimum": 75.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body Height"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "maximum": 16384.0,
+                "minimum": 150.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "title": "GraphPresentationViewerLayout",
         "type": "object"
       },
       "GraphProjection": {

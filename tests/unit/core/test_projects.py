@@ -20,6 +20,7 @@ from grafy_core.domain.graph_documents import (
     GraphPresentationDocument,
     GraphPresentationLink,
     GraphPresentationViewer,
+    GraphPresentationViewerLayout,
     SAVED_GRAPH_SCHEMA_VERSION,
     GraphAnnotationLayout,
     GraphArtifactTypeBinding,
@@ -258,7 +259,7 @@ def test_artifact_card_reference_round_trips_without_a_link() -> None:
                 GraphPresentationViewer(
                     id="artifact-viewer-card",
                     position=GraphPoint(x=4.0, y=8.0),
-                    layout=GraphNodeLayout(width=320, body_height=240),
+                    layout=GraphPresentationViewerLayout(width=320, body_height=240),
                     artifact_ref=ARTIFACT_CARD_REF,
                 ),
             ),
@@ -275,6 +276,35 @@ def test_artifact_card_reference_round_trips_without_a_link() -> None:
         "content_hash": "a" * 64,
     }
     assert GraphDocument.model_validate(payload) == document
+
+
+def test_presentation_viewer_layout_accepts_compact_card_floor_and_rejects_below() -> (
+    None
+):
+    compact = GraphPresentationViewer(
+        id="artifact-viewer-compact",
+        position=GraphPoint(x=0.0, y=0.0),
+        layout=GraphPresentationViewerLayout(width=150, body_height=75),
+        artifact_ref=ARTIFACT_CARD_REF,
+    )
+    payload = compact.model_dump(mode="json")
+    assert payload["layout"] == {
+        "width": 150.0,
+        "body_height": 75.0,
+        "appendix_height": None,
+    }
+    assert GraphPresentationViewer.model_validate(payload) == compact
+
+    with pytest.raises(ValidationError, match="at least one of width"):
+        GraphPresentationViewerLayout()
+    with pytest.raises(ValidationError):
+        GraphPresentationViewerLayout(width=149)
+    with pytest.raises(ValidationError):
+        GraphPresentationViewerLayout(body_height=74)
+    with pytest.raises(ValidationError):
+        GraphPresentationViewerLayout(appendix_height=10)
+    with pytest.raises(ValidationError):
+        GraphPresentationViewerLayout(width=16_385)
 
 
 def test_artifact_card_sequence_round_trips_in_order() -> None:

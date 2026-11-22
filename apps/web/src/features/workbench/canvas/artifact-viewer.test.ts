@@ -309,6 +309,55 @@ describe("shared presentation", () => {
     });
   });
 
+  it("preserves compact 150×75 artifact card layouts and caps oversized layouts at 1200×1200", () => {
+    const compact = presentationFromArtifactViewers({
+      nodes: [
+        {
+          id: "artifact-viewer-small",
+          type: ARTIFACT_VIEWER_NODE_TYPE,
+          position: { x: 0, y: 0 },
+          data: {
+            layout: { width: 150, bodyHeight: 75 },
+            mode: "artifact",
+          },
+        },
+        {
+          id: "artifact-viewer-huge",
+          type: ARTIFACT_VIEWER_NODE_TYPE,
+          position: { x: 0, y: 0 },
+          data: {
+            layout: { width: 3000, bodyHeight: 3000 },
+            mode: "artifact",
+          },
+        },
+      ],
+      edges: [],
+      bindings: [],
+      annotations: [],
+    });
+
+    expect(compact.viewers?.[0]?.layout).toEqual({
+      width: 150,
+      body_height: 75,
+      appendix_height: null,
+    });
+    expect(compact.viewers?.[1]?.layout).toEqual({
+      width: 1200,
+      body_height: 1200,
+      appendix_height: null,
+    });
+
+    const hydrated = artifactViewersFromPresentation(compact);
+    expect(hydrated.nodes[0]?.data.layout).toEqual({
+      width: 150,
+      bodyHeight: 75,
+    });
+    expect(hydrated.nodes[1]?.data.layout).toEqual({
+      width: 1200,
+      bodyHeight: 1200,
+    });
+  });
+
   it("hydrates API snake_case layout and drops invalid links", () => {
     const state = artifactViewersFromPresentation({
       viewers: [

@@ -27,6 +27,15 @@ export interface SavedNodeLayout {
   appendix_height?: number | null;
 }
 
+export interface LayoutClampBounds {
+  readonly minWidth?: number;
+  readonly maxWidth?: number;
+  readonly minBodyHeight?: number;
+  readonly maxBodyHeight?: number;
+  readonly minAppendixHeight?: number;
+  readonly maxAppendixHeight?: number;
+}
+
 function clamp(
   value: number | undefined,
   min: number,
@@ -39,19 +48,24 @@ function clamp(
 /** Clamp layout dimensions; returns null when nothing remains set. */
 export function clampNodeLayout(
   layout: WorkflowNodeLayout | null | undefined,
+  bounds?: LayoutClampBounds,
 ): WorkflowNodeLayout | null {
   if (!layout) return null;
   const next: WorkflowNodeLayout = {};
-  const width = clamp(layout.width, NODE_WIDTH_MIN, LAYOUT_DIMENSION_MAX);
+  const width = clamp(
+    layout.width,
+    bounds?.minWidth ?? NODE_WIDTH_MIN,
+    bounds?.maxWidth ?? LAYOUT_DIMENSION_MAX,
+  );
   const bodyHeight = clamp(
     layout.bodyHeight,
-    BODY_HEIGHT_MIN,
-    LAYOUT_DIMENSION_MAX,
+    bounds?.minBodyHeight ?? BODY_HEIGHT_MIN,
+    bounds?.maxBodyHeight ?? LAYOUT_DIMENSION_MAX,
   );
   const appendixHeight = clamp(
     layout.appendixHeight,
-    APPENDIX_HEIGHT_MIN,
-    LAYOUT_DIMENSION_MAX,
+    bounds?.minAppendixHeight ?? APPENDIX_HEIGHT_MIN,
+    bounds?.maxAppendixHeight ?? LAYOUT_DIMENSION_MAX,
   );
   if (width !== undefined) next.width = width;
   if (bodyHeight !== undefined) next.bodyHeight = bodyHeight;
@@ -66,18 +80,23 @@ export function clampNodeLayout(
 export function mergeNodeLayout(
   current: WorkflowNodeLayout | null | undefined,
   patch: WorkflowNodeLayout,
+  bounds?: LayoutClampBounds,
 ): WorkflowNodeLayout | null {
-  return clampNodeLayout({
-    width: patch.width ?? current?.width,
-    bodyHeight: patch.bodyHeight ?? current?.bodyHeight,
-    appendixHeight: patch.appendixHeight ?? current?.appendixHeight,
-  });
+  return clampNodeLayout(
+    {
+      width: patch.width ?? current?.width,
+      bodyHeight: patch.bodyHeight ?? current?.bodyHeight,
+      appendixHeight: patch.appendixHeight ?? current?.appendixHeight,
+    },
+    bounds,
+  );
 }
 
 export function serializeNodeLayout(
   layout: WorkflowNodeLayout | null | undefined,
+  bounds?: LayoutClampBounds,
 ): SavedNodeLayout | null {
-  const clamped = clampNodeLayout(layout);
+  const clamped = clampNodeLayout(layout, bounds);
   if (!clamped) return null;
   return {
     width: clamped.width ?? null,
@@ -88,13 +107,17 @@ export function serializeNodeLayout(
 
 export function hydrateNodeLayout(
   layout: SavedNodeLayout | null | undefined,
+  bounds?: LayoutClampBounds,
 ): WorkflowNodeLayout | null {
   if (!layout) return null;
-  return clampNodeLayout({
-    width: layout.width ?? undefined,
-    bodyHeight: layout.body_height ?? undefined,
-    appendixHeight: layout.appendix_height ?? undefined,
-  });
+  return clampNodeLayout(
+    {
+      width: layout.width ?? undefined,
+      bodyHeight: layout.body_height ?? undefined,
+      appendixHeight: layout.appendix_height ?? undefined,
+    },
+    bounds,
+  );
 }
 
 export function resolvedNodeWidth(
