@@ -23,6 +23,7 @@ export const canvasNodeRegistry: NodeRegistry = {
         schema_version: 1,
       },
       title: "Text",
+      preview_kind: "text",
       payload_schema: {
         additionalProperties: false,
         properties: {
