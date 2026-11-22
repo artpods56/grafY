@@ -16,9 +16,10 @@ import {
   type ArtifactViewerCanvasState,
   type GraphPresentation,
 } from "../artifacts/artifact-viewer";
-import type {
-  AuthoredGraphDocument,
-  GraphCommand,
+import {
+  applyGraphCommandNormalized,
+  type AuthoredGraphDocument,
+  type GraphCommand,
 } from "../authoring/graph-document";
 import { callableGraphs, graphInterface } from "../authoring/project-graphs";
 import { createUuid } from "../authoring/uuid";
@@ -791,9 +792,11 @@ export function useWorkbenchSyncReducer({
         const graphId = openGraphIdRef.current;
         if (graphId === null) return;
         const batch: RoomProjectCommand[] = [];
+        let current = before;
         for (const command of commands) {
-          const mapped = toRoomGraphCommand(command, before, graphId);
+          const mapped = toRoomGraphCommand(command, current, graphId);
           if (mapped) batch.push(mapped);
+          current = applyGraphCommandNormalized(current, command);
         }
         if (batch.length === 0) return;
         submitRoomCommands(batch, "Collaborative sync failed.");

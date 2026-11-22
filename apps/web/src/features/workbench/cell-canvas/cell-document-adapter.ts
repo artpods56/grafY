@@ -12,6 +12,10 @@
 import type { NodeRegistry, SavedGraphDocument } from "@/lib/api";
 
 import type { AuthoredGraphDocument } from "../authoring/graph-document";
+import {
+  resolveGraphSemantics,
+  type ResolvedGraphSemantics,
+} from "../authoring/graph-semantics";
 
 import type { CellCardSurfaceData } from "./cell-contracts";
 import type { CellGraph } from "./cell-model";
@@ -37,6 +41,7 @@ export function cellGraphFromAuthoredDocument(
   document: AuthoredGraphDocument,
   registry: NodeRegistry,
   options?: {
+    semantics?: ResolvedGraphSemantics;
     presentation?: SavedGraphDocument["presentation"] | null;
     nodeRunState?: Readonly<Record<string, CellNodeRunState>>;
     collapsedAppendices?: ReadonlySet<string>;
@@ -63,7 +68,10 @@ export function cellGraphFromAuthoredDocument(
     viewerMetadata?: ReadonlyMap<string, CellViewerMetadata>;
   },
 ): { graph: CellGraph; surfaceById: Record<string, CellCardSurfaceData> } {
+  const semantics =
+    options?.semantics ?? resolveGraphSemantics(document, registry);
   const operators = buildOperatorCardsAndSurfaces(document, registry, {
+    semantics,
     nodeRunState: options?.nodeRunState,
     collapsedAppendices: options?.collapsedAppendices,
     configSections: options?.configSections,
@@ -111,6 +119,7 @@ export function cellGraphFromAuthoredDocument(
         presentationLinks,
         new Set(cards.map((card) => card.id)),
         {
+          semantics,
           originLinks: options?.originLinks,
           pipeMetadataById: options?.pipeMetadataById,
         },

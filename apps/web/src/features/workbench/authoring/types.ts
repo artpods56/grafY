@@ -607,6 +607,33 @@ export function portHasInstancePlugs(port: Port): boolean {
 }
 
 /**
+ * Collection modes an artifact input may use, the default first. A many-only
+ * port takes one artifact by holding it as a sequence of one. A sequence on a
+ * port that takes one item maps the node over its items; on a port that takes
+ * a sequence it may also be mapped, one sequence of one per item.
+ */
+export function originCollectionModes(
+  port: Port,
+  shape: Port["shape"],
+): RunEdgeCollectionMode[] {
+  const accepted = acceptedPortShapes(port);
+  const modes: RunEdgeCollectionMode[] = [];
+  if (
+    accepted.includes(shape) ||
+    (shape === "one" && accepted.includes("many"))
+  )
+    modes.push("direct");
+  if (
+    shape === "many" &&
+    !port.variadic &&
+    !portHasInstancePlugs(port) &&
+    (port.shape === "many" || !accepted.includes("many"))
+  )
+    modes.push("map");
+  return modes;
+}
+
+/**
  * Collection modes an edge may use from a source of `sourceShape` into
  * `targetPort`, whose effective shape is `targetShape`; the default comes first.
  * A sequence feeding a non-variadic sequence input may be passed whole or

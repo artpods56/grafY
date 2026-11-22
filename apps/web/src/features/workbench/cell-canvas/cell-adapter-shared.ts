@@ -88,17 +88,6 @@ export function targetPortId(
   return plug ? `${port}${PLUG_SEPARATOR}${plug}` : port;
 }
 
-/** The catalogued spec a node was placed from, falling back to its operator id. */
-export function nodeSpec(node: AuthoredGraphNode, registry: NodeRegistry) {
-  return (
-    registry.nodes.find(
-      (spec) =>
-        spec.operator_id === node.operator_id &&
-        spec.operator_version === node.operator_version,
-    ) ?? registry.nodes.find((spec) => spec.operator_id === node.operator_id)
-  );
-}
-
 /** The artifact type a port carries once the node's variable bindings resolve. */
 export function portArtifactType(
   node: AuthoredGraphNode,

@@ -146,6 +146,7 @@ import {
   hydrateAuthoredGraphDocument,
   savedGraphExecutionFingerprint,
 } from "../authoring/saved-graph";
+import { resolveGraphSemantics } from "../authoring/graph-semantics";
 import {
   type ArtifactInteractionField,
   type ArtifactKeySelection,
@@ -205,7 +206,6 @@ import {
 } from "../artifacts/artifact-drop";
 import {
   collectionModeForConnection,
-  collectionModesForConnection,
   isConnectionAccepted,
   renderedOutputHandleId,
   workflowEdgeRouteOption,
@@ -525,12 +525,21 @@ function WorkbenchBody({
     setPendingFolderDrop,
     requestCanvasRefit,
   } = authoring;
+  const graphSemantics = React.useMemo(
+    () => (registry ? resolveGraphSemantics(authoredDocument, registry) : null),
+    [authoredDocument, registry],
+  );
   const hydratedDocument = React.useMemo(
     () =>
       registry
-        ? hydrateAuthoredGraphDocument(authoredDocument, registry)
+        ? hydrateAuthoredGraphDocument(
+            authoredDocument,
+            registry,
+            [],
+            graphSemantics ?? undefined,
+          )
         : { nodes: [], edges: [] },
-    [authoredDocument, registry],
+    [authoredDocument, graphSemantics, registry],
   );
   const nodesRef = React.useRef<WorkflowNode[]>([]);
   const edgesRef = React.useRef<WorkflowEdge[]>([]);
@@ -544,10 +553,13 @@ function WorkbenchBody({
           data: {
             ...node.data,
             ...(nodeOverlays[node.id] ?? {}),
+            mappedInputPorts:
+              graphSemantics?.nodes.get(node.id)?.mappedInputPorts ?? [],
           },
         };
       }),
     [
+      graphSemantics,
       hydratedDocument.nodes,
       nodeOverlays,
       positionOverrides,
@@ -1184,6 +1196,7 @@ function WorkbenchBody({
         activeArtifactViewers.edges,
         nodes,
         authoredDocument.origins,
+        graphSemantics,
       ).map((edge) => ({
         ...edge,
         selected: selectedEdgeIdSet.has(edge.id),
@@ -1193,6 +1206,7 @@ function WorkbenchBody({
       activeArtifactViewers.edges,
       nodes,
       authoredDocument.origins,
+      graphSemantics,
       selectedEdgeIdSet,
     ],
   );
@@ -2088,7 +2102,11 @@ function WorkbenchBody({
               nodes: catalogNodes,
             })
           : downstreamCandidatesFromOutput({
-              sourcePort: { ...port, direction: "output" },
+              sourcePort: {
+                ...port,
+                shape: decoded.shape,
+                direction: "output",
+              },
               sourceHandle: handleId,
               sourceFeed: decoded.feed ?? null,
               registry,
@@ -2293,6 +2311,7 @@ function WorkbenchBody({
             origins: authoredDocumentRef.current.origins,
             conversions: registry.artifact_conversions,
           },
+          card.id,
         );
         if (!commands) return;
         applyAuthoringCommands([nodeCommand, ...commands]);
@@ -2577,15 +2596,9 @@ function WorkbenchBody({
             )?.title ??
             `${requestedConversion.id}@${requestedConversion.version}`,
         );
-        const otherEdges = edges.filter(
-          (candidate) => candidate.id !== edge.id,
-        );
-        const validModes = collectionModesForConnection(
-          connection,
-          nodes,
-          otherEdges,
-          authoredDocument.origins,
-        );
+        const validModes = [
+          ...(graphSemantics?.edges.get(edge.id)?.allowedCollectionModes ?? []),
+        ];
         return {
           ...edge,
           type: WORKFLOW_EDGE_TYPE,
@@ -2606,9 +2619,8 @@ function WorkbenchBody({
         };
       }),
     [
-      authoredDocument.origins,
       edges,
-      nodes,
+      graphSemantics,
       registry?.artifact_conversions,
       registry?.artifact_types,
     ],
@@ -2853,6 +2865,7 @@ function WorkbenchBody({
             workspaceId,
             document: authoredDocument,
             registry,
+            semantics: graphSemantics,
             presentation: sharedPresentation,
             nodes,
             nodeInstanceStates,
@@ -2883,6 +2896,7 @@ function WorkbenchBody({
       cellImageNaturalSizes,
       collapsedAppendices,
       configSections,
+      graphSemantics,
       libraryItemsByArtifactId,
       nodeInstanceStates,
       nodeSecretStatuses,

@@ -10,11 +10,11 @@ import {
   type SavedGraphNode,
 } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { artifactTypeKey } from "../artifacts/artifact-type-key";
 import {
-  collectionModesToRepair,
-  type CollectionStepResolver,
-} from "./edge-collection-modes";
+  operatorSpecKey,
+  resolveGraphSemantics,
+  type ResolvedGraphSemantics,
+} from "./graph-semantics";
 import { connectionRouteForSelection, encodeHandleId } from "./handles";
 import { hydrateNodeLayout } from "./node-layout";
 import { artifactTypeColor } from "../config-ui/nodes.css";
@@ -24,16 +24,11 @@ import {
   collectionModesForShapes,
   compatibilityHandleId,
   createWorkflowNodeData,
-  resolveInstancePortShapes,
   defaultNodeLayout,
-  declaredArtifactTypeVariables,
   portHasInstancePlugs,
   portMetaForPort,
   resolvedPortArtifactType,
   type WorkflowEdge,
-  type WorkflowArtifactTypeBindingInput,
-  type WorkflowArtifactTypeBindings,
-  type WorkflowCompatibilityEndpoint,
   type WorkflowNodeData,
   workflowNodeIsSupported,
 } from "./types";
@@ -53,6 +48,7 @@ export function hydrateAuthoredGraphDocument(
   document: AuthoredGraphDocument,
   registry: NodeRegistry,
   nodeRuns: readonly RunNodeResult[] = [],
+  semantics?: ResolvedGraphSemantics,
 ): HydratedSavedGraph {
   return hydrateSavedGraph(
     {
@@ -64,6 +60,7 @@ export function hydrateAuthoredGraphDocument(
     },
     registry,
     nodeRuns,
+    semantics,
   );
 }
 
@@ -97,45 +94,8 @@ export class SavedGraphHydrationError extends Error {
   }
 }
 
-function operatorKey(operatorId: string, operatorVersion: number): string {
-  return `${operatorId}@${operatorVersion}`;
-}
-
-function compatibilityEndpoints(
-  savedNode: SavedGraphNode,
-  savedEdges: readonly SavedGraphEdge[],
-): {
-  inputs: WorkflowCompatibilityEndpoint[];
-  outputs: WorkflowCompatibilityEndpoint[];
-} {
-  const inputs = new Map<string, WorkflowCompatibilityEndpoint>();
-  const outputs = new Map<string, WorkflowCompatibilityEndpoint>();
-  for (const plug of savedNode.input_plugs) {
-    inputs.set(`${plug.port}::${plug.id}`, {
-      portName: plug.port,
-      plugId: plug.id,
-    });
-  }
-  for (const edge of savedEdges) {
-    if (edge.to_node === savedNode.id) {
-      const endpoint = {
-        portName: edge.to_port,
-        ...(edge.to_plug ? { plugId: edge.to_plug } : {}),
-      };
-      inputs.set(`${edge.to_port}::${edge.to_plug ?? ""}`, endpoint);
-    }
-    if (edge.from_node === savedNode.id) {
-      outputs.set(edge.from_port, { portName: edge.from_port });
-    }
-  }
-  return {
-    inputs: [...inputs.values()],
-    outputs: [...outputs.values()],
-  };
-}
-
 function unavailableNodeSpec(savedNode: SavedGraphNode): NodeSpec {
-  const identity = operatorKey(
+  const identity = operatorSpecKey(
     savedNode.operator_id,
     savedNode.operator_version,
   );
@@ -156,36 +116,6 @@ function unavailableNodeSpec(savedNode: SavedGraphNode): NodeSpec {
   };
 }
 
-function incompatibleNodeData(
-  savedNode: SavedGraphNode,
-  savedEdges: readonly SavedGraphEdge[],
-  status: "unsupported" | "invalid",
-  issues: readonly string[],
-  spec: NodeSpec = unavailableNodeSpec(savedNode),
-): WorkflowNodeData {
-  const data = createWorkflowNodeData(spec, savedNode.input_plugs);
-  const artifactTypeBindings: Record<
-    string,
-    WorkflowArtifactTypeBindingInput["artifact_type"]
-  > = {};
-  for (const binding of savedNode.artifact_type_bindings) {
-    artifactTypeBindings[binding.variable] = {
-      id: binding.artifact_type.id,
-      schema_version: binding.artifact_type.schema_version,
-    };
-  }
-  data.compatibility = {
-    status,
-    issues: [...issues],
-    ...compatibilityEndpoints(savedNode, savedEdges),
-    persistedNode: structuredClone(savedNode),
-  };
-  data.artifactTypeBindings = artifactTypeBindings;
-  data.config = structuredClone(savedNode.config ?? {});
-  data.layout = hydrateNodeLayout(savedNode.layout);
-  return data;
-}
-
 function sortedRecord(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => sortedRecord(item));
@@ -199,74 +129,6 @@ function sortedRecord(value: unknown): unknown {
     if (item !== undefined) sorted[key] = sortedRecord(item);
   }
   return sorted;
-}
-
-function requireArtifactTypeBindings(
-  savedGraph: SavedGraph,
-  savedNode: SavedGraphNode,
-  spec: NodeSpec,
-  registry: NodeRegistry,
-): WorkflowArtifactTypeBindings {
-  const declaredVariables = new Set(declaredArtifactTypeVariables(spec));
-  const registryArtifactTypes = new Set(
-    registry.artifact_types.map((artifact) => artifactTypeKey(artifact.key)),
-  );
-  const bindings: Record<
-    string,
-    WorkflowArtifactTypeBindingInput["artifact_type"]
-  > = {};
-  for (const binding of savedNode.artifact_type_bindings) {
-    if (!declaredVariables.has(binding.variable)) {
-      throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”. A step’s type is not available.`,
-      );
-    }
-    if (binding.variable in bindings) {
-      throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”. A step’s type is not available.`,
-      );
-    }
-    const bindingKey = artifactTypeKey(binding.artifact_type);
-    if (!registryArtifactTypes.has(bindingKey)) {
-      throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”. A step’s type is not available.`,
-      );
-    }
-    bindings[binding.variable] = {
-      id: binding.artifact_type.id,
-      schema_version: binding.artifact_type.schema_version,
-    };
-  }
-  return bindings;
-}
-
-/** What a call node's saved connections still name that its callee no longer declares. */
-function staleCallPorts(
-  document: SavedGraph["document"],
-  savedNode: SavedGraphNode,
-  spec: NodeSpec,
-): string[] {
-  const inputs = new Set(spec.inputs.map((port) => port.name));
-  const outputs = new Set(spec.outputs.map((port) => port.name));
-  const issues: string[] = [];
-  const note = (direction: "input" | "output", port: string) => {
-    const message = `${direction === "input" ? "Input" : "Output"} “${port}” no longer exists on “${spec.title}”.`;
-    if (!issues.includes(message)) issues.push(message);
-  };
-  for (const edge of document.edges) {
-    if (edge.to_node === savedNode.id && !inputs.has(edge.to_port)) {
-      note("input", edge.to_port);
-    }
-    if (edge.from_node === savedNode.id && !outputs.has(edge.from_port)) {
-      note("output", edge.from_port);
-    }
-  }
-  for (const origin of document.origins ?? []) {
-    if (origin.to_node === savedNode.id && !inputs.has(origin.to_port)) {
-      note("input", origin.to_port);
-    }
-  }
-  return issues;
 }
 
 export function savedGraphFingerprint(graph: GraphDraft): string {
@@ -283,6 +145,9 @@ export function savedGraphFingerprint(graph: GraphDraft): string {
       left.id.localeCompare(right.id),
     ),
     edges: [...graph.document.edges].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
+    origins: [...(graph.document.origins ?? [])].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
     presentation: {
@@ -317,32 +182,11 @@ export function savedGraphExecutionFingerprint(graph: GraphDraft): string {
     edges: [...graph.document.edges].sort((left, right) =>
       left.id.localeCompare(right.id),
     ),
+    origins: [...(graph.document.origins ?? [])].sort((left, right) =>
+      left.id.localeCompare(right.id),
+    ),
   };
   return JSON.stringify(sortedRecord(normalized));
-}
-
-function requireInputPlugs(
-  savedGraph: SavedGraph,
-  savedNode: SavedGraphNode,
-  spec: NodeSpec,
-): typeof savedNode.input_plugs {
-  const inputPlugs = savedNode.input_plugs;
-  const plugIds = new Set<string>();
-  for (const plug of inputPlugs) {
-    const port = spec.inputs.find((candidate) => candidate.name === plug.port);
-    if (!port || !portHasInstancePlugs(port)) {
-      throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”. A step has a slot the input does not allow.`,
-      );
-    }
-    if (plugIds.has(plug.id)) {
-      throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”. A step has two slots with the same identity.`,
-      );
-    }
-    plugIds.add(plug.id);
-  }
-  return inputPlugs;
 }
 
 function requireEdgeEndpoint(
@@ -417,82 +261,36 @@ export function hydrateSavedGraph(
   savedGraph: SavedGraph,
   registry: NodeRegistry,
   nodeRuns: readonly RunNodeResult[] = [],
+  providedSemantics?: ResolvedGraphSemantics,
 ): HydratedSavedGraph {
   const savedEdges = savedGraph.document.edges;
-  const specs = new Map(
-    registry.nodes.map((spec) => [
-      operatorKey(spec.operator_id, spec.operator_version),
-      spec,
-    ]),
-  );
   const nodeIds = new Set<string>();
+  for (const savedNode of savedGraph.document.nodes) {
+    if (nodeIds.has(savedNode.id)) {
+      throw new SavedGraphHydrationError(
+        `Cannot open “${savedGraph.name}”. This file has two steps with the same identity.`,
+      );
+    }
+    nodeIds.add(savedNode.id);
+  }
+
+  const semantics =
+    providedSemantics ?? resolveGraphSemantics(savedGraph.document, registry);
+
   const nodes: SavedGraphWorkflowNode[] = savedGraph.document.nodes.map(
     (savedNode: SavedGraphNode) => {
-      if (nodeIds.has(savedNode.id)) {
-        throw new SavedGraphHydrationError(
-          `Cannot open “${savedGraph.name}”. This file has two steps with the same identity.`,
-        );
-      }
-      nodeIds.add(savedNode.id);
-      const operatorIdentity = operatorKey(
-        savedNode.operator_id,
-        savedNode.operator_version,
-      );
-      const spec = specs.get(operatorIdentity);
-      let data: WorkflowNodeData;
-      if (savedNode.kind === "module") {
-        // Modules left the product (ADR 0020). The node stays in the document so
-        // it remains openable; it just has nothing left to execute.
-        data = incompatibleNodeData(savedNode, savedEdges, "unsupported", [
-          `Operator ${operatorIdentity} is a Module, a node type that is no longer supported. This saved node is preserved but cannot run.`,
-        ]);
-      } else if (!spec) {
-        data = incompatibleNodeData(savedNode, savedEdges, "unsupported", [
-          `Operator ${operatorIdentity} is unavailable. This saved node is preserved but cannot run.`,
-        ]);
-      } else if (
-        savedNode.kind === "call" &&
-        staleCallPorts(savedGraph.document, savedNode, spec).length > 0
-      ) {
-        // The callee's interface moved under this call site. The connections
-        // stay in the document and show as issues here (ADR 0020), rather than
-        // making the whole Graph impossible to open.
-        data = incompatibleNodeData(
-          savedNode,
-          savedEdges,
-          "invalid",
-          staleCallPorts(savedGraph.document, savedNode, spec),
-          spec,
-        );
-      } else {
-        try {
-          const inputPlugs = requireInputPlugs(savedGraph, savedNode, spec);
-          data = createWorkflowNodeData(spec, inputPlugs);
-          data.artifactTypeBindings = requireArtifactTypeBindings(
-            savedGraph,
-            savedNode,
-            spec,
-            registry,
-          );
-          data.config = structuredClone(savedNode.config ?? {});
-          data.spec = resolveInstancePortShapes(spec, data.config);
-          data.layout =
-            hydrateNodeLayout(savedNode.layout) ?? defaultNodeLayout(spec);
-        } catch (error) {
-          if (!(error instanceof SavedGraphHydrationError)) throw error;
-          const graphPrefix = `Cannot open “${savedGraph.name}”. `;
-          const issue = error.message.startsWith(graphPrefix)
-            ? error.message.slice(graphPrefix.length)
-            : error.message;
-          data = incompatibleNodeData(
-            savedNode,
-            savedEdges,
-            "invalid",
-            [issue],
-            spec,
-          );
-        }
-      }
+      const resolved = semantics.nodes.get(savedNode.id);
+      const spec = resolved?.spec ?? unavailableNodeSpec(savedNode);
+      const data = createWorkflowNodeData(spec, savedNode.input_plugs);
+      data.compatibility = resolved?.compatibility ?? { status: "supported" };
+      data.artifactTypeBindings = resolved
+        ? { ...resolved.artifactTypeBindings }
+        : {};
+      data.config = structuredClone(savedNode.config ?? {});
+      data.layout =
+        resolved?.compatibility.status === "supported"
+          ? (hydrateNodeLayout(savedNode.layout) ?? defaultNodeLayout(spec))
+          : hydrateNodeLayout(savedNode.layout);
       return {
         id: savedNode.id,
         type: WORKFLOW_NODE_TYPE,
@@ -506,74 +304,10 @@ export function hydrateSavedGraph(
     },
   );
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const savedNodeById = new Map<string, SavedGraphNode>(
-    savedGraph.document.nodes.map((savedNode: SavedGraphNode) => [
-      savedNode.id,
-      savedNode,
-    ]),
-  );
 
-  for (const savedEdge of savedEdges) {
-    const sourceNode = nodeById.get(savedEdge.from_node);
-    const targetNode = nodeById.get(savedEdge.to_node);
-    if (!sourceNode || !targetNode) continue;
-    if (
-      workflowNodeIsSupported(sourceNode.data) &&
-      !sourceNode.data.spec.outputs.some(
-        (port) => port.name === savedEdge.from_port,
-      )
-    ) {
-      const savedNode = savedNodeById.get(sourceNode.id);
-      if (savedNode) {
-        sourceNode.data = incompatibleNodeData(
-          savedNode,
-          savedEdges,
-          "invalid",
-          [`A saved connection points at an output this step no longer has.`],
-          sourceNode.data.spec,
-        );
-      }
-    }
-    if (
-      workflowNodeIsSupported(targetNode.data) &&
-      !targetNode.data.spec.inputs.some(
-        (port) => port.name === savedEdge.to_port,
-      )
-    ) {
-      const savedNode = savedNodeById.get(targetNode.id);
-      if (savedNode) {
-        targetNode.data = incompatibleNodeData(
-          savedNode,
-          savedEdges,
-          "invalid",
-          [`A saved connection points at an input this step no longer has.`],
-          targetNode.data.spec,
-        );
-      }
-    }
-  }
-  // A connection's collection mode follows the shapes at its ends, and this
-  // graph's own map connections decide those shapes: a step fed one item at a
-  // time offers a sequence from every output, and a step fed a whole input runs
-  // once and offers one value. An edit can leave a step running once while the
-  // connections after it still ask for a list, so those modes are read as the
-  // shapes now allow them rather than as the file first recorded them.
-  const resolveCollectionStep: CollectionStepResolver = (nodeId) => {
-    const node = nodeById.get(nodeId);
-    if (!node || !workflowNodeIsSupported(node.data)) return null;
-    return {
-      inputs: node.data.spec.inputs,
-      outputs: node.data.spec.outputs,
-    };
-  };
-  const collectionModeRepairs = collectionModesToRepair(
-    savedEdges,
-    savedGraph.document.origins,
-    resolveCollectionStep,
-  );
-  const savedEdgesToRead = collectionModeRepairs.size
+  const savedEdgesToRead = semantics.edgeModeRepairs.size
     ? savedEdges.map((savedEdge: SavedGraphEdge) => {
-        const collectionMode = collectionModeRepairs.get(savedEdge.id);
+        const collectionMode = semantics.edgeModeRepairs.get(savedEdge.id);
         return collectionMode
           ? { ...savedEdge, collection_mode: collectionMode }
           : savedEdge;
@@ -581,7 +315,7 @@ export function hydrateSavedGraph(
     : savedEdges;
 
   const mapEdgeByTargetInput = new Map<string, SavedGraphEdge>();
-  const mappedNodeIds = new Set<string>();
+  const mappedNodeIds = new Set<string>(semantics.authoringMappedNodeIds);
   for (const edge of savedEdgesToRead) {
     if (edge.collection_mode !== "map") continue;
     const targetKey = JSON.stringify([edge.to_node, edge.to_port]);
@@ -592,10 +326,6 @@ export function hydrateSavedGraph(
       );
     }
     mapEdgeByTargetInput.set(targetKey, edge);
-    mappedNodeIds.add(edge.to_node);
-  }
-  for (const origin of savedGraph.document.origins) {
-    if (origin.collection_mode === "map") mappedNodeIds.add(origin.to_node);
   }
   const edgeIds = new Set<string>();
   const occupiedTargetPlugIds = new Set<string>();

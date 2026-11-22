@@ -4,7 +4,10 @@ import type { NodeRegistry, NodeSpec, Port, SavedGraphOrigin } from "@/lib/api";
 import {
   collectionModeRepairCommands,
   collectionModesToRepair,
+  foldCollectionModeRepairs,
+  originModesToRepair,
   type CollectionModeConnection,
+  type CollectionModeOrigin,
   type CollectionModeStep,
 } from "./edge-collection-modes";
 import {
@@ -207,6 +210,94 @@ describe("collection modes the graph leaves behind", () => {
 
     expect([...repairs]).toEqual([]);
   });
+
+  it("propagates map across origins and downstream edges when a single-item origin becomes a sequence", () => {
+    const sequenceValue: SavedGraphOrigin["value"] = {
+      artifact_type: "file.jpeg",
+      schema_version: 1,
+      item_refs: [
+        {
+          artifact_id: "scan-1",
+          artifact_type: "file.jpeg",
+          schema_version: 1,
+        },
+        {
+          artifact_id: "scan-2",
+          artifact_type: "file.jpeg",
+          schema_version: 1,
+        },
+      ],
+      ordered: true,
+      index_key: "order_index",
+      sequence_id: "seq-1",
+    };
+    const origins: CollectionModeOrigin[] = [
+      {
+        id: "ocr-scan",
+        to_node: "reader",
+        to_port: "document",
+        value: sequenceValue,
+        collection_mode: "direct",
+      },
+      {
+        id: "boxes-image",
+        to_node: "boxes",
+        to_port: "image",
+        value: sequenceValue,
+        collection_mode: "direct",
+      },
+    ];
+    const edges = [
+      edge("reading", "reader", "markdown", "boxes", "regions", "direct"),
+      edge("painted", "boxes", "image", "viewer", "image", "direct"),
+    ];
+
+    expect([...originModesToRepair(edges, origins, resolveStep)]).toEqual([
+      ["ocr-scan", "map"],
+      ["boxes-image", "map"],
+    ]);
+    expect([...collectionModesToRepair(edges, origins, resolveStep)]).toEqual([
+      ["reading", "map"],
+      ["painted", "map"],
+    ]);
+  });
+
+  it("reverts origins and downstream edges to direct when a sequence origin is unstacked to one item", () => {
+    const singleValue: SavedGraphOrigin["value"] = {
+      artifact_id: "scan-1",
+      artifact_type: "file.jpeg",
+      schema_version: 1,
+    };
+    const origins: CollectionModeOrigin[] = [
+      {
+        id: "ocr-scan",
+        to_node: "reader",
+        to_port: "document",
+        value: singleValue,
+        collection_mode: "map",
+      },
+      {
+        id: "boxes-image",
+        to_node: "boxes",
+        to_port: "image",
+        value: singleValue,
+        collection_mode: "map",
+      },
+    ];
+    const edges = [
+      edge("reading", "reader", "markdown", "boxes", "regions", "map"),
+      edge("painted", "boxes", "image", "viewer", "image", "map"),
+    ];
+
+    expect([...originModesToRepair(edges, origins, resolveStep)]).toEqual([
+      ["ocr-scan", "direct"],
+      ["boxes-image", "direct"],
+    ]);
+    expect([...collectionModesToRepair(edges, origins, resolveStep)]).toEqual([
+      ["reading", "direct"],
+      ["painted", "direct"],
+    ]);
+  });
 });
 
 function spec(operatorId: string, step: CollectionModeStep): NodeSpec {
@@ -240,6 +331,7 @@ const REGISTRY: NodeRegistry = {
 
 function documentOf(
   edges: AuthoredGraphDocument["edges"],
+  origins: AuthoredGraphDocument["origins"] = [],
 ): AuthoredGraphDocument {
   return authoredGraphDocument(
     createSavedGraphRequest({
@@ -277,7 +369,7 @@ function documentOf(
         },
       ],
       edges,
-      origins: [],
+      origins,
       agents: [],
     }),
   );
@@ -333,5 +425,127 @@ describe("collection mode repairs as authored commands", () => {
     ]);
 
     expect(collectionModeRepairCommands(document, null)).toEqual([]);
+  });
+
+  it("emits origin and downstream edge repairs and folds them into the origin update batch", () => {
+    const sequenceValue: SavedGraphOrigin["value"] = {
+      artifact_type: "file.jpeg",
+      schema_version: 1,
+      item_refs: [
+        {
+          artifact_id: "scan-1",
+          artifact_type: "file.jpeg",
+          schema_version: 1,
+        },
+        {
+          artifact_id: "scan-2",
+          artifact_type: "file.jpeg",
+          schema_version: 1,
+        },
+      ],
+      ordered: true,
+      index_key: "order_index",
+      sequence_id: "seq-1",
+    };
+    const document = documentOf(
+      [
+        savedEdge(
+          "reading",
+          "reader",
+          "markdown",
+          "boxes",
+          "regions",
+          "direct",
+        ),
+      ],
+      [
+        {
+          id: "ocr-scan",
+          to_node: "reader",
+          to_port: "document",
+          to_plug: null,
+          value: sequenceValue,
+          source_card_ids: ["card-a", "card-a"],
+          collection_mode: "direct",
+          conversion_path: [],
+        },
+        {
+          id: "boxes-image",
+          to_node: "boxes",
+          to_port: "image",
+          to_plug: null,
+          value: sequenceValue,
+          source_card_ids: ["card-a", "card-a"],
+          collection_mode: "direct",
+          conversion_path: [],
+        },
+      ],
+    );
+
+    const repairs = collectionModeRepairCommands(document, REGISTRY);
+    expect(repairs).toEqual([
+      {
+        kind: "update_origin",
+        origin_id: "ocr-scan",
+        update: { collection_mode: "map" },
+      },
+      {
+        kind: "update_origin",
+        origin_id: "boxes-image",
+        update: { collection_mode: "map" },
+      },
+      {
+        kind: "update_edge",
+        edge_id: "reading",
+        update: { collection_mode: "map" },
+      },
+    ]);
+
+    const folded = foldCollectionModeRepairs(
+      [
+        {
+          kind: "update_origin",
+          origin_id: "ocr-scan",
+          update: {
+            value: sequenceValue,
+            source_card_ids: ["card-a", "card-a"],
+          },
+        },
+        {
+          kind: "update_origin",
+          origin_id: "boxes-image",
+          update: {
+            value: sequenceValue,
+            source_card_ids: ["card-a", "card-a"],
+          },
+        },
+      ],
+      repairs,
+    );
+    expect(folded).toEqual([
+      {
+        kind: "update_origin",
+        origin_id: "ocr-scan",
+        update: {
+          value: sequenceValue,
+          source_card_ids: ["card-a", "card-a"],
+          collection_mode: "map",
+        },
+      },
+      {
+        kind: "update_origin",
+        origin_id: "boxes-image",
+        update: {
+          value: sequenceValue,
+          source_card_ids: ["card-a", "card-a"],
+          collection_mode: "map",
+        },
+      },
+      {
+        kind: "update_edge",
+        edge_id: "reading",
+        update: { collection_mode: "map" },
+      },
+    ]);
   });
 });
