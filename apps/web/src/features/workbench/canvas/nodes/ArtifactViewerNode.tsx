@@ -51,7 +51,10 @@ import {
 } from "../types";
 import { ArtifactCardBody } from "./ArtifactCardBody";
 import { ArtifactPortPreview, storedArtifactView } from "./ArtifactsAppendix";
-import { presentsArtifacts } from "../artifact-card";
+import {
+  ARTIFACT_CARD_LAYOUT_BOUNDS,
+  presentsArtifacts,
+} from "../artifact-card";
 import { rendererCanBrush } from "./artifact-renderers/registry";
 import {
   type CanvasNodeOverflowItem,
@@ -371,6 +374,7 @@ function RichArtifactViewerNode({
           <LayoutResizeHandle
             layout={layout}
             axes={["width", "appendixHeight"]}
+            bounds={ARTIFACT_CARD_LAYOUT_BOUNDS}
             ariaLabel="Resize artifact viewer"
             onDraft={setDraftLayout}
             onCommit={commitLayout}

@@ -7,4 +7,8 @@ describe("sandbox catalog", () => {
     expect(getSpike("port-types")?.title).toBe("Port types");
     expect(getSpike("missing")).toBeUndefined();
   });
+
+  it("registers the cell canvas spike", () => {
+    expect(getSpike("cell-canvas")?.title).toBe("Cell-based canvas");
+  });
 });

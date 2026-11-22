@@ -11,6 +11,12 @@ export const SPIKES = [
     summary:
       "The product canvas with real node cards, kept as a base for building an input interaction.",
   },
+  {
+    id: "cell-canvas",
+    title: "Cell-based canvas",
+    summary:
+      "Cards, ports, gutters, and pipes on one shared 50px cell grid with snapping drag and track-capacity routing.",
+  },
 ] as const;
 
 export type SpikeId = (typeof SPIKES)[number]["id"];

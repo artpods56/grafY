@@ -185,11 +185,12 @@ read. Two consequences a writer must get right:
 1. A caller editing outside the room must read `GET …/projects/{id}/head` first and
    stamp the submission with *that* sequence, not with whatever the canvas last
    rendered.
-2. The checkpoint that follows must assert the sequence the batch was **accepted at**
-   (`receipt.accepted_sequence`, or the head returned by the submission), never the one
-   it read before submitting — otherwise a peer's interleaved batch makes your own work
-   uncheckpointable. The save path does exactly this
-   ([`useSavedGraphLifecycle.ts:119-151`](../../apps/web/src/features/workbench/ui/useSavedGraphLifecycle.ts)).
+2. Start the checkpoint at the sequence the batch was **accepted at**
+   (`receipt.accepted_sequence`, or the head returned by the submission). If a peer
+   advances the head before the checkpoint arrives, the Workbench fetches the newer
+   head and retries the checkpoint within the same room epoch. It never resubmits
+   the original document and a retry cannot cross a room reset
+   ([`checkpoint-accepted-head.ts`](../../apps/web/src/features/workbench/room/checkpoint-accepted-head.ts)).
 
 High-frequency gestures do not touch either counter until the gesture commits: cursor
 updates are presence, positions under a held pointer are drag previews, and pointer

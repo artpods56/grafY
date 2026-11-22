@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Search } from "lucide-react";
 import { useStore, ViewportPortal } from "@xyflow/react";
 
+import { CellViewportLayer } from "../cell-canvas/CellCanvasContext";
 import { Button } from "@/components/ui/button";
 import { phoneTouch } from "@/components/ui/touch-target";
 import type { NodeRegistry } from "@/lib/api";
@@ -313,7 +314,7 @@ function previewFlowPosition(flowPosition: { x: number; y: number }): {
   };
 }
 
-export function ContextualNodeDiscovery({
+function ContextualNodeDiscoveryContent({
   session,
   registry,
   canInsert,
@@ -321,7 +322,12 @@ export function ContextualNodeDiscovery({
   onClose,
   onConfirm,
   onPlaceOutputCard,
-}: ContextualNodeDiscoveryProps) {
+  sourcePoint,
+  renderWorldPortal,
+}: ContextualNodeDiscoveryProps & {
+  sourcePoint: { x: number; y: number } | null;
+  renderWorldPortal: (node: React.ReactNode) => React.ReactNode;
+}) {
   const finePointer = useMediaQuery(FINE_POINTER_QUERY);
   const [query, setQuery] = React.useState("");
   const [pendingCandidate, setPendingCandidate] =
@@ -335,38 +341,6 @@ export function ContextualNodeDiscovery({
   const previewRef = React.useRef<HTMLDivElement>(null);
   const resultRefs = React.useRef(new Map<string, HTMLButtonElement>());
   const autoFocusSessionKeyRef = React.useRef<string | null>(null);
-
-  const sourcePoint = useStore((state) => {
-    if (!session) return null;
-    const node = state.nodeLookup.get(session.sourceNodeId);
-    if (!node) return null;
-    const origin = node.internals.positionAbsolute;
-    const downstream = session.direction === "downstream";
-    const handle = (
-      downstream
-        ? node.internals.handleBounds?.source
-        : node.internals.handleBounds?.target
-    )?.find((candidate) => candidate.id === session.sourceHandle);
-    if (!handle) {
-      return downstream
-        ? {
-            x: origin.x + (node.measured.width ?? DEFAULT_NODE_WIDTH),
-            y:
-              origin.y +
-              (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
-          }
-        : {
-            x: origin.x,
-            y:
-              origin.y +
-              (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
-          };
-    }
-    return {
-      x: origin.x + handle.x + handle.width / 2,
-      y: origin.y + handle.y + handle.height / 2,
-    };
-  });
 
   const autoFocusSessionKey = session
     ? JSON.stringify([
@@ -579,8 +553,8 @@ export function ContextualNodeDiscovery({
 
   return (
     <>
-      <ViewportPortal>
-        {previewedCandidate ? (
+      {renderWorldPortal(
+        previewedCandidate ? (
           <>
             {edgePath ? (
               <svg
@@ -624,8 +598,8 @@ export function ContextualNodeDiscovery({
               />
             </div>
           </>
-        ) : null}
-      </ViewportPortal>
+        ) : null,
+      )}
 
       <div
         ref={rootRef}
@@ -808,6 +782,71 @@ export function ContextualNodeDiscovery({
         </div>
       </div>
     </>
+  );
+}
+
+export function ContextualNodeDiscovery(props: ContextualNodeDiscoveryProps) {
+  const { session } = props;
+  const sourcePoint = useStore((state) => {
+    if (!session) return null;
+    const node = state.nodeLookup.get(session.sourceNodeId);
+    if (!node) return null;
+    const origin = node.internals.positionAbsolute;
+    const downstream = session.direction === "downstream";
+    const handle = (
+      downstream
+        ? node.internals.handleBounds?.source
+        : node.internals.handleBounds?.target
+    )?.find((candidate) => candidate.id === session.sourceHandle);
+    if (!handle) {
+      return downstream
+        ? {
+            x: origin.x + (node.measured.width ?? DEFAULT_NODE_WIDTH),
+            y:
+              origin.y +
+              (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
+          }
+        : {
+            x: origin.x,
+            y:
+              origin.y +
+              (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
+          };
+    }
+    return {
+      x: origin.x + handle.x + handle.width / 2,
+      y: origin.y + handle.y + handle.height / 2,
+    };
+  });
+
+  return (
+    <ContextualNodeDiscoveryContent
+      {...props}
+      sourcePoint={sourcePoint}
+      renderWorldPortal={(node) => <ViewportPortal>{node}</ViewportPortal>}
+    />
+  );
+}
+
+export function CellContextualNodeDiscovery({
+  sourcePoint,
+  ...props
+}: ContextualNodeDiscoveryProps & {
+  sourcePoint: { x: number; y: number } | null;
+}) {
+  return (
+    <div
+      data-cell-canvas-chrome="true"
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <ContextualNodeDiscoveryContent
+        {...props}
+        sourcePoint={sourcePoint}
+        renderWorldPortal={(node) => (
+          <CellViewportLayer layer="over-cards">{node}</CellViewportLayer>
+        )}
+      />
+    </div>
   );
 }
 

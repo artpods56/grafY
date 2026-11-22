@@ -15,11 +15,14 @@ import {
   type AnnotationNode,
 } from "../canvas/annotations";
 import {
+  ARTIFACT_VIEWER_EDGE_TYPE,
   ARTIFACT_VIEWER_NODE_TYPE,
   type ArtifactViewerCanvasState,
   type ArtifactViewerNode,
 } from "../canvas/artifact-viewer";
+import type { SavedGraphOrigin } from "@/lib/api";
 import type { GraphCommand } from "../model/graph-document";
+import { CELL_SIZE } from "../cell-canvas/cell-model";
 import { DEFAULT_ARTIFACT_CARD_WIDTH } from "../canvas/artifact-card";
 import {
   ARTIFACT_CARD_DROP_GUTTER,
@@ -87,10 +90,15 @@ function state(
 async function mount(options: {
   nodes?: readonly ArtifactViewerNode[];
   annotations?: readonly AnnotationNode[];
+  edges?: ArtifactViewerCanvasState["edges"];
+  origins?: readonly SavedGraphOrigin[];
   localAuthoringEnabled?: boolean;
   groupingDisabledReason?: string | null;
 }) {
-  const base = state(options.nodes ?? [], options.annotations ?? []);
+  const base = {
+    ...state(options.nodes ?? [], options.annotations ?? []),
+    edges: [...(options.edges ?? [])],
+  };
   const committed: ArtifactViewerCanvasState[] = [];
   const commands: GraphCommand[][] = [];
   /** Every time the card layer asked the node layer to let go. */
@@ -103,7 +111,7 @@ async function mount(options: {
         commands.push([...batch]);
       },
       artifactViewers: base,
-      authoredDocumentRef: { current: { origins: [] } },
+      authoredDocumentRef: { current: { origins: options.origins ?? [] } },
       // The real commit refuses while the canvas cannot author, and says so.
       commitArtifactViewers: (updater) => {
         if (!(options.localAuthoringEnabled ?? true)) return false;
@@ -247,6 +255,397 @@ describe("useArtifactCardCommands", () => {
 
     expect(view.committed).toEqual([]);
     expect(view.commands).toEqual([]);
+    view.unmount();
+  });
+});
+
+function placedCard(
+  id: string,
+  artifactIds: readonly string[],
+  position = { x: 100, y: 200 },
+): ArtifactViewerNode {
+  return {
+    id,
+    type: ARTIFACT_VIEWER_NODE_TYPE,
+    position,
+    selected: false,
+    data: {
+      layout: null,
+      mode: null,
+      artifactRef:
+        artifactIds.length === 1
+          ? single(artifactIds[0] ?? "")
+          : cardValue(artifactIds),
+    },
+  };
+}
+
+function origin(
+  id: string,
+  sourceCardIds: readonly string[],
+  value: ArtifactCardValue,
+): SavedGraphOrigin {
+  return {
+    id,
+    to_node: "consumer",
+    to_port: "images",
+    to_plug: null,
+    value,
+    source_card_ids: [...sourceCardIds],
+    collection_mode: "direct",
+    conversion_path: [],
+  };
+}
+
+function refIds(value: ArtifactCardValue | null | undefined): string[] {
+  if (!value) return [];
+  return "item_refs" in value
+    ? value.item_refs.map((ref) => ref.artifact_id)
+    : [value.artifact_id];
+}
+
+describe("sequence authoring", () => {
+  it("lets two standalone cards of one type merge, either way round", async () => {
+    const view = await mount({
+      nodes: [placedCard("a", ["a1"]), placedCard("b", ["b1", "b2"])],
+    });
+    expect(view.read().canMergeArtifactCards("a", "b")).toBe(true);
+    expect(view.read().canMergeArtifactCards("b", "a")).toBe(true);
+    expect(view.read().canMergeArtifactCards("a", "a")).toBe(false);
+    expect(view.read().canMergeArtifactCards("a", "gone")).toBe(false);
+    view.unmount();
+  });
+
+  it("refuses a card following a producer, another type, or a read-only canvas", async () => {
+    const follower: ArtifactViewerNode = {
+      ...placedCard("follow", ["f1"]),
+      data: { layout: null, mode: "artifact", artifactRef: single("f1") },
+    };
+    const png: ArtifactViewerNode = {
+      ...placedCard("png", ["p1"]),
+      data: {
+        layout: null,
+        mode: null,
+        artifactRef: { ...single("p1"), artifact_type: "file.png" },
+      },
+    };
+    const view = await mount({
+      nodes: [placedCard("a", ["a1"]), follower, png],
+      edges: [
+        {
+          id: "feed",
+          type: ARTIFACT_VIEWER_EDGE_TYPE,
+          source: "producer",
+          target: "follow",
+          targetHandle: "artifact-viewer-input",
+          data: { sourcePortName: "result" },
+        },
+      ],
+    });
+    expect(view.read().canMergeArtifactCards("a", "follow")).toBe(false);
+    expect(view.read().canMergeArtifactCards("follow", "a")).toBe(false);
+    expect(view.read().canMergeArtifactCards("a", "png")).toBe(false);
+    view.unmount();
+
+    const readOnly = await mount({
+      nodes: [placedCard("a", ["a1"]), placedCard("b", ["b1"])],
+      localAuthoringEnabled: false,
+    });
+    expect(readOnly.read().canMergeArtifactCards("a", "b")).toBe(false);
+    readOnly.unmount();
+  });
+
+  it("never merges away a card that is passed into an input", async () => {
+    const view = await mount({
+      nodes: [placedCard("a", ["a1"]), placedCard("b", ["b1"])],
+      origins: [origin("wired", ["a"], single("a1"))],
+    });
+    expect(view.read().canMergeArtifactCards("a", "b")).toBe(false);
+    await act(async () => {
+      view.read().mergeArtifactCards("a", "b");
+    });
+    expect(view.committed).toEqual([]);
+    expect(view.commands).toEqual([]);
+    // The wired card may still take the other in.
+    expect(view.read().canMergeArtifactCards("b", "a")).toBe(true);
+    view.unmount();
+  });
+
+  it("merges onto the target after its own items and hands it the selection", async () => {
+    const view = await mount({
+      nodes: [
+        { ...placedCard("a", ["a1"]), selected: true },
+        placedCard("b", ["b1", "b2"]),
+      ],
+    });
+    await act(async () => {
+      view.read().mergeArtifactCards("a", "b", "target-first");
+    });
+    const next = view.committed.at(-1);
+    expect(next?.nodes.map((node) => node.id)).toEqual(["b"]);
+    const target = next?.nodes[0];
+    expect(target?.selected).toBe(true);
+    expect(refIds(target?.data.artifactRef)).toEqual(["b1", "b2", "a1"]);
+    // The target keeps its sequence identity.
+    expect(target?.data.artifactRef).toMatchObject({
+      sequence_id: "22222222-2222-4222-8222-222222222222",
+    });
+    expect(view.cleared).toEqual(["workflow"]);
+    view.unmount();
+  });
+
+  it("puts the source first when it sits to the left", async () => {
+    const view = await mount({
+      nodes: [placedCard("left", ["l1"]), placedCard("right", ["r1"])],
+    });
+    await act(async () => {
+      view.read().mergeArtifactCards("left", "right", "source-first");
+    });
+    const target = view.committed.at(-1)?.nodes[0];
+    expect(target?.id).toBe("right");
+    expect(refIds(target?.data.artifactRef)).toEqual(["l1", "r1"]);
+    expect(target?.data.artifactRef).toHaveProperty("item_refs");
+    view.unmount();
+  });
+
+  it("rewrites what the target is passed into with the merged sequence", async () => {
+    const view = await mount({
+      nodes: [placedCard("a", ["a1"]), placedCard("b", ["b1"])],
+      origins: [origin("wired", ["b"], single("b1"))],
+    });
+    await act(async () => {
+      view.read().mergeArtifactCards("a", "b");
+    });
+    expect(view.commands).toHaveLength(1);
+    const [command] = view.commands[0] ?? [];
+    expect(command).toMatchObject({
+      kind: "update_origin",
+      origin_id: "wired",
+      update: { source_card_ids: ["b", "b"] },
+    });
+    if (command?.kind !== "update_origin") throw new Error("not an update");
+    expect(refIds(command.update.value)).toEqual(["b1", "a1"]);
+    view.unmount();
+  });
+
+  it("moves one item within a sequence and rewrites the origin it feeds", async () => {
+    const view = await mount({
+      nodes: [placedCard("s", ["s1", "s2", "s3"])],
+      origins: [
+        origin("wired", ["s", "s", "s"], cardValue(["s1", "s2", "s3"])),
+      ],
+    });
+    await act(async () => {
+      view.read().reorderArtifactCardItem("s", 0, 2);
+    });
+    expect(refIds(view.committed.at(-1)?.nodes[0]?.data.artifactRef)).toEqual([
+      "s2",
+      "s3",
+      "s1",
+    ]);
+    const [command] = view.commands[0] ?? [];
+    if (command?.kind !== "update_origin") throw new Error("not an update");
+    expect(refIds(command.update.value)).toEqual(["s2", "s3", "s1"]);
+    view.unmount();
+  });
+
+  it("ignores a reorder that goes nowhere or out of range", async () => {
+    const view = await mount({ nodes: [placedCard("s", ["s1", "s2"])] });
+    await act(async () => {
+      view.read().reorderArtifactCardItem("s", 1, 1);
+      view.read().reorderArtifactCardItem("s", 0, 5);
+    });
+    expect(view.committed).toEqual([]);
+    view.unmount();
+  });
+
+  it("pulls one item out onto its own card a cell to the right", async () => {
+    const view = await mount({ nodes: [placedCard("s", ["s1", "s2", "s3"])] });
+    await act(async () => {
+      view.read().extractArtifactCardItem("s", 1);
+    });
+    const [kept, added] = view.committed;
+    expect(refIds(kept?.nodes[0]?.data.artifactRef)).toEqual(["s1", "s3"]);
+    const extracted = added?.nodes.at(-1);
+    expect(extracted?.data.artifactRef).toEqual(single("s2"));
+    // Ten cells wide at the default width, so it lands one empty cell past
+    // the card's right edge.
+    expect(extracted?.position).toEqual({
+      x: 100 + 10 * CELL_SIZE + CELL_SIZE,
+      y: 200,
+    });
+    expect(extracted?.selected).toBe(true);
+    view.unmount();
+  });
+
+  it("leaves a single card behind when the second to last item is pulled out", async () => {
+    const view = await mount({ nodes: [placedCard("s", ["s1", "s2"])] });
+    await act(async () => {
+      view.read().extractArtifactCardItem("s", 0);
+    });
+    expect(view.committed[0]?.nodes[0]?.data.artifactRef).toEqual(single("s2"));
+    view.unmount();
+  });
+
+  it("lands a pulled-out item on the cell it was dropped on and inherits the sequence's layout", async () => {
+    const resized = placedCard("s", ["s1", "s2", "s3"]);
+    resized.data = {
+      ...resized.data,
+      layout: { width: 250, bodyHeight: 375 },
+    };
+    const view = await mount({ nodes: [resized] });
+    await act(async () => {
+      view.read().extractArtifactCardItem("s", 2, { col: 30, row: 12 });
+    });
+    const [kept, added] = view.committed;
+    expect(refIds(kept?.nodes[0]?.data.artifactRef)).toEqual(["s1", "s2"]);
+    const extracted = added?.nodes.at(-1);
+    expect(extracted?.data.artifactRef).toEqual(single("s3"));
+    expect(extracted?.data.layout).toEqual({ width: 250, bodyHeight: 375 });
+    expect(extracted?.position).toEqual({
+      x: 30 * CELL_SIZE,
+      y: 12 * CELL_SIZE,
+    });
+    view.unmount();
+  });
+
+  it("merges a whole flush run onto its target in visual order at the leftmost card's position", async () => {
+    const view = await mount({
+      nodes: [
+        { ...placedCard("a", ["a1"]), position: { x: 0, y: 50 } },
+        { ...placedCard("b", ["b1", "b2"]), position: { x: 250, y: 50 } },
+        { ...placedCard("c", ["c1"]), position: { x: 500, y: 50 } },
+        { ...placedCard("d", ["b2", "d1"]), position: { x: 750, y: 50 } },
+      ],
+      origins: [origin("wired", ["b", "b"], cardValue(["b1", "b2"]))],
+    });
+    await act(async () => {
+      view.read().mergeArtifactCardRun(["a", "b", "c", "d"], "b");
+    });
+    // One commit and one origin rewrite for the whole run.
+    expect(view.committed).toHaveLength(1);
+    const next = view.committed[0];
+    expect(next?.nodes.map((node) => node.id)).toEqual(["b"]);
+    const target = next?.nodes[0];
+    expect(target?.selected).toBe(true);
+    // Stacks always collapse onto the first (leftmost) card's position, even
+    // when a wired card further right stays as the surviving node id.
+    expect(target?.position).toEqual({ x: 0, y: 50 });
+    // Each artifact once, in the cards' order left to right.
+    expect(refIds(target?.data.artifactRef)).toEqual([
+      "a1",
+      "b1",
+      "b2",
+      "c1",
+      "d1",
+    ]);
+    expect(target?.data.artifactRef).toMatchObject({
+      sequence_id: "22222222-2222-4222-8222-222222222222",
+    });
+    expect(view.commands).toHaveLength(1);
+    const [command] = view.commands[0] ?? [];
+    if (command?.kind !== "update_origin") throw new Error("not an update");
+    expect(refIds(command.update.value)).toEqual([
+      "a1",
+      "b1",
+      "b2",
+      "c1",
+      "d1",
+    ]);
+    expect(view.cleared).toEqual(["workflow"]);
+    view.unmount();
+  });
+
+  it("drops a run that would merge away a wired card", async () => {
+    const view = await mount({
+      nodes: [placedCard("a", ["a1"]), placedCard("b", ["b1"])],
+      origins: [origin("wired", ["a"], single("a1"))],
+    });
+    await act(async () => {
+      view.read().mergeArtifactCardRun(["a", "b"], "b");
+      view.read().mergeArtifactCardRun(["a", "b"], "missing");
+    });
+    expect(view.committed).toEqual([]);
+    expect(view.commands).toEqual([]);
+    view.unmount();
+  });
+
+  it("inserts a dragged card into a sequence at the exact index and rewrites wired origins", async () => {
+    const view = await mount({
+      nodes: [
+        placedCard("seq", ["s1", "s2", "s3"]),
+        placedCard("loose", ["x1", "s2", "x2"]),
+      ],
+      origins: [
+        origin("wired", ["seq", "seq", "seq"], cardValue(["s1", "s2", "s3"])),
+      ],
+    });
+    await act(async () => {
+      view.read().insertArtifactCardIntoSequence("loose", "seq", 1);
+    });
+    expect(view.committed).toHaveLength(1);
+    const next = view.committed[0];
+    expect(next?.nodes.map((node) => node.id)).toEqual(["seq"]);
+    const target = next?.nodes[0];
+    expect(target?.selected).toBe(true);
+    // Inserts x1 and x2 at index 1 while deduping already-present s2.
+    expect(refIds(target?.data.artifactRef)).toEqual([
+      "s1",
+      "x1",
+      "x2",
+      "s2",
+      "s3",
+    ]);
+    expect(view.commands).toHaveLength(1);
+    const [command] = view.commands[0] ?? [];
+    if (command?.kind !== "update_origin") throw new Error("not an update");
+    expect(refIds(command.update.value)).toEqual([
+      "s1",
+      "x1",
+      "x2",
+      "s2",
+      "s3",
+    ]);
+    view.unmount();
+  });
+
+  it("removes one item from a sequence and rewrites the origin it feeds", async () => {
+    const view = await mount({
+      nodes: [placedCard("s", ["s1", "s2", "s3"])],
+      origins: [
+        origin("wired", ["s", "s", "s"], cardValue(["s1", "s2", "s3"])),
+      ],
+    });
+    await act(async () => {
+      view.read().removeArtifactCardItem("s", 1);
+    });
+    expect(view.committed).toHaveLength(1);
+    const kept = view.committed[0]?.nodes[0]?.data.artifactRef;
+    expect(refIds(kept)).toEqual(["s1", "s3"]);
+    expect(kept).toHaveProperty("item_refs");
+    const [command] = view.commands[0] ?? [];
+    if (command?.kind !== "update_origin") throw new Error("not an update");
+    expect(refIds(command.update.value)).toEqual(["s1", "s3"]);
+    view.unmount();
+  });
+
+  it("leaves a single card when the second to last item is removed", async () => {
+    const view = await mount({ nodes: [placedCard("s", ["s1", "s2"])] });
+    await act(async () => {
+      view.read().removeArtifactCardItem("s", 0);
+      view.read().removeArtifactCardItem("s", 9);
+    });
+    expect(view.committed).toHaveLength(1);
+    expect(view.committed[0]?.nodes[0]?.data.artifactRef).toEqual(single("s2"));
+    view.unmount();
+  });
+
+  it("removes the card when its last item is removed", async () => {
+    const view = await mount({ nodes: [placedCard("s", ["s1"])] });
+    await act(async () => {
+      view.read().removeArtifactCardItem("s", 0);
+    });
+    expect(view.committed[0]?.nodes).toEqual([]);
     view.unmount();
   });
 });

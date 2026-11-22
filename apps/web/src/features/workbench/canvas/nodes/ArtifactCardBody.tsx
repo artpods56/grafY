@@ -30,6 +30,7 @@ import { gridAlignedWidth } from "../grid-layout";
 import { ARTIFACT_ORIGIN_EDGE_TYPE } from "../artifact-origin-edge";
 import { decodeHandleId } from "../handles";
 import {
+  ARTIFACT_CARD_LAYOUT_BOUNDS,
   ARTIFACT_CARD_WIDTH_MIN,
   DEFAULT_ARTIFACT_CARD_WIDTH,
   DEFAULT_ARTIFACT_FILE_CARD_WIDTH,
@@ -1184,6 +1185,7 @@ export function ArtifactCardBody({
                     ? ["width", "bodyHeight"]
                     : ["width"]
                 }
+                bounds={ARTIFACT_CARD_LAYOUT_BOUNDS}
                 ariaLabel="Resize artifact"
                 onDraft={setDraftLayout}
                 onCommit={commitLayout}

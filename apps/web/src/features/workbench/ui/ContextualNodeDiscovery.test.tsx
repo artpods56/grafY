@@ -34,6 +34,7 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 import {
+  CellContextualNodeDiscovery,
   ContextualNodeDiscovery,
   popupPositionBesidePreview,
   type ContextualDiscoverySession,
@@ -511,5 +512,33 @@ describe("ContextualNodeDiscovery", () => {
       "text.transform",
     );
     expect(onConfirm.mock.calls[0]?.[1].candidatePort.direction).toBe("output");
+  });
+
+  it("renders CellContextualNodeDiscovery without a React Flow store", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    roots.set(root, container);
+    const registryValue = registry();
+    const onConfirm = vi.fn();
+
+    await React.act(async () => {
+      root.render(
+        <CellContextualNodeDiscovery
+          session={sessionFor(registryValue)}
+          registry={registryValue}
+          sourcePoint={{ x: 200, y: 150 }}
+          canInsert
+          onClose={vi.fn()}
+          onConfirm={onConfirm}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(
+      container.querySelector('[data-cell-viewport-layer="over-cards"]'),
+    ).not.toBeNull();
+    expect(document.body.textContent).toContain("Continue from Text");
   });
 });

@@ -22,7 +22,10 @@ import {
   type WorkflowEdgeRouteOption,
   type WorkflowNodeData,
 } from "./types";
-import type { ArtifactCardValue } from "./artifact-card";
+import {
+  ARTIFACT_CARD_LAYOUT_BOUNDS,
+  type ArtifactCardValue,
+} from "./artifact-card";
 import type {
   ArtifactInteractionField,
   ArtifactKeySelection,
@@ -148,7 +151,10 @@ export function presentationFromArtifactViewers(
     viewers: state.nodes.map((node) => ({
       id: node.id,
       position: { x: node.position.x, y: node.position.y },
-      layout: serializeNodeLayout(node.data.layout),
+      layout: serializeNodeLayout(
+        node.data.layout,
+        ARTIFACT_CARD_LAYOUT_BOUNDS,
+      ),
       mode: node.data.mode,
       artifact_ref: node.data.artifactRef,
     })),
@@ -205,7 +211,10 @@ export function artifactViewersFromPresentation(
       type: ARTIFACT_VIEWER_NODE_TYPE,
       position: { x, y },
       data: {
-        layout: hydrateNodeLayout(viewer.layout ?? null),
+        layout: hydrateNodeLayout(
+          viewer.layout ?? null,
+          ARTIFACT_CARD_LAYOUT_BOUNDS,
+        ),
         mode: viewer.mode ?? null,
         artifactRef: viewer.artifact_ref,
       },
