@@ -10,6 +10,7 @@ from reducto.types import SettingsParam
 from reducto.types.shared_params.page_range import PageRange
 
 from grafy_core.artifact_contracts import MarkdownValue
+from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.config_ui import field_ui
 from grafy_core.documents import PdfFile, RasterImage
@@ -267,6 +268,10 @@ API_KEY = NodeSecretInput(
     title="API key",
     description="Write-only bearer credential for the Reducto platform API.",
     config_dependencies=(),
+    provider_kind="reducto",
+    verifier=unsupported_credential_verifier(
+        "Reducto has no free verification endpoint; key will be checked on first run."
+    ),
 )
 
 
@@ -293,8 +298,7 @@ async def _run_parse(
 ) -> OcrResult:
     if (document_url is None) == (image is None):
         raise ReductoOcrError(
-            "Connect either a document link or a page image, not both, and "
-            "not neither."
+            "Connect either a document link or a page image, not both, and not neither."
         )
     # Also keeps the provider's own reducto:// and jobid:// inputs out of graphs.
     # The URL is never quoted: a presigned one carries its signature.
@@ -381,8 +385,10 @@ async def _run_parse(
             ) from None
         if isinstance(exc, APIConnectionError | httpx.TransportError):
             raise ReductoOcrError("Reducto could not be reached") from None
-        label = "Reducto OCR failed" if node_id is None else (
-            f"Reducto OCR failed for node {node_id!r}"
+        label = (
+            "Reducto OCR failed"
+            if node_id is None
+            else (f"Reducto OCR failed for node {node_id!r}")
         )
         raise ReductoOcrError(label) from None
 

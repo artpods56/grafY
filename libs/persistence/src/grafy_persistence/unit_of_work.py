@@ -33,6 +33,14 @@ from grafy_core.ports.identity import (
     SecurityAuditRepositoryPort,
 )
 from grafy_core.ports.library_folders import LibraryFolderRepositoryPort
+from grafy_core.ports.credentials import (
+    CredentialRepositoryPort,
+    NodeCredentialSelectionRepositoryPort,
+)
+from grafy_persistence.adapters.repositories.credentials import (
+    SqlCredentialRepository,
+    SqlNodeCredentialSelectionRepository,
+)
 from grafy_core.ports.node_secrets import (
     NodeSecretRepositoryPort,
     NodeSecretUnitOfWorkPort,
@@ -72,6 +80,8 @@ class _SqlAlchemyUnitOfWorkState:
     results: ResultStoreRepositoryPort
     artifacts: ArtifactRepositoryPort
     node_secrets: NodeSecretRepositoryPort
+    credentials: CredentialRepositoryPort
+    node_credential_selections: NodeCredentialSelectionRepositoryPort
     agent_keys: AgentKeyRepositoryPort
     agent_conversations: AgentConversationRepositoryPort
     agent_turns: AgentTurnRepositoryPort
@@ -241,6 +251,14 @@ class SqlAlchemyUnitOfWork(
 
     @property
     @override
+    def credentials(self) -> CredentialRepositoryPort:
+        return self._entered_state().credentials
+
+    @property
+    def node_credential_selections(self) -> NodeCredentialSelectionRepositoryPort:
+        return self._entered_state().node_credential_selections
+
+    @property
     def node_secrets(self) -> NodeSecretRepositoryPort:
         return self._entered_state().node_secrets
 
@@ -297,6 +315,10 @@ class SqlAlchemyUnitOfWork(
                 results=SqlResultStoreRepository(session),
                 artifacts=SqlArtifactRepository(session),
                 node_secrets=SqlNodeSecretRepository(session),
+                credentials=SqlCredentialRepository(session),
+                node_credential_selections=SqlNodeCredentialSelectionRepository(
+                    session
+                ),
                 agent_keys=SqlAgentKeyRepository(session),
                 agent_conversations=SqlAgentConversationRepository(session),
                 agent_turns=SqlAgentTurnRepository(session),

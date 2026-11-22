@@ -89,6 +89,8 @@ class NodeSecrets:
         repr=False,
     )
 
+    actor_user_id: UUID | None = None
+
     async def require(self, name: str) -> SecretStr:
         """Read one secret this node declared.
 
@@ -129,6 +131,7 @@ class NodeSecrets:
                 node_id=self.node_id,
                 name=name,
                 dependencies=dependencies,
+                actor_user_id=self.actor_user_id,
             )
         except Exception as exc:
             raise UserFacingNodeError(
@@ -179,6 +182,8 @@ class NodeExecutionContext:
         repr=False,
         compare=False,
     )
+
+    actor_user_id: UUID | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "call_path", tuple(self.call_path))
@@ -254,6 +259,7 @@ def bind_node_secrets(
             graph_id=context.graph_id,
             node_id=context.node_id,
             secret_inputs=secret_inputs,
+            actor_user_id=context.actor_user_id,
         ),
     )
 

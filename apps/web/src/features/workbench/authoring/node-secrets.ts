@@ -1,10 +1,20 @@
-import type { NodeSecretStatus, NodeSpec, SavedGraphNode } from "@/lib/api";
+import type {
+  Credential,
+  CredentialVerification,
+  NodeSecretStatus,
+  NodeSpec,
+  PersonalCredentialSelection,
+  SavedGraphNode,
+  SharedCredentialBinding,
+} from "@/lib/api";
 
 export interface WorkflowNodeSecretInput {
   name: string;
   title: string;
   description?: string;
   configDependencies: readonly string[];
+  providerKind?: string;
+  supportsVerification?: boolean;
 }
 
 export type WorkflowNodeSecretState =
@@ -20,11 +30,33 @@ export type WorkflowNodeSecretState =
 export interface WorkflowNodeSecretStatus {
   state: WorkflowNodeSecretState;
   message?: string;
+  remote?: NodeSecretStatus;
 }
 
 export type WorkflowNodeSecretStatuses = Readonly<
   Record<string, WorkflowNodeSecretStatus>
 >;
+
+export type NodeCredentialSelection =
+  | {
+      scope: "shared";
+      binding: Omit<SharedCredentialBinding, "expected_head_sequence">;
+    }
+  | { scope: "personal"; binding: PersonalCredentialSelection };
+
+export interface NodeCredentialController {
+  credentials: readonly Credential[];
+  refreshCredentials: () => Promise<void>;
+  selectCredential: (
+    nodeId: string,
+    name: string,
+    selection: NodeCredentialSelection,
+  ) => Promise<void>;
+  verifyCredential: (
+    nodeId: string,
+    name: string,
+  ) => Promise<CredentialVerification>;
+}
 
 export type RemoteNodeSecretStatus = NodeSecretStatus;
 
@@ -81,6 +113,12 @@ export function nodeSecretInputs(spec: NodeSpec): WorkflowNodeSecretInput[] {
         description:
           typeof input.description === "string" ? input.description : undefined,
         configDependencies: input.config_dependencies,
+        ...(typeof input.provider_kind === "string"
+          ? { providerKind: input.provider_kind }
+          : {}),
+        ...(typeof input.supports_verification === "boolean"
+          ? { supportsVerification: input.supports_verification }
+          : {}),
       },
     ];
   });
@@ -141,6 +179,9 @@ export function reconciledNodeSecretStatuses(
         state: remoteByName.get(input.name)?.configured
           ? "configured"
           : "unconfigured",
+        ...(remoteByName.get(input.name)?.effective_source
+          ? { remote: remoteByName.get(input.name) }
+          : {}),
       } satisfies WorkflowNodeSecretStatus,
     ]),
   );

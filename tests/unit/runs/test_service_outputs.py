@@ -190,6 +190,7 @@ class RecordingNodeSecrets:
         node_id: str | None,
         name: str,
         dependencies: Mapping[str, JsonValue],
+        actor_user_id: UUID | None = None,
     ) -> SecretStr:
         del workspace_id, project_id, graph_id, name, dependencies
         key = self.keys.get(str(node_id))

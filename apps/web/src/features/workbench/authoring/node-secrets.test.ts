@@ -29,6 +29,8 @@ function secretNodeSpec(): NodeSpec {
         title: "API key",
         description: "OpenAI-compatible bearer credential.",
         config_dependencies: ["base_url"],
+        provider_kind: "openai_compatible",
+        supports_verification: true,
       },
     ],
   };
@@ -42,6 +44,8 @@ describe("write-only node secret metadata", () => {
         title: "API key",
         description: "OpenAI-compatible bearer credential.",
         configDependencies: ["base_url"],
+        providerKind: "openai_compatible",
+        supportsVerification: true,
       },
     ]);
   });
@@ -52,13 +56,21 @@ describe("write-only node secret metadata", () => {
     expect(reconciledNodeSecretStatuses(spec, "llm-1", [])).toEqual({
       api_key: { state: "unconfigured" },
     });
-    expect(
-      reconciledNodeSecretStatuses(spec, "llm-1", [
-        { node_id: "other", name: "api_key", configured: true },
-        { node_id: "llm-1", name: "api_key", configured: true },
-      ]),
-    ).toEqual({
-      api_key: { state: "configured" },
+    const shared = {
+      node_id: "llm-1",
+      name: "api_key",
+      configured: true,
+      deployment_default_available: false,
+      effective_source: "shared_credential",
+      effective_credential_id: "shared-key",
+      personal_override_mode: "none",
+      provider_kind: "openai_compatible",
+      shared_binding_mode: "credential",
+      shared_credential_missing: false,
+      supports_verification: true,
+    } as const;
+    expect(reconciledNodeSecretStatuses(spec, "llm-1", [shared])).toEqual({
+      api_key: { state: "configured", remote: shared },
     });
   });
 
@@ -173,6 +185,8 @@ describe("write-only node secret metadata", () => {
           name: "organization_key",
           title: "Organization key",
           config_dependencies: ["organization"],
+          provider_kind: "openai_compatible",
+          supports_verification: true,
         },
       ],
     };

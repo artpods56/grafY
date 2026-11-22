@@ -244,6 +244,22 @@ holds no outputs. On API restart unfinished Runs are marked `interrupted` and st
 results stay fresh.
 _Avoid_: execution, workflow run
 
+### Provider credential
+
+An encrypted, write-only provider key with a label, provider kind, and verification
+status. A Personal credential belongs to a user. A Shared credential belongs to one
+Workspace, and only members with `manage_secrets` can create, rotate, verify, or
+delete it in the vault. A node's Graph binding can select a Shared credential,
+require a Personal credential, or select a deployment default. A user's selection
+takes precedence for Runs that user starts. Selections live outside the Graph
+document and its checkpoints.
+
+A Shared credential's Graph binding contributes its revision to the Workspace's
+fingerprints. A binding that requires Personal credentials contributes the binding
+mode. Personal selections and Personal credential identities stay out of shared
+fingerprints. Runs still share stored results and in-flight work at the Workspace
+fingerprint.
+
 ### Library artifact
 
 The artifact a Workspace owns, shown in the Library drawer. There is one Library
@@ -668,7 +684,7 @@ scalar MAP items run concurrently inside the node executor, bounded by
 `GRAFY_MAP_MAX_CONCURRENCY` (default `4`), and aggregation stays aligned to source
 position. `NodeRuntime` executes and persists exactly one scalar node invocation; it
 does not schedule graphs or implement collection mapping. Grafy remains the source of
-truth for artifacts, stored results and encrypted node secrets; decrypted secrets and
+truth for artifacts, stored results and encrypted provider credentials; decrypted secrets and
 live runtime collaborators never leave the process. In-flight state lives in the single
 API owner; the current design defines no multi-worker or remote scheduling.
 

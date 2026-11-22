@@ -53,6 +53,14 @@ BASELINE_TABLES = {
 }
 
 
+VAULT_TABLES = {
+    "credentials",
+    "node_shared_credential_bindings",
+    "node_user_credential_overrides",
+}
+HEAD_TABLES = BASELINE_TABLES | VAULT_TABLES
+
+
 def _alembic_config() -> Config:
     return Config(REPOSITORY_ROOT / "alembic.ini")
 
@@ -85,19 +93,19 @@ async def _postgresql_migration_state(
         await engine.dispose()
 
 
-def test_migration_directory_holds_one_baseline_revision() -> None:
-    """ADR 0020 keeps no rows, so there is no revision history to walk."""
-
+def test_credentials_revision_follows_baseline() -> None:
     files = sorted(path.name for path in MIGRATION_DIRECTORY.glob("*.py"))
-    assert files == ["0001_baseline.py"]
+    assert files == ["0001_baseline.py", "0002_credentials_and_selections.py"]
 
-    config = _alembic_config()
-    script = ScriptDirectory.from_config(config)
-    heads = script.get_heads()
-    assert heads == ["0001_baseline"]
+    script = ScriptDirectory.from_config(_alembic_config())
+    assert script.get_heads() == ["0002_credentials_and_selections"]
     revisions = list(script.walk_revisions())
-    assert [revision.revision for revision in revisions] == ["0001_baseline"]
-    assert revisions[0].down_revision is None
+    assert [revision.revision for revision in revisions] == [
+        "0002_credentials_and_selections",
+        "0001_baseline",
+    ]
+    assert revisions[0].down_revision == "0001_baseline"
+    assert revisions[1].down_revision is None
 
 
 def test_fresh_postgresql_database_upgrades_to_head(
@@ -129,7 +137,7 @@ def test_fresh_postgresql_database_upgrades_to_head(
         heads = ScriptDirectory.from_config(config).get_heads()
         assert len(heads) == 1
         assert revision == heads[0]
-        assert set(tables) == BASELINE_TABLES | {"alembic_version"}
+        assert set(tables) == HEAD_TABLES | {"alembic_version"}
         assert workspace_count == 0
         command.check(config)
 
@@ -143,7 +151,7 @@ def test_fresh_postgresql_database_upgrades_to_head(
 
         command.upgrade(config, "head")
         tables, _, _ = asyncio.run(_postgresql_migration_state(database_url))
-        assert set(tables) == BASELINE_TABLES | {"alembic_version"}
+        assert set(tables) == HEAD_TABLES | {"alembic_version"}
         command.check(config)
     finally:
         get_settings.cache_clear()
@@ -162,9 +170,13 @@ def test_baseline_upgrades_downgrades_and_has_no_schema_drift(
         command.upgrade(config, "head")
         with create_engine(f"sqlite:///{database_path}").connect() as connection:
             connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-            assert _table_names(connection) == BASELINE_TABLES | {"alembic_version"}
+            assert _table_names(connection) == HEAD_TABLES | {"alembic_version"}
             assert connection.execute(text("PRAGMA foreign_key_check")).fetchall() == []
         command.check(config)
+
+        command.downgrade(config, "0001_baseline")
+        with create_engine(f"sqlite:///{database_path}").connect() as connection:
+            assert _table_names(connection) == BASELINE_TABLES | {"alembic_version"}
 
         command.downgrade(config, "base")
         with create_engine(f"sqlite:///{database_path}").connect() as connection:
@@ -173,7 +185,7 @@ def test_baseline_upgrades_downgrades_and_has_no_schema_drift(
         command.upgrade(config, "head")
         with create_engine(f"sqlite:///{database_path}").connect() as connection:
             connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-            assert _table_names(connection) == BASELINE_TABLES | {"alembic_version"}
+            assert _table_names(connection) == HEAD_TABLES | {"alembic_version"}
         command.check(config)
     finally:
         get_settings.cache_clear()

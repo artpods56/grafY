@@ -1,5 +1,5 @@
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from inspect import Parameter, getdoc, iscoroutinefunction, signature
@@ -14,6 +14,14 @@ from typing import (
     override,
 )
 
+from httpx import AsyncClient
+from pydantic import SecretStr
+
+from grafy_core.domain.credentials import (
+    CredentialVerificationResult,
+    PROVIDER_KIND_PATTERN,
+)
+from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.artifacts import (
     ArtifactFieldProjection,
     ArtifactTypeKey,
@@ -40,6 +48,7 @@ from grafy_core.nodes import (
     derive_output_contract,
     validate_service_node,
 )
+from grafy_core.node_ports import ServiceContractKey
 from grafy_core.service_contracts import ServiceContract, marked_contract
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.node_secrets import (
@@ -83,14 +92,24 @@ class PluginRuntimeContext:
     provider_cache_ttl_seconds: int = 30 * 24 * 60 * 60
 
 
+type CredentialVerifier = Callable[
+    [SecretStr, Mapping[str, JsonValue], AsyncClient],
+    Awaitable[CredentialVerificationResult],
+]
+
+
 @dataclass(frozen=True, slots=True)
 class NodeSecretInput:
     name: str
     title: str
     config_dependencies: tuple[str, ...] = ()
     description: str | None = None
+    provider_kind: str = "generic"
+    verifier: CredentialVerifier | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
+        if re.fullmatch(PROVIDER_KIND_PATTERN, self.provider_kind) is None:
+            raise ValueError("Invalid credential provider kind")
         if re.fullmatch(r"[a-z][a-z0-9_]*", self.name) is None:
             raise ValueError(
                 "Node secret input name must start with a lowercase letter and "
@@ -782,9 +801,7 @@ class PluginRegistry:
                     f"{dependency.key.id}@{dependency.key.schema_version}"
                 )
 
-        service_contracts_by_key: dict[
-            tuple[str, int], tuple[ServiceContract, str]
-        ] = {
+        service_contracts_by_key: dict[tuple[str, int], tuple[ServiceContract, str]] = {
             (contract.id, contract.version): (contract, plugin_slug)
             for plugin_slug, declaration in self._declarations.items()
             for contract in declaration.service_contracts
@@ -829,7 +846,7 @@ class PluginRegistry:
                 for port in registration.node_class.output_contract.ports.values()
                 if port.kind != "service" and (produces := port.produces) is not None
             )
-            service_keys = (
+            service_keys: set[ServiceContractKey] = (
                 set()
                 if declaration is None
                 else {

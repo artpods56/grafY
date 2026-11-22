@@ -410,6 +410,7 @@ function WorkbenchBody({
   } = useCanvasGridSettings();
   const { workspace } = useWorkspaceContext();
   const canCreateProject = workspace.capabilities.includes("create_project");
+  const canManageSecrets = workspace.capabilities.includes("manage_secrets");
   const canEditProject = workspace.capabilities.includes("edit_project");
   const canStartRun = workspace.capabilities.includes("start_run");
   const canCancelRun = workspace.capabilities.includes("cancel_run");
@@ -626,6 +627,10 @@ function WorkbenchBody({
   const artifactViewerActivityRevisionRef = React.useRef(0);
   const {
     nodeSecretStatuses,
+    credentials,
+    refreshCredentials,
+    selectCredential,
+    verifyCredential,
     refreshNodeSecretStatuses,
     applyConfiguredNodeSecret,
     removeConfiguredNodeSecret,
@@ -2805,6 +2810,16 @@ function WorkbenchBody({
             configSections,
             secrets: {
               statuses: nodeSecretStatuses,
+              vault: {
+                workspaceId,
+                canManageShared: canManageSecrets,
+                canEditShared: canEditProject,
+                canSelectPersonal: canStartRun,
+                credentials,
+                refreshCredentials,
+                selectCredential,
+                verifyCredential,
+              },
               savedNodes: activeGraph?.nodes ?? null,
               scope: `${openGraphId ?? "unsaved"}:${activeGraph?.roomEpoch ?? "none"}`,
             },
@@ -2823,7 +2838,13 @@ function WorkbenchBody({
       artifactOriginCanvasEdges,
       artifactViewerCanvasEdges,
       authoredDocument,
+      canEditProject,
+      canManageSecrets,
       canStartRun,
+      credentials,
+      refreshCredentials,
+      selectCredential,
+      verifyCredential,
       canvasEdges,
       cellImageNaturalSizes,
       collapsedAppendices,
@@ -3520,8 +3541,12 @@ function WorkbenchBody({
               }}
               onOperatorConfigChange={updateConfig}
               onOperatorToggleConfigSection={setConfigSection}
-              onOperatorApplySecret={applyConfiguredNodeSecret}
-              onOperatorRemoveSecret={removeConfiguredNodeSecret}
+              onOperatorApplySecret={
+                canManageSecrets ? applyConfiguredNodeSecret : undefined
+              }
+              onOperatorRemoveSecret={
+                canManageSecrets ? removeConfiguredNodeSecret : undefined
+              }
               onOperatorAddPlug={addNodeInputPlug}
               onOperatorRemovePlug={(cardId, portName, plugId) =>
                 removeNodeInputPlug(

@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from uuid import UUID
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -57,8 +58,9 @@ class ComputationPlan:
     # The provider instances this computation builds in-process. Empty for a
     # computation that reads only stored artifacts. Not mutated.
     service_sources: Mapping[InstanceKey, ExpandedInstance] = field(
-        default_factory=dict
+        default_factory=dict[InstanceKey, ExpandedInstance]
     )
+    actor_user_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,8 +77,9 @@ class ComputationRequest:
     instance: ExpandedInstance
     upstream_fingerprints: Mapping[InstanceKey, str]
     service_sources: Mapping[InstanceKey, ExpandedInstance] = field(
-        default_factory=dict
+        default_factory=dict[InstanceKey, ExpandedInstance]
     )
+    actor_user_id: UUID | None = None
 
 
 type ComputationRunner = Callable[
@@ -371,6 +374,7 @@ class _Scheduler:
             instance=record.plan.representative,
             upstream_fingerprints=record.plan.upstream_fingerprints,
             service_sources=record.plan.service_sources,
+            actor_user_id=record.plan.actor_user_id,
         )
         try:
             outputs = await self._runner(request)

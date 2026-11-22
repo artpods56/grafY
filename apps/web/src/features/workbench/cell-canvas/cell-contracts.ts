@@ -1,4 +1,11 @@
 import type {
+  Credential,
+  CredentialVerification,
+  NodeCredentialStatus,
+} from "@/lib/api";
+import type { CredentialProvider } from "@/features/credentials/CredentialForm";
+import type { NodeCredentialSelection } from "../authoring/node-secrets";
+import type {
   ConnectedInputPortMap,
   SchemaField,
 } from "../config-ui/config-schema";
@@ -233,6 +240,18 @@ export interface CellSecretInputSpec {
    * it depends on), so an editor holding a half-typed key starts over.
    */
   revision: string;
+  vault?: {
+    workspaceId: string;
+    canManageShared: boolean;
+    canEditShared: boolean;
+    canSelectPersonal: boolean;
+    credentials: readonly Credential[];
+    status: NodeCredentialStatus;
+    provider: CredentialProvider;
+    select: (selection: NodeCredentialSelection) => Promise<void>;
+    verify: () => Promise<CredentialVerification>;
+    refresh: () => Promise<void>;
+  };
 }
 
 export interface CellInstancePlugItem {

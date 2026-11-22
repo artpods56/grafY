@@ -243,7 +243,7 @@ export interface ActiveRunSummary {
 export type NodeSecretStatus = Schemas["NodeSecretStatusResponse"];
 export type ProjectNodeSecrets = Schemas["ProjectNodeSecretsResponse"];
 export type ApplyNodeSecretRequest = Schemas["ConfigureNodeSecretRequest"];
-export type AppliedNodeSecret = NodeSecretStatus;
+export type AppliedNodeSecret = Schemas["ConfigureNodeSecretResponse"];
 
 // --- Catalog ---------------------------------------------------------------
 

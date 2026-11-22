@@ -7,9 +7,11 @@ import { KeyRound, LoaderCircle } from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { TextInput } from "@/components/ui/field";
+import { nodeCredentialTone } from "@/features/credentials/credential-display";
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
+import { CellVaultCredential } from "./CellVaultCredential";
 import type { CellSecretInputSpec } from "../cell-contracts";
 
 /**
@@ -46,7 +48,7 @@ const s = stylex.create({
   positioner: { zIndex: 90 },
   popup: {
     boxSizing: "border-box",
-    width: "min(280px, calc(100vw - 24px))",
+    width: "min(312px, calc(100vw - 24px))",
     maxHeight: "calc(100dvh - 32px)",
     display: "grid",
     gap: "10px",
@@ -72,6 +74,28 @@ const s = stylex.create({
     lineHeight: 1.4,
   },
   inputs: { display: "grid", gap: "10px" },
+  /** Each vault key after the first starts under a hairline. */
+  vaultSlot: {
+    paddingTop: {
+      default: "10px",
+      ":first-child": "0px",
+    },
+    borderTopWidth: { default: "1px", ":first-child": "0px" },
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+  },
+  legacy: {
+    color: tokens.colorSubtle,
+    fontSize: "9px",
+  },
+  legacySummary: {
+    cursor: "pointer",
+    color: {
+      default: tokens.colorMuted,
+      ":hover": tokens.colorText,
+    },
+    fontWeight: 600,
+  },
   input: {
     display: "grid",
     gap: "4px",
@@ -167,6 +191,12 @@ export function secretInputBadge(input: CellSecretInputSpec): {
 } {
   if (input.state === "stale") return { label: "Out of date", tone: "needed" };
   if (!input.ready) return { label: "Save node first", tone: "needed" };
+  if (
+    input.vault &&
+    (input.state === "configured" || input.state === "unconfigured")
+  ) {
+    return vaultBadge(input.vault.status);
+  }
   switch (input.state) {
     case "configured":
       return { label: "Configured", tone: "configured" };
@@ -185,6 +215,39 @@ export function secretInputBadge(input: CellSecretInputSpec): {
   }
 }
 
+/**
+ * A vault key's badge follows the key that runs the node, not only whether one
+ * is set: a key the provider refused or a shared key that is gone is an error,
+ * one that could not be reached needs attention.
+ */
+function vaultBadge(
+  status: NonNullable<CellSecretInputSpec["vault"]>["status"],
+): {
+  label: string;
+  tone: BadgeTone;
+} {
+  const tone = nodeCredentialTone(status);
+  if (status.shared_credential_missing) {
+    return { label: "Shared key missing", tone };
+  }
+  switch (status.effective_verification_status) {
+    case "invalid":
+      return { label: "Key invalid", tone };
+    case "egress_blocked":
+      return { label: "Blocked", tone };
+    case "unreachable":
+      if (status.configured) return { label: "Unreachable", tone };
+  }
+  if (tone === "needed") return { label: "Not set", tone };
+  return {
+    label:
+      status.effective_verification_status === "valid"
+        ? "Verified"
+        : "Configured",
+    tone,
+  };
+}
+
 /** The worst state wins: one key that needs attention is the card's state. */
 export function credentialsTone(
   inputs: readonly CellSecretInputSpec[],
@@ -200,7 +263,7 @@ export function credentialsTone(
 
 const TONE_WORDS: Record<CredentialsTone, string> = {
   configured: "configured",
-  needed: "key needed",
+  needed: "needs attention",
   error: "key error",
   pending: "status unavailable",
 };
@@ -397,19 +460,45 @@ export function CellCredentialsPopover({
             <header {...stylex.props(s.header)}>
               <h3 {...stylex.props(s.title)}>Credentials</h3>
               <p {...stylex.props(s.subtitle)}>
-                Saved write-only for this node. A saved key cannot be read back.
+                {inputs.every((input) => !input.vault)
+                  ? "Saved write-only for this node. A saved key cannot be read back."
+                  : "Choose whose key runs this node. A saved key is never shown again."}
               </p>
             </header>
             <div {...stylex.props(s.inputs)}>
-              {inputs.map((input) => (
-                <SecretInputRow
-                  key={`${input.name}:${input.revision}`}
-                  cardId={cardId}
-                  input={input}
-                  onApply={onApply}
-                  onRemove={onRemove}
-                />
-              ))}
+              {inputs.map((input) =>
+                input.vault ? (
+                  <div
+                    key={`${input.name}:${input.revision}`}
+                    {...stylex.props(s.vaultSlot)}
+                  >
+                    <CellVaultCredential input={input} />
+                    {input.vault.canManageShared &&
+                      input.vault.status.effective_source ===
+                        "inline_legacy" && (
+                        <details {...stylex.props(s.legacy)}>
+                          <summary {...stylex.props(s.legacySummary)}>
+                            Manage inline key
+                          </summary>
+                          <SecretInputRow
+                            cardId={cardId}
+                            input={input}
+                            onApply={onApply}
+                            onRemove={onRemove}
+                          />
+                        </details>
+                      )}
+                  </div>
+                ) : (
+                  <SecretInputRow
+                    key={`${input.name}:${input.revision}`}
+                    cardId={cardId}
+                    input={input}
+                    onApply={onApply}
+                    onRemove={onRemove}
+                  />
+                ),
+              )}
             </div>
           </Popover.Popup>
         </Popover.Positioner>

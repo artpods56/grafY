@@ -732,7 +732,13 @@ describe("asking for a Run", () => {
     const setRunError = vi.fn();
     const spec = nodeSpec("llm.operator", {
       secretInputs: [
-        { name: "api_key", config_dependencies: ["model"], title: "API key" },
+        {
+          name: "api_key",
+          config_dependencies: ["model"],
+          title: "API key",
+          provider_kind: "generic",
+          supports_verification: false,
+        },
       ],
     });
     const canvas = canvasState([workflowNode("a", { spec })]);
@@ -763,7 +769,13 @@ describe("asking for a Run", () => {
     const setRunError = vi.fn();
     const spec = nodeSpec("llm.operator", {
       secretInputs: [
-        { name: "api_key", config_dependencies: ["model"], title: "API key" },
+        {
+          name: "api_key",
+          config_dependencies: ["model"],
+          title: "API key",
+          provider_kind: "generic",
+          supports_verification: false,
+        },
       ],
     });
     const canvas = canvasState([
@@ -802,7 +814,13 @@ describe("asking for a Run", () => {
     const setRunError = vi.fn();
     const spec = nodeSpec("llm.operator", {
       secretInputs: [
-        { name: "api_key", config_dependencies: ["model"], title: "API key" },
+        {
+          name: "api_key",
+          config_dependencies: ["model"],
+          title: "API key",
+          provider_kind: "generic",
+          supports_verification: false,
+        },
       ],
     });
     const canvas = canvasState([
