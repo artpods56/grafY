@@ -15,7 +15,7 @@ import { schemaFields } from "../config-ui/config-schema";
 import { DEFAULT_NODE_PLACEMENT_HEIGHT } from "../authoring/node-layout";
 import { artifactTypeColor } from "../config-ui/nodes.css";
 import type { ArtifactTypeCatalog } from "../artifacts/artifact-type-label";
-import { portArtifactType } from "../authoring/types";
+import { portArtifactType, type PortMeta } from "../authoring/types";
 import { connectionRouteTitle } from "../authoring/graph-authoring";
 import {
   catalogNodeKey,
@@ -34,11 +34,21 @@ import {
 
 export type ContextualDiscoveryDirection = "downstream" | "upstream";
 
+export type ContextualDiscoveryEndpoint =
+  | { readonly kind: "artifact-card" }
+  | {
+      readonly kind: "port";
+      readonly portName: string;
+      readonly plugId?: string;
+      readonly direction: "input" | "output";
+      readonly meta: PortMeta;
+    };
+
 export interface ContextualDiscoverySession {
   graphId: string | null;
-  /** The port the drag started from, always on an existing node. */
+  /** The port or artifact card the drag started from, always on an existing canvas card. */
   sourceNodeId: string;
-  sourceHandle: string;
+  sourceEndpoint: ContextualDiscoveryEndpoint;
   sourcePortTitle: string;
   direction: ContextualDiscoveryDirection;
   clientAnchor: { x: number; y: number };
@@ -340,7 +350,7 @@ export function CellContextualNodeDiscovery({
     ? JSON.stringify([
         session.graphId,
         session.sourceNodeId,
-        session.sourceHandle,
+        session.sourceEndpoint,
         session.direction,
         session.flowPosition.x,
         session.flowPosition.y,

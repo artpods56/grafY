@@ -3,7 +3,7 @@ import type { SavedGraphEdge } from "@/lib/api";
 /** How an edge gathers its upstream: one value, or one per item. */
 export type EdgeCollectionMode = SavedGraphEdge["collection_mode"];
 
-import type { ConnectionRoute } from "./handles";
+import type { ConnectionRoute } from "./connection-routes";
 import type {
   WorkflowEdgeData,
   WorkflowEdgeRoute,

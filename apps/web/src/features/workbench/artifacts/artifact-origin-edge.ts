@@ -1,22 +1,22 @@
-import type { CanvasEdgeBase } from "../authoring/types";
 import type { SavedGraphOrigin } from "@/lib/api";
 
 export const ARTIFACT_ORIGIN_EDGE_TYPE = "grafyArtifactOriginEdge";
 
 type OriginCollectionMode = SavedGraphOrigin["collection_mode"];
 
-interface ArtifactOriginEdgeData extends Record<string, unknown> {
+interface ArtifactOriginEdgeData {
   originId: string;
   collectionMode?: OriginCollectionMode;
   allowedCollectionModes?: readonly OriginCollectionMode[];
-  onDisconnect?: (originId: string) => void;
-  onCollectionModeChange?: (
-    originId: string,
-    collectionMode: OriginCollectionMode,
-  ) => void;
 }
 
-export type ArtifactOriginEdge = CanvasEdgeBase<
-  ArtifactOriginEdgeData,
-  typeof ARTIFACT_ORIGIN_EDGE_TYPE
-> & { data: ArtifactOriginEdgeData };
+export interface ArtifactOriginEdge {
+  id: string;
+  type?: typeof ARTIFACT_ORIGIN_EDGE_TYPE;
+  source: string;
+  target: string;
+  targetPort: string;
+  targetPlug?: string | null;
+  selected?: boolean;
+  data: ArtifactOriginEdgeData;
+}

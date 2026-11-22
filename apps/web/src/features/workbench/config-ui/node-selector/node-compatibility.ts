@@ -1,10 +1,9 @@
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 
 import {
-  connectionRoutesFor,
-  encodeHandleId,
+  connectionRoutesForPorts,
   type ConnectionRoute,
-} from "../../authoring/handles";
+} from "../../authoring/connection-routes";
 import {
   acceptedPortShapes,
   portHasInstancePlugs,
@@ -63,11 +62,9 @@ function compatiblePortPairs(
   for (const source of sourceSpec.outputs) {
     for (const target of targetSpec.inputs) {
       if (!shapesAreCompatible(source, target)) continue;
-      const routes = connectionRoutesFor(
-        {
-          sourceHandle: encodeHandleId(portMetaForPort(source)),
-          targetHandle: encodeHandleId(portMetaForPort(target)),
-        },
+      const routes = connectionRoutesForPorts(
+        portMetaForPort(source),
+        portMetaForPort(target),
         registry.artifact_types,
         registry.artifact_conversions,
       );

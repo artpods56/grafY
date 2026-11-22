@@ -6,15 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
-import {
-  artifactCardOutputPort,
-  ARTIFACT_CARD_OUTPUT_HANDLE,
-} from "../artifacts/artifact-connections";
+import { artifactCardOutputPort } from "../artifacts/artifact-connections";
 import {
   artifactDropCommands,
   artifactDropPayload,
 } from "../artifacts/artifact-drop";
-import { encodeHandleId } from "../authoring/handles";
 import { portMetaForPort } from "../authoring/types";
 import {
   downstreamCandidatesFromOutput,
@@ -99,16 +95,21 @@ function registry(): NodeRegistry {
 
 function sessionFor(registryValue: NodeRegistry): ContextualDiscoverySession {
   const source = port("text", "output");
-  const sourceHandle = encodeHandleId(portMetaForPort(source));
+  const sourceMeta = portMetaForPort(source, source.shape);
   const candidates = downstreamCandidatesFromOutput({
     sourcePort: source as Port & { readonly direction: "output" },
-    sourceHandle,
+    sourceMeta,
     registry: registryValue,
     nodes: registryValue.nodes,
   });
   return {
     sourceNodeId: "source-1",
-    sourceHandle,
+    sourceEndpoint: {
+      kind: "port",
+      portName: source.name,
+      direction: "output",
+      meta: sourceMeta,
+    },
     sourcePortTitle: "Text",
     direction: "downstream",
     clientAnchor: { x: 120, y: 140 },
@@ -122,16 +123,21 @@ function upstreamSessionFor(
   registryValue: NodeRegistry,
 ): ContextualDiscoverySession {
   const target = port("text", "input");
-  const targetHandle = encodeHandleId(portMetaForPort(target));
+  const targetMeta = portMetaForPort(target, target.shape);
   const candidates = upstreamCandidatesFromInput({
     targetPort: target as Port & { readonly direction: "input" },
-    targetHandle,
+    targetMeta,
     registry: registryValue,
     nodes: registryValue.nodes,
   });
   return {
     sourceNodeId: "source-1",
-    sourceHandle: targetHandle,
+    sourceEndpoint: {
+      kind: "port",
+      portName: target.name,
+      direction: "input",
+      meta: targetMeta,
+    },
     sourcePortTitle: "Text",
     direction: "upstream",
     clientAnchor: { x: 120, y: 140 },
@@ -225,7 +231,7 @@ describe("ContextualNodeDiscovery", () => {
     });
     const candidates = downstreamCandidatesFromOutput({
       sourcePort: source,
-      sourceHandle: encodeHandleId(portMetaForPort(source, source.shape)),
+      sourceMeta: portMetaForPort(source, source.shape),
       registry: catalog,
       nodes: catalog.nodes,
     });
@@ -233,7 +239,7 @@ describe("ContextualNodeDiscovery", () => {
     const { container } = await renderDiscovery({
       session: {
         ...sessionFor(catalog),
-        sourceHandle: ARTIFACT_CARD_OUTPUT_HANDLE,
+        sourceEndpoint: { kind: "artifact-card" },
         candidates,
       },
       onConfirm,

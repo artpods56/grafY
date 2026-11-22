@@ -7,11 +7,10 @@ import type {
 } from "@/lib/api";
 
 import {
-  connectionRoutesFor,
-  encodeHandleId,
+  connectionRoutesForPorts,
   type ConnectionRoute,
   type HandleFeedIntent,
-} from "./handles";
+} from "./connection-routes";
 import { artifactTypeKey } from "../artifacts/artifact-type-key";
 import { schemaFields } from "../config-ui/config-schema";
 import {
@@ -20,6 +19,7 @@ import {
   portArtifactTypeVariable,
   portHasInstancePlugs,
   portMetaForPort,
+  type PortMeta,
 } from "./types";
 import { routesForHandleFeed } from "./connection-feeds";
 
@@ -424,20 +424,13 @@ function collectionModeForPorts(
 
 const DISCOVERY_INSTANCE_PLUG_ID = "discovery-instance-plug";
 
-function targetHandleForRoute(
-  target: Port,
-  plugId: string | undefined,
-): string {
-  return encodeHandleId(portMetaForPort(target, target.shape, plugId));
-}
-
 /**
  * Downstream nodes with at least one valid typed route from an exact source
- * output handle. Uses existing connection route calculation.
+ * output port. Uses existing connection route calculation.
  */
 export function downstreamCandidatesFromOutput(options: {
   sourcePort: Port & { readonly direction: "output" };
-  sourceHandle: string;
+  sourceMeta: PortMeta;
   sourceFeed?: HandleFeedIntent | null;
   registry: NodeRegistry;
   nodes: readonly NodeSpec[];
@@ -445,7 +438,7 @@ export function downstreamCandidatesFromOutput(options: {
 }): ContextualCandidate[] {
   const {
     sourcePort,
-    sourceHandle,
+    sourceMeta,
     sourceFeed = null,
     registry,
     nodes,
@@ -470,14 +463,13 @@ export function downstreamCandidatesFromOutput(options: {
       // Optional instance-plug inputs get no initial plug on a newly created node.
       if (usesInstancePlug && !input.required) continue;
 
-      const allRoutes = connectionRoutesFor(
-        {
-          sourceHandle,
-          targetHandle: targetHandleForRoute(
-            input,
-            usesInstancePlug ? DISCOVERY_INSTANCE_PLUG_ID : undefined,
-          ),
-        },
+      const allRoutes = connectionRoutesForPorts(
+        sourceMeta,
+        portMetaForPort(
+          input,
+          input.shape,
+          usesInstancePlug ? DISCOVERY_INSTANCE_PLUG_ID : undefined,
+        ),
         artifactTypes,
         conversions,
       );
@@ -502,16 +494,16 @@ export function downstreamCandidatesFromOutput(options: {
 
 /**
  * Upstream nodes with at least one valid typed route into an exact input
- * handle. Mirrors {@link downstreamCandidatesFromOutput} for the reverse
+ * port. Mirrors {@link downstreamCandidatesFromOutput} for the reverse
  * direction: drag from an input port and drop on the canvas.
  */
 export function upstreamCandidatesFromInput(options: {
   targetPort: Port & { readonly direction: "input" };
-  targetHandle: string;
+  targetMeta: PortMeta;
   registry: NodeRegistry;
   nodes: readonly NodeSpec[];
 }): ContextualCandidate[] {
-  const { targetPort, targetHandle, registry, nodes } = options;
+  const { targetPort, targetMeta, registry, nodes } = options;
   const artifactTypes = registry.artifact_types;
   const conversions = registry.artifact_conversions;
   const candidates: ContextualCandidate[] = [];
@@ -528,11 +520,9 @@ export function upstreamCandidatesFromInput(options: {
       const collectionMode = collectionModeForPorts(output, targetPort);
       if (!collectionMode) continue;
 
-      const allRoutes = connectionRoutesFor(
-        {
-          sourceHandle: encodeHandleId(portMetaForPort(output)),
-          targetHandle,
-        },
+      const allRoutes = connectionRoutesForPorts(
+        portMetaForPort(output),
+        targetMeta,
         artifactTypes,
         conversions,
       );
@@ -583,13 +573,9 @@ function portsCanConnect(
   if (portHasInstancePlugs(target) && !target.required) return false;
   const plugId = portHasInstancePlugs(target) ? "discovery-plug" : undefined;
   return (
-    connectionRoutesFor(
-      {
-        sourceHandle: encodeHandleId(portMetaForPort(source)),
-        targetHandle: encodeHandleId(
-          portMetaForPort(target, target.shape, plugId),
-        ),
-      },
+    connectionRoutesForPorts(
+      portMetaForPort(source),
+      portMetaForPort(target, target.shape, plugId),
       registry.artifact_types,
       registry.artifact_conversions,
     ).length > 0

@@ -163,9 +163,7 @@ function inspectorTitle(pipe: CellInspectedPipe): string {
 function inspectorSubtitle(pipe: CellInspectedPipe): string | null {
   switch (pipe.kind) {
     case "workflow":
-      return pipe.edge.data?.sourcePortName
-        ? `From ${pipe.edge.data.sourcePortName}`
-        : null;
+      return pipe.edge.sourcePort ? `From ${pipe.edge.sourcePort}` : null;
     case "viewer":
       return pipe.edge.data?.sourcePortName
         ? `From ${pipe.edge.data.sourcePortName}`
@@ -356,7 +354,7 @@ function WorkflowPipeInspectorBody({
   const showCollectionModes =
     (edge.data?.allowedCollectionModes?.length ?? 0) > 1;
   const choices = feedChoicesFromRouteOptions(
-    edge.data?.sourcePortName ?? "",
+    edge.sourcePort,
     edge.data?.routeOptions ?? [],
   );
   const showFeedChoices =

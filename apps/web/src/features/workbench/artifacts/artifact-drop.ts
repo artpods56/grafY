@@ -6,10 +6,7 @@ import type {
 } from "@/lib/api";
 import { artifactCardValue, cardArtifactRefs } from "./artifact-card";
 import { artifactTypeKey } from "./artifact-type-key";
-import {
-  decodeHandleId,
-  shortestConversionPathsToAny,
-} from "../authoring/handles";
+import { shortestConversionPathsToAny } from "../authoring/connection-routes";
 import {
   acceptedPortShapes,
   originCollectionModes,
@@ -383,10 +380,9 @@ export function artifactDropCommands(
       if (edge.data?.enabled === false || edge.target !== target.nodeId) {
         return false;
       }
-      const handle = decodeHandleId(edge.targetHandle);
       return (
-        handle?.portName === target.portName &&
-        (handle.plugId ?? null) === target.plugId
+        edge.targetPort === target.portName &&
+        (edge.targetPlug ?? null) === target.plugId
       );
     })
     .map((edge) => edge.id);

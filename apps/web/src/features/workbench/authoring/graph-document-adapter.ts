@@ -8,14 +8,11 @@ import {
 } from "./graph-document";
 import { newNodeKind } from "./project-graphs";
 import type {
-  CanvasConnection,
-  CanvasEdgeChange,
-  CanvasNodeChange,
+  GraphConnection,
   WorkflowEdge,
   WorkflowNode,
   WorkflowNodeData,
 } from "./types";
-import { decodeHandleId } from "./handles";
 import { serializeNodeLayout } from "./node-layout";
 
 export type NodeOverlays = Record<
@@ -114,35 +111,7 @@ export function reduceWorkbenchAuthoringState(
   }
 }
 
-/** Translate renderer events into product-level authoring commands. */
-export function graphCommandsFromNodeChanges(
-  changes: readonly CanvasNodeChange[],
-): GraphCommand[] {
-  const commands: GraphCommand[] = [];
-  const positions = changes.flatMap((change) =>
-    change.type === "position" && !change.dragging && change.position
-      ? [{ node_id: change.id, x: change.position.x, y: change.position.y }]
-      : [],
-  );
-  if (positions.length) commands.push({ kind: "move_nodes", positions });
-
-  const node_ids = changes.flatMap((change) =>
-    change.type === "remove" ? [change.id] : [],
-  );
-  if (node_ids.length) commands.push({ kind: "remove_nodes", node_ids });
-  return commands;
-}
-
-export function graphCommandsFromEdgeChanges(
-  changes: readonly CanvasEdgeChange[],
-): GraphCommand[] {
-  const edge_ids = changes.flatMap((change) =>
-    change.type === "remove" ? [change.id] : [],
-  );
-  return edge_ids.length ? [{ kind: "remove_edges", edge_ids }] : [];
-}
-
-/** Project one hydrated catalog node into the durable authoring command shape. */
+/** Project one catalog node into the durable authoring command shape. */
 export function addNodeCommand(
   nodeId: string,
   data: WorkflowNodeData,
@@ -176,29 +145,27 @@ export function addNodeCommand(
 }
 
 export function addEdgeCommand(
-  connection: CanvasConnection,
+  connection: GraphConnection,
   data: WorkflowEdge["data"],
   edgeId: string,
 ): GraphCommand {
-  const source = decodeHandleId(connection.sourceHandle);
-  const target = decodeHandleId(connection.targetHandle);
   if (
     !connection.source ||
     !connection.target ||
-    !source?.portName ||
-    !target?.portName
+    !connection.sourcePort ||
+    !connection.targetPort
   ) {
-    throw new Error("Cannot author an edge without typed endpoint handles");
+    throw new Error("Cannot author an edge without typed endpoint ports");
   }
   return {
     kind: "add_edge",
     edge: {
       id: edgeId,
       from_node: connection.source,
-      from_port: source.portName,
+      from_port: connection.sourcePort,
       to_node: connection.target,
-      to_port: target.portName,
-      to_plug: target.plugId ?? null,
+      to_port: connection.targetPort,
+      to_plug: connection.targetPlug ?? null,
       enabled: data?.enabled ?? true,
       collection_mode: data?.collectionMode ?? "direct",
       projection: data?.projection ? { path: [...data.projection.path] } : null,

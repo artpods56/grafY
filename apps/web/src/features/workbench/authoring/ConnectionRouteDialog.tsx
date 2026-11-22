@@ -1,7 +1,7 @@
 "use client";
 
 import * as stylex from "@stylexjs/stylex";
-import type { CanvasConnection } from "./types";
+import type { GraphConnection } from "./types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import type { RunEdgeCollectionMode } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import type { ConnectionRoute } from "./handles";
+import type { ConnectionRoute } from "./connection-routes";
 import { formatArtifactTypeTooltip } from "../artifacts/artifact-type-label";
 import { useArtifactTypeCatalog } from "../artifacts/use-artifact-type-catalog";
 import {
@@ -29,7 +29,7 @@ interface ConnectionEndpoint {
 }
 
 export interface PendingConnectionRoute {
-  connection: CanvasConnection;
+  connection: GraphConnection;
   collectionMode: RunEdgeCollectionMode;
   candidates: ConnectionRoute[];
   source: ConnectionEndpoint;

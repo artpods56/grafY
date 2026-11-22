@@ -8,10 +8,7 @@ import { describe, expect, it } from "vitest";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-import {
-  graphCommandsFromNodeChanges,
-  reduceWorkbenchAuthoringState,
-} from "./graph-document-adapter";
+import { reduceWorkbenchAuthoringState } from "./graph-document-adapter";
 import {
   ARTIFACT_VIEWER_EDGE_TYPE,
   ARTIFACT_VIEWER_NODE_TYPE,
@@ -374,9 +371,9 @@ describe("workbench authoring commands", () => {
   it("retires card links when a node removal deletes their source", async () => {
     const view = await mount();
 
-    const commands = graphCommandsFromNodeChanges([
-      { id: "card-source", type: "remove" },
-    ]);
+    const commands = [
+      { kind: "remove_nodes" as const, node_ids: ["card-source"] },
+    ];
     expect(commands).toEqual([
       { kind: "remove_nodes", node_ids: ["card-source"] },
     ]);
