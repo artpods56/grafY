@@ -254,6 +254,33 @@ describe("module architecture", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("keeps sandbox-only code out of feature modules", () => {
+    function reachable(roots: string[]) {
+      const visited = new Set<string>();
+      for (const from of roots) {
+        if (visited.has(from)) continue;
+        visited.add(from);
+        roots.push(...(graph.get(from) ?? []));
+      }
+      return visited;
+    }
+
+    const appRoutes = [...graph.keys()].filter((file) =>
+      file.startsWith("app/"),
+    );
+    const app = reachable(
+      appRoutes.filter((file) => !file.startsWith("app/sandbox/")),
+    );
+    const sandbox = reachable(
+      appRoutes.filter((file) => file.startsWith("app/sandbox/")),
+    );
+    expect(
+      [...sandbox].filter(
+        (file) => file.startsWith("features/") && !app.has(file),
+      ),
+    ).toEqual([]);
+  });
+
   it("keeps the web app free of React Flow and its handle/node shims", () => {
     const retiredShims =
       /\b(?:encodeHandleId|decodeHandleId|canonicalHandleId|CanvasNodeBase|CanvasEdgeBase|CanvasConnection|CanvasNodeChange|CanvasEdgeChange|WORKFLOW_NODE_TYPE|WORKFLOW_EDGE_TYPE)\b/;

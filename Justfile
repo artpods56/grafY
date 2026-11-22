@@ -62,6 +62,10 @@ typecheck-tiler:
 web port="":
     bun run --cwd apps/web --bun dev {{ if port != "" {"--port=" + port} else {""} }}
 
+# Start the sandbox on a free loopback port without API or Keycloak.
+lab-web port="3301":
+    NEXT_PUBLIC_GRAFY_DEV_SESSION=1 bun run --cwd apps/web --bun dev --hostname 127.0.0.1 --port={{port}}
+
 # Run backend and web tests.
 test:
     uv run pytest

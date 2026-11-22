@@ -46,7 +46,6 @@ import {
   richRegistry,
   vectorLayerSpec,
 } from "../cell-config-fixtures.test-support";
-import { CellCard } from "../CellCard";
 import { PUNCHED_LABEL_INSET } from "../punched-port";
 
 // --- Helpers ---------------------------------------------------------------
@@ -68,7 +67,7 @@ function stemTag(html: string, portId: string): string {
   return tagWith(html, "data-port-stem", portId);
 }
 
-/** Where a port's 30px hit target sits for its row and side, as `CellCard` places it. */
+/** Where a port's 30px hit target sits for its row and side, as the card shell places it. */
 function expectPortPinned(html: string, port: CellPort, widthCells: number) {
   const centreX = port.direction === "input" ? -12.5 : widthCells * 25 + 12.5;
   const centreY = (port.rowOffset + 0.5) * 25;
@@ -1842,30 +1841,6 @@ describe("punched wells", () => {
     expect(html).not.toContain('data-punched-bore="through"');
   });
 
-  it("punches the demo card's ports and insets its labels", () => {
-    const card = operatorCard(operatorSurface());
-    const html = renderToStaticMarkup(
-      <CellCard
-        card={card}
-        material="frost"
-        well="punched"
-        selected={false}
-        dragging={false}
-        connectedPortIds={new Set(["result"])}
-        onCardPointerDown={() => {}}
-        onPortPointerDown={() => {}}
-      />,
-    );
-    for (const port of OPERATOR_PORTS) expectPortPunched(html, port, 12);
-    expect(html).not.toContain("data-port-stem");
-    expect(tagWith(html, "data-port-row", "2")).toContain(
-      "padding-inline:34px",
-    );
-    expect(socketOf(html, "result")).toContain(
-      'data-punched-socket="connected"',
-    );
-  });
-
   it("bridges a docked seam from one hole's mouth to the other's", () => {
     const html = renderToStaticMarkup(
       <CellDockedBridgeLayer joins={[dockedJoin()]} punched />,
@@ -1891,7 +1866,6 @@ const LANE_SOURCES = [
   "cards/CellArtifactSequenceSpread.tsx",
   "cell-artifact-stacking.ts",
   "CellGlassOverlays.tsx",
-  "CellCard.tsx",
   "punched-port.tsx",
 ] as const;
 const LANE_TESTS = [
@@ -1990,25 +1964,6 @@ describe("an operator whose input and output are both named image", () => {
     const html = render({ activePortKey: "merge:input:image" });
     expect(imagePort(html, "input")).toContain('data-port-hot="true"');
     expect(imagePort(html, "output")).toContain('data-port-hot="false"');
-  });
-
-  it("keys the generic card's ports apart too", () => {
-    const html = renderToStaticMarkup(
-      <CellCard
-        card={card}
-        material="frost"
-        selected={false}
-        dragging={false}
-        connectedPortIds={new Set(["input:image"])}
-        activePortKey="merge:output:image"
-        onCardPointerDown={() => {}}
-        onPortPointerDown={() => {}}
-      />,
-    );
-    expect(imagePort(html, "input")).toContain('data-port-connected="true"');
-    expect(imagePort(html, "output")).toContain('data-port-connected="false"');
-    expect(imagePort(html, "output")).toContain('data-port-hot="true"');
-    expect(imagePort(html, "input")).toContain('data-port-hot="false"');
   });
 });
 

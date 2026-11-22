@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  devIndicators: { position: "top-right" },
+  devIndicators: process.env.NEXT_PUBLIC_GRAFY_DEV_SESSION === "1" ? false : { position: "top-right" },
   allowedDevOrigins: ["127.0.0.1", "192.168.1.45"],
   output: "standalone",
   // The dev rewrite below buffers proxied request bodies and truncates them at

@@ -65,7 +65,7 @@ export interface CanvasMenuActions {
   addAnnotationHere: (kind: AnnotationKind) => void;
   selectAll: () => void;
   fitView: () => void;
-  openCanvasSettings: () => void;
+  openCanvasLab?: () => void;
   runSelection: () => void;
   collect: () => void;
   tidy: () => void;
@@ -295,12 +295,16 @@ function PaneItems({
         onClick={actions.selectAll}
       />
       <Item icon={Maximize} label="Fit view" onClick={actions.fitView} />
-      <MenuSeparator />
-      <Item
-        icon={Grid3x3}
-        label="Canvas settings…"
-        onClick={actions.openCanvasSettings}
-      />
+      {actions.openCanvasLab && (
+        <>
+          <MenuSeparator />
+          <Item
+            icon={Grid3x3}
+            label="Canvas lab"
+            onClick={actions.openCanvasLab}
+          />
+        </>
+      )}
     </>
   );
 }

@@ -20,7 +20,6 @@ import {
   Bot,
   Circle,
   Copy,
-  Grid3x3,
   History,
   Layers,
   LoaderCircle,
@@ -47,7 +46,7 @@ import {
 } from "./WorkbenchActivityBar";
 import { ArtifactFolderDropDialog } from "../artifacts/ArtifactFolderDropDialog";
 import { ConnectionRouteDialog } from "../authoring/ConnectionRouteDialog";
-import { CanvasGridSettingsPanel } from "../cell-canvas/CanvasGridSettingsPanel";
+import { CanvasLabPanel } from "../cell-canvas/CanvasLabPanel";
 import { workbenchStyles as s } from "./Workbench.styles";
 import { NodeSelector } from "../config-ui/NodeSelector";
 import {
@@ -82,9 +81,9 @@ import { usePublishWorkbenchChrome } from "./WorkbenchChromeContext";
 import { renameProjectRemote } from "@/features/workspaces/graph-actions";
 import type { Port, SavedGraphSummary } from "@/lib/api";
 import {
-  CanvasGridSettingsProvider,
-  useCanvasGridSettings,
-} from "../cell-canvas/canvas-grid-settings";
+  CanvasLabProvider,
+  useCanvasLab,
+} from "../cell-canvas/CanvasLabProvider";
 import { validateConfig } from "../config-ui/config-schema";
 import { DEFAULT_NODE_PLACEMENT_HEIGHT } from "../authoring/node-layout";
 import { useNodeSecrets } from "../execution/useNodeSecrets";
@@ -360,9 +359,11 @@ function PresenceAwareCellCanvas({
 
 export function Workbench(props: WorkbenchProps) {
   return (
-    <CanvasGridSettingsProvider>
-      <WorkbenchBody {...props} />
-    </CanvasGridSettingsProvider>
+    <React.Suspense fallback={null}>
+      <CanvasLabProvider>
+        <WorkbenchBody {...props} />
+      </CanvasLabProvider>
+    </React.Suspense>
   );
 }
 
@@ -403,11 +404,12 @@ function WorkbenchBody({
     [apiRegistry, projectCatalog],
   );
   const {
-    cellLook,
-    cellRouting,
-    panelOpen: gridPanelOpen,
-    setPanelOpen: setGridPanelOpen,
-  } = useCanvasGridSettings();
+    enabled: canvasLabEnabled,
+    settings: cellLook,
+    routing: cellRouting,
+    panelOpen: labPanelOpen,
+    setPanelOpen: setLabPanelOpen,
+  } = useCanvasLab();
   const { workspace } = useWorkspaceContext();
   const canCreateProject = workspace.capabilities.includes("create_project");
   const canManageSecrets = workspace.capabilities.includes("manage_secrets");
@@ -441,8 +443,8 @@ function WorkbenchBody({
     [],
   );
   const closeGridPanel = React.useCallback(() => {
-    setGridPanelOpen(false);
-  }, [setGridPanelOpen]);
+    setLabPanelOpen(false);
+  }, [setLabPanelOpen]);
   const runErrorBridgeRef = React.useRef<{
     set: React.Dispatch<React.SetStateAction<string | null>>;
     clear: () => void;
@@ -2964,7 +2966,7 @@ function WorkbenchBody({
       );
     },
     fitView: () => fitCanvasView(WORKBENCH_FIT_VIEW),
-    openCanvasSettings: () => setGridPanelOpen(true),
+    openCanvasLab: canvasLabEnabled ? () => setLabPanelOpen(true) : undefined,
     runSelection: () => void runWorkflow("selected"),
     collect: collectSelectedArtifacts,
     tidy: tidySelectedArtifacts,
@@ -2992,7 +2994,7 @@ function WorkbenchBody({
     const toggleSidePanelView = (view: SidePanelViewId) => {
       closeGraphBrowser();
       setLibraryOpen(false);
-      setGridPanelOpen(false);
+      setLabPanelOpen(false);
       if (sidePanelIsOpen && sidePanelView === view) {
         setSidePanelOpen(false);
         return;
@@ -3072,7 +3074,7 @@ function WorkbenchBody({
     savedProjectName,
     saving,
     setGraphName,
-    setGridPanelOpen,
+    setLabPanelOpen,
     setLibraryOpen,
     setSidePanelOpen,
     setSidePanelView,
@@ -3637,7 +3639,12 @@ function WorkbenchBody({
         <WorkbenchActivityBar activity={workbenchActivity} />
       ) : null}
 
-      <CanvasGridSettingsPanel />
+      {canvasLabEnabled && labPanelOpen && (
+        <CanvasLabPanel
+          close={() => setLabPanelOpen(false)}
+          xstyle={s.canvasLabDock}
+        />
+      )}
 
       <aside aria-label="Canvas actions" {...stylex.props(s.toolDock)}>
         <IconButton
@@ -3649,7 +3656,7 @@ function WorkbenchBody({
           {...firefoxDynamicButtonProps}
           onClick={() => {
             closeGraphBrowser();
-            setGridPanelOpen(false);
+            setLabPanelOpen(false);
             toggleLibrary();
           }}
         >
@@ -3668,7 +3675,7 @@ function WorkbenchBody({
             onClick={() => {
               closeGraphBrowser();
               setLibraryOpen(false);
-              setGridPanelOpen(false);
+              setLabPanelOpen(false);
               toggleShapesMenu();
             }}
           >
@@ -3754,22 +3761,6 @@ function WorkbenchBody({
         >
           <Maximize2 size={14} />
         </IconButton>
-        <IconButton
-          size="lg"
-          variant="accent"
-          label="Canvas lab"
-          pressed={gridPanelOpen}
-          title="Experiment with canvas behavior"
-          xstyle={phoneTouch.rail}
-          onClick={() => {
-            closeGraphBrowser();
-            setLibraryOpen(false);
-            closeInspectedPipe();
-            setGridPanelOpen((open) => !open);
-          }}
-        >
-          <Grid3x3 size={14} />
-        </IconButton>
         <span {...stylex.props(s.railDivider)} />
         <IconButton
           size="lg"
@@ -3783,7 +3774,7 @@ function WorkbenchBody({
           xstyle={phoneTouch.rail}
           onClick={(event) => {
             setLibraryOpen(false);
-            setGridPanelOpen(false);
+            setLabPanelOpen(false);
             executionHistoryReturnFocusRef.current = event.currentTarget;
             openExecutionHistory({ nodeId: null, executionId: null });
           }}
