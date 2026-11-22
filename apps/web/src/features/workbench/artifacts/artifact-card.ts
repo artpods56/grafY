@@ -1,0 +1,387 @@
+import type {
+  ArtifactRef,
+  ArtifactTypeSpec,
+  SavedGraphOrigin,
+} from "@/lib/api";
+import { createUuid } from "@/features/workbench/authoring/uuid";
+import {
+  formatArtifactTypeContract,
+  formatArtifactTypeSequenceTooltip,
+  formatArtifactTypeTooltip,
+  type ArtifactTypeCatalog,
+} from "./artifact-type-label";
+import type { LayoutClampBounds } from "../authoring/node-layout";
+
+/**
+ * What one canvas artifact card presents: a single artifact, or an ordered run
+ * of artifacts of the same type. It is the same value shape an origin carries,
+ * so what a card shows and what a card passes on are one thing.
+ */
+export type ArtifactCardValue = SavedGraphOrigin["value"];
+
+/** Card width when placed: five lattice cells at the default cell size. */
+export const DEFAULT_ARTIFACT_CARD_WIDTH = 250;
+
+/**
+ * Width a file or PDF card opens at: three lattice cells. It has no pixels to
+ * fill, so it takes the narrowest card that still reads as a document.
+ */
+export const DEFAULT_ARTIFACT_FILE_CARD_WIDTH = 150;
+
+export const DEFAULT_ARTIFACT_TABLE_CARD_WIDTH = 600;
+export const DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT = 360;
+
+export const DEFAULT_ARTIFACT_MAP_CARD_WIDTH = 450;
+export const DEFAULT_ARTIFACT_MAP_BODY_HEIGHT = 340;
+
+/**
+ * Width a card following a node output opens at when it is not a picture:
+ * four lattice cells, room for "Producer → port" beside its type while it
+ * waits, and for the value once one arrives.
+ */
+export const DEFAULT_ARTIFACT_OUTPUT_CARD_WIDTH = 200;
+
+/**
+ * Artifact card resize floor and ceiling in flow pixels (25px per cell):
+ * 6 × 3 cells (150 × 75px) up to 48 × 48 cells (1200 × 1200px).
+ * Workflow nodes keep their own wider floor (`NODE_WIDTH_MIN`, `BODY_HEIGHT_MIN`).
+ */
+export const ARTIFACT_CARD_WIDTH_MIN = 150;
+export const ARTIFACT_CARD_HEIGHT_MIN = 75;
+export const ARTIFACT_CARD_WIDTH_MAX = 1200;
+export const ARTIFACT_CARD_HEIGHT_MAX = 1200;
+
+export const ARTIFACT_CARD_LAYOUT_BOUNDS: LayoutClampBounds = {
+  minWidth: ARTIFACT_CARD_WIDTH_MIN,
+  maxWidth: ARTIFACT_CARD_WIDTH_MAX,
+  minBodyHeight: ARTIFACT_CARD_HEIGHT_MIN,
+  maxBodyHeight: ARTIFACT_CARD_HEIGHT_MAX,
+};
+
+/** A card's media box is 4:3 until the operator shapes it. */
+export const ARTIFACT_CARD_MEDIA_ASPECT = 3 / 4;
+
+/** The height an unresized card's media box takes at a given width. */
+export function artifactCardMediaHeight(width: number): number {
+  return Math.round(width * ARTIFACT_CARD_MEDIA_ASPECT);
+}
+
+/** The card's artifacts in the order it presents and passes them. */
+export function cardArtifactRefs(
+  value: ArtifactCardValue | null | undefined,
+): ArtifactRef[] {
+  if (!value) return [];
+  return "item_refs" in value ? [...value.item_refs] : [value];
+}
+
+/**
+ * The value that presents exactly these artifacts, or null when they cannot sit
+ * on one card: two artifacts of different types never share a sequence, so a
+ * mixed card has no honest representation.
+ */
+export function artifactCardValue(
+  refs: readonly ArtifactRef[],
+  previous?: ArtifactCardValue | null,
+  options?: { readonly asSequence?: boolean },
+): ArtifactCardValue | null {
+  if (refs.length === 0) return null;
+  const first = refs[0];
+  if (!first) return null;
+  const mixedType = refs.some(
+    (ref) =>
+      ref.artifact_type !== first.artifact_type ||
+      ref.schema_version !== first.schema_version,
+  );
+  if (mixedType) return null;
+  // One artifact is a single card, unless it is being put in a sequence or
+  // it is what remains of a sequence.
+  if (
+    refs.length === 1 &&
+    !options?.asSequence &&
+    !(previous && "item_refs" in previous)
+  ) {
+    return first;
+  }
+  return {
+    artifact_type: first.artifact_type,
+    schema_version: first.schema_version,
+    item_refs: refs.map((ref) => ({ ...ref })),
+    ordered: true,
+    index_key: "order_index",
+    sequence_id:
+      previous && "sequence_id" in previous && previous.sequence_id
+        ? previous.sequence_id
+        : createUuid(),
+  };
+}
+
+/** Order selected canvas artifacts for collection, without repeating a ref. */
+export function collectArtifactCardRefs(
+  cards: readonly {
+    position: { x: number; y: number };
+    value: ArtifactCardValue;
+  }[],
+): ArtifactRef[] | null {
+  if (cards.length < 1) return null;
+  const seen = new Set<string>();
+  const refs = [...cards]
+    .sort(
+      (left, right) =>
+        left.position.y - right.position.y ||
+        left.position.x - right.position.x,
+    )
+    .flatMap((card) => cardArtifactRefs(card.value))
+    .filter((ref) => {
+      if (seen.has(ref.artifact_id)) return false;
+      seen.add(ref.artifact_id);
+      return true;
+    });
+  if (refs.length < 1) return null;
+  const first = refs[0];
+  if (!first) return null;
+  return refs.every((ref) => shareOneArtifactType(ref, first)) ? refs : null;
+}
+
+/**
+ * Whether Collect would make a sequence these cards do not already are.
+ * One artifact becomes a sequence of one. Several become one sequence.
+ * A card that is already a sequence, selected alone, stays as it is.
+ */
+export function selectionCollectsIntoSequence(
+  values: readonly ArtifactCardValue[],
+): boolean {
+  const [first] = values;
+  if (first === undefined) return false;
+  if (values.length === 1) return !("item_refs" in first);
+  return true;
+}
+
+/**
+ * The value that presents the target card's artifacts followed by the dropped
+ * ones, keeping an artifact that is already on the card in its first position.
+ */
+export function mergedArtifactCardValue(
+  target: ArtifactCardValue | null | undefined,
+  dropped: ArtifactCardValue | null | undefined,
+): ArtifactCardValue | null {
+  const targetRefs = cardArtifactRefs(target);
+  const seen = new Set(targetRefs.map((ref) => ref.artifact_id));
+  const added = cardArtifactRefs(dropped).filter(
+    (ref) => !seen.has(ref.artifact_id),
+  );
+  if (added.length === 0) return null;
+  return artifactCardValue([...targetRefs, ...added], target ?? null);
+}
+
+/** These cards may sit together: merging them leaves a value a card can hold. */
+export function canMergeIntoCard(
+  target: ArtifactCardValue | null | undefined,
+  dropped: ArtifactCardValue | null | undefined,
+): boolean {
+  return mergedArtifactCardValue(target, dropped) !== null;
+}
+
+/** These artifacts may join one card: they share one artifact type. */
+export function shareOneArtifactType(a: ArtifactRef, b: ArtifactRef): boolean {
+  return (
+    a.artifact_type === b.artifact_type && a.schema_version === b.schema_version
+  );
+}
+
+/** The same artifacts with the one at `index` moved `delta` places, clamped. */
+export function moveArtifactCardRef(
+  refs: readonly ArtifactRef[],
+  index: number,
+  delta: number,
+): ArtifactRef[] {
+  const target = Math.min(refs.length - 1, Math.max(0, index + delta));
+  if (index < 0 || index >= refs.length || index === target) return [...refs];
+  const next = [...refs];
+  const [moved] = next.splice(index, 1);
+  if (!moved) return [...refs];
+  next.splice(target, 0, moved);
+  return next;
+}
+
+/**
+ * Artifact types the browser can paint directly. A card without a library
+ * entry has no content type to ask, so it falls back on the declared type.
+ */
+const IMAGE_ARTIFACT_TYPES = new Set([
+  "image.raster",
+  "image.pixmap",
+  "file.png",
+  "file.jpeg",
+  "file.tiff",
+  "file.webp",
+  "file.bmp",
+]);
+
+const GEO_MAP_ARTIFACT_TYPES = new Set([
+  "geo.feature_collection",
+  "geo.raster_scan",
+  "geo.map_layer",
+  "geo.map_document",
+]);
+
+export function isGeoMapArtifact(
+  ref: Pick<ArtifactRef, "artifact_type" | "schema_version">,
+): boolean {
+  return (
+    ref.schema_version === 1 && GEO_MAP_ARTIFACT_TYPES.has(ref.artifact_type)
+  );
+}
+
+export function isTableArtifact(
+  ref: Pick<ArtifactRef, "artifact_type" | "schema_version">,
+): boolean {
+  return ref.artifact_type === "table.data" && ref.schema_version === 1;
+}
+
+/** A card's clues about the bytes behind a reference. */
+export type ArtifactByteClues = {
+  contentType?: string | null;
+  fileName?: string | null;
+};
+
+/** A PDF: the browser's own reader beats anything the canvas can draw. */
+export function isPdfArtifact(
+  ref: Pick<ArtifactRef, "artifact_type">,
+  { contentType, fileName }: ArtifactByteClues = {},
+): boolean {
+  return (
+    contentType === "application/pdf" ||
+    ref.artifact_type === "file.pdf" ||
+    (fileName?.toLowerCase().endsWith(".pdf") ?? false)
+  );
+}
+
+/** A table carried as bytes rather than as the `table.data@1` grid. */
+export function isTableFileArtifact(
+  ref: Pick<ArtifactRef, "artifact_type">,
+  { contentType, fileName }: ArtifactByteClues = {},
+): boolean {
+  return (
+    contentType === "text/csv" ||
+    ref.artifact_type === "file.csv" ||
+    ref.artifact_type.startsWith("table.") ||
+    (fileName?.toLowerCase().endsWith(".csv") ?? false)
+  );
+}
+
+/** Whether a card paints this artifact as a picture. */
+export function isImageArtifact(
+  ref: ArtifactRef,
+  contentType?: string | null,
+): boolean {
+  if (isGeoMapArtifact(ref)) return false;
+  if (contentType) return contentType.toLowerCase().startsWith("image/");
+  return IMAGE_ARTIFACT_TYPES.has(ref.artifact_type);
+}
+
+/** The catalog's entry for a stored artifact's type, when it lists it. */
+export function artifactTypeFor(
+  ref: Pick<ArtifactRef, "artifact_type" | "schema_version">,
+  artifactTypes: readonly ArtifactTypeSpec[],
+): ArtifactTypeSpec | undefined {
+  return artifactTypes.find(
+    (candidate) =>
+      candidate.key.id === ref.artifact_type &&
+      candidate.key.schema_version === ref.schema_version,
+  );
+}
+
+/**
+ * The content type the catalog declares for an artifact type, or `null`.
+ *
+ * A stored result's artifact is a *reference* — id, artifact type, schema
+ * version, content hash — so a card holding one has never received a content
+ * type. What still names one is the type catalog: `export_formats[0]` is how the
+ * type serializes, which is what the content route serves for it, and an
+ * inline-JSON bundle is named by the bundle contract instead. A Library item's
+ * summary carries the content type actually stored and wins wherever a caller
+ * has one; this is the reference-only answer, and it declares a type rather
+ * than reporting a fact about these bytes.
+ */
+export function declaredArtifactContentType(
+  artifactType: ArtifactTypeSpec | undefined,
+): string | null {
+  const declared = artifactType?.export_formats?.[0]?.content_type;
+  if (declared) return declared;
+  return artifactType?.bundle?.format === "inline-json"
+    ? "application/json"
+    : null;
+}
+
+/** Whether a presentation viewer carries artifacts of its own, so it is a card. */
+export function presentsArtifacts(
+  value: ArtifactCardValue | null | undefined,
+): value is ArtifactCardValue {
+  return value !== null && value !== undefined;
+}
+
+/** The artifact ids a card presents. */
+export function cardArtifactIds(
+  value: ArtifactCardValue | null | undefined,
+): string[] {
+  return cardArtifactRefs(value).map((ref) => ref.artifact_id);
+}
+
+/**
+ * Whether an origin's value carries what this card presents, which is how a
+ * card learns it is already passed into an input. The card owns the order, so
+ * reordering it rewrites the origin that carries it.
+ */
+export function originCarriesCardArtifacts(
+  originValue: ArtifactCardValue,
+  cardValue: ArtifactCardValue | null | undefined,
+): boolean {
+  const cardIds = new Set(cardArtifactIds(cardValue));
+  if (cardIds.size === 0) return false;
+  const originRefs = cardArtifactRefs(originValue);
+  return (
+    originRefs.length > 0 &&
+    originRefs.every((ref) => cardIds.has(ref.artifact_id))
+  );
+}
+
+/** The value contract as a person reads it, including sequence shape. */
+export function artifactCardContract(
+  value: ArtifactCardValue | null,
+  artifactTypes: ArtifactTypeCatalog,
+): string {
+  if (!value) return "";
+  return formatArtifactTypeContract(
+    { id: value.artifact_type, schema_version: value.schema_version },
+    artifactTypes,
+    "item_refs" in value,
+  );
+}
+
+/**
+ * The contract as identity, for the tooltip behind {@link artifactCardContract}:
+ * `List of file.jpg@1`.
+ */
+export function artifactCardContractTooltip(
+  value: ArtifactCardValue | null,
+): string {
+  if (!value) return "";
+  const type = {
+    id: value.artifact_type,
+    schema_version: value.schema_version,
+  };
+  return "item_refs" in value
+    ? formatArtifactTypeSequenceTooltip(type)
+    : formatArtifactTypeTooltip(type);
+}
+
+/** Explicit instance ownership, with value matching for documents saved before it existed. */
+export function originBelongsToCard(
+  origin: Pick<SavedGraphOrigin, "value" | "source_card_ids">,
+  cardId: string,
+  cardValue: ArtifactCardValue | null | undefined,
+): boolean {
+  if (origin.source_card_ids != null)
+    return origin.source_card_ids.includes(cardId);
+  return originCarriesCardArtifacts(origin.value, cardValue);
+}

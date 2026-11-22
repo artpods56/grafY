@@ -11,7 +11,7 @@
 This note holds what the code does not say on its own. The rules a Project
 enforces (acyclic calls, refused delete, typed interface) live in
 `libs/core/src/grafy_core/kernel/project.py`; the canvas mirrors them in
-`apps/web/src/features/workbench/model/project-graphs.ts` so it can offer only
+`apps/web/src/features/workbench/authoring/project-graphs.ts` so it can offer only
 what the server will accept and say why when it cannot.
 
 ## The canvas shows one Graph, read from the head
@@ -26,7 +26,7 @@ fetches nothing and does not change the address.
   has not confirmed yet.
 - A Graph another writer removes falls back to the Project's first Graph on the
   next sync.
-- The Graph switcher (`ui/GraphSwitcher.tsx`) is a controlled component. The
+- The Graph switcher (`authoring/GraphSwitcher.tsx`) is a controlled component. The
   Workbench stays the only writer: add, rename and delete are Project commands
   (`add_graph`, `rename_graph`, `remove_graph`). The room persists each accepted
   batch and reports any refusal to the person who submitted it.

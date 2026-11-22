@@ -12,6 +12,10 @@ import { describe, expect, it } from "vitest";
  *    host that may borrow product code, never the other way round.
  * 3. The generated OpenAPI types are reachable only through `lib/api/contract.ts`, so
  *    the wire shape is named in exactly one place.
+ * 4. `features/workbench` is a set of vertical slices with an explicit allowed-import
+ *    matrix, so a card change cannot reach into the collaboration transport.
+ * 5. An extracted `*-reducer.ts` state machine stays framework-free, so it is testable
+ *    without a renderer and reusable from another host.
  */
 
 const SRC_ROOT = path.resolve(__dirname);
@@ -150,6 +154,81 @@ function findCycle(graph: Map<string, string[]>): string[] | null {
   return null;
 }
 
+const WORKBENCH = "features/workbench";
+
+/** The vertical slices the workbench is allowed to be made of. */
+const WORKBENCH_SLICES = [
+  "agents",
+  "artifacts",
+  "authoring",
+  "cell-canvas",
+  "collaboration",
+  "config-ui",
+  "execution",
+  "shell",
+  "test",
+];
+
+/**
+ * Which slices each slice may import, besides itself. Only `shell` composes,
+ * so it is the sole slice allowed to reach `cell-canvas` (the canvas engine),
+ * and nothing imports `shell` or `test`. `test` is shared test support and
+ * imports no product code at all.
+ */
+const SLICE_IMPORTS: Record<string, string[]> = {
+  shell: WORKBENCH_SLICES.filter((slice) => slice !== "test"),
+  "cell-canvas": ["cell-canvas", "artifacts", "authoring", "config-ui"],
+  artifacts: ["artifacts", "authoring", "config-ui", "agents"],
+  authoring: ["authoring", "artifacts", "config-ui"],
+  "config-ui": ["config-ui", "artifacts", "authoring"],
+  execution: ["execution", "authoring", "collaboration", "config-ui"],
+  collaboration: [
+    "collaboration",
+    "agents",
+    "artifacts",
+    "authoring",
+    "execution",
+  ],
+  agents: ["agents", "artifacts", "authoring"],
+  test: [],
+};
+
+/**
+ * `features/workbench/routes.ts` is the feature's own route table and a leaf, so the two
+ * slices that build links may read it. The feature barrel `index.ts` is outward-facing:
+ * nothing inside the feature may import it, or every slice would close a cycle through it.
+ */
+const WORKBENCH_ROUTE_TABLE = `${WORKBENCH}/routes.ts`;
+const WORKBENCH_ROUTE_READERS = ["collaboration", "shell"];
+
+/** `agents`, for `features/workbench/agents/stream.ts`; `null` outside the feature. */
+function workbenchSlice(module: string): string | null {
+  if (!module.startsWith(`${WORKBENCH}/`)) return null;
+  const rest = module.slice(WORKBENCH.length + 1);
+  if (!rest.includes("/")) return "root";
+  return rest.slice(0, rest.indexOf("/"));
+}
+
+/** A reducer the framework-free rule cannot apply to: the React host that runs them. */
+const REDUCER_REACT_HOST = "lib/state/use-effect-reducer.ts";
+
+const UI_FRAMEWORK_PACKAGES = ["react", "react-dom", "next"];
+
+function importsUiFramework(file: string): string[] {
+  const offenders: string[] = [];
+  for (const [, specifier] of readFileSync(file, "utf8").matchAll(
+    IMPORT_SPECIFIER,
+  )) {
+    if (!specifier) continue;
+    const bare = specifier.split("/").slice(0, 2).join("/");
+    const isUi = UI_FRAMEWORK_PACKAGES.some(
+      (pkg) => specifier === pkg || bare === pkg || bare.startsWith(`${pkg}/`),
+    );
+    if (isUi) offenders.push(specifier);
+  }
+  return offenders;
+}
+
 describe("module architecture", () => {
   const graph = buildGraph();
 
@@ -175,23 +254,23 @@ describe("module architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps features/workbench/cell-canvas free of @xyflow/react", () => {
+  it("keeps the web app free of React Flow", () => {
     const offenders: string[] = [];
-    for (const file of allSourceFiles(
-      path.join(SRC_ROOT, "features/workbench/cell-canvas"),
-    )) {
+    for (const file of allSourceFiles(SRC_ROOT)) {
       for (const [, specifier] of readFileSync(file, "utf8").matchAll(
         IMPORT_SPECIFIER,
       )) {
-        if (
-          specifier === "@xyflow/react" ||
-          specifier?.startsWith("@xyflow/")
-        ) {
+        if (specifier?.startsWith("@xyflow/")) {
           offenders.push(`${relative(file)} -> ${specifier}`);
         }
       }
     }
     expect(offenders).toEqual([]);
+    const manifest = readFileSync(
+      path.resolve(SRC_ROOT, "../package.json"),
+      "utf8",
+    );
+    expect(manifest).not.toContain('"@xyflow/react"');
   });
 
   it("reaches the generated OpenAPI types only through lib/api/contract.ts", () => {
@@ -200,6 +279,60 @@ describe("module architecture", () => {
       .filter((file) => relative(file) !== "lib/api/contract.ts")
       .filter((file) => directImports(file).includes(generated))
       .map(relative);
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps features/workbench split into exactly its vertical slices", () => {
+    const workbenchRoot = path.join(SRC_ROOT, WORKBENCH);
+    const folders = readdirSync(workbenchRoot)
+      .filter((entry) =>
+        statSync(path.join(workbenchRoot, entry)).isDirectory(),
+      )
+      .sort();
+    expect(folders).toEqual([...WORKBENCH_SLICES].sort());
+  });
+
+  it("keeps workbench slice imports within their allowed slice boundaries", () => {
+    const offenders: string[] = [];
+    for (const [from, targets] of graph) {
+      const slice = workbenchSlice(from);
+      if (slice === null || slice === "root") continue;
+      const allowed = SLICE_IMPORTS[slice];
+      expect(allowed, `no rule for the ${slice} slice`).toBeDefined();
+      for (const to of targets) {
+        const target = workbenchSlice(to);
+        if (target === null) continue;
+        if (target === "root") {
+          if (
+            to === WORKBENCH_ROUTE_TABLE &&
+            WORKBENCH_ROUTE_READERS.includes(slice)
+          ) {
+            continue;
+          }
+          offenders.push(`${from} -> ${to} (feature root)`);
+          continue;
+        }
+        if (allowed && !allowed.includes(target)) {
+          offenders.push(`${from} -> ${to}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps extracted reducers free of the UI framework", () => {
+    const reducers = allSourceFiles(SRC_ROOT)
+      .map((file) => relative(file))
+      .filter((name) => name.endsWith("-reducer.ts"))
+      .filter((name) => !name.endsWith(".test.ts"))
+      .filter((name) => name !== REDUCER_REACT_HOST);
+    expect(reducers.length).toBeGreaterThan(0);
+    const offenders: string[] = [];
+    for (const name of reducers) {
+      for (const specifier of importsUiFramework(path.join(SRC_ROOT, name))) {
+        offenders.push(`${name} -> ${specifier}`);
+      }
+    }
     expect(offenders).toEqual([]);
   });
 });

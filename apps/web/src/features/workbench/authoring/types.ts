@@ -1,0 +1,638 @@
+import type { CSSProperties } from "react";
+
+import type {
+  ArtifactConversionInput,
+  ArtifactConversionPathInput,
+  ArtifactTypeKey,
+  InputPlugInput,
+  NodeSpec,
+  Port,
+  RunEdgeCollectionMode,
+  RunEdgeProjectionInput,
+  RunNodeInput,
+  RunNodeResult,
+  SavedGraphNode,
+  ServiceContractKey,
+} from "@/lib/api";
+import {
+  initialInputPlugs,
+  type WorkflowInputPlug,
+  type WorkflowInputPlugBinding,
+} from "./input-plugs";
+import type { WorkflowNodeLayout } from "./node-layout";
+import type { SchemaBuilderField } from "./schema-builder";
+import type { WorkflowNodeSecretStatuses } from "./node-secrets";
+import type { CollectionMember } from "./collection-member";
+import type { ConnectedInputPortMap } from "../config-ui/config-schema";
+
+export type {
+  WorkflowInputPlug,
+  WorkflowInputPlugBinding,
+} from "./input-plugs";
+export type { WorkflowNodeLayout } from "./node-layout";
+
+export type WorkflowEdgeProjection = RunEdgeProjectionInput;
+export type WorkflowEdgeConversion = ArtifactConversionInput;
+export type WorkflowEdgeConversionPath = readonly WorkflowEdgeConversion[];
+
+export interface WorkflowEdgeRoute {
+  projection?: WorkflowEdgeProjection;
+  conversionPath: WorkflowEdgeConversionPath;
+}
+
+export interface WorkflowEdgeRouteOption extends WorkflowEdgeRoute {
+  projectionTitle?: string;
+  conversionTitles: readonly string[];
+}
+
+export interface WorkflowEdgeRouteOffset {
+  x: number;
+  y: number;
+}
+
+export interface WorkflowEdgeUpdate {
+  enabled?: boolean;
+  collectionMode?: RunEdgeCollectionMode;
+  route?: WorkflowEdgeRoute;
+}
+
+export interface WorkflowEdgeData extends Record<string, unknown> {
+  enabled: boolean;
+  collectionMode: RunEdgeCollectionMode;
+  projection?: WorkflowEdgeProjection;
+  conversionPath?: WorkflowEdgeConversionPath;
+  /** Visual routing adjustment from the edge's natural midpoint. */
+  routeOffset?: WorkflowEdgeRouteOffset;
+  /** Persisted endpoint names remain authoritative when a live port is unavailable. */
+  sourcePortName?: string;
+  targetPortName?: string;
+  targetPlugId?: string | null;
+  /** Registry compatibility failures disable editing and in-scope execution. */
+  compatibilityIssues?: readonly string[];
+  conversionTitles?: readonly string[];
+  /** Stroke at the input end when the route delivers a different artifact type. */
+  targetStroke?: string;
+  routeOptions?: readonly WorkflowEdgeRouteOption[];
+  allowedCollectionModes?: readonly RunEdgeCollectionMode[];
+  onUpdate?: (edgeId: string, update: WorkflowEdgeUpdate) => void;
+  onRouteOffsetChange?: (
+    edgeId: string,
+    offset: WorkflowEdgeRouteOffset,
+  ) => void;
+}
+
+export type XYPosition = { x: number; y: number };
+
+export interface CanvasNodeBase<TData, TType extends string> {
+  id: string;
+  type?: TType;
+  position: XYPosition;
+  data: TData;
+  selected?: boolean;
+  dragging?: boolean;
+  zIndex?: number;
+  width?: number;
+  height?: number;
+  measured?: { width?: number; height?: number };
+  style?: CSSProperties;
+}
+
+export interface CanvasConnection {
+  source: string;
+  target: string;
+  sourceHandle: string | null;
+  targetHandle: string | null;
+}
+
+export interface CanvasEdgeBase<TData, TType extends string> {
+  id: string;
+  type?: TType;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  data?: TData;
+  selected?: boolean;
+  animated?: boolean;
+  zIndex?: number;
+  style?: CSSProperties;
+}
+
+export type CanvasNodeChange =
+  | { type: "position"; id: string; position?: XYPosition; dragging?: boolean }
+  | { type: "select"; id: string; selected: boolean }
+  | { type: "remove"; id: string };
+
+export type CanvasEdgeChange =
+  | { type: "select"; id: string; selected: boolean }
+  | { type: "remove"; id: string };
+
+export interface CanvasFitViewOptions {
+  padding: number;
+  maxZoom: number;
+  nodes?: readonly { id: string }[];
+}
+
+export type WorkflowNode = CanvasNodeBase<
+  WorkflowNodeData,
+  typeof WORKFLOW_NODE_TYPE
+>;
+export type WorkflowEdge = CanvasEdgeBase<
+  WorkflowEdgeData,
+  typeof WORKFLOW_EDGE_TYPE
+>;
+
+export interface WorkflowEdgeTransport {
+  collection_mode: RunEdgeCollectionMode;
+  projection: RunEdgeProjectionInput | null;
+  conversion_path: ArtifactConversionPathInput;
+}
+
+export function serializeWorkflowEdgeTransport(
+  data: WorkflowEdgeData | undefined,
+): WorkflowEdgeTransport {
+  return {
+    collection_mode: data?.collectionMode ?? "direct",
+    projection: data?.projection ? { path: [...data.projection.path] } : null,
+    conversion_path: (data?.conversionPath ?? []).map((conversion) => ({
+      id: conversion.id,
+      version: conversion.version,
+    })),
+  };
+}
+
+/** Connect-time feed intent on output catalog satellite handles. */
+export type HandleFeedIntent =
+  { kind: "whole" } | { kind: "projection"; path: readonly string[] };
+
+interface PortMetaBase {
+  portName: string;
+  shape: Port["shape"];
+  direction: "input" | "output";
+  plugId?: string;
+  /** Connect-time only; catalog satellites. Never persisted on saved edges. */
+  feed?: HandleFeedIntent;
+  /** Additional artifact types an input port accepts, after the primary one. */
+  alsoAccepts?: readonly ArtifactTypeKey[];
+}
+
+/** Metadata encoded into React Flow handle ids for typed connections. */
+export type PortMeta = PortMetaBase &
+  (
+    | {
+        artifactTypeId: string;
+        schemaVersion: number;
+        artifactTypeVariable?: never;
+        serviceContracts?: never;
+      }
+    | {
+        artifactTypeId?: never;
+        schemaVersion?: never;
+        artifactTypeVariable: string;
+        serviceContracts?: never;
+      }
+    | {
+        artifactTypeId?: never;
+        schemaVersion?: never;
+        artifactTypeVariable?: never;
+        serviceContracts: readonly ServiceContractKey[];
+      }
+  );
+
+export type WorkflowArtifactTypeBindings = Readonly<
+  Record<string, ArtifactTypeKey>
+>;
+
+export interface WorkflowArtifactTypeBindingInput {
+  variable: string;
+  artifact_type: ArtifactTypeKey;
+}
+
+export type WorkflowNodeConfig = Record<string, unknown>;
+
+export type NodeExecutionStatus =
+  | "idle"
+  | "queued"
+  | "running"
+  | "cancelling"
+  | "cancelled"
+  | "succeeded"
+  | "failed"
+  | "skipped";
+
+export interface NodeExecution {
+  status: NodeExecutionStatus;
+  error?: string;
+}
+
+export interface WorkflowNodeProgressEntry {
+  sequence: number;
+  message: string;
+  current: number | null;
+  total: number | null;
+  sourceNodePath: readonly string[];
+  invocationIndex: number | null;
+  invocationPath: readonly number[];
+}
+
+export interface WorkflowNodeProgress {
+  entries: readonly WorkflowNodeProgressEntry[];
+  omittedCount: number;
+}
+
+export interface WorkflowNodeHistoryContext {
+  workspaceId: string;
+  graphId: string | null;
+  isDirty: boolean;
+}
+
+export interface WorkflowCompatibilityEndpoint {
+  portName: string;
+  plugId?: string;
+}
+
+export type WorkflowNodeCompatibility =
+  | {
+      status: "supported";
+    }
+  | {
+      status: "unsupported" | "invalid";
+      issues: readonly string[];
+      inputs: readonly WorkflowCompatibilityEndpoint[];
+      outputs: readonly WorkflowCompatibilityEndpoint[];
+      /** Exact API transport retained while the live contract is unavailable. */
+      persistedNode: SavedGraphNode;
+    };
+
+export interface WorkflowNodeData extends Record<string, unknown> {
+  spec: NodeSpec;
+  compatibility: WorkflowNodeCompatibility;
+  /** Persisted concrete choices for artifact type variables declared by ports. */
+  artifactTypeBindings: WorkflowArtifactTypeBindings;
+  /** Ordered, serializable input instances. Their ids remain stable on reorder. */
+  inputPlugs: readonly WorkflowInputPlug[];
+  /** Edge- and result-derived display data; never persisted. */
+  inputPlugBindings: Readonly<Record<string, WorkflowInputPlugBinding>>;
+  /** Derived from incoming map edges; never persisted as node configuration. */
+  mappedInputPorts: readonly string[];
+  connectedInputPorts?: ConnectedInputPortMap;
+  /** Server-reported write-only state; never persisted with the graph. */
+  secretStatuses: WorkflowNodeSecretStatuses;
+  /** Per-input match against its saved operator and declared config dependencies. */
+  secretInputReadiness: Readonly<Record<string, boolean>>;
+  /** Derived lifecycle scope for clearing unapplied write-only input values. */
+  secretInputScope: string;
+  config: WorkflowNodeConfig;
+  /** Canvas chrome sizes; persisted with the saved graph, not with run transport. */
+  layout: WorkflowNodeLayout | null;
+  run: RunNodeResult | null;
+  execution: NodeExecution;
+  /** Bounded, ephemeral live telemetry; never serialized with the graph. */
+  progress: WorkflowNodeProgress | null;
+  /** Saved-graph identity and authoring state; never serialized with the graph. */
+  historyContext: WorkflowNodeHistoryContext | null;
+  /** Ephemeral collaborator selection tint; never persisted. */
+  remoteSelectionColor?: string | null;
+  onConfigChange?: (nodeId: string, name: string, value: unknown) => void;
+  tiffWindowSourceId?: string;
+  onConfigPatch?: (nodeId: string, patch: WorkflowNodeConfig) => void;
+  onLayoutChange?: (nodeId: string, layout: WorkflowNodeLayout | null) => void;
+  onRunNode?: (nodeId: string) => void;
+  onRevealNodeOutput?: (nodeId: string) => void;
+  hasFollowingOutputCard?: boolean;
+  onRemoveNode?: (nodeId: string) => void;
+  onAddInputPlug?: (nodeId: string, portName: string) => void;
+  onRemoveInputPlug?: (nodeId: string, plugId: string) => void;
+  onReorderInputPlug?: (
+    nodeId: string,
+    portName: string,
+    plugId: string,
+    toIndex: number,
+  ) => void;
+  onSchemaBuilderFieldsChange?: (
+    nodeId: string,
+    fields: readonly SchemaBuilderField[],
+    inputPlugs: readonly WorkflowInputPlug[],
+  ) => void;
+  onApplyNodeSecret?: (
+    nodeId: string,
+    name: string,
+    value: string,
+  ) => Promise<boolean>;
+  onRemoveNodeSecret?: (nodeId: string, name: string) => Promise<boolean>;
+  onResetArtifactTypeBinding?: (nodeId: string, variable: string) => void;
+  onBindArtifactTypeBinding?: (
+    nodeId: string,
+    variable: string,
+    artifactType: ArtifactTypeKey,
+  ) => void;
+  bindableArtifactTypes?: readonly ArtifactTypeKey[];
+  onHandlesMeasured?: (
+    nodeId: string,
+    artifactTypeBindings: WorkflowArtifactTypeBindings,
+  ) => void;
+  /** A collection's members in plug order; derived, never persisted. */
+  collectionMembers?: readonly CollectionMember[];
+  /** Turns a collection back into one card per member. */
+  onUngroupCollection?: (nodeId: string) => void;
+  /** Why a collection cannot be ungrouped right now, if it cannot. */
+  ungroupDisabledReason?: string | null;
+}
+
+export const WORKFLOW_NODE_TYPE = "grafyWorkflowNode";
+export const WORKFLOW_EDGE_TYPE = "grafyWorkflowEdge";
+export const GIS_COMPOSE_MAP_OPERATOR_ID = "gis.map.compose";
+export const TIFF_TEXT_DETECTOR_OPERATOR_ID = "ocr.detect_tiff_text";
+
+export function workflowNodeIsSupported(data: WorkflowNodeData): boolean {
+  return data.compatibility.status === "supported";
+}
+
+export function compatibilityHandleId(
+  direction: "input" | "output",
+  endpoint: WorkflowCompatibilityEndpoint,
+): string {
+  const plugId = endpoint.plugId ? encodeURIComponent(endpoint.plugId) : "";
+  return [
+    "$compatibility",
+    direction,
+    encodeURIComponent(endpoint.portName),
+    plugId,
+  ].join("::");
+}
+
+export function resolveInstancePortShapes(
+  spec: NodeSpec,
+  config: WorkflowNodeConfig,
+): NodeSpec {
+  if (![...spec.inputs, ...spec.outputs].some((port) => port.shape_field))
+    return spec;
+  const resolve = (port: Port): Port => {
+    const shape = port.shape_field ? config[port.shape_field] : undefined;
+    return shape === "one" || shape === "many"
+      ? { ...port, shape, accepted_shapes: [shape] }
+      : port;
+  };
+  return {
+    ...spec,
+    inputs: spec.inputs.map(resolve),
+    outputs: spec.outputs.map(resolve),
+  };
+}
+
+export function defaultNodeLayout(spec: NodeSpec): WorkflowNodeLayout | null {
+  return spec.operator_id === GIS_COMPOSE_MAP_OPERATOR_ID
+    ? { width: 620, appendixHeight: 420 }
+    : null;
+}
+
+function schemaRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+export function defaultNodeConfig(spec: NodeSpec): WorkflowNodeConfig {
+  const schema = schemaRecord(spec.config_schema);
+  const properties = schemaRecord(schema?.properties);
+  const config: WorkflowNodeConfig = {};
+
+  if (properties) {
+    for (const [name, propertyValue] of Object.entries(properties)) {
+      const property = schemaRecord(propertyValue);
+      if (property && "default" in property) {
+        config[name] = property.default;
+      }
+    }
+  }
+
+  return config;
+}
+
+export function createWorkflowNodeData(
+  spec: NodeSpec,
+  savedInputPlugs?: readonly InputPlugInput[],
+): WorkflowNodeData {
+  const inputPlugs = savedInputPlugs
+    ? savedInputPlugs.map((plug) => ({
+        id: plug.id,
+        portName: plug.port,
+      }))
+    : initialInputPlugs(spec);
+  const config = defaultNodeConfig(spec);
+  return {
+    spec,
+    compatibility: { status: "supported" },
+    artifactTypeBindings: {},
+    inputPlugs,
+    inputPlugBindings: {},
+    mappedInputPorts: [],
+    secretStatuses: {},
+    secretInputReadiness: {},
+    secretInputScope: "unsaved:none",
+    config,
+    layout: defaultNodeLayout(spec),
+    run: null,
+    execution: { status: "idle" },
+    progress: null,
+    historyContext: null,
+  };
+}
+
+export function serializeRunNode(
+  id: string,
+  data: WorkflowNodeData,
+  activeInputPlugIds?: ReadonlySet<string>,
+): RunNodeInput {
+  if (!workflowNodeIsSupported(data)) {
+    throw new Error(
+      `Cannot serialize unsupported node ${id} (${data.spec.operator_id}@${data.spec.operator_version}) for execution`,
+    );
+  }
+  const inputPlugs = serializeInputPlugs(data);
+  return {
+    kind: "builtin",
+    id,
+    // A stored node says where it sits. The canvas keeps that on the React Flow
+    // node, and a node the drag never placed has no position to report, so the
+    // origin is the honest answer rather than a field the document lacks.
+    position: nodePosition(data),
+    operator_id: data.spec.operator_id,
+    operator_version: data.spec.operator_version,
+    config: data.config,
+    input_plugs: activeInputPlugIds
+      ? inputPlugs.filter((plug) => activeInputPlugIds.has(plug.id))
+      : inputPlugs,
+    artifact_type_bindings: serializeArtifactTypeBindings(data),
+  };
+}
+
+/** The node's own position, as the canvas holds it. */
+function nodePosition(data: WorkflowNodeData): { x: number; y: number } {
+  const read = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const x = read(data.x);
+  const y = read(data.y);
+  return { x: x ?? 0, y: y ?? 0 };
+}
+
+export function serializeInputPlugs(data: WorkflowNodeData): InputPlugInput[] {
+  return data.inputPlugs.map((plug) => ({
+    id: plug.id,
+    port: plug.portName,
+  }));
+}
+
+export function serializeArtifactTypeBindings(
+  data: WorkflowNodeData,
+): WorkflowArtifactTypeBindingInput[] {
+  return Object.entries(data.artifactTypeBindings)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([variable, artifactType]) => ({
+      variable,
+      artifact_type: {
+        id: artifactType.id,
+        schema_version: artifactType.schema_version,
+      },
+    }));
+}
+
+export function declaredArtifactTypeVariables(
+  spec: NodeSpec,
+): readonly string[] {
+  return [
+    ...new Set(
+      [...spec.inputs, ...spec.outputs].flatMap((port) => {
+        const variable = portArtifactTypeVariable(port);
+        return variable ? [variable] : [];
+      }),
+    ),
+  ];
+}
+
+export function effectivePortShape(
+  data: WorkflowNodeData,
+  port: Port,
+): Port["shape"] {
+  if (!data.mappedInputPorts.length) return port.shape;
+  if (port.direction === "output") return "many";
+  return data.mappedInputPorts.includes(port.name) ? "many" : port.shape;
+}
+
+export function portIsService(port: Port): boolean {
+  return port.kind === "service";
+}
+
+/** A provider node: every output is a service port (no stored artifact). */
+export function isServiceProviderNode(spec: NodeSpec): boolean {
+  return (
+    spec.outputs.length > 0 && spec.outputs.every((port) => portIsService(port))
+  );
+}
+
+export function portMetaForPort(
+  port: Port,
+  shape: Port["shape"] = port.shape,
+  plugId?: string,
+  artifactTypeBindings: WorkflowArtifactTypeBindings = {},
+): PortMeta {
+  const base = {
+    portName: port.name,
+    shape,
+    direction: port.direction,
+    ...(plugId ? { plugId } : {}),
+  };
+  if (portIsService(port)) {
+    const serviceContracts = port.service_contracts ?? [];
+    if (!serviceContracts.length) {
+      throw new Error(
+        `Cannot encode service port ${port.name}: it names no service contract`,
+      );
+    }
+    return {
+      ...base,
+      serviceContracts,
+    };
+  }
+
+  const artifactType = resolvedPortArtifactType(port, artifactTypeBindings);
+  if (artifactType) {
+    const alsoAccepts = port.also_accepts ?? [];
+    return {
+      ...base,
+      artifactTypeId: artifactType.id,
+      schemaVersion: artifactType.schema_version,
+      ...(alsoAccepts.length ? { alsoAccepts } : {}),
+    };
+  }
+
+  const variable = portArtifactTypeVariable(port);
+  if (!variable) {
+    throw new Error(
+      `Cannot encode port ${port.name}: it has no artifact type or artifact type variable`,
+    );
+  }
+  return {
+    ...base,
+    artifactTypeVariable: variable,
+  };
+}
+
+export function portArtifactType(port: Port): ArtifactTypeKey | null {
+  return port.artifact_type ?? null;
+}
+
+export function portArtifactTypeVariable(port: Port): string | null {
+  return port.artifact_type_variable ?? null;
+}
+
+export function resolvedPortArtifactType(
+  port: Port,
+  artifactTypeBindings: WorkflowArtifactTypeBindings = {},
+): ArtifactTypeKey | null {
+  const artifactType = portArtifactType(port);
+  if (artifactType) return artifactType;
+
+  const variable = portArtifactTypeVariable(port);
+  return variable ? (artifactTypeBindings[variable] ?? null) : null;
+}
+
+export function acceptedPortShapes(port: Port): readonly Port["shape"][] {
+  return port.accepted_shapes?.length ? port.accepted_shapes : [port.shape];
+}
+
+export function portHasInstancePlugs(port: Port): boolean {
+  return port.direction === "input" && port.instance_plugs === true;
+}
+
+/**
+ * Collection modes an edge may use from a source of `sourceShape` into
+ * `targetPort`, whose effective shape is `targetShape`; the default comes first.
+ * A sequence feeding a non-variadic sequence input may be passed whole or
+ * mapped, in which case each invocation receives a sequence of one.
+ */
+export function collectionModesForShapes(
+  sourceShape: Port["shape"],
+  targetPort: Port,
+  targetShape: Port["shape"],
+): RunEdgeCollectionMode[] {
+  const modes: RunEdgeCollectionMode[] = [];
+  const instancePlugs = portHasInstancePlugs(targetPort);
+  if (
+    acceptedPortShapes(targetPort).includes(sourceShape) ||
+    (!instancePlugs && sourceShape === targetShape)
+  ) {
+    modes.push("direct");
+  }
+  if (
+    sourceShape === "many" &&
+    !instancePlugs &&
+    ((targetShape === "one" &&
+      !acceptedPortShapes(targetPort).includes("many")) ||
+      (targetPort.shape === "many" && !targetPort.variadic))
+  ) {
+    modes.push("map");
+  }
+  return modes;
+}

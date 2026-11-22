@@ -6,7 +6,7 @@ import { Trash2 } from "lucide-react";
 
 import { IconButton } from "@/components/ui/button";
 import { Field, TextInput } from "@/components/ui/field";
-import { artifactTypeTitle } from "../canvas/artifact-type-label";
+import { artifactTypeTitle } from "../artifacts/artifact-type-label";
 import type {
   NodeRegistry,
   NodeSpec,
@@ -17,7 +17,7 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   ARTIFACT_DROP_DATA_TYPE,
   readArtifactDrop,
-} from "../model/artifact-drop";
+} from "../artifacts/artifact-drop";
 import {
   cardContext,
   libraryItemContext,

@@ -1,7 +1,7 @@
 import * as React from "react";
 import { agentApi, type AgentScope, type AgentEvent } from "@/lib/api/agents";
 import type { components } from "@/lib/api/generated/grafy";
-import { createUuid } from "../model/uuid";
+import { createUuid } from "../authoring/uuid";
 import {
   appendDelta,
   parseDelta,

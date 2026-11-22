@@ -5,8 +5,8 @@ import * as stylex from "@stylexjs/stylex";
 import { ChevronDown } from "lucide-react";
 
 import { IconButton } from "@/components/ui/button";
-import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { useEffectReducer } from "@/lib/state/use-effect-reducer";
 
 import { CellCanvasProvider, CellViewportLayer } from "./CellCanvasContext";
 import { CellCard } from "./CellCard";
@@ -28,17 +28,12 @@ import { CellArtifactSequenceSpread } from "./cards/CellArtifactSequenceSpread";
 import { CellOperatorCard } from "./cards/CellOperatorCard";
 import { CellStackTuckLayer, type StackTuck } from "./cards/CellStackTuckLayer";
 import {
-  artifactCardItemCount,
   computeSequenceSpreadLayout,
   findArtifactMergeSuggestions,
-  findArtifactMergeTarget,
-  findSpreadInsertTarget,
   type ArtifactMergeOrder,
   type ArtifactMergeSuggestion,
   type OpenSequenceSpreadLayout,
-  type SpreadInsertTarget,
 } from "./cell-artifact-stacking";
-import { plugRowOffset } from "./cell-card-geometry";
 import type {
   AnnotationColorToken,
   ArtifactCardSurfaceData,
@@ -51,6 +46,24 @@ import type {
   CellSelectionSnapshot,
   CellViewportApi,
 } from "./cell-contracts";
+import {
+  cellCanvasInteractionReducer,
+  createInitialCellCanvasInteractionState,
+  indexGraph,
+  isUnderCardsFrame,
+  portColor,
+  previewPoints,
+  resolvePortColor,
+  restingScene,
+  wellKey,
+  type CellCanvasInteractionAction,
+  type CellCanvasInteractionEffect,
+  type CellCardMove,
+  type CellConnectionEnds,
+  type GraphIndex,
+  type OpenSpreadSnapshot,
+  type StackTuckJoin,
+} from "./cell-canvas-interaction-reducer";
 import { detectCellDockedJoins } from "./cell-docking";
 import {
   CellConnectionPreview,
@@ -63,28 +76,15 @@ import {
 } from "./cell-glass-stage";
 import { DEFAULT_CELL_GLASS_LOOK, DEFAULT_CELL_ROUTING } from "./cell-look";
 import {
-  computeCellResize,
-  createGroupDragSession,
-  partitionSceneForMovingCards,
-  resolveNonOverlappingDelta,
-  updateGroupDragSession,
-  type GroupDragSession,
-} from "./cell-group-drag";
-import {
   ARTIFACT_CARD_OUTPUT_PORT_ID,
-  CELL_PIPE_STUB_MIN,
   CELL_SIZE,
   artifactCardOutputRow,
   cardWorldRect,
   cellToWorldOrigin,
-  PUNCHED_PORT_INSET,
   portAnchorCenter,
   portSide,
-  portWorldCenter,
-  punchedPipePoints,
   type CellCardModel,
   type CellCoord,
-  type CellDir,
   type CellGraph,
   type CellPort,
   type CellRoutingOptions,
@@ -94,23 +94,12 @@ import {
 } from "./cell-model";
 import { solvePipeAttachmentAnchors } from "./cell-pipe-attachments";
 import { routeCellGraph } from "./cell-router";
-import {
-  cardsInMarqueeRect,
-  createCellInteractionStore,
-  pipesInMarqueeRect,
-} from "./cell-store";
-import {
-  MORPH_DURATION_MS,
-  anchorPipeEndpoints,
-  createCardSettle,
-  morphPipePoints,
-  retargetCardSettle,
-  shouldAnimateMotion,
-  stepCardSettle,
-  type CardSettleState,
-} from "./cell-transitions";
+import { createCellInteractionStore } from "./cell-store";
+import { shouldAnimateMotion } from "./cell-transitions";
 import { useCellViewport, type WorldBounds } from "./use-cell-viewport";
 import { useRemoteCellDrag } from "./use-remote-cell-drag";
+
+export type { CellCardMove, CellConnectionEnds };
 
 export interface CellCanvasStats {
   cards: number;
@@ -173,19 +162,6 @@ export interface CellCanvasHandle {
   cancelGesture(): void;
 }
 
-export interface CellCardMove {
-  cardId: string;
-  col: number;
-  row: number;
-}
-
-export interface CellConnectionEnds {
-  sourceCardId: string;
-  sourcePortId: string;
-  targetCardId: string;
-  targetPortId: string;
-}
-
 export interface CellCanvasProps {
   graph: CellGraph;
   surfaceById?: Readonly<Record<string, CellCardSurfaceData>>;
@@ -213,11 +189,24 @@ export interface CellCanvasProps {
   onPaneClick?: () => void;
   onSelectEdgeAttachment?: (pipeId: string, anchor?: WorldPoint) => void;
   onOperatorRun?: (cardId: string) => void;
+  /** A field's new value: a primitive, or a whole object or list. */
   onOperatorConfigChange?: (
     cardId: string,
     fieldId: string,
-    value: string | number | boolean,
+    value: unknown,
   ) => void;
+  /** Opens or closes one config section of a card. */
+  onOperatorToggleConfigSection?: (
+    cardId: string,
+    sectionKey: string,
+    open: boolean,
+  ) => void;
+  onOperatorApplySecret?: (
+    cardId: string,
+    name: string,
+    value: string,
+  ) => Promise<boolean>;
+  onOperatorRemoveSecret?: (cardId: string, name: string) => Promise<boolean>;
   onOperatorAddPlug?: (cardId: string, portName: string) => void;
   onOperatorRemovePlug?: (
     cardId: string,
@@ -278,11 +267,6 @@ export interface CellCanvasProps {
   children?: React.ReactNode;
 }
 
-/** Screen pixels a pointer travels before a press on a card becomes a drag. */
-const DRAG_THRESHOLD_PX = 3;
-/** How close, in flow units, the cursor must come to a port to wire to it. */
-const WIRE_SNAP_RADIUS = 22;
-
 export { DEFAULT_CELL_GLASS_LOOK, DEFAULT_CELL_ROUTING };
 
 const EMPTY_ID_SET: ReadonlySet<string> = new Set();
@@ -328,99 +312,6 @@ const s = stylex.create({
 // ---------------------------------------------------------------------------
 // Pure helpers
 
-interface DragGhostBox {
-  cardId: string;
-  col: number;
-  row: number;
-  widthCells: number;
-  heightCells: number;
-}
-
-interface DragFrameState {
-  anchorCardId: string;
-  snappedDelta: CellCoord;
-  visualOffset: WorldPoint;
-  showGhostCells: boolean;
-  ghostBoxes: readonly DragGhostBox[];
-  movingPipes: readonly StagePipe[];
-  movingWells: readonly StageWell[];
-}
-
-interface GraphIndex {
-  cardsById: ReadonlyMap<string, CellCardModel>;
-  portsByCardId: ReadonlyMap<string, ReadonlyMap<string, CellPort>>;
-  connectedPortIdsByCardId: ReadonlyMap<string, ReadonlySet<string>>;
-}
-
-interface PortRef {
-  card: CellCardModel;
-  port: CellPort;
-}
-
-interface RestingScene {
-  pipes: readonly StagePipe[];
-  wells: readonly StageWell[];
-  /** Keys of the wells the resting scene draws. */
-  wellKeys: ReadonlySet<string>;
-  /** Pipes attached to the moving card group, which the moving scene draws. */
-  attachedPipeIds: ReadonlySet<string>;
-}
-
-interface PipeMotion {
-  id: string;
-  sourceCardId: string;
-  targetCardId: string;
-  sourcePortId: string;
-  targetPortId: string;
-  color: string;
-  sequence: boolean;
-  disabled: boolean;
-  fromPoints: WorldPoint[];
-  toPoints: WorldPoint[];
-  currentPoints: WorldPoint[];
-  sourceExit: CellDir;
-  targetExit: CellDir;
-  depth: number;
-  morphStartMs: number;
-  morphing: boolean;
-  /** True while this pipe's two endpoints remain flush-docked at the current cell delta. */
-  dockedAtCurrentCell: boolean;
-}
-
-interface GroupCardDrag {
-  anchorCardId: string;
-  session: GroupDragSession;
-  startClient: WorldPoint;
-  movedBeyondClick: boolean;
-  pointerReleased: boolean;
-  cellSettle: CardSettleState;
-  /** The delta the group lands on if dropped now: never overlapping a card. */
-  landingDelta: CellCoord;
-  attachedPipeIds: ReadonlySet<string>;
-  restingWellKeys: ReadonlySet<string>;
-  pipes: PipeMotion[];
-  /** Ports are punched holes in the cards: pipes run on into them. */
-  punched: boolean;
-}
-
-interface WireTarget {
-  cardId: string;
-  port: CellPort;
-  centre: WorldPoint;
-}
-
-interface WiringState {
-  fromCardId: string;
-  fromPort: CellPort;
-  cursor: WorldPoint;
-  target: WireTarget | null;
-}
-
-interface ResizeSession {
-  cardSnapshot: CellCardModel;
-  startWorld: WorldPoint;
-}
-
 function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a === b) return true;
   if (a.size !== b.size) return false;
@@ -428,19 +319,6 @@ function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
     if (!b.has(item)) return false;
   }
   return true;
-}
-
-function isUnderCardsFrame(
-  cardId: string,
-  surfaceById: Readonly<Record<string, CellCardSurfaceData>>,
-): boolean {
-  const surface = surfaceById[cardId];
-  return surface?.kind === "annotation" && surface.variant === "frame";
-}
-
-function resolvePortColor(artifactTypeId: string, port?: CellPort): string {
-  if (port?.kind === "service") return tokens.colorAccent;
-  return artifactTypeColor(artifactTypeId, tokens.colorMuted);
 }
 
 export function cellGraphBounds(cards: readonly CellCardModel[]): WorldBounds {
@@ -466,416 +344,29 @@ export function cellGraphBounds(cards: readonly CellCardModel[]): WorldBounds {
   };
 }
 
-function allCardPorts(
-  card: CellCardModel,
-  surface: CellCardSurfaceData | undefined,
-): readonly CellPort[] {
-  if (surface?.kind !== "operator" || !surface.instancePlugGroups?.length) {
-    return card.ports;
-  }
-  const listed = new Set(card.ports.map((p) => p.id));
-  const extra: CellPort[] = [];
-  for (const group of surface.instancePlugGroups) {
-    group.plugs.forEach((plug, index) => {
-      const compositeId = `${group.portName}::${plug.plugId}`;
-      if (listed.has(plug.plugId) || listed.has(compositeId)) return;
-      extra.push({
-        id: compositeId,
-        name: plug.label,
-        direction: "input",
-        rowOffset: plugRowOffset(group, index),
-        artifactTypeId: group.artifactTypeId,
-        shape: group.shape,
-      });
-    });
-  }
-  return extra.length > 0 ? [...card.ports, ...extra] : card.ports;
-}
-
-function indexGraph(
-  graph: CellGraph,
-  surfaceById: Readonly<Record<string, CellCardSurfaceData>>,
-): GraphIndex {
-  const cardsById = new Map<string, CellCardModel>();
-  const portsByCardId = new Map<string, Map<string, CellPort>>();
-  for (const card of graph.cards) {
-    cardsById.set(card.id, card);
-    const ports = allCardPorts(card, surfaceById[card.id]);
-    portsByCardId.set(
-      card.id,
-      new Map(ports.map((p) => [cellPortKey(p.direction, p.id), p])),
-    );
-  }
-  // Keyed by `cellPortKey`: an input and an output may share a bare id.
-  const connected = new Map<string, Set<string>>();
-  const mark = (cardId: string, key: string) => {
-    const ids = connected.get(cardId) ?? new Set<string>();
-    ids.add(key);
-    connected.set(cardId, ids);
-  };
-  for (const pipe of graph.pipes) {
-    mark(pipe.sourceCardId, cellPortKey("output", pipe.sourcePortId));
-    mark(pipe.targetCardId, cellPortKey("input", pipe.targetPortId));
-  }
-  return { cardsById, portsByCardId, connectedPortIdsByCardId: connected };
-}
-
-function findPort(
-  index: GraphIndex,
-  cardId: string,
-  portId: string,
-  direction: CellPort["direction"],
-): PortRef | null {
-  const card = index.cardsById.get(cardId);
-  const port = index.portsByCardId
-    .get(cardId)
-    ?.get(cellPortKey(direction, portId));
-  return card && port ? { card, port } : null;
-}
-
-function portColor(port: CellPort): string {
-  return resolvePortColor(port.artifactTypeId, port);
-}
-
-function wellKey(
-  cardId: string,
-  direction: CellPort["direction"],
-  portId: string,
-): string {
-  return `${cardId}:${cellPortKey(direction, portId)}`;
-}
-
-/** Adds the port's well unless one is already bored there: one per port. */
-function addWell(
-  wells: StageWell[],
-  keys: Set<string>,
-  skip: ReadonlySet<string> | null,
-  ref: PortRef,
-  centre: WorldPoint,
-  exit: CellDir,
-  pipeColor: string,
-  pipeTwin: boolean,
-): void {
-  const key = wellKey(ref.card.id, ref.port.direction, ref.port.id);
-  if (keys.has(key) || skip?.has(key)) return;
-  keys.add(key);
-  wells.push({
-    key,
-    centre,
-    exit,
-    pipeColor,
-    portColor: portColor(ref.port),
-    portSequence: ref.port.shape === "many",
-    pipeTwin,
-  });
-}
-
-function restingScene(
-  graph: CellGraph,
-  index: GraphIndex,
-  layout: CellRoutingResult,
-  dockedPipeIds: ReadonlySet<string>,
-  movingCardIds: ReadonlySet<string>,
-  punched: boolean,
-): RestingScene {
-  const partition = partitionSceneForMovingCards(graph, movingCardIds);
-  const pipes: StagePipe[] = [];
-  const wells: StageWell[] = [];
-  const wellKeys = new Set<string>();
-  for (const pipe of partition.restingPipes) {
-    if (dockedPipeIds.has(pipe.id)) continue;
-    const routed = layout.pipes.get(pipe.id);
-    const source = findPort(
-      index,
-      pipe.sourceCardId,
-      pipe.sourcePortId,
-      "output",
-    );
-    const target = findPort(
-      index,
-      pipe.targetCardId,
-      pipe.targetPortId,
-      "input",
-    );
-    if (!routed || !source || !target) continue;
-    const color = portColor(source.port);
-    const sequence = source.port.shape === "many";
-    pipes.push({
-      id: pipe.id,
-      points: punched
-        ? punchedPipePoints(
-            routed.points,
-            portAnchorCenter(source.card, source.port, true),
-            portAnchorCenter(target.card, target.port, true),
-          )
-        : routed.points,
-      color,
-      sequence,
-      depth: routed.depth,
-      disabled: pipe.enabled === false || pipe.incompatible === true,
-    });
-    const sourceCentre = portWorldCenter(source.card, source.port);
-    const targetCentre = portWorldCenter(target.card, target.port);
-    addWell(
-      wells,
-      wellKeys,
-      null,
-      source,
-      sourceCentre,
-      routed.sourceExit,
-      color,
-      sequence,
-    );
-    addWell(
-      wells,
-      wellKeys,
-      null,
-      target,
-      targetCentre,
-      routed.targetExit,
-      color,
-      sequence,
-    );
-  }
-  return {
-    pipes,
-    wells,
-    wellKeys,
-    attachedPipeIds: partition.attachedPipeIds,
-  };
-}
-
-/**
- * An orthogonal preview from a port: out along its side for at least a stub,
- * across at the halfway line, then on to the end.
- */
-function previewPoints(
-  start: WorldPoint,
-  side: CellDir,
-  end: WorldPoint,
-  punched: boolean,
-): WorldPoint[] {
-  const out = side === "right" ? 1 : -1;
-  const ahead = (end.x - start.x) * out;
-  // From a punched hole the stub first runs out from under the card to its
-  // gutter cell's centre, then keeps the router's own minimum.
-  const stub = punched
-    ? PUNCHED_PORT_INSET + CELL_SIZE / 2 + CELL_PIPE_STUB_MIN
-    : CELL_PIPE_STUB_MIN;
-  if (Math.abs(end.y - start.y) < 0.5 && ahead >= stub) {
-    return [start, end];
-  }
-  const reach = start.x + out * stub;
-  const halfway = (start.x + end.x) / 2;
-  const x = out > 0 ? Math.max(reach, halfway) : Math.min(reach, halfway);
-  return [start, { x, y: start.y }, { x, y: end.y }, end];
-}
-
-function liveCentre(
-  drag: GroupCardDrag,
-  index: GraphIndex,
-  cardId: string,
-  portId: string,
-  direction: CellPort["direction"],
-  offset: WorldPoint,
-): WorldPoint | null {
-  const ref = findPort(index, cardId, portId, direction);
-  if (!ref) return null;
-  return drag.session.movingCardIds.has(cardId)
-    ? portWorldCenter(ref.card, ref.port, offset)
-    : portWorldCenter(ref.card, ref.port);
-}
-
-/** A punched port's centre where it is drawn now, moving with its card or not. */
-function liveAnchor(
-  drag: GroupCardDrag,
-  ref: PortRef,
-  offset: WorldPoint,
-): WorldPoint {
-  return drag.session.movingCardIds.has(ref.card.id)
-    ? portAnchorCenter(ref.card, ref.port, true, offset)
-    : portAnchorCenter(ref.card, ref.port, true);
-}
-
-/** Steps every attached pipe to `now` and draws the moving scene. */
-function buildDragFrame(
-  drag: GroupCardDrag,
-  index: GraphIndex,
-  now: number,
-): DragFrameState {
-  const visualOrigin = drag.cellSettle.current;
-  const anchorInitial = drag.session.anchorInitialCell;
-  const visualOffset = {
-    x: visualOrigin.x - anchorInitial.col * CELL_SIZE,
-    y: visualOrigin.y - anchorInitial.row * CELL_SIZE,
-  };
-  const movingPipes: StagePipe[] = [];
-  const movingWells: StageWell[] = [];
-  const wellKeys = new Set<string>();
-  for (const motion of drag.pipes) {
-    if (motion.dockedAtCurrentCell) continue;
-    let basePoints = motion.toPoints;
-    if (motion.morphing) {
-      const progress = (now - motion.morphStartMs) / MORPH_DURATION_MS;
-      basePoints = morphPipePoints(
-        motion.fromPoints,
-        motion.toPoints,
-        progress,
-      );
-      if (progress >= 1) motion.morphing = false;
-    }
-    const sourceCentre = liveCentre(
-      drag,
-      index,
-      motion.sourceCardId,
-      motion.sourcePortId,
-      "output",
-      visualOffset,
-    );
-    const targetCentre = liveCentre(
-      drag,
-      index,
-      motion.targetCardId,
-      motion.targetPortId,
-      "input",
-      visualOffset,
-    );
-    const source = findPort(
-      index,
-      motion.sourceCardId,
-      motion.sourcePortId,
-      "output",
-    );
-    const target = findPort(
-      index,
-      motion.targetCardId,
-      motion.targetPortId,
-      "input",
-    );
-    if (!sourceCentre || !targetCentre || !source || !target) continue;
-    const anchored = anchorPipeEndpoints(
-      basePoints,
-      sourceCentre,
-      motion.sourceExit,
-      targetCentre,
-      motion.targetExit,
-    );
-    motion.currentPoints = anchored;
-    movingPipes.push({
-      id: motion.id,
-      points: drag.punched
-        ? punchedPipePoints(
-            anchored,
-            liveAnchor(drag, source, visualOffset),
-            liveAnchor(drag, target, visualOffset),
-          )
-        : anchored,
-      color: motion.color,
-      sequence: motion.sequence,
-      depth: motion.depth,
-      disabled: motion.disabled,
-    });
-    addWell(
-      movingWells,
-      wellKeys,
-      drag.restingWellKeys,
-      source,
-      sourceCentre,
-      motion.sourceExit,
-      motion.color,
-      motion.sequence,
-    );
-    addWell(
-      movingWells,
-      wellKeys,
-      drag.restingWellKeys,
-      target,
-      targetCentre,
-      motion.targetExit,
-      motion.color,
-      motion.sequence,
-    );
-  }
-
-  const ghostBoxes: DragGhostBox[] = [];
-  if (!drag.pointerReleased) {
-    for (const [cardId, initial] of drag.session.initialCells) {
-      const card = index.cardsById.get(cardId);
-      if (!card) continue;
-      ghostBoxes.push({
-        cardId,
-        col: initial.col + drag.landingDelta.col,
-        row: initial.row + drag.landingDelta.row,
-        widthCells: card.widthCells,
-        heightCells: card.heightCells,
-      });
-    }
-  }
-
-  return {
-    anchorCardId: drag.anchorCardId,
-    snappedDelta: drag.session.currentDelta,
-    visualOffset,
-    showGhostCells: !drag.pointerReleased,
-    ghostBoxes,
-    movingPipes,
-    movingWells,
-  };
-}
-
-function seedPipeMotions(
-  graph: CellGraph,
-  index: GraphIndex,
-  layout: CellRoutingResult,
-  dockedPipeIds: ReadonlySet<string>,
-  attachedPipeIds: ReadonlySet<string>,
-): PipeMotion[] {
-  const motions: PipeMotion[] = [];
-  for (const pipe of graph.pipes) {
-    if (!attachedPipeIds.has(pipe.id)) continue;
-    const source = findPort(
-      index,
-      pipe.sourceCardId,
-      pipe.sourcePortId,
-      "output",
-    );
-    const target = findPort(
-      index,
-      pipe.targetCardId,
-      pipe.targetPortId,
-      "input",
-    );
-    if (!source || !target) continue;
-    const routed = layout.pipes.get(pipe.id);
-    const fallbackPoints = [
-      portWorldCenter(source.card, source.port),
-      portWorldCenter(target.card, target.port),
-    ];
-    const points = routed?.points ?? fallbackPoints;
-    motions.push({
-      id: pipe.id,
-      sourceCardId: pipe.sourceCardId,
-      targetCardId: pipe.targetCardId,
-      sourcePortId: pipe.sourcePortId,
-      targetPortId: pipe.targetPortId,
-      color: portColor(source.port),
-      sequence: source.port.shape === "many",
-      disabled: pipe.enabled === false || pipe.incompatible === true,
-      fromPoints: points,
-      toPoints: points,
-      currentPoints: points,
-      sourceExit: routed?.sourceExit ?? "right",
-      targetExit: routed?.targetExit ?? "left",
-      depth: routed?.depth ?? 0,
-      morphStartMs: 0,
-      morphing: false,
-      dockedAtCurrentCell: dockedPipeIds.has(pipe.id),
-    });
-  }
-  return motions;
-}
-
 // ---------------------------------------------------------------------------
+
+type GestureListeners = {
+  move: (event: PointerEvent) => void;
+  up: (event: PointerEvent) => void;
+};
+
+function detachGestureListeners(slot: {
+  current: GestureListeners | null;
+}): void {
+  const listeners = slot.current;
+  if (!listeners) return;
+  window.removeEventListener("pointermove", listeners.move);
+  window.removeEventListener("pointerup", listeners.up);
+  window.removeEventListener("pointercancel", listeners.up);
+  slot.current = null;
+}
+
+function cancelDragFrame(frameRef: { current: number }): void {
+  if (frameRef.current === 0) return;
+  cancelAnimationFrame(frameRef.current);
+  frameRef.current = 0;
+}
 
 export function CellCanvas({
   graph,
@@ -905,6 +396,9 @@ export function CellCanvas({
   onSelectEdgeAttachment,
   onOperatorRun,
   onOperatorConfigChange,
+  onOperatorToggleConfigSection,
+  onOperatorApplySecret,
+  onOperatorRemoveSecret,
   onOperatorAddPlug,
   onOperatorRemovePlug,
   onOperatorToggleAppendix,
@@ -929,14 +423,14 @@ export function CellCanvas({
   const punched = look.well === "punched";
   const {
     viewport,
-    panning,
+    panBy,
+    flushPan,
     zoomAtCenter,
     zoomBy,
     fitRect,
     viewAt,
     screenToWorld,
     worldToScreen,
-    onBackgroundPointerDown,
   } = useCellViewport(containerRef, { fitLeftClearance });
 
   const [store] = React.useState(createCellInteractionStore);
@@ -952,27 +446,9 @@ export function CellCanvas({
   );
 
   const [hoveredPipeId, setHoveredPipeId] = React.useState<string | null>(null);
-  const [rerouteCount, setRerouteCount] = React.useState(0);
-  const [movingCardIds, setMovingCardIds] =
-    React.useState<ReadonlySet<string>>(EMPTY_ID_SET);
-  const [draggedCardId, setDraggedCardId] = React.useState<string | null>(null);
-  const [dragFrame, setDragFrame] = React.useState<DragFrameState | null>(null);
-  const [resizePreview, setResizePreview] =
-    React.useState<CellResizeCommit | null>(null);
-  const [wiring, setWiring] = React.useState<WiringState | null>(null);
-  const [lastConnectDropEmpty, setLastConnectDropEmpty] =
-    React.useState<CellConnectDropEmptyEvent | null>(null);
-  /** The artifact card a dragged card joins if released now. */
-  const [mergeTarget, setMergeTarget] = React.useState<{
-    cardId: string;
-    itemCount: number;
-  } | null>(null);
   /** Cards sliding under a stack they just joined, drawn until they land. */
   const [stackTucks, setStackTucks] = React.useState<readonly StackTuck[]>([]);
   const stackTuckSeqRef = React.useRef(0);
-  /** The open spread slot a dragged canvas card inserts into if released now. */
-  const [spreadInsertTarget, setSpreadInsertTarget] =
-    React.useState<SpreadInsertTarget | null>(null);
   /** The sequence card laid open in place. */
   const [expandedSequenceId, setExpandedSequenceId] = React.useState<
     string | null
@@ -987,6 +463,291 @@ export function CellCanvas({
   const [spreadViewportWidth, setSpreadViewportWidth] = React.useState<
     number | undefined
   >(undefined);
+
+  const graphRef = React.useRef(graph);
+  const surfaceByIdRef = React.useRef(surfaceById);
+  const foregroundCardsRef = React.useRef<readonly CellCardModel[]>(
+    graph.cards,
+  );
+  const indexRef = React.useRef<GraphIndex | null>(null);
+  const dockingRef = React.useRef<ReturnType<
+    typeof detectCellDockedJoins
+  > | null>(null);
+  const layoutRef = React.useRef<CellRoutingResult | null>(null);
+  const routingRef = React.useRef(routing);
+  const viewportRef = React.useRef(viewport);
+  const rerouteRef = React.useRef(0);
+  const draggedRef = React.useRef<string | null>(null);
+  const editableRef = React.useRef(editable);
+  const punchedRef = React.useRef(punched);
+  const stackLookRef = React.useRef({
+    stackStyle: look.stackStyle,
+    corners: look.corners,
+  });
+  const lastDropEmptyRef = React.useRef<CellConnectDropEmptyEvent | null>(null);
+  const onMoveCardsRef = React.useRef(onMoveCards);
+  const onDragCardsProgressRef = React.useRef(onDragCardsProgress);
+  const onResizeCardRef = React.useRef(onResizeCard);
+  const onCanConnectRef = React.useRef(onCanConnect);
+  const onConnectRef = React.useRef(onConnect);
+  const onConnectDropEmptyRef = React.useRef(onConnectDropEmpty);
+  const onRemoveCardsRef = React.useRef(onRemoveCards);
+  const onRemovePipesRef = React.useRef(onRemovePipes);
+  const onSelectionChangeRef = React.useRef(onSelectionChange);
+  const onPaneClickRef = React.useRef(onPaneClick);
+  const onSelectEdgeAttachmentRef = React.useRef(onSelectEdgeAttachment);
+  const canMergeArtifactCardsRef = React.useRef(canMergeArtifactCards);
+  const onMergeArtifactCardsRef = React.useRef(onMergeArtifactCards);
+  const onInsertArtifactCardIntoSequenceRef = React.useRef(
+    onInsertArtifactCardIntoSequence,
+  );
+  const expandedSequenceIdRef = React.useRef(expandedSequenceId);
+  const openSpreadRef = React.useRef<OpenSpreadSnapshot | null>(null);
+  const onViewportZoomChangeRef = React.useRef(onViewportZoomChange);
+  const onStatsChangeRef = React.useRef(onStatsChange);
+  const panByRef = React.useRef(panBy);
+  const flushPanRef = React.useRef(flushPan);
+  const dragProgressActiveRef = React.useRef(false);
+  const screenToWorldRef = React.useRef(screenToWorld);
+  const commitSelectionRef = React.useRef<
+    (next: { cardIds?: Iterable<string>; pipeIds?: Iterable<string> }) => void
+  >(() => {});
+  const toggleCardSelectionRef = React.useRef<(cardId: string) => void>(
+    () => {},
+  );
+  const clearSelectionRef = React.useRef<() => void>(() => {});
+  const startStackTucksRef = React.useRef<
+    (joins: readonly StackTuckJoin[]) => void
+  >(() => {});
+  const gestureListenersRef = React.useRef<GestureListeners | null>(null);
+  const dragFrameRef = React.useRef(0);
+  const mountedRef = React.useRef(true);
+
+  const runEffect = React.useCallback(
+    (
+      effect: CellCanvasInteractionEffect,
+      dispatchAction: React.Dispatch<CellCanvasInteractionAction>,
+    ) => {
+      switch (effect.kind) {
+        case "attachWindowGesture": {
+          detachGestureListeners(gestureListenersRef);
+          const pointerId = effect.pointerId;
+          const move = (event: PointerEvent) => {
+            if (event.pointerId !== pointerId) return;
+            const clientPoint = { x: event.clientX, y: event.clientY };
+            if (effect.gesture === "pan") {
+              dispatchAction({ kind: "panMove", pointerId, clientPoint });
+              return;
+            }
+            const worldPoint = screenToWorldRef.current(
+              event.clientX,
+              event.clientY,
+            );
+            if (effect.gesture === "marquee") {
+              const layout = layoutRef.current;
+              if (!layout) return;
+              dispatchAction({
+                kind: "marqueeMove",
+                pointerId,
+                worldPoint,
+                foregroundCards: foregroundCardsRef.current,
+                routedPipes: layout.pipes,
+              });
+              return;
+            }
+            if (effect.gesture === "drag") {
+              dispatchAction({
+                kind: "dragMove",
+                pointerId,
+                clientPoint,
+                worldPoint,
+                now: performance.now(),
+                openSpread: openSpreadRef.current,
+              });
+              return;
+            }
+            dispatchAction({
+              kind: "connectMove",
+              pointerId,
+              cursor: worldPoint,
+              cards: graphRef.current.cards,
+              surfaces: surfaceByIdRef.current,
+              punched: punchedRef.current,
+              canConnect: onCanConnectRef.current,
+            });
+          };
+          const up = (event: PointerEvent) => {
+            if (event.pointerId !== pointerId) return;
+            if (effect.gesture === "pan") {
+              dispatchAction({ kind: "panEnd", pointerId });
+              return;
+            }
+            if (effect.gesture === "marquee") {
+              dispatchAction({ kind: "marqueeEnd", pointerId });
+              return;
+            }
+            if (effect.gesture === "drag") {
+              if (event.type === "pointercancel") {
+                dispatchAction({ kind: "cancelGesture" });
+                return;
+              }
+              dispatchAction({
+                kind: "dragUp",
+                pointerId,
+                now: performance.now(),
+              });
+              return;
+            }
+            dispatchAction({
+              kind: "connectEnd",
+              pointerId,
+              clientPoint: { x: event.clientX, y: event.clientY },
+              isCancel: event.type === "pointercancel",
+            });
+          };
+          gestureListenersRef.current = { move, up };
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up);
+          window.addEventListener("pointercancel", up);
+          return;
+        }
+        case "detachWindowGesture":
+          detachGestureListeners(gestureListenersRef);
+          flushPanRef.current(true);
+          return;
+        case "scheduleDragFrame": {
+          if (dragFrameRef.current !== 0) return;
+          dragFrameRef.current = requestAnimationFrame(() => {
+            dragFrameRef.current = 0;
+            if (!mountedRef.current) return;
+            const index = indexRef.current;
+            if (!index) return;
+            dispatchAction({
+              kind: "dragTick",
+              now: performance.now(),
+              index,
+            });
+          });
+          return;
+        }
+        case "cancelDragFrame":
+          cancelDragFrame(dragFrameRef);
+          return;
+        case "panViewportBy":
+          panByRef.current(effect.dx, effect.dy);
+          return;
+        case "setStoreMarquee":
+          store.setMarquee(effect.rect);
+          return;
+        case "commitSelection":
+          commitSelectionRef.current(effect.selection);
+          return;
+        case "toggleCardSelection":
+          toggleCardSelectionRef.current(effect.cardId);
+          return;
+        case "clearSelection":
+          clearSelectionRef.current();
+          return;
+        case "invokePaneClick":
+          onPaneClickRef.current?.();
+          return;
+        case "setStoreDraggingCards":
+          store.setDraggingCards(effect.cardIds);
+          return;
+        case "notifyDragProgress":
+          dragProgressActiveRef.current = effect.moves !== null;
+          onDragCardsProgressRef.current?.(effect.moves);
+          return;
+        case "commitMoveCards":
+          onMoveCardsRef.current?.(effect.moves);
+          return;
+        case "setMergeTarget":
+        case "setSpreadInsertTarget":
+          return;
+        case "startStackTucks":
+          startStackTucksRef.current(effect.joins);
+          return;
+        case "commitMergeArtifactCards":
+          onMergeArtifactCardsRef.current?.(
+            effect.cardId,
+            effect.targetCardId,
+            "target-first",
+          );
+          return;
+        case "commitInsertArtifactCardIntoSequence":
+          onInsertArtifactCardIntoSequenceRef.current?.(
+            effect.cardId,
+            effect.spreadCardId,
+            effect.insertIndex,
+          );
+          return;
+        case "setStoreResizingCard":
+          store.setResizingCard(effect.cardId);
+          return;
+        case "commitResizeCard":
+          onResizeCardRef.current?.(effect.commit);
+          return;
+        case "setStoreActivePortKey":
+          store.setActivePortKey(effect.key);
+          return;
+        case "commitConnect":
+          onConnectRef.current?.(effect.ends);
+          return;
+        case "notifyConnectDropEmpty":
+          lastDropEmptyRef.current = effect.event;
+          if (window.__cellCanvas) {
+            window.__cellCanvas.lastConnectDropEmpty = effect.event;
+          }
+          onConnectDropEmptyRef.current?.(effect.event);
+          return;
+        default: {
+          const exhaustive: never = effect;
+          return exhaustive;
+        }
+      }
+    },
+    [store],
+  );
+
+  const [interaction, dispatch] = useEffectReducer(
+    cellCanvasInteractionReducer,
+    createInitialCellCanvasInteractionState,
+    runEffect,
+    { flush: "sync" },
+  );
+
+  const phase = interaction.phase;
+  const resizePreview = phase.kind === "resizingCard" ? phase.preview : null;
+  const movingCardIds =
+    phase.kind === "draggingCards" && phase.movedBeyondClick
+      ? phase.session.movingCardIds
+      : EMPTY_ID_SET;
+  const draggedCardId =
+    phase.kind === "draggingCards" && phase.movedBeyondClick
+      ? phase.anchorCardId
+      : null;
+  const dragFrame = interaction.dragFrame;
+  const wiring = React.useMemo(
+    () =>
+      phase.kind === "connectingPipe"
+        ? {
+            fromCardId: phase.fromCardId,
+            fromPort: phase.fromPort,
+            cursor: phase.cursor,
+            target: phase.target,
+          }
+        : null,
+    [phase],
+  );
+  const mergeTarget =
+    phase.kind === "draggingCards" && phase.mergeTargetId !== null
+      ? { cardId: phase.mergeTargetId, itemCount: phase.mergeItemCount }
+      : null;
+  const spreadInsertTarget =
+    phase.kind === "draggingCards" ? phase.spreadInsert : null;
+  const rerouteCount = interaction.rerouteCount;
+  const lastConnectDropEmpty = interaction.lastConnectDropEmpty;
+  const panning = phase.kind === "panning";
 
   const effectiveGraph = React.useMemo<CellGraph>(() => {
     if (!resizePreview) return graph;
@@ -1150,52 +911,6 @@ export function CellCanvas({
 
   // Refs synced in layout effect keep gesture handlers stable and prevent
   // 60fps parent re-renders.
-  const graphRef = React.useRef(effectiveGraph);
-  const surfaceByIdRef = React.useRef(surfaceById);
-  const foregroundCardsRef = React.useRef(foregroundCards);
-  const indexRef = React.useRef(index);
-  const dockingRef = React.useRef(docking);
-  const layoutRef = React.useRef(restingLayout);
-  const routingRef = React.useRef(routing);
-  const viewportRef = React.useRef(viewport);
-  const rerouteRef = React.useRef(rerouteCount);
-  const draggedRef = React.useRef(draggedCardId);
-  const resizePreviewRef = React.useRef(resizePreview);
-  const editableRef = React.useRef(editable);
-  const punchedRef = React.useRef(punched);
-  const stackLookRef = React.useRef({
-    stackStyle: look.stackStyle,
-    corners: look.corners,
-  });
-  const lastDropEmptyRef = React.useRef(lastConnectDropEmpty);
-  const resizeSessionRef = React.useRef<ResizeSession | null>(null);
-
-  const onMoveCardsRef = React.useRef(onMoveCards);
-  const onDragCardsProgressRef = React.useRef(onDragCardsProgress);
-  const onResizeCardRef = React.useRef(onResizeCard);
-  const onCanConnectRef = React.useRef(onCanConnect);
-  const onConnectRef = React.useRef(onConnect);
-  const onConnectDropEmptyRef = React.useRef(onConnectDropEmpty);
-  const onRemoveCardsRef = React.useRef(onRemoveCards);
-  const onRemovePipesRef = React.useRef(onRemovePipes);
-  const onSelectionChangeRef = React.useRef(onSelectionChange);
-  const onPaneClickRef = React.useRef(onPaneClick);
-  const onSelectEdgeAttachmentRef = React.useRef(onSelectEdgeAttachment);
-  const canMergeArtifactCardsRef = React.useRef(canMergeArtifactCards);
-  const onMergeArtifactCardsRef = React.useRef(onMergeArtifactCards);
-  const onInsertArtifactCardIntoSequenceRef = React.useRef(
-    onInsertArtifactCardIntoSequence,
-  );
-  const expandedSequenceIdRef = React.useRef(expandedSequenceId);
-  const openSpreadRef = React.useRef<{
-    card: CellCardModel;
-    layout: OpenSequenceSpreadLayout;
-    windowStart: number;
-    itemCount: number;
-  } | null>(null);
-  const onViewportZoomChangeRef = React.useRef(onViewportZoomChange);
-  const onStatsChangeRef = React.useRef(onStatsChange);
-
   React.useLayoutEffect(() => {
     graphRef.current = effectiveGraph;
     surfaceByIdRef.current = surfaceById;
@@ -1207,7 +922,6 @@ export function CellCanvas({
     viewportRef.current = viewport;
     rerouteRef.current = rerouteCount;
     draggedRef.current = draggedCardId;
-    resizePreviewRef.current = resizePreview;
     editableRef.current = editable;
     punchedRef.current = punched;
     stackLookRef.current = {
@@ -1215,6 +929,9 @@ export function CellCanvas({
       corners: look.corners,
     };
     lastDropEmptyRef.current = lastConnectDropEmpty;
+    panByRef.current = panBy;
+    flushPanRef.current = flushPan;
+    screenToWorldRef.current = screenToWorld;
 
     onMoveCardsRef.current = onMoveCards;
     onDragCardsProgressRef.current = onDragCardsProgress;
@@ -1236,10 +953,18 @@ export function CellCanvas({
     onStatsChangeRef.current = onStatsChange;
   });
 
-  const cancelGestureRef = React.useRef<(() => void) | null>(null);
   React.useEffect(() => {
-    const gesture = cancelGestureRef;
-    return () => gesture.current?.();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      detachGestureListeners(gestureListenersRef);
+      flushPanRef.current(false);
+      cancelDragFrame(dragFrameRef);
+      if (dragProgressActiveRef.current) {
+        dragProgressActiveRef.current = false;
+        onDragCardsProgressRef.current?.(null);
+      }
+    };
   }, []);
 
   const commitSelection = React.useCallback(
@@ -1339,9 +1064,10 @@ export function CellCanvas({
       zoomAtCenter,
       zoomBy,
       viewAt,
-      cancelGesture: () => cancelGestureRef.current?.(),
+      cancelGesture: () => dispatch({ kind: "cancelGesture" }),
     }),
     [
+      dispatch,
       fitCards,
       fitGraph,
       fitRect,
@@ -1493,420 +1219,50 @@ export function CellCanvas({
     onMergeArtifactCardRun?.(chosen.cardIds, chosen.targetCardId);
   };
 
+  React.useLayoutEffect(() => {
+    commitSelectionRef.current = commitSelection;
+    toggleCardSelectionRef.current = toggleCardSelection;
+    clearSelectionRef.current = clearSelection;
+    startStackTucksRef.current = startStackTucks;
+  });
+
   const onCardPointerDown = React.useCallback(
     (cardId: string, event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
       event.stopPropagation();
-      cancelGestureRef.current?.();
-
-      const graphAtPickup = graphRef.current;
-      const surfacesAtPickup = surfaceByIdRef.current;
       const indexAtPickup = indexRef.current;
-      const routingAtPickup = routingRef.current;
-      const dockingAtPickup = dockingRef.current;
-      const card = indexAtPickup.cardsById.get(cardId);
-      if (!card) return;
-
-      const shiftPressed = event.shiftKey;
-      const wasSelectedBefore = store.getSelection().cardIds.has(cardId);
-      if (shiftPressed) {
-        toggleCardSelection(cardId);
-      } else if (!wasSelectedBefore) {
-        commitSelection({ cardIds: [cardId], pipeIds: [] });
-      }
-
-      if (!editableRef.current) return;
-
-      const draggingFrame = isUnderCardsFrame(cardId, surfacesAtPickup);
-      const rawSelected = store.getSelection().cardIds;
-      const effectiveSelection = draggingFrame
-        ? new Set([cardId])
-        : new Set(
-            [...rawSelected].filter(
-              (id) => !isUnderCardsFrame(id, surfacesAtPickup),
-            ),
-          );
-      if (!effectiveSelection.has(cardId)) {
-        effectiveSelection.add(cardId);
-      }
-
-      const pointerId = event.pointerId;
-      const originWorld = cellToWorldOrigin(card.col, card.row);
-      const pointer = screenToWorld(event.clientX, event.clientY);
-      const session = createGroupDragSession(
-        graphAtPickup.cards,
-        effectiveSelection,
+      const docking = dockingRef.current;
+      const layout = layoutRef.current;
+      if (!indexAtPickup || !docking || !layout) return;
+      const selectedCardIds = store.getSelection().cardIds;
+      dispatch({
+        kind: "cardPointerDown",
         cardId,
-        pointer,
-      );
-
-      const drag: GroupCardDrag = {
-        anchorCardId: cardId,
-        session,
-        startClient: { x: event.clientX, y: event.clientY },
-        movedBeyondClick: false,
-        pointerReleased: false,
-        cellSettle: createCardSettle(originWorld),
-        landingDelta: { col: 0, row: 0 },
-        attachedPipeIds: EMPTY_ID_SET,
-        restingWellKeys: EMPTY_ID_SET,
-        pipes: [],
+        pointerId: event.pointerId,
+        clientPoint: { x: event.clientX, y: event.clientY },
+        worldPoint: screenToWorld(event.clientX, event.clientY),
+        shiftKey: event.shiftKey,
+        wasSelectedBefore: selectedCardIds.has(cardId),
+        selectedCardIds,
+        editable: editableRef.current,
+        graph: graphRef.current,
+        surfaces: surfaceByIdRef.current,
+        index: indexAtPickup,
+        routing: routingRef.current,
+        docking: {
+          dockedPipeIds: docking.dockedPipeIds,
+          routablePipes: docking.routablePipes,
+        },
+        layout,
         punched: punchedRef.current,
-      };
-      let frame = 0;
-      const openSpreadAtPickup = openSpreadRef.current;
-      const foregroundAtPickup = graphAtPickup.cards.filter(
-        (c) => !isUnderCardsFrame(c.id, surfacesAtPickup),
-      );
-      // While a sequence is spread open, non-inserting drags treat its full
-      // expanded footprint as occupied space so cards never land over it.
-      const obstacleForegroundAtPickup = openSpreadAtPickup
-        ? foregroundAtPickup.map((c) =>
-            c.id === openSpreadAtPickup.card.id
-              ? {
-                  ...c,
-                  col: openSpreadAtPickup.layout.startCol,
-                  row: openSpreadAtPickup.layout.row,
-                  widthCells: openSpreadAtPickup.layout.totalCols,
-                  heightCells: openSpreadAtPickup.layout.heightCells,
-                }
-              : c,
-          )
-        : foregroundAtPickup;
-      // A lone artifact card may be dropped onto another card or directly into
-      // an open sequence spread at a specific slot.
-      const canMergeAtPickup = canMergeArtifactCardsRef.current;
-      const mergeable =
-        effectiveSelection.size === 1 &&
-        canMergeAtPickup !== undefined &&
-        (onMergeArtifactCardsRef.current !== undefined ||
-          onInsertArtifactCardIntoSequenceRef.current !== undefined) &&
-        artifactCardItemCount(surfacesAtPickup[cardId]) !== null;
-      let mergeTargetId: string | null = null;
-      let spreadInsert: SpreadInsertTarget | null = null;
-
-      function trackMergeTarget(at: WorldPoint) {
-        if (!mergeable || !canMergeAtPickup) return;
-        if (
-          openSpreadAtPickup &&
-          openSpreadAtPickup.card.id !== cardId &&
-          onInsertArtifactCardIntoSequenceRef.current !== undefined &&
-          canMergeAtPickup(cardId, openSpreadAtPickup.card.id)
-        ) {
-          // The spread may page (wheel) mid-drag, so read its live window.
-          const current = openSpreadRef.current;
-          const live =
-            current?.card.id === openSpreadAtPickup.card.id
-              ? current
-              : openSpreadAtPickup;
-          const hit = findSpreadInsertTarget({
-            spreadCardId: openSpreadAtPickup.card.id,
-            layout: openSpreadAtPickup.layout,
-            windowStart: live.windowStart,
-            itemCount: live.itemCount,
-            cardWidthCells: openSpreadAtPickup.card.widthCells,
-            point: at,
-          });
-          if (hit) {
-            if (mergeTargetId !== null) {
-              mergeTargetId = null;
-              setMergeTarget(null);
-            }
-            if (
-              spreadInsert?.spreadCardId !== hit.spreadCardId ||
-              spreadInsert.slot !== hit.slot ||
-              spreadInsert.insertIndex !== hit.insertIndex
-            ) {
-              spreadInsert = hit;
-              setSpreadInsertTarget(hit);
-            }
-            return;
-          }
-        }
-        if (spreadInsert !== null) {
-          spreadInsert = null;
-          setSpreadInsertTarget(null);
-        }
-        if (onMergeArtifactCardsRef.current === undefined) return;
-        const mergeCandidates = openSpreadAtPickup
-          ? foregroundAtPickup.filter(
-              (c) => c.id !== openSpreadAtPickup.card.id,
-            )
-          : foregroundAtPickup;
-        const next = findArtifactMergeTarget(
-          mergeCandidates,
-          surfacesAtPickup,
-          cardId,
-          at,
-          canMergeAtPickup,
-        );
-        if (next === mergeTargetId) return;
-        mergeTargetId = next;
-        setMergeTarget(
-          next
-            ? {
-                cardId: next,
-                itemCount:
-                  (artifactCardItemCount(surfacesAtPickup[cardId]) ?? 1) +
-                  (artifactCardItemCount(surfacesAtPickup[next]) ?? 1),
-              }
-            : null,
-        );
-      }
-
-      function resolveLanding(delta: CellCoord): CellCoord {
-        if (draggingFrame) return delta;
-        return resolveNonOverlappingDelta(
-          obstacleForegroundAtPickup,
-          drag.session.movingCardIds,
-          delta,
-        );
-      }
-
-      function currentMoves(): CellCardMove[] {
-        const moves: CellCardMove[] = [];
-        for (const [id, initial] of drag.session.initialCells) {
-          moves.push({
-            cardId: id,
-            col: initial.col + drag.landingDelta.col,
-            row: initial.row + drag.landingDelta.row,
-          });
-        }
-        return moves;
-      }
-
-      const schedule = () => {
-        if (frame === 0) frame = requestAnimationFrame(tick);
-      };
-
-      function tick() {
-        frame = 0;
-        const now = performance.now();
-        drag.cellSettle = stepCardSettle(drag.cellSettle, now);
-        const next = buildDragFrame(drag, indexAtPickup, now);
-        const morphing = drag.pipes.some((motion) => motion.morphing);
-        if (drag.pointerReleased && !drag.cellSettle.active && !morphing) {
-          finish();
-          return;
-        }
-        setDragFrame(next);
-        if (drag.pointerReleased || drag.cellSettle.active || morphing) {
-          schedule();
-        }
-      }
-
-      function finish() {
-        stop();
-        onDragCardsProgressRef.current?.(null);
-        const finalDelta = drag.landingDelta;
-        if (finalDelta.col !== 0 || finalDelta.row !== 0) {
-          onMoveCardsRef.current?.(currentMoves());
-        }
-        store.setDraggingCards([]);
-        setMovingCardIds(EMPTY_ID_SET);
-        setDraggedCardId(null);
-        setDragFrame(null);
-      }
-
-      function activate() {
-        drag.movedBeyondClick = true;
-        drag.cellSettle = createCardSettle(originWorld);
-        drag.landingDelta = resolveLanding(drag.session.currentDelta);
-        const split = restingScene(
-          graphAtPickup,
-          indexAtPickup,
-          layoutRef.current,
-          dockingAtPickup.dockedPipeIds,
-          drag.session.movingCardIds,
-          drag.punched,
-        );
-        drag.attachedPipeIds = split.attachedPipeIds;
-        drag.restingWellKeys = split.wellKeys;
-        drag.pipes = seedPipeMotions(
-          graphAtPickup,
-          indexAtPickup,
-          layoutRef.current,
-          dockingAtPickup.dockedPipeIds,
-          split.attachedPipeIds,
-        );
-        onDragCardsProgressRef.current?.(currentMoves());
-      }
-
-      function onMove(move: PointerEvent) {
-        if (move.pointerId !== pointerId || drag.pointerReleased) return;
-        let activated = false;
-        if (!drag.movedBeyondClick) {
-          const travelled = Math.hypot(
-            move.clientX - drag.startClient.x,
-            move.clientY - drag.startClient.y,
-          );
-          if (travelled < DRAG_THRESHOLD_PX) return;
-          activate();
-          activated = true;
-        }
-        const now = performance.now();
-        const at = screenToWorld(move.clientX, move.clientY);
-        trackMergeTarget(at);
-        const step = updateGroupDragSession(
-          drag.session,
-          graphAtPickup.cards,
-          at,
-        );
-        drag.session = step.session;
-        if (step.changedCell) {
-          drag.landingDelta = resolveLanding(step.snappedDelta);
-          onDragCardsProgressRef.current?.(currentMoves());
-          setRerouteCount((count) => count + 1);
-          const anchorTarget = {
-            col: drag.session.anchorInitialCell.col + step.snappedDelta.col,
-            row: drag.session.anchorInitialCell.row + step.snappedDelta.row,
-          };
-          drag.cellSettle = retargetCardSettle(
-            drag.cellSettle,
-            cellToWorldOrigin(anchorTarget.col, anchorTarget.row),
-            now,
-          );
-          const movedForeground = step.movedCards.filter(
-            (c) => !isUnderCardsFrame(c.id, surfacesAtPickup),
-          );
-          const movedDocking = detectCellDockedJoins(
-            { cards: movedForeground, pipes: graphAtPickup.pipes },
-            resolvePortColor,
-            { punched: punchedRef.current },
-          );
-          const rerouted = routeCellGraph(
-            { cards: movedForeground, pipes: movedDocking.routablePipes },
-            routingAtPickup,
-            drag.attachedPipeIds,
-          );
-          for (const motion of drag.pipes) {
-            if (movedDocking.dockedPipeIds.has(motion.id)) {
-              motion.dockedAtCurrentCell = true;
-              motion.morphing = false;
-              continue;
-            }
-            motion.dockedAtCurrentCell = false;
-            const routed = rerouted.pipes.get(motion.id);
-            if (!routed) continue;
-            motion.fromPoints = motion.currentPoints;
-            motion.toPoints = routed.points;
-            motion.sourceExit = routed.sourceExit;
-            motion.targetExit = routed.targetExit;
-            motion.depth = routed.depth;
-            motion.morphStartMs = now;
-            motion.morphing = true;
-          }
-        }
-        if (activated) {
-          store.setDraggingCards(drag.session.movingCardIds);
-          setMovingCardIds(drag.session.movingCardIds);
-          setDraggedCardId(cardId);
-          setDragFrame(buildDragFrame(drag, indexAtPickup, now));
-        }
-        schedule();
-      }
-
-      function onUp(up: PointerEvent) {
-        if (up.pointerId !== pointerId || drag.pointerReleased) return;
-        if (!drag.movedBeyondClick) {
-          stop();
-          if (!shiftPressed && wasSelectedBefore) {
-            commitSelection({ cardIds: [cardId], pipeIds: [] });
-          }
-          return;
-        }
-        if (spreadInsert) {
-          // Released over an open spread: insert at the hovered slot index.
-          const target = spreadInsert;
-          cancel();
-          onInsertArtifactCardIntoSequenceRef.current?.(
-            cardId,
-            target.spreadCardId,
-            target.insertIndex,
-          );
-          return;
-        }
-        if (mergeTargetId) {
-          // Released over a sequence: the card joins it instead of landing,
-          // sliding from where it was let go under the stack's top card.
-          const target = mergeTargetId;
-          const released = stepCardSettle(
-            drag.cellSettle,
-            performance.now(),
-          ).current;
-          const draggedCard = indexAtPickup.cardsById.get(cardId);
-          const targetCard = indexAtPickup.cardsById.get(target);
-          if (draggedCard && targetCard) {
-            startStackTucks([
-              {
-                card: draggedCard,
-                from: released,
-                target: targetCard,
-                slot: 0,
-                surface: surfacesAtPickup[cardId],
-              },
-            ]);
-          }
-          cancel();
-          onMergeArtifactCardsRef.current?.(cardId, target, "target-first");
-          return;
-        }
-        const now = performance.now();
-        drag.pointerReleased = true;
-        const anchorTarget = {
-          col: drag.session.anchorInitialCell.col + drag.landingDelta.col,
-          row: drag.session.anchorInitialCell.row + drag.landingDelta.row,
-        };
-        drag.cellSettle = retargetCardSettle(
-          drag.cellSettle,
-          cellToWorldOrigin(anchorTarget.col, anchorTarget.row),
-          now,
-        );
-        schedule();
-      }
-
-      function stop() {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
-        if (frame !== 0) cancelAnimationFrame(frame);
-        frame = 0;
-        if (cancelGestureRef.current === cancel) {
-          cancelGestureRef.current = null;
-        }
-      }
-
-      function cancel() {
-        stop();
-        if (spreadInsert) {
-          spreadInsert = null;
-          setSpreadInsertTarget(null);
-        }
-        if (mergeTargetId) {
-          mergeTargetId = null;
-          setMergeTarget(null);
-        }
-        if (drag.movedBeyondClick) {
-          onDragCardsProgressRef.current?.(null);
-          store.setDraggingCards([]);
-          setMovingCardIds(EMPTY_ID_SET);
-          setDraggedCardId(null);
-          setDragFrame(null);
-        }
-      }
-
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
-      cancelGestureRef.current = cancel;
+        openSpread: openSpreadRef.current,
+        canMergeArtifactCards: canMergeArtifactCardsRef.current ?? null,
+        hasMergeCallback: onMergeArtifactCardsRef.current !== undefined,
+        hasInsertCallback:
+          onInsertArtifactCardIntoSequenceRef.current !== undefined,
+      });
     },
-    [
-      commitSelection,
-      screenToWorld,
-      startStackTucks,
-      store,
-      toggleCardSelection,
-    ],
+    [dispatch, screenToWorld, store],
   );
 
   const onPortPointerDown = React.useCallback(
@@ -1917,138 +1273,42 @@ export function CellCanvas({
     ) => {
       if (event.button !== 0 || !editableRef.current) return;
       event.stopPropagation();
-      cancelGestureRef.current?.();
-      const pointerId = event.pointerId;
-      const wanted = port.direction === "output" ? "input" : "output";
-      let state: WiringState | null = null;
-
-      const track = (clientX: number, clientY: number) => {
-        const cursor = screenToWorld(clientX, clientY);
-        let target: WireTarget | null = null;
-        let nearest = WIRE_SNAP_RADIUS;
-        for (const other of graphRef.current.cards) {
-          if (other.id === cardId) continue;
-          const ports = allCardPorts(other, surfaceByIdRef.current[other.id]);
-          for (const candidate of ports) {
-            if (candidate.direction !== wanted) continue;
-            if (onCanConnectRef.current) {
-              const fromOutput = port.direction === "output";
-              const normalized: CellConnectionEnds = {
-                sourceCardId: fromOutput ? cardId : other.id,
-                sourcePortId: fromOutput ? port.id : candidate.id,
-                targetCardId: fromOutput ? other.id : cardId,
-                targetPortId: fromOutput ? candidate.id : port.id,
-              };
-              if (!onCanConnectRef.current(normalized)) continue;
-            }
-            const centre = portAnchorCenter(
-              other,
-              candidate,
-              punchedRef.current,
-            );
-            const distance = Math.hypot(
-              centre.x - cursor.x,
-              centre.y - cursor.y,
-            );
-            if (distance <= nearest) {
-              nearest = distance;
-              target = { cardId: other.id, port: candidate, centre };
-            }
-          }
-        }
-        state = { fromCardId: cardId, fromPort: port, cursor, target };
-        store.setActivePortKey(
-          target
-            ? wellKey(target.cardId, target.port.direction, target.port.id)
-            : null,
-        );
-        setWiring(state);
-      };
-
-      function onMove(move: PointerEvent) {
-        if (move.pointerId === pointerId) track(move.clientX, move.clientY);
-      }
-
-      function onUp(up: PointerEvent) {
-        if (up.pointerId !== pointerId) return;
-        const current = state;
-        const target = up.type === "pointerup" ? current?.target : null;
-        stop();
-        if (!target) {
-          if (up.type === "pointerup" && current) {
-            const dropEvent: CellConnectDropEmptyEvent = {
-              sourceCardId: cardId,
-              sourcePortId: port.id,
-              direction:
-                port.direction === "output" ? "downstream" : "upstream",
-              worldPoint: current.cursor,
-              targetCell: {
-                col: Math.floor(current.cursor.x / CELL_SIZE),
-                row: Math.floor(current.cursor.y / CELL_SIZE),
-              },
-              clientPoint: { x: up.clientX, y: up.clientY },
-            };
-            lastDropEmptyRef.current = dropEvent;
-            setLastConnectDropEmpty(dropEvent);
-            if (window.__cellCanvas) {
-              window.__cellCanvas.lastConnectDropEmpty = dropEvent;
-            }
-            onConnectDropEmptyRef.current?.(dropEvent);
-          }
-          return;
-        }
-        const fromOutput = port.direction === "output";
-        const ends: CellConnectionEnds = {
-          sourceCardId: fromOutput ? cardId : target.cardId,
-          sourcePortId: fromOutput ? port.id : target.port.id,
-          targetCardId: fromOutput ? target.cardId : cardId,
-          targetPortId: fromOutput ? target.port.id : port.id,
-        };
-        onConnectRef.current?.(ends);
-      }
-
-      function stop() {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
-        if (cancelGestureRef.current === stop) cancelGestureRef.current = null;
-        store.setActivePortKey(null);
-        setWiring(null);
-      }
-
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
-      cancelGestureRef.current = stop;
-      track(event.clientX, event.clientY);
+      dispatch({
+        kind: "startConnect",
+        pointerId: event.pointerId,
+        fromCardId: cardId,
+        fromPort: port,
+        cursor: screenToWorld(event.clientX, event.clientY),
+        cards: graphRef.current.cards,
+        surfaces: surfaceByIdRef.current,
+        punched: punchedRef.current,
+        canConnect: onCanConnectRef.current,
+      });
     },
-    [screenToWorld, store],
+    [dispatch, screenToWorld],
   );
 
   const onResizeStart = React.useCallback(
     (
       cardId: string,
-      _edge: CellResizeEdge,
+      edge: CellResizeEdge,
       event: React.PointerEvent<HTMLDivElement>,
     ) => {
       if (!editableRef.current) return;
-      cancelGestureRef.current?.();
-      const card = indexRef.current.cardsById.get(cardId);
-      if (!card) return;
-      resizeSessionRef.current = {
-        cardSnapshot: card,
+      const card = indexRef.current?.cardsById.get(cardId);
+      if (!card) {
+        dispatch({ kind: "cancelGesture" });
+        return;
+      }
+      dispatch({
+        kind: "startResize",
+        card,
+        edge,
         startWorld: screenToWorld(event.clientX, event.clientY),
-      };
-      const initialPreview: CellResizeCommit = {
-        cardId,
-        widthCells: card.widthCells,
-        heightCells: card.heightCells,
-      };
-      resizePreviewRef.current = initialPreview;
-      setResizePreview(initialPreview);
-      store.setResizingCard(cardId);
+        editable: true,
+      });
     },
-    [screenToWorld, store],
+    [dispatch, screenToWorld],
   );
 
   const onResizeMove = React.useCallback(
@@ -2057,29 +1317,14 @@ export function CellCanvas({
       edge: CellResizeEdge,
       event: React.PointerEvent<HTMLDivElement>,
     ) => {
-      const session = resizeSessionRef.current;
-      if (!session || session.cardSnapshot.id !== cardId) return;
-      const currentWorld = screenToWorld(event.clientX, event.clientY);
-      const commit = computeCellResize(
-        session.cardSnapshot,
+      dispatch({
+        kind: "resizeMove",
+        cardId,
         edge,
-        session.startWorld,
-        currentWorld,
-      );
-      const currentPreview = resizePreviewRef.current;
-      if (
-        currentPreview &&
-        currentPreview.cardId === commit.cardId &&
-        currentPreview.widthCells === commit.widthCells &&
-        currentPreview.heightCells === commit.heightCells
-      ) {
-        return;
-      }
-      setRerouteCount((count) => count + 1);
-      resizePreviewRef.current = commit;
-      setResizePreview(commit);
+        worldPoint: screenToWorld(event.clientX, event.clientY),
+      });
     },
-    [screenToWorld],
+    [dispatch, screenToWorld],
   );
 
   const onResizeEnd = React.useCallback(
@@ -2088,84 +1333,45 @@ export function CellCanvas({
       edge: CellResizeEdge,
       event: React.PointerEvent<HTMLDivElement>,
     ) => {
-      const session = resizeSessionRef.current;
-      resizeSessionRef.current = null;
-      resizePreviewRef.current = null;
-      setResizePreview(null);
-      store.setResizingCard(null);
-      if (!session || session.cardSnapshot.id !== cardId) return;
-      const currentWorld = screenToWorld(event.clientX, event.clientY);
-      const commit = computeCellResize(
-        session.cardSnapshot,
-        edge,
-        session.startWorld,
-        currentWorld,
-      );
-      if (
-        commit.widthCells === session.cardSnapshot.widthCells &&
-        commit.heightCells === session.cardSnapshot.heightCells
-      ) {
+      if (event.type === "pointercancel") {
+        dispatch({ kind: "cancelGesture" });
         return;
       }
-      setRerouteCount((count) => count + 1);
-      onResizeCardRef.current?.(commit);
+      dispatch({
+        kind: "resizeEnd",
+        cardId,
+        edge,
+        worldPoint: screenToWorld(event.clientX, event.clientY),
+      });
     },
-    [screenToWorld, store],
+    [dispatch, screenToWorld],
   );
 
   const onRootPointerDown = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 && event.button !== 1) return;
+      if (event.button === 1) event.preventDefault();
       if (event.shiftKey && event.button === 0) {
         event.preventDefault();
         event.stopPropagation();
-        cancelGestureRef.current?.();
-        const pointerId = event.pointerId;
-        const start = screenToWorld(event.clientX, event.clientY);
-        store.setMarquee({ start, current: start });
-
-        function onMove(move: PointerEvent) {
-          if (move.pointerId !== pointerId) return;
-          const current = screenToWorld(move.clientX, move.clientY);
-          const rect = { start, current };
-          store.setMarquee(rect);
-          const cardIds = cardsInMarqueeRect(
-            foregroundCardsRef.current,
-            rect,
-            "intersect",
-          );
-          const pipeIds = pipesInMarqueeRect(layoutRef.current.pipes, rect);
-          commitSelection({ cardIds, pipeIds });
-        }
-
-        function stop() {
-          window.removeEventListener("pointermove", onMove);
-          window.removeEventListener("pointerup", stop);
-          window.removeEventListener("pointercancel", stop);
-          if (cancelGestureRef.current === stop) {
-            cancelGestureRef.current = null;
-          }
-          store.setMarquee(null);
-        }
-
-        window.addEventListener("pointermove", onMove);
-        window.addEventListener("pointerup", stop);
-        window.addEventListener("pointercancel", stop);
-        cancelGestureRef.current = stop;
+        const layout = layoutRef.current;
+        if (!layout) return;
+        dispatch({
+          kind: "startMarquee",
+          pointerId: event.pointerId,
+          worldPoint: screenToWorld(event.clientX, event.clientY),
+          foregroundCards: foregroundCardsRef.current,
+          routedPipes: layout.pipes,
+        });
         return;
       }
-
-      clearSelection();
-      onPaneClickRef.current?.();
-      onBackgroundPointerDown(event);
+      dispatch({
+        kind: "startPan",
+        pointerId: event.pointerId,
+        clientPoint: { x: event.clientX, y: event.clientY },
+      });
     },
-    [
-      clearSelection,
-      commitSelection,
-      onBackgroundPointerDown,
-      screenToWorld,
-      store,
-    ],
+    [dispatch, screenToWorld],
   );
 
   const connectionPreview = React.useMemo<LiveConnectionPreview | null>(() => {
@@ -2196,12 +1402,12 @@ export function CellCanvas({
         return;
       }
       if (event.key === "Escape") {
+        dispatch({ kind: "cancelGesture" });
         if (expandedSequenceIdRef.current) {
           // The open spread closes first; the card stays held.
           setExpandedSequenceId(null);
           return;
         }
-        cancelGestureRef.current?.();
         clearSelection();
         return;
       }
@@ -2225,7 +1431,7 @@ export function CellCanvas({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [clearSelection, store]);
+  }, [clearSelection, dispatch, store]);
 
   React.useEffect(() => {
     if (!exposeDebugApi) return;
@@ -2235,7 +1441,7 @@ export function CellCanvas({
       getStats: () => ({
         cards: graphRef.current.cards.length,
         pipes: graphRef.current.pipes.length,
-        deepCount: layoutRef.current.deepCount,
+        deepCount: layoutRef.current?.deepCount ?? 0,
         reroutes: rerouteRef.current,
         draggedCardId: draggedRef.current,
       }),
@@ -2384,7 +1590,6 @@ export function CellCanvas({
     [viewport.zoom],
   );
   const closeSequence = React.useCallback(() => {
-    setSpreadInsertTarget(null);
     setExpandedSequenceId(null);
   }, []);
   const moveSpreadSequence = React.useCallback(
@@ -2474,6 +1679,9 @@ export function CellCanvas({
             onAddPlug={editable ? onOperatorAddPlug : undefined}
             onRemovePlug={editable ? onOperatorRemovePlug : undefined}
             onConfigChange={editable ? onOperatorConfigChange : undefined}
+            onToggleConfigSection={onOperatorToggleConfigSection}
+            onApplySecret={editable ? onOperatorApplySecret : undefined}
+            onRemoveSecret={editable ? onOperatorRemoveSecret : undefined}
             onToggleAppendix={onOperatorToggleAppendix}
           />
         );

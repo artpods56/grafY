@@ -8,8 +8,8 @@ import type {
   SavedGraphNode,
   SavedGraphOrigin,
 } from "@/lib/api";
-import { artifactTypeKey } from "../canvas/artifact-type-key";
-import { createUuid } from "../model/uuid";
+import { artifactTypeKey } from "../artifacts/artifact-type-key";
+import { createUuid } from "../authoring/uuid";
 
 /**
  * What is connected to an Agent, as pure edits of the Agent (ADR 0021).

@@ -1,0 +1,147 @@
+import * as stylex from "@stylexjs/stylex";
+import { RefreshCw } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { tokens } from "@/lib/stylex/tokens.stylex";
+import type {
+  GraphReadinessState,
+  ProjectRoomFailure,
+  ProjectRoomStatus,
+  ProjectRoomTerminalReason,
+} from ".";
+
+interface GraphRoomRecoveryNoticeProps {
+  readonly readiness: GraphReadinessState;
+  readonly status: ProjectRoomStatus;
+  readonly failure: ProjectRoomFailure | null;
+  readonly terminalReason: ProjectRoomTerminalReason | null;
+  readonly onRetry: () => void;
+  readonly onReload: () => void;
+}
+
+export function GraphRoomRecoveryNotice({
+  readiness,
+  status,
+  failure,
+  terminalReason,
+  onRetry,
+  onReload,
+}: GraphRoomRecoveryNoticeProps) {
+  if (readiness === "current") {
+    return (
+      <span
+        role="status"
+        aria-live="polite"
+        {...stylex.props(s.visuallyHidden)}
+      >
+        Graph current. Graph operations are available according to your
+        workspace permissions.
+      </span>
+    );
+  }
+
+  const incompatible = terminalReason === "protocol_incompatible";
+  const exhausted = terminalReason === "reconnect_exhausted";
+  const title =
+    readiness === "stale" ? "Stale graph — read only" : "Graph unavailable";
+  const preservation =
+    readiness === "stale"
+      ? "The last confirmed graph is shown. Server-accepted work is preserved; visible local changes stay on this device until reconnection confirms them."
+      : "No confirmed graph is available yet.";
+  const recovery = incompatible
+    ? "The client and server collaboration protocols are incompatible. Reload the graph after updating either side."
+    : exhausted
+      ? "Automatic reconnection stopped. Retry the connection to request a fresh graph."
+      : status === "connecting"
+        ? "Connecting and loading the current graph."
+        : "Reconnecting and loading a fresh graph before graph operations resume.";
+
+  return (
+    <section role="status" aria-live="polite" {...stylex.props(s.notice)}>
+      <div {...stylex.props(s.copy)}>
+        <strong {...stylex.props(s.title)}>{title}</strong>
+        <span {...stylex.props(s.message)}>
+          {preservation} Editing, saving, and running are unavailable.
+          {recovery}
+        </span>
+        {failure?.messageType ? (
+          <span {...stylex.props(s.detail)}>
+            Failure while receiving {failure.messageType}.
+          </span>
+        ) : null}
+      </div>
+      {incompatible ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          xstyle={s.action}
+          onClick={onReload}
+        >
+          <RefreshCw size={14} aria-hidden="true" /> Reload graph
+        </Button>
+      ) : exhausted ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          xstyle={s.action}
+          onClick={onRetry}
+        >
+          <RefreshCw size={14} aria-hidden="true" /> Retry connection
+        </Button>
+      ) : null}
+    </section>
+  );
+}
+
+const s = stylex.create({
+  notice: {
+    position: "absolute",
+    zIndex: 35,
+    top: "16px",
+    left: "50%",
+    width: "min(680px, calc(100% - 32px))",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "16px",
+    padding: "12px 14px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: "10px",
+    backgroundColor: tokens.colorChrome,
+    boxShadow: tokens.shadowNodeRaised,
+    transform: "translateX(-50%)",
+  },
+  copy: { display: "grid", gap: "3px", minWidth: 0 },
+  title: { color: tokens.colorTextEmphasis, fontSize: tokens.fontSizeSm },
+  message: {
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
+  },
+  detail: { color: tokens.colorSubtle, fontSize: tokens.fontSizeXs },
+  /**
+   * What this notice adds to the kit's secondary `Button`: it sits in a row that can
+   * shrink, and the recovery action is 34px rather than the kit's 32 because it is the
+   * one thing a person who lost the connection is aiming at. `min-height` is a
+   * different StyleX key from the kit's `height`, so both hold.
+   */
+  action: {
+    flexShrink: 0,
+    minHeight: "34px",
+  },
+  visuallyHidden: {
+    position: "absolute",
+    width: "1px",
+    height: "1px",
+    margin: "-1px",
+    padding: 0,
+    overflow: "hidden",
+    borderWidth: 0,
+    clip: "rect(0, 0, 0, 0)",
+    whiteSpace: "nowrap",
+  },
+});

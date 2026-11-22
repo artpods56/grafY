@@ -254,23 +254,6 @@ body.grafy-side-panel-resizing {
   }
 }
 
-.react-flow__edge-path {
-  transition:
-    opacity 140ms ease,
-    stroke-width 140ms ease;
-}
-
-.react-flow__edge:hover .react-flow__edge-path {
-  opacity: 1;
-  stroke-width: 3;
-}
-
-/* React Flow positions each edge in an overflow-visible SVG whose own width is
- * intentionally zero. The global responsive-SVG reset must not collapse it. */
-.react-flow__edges > svg {
-  max-width: none;
-}
-
 /* Brand assets: invert ink marks when the document is in dark color-scheme. */
 .grafy-brand-icon,
 .grafy-brand-wordmark {

@@ -14,20 +14,20 @@ import {
 } from "lucide-react";
 
 import { IconButton } from "@/components/ui/button";
+import { useEffectReducer } from "@/lib/state/use-effect-reducer";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
+import type { OpenSequenceSpreadLayout } from "../cell-artifact-stacking";
 import type {
   ArtifactCardSurfaceData,
   ArtifactStackItem,
 } from "../cell-contracts";
-import type { OpenSequenceSpreadLayout } from "../cell-artifact-stacking";
 import { cardPlateFill, cellCornerRadius } from "../cell-glass-stage";
 import type {
   CellCorners,
   CellGlassMaterial,
   CellStackStyle,
 } from "../cell-glass-stage";
-import { resolveNonOverlappingDelta } from "../cell-group-drag";
 import {
   CARD_HEADER_HEIGHT,
   CARD_HEADER_TOP,
@@ -39,13 +39,7 @@ import {
   type CellCoord,
   type WorldPoint,
 } from "../cell-model";
-import {
-  createCardSettle,
-  retargetCardSettle,
-  stepCardSettle,
-  type CardSettleState,
-  shouldAnimateMotion,
-} from "../cell-transitions";
+import { shouldAnimateMotion } from "../cell-transitions";
 import {
   ArtifactStackBacks,
   STACK_BACK_COUNT,
@@ -58,6 +52,34 @@ import {
   styled,
   type CellCardMenuItem,
 } from "./CellOperatorCard";
+import {
+  createInitialSequenceSpreadState,
+  displayedWindowStart,
+  dragViewFromPhase,
+  foldBackSyncFromPhase,
+  FRAME_OUTSET,
+  isClosingPhase,
+  isFoldingPhase,
+  isResizingPhase,
+  motionXFromPhase,
+  moveViewFromPhase,
+  reorderDropIndex,
+  resizeBackSyncFromState,
+  resizeTucksFromPhase,
+  sequenceSpreadReducer,
+  STACK_HOVER_STEP_MS,
+  stepTucksFromPhase,
+  underCardFromState,
+  visualSlotForSibling,
+  type ResizeTuck,
+  type SequenceSpreadAction,
+  type SequenceSpreadEffect,
+  type SpreadHitScene,
+  type StepTuck,
+  type UnderCard,
+} from "./sequence-spread-reducer";
+
+export { STACK_HOVER_STEP_MS, reorderDropIndex, visualSlotForSibling };
 
 /**
  * A sequence card laid open in place, always anchored at `card.col` and
@@ -71,14 +93,6 @@ import {
 const MONO_FONT =
   "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
 
-/** How far the dashed frame stands outside the plates' cells. */
-const FRAME_OUTSET = 6;
-/** Screen pixels a press travels before it becomes a drag. */
-const DRAG_THRESHOLD_PX = 4;
-/** How long a dragged card rests on a side stack before the window steps. */
-export const STACK_HOVER_STEP_MS = 350;
-/** Horizontal wheel pixels per step. */
-const WHEEL_STEP_PX = 40;
 /** How the frame, pager and handles follow a resize of the open row. */
 const RESIZE_GLIDE_MS = 220;
 const RESIZE_GLIDE_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -86,12 +100,7 @@ const RESIZE_GLIDE_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 const EXTERNAL_GAP_SHIFT = 8;
 /** How far every card slides off an edge gap, so the bar clears the frame. */
 const EXTERNAL_EDGE_SHIFT = 10;
-/** Synthetic ids for non-overlapping landing resolution. */
-const LANDING_ID = "\u0000sequence-spread-landing";
-const FRAME_ID = "\u0000sequence-spread-frame";
-const MOVE_ID = "\u0000sequence-spread-move";
 
-// StyleX evaluates these at build time, so they are plain strings, not calls.
 const IMAGE_HAIRLINE =
   "inset 0 0 0 1px light-dark(color-mix(in srgb, black 9%, transparent), color-mix(in srgb, white 10%, transparent))";
 const LIFTED_SHADOW =
@@ -402,75 +411,6 @@ export interface CellArtifactSequenceSpreadProps {
   onRemoveItem?: (cardId: string, index: number) => void;
 }
 
-type DragMode = "reorder" | "left" | "right" | "extract" | "none";
-
-interface ItemDrag {
-  pointerId: number;
-  from: number;
-  slot: number;
-  startX: number;
-  startY: number;
-  /** The pointer's offset in the dragged card's own box, in world units. */
-  grab: WorldPoint;
-  active: boolean;
-  mode: DragMode;
-  targetSlot: number;
-  landing: CellCoord | null;
-  draggedSettle: CardSettleState;
-  siblingSettles: Map<number, CardSettleState>;
-}
-
-interface ItemDragView {
-  from: number;
-  /** The slot it was picked up from. */
-  slot: number;
-  /** Current spring-settled position of the held card inside the spread root. */
-  pos: WorldPoint;
-  /** Current spring-settled x positions of displaced siblings. */
-  siblingX: ReadonlyMap<number, number>;
-  mode: DragMode;
-  /** Slot the held card currently occupies while reordering. */
-  targetSlot: number;
-  landing: CellCoord | null;
-}
-
-interface SpreadMoveDrag {
-  pointerId: number;
-  startClient: WorldPoint;
-  startWorld: WorldPoint;
-  active: boolean;
-  landingDelta: CellCoord;
-  settle: CardSettleState;
-}
-
-interface SpreadMoveView {
-  offset: WorldPoint;
-  landingDelta: CellCoord;
-}
-
-/** A card a narrowing resize retired, for as long as it glides away. */
-interface ResizeTuck {
-  key: string;
-  index: number;
-  item: ArtifactStackItem;
-}
-
-/** A middle card a multi-slot step retired into the covered side stack. */
-interface StepTuck {
-  key: string;
-  item: ArtifactStackItem;
-  targetX: number;
-}
-
-type ClosePhase = "idle" | "rewinding" | "folding";
-
-/** Syncs slot 0's collapsed stack backs to the fold glide into `x = 0`. */
-type FoldBackSync = {
-  driverKey: string;
-  startX: number;
-  targetX: number;
-};
-
 function fallbackItems(count: number): ArtifactStackItem[] {
   return Array.from({ length: count }, (_, index) => ({
     artifactId: `item-${index}`,
@@ -478,114 +418,48 @@ function fallbackItems(count: number): ArtifactStackItem[] {
   }));
 }
 
-/**
- * Target sequence index when dropping `from` onto slot `targetSlot`: the card
- * lands exactly in that slot, even when the window stepped mid-drag and `from`
- * now sits in a side stack.
- */
-export function reorderDropIndex(
-  windowStart: number,
-  targetSlot: number,
-): number {
-  return windowStart + targetSlot;
-}
-
-/**
- * Visual slot a sibling glides into while another open card is dragged. A card
- * held from outside the window (it stepped into a side stack mid-drag) parts
- * the row as if it came from just past that edge.
- */
-export function visualSlotForSibling(
-  naturalSlot: number,
-  from: number,
-  mode: DragMode,
-  targetSlot: number,
-  windowStart: number,
-  visibleCount: number,
-): number {
-  if (mode !== "reorder") return naturalSlot;
-  const fromSlot = clamp(from - windowStart, -1, visibleCount);
-  if (
-    fromSlot < targetSlot &&
-    naturalSlot > fromSlot &&
-    naturalSlot <= targetSlot
-  ) {
-    return naturalSlot - 1;
-  }
-  if (
-    fromSlot > targetSlot &&
-    naturalSlot >= targetSlot &&
-    naturalSlot < fromSlot
-  ) {
-    return naturalSlot + 1;
-  }
-  return naturalSlot;
-}
-
-/**
- * The end-slot card a step covers: it stays put beneath the incoming card
- * until the step settles, while its plate and backs cascade smoothly down in
- * depth in lockstep with the incoming card's glide. When the opposite end also
- * held a stack, `reveal` drives its smooth rise back up on the same spring.
- */
-type UnderCard = {
-  side: "left" | "right";
-  index: number;
-  /** Items in the stack it topped, or 0 when it was an open card. */
-  stackCount: number;
-  /** Depth layers the covered stack sinks by (1 for a step, 2 for a page jump). */
-  shift: number;
-  /** Incoming card's spring key and horizontal travel, driving synced depth. */
-  coverKey: string;
-  coverStartX: number;
-  coverTargetX: number;
-  /** Opposite side stack uncovered by this step, if any. */
-  reveal: { side: "left" | "right"; shift: number } | null;
-  /** The list and row it was captured for; a change to either drops it. */
-  items: readonly ArtifactStackItem[];
-  visibleCount: number;
-};
-
-/**
- * Syncs a right-edge stack's backs to the resize glide so backs fan smoothly
- * out as cards tuck under or glide out from a resized spread.
- */
-type ResizeBackSync = {
-  driverKey: string;
-  startX: number;
-  targetX: number;
-  itemCount: number;
-  visibleCount: number;
-};
-
-function snapshotDrag(state: ItemDrag): ItemDragView {
-  const siblingX = new Map<number, number>();
-  for (const [index, settle] of state.siblingSettles) {
-    siblingX.set(index, settle.current.x);
-  }
-  return {
-    from: state.from,
-    slot: state.slot,
-    pos: { ...state.draggedSettle.current },
-    siblingX,
-    mode: state.mode,
-    targetSlot: state.targetSlot,
-    landing: state.landing,
-  };
-}
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function retargetSettle(
-  current: CardSettleState,
-  target: WorldPoint,
-  nowMs: number,
-  animate: boolean,
-): CardSettleState {
-  if (!animate) return createCardSettle(target);
-  return retargetCardSettle(current, target, nowMs);
+interface SpreadLive {
+  screenToWorld: (clientX: number, clientY: number) => WorldPoint;
+  cardWidth: number;
+  cardHeight: number;
+  windowed: boolean;
+  originX: number;
+  originY: number;
+  frameWidth: number;
+  layoutStartCol: number;
+  layoutRow: number;
+  layoutTotalCols: number;
+  card: CellCardModel;
+  foregroundCards: readonly CellCardModel[];
+  canExtract: boolean;
+  cardId: string;
+  onClose: () => void;
+  onWindowStartChange?: (windowStart: number) => void;
+  onPreferredVisibleCountChange?: (count: number) => void;
+  onReorder?: (cardId: string, fromIndex: number, toIndex: number) => void;
+  onExtract?: (cardId: string, index: number, targetCell: CellCoord) => void;
+  onMove?: (cardId: string, col: number, row: number) => void;
+}
+
+function hitScene(live: SpreadLive): SpreadHitScene {
+  return {
+    originX: live.originX,
+    originY: live.originY,
+    frameWidth: live.frameWidth,
+    cardWidth: live.cardWidth,
+    cardHeight: live.cardHeight,
+    windowed: live.windowed,
+    layoutStartCol: live.layoutStartCol,
+    layoutRow: live.layoutRow,
+    layoutTotalCols: live.layoutTotalCols,
+    card: live.card,
+    foregroundCards: live.foregroundCards,
+    canExtract: live.canExtract,
+  };
 }
 
 export function CellArtifactSequenceSpread({
@@ -608,415 +482,229 @@ export function CellArtifactSequenceSpread({
   onExtract,
   onRemoveItem,
 }: CellArtifactSequenceSpreadProps) {
-  const items = React.useMemo(
+  const itemList = React.useMemo(
     () => surface.stackItems ?? fallbackItems(surface.itemCount ?? 0),
     [surface.itemCount, surface.stackItems],
   );
-  const w = card.widthCells;
-  const h = card.heightCells;
-  const cardWidth = w * CELL_SIZE;
-  const cardHeight = h * CELL_SIZE;
+  const cardWidth = card.widthCells * CELL_SIZE;
+  const cardHeight = card.heightCells * CELL_SIZE;
   const plateHeight = cardHeight - CARD_PLATE_TOP - CARD_PLATE_BOTTOM_INSET;
   const frameWidth = layout.totalCols * CELL_SIZE;
   const originX = layout.startCol * CELL_SIZE;
   const originY = layout.row * CELL_SIZE;
 
-  const visibleCount = Math.min(layout.visibleCount, items.length);
-  const maxStart = Math.max(0, items.length - visibleCount);
-  const [windowStartState, setWindowStart] = React.useState(0);
-  const windowStart = layout.windowed
-    ? clamp(windowStartState, 0, maxStart)
-    : 0;
-  // Items removed or the spread widened past the window: keep the stored start
-  // in range, so a later insert does not jump back to a stale page.
-  if (layout.windowed && windowStartState > maxStart) setWindowStart(maxStart);
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const liveRef = React.useRef<SpreadLive | null>(null);
+  const previousWindowedRef = React.useRef(layout.windowed);
+  const motionFrameRef = React.useRef(0);
+  const dragFrameRef = React.useRef(0);
+  const moveFrameRef = React.useRef(0);
+  const hoverTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
+  const runEffect = React.useCallback(
+    (
+      effect: SequenceSpreadEffect,
+      dispatchAction: React.Dispatch<SequenceSpreadAction>,
+    ) => {
+      switch (effect.kind) {
+        case "scheduleMotionFrame": {
+          if (motionFrameRef.current !== 0) return;
+          motionFrameRef.current = requestAnimationFrame(() => {
+            motionFrameRef.current = 0;
+            dispatchAction({ kind: "motionTick", nowMs: performance.now() });
+          });
+          return;
+        }
+        case "cancelMotionFrame": {
+          if (motionFrameRef.current !== 0) {
+            cancelAnimationFrame(motionFrameRef.current);
+            motionFrameRef.current = 0;
+          }
+          return;
+        }
+        case "scheduleDragFrame": {
+          if (dragFrameRef.current !== 0) return;
+          dragFrameRef.current = requestAnimationFrame(() => {
+            dragFrameRef.current = 0;
+            dispatchAction({ kind: "dragTick", nowMs: performance.now() });
+          });
+          return;
+        }
+        case "cancelDragFrame": {
+          if (dragFrameRef.current !== 0) {
+            cancelAnimationFrame(dragFrameRef.current);
+            dragFrameRef.current = 0;
+          }
+          return;
+        }
+        case "scheduleMoveFrame": {
+          if (moveFrameRef.current !== 0) return;
+          moveFrameRef.current = requestAnimationFrame(() => {
+            moveFrameRef.current = 0;
+            dispatchAction({ kind: "moveTick", nowMs: performance.now() });
+          });
+          return;
+        }
+        case "cancelMoveFrame": {
+          if (moveFrameRef.current !== 0) {
+            cancelAnimationFrame(moveFrameRef.current);
+            moveFrameRef.current = 0;
+          }
+          return;
+        }
+        case "armHoverStepTimer": {
+          if (hoverTimerRef.current !== null) {
+            clearTimeout(hoverTimerRef.current);
+          }
+          hoverTimerRef.current = setTimeout(() => {
+            hoverTimerRef.current = null;
+            const live = liveRef.current;
+            if (!live) return;
+            dispatchAction({
+              kind: "hoverStackTimerFired",
+              nowMs: performance.now(),
+              animateMotion: shouldAnimateMotion(),
+              cardWidth: live.cardWidth,
+              windowed: live.windowed,
+            });
+          }, STACK_HOVER_STEP_MS);
+          return;
+        }
+        case "clearHoverStepTimer": {
+          if (hoverTimerRef.current !== null) {
+            clearTimeout(hoverTimerRef.current);
+            hoverTimerRef.current = null;
+          }
+          return;
+        }
+        case "notifyWindowStartChange":
+          liveRef.current?.onWindowStartChange?.(effect.windowStart);
+          return;
+        case "notifyPreferredVisibleCountChange":
+          liveRef.current?.onPreferredVisibleCountChange?.(effect.count);
+          return;
+        case "notifyClose":
+          liveRef.current?.onClose();
+          return;
+        case "notifyReorder":
+          liveRef.current?.onReorder?.(
+            effect.cardId,
+            effect.fromIndex,
+            effect.toIndex,
+          );
+          return;
+        case "notifyExtract":
+          liveRef.current?.onExtract?.(
+            effect.cardId,
+            effect.index,
+            effect.targetCell,
+          );
+          return;
+        case "notifyMove":
+          liveRef.current?.onMove?.(effect.cardId, effect.col, effect.row);
+          return;
+        default: {
+          const exhaustive: never = effect;
+          return exhaustive;
+        }
+      }
+    },
+    [],
+  );
+
+  const [state, dispatch] = useEffectReducer(
+    sequenceSpreadReducer,
+    () =>
+      createInitialSequenceSpreadState({
+        items: itemList,
+        layout,
+        animateMotion: shouldAnimateMotion(),
+      }),
+    runEffect,
+  );
+
+  const items = state.items;
+  const visibleCount = state.visibleCount;
+  const windowStart = displayedWindowStart(
+    state.windowStart,
+    layout.windowed,
+    items.length,
+    visibleCount,
+  );
+  const maxStart = Math.max(0, items.length - visibleCount);
   const hasLeftStack = layout.windowed && windowStart > 0;
   const hasRightStack = layout.windowed && windowStart < maxStart;
   const leftCount = hasLeftStack ? windowStart + 1 : 0;
   const rightCount = hasRightStack
     ? items.length - (windowStart + visibleCount - 1)
     : 0;
-
-  const rootRef = React.useRef<HTMLDivElement | null>(null);
-  const dragRef = React.useRef<ItemDrag | null>(null);
-  const dragFrameRef = React.useRef(0);
-  const [drag, setDrag] = React.useState<ItemDragView | null>(null);
-  const moveRef = React.useRef<SpreadMoveDrag | null>(null);
-  const moveFrameRef = React.useRef(0);
-  const [moveView, setMoveView] = React.useState<SpreadMoveView | null>(null);
-  const [resizing, setResizing] = React.useState(false);
-  const [closePhase, setClosePhase] = React.useState<ClosePhase>("idle");
-  const closing = closePhase !== "idle";
-  const folding = closePhase === "folding";
-  const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
-  const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
-  const [menuIndex, setMenuIndex] = React.useState<number | null>(null);
-  const hoverTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const hoverModeRef = React.useRef<DragMode>("none");
-  const wheelRef = React.useRef(0);
+  const drag = dragViewFromPhase(state.phase);
+  const moveView = moveViewFromPhase(state.phase);
+  const resizing = isResizingPhase(state.phase);
+  const closing = isClosingPhase(state.phase);
+  const folding = isFoldingPhase(state.phase);
+  const activeIndex = state.activeIndex;
+  const hoveredIndex = state.hoveredIndex;
+  const menuIndex = state.menuIndex;
   const editable = Boolean(onReorder || onExtract);
+  const underCardState = underCardFromState(state);
+  const stepTucks = stepTucksFromPhase(state.phase);
+  const resizeTucks = resizeTucksFromPhase(state.phase);
+  const resizeBackSyncState = resizeBackSyncFromState(state);
+  const foldBackSync = foldBackSyncFromPhase(state.phase);
+  const motionX = motionXFromPhase(state.phase);
 
-  // Spring-settled card X offsets for expand, collapse, and <- / -> stepping.
-  // Start slots >= 1 at x = 0 on initial mount when motion is enabled so the
-  // first frame already sits stacked on `card.col` before fanning rightward.
-  const motionSettlesRef = React.useRef<Map<string, CardSettleState>>(
-    new Map(),
-  );
-  const motionFrameRef = React.useRef(0);
-  const closePhaseRef = React.useRef<ClosePhase>("idle");
-  const startFoldRef = React.useRef<() => void>(() => {});
-  const onCloseRef = React.useRef(onClose);
-  const [underCardState, setUnderCard] = React.useState<UnderCard | null>(null);
-  /** Middle cards a multi-slot step retired into the covered stack. */
-  const [stepTucks, setStepTucks] = React.useState<readonly StepTuck[]>([]);
-  /** Cards a narrowing resize retired, gliding under the new right stack. */
-  const resizeTucksRef = React.useRef<readonly ResizeTuck[]>([]);
-  const [resizeTucks, setResizeTucks] = React.useState<readonly ResizeTuck[]>(
-    [],
-  );
-  const [resizeBackSyncState, setResizeBackSync] =
-    React.useState<ResizeBackSync | null>(null);
-  const [foldBackSync, setFoldBackSync] = React.useState<FoldBackSync | null>(
-    null,
-  );
-  const [motionX, setMotionX] = React.useState<ReadonlyMap<string, number>>(
-    () => {
-      const initial = new Map<string, number>();
-      if (!shouldAnimateMotion()) return initial;
-      for (let slot = 1; slot < visibleCount; slot += 1) {
-        const item = items[slot];
-        if (item) initial.set(`${item.artifactId}:${slot}`, 0);
-      }
-      return initial;
-    },
-  );
-
-  // The latest window and item list, for gestures and timers.
-  const windowRef = React.useRef({
-    windowStart,
-    maxStart,
-    visibleCount,
-    items,
-    cardWidth,
-  });
   React.useLayoutEffect(() => {
-    windowRef.current = {
-      windowStart,
-      maxStart,
-      visibleCount,
-      items,
+    liveRef.current = {
+      screenToWorld,
       cardWidth,
+      cardHeight,
+      windowed: layout.windowed,
+      originX,
+      originY,
+      frameWidth,
+      layoutStartCol: layout.startCol,
+      layoutRow: layout.row,
+      layoutTotalCols: layout.totalCols,
+      card,
+      foregroundCards,
+      canExtract: Boolean(onExtract),
+      cardId: card.id,
+      onClose,
+      onWindowStartChange,
+      onPreferredVisibleCountChange,
+      onReorder,
+      onExtract,
+      onMove,
     };
-    onCloseRef.current = onClose;
   });
 
   React.useEffect(() => {
-    onWindowStartChange?.(windowStart);
-  }, [onWindowStartChange, windowStart]);
+    const previousWindowed = previousWindowedRef.current;
+    dispatch({
+      kind: "syncProps",
+      items: itemList,
+      windowed: layout.windowed,
+      previousWindowed,
+      layoutVisibleCount: layout.visibleCount,
+    });
+    previousWindowedRef.current = layout.windowed;
+  }, [dispatch, itemList, layout.visibleCount, layout.windowed]);
 
-  const clearHoverTimer = () => {
-    if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = null;
-  };
-  const cancelDragFrame = () => {
-    if (dragFrameRef.current !== 0) cancelAnimationFrame(dragFrameRef.current);
-    dragFrameRef.current = 0;
-  };
-  const cancelMoveFrame = () => {
-    if (moveFrameRef.current !== 0) cancelAnimationFrame(moveFrameRef.current);
-    moveFrameRef.current = 0;
-  };
-  const cancelMotionFrame = () => {
-    if (motionFrameRef.current !== 0) {
-      cancelAnimationFrame(motionFrameRef.current);
-    }
-    motionFrameRef.current = 0;
-  };
-
-  const snapshotMotion = () => {
-    const next = new Map<string, number>();
-    for (const [key, settle] of motionSettlesRef.current) {
-      next.set(key, settle.current.x);
-    }
-    return next;
-  };
-
-  const scheduleMotionTick = React.useCallback(() => {
-    if (motionFrameRef.current !== 0) return;
-    const tick = () => {
-      motionFrameRef.current = 0;
-      const now = performance.now();
-      let anyActive = false;
-      for (const [key, settle] of motionSettlesRef.current) {
-        const stepped = stepCardSettle(settle, now);
-        motionSettlesRef.current.set(key, stepped);
-        if (stepped.active) anyActive = true;
-      }
-      setMotionX(snapshotMotion());
-      if (anyActive) {
-        motionFrameRef.current = requestAnimationFrame(tick);
-      } else if (closePhaseRef.current === "rewinding") {
-        startFoldRef.current();
-      } else if (closePhaseRef.current === "folding") {
-        closePhaseRef.current = "idle";
-        onCloseRef.current();
-      } else {
-        motionSettlesRef.current.clear();
-        setMotionX(new Map());
-        setUnderCard(null);
-        setStepTucks([]);
-        resizeTucksRef.current = [];
-        setResizeTucks([]);
-        setResizeBackSync(null);
-        setFoldBackSync(null);
-      }
-    };
-    motionFrameRef.current = requestAnimationFrame(tick);
-  }, []);
-
-  // Expand transition: cards fan rightward out from `card.col` on mount.
   React.useEffect(() => {
-    if (!shouldAnimateMotion()) return;
-    const {
-      windowStart: start,
-      visibleCount: open,
-      items: list,
-      cardWidth: cw,
-    } = windowRef.current;
-    const now = performance.now();
-    const settles = new Map<string, CardSettleState>();
-    let anyActive = false;
-    for (let slot = 1; slot < open; slot += 1) {
-      const item = list[start + slot];
-      if (!item) continue;
-      const key = `${item.artifactId}:${start + slot}`;
-      const settle = retargetCardSettle(
-        createCardSettle({ x: 0, y: 0 }),
-        { x: slot * cw, y: 0 },
-        now,
-      );
-      settles.set(key, settle);
-      if (settle.active) anyActive = true;
-    }
-    if (!anyActive) return;
-    motionSettlesRef.current = settles;
-    scheduleMotionTick();
-  }, [scheduleMotionTick]);
+    const live = liveRef.current;
+    if (!live) return;
+    dispatch({
+      kind: "mounted",
+      nowMs: performance.now(),
+      animateMotion: shouldAnimateMotion(),
+      cardWidth: live.cardWidth,
+      windowed: live.windowed,
+    });
+  }, [dispatch]);
 
-  React.useEffect(
-    () => () => {
-      clearHoverTimer();
-      cancelDragFrame();
-      cancelMoveFrame();
-      cancelMotionFrame();
-    },
-    [],
-  );
-
-  const startFold = React.useCallback(() => {
-    const {
-      windowStart: start,
-      visibleCount: open,
-      items: list,
-      cardWidth: cw,
-    } = windowRef.current;
-    const now = performance.now();
-    const settles = new Map<string, CardSettleState>();
-    let anyActive = false;
-    let driver: FoldBackSync | null = null;
-    for (let slot = 0; slot < open; slot += 1) {
-      const item = list[start + slot];
-      if (!item) continue;
-      const key = `${item.artifactId}:${start + slot}`;
-      const current =
-        motionSettlesRef.current.get(key) ??
-        createCardSettle({ x: slot * cw, y: 0 });
-      const settle = retargetCardSettle(current, { x: 0, y: 0 }, now);
-      settles.set(key, settle);
-      if (settle.active) {
-        anyActive = true;
-        if (slot > 0 && driver === null) {
-          driver = { driverKey: key, startX: settle.current.x, targetX: 0 };
-        }
-      }
-    }
-    if (!anyActive) {
-      closePhaseRef.current = "idle";
-      setClosePhase("idle");
-      onCloseRef.current();
-      return;
-    }
-    closePhaseRef.current = "folding";
-    setClosePhase("folding");
-    setUnderCard(null);
-    setStepTucks([]);
-    resizeTucksRef.current = [];
-    setResizeTucks([]);
-    setResizeBackSync(null);
-    setFoldBackSync(driver);
-    motionSettlesRef.current = settles;
-    setMotionX(snapshotMotion());
-    scheduleMotionTick();
-  }, [scheduleMotionTick]);
-
-  React.useLayoutEffect(() => {
-    startFoldRef.current = startFold;
-  }, [startFold]);
-
-  const performStep = React.useCallback(
-    (by: number): boolean => {
-      const {
-        windowStart: current,
-        maxStart: last,
-        visibleCount: open,
-        items: list,
-        cardWidth: cw,
-      } = windowRef.current;
-      const next = clamp(current + by, 0, last);
-      if (next === current) return false;
-      const delta = next - current;
-      windowRef.current = { ...windowRef.current, windowStart: next };
-      // A card held over a side stack steps the window mid-drag; its siblings'
-      // settles were in the old window's slots, so they hand over to motion.
-      const held = dragRef.current?.active ? dragRef.current : null;
-      let startedMotion = false;
-
-      if (shouldAnimateMotion()) {
-        const now = performance.now();
-        const nextSettles = new Map<string, CardSettleState>();
-        let anyActive = false;
-        for (let slot = 0; slot < open; slot += 1) {
-          const item = list[next + slot];
-          if (!item) continue;
-          const key = `${item.artifactId}:${next + slot}`;
-          const prevSlot = clamp(slot + delta, 0, open - 1);
-          const from =
-            motionSettlesRef.current.get(key) ??
-            held?.siblingSettles.get(next + slot) ??
-            createCardSettle({ x: prevSlot * cw, y: 0 });
-          const settle = retargetCardSettle(from, { x: slot * cw, y: 0 }, now);
-          nextSettles.set(key, settle);
-          if (settle.active) anyActive = true;
-        }
-        const side = delta > 0 ? "left" : "right";
-        const underIndex = delta > 0 ? current : current + open - 1;
-        const coverSlot = side === "left" ? 0 : open - 1;
-        const nextStepTucks: StepTuck[] = [];
-        for (let oldSlot = 0; oldSlot < open; oldSlot += 1) {
-          const oldIndex = current + oldSlot;
-          if (
-            (oldIndex >= next && oldIndex < next + open) ||
-            oldIndex === underIndex
-          ) {
-            continue;
-          }
-          const oldItem = list[oldIndex];
-          if (!oldItem) continue;
-          const oldKey = `${oldItem.artifactId}:${oldIndex}`;
-          const from =
-            motionSettlesRef.current.get(oldKey) ??
-            held?.siblingSettles.get(oldIndex) ??
-            createCardSettle({ x: oldSlot * cw, y: 0 });
-          const tuckKey = `step-tuck:${oldItem.artifactId}:${oldIndex}`;
-          const targetX = coverSlot * cw;
-          const settle = retargetCardSettle(from, { x: targetX, y: 0 }, now);
-          nextSettles.set(tuckKey, settle);
-          if (settle.active) anyActive = true;
-          nextStepTucks.push({ key: tuckKey, item: oldItem, targetX });
-        }
-        motionSettlesRef.current = nextSettles;
-        setMotionX(snapshotMotion());
-        resizeTucksRef.current = [];
-        setResizeTucks([]);
-        setResizeBackSync(null);
-        setFoldBackSync(null);
-        if (anyActive) {
-          startedMotion = true;
-          // The end slot the incoming card glides onto keeps its old card
-          // beneath until the step lands: slot 0 stepping ->, S-1 stepping <-.
-          const stackCount =
-            delta > 0
-              ? current > 0
-                ? current + 1
-                : 0
-              : current < last
-                ? list.length - underIndex
-                : 0;
-          const shift = Math.min(STACK_BACK_COUNT, Math.abs(delta));
-          const coverItem = list[next + coverSlot];
-          const coverKey = coverItem
-            ? `${coverItem.artifactId}:${next + coverSlot}`
-            : "";
-          const coverSettle = nextSettles.get(coverKey);
-          const coverStartX = coverSettle
-            ? coverSettle.current.x
-            : coverSlot * cw;
-          const coverTargetX = coverSlot * cw;
-          const hadOppositeStack = delta > 0 ? current < last : current > 0;
-          const reveal = hadOppositeStack
-            ? {
-                side: side === "left" ? ("right" as const) : ("left" as const),
-                shift,
-              }
-            : null;
-          setStepTucks(nextStepTucks);
-          setUnderCard({
-            side,
-            index: underIndex,
-            stackCount,
-            shift,
-            coverKey,
-            coverStartX,
-            coverTargetX,
-            reveal,
-            items: list,
-            visibleCount: open,
-          });
-          scheduleMotionTick();
-        } else {
-          setUnderCard(null);
-          setStepTucks([]);
-        }
-      }
-      if (held) {
-        held.siblingSettles.clear();
-        setDrag(snapshotDrag(held));
-      }
-
-      setWindowStart(next);
-      return startedMotion;
-    },
-    [scheduleMotionTick],
-  );
-
-  const requestClose = React.useCallback(() => {
-    if (closePhaseRef.current !== "idle") return;
-    if (!shouldAnimateMotion()) {
-      onCloseRef.current();
-      return;
-    }
-    const { windowStart: start } = windowRef.current;
-    if (start > 0) {
-      closePhaseRef.current = "rewinding";
-      setClosePhase("rewinding");
-      if (performStep(-start)) return;
-    }
-    startFold();
-  }, [performStep, startFold]);
-
-  const step = React.useCallback(
-    (by: number) => {
-      if (closePhaseRef.current !== "idle") return;
-      performStep(by);
-    },
-    [performStep],
-  );
-
-  // A horizontal swipe over the spread pages it instead of panning the
-  // canvas; the canvas listens natively, so this must too.
   React.useEffect(() => {
     const element = rootRef.current;
     if (!element || !layout.windowed) return;
@@ -1024,439 +712,121 @@ export function CellArtifactSequenceSpread({
       if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
       event.preventDefault();
       event.stopPropagation();
-      wheelRef.current += event.deltaX;
-      while (Math.abs(wheelRef.current) >= WHEEL_STEP_PX) {
-        const direction = Math.sign(wheelRef.current);
-        step(direction);
-        wheelRef.current -= direction * WHEEL_STEP_PX;
-      }
+      const live = liveRef.current;
+      if (!live) return;
+      dispatch({
+        kind: "wheel",
+        deltaX: event.deltaX,
+        nowMs: performance.now(),
+        animateMotion: shouldAnimateMotion(),
+        cardWidth: live.cardWidth,
+        windowed: live.windowed,
+      });
     };
     element.addEventListener("wheel", onWheel, { passive: false });
     return () => element.removeEventListener("wheel", onWheel);
-  }, [layout.windowed, step]);
+  }, [dispatch, layout.windowed]);
 
-  const slotLeft = (slot: number) => slot * cardWidth;
-
-  const scheduleDragTick = () => {
-    if (dragFrameRef.current !== 0) return;
-    dragFrameRef.current = requestAnimationFrame(() => {
-      dragFrameRef.current = 0;
-      const state = dragRef.current;
-      if (!state || !state.active) return;
-      const now = performance.now();
-      state.draggedSettle = stepCardSettle(state.draggedSettle, now);
-      let anyActive = state.draggedSettle.active;
-      for (const [index, settle] of state.siblingSettles) {
-        const stepped = stepCardSettle(settle, now);
-        state.siblingSettles.set(index, stepped);
-        if (stepped.active) anyActive = true;
-      }
-      setDrag(snapshotDrag(state));
-      if (anyActive) scheduleDragTick();
-    });
-  };
-
-  const scheduleMoveTick = () => {
-    if (moveFrameRef.current !== 0) return;
-    moveFrameRef.current = requestAnimationFrame(() => {
-      moveFrameRef.current = 0;
-      const state = moveRef.current;
-      if (!state || !state.active) return;
-      const now = performance.now();
-      state.settle = stepCardSettle(state.settle, now);
-      setMoveView({
-        offset: { ...state.settle.current },
-        landingDelta: state.landingDelta,
-      });
-      if (state.settle.active) scheduleMoveTick();
-    });
-  };
-
-  const modeAt = (point: WorldPoint, state: ItemDrag) => {
-    const inside =
-      point.x >= originX - FRAME_OUTSET &&
-      point.x <= originX + frameWidth + FRAME_OUTSET &&
-      point.y >= originY - FRAME_OUTSET &&
-      point.y <= originY + cardHeight + FRAME_OUTSET;
-    const {
-      windowStart: start,
-      maxStart: last,
-      visibleCount: open,
-    } = windowRef.current;
-    const leftStackActive = layout.windowed && start > 0;
-    const rightStackActive = layout.windowed && start < last;
-    if (inside) {
-      if (leftStackActive && point.x < originX + cardWidth) {
-        return {
-          mode: "left" as const,
-          targetSlot: state.targetSlot,
-          landing: null,
-        };
-      }
-      if (rightStackActive && point.x >= originX + (open - 1) * cardWidth) {
-        return {
-          mode: "right" as const,
-          targetSlot: state.targetSlot,
-          landing: null,
-        };
-      }
-      const firstOpenSlot = leftStackActive ? 1 : 0;
-      const lastOpenSlot = rightStackActive ? open - 2 : open - 1;
-      const cardCenterX = point.x - state.grab.x + cardWidth / 2;
-      const targetSlot = clamp(
-        Math.floor((cardCenterX - originX) / cardWidth),
-        firstOpenSlot,
-        Math.max(firstOpenSlot, lastOpenSlot),
-      );
-      return { mode: "reorder" as const, targetSlot, landing: null };
-    }
-    if (!onExtract) {
-      return {
-        mode: "none" as const,
-        targetSlot: state.targetSlot,
-        landing: null,
-      };
-    }
-    const col = Math.round((point.x - state.grab.x) / CELL_SIZE);
-    const row = Math.round((point.y - state.grab.y) / CELL_SIZE);
-    const landingCard: CellCardModel = { ...card, id: LANDING_ID, col, row };
-    const frameCard: CellCardModel = {
-      ...card,
-      id: FRAME_ID,
-      col: layout.startCol,
-      row: layout.row,
-      widthCells: layout.totalCols,
-      heightCells: h,
-    };
-    const delta = resolveNonOverlappingDelta(
-      [...foregroundCards, frameCard, landingCard],
-      new Set([LANDING_ID]),
-      { col: 0, row: 0 },
-    );
-    return {
-      mode: "extract" as const,
-      targetSlot: state.targetSlot,
-      landing: { col: col + delta.col, row: row + delta.row },
-    };
-  };
-
-  const targetPointForDrag = (
-    mode: DragMode,
-    targetSlot: number,
-    landing: CellCoord | null,
-    fallbackSlot: number,
-  ): WorldPoint => {
-    if (mode === "reorder") return { x: slotLeft(targetSlot), y: 0 };
-    if (mode === "left") return { x: 0, y: 0 };
-    if (mode === "right") {
-      return { x: slotLeft(windowRef.current.visibleCount - 1), y: 0 };
-    }
-    if (mode === "extract" && landing) {
-      return {
-        x: (landing.col - layout.startCol) * CELL_SIZE,
-        y: (landing.row - layout.row) * CELL_SIZE,
-      };
-    }
-    return { x: slotLeft(fallbackSlot), y: 0 };
-  };
-
-  const armHoverStep = (mode: DragMode) => {
-    if (mode === hoverModeRef.current) return;
-    hoverModeRef.current = mode;
-    clearHoverTimer();
-    if (mode !== "left" && mode !== "right") return;
-    const direction = mode === "left" ? -1 : 1;
-    const tick = () => {
-      step(direction);
-      hoverTimerRef.current = setTimeout(tick, STACK_HOVER_STEP_MS);
-    };
-    hoverTimerRef.current = setTimeout(tick, STACK_HOVER_STEP_MS);
-  };
-
-  const onItemPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.stopPropagation();
-    if (closePhaseRef.current !== "idle") return;
-    const index = Number(event.currentTarget.dataset.sequenceItem);
-    const slot = Number(event.currentTarget.dataset.sequenceSlot);
-    setActiveIndex(index);
-    if (event.button !== 0 || !editable) return;
-    const world = screenToWorld(event.clientX, event.clientY);
-    const origin = { x: slotLeft(slot), y: 0 };
-    dragRef.current = {
-      pointerId: event.pointerId,
-      from: index,
-      slot,
-      startX: event.clientX,
-      startY: event.clientY,
-      grab: {
-        x: world.x - (originX + origin.x),
-        y: world.y - originY,
-      },
-      active: false,
-      mode: "reorder",
-      targetSlot: slot,
-      landing: null,
-      draggedSettle: createCardSettle(origin),
-      siblingSettles: new Map(),
-    };
-  };
-
-  const onItemPointerMove = (event: PointerEvent) => {
-    const state = dragRef.current;
-    if (!state || state.pointerId !== event.pointerId) return;
-    let activated = false;
-    if (!state.active) {
-      const travelled = Math.hypot(
-        event.clientX - state.startX,
-        event.clientY - state.startY,
-      );
-      if (travelled < DRAG_THRESHOLD_PX) return;
-      state.active = true;
-      activated = true;
-    }
-    const world = screenToWorld(event.clientX, event.clientY);
-    const at = modeAt(world, state);
-    armHoverStep(at.mode);
-
-    const changedTarget =
-      activated ||
-      at.mode !== state.mode ||
-      at.targetSlot !== state.targetSlot ||
-      at.landing?.col !== state.landing?.col ||
-      at.landing?.row !== state.landing?.row;
-
-    if (!changedTarget) return;
-
-    state.mode = at.mode;
-    state.targetSlot = at.targetSlot;
-    state.landing = at.landing;
-
-    const now = performance.now();
-    const animate = shouldAnimateMotion();
-    const nextPoint = targetPointForDrag(
-      at.mode,
-      at.targetSlot,
-      at.landing,
-      state.slot,
-    );
-    state.draggedSettle = retargetSettle(
-      state.draggedSettle,
-      nextPoint,
-      now,
-      animate,
-    );
-
-    const {
-      windowStart: start,
-      visibleCount: open,
-      items: list,
-    } = windowRef.current;
-    let anyActive = state.draggedSettle.active;
-    for (let slot = 0; slot < open; slot += 1) {
-      const index = start + slot;
-      if (index === state.from) continue;
-      const visualSlot = visualSlotForSibling(
-        slot,
-        state.from,
-        at.mode,
-        at.targetSlot,
-        start,
-        open,
-      );
-      const targetPoint = { x: slotLeft(visualSlot), y: 0 };
-      const existing = state.siblingSettles.get(index);
-      if (!existing && visualSlot === slot) continue;
-      // Pick up from wherever a step is still carrying this card.
-      const item = list[index];
-      const stepping = item
-        ? motionSettlesRef.current.get(`${item.artifactId}:${index}`)
-        : undefined;
-      const nextSibling = retargetSettle(
-        existing ?? stepping ?? createCardSettle({ x: slotLeft(slot), y: 0 }),
-        targetPoint,
-        now,
-        animate,
-      );
-      state.siblingSettles.set(index, nextSibling);
-      if (nextSibling.active) anyActive = true;
-    }
-
-    setDrag(snapshotDrag(state));
-    if (anyActive) scheduleDragTick();
-  };
-
-  const endItemDrag = (event: PointerEvent) => {
-    const state = dragRef.current;
-    if (!state || state.pointerId !== event.pointerId) return;
-    dragRef.current = null;
-    cancelDragFrame();
-    armHoverStep("none");
-    setDrag(null);
-    if (!state.active || event.type === "pointercancel") return;
-    const at = modeAt(screenToWorld(event.clientX, event.clientY), state);
-    const { windowStart: start, visibleCount: open } = windowRef.current;
-    switch (at.mode) {
-      case "reorder": {
-        const to = reorderDropIndex(start, at.targetSlot);
-        if (to !== state.from) onReorder?.(card.id, state.from, to);
-        return;
-      }
-      case "left": {
-        const to = clamp(start, 0, items.length - 1);
-        if (to !== state.from) onReorder?.(card.id, state.from, to);
-        return;
-      }
-      case "right": {
-        const to = clamp(start + open - 1, 0, items.length - 1);
-        if (to !== state.from) onReorder?.(card.id, state.from, to);
-        return;
-      }
-      case "extract":
-        if (at.landing) onExtract?.(card.id, state.from, at.landing);
-        return;
-      case "none":
-        return;
-    }
-  };
-
-  // Top-edge move drag handle: moves the whole spread (and its stack card) on
-  // the cell grid using the same settle physics and non-overlapping placement.
-  const onMovePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.stopPropagation();
-    if (event.button !== 0 || !onMove || closePhaseRef.current !== "idle")
-      return;
-    const world = screenToWorld(event.clientX, event.clientY);
-    moveRef.current = {
-      pointerId: event.pointerId,
-      startClient: { x: event.clientX, y: event.clientY },
-      startWorld: world,
-      active: false,
-      landingDelta: { col: 0, row: 0 },
-      settle: createCardSettle({ x: 0, y: 0 }),
-    };
-  };
-
-  const resolveSpreadMoveDelta = (rawDelta: CellCoord): CellCoord => {
-    const others = foregroundCards.filter(
-      (candidate) => candidate.id !== card.id,
-    );
-    const spreadBox: CellCardModel = {
-      ...card,
-      id: MOVE_ID,
-      col: layout.startCol,
-      row: layout.row,
-      widthCells: layout.totalCols,
-      heightCells: h,
-    };
-    return resolveNonOverlappingDelta(
-      [...others, spreadBox],
-      new Set([MOVE_ID]),
-      rawDelta,
-    );
-  };
-
-  const onMovePointerMove = (event: PointerEvent) => {
-    const state = moveRef.current;
-    if (!state || state.pointerId !== event.pointerId) return;
-    let activated = false;
-    if (!state.active) {
-      const travelled = Math.hypot(
-        event.clientX - state.startClient.x,
-        event.clientY - state.startClient.y,
-      );
-      if (travelled < DRAG_THRESHOLD_PX) return;
-      state.active = true;
-      activated = true;
-    }
-    const world = screenToWorld(event.clientX, event.clientY);
-    const rawDelta: CellCoord = {
-      col: Math.round((world.x - state.startWorld.x) / CELL_SIZE),
-      row: Math.round((world.y - state.startWorld.y) / CELL_SIZE),
-    };
-    const landingDelta = resolveSpreadMoveDelta(rawDelta);
-    if (
-      !activated &&
-      landingDelta.col === state.landingDelta.col &&
-      landingDelta.row === state.landingDelta.row
-    ) {
-      return;
-    }
-    state.landingDelta = landingDelta;
-    const now = performance.now();
-    const target = {
-      x: landingDelta.col * CELL_SIZE,
-      y: landingDelta.row * CELL_SIZE,
-    };
-    state.settle = retargetSettle(
-      state.settle,
-      target,
-      now,
-      shouldAnimateMotion(),
-    );
-    setMoveView({
-      offset: { ...state.settle.current },
-      landingDelta,
-    });
-    if (state.settle.active) scheduleMoveTick();
-  };
-
-  const endMoveDrag = (event: PointerEvent) => {
-    const state = moveRef.current;
-    if (!state || state.pointerId !== event.pointerId) return;
-    moveRef.current = null;
-    cancelMoveFrame();
-    setMoveView(null);
-    if (!state.active || event.type === "pointercancel") return;
-    const world = screenToWorld(event.clientX, event.clientY);
-    const rawDelta: CellCoord = {
-      col: Math.round((world.x - state.startWorld.x) / CELL_SIZE),
-      row: Math.round((world.y - state.startWorld.y) / CELL_SIZE),
-    };
-    const delta = resolveSpreadMoveDelta(rawDelta);
-    if (delta.col !== 0 || delta.row !== 0) {
-      onMove?.(card.id, card.col + delta.col, card.row + delta.row);
-    }
-  };
-
-  const windowDragHandlers = React.useRef({
-    itemMove: onItemPointerMove,
-    itemEnd: endItemDrag,
-    spreadMove: onMovePointerMove,
-    spreadEnd: endMoveDrag,
-  });
-  React.useLayoutEffect(() => {
-    windowDragHandlers.current = {
-      itemMove: onItemPointerMove,
-      itemEnd: endItemDrag,
-      spreadMove: onMovePointerMove,
-      spreadEnd: endMoveDrag,
-    };
-  });
   React.useEffect(() => {
-    const move = (event: PointerEvent) => {
-      windowDragHandlers.current.itemMove(event);
-      windowDragHandlers.current.spreadMove(event);
+    const onPointerMove = (event: PointerEvent) => {
+      const live = liveRef.current;
+      if (!live) return;
+      const world = live.screenToWorld(event.clientX, event.clientY);
+      const nowMs = performance.now();
+      const scene = hitScene(live);
+      const animateMotion = shouldAnimateMotion();
+      dispatch({
+        kind: "itemPointerMove",
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        world,
+        scene,
+        nowMs,
+        animateMotion,
+        cardWidth: live.cardWidth,
+        windowed: live.windowed,
+      });
+      dispatch({
+        kind: "movePointerMove",
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        world,
+        scene,
+        nowMs,
+        animateMotion,
+      });
     };
-    const end = (event: PointerEvent) => {
-      windowDragHandlers.current.itemEnd(event);
-      windowDragHandlers.current.spreadEnd(event);
+    const onPointerEnd = (event: PointerEvent) => {
+      const live = liveRef.current;
+      if (!live) return;
+      const world = live.screenToWorld(event.clientX, event.clientY);
+      const scene = hitScene(live);
+      const cancelled = event.type === "pointercancel";
+      dispatch({
+        kind: "itemPointerEnd",
+        pointerId: event.pointerId,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        world,
+        cancelled,
+        cardId: live.cardId,
+        scene,
+      });
+      dispatch({
+        kind: "movePointerEnd",
+        pointerId: event.pointerId,
+        world,
+        cancelled,
+        cardId: live.cardId,
+        scene,
+      });
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", end);
-    window.addEventListener("pointercancel", end);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerEnd);
+    window.addEventListener("pointercancel", onPointerEnd);
     return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", end);
-      window.removeEventListener("pointercancel", end);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerEnd);
+      window.removeEventListener("pointercancel", onPointerEnd);
     };
-  }, []);
+  }, [dispatch]);
 
-  /** One card, or with Shift a page: the open cards between the stacks. */
+  React.useEffect(
+    () => () => {
+      if (motionFrameRef.current !== 0) {
+        cancelAnimationFrame(motionFrameRef.current);
+      }
+      if (dragFrameRef.current !== 0) {
+        cancelAnimationFrame(dragFrameRef.current);
+      }
+      if (moveFrameRef.current !== 0) {
+        cancelAnimationFrame(moveFrameRef.current);
+      }
+      if (hoverTimerRef.current !== null) {
+        clearTimeout(hoverTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const clock = () => ({
+    nowMs: performance.now(),
+    animateMotion: shouldAnimateMotion(),
+    cardWidth,
+    windowed: layout.windowed,
+  });
+  const step = (by: number) => {
+    dispatch({ kind: "step", by, ...clock() });
+  };
+  const requestClose = () => {
+    dispatch({ kind: "requestClose", ...clock() });
+  };
   const stepBy = (direction: number, page: boolean) => {
-    const pageStep = Math.max(1, windowRef.current.visibleCount - 2);
+    const pageStep = Math.max(1, visibleCount - 2);
     step(direction * (page ? pageStep : 1));
   };
-  /** A side stack steps toward itself. */
   const onStackClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const direction =
       event.currentTarget.dataset.sequenceStack === "left" ? -1 : 1;
@@ -1469,7 +839,6 @@ export function CellArtifactSequenceSpread({
       event.currentTarget.dataset.sequenceStack === "left" ? -1 : 1;
     stepBy(direction, event.shiftKey);
   };
-
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.stopPropagation();
@@ -1485,8 +854,12 @@ export function CellArtifactSequenceSpread({
       if (to < 0 || to >= items.length) return;
       event.preventDefault();
       event.stopPropagation();
-      onReorder(card.id, index, to);
-      setActiveIndex(to);
+      dispatch({
+        kind: "keyboardReorder",
+        direction,
+        cardId: card.id,
+        canReorder: true,
+      });
       return;
     }
     if (!layout.windowed) return;
@@ -1494,200 +867,86 @@ export function CellArtifactSequenceSpread({
     event.stopPropagation();
     stepBy(direction, event.shiftKey);
   };
-
-  // Resizing the spread by its right edge, in whole card slots.
-  const resizeRef = React.useRef<{
-    pointerId: number;
-    startX: number;
-    startCount: number;
-    last: number;
-  } | null>(null);
+  const setActiveIndex = (next: React.SetStateAction<number | null>) => {
+    const index = typeof next === "function" ? next(activeIndex) : next;
+    dispatch({ kind: "setActiveIndex", index });
+  };
+  const setHoveredIndex = (next: React.SetStateAction<number | null>) => {
+    const index = typeof next === "function" ? next(hoveredIndex) : next;
+    dispatch({ kind: "setHoveredIndex", index });
+  };
+  const setMenuIndex = (next: React.SetStateAction<number | null>) => {
+    const index = typeof next === "function" ? next(menuIndex) : next;
+    dispatch({ kind: "setMenuIndex", index });
+  };
+  const onItemPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    const index = Number(event.currentTarget.dataset.sequenceItem);
+    const slot = Number(event.currentTarget.dataset.sequenceSlot);
+    dispatch({
+      kind: "itemPointerDown",
+      pointerId: event.pointerId,
+      button: event.button,
+      index,
+      slot,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      world: screenToWorld(event.clientX, event.clientY),
+      editable,
+      originX,
+      originY,
+      cardWidth,
+    });
+  };
+  const onMovePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (!onMove) return;
+    dispatch({
+      kind: "movePointerDown",
+      pointerId: event.pointerId,
+      button: event.button,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      world: screenToWorld(event.clientX, event.clientY),
+    });
+  };
   const onResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
-    if (event.button !== 0 || closePhaseRef.current !== "idle") return;
-    resizeRef.current = {
-      pointerId: event.pointerId,
-      startX: screenToWorld(event.clientX, event.clientY).x,
-      startCount: visibleCount,
-      last: visibleCount,
-    };
-    setResizing(true);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-  // Resize transition: when the open row widens, the cards it reveals glide
-  // out from the old right edge; when it narrows, the cards it retires glide
-  // in under the new right stack before they go.
-  const glideResize = (nextVisibleCount: number) => {
-    if (closePhaseRef.current !== "idle" || !shouldAnimateMotion()) return;
-    const {
-      windowStart: seenStart,
-      visibleCount: seenCount,
-      items: list,
-      cardWidth: cw,
-    } = windowRef.current;
-    // The window the parent will draw for that count, clamped as above.
-    const nextCount = Math.min(nextVisibleCount, list.length);
-    const nextStart =
-      nextCount < list.length
-        ? clamp(seenStart, 0, Math.max(0, list.length - nextCount))
-        : 0;
-    if (nextCount === seenCount) return;
-    const now = performance.now();
-    const prevSettles = motionSettlesRef.current;
-    const nextSettles = new Map<string, CardSettleState>();
-    let anyActive = false;
-
-    const takePreviousSettle = (
-      item: ArtifactStackItem,
-      index: number,
-      fallbackX: number,
-    ): CardSettleState =>
-      prevSettles.get(`${item.artifactId}:${index}`) ??
-      prevSettles.get(`resize-tuck:${item.artifactId}:${index}`) ??
-      createCardSettle({ x: fallbackX, y: 0 });
-
-    const glide = (key: string, from: CardSettleState, toX: number) => {
-      const settle = retargetCardSettle(from, { x: toX, y: 0 }, now);
-      nextSettles.set(key, settle);
-      if (settle.active) anyActive = true;
-      return settle;
-    };
-
-    const nextOpenIndices = new Set<number>();
-    // Every card still open comes from where the old row (or an in-flight
-    // tuck) drew it: its live settle, its old slot, or the end of the old row.
-    for (let slot = 0; slot < nextCount; slot += 1) {
-      const index = nextStart + slot;
-      const item = list[index];
-      if (!item) continue;
-      nextOpenIndices.add(index);
-      const key = `${item.artifactId}:${index}`;
-      const seenSlot = index - seenStart;
-      const fromSlot = seenSlot < 0 ? 0 : Math.min(seenSlot, seenCount - 1);
-      const hasPrior =
-        prevSettles.has(key) ||
-        prevSettles.has(`resize-tuck:${item.artifactId}:${index}`);
-      if (fromSlot === slot && !hasPrior) continue;
-      glide(key, takePreviousSettle(item, index, fromSlot * cw), slot * cw);
-    }
-
-    const rightEdgeX = (nextCount - 1) * cw;
-    const nextTucksByIndex = new Map<number, ResizeTuck>();
-    const newlyRetired: ResizeTuck[] = [];
-
-    // Retire cards leaving the right side of the row into the new right edge.
-    for (let slot = nextCount; slot < seenCount; slot += 1) {
-      const index = seenStart + slot;
-      if (nextOpenIndices.has(index)) continue;
-      const item = list[index];
-      if (!item) continue;
-      const key = `resize-tuck:${item.artifactId}:${index}`;
-      const from = takePreviousSettle(item, index, slot * cw);
-      glide(key, from, rightEdgeX);
-      const tuck: ResizeTuck = { key, index, item };
-      nextTucksByIndex.set(index, tuck);
-      newlyRetired.push(tuck);
-    }
-
-    // Retarget any already-tucking cards to the new right edge so rapid
-    // narrowing never strands them outside the frame, and drop any that were
-    // re-opened or are already behind the widened right edge.
-    if (nextStart + nextCount < list.length) {
-      for (const existing of resizeTucksRef.current) {
-        if (
-          nextOpenIndices.has(existing.index) ||
-          nextTucksByIndex.has(existing.index)
-        ) {
-          continue;
-        }
-        const live = prevSettles.get(existing.key);
-        if (!live || live.current.x <= rightEdgeX + 0.5) continue;
-        glide(existing.key, live, rightEdgeX);
-        nextTucksByIndex.set(existing.index, existing);
-      }
-    }
-
-    const nextTucks = [...nextTucksByIndex.values()].sort(
-      (a, b) => b.index - a.index,
-    );
-
-    windowRef.current = {
-      ...windowRef.current,
-      windowStart: nextStart,
-      visibleCount: nextCount,
-    };
-    motionSettlesRef.current = nextSettles;
-    resizeTucksRef.current = anyActive ? nextTucks : [];
-    setUnderCard(null);
-    setStepTucks([]);
-    setResizeTucks(resizeTucksRef.current);
-
-    if (!anyActive) {
-      setMotionX(new Map());
-      setResizeBackSync(null);
+    if (event.button !== 0 || closing) return;
+    if (
+      state.phase.kind === "draggingItem" ||
+      state.phase.kind === "movingSpread"
+    ) {
       return;
     }
-
-    if (newlyRetired.length > 0) {
-      let driver: { key: string; startX: number; span: number } | null = null;
-      for (const tuck of nextTucks) {
-        const tuckSettle = nextSettles.get(tuck.key);
-        if (!tuckSettle) continue;
-        const span = Math.abs(tuckSettle.current.x - rightEdgeX);
-        if (!driver || span > driver.span) {
-          driver = { key: tuck.key, startX: tuckSettle.current.x, span };
-        }
-      }
-      if (driver) {
-        setResizeBackSync({
-          driverKey: driver.key,
-          startX: driver.startX,
-          targetX: rightEdgeX,
-          itemCount: list.length,
-          visibleCount: nextCount,
-        });
-      }
-    } else if (nextCount > seenCount && nextStart + nextCount < list.length) {
-      const endIndex = nextStart + nextCount - 1;
-      const endItem = list[endIndex];
-      const driverKey = endItem ? `${endItem.artifactId}:${endIndex}` : "";
-      const driverSettle = driverKey ? nextSettles.get(driverKey) : undefined;
-      if (driverKey && driverSettle) {
-        setResizeBackSync({
-          driverKey,
-          startX: driverSettle.current.x,
-          targetX: rightEdgeX,
-          itemCount: list.length,
-          visibleCount: nextCount,
-        });
-      }
-    } else {
-      setResizeBackSync(null);
-    }
-    setMotionX(snapshotMotion());
-    scheduleMotionTick();
+    dispatch({
+      kind: "resizePointerDown",
+      pointerId: event.pointerId,
+      button: event.button,
+      startX: screenToWorld(event.clientX, event.clientY).x,
+    });
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
   const onResizePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const state = resizeRef.current;
-    if (!state || state.pointerId !== event.pointerId) return;
-    const dx = screenToWorld(event.clientX, event.clientY).x - state.startX;
-    const next = clamp(
-      state.startCount + Math.round(dx / cardWidth),
-      layout.minVisibleCount,
-      layout.maxVisibleCount,
-    );
-    if (next === state.last) return;
-    state.last = next;
-    glideResize(next);
-    onPreferredVisibleCountChange?.(next);
+    dispatch({
+      kind: "resizePointerMove",
+      pointerId: event.pointerId,
+      worldX: screenToWorld(event.clientX, event.clientY).x,
+      nowMs: performance.now(),
+      animateMotion: shouldAnimateMotion(),
+      cardWidth,
+      minVisibleCount: layout.minVisibleCount,
+      maxVisibleCount: layout.maxVisibleCount,
+    });
   };
   const endResize = (event: React.PointerEvent<HTMLDivElement>) => {
-    const state = resizeRef.current;
-    if (!state || state.pointerId !== event.pointerId) return;
-    resizeRef.current = null;
-    setResizing(false);
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    const captured =
+      state.phase.kind === "resizing" &&
+      state.phase.pointer?.pointerId === event.pointerId;
+    dispatch({ kind: "resizePointerEnd", pointerId: event.pointerId });
+    if (captured) event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
+  const slotLeft = (slot: number) => slot * cardWidth;
 
   const plateFill = cardPlateFill(material, cardFill);
   const radius = cellCornerRadius(corners);

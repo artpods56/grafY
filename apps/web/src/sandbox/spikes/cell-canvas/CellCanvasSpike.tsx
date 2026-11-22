@@ -5,8 +5,8 @@ import * as stylex from "@stylexjs/stylex";
 
 import { useOptionalAuthSession } from "@/features/auth/AuthSessionBoundary";
 import { sandboxSession } from "@/features/auth/dev-session";
-import type { GraphPresentation } from "@/features/workbench/canvas/artifact-viewer";
-import { defaultNodeConfig } from "@/features/workbench/canvas/types";
+import type { GraphPresentation } from "@/features/workbench/artifacts/artifact-viewer";
+import { defaultNodeConfig } from "@/features/workbench/authoring/types";
 import {
   CellCanvas,
   DEFAULT_CELL_GLASS_LOOK,
@@ -49,12 +49,12 @@ import {
   type CellPort,
   type CellRoutingOptions,
 } from "@/features/workbench/cell-canvas/cell-model";
-import { COLLECTION_PORT } from "@/features/workbench/model/collection-spec";
-import { newNodeKind } from "@/features/workbench/model/project-graphs";
+import { COLLECTION_PORT } from "@/features/workbench/authoring/collection-spec";
+import { newNodeKind } from "@/features/workbench/authoring/project-graphs";
 import {
   applyGraphCommandNormalized,
   type AuthoredGraphDocument,
-} from "@/features/workbench/model/graph-document";
+} from "@/features/workbench/authoring/graph-document";
 import { useNodeRegistry, useWorkspaces } from "@/hooks/use-api";
 
 import {
@@ -177,6 +177,9 @@ export function CellCanvasSpike() {
   >(initialShowcase.nodeRunState);
   const [collapsedAppendices, setCollapsedAppendices] =
     React.useState<ReadonlySet<string>>(EMPTY_ID_SET);
+  const [configSections, setConfigSections] = React.useState<
+    Readonly<Record<string, Readonly<Record<string, boolean>>>>
+  >({});
 
   const [selection, setSelection] =
     React.useState<CellSelectionSnapshot>(EMPTY_SELECTION);
@@ -205,9 +208,11 @@ export function CellCanvasSpike() {
         presentation: showcasePresentation,
         nodeRunState: showcaseRunState,
         collapsedAppendices,
+        configSections,
       }),
     [
       collapsedAppendices,
+      configSections,
       effectiveRegistry,
       showcaseDoc,
       showcasePresentation,
@@ -507,8 +512,16 @@ export function CellCanvasSpike() {
   );
 
   const onOperatorConfigChange = React.useCallback(
-    (cardId: string, fieldId: string, value: string | number | boolean) => {
+    (cardId: string, fieldId: string, value: unknown) => {
       if (graphKindRef.current !== "showcase") {
+        // Mock surfaces hold plain fields only, so only a primitive lands.
+        if (
+          typeof value !== "string" &&
+          typeof value !== "number" &&
+          typeof value !== "boolean"
+        ) {
+          return;
+        }
         setMockSurfaces((current) => {
           const surface = current[cardId];
           if (surface?.kind !== "operator" || !surface.configFields) {
@@ -628,6 +641,16 @@ export function CellCanvasSpike() {
     });
   }, []);
 
+  const onOperatorToggleConfigSection = React.useCallback(
+    (cardId: string, sectionKey: string, open: boolean) => {
+      setConfigSections((current) => ({
+        ...current,
+        [cardId]: { ...current[cardId], [sectionKey]: open },
+      }));
+    },
+    [],
+  );
+
   const onOperatorRun = React.useCallback((cardId: string) => {
     if (graphKindRef.current !== "showcase") {
       setMockGraph((current) => ({
@@ -744,6 +767,7 @@ export function CellCanvasSpike() {
         onOperatorAddPlug={onOperatorAddPlug}
         onOperatorRemovePlug={onOperatorRemovePlug}
         onOperatorToggleAppendix={onOperatorToggleAppendix}
+        onOperatorToggleConfigSection={onOperatorToggleConfigSection}
         onCollectionRemoveMember={onCollectionRemoveMember}
         onAnnotationColorChange={onAnnotationColorChange}
         onHandleReady={onHandleReady}

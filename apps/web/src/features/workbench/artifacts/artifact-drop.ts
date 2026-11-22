@@ -1,0 +1,449 @@
+import type {
+  ArtifactConversionSpec,
+  ArtifactTypeKey,
+  Port,
+  SavedGraphOrigin,
+} from "@/lib/api";
+import { artifactCardValue, cardArtifactRefs } from "./artifact-card";
+import { artifactTypeKey } from "./artifact-type-key";
+import {
+  decodeHandleId,
+  shortestConversionPathsToAny,
+} from "../authoring/handles";
+import {
+  acceptedPortShapes,
+  portHasInstancePlugs,
+  resolvedPortArtifactType,
+  type WorkflowEdge,
+} from "../authoring/types";
+import type { GraphCommand } from "../authoring/graph-document";
+import { createUuid } from "../authoring/uuid";
+
+export const ARTIFACT_DROP_DATA_TYPE = "application/x-grafy-artifact";
+
+/**
+ * Several cards in one drag: an artifact-card payload per group, in the order
+ * the groups should land. A drag that carries only `ARTIFACT_DROP_DATA_TYPE`
+ * still means one card, and every reader that predates multi-card drops keeps
+ * working, because a grouped drag writes that type too — with its first group.
+ */
+export const ARTIFACT_GROUPS_DATA_TYPE = "application/x-grafy-artifact-groups";
+
+/**
+ * Marks a grouped drag as one whole Library folder, and names it. The groups it
+ * rides with are the folder's artifacts split by type; the marker is what lets
+ * a drop that finds several types ask which to place instead of placing all.
+ */
+export const ARTIFACT_FOLDER_DATA_TYPE = "application/x-grafy-artifact-folder";
+
+export type ArtifactDropValue = SavedGraphOrigin["value"];
+
+export interface ArtifactDropPayload {
+  readonly value: ArtifactDropValue;
+  readonly shape: "one" | "many";
+}
+
+export interface ArtifactDropTarget {
+  readonly nodeId: string;
+  readonly portName: string;
+  readonly plugId: string | null;
+}
+
+export interface ArtifactDropResolution {
+  readonly conversionPath: readonly { id: string; version: number }[];
+  /** `map` when a sequence feeds an input that takes one item at a time. */
+  readonly collectionMode: SavedGraphOrigin["collection_mode"];
+}
+
+export interface ArtifactDropGraphState {
+  readonly edges: readonly WorkflowEdge[];
+  readonly origins: readonly SavedGraphOrigin[];
+  readonly conversions: readonly ArtifactConversionSpec[];
+}
+
+export function artifactDropPayload(
+  value: ArtifactDropValue,
+): ArtifactDropPayload {
+  return {
+    value,
+    shape: "item_refs" in value ? "many" : "one",
+  };
+}
+
+export function writeArtifactDrop(
+  dataTransfer: DataTransfer,
+  value: ArtifactDropValue,
+): void {
+  dataTransfer.setData(
+    ARTIFACT_DROP_DATA_TYPE,
+    JSON.stringify(artifactDropPayload(value)),
+  );
+  dataTransfer.effectAllowed = "copy";
+}
+
+/** Whether one drag carries a Grafy artifact rather than page text or a file. */
+export function isArtifactDrop(dataTransfer: DataTransfer): boolean {
+  return (
+    Array.from(dataTransfer.types ?? []).includes(ARTIFACT_DROP_DATA_TYPE) ||
+    Array.from(dataTransfer.types ?? []).includes(ARTIFACT_GROUPS_DATA_TYPE)
+  );
+}
+
+/** One payload from parsed JSON, or null when it is not a payload we wrote. */
+function parseArtifactDropPayload(parsed: unknown): ArtifactDropPayload | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  if (!("value" in parsed) || !("shape" in parsed)) return null;
+  const value = parsed.value;
+  const shape = parsed.shape;
+  if (!value || typeof value !== "object") return null;
+  if (shape !== "one" && shape !== "many") return null;
+  if (shape === "many" && !("item_refs" in value)) return null;
+  if (shape === "one" && "item_refs" in value) return null;
+  return { value: value as ArtifactDropValue, shape };
+}
+
+function readArtifactDropPayload(raw: string): ArtifactDropPayload | null {
+  if (!raw) return null;
+  try {
+    return parseArtifactDropPayload(JSON.parse(raw) as unknown);
+  } catch {
+    return null;
+  }
+}
+
+export function readArtifactDrop(
+  dataTransfer: DataTransfer,
+): ArtifactDropPayload | null {
+  return readArtifactDropPayload(dataTransfer.getData(ARTIFACT_DROP_DATA_TYPE));
+}
+
+/**
+ * Every card one drag asks for, in the order they should land.
+ *
+ * A drag of one artifact, and any drag made before grouped drops existed, reads
+ * back as the one payload it carries.
+ */
+export function readArtifactDropGroups(
+  dataTransfer: DataTransfer,
+): ArtifactDropPayload[] {
+  const raw = dataTransfer.getData(ARTIFACT_GROUPS_DATA_TYPE);
+  if (raw) {
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const groups = parsed
+          .map((entry) => parseArtifactDropPayload(entry))
+          .filter((entry): entry is ArtifactDropPayload => entry !== null);
+        if (groups.length > 0) return groups;
+      }
+    } catch {
+      // Fall through: a grouped drag always carries the first group on its own.
+    }
+  }
+  const single = readArtifactDrop(dataTransfer);
+  return single ? [single] : [];
+}
+
+/**
+ * Write a drag of one or more cards.
+ *
+ * The first group goes on the type every reader already knows, so a canvas or a
+ * Library built without grouped drops still lands something sensible rather
+ * than refusing the drag.
+ */
+export function writeArtifactDropGroups(
+  dataTransfer: DataTransfer,
+  payloads: readonly ArtifactDropPayload[],
+): void {
+  if (payloads.length === 0) return;
+  dataTransfer.setData(ARTIFACT_DROP_DATA_TYPE, JSON.stringify(payloads[0]));
+  if (payloads.length > 1) {
+    dataTransfer.setData(ARTIFACT_GROUPS_DATA_TYPE, JSON.stringify(payloads));
+  }
+}
+
+/** Mark the drag as a Library folder: see {@link ARTIFACT_FOLDER_DATA_TYPE}. */
+export function writeArtifactDropFolder(
+  dataTransfer: DataTransfer,
+  folderName: string,
+): void {
+  dataTransfer.setData(ARTIFACT_FOLDER_DATA_TYPE, folderName);
+}
+
+/** The folder a drag was picked up as, or null when it is not a folder drag. */
+export function readArtifactDropFolder(
+  dataTransfer: DataTransfer,
+): { readonly name: string } | null {
+  if (
+    !Array.from(dataTransfer.types ?? []).includes(ARTIFACT_FOLDER_DATA_TYPE)
+  ) {
+    return null;
+  }
+  return { name: dataTransfer.getData(ARTIFACT_FOLDER_DATA_TYPE) };
+}
+
+/**
+ * Read the drop target's live identity off its own row element. React Flow
+ * writes `data-handleid` once at mount, so a handle attribute reports the row's
+ * previous plug; the row carries the identity that is current at drop time.
+ */
+export function artifactDropTargetFromRow(
+  row: HTMLElement,
+): ArtifactDropTarget | null {
+  const nodeId = row.dataset.inputNodeId;
+  const portName = row.dataset.inputPortName ?? row.dataset.inputPlugPort;
+  if (!nodeId || !portName) return null;
+  return { nodeId, portName, plugId: row.dataset.inputPlugId ?? null };
+}
+
+function artifactTypeForValue(value: ArtifactDropValue): ArtifactTypeKey {
+  return {
+    id: value.artifact_type,
+    schema_version: value.schema_version,
+  };
+}
+
+export function resolveArtifactDrop(
+  payload: ArtifactDropPayload,
+  port: Port,
+  bindings: Readonly<Record<string, ArtifactTypeKey>>,
+  conversions: readonly ArtifactConversionSpec[],
+): ArtifactDropResolution | null {
+  if (port.direction !== "input") return null;
+  const collectionMode = dropCollectionMode(port, payload.shape);
+  if (!collectionMode) return null;
+  const source = artifactTypeForValue(payload.value);
+  const accepted = [
+    resolvedPortArtifactType(port, bindings),
+    ...(port.also_accepts ?? []),
+  ].filter((candidate): candidate is ArtifactTypeKey => candidate !== null);
+  if (!accepted.length) return null;
+  if (
+    accepted.some(
+      (candidate) => artifactTypeKey(candidate) === artifactTypeKey(source),
+    )
+  ) {
+    return { conversionPath: [], collectionMode };
+  }
+  const paths = shortestConversionPathsToAny(source, accepted, conversions);
+  if (!paths || paths.length !== 1) return null;
+  const [path] = paths;
+  if (!path) return null;
+  return {
+    conversionPath: path.map(({ key }) => ({
+      id: key.id,
+      version: key.version,
+    })),
+    collectionMode,
+  };
+}
+
+/**
+ * Collection modes an artifact input may use, the default first. A many-only
+ * port takes one artifact by holding it as a sequence of one. A sequence on a
+ * port that takes one item maps the node over its items; on a port that takes
+ * a sequence it may also be mapped, one sequence of one per item.
+ */
+export function originCollectionModes(
+  port: Port,
+  shape: ArtifactDropPayload["shape"],
+): SavedGraphOrigin["collection_mode"][] {
+  const accepted = acceptedPortShapes(port);
+  const modes: SavedGraphOrigin["collection_mode"][] = [];
+  if (
+    accepted.includes(shape) ||
+    (shape === "one" && accepted.includes("many"))
+  )
+    modes.push("direct");
+  if (
+    shape === "many" &&
+    !port.variadic &&
+    !portHasInstancePlugs(port) &&
+    (port.shape === "many" || !accepted.includes("many"))
+  )
+    modes.push("map");
+  return modes;
+}
+
+function dropCollectionMode(
+  port: Port,
+  shape: ArtifactDropPayload["shape"],
+): SavedGraphOrigin["collection_mode"] | null {
+  return originCollectionModes(port, shape)[0] ?? null;
+}
+
+function portAcceptsOnlySequences(port: Port): boolean {
+  const accepted = acceptedPortShapes(port);
+  return accepted.includes("many") && !accepted.includes("one");
+}
+
+/** One artifact, stored as a sequence, for a port that cannot take a single. */
+function sequenceOfOne(dropped: ArtifactDropValue): ArtifactDropValue {
+  if (!("artifact_id" in dropped)) return dropped;
+  return artifactCardValue([dropped], null, { asSequence: true }) ?? dropped;
+}
+
+/**
+ * A `many` input groups same-type drops into one ordered sequence. A port that
+ * accepts only sequences stores even the first artifact as a sequence of one.
+ * A dropped sequence, a converted value, and a value of another artifact type
+ * each replace the slot, because one origin cannot hold two artifact types and
+ * a conversion path describes one source contract.
+ */
+function collectedOriginValue(
+  payload: ArtifactDropPayload,
+  port: Port,
+  existing: SavedGraphOrigin | undefined,
+  conversionPath: ArtifactDropResolution["conversionPath"],
+): ArtifactDropValue {
+  const dropped = payload.value;
+  if (payload.shape === "many" || !acceptedPortShapes(port).includes("many")) {
+    return dropped;
+  }
+  // A conversion describes one source contract, so it is not appended onto a
+  // sequence that may already hold something else. A many-only port still
+  // needs that one source wrapped, or the input cannot run.
+  if (conversionPath.length) {
+    return portAcceptsOnlySequences(port) ? sequenceOfOne(dropped) : dropped;
+  }
+  const prior = existing?.value;
+  if (
+    !("artifact_id" in dropped) ||
+    !prior ||
+    prior.artifact_type !== dropped.artifact_type ||
+    prior.schema_version !== dropped.schema_version
+  ) {
+    return portAcceptsOnlySequences(port) ? sequenceOfOne(dropped) : dropped;
+  }
+  if ("item_refs" in prior) {
+    return {
+      artifact_type: prior.artifact_type,
+      schema_version: prior.schema_version,
+      item_refs: [...prior.item_refs, dropped],
+      ordered: prior.ordered,
+      index_key: prior.index_key,
+      sequence_id: prior.sequence_id ?? createUuid(),
+      ...(prior.metadata ? { metadata: prior.metadata } : {}),
+    };
+  }
+  return {
+    artifact_type: dropped.artifact_type,
+    schema_version: dropped.schema_version,
+    item_refs: [prior, dropped],
+    ordered: true,
+    index_key: "order_index",
+    sequence_id: createUuid(),
+  };
+}
+
+/**
+ * Commands one deliberate drop means, or null when the port refuses it.
+ *
+ * Acceptance uses the port's declared accepted set and a unique shortest
+ * declared conversion, exactly like an edge. A projection is never selected,
+ * because it is a titled choice among several nested fields and a drop is a
+ * single gesture. A refused or ambiguous drop returns null, so the caller
+ * writes nothing and the input keeps the state it had.
+ */
+export function artifactDropCommands(
+  payload: ArtifactDropPayload,
+  target: ArtifactDropTarget,
+  port: Port,
+  bindings: Readonly<Record<string, ArtifactTypeKey>>,
+  state: ArtifactDropGraphState,
+  sourceCardId?: string,
+): GraphCommand[] | null {
+  const resolution = resolveArtifactDrop(
+    payload,
+    port,
+    bindings,
+    state.conversions,
+  );
+  if (!resolution) return null;
+
+  const existing = state.origins.find(
+    (origin) =>
+      origin.to_node === target.nodeId &&
+      origin.to_port === target.portName &&
+      (origin.to_plug ?? null) === target.plugId,
+  );
+  const value = collectedOriginValue(
+    payload,
+    port,
+    existing,
+    resolution.conversionPath,
+  );
+  const appendsToExisting =
+    existing !== undefined &&
+    payload.shape === "one" &&
+    acceptedPortShapes(port).includes("many") &&
+    resolution.conversionPath.length === 0 &&
+    existing.value.artifact_type === payload.value.artifact_type &&
+    existing.value.schema_version === payload.value.schema_version;
+  const priorCardIds = appendsToExisting
+    ? (existing.source_card_ids ?? [])
+    : [];
+  // One visible wire from this card to this slot represents one contribution.
+  if (appendsToExisting && sourceCardId && priorCardIds.includes(sourceCardId))
+    return [];
+  // Legacy appends stay value-matched until their existing owners are known.
+  const sourceCardIds =
+    appendsToExisting && existing.source_card_ids == null
+      ? null
+      : [
+          ...priorCardIds,
+          ...cardArtifactRefs(payload.value).map(() => sourceCardId ?? null),
+        ];
+  // A sequence replacing a mapped sequence keeps being mapped.
+  const collectionMode =
+    resolution.collectionMode === "map" ||
+    (existing?.collection_mode === "map" && payload.shape === "many")
+      ? "map"
+      : "direct";
+  // An origin and an enabled edge never satisfy one input, so a deliberate
+  // drop over a wired input removes that edge. A disabled edge may wait beside
+  // the origin and is left alone.
+  const enabledEdgeIds = state.edges
+    .filter((edge) => {
+      if (edge.data?.enabled === false || edge.target !== target.nodeId) {
+        return false;
+      }
+      const handle = decodeHandleId(edge.targetHandle);
+      return (
+        handle?.portName === target.portName &&
+        (handle.plugId ?? null) === target.plugId
+      );
+    })
+    .map((edge) => edge.id);
+  const commands: GraphCommand[] = [];
+  if (enabledEdgeIds.length) {
+    commands.push({ kind: "remove_edges", edge_ids: enabledEdgeIds });
+  }
+  if (existing) {
+    commands.push({
+      kind: "update_origin",
+      origin_id: existing.id,
+      update: {
+        value,
+        source_card_ids: sourceCardIds,
+        collection_mode: collectionMode,
+        conversion_path: resolution.conversionPath,
+      },
+    });
+    return commands;
+  }
+  commands.push({
+    kind: "add_origin",
+    origin: {
+      id: `origin-${createUuid()}`,
+      to_node: target.nodeId,
+      to_port: target.portName,
+      to_plug: target.plugId,
+      value,
+      source_card_ids: sourceCardIds,
+      collection_mode: collectionMode,
+      conversion_path: resolution.conversionPath,
+    },
+  });
+  return commands;
+}

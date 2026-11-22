@@ -7,7 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 <!-- BEGIN:grafy-workbench-rules -->
 
-# React Flow canvas checks
+# CellCanvas checks
 
 - The standalone Artifact Viewer is deprecated. New artifact presentation uses
   direct canvas cards from Library drops or materialized output-port drops. Do
@@ -19,10 +19,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 - A gesture that places a node, card, or annotation hands the new thing the whole
   selection. Selection has four writers — node ids, edge ids, each card's
   `selected`, each annotation's `selected` — so write them through
-  `useCanvasSelection` (`ui/workbench-canvas-selection.ts`) and verify with a real
+  `useCanvasSelection` (`authoring/workbench-canvas-selection.ts`) and verify with a real
   pointer drag that the thing held before the drop gave up its plate.
-- Do not let global `svg` sizing or media resets constrain React Flow's edge
-  layers. Keep any required override scoped to `.react-flow__edges > svg`.
 - After changing node dimensions, handles, edge SVG styles, or canvas layout,
   verify at least one real pointer-drag connection in the rendered workbench.
   Compilation and programmatic edge insertion do not prove that wiring works.
@@ -89,14 +87,13 @@ cannot resolve, which `tsc` and Vitest both pass.
 ## Shared components and call sites
 
 - `src/components/ui` holds the shared controls, Base UI underneath and StyleX
-  on top: `Button` and `ButtonLink`, `IconButton`, `Field` with
+  on top. The kit includes `Button` and `ButtonLink`, `IconButton`, `Field` with
   `TextInput`/`TextArea`/`Select`, `Switch`, `Checkbox`, `Slider`,
   `ColorWell`/`ColorField`, `SegmentedControl`, `Surface`, `Dialog`, `Menu`, and
   `Notice`. Use them before hand-styling a button, a menu, a toggle, a colour
-  well, or an alert. Local overrides go through `xstyle` (applied last), React
-  Flow's `nodrag`/`nopan` through `className`. A Base UI trigger draws one with
-  `render={<IconButton label="…" />}` and passes its children in.
-  `MenuContent` already carries `nodrag nopan nowheel`.
+  well, or an alert. Pass local style overrides through `xstyle`. A Base UI
+  trigger draws one with `render={<IconButton label="…" />}` and passes in its
+  children.
 - Take the kit's size rather than overriding it, and say so in the change when you
   do. Controls inside a canvas card use the `dense` step (`Field`, `TextInput`,
   `Select`, `Switch`, `Checkbox`, `Slider`, `ColorWell`): a card's rows are 25px and
@@ -149,7 +146,7 @@ cannot resolve, which `tsc` and Vitest both pass.
 
 ## Artifact type labels
 
-- `features/workbench/canvas/artifact-type-label.ts` is the single place that
+- `features/workbench/artifacts/artifact-type-label.ts` is the single place that
   names an artifact type for a person: the catalog title (`Text value`,
   `List of Text value`), with the schema version inline as `Text value · v2`
   — the node catalog's separator — only once it is past `@1`. Keep the full
@@ -159,7 +156,7 @@ cannot resolve, which `tsc` and Vitest both pass.
   purpose, and reads back the full identity (`scalar.text@1`) — never a bare
   id. Omitting the catalog is a type error, so a surface cannot quietly degrade
   to raw ids.
-- `artifactTypeKey` in `canvas/artifact-type-key.ts` is identity, not a label:
+- `artifactTypeKey` in `artifacts/artifact-type-key.ts` is identity, not a label:
   port compatibility, handle ids, saved bindings, and API payloads compare it.
   Never swap a label into one of those, and never print one as a card or port
   caption.
@@ -209,7 +206,7 @@ cannot resolve, which `tsc` and Vitest both pass.
 ## Browser APIs and storage
 
 - Workbench IDs must support plain HTTP LAN origins used for mobile testing.
-  Use `createUuid` from `features/workbench/model/uuid.ts`; it uses
+  Use `createUuid` from `features/workbench/authoring/uuid.ts`; it uses
   `crypto.getRandomValues` when the secure-context-only `crypto.randomUUID`
   API is unavailable.
 

@@ -86,7 +86,7 @@ vi.mock("@/features/auth/AuthSessionBoundary", () => ({
   useAuthSession: () => ({ session: testSession, logout: vi.fn() }),
 }));
 
-vi.mock("@/features/workbench/ui/WorkbenchChromeContext", () => ({
+vi.mock("@/features/workbench/shell/WorkbenchChromeContext", () => ({
   useWorkbenchChrome: () => testState.chrome,
 }));
 

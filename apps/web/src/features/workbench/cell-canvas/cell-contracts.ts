@@ -1,3 +1,9 @@
+import type {
+  ConnectedInputPortMap,
+  SchemaField,
+} from "../config-ui/config-schema";
+import type { WorkflowNodeSecretState } from "../authoring/node-secrets";
+
 import type { StageViewport } from "./cell-glass-stage";
 import type { CellCoord, PortShape, WorldPoint } from "./cell-model";
 import type { WorldBounds } from "./use-cell-viewport";
@@ -164,13 +170,33 @@ export type CellConfigFieldKind =
   | "toggle"
   | "number"
   | "multiline"
-  /** A node secret input: write-only, never read back. */
-  | "secret";
+  /** A field drawn from its config schema: `schemaField` says which control. */
+  | "schema"
+  /** A named group's header row: `section` says whether it is open. */
+  | "group"
+  /** The row that folds a card's untouched advanced fields away. */
+  | "advanced"
+  /** One quiet row naming config issues no shown field can display. */
+  | "issues";
+
+export interface CellConfigSectionRow {
+  /** The key `onToggleConfigSection` receives, e.g. `group:Style`. */
+  key: string;
+  open: boolean;
+  /** Fields behind the row. */
+  count: number;
+  /** Validation issues in those fields. */
+  issueCount: number;
+}
 
 export interface CellConfigFieldSpec {
   id: string;
   label: string;
   kind: CellConfigFieldKind;
+  /**
+   * The value a simple control shows. A `schema` field carries the stored
+   * value in `rawValue` too, whatever its shape; this stays its primitive face.
+   */
   value: string | number | boolean;
   options?: readonly { value: string; label: string }[];
   placeholder?: string;
@@ -178,8 +204,35 @@ export interface CellConfigFieldSpec {
   span?: 1 | 2;
   /** Dense 25px rows occupied (default 1 for single-line, 3 for multiline). */
   denseRows?: number;
-  /** Quiet line under the control, e.g. a secret's write-only note. */
+  /** Quiet line under the control. */
   description?: string;
+  /** The schema field a `schema` entry draws, with everything it declares. */
+  schemaField?: SchemaField;
+  /** The stored value of a `schema` field: an object, a list, or a primitive. */
+  rawValue?: unknown;
+  /** What validation says is wrong with this field, if anything. */
+  issue?: string;
+  /** A `group` or `advanced` row's disclosure. */
+  section?: CellConfigSectionRow;
+}
+
+/** One write-only key a node declares, with what the API says about it. */
+export interface CellSecretInputSpec {
+  name: string;
+  title: string;
+  description?: string;
+  state: WorkflowNodeSecretState;
+  message?: string;
+  /**
+   * Whether a key may be written now: the node is saved and the settings the
+   * key is bound to still match the saved ones.
+   */
+  ready: boolean;
+  /**
+   * Changes when the key's binding does (graph, room epoch, or a config field
+   * it depends on), so an editor holding a half-typed key starts over.
+   */
+  revision: string;
 }
 
 export interface CellInstancePlugItem {
@@ -216,6 +269,16 @@ export interface OperatorCardSurfaceData {
   statusLabel?: string;
   runDisabled?: boolean;
   configFields?: readonly CellConfigFieldSpec[];
+  /**
+   * Open or closed, by section key, wherever the person chose: a group, the
+   * advanced fields, or an object field nested at any depth. A section not
+   * listed keeps its default.
+   */
+  configSections?: Readonly<Record<string, boolean>>;
+  /** What each input port receives, for fields nested under a `visibleWhen`. */
+  connectedInputPorts?: ConnectedInputPortMap;
+  /** Write-only keys, behind the header's key button rather than in the band. */
+  secretInputs?: readonly CellSecretInputSpec[];
   instancePlugGroups?: readonly CellInstancePlugGroup[];
   appendix?: CellExecutionAppendixSpec | null;
 }

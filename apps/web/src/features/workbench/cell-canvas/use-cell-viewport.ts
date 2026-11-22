@@ -38,6 +38,8 @@ export interface UseCellViewportResult {
   viewport: StageViewport;
   panning: boolean;
   setViewport: React.Dispatch<React.SetStateAction<StageViewport>>;
+  panBy: (dx: number, dy: number) => void;
+  flushPan: (commit?: boolean) => void;
   zoomAtCenter: (nextZoom: number) => void;
   zoomBy: (factor: number) => void;
   fitRect: (
@@ -127,6 +129,7 @@ export function useCellViewport(
   const [panning, setPanning] = React.useState(false);
   const viewportRef = React.useRef(viewport);
   const stopPanRef = React.useRef<((commit?: boolean) => void) | null>(null);
+  const panFrameRef = React.useRef<number | null>(null);
 
   const clampZoom = React.useCallback(
     (zoom: number) => {
@@ -137,8 +140,36 @@ export function useCellViewport(
   );
 
   const apply = React.useCallback((next: StageViewport) => {
+    if (panFrameRef.current !== null) {
+      window.cancelAnimationFrame(panFrameRef.current);
+      panFrameRef.current = null;
+    }
     viewportRef.current = next;
     setViewportState(next);
+  }, []);
+
+  const panBy = React.useCallback((dx: number, dy: number) => {
+    if (dx === 0 && dy === 0) return;
+    const current = viewportRef.current;
+    viewportRef.current = {
+      ...current,
+      x: current.x + dx,
+      y: current.y + dy,
+    };
+    if (panFrameRef.current !== null) return;
+    panFrameRef.current = window.requestAnimationFrame(() => {
+      panFrameRef.current = null;
+      setViewportState(viewportRef.current);
+    });
+  }, []);
+
+  const flushPan = React.useCallback((commit = true) => {
+    if (panFrameRef.current === null) return;
+    window.cancelAnimationFrame(panFrameRef.current);
+    panFrameRef.current = null;
+    if (commit) {
+      setViewportState(viewportRef.current);
+    }
   }, []);
 
   const setViewport = React.useCallback<
@@ -185,7 +216,13 @@ export function useCellViewport(
     return () => element.removeEventListener("wheel", onWheel);
   }, [containerRef, apply, clampZoom]);
 
-  React.useEffect(() => () => stopPanRef.current?.(false), []);
+  React.useEffect(
+    () => () => {
+      stopPanRef.current?.(false);
+      flushPan(false);
+    },
+    [flushPan],
+  );
 
   const onBackgroundPointerDown = React.useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
@@ -338,6 +375,8 @@ export function useCellViewport(
     viewport,
     panning,
     setViewport,
+    panBy,
+    flushPan,
     zoomAtCenter,
     zoomBy,
     fitRect,

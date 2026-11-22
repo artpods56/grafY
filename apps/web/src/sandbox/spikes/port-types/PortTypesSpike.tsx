@@ -7,8 +7,8 @@ import { Check, ChevronDown } from "lucide-react";
 
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { portMarkStyle } from "@/features/workbench/canvas/handle-style";
-import { artifactTypeColor } from "@/features/workbench/canvas/nodes.css";
+import { portMarkStyle } from "@/features/workbench/config-ui/handle-style";
+import { artifactTypeColor } from "@/features/workbench/config-ui/nodes.css";
 import { SandboxShell } from "../../SandboxShell";
 
 /**
