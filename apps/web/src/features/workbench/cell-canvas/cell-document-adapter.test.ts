@@ -312,7 +312,7 @@ describe("cell document adapter", () => {
       heightCells: 27,
       resizable: true,
       resizeBounds: {
-        minWidthCells: 8,
+        minWidthCells: 11,
         maxWidthCells: 48,
         minHeightCells: 14,
         maxHeightCells: 60,
@@ -429,7 +429,7 @@ describe("cell document adapter", () => {
       kind: "collection",
       col: 16,
       row: -3,
-      widthCells: 10,
+      widthCells: 11,
       heightCells: 8,
     });
     expect(collect?.ports.map((item) => [item.id, item.rowOffset])).toEqual([
@@ -657,7 +657,7 @@ describe("cell document adapter", () => {
       { presentation: null },
     );
     expect(result.graph.cards[0]).toMatchObject({
-      widthCells: 8,
+      widthCells: 11,
       heightCells: 26,
     });
     expect(
@@ -681,7 +681,7 @@ describe("cell document adapter", () => {
     });
     expect(result.graph.cards[1]).toMatchObject({
       kind: "collection",
-      widthCells: 10,
+      widthCells: 11,
     });
     expect(result.surfaceById.collection).toMatchObject({
       kind: "collection",
@@ -713,7 +713,7 @@ describe("cell document adapter", () => {
       {
         kind: "update_node_layout",
         node_id: "source",
-        layout: { width: 500, body_height: 600, appendix_height: 101 },
+        layout: { width: 500, body_height: 600, appendix_height: 120 },
       },
     ]);
     const updated = [...moves, ...resize].reduce(
@@ -737,7 +737,7 @@ describe("cell document adapter", () => {
       withoutAppendix.reduce(applyGraphCommandNormalized, updated).nodes[1]
         ?.layout,
     ).toEqual({
-      width: 250,
+      width: 260,
       body_height: 300,
       appendix_height: null,
     });
