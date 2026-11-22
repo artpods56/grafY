@@ -3,7 +3,10 @@ import * as React from "react";
 import type { NodeRegistry } from "@/lib/api";
 import { withoutViewerEdgesFromNodes } from "../artifacts/artifact-viewer-edits";
 import type { ArtifactViewerCanvasState } from "../artifacts/artifact-viewer";
-import { collectionModeRepairCommands } from "./edge-collection-modes";
+import {
+  collectionModeRepairCommands,
+  foldCollectionModeRepairs,
+} from "./edge-collection-modes";
 import {
   applyGraphCommandNormalized,
   type AuthoredGraphDocument,
@@ -152,7 +155,7 @@ export function useWorkbenchAuthoringCommands(
       setRunError(null);
       if (options?.syncRoom !== false) {
         roomCommandSyncRef.current.submitLocal(
-          repairs.length ? [...commands, ...repairs] : commands,
+          foldCollectionModeRepairs(commands, repairs),
           before,
         );
       }

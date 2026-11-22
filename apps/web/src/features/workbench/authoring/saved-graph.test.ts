@@ -589,6 +589,52 @@ describe("saved collection modes", () => {
       ["reading", "map"],
     ]);
   });
+
+  it("repairs a direct origin and its downstream edges when the origin holds a sequence on a single-item port", () => {
+    const base = mappedStepGraph([
+      { ...ocrReadingEdge(), collection_mode: "direct" },
+    ]);
+    const graph: SavedGraph = {
+      ...base,
+      document: {
+        ...base.document,
+        origins: [
+          {
+            id: "ocr-scan",
+            to_node: "ocr",
+            to_port: "document",
+            to_plug: null,
+            value: {
+              artifact_type: "page",
+              schema_version: 1,
+              item_refs: [
+                {
+                  artifact_id: "scan-1",
+                  artifact_type: "page",
+                  schema_version: 1,
+                },
+                {
+                  artifact_id: "scan-2",
+                  artifact_type: "page",
+                  schema_version: 1,
+                },
+              ],
+              ordered: true,
+              index_key: "order_index",
+              sequence_id: "seq-1",
+            },
+            collection_mode: "direct",
+            conversion_path: [],
+          },
+        ],
+      },
+    };
+
+    const hydrated = hydrateSavedGraph(graph, mappedStepRegistry());
+    const reading = hydrated.edges.find((edge) => edge.id === "reading");
+    expect(reading?.data?.collectionMode).toBe("map");
+    expect(decodeHandleId(reading?.sourceHandle)?.shape).toBe("many");
+  });
 });
 
 /** A port that says what it carries, which the handle of a connection needs. */

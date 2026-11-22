@@ -21,6 +21,7 @@ import type {
   ArtifactViewerNode,
   CanvasWorkflowNode,
 } from "./artifact-viewer";
+import type { ResolvedGraphSemantics } from "../authoring/graph-semantics";
 import { decodeHandleId, encodeHandleId } from "../authoring/handles";
 import {
   effectivePortShape,
@@ -185,6 +186,7 @@ export function artifactOriginConnections(
   feeds: readonly ArtifactViewerEdge[],
   nodes: readonly CanvasWorkflowNode[],
   origins: readonly SavedGraphOrigin[],
+  semantics?: ResolvedGraphSemantics | null,
 ): ArtifactOriginEdge[] {
   const edges: ArtifactOriginEdge[] = [];
   for (const origin of origins) {
@@ -193,6 +195,7 @@ export function artifactOriginConnections(
       (port) => port.name === origin.to_port,
     );
     if (!target || !port) continue;
+    const resolvedOrigin = semantics?.origins.get(origin.id);
     const remaining = new Set(
       cardArtifactRefs(origin.value).map((ref) => ref.artifact_id),
     );
@@ -228,11 +231,14 @@ export function artifactOriginConnections(
         ),
         data: {
           originId: origin.id,
-          collectionMode: origin.collection_mode,
-          allowedCollectionModes: originCollectionModes(
-            port,
-            artifactDropPayload(origin.value).shape,
-          ),
+          collectionMode:
+            resolvedOrigin?.collectionMode ?? origin.collection_mode,
+          allowedCollectionModes: resolvedOrigin
+            ? [...resolvedOrigin.allowedCollectionModes]
+            : originCollectionModes(
+                port,
+                artifactDropPayload(origin.value).shape,
+              ),
         },
       });
       if (origin.source_card_ids == null) {

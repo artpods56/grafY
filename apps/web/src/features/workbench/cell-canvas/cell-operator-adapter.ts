@@ -25,6 +25,10 @@ import {
   serializeNodeLayout,
 } from "../authoring/node-layout";
 import {
+  resolveGraphSemantics,
+  type ResolvedGraphSemantics,
+} from "../authoring/graph-semantics";
+import {
   COLLECTION_OPERATOR_ID,
   COLLECTION_PORT,
   isCollectionSpec,
@@ -63,7 +67,6 @@ import {
   PLUG_SEPARATOR,
   collectionTypeLabel,
   cellOriginFromWorld,
-  nodeSpec,
   portArtifactType,
   portTypeId,
   snapPixelsToCell,
@@ -183,6 +186,7 @@ function nodePorts(
   spec: NodeSpec | undefined,
   connections: ReadonlyMap<string, PlugConnection> | undefined,
   isCollection: boolean,
+  effectiveOutputShapes: ReadonlyMap<string, Port["shape"]> | undefined,
   serviceContracts?: readonly ServiceContract[],
 ) {
   const inputs = spec?.inputs ?? [];
@@ -209,7 +213,10 @@ function nodePorts(
       direction: port.direction,
       rowOffset: firstRow + index * PORT_ROW_PITCH,
       artifactTypeId: portTypeId(node, port),
-      shape: port.shape,
+      shape:
+        port.direction === "output"
+          ? (effectiveOutputShapes?.get(port.name) ?? port.shape)
+          : port.shape,
       required: port.required,
     };
   };
@@ -331,6 +338,7 @@ export function buildOperatorCardsAndSurfaces(
   document: AuthoredGraphDocument,
   registry: NodeRegistry,
   options?: {
+    semantics?: ResolvedGraphSemantics;
     nodeRunState?: Readonly<Record<string, CellNodeRunState>>;
     collapsedAppendices?: ReadonlySet<string>;
     /** Config sections opened or closed, by node id, then by section key. */
@@ -344,10 +352,15 @@ export function buildOperatorCardsAndSurfaces(
   surfaces: Map<string, CellCardSurfaceData>;
   specsByNode: Map<string, NodeSpec | undefined>;
 } {
+  const semantics =
+    options?.semantics ?? resolveGraphSemantics(document, registry);
   const cards: CellCardModel[] = [];
   const surfaces = new Map<string, CellCardSurfaceData>();
   const specsByNode = new Map(
-    document.nodes.map((node) => [node.id, nodeSpec(node, registry)]),
+    document.nodes.map((node) => [
+      node.id,
+      semantics.nodes.get(node.id)?.displaySpec ?? undefined,
+    ]),
   );
   const connections = connectionsByNode(document);
   const sources = new Map(
@@ -358,6 +371,7 @@ export function buildOperatorCardsAndSurfaces(
   );
 
   for (const node of document.nodes) {
+    const nodeSemantics = semantics.nodes.get(node.id);
     const spec = specsByNode.get(node.id);
     const runState = options?.nodeRunState?.[node.id];
     const isCollection =
@@ -376,6 +390,7 @@ export function buildOperatorCardsAndSurfaces(
       spec,
       nodeConnections,
       isCollection,
+      isCollection ? undefined : nodeSemantics?.effectiveOutputShapes,
       registry.service_contracts,
     );
     const collection = isCollection

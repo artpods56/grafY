@@ -1062,6 +1062,16 @@ describe("cell document adapter", () => {
         artifactTypeId: "llm.chat",
       },
     ]);
+    const mappedSourceCard = fallbackScene.graph.cards.find(
+      (c) => c.id === "source",
+    );
+    expect(
+      mappedSourceCard?.ports.find((p) => p.id === "result"),
+    ).toMatchObject({
+      id: "result",
+      direction: "output",
+      shape: "many",
+    });
     const followCard = fallbackScene.graph.cards.find(
       (c) => c.id === "viewer-follow",
     );

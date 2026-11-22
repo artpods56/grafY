@@ -58,6 +58,7 @@ import {
 } from "../cell-canvas/cell-document-adapter";
 import { CELL_SIZE, cellToWorldOrigin } from "../cell-canvas/cell-model";
 import type { AuthoredGraphDocument } from "../authoring/graph-document";
+import type { ResolvedGraphSemantics } from "../authoring/graph-semantics";
 import { changeOriginCardReferences } from "../artifacts/origin-card-commands";
 import type {
   PresenceParticipant,
@@ -139,6 +140,7 @@ export function buildWorkbenchCellScene({
   workspaceId,
   document,
   registry,
+  semantics,
   presentation,
   nodes,
   nodeInstanceStates,
@@ -157,6 +159,7 @@ export function buildWorkbenchCellScene({
   workspaceId?: string | null;
   document: AuthoredGraphDocument;
   registry: NodeRegistry;
+  semantics?: ResolvedGraphSemantics | null;
   presentation: GraphPresentation | null;
   nodes: readonly WorkflowNode[];
   nodeInstanceStates: Readonly<Record<string, RoomInstanceState>>;
@@ -302,7 +305,10 @@ export function buildWorkbenchCellScene({
             targetPortId: decoded.plugId
               ? `${decoded.portName}::${decoded.plugId}`
               : decoded.portName,
-            collectionMode: edge.data.collectionMode ?? "direct",
+            collectionMode:
+              semantics?.origins.get(edge.data.originId)?.collectionMode ??
+              edge.data.collectionMode ??
+              "direct",
             conversionCount: origin?.conversion_path.length ?? 0,
           },
         ];
@@ -351,6 +357,7 @@ export function buildWorkbenchCellScene({
   }
 
   return cellGraphFromAuthoredDocument(document, registry, {
+    semantics: semantics ?? undefined,
     presentation,
     nodeRunState,
     collapsedAppendices,
