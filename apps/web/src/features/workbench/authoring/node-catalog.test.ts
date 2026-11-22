@@ -80,6 +80,7 @@ function registry(): NodeRegistry {
       {
         key: { id: "scalar.text", schema_version: 1 },
         title: "Text",
+        preview_kind: "text",
         payload_schema: {},
         field_projections: [],
         bundle: { format: "inline-json", version: 1 },
@@ -87,6 +88,7 @@ function registry(): NodeRegistry {
       {
         key: { id: "scalar.text", schema_version: 2 },
         title: "Text",
+        preview_kind: "text",
         payload_schema: {},
         field_projections: [],
         bundle: { format: "inline-json", version: 1 },
@@ -94,6 +96,7 @@ function registry(): NodeRegistry {
       {
         key: { id: "table.data", schema_version: 1 },
         title: "Table",
+        preview_kind: "table",
         payload_schema: {},
         field_projections: [],
         bundle: { format: "table-bundle", version: 1 },

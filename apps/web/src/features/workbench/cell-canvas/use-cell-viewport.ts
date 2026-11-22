@@ -187,6 +187,24 @@ export function useCellViewport(
     const element = containerRef.current;
     if (!element) return;
     const onWheel = (event: WheelEvent) => {
+      const target = event.target;
+      // OpenSeadragon and MapLibre zoom themselves. A pinch that lands on
+      // their loading state or controls still must not zoom the browser page.
+      // A scrollable card body keeps an ordinary wheel.
+      if (
+        target instanceof Element &&
+        target.closest("[data-cell-interactive-viewport]")
+      ) {
+        if (event.ctrlKey || event.metaKey) event.preventDefault();
+        return;
+      }
+      if (
+        !(event.ctrlKey || event.metaKey) &&
+        target instanceof Element &&
+        target.closest(".nowheel, [data-cell-nowheel]")
+      ) {
+        return;
+      }
       event.preventDefault();
       const rect = element.getBoundingClientRect();
       const delta = wheelPixels(event, rect.height || FALLBACK_HEIGHT);

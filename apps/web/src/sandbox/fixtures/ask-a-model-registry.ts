@@ -24,6 +24,7 @@ export const askAModelRegistry: NodeRegistry = {
         schema_version: 2,
       },
       title: "Instruction",
+      preview_kind: "text",
       payload_schema: {
         $defs: {
           ArtifactRef: {
@@ -121,6 +122,7 @@ export const askAModelRegistry: NodeRegistry = {
         schema_version: 1,
       },
       title: "Answer format",
+      preview_kind: "text",
       payload_schema: {
         additionalProperties: false,
         properties: {
@@ -161,6 +163,7 @@ export const askAModelRegistry: NodeRegistry = {
         schema_version: 1,
       },
       title: "LLM completion",
+      preview_kind: "text",
       payload_schema: {
         additionalProperties: false,
         description:

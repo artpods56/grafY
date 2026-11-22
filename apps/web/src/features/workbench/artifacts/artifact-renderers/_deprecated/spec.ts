@@ -4,7 +4,7 @@ import type { ArtifactSummary } from "@/lib/api";
 import type {
   ArtifactViewerEffect,
   ArtifactViewerInteractionContext,
-} from "../artifact-interactions";
+} from "../../artifact-interactions";
 
 /**
  * The contract every artifact renderer implements. It lives apart from the registry so

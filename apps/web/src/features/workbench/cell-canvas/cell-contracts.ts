@@ -1,12 +1,17 @@
+import type { ArtifactPreviewKind, ArtifactRef } from "@/lib/api";
+
 import type {
   ConnectedInputPortMap,
   SchemaField,
 } from "../config-ui/config-schema";
 import type { WorkflowNodeSecretState } from "../authoring/node-secrets";
+import type { TiffWindowSelection } from "../artifacts/TiffWindowSelector";
 
 import type { StageViewport } from "./cell-glass-stage";
 import type { CellCoord, PortShape, WorldPoint } from "./cell-model";
 import type { WorldBounds } from "./use-cell-viewport";
+
+export type { ArtifactPreviewKind };
 
 /**
  * Frozen cross-lane contracts for the cell-canvas engine.
@@ -283,9 +288,6 @@ export interface OperatorCardSurfaceData {
   appendix?: CellExecutionAppendixSpec | null;
 }
 
-export type ArtifactPreviewKind =
-  "image" | "table" | "markdown" | "file" | "map";
-
 /** One artifact of a sequence card, as its spread shows it. */
 export interface ArtifactStackItem {
   artifactId: string;
@@ -317,6 +319,20 @@ export interface ArtifactCardSurfaceData {
   tableHeaders?: readonly string[];
   tableRows?: readonly (readonly string[])[];
   byteSizeLabel?: string;
+  /**
+   * Live renderers read the artifact through the workspace. Sandbox and mock
+   * graphs omit both and keep the static picture, table, or text above.
+   */
+  workspaceId?: string;
+  artifact?: ArtifactRef;
+  /** Crop window a single TIFF card edits on the one node that consumes it. */
+  tiffWindow?: { artifactId: string; selection: TiffWindowSelection };
+  /** TIFF text overlay, and the scan window it is read against when one is wired. */
+  tiffText?: {
+    url: string | null;
+    recognized: boolean;
+    linkedWindow?: { artifactId: string; selection: TiffWindowSelection };
+  };
 }
 
 export interface CollectionCardMemberSpec {

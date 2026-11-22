@@ -1300,12 +1300,11 @@ function WorkbenchBody({
         point,
         groups.map((group) => ({
           artifactCount: cardArtifactRefs(group.value).length,
-          width:
-            !("item_refs" in group.value) && isTableArtifact(group.value)
-              ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
-              : !("item_refs" in group.value) && isGeoMapArtifact(group.value)
-                ? DEFAULT_ARTIFACT_MAP_CARD_WIDTH
-                : DEFAULT_ARTIFACT_CARD_WIDTH,
+          width: isTableArtifact(group.value)
+            ? DEFAULT_ARTIFACT_TABLE_CARD_WIDTH
+            : isGeoMapArtifact(group.value)
+              ? DEFAULT_ARTIFACT_MAP_CARD_WIDTH
+              : DEFAULT_ARTIFACT_CARD_WIDTH,
         })),
       );
       addArtifactCards(
@@ -2870,6 +2869,9 @@ function WorkbenchBody({
             artifactOriginEdges: artifactOriginCanvasEdges,
             libraryItemsByArtifactId,
             imageNaturalSizes: cellImageNaturalSizes,
+            onOperatorConfigChange: localAuthoringEnabled
+              ? updateConfigPatch
+              : undefined,
           })
         : null,
     [
@@ -2884,6 +2886,7 @@ function WorkbenchBody({
       collapsedAppendices,
       configSections,
       libraryItemsByArtifactId,
+      localAuthoringEnabled,
       nodeInstanceStates,
       nodeSecretStatuses,
       nodes,
@@ -2892,6 +2895,7 @@ function WorkbenchBody({
       registry,
       running,
       sharedPresentation,
+      updateConfigPatch,
       workspaceId,
     ],
   );

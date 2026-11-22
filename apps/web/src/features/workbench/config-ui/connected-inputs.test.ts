@@ -98,6 +98,7 @@ const artifactTypes: readonly ArtifactTypeSpec[] = [
   {
     key: document,
     title: "JSON document",
+    preview_kind: "text",
     bundle: { format: "inline-json", version: 1 },
     payload_schema: {},
     field_projections: [

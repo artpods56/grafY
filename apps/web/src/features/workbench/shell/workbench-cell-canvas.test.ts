@@ -7,6 +7,7 @@ import {
   type PlacedLibraryItem,
   type Port,
 } from "@/lib/api";
+import { imagePath, imageThumbnailUrl } from "@/lib/api/images";
 import { ARTIFACT_CARD_OUTPUT_HANDLE } from "../artifacts/artifact-connections";
 import {
   ARTIFACT_ORIGIN_EDGE_TYPE,
@@ -20,7 +21,12 @@ import {
   type GraphPresentation,
 } from "../artifacts/artifact-viewer";
 import { hydrateAuthoredGraphDocument } from "../authoring/saved-graph";
-import { WORKFLOW_EDGE_TYPE, type WorkflowEdge } from "../authoring/types";
+import {
+  WORKFLOW_EDGE_TYPE,
+  type WorkflowEdge,
+  type WorkflowNode,
+  type WorkflowNodeConfig,
+} from "../authoring/types";
 import type {
   AuthoredGraphDocument,
   AuthoredGraphNode,
@@ -780,11 +786,285 @@ describe("artifact card pictures", () => {
     expect(pngCard?.heightCells).toBe(14);
   });
 
-  it("leaves a TIFF on its placeholder", () => {
+  it("shows a TIFF through its first-page thumbnail", () => {
+    const thumb = imageThumbnailUrl(imagePath("ws", "t"), 0);
     expect(build("ws").surfaceById.tiff).toMatchObject({
-      previewKind: "image",
-      imageUrl: null,
+      previewKind: "tiff",
+      imageUrl: thumb,
+      workspaceId: "ws",
+      artifact: {
+        artifact_id: "t",
+        artifact_type: "file.tiff",
+        schema_version: 1,
+      },
     });
+    const { graph: fitted } = build(
+      "ws",
+      undefined,
+      new Map([[thumb, { width: 1200, height: 1600 }]]),
+    );
+    const tiffCard = fitted.cards.find((card) => card.id === "tiff");
+    expect(tiffCard?.widthCells).toBe(10);
+    expect(tiffCard?.heightCells).toBe(14);
+  });
+
+  it("wires a TIFF card's crop window to its one consumer", () => {
+    const patches: [string, WorkflowNodeConfig][] = [];
+    const consumer: WorkflowNode = {
+      ...targetNode,
+      data: {
+        ...targetNode.data,
+        compatibility: { status: "supported" },
+        config: {
+          page: 1,
+          col: 2,
+          row: 3,
+          width: 40,
+          height: 50,
+          scope: "Whole TIFF page",
+          strategy: "Single crop",
+        },
+      },
+    };
+    const { surfaceById } = buildWorkbenchCellScene({
+      workspaceId: "ws",
+      document: graph,
+      registry,
+      presentation: pictures,
+      nodes: [{ ...sourceNode, data: { ...sourceNode.data, run } }, consumer],
+      nodeInstanceStates: {},
+      collapsedAppendices: new Set(),
+      canRun: true,
+      artifactViewerEdges: pictureViewers.edges,
+      artifactViewerNodes: pictureViewers.nodes,
+      artifactOriginEdges: [
+        {
+          id: "origin-edge",
+          type: ARTIFACT_ORIGIN_EDGE_TYPE,
+          source: "tiff",
+          target: "target",
+          targetHandle: "tiff::file.tiff::1::one::input",
+          data: { originId: "origin-tiff" },
+        },
+      ],
+      onOperatorConfigChange: (nodeId, patch) => {
+        patches.push([nodeId, patch]);
+      },
+    });
+    const surface = surfaceById.tiff;
+    assert(surface?.kind === "artifact");
+    expect(surface.tiffWindow).toMatchObject({
+      artifactId: "t",
+      selection: {
+        window: { page: 1, col: 2, row: 3, width: 40, height: 50 },
+        wholePage: true,
+        singleCrop: true,
+      },
+    });
+    surface.tiffWindow?.selection.onChange({
+      page: 2,
+      col: 0,
+      row: 0,
+      width: 8,
+      height: 9,
+    });
+    expect(patches).toEqual([
+      ["target", { page: 2, col: 0, row: 0, width: 8, height: 9 }],
+    ]);
+  });
+
+  it("links TIFF text to the scan window its producer reads", () => {
+    const textArtifact = {
+      artifact_id: "regions",
+      artifact_type: "ocr.tiff_recognized_text",
+      schema_version: 1,
+    };
+    const textPresentation: GraphPresentation = {
+      viewers: [
+        {
+          id: "regions",
+          position: { x: 0, y: 0 },
+          artifact_ref: null,
+          mode: "artifact",
+        },
+      ],
+      links: [
+        {
+          id: "feed",
+          source_node_id: "source",
+          source_port_name: "result",
+          target_viewer_id: "regions",
+        },
+      ],
+      annotations: [],
+      bindings: [],
+    };
+    const textViewers = artifactViewersFromPresentation(textPresentation);
+    const textRun = {
+      node_id: "source",
+      status: "succeeded",
+      error: null,
+      outputs: [
+        {
+          port: "result",
+          kind: "single",
+          artifacts: [{ ...textArtifact, content_hash: null }],
+          value: textArtifact,
+        },
+      ],
+      result_fingerprint: "result",
+      created_at: null,
+    } satisfies NonNullable<typeof sourceNode.data.run>;
+    const producer = {
+      ...sourceNode,
+      data: {
+        ...sourceNode.data,
+        config: { page: 0, col: 4, row: 5, width: 6, height: 7 },
+        run: textRun,
+      },
+    };
+    const { surfaceById } = buildWorkbenchCellScene({
+      workspaceId: "ws",
+      document: {
+        ...graph,
+        origins: [
+          {
+            id: "fed-tiff",
+            to_node: "source",
+            to_port: "tiff",
+            collection_mode: "direct",
+            conversion_path: [],
+            value: {
+              artifact_id: "scan",
+              artifact_type: "file.tiff",
+              schema_version: 1,
+            },
+          },
+        ],
+      },
+      registry,
+      presentation: textPresentation,
+      nodes: [producer, targetNode],
+      nodeInstanceStates: {},
+      collapsedAppendices: new Set(),
+      canRun: true,
+      artifactViewerEdges: textViewers.edges,
+      artifactViewerNodes: textViewers.nodes,
+      onOperatorConfigChange: () => {},
+    });
+    const surface = surfaceById.regions;
+    assert(surface?.kind === "artifact");
+    expect(surface.previewKind).toBe("tiff-text");
+    expect(surface.tiffText).toMatchObject({
+      url: artifactInlineContentUrl("ws", "regions"),
+      recognized: true,
+      linkedWindow: {
+        artifactId: "scan",
+        selection: {
+          window: { page: 0, col: 4, row: 5, width: 6, height: 7 },
+        },
+      },
+    });
+  });
+
+  it("shows a linked TIFF on a text card before its producer runs", () => {
+    const textType = { id: "ocr.tiff_text_regions", schema_version: 1 };
+    const textSpec: NodeSpec = {
+      ...spec,
+      operator_id: "test.tiff-text",
+      outputs: [{ ...output, artifact_type: textType }],
+    };
+    const textRegistry: NodeRegistry = { ...registry, nodes: [spec, textSpec] };
+    const textGraph: AuthoredGraphDocument = {
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node.id === "source"
+          ? { ...node, operator_id: textSpec.operator_id }
+          : node,
+      ),
+      origins: [
+        {
+          id: "fed-tiff",
+          to_node: "source",
+          to_port: "tiff",
+          collection_mode: "direct",
+          conversion_path: [],
+          value: {
+            artifact_id: "scan",
+            artifact_type: "file.tiff",
+            schema_version: 1,
+          },
+        },
+      ],
+    };
+    const waiting: GraphPresentation = {
+      viewers: [
+        {
+          id: "regions",
+          position: { x: 0, y: 0 },
+          artifact_ref: null,
+          mode: "artifact",
+        },
+      ],
+      links: [
+        {
+          id: "feed",
+          source_node_id: "source",
+          source_port_name: "result",
+          target_viewer_id: "regions",
+        },
+      ],
+      annotations: [],
+      bindings: [],
+    };
+    const { nodes: hydrated } = hydrateAuthoredGraphDocument(
+      textGraph,
+      textRegistry,
+    );
+    const textSource = hydrated.find((node) => node.id === "source");
+    const textTarget = hydrated.find((node) => node.id === "target");
+    assert(textSource && textTarget);
+    const producer = {
+      ...textSource,
+      data: {
+        ...textSource.data,
+        config: { page: 0, col: 4, row: 5, width: 6, height: 7 },
+      },
+    };
+    const thumb = imageThumbnailUrl(imagePath("ws", "scan"), 0);
+    const viewers = artifactViewersFromPresentation(waiting);
+    const { graph: fitted, surfaceById } = buildWorkbenchCellScene({
+      workspaceId: "ws",
+      document: textGraph,
+      registry: textRegistry,
+      presentation: waiting,
+      nodes: [producer, textTarget],
+      nodeInstanceStates: {},
+      collapsedAppendices: new Set(),
+      canRun: true,
+      artifactViewerEdges: viewers.edges,
+      artifactViewerNodes: viewers.nodes,
+      imageNaturalSizes: new Map([[thumb, { width: 1200, height: 1600 }]]),
+      onOperatorConfigChange: () => {},
+    });
+    const surface = surfaceById.regions;
+    assert(surface?.kind === "artifact");
+    expect(surface.previewKind).toBe("tiff-text");
+    expect(surface.artifact).toBeUndefined();
+    expect(surface.workspaceId).toBe("ws");
+    expect(surface.tiffText).toMatchObject({
+      url: null,
+      recognized: false,
+      linkedWindow: {
+        artifactId: "scan",
+        selection: {
+          window: { page: 0, col: 4, row: 5, width: 6, height: 7 },
+        },
+      },
+    });
+    const card = fitted.cards.find((item) => item.id === "regions");
+    expect(card?.widthCells).toBe(10);
+    expect(card?.heightCells).toBe(14);
   });
 
   it("shows what a following card's run produced", () => {

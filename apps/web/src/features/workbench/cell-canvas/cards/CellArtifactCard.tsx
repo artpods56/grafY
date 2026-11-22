@@ -4,7 +4,6 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import {
   FileText,
-  ImageIcon,
   Layers,
   Map as MapIcon,
   Plus,
@@ -12,11 +11,29 @@ import {
   Ungroup,
   X,
 } from "lucide-react";
+import useSWR from "swr";
 
 import { IconButton } from "@/components/ui/button";
 import { artifactTypeColor } from "@/features/workbench/config-ui/nodes.css";
 import { COLLECTION_PORT } from "@/features/workbench/authoring/collection-spec";
+import { artifactInlineContentUrl, type ArtifactRef } from "@/lib/api";
+import { imagePath, imageThumbnailUrl } from "@/lib/api/images";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { GeoMapArtifactRenderer } from "../../artifacts/geo-map-artifact-renderer";
+import { SafeMarkdown } from "../../artifacts/safe-markdown";
+import { TiffArtifactView } from "../../artifacts/TiffArtifactView";
+import {
+  cardTextKey,
+  cardTextLimit,
+  fetchCardText,
+  formatCardText,
+} from "../../artifacts/artifact-renderers/card-text";
+import { CardTextBody } from "../../artifacts/artifact-renderers/card-text-body";
+import { HtmlPageFill } from "../../artifacts/artifact-renderers/html-page-fill";
+import { useHtmlPage } from "../../artifacts/artifact-renderers/html-page";
+import { ImageCardPreview } from "../../artifacts/artifact-renderers/image-card-preview";
+import { TableArtifactRenderer } from "../../artifacts/artifact-renderers/table-renderer";
+import { TiffTextArtifact } from "../../artifacts/artifact-renderers/tiff-text-renderer";
 
 import type {
   ArtifactCardSurfaceData,
@@ -350,29 +367,6 @@ const s = stylex.create({
     backgroundImage: `repeating-conic-gradient(${tokens.colorSurfaceRaised} 0% 25%, transparent 0% 50%)`,
     backgroundSize: "14px 14px",
   },
-  image: {
-    position: "absolute",
-    inset: 0,
-    display: "block",
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    pointerEvents: "none",
-    userSelect: "none",
-  },
-  placeholder: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "4px",
-    maxWidth: "100%",
-    paddingInline: "12px",
-    boxSizing: "border-box",
-    color: tokens.colorSubtle,
-    fontSize: "10px",
-    textAlign: "center",
-  },
   placeholderMeta: {
     fontFamily: MONO_FONT,
     fontSize: "9px",
@@ -598,9 +592,10 @@ function CellArtifactCardImpl(props: CellArtifactCardProps) {
   const canExpandSequence = props.canExpandSequence ?? true;
   const state = useResolvedCardState(card.id, props);
   const image = surface.previewKind === "image";
+  const stackable = image || surface.previewKind === "tiff";
   const itemCount = surface.itemCount ?? 1;
   const sequence = itemCount > 1;
-  const stacked = image && sequence;
+  const stacked = stackable && sequence;
   const stackStyle = props.stackStyle ?? "fan";
   const rebounding = useStackRebound(itemCount);
   // The title names the type; the header's right side names the file, or
@@ -651,8 +646,8 @@ function CellArtifactCardImpl(props: CellArtifactCardProps) {
         "data-stack-rebound": rebounding ? "true" : "false",
       }}
       behindPlate={
-        // Drawn for every image, so a back that leaves can fold away.
-        image ? (
+        // Drawn for every picture, so a back that leaves can fold away.
+        stackable ? (
           <ArtifactStackBacks
             card={card}
             corners={props.corners ?? "rounded"}
@@ -684,6 +679,7 @@ function CellArtifactCardImpl(props: CellArtifactCardProps) {
         <ArtifactPreview
           card={card}
           surface={surface}
+          selected={state.selected}
           onImageLoad={props.onImageLoad}
         />
       </div>
@@ -994,60 +990,218 @@ function useLingeringBackCount(backs: number): number {
   return Math.max(backs, drawn);
 }
 
+function FileTile({
+  card,
+  surface,
+}: {
+  card: CellArtifactCardProps["card"];
+  surface: ArtifactCardSurfaceData;
+}) {
+  return (
+    <div {...stylex.props(s.fileBody)}>
+      <span aria-hidden="true" {...stylex.props(s.fileIcon)}>
+        <FileText size={18} />
+      </span>
+      <span {...stylex.props(s.fileText)}>
+        <span {...stylex.props(s.fileName, m.ellipsis)}>
+          {surface.filename ?? card.title}
+        </span>
+        <span {...stylex.props(s.fileMeta, m.ellipsis)}>
+          {surface.typeLabel}
+          {surface.byteSizeLabel ? ` · ${surface.byteSizeLabel}` : ""}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function LiveHtmlPage({
+  workspaceId,
+  artifactId,
+  plateHeight,
+  selected,
+}: {
+  workspaceId: string;
+  artifactId: string;
+  plateHeight: number;
+  selected: boolean;
+}) {
+  const { data, mutate } = useHtmlPage(workspaceId, artifactId);
+  return (
+    <div
+      onPointerDown={selected ? stopCardDrag : undefined}
+      style={{ width: "100%", height: "100%" }}
+    >
+      <HtmlPageFill
+        load={data}
+        height={plateHeight}
+        selected={selected}
+        view="html"
+        onRetry={() => void mutate()}
+      />
+    </div>
+  );
+}
+
+function LiveCardText({
+  workspaceId,
+  artifact,
+  plateHeight,
+  selected,
+  rendered,
+}: {
+  workspaceId: string;
+  artifact: ArtifactRef;
+  plateHeight: number;
+  selected: boolean;
+  rendered: boolean;
+}) {
+  const { data } = useSWR(
+    cardTextKey(workspaceId, artifact.artifact_id, cardTextLimit(artifact)),
+    fetchCardText,
+  );
+  const shownText = data ? formatCardText(data, artifact.artifact_type) : "";
+  if (!shownText) return <ReadingPreview text="" />;
+  return (
+    <div
+      onPointerDown={selected ? stopCardDrag : undefined}
+      style={{
+        width: "100%",
+        height: "100%",
+        padding: "8px 10px",
+        boxSizing: "border-box",
+      }}
+    >
+      <CardTextBody
+        height={Math.max(40, plateHeight - 16)}
+        rendered={rendered}
+        interactive={selected}
+      >
+        {rendered ? <SafeMarkdown>{shownText}</SafeMarkdown> : shownText}
+      </CardTextBody>
+    </div>
+  );
+}
+
 function ArtifactPreview({
   card,
   surface,
+  selected,
   onImageLoad,
 }: {
   card: CellArtifactCardProps["card"];
   surface: ArtifactCardSurfaceData;
+  selected: boolean;
   onImageLoad?: (
     imageUrl: string,
     size: { width: number; height: number },
   ) => void;
 }) {
+  const plateHeight =
+    card.heightCells * CELL_SIZE - CARD_PLATE_TOP - CARD_PLATE_BOTTOM_INSET;
+  const alt = surface.filename ?? card.title;
   switch (surface.previewKind) {
-    case "image": {
-      const imageUrl = surface.imageUrl;
-      const reportSize = (img: HTMLImageElement | null) => {
-        if (
-          !img ||
-          !imageUrl ||
-          !onImageLoad ||
-          img.naturalWidth <= 0 ||
-          img.naturalHeight <= 0
-        ) {
-          return;
-        }
-        onImageLoad(imageUrl, {
-          width: img.naturalWidth,
-          height: img.naturalHeight,
-        });
-      };
-      return imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer
-        <img
-          ref={(img) => {
-            if (img?.complete) reportSize(img);
-          }}
-          src={imageUrl}
-          alt={surface.filename ?? card.title}
-          draggable={false}
-          onLoad={(event) => reportSize(event.currentTarget)}
-          {...stylex.props(s.image)}
+    case "image":
+      return (
+        <ImageCardPreview
+          imageUrl={surface.imageUrl}
+          alt={alt}
+          dimensionsLabel={surface.dimensionsLabel}
+          showDimensions={(surface.itemCount ?? 1) <= 1}
+          onImageLoad={onImageLoad}
         />
-      ) : (
-        <div data-artifact-placeholder="image" {...stylex.props(s.placeholder)}>
-          <ImageIcon size={18} aria-hidden="true" />
-          {surface.dimensionsLabel && (surface.itemCount ?? 1) <= 1 ? (
-            <span {...stylex.props(s.placeholderMeta)}>
-              {surface.dimensionsLabel}
-            </span>
-          ) : null}
-        </div>
+      );
+    case "tiff": {
+      const { workspaceId, artifact } = surface;
+      if (workspaceId && artifact) {
+        return (
+          <div
+            data-cell-interactive-viewport="true"
+            onPointerDown={stopCardDrag}
+            style={{ width: "100%", height: "100%" }}
+          >
+            <TiffArtifactView
+              workspaceId={workspaceId}
+              artifactId={artifact.artifact_id}
+              name={alt}
+              selection={surface.tiffWindow?.selection}
+              onSize={(width, height) =>
+                onImageLoad?.(
+                  imageThumbnailUrl(
+                    imagePath(workspaceId, artifact.artifact_id),
+                    0,
+                  ),
+                  { width, height },
+                )
+              }
+            />
+          </div>
+        );
+      }
+      return (
+        <ImageCardPreview
+          imageUrl={surface.imageUrl}
+          alt={alt}
+          dimensionsLabel={surface.dimensionsLabel}
+          showDimensions={(surface.itemCount ?? 1) <= 1}
+          onImageLoad={onImageLoad}
+        />
       );
     }
+    case "tiff-text": {
+      const { workspaceId, tiffText } = surface;
+      const scanId = tiffText?.linkedWindow?.artifactId;
+      if (workspaceId && tiffText) {
+        return (
+          <div
+            data-cell-interactive-viewport="true"
+            onPointerDown={stopCardDrag}
+            style={{ width: "100%", height: "100%" }}
+          >
+            <TiffTextArtifact
+              url={tiffText.url}
+              workspaceId={workspaceId}
+              height={plateHeight}
+              linkedWindow={tiffText.linkedWindow}
+              recognized={tiffText.recognized}
+              onSize={
+                scanId
+                  ? (width, height) =>
+                      onImageLoad?.(
+                        imageThumbnailUrl(imagePath(workspaceId, scanId), 0),
+                        { width, height },
+                      )
+                  : undefined
+              }
+            />
+          </div>
+        );
+      }
+      return <FileTile card={card} surface={surface} />;
+    }
     case "table": {
+      const { workspaceId, artifact } = surface;
+      if (workspaceId && artifact) {
+        return (
+          <div
+            onPointerDown={stopCardDrag}
+            style={{ width: "100%", height: "100%" }}
+          >
+            <TableArtifactRenderer
+              artifact={{
+                artifact_id: artifact.artifact_id,
+                content_url: artifactInlineContentUrl(
+                  workspaceId,
+                  artifact.artifact_id,
+                ),
+              }}
+              mode="table"
+              presentation="canvas"
+              availableHeight={plateHeight}
+            />
+          </div>
+        );
+      }
       const headers = surface.tableHeaders ?? [];
       const rows = surface.tableRows ?? [];
       return (
@@ -1084,26 +1238,25 @@ function ArtifactPreview({
         </table>
       );
     }
-    case "markdown":
-      return <ReadingPreview text={surface.previewText ?? ""} />;
-    case "file":
-      return (
-        <div {...stylex.props(s.fileBody)}>
-          <span aria-hidden="true" {...stylex.props(s.fileIcon)}>
-            <FileText size={18} />
-          </span>
-          <span {...stylex.props(s.fileText)}>
-            <span {...stylex.props(s.fileName, m.ellipsis)}>
-              {surface.filename ?? card.title}
-            </span>
-            <span {...stylex.props(s.fileMeta, m.ellipsis)}>
-              {surface.typeLabel}
-              {surface.byteSizeLabel ? ` · ${surface.byteSizeLabel}` : ""}
-            </span>
-          </span>
-        </div>
-      );
-    case "map":
+    case "map": {
+      const { workspaceId, artifact } = surface;
+      if (workspaceId && artifact) {
+        return (
+          <div
+            data-cell-interactive-viewport="true"
+            onPointerDown={stopCardDrag}
+            style={{ width: "100%", height: "100%" }}
+          >
+            <GeoMapArtifactRenderer
+              artifact={artifact}
+              mode="map"
+              autoLoad
+              presentation="canvas"
+              availableHeight={Math.max(120, plateHeight - 2)}
+            />
+          </div>
+        );
+      }
       return (
         <>
           <MapMotif />
@@ -1125,6 +1278,43 @@ function ArtifactPreview({
           </span>
         </>
       );
+    }
+    case "html-page": {
+      const { workspaceId, artifact } = surface;
+      if (workspaceId && artifact) {
+        return (
+          <LiveHtmlPage
+            workspaceId={workspaceId}
+            artifactId={artifact.artifact_id}
+            plateHeight={plateHeight}
+            selected={selected}
+          />
+        );
+      }
+      return <FileTile card={card} surface={surface} />;
+    }
+    case "markdown":
+    case "text": {
+      const { workspaceId, artifact, previewText } = surface;
+      if (workspaceId && artifact && previewText == null) {
+        return (
+          <LiveCardText
+            workspaceId={workspaceId}
+            artifact={artifact}
+            plateHeight={plateHeight}
+            selected={selected}
+            rendered={surface.previewKind === "markdown"}
+          />
+        );
+      }
+      return <ReadingPreview text={previewText ?? ""} />;
+    }
+    case "file":
+      return <FileTile card={card} surface={surface} />;
+    default: {
+      const _exhaustive: never = surface.previewKind;
+      return _exhaustive;
+    }
   }
 }
 

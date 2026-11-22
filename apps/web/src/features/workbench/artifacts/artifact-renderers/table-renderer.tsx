@@ -21,7 +21,6 @@ import { TextArea } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
-import { isTableArtifact } from "../artifact-card";
 import { SafeMarkdown } from "../safe-markdown";
 import {
   interactionScalarFromIntegerEncoding,
@@ -29,7 +28,6 @@ import {
   type ArtifactViewerInteractionContext,
 } from "../artifact-interactions";
 
-import type { ArtifactRendererSpec } from "./spec";
 import { sharedStyles } from "./styles";
 import {
   CELL_VIEW_LABEL,
@@ -859,21 +857,3 @@ export function TableArtifactRenderer(props: TableArtifactRendererProps) {
     <TableArtifactRendererState key={props.artifact.artifact_id} {...props} />
   );
 }
-
-export const tableRenderer: ArtifactRendererSpec = {
-  id: "table",
-  modes: ["table", "raw"],
-  interaction: {
-    emits: ["key-selection"],
-    accepts: ["filter", "highlight"],
-  },
-  matches: isTableArtifact,
-  Component: ({ artifact, mode, availableHeight, interaction }) => (
-    <TableArtifactRenderer
-      artifact={artifact}
-      mode={mode}
-      availableHeight={availableHeight}
-      interaction={interaction}
-    />
-  ),
-};

@@ -9,6 +9,7 @@ from typing import cast, final, override
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from grafy_core.artifacts import (
+    ArtifactPreviewKind,
     ArtifactReferenceContract,
     ArtifactTypeKey,
     ArtifactTypeSpec,
@@ -104,6 +105,7 @@ OCR.register(
                     path=("source",), target=TIFF_FILE.key, shape="one"
                 ),
             ),
+            preview_kind=ArtifactPreviewKind.TIFF_TEXT,
         ),
         TiffRecognizedText,
     )

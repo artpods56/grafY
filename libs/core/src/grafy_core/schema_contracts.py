@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, StrictStr
 from referencing.exceptions import Unresolvable
 
 from grafy_core.artifacts import (
+    ArtifactPreviewKind,
     ArtifactTypeKey,
     ArtifactTypeSpec,
     JsonObject,
@@ -25,6 +26,7 @@ JSON_SCHEMA = ArtifactTypeSpec(
     key=ArtifactTypeKey("json.schema", 1),
     title="Answer format",
     payload_schema=cast(JsonObject, JsonSchemaPayload.model_json_schema()),
+    preview_kind=ArtifactPreviewKind.TEXT,
 )
 
 

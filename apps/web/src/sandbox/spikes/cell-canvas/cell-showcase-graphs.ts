@@ -608,6 +608,7 @@ export const showcaseFallbackRegistry: NodeRegistry = {
     {
       key: { id: IMAGE, schema_version: 1 },
       title: "Raster image",
+      preview_kind: "image",
       bundle: { format: "inline-json", version: 1 },
       payload_schema: {},
       field_projections: [],
@@ -615,6 +616,7 @@ export const showcaseFallbackRegistry: NodeRegistry = {
     {
       key: { id: MARKDOWN, schema_version: 1 },
       title: "Markdown",
+      preview_kind: "markdown",
       bundle: { format: "inline-json", version: 1 },
       payload_schema: {},
       field_projections: [],
@@ -622,6 +624,7 @@ export const showcaseFallbackRegistry: NodeRegistry = {
     {
       key: { id: TABLE, schema_version: 1 },
       title: "Data table",
+      preview_kind: "table",
       bundle: { format: "inline-json", version: 1 },
       payload_schema: {},
       field_projections: [],

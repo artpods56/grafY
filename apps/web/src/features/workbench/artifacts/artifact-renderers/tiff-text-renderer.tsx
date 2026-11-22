@@ -79,12 +79,15 @@ export function TiffTextArtifact({
   height,
   linkedWindow,
   recognized = false,
+  onSize,
 }: {
   url: string | null;
   workspaceId: string;
   height: number;
   linkedWindow?: { artifactId: string; selection: TiffWindowSelection };
   recognized?: boolean;
+  /** The linked scan's pixel size, once its tile pyramid describes it. */
+  onSize?: (width: number, height: number) => void;
 }) {
   const { data, error } = useSWR(url, fetchOverlay, { keepPreviousData: true });
   const artifactId = linkedWindow?.artifactId ?? data?.artifactId;
@@ -103,6 +106,7 @@ export function TiffTextArtifact({
         name={recognized ? "Recognized text" : "Detected text"}
         overlay={data?.artifactId === artifactId ? data : undefined}
         selection={linkedWindow?.selection}
+        onSize={onSize}
       />
     </div>
   );

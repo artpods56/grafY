@@ -1897,6 +1897,12 @@ export interface components {
         };
         readonly ArtifactInteractionScalar: string | number | boolean | null;
         readonly ArtifactOutputValue: components["schemas"]["ArtifactRef"] | components["schemas"]["ArtifactRefSequence"];
+        /**
+         * ArtifactPreviewKind
+         * @description Which canvas card preview renderer presents an artifact of this type.
+         * @enum {string}
+         */
+        readonly ArtifactPreviewKind: "image" | "tiff" | "tiff-text" | "table" | "map" | "html-page" | "markdown" | "text" | "file";
         /** ArtifactRef */
         readonly ArtifactRef: {
             /**
@@ -1998,6 +2004,8 @@ export interface components {
             readonly payload_schema: {
                 readonly [key: string]: unknown;
             };
+            /** @default file */
+            readonly preview_kind: components["schemas"]["ArtifactPreviewKind"];
             /** Title */
             readonly title: string;
         };

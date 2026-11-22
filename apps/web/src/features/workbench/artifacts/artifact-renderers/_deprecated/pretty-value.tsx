@@ -4,7 +4,7 @@ import * as stylex from "@stylexjs/stylex";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { record } from "./payload";
+import { record } from "../payload";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 
