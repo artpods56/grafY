@@ -37,9 +37,15 @@ function mount(
   props: Partial<CellOperatorCardProps> = {},
   secretInputs?: readonly CellSecretInputSpec[],
 ) {
+  const registry = {
+    ...richRegistry,
+    nodes: richRegistry.nodes.map((node) =>
+      node.operator_id === spec.operator_id ? spec : node,
+    ),
+  };
   const { cards, surfaces } = buildOperatorCardsAndSurfaces(
     fixtureDocument([fixtureNode("node", spec, config)]),
-    richRegistry,
+    registry,
   );
   const surface = surfaces.get("node");
   if (surface?.kind !== "operator") throw new Error("operator surface");
@@ -115,6 +121,47 @@ describe("CellOperatorCard config interactions", () => {
     });
   });
 
+  it("draws a dense select when the `Style` branch titles are class names", () => {
+    const longTitles = structuredClone(vectorLayerSpec);
+    const defs = longTitles.config_schema.$defs as Record<
+      string,
+      { title?: string }
+    >;
+    defs.GeoVectorStyle!.title = "GeoVectorStyle";
+    defs.GeoCategorizedPointStyle!.title = "GeoCategorizedPointStyle";
+    const onConfigChange = vi.fn();
+    const container = mount(longTitles, { title: "Roads" }, { onConfigChange });
+    const union = container.querySelector('[data-config-union="style"]');
+    expect(union?.querySelector('[role="radio"]')).toBeNull();
+    const picker = union?.querySelector<HTMLSelectElement>(
+      'select[aria-label="Style mode"]',
+    );
+    expect(picker?.title).toBe("GeoVectorStyle");
+    expect([...(picker?.options ?? [])].map((option) => option.text)).toEqual([
+      "GeoVectorStyle",
+      "GeoCategorizedPointStyle",
+    ]);
+    React.act(() => {
+      picker!.value = "categorized_points";
+      picker!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onConfigChange).toHaveBeenCalledWith(
+      "node",
+      "style",
+      expect.objectContaining({ kind: "categorized_points" }),
+    );
+  });
+
+  it("keeps short `Style` branch titles as truncating segments", () => {
+    const container = mount(vectorLayerSpec, { title: "Roads" });
+    const labels = [
+      ...container.querySelectorAll(
+        '[aria-label="Style mode"] [role="radio"] span[title]',
+      ),
+    ].map((label) => label.getAttribute("title"));
+    expect(labels).toEqual(["Simple", "By category"]);
+  });
+
   it("adds an item to an object list with a fresh id and a numbered title", () => {
     const onConfigChange = vi.fn();
     const style = {
@@ -187,83 +234,145 @@ describe("CellOperatorCard credentials popover", () => {
     return { container, popup: popup as HTMLElement };
   }
 
-  it("lets an editor bind a Shared key and save an unreachable Personal key", async () => {
-    const select = vi.fn(async () => {});
-    const shared: Credential = {
-      id: "vault-key",
-      scope: "shared",
-      provider_kind: "openai_compatible",
-      label: "Team gateway",
-      key_hint: "••••1234",
-      usable: true,
-      supports_verification: true,
-      verification_status: "valid",
-      verification_message: "Verified OpenAI-compatible key.",
-      verification_hint: null,
-      verified_at: "2026-09-01T10:00:00Z",
-      created_at: "2026-09-01T10:00:00Z",
-      updated_at: "2026-09-01T10:00:00Z",
-    };
-    const { popup } = openPopover([
-      {
-        ...configured,
-        vault: {
-          workspaceId: "workspace",
-          canEditShared: true,
-          canSelectPersonal: true,
-          canManageShared: false,
-          credentials: [shared],
-          provider: { kind: "openai_compatible", fields: ["base_url"] },
-          select,
-          verify: vi.fn(async (): Promise<CredentialVerification> => ({
-            status: "valid",
-            message: "Verified.",
-            account_hint: null,
-          })),
-          refresh: vi.fn(async () => {}),
-          status: {
-            node_id: "node",
-            name: "api_key",
-            configured: true,
-            provider_kind: "openai_compatible",
-            supports_verification: true,
-            effective_source: "shared_credential",
-            effective_credential_id: shared.id,
-            effective_verification_status: "valid",
-            shared_binding_mode: "credential",
-            shared_credential_id: shared.id,
-            shared_credential_missing: false,
-            personal_override_mode: "none",
-            deployment_default_available: false,
-          },
+  const sharedKey: Credential = {
+    id: "vault-key",
+    scope: "shared",
+    provider_kind: "openai_compatible",
+    label: "Team gateway",
+    key_hint: "••••1234",
+    usable: true,
+    supports_verification: true,
+    verification_status: "valid",
+    verification_message: "Verified OpenAI-compatible key.",
+    verification_hint: null,
+    verified_at: "2026-09-01T10:00:00Z",
+    created_at: "2026-09-01T10:00:00Z",
+    updated_at: "2026-09-01T10:00:00Z",
+  };
+
+  function vaultInput(
+    status: Partial<NonNullable<CellSecretInputSpec["vault"]>["status"]> = {},
+    vault: Partial<NonNullable<CellSecretInputSpec["vault"]>> = {},
+  ): CellSecretInputSpec {
+    return {
+      ...configured,
+      vault: {
+        workspaceId: "workspace",
+        canEditShared: true,
+        canSelectPersonal: true,
+        canManageShared: false,
+        credentials: [sharedKey],
+        provider: { kind: "openai_compatible", fields: ["base_url"] },
+        select: vi.fn(async () => {}),
+        verify: vi.fn(async (): Promise<CredentialVerification> => ({
+          status: "valid",
+          message: "Verified.",
+          account_hint: null,
+        })),
+        refresh: vi.fn(async () => {}),
+        ...vault,
+        status: {
+          node_id: "node",
+          name: "api_key",
+          configured: true,
+          provider_kind: "openai_compatible",
+          supports_verification: true,
+          effective_source: "shared_credential",
+          effective_credential_id: sharedKey.id,
+          effective_credential_label: sharedKey.label,
+          effective_verification_status: "valid",
+          shared_binding_mode: "credential",
+          shared_credential_id: sharedKey.id,
+          shared_credential_label: sharedKey.label,
+          shared_credential_missing: false,
+          personal_override_mode: "none",
+          deployment_default_available: false,
+          ...status,
         },
       },
-    ]);
-    expect(popup.textContent).toContain("Team gateway");
-    expect(popup.textContent).toContain("Verified");
+    };
+  }
+
+  function buttonNamed(root: ParentNode, text: string) {
+    return (
+      [...root.querySelectorAll("button")].find(
+        (button) => button.textContent === text,
+      ) ?? null
+    );
+  }
+
+  it("leads with the key that runs the node and binds the graph default", async () => {
+    const input = vaultInput();
+    const { container, popup } = openPopover([input]);
+    expect(
+      container.querySelector('[data-credentials-trigger="configured"]'),
+    ).not.toBeNull();
+    const summary = popup.querySelector("[data-credential-source]");
+    expect(summary?.getAttribute("data-credential-source")).toBe(
+      "shared_credential",
+    );
+    expect(summary?.textContent).toContain("Shared");
+    expect(summary?.textContent).toContain("Team gateway");
+    expect(summary?.textContent).toContain("••••1234");
+    expect(
+      summary?.querySelector('[data-verification="valid"]')?.textContent,
+    ).toBe("Verified");
+    expect(popup.textContent).toContain("OpenAI-compatible");
+    expect(
+      popup.querySelector('[aria-label="Re-verify API key"]'),
+    ).not.toBeNull();
+
+    // One picker at a time: "My run" first, "Graph default" behind its tab.
+    const personal = popup.querySelector<HTMLSelectElement>(
+      '[aria-label="API key personal selection"]',
+    );
+    expect(personal?.value).toBe("none");
+    expect(
+      [...(personal?.querySelectorAll("optgroup") ?? [])].map(
+        (group) => group.label,
+      ),
+    ).toEqual(["Default", "Shared (workspace)"]);
+    expect(
+      popup.querySelector('[aria-label="API key graph binding"]'),
+    ).toBeNull();
+    expect(popup.textContent).toContain("Overrides only your runs.");
+    const graphTab = [
+      ...popup.querySelectorAll(
+        '[aria-label="API key selection scope"] [role="radio"]',
+      ),
+    ].find((radio) => radio.textContent === "Graph default");
+    click(graphTab ?? null);
     const graphBinding = popup.querySelector<HTMLSelectElement>(
       '[aria-label="API key graph binding"]',
     );
     expect(graphBinding?.value).toBe("credential:vault-key");
+    expect(popup.textContent).toContain(
+      "Default for everyone who runs this graph.",
+    );
     if (!graphBinding) throw new Error("Graph binding picker is missing");
     await React.act(async () => {
       graphBinding.value = "personal";
       graphBinding.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    expect(select).toHaveBeenCalledWith({
+    expect(input.vault?.select).toHaveBeenCalledWith({
       scope: "shared",
       binding: { mode: "personal" },
     });
-    const addButton = [...popup.querySelectorAll("button")].find(
-      (button) => button.textContent === "+ Add credential",
-    );
-    click(addButton ?? null);
+  });
+
+  it("saves an unreachable Personal key anyway and selects it for my runs", async () => {
+    const input = vaultInput();
+    const { popup } = openPopover([input]);
+    click(buttonNamed(popup, "Add credential"));
     expect(popup.querySelector('[aria-label="Credential scope"]')).toBeNull();
-    const key = popup.querySelector<HTMLInputElement>(
-      '[aria-label="Credential key"]',
+    type(
+      popup.querySelector<HTMLInputElement>('input[name="value"]'),
+      "synthetic-personal-key",
     );
-    type(key, "synthetic-personal-key");
-    type(popup.querySelector('[aria-label="Credential label"]'), "My key");
+    type(
+      popup.querySelector<HTMLInputElement>('input[name="label"]'),
+      "My key",
+    );
 
     const fetcher = vi
       .fn<typeof fetch>()
@@ -285,7 +394,7 @@ describe("CellOperatorCard credentials popover", () => {
       .mockResolvedValueOnce(
         Response.json(
           {
-            ...shared,
+            ...sharedKey,
             id: "my-key",
             label: "My key",
             scope: "personal",
@@ -303,10 +412,8 @@ describe("CellOperatorCard credentials popover", () => {
           ?.click();
       });
       expect(popup.textContent).toContain("Provider unreachable.");
-      const saveAnyway = [...popup.querySelectorAll("button")].find(
-        (button) => button.textContent === "Save anyway",
-      );
-      expect(saveAnyway).toBeDefined();
+      const saveAnyway = buttonNamed(popup, "Save anyway");
+      expect(saveAnyway).not.toBeNull();
       await React.act(async () => saveAnyway?.click());
       expect(fetcher).toHaveBeenLastCalledWith(
         "/api/v1/me/credentials",
@@ -315,10 +422,127 @@ describe("CellOperatorCard credentials popover", () => {
         }),
       );
       expect(popup.textContent).toContain("Saved without verification.");
-      expect(popup.querySelector('[aria-label="Credential key"]')).toBeNull();
+      expect(popup.querySelector('input[name="value"]')).toBeNull();
+      expect(input.vault?.select).toHaveBeenCalledWith({
+        scope: "personal",
+        binding: { mode: "credential", credential_id: "my-key" },
+      });
+      expect(input.vault?.refresh).toHaveBeenCalled();
+      expect(popup.textContent).toContain("Now using “My key”.");
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("makes a new Shared key the graph default and drops my override", async () => {
+    const input = vaultInput(
+      { personal_override_mode: "deployment_default" },
+      { canManageShared: true },
+    );
+    const { popup } = openPopover([input]);
+    click(buttonNamed(popup, "Add credential"));
+    const shared = [
+      ...popup.querySelectorAll(
+        '[aria-label="Credential scope"] [role="radio"]',
+      ),
+    ].find((radio) => radio.textContent === "Shared");
+    click(shared ?? null);
+    type(popup.querySelector<HTMLInputElement>('input[name="value"]'), "k");
+    type(popup.querySelector<HTMLInputElement>('input[name="label"]'), "Ops");
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { ...sharedKey, id: "ops", label: "Ops" },
+          { status: 201 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      await React.act(async () => {
+        popup
+          .querySelector<HTMLButtonElement>('button[type="submit"]')
+          ?.click();
+      });
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/v1/workspaces/workspace/credentials",
+        expect.anything(),
+      );
+      expect(input.vault?.select).toHaveBeenNthCalledWith(1, {
+        scope: "shared",
+        binding: { mode: "credential", credential_id: "ops" },
+      });
+      expect(input.vault?.select).toHaveBeenNthCalledWith(2, {
+        scope: "personal",
+        binding: { mode: "none" },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("tests a pasted key without saving it", async () => {
+    const { popup } = openPopover([vaultInput()]);
+    click(buttonNamed(popup, "Add credential"));
+    type(popup.querySelector<HTMLInputElement>('input[name="value"]'), "k");
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      Response.json({
+        status: "valid",
+        message: "42 models available",
+        account_hint: null,
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      await React.act(async () => buttonNamed(popup, "Test key")?.click());
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/v1/me/credentials/verify",
+        expect.objectContaining({
+          body: expect.stringContaining('"provider_kind":"openai_compatible"'),
+        }),
+      );
+      expect(
+        popup.querySelector('[data-credential-callout="success"]')?.textContent,
+      ).toBe("Verified · 42 models available");
+      // Renaming keeps the result; a new key clears it.
+      type(popup.querySelector<HTMLInputElement>('input[name="label"]'), "A");
+      expect(popup.querySelector("[data-credential-callout]")).not.toBeNull();
+      type(popup.querySelector<HTMLInputElement>('input[name="value"]'), "k2");
+      expect(popup.querySelector("[data-credential-callout]")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("marks the header key red for a refused or missing key", () => {
+    const invalid = mount(askModelSpec, {}, {}, [
+      vaultInput({ effective_verification_status: "invalid" }),
+    ]);
+    expect(
+      invalid.querySelector('[data-credentials-trigger="error"]'),
+    ).not.toBeNull();
+    const missing = mount(askModelSpec, {}, {}, [
+      vaultInput({ shared_credential_missing: true }),
+    ]);
+    expect(
+      missing.querySelector('[data-credentials-trigger="error"]'),
+    ).not.toBeNull();
+    const unreachable = mount(askModelSpec, {}, {}, [
+      vaultInput({ effective_verification_status: "unreachable" }),
+    ]);
+    expect(
+      unreachable.querySelector('[data-credentials-trigger="needed"]'),
+    ).not.toBeNull();
+    const unset = mount(askModelSpec, {}, {}, [
+      vaultInput({
+        configured: false,
+        effective_source: "none",
+        effective_verification_status: null,
+      }),
+    ]);
+    expect(
+      unset.querySelector('[data-credentials-trigger="needed"]'),
+    ).not.toBeNull();
   });
 
   it("opens from the header key and lists each key with its status", () => {
