@@ -365,8 +365,16 @@ const FIELD_KINDS: Record<ConfigControlKind, CellConfigFieldKind> = {
   select: "select",
   checkbox: "toggle",
   textarea: "multiline",
+  slider: "number",
+  color: "text",
+  segmented: "select",
+  switch: "toggle",
   "number-tuple": "text",
   "string-list": "multiline",
+  "primitive-list": "multiline",
+  object: "multiline",
+  "discriminated-union": "multiline",
+  "object-list": "multiline",
   secret: "text",
 };
 
@@ -383,7 +391,7 @@ function configField(
     typeof saved === "number" ||
     typeof saved === "boolean"
       ? saved
-      : Array.isArray(saved)
+      : saved !== null && typeof saved === "object"
         ? JSON.stringify(saved)
         : fallback;
   return {
@@ -393,7 +401,7 @@ function configField(
     value,
     options: field.enumValues?.map((option) => ({
       value: String(option),
-      label: String(option),
+      label: field.enumLabels?.[String(option)] ?? String(option),
     })),
     span: footprint.columns >= 6 ? 2 : 1,
     // A switch carries its label beside it, so it never needs a label row.
