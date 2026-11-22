@@ -26,8 +26,16 @@ export type ConfigControlKind =
   | "select"
   | "checkbox"
   | "textarea"
+  | "slider"
+  | "color"
+  | "segmented"
+  | "switch"
   | "number-tuple"
   | "string-list"
+  | "primitive-list"
+  | "object"
+  | "discriminated-union"
+  | "object-list"
   | "secret";
 
 /** Half of the standard node so two short fields pair on one shelf. */
@@ -58,6 +66,10 @@ const FOOTPRINTS: Record<ConfigControlKind, FieldFootprint> = {
   number: { columns: HALF_WIDTH_CELLS, rows: 1, growX: true },
   select: { columns: HALF_WIDTH_CELLS, rows: 1, growX: true },
   checkbox: { columns: HALF_WIDTH_CELLS, rows: 1, growX: true },
+  slider: { columns: HALF_WIDTH_CELLS, rows: 1, growX: true },
+  color: { columns: HALF_WIDTH_CELLS, rows: 1, growX: true },
+  switch: { columns: HALF_WIDTH_CELLS, rows: 1, growX: true },
+  segmented: { columns: STANDARD_NODE_WIDTH_CELLS, rows: 1, growX: true },
   textarea: {
     columns: STANDARD_NODE_WIDTH_CELLS,
     rows: 2,
@@ -67,12 +79,43 @@ const FOOTPRINTS: Record<ConfigControlKind, FieldFootprint> = {
   // Base brick holds one row of tuple inputs; extra pairs are added per field.
   "number-tuple": { columns: STANDARD_NODE_WIDTH_CELLS, rows: 1, growX: true },
   "string-list": { columns: STANDARD_NODE_WIDTH_CELLS, rows: 2, growX: true },
+  "primitive-list": {
+    columns: STANDARD_NODE_WIDTH_CELLS,
+    rows: 1,
+    growX: true,
+  },
+  object: { columns: STANDARD_NODE_WIDTH_CELLS, rows: 2, growX: true },
+  "discriminated-union": {
+    columns: STANDARD_NODE_WIDTH_CELLS,
+    rows: 2,
+    growX: true,
+  },
+  "object-list": { columns: STANDARD_NODE_WIDTH_CELLS, rows: 2, growX: true },
   secret: { columns: STANDARD_NODE_WIDTH_CELLS, rows: 2, growX: true },
 };
 
 export function configControlKind(field: SchemaField): ConfigControlKind {
-  if (field.type === "number-tuple") return "number-tuple";
-  if (field.type === "string-list") return "string-list";
+  switch (field.type) {
+    case "number-tuple":
+    case "string-list":
+    case "primitive-list":
+    case "object":
+    case "discriminated-union":
+    case "object-list":
+      return field.type;
+  }
+  switch (field.widget) {
+    case "color":
+    case "segmented":
+    case "switch":
+    case "textarea":
+      return field.widget;
+    case "slider":
+      if (Number.isFinite(field.minimum) && Number.isFinite(field.maximum)) {
+        return field.widget;
+      }
+      break;
+  }
   if (field.type === "boolean") return "checkbox";
   if (field.enumValues?.length) return "select";
   if (field.format === "textarea") return "textarea";

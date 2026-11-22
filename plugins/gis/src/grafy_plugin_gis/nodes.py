@@ -10,6 +10,7 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
+from grafy_core.config_ui import field_ui
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import validated_public_destination
 from grafy_core.documents import GeoJsonFile, JsonFile, TiffFile
@@ -660,10 +661,16 @@ class ImportWfsNode(Node[WfsImportConfig, WfsImportInput, WfsImportOutput]):
 
 class _CommonLayerConfig(NodeConfig):
     title: StrictStr = Field(min_length=1, max_length=1_024)
-    visible: bool = True
-    opacity: float = Field(default=1.0, ge=0.0, le=1.0)
-    min_zoom: StrictInt = Field(default=0, ge=0, le=24)
-    max_zoom: StrictInt = Field(default=22, ge=0, le=24)
+    visible: bool = Field(default=True, json_schema_extra=field_ui(widget="switch"))
+    opacity: float = Field(
+        default=1.0, ge=0.0, le=1.0, json_schema_extra=field_ui(widget="slider")
+    )
+    min_zoom: StrictInt = Field(
+        default=0, ge=0, le=24, json_schema_extra=field_ui(advanced=True)
+    )
+    max_zoom: StrictInt = Field(
+        default=22, ge=0, le=24, json_schema_extra=field_ui(advanced=True)
+    )
 
     @field_validator("title")
     @classmethod
@@ -674,7 +681,13 @@ class _CommonLayerConfig(NodeConfig):
 
 
 class VectorLayerConfig(_CommonLayerConfig):
-    style: GeoFeatureStyle = Field(default_factory=GeoVectorStyle)
+    style: GeoFeatureStyle = Field(
+        default_factory=GeoVectorStyle,
+        json_schema_extra=field_ui(
+            widget="segmented",
+            enum_labels={"vector": "Uniform", "categorized_points": "Categories"},
+        ),
+    )
 
 
 class VectorLayerInput(NodeInput):

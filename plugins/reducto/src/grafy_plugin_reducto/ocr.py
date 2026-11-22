@@ -11,6 +11,7 @@ from reducto.types.shared_params.page_range import PageRange
 
 from grafy_core.artifact_contracts import MarkdownValue
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.config_ui import field_ui
 from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressRejectedError, PinnedPublicAddressTransport
@@ -82,30 +83,35 @@ class ReductoOcrConfig(NodeConfig):
             "Reducto Parse model. Always sent, so a change to the provider's default "
             "cannot move existing graphs. r-1-mini does not accept spreadsheets."
         ),
+        json_schema_extra=field_ui(
+            enum_labels={"r-1": "Standard", "r-1-mini": "Faster (no spreadsheets)"}
+        ),
     )
     page_start: int | None = Field(
         title="First page",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(advanced=True),
         default=None,
         ge=1,
         description="First page to process, 1-indexed. Empty processes from page 1.",
     )
     page_end: int | None = Field(
         title="Last page",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(advanced=True),
         default=None,
         ge=1,
         description="Last page to process, 1-indexed. Empty processes to the end.",
     )
     table_format: Literal["md", "html"] = Field(
         title="Table format",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(
+            advanced=True, enum_labels={"md": "Markdown", "html": "HTML"}
+        ),
         default="md",
         description="Render tables as Markdown, or HTML for tables with merged cells.",
     )
     timeout_s: int = Field(
         title="Time limit (seconds)",
-        json_schema_extra={"x-grafy-advanced": True},
+        json_schema_extra=field_ui(advanced=True),
         default=300,
         ge=10,
         le=900,

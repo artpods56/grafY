@@ -14,6 +14,7 @@ from pydantic import (
 )
 
 from grafy_core.artifacts import JsonObject, NodeConfig, NodeInput, NodeOutput
+from grafy_core.config_ui import field_ui, when_port_connected
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.nodes import (
     Node,
@@ -47,6 +48,7 @@ class OpenAICompatibleConfig(NodeConfig):
         default="https://api.openai.com/v1",
         min_length=1,
         description="OpenAI-compatible API base URL, including its version path.",
+        json_schema_extra=field_ui(advanced=True),
     )
     model: StrictStr = Field(
         default="gpt-4.1-mini",
@@ -58,18 +60,21 @@ class OpenAICompatibleConfig(NodeConfig):
         ge=0.0,
         le=2.0,
         description="Sampling temperature passed to the provider.",
+        json_schema_extra=field_ui(advanced=True, widget="slider"),
     )
     max_completion_tokens: int = Field(
         default=2_048,
         ge=1,
         le=1_000_000,
         description="Maximum number of generated tokens.",
+        json_schema_extra=field_ui(advanced=True),
     )
     timeout_ms: int = Field(
         default=120_000,
         ge=1_000,
         le=900_000,
         description="Maximum provider request time in milliseconds.",
+        json_schema_extra=field_ui(advanced=True),
     )
     max_retries: int = Field(
         default=0,
@@ -79,6 +84,7 @@ class OpenAICompatibleConfig(NodeConfig):
             "Maximum SDK retries after a failed provider request. Keep at zero "
             "when duplicate provider calls are unacceptable."
         ),
+        json_schema_extra=field_ui(advanced=True),
     )
     schema_name: StrictStr = Field(
         default="structured_response",
@@ -86,10 +92,14 @@ class OpenAICompatibleConfig(NodeConfig):
         max_length=64,
         pattern=r"^[a-zA-Z0-9_-]+$",
         description="Provider-facing name used when a JSON Schema is connected.",
+        json_schema_extra=field_ui(visible_when=when_port_connected("json_schema")),
     )
     strict: bool = Field(
         default=True,
         description="Whether the provider must enforce a connected JSON Schema.",
+        json_schema_extra=field_ui(
+            widget="switch", visible_when=when_port_connected("json_schema")
+        ),
     )
 
     @field_validator("base_url")

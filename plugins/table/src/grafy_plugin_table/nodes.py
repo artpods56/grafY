@@ -5,6 +5,7 @@ from io import BytesIO, StringIO
 from typing import Annotated, cast, final, override
 
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.config_ui import field_ui, when_port_artifact_type
 from grafy_core.documents import CsvFile, XlsxFile
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import NodeCachePolicy
@@ -189,6 +190,10 @@ class TableImportConfig(NodeConfig):
         min_length=1,
         max_length=1,
         description="CSV delimiter. Leave empty to detect it from the file.",
+        json_schema_extra=field_ui(
+            advanced=True,
+            visible_when=when_port_artifact_type("file", not_in=("file.xlsx@1",)),
+        ),
     )
     header_row: StrictInt = Field(
         default=1,
@@ -200,8 +205,13 @@ class TableImportConfig(NodeConfig):
         min_length=1,
         max_length=255,
         description="XLSX worksheet name. Leave empty to use the active sheet.",
+        json_schema_extra=field_ui(
+            visible_when=when_port_artifact_type("file", not_in=("file.csv@1",))
+        ),
     )
-    skip_empty_rows: StrictBool = True
+    skip_empty_rows: StrictBool = Field(
+        default=True, json_schema_extra=field_ui(advanced=True, widget="switch")
+    )
 
     @field_validator("sheet_name")
     @classmethod

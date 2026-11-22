@@ -8,6 +8,7 @@ from typing import Annotated, Literal, final, override
 from pydantic import Field, StringConstraints
 
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.config_ui import field_ui, when_any, when_field_truthy
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
@@ -213,42 +214,59 @@ class MatchPlacesConfig(NodeConfig):
     reference_scope_column: ColumnId | None = Field(
         default=None,
         title="Optional reference scope column ID (e.g. expected sheets)",
+        json_schema_extra=field_ui(advanced=True),
     )
     candidate_scope_column: ColumnId | None = Field(
         default=None,
         title="Optional candidate scope column ID (e.g. source_tiff)",
+        json_schema_extra=field_ui(advanced=True),
     )
     scope_boost: float = Field(
         default=0.10,
         ge=0.0,
         le=0.5,
         title="Ranking boost when candidate falls in expected scope",
+        json_schema_extra=field_ui(
+            widget="slider",
+            visible_when=when_any(
+                when_field_truthy("reference_scope_column"),
+                when_field_truthy("candidate_scope_column"),
+            ),
+        ),
     )
     min_score: float = Field(
         default=0.68,
         ge=0.0,
         le=1.0,
         title="Minimum score for a candidate match",
+        json_schema_extra=field_ui(widget="slider"),
     )
     strong_score: float = Field(
         default=0.80,
         ge=0.0,
         le=1.0,
         title="Minimum score for a strong match",
+        json_schema_extra=field_ui(widget="slider"),
     )
     candidate_prefix: Annotated[
         str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
     ] = Field(
         default="ocr_",
         title="Prefix for joined candidate columns",
+        json_schema_extra=field_ui(advanced=True),
     )
     include_unmatched: bool = Field(
         default=True,
         title="Keep unmatched reference rows",
+        json_schema_extra=field_ui(advanced=True),
     )
     sort_by: Literal["input", "score_desc"] = Field(
         default="input",
         title="Output row ordering",
+        json_schema_extra=field_ui(
+            advanced=True,
+            enum_labels={"input": "Reference order", "score_desc": "Best match first"},
+        ),
     )
 
 

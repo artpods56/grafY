@@ -3,14 +3,13 @@
 import * as React from "react";
 import { useUpdateNodeInternals } from "@xyflow/react";
 import * as stylex from "@stylexjs/stylex";
-import { RotateCcw } from "lucide-react";
+import { ChevronRight, RotateCcw } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { Button, IconButton } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Notice } from "@/components/ui/notice";
 
-import { nodeSecretDependencyRevision } from "../../node-secrets";
 import { resolvedNodeWidth, type WorkflowNodeLayout } from "../../node-layout";
 import {
   declaredArtifactTypeVariables,
@@ -24,14 +23,21 @@ import {
 } from "../../artifact-type-label";
 import { useArtifactTypeCatalog } from "../../use-artifact-type-catalog";
 import { GRID_CELL_SIZE_DEFAULT, spanFromLength } from "../../grid-layout";
-import { validateConfig } from "../../config-schema";
+import {
+  schemaFields,
+  validateConfig,
+  visibleSchemaFields,
+  type ConfigValidationIssue,
+  type ConnectedInputPortMap,
+  type SchemaField,
+} from "../../config-schema";
 import { configBoardColumns, packFieldFootprints } from "../field-footprints";
 
 import {
   ConfigField,
-  SecretInputField,
   configBricks,
   configFieldLabelIsRedundant,
+  type ConfigBrick,
 } from "./config-fields";
 import { ANY_TYPE_LABEL } from "./ports";
 
@@ -98,6 +104,58 @@ const s = stylex.create({
     flexDirection: "column",
     paddingBottom: "8px",
   },
+  /** A named group: one quiet header row, its bricks on the same lattice. */
+  group: {
+    minWidth: 0,
+    display: "grid",
+    gap: "4px",
+  },
+  groupToggle: {
+    width: "100%",
+    minWidth: 0,
+    justifyContent: "flex-start",
+    gap: "5px",
+    paddingBlock: "3px",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+    borderRadius: 0,
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 600,
+    textAlign: "left",
+    textDecoration: {
+      default: "none",
+      ":hover:not(:disabled)": "none",
+      ":focus-visible": "none",
+    },
+  },
+  groupTitle: {
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  groupCount: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+    fontSize: "10px",
+    fontWeight: 400,
+  },
+  groupIssues: {
+    flexShrink: 0,
+    marginLeft: "auto",
+    color: tokens.colorDanger,
+    fontSize: "10px",
+    fontWeight: 500,
+  },
+  chevron: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+    transitionDuration: "120ms",
+    transitionProperty: "transform",
+  },
+  chevronOpen: { transform: "rotate(90deg)" },
 });
 
 export function GenericArtifactTypeState({
@@ -203,12 +261,168 @@ export function GenericArtifactTypeState({
   );
 }
 
+type ConfigSegment =
+  | { kind: "board"; key: string; fields: SchemaField[] }
+  | { kind: "group"; key: string; name: string; fields: SchemaField[] };
+
+/**
+ * Ungrouped fields stay in schema order on the lattice; a named group gathers
+ * its fields where its first one stands, so the order a schema reads in is
+ * the order the card reads in.
+ */
+function configSegments(fields: readonly SchemaField[]): ConfigSegment[] {
+  const segments: ConfigSegment[] = [];
+  const groups = new Map<string, SchemaField[]>();
+  for (const field of fields) {
+    if (field.group) {
+      const members = groups.get(field.group);
+      if (members) {
+        members.push(field);
+      } else {
+        const created = [field];
+        groups.set(field.group, created);
+        segments.push({
+          kind: "group",
+          key: `group:${field.group}`,
+          name: field.group,
+          fields: created,
+        });
+      }
+      continue;
+    }
+    const last = segments.at(-1);
+    if (last?.kind === "board") {
+      last.fields.push(field);
+    } else {
+      segments.push({
+        kind: "board",
+        key: `board:${field.name}`,
+        fields: [field],
+      });
+    }
+  }
+  return segments;
+}
+
+/** An advanced field folds away only while it still holds its default. */
+function isQuietAdvanced(
+  field: SchemaField,
+  value: unknown,
+  invalidFields: ReadonlySet<string | null>,
+): boolean {
+  if (!field.advanced || invalidFields.has(field.name)) return false;
+  return (
+    value === undefined ||
+    JSON.stringify(value) === JSON.stringify(field.defaultValue)
+  );
+}
+
+/** A group opens by default when it holds something to fix or to set. */
+function groupStartsOpen(
+  fields: readonly SchemaField[],
+  invalidFields: ReadonlySet<string | null>,
+): boolean {
+  return fields.some(
+    (field) => invalidFields.has(field.name) || !field.advanced,
+  );
+}
+
+function ConfigBoard({
+  id,
+  data,
+  bricks,
+  issues,
+  columns,
+  cellSize,
+  minRows,
+  labelHidden,
+  layout,
+  onLayoutDraft,
+  onLayoutCommit,
+  connectedPorts,
+  onStructureChange,
+}: {
+  id: string;
+  data: WorkflowNodeData;
+  bricks: readonly ConfigBrick[];
+  issues: readonly ConfigValidationIssue[];
+  columns: number;
+  cellSize: number;
+  minRows: number;
+  labelHidden: boolean;
+  layout: WorkflowNodeLayout | null;
+  onLayoutDraft: (layout: WorkflowNodeLayout | null) => void;
+  onLayoutCommit: (layout: WorkflowNodeLayout | null) => void;
+  connectedPorts?: ConnectedInputPortMap;
+  onStructureChange: () => void;
+}) {
+  const board = packFieldFootprints(
+    bricks.map((brick) => brick.footprint),
+    { columns, minRows },
+  );
+  return (
+    <div
+      data-testid="config-board"
+      {...stylex.props(s.configBoard)}
+      style={{
+        gridTemplateColumns: `repeat(${board.columns}, minmax(0, 1fr))`,
+        gridTemplateRows: `repeat(${board.rows}, minmax(${cellSize}px, auto))`,
+      }}
+    >
+      {board.placements.map((placement) => {
+        const brick = bricks[placement.index];
+        if (!brick) return null;
+        const { field } = brick;
+        return (
+          <div
+            key={`field:${field.name}`}
+            data-testid="config-brick"
+            data-config-field={field.name}
+            {...stylex.props(s.configBrick)}
+            style={{
+              gridColumn: `${placement.col + 1} / span ${placement.w}`,
+              gridRow: `${placement.row + 1} / span ${placement.h}`,
+            }}
+          >
+            <ConfigField
+              field={field}
+              value={data.config[field.name]}
+              fillHeight={brick.footprint.growY === true}
+              labelHidden={labelHidden}
+              layout={layout}
+              onLayoutDraft={onLayoutDraft}
+              onLayoutCommit={onLayoutCommit}
+              connectedPorts={connectedPorts}
+              onStructureChange={onStructureChange}
+              onChange={(value) => data.onConfigChange?.(id, field.name, value)}
+            />
+            {issues
+              .filter((issue) => issue.fieldName === field.name)
+              .map((issue, index) => (
+                <Notice
+                  key={`${field.name}-config-issue-${index}`}
+                  tone="danger"
+                >
+                  {issue.message}
+                </Notice>
+              ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * Config inputs are packed onto the body lattice in schema order. Widening the
  * node stretches the existing bricks first (more room for labels/descriptions);
  * packing only adds columns once another half-brick can stay comfortably wide.
  * A saved body height is only a request — the board grows whenever the ordered
  * bricks need more rows.
+ *
+ * Which fields show is a function of the config and the wires: a field hidden
+ * by its `visibleWhen` keeps its saved value untouched, so turning the
+ * condition back on brings back exactly what was there.
  */
 export function GenericBody({
   id,
@@ -217,6 +431,7 @@ export function GenericBody({
   layout,
   onLayoutDraft,
   onLayoutCommit,
+  connectedPorts,
 }: {
   id: string;
   data: WorkflowNodeData;
@@ -224,122 +439,148 @@ export function GenericBody({
   layout: WorkflowNodeLayout | null;
   onLayoutDraft: (layout: WorkflowNodeLayout | null) => void;
   onLayoutCommit: (layout: WorkflowNodeLayout | null) => void;
+  connectedPorts?: ConnectedInputPortMap;
 }) {
   const grid = useOptionalCanvasGridSettings();
   const [optionsOpen, setOptionsOpen] = React.useState(false);
-  const updateNodeInternals = useUpdateNodeInternals();
-  const allBricks = configBricks(data);
-  const issues = validateConfig(data.spec.config_schema, data.config);
-  const hiddenAdvanced = allBricks.filter((brick) => {
-    if (brick.kind !== "field" || !brick.field.advanced) return false;
-    if (issues.some((issue) => issue.fieldName === brick.field.name))
-      return false;
-    const value = data.config[brick.field.name];
-    return (
-      value === undefined ||
-      JSON.stringify(value) === JSON.stringify(brick.field.defaultValue)
-    );
-  });
-  const bricks = optionsOpen
-    ? allBricks
-    : allBricks.filter((brick) => !hiddenAdvanced.includes(brick));
-  if (!allBricks.length && !issues.length) return null;
-  const displayedFields = new Set(
-    bricks.flatMap((brick) =>
-      brick.kind === "field" ? [brick.field.name] : [],
-    ),
+  const [groupOpen, setGroupOpen] = React.useState<
+    Readonly<Record<string, boolean>>
+  >({});
+  // Composite fields fold and unfold on their own; each fold is a new height.
+  const [structureRevision, bumpStructure] = React.useReducer(
+    (revision: number) => revision + 1,
+    0,
   );
+  const updateNodeInternals = useUpdateNodeInternals();
+  const allFields = schemaFields(data.spec.config_schema);
+  const issues = validateConfig(data.spec.config_schema, data.config);
+  const visibleFields = visibleSchemaFields(
+    allFields,
+    { config: data.config, connectedPorts },
+    issues,
+  );
+  const invalidFields = new Set(issues.map((issue) => issue.fieldName));
+  const hiddenAdvanced = visibleFields.filter((field) =>
+    isQuietAdvanced(field, data.config[field.name], invalidFields),
+  );
+  const shownFields = optionsOpen
+    ? visibleFields
+    : visibleFields.filter((field) => !hiddenAdvanced.includes(field));
+  const segments = configSegments(shownFields);
+  const isGroupOpen = (segment: ConfigSegment) =>
+    segment.kind === "board" ||
+    (groupOpen[segment.name] ?? groupStartsOpen(segment.fields, invalidFields));
+  const layoutSignature = [
+    shownFields.map((field) => field.name).join("|"),
+    segments
+      .filter((segment) => segment.kind === "group" && isGroupOpen(segment))
+      .map((segment) => segment.key)
+      .join("|"),
+    optionsOpen,
+    structureRevision,
+  ].join("#");
+
+  React.useLayoutEffect(() => {
+    updateNodeInternals(id);
+  }, [id, layoutSignature, updateNodeInternals]);
+
+  if (!allFields.length && !issues.length) return null;
+  const displayedFields = new Set(shownFields.map((field) => field.name));
   const summaryIssues = issues.filter(
     (issue) =>
       issue.fieldName === null || !displayedFields.has(issue.fieldName),
   );
 
   const cellSize = grid?.settings.cellSize ?? GRID_CELL_SIZE_DEFAULT;
-  const labelHidden = configFieldLabelIsRedundant(data.spec.title, bricks);
-  const board = packFieldFootprints(
-    bricks.map((brick) => brick.footprint),
-    {
-      columns: configBoardColumns(resolvedNodeWidth(layout), cellSize),
-      minRows: bodyHeight === null ? 0 : spanFromLength(bodyHeight, cellSize),
-    },
-  );
+  const columns = configBoardColumns(resolvedNodeWidth(layout), cellSize);
+  const onlyBoard = segments.length === 1 && segments[0]?.kind === "board";
+  // A saved body height belongs to the one board a plain node has.
+  const minRows =
+    bodyHeight === null || !onlyBoard
+      ? 0
+      : spanFromLength(bodyHeight, cellSize);
+  const labelHidden =
+    onlyBoard &&
+    configFieldLabelIsRedundant(data.spec.title, configBricks(shownFields));
+  const boardProps = {
+    id,
+    data,
+    issues,
+    columns,
+    cellSize,
+    labelHidden,
+    layout,
+    onLayoutDraft,
+    onLayoutCommit,
+    connectedPorts,
+    onStructureChange: bumpStructure,
+  };
 
   return (
     <div {...stylex.props(s.body)}>
-      {bricks.length ? (
-        <div
-          data-testid="config-board"
-          {...stylex.props(s.configBoard)}
-          style={{
-            gridTemplateColumns: `repeat(${board.columns}, minmax(0, 1fr))`,
-            gridTemplateRows: `repeat(${board.rows}, minmax(${cellSize}px, auto))`,
-          }}
-        >
-          {board.placements.map((placement) => {
-            const brick = bricks[placement.index];
-            if (!brick) return null;
-            const fillsCell = brick.footprint.growY === true;
-            return (
-              <div
-                key={
-                  brick.kind === "field"
-                    ? `field:${brick.field.name}`
-                    : `secret:${brick.input.name}`
-                }
-                data-testid="config-brick"
-                {...stylex.props(s.configBrick)}
-                style={{
-                  gridColumn: `${placement.col + 1} / span ${placement.w}`,
-                  gridRow: `${placement.row + 1} / span ${placement.h}`,
-                }}
-              >
-                {brick.kind === "field" ? (
-                  <>
-                    <ConfigField
-                      field={brick.field}
-                      value={data.config[brick.field.name]}
-                      fillHeight={fillsCell}
-                      labelHidden={labelHidden}
-                      layout={layout}
-                      onLayoutDraft={onLayoutDraft}
-                      onLayoutCommit={onLayoutCommit}
-                      onChange={(value) =>
-                        data.onConfigChange?.(id, brick.field.name, value)
-                      }
-                    />
-                    {issues
-                      .filter((issue) => issue.fieldName === brick.field.name)
-                      .map((issue, index) => (
-                        <Notice
-                          key={`${brick.field.name}-config-issue-${index}`}
-                          tone="danger"
-                        >
-                          {issue.message}
-                        </Notice>
-                      ))}
-                  </>
-                ) : (
-                  <SecretInputField
-                    key={`${data.secretInputScope}:${brick.input.name}:${nodeSecretDependencyRevision(brick.input, data.config)}`}
-                    id={id}
-                    data={data}
-                    input={brick.input}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      {segments.map((segment) => {
+        const bricks = configBricks(segment.fields);
+        if (segment.kind === "board") {
+          return (
+            <ConfigBoard
+              key={segment.key}
+              bricks={bricks}
+              minRows={minRows}
+              {...boardProps}
+            />
+          );
+        }
+        const open = isGroupOpen(segment);
+        const groupIssues = issues.filter((issue) =>
+          segment.fields.some((field) => field.name === issue.fieldName),
+        ).length;
+        return (
+          <section
+            key={segment.key}
+            aria-label={segment.name}
+            data-config-group={segment.name}
+            {...stylex.props(s.group)}
+          >
+            <Button
+              variant="plain"
+              size="text"
+              aria-expanded={open}
+              className="nodrag nopan nowheel"
+              xstyle={s.groupToggle}
+              onClick={() =>
+                setGroupOpen((current) => ({
+                  ...current,
+                  [segment.name]: !open,
+                }))
+              }
+            >
+              <ChevronRight
+                size={12}
+                aria-hidden="true"
+                {...stylex.props(s.chevron, open ? s.chevronOpen : null)}
+              />
+              <span {...stylex.props(s.groupTitle)}>{segment.name}</span>
+              <span {...stylex.props(s.groupCount)}>
+                {segment.fields.length}
+              </span>
+              {groupIssues ? (
+                <span {...stylex.props(s.groupIssues)}>
+                  {groupIssues === 1 ? "1 issue" : `${groupIssues} issues`}
+                </span>
+              ) : null}
+            </Button>
+            {open ? (
+              <ConfigBoard bricks={bricks} minRows={0} {...boardProps} />
+            ) : null}
+          </section>
+        );
+      })}
       {hiddenAdvanced.length || optionsOpen ? (
         <Button
           size="xs"
           variant="ghost"
-          className="nodrag nowheel"
-          onClick={() => {
-            setOptionsOpen((open) => !open);
-            requestAnimationFrame(() => updateNodeInternals(id));
-          }}
+          className="nodrag nopan nowheel"
+          onClick={() => setOptionsOpen((open) => !open)}
           aria-expanded={optionsOpen}
         >
           {optionsOpen ? "Hide options" : `Options (${hiddenAdvanced.length})`}

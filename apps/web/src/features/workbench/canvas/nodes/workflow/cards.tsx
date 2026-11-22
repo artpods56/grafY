@@ -18,8 +18,12 @@ import { Notice } from "@/components/ui/notice";
 import { CanvasNodeHeader } from "../CanvasNodeChrome";
 import type { CanvasNode } from "../../artifact-viewer";
 import { artifactTypeKey } from "../../artifact-type-key";
-import { schemaFields, validateConfig } from "../../config-schema";
-import { nodeSecretInputs } from "../../node-secrets";
+import {
+  schemaFields,
+  validateConfig,
+  visibleSchemaFields,
+} from "../../config-schema";
+import { connectedInputPortsForNode } from "../../connected-inputs";
 import { notProducedInputReasons } from "../../provider-outputs";
 import {
   SCHEMA_BUILDER_INPUT_PORT,
@@ -31,7 +35,6 @@ import {
   type WorkflowNodeLayout,
 } from "../../node-layout";
 import {
-  GIS_VECTOR_LAYER_OPERATOR_ID,
   WORKFLOW_NODE_TYPE,
   isServiceProviderNode,
   portHasInstancePlugs,
@@ -42,7 +45,6 @@ import { useOptionalCanvasGridSettings } from "../../canvas-grid-settings";
 import { CanvasNodeShell, useCanvasNodeShell } from "../CanvasNodeShell";
 import { LayoutResizeHandle } from "../LayoutResizeHandle";
 import { NodeExecutionAppendix } from "../NodeExecutionAppendix";
-import { VectorLayerStyleBody } from "../VectorLayerStyleBody";
 
 import { GenericArtifactTypeState, GenericBody } from "./generic-body";
 import { InstancePlugPort } from "./instance-plug";
@@ -289,12 +291,33 @@ export function SupportedWorkflowNodeCard({
 }: NodeProps<WorkflowNode>) {
   const fields = schemaFields(data.spec.config_schema);
   const configIssues = validateConfig(data.spec.config_schema, data.config);
-  const secretInputs = nodeSecretInputs(data.spec);
   const isSchemaBuilder = data.spec.operator_id === SCHEMA_BUILDER_OPERATOR_ID;
-  const isVectorLayer = data.spec.operator_id === GIS_VECTOR_LAYER_OPERATOR_ID;
   const isProvider = isServiceProviderNode(data.spec);
   const edges = useEdges<WorkflowEdge>();
   const nodes = useNodes<CanvasNode>();
+  // Workbench resolves delivered types through conversions and saved origins;
+  // a card drawn without it still knows which of its ports have a wire.
+  const derivedConnectedPorts = data.connectedInputPorts;
+  const connectedPorts = React.useMemo(
+    () =>
+      derivedConnectedPorts ??
+      connectedInputPortsForNode({
+        nodeId: id,
+        spec: data.spec,
+        edges,
+        nodes,
+      }),
+    [data.spec, derivedConnectedPorts, edges, id, nodes],
+  );
+  // A field shown or hidden by a remote edit or a new wire moves everything
+  // under it, so the visible set is part of what the handles are measured on.
+  const visibleFieldsRevision = visibleSchemaFields(
+    fields,
+    { config: data.config, connectedPorts },
+    configIssues,
+  )
+    .map((field) => field.name)
+    .join("|");
   const notProducedReasons = React.useMemo(
     () =>
       isProvider
@@ -312,8 +335,8 @@ export function SupportedWorkflowNodeCard({
     }
     return true;
   });
-  const hasConfig =
-    fields.length > 0 || secretInputs.length > 0 || configIssues.length > 0;
+  // Write-only keys live in the header's credentials popover, not the body.
+  const hasConfig = fields.length > 0 || configIssues.length > 0;
   const hasExecutionError = Boolean(data.execution.error);
   const hasProgress = Boolean(data.progress?.entries.length);
   const hasMaterialization = (data.run?.outputs ?? []).some(
@@ -388,9 +411,9 @@ export function SupportedWorkflowNodeCard({
     data.spec.inputs.length,
     data.spec.outputs.length,
     fields.length,
+    visibleFieldsRevision,
     fillMinHeight,
     gridWidth,
-    secretInputs.length,
     hasExecutionError,
     hasMaterialization,
     hasProgress,
@@ -485,18 +508,6 @@ export function SupportedWorkflowNodeCard({
       ) : null}
       {isSchemaBuilder ? (
         <SchemaBuilderBody id={id} data={data} />
-      ) : isVectorLayer ? (
-        <>
-          <GenericBody
-            id={id}
-            data={data}
-            bodyHeight={bodyHeight}
-            layout={layout}
-            onLayoutDraft={setDraftLayout}
-            onLayoutCommit={commitLayout}
-          />
-          <VectorLayerStyleBody id={id} data={data} />
-        </>
       ) : hasConfig ? (
         <GenericBody
           id={id}
@@ -505,6 +516,7 @@ export function SupportedWorkflowNodeCard({
           layout={layout}
           onLayoutDraft={setDraftLayout}
           onLayoutCommit={commitLayout}
+          connectedPorts={connectedPorts}
         />
       ) : (
         <div {...stylex.props(s.spacer)} aria-hidden />

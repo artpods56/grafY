@@ -23,7 +23,6 @@ from pydantic import (
     AwareDatetime,
     BaseModel,
     Field,
-    JsonValue,
     SecretStr,
     TypeAdapter,
     ValidationError,
@@ -31,6 +30,7 @@ from pydantic import (
 )
 
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.config_ui import field_ui, when_field_eq
 from grafy_core.documents import TiffFile
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressRejectedError, PinnedPublicAddressTransport
@@ -96,7 +96,6 @@ _CAPABILITIES = (
 )
 _LS_TOKEN = NodeSecretInput(name="label_studio_token", title="Label Studio API token")
 _S3_SECRET = NodeSecretInput(name="s3_secret_key", title="MinIO / S3 secret access key")
-_ADVANCED: dict[str, JsonValue] = {"x-grafy-advanced": True}
 _PROJECT_TITLE = "Grafy Map OCR Triage"
 _PAGE_SIZE = 100
 _PROJECT_LOCKS: WeakValueDictionary[tuple[AbstractEventLoop, str, str], Lock] = (
@@ -109,10 +108,15 @@ def _segments(value: str) -> list[str]:
 
 
 class _LabelStudioConfig(NodeConfig):
-    label_studio_url: AnyHttpUrl = AnyHttpUrl("http://127.0.0.1:8085")
-    project_title: str = _PROJECT_TITLE
+    label_studio_url: AnyHttpUrl = Field(
+        default=AnyHttpUrl("http://127.0.0.1:8085"),
+        json_schema_extra=field_ui(group="Label Studio"),
+    )
+    project_title: str = Field(
+        default=_PROJECT_TITLE, json_schema_extra=field_ui(group="Label Studio")
+    )
     timeout_ms: int = Field(
-        default=30_000, ge=1_000, le=300_000, json_schema_extra=_ADVANCED
+        default=30_000, ge=1_000, le=300_000, json_schema_extra=field_ui(advanced=True)
     )
 
     @field_validator(
@@ -132,22 +136,54 @@ class _LabelStudioConfig(NodeConfig):
 
 class ExportLabelStudioConfig(_LabelStudioConfig):
     mode: ExportMode = _CROPS
-    s3_endpoint_url: AnyHttpUrl = AnyHttpUrl("http://127.0.0.1:9100")
-    s3_public_url: AnyHttpUrl = AnyHttpUrl("http://127.0.0.1:9100")
-    s3_bucket: str = "label-studio"
-    s3_prefix: str = "grafy-ocr"
-    s3_region: str = "us-east-1"
-    s3_access_key: str = "minioadmin"
+    s3_endpoint_url: AnyHttpUrl = Field(
+        default=AnyHttpUrl("http://127.0.0.1:9100"),
+        json_schema_extra=field_ui(group="Storage (S3 / MinIO)"),
+    )
+    s3_public_url: AnyHttpUrl = Field(
+        default=AnyHttpUrl("http://127.0.0.1:9100"),
+        json_schema_extra=field_ui(group="Storage (S3 / MinIO)"),
+    )
+    s3_bucket: str = Field(
+        default="label-studio", json_schema_extra=field_ui(group="Storage (S3 / MinIO)")
+    )
+    s3_prefix: str = Field(
+        default="grafy-ocr", json_schema_extra=field_ui(group="Storage (S3 / MinIO)")
+    )
+    s3_region: str = Field(
+        default="us-east-1", json_schema_extra=field_ui(group="Storage (S3 / MinIO)")
+    )
+    s3_access_key: str = Field(
+        default="minioadmin", json_schema_extra=field_ui(group="Storage (S3 / MinIO)")
+    )
     max_tasks: int = Field(default=200, ge=1, le=2000)
-    skip_auto_drop: bool = False
+    skip_auto_drop: bool = Field(
+        default=False,
+        json_schema_extra=field_ui(visible_when=when_field_eq("mode", _CROPS)),
+    )
     context_padding_px: int = Field(
-        default=80, ge=16, le=256, json_schema_extra=_ADVANCED
+        default=80,
+        ge=16,
+        le=256,
+        json_schema_extra=field_ui(
+            advanced=True, visible_when=when_field_eq("mode", _CROPS)
+        ),
     )
     min_crop_edge_px: int = Field(
-        default=280, ge=280, le=1000, json_schema_extra=_ADVANCED
+        default=280,
+        ge=280,
+        le=1000,
+        json_schema_extra=field_ui(
+            advanced=True, visible_when=when_field_eq("mode", _CROPS)
+        ),
     )
     tile_edge_px: int = Field(
-        default=1000, ge=256, le=2048, json_schema_extra=_ADVANCED
+        default=1000,
+        ge=256,
+        le=2048,
+        json_schema_extra=field_ui(
+            advanced=True, visible_when=when_field_eq("mode", _TILES)
+        ),
     )
 
     @field_validator("s3_bucket")

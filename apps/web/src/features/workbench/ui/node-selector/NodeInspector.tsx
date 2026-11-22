@@ -17,7 +17,11 @@ import {
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { schemaFields, type SchemaField } from "../../canvas/config-schema";
+import {
+  fieldDisplayTitle,
+  schemaFields,
+  type SchemaField,
+} from "../../canvas/config-schema";
 import { artifactTypeColor } from "../../canvas/nodes.css";
 import {
   formatArtifactTypeLabel,
@@ -439,7 +443,7 @@ function FieldList({ fields }: { fields: readonly SchemaField[] }) {
       {fields.map((field) => (
         <div key={field.name} {...stylex.props(s.fieldRow)}>
           <div {...stylex.props(s.minZero)}>
-            <div {...stylex.props(s.rowTitle)}>{field.title}</div>
+            <div {...stylex.props(s.rowTitle)}>{fieldDisplayTitle(field)}</div>
             <div {...stylex.props(s.contract)}>{field.name}</div>
           </div>
           <div {...stylex.props(s.minZero)}>
@@ -451,7 +455,15 @@ function FieldList({ fields }: { fields: readonly SchemaField[] }) {
             ) : null}
             {field.enumValues?.length ? (
               <p {...stylex.props(s.choices)}>
-                Choices: {field.enumValues.map(String).join(", ")}
+                Choices:{" "}
+                {field.enumValues
+                  .map((value) => field.enumLabels?.[String(value)] ?? value)
+                  .join(", ")}
+              </p>
+            ) : null}
+            {field.type === "discriminated-union" ? (
+              <p {...stylex.props(s.choices)}>
+                Modes: {field.branches.map((branch) => branch.label).join(", ")}
               </p>
             ) : null}
             {field.pattern ? (
@@ -477,21 +489,45 @@ function rangeLabel(
 }
 
 export function fieldConstraintLabel(field: SchemaField): string {
-  const constraints =
-    field.type === "string-list"
-      ? [
-          rangeLabel(field.minItems, field.maxItems, "items"),
-          rangeLabel(
-            field.itemMinLength,
-            field.itemMaxLength,
-            "characters per item",
-          ),
-        ]
-      : [
-          rangeLabel(field.minimum, field.maximum),
-          rangeLabel(field.minLength, field.maxLength, "characters"),
-        ];
-  return [field.required ? "required" : "optional", ...constraints]
+  let constraints: (string | null)[];
+  switch (field.type) {
+    case "string-list":
+      constraints = [
+        rangeLabel(field.minItems, field.maxItems, "items"),
+        rangeLabel(
+          field.itemMinLength,
+          field.itemMaxLength,
+          "characters per item",
+        ),
+      ];
+      break;
+    case "primitive-list":
+    case "object-list":
+      constraints = [rangeLabel(field.minItems, field.maxItems, "items")];
+      break;
+    case "object":
+      constraints = [
+        `${field.fields.length} ${field.fields.length === 1 ? "setting" : "settings"}`,
+        field.nullable ? "can be off" : null,
+      ];
+      break;
+    case "discriminated-union":
+      constraints = [`${field.branches.length} modes`];
+      break;
+    case "number-tuple":
+      constraints = [`${field.items.length} values`];
+      break;
+    default:
+      constraints = [
+        rangeLabel(field.minimum, field.maximum),
+        rangeLabel(field.minLength, field.maxLength, "characters"),
+      ];
+  }
+  return [
+    field.required ? "required" : "optional",
+    field.advanced ? "advanced" : null,
+    ...constraints,
+  ]
     .filter((part): part is string => part !== null)
     .join(" · ");
 }
