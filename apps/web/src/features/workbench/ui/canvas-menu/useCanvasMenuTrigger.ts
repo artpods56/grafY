@@ -194,7 +194,7 @@ export function useCanvasMenuTrigger(
       if (!asked || !(event.target instanceof Element)) return;
       if (wantsNativeMenu(event.target)) return;
       const focused = event.target;
-      const node = focused.closest(".react-flow__node");
+      const node = focused.closest('[data-cell-card="true"]');
       const box = (node ?? event.currentTarget).getBoundingClientRect();
       const target = node ? canvasMenuTarget(node) : { kind: "pane" as const };
       if (!target) return;

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useNodeId } from "@xyflow/react";
 
 export interface NodeMenuItem {
   id: string;
@@ -66,21 +65,6 @@ export class NodeMenuRegistry {
 
 export const NodeMenuRegistryContext =
   React.createContext<NodeMenuRegistry | null>(null);
-
-/** Files a card's menu under its node. Outside a canvas node it does nothing. */
-export function useRegisterNodeMenu(
-  info: NodeMenuInfo,
-  items: readonly NodeMenuItem[],
-): void {
-  const registry = React.useContext(NodeMenuRegistryContext);
-  const nodeId = useNodeId();
-  React.useEffect(() => {
-    if (!registry || !nodeId) return;
-    const entry = { info, items };
-    registry.set(nodeId, entry);
-    return () => registry.release(nodeId, entry);
-  }, [info, items, nodeId, registry]);
-}
 
 export function useNodeMenuEntry(
   registry: NodeMenuRegistry,

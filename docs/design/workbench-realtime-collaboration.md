@@ -56,7 +56,7 @@ One Project, one room, one command sequence, many Runs.
 3. Cursor position, remote selection, editing activity and drag previews are **ephemeral
    presence**. They never create a checkpoint and are dropped before anything else when
    a session falls behind.
-4. React Flow remains the canvas renderer, not the canonical document.
+4. CellCanvas renders cards and pipes derived from the canonical document.
 5. **Results belong to node instances.** Any number of Runs are active in a Project at
    once; the room announces `run.started`, `run.finished` and `instances.changed`, and
    REST stays the source of truth for what they mean.
@@ -489,7 +489,7 @@ Presence explains collaborators without becoming a second document.
   ([`grafy_shared/config/realtime.py:16-27`](../../libs/shared/src/grafy_shared/config/realtime.py)).
   An out-of-order or rate-violating update is dropped, not rejected. TTL clears presence,
   never room membership.
-- Remote selection is an annotation: it never changes the local React Flow selection or
+- Remote selection is an annotation: it never changes the local canvas selection or
   keyboard target. Editing activity is a soft claim, not a lock; the command's own
   conflict policy decides who wins. Dragging publishes transient positions and submits
   one durable `move_nodes` on release; a rejected move leaves the confirmed document
@@ -499,20 +499,17 @@ Presence explains collaborators without becoming a second document.
 
 ## Where it lives in the web client
 
-The durable document no longer wears React Flow's shape, which is the part of
-[ADR 0001](../adr/0001-workbench-feature-architecture.md)'s recorded debt this rework
-cleared: the renderer types and the document are now on opposite sides of one adapter.
-The `model -> canvas` edge the ADR allows still exists elsewhere (`model/artifact-drop.ts`
-imports canvas helpers), so the ADR's wider extraction stays open.
+The authored document and the rendered scene have separate types. Model modules
+can still import shared canvas contracts and helpers, as described in
+[ADR 0001](../adr/0001-workbench-feature-architecture.md).
 
 - [`model/graph-document.ts`](../../apps/web/src/features/workbench/model/graph-document.ts)
   owns the graph document as a value: pure application of commands
   (`applyGraphCommandNormalized`), the authored document a save serializes to, and the
   nodes an execution change invalidates. It imports no renderer type.
-- [`canvas/graph-document-adapter.ts`](../../apps/web/src/features/workbench/canvas/graph-document-adapter.ts)
-  turns React Flow node and edge changes and connection attempts into commands, and adds
-  run, execution and progress overlays at render time. An overlay is never written back
-  to the document except as a user gesture that becomes a command.
+- [`cell-canvas/cell-document-adapter.ts`](../../apps/web/src/features/workbench/cell-canvas/cell-document-adapter.ts)
+  derives the CellCanvas scene from the authored document and maps canvas moves,
+  resizes, and removals to graph commands. Execution overlays stay in view state.
 - [`room/`](../../apps/web/src/features/workbench/room) is the collaboration seam:
   `protocol.ts` (wire types and the strict parser), `graph-room-session.ts` (socket,
   confirmed head, presence throttle, reconnect and terminal states), `command-outbox.ts`

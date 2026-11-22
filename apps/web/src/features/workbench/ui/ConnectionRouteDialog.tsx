@@ -1,7 +1,7 @@
 "use client";
 
 import * as stylex from "@stylexjs/stylex";
-import type { Connection } from "@xyflow/react";
+import type { CanvasConnection } from "../canvas/types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +29,7 @@ interface ConnectionEndpoint {
 }
 
 export interface PendingConnectionRoute {
-  connection: Connection;
+  connection: CanvasConnection;
   collectionMode: RunEdgeCollectionMode;
   candidates: ConnectionRoute[];
   source: ConnectionEndpoint;

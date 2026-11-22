@@ -23,19 +23,8 @@ import {
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-vi.mock("@xyflow/react", () => ({
-  useNodeId: () => null,
-  ViewportPortal: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="canvas-preview">{children}</div>
-  ),
-  useStore: (
-    selector: (state: { nodeLookup: Map<string, unknown> }) => unknown,
-  ) => selector({ nodeLookup: new Map() }),
-}));
-
 import {
   CellContextualNodeDiscovery,
-  ContextualNodeDiscovery,
   popupPositionBesidePreview,
   type ContextualDiscoverySession,
 } from "./ContextualNodeDiscovery";
@@ -153,7 +142,9 @@ function upstreamSessionFor(
 }
 
 async function renderDiscovery(
-  overrides: Partial<React.ComponentProps<typeof ContextualNodeDiscovery>> = {},
+  overrides: Partial<
+    React.ComponentProps<typeof CellContextualNodeDiscovery>
+  > = {},
 ) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -162,7 +153,8 @@ async function renderDiscovery(
   const registryValue = registry();
   await React.act(async () => {
     root.render(
-      <ContextualNodeDiscovery
+      <CellContextualNodeDiscovery
+        sourcePoint={null}
         session={overrides.session ?? sessionFor(registryValue)}
         registry={registryValue}
         canInsert
@@ -384,9 +376,9 @@ describe("ContextualNodeDiscovery", () => {
     const { container } = await renderDiscovery();
     const dialog = container.querySelector<HTMLElement>('[role="dialog"]');
     expect(dialog?.style.maxHeight).toContain("400px");
-    expect(container.firstElementChild?.getAttribute("data-testid")).toBe(
-      "canvas-preview",
-    );
+    expect(
+      container.querySelector('[data-cell-viewport-layer="over-cards"]'),
+    ).not.toBeNull();
 
     await React.act(async () => {
       visualHeight = 300;
@@ -461,7 +453,7 @@ describe("ContextualNodeDiscovery", () => {
       ),
     ).toHaveLength(1);
     const preview = document.querySelector(
-      '[data-testid="canvas-preview"] article',
+      '[data-cell-viewport-layer="over-cards"] article',
     );
     expect(preview).toBeTruthy();
     expect(preview?.getAttribute("aria-label")).toMatch(/text/i);
@@ -477,7 +469,9 @@ describe("ContextualNodeDiscovery", () => {
       annotate?.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     });
 
-    const preview = document.querySelector('[data-testid="canvas-preview"]');
+    const preview = document.querySelector(
+      '[data-cell-viewport-layer="over-cards"]',
+    );
     expect(preview?.textContent).toContain("Annotate text");
   });
 
@@ -514,7 +508,7 @@ describe("ContextualNodeDiscovery", () => {
     expect(onConfirm.mock.calls[0]?.[1].candidatePort.direction).toBe("output");
   });
 
-  it("renders CellContextualNodeDiscovery without a React Flow store", async () => {
+  it("renders the discovery preview in the world layer", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);

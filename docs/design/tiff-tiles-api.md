@@ -64,9 +64,9 @@ to the explicit five-minute browser-cache allowance.
 ## Canvas
 
 The direct image card hosts OpenSeadragon in pixel space. The existing MapLibre
-renderer is geographic and is unsuitable for scans; React Flow zoom transforms
-the workbench, not image pixels. OpenSeadragon supplies mature image-pyramid
-selection, mouse/touch pan and zoom, edge-tile handling and bounded tile caching.
+renderer is geographic and is unsuitable for scans. CellCanvas zoom transforms
+the workbench. OpenSeadragon controls image pixels and supplies image-pyramid
+selection, mouse and touch gestures, edge-tile handling, and bounded tile caching.
 The card first shows a thumbnail, then opens the selected page's pyramid.
 Page switches destroy the old viewer and its pending work. Controls use the
 shared UI kit. Header/ports remain canvas drag and wiring surfaces; image gestures

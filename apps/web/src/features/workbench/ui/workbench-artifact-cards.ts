@@ -27,8 +27,7 @@ import {
   type ArtifactViewerEdge,
   type ArtifactViewerNode,
 } from "../canvas/artifact-viewer";
-import type { WorkflowNode } from "../canvas/nodes/workflow/node-type";
-import type { WorkflowEdge } from "../canvas/types";
+import type { WorkflowEdge, WorkflowNode } from "../canvas/types";
 import type {
   AuthoredGraphOrigin,
   GraphCommand,

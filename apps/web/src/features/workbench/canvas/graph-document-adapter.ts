@@ -1,5 +1,3 @@
-import type { Connection, EdgeChange, NodeChange } from "@xyflow/react";
-
 import {
   applyGraphCommandNormalized,
   authoredGraphDocument,
@@ -8,9 +6,15 @@ import {
   type AuthoredGraphDocument,
   type GraphCommand,
 } from "../model/graph-document";
-import type { WorkflowNode } from "../model/execution-plan";
 import { newNodeKind } from "../model/project-graphs";
-import type { WorkflowEdge, WorkflowNodeData } from "./types";
+import type {
+  CanvasConnection,
+  CanvasEdgeChange,
+  CanvasNodeChange,
+  WorkflowEdge,
+  WorkflowNode,
+  WorkflowNodeData,
+} from "./types";
 import { decodeHandleId } from "./handles";
 import { serializeNodeLayout } from "./node-layout";
 
@@ -112,7 +116,7 @@ export function reduceWorkbenchAuthoringState(
 
 /** Translate renderer events into product-level authoring commands. */
 export function graphCommandsFromNodeChanges(
-  changes: readonly NodeChange<WorkflowNode>[],
+  changes: readonly CanvasNodeChange[],
 ): GraphCommand[] {
   const commands: GraphCommand[] = [];
   const positions = changes.flatMap((change) =>
@@ -130,7 +134,7 @@ export function graphCommandsFromNodeChanges(
 }
 
 export function graphCommandsFromEdgeChanges(
-  changes: readonly EdgeChange<WorkflowEdge>[],
+  changes: readonly CanvasEdgeChange[],
 ): GraphCommand[] {
   const edge_ids = changes.flatMap((change) =>
     change.type === "remove" ? [change.id] : [],
@@ -172,7 +176,7 @@ export function addNodeCommand(
 }
 
 export function addEdgeCommand(
-  connection: Connection,
+  connection: CanvasConnection,
   data: WorkflowEdge["data"],
   edgeId: string,
 ): GraphCommand {

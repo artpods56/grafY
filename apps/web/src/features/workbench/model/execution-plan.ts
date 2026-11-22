@@ -1,20 +1,17 @@
-import type { Node } from "@xyflow/react";
-
 import { decodeHandleId } from "../canvas/handles";
 import { inputPlugsForPort } from "../canvas/input-plugs";
 import { isCollectionNode } from "./collection-spec";
 import { validateConfig } from "../canvas/config-schema";
 import {
-  WORKFLOW_NODE_TYPE,
   isServiceProviderNode,
   portHasInstancePlugs,
   type WorkflowEdge,
-  type WorkflowNodeData,
+  type WorkflowNode,
   workflowNodeIsSupported,
 } from "../canvas/types";
 import type { Port, RunTargetInput, SavedGraphOrigin } from "@/lib/api";
 
-export type WorkflowNode = Node<WorkflowNodeData, typeof WORKFLOW_NODE_TYPE>;
+export type { WorkflowNode } from "../canvas/types";
 
 /**
  * Which nodes a person is asking to become fresh. Every Run demands the same

@@ -1,4 +1,4 @@
-import type { Edge } from "@xyflow/react";
+import type { CSSProperties } from "react";
 
 import type {
   ArtifactConversionInput,
@@ -81,7 +81,66 @@ export interface WorkflowEdgeData extends Record<string, unknown> {
   ) => void;
 }
 
-export type WorkflowEdge = Edge<WorkflowEdgeData>;
+export type XYPosition = { x: number; y: number };
+
+export interface CanvasNodeBase<TData, TType extends string> {
+  id: string;
+  type?: TType;
+  position: XYPosition;
+  data: TData;
+  selected?: boolean;
+  dragging?: boolean;
+  zIndex?: number;
+  width?: number;
+  height?: number;
+  measured?: { width?: number; height?: number };
+  style?: CSSProperties;
+}
+
+export interface CanvasConnection {
+  source: string;
+  target: string;
+  sourceHandle: string | null;
+  targetHandle: string | null;
+}
+
+export interface CanvasEdgeBase<TData, TType extends string> {
+  id: string;
+  type?: TType;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  data?: TData;
+  selected?: boolean;
+  animated?: boolean;
+  zIndex?: number;
+  style?: CSSProperties;
+}
+
+export type CanvasNodeChange =
+  | { type: "position"; id: string; position?: XYPosition; dragging?: boolean }
+  | { type: "select"; id: string; selected: boolean }
+  | { type: "remove"; id: string };
+
+export type CanvasEdgeChange =
+  | { type: "select"; id: string; selected: boolean }
+  | { type: "remove"; id: string };
+
+export interface CanvasFitViewOptions {
+  padding: number;
+  maxZoom: number;
+  nodes?: readonly { id: string }[];
+}
+
+export type WorkflowNode = CanvasNodeBase<
+  WorkflowNodeData,
+  typeof WORKFLOW_NODE_TYPE
+>;
+export type WorkflowEdge = CanvasEdgeBase<
+  WorkflowEdgeData,
+  typeof WORKFLOW_EDGE_TYPE
+>;
 
 export interface WorkflowEdgeTransport {
   collection_mode: RunEdgeCollectionMode;

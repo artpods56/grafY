@@ -258,7 +258,6 @@ function lifecycleOptions(
       replaceDocument: callbacks.replaceDocument,
       replacePresentation: callbacks.replacePresentation,
       updateDocumentName,
-      attachNodeCallbacks: (data) => data,
       refreshNodeSecretStatuses: callbacks.refreshNodeSecretStatuses,
       clearGraphSecretStatuses: callbacks.clearGraphSecretStatuses,
       clearPendingConnectionRoute: callbacks.clearPendingConnectionRoute,

@@ -1,5 +1,3 @@
-import type { Connection } from "@xyflow/react";
-
 import {
   artifactInlineContentUrl,
   type ArtifactRef,
@@ -30,7 +28,9 @@ import {
   isServiceProviderNode,
   portMetaForPort,
   workflowNodeIsSupported,
+  type CanvasConnection,
   type WorkflowEdge,
+  type WorkflowNode,
 } from "../canvas/types";
 import {
   formatLibraryByteSize,
@@ -56,7 +56,6 @@ import {
   type CellViewerMetadata,
 } from "../cell-canvas/cell-document-adapter";
 import { CELL_SIZE, cellToWorldOrigin } from "../cell-canvas/cell-model";
-import type { WorkflowNode } from "../model/execution-plan";
 import type { AuthoredGraphDocument } from "../model/graph-document";
 import { changeOriginCardReferences } from "../model/origin-card-commands";
 import type { PresenceParticipant, RoomInstanceState } from "../room/protocol";
@@ -415,7 +414,7 @@ export function cellConnectionToWorkbenchConnection(
     targetCardId,
     targetPortId,
   }: CellConnectionEnds,
-): Connection | null {
+): CanvasConnection | null {
   const sourceNode = nodes.find((node) => node.id === sourceCardId);
   const targetNode = nodes.find((node) => node.id === targetCardId);
   const sourceHandle = sourceNode

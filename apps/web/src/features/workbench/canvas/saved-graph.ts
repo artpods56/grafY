@@ -1,4 +1,4 @@
-import type { Node } from "@xyflow/react";
+import type { CanvasNodeBase } from "./types";
 
 import {
   type GraphDraft,
@@ -42,7 +42,7 @@ import {
   type AuthoredGraphDocument,
 } from "../model/graph-document";
 
-export type SavedGraphWorkflowNode = Node<
+export type SavedGraphWorkflowNode = CanvasNodeBase<
   WorkflowNodeData,
   typeof WORKFLOW_NODE_TYPE
 >;

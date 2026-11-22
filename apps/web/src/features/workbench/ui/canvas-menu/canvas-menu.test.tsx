@@ -10,23 +10,20 @@ import { useCanvasMenuTrigger } from "./useCanvasMenuTrigger";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-/** A canvas as React Flow draws it: pane, a node with a field, an edge, a panel. */
+/** A CellCanvas pane with a card, a pipe and canvas chrome. */
 function canvasMarkup(): string {
   return `
-    <div class="react-flow">
-      <div class="react-flow__pane">
-        <div class="react-flow__viewport">
-          <div class="react-flow__node" data-id="node-1">
-            <header><span class="title">Split text</span></header>
-            <div class="react-flow__handle" data-id="flow-node-1-text-target"></div>
-            <input aria-label="Separator" />
-          </div>
-          <svg><g class="react-flow__edge" data-id="edge-1"><path class="edge-path" /></g></svg>
-          <div class="react-flow__nodesselection-rect"></div>
-          <div class="react-flow__edgelabel-renderer"><button class="chip">Map</button></div>
+    <div data-cell-canvas="true">
+      <div class="viewport">
+        <div data-cell-card="true" data-card-id="node-1">
+          <header><span class="title">Split text</span></header>
+          <div class="port" data-cell-port="text-target"></div>
+          <input aria-label="Separator" />
         </div>
+        <svg><path data-pipe-hit="edge-1" class="edge-path" /></svg>
+        <button data-edge-selector-pill="edge-1" class="chip">Map</button>
       </div>
-      <div class="react-flow__panel"><button class="zoom">+</button></div>
+      <div data-cell-canvas-chrome="true"><button class="zoom">+</button></div>
     </div>
     <div class="outside"></div>`;
 }
@@ -54,8 +51,8 @@ describe("canvasMenuTarget", () => {
       kind: "node",
       nodeId: "node-1",
     });
-    // A port handle carries its own data-id; the node still answers.
-    expect(canvasMenuTarget(el(".react-flow__handle"))).toEqual({
+    // A port belongs to its card.
+    expect(canvasMenuTarget(el(".port"))).toEqual({
       kind: "node",
       nodeId: "node-1",
     });
@@ -63,13 +60,13 @@ describe("canvasMenuTarget", () => {
       kind: "edge",
       edgeId: "edge-1",
     });
-    expect(canvasMenuTarget(el(".react-flow__nodesselection-rect"))).toEqual({
-      kind: "selection",
-    });
-    expect(canvasMenuTarget(el(".react-flow__viewport"))).toEqual({
+    expect(canvasMenuTarget(el(".viewport"))).toEqual({
       kind: "pane",
     });
-    expect(canvasMenuTarget(el(".chip"))).toBeNull();
+    expect(canvasMenuTarget(el(".chip"))).toEqual({
+      kind: "edge",
+      edgeId: "edge-1",
+    });
     expect(canvasMenuTarget(el(".zoom"))).toBeNull();
     expect(canvasMenuTarget(el(".outside"))).toBeNull();
   });
@@ -164,7 +161,7 @@ describe("useCanvasMenuTrigger", () => {
   it("opens on a right click and leaves a right drag to panning", () => {
     const { onOpen } = renderTrigger();
 
-    pointer(el(".react-flow__viewport"), "pointerdown", { x: 100, y: 80 });
+    pointer(el(".viewport"), "pointerdown", { x: 100, y: 80 });
     pointer(document.body, "pointerup", { x: 102, y: 81 });
     expect(onOpen).toHaveBeenCalledWith({
       point: { x: 102, y: 81 },
@@ -222,7 +219,7 @@ describe("useCanvasMenuTrigger", () => {
       target: { kind: "node", nodeId: "node-1" },
     });
 
-    const node = el(".react-flow__node") as HTMLElement;
+    const node = el('[data-cell-card="true"]') as HTMLElement;
     node.tabIndex = 0;
     node.focus();
     React.act(() => {
@@ -244,7 +241,7 @@ describe("useCanvasMenuTrigger", () => {
     vi.useFakeTimers();
     try {
       const { onOpen } = renderTrigger();
-      const pane = el(".react-flow__viewport");
+      const pane = el(".viewport");
       const touch = { pointerType: "touch", button: 0 };
 
       // A tap.

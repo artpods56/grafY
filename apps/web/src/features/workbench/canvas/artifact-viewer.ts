@@ -1,8 +1,8 @@
 import type { AgentNode } from "../agents/agent-node";
 import type { ArtifactOriginEdge } from "./artifact-origin-edge";
-import type { Edge, Node } from "@xyflow/react";
+import type { CanvasNodeBase, CanvasEdgeBase } from "./types";
 
-import type { CollaborativeHead, SavedGraphDocument } from "@/lib/api";
+import type { SavedGraphDocument } from "@/lib/api";
 
 import {
   annotationsFromPresentation,
@@ -71,7 +71,7 @@ export interface ArtifactViewerNodeData extends Record<string, unknown> {
   remoteSelectionColor?: string | null;
 }
 
-export type ArtifactViewerNode = Node<
+export type ArtifactViewerNode = CanvasNodeBase<
   ArtifactViewerNodeData,
   typeof ARTIFACT_VIEWER_NODE_TYPE
 >;
@@ -93,7 +93,7 @@ export interface ArtifactViewerEdgeData extends Record<string, unknown> {
   ) => void;
 }
 
-export type ArtifactViewerEdge = Edge<
+export type ArtifactViewerEdge = CanvasEdgeBase<
   ArtifactViewerEdgeData,
   typeof ARTIFACT_VIEWER_EDGE_TYPE
 >;
@@ -108,12 +108,12 @@ export interface ArtifactViewerInteractionEdgeData extends Record<
   onBindingChange?: (bindingId: string, binding: ArtifactViewerBinding) => void;
 }
 
-export type ArtifactViewerInteractionEdge = Edge<
+export type ArtifactViewerInteractionEdge = CanvasEdgeBase<
   ArtifactViewerInteractionEdgeData,
   typeof ARTIFACT_VIEWER_INTERACTION_EDGE_TYPE
 >;
 
-export type CanvasWorkflowNode = Node<
+export type CanvasWorkflowNode = CanvasNodeBase<
   WorkflowNodeData,
   typeof WORKFLOW_NODE_TYPE
 >;

@@ -36,7 +36,8 @@ src/
       routes.ts                # Public server-safe route API
       ui/                      # Workbench composition and user-facing regions
       model/                   # Graph policies and state transitions
-      canvas/                  # React Flow adapter, nodes, edges, and handles
+      canvas/                  # Canvas contracts, document adapters, and artifact renderers
+      cell-canvas/             # Workbench renderer and pointer gestures
   components/                  # Reusable, feature-agnostic UI and providers
   lib/
     api/                       # Generated contracts and concrete HTTP adapter
@@ -74,19 +75,17 @@ Imports follow these rules:
 3. `ui` owns feature composition, browser-facing effects, view state, navigation,
    and calls to the concrete API adapter. It may import `canvas`, `model`, shared
    components, and `lib/api`.
-4. `canvas` owns both the canonical React Flow-shaped graph contracts and the
-   renderer. `handles.ts`, `input-plugs.ts`, and `types.ts` are the current graph
-   contract; component, measurement, and style modules are renderer concerns.
-   Renderer modules may import the graph contract and shared components, but no
-   `canvas` module imports `model`, `ui`, or `app` while the transitional
-   `model -> canvas graph contract` edge exists.
+4. `canvas` owns the graph view contracts in `handles.ts`, `input-plugs.ts`,
+   and `types.ts`. `cell-canvas` owns the renderer and its pointer gestures.
+   The renderer imports graph contracts and shared components. The architecture
+   test enforces acyclic imports and keeps route and sandbox code out of features.
 5. `model` owns deterministic Workbench policies and state transitions. During
    this migration it may import non-rendering graph contract functions and
    types from `canvas`, but it does not import canvas components or styles,
    React hooks, Next.js, StyleX, or the concrete HTTP client. Type-only imports
    from stable API contract aliases are allowed when duplicating the contract
    would be worse. Move the canonical graph contract inward only when that work
-   can replace the React Flow-shaped contract rather than duplicate it.
+   can migrate the existing callers together.
 6. Shared components and `lib/api` never import from `features/workbench`.
    Code becomes shared only after an independent consumer needs the same
    responsibility.
@@ -144,10 +143,8 @@ parameters or interfaces solely for tests.
 
 - Route code sees a small, stable feature API.
 - Graph and execution policies can be tested without rendering the full editor.
-- React Flow-shaped contracts remain centralized in the feature's `canvas`
-  segment instead of leaking through every Workbench module. Extracting a
-  framework-independent graph contract is recorded follow-up debt; until then,
-  the explicit `model -> canvas graph contract` edge prevents circular imports.
+- Canvas view contracts live in `canvas`. The authored graph document lives in
+  `model`. The architecture test checks imports across those modules for cycles.
 - The refactor can move one responsibility at a time while preserving behavior.
 - The Workbench remains one client bundle and one coordinated interaction
   boundary; this decision does not promise independent hydration.

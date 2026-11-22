@@ -1,4 +1,4 @@
-import type { Edge } from "@xyflow/react";
+import type { CanvasEdgeBase } from "./types";
 import type { SavedGraphOrigin } from "@/lib/api";
 
 export const ARTIFACT_ORIGIN_EDGE_TYPE = "grafyArtifactOriginEdge";
@@ -16,7 +16,7 @@ interface ArtifactOriginEdgeData extends Record<string, unknown> {
   ) => void;
 }
 
-export type ArtifactOriginEdge = Edge<
+export type ArtifactOriginEdge = CanvasEdgeBase<
   ArtifactOriginEdgeData,
   typeof ARTIFACT_ORIGIN_EDGE_TYPE
 > & { data: ArtifactOriginEdgeData };

@@ -7,7 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 <!-- BEGIN:grafy-workbench-rules -->
 
-# React Flow canvas checks
+# CellCanvas checks
 
 - The standalone Artifact Viewer is deprecated. New artifact presentation uses
   direct canvas cards from Library drops or materialized output-port drops. Do
@@ -21,8 +21,6 @@ This version has breaking changes — APIs, conventions, and file structure may 
   `selected`, each annotation's `selected` — so write them through
   `useCanvasSelection` (`ui/workbench-canvas-selection.ts`) and verify with a real
   pointer drag that the thing held before the drop gave up its plate.
-- Do not let global `svg` sizing or media resets constrain React Flow's edge
-  layers. Keep any required override scoped to `.react-flow__edges > svg`.
 - After changing node dimensions, handles, edge SVG styles, or canvas layout,
   verify at least one real pointer-drag connection in the rendered workbench.
   Compilation and programmatic edge insertion do not prove that wiring works.
@@ -89,14 +87,13 @@ cannot resolve, which `tsc` and Vitest both pass.
 ## Shared components and call sites
 
 - `src/components/ui` holds the shared controls, Base UI underneath and StyleX
-  on top: `Button` and `ButtonLink`, `IconButton`, `Field` with
+  on top. The kit includes `Button` and `ButtonLink`, `IconButton`, `Field` with
   `TextInput`/`TextArea`/`Select`, `Switch`, `Checkbox`, `Slider`,
   `ColorWell`/`ColorField`, `SegmentedControl`, `Surface`, `Dialog`, `Menu`, and
   `Notice`. Use them before hand-styling a button, a menu, a toggle, a colour
-  well, or an alert. Local overrides go through `xstyle` (applied last), React
-  Flow's `nodrag`/`nopan` through `className`. A Base UI trigger draws one with
-  `render={<IconButton label="…" />}` and passes its children in.
-  `MenuContent` already carries `nodrag nopan nowheel`.
+  well, or an alert. Pass local style overrides through `xstyle`. A Base UI
+  trigger draws one with `render={<IconButton label="…" />}` and passes in its
+  children.
 - Take the kit's size rather than overriding it, and say so in the change when you
   do. Controls inside a canvas card use the `dense` step (`Field`, `TextInput`,
   `Select`, `Switch`, `Checkbox`, `Slider`, `ColorWell`): a card's rows are 25px and

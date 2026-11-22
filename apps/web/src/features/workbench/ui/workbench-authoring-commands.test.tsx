@@ -371,11 +371,9 @@ describe("workbench authoring commands", () => {
     view.unmount();
   });
 
-  it("retires card links when a React Flow node removal deletes their source", async () => {
+  it("retires card links when a node removal deletes their source", async () => {
     const view = await mount();
 
-    // The Delete key path: React Flow reports a node removal, the adapter turns it into
-    // a `remove_nodes` command, and the workbench applies it.
     const commands = graphCommandsFromNodeChanges([
       { id: "card-source", type: "remove" },
     ]);

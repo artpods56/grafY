@@ -175,23 +175,23 @@ describe("module architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps features/workbench/cell-canvas free of @xyflow/react", () => {
+  it("keeps the web app free of React Flow", () => {
     const offenders: string[] = [];
-    for (const file of allSourceFiles(
-      path.join(SRC_ROOT, "features/workbench/cell-canvas"),
-    )) {
+    for (const file of allSourceFiles(SRC_ROOT)) {
       for (const [, specifier] of readFileSync(file, "utf8").matchAll(
         IMPORT_SPECIFIER,
       )) {
-        if (
-          specifier === "@xyflow/react" ||
-          specifier?.startsWith("@xyflow/")
-        ) {
+        if (specifier?.startsWith("@xyflow/")) {
           offenders.push(`${relative(file)} -> ${specifier}`);
         }
       }
     }
     expect(offenders).toEqual([]);
+    const manifest = readFileSync(
+      path.resolve(SRC_ROOT, "../package.json"),
+      "utf8",
+    );
+    expect(manifest).not.toContain('"@xyflow/react"');
   });
 
   it("reaches the generated OpenAPI types only through lib/api/contract.ts", () => {

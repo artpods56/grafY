@@ -63,7 +63,7 @@ export type WorkbenchAuthoringCommandDeps = {
  * Everything that has to follow a command follows it here, once, for every caller.
  * `remove_nodes` is the reason that matters: a deleted workflow node also retires every
  * artifact-card link sourced from it, whichever gesture deleted the node: the node's
- * own remove button, the Delete key through the React Flow change path, or an ungroup
+ * own remove button, the canvas Delete key, or an ungroup
  * that replaces a collection node with cards. Pruning anywhere else would leave a
  * gesture that forgets it, and the next save of that graph would offer the server a
  * link against a node the document no longer has.
@@ -102,8 +102,8 @@ export function useWorkbenchAuthoringCommands(
         return;
       }
       const before = authoredDocumentRef.current;
-      // React Flow emits node and edge removals before React renders again.
-      // Later handlers must read the result of the preceding batch.
+      // Gestures can submit several batches before React renders again.
+      // Each batch reads the document produced by the preceding batch.
       const edited = reduceWorkbenchAuthoringState(
         { document: before, nodeOverlays: {}, error: null },
         { kind: "apply_commands", commands },

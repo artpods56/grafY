@@ -1,14 +1,10 @@
-import type { Node } from "@xyflow/react";
+import type { CanvasNodeBase } from "../canvas/types";
 import type { NodeRegistry, SavedGraphAgent } from "@/lib/api/contract";
 import type { LinkableDocument } from "./agent-links";
 import type { AgentScope } from "@/lib/api/agents";
 
-/**
- * An Agent as a React Flow node. It lives apart from `AgentCard` so the canvas
- * model can name it without importing the card and the chrome the card draws
- * with, which import the canvas model back.
- */
-export type AgentNode = Node<
+/** An Agent's canvas node shape, independent of the conversation UI. */
+export type AgentNode = CanvasNodeBase<
   {
     remoteSelectionColor?: string | null;
     agent: SavedGraphAgent;

@@ -35,7 +35,6 @@ export {
   type RoomProjectCommand,
 } from "./room-command-bridge";
 export { PresenceOverlay } from "./PresenceOverlay";
-export { RemoteSelectionRing } from "./RemoteSelectionRing";
 export { remoteSelectionColor } from "./remote-selection";
 export {
   ProjectRoomPresenceStore,
@@ -48,13 +47,7 @@ export {
   type ProjectRoomSubmitResult,
   type UseProjectRoomSessionResult,
 } from "./useProjectRoomSession";
-export { useRemoteDragPreviews } from "./useRemoteDragPreviews";
-export {
-  usePresenceCollaborators,
-  usePresenceCursorSamples,
-  useRemoteDragTargets,
-  useRemoteSelectionColors,
-} from "./usePresenceStore";
+export { usePresenceCollaborators } from "./usePresenceStore";
 export {
   graphReadiness,
   type GraphReadiness,

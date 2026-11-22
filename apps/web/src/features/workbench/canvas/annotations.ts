@@ -1,5 +1,5 @@
 import { createUuid } from "@/features/workbench/model/uuid";
-import type { Node } from "@xyflow/react";
+import type { CanvasNodeBase } from "./types";
 
 export type AnnotationKind = "text" | "rectangle" | "ellipse";
 /** `#RRGGBB` stroke/text color for an annotation. */
@@ -57,7 +57,7 @@ export interface AnnotationNodeData extends Record<string, unknown> {
   remoteSelectionColor?: string | null;
 }
 
-export type AnnotationNode = Node<
+export type AnnotationNode = CanvasNodeBase<
   AnnotationNodeData,
   typeof ANNOTATION_NODE_TYPE
 >;

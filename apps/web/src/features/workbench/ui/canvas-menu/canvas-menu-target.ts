@@ -30,47 +30,27 @@ export function wantsNativeMenu(element: Element): boolean {
 
 /** The canvas thing under `element`, or null for chrome that sits on the canvas. */
 export function canvasMenuTarget(element: Element): CanvasMenuTarget | null {
-  if (element.closest('[data-cell-canvas="true"]')) {
-    if (element.closest('[data-cell-canvas-chrome="true"]')) return null;
-    const card = element.closest<HTMLElement>('[data-cell-card="true"]');
-    if (card) {
-      const nodeId = card.getAttribute("data-card-id");
-      return nodeId ? { kind: "node", nodeId } : null;
-    }
-    const pill = element.closest<HTMLElement>("[data-edge-selector-pill]");
-    if (pill) {
-      const edgeId = pill.getAttribute("data-edge-selector-pill");
-      return edgeId ? { kind: "edge", edgeId } : null;
-    }
-    const join = element.closest<HTMLElement>("[data-docked-join]");
-    if (join) {
-      const edgeId = join.getAttribute("data-docked-join");
-      return edgeId ? { kind: "edge", edgeId } : null;
-    }
-    const pipeHit = element.closest<HTMLElement>("[data-pipe-hit]");
-    if (pipeHit) {
-      const edgeId = pipeHit.getAttribute("data-pipe-hit");
-      return edgeId ? { kind: "edge", edgeId } : null;
-    }
-    return { kind: "pane" };
-  }
-  if (!element.closest(".react-flow")) return null;
-  const node = element.closest<HTMLElement>(".react-flow__node");
-  if (node) {
-    const nodeId = node.getAttribute("data-id");
+  if (!element.closest('[data-cell-canvas="true"]')) return null;
+  if (element.closest('[data-cell-canvas-chrome="true"]')) return null;
+  const card = element.closest<HTMLElement>('[data-cell-card="true"]');
+  if (card) {
+    const nodeId = card.getAttribute("data-card-id");
     return nodeId ? { kind: "node", nodeId } : null;
   }
-  if (element.closest(".react-flow__nodesselection-rect")) {
-    return { kind: "selection" };
-  }
-  const edge = element.closest(".react-flow__edge");
-  if (edge) {
-    const edgeId = edge.getAttribute("data-id");
+  const pill = element.closest<HTMLElement>("[data-edge-selector-pill]");
+  if (pill) {
+    const edgeId = pill.getAttribute("data-edge-selector-pill");
     return edgeId ? { kind: "edge", edgeId } : null;
   }
-  // Edge label chips and panels float over the pane but are not the pane.
-  if (element.closest(".react-flow__edgelabel-renderer, .react-flow__panel")) {
-    return null;
+  const join = element.closest<HTMLElement>("[data-docked-join]");
+  if (join) {
+    const edgeId = join.getAttribute("data-docked-join");
+    return edgeId ? { kind: "edge", edgeId } : null;
   }
-  return element.closest(".react-flow__pane") ? { kind: "pane" } : null;
+  const pipeHit = element.closest<HTMLElement>("[data-pipe-hit]");
+  if (pipeHit) {
+    const edgeId = pipeHit.getAttribute("data-pipe-hit");
+    return edgeId ? { kind: "edge", edgeId } : null;
+  }
+  return { kind: "pane" };
 }

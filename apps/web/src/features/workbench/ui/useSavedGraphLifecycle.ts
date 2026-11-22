@@ -40,7 +40,6 @@ import {
   createGraphDraft,
   type AuthoredGraphDocument,
 } from "../model/graph-document";
-import type { WorkflowNodeData } from "../canvas/types";
 import type { WorkflowNode } from "../model/execution-plan";
 import { NEW_PROJECT_ROUTE_ID, workbenchGraphPath } from "../routes";
 import { NEW_GRAPH_NAME, savedGraphDirtiness } from "./saved-graph-dirtiness";
@@ -150,7 +149,6 @@ interface UseSavedGraphLifecycleOptions {
    */
   replacePresentation: (presentation: GraphPresentation) => void;
   updateDocumentName: (name: string) => void;
-  attachNodeCallbacks: (data: WorkflowNodeData) => WorkflowNodeData;
   refreshNodeSecretStatuses: (
     graph: ActiveSavedGraph,
     nodes: readonly WorkflowNode[],
@@ -217,7 +215,6 @@ export function useSavedGraphLifecycle({
   replaceDocument,
   replacePresentation,
   updateDocumentName,
-  attachNodeCallbacks,
   refreshNodeSecretStatuses,
   clearGraphSecretStatuses,
   clearPendingConnectionRoute,
@@ -731,11 +728,7 @@ export function useSavedGraphLifecycle({
 
         const responseDocument = documentOfGraph(savedGraph);
         const responsePresentation = presentationOf(savedGraph);
-        const openedNodes = hydrated.nodes.map((node) => ({
-          ...node,
-          data: attachNodeCallbacks(node.data),
-        }));
-        replaceDocument(responseDocument, openedNodes);
+        replaceDocument(responseDocument, hydrated.nodes);
         replacePresentation(responsePresentation);
         setOpenedHead(head);
         clearPendingConnectionRoute();
@@ -765,7 +758,6 @@ export function useSavedGraphLifecycle({
     },
     [
       activeGraph?.id,
-      attachNodeCallbacks,
       clearPendingConnectionRoute,
       clearRunError,
       closeNodeLibrary,

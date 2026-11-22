@@ -1,4 +1,4 @@
-import type { Connection } from "@xyflow/react";
+import type { CanvasConnection } from "./types";
 import type {
   ArtifactConversionSpec,
   SavedGraphOrigin,
@@ -119,7 +119,7 @@ export function artifactCardConnectionValue(
 
 /** Resolve real canvas endpoints before applying the normal artifact-input rules. */
 export function resolveArtifactCardConnection(
-  connection: Connection,
+  connection: CanvasConnection,
   cards: readonly ArtifactViewerNode[],
   feeds: readonly ArtifactViewerEdge[],
   nodes: readonly CanvasWorkflowNode[],

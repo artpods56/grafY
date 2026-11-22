@@ -2,7 +2,7 @@
 
 A ComfyUI-like workbench for assembling typed artifact transformations over the
 Grafy runtime. It is built with Next.js 16, StyleX, Base UI
-primitives, React Flow, and SWR.
+primitives, CellCanvas, and SWR.
 
 Node configuration is rendered directly inside each node from the live
 `config_schema`. Primitive JSON Schema fields use a compact preset: text,
@@ -64,7 +64,7 @@ type for every node.
 Requirements:
 
 1. Bun 1.4.4.
-3. The Grafy API running on `http://127.0.0.1:8000` (the Next.js dev
+2. The Grafy API running on `http://127.0.0.1:8000` (the Next.js dev
    server proxies browser `/api` requests to it).
 
 ```bash

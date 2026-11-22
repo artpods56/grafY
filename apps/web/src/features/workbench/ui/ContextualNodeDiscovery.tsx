@@ -3,7 +3,6 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Search } from "lucide-react";
-import { useStore, ViewportPortal } from "@xyflow/react";
 
 import { CellViewportLayer } from "../cell-canvas/CellCanvasContext";
 import { Button } from "@/components/ui/button";
@@ -13,10 +12,7 @@ import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { schemaFields } from "../canvas/config-schema";
-import {
-  DEFAULT_NODE_PLACEMENT_HEIGHT,
-  DEFAULT_NODE_WIDTH,
-} from "../canvas/node-layout";
+import { DEFAULT_NODE_PLACEMENT_HEIGHT } from "../canvas/node-layout";
 import { artifactTypeColor } from "../canvas/nodes.css";
 import type { ArtifactTypeCatalog } from "../canvas/artifact-type-label";
 import { portArtifactType } from "../canvas/types";
@@ -314,7 +310,7 @@ function previewFlowPosition(flowPosition: { x: number; y: number }): {
   };
 }
 
-function ContextualNodeDiscoveryContent({
+export function CellContextualNodeDiscovery({
   session,
   registry,
   canInsert,
@@ -323,10 +319,8 @@ function ContextualNodeDiscoveryContent({
   onConfirm,
   onPlaceOutputCard,
   sourcePoint,
-  renderWorldPortal,
 }: ContextualNodeDiscoveryProps & {
   sourcePoint: { x: number; y: number } | null;
-  renderWorldPortal: (node: React.ReactNode) => React.ReactNode;
 }) {
   const finePointer = useMediaQuery(FINE_POINTER_QUERY);
   const [query, setQuery] = React.useState("");
@@ -552,9 +546,12 @@ function ContextualNodeDiscoveryContent({
       : null;
 
   return (
-    <>
-      {renderWorldPortal(
-        previewedCandidate ? (
+    <div
+      data-cell-canvas-chrome="true"
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <CellViewportLayer layer="over-cards">
+        {previewedCandidate ? (
           <>
             {edgePath ? (
               <svg
@@ -598,8 +595,8 @@ function ContextualNodeDiscoveryContent({
               />
             </div>
           </>
-        ) : null,
-      )}
+        ) : null}
+      </CellViewportLayer>
 
       <div
         ref={rootRef}
@@ -781,71 +778,6 @@ function ContextualNodeDiscoveryContent({
           </span>
         </div>
       </div>
-    </>
-  );
-}
-
-export function ContextualNodeDiscovery(props: ContextualNodeDiscoveryProps) {
-  const { session } = props;
-  const sourcePoint = useStore((state) => {
-    if (!session) return null;
-    const node = state.nodeLookup.get(session.sourceNodeId);
-    if (!node) return null;
-    const origin = node.internals.positionAbsolute;
-    const downstream = session.direction === "downstream";
-    const handle = (
-      downstream
-        ? node.internals.handleBounds?.source
-        : node.internals.handleBounds?.target
-    )?.find((candidate) => candidate.id === session.sourceHandle);
-    if (!handle) {
-      return downstream
-        ? {
-            x: origin.x + (node.measured.width ?? DEFAULT_NODE_WIDTH),
-            y:
-              origin.y +
-              (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
-          }
-        : {
-            x: origin.x,
-            y:
-              origin.y +
-              (node.measured.height ?? DEFAULT_NODE_PLACEMENT_HEIGHT) / 2,
-          };
-    }
-    return {
-      x: origin.x + handle.x + handle.width / 2,
-      y: origin.y + handle.y + handle.height / 2,
-    };
-  });
-
-  return (
-    <ContextualNodeDiscoveryContent
-      {...props}
-      sourcePoint={sourcePoint}
-      renderWorldPortal={(node) => <ViewportPortal>{node}</ViewportPortal>}
-    />
-  );
-}
-
-export function CellContextualNodeDiscovery({
-  sourcePoint,
-  ...props
-}: ContextualNodeDiscoveryProps & {
-  sourcePoint: { x: number; y: number } | null;
-}) {
-  return (
-    <div
-      data-cell-canvas-chrome="true"
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <ContextualNodeDiscoveryContent
-        {...props}
-        sourcePoint={sourcePoint}
-        renderWorldPortal={(node) => (
-          <CellViewportLayer layer="over-cards">{node}</CellViewportLayer>
-        )}
-      />
     </div>
   );
 }
