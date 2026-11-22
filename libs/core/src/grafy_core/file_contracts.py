@@ -13,6 +13,7 @@ from types import MappingProxyType
 from grafy_core.artifacts import (
     ArtifactBundleContract,
     ArtifactConfirmationRule,
+    ArtifactPreviewKind,
     ArtifactTypeKey,
     ArtifactTypeSpec,
     MagicSegment,
@@ -45,6 +46,7 @@ PNG_FILE = ArtifactTypeSpec(
     title="PNG image",
     extensions=("png",),
     confirmation_rule=_magic(((0, b"\x89PNG\r\n\x1a\n"),)),
+    preview_kind=ArtifactPreviewKind.IMAGE,
 )
 
 JPEG_FILE = ArtifactTypeSpec(
@@ -53,6 +55,7 @@ JPEG_FILE = ArtifactTypeSpec(
     title="JPEG image",
     extensions=("jpg", "jpeg"),
     confirmation_rule=_magic(((0, b"\xff\xd8\xff"),)),
+    preview_kind=ArtifactPreviewKind.IMAGE,
 )
 
 TIFF_FILE = ArtifactTypeSpec(
@@ -64,6 +67,7 @@ TIFF_FILE = ArtifactTypeSpec(
         ((0, b"II*\x00"),),
         ((0, b"MM\x00*"),),
     ),
+    preview_kind=ArtifactPreviewKind.TIFF,
 )
 
 WEBP_FILE = ArtifactTypeSpec(
@@ -72,6 +76,7 @@ WEBP_FILE = ArtifactTypeSpec(
     title="WebP image",
     extensions=("webp",),
     confirmation_rule=_magic(((0, b"RIFF"), (8, b"WEBP"))),
+    preview_kind=ArtifactPreviewKind.IMAGE,
 )
 
 BMP_FILE = ArtifactTypeSpec(
@@ -80,6 +85,7 @@ BMP_FILE = ArtifactTypeSpec(
     title="BMP image",
     extensions=("bmp",),
     confirmation_rule=_magic(((0, b"BM"),)),
+    preview_kind=ArtifactPreviewKind.IMAGE,
 )
 
 PDF_FILE = ArtifactTypeSpec(
@@ -88,6 +94,7 @@ PDF_FILE = ArtifactTypeSpec(
     title="PDF document",
     extensions=("pdf",),
     confirmation_rule=_magic(((0, b"%PDF-"),)),
+    preview_kind=ArtifactPreviewKind.FILE,
 )
 
 XLSX_FILE = ArtifactTypeSpec(
@@ -96,6 +103,7 @@ XLSX_FILE = ArtifactTypeSpec(
     title="Excel workbook",
     extensions=("xlsx",),
     confirmation_rule=_magic(((0, b"PK\x03\x04"),)),
+    preview_kind=ArtifactPreviewKind.FILE,
 )
 
 GEOJSON_FILE = ArtifactTypeSpec(
@@ -104,6 +112,7 @@ GEOJSON_FILE = ArtifactTypeSpec(
     title="GeoJSON document",
     extensions=("geojson",),
     confirmation_rule=ArtifactConfirmationRule(rule="json"),
+    preview_kind=ArtifactPreviewKind.TEXT,
 )
 
 JSON_FILE = ArtifactTypeSpec(
@@ -112,6 +121,7 @@ JSON_FILE = ArtifactTypeSpec(
     title="JSON document",
     extensions=("json",),
     confirmation_rule=ArtifactConfirmationRule(rule="json_document"),
+    preview_kind=ArtifactPreviewKind.TEXT,
 )
 
 CSV_FILE = ArtifactTypeSpec(
@@ -119,6 +129,7 @@ CSV_FILE = ArtifactTypeSpec(
     key=ArtifactTypeKey("file.csv", 1),
     title="CSV file",
     extensions=("csv",),
+    preview_kind=ArtifactPreviewKind.FILE,
 )
 
 TXT_FILE = ArtifactTypeSpec(
@@ -126,12 +137,14 @@ TXT_FILE = ArtifactTypeSpec(
     key=ArtifactTypeKey("file.txt", 1),
     title="Text file",
     extensions=("txt",),
+    preview_kind=ArtifactPreviewKind.TEXT,
 )
 
 BLOB_FILE = ArtifactTypeSpec(
     bundle=ArtifactBundleContract(format="binary-file", version=1),
     key=ArtifactTypeKey("file.blob", 1),
     title="Unrecognized file",
+    preview_kind=ArtifactPreviewKind.FILE,
 )
 
 

@@ -3,6 +3,7 @@ from typing import Any, Literal, Self, cast
 from grafy_core.artifacts import (
     ArtifactBundleFormat,
     ArtifactConfirmationRule,
+    ArtifactPreviewKind,
     ArtifactTypeKey,
     ArtifactTypeSpec,
     ConfirmationRule,
@@ -111,6 +112,7 @@ class ArtifactTypeSpecResponse(ApiResponse):
         default_factory=ConfirmationRuleResponse,
     )
     bundle: ArtifactBundleContractResponse
+    preview_kind: ArtifactPreviewKind = ArtifactPreviewKind.FILE
 
     @classmethod
     def from_spec(cls, spec: ArtifactTypeSpec) -> Self:
@@ -149,6 +151,7 @@ class ArtifactTypeSpecResponse(ApiResponse):
                 format=spec.bundle.format,
                 version=spec.bundle.version,
             ),
+            preview_kind=spec.preview_kind,
         )
 
 

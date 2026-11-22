@@ -70,6 +70,7 @@ function registry(
     artifact_types: ["x", "y", "z"].map((id) => ({
       key: { id, schema_version: 1 },
       title: id,
+      preview_kind: "file",
       payload_schema: {},
       field_projections: [],
       bundle: { format: "inline-json", version: 1 },
@@ -735,6 +736,7 @@ function mappedStepRegistry(): NodeRegistry {
     artifact_types: ["page", "markdown", "boxes"].map((id) => ({
       key: { id, schema_version: 1 },
       title: id,
+      preview_kind: "file",
       payload_schema: {},
       field_projections: [],
       bundle: { format: "inline-json", version: 1 },
@@ -851,6 +853,7 @@ function collectRegistry(): NodeRegistry {
       {
         key: { id: "text", schema_version: 1 },
         title: "Text",
+        preview_kind: "text",
         payload_schema: {},
         field_projections: [],
         bundle: { format: "inline-json", version: 1 },
@@ -1023,6 +1026,7 @@ function genericCollectRegistry(): NodeRegistry {
       {
         key: { id: "scalar.integer", schema_version: 1 },
         title: "Integer",
+        preview_kind: "text",
         payload_schema: {},
         field_projections: [],
         bundle: { format: "inline-json", version: 1 },
@@ -1270,6 +1274,7 @@ describe("saved Module nodes", () => {
       artifact_types: ["x"].map((id) => ({
         key: { id, schema_version: 1 },
         title: id,
+        preview_kind: "file",
         payload_schema: {},
         field_projections: [],
         bundle: { format: "inline-json" as const, version: 1 },

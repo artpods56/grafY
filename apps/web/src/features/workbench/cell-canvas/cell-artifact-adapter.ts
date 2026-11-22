@@ -8,17 +8,27 @@
  * the saved document.
  */
 import type {
+  ArtifactRef,
   ArtifactTypeKey,
+  ArtifactTypeSpec,
   NodeRegistry,
   NodeSpec,
   SavedGraphDocument,
 } from "@/lib/api";
 
-import { DEFAULT_ARTIFACT_CARD_WIDTH } from "../artifacts/artifact-card";
+import {
+  DEFAULT_ARTIFACT_CARD_WIDTH,
+  DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
+  DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
+  DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
+  DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
+  artifactTypeFor,
+} from "../artifacts/artifact-card";
 import type { AuthoredGraphDocument } from "../authoring/graph-document";
 
 import type {
   AnnotationColorToken,
+  ArtifactCardSurfaceData,
   ArtifactPreviewKind,
   ArtifactStackItem,
   CellCardSurfaceData,
@@ -212,27 +222,96 @@ export function annotationHexFromToken(color: AnnotationColorToken): string {
   }
 }
 
-function viewerPreviewKind(artifactTypeId: string): ArtifactPreviewKind {
-  const lower = artifactTypeId.toLowerCase();
-  if (
-    lower.startsWith("image.") ||
-    lower === "geo.raster_scan" ||
-    /^file\.(png|jpe?g|tiff|webp|bmp)$/.test(lower)
-  ) {
-    return "image";
+/**
+ * Preview kind when a unit test hands the adapter an empty catalog.
+ * A populated catalog is the source of truth, including a missing type.
+ */
+function fallbackPreviewKind(artifactTypeId: string): ArtifactPreviewKind {
+  switch (artifactTypeId) {
+    case "file.tiff":
+      return "tiff";
+    case "ocr.tiff_text_regions":
+    case "ocr.tiff_recognized_text":
+      return "tiff-text";
+    case "html.page":
+      return "html-page";
+    case "text.markdown":
+      return "markdown";
+    case "geo.feature_collection":
+    case "geo.raster_scan":
+    case "geo.map_layer":
+    case "geo.map_document":
+      return "map";
+    case "table.data":
+      return "table";
+    case "scalar.text":
+    case "scalar.integer":
+    case "image.regions":
+    case "json.schema":
+    case "prompt.message":
+    case "llm.completion":
+    case "file.json":
+    case "file.geojson":
+    case "file.txt":
+      return "text";
+    default: {
+      const lower = artifactTypeId.toLowerCase();
+      if (
+        lower.startsWith("image.") ||
+        /^file\.(png|jpe?g|webp|bmp)$/.test(lower)
+      ) {
+        return "image";
+      }
+      if (lower.startsWith("table.") || lower.includes("tabular")) {
+        return "table";
+      }
+      if (lower.startsWith("geo.")) return "map";
+      if (lower.startsWith("text.") || lower.startsWith("prompt.")) {
+        return "markdown";
+      }
+      return "file";
+    }
   }
-  if (lower.startsWith("table.") || lower.includes("tabular")) return "table";
-  if (lower.startsWith("geo.")) return "map";
-  if (
-    lower === "text.markdown" ||
-    lower === "scalar.text" ||
-    lower === "llm.completion" ||
-    lower.startsWith("text.") ||
-    lower.startsWith("prompt.")
-  ) {
-    return "markdown";
+}
+
+function previewKindFor(
+  artifactKey: ArtifactTypeKey | null,
+  artifactTypes: readonly ArtifactTypeSpec[],
+): ArtifactPreviewKind {
+  if (artifactTypes.length === 0) {
+    return fallbackPreviewKind(artifactKey?.id ?? "");
   }
-  return "file";
+  if (!artifactKey) return "file";
+  return (
+    artifactTypeFor(
+      {
+        artifact_type: artifactKey.id,
+        schema_version: artifactKey.schema_version,
+      },
+      artifactTypes,
+    )?.preview_kind ?? "file"
+  );
+}
+
+/** Pixel size a non-picture card opens at when its author has not sized it. */
+function defaultCardPixels(previewKind: ArtifactPreviewKind): {
+  width: number;
+  height: number;
+} {
+  switch (previewKind) {
+    case "table":
+      return {
+        width: DEFAULT_ARTIFACT_TABLE_CARD_WIDTH,
+        height: DEFAULT_ARTIFACT_TABLE_BODY_HEIGHT,
+      };
+    case "map":
+      return {
+        width: DEFAULT_ARTIFACT_MAP_CARD_WIDTH,
+        height: DEFAULT_ARTIFACT_MAP_BODY_HEIGHT,
+      };
+    default:
+      return { width: DEFAULT_ARTIFACT_CARD_WIDTH, height: 150 };
+  }
 }
 
 /** Agent cards: the graph's own boxes, sized in the document, never derived. */
@@ -304,6 +383,18 @@ export function buildViewerCardsAndSurfaces(
     >;
     viewerImages?: ReadonlyMap<string, CellViewerImages>;
     viewerMetadata?: ReadonlyMap<string, CellViewerMetadata>;
+    /** Set with `viewerArtifacts` so a live renderer can read the workspace. */
+    workspaceId?: string;
+    /** Lead artifact of each card, when the caller has resolved one. */
+    viewerArtifacts?: ReadonlyMap<string, ArtifactRef>;
+    viewerTiffWindows?: ReadonlyMap<
+      string,
+      NonNullable<ArtifactCardSurfaceData["tiffWindow"]>
+    >;
+    viewerTiffTexts?: ReadonlyMap<
+      string,
+      NonNullable<ArtifactCardSurfaceData["tiffText"]>
+    >;
   },
 ): { cards: CellCardModel[]; surfaces: Map<string, CellCardSurfaceData> } {
   const cards: CellCardModel[] = [];
@@ -344,7 +435,7 @@ export function buildViewerCardsAndSurfaces(
         : (fallbackType ?? null);
     const artifactTypeId = artifactKey?.id ?? "artifact";
     const typeLabel = collectionTypeLabel(artifactKey, registry.artifact_types);
-    const previewKind = viewerPreviewKind(artifactTypeId);
+    const previewKind = previewKindFor(artifactKey, registry.artifact_types);
     const viewerPorts: CellPort[] = [];
     if (feedLink || !ref) {
       viewerPorts.push({
@@ -360,27 +451,29 @@ export function buildViewerCardsAndSurfaces(
     const minHeightCells = feedLink
       ? STRIP_FIRST_PORT_ROW + 2
       : MIN_ARTIFACT_HEIGHT_CELLS;
-    const rawCells =
-      previewKind === "image"
-        ? cellArtifactImageCells(images?.naturalSize, viewer.layout)
-        : {
-            widthCells: Math.min(
-              MAX_ARTIFACT_WIDTH_CELLS,
-              Math.max(
-                MIN_ARTIFACT_WIDTH_CELLS,
-                snapPixelsToCell(
-                  viewer.layout?.width ?? DEFAULT_ARTIFACT_CARD_WIDTH,
-                ),
-              ),
+    const picture =
+      previewKind === "image" ||
+      previewKind === "tiff" ||
+      previewKind === "tiff-text";
+    const defaults = defaultCardPixels(previewKind);
+    const rawCells = picture
+      ? cellArtifactImageCells(images?.naturalSize, viewer.layout)
+      : {
+          widthCells: Math.min(
+            MAX_ARTIFACT_WIDTH_CELLS,
+            Math.max(
+              MIN_ARTIFACT_WIDTH_CELLS,
+              snapPixelsToCell(viewer.layout?.width ?? defaults.width),
             ),
-            heightCells: Math.min(
-              MAX_ARTIFACT_HEIGHT_CELLS,
-              Math.max(
-                minHeightCells,
-                snapPixelsToCell(viewer.layout?.body_height ?? 150),
-              ),
+          ),
+          heightCells: Math.min(
+            MAX_ARTIFACT_HEIGHT_CELLS,
+            Math.max(
+              minHeightCells,
+              snapPixelsToCell(viewer.layout?.body_height ?? defaults.height),
             ),
-          };
+          ),
+        };
     const widthCells = rawCells.widthCells;
     const heightCells = Math.max(minHeightCells, rawCells.heightCells);
     if (ref || liveOutput) {
@@ -400,6 +493,9 @@ export function buildViewerCardsAndSurfaces(
       });
     }
     const metadata = options.viewerMetadata?.get(viewer.id);
+    const artifact = options.viewerArtifacts?.get(viewer.id);
+    const tiffWindow = options.viewerTiffWindows?.get(viewer.id);
+    const tiffText = options.viewerTiffTexts?.get(viewer.id);
     const filename = metadata?.filename ?? feedLink?.source_port_name;
     const itemCount =
       ref && "item_refs" in ref ? ref.item_refs.length : images?.itemCount;
@@ -438,7 +534,7 @@ export function buildViewerCardsAndSurfaces(
       ...(metadata?.byteSizeLabel
         ? { byteSizeLabel: metadata.byteSizeLabel }
         : {}),
-      ...(previewKind === "image" && images
+      ...((previewKind === "image" || previewKind === "tiff") && images
         ? {
             imageUrl: images.imageUrl,
             ...(images.stackImageUrls.length
@@ -446,6 +542,12 @@ export function buildViewerCardsAndSurfaces(
               : {}),
           }
         : {}),
+      ...(options.workspaceId && (artifact || tiffText)
+        ? { workspaceId: options.workspaceId }
+        : {}),
+      ...(artifact ? { artifact } : {}),
+      ...(tiffWindow ? { tiffWindow } : {}),
+      ...(tiffText ? { tiffText } : {}),
     });
   }
   return { cards, surfaces };

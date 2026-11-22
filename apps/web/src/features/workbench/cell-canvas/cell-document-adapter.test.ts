@@ -1278,12 +1278,15 @@ describe("artifact card pictures and output corner", () => {
     );
   }
 
-  it("reads PNG, JPEG and TIFF files as pictures", () => {
-    for (const type of ["file.png", "file.jpeg", "file.jpg", "file.tiff"]) {
+  it("reads PNG and JPEG files as pictures and a TIFF as a scan", () => {
+    for (const type of ["file.png", "file.jpeg", "file.jpg"]) {
       expect(viewerScene(ref("a", type)).surfaceById.card).toMatchObject({
         previewKind: "image",
       });
     }
+    expect(viewerScene(ref("a", "file.tiff")).surfaceById.card).toMatchObject({
+      previewKind: "tiff",
+    });
   });
 
   it("puts the output on the bottom-right row, one row clear of the edge", () => {
@@ -1343,7 +1346,7 @@ describe("artifact card pictures and output corner", () => {
       ]),
     });
     expect(tiff.surfaceById.card).toMatchObject({
-      previewKind: "image",
+      previewKind: "tiff",
       imageUrl: null,
     });
   });

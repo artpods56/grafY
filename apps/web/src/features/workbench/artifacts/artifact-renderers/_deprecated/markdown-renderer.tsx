@@ -10,10 +10,10 @@ import Markdown, {
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { artifactMeta } from "./artifact-meta";
-import { markdownPayload } from "./payload";
+import { markdownPayload } from "../payload";
 import { PrettyValue } from "./pretty-value";
 import type { ArtifactRendererSpec } from "./spec";
-import { sharedStyles } from "./styles";
+import { sharedStyles } from "../styles";
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 

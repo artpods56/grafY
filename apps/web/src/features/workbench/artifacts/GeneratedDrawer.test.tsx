@@ -85,6 +85,7 @@ const REGISTRY = {
     {
       key: { id: "table.data", schema_version: 1 },
       title: "Table",
+      preview_kind: "table",
       bundle: { format: "inline-json", version: 1 },
       payload_schema: {},
       field_projections: [],
@@ -92,6 +93,7 @@ const REGISTRY = {
     {
       key: { id: "file.blob", schema_version: 1 },
       title: "Unrecognized file",
+      preview_kind: "file",
       bundle: { format: "inline-json", version: 1 },
       payload_schema: {},
       field_projections: [],

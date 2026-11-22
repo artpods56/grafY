@@ -27,6 +27,7 @@ export type PersonalAccessTokenCreateRequest =
 
 export type ArtifactTypeKey = Schemas["ArtifactTypeKeyResponse"];
 export type ArtifactTypeSpec = Schemas["ArtifactTypeSpecResponse"];
+export type ArtifactPreviewKind = Schemas["ArtifactPreviewKind"];
 export type ArtifactConversionSpec = Schemas["ArtifactConversionSpecResponse"];
 export type FieldProjection = Schemas["FieldProjectionResponse"];
 export type Port = Schemas["PortResponse"];

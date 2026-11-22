@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictStr, model_validator
 
 from grafy_core.artifact_contracts import RASTER_IMAGE
 from grafy_core.artifacts import (
+    ArtifactPreviewKind,
     ArtifactRef,
     ArtifactReferenceContract,
     ArtifactTypeKey,
@@ -50,6 +51,7 @@ PROMPT_MESSAGE = ArtifactTypeSpec(
             shape="many",
         ),
     ),
+    preview_kind=ArtifactPreviewKind.TEXT,
 )
 
 

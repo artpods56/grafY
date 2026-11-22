@@ -79,6 +79,14 @@ function registry(): NodeRegistry {
     ].map((id) => ({
       key: { id, schema_version: 1 },
       title: id,
+      preview_kind:
+        id === "table.data"
+          ? "table"
+          : id === "image.raster"
+            ? "image"
+            : id.startsWith("geo.")
+              ? "map"
+              : "text",
       bundle: { format: "inline-json" as const, version: 1 },
       payload_schema: {},
       field_projections: [],

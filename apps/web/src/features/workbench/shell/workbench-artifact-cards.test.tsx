@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-import type { ArtifactCardValue } from "../artifacts/artifact-card";
+import {
+  DEFAULT_ARTIFACT_CARD_WIDTH,
+  type ArtifactCardValue,
+} from "../artifacts/artifact-card";
 import {
   ANNOTATION_NODE_TYPE,
   DEFAULT_ANNOTATION_COLOR,
@@ -23,11 +26,11 @@ import {
 import type { SavedGraphOrigin } from "@/lib/api";
 import type { GraphCommand } from "../authoring/graph-document";
 import { CELL_SIZE } from "../cell-canvas/cell-model";
-import { DEFAULT_ARTIFACT_CARD_WIDTH } from "../artifacts/artifact-card";
 import {
   ARTIFACT_CARD_DROP_GUTTER,
   artifactCardDropPosition,
   artifactCardDropPositions,
+  artifactCardFootprint,
   useArtifactCardCommands,
 } from "./workbench-artifact-cards";
 
@@ -715,6 +718,61 @@ describe("addArtifactCards", () => {
 
     expect(view.committed).toEqual([]);
     view.unmount();
+  });
+});
+
+describe("artifactCardFootprint", () => {
+  const box = (artifactRef: ArtifactCardValue) =>
+    artifactCardFootprint({
+      data: { layout: null, mode: null, artifactRef },
+    });
+
+  it("sizes an unsized table or map, including a sequence of them", () => {
+    const table = {
+      artifact_id: "grid",
+      artifact_type: "table.data",
+      schema_version: 1,
+    };
+    expect(box(table)).toEqual({ width: 600, height: 350 });
+    expect(
+      box({
+        artifact_type: "table.data",
+        schema_version: 1,
+        ordered: true,
+        index_key: "order_index",
+        item_refs: [table, { ...table, artifact_id: "grid-b" }],
+      }),
+    ).toEqual({ width: 600, height: 350 });
+    expect(
+      box({
+        artifact_id: "scan",
+        artifact_type: "geo.raster_scan",
+        schema_version: 1,
+      }),
+    ).toEqual({ width: 450, height: 350 });
+    expect(
+      box({
+        artifact_id: "photo",
+        artifact_type: "file.png",
+        schema_version: 1,
+      }).width,
+    ).toBe(DEFAULT_ARTIFACT_CARD_WIDTH);
+  });
+
+  it("keeps a saved layout ahead of the kind default", () => {
+    expect(
+      artifactCardFootprint({
+        data: {
+          layout: { width: 200, bodyHeight: 150 },
+          mode: null,
+          artifactRef: {
+            artifact_id: "grid",
+            artifact_type: "table.data",
+            schema_version: 1,
+          },
+        },
+      }),
+    ).toEqual({ width: 200, height: 150 });
   });
 });
 
