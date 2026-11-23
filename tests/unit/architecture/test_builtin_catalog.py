@@ -32,7 +32,6 @@ EXPECTED_BUILTIN_OPERATORS = {
     ("ocr.filter_tiff_jev", 1),
     ("ocr.export_label_studio", 1),
     ("ocr.import_label_studio", 1),
-    ("ocr.georeference_places", 1),
     ("ocr.prepare_tiff_labels", 1),
     ("ocr.filter_tiff_readings", 1),
     ("ocr.places_table", 1),
@@ -81,3 +80,11 @@ def test_file_plugins_install_alongside_builtin_artifact_contracts() -> None:
     assert registry.node_registration("table.import", 1).plugin_slug == "external.table"
     assert registry.artifact_type_owner(RASTER_IMAGE.key) == "image"
     assert registry.artifact_type_owner(TABLE_DATA.key) == "table"
+
+
+def test_application_catalog_has_explicit_descriptions() -> None:
+    from grafy_api.services.families import build_application_registry
+
+    for node in build_application_registry().nodes:
+        assert node.description.strip(), node.key
+        assert "ABC" not in node.description, node.key

@@ -1,6 +1,8 @@
 """Service contracts: nominal protocols, ports, and registration rules."""
 
-from typing import Protocol, override
+from collections.abc import MutableMapping
+from typing import Protocol, cast, override
+import operator
 
 import pytest
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
@@ -109,6 +111,8 @@ def test_registration_rejects_a_service_node_with_inputs() -> None:
 
         @plugin.node(operator_id="test.bad_provider", version=1, title="Bad")
         class BadProvider(Node[ProviderConfig, BadProviderInput, BadProviderOutput]):
+            """Provide a test node."""
+
             @override
             async def run(
                 self,
@@ -142,3 +146,44 @@ def test_a_duplicate_service_contract_is_refused() -> None:
     with pytest.raises(PluginRegistrationError, match="already installed"):
         registry.install(second)
 
+
+@pytest.mark.parametrize("value", ["", " ", " padded", "padded ", "x" * 256])
+def test_service_cache_identity_rejects_invalid_names(value: str) -> None:
+    from grafy_core.text_regions import ServiceCacheIdentity
+
+    with pytest.raises(ValueError):
+        ServiceCacheIdentity(value, "revision")
+    with pytest.raises(ValueError):
+        ServiceCacheIdentity("deployment", value)
+
+
+def test_cache_identity_snapshots_nested_options() -> None:
+    from grafy_core.text_regions import ServiceCacheIdentity
+
+    nested: list[dict[str, float]] = [{"threshold": 0.5}]
+    source: dict[str, object] = {"nested": nested, "tuple": (True, None)}
+    identity = ServiceCacheIdentity("deployment", "revision", source)
+    nested[0]["threshold"] = 0.9
+    nested.append({"new": 1.0})
+    assert identity.options_payload() == {
+        "nested": [{"threshold": 0.5}],
+        "tuple": [True, None],
+    }
+    payload = identity.options_payload()
+    cast(list[object], payload["nested"]).clear()
+    assert identity.options_payload()["nested"] == [{"threshold": 0.5}]
+    with pytest.raises(TypeError):
+        frozen_list = cast(tuple[object, ...], identity.options["nested"])
+        operator.setitem(
+            cast(MutableMapping[str, object], frozen_list[0]), "threshold", 1
+        )
+
+
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), float("-inf"), object(), {1: "bad"}]
+)
+def test_cache_identity_rejects_invalid_options(value: object) -> None:
+    from grafy_core.text_regions import ServiceCacheIdentity
+
+    with pytest.raises(ValueError):
+        ServiceCacheIdentity("deployment", "revision", {"nested": [value]})

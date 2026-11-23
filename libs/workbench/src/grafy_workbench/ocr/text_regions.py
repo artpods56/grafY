@@ -130,6 +130,8 @@ class DetectTextOutput(NodeOutput):
 )
 @final
 class DetectTiffTextNode(Node[DetectTextConfig, DetectTextInput, DetectTextOutput]):
+    """Detect text regions in a TIFF page."""
+
     def __init__(
         self,
         open_page: TiffPageOpener | None,

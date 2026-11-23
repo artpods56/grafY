@@ -33,7 +33,6 @@ from grafy_core.text_regions import (
     TiffPageOpener,
 )
 from grafy_workbench.ocr.declaration import OCR
-from grafy_workbench.ocr.paddle_recognizer import PADDLE_MODEL
 from grafy_workbench.ocr.progress import cached_progress
 from grafy_workbench.ocr.tiff_label_crop import read_label_crop
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
@@ -52,30 +51,28 @@ class TiffRecognizedText(BaseModel):
 
 
 _CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
-_PADDLE_DEPLOYMENT = "paddle.ai-test-ihpan"
 _CROP_VERSION = "label-crop@1"
 _READING_CODEC: TypeAdapter[TextReading] = TypeAdapter(TextReading)
 
 
-def _paddle_spec(ttl_seconds: int) -> CacheSpec[TextReading]:
-    """One crop's reading, as this deployment answers it.
-
-    This is where the Paddle service gets cached: the node that cuts the crops is
-    the only caller a recognizer ever has, so the provider itself keeps one job and
-    never holds a second copy of the same answers under a second key.
-    """
+def _recognizer_spec(
+    ttl_seconds: int, deployment: str, revision: str
+) -> CacheSpec[TextReading]:
+    """Cache one crop reading for the configured recognizer."""
 
     return CacheSpec(
-        operation="ocr.paddle.recognize_crop",
-        deployment=_PADDLE_DEPLOYMENT,
-        revision=PADDLE_MODEL,
+        operation="ocr.crop_reader.recognize_crop",
+        deployment=deployment,
+        revision=revision,
         schema_version=1,
         codec=_READING_CODEC,
         ttl_seconds=ttl_seconds,
     )
 
 
-def _crop_request(png: bytes) -> JsonValue:
+def _crop_request(
+    png: bytes, revision: str, options: dict[str, JsonValue]
+) -> JsonValue:
     """What a reading depends on, and nothing that merely describes the work.
 
     The crop enters as a digest because those pixels are what the model is shown: any
@@ -87,9 +84,9 @@ def _crop_request(png: bytes) -> JsonValue:
 
     return {
         "crop_sha256": hashlib.sha256(png).hexdigest(),
-        "recognizer": PADDLE_MODEL,
+        "recognizer": revision,
         "preprocessing": _CROP_VERSION,
-        "options": {},
+        "options": options,
     }
 
 
@@ -154,6 +151,8 @@ class RecognizeOutput(NodeOutput):
 )
 @final
 class ReadTiffTextNode(Node[NoConfig, RecognizeInput, RecognizeOutput]):
+    """Read text from detected TIFF regions."""
+
     def __init__(
         self,
         open_page: TiffPageOpener | None,
@@ -179,7 +178,8 @@ class ReadTiffTextNode(Node[NoConfig, RecognizeInput, RecognizeOutput]):
         """
 
         cache = self._cache
-        if cache is None:
+        identity = recognizer.cache_identity()
+        if cache is None or identity.revision is None:
             return _checked(await recognizer.recognize(list(pngs)), len(pngs))
 
         async def compute(missing: Sequence[int]) -> list[TextReading]:
@@ -190,8 +190,13 @@ class ReadTiffTextNode(Node[NoConfig, RecognizeInput, RecognizeOutput]):
 
         found = await cache.get_or_compute_many(
             context.workspace_id,
-            _paddle_spec(self._cache_ttl_seconds),
-            [_crop_request(png) for png in pngs],
+            _recognizer_spec(
+                self._cache_ttl_seconds, identity.deployment, identity.revision
+            ),
+            [
+                _crop_request(png, identity.revision, identity.options_payload())
+                for png in pngs
+            ],
             compute,
         )
         readings: list[TextReading] = []

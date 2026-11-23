@@ -1,3 +1,4 @@
+from grafy_core.text_regions import ServiceCacheIdentity
 from base64 import b64decode
 from collections.abc import Sequence
 from io import BytesIO
@@ -28,7 +29,11 @@ from grafy_workbench.ocr.paddle_recognizer import (
 )
 from grafy_workbench.ocr.provider_http import serve_client
 from grafy_workbench.ocr.tiff_label_crop import NATIVE_CROP_PIXEL_LIMIT
-from grafy_workbench.ocr.tiff_recognition import ReadTiffTextNode, RecognizeInput
+from grafy_workbench.ocr.tiff_recognition import (
+    ReadTiffTextNode,
+    RecognizeInput,
+    RecognizeOutput,
+)
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
 
 
@@ -65,6 +70,9 @@ async def test_reads_rotated_polygons_without_losing_their_source_coordinates():
         return TiffPage(100, 100, read, source_sha256="0" * 64, page=page)
 
     class Recognizer(TextRecognizer):
+        def cache_identity(self):
+            return ServiceCacheIdentity("test", "1")
+
         async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
             assert len(crops) == 1
             with Image.open(BytesIO(crops[0])) as crop:
@@ -120,6 +128,9 @@ async def test_a_repeated_crop_does_not_call_the_recognizer_again():
         return TiffPage(100, 100, read, source_sha256="ab" * 32, page=page)
 
     class Recognizer(TextRecognizer):
+        def cache_identity(self):
+            return ServiceCacheIdentity("test", "1")
+
         async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
             nonlocal calls
             calls += 1
@@ -175,6 +186,9 @@ async def test_distinct_misses_go_to_the_recognizer_in_one_call():
         return TiffPage(100, 100, read, source_sha256="cd" * 32, page=page)
 
     class Recognizer(TextRecognizer):
+        def cache_identity(self):
+            return ServiceCacheIdentity("test", "1")
+
         async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
             batches.append(len(crops))
             return [
@@ -246,6 +260,9 @@ async def test_a_second_scan_of_the_same_labels_reads_the_cache_not_the_provider
         return TiffPage(page_side, page_side, read, source_sha256="ef" * 32, page=page)
 
     class Recognizer(TextRecognizer):
+        def cache_identity(self):
+            return ServiceCacheIdentity("test", "1")
+
         async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
             batches.append(len(crops))
             return [
@@ -399,6 +416,9 @@ async def test_a_label_wider_than_one_native_read_is_stitched_from_several_reads
     crops: list[bytes] = []
 
     class Recognizer(TextRecognizer):
+        def cache_identity(self):
+            return ServiceCacheIdentity("test", "1")
+
         async def recognize(self, requests: Sequence[bytes]) -> list[TextReading]:
             crops.extend(requests)
             return [
@@ -521,3 +541,75 @@ async def test_paddle_names_a_provider_that_stops_answering():
         pytest.raises(UserFacingNodeError, match="Could not reach Cyrillic OCR"),
     ):
         await provider.recognize([b"crop"])
+
+
+async def _run_identity_recognition(
+    cache: ProviderCache, context: NodeExecutionContext, recognizer: TextRecognizer
+) -> RecognizeOutput:
+    async def read(*, col: int, row: int, width: int, height: int) -> bytes:
+        return _window_png(width, height)
+
+    async def open_page(
+        workspace_id: UUID, artifact_id: UUID, *, page: int
+    ) -> TiffPage:
+        return TiffPage(100, 100, read, source_sha256="c" * 64, page=page)
+
+    source = Ref[TiffFile](
+        artifact_id=uuid4(), artifact_type="file.tiff", schema_version=1
+    )
+    regions = TiffTextRegions(
+        source=source,
+        window=TiffPixelWindow(page=0, col=0, row=0, width=100, height=100),
+        regions=[TextRegion(polygon=[(10, 10), (60, 10), (60, 30), (10, 30)])],
+    )
+    return await ReadTiffTextNode(open_page, cache=cache).run(
+        context, NoConfig(), RecognizeInput(regions=regions, recognizer=recognizer)
+    )
+
+
+async def test_recognizer_identities_isolate_cache_entries():
+    class Recognizer(TextRecognizer):
+        def __init__(self, deployment: str):
+            self.deployment = deployment
+            self.calls = 0
+
+        def cache_identity(self) -> ServiceCacheIdentity:
+            return ServiceCacheIdentity(self.deployment, "1")
+
+        async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
+            self.calls += 1
+            return [TextReading(text=self.deployment, model="1") for _ in crops]
+
+    cache = ProviderCache(InMemoryCacheStore())
+    context = NodeExecutionContext(workspace_id=uuid4())
+    first, second = Recognizer("first"), Recognizer("second")
+
+    first_result = await _run_identity_recognition(cache, context, first)
+    second_result = await _run_identity_recognition(cache, context, second)
+    await _run_identity_recognition(cache, context, second)
+    assert first_result.text.regions[0].reading is not None
+    assert first_result.text.regions[0].reading.text == "first"
+    assert second_result.text.regions[0].reading is not None
+    assert second_result.text.regions[0].reading.text == "second"
+    assert (first.calls, second.calls) == (1, 1)
+
+
+async def test_recognizer_moving_revision_bypasses_cache():
+    from unittest.mock import AsyncMock
+
+    class Recognizer(TextRecognizer):
+        def cache_identity(self) -> ServiceCacheIdentity:
+            return ServiceCacheIdentity("moving", None)
+
+        async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
+            return [TextReading(text="fresh", model="latest") for _ in crops]
+
+    cache = ProviderCache(InMemoryCacheStore())
+    cache.get_or_compute_many = AsyncMock(side_effect=AssertionError("cache accessed"))
+
+    result = await _run_identity_recognition(
+        cache, NodeExecutionContext(workspace_id=uuid4()), Recognizer()
+    )
+    assert result.text.regions[0].reading is not None
+    assert result.text.regions[0].reading.text == "fresh"
+    cache.get_or_compute_many.assert_not_called()

@@ -113,6 +113,8 @@ class BetaOutput(NodeOutput):
 )
 @final
 class AlphaProvider(Node[ProviderConfig, EmptyInput, AlphaOutput]):
+    """Provide a test node."""
+
     @override
     async def run(
         self,
@@ -123,9 +125,7 @@ class AlphaProvider(Node[ProviderConfig, EmptyInput, AlphaOutput]):
     ) -> AlphaOutput:
         api_key = await context.secrets.require(API_KEY.name)
         PROVIDER_BUILDS.append((context.node_id, api_key.get_secret_value()))
-        return AlphaOutput(
-            reader=AlphaReader(label=config.label, api_key=api_key)
-        )
+        return AlphaOutput(reader=AlphaReader(label=config.label, api_key=api_key))
 
 
 @SERVICES.node(
@@ -137,6 +137,8 @@ class AlphaProvider(Node[ProviderConfig, EmptyInput, AlphaOutput]):
 )
 @final
 class BetaProvider(Node[ProviderConfig, EmptyInput, BetaOutput]):
+    """Provide a test node."""
+
     @override
     async def run(
         self,
@@ -165,6 +167,8 @@ class ConsumerOutput(NodeOutput):
 @SERVICES.node(operator_id="test.reader_consumer", version=1, title="Reader consumer")
 @final
 class ReaderConsumer(Node[ConsumerConfig, ConsumerInput, ConsumerOutput]):
+    """Provide a test node."""
+
     @override
     async def run(
         self,
@@ -260,7 +264,9 @@ def _clear_builds() -> None:
 
 
 @pytest.fixture
-def harness(tmp_path: Path) -> tuple[
+def harness(
+    tmp_path: Path,
+) -> tuple[
     ExpandedGraph,
     object,
     RecordingNodeSecrets,
