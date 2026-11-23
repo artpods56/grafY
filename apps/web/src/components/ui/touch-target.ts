@@ -3,8 +3,9 @@ import * as stylex from "@stylexjs/stylex";
 /**
  * The phone touch target this app's own CSS has promised since before the shared
  * kit existed: a control that lives in a page or a panel grows to 44px under the
- * shell's 620px breakpoint, which `globals.css` repeats for the rail, the search
- * fields, the selects and the member rows.
+ * shell's 620px breakpoint, which `globals.css` still repeats for the rail, the
+ * search fields, and the native inputs. Member-form and member-row selects pass
+ * `phoneTouch.on`.
  *
  * The kit's own sizes stay as designed, and only `Button lg` grows: a control
  * that has to be reachable with a thumb has to be bigger than a pixel grid.
