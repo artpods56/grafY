@@ -191,7 +191,7 @@ describe("workspace graph panel interactions", () => {
     trigger.dataset.graphPanelTrigger = "";
     document.body.append(trigger);
     const accountMenu = document.createElement("div");
-    accountMenu.className = "grafy-workspace-rail__account-menu";
+    accountMenu.dataset.accountMenu = "";
     document.body.append(accountMenu);
     const { onClose } = await renderPanel();
 
@@ -225,9 +225,14 @@ describe("workspace graph panel interactions", () => {
     ];
     const { container } = await renderPanel();
 
-    expect(
-      container.querySelector(".grafy-graph-panel__row-meta")?.textContent,
-    ).toContain("0 nodes · 0 edges");
+    // The row's open button is the one without an accessible name; its last
+    // span is the meta line.
+    const rowOpen = [...container.querySelectorAll("button")].find(
+      (button) => !button.hasAttribute("aria-label"),
+    );
+    expect(rowOpen?.lastElementChild?.textContent).toContain(
+      "0 nodes · 0 edges",
+    );
     expect(container.textContent).not.toContain("unsaved draft");
   });
 
@@ -257,8 +262,8 @@ describe("workspace graph panel interactions", () => {
 
   it("navigates before reporting graph selection", async () => {
     const { container, onClose } = await renderPanel();
-    const graph = container.querySelector<HTMLButtonElement>(
-      ".grafy-graph-panel__row-open",
+    const graph = [...container.querySelectorAll("button")].find(
+      (button) => !button.hasAttribute("aria-label"),
     );
 
     await act(async () => graph?.click());
@@ -327,8 +332,8 @@ describe("workspace graph panel interactions", () => {
       ),
     );
     const { container } = await renderPanel();
-    const graphButton = container.querySelector<HTMLButtonElement>(
-      ".grafy-graph-panel__row-open",
+    const graphButton = [...container.querySelectorAll("button")].find(
+      (button) => !button.hasAttribute("aria-label"),
     );
     graphButton?.focus();
 

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import * as stylex from "@stylexjs/stylex";
 import {
   Check,
   Clipboard,
@@ -32,6 +33,7 @@ import {
 import { WorkspacePacks } from "./WorkspacePacks";
 import { WorkspaceCredentials } from "./WorkspaceCredentials";
 import { WorkspaceMembersDialog } from "./WorkspaceMembersDialog";
+import { workspaceSettingsStyles as settings } from "./workspace-settings.styles";
 
 type ExpiryDays = "1" | "7" | "30";
 type TokenPurpose = "graph-automation" | "module-publishing";
@@ -188,58 +190,81 @@ export function WorkspaceSettings() {
   };
 
   return (
-    <main className="grafy-workspace-settings">
-      <header className="grafy-workspace-settings__header">
-        <p className="grafy-workspace-overview__eyebrow">Workspace</p>
-        <h1>Settings</h1>
-        <p>
-          Configuration and access for <strong>{label}</strong>.
+    <main {...stylex.props(settings.main)}>
+      <header {...stylex.props(settings.header)}>
+        <p {...stylex.props(settings.eyebrow)}>Workspace</p>
+        <h1 {...stylex.props(settings.headerTitle)}>Settings</h1>
+        <p {...stylex.props(settings.headerText)}>
+          Configuration and access for{" "}
+          <strong {...stylex.props(settings.headerStrong)}>{label}</strong>.
         </p>
       </header>
 
       <section
-        className="grafy-workspace-settings__section"
+        {...stylex.props(settings.section)}
         aria-labelledby="workspace-details-heading"
       >
-        <div className="grafy-workspace-settings__section-heading">
+        <div {...stylex.props(settings.sectionHeading)}>
           <div>
-            <h2 id="workspace-details-heading">Workspace details</h2>
-            <p>The active location these settings apply to.</p>
+            <h2
+              id="workspace-details-heading"
+              {...stylex.props(settings.headingTitle)}
+            >
+              Workspace details
+            </h2>
+            <p {...stylex.props(settings.headingText)}>
+              The active location these settings apply to.
+            </p>
           </div>
-          <Workflow size={18} aria-hidden="true" />
+          <Workflow
+            size={18}
+            aria-hidden="true"
+            {...stylex.props(settings.headingIcon)}
+          />
         </div>
-        <dl className="grafy-workspace-settings__details">
-          <div>
-            <dt>Name</dt>
-            <dd>{label}</dd>
+        <dl {...stylex.props(settings.details)}>
+          <div {...stylex.props(settings.detailsRow)}>
+            <dt {...stylex.props(settings.detailsTerm)}>Name</dt>
+            <dd {...stylex.props(settings.detailsValue)}>{label}</dd>
           </div>
-          <div>
-            <dt>Type</dt>
-            <dd>{workspace.kind === "personal" ? "Personal" : "Shared"}</dd>
+          <div {...stylex.props(settings.detailsRow)}>
+            <dt {...stylex.props(settings.detailsTerm)}>Type</dt>
+            <dd {...stylex.props(settings.detailsValue)}>
+              {workspace.kind === "personal" ? "Personal" : "Shared"}
+            </dd>
           </div>
-          <div>
-            <dt>Your role</dt>
-            <dd>{workspace.role}</dd>
+          <div {...stylex.props(settings.detailsRow)}>
+            <dt {...stylex.props(settings.detailsTerm)}>Your role</dt>
+            <dd {...stylex.props(settings.detailsValue)}>{workspace.role}</dd>
           </div>
         </dl>
       </section>
 
       {workspace.kind === "shared" ? (
         <section
-          className="grafy-workspace-settings__section"
+          {...stylex.props(settings.section)}
           aria-labelledby="workspace-access-heading"
         >
-          <div className="grafy-workspace-settings__section-heading">
+          <div {...stylex.props(settings.sectionHeading)}>
             <div>
-              <h2 id="workspace-access-heading">Members and access</h2>
-              <p>
+              <h2
+                id="workspace-access-heading"
+                {...stylex.props(settings.headingTitle)}
+              >
+                Members and access
+              </h2>
+              <p {...stylex.props(settings.headingText)}>
                 Control who can work in this workspace and what they can do.
               </p>
             </div>
-            <Users size={18} aria-hidden="true" />
+            <Users
+              size={18}
+              aria-hidden="true"
+              {...stylex.props(settings.headingIcon)}
+            />
           </div>
-          <div className="grafy-workspace-settings__section-action">
-            <span>
+          <div {...stylex.props(settings.sectionAction)}>
+            <span {...stylex.props(settings.sectionActionText)}>
               {canManageMembers
                 ? "Invite people, change roles, or remove access."
                 : "Only workspace owners can change member access."}
@@ -250,28 +275,38 @@ export function WorkspaceSettings() {
       ) : null}
 
       <section
-        className="grafy-workspace-settings__section"
+        {...stylex.props(settings.section)}
         aria-labelledby="workspace-token-heading"
       >
-        <div className="grafy-workspace-settings__section-heading">
+        <div {...stylex.props(settings.sectionHeading)}>
           <div>
-            <h2 id="workspace-token-heading">Personal access tokens</h2>
-            <p>
+            <h2
+              id="workspace-token-heading"
+              {...stylex.props(settings.headingTitle)}
+            >
+              Personal access tokens
+            </h2>
+            <p {...stylex.props(settings.headingText)}>
               Authenticate command-line and agent workflows without using your
               browser session.
             </p>
           </div>
-          <KeyRound size={18} aria-hidden="true" />
+          <KeyRound
+            size={18}
+            aria-hidden="true"
+            {...stylex.props(settings.headingIcon)}
+          />
         </div>
 
         {selectedTokenPurpose ? (
           <form
-            className="grafy-workspace-settings__token-form"
+            {...stylex.props(settings.tokenForm)}
             onSubmit={(event) => void createToken(event)}
           >
-            <label>
+            <label {...stylex.props(settings.tokenFormLabel)}>
               Label
               <input
+                {...stylex.props(settings.tokenInput)}
                 value={tokenLabel}
                 maxLength={160}
                 onChange={(event) => setTokenLabel(event.currentTarget.value)}
@@ -315,13 +350,14 @@ export function WorkspaceSettings() {
               type="submit"
               variant="primary"
               size="lg"
+              xstyle={settings.tokenFormButton}
               disabled={creating || tokenLabel.trim() === ""}
             >
               {creating ? "Creating…" : "Create token"}
             </Button>
           </form>
         ) : (
-          <p className="grafy-workspace-settings__muted">
+          <p {...stylex.props(settings.muted)}>
             Your role does not allow the supported automation workflows in this
             workspace.
           </p>
@@ -330,7 +366,7 @@ export function WorkspaceSettings() {
         {createdToken ? (
           <Notice
             tone="neutral"
-            className="grafy-workspace-settings__token-message"
+            xstyle={settings.tokenMessage}
             action={
               <IconButton
                 label="Copy personal access token"
@@ -352,28 +388,25 @@ export function WorkspaceSettings() {
               {createdToken.label} will not be shown again after you leave this
               page.
             </span>
-            <code className="grafy-workspace-settings__token-secret">
+            <code {...stylex.props(settings.tokenSecret)}>
               {createdToken.token}
             </code>
           </Notice>
         ) : null}
 
         {message ? (
-          <Notice
-            tone="danger"
-            className="grafy-workspace-settings__token-message"
-          >
+          <Notice tone="danger" xstyle={settings.tokenMessage}>
             {message}
           </Notice>
         ) : null}
 
-        <div className="grafy-workspace-settings__token-list">
+        <div {...stylex.props(settings.tokenList)}>
           {tokensLoading ? (
-            <p className="grafy-workspace-settings__muted">Loading tokens…</p>
+            <p {...stylex.props(settings.muted)}>Loading tokens…</p>
           ) : tokensError ? (
             <Notice
               tone="danger"
-              className="grafy-workspace-settings__token-message"
+              xstyle={settings.tokenMessage}
               action={
                 <Button
                   variant="secondary"
@@ -390,24 +423,25 @@ export function WorkspaceSettings() {
             tokens.map((token) => {
               const status = tokenState(token, renderedAt);
               return (
-                <div
-                  className="grafy-workspace-settings__token-row"
-                  key={token.id}
-                >
-                  <div className="grafy-workspace-settings__token-row-main">
-                    <div>
-                      <strong>{token.label}</strong>
+                <div {...stylex.props(settings.tokenRow)} key={token.id}>
+                  <div {...stylex.props(settings.tokenRowMain)}>
+                    <div {...stylex.props(settings.tokenRowMainLine)}>
+                      <strong {...stylex.props(settings.tokenRowLabel)}>
+                        {token.label}
+                      </strong>
                       <span
-                        className="grafy-workspace-settings__token-status"
+                        {...stylex.props(settings.tokenStatus)}
                         data-state={status.state}
                       >
                         {status.label}
                       </span>
                     </div>
-                    <code>{token.public_prefix}…</code>
+                    <code {...stylex.props(settings.tokenRowPrefix)}>
+                      {token.public_prefix}…
+                    </code>
                   </div>
-                  <div className="grafy-workspace-settings__token-meta">
-                    <span>
+                  <div {...stylex.props(settings.tokenMeta)}>
+                    <span {...stylex.props(settings.tokenMetaWhen)}>
                       <Clock3 size={13} aria-hidden="true" /> Expires{" "}
                       {formatTimestamp(token.expires_at)}
                     </span>
@@ -418,6 +452,7 @@ export function WorkspaceSettings() {
                     title="Revoke token"
                     variant="danger"
                     size="sm"
+                    xstyle={settings.tokenRowAction}
                     disabled={
                       status.state !== "active" || revokingId === token.id
                     }
@@ -429,7 +464,7 @@ export function WorkspaceSettings() {
               );
             })
           ) : (
-            <p className="grafy-workspace-settings__muted">
+            <p {...stylex.props(settings.muted)}>
               No personal access tokens for this workspace.
             </p>
           )}

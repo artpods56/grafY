@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import * as stylex from "@stylexjs/stylex";
 import {
   ArrowUpRight,
   Plus,
@@ -25,6 +26,8 @@ import { createWorkspace } from "@/lib/api";
 import type { Workspace } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
 
+import { workspacesPageStyles as styles } from "./page.styles";
+
 function slugFromName(name: string): string {
   const slug = name
     .trim()
@@ -37,26 +40,31 @@ function slugFromName(name: string): string {
 function LocationRow({ workspace }: { workspace: Workspace }) {
   return (
     <Link
-      className="grafy-workspace-list__row"
+      className={stylex.props(styles.row).className}
       href={`/workspaces/${encodeURIComponent(workspace.slug)}`}
       aria-label={`Open settings for ${workspaceDisplayName(workspace)}`}
     >
-      <span className="grafy-workspace-list__icon" aria-hidden="true">
+      <span
+        className={stylex.props(styles.rowIcon).className}
+        aria-hidden="true"
+      >
         {workspace.kind === "personal" ? (
           <Workflow size={16} />
         ) : (
           <Users size={16} />
         )}
       </span>
-      <span className="grafy-workspace-list__copy">
-        <strong>{workspaceDisplayName(workspace)}</strong>
-        <small>
+      <span className={stylex.props(styles.rowCopy).className}>
+        <strong className={stylex.props(styles.rowName).className}>
+          {workspaceDisplayName(workspace)}
+        </strong>
+        <small className={stylex.props(styles.rowHint).className}>
           {workspace.kind === "personal"
             ? "Your private project location"
             : "A project location shared with this team"}
         </small>
       </span>
-      <span className="grafy-workspace-list__open">Settings</span>
+      <span className={stylex.props(styles.rowOpen).className}>Settings</span>
       <ArrowUpRight size={15} aria-hidden="true" />
     </Link>
   );
@@ -71,15 +79,18 @@ function LocationSection({
 }) {
   if (workspaces.length === 0) return null;
   return (
-    <section className="grafy-workspace-section" aria-label={title}>
-      <div className="grafy-workspace-section__heading">
-        <h2>{title}</h2>
-        <span className="grafy-workspace-section__meta">
+    <section
+      className={stylex.props(styles.section).className}
+      aria-label={title}
+    >
+      <div className={stylex.props(styles.sectionHeading).className}>
+        <h2 className={stylex.props(styles.sectionTitle).className}>{title}</h2>
+        <span className={stylex.props(styles.sectionMeta).className}>
           {workspaces.length}{" "}
           {workspaces.length === 1 ? "location" : "locations"}
         </span>
       </div>
-      <div className="grafy-workspace-list">
+      <div className={stylex.props(styles.list).className}>
         {workspaces.map((workspace) => (
           <LocationRow key={workspace.id} workspace={workspace} />
         ))}
@@ -148,7 +159,7 @@ export default function WorkspacesPage() {
   const teams = filtered.filter((workspace) => workspace.kind === "shared");
 
   return (
-    <div className="grafy-workspace-directory">
+    <div className={stylex.props(styles.directory).className}>
       {workspaces ? (
         <WorkspaceRail
           workspaces={workspaces}
@@ -156,20 +167,29 @@ export default function WorkspacesPage() {
           onLogout={logout}
         />
       ) : null}
-      <main className="grafy-workspace-directory__main">
-        <header className="grafy-workspace-directory__header">
+      <main className={stylex.props(styles.main).className}>
+        <header className={stylex.props(styles.header).className}>
           <div>
-            <p className="grafy-workspace-overview__eyebrow">Administration</p>
-            <h1>Workspace directory</h1>
-            <p>
+            <p
+              className={
+                stylex.props(styles.eyebrow, styles.headerText).className
+              }
+            >
+              Administration
+            </p>
+            <h1 className={stylex.props(styles.headerTitle).className}>
+              Workspace directory
+            </h1>
+            <p className={stylex.props(styles.headerText).className}>
               Manage the locations that own your graphs and control who can work
               with them.
             </p>
           </div>
-          <div className="grafy-workspace-directory__actions">
+          <div className={stylex.props(styles.actions).className}>
             <Button
               variant="primary"
               size="lg"
+              xstyle={styles.actionItem}
               onClick={() => {
                 setCreateOpen((current) => !current);
                 setJoinOpen(false);
@@ -180,6 +200,7 @@ export default function WorkspacesPage() {
             <Button
               variant="secondary"
               size="lg"
+              xstyle={styles.actionItem}
               onClick={() => {
                 setJoinOpen((current) => !current);
                 setCreateOpen(false);
@@ -192,12 +213,13 @@ export default function WorkspacesPage() {
 
         {createOpen ? (
           <form
-            className="grafy-workspace-create"
+            className={stylex.props(styles.createForm).className}
             onSubmit={(event) => void submit(event)}
           >
-            <label>
+            <label className={stylex.props(styles.createLabel).className}>
               Team name
               <input
+                className={stylex.props(styles.createInput).className}
                 value={name}
                 onChange={(event) => setName(event.currentTarget.value)}
                 placeholder="Planning"
@@ -218,21 +240,22 @@ export default function WorkspacesPage() {
 
         {joinOpen ? (
           <div
-            className="grafy-workspace-join"
+            className={stylex.props(styles.joinForm).className}
             role="region"
             aria-label="Join a team"
           >
-            <p>
+            <p className={stylex.props(styles.joinText).className}>
               Ask a team owner to add you. The team will appear here as soon as
               access is granted.
             </p>
           </div>
         ) : null}
 
-        <div className="grafy-workspace-toolbar">
-          <label className="grafy-workspace-search">
+        <div className={stylex.props(styles.toolbar).className}>
+          <label className={stylex.props(styles.search).className}>
             <Search size={15} aria-hidden="true" />
             <input
+              className={stylex.props(styles.searchInput).className}
               type="search"
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
@@ -258,12 +281,12 @@ export default function WorkspacesPage() {
             Teams and access couldn&apos;t be loaded.
           </Notice>
         ) : !workspaces ? (
-          <div className="grafy-workspace-directory__loading">
+          <div className={stylex.props(styles.loading).className}>
             <BrandLoader size={40} label="Loading teams and access" />
             <span>Loading teams &amp; access…</span>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="grafy-workspace-empty">
+          <div className={stylex.props(styles.empty).className}>
             <p>
               {normalizedQuery
                 ? "No teams or locations match that search."
@@ -287,17 +310,22 @@ export default function WorkspacesPage() {
         )}
 
         <aside
-          className="grafy-workspace-edu"
+          className={stylex.props(styles.edu).className}
           aria-label="About project locations"
         >
           <div>
-            <h2>How locations work</h2>
-            <p>
+            <h2 className={stylex.props(styles.eduTitle).className}>
+              How locations work
+            </h2>
+            <p className={stylex.props(styles.eduText).className}>
               My projects is private to you. A Team location shares its projects
               with that Team while keeping access and project data together.
             </p>
           </div>
-          <span className="grafy-workspace-edu__mark" aria-hidden="true" />
+          <span
+            className={stylex.props(styles.eduMark).className}
+            aria-hidden="true"
+          />
         </aside>
       </main>
     </div>

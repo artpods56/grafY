@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
+import * as stylex from "@stylexjs/stylex";
 import { Popover } from "@base-ui/react/popover";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 import type { SavedGraphSummary } from "@/lib/api";
+import { railStyles } from "./workspace-rail.stylex";
 
 export function GraphRowMenu({
   graph,
@@ -22,7 +24,7 @@ export function GraphRowMenu({
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
-        className="grafy-graph-row__menu-trigger"
+        className={stylex.props(railStyles.menuTrigger).className}
         disabled={busy}
         aria-label={`Actions for ${graph.name}`}
         title="Graph actions"
@@ -35,15 +37,18 @@ export function GraphRowMenu({
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Positioner
-          className="grafy-workspace-rail__account-positioner"
+          className={stylex.props(railStyles.accountPositioner).className}
           side="right"
           align="start"
           sideOffset={4}
         >
-          <Popover.Popup className="grafy-workspace-rail__account-menu">
+          <Popover.Popup
+            className={stylex.props(railStyles.accountMenu).className}
+            data-account-menu=""
+          >
             <button
               type="button"
-              className="grafy-workspace-rail__account-menu-item"
+              className={stylex.props(railStyles.accountMenuItem).className}
               onClick={() => {
                 setOpen(false);
                 onRename(graph);
@@ -54,7 +59,12 @@ export function GraphRowMenu({
             </button>
             <button
               type="button"
-              className="grafy-workspace-rail__account-menu-item grafy-workspace-rail__account-menu-item--danger"
+              className={
+                stylex.props(
+                  railStyles.accountMenuItem,
+                  railStyles.accountMenuItemDanger,
+                ).className
+              }
               onClick={() => {
                 setOpen(false);
                 onDelete(graph);

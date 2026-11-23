@@ -431,9 +431,7 @@ describe("WorkspaceSettings", () => {
       setInputValue(labelInput, "Notarius publisher"),
     );
 
-    const form = container.querySelector<HTMLFormElement>(
-      ".grafy-workspace-settings__token-form",
-    );
+    const form = labelInput.closest("form");
     if (!form) throw new Error("Token form was not rendered");
     await React.act(async () => {
       form.dispatchEvent(
@@ -505,9 +503,10 @@ describe("WorkspaceSettings", () => {
     const container = await renderSettings();
     expect(container.textContent).toContain("Module publishing");
 
-    const form = container.querySelector<HTMLFormElement>(
-      ".grafy-workspace-settings__token-form",
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Create token",
     );
+    const form = submit?.closest("form");
     if (!form) throw new Error("Token form was not rendered");
     await React.act(async () => {
       form.dispatchEvent(
@@ -524,10 +523,12 @@ describe("WorkspaceSettings", () => {
 
   it("names the purpose and expiry selects by their own labels", async () => {
     const container = await renderSettings();
+    const submit = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Create token",
+    );
+    const form = submit?.closest("form");
     const selects = [
-      ...container.querySelectorAll<HTMLSelectElement>(
-        ".grafy-workspace-settings__token-form select",
-      ),
+      ...(form?.querySelectorAll<HTMLSelectElement>("select") ?? []),
     ];
     expect(selects).toHaveLength(2);
     for (const select of selects) {

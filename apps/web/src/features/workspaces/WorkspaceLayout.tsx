@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import * as stylex from "@stylexjs/stylex";
 import { Popover } from "@base-ui/react/popover";
 import {
   ChevronsUpDown,
@@ -61,6 +62,7 @@ import {
 import { deleteProjectRemote, renameProjectRemote } from "./graph-actions";
 import { GraphRowMenu, promptGraphRename } from "./GraphRowMenu";
 import { sortGraphsByRecency } from "./WorkspaceGraphPanel";
+import { graphRowMarker, railStyles } from "./workspace-rail.stylex";
 
 export interface WorkspaceContextValue {
   workspace: Workspace;
@@ -590,6 +592,10 @@ export function WorkspaceRail({
   const initials = sessionInitials(session);
   const email = session.email?.trim() || null;
   const visuallyCollapsed = previewCollapsed ?? collapsed;
+  // A drag on the resize handle is the only time the body carries
+  // `grafy-rail-resizing`; the preview flag is non-null exactly then.
+  const resizing = previewCollapsed !== null;
+  const railIconClass = stylex.props(railStyles.railIcon).className;
   const mobileNavigationHidden = mobileViewport && !mobileOpen;
   const graphBrowserActive = Boolean(
     activeSlug &&
@@ -669,11 +675,10 @@ export function WorkspaceRail({
 
   return (
     <>
-      <header className="grafy-mobile-nav">
+      <header className={stylex.props(railStyles.mobileNav).className}>
         <IconButton
           ref={mobileMenuButtonRef}
           type="button"
-          className="grafy-mobile-nav__menu"
           label={mobileOpen ? "Close navigation" : "Open navigation"}
           variant="ghost"
           size="lg"
@@ -697,17 +702,24 @@ export function WorkspaceRail({
         </IconButton>
         <button
           type="button"
-          className="grafy-mobile-nav__brand"
+          className={stylex.props(railStyles.mobileBrand).className}
           aria-label="Projects"
           onClick={activateBrand}
         >
           <BrandWordmark height={22} />
         </button>
-        <span className="grafy-mobile-nav__location">{mobileContextLabel}</span>
+        <span className={stylex.props(railStyles.mobileLocation).className}>
+          {mobileContextLabel}
+        </span>
       </header>
 
       <div
-        className={`grafy-mobile-nav__backdrop${mobileOpen ? " is-open" : ""}`}
+        className={
+          stylex.props(
+            railStyles.mobileBackdrop,
+            mobileOpen && railStyles.mobileBackdropOpen,
+          ).className
+        }
         aria-hidden="true"
         onClick={() => closeMobileNavigation(true)}
       />
@@ -715,7 +727,14 @@ export function WorkspaceRail({
       <aside
         ref={mobileRailRef}
         id="grafy-primary-navigation"
-        className={`grafy-workspace-rail${visuallyCollapsed ? " is-collapsed" : ""}${mobileOpen ? " is-mobile-open" : ""}`}
+        className={
+          stylex.props(
+            railStyles.rail,
+            visuallyCollapsed && railStyles.railCollapsed,
+            mobileOpen && railStyles.railMobileOpen,
+            resizing && railStyles.railNoTransition,
+          ).className
+        }
         role={mobileViewport && mobileOpen ? "dialog" : undefined}
         aria-modal={mobileViewport && mobileOpen ? true : undefined}
         aria-hidden={mobileNavigationHidden ? true : undefined}
@@ -724,40 +743,70 @@ export function WorkspaceRail({
       >
         <button
           type="button"
-          className="grafy-workspace-rail__item grafy-workspace-rail__mobile-close"
+          className={
+            stylex.props(railStyles.railItem, railStyles.mobileClose).className
+          }
           onClick={() => closeMobileNavigation(true)}
         >
-          <span>Close navigation</span>
-          <X size={18} aria-hidden="true" />
+          <span
+            className={
+              stylex.props(
+                railStyles.itemSpan,
+                railStyles.mobileCloseSpan,
+                visuallyCollapsed && railStyles.copyHidden,
+              ).className
+            }
+          >
+            Close navigation
+          </span>
+          <X size={18} aria-hidden="true" className={railIconClass} />
         </button>
         <button
           type="button"
-          className="grafy-workspace-rail__brand"
+          className={stylex.props(railStyles.railBrand).className}
           aria-label="Projects"
           onClick={activateBrand}
         >
           <BrandWordmark
-            className="grafy-workspace-rail__brand-wordmark"
+            className={stylex.props(railStyles.brandWordmark).className}
             height={24}
           />
           <BrandIcon
-            className="grafy-workspace-rail__brand-icon"
+            className={stylex.props(railStyles.brandIcon).className}
             size={28}
             alt=""
           />
         </button>
 
-        <nav className="grafy-workspace-rail__nav" aria-label="Workspaces">
-          <p className="grafy-workspace-rail__section-label">Workspaces</p>
-          <label className="grafy-workspace-rail__workspace-select">
+        <nav
+          className={stylex.props(railStyles.railNav).className}
+          aria-label="Workspaces"
+        >
+          <p
+            className={
+              stylex.props(
+                railStyles.sectionLabel,
+                visuallyCollapsed && railStyles.copyHidden,
+              ).className
+            }
+          >
+            Workspaces
+          </p>
+          <label className={stylex.props(railStyles.workspaceSelect).className}>
             <span
-              className="grafy-workspace-rail__workspace-select-icon"
+              className={stylex.props(railStyles.selectIcon).className}
               aria-hidden="true"
             >
               {selectedWorkspace?.kind === "personal" ? (
-                <Workflow size={15} />
+                <Workflow
+                  size={15}
+                  className={stylex.props(railStyles.selectIconSvg).className}
+                />
               ) : (
-                <Users size={15} />
+                <Users
+                  size={15}
+                  className={stylex.props(railStyles.selectIconSvg).className}
+                />
               )}
             </span>
             <Select
@@ -765,6 +814,10 @@ export function WorkspaceRail({
               aria-label="Switch workspace"
               title={workspaceSelectorLabel(selectedWorkspace)}
               onChange={onChangeWorkspace}
+              xstyle={[
+                railStyles.workspaceSelectControl,
+                visuallyCollapsed && railStyles.workspaceSelectCollapsed,
+              ]}
             >
               {workspaces.map((workspace) => (
                 <option key={workspace.id} value={workspace.slug}>
@@ -773,15 +826,18 @@ export function WorkspaceRail({
               ))}
             </Select>
             <span
-              className="grafy-workspace-rail__workspace-select-chevron"
+              className={stylex.props(railStyles.selectChevron).className}
               aria-hidden="true"
             >
-              <ChevronsUpDown size={12} />
+              <ChevronsUpDown
+                size={12}
+                className={stylex.props(railStyles.selectChevronSvg).className}
+              />
             </span>
           </label>
           <button
             type="button"
-            className="grafy-workspace-rail__item"
+            className={stylex.props(railStyles.railItem).className}
             title="Workspace invitations"
             aria-label={`Workspace invitations${workspaceInvitations?.length ? `, ${workspaceInvitations.length} pending` : ""}`}
             onClick={() => {
@@ -789,10 +845,19 @@ export function WorkspaceRail({
               setInvitationDialogOpen(true);
             }}
           >
-            <Mail size={15} aria-hidden="true" />
-            <span>Invitations</span>
+            <Mail size={15} aria-hidden="true" className={railIconClass} />
+            <span
+              className={
+                stylex.props(
+                  railStyles.itemSpan,
+                  visuallyCollapsed && railStyles.copyHidden,
+                ).className
+              }
+            >
+              Invitations
+            </span>
             {workspaceInvitations?.length ? (
-              <span className="grafy-workspace-rail__badge">
+              <span className={stylex.props(railStyles.badge).className}>
                 {workspaceInvitations.length}
               </span>
             ) : null}
@@ -870,21 +935,48 @@ export function WorkspaceRail({
           </DialogContent>
         </Dialog>
 
-        <nav className="grafy-workspace-rail__nav" aria-label="Projects">
-          <p className="grafy-workspace-rail__section-label">Projects</p>
+        <nav
+          className={stylex.props(railStyles.railNav).className}
+          aria-label="Projects"
+        >
+          <p
+            className={
+              stylex.props(
+                railStyles.sectionLabel,
+                visuallyCollapsed && railStyles.copyHidden,
+              ).className
+            }
+          >
+            Projects
+          </p>
           <button
             type="button"
-            className={`grafy-workspace-rail__item${graphBrowserActive ? " is-active" : ""}`}
+            className={
+              stylex.props(
+                railStyles.railItem,
+                graphBrowserActive && railStyles.railItemActive,
+              ).className
+            }
+            data-active={graphBrowserActive ? true : undefined}
             title="Browse all projects"
             onClick={goGraphs}
           >
-            <Workflow size={15} aria-hidden="true" />
-            <span>All projects</span>
+            <Workflow size={15} aria-hidden="true" className={railIconClass} />
+            <span
+              className={
+                stylex.props(
+                  railStyles.itemSpan,
+                  visuallyCollapsed && railStyles.copyHidden,
+                ).className
+              }
+            >
+              All projects
+            </span>
           </button>
           {activeWorkspace || onNewGraph ? (
             <button
               type="button"
-              className="grafy-workspace-rail__item"
+              className={stylex.props(railStyles.railItem).className}
               title="New project"
               onClick={() => {
                 closeMobileNavigation(true);
@@ -902,14 +994,29 @@ export function WorkspaceRail({
                 }
               }}
             >
-              <Plus size={15} aria-hidden="true" />
-              <span>New project</span>
+              <Plus size={15} aria-hidden="true" className={railIconClass} />
+              <span
+                className={
+                  stylex.props(
+                    railStyles.itemSpan,
+                    visuallyCollapsed && railStyles.copyHidden,
+                  ).className
+                }
+              >
+                New project
+              </span>
             </button>
           ) : null}
           {activeWorkspace && chrome ? (
             <button
               type="button"
-              className={`grafy-workspace-rail__item${chrome.isDirty ? " is-active" : ""}`}
+              className={
+                stylex.props(
+                  railStyles.railItem,
+                  chrome.isDirty && railStyles.railItemActive,
+                ).className
+              }
+              data-active={chrome.isDirty ? true : undefined}
               title={
                 chrome.saving
                   ? "Saving graph…"
@@ -926,12 +1033,19 @@ export function WorkspaceRail({
                 <LoaderCircle
                   size={15}
                   aria-hidden="true"
-                  className="grafy-workspace-rail__spin"
+                  className={stylex.props(railStyles.railSpin).className}
                 />
               ) : (
-                <Save size={15} aria-hidden="true" />
+                <Save size={15} aria-hidden="true" className={railIconClass} />
               )}
-              <span>
+              <span
+                className={
+                  stylex.props(
+                    railStyles.itemSpan,
+                    visuallyCollapsed && railStyles.copyHidden,
+                  ).className
+                }
+              >
                 {chrome.saving
                   ? "Saving…"
                   : chrome.isDirty || !chrome.activeGraphId
@@ -945,7 +1059,13 @@ export function WorkspaceRail({
           {activeWorkspace && chrome ? (
             <button
               type="button"
-              className={`grafy-workspace-rail__item${chrome.sidePanelOpen ? " is-active" : ""}`}
+              className={
+                stylex.props(
+                  railStyles.railItem,
+                  chrome.sidePanelOpen && railStyles.railItemActive,
+                ).className
+              }
+              data-active={chrome.sidePanelOpen ? true : undefined}
               title={chrome.sidePanelOpen ? "Hide library" : "Show library"}
               aria-expanded={chrome.sidePanelOpen}
               aria-controls={
@@ -958,14 +1078,33 @@ export function WorkspaceRail({
                 chrome.toggleSidePanel();
               }}
             >
-              <FolderTree size={15} aria-hidden="true" />
-              <span>Library</span>
+              <FolderTree
+                size={15}
+                aria-hidden="true"
+                className={railIconClass}
+              />
+              <span
+                className={
+                  stylex.props(
+                    railStyles.itemSpan,
+                    visuallyCollapsed && railStyles.copyHidden,
+                  ).className
+                }
+              >
+                Library
+              </span>
             </button>
           ) : null}
           {activeWorkspace && chrome ? (
             <button
               type="button"
-              className={`grafy-workspace-rail__item${chrome.generatedPanelOpen ? " is-active" : ""}`}
+              className={
+                stylex.props(
+                  railStyles.railItem,
+                  chrome.generatedPanelOpen && railStyles.railItemActive,
+                ).className
+              }
+              data-active={chrome.generatedPanelOpen ? true : undefined}
               aria-label="Results"
               title={
                 chrome.generatedPanelOpen
@@ -982,27 +1121,60 @@ export function WorkspaceRail({
                 chrome.toggleGeneratedPanel();
               }}
             >
-              <Layers size={15} aria-hidden="true" />
-              <span>Results</span>
+              <Layers size={15} aria-hidden="true" className={railIconClass} />
+              <span
+                className={
+                  stylex.props(
+                    railStyles.itemSpan,
+                    visuallyCollapsed && railStyles.copyHidden,
+                  ).className
+                }
+              >
+                Results
+              </span>
             </button>
           ) : null}
         </nav>
 
         {activeWorkspace && !visuallyCollapsed && recentGraphs.length ? (
           <nav
-            className="grafy-workspace-rail__nav grafy-workspace-rail__nav--open"
+            className={
+              stylex.props(railStyles.railNav, railStyles.railNavOpen).className
+            }
             aria-label="Recent projects"
           >
-            <p className="grafy-workspace-rail__section-label">Recent</p>
-            <div className="grafy-workspace-rail__items">
+            <p
+              className={
+                stylex.props(
+                  railStyles.sectionLabel,
+                  visuallyCollapsed && railStyles.copyHidden,
+                ).className
+              }
+            >
+              Recent
+            </p>
+            <div className={stylex.props(railStyles.railItems).className}>
               {recentGraphs.map((graph) => (
                 <div
                   key={graph.id}
-                  className={`grafy-graph-row${activeGraphId === graph.id ? " is-active" : ""}`}
+                  className={
+                    stylex.props(
+                      railStyles.graphRow,
+                      graphRowMarker,
+                      activeGraphId === graph.id && railStyles.graphRowActive,
+                    ).className
+                  }
+                  data-active={activeGraphId === graph.id ? true : undefined}
                 >
                   <button
                     type="button"
-                    className="grafy-workspace-rail__item grafy-graph-row__open"
+                    className={
+                      stylex.props(
+                        railStyles.railItem,
+                        railStyles.graphRowItem,
+                        railStyles.graphRowOpen,
+                      ).className
+                    }
                     title={graph.name}
                     aria-label={graph.name}
                     onClick={() => {
@@ -1012,7 +1184,16 @@ export function WorkspaceRail({
                       );
                     }}
                   >
-                    <span>{graph.name}</span>
+                    <span
+                      className={
+                        stylex.props(
+                          railStyles.itemSpan,
+                          visuallyCollapsed && railStyles.copyHidden,
+                        ).className
+                      }
+                    >
+                      {graph.name}
+                    </span>
                   </button>
                   <GraphRowMenu
                     graph={graph}
@@ -1028,7 +1209,14 @@ export function WorkspaceRail({
 
         <button
           type="button"
-          className={`grafy-workspace-rail__settings${workspaceSettingsActive ? " is-active" : ""}`}
+          className={
+            stylex.props(
+              railStyles.railItem,
+              railStyles.railSettings,
+              workspaceSettingsActive && railStyles.railItemActive,
+            ).className
+          }
+          data-active={workspaceSettingsActive ? true : undefined}
           onClick={() => {
             closeMobileNavigation(true);
             if (selectedWorkspace) {
@@ -1040,11 +1228,20 @@ export function WorkspaceRail({
           title="Settings"
           disabled={!selectedWorkspace}
         >
-          <Settings size={15} aria-hidden="true" />
-          <span>Settings</span>
+          <Settings size={15} aria-hidden="true" className={railIconClass} />
+          <span
+            className={
+              stylex.props(
+                railStyles.itemSpan,
+                visuallyCollapsed && railStyles.copyHidden,
+              ).className
+            }
+          >
+            Settings
+          </span>
         </button>
 
-        <div className="grafy-workspace-rail__footer">
+        <div className={stylex.props(railStyles.railFooter).className}>
           <Popover.Root
             open={accountMenuOpen}
             onOpenChange={(open) => {
@@ -1052,19 +1249,33 @@ export function WorkspaceRail({
             }}
           >
             <Popover.Trigger
-              className="grafy-workspace-rail__account"
+              className={stylex.props(railStyles.railAccount).className}
               title={displayName}
               aria-label="Account menu"
             >
-              <span className="grafy-workspace-rail__avatar" aria-hidden="true">
+              <span
+                className={stylex.props(railStyles.railAvatar).className}
+                aria-hidden="true"
+              >
                 {initials}
               </span>
-              <span className="grafy-workspace-rail__account-copy">
-                <span className="grafy-workspace-rail__account-name">
+              <span
+                className={
+                  stylex.props(
+                    railStyles.accountCopy,
+                    visuallyCollapsed && railStyles.copyHidden,
+                  ).className
+                }
+              >
+                <span
+                  className={stylex.props(railStyles.accountName).className}
+                >
                   {displayName}
                 </span>
                 {email ? (
-                  <span className="grafy-workspace-rail__account-email">
+                  <span
+                    className={stylex.props(railStyles.accountEmail).className}
+                  >
                     {email}
                   </span>
                 ) : null}
@@ -1072,15 +1283,20 @@ export function WorkspaceRail({
             </Popover.Trigger>
             <Popover.Portal container={mobileViewport ? mobileRailRef : null}>
               <Popover.Positioner
-                className="grafy-workspace-rail__account-positioner"
+                className={stylex.props(railStyles.accountPositioner).className}
                 side="top"
                 align="start"
                 sideOffset={8}
               >
-                <Popover.Popup className="grafy-workspace-rail__account-menu">
+                <Popover.Popup
+                  className={stylex.props(railStyles.accountMenu).className}
+                  data-account-menu=""
+                >
                   <button
                     type="button"
-                    className="grafy-workspace-rail__account-menu-item"
+                    className={
+                      stylex.props(railStyles.accountMenuItem).className
+                    }
                     onClick={() => {
                       cycleTheme();
                       setAccountMenuPath(null);
@@ -1091,7 +1307,9 @@ export function WorkspaceRail({
                   </button>
                   <button
                     type="button"
-                    className="grafy-workspace-rail__account-menu-item"
+                    className={
+                      stylex.props(railStyles.accountMenuItem).className
+                    }
                     onClick={() => {
                       setAccountMenuPath(null);
                       void onLogout();
@@ -1107,7 +1325,12 @@ export function WorkspaceRail({
         </div>
 
         <div
-          className="grafy-workspace-rail__resize"
+          className={
+            stylex.props(
+              railStyles.railResize,
+              resizing && railStyles.railResizeActive,
+            ).className
+          }
           role="separator"
           aria-orientation="vertical"
           aria-label="Resize sidebar"
@@ -1211,14 +1434,16 @@ export default function WorkspaceLayout({
         refreshWorkspaces: () => mutate(),
       }}
     >
-      <div className="grafy-workspace-frame">
+      <div className={stylex.props(railStyles.frame).className}>
         <WorkspaceRail
           workspaces={data}
           activeSlug={workspace.slug}
           session={session}
           onLogout={logout}
         />
-        <div className="grafy-workspace-frame__main">{children}</div>
+        <div className={stylex.props(railStyles.frameMain).className}>
+          {children}
+        </div>
       </div>
     </WorkspaceContext.Provider>
   );

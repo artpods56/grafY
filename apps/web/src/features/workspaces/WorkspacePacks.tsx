@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { request } from "@/lib/api/client";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { workspaceSettingsStyles as settings } from "./workspace-settings.styles";
 
 export function WorkspacePacks({ workspace }: { workspace: Workspace }) {
   const key = workspacePacksPath(workspace.id);
@@ -55,13 +56,17 @@ export function WorkspacePacks({ workspace }: { workspace: Workspace }) {
   return (
     <section
       id="tool-packs"
-      className="grafy-workspace-settings__section"
+      {...stylex.props(settings.section)}
       aria-labelledby="tool-packs-heading"
     >
-      <div className="grafy-workspace-settings__section-heading">
+      <div {...stylex.props(settings.sectionHeading)}>
         <div>
-          <h2 id="tool-packs-heading">Tool packs</h2>
-          <p>Choose which steps appear in this Workspace’s picker.</p>
+          <h2 id="tool-packs-heading" {...stylex.props(settings.headingTitle)}>
+            Tool packs
+          </h2>
+          <p {...stylex.props(settings.headingText)}>
+            Choose which steps appear in this Workspace’s picker.
+          </p>
         </div>
       </div>
       {error ? (
@@ -166,7 +171,9 @@ const s = stylex.create({
     justifyContent: "space-between",
     gap: "16px",
     paddingBlock: "12px",
-    borderTop: `1px solid ${tokens.colorDivider}`,
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
   },
   title: {
     display: "flex",

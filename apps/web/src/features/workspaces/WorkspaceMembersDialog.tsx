@@ -35,6 +35,10 @@ import {
   MemberListRefreshError,
 } from "./workspace-member-mutation";
 import { useWorkspaceContext } from "./WorkspaceLayout";
+import { workspaceSettingsStyles as settings } from "./workspace-settings.styles";
+
+const MONO =
+  "var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace";
 
 const roles: readonly WorkspaceRole[] = ["viewer", "editor", "owner"];
 const roleDescriptions: Record<WorkspaceRole, string> = {
@@ -54,6 +58,130 @@ const s = stylex.create({
    */
   formField: {
     flex: "1 1 0%",
+  },
+  form: {
+    display: "flex",
+    alignItems: {
+      default: "end",
+      "@media (max-width: 860px)": "stretch",
+    },
+    flexDirection: {
+      default: "row",
+      "@media (max-width: 860px)": "column",
+    },
+    gap: "8px",
+  },
+  formLabel: {
+    display: "grid",
+    flex: "1",
+    gap: "5px",
+    color: "light-dark(#6b6b6b, #a3a3a3)",
+    fontSize: "12px",
+    fontWeight: 500,
+  },
+  formInput: {
+    minHeight: {
+      default: "36px",
+      "@media (max-width: 620px)": "44px",
+    },
+    padding: "0 10px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: {
+      default: "light-dark(#d9d9d9, #333333)",
+      ":focus": "light-dark(#111111, #ffffff)",
+    },
+    borderRadius: "6px",
+    outline: "0",
+    backgroundColor: "light-dark(#ffffff, #1a1a1a)",
+    color: "light-dark(#111111, #f5f5f5)",
+    fontSize: "13px",
+  },
+  memberEmpty: {
+    color: "light-dark(#6b6b6b, #8a8a8a)",
+    fontSize: "13px",
+  },
+  memberList: {
+    display: "grid",
+    gap: "1px",
+  },
+  memberRow: {
+    display: "grid",
+    gridTemplateColumns: {
+      default: "minmax(0, 1fr) 100px auto",
+      "@media (max-width: 860px)": "minmax(0, 1fr) auto",
+    },
+    alignItems: "center",
+    gap: {
+      default: "9px",
+      "@media (max-width: 620px)": "12px",
+    },
+    padding: "11px 0",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: "light-dark(#d9d9d9, #2a2a2a)",
+  },
+  memberRowMain: {
+    display: "grid",
+    gap: "2px",
+    minWidth: 0,
+  },
+  memberRowName: {
+    overflow: "hidden",
+    color: "light-dark(#111111, #f5f5f5)",
+    fontSize: "13px",
+    fontWeight: 500,
+    textOverflow: "ellipsis",
+  },
+  memberRowDetail: {
+    overflow: "hidden",
+    color: "light-dark(#6b6b6b, #8a8a8a)",
+    fontFamily: MONO,
+    fontSize: "11px",
+    textOverflow: "ellipsis",
+  },
+  /** The role select's grid placement from the 860px breakpoint down. */
+  memberRowSelect: {
+    gridColumn: {
+      default: "auto",
+      "@media (max-width: 860px)": "2",
+    },
+    gridRow: {
+      default: "auto",
+      "@media (max-width: 860px)": "1",
+    },
+  },
+  /** The remove button's grid placement from the 860px breakpoint down. */
+  memberRowRemove: {
+    gridColumn: {
+      default: "auto",
+      "@media (max-width: 860px)": "1 / -1",
+    },
+    justifySelf: {
+      default: "unset",
+      "@media (max-width: 860px)": "start",
+    },
+  },
+  invitationConfirm: {
+    display: "grid",
+    gap: "8px",
+    margin: "12px 0 18px",
+    padding: "14px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "light-dark(#d9d9d9, #333333)",
+    borderRadius: "8px",
+    backgroundColor: "light-dark(#fafafa, #1a1a1a)",
+    fontSize: "13px",
+  },
+  invitationConfirmEmail: {
+    color: "light-dark(#6b6b6b, #8a8a8a)",
+    fontSize: "12px",
+  },
+  invitationActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "8px",
   },
 });
 
@@ -238,7 +366,7 @@ export function WorkspaceMembersDialog() {
       <Button
         variant="secondary"
         size="lg"
-        className="grafy-workspace-settings__action"
+        xstyle={settings.action}
         disabled={authorityUncertain}
         onClick={() => setOpen(true)}
       >
@@ -258,10 +386,13 @@ export function WorkspaceMembersDialog() {
           </DialogHeader>
           <DialogBody className="grafy-dialog-stack">
             <form
-              className="grafy-member-form"
+              {...stylex.props(s.form)}
               onSubmit={(event) => void resolveCandidate(event)}
             >
-              <label htmlFor="workspace-invite-email">
+              <label
+                htmlFor="workspace-invite-email"
+                {...stylex.props(s.formLabel)}
+              >
                 Verified email
                 <input
                   ref={emailInput}
@@ -279,6 +410,7 @@ export function WorkspaceMembersDialog() {
                     setFieldError(null);
                   }}
                   placeholder="person@example.com"
+                  {...stylex.props(s.formInput)}
                 />
                 {fieldError ? (
                   <Notice id="workspace-invite-email-error" tone="danger">
@@ -289,7 +421,7 @@ export function WorkspaceMembersDialog() {
               <Field
                 label="Requested role"
                 description={
-                  <span className="grafy-member-empty">
+                  <span {...stylex.props(s.memberEmpty)}>
                     {roleDescriptions[role]}
                   </span>
                 }
@@ -322,14 +454,16 @@ export function WorkspaceMembersDialog() {
 
             {candidate ? (
               <section
-                className="grafy-invitation-confirm"
+                {...stylex.props(s.invitationConfirm)}
                 aria-label="Confirm invitation"
               >
                 <strong>
                   {candidate.recipient.display_name ??
                     candidate.recipient.email}
                 </strong>
-                <span>{candidate.recipient.email}</span>
+                <span {...stylex.props(s.invitationConfirmEmail)}>
+                  {candidate.recipient.email}
+                </span>
                 <p>
                   Invite as <strong>{role}</strong>. The invitation expires in
                   seven days and grants no access until accepted.
@@ -339,7 +473,7 @@ export function WorkspaceMembersDialog() {
                     Owners can manage members and all workspace settings.
                   </Notice>
                 ) : null}
-                <div>
+                <div {...stylex.props(s.invitationActions)}>
                   <Button
                     variant="secondary"
                     size="lg"
@@ -370,15 +504,15 @@ export function WorkspaceMembersDialog() {
             {invitations?.length ? (
               <section>
                 <h3>Pending invitations</h3>
-                <div className="grafy-member-list">
+                <div {...stylex.props(s.memberList)}>
                   {invitations.map((invitation) => (
-                    <div className="grafy-member-row" key={invitation.id}>
-                      <div>
-                        <strong>
+                    <div {...stylex.props(s.memberRow)} key={invitation.id}>
+                      <div {...stylex.props(s.memberRowMain)}>
+                        <strong {...stylex.props(s.memberRowName)}>
                           {invitation.recipient.display_name ??
                             invitation.recipient.email}
                         </strong>
-                        <span>
+                        <span {...stylex.props(s.memberRowDetail)}>
                           {invitation.recipient.email} · {invitation.role} ·
                           expires{" "}
                           {new Date(invitation.expires_at).toLocaleDateString()}
@@ -388,7 +522,7 @@ export function WorkspaceMembersDialog() {
                         type="button"
                         variant="danger"
                         size="xs"
-                        className="grafy-member-row__remove"
+                        xstyle={s.memberRowRemove}
                         disabled={busyKey === invitation.id}
                         onClick={() => void cancelInvitation(invitation.id)}
                       >
@@ -404,16 +538,20 @@ export function WorkspaceMembersDialog() {
               <Notice tone="danger">Members could not be loaded.</Notice>
             ) : null}
             {!members ? (
-              <p className="grafy-member-empty">Loading members…</p>
+              <p {...stylex.props(s.memberEmpty)}>Loading members…</p>
             ) : members.length === 0 ? (
-              <p className="grafy-member-empty">No members returned.</p>
+              <p {...stylex.props(s.memberEmpty)}>No members returned.</p>
             ) : (
-              <div className="grafy-member-list">
+              <div {...stylex.props(s.memberList)}>
                 {members.map((member) => (
-                  <div className="grafy-member-row" key={member.user.id}>
-                    <div>
-                      <strong>{memberName(member)}</strong>
-                      <span>{member.user.email ?? "No email available"}</span>
+                  <div {...stylex.props(s.memberRow)} key={member.user.id}>
+                    <div {...stylex.props(s.memberRowMain)}>
+                      <strong {...stylex.props(s.memberRowName)}>
+                        {memberName(member)}
+                      </strong>
+                      <span {...stylex.props(s.memberRowDetail)}>
+                        {member.user.email ?? "No email available"}
+                      </span>
                     </div>
                     <Select
                       aria-label={`Role for ${memberName(member)}`}
@@ -426,7 +564,7 @@ export function WorkspaceMembersDialog() {
                           role: event.target.value as WorkspaceRole,
                         })
                       }
-                      xstyle={phoneTouch.on}
+                      xstyle={[phoneTouch.on, s.memberRowSelect]}
                     >
                       {roles.map((option) => (
                         <option key={option} value={option}>
@@ -438,7 +576,7 @@ export function WorkspaceMembersDialog() {
                       type="button"
                       variant="danger"
                       size="xs"
-                      className="grafy-member-row__remove"
+                      xstyle={s.memberRowRemove}
                       disabled={busyKey === member.user.id}
                       onClick={() =>
                         setMemberAction({ kind: "remove", member })
@@ -453,7 +591,7 @@ export function WorkspaceMembersDialog() {
 
             {memberAction ? (
               <section
-                className="grafy-invitation-confirm"
+                {...stylex.props(s.invitationConfirm)}
                 role="alertdialog"
                 aria-label="Confirm member change"
               >
@@ -465,7 +603,7 @@ export function WorkspaceMembersDialog() {
                     ? "They will immediately lose workspace access and active collaboration sessions will close."
                     : `Change their role from ${memberAction.member.role} to ${memberAction.role}. ${roleDescriptions[memberAction.role]}`}
                 </p>
-                <div>
+                <div {...stylex.props(s.invitationActions)}>
                   <Button
                     variant="secondary"
                     size="lg"

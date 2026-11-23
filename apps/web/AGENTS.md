@@ -126,14 +126,27 @@ cannot resolve, which `tsc` and Vitest both pass.
 
 ## CSS
 
-- **A `.grafy-*` rule always beats the kit.** The StyleX PostCSS plugin compiles with
-  `useCSSLayers: true` and `globals.css` is unlayered, and an unlayered declaration wins
-  over a layered one whatever the specificity or the order — so an `xstyle` cannot beat
-  a global rule either. Converting a control that `globals.css` styles therefore changes
-  nothing a reader can see until the global rule is deleted: the Teams & access selects
-  and the member rows still draw the global border, background, radius, and 44px phone
-  floor. When you move such a surface onto the kit, name the global selectors that have
-  to go with it, and leave the phone target on the control before you remove theirs.
+- Legacy `.grafy-*` rules live in `@layer legacy`. `globals.css` declares
+  `@layer resets, legacy` before `@stylex`, and StyleX (`useCSSLayers: true`) appends
+  its `priority*` layers after that list. A kit style or an `xstyle` wins on every
+  property it sets. A property only the global rule sets still applies, including
+  layout and a `min-height: 44px` floor where the kit does not set `min-height`.
+- These stay unlayered, which is what lets them beat StyleX:
+  - `@font-face`, `@keyframes`, and `:root` / `[data-*]` custom properties, including
+    the breakpoint overrides of `--grafy-rail-width`.
+  - Dialog and toast motion (`.grafy-dialog-backdrop`, `.grafy-dialog-popup`,
+    `.grafy-workbench-toast`) and `.grafy-dialog-stack`'s 12px rhythm. The motion
+    rules supply `transform` while `data-starting-style`, `data-ending-style`, or
+    `data-swiping` is set. The stack rule supplies the gap above `Notice`'s margin.
+  - MapLibre cursor overrides, `[data-canvas-lab-frozen]`, and the lab panel's 44px
+    floor (`max-width: 620px` together with `pointer: coarse`).
+  - The rail workspace `<select>` chrome: icon padding, collapsed transparency, and
+    the 44px phone row. The control is the kit `Select`; those rules are the rail's face.
+- Member-form and member-row selects are the kit `Select` with `xstyle={phoneTouch.on}`.
+  Their old border, background, radius, and global 44px rule are gone. Token-form
+  selects are the kit `Select` at its `md` size (32px); that form had no 620px floor.
+  When a control moves onto the kit, delete its global skin once the kit owns the look
+  and the phone target. Leave the three `phoneTouch` families separate (issue #211).
 - Global classes use the `.grafy-` prefix with BEM-ish structure:
   `.grafy-workspace-rail__item`, `.grafy-home__section-header`, etc.
 - Shared shell and route styles live in `src/app/globals.css`; complex feature
