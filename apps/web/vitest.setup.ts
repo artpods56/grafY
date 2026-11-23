@@ -33,6 +33,10 @@ vi.mock("@stylexjs/stylex", () => ({
       ]),
     ) as Styles,
   defineVars: <Variables>(variables: Variables) => variables,
+  createTheme: <Overrides extends object>(
+    _variables: unknown,
+    overrides: Overrides,
+  ) => ({ ...overrides, __styleName: "theme" }),
   keyframes: () => "keyframes",
   defaultMarker: () => ({}),
   when: { ancestor: (selector: string) => selector },

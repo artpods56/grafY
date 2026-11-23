@@ -14,6 +14,12 @@ export const SPIKES = [
     title: "Component kit",
     question: "What does each kit part look like at every size it declares?",
   },
+  {
+    id: "studio-theme",
+    title: "Studio theme workbench",
+    question:
+      "How do the app shell and UI kit feel when aligned with the cool, floating studio aesthetic of the canvas?",
+  },
 ] as const;
 
 export type SpikeId = (typeof SPIKES)[number]["id"];
