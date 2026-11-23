@@ -817,8 +817,7 @@ def test_a_token_that_may_create_and_checkpoint_but_not_edit_cannot_open_a_start
         assert refused.json()["code"] == "identity.capability_denied"
         owner = stage.as_("owner_a")
         assert [
-            item.id
-            for item in stage.projects(stage.a).list_ok(headers=owner).projects
+            item.id for item in stage.projects(stage.a).list_ok(headers=owner).projects
         ] == [stage.project_a]
         library = stage.api.raw.get(
             f"/v1/workspaces/{stage.a}/library/artifacts",

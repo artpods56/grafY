@@ -51,7 +51,12 @@ import { ArtifactFolderDropDialog } from "../artifacts/ArtifactFolderDropDialog"
 import { ConnectionRouteDialog } from "../authoring/ConnectionRouteDialog";
 import { CanvasLabPanel } from "../cell-canvas/CanvasLabPanel";
 import { EmptyCanvasStarter } from "./EmptyCanvasStarter";
-import { mayPlaceOnInitiatingGraph } from "./initiatingGraphPlacement";
+import {
+  advanceDraftSession,
+  canvasPlacementTarget,
+  mayPlaceOnInitiatingCanvas,
+  type CanvasPlacementTarget,
+} from "./initiatingGraphPlacement";
 import { workbenchStyles as s } from "./Workbench.styles";
 import { NodeSelector } from "../config-ui/NodeSelector";
 import {
@@ -434,7 +439,11 @@ function WorkbenchBody({
   const localAuthoringEnabledRef = React.useRef(
     projectId === null && canCreateProject,
   );
-  const openGraphIdRef = React.useRef<string | null>(null);
+  const draftSessionRef = React.useRef(1);
+  const placementProjectIdRef = React.useRef<string | null>(projectId);
+  const canvasTargetRef = React.useRef<CanvasPlacementTarget | null>(
+    projectId === null ? { kind: "draft", sessionId: "1" } : null,
+  );
   const localAuthoringBlockedMessageRef = React.useRef(
     "Editing is unavailable until this Project is synchronized.",
   );
@@ -944,7 +953,18 @@ function WorkbenchBody({
   }
   React.useLayoutEffect(() => {
     localAuthoringEnabledRef.current = localAuthoringEnabled;
-    openGraphIdRef.current = openGraphId;
+    const draftSession = advanceDraftSession(
+      placementProjectIdRef.current,
+      projectId,
+      draftSessionRef.current,
+    );
+    draftSessionRef.current = draftSession;
+    placementProjectIdRef.current = projectId;
+    canvasTargetRef.current = canvasPlacementTarget({
+      projectId,
+      graphId: openGraphId,
+      draftSessionId: String(draftSession),
+    });
     localAuthoringBlockedMessageRef.current = localAuthoringBlockedMessage;
     executionRunningRef.current = run.isExecutionRunning;
     closeGraphBrowserRef.current = closeGraphBrowser;
@@ -957,6 +977,7 @@ function WorkbenchBody({
     localAuthoringBlockedMessage,
     localAuthoringEnabled,
     openGraphId,
+    projectId,
     run.clearRunError,
     run.isExecutionRunning,
     run.setRunError,
@@ -1350,7 +1371,7 @@ function WorkbenchBody({
   const uploadFilesOntoCanvas = React.useCallback(
     async (files: readonly File[], point: XYPosition) => {
       if (files.length === 0 || !localAuthoringEnabledRef.current) return;
-      const initiatingGraphId = openGraphIdRef.current;
+      const initiating = canvasTargetRef.current;
       const items: PlacedLibraryItem[] = [];
       try {
         for (const [index, file] of files.entries()) {
@@ -1373,10 +1394,10 @@ function WorkbenchBody({
       } finally {
         if (
           items.length &&
-          mayPlaceOnInitiatingGraph({
+          mayPlaceOnInitiatingCanvas({
             authoringEnabled: localAuthoringEnabledRef.current,
-            activeGraphId: openGraphIdRef.current,
-            initiatingGraphId,
+            active: canvasTargetRef.current,
+            initiating,
           })
         ) {
           placeArtifactGroups(
@@ -1894,16 +1915,16 @@ function WorkbenchBody({
 
   const placeStarterSample = React.useCallback(async () => {
     if (samplePending || !localAuthoringEnabledRef.current) return;
-    const initiatingGraphId = openGraphIdRef.current;
+    const initiating = canvasTargetRef.current;
     setSamplePending(true);
     try {
       const item = await seedStarterSample(workspaceId);
       void mutateCache(["library-tree", workspaceId]);
       if (
-        mayPlaceOnInitiatingGraph({
+        mayPlaceOnInitiatingCanvas({
           authoringEnabled: localAuthoringEnabledRef.current,
-          activeGraphId: openGraphIdRef.current,
-          initiatingGraphId,
+          active: canvasTargetRef.current,
+          initiating,
         })
       ) {
         placeArtifactGroups(
