@@ -81,6 +81,7 @@ const FIELD_NAMES: Readonly<Record<string, string>> = {
   api_base: "API base URL",
   endpoint: "Endpoint",
   region: "Region",
+  label_studio_url: "Label Studio URL",
 };
 
 /** A verification field's label: `base_url` → `Base URL`. */

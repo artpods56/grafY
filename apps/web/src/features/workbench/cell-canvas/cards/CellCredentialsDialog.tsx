@@ -2,26 +2,42 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { Popover } from "@base-ui/react/popover";
 import { KeyRound, LoaderCircle } from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { TextInput } from "@/components/ui/field";
 import { nodeCredentialTone } from "@/features/credentials/credential-display";
-import { overlay } from "@/lib/stylex/overlay.stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { CellVaultCredential } from "./CellVaultCredential";
+import {
+  credentialsDialogInitialState,
+  credentialsDialogReducer,
+} from "./credentials-dialog-state";
 import type { CellSecretInputSpec } from "../cell-contracts";
 
 /**
- * A node's write-only keys, behind one key button in its card's header
- * instead of three rows each at the bottom of the config band.
+ * A node's write-only keys, behind one key button in its card's header.
  *
- * The button's dot says the worst state among the keys, so a card that still
- * needs one says so at rest. The popover lists every key with its status and
- * a write-only input: a saved key is never read back, only replaced or
- * removed.
+ * It is a dialog and not a popover on purpose. A popover anchored to a card is
+ * drawn at one scale and sits on a surface drawn at another: the canvas layer
+ * carries `scale(zoom)` (`CellCanvas.tsx`), so an anchored plate reads as a
+ * shrunken piece of the card at 200% and as a billboard wider than its node at
+ * fit zoom. A dialog is app chrome, so it looks the same at every zoom. It also
+ * cannot dismiss silently: an Escape or a backdrop press over an unsaved key
+ * asks first (`credentials-dialog-state.ts`), because a saved key is never read
+ * back and a typed one is worth more than a stray click.
+ *
+ * The button's dot still carries the worst state among the keys, so a card that
+ * needs one says so at rest.
  */
 
 const spin = stylex.keyframes({
@@ -30,6 +46,7 @@ const spin = stylex.keyframes({
 });
 
 const s = stylex.create({
+  owner: { display: "inline-flex" },
   trigger: { position: "relative" },
   dot: {
     position: "absolute",
@@ -45,39 +62,38 @@ const s = stylex.create({
   dotNeeded: { backgroundColor: tokens.colorWarning },
   dotError: { backgroundColor: tokens.colorDanger },
   dotPending: { backgroundColor: tokens.colorSubtle },
-  positioner: { zIndex: 90 },
-  popup: {
-    boxSizing: "border-box",
-    width: "min(312px, calc(100vw - 24px))",
-    maxHeight: "calc(100dvh - 32px)",
+  discard: {
     display: "grid",
-    gap: "10px",
-    overflowY: "auto",
-    padding: "10px 11px 11px",
-    // The canvas's frosted plates, lifted: a little more opaque than a card
-    // so a key never reads through to the grid under it.
-    backgroundColor: `color-mix(in oklab, ${tokens.colorSurface} 92%, transparent)`,
-    backdropFilter: "blur(14px) saturate(1.4)",
-    outline: "none",
+    gap: "8px",
+    padding: "10px 12px",
+    borderRadius: tokens.radiusMd,
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: `color-mix(in oklab, ${tokens.colorWarning} 30%, transparent)`,
+    backgroundColor: tokens.colorWarningSoft,
   },
-  header: { display: "grid", gap: "2px" },
-  title: {
+  discardTitle: {
     margin: 0,
-    color: tokens.colorTextEmphasis,
-    fontSize: tokens.fontSizeXs,
+    color: tokens.colorWarning,
+    fontSize: tokens.fontSizeSm,
     fontWeight: 600,
   },
-  subtitle: {
+  discardBody: {
     margin: 0,
-    color: tokens.colorSubtle,
-    fontSize: "9px",
-    lineHeight: 1.4,
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
   },
-  inputs: { display: "grid", gap: "10px" },
+  discardActions: {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "8px",
+  },
+  inputs: { display: "grid", gap: "16px" },
   /** Each vault key after the first starts under a hairline. */
   vaultSlot: {
     paddingTop: {
-      default: "10px",
+      default: "16px",
       ":first-child": "0px",
     },
     borderTopWidth: { default: "1px", ":first-child": "0px" },
@@ -85,8 +101,9 @@ const s = stylex.create({
     borderTopColor: tokens.colorDivider,
   },
   legacy: {
+    marginTop: "12px",
     color: tokens.colorSubtle,
-    fontSize: "9px",
+    fontSize: tokens.fontSizeSm,
   },
   legacySummary: {
     cursor: "pointer",
@@ -96,12 +113,16 @@ const s = stylex.create({
     },
     fontWeight: 600,
   },
+  legacyBody: { marginTop: "10px" },
   input: {
     display: "grid",
-    gap: "4px",
+    gap: "8px",
     margin: 0,
-    paddingTop: "8px",
-    borderTopWidth: "1px",
+    paddingTop: {
+      default: "14px",
+      ":first-child": "0px",
+    },
+    borderTopWidth: { default: "1px", ":first-child": "0px" },
     borderTopStyle: "solid",
     borderTopColor: tokens.colorDivider,
   },
@@ -110,13 +131,13 @@ const s = stylex.create({
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: "8px",
+    gap: "10px",
   },
   inputTitle: {
     minWidth: 0,
     overflow: "hidden",
-    color: tokens.colorText,
-    fontSize: "9px",
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
     fontWeight: 600,
     textOverflow: "ellipsis",
     textTransform: "capitalize",
@@ -126,10 +147,10 @@ const s = stylex.create({
     flexShrink: 0,
     display: "inline-flex",
     alignItems: "center",
-    height: "15px",
-    paddingInline: "6px",
+    height: "20px",
+    paddingInline: "8px",
     borderRadius: "9999px",
-    fontSize: "8.5px",
+    fontSize: tokens.fontSizeXs,
     fontWeight: 600,
     whiteSpace: "nowrap",
   },
@@ -152,21 +173,22 @@ const s = stylex.create({
   control: {
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) auto",
-    gap: "5px",
+    gap: "8px",
+    alignItems: "center",
   },
   footer: {
-    minHeight: "18px",
+    minHeight: "28px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: "8px",
+    gap: "12px",
   },
   hint: {
     minWidth: 0,
     margin: 0,
     color: tokens.colorSubtle,
-    fontSize: "9px",
-    lineHeight: 1.35,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
   },
   hintError: { color: tokens.colorDanger },
   spinner: {
@@ -282,19 +304,37 @@ const BADGE_STYLE = {
   pending: s.badgePending,
 } as const;
 
+/** What the dialog's own subtitle says about the keys it holds. */
+export function credentialsIntro(
+  inputs: readonly CellSecretInputSpec[],
+): string {
+  const vaulted = inputs.filter((input) => input.vault).length;
+  if (vaulted === 0) {
+    return "Saved write-only for this node. A saved key cannot be read back.";
+  }
+  if (vaulted === inputs.length) {
+    return "Choose whose key runs this node. A saved key is never shown again.";
+  }
+  return "Some of these keys come from the workspace vault and some are saved on this node. A saved key is never shown again.";
+}
+
 export type ApplySecret = (name: string, value: string) => Promise<boolean>;
 export type RemoveSecret = (name: string) => Promise<boolean>;
+/** Reports whether a key field holds typed text the server has never seen. */
+export type ReportDraft = (name: string, dirty: boolean) => void;
 
 function SecretInputRow({
   cardId,
   input,
   onApply,
   onRemove,
+  onDraft,
 }: {
   cardId: string;
   input: CellSecretInputSpec;
   onApply?: ApplySecret;
   onRemove?: RemoveSecret;
+  onDraft?: ReportDraft;
 }) {
   const [value, setValue] = React.useState("");
   const badge = secretInputBadge(input);
@@ -313,6 +353,10 @@ function SecretInputRow({
         : (input.description ??
           "Write-only · a saved key cannot be read back.");
   const titleId = React.useId();
+
+  React.useEffect(() => {
+    onDraft?.(input.name, value.length > 0);
+  }, [input.name, value, onDraft]);
 
   return (
     <form
@@ -341,7 +385,6 @@ function SecretInputRow({
       </div>
       <div {...stylex.props(s.control)}>
         <TextInput
-          size="dense"
           mono
           type="password"
           name={`${cardId}-${input.name}`}
@@ -359,10 +402,10 @@ function SecretInputRow({
           disabled={!input.ready || busy}
           onChange={(event) => setValue(event.currentTarget.value)}
         />
-        <Button type="submit" size="xs" variant="soft" disabled={!canApply}>
+        <Button type="submit" size="md" variant="soft" disabled={!canApply}>
           {input.state === "applying" ? (
             <LoaderCircle
-              size={11}
+              size={13}
               aria-hidden="true"
               {...stylex.props(s.spinner)}
             />
@@ -381,7 +424,7 @@ function SecretInputRow({
         </p>
         <Button
           type="button"
-          size="xs"
+          size="sm"
           variant="danger"
           disabled={!canRemove}
           onClick={() => {
@@ -398,9 +441,65 @@ function SecretInputRow({
   );
 }
 
+/** The dialog's contents, apart from its frame, so a spike can draw them. */
+export function CellCredentialsBody({
+  cardId,
+  inputs,
+  onApply,
+  onRemove,
+  onDraft,
+}: {
+  cardId: string;
+  inputs: readonly CellSecretInputSpec[];
+  onApply?: ApplySecret;
+  onRemove?: RemoveSecret;
+  onDraft?: ReportDraft;
+}) {
+  return (
+    <div {...stylex.props(s.inputs)}>
+      {inputs.map((input) =>
+        input.vault ? (
+          <div
+            key={`${input.name}:${input.revision}`}
+            {...stylex.props(s.vaultSlot)}
+          >
+            <CellVaultCredential input={input} />
+            {input.vault.canManageShared &&
+              input.vault.status.effective_source === "inline_legacy" && (
+                <details {...stylex.props(s.legacy)}>
+                  <summary {...stylex.props(s.legacySummary)}>
+                    Manage inline key
+                  </summary>
+                  <div {...stylex.props(s.legacyBody)}>
+                    <SecretInputRow
+                      cardId={cardId}
+                      input={input}
+                      onApply={onApply}
+                      onRemove={onRemove}
+                      onDraft={onDraft}
+                    />
+                  </div>
+                </details>
+              )}
+          </div>
+        ) : (
+          <SecretInputRow
+            key={`${input.name}:${input.revision}`}
+            cardId={cardId}
+            input={input}
+            onApply={onApply}
+            onRemove={onRemove}
+            onDraft={onDraft}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
 const stopPointer = (event: React.PointerEvent) => event.stopPropagation();
 
-export function CellCredentialsPopover({
+export function CellCredentialsDialog({
   cardId,
   cardTitle,
   inputs,
@@ -416,93 +515,98 @@ export function CellCredentialsPopover({
   /** For a card rendered on its own, e.g. a test or a sandbox spike. */
   defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = React.useState(defaultOpen);
+  const [state, dispatch] = React.useReducer(
+    credentialsDialogReducer,
+    defaultOpen,
+    credentialsDialogInitialState,
+  );
+  const reportDraft = React.useCallback<ReportDraft>(
+    (name, dirty) => dispatch({ kind: "draft", name, dirty }),
+    [],
+  );
   if (inputs.length === 0) return null;
   const tone = credentialsTone(inputs);
   const name = `Credentials for ${cardTitle}`;
-  const popup = stylex.props(overlay.popup, s.popup);
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger
+    <span onPointerDown={stopPointer} {...stylex.props(s.owner)}>
+      <IconButton
+        size="2xs"
+        variant="ghost"
+        label={`${name}: ${TONE_WORDS[tone]}`}
+        title={`Credentials — ${TONE_WORDS[tone]}`}
+        xstyle={s.trigger}
         data-credentials-trigger={tone}
+        aria-haspopup="dialog"
+        aria-expanded={state.open}
         onPointerDown={stopPointer}
-        render={
-          <IconButton
-            size="2xs"
-            variant="ghost"
-            label={`${name}: ${TONE_WORDS[tone]}`}
-            title={`Credentials — ${TONE_WORDS[tone]}`}
-            xstyle={s.trigger}
-          />
-        }
+        onClick={() => dispatch({ kind: "open" })}
       >
         <KeyRound size={11} aria-hidden="true" />
         <span aria-hidden="true" {...stylex.props(s.dot, DOT_STYLE[tone])} />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner
-          {...stylex.props(s.positioner)}
-          side="bottom"
-          align="end"
-          sideOffset={6}
-          collisionPadding={12}
+      </IconButton>
+      <Dialog
+        open={state.open}
+        onOpenChange={(next) =>
+          dispatch({ kind: next ? "open" : "requestClose" })
+        }
+      >
+        <DialogContent
+          size="form"
+          data-credentials-dialog={cardId}
+          // The popup is portalled out of the card's DOM but not out of its
+          // React tree, so a press here would still reach the card's drag.
+          onPointerDown={stopPointer}
         >
-          <Popover.Popup
-            aria-label={name}
-            data-credentials-popover={cardId}
-            // The popup is portalled out of the card's DOM but not out of its
-            // React tree, so a press here would still reach the card's drag.
-            onPointerDown={stopPointer}
-            className={popup.className}
-            style={popup.style}
-          >
-            <header {...stylex.props(s.header)}>
-              <h3 {...stylex.props(s.title)}>Credentials</h3>
-              <p {...stylex.props(s.subtitle)}>
-                {inputs.every((input) => !input.vault)
-                  ? "Saved write-only for this node. A saved key cannot be read back."
-                  : "Choose whose key runs this node. A saved key is never shown again."}
-              </p>
-            </header>
-            <div {...stylex.props(s.inputs)}>
-              {inputs.map((input) =>
-                input.vault ? (
-                  <div
-                    key={`${input.name}:${input.revision}`}
-                    {...stylex.props(s.vaultSlot)}
+          <DialogHeader>
+            <DialogTitle>Credentials · {cardTitle}</DialogTitle>
+            <DialogDescription>{credentialsIntro(inputs)}</DialogDescription>
+          </DialogHeader>
+          <DialogBody>
+            {state.discardAsked && (
+              <div
+                role="alertdialog"
+                aria-label="Discard the key you typed?"
+                data-credentials-discard="ask"
+                {...stylex.props(s.discard)}
+              >
+                <p {...stylex.props(s.discardTitle)}>
+                  You typed a key that was not saved.
+                </p>
+                <p {...stylex.props(s.discardBody)}>
+                  A saved key is never shown again, so closing now loses what is
+                  in the field.
+                </p>
+                <div {...stylex.props(s.discardActions)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => dispatch({ kind: "keepEditing" })}
                   >
-                    <CellVaultCredential input={input} />
-                    {input.vault.canManageShared &&
-                      input.vault.status.effective_source ===
-                        "inline_legacy" && (
-                        <details {...stylex.props(s.legacy)}>
-                          <summary {...stylex.props(s.legacySummary)}>
-                            Manage inline key
-                          </summary>
-                          <SecretInputRow
-                            cardId={cardId}
-                            input={input}
-                            onApply={onApply}
-                            onRemove={onRemove}
-                          />
-                        </details>
-                      )}
-                  </div>
-                ) : (
-                  <SecretInputRow
-                    key={`${input.name}:${input.revision}`}
-                    cardId={cardId}
-                    input={input}
-                    onApply={onApply}
-                    onRemove={onRemove}
-                  />
-                ),
-              )}
-            </div>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+                    Keep editing
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="danger"
+                    onClick={() => dispatch({ kind: "discard" })}
+                  >
+                    Discard and close
+                  </Button>
+                </div>
+              </div>
+            )}
+            <CellCredentialsBody
+              cardId={cardId}
+              inputs={inputs}
+              onApply={onApply}
+              onRemove={onRemove}
+              onDraft={reportDraft}
+            />
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    </span>
   );
 }

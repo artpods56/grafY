@@ -214,7 +214,7 @@ describe("CellOperatorCard config interactions", () => {
   });
 });
 
-describe("CellOperatorCard credentials popover", () => {
+describe("CellOperatorCard credentials dialog", () => {
   const configured: CellSecretInputSpec = {
     name: "api_key",
     title: "API key",
@@ -223,15 +223,15 @@ describe("CellOperatorCard credentials popover", () => {
     revision: "graph:1",
   };
 
-  function openPopover(
+  function openDialog(
     inputs: readonly CellSecretInputSpec[],
     props: Partial<CellOperatorCardProps> = {},
   ) {
     const container = mount(askModelSpec, {}, props, inputs);
     click(container.querySelector("[data-credentials-trigger]"));
-    const popup = document.querySelector('[data-credentials-popover="node"]');
-    expect(popup).not.toBeNull();
-    return { container, popup: popup as HTMLElement };
+    const dialog = document.querySelector('[data-credentials-dialog="node"]');
+    expect(dialog).not.toBeNull();
+    return { container, dialog: dialog as HTMLElement };
   }
 
   const sharedKey: Credential = {
@@ -301,13 +301,21 @@ describe("CellOperatorCard credentials popover", () => {
     );
   }
 
+  function only(root: ParentNode, selector: string): HTMLElement {
+    const element = root.querySelector(selector);
+    if (!(element instanceof HTMLElement)) {
+      throw new Error(`no ${selector} in the dialog`);
+    }
+    return element;
+  }
+
   it("leads with the key that runs the node and binds the graph default", async () => {
     const input = vaultInput();
-    const { container, popup } = openPopover([input]);
+    const { container, dialog } = openDialog([input]);
     expect(
       container.querySelector('[data-credentials-trigger="configured"]'),
     ).not.toBeNull();
-    const summary = popup.querySelector("[data-credential-source]");
+    const summary = dialog.querySelector("[data-credential-source]");
     expect(summary?.getAttribute("data-credential-source")).toBe(
       "shared_credential",
     );
@@ -317,13 +325,13 @@ describe("CellOperatorCard credentials popover", () => {
     expect(
       summary?.querySelector('[data-verification="valid"]')?.textContent,
     ).toBe("Verified");
-    expect(popup.textContent).toContain("OpenAI-compatible");
+    expect(dialog.textContent).toContain("OpenAI-compatible");
     expect(
-      popup.querySelector('[aria-label="Re-verify API key"]'),
+      dialog.querySelector('[aria-label="Re-verify API key"]'),
     ).not.toBeNull();
 
     // One picker at a time: "My run" first, "Graph default" behind its tab.
-    const personal = popup.querySelector<HTMLSelectElement>(
+    const personal = dialog.querySelector<HTMLSelectElement>(
       '[aria-label="API key personal selection"]',
     );
     expect(personal?.value).toBe("none");
@@ -333,20 +341,20 @@ describe("CellOperatorCard credentials popover", () => {
       ),
     ).toEqual(["Default", "Shared (workspace)"]);
     expect(
-      popup.querySelector('[aria-label="API key graph binding"]'),
+      dialog.querySelector('[aria-label="API key graph binding"]'),
     ).toBeNull();
-    expect(popup.textContent).toContain("Overrides only your runs.");
+    expect(dialog.textContent).toContain("Overrides only your runs.");
     const graphTab = [
-      ...popup.querySelectorAll(
+      ...dialog.querySelectorAll(
         '[aria-label="API key selection scope"] [role="radio"]',
       ),
     ].find((radio) => radio.textContent === "Graph default");
     click(graphTab ?? null);
-    const graphBinding = popup.querySelector<HTMLSelectElement>(
+    const graphBinding = dialog.querySelector<HTMLSelectElement>(
       '[aria-label="API key graph binding"]',
     );
     expect(graphBinding?.value).toBe("credential:vault-key");
-    expect(popup.textContent).toContain(
+    expect(dialog.textContent).toContain(
       "Default for everyone who runs this graph.",
     );
     if (!graphBinding) throw new Error("Graph binding picker is missing");
@@ -362,15 +370,15 @@ describe("CellOperatorCard credentials popover", () => {
 
   it("saves an unreachable Personal key anyway and selects it for my runs", async () => {
     const input = vaultInput();
-    const { popup } = openPopover([input]);
-    click(buttonNamed(popup, "Add credential"));
-    expect(popup.querySelector('[aria-label="Credential scope"]')).toBeNull();
+    const { dialog } = openDialog([input]);
+    click(buttonNamed(dialog, "Add credential"));
+    expect(dialog.querySelector('[aria-label="Credential scope"]')).toBeNull();
     type(
-      popup.querySelector<HTMLInputElement>('input[name="value"]'),
+      dialog.querySelector<HTMLInputElement>('input[name="value"]'),
       "synthetic-personal-key",
     );
     type(
-      popup.querySelector<HTMLInputElement>('input[name="label"]'),
+      dialog.querySelector<HTMLInputElement>('input[name="label"]'),
       "My key",
     );
 
@@ -407,12 +415,12 @@ describe("CellOperatorCard credentials popover", () => {
     vi.stubGlobal("fetch", fetcher);
     try {
       await React.act(async () => {
-        popup
+        dialog
           .querySelector<HTMLButtonElement>('button[type="submit"]')
           ?.click();
       });
-      expect(popup.textContent).toContain("Provider unreachable.");
-      const saveAnyway = buttonNamed(popup, "Save anyway");
+      expect(dialog.textContent).toContain("Provider unreachable.");
+      const saveAnyway = buttonNamed(dialog, "Save anyway");
       expect(saveAnyway).not.toBeNull();
       await React.act(async () => saveAnyway?.click());
       expect(fetcher).toHaveBeenLastCalledWith(
@@ -421,14 +429,14 @@ describe("CellOperatorCard credentials popover", () => {
           body: expect.stringContaining('"save_if_unverified":true'),
         }),
       );
-      expect(popup.textContent).toContain("Saved without verification.");
-      expect(popup.querySelector('input[name="value"]')).toBeNull();
+      expect(dialog.textContent).toContain("Saved without verification.");
+      expect(dialog.querySelector('input[name="value"]')).toBeNull();
       expect(input.vault?.select).toHaveBeenCalledWith({
         scope: "personal",
         binding: { mode: "credential", credential_id: "my-key" },
       });
       expect(input.vault?.refresh).toHaveBeenCalled();
-      expect(popup.textContent).toContain("Now using “My key”.");
+      expect(dialog.textContent).toContain("Now using “My key”.");
     } finally {
       vi.unstubAllGlobals();
     }
@@ -439,16 +447,16 @@ describe("CellOperatorCard credentials popover", () => {
       { personal_override_mode: "deployment_default" },
       { canManageShared: true },
     );
-    const { popup } = openPopover([input]);
-    click(buttonNamed(popup, "Add credential"));
+    const { dialog } = openDialog([input]);
+    click(buttonNamed(dialog, "Add credential"));
     const shared = [
-      ...popup.querySelectorAll(
+      ...dialog.querySelectorAll(
         '[aria-label="Credential scope"] [role="radio"]',
       ),
     ].find((radio) => radio.textContent === "Shared");
     click(shared ?? null);
-    type(popup.querySelector<HTMLInputElement>('input[name="value"]'), "k");
-    type(popup.querySelector<HTMLInputElement>('input[name="label"]'), "Ops");
+    type(dialog.querySelector<HTMLInputElement>('input[name="value"]'), "k");
+    type(dialog.querySelector<HTMLInputElement>('input[name="label"]'), "Ops");
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
@@ -460,7 +468,7 @@ describe("CellOperatorCard credentials popover", () => {
     vi.stubGlobal("fetch", fetcher);
     try {
       await React.act(async () => {
-        popup
+        dialog
           .querySelector<HTMLButtonElement>('button[type="submit"]')
           ?.click();
       });
@@ -482,9 +490,9 @@ describe("CellOperatorCard credentials popover", () => {
   });
 
   it("tests a pasted key without saving it", async () => {
-    const { popup } = openPopover([vaultInput()]);
-    click(buttonNamed(popup, "Add credential"));
-    type(popup.querySelector<HTMLInputElement>('input[name="value"]'), "k");
+    const { dialog } = openDialog([vaultInput()]);
+    click(buttonNamed(dialog, "Add credential"));
+    type(dialog.querySelector<HTMLInputElement>('input[name="value"]'), "k");
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(
       Response.json({
         status: "valid",
@@ -494,7 +502,7 @@ describe("CellOperatorCard credentials popover", () => {
     );
     vi.stubGlobal("fetch", fetcher);
     try {
-      await React.act(async () => buttonNamed(popup, "Test key")?.click());
+      await React.act(async () => buttonNamed(dialog, "Test key")?.click());
       expect(fetcher).toHaveBeenCalledWith(
         "/api/v1/me/credentials/verify",
         expect.objectContaining({
@@ -502,13 +510,14 @@ describe("CellOperatorCard credentials popover", () => {
         }),
       );
       expect(
-        popup.querySelector('[data-credential-callout="success"]')?.textContent,
+        dialog.querySelector('[data-credential-callout="success"]')
+          ?.textContent,
       ).toBe("Verified · 42 models available");
       // Renaming keeps the result; a new key clears it.
-      type(popup.querySelector<HTMLInputElement>('input[name="label"]'), "A");
-      expect(popup.querySelector("[data-credential-callout]")).not.toBeNull();
-      type(popup.querySelector<HTMLInputElement>('input[name="value"]'), "k2");
-      expect(popup.querySelector("[data-credential-callout]")).toBeNull();
+      type(dialog.querySelector<HTMLInputElement>('input[name="label"]'), "A");
+      expect(dialog.querySelector("[data-credential-callout]")).not.toBeNull();
+      type(dialog.querySelector<HTMLInputElement>('input[name="value"]'), "k2");
+      expect(dialog.querySelector("[data-credential-callout]")).toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -546,16 +555,16 @@ describe("CellOperatorCard credentials popover", () => {
   });
 
   it("opens from the header key and lists each key with its status", () => {
-    const { container, popup } = openPopover([configured]);
+    const { container, dialog } = openDialog([configured]);
     expect(
       container.querySelector('[data-credentials-trigger="configured"]'),
     ).not.toBeNull();
-    expect(popup.textContent).toContain("Credentials");
-    expect(popup.textContent).toContain("API key");
+    expect(dialog.textContent).toContain("Credentials");
+    expect(dialog.textContent).toContain("API key");
     expect(
-      popup.querySelector('[data-secret-status="configured"]')?.textContent,
+      dialog.querySelector('[data-secret-status="configured"]')?.textContent,
     ).toBe("Configured");
-    const input = popup.querySelector<HTMLInputElement>(
+    const input = dialog.querySelector<HTMLInputElement>(
       'input[type="password"]',
     );
     expect(input?.value).toBe("");
@@ -568,15 +577,15 @@ describe("CellOperatorCard credentials popover", () => {
       resolve = done;
     });
     const onApplySecret = vi.fn(() => applied);
-    const { popup } = openPopover([{ ...configured, state: "unconfigured" }], {
+    const { dialog } = openDialog([{ ...configured, state: "unconfigured" }], {
       onApplySecret,
     });
-    expect(popup.textContent).toContain("Not set");
-    const input = popup.querySelector<HTMLInputElement>(
+    expect(dialog.textContent).toContain("Not set");
+    const input = dialog.querySelector<HTMLInputElement>(
       'input[type="password"]',
     );
     type(input, "sk-test");
-    const apply = [...popup.querySelectorAll("button")].find(
+    const apply = [...dialog.querySelectorAll("button")].find(
       (button) => button.textContent === "Apply",
     );
     expect(apply?.disabled).toBe(false);
@@ -591,8 +600,8 @@ describe("CellOperatorCard credentials popover", () => {
 
   it("removes a configured key", () => {
     const onRemoveSecret = vi.fn(() => Promise.resolve(true));
-    const { popup } = openPopover([configured], { onRemoveSecret });
-    const remove = [...popup.querySelectorAll("button")].find(
+    const { dialog } = openDialog([configured], { onRemoveSecret });
+    const remove = [...dialog.querySelectorAll("button")].find(
       (button) => button.textContent === "Remove",
     );
     expect(remove?.disabled).toBe(false);
@@ -601,33 +610,118 @@ describe("CellOperatorCard credentials popover", () => {
   });
 
   it("asks for a save before a key can be written to an unsaved node", () => {
-    const { container, popup } = openPopover(
+    const { container, dialog } = openDialog(
       [{ ...configured, state: "unknown", ready: false }],
       { onApplySecret: vi.fn(), onRemoveSecret: vi.fn() },
     );
     expect(
       container.querySelector('[data-credentials-trigger="needed"]'),
     ).not.toBeNull();
-    expect(popup.textContent).toContain("Save node first");
-    expect(popup.textContent).toContain("Save this node before adding a key.");
+    expect(dialog.textContent).toContain("Save node first");
+    expect(dialog.textContent).toContain("Save this node before adding a key.");
     expect(
-      popup.querySelector<HTMLInputElement>('input[type="password"]')?.disabled,
+      dialog.querySelector<HTMLInputElement>('input[type="password"]')
+        ?.disabled,
     ).toBe(true);
-    const remove = [...popup.querySelectorAll("button")].find(
+    const remove = [...dialog.querySelectorAll("button")].find(
       (button) => button.textContent === "Remove",
     );
     expect(remove?.disabled).toBe(true);
   });
 
   it("closes on Escape", () => {
-    const { popup } = openPopover([configured]);
+    const { dialog } = openDialog([configured]);
     React.act(() => {
-      popup.dispatchEvent(
+      dialog.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
       );
     });
     expect(
-      document.querySelector('[data-credentials-popover="node"]'),
+      document.querySelector('[data-credentials-dialog="node"]'),
+    ).toBeNull();
+  });
+
+  it("names the endpoint the stored key is bound to", () => {
+    const { dialog } = openDialog([
+      vaultInput(
+        {},
+        {
+          provider: {
+            kind: "openai_compatible",
+            fields: ["base_url"],
+            defaults: { base_url: "https://api.openai.com/v1" },
+          },
+        },
+      ),
+    ]);
+    const bindings = dialog.querySelector('[data-credential-bindings="true"]');
+    expect(bindings?.textContent).toContain("Base URL");
+    expect(bindings?.textContent).toContain("https://api.openai.com/v1");
+  });
+
+  it("stacks every key a node declares", () => {
+    const { dialog } = openDialog([
+      {
+        ...vaultInput(),
+        name: "label_studio_token",
+        title: "Label Studio API token",
+      },
+      {
+        ...vaultInput(),
+        name: "s3_secret_key",
+        title: "MinIO / S3 secret access key",
+      },
+    ]);
+    expect(
+      dialog.querySelector('[data-vault-credential="label_studio_token"]'),
+    ).not.toBeNull();
+    expect(
+      dialog.querySelector('[data-vault-credential="s3_secret_key"]'),
+    ).not.toBeNull();
+  });
+
+  it("asks before discarding a typed key and keeps it when told not to", () => {
+    const { dialog } = openDialog([{ ...configured, state: "unconfigured" }], {
+      onApplySecret: vi.fn(() => Promise.resolve(true)),
+    });
+    const field = () =>
+      dialog.querySelector<HTMLInputElement>('input[type="password"]');
+    type(field(), "sk-keep-me");
+
+    React.act(() => {
+      dialog.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    expect(
+      document.querySelector('[data-credentials-dialog="node"]'),
+    ).not.toBeNull();
+    const ask = only(dialog, '[data-credentials-discard="ask"]');
+    expect(ask.textContent).toContain("was not saved");
+
+    click(buttonNamed(ask, "Keep editing"));
+    expect(dialog.querySelector('[data-credentials-discard="ask"]')).toBeNull();
+    expect(field()?.value).toBe("sk-keep-me");
+  });
+
+  it("closes and drops the draft when the key is discarded on purpose", () => {
+    const { dialog } = openDialog([{ ...configured, state: "unconfigured" }], {
+      onApplySecret: vi.fn(() => Promise.resolve(true)),
+    });
+    type(dialog.querySelector('input[type="password"]'), "sk-drop-me");
+    React.act(() => {
+      dialog.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    click(
+      buttonNamed(
+        only(dialog, '[data-credentials-discard="ask"]'),
+        "Discard and close",
+      ),
+    );
+    expect(
+      document.querySelector('[data-credentials-dialog="node"]'),
     ).toBeNull();
   });
 });

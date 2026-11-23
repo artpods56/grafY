@@ -22,6 +22,7 @@ import {
 } from "@/features/credentials/CredentialBadge";
 import { CredentialForm } from "@/features/credentials/CredentialForm";
 import {
+  credentialFieldLabel,
   credentialSourceDescription,
   credentialSourceLabel,
   credentialStatusLabel,
@@ -44,32 +45,32 @@ const spin = stylex.keyframes({
 });
 
 const styles = stylex.create({
-  slot: { display: "grid", gap: "7px", minWidth: 0 },
+  slot: { display: "grid", gap: "12px", minWidth: 0 },
   header: {
     minWidth: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: "8px",
+    gap: "10px",
   },
   title: {
     minWidth: 0,
     overflow: "hidden",
-    color: tokens.colorText,
-    fontSize: "9.5px",
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
     fontWeight: 600,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  /** The key that runs this node now: the answer the popover leads with. */
+  /** The key that runs this node now: the answer the dialog leads with. */
   summary: {
     minWidth: 0,
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) auto",
     alignItems: "center",
-    columnGap: "6px",
-    rowGap: "3px",
-    padding: "6px 6px 6px 8px",
+    columnGap: "8px",
+    rowGap: "5px",
+    padding: "10px 10px 10px 12px",
     borderRadius: tokens.radiusMd,
     backgroundColor: tokens.colorHover,
     boxShadow: `inset 0 0 0 1px ${tokens.colorDivider}`,
@@ -78,13 +79,13 @@ const styles = stylex.create({
     minWidth: 0,
     display: "flex",
     alignItems: "center",
-    gap: "5px",
+    gap: "8px",
   },
   summaryLabel: {
     minWidth: 0,
     overflow: "hidden",
     color: tokens.colorTextEmphasis,
-    fontSize: "10px",
+    fontSize: tokens.fontSizeMd,
     fontWeight: 600,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -93,37 +94,47 @@ const styles = stylex.create({
   summaryAside: {
     display: "flex",
     alignItems: "center",
-    gap: "2px",
+    gap: "6px",
   },
   summaryDetail: {
     gridColumn: "1 / -1",
     minWidth: 0,
     margin: 0,
-    overflow: "hidden",
     color: tokens.colorSubtle,
-    fontSize: "9px",
-    lineHeight: 1.35,
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
+  },
+  /** The config the stored key is bound to, read-only above the picker. */
+  binding: {
+    margin: 0,
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
+    overflowWrap: "anywhere",
   },
   hint: {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     letterSpacing: "0.02em",
   },
-  picker: { display: "grid", gap: "4px", minWidth: 0 },
+  picker: { display: "grid", gap: "8px", minWidth: 0 },
   scopeLabel: {
     margin: 0,
     color: tokens.colorMuted,
-    fontSize: "9px",
+    fontSize: tokens.fontSizeXs,
     fontWeight: 600,
   },
   helper: {
     margin: 0,
     color: tokens.colorSubtle,
-    fontSize: "9px",
-    lineHeight: 1.35,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
   },
-  note: { margin: 0, color: tokens.colorSubtle, fontSize: "9px" },
+  note: {
+    margin: 0,
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.45,
+  },
   spinner: {
     animationName: spin,
     animationDuration: {
@@ -307,6 +318,10 @@ export function CellVaultCredential({ input }: { input: CellSecretInputSpec }) {
           ? "your own key"
           : null;
 
+  const boundFields = Object.entries(vault.provider.defaults ?? {}).filter(
+    ([, value]) => value.trim().length > 0,
+  );
+
   function change(selection: NodeCredentialSelection) {
     dispatch({
       kind: "start",
@@ -323,18 +338,28 @@ export function CellVaultCredential({ input }: { input: CellSecretInputSpec }) {
     >
       <div {...stylex.props(styles.header)}>
         <span {...stylex.props(styles.title)}>{input.title}</span>
-        <CredentialBadge tone="outline" size="dense">
+        <CredentialBadge tone="outline">
           {providerDisplayName(vault.provider.kind)}
         </CredentialBadge>
       </div>
+      {boundFields.length > 0 && (
+        <p data-credential-bindings="true" {...stylex.props(styles.binding)}>
+          {boundFields.map(([field, value], index) => (
+            <React.Fragment key={field}>
+              {index > 0 ? " · " : null}
+              {credentialFieldLabel(field)}:{" "}
+              <span {...stylex.props(styles.hint)}>{value}</span>
+            </React.Fragment>
+          ))}
+        </p>
+      )}
 
       <div data-credential-source={source} {...stylex.props(styles.summary)}>
         <div {...stylex.props(styles.summaryMain)}>
           <CredentialBadge
             tone="outline"
-            size="dense"
             title={credentialSourceDescription[source]}
-            icon={<SourceIcon size={8} aria-hidden="true" />}
+            icon={<SourceIcon size={11} aria-hidden="true" />}
           >
             {input.ready ? credentialSourceLabel[source] : "Settings changed"}
           </CredentialBadge>
@@ -350,16 +375,13 @@ export function CellVaultCredential({ input }: { input: CellSecretInputSpec }) {
         </div>
         <div {...stylex.props(styles.summaryAside)}>
           {input.ready && status.effective_verification_status && (
-            <VerificationBadge
-              status={status.effective_verification_status}
-              size="dense"
-            />
+            <VerificationBadge status={status.effective_verification_status} />
           )}
           {canReverify && (
             <IconButton
               label={`Re-verify ${input.title}`}
               title="Re-verify with the provider"
-              size="2xs"
+              size="sm"
               variant="ghost"
               disabled={unavailable}
               onClick={() =>
@@ -372,12 +394,12 @@ export function CellVaultCredential({ input }: { input: CellSecretInputSpec }) {
             >
               {verifying ? (
                 <LoaderCircle
-                  size={10}
+                  size={14}
                   aria-hidden="true"
                   {...stylex.props(styles.spinner)}
                 />
               ) : (
-                <RefreshCw size={10} aria-hidden="true" />
+                <RefreshCw size={14} aria-hidden="true" />
               )}
             </IconButton>
           )}
@@ -398,16 +420,12 @@ export function CellVaultCredential({ input }: { input: CellSecretInputSpec }) {
       </div>
 
       {status.shared_credential_missing && (
-        <CredentialCallout
-          tone="danger"
-          title="Shared key missing"
-          size="dense"
-        >
+        <CredentialCallout tone="danger" title="Shared key missing">
           The graph&apos;s shared key was removed or is unavailable.
         </CredentialCallout>
       )}
       {state.kind === "failed" && (
-        <CredentialCallout tone="danger" title="Failed" size="dense">
+        <CredentialCallout tone="danger" title="Failed">
           {state.message}
         </CredentialCallout>
       )}
@@ -421,7 +439,7 @@ export function CellVaultCredential({ input }: { input: CellSecretInputSpec }) {
         <div {...stylex.props(styles.picker)}>
           {scopes.length > 1 ? (
             <SegmentedControl
-              size="sm"
+              size="md"
               aria-label={`${input.title} selection scope`}
               value={activeTab}
               options={scopes.map((scope) => ({
@@ -436,7 +454,6 @@ export function CellVaultCredential({ input }: { input: CellSecretInputSpec }) {
           {activeTab === "personal" ? (
             <Select
               aria-label={`${input.title} personal selection`}
-              size="dense"
               value={personalValue}
               disabled={unavailable}
               onChange={(event) => {
@@ -510,7 +527,6 @@ export function CellVaultCredential({ input }: { input: CellSecretInputSpec }) {
           ) : (
             <Select
               aria-label={`${input.title} graph binding`}
-              size="dense"
               value={sharedValue}
               disabled={unavailable}
               onChange={(event) => {
@@ -569,7 +585,7 @@ export function CellVaultCredential({ input }: { input: CellSecretInputSpec }) {
 
       {input.ready && vault.canSelectPersonal && (
         <CredentialForm
-          dense
+          layout="stack"
           workspaceId={vault.workspaceId}
           keyLabel={input.title}
           providers={[

@@ -28,13 +28,14 @@ const badge = stylex.create({
     alignItems: "center",
     gap: "3px",
     boxSizing: "border-box",
+    height: "20px",
+    paddingInline: "7px",
     borderRadius: "9999px",
+    fontSize: tokens.fontSizeXs,
     fontWeight: 600,
     lineHeight: 1,
     whiteSpace: "nowrap",
   },
-  dense: { height: "15px", paddingInline: "5px", fontSize: "8.5px" },
-  md: { height: "20px", paddingInline: "7px", fontSize: tokens.fontSizeXs },
   success: {
     backgroundColor: `color-mix(in oklab, ${tokens.colorSuccess} 14%, transparent)`,
     color: tokens.colorSuccess,
@@ -64,24 +65,18 @@ export type BadgeTone = CredentialTone | "outline";
 /** A small pill: a status in a tone, or an outlined scope or provider. */
 export function CredentialBadge({
   tone,
-  size = "md",
   icon,
   title,
   children,
   ...data
 }: {
   tone: BadgeTone;
-  size?: "dense" | "md";
   icon?: React.ReactNode;
   title?: string;
   children: React.ReactNode;
 } & { [key: `data-${string}`]: string | undefined }) {
   return (
-    <span
-      title={title}
-      {...data}
-      {...stylex.props(badge.root, badge[size], badge[tone])}
-    >
+    <span title={title} {...data} {...stylex.props(badge.root, badge[tone])}>
       {icon}
       {children}
     </span>
@@ -100,19 +95,16 @@ const STATUS_ICON: Record<CredentialVerificationStatus, typeof CircleCheck> = {
 /** A verification result as a toned badge, with its meaning as a tooltip. */
 export function VerificationBadge({
   status,
-  size = "md",
 }: {
   status: CredentialVerificationStatus;
-  size?: "dense" | "md";
 }) {
   const Icon = STATUS_ICON[status];
   return (
     <CredentialBadge
       tone={credentialStatusTone(status)}
-      size={size}
       title={credentialStatusDescription[status]}
       data-verification={status}
-      icon={<Icon size={size === "dense" ? 8 : 11} aria-hidden="true" />}
+      icon={<Icon size={11} aria-hidden="true" />}
     >
       {credentialStatusLabel[status]}
     </CredentialBadge>
@@ -126,13 +118,13 @@ const callout = stylex.create({
     alignItems: "start",
     columnGap: "6px",
     margin: 0,
+    padding: "8px 10px",
     borderRadius: tokens.radiusMd,
     borderWidth: "1px",
     borderStyle: "solid",
+    fontSize: tokens.fontSizeSm,
     lineHeight: 1.4,
   },
-  dense: { padding: "5px 7px", fontSize: "9px" },
-  md: { padding: "8px 10px", fontSize: tokens.fontSizeSm },
   icon: { marginTop: "1px" },
   title: { fontWeight: 600 },
   message: { color: tokens.colorText, overflowWrap: "anywhere" },
@@ -173,25 +165,19 @@ export function CredentialCallout({
   tone,
   title,
   children,
-  size = "md",
 }: {
   tone: CredentialTone;
   title: string;
   children?: React.ReactNode;
-  size?: "dense" | "md";
 }) {
   const Icon = TONE_ICON[tone];
   return (
     <p
       role={tone === "danger" || tone === "warning" ? "alert" : "status"}
       data-credential-callout={tone}
-      {...stylex.props(callout.root, callout[size], callout[tone])}
+      {...stylex.props(callout.root, callout[tone])}
     >
-      <Icon
-        size={size === "dense" ? 10 : 13}
-        aria-hidden="true"
-        {...stylex.props(callout.icon)}
-      />
+      <Icon size={13} aria-hidden="true" {...stylex.props(callout.icon)} />
       <span>
         <span {...stylex.props(callout.title)}>{title}</span>
         {children != null && children !== "" ? (
