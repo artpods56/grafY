@@ -50,6 +50,9 @@ import { Switch } from "@/components/ui/switch";
  * The size lists below are written out rather than derived from the types, so
  * adding a variant to the kit leaves this lab visibly incomplete instead of
  * silently skipping it.
+ *
+ * `NOTES.md` beside this file holds the call-site counts behind each option and
+ * the shape the next cut should take. Read it before changing the layout here.
  */
 
 const BUTTON_VARIANTS = [
@@ -760,6 +763,12 @@ export function UiKitSpike() {
           </DialogContent>
         </Dialog>
       </Section>
+
+      <p {...stylex.props(s.note)}>
+        Call-site counts and the plan for the next cut:{" "}
+        <code>src/sandbox/spikes/ui-kit/NOTES.md</code>, refreshed with{" "}
+        <code>bun apps/web/src/sandbox/spikes/ui-kit/usage.mjs</code>.
+      </p>
     </div>
   );
 }
