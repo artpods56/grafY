@@ -534,11 +534,16 @@ _Avoid_: egress broker, network policy, sandbox network
 
 ### Node catalog / Add node
 
-The catalog lists the builtin families, the Plugin families installed in this
-deployment, and, as a separate entry kind, the sibling Graphs of the open Project that can be placed as call nodes. Every insertable node
-carries its operator id and version plus the deployment's build digest; an
-operator that is not in the registry is a compile error, not a disabled entry
-waiting for a release.
+The node registry describes every installed operator by id and version. Saved
+Graphs resolve their nodes against that registry, including steps hidden from
+Add node. A missing registration is a compile error.
+
+A **Tool pack** is a curated set of steps and engines that a Workspace can
+subscribe to for discovery. The deployment can hide Packs or operators and
+choose the default subscriptions for new Workspaces through
+`GRAFY_CATALOG_CONFIG`. Essentials is always on. Only Workspace owners can
+change subscriptions. Pack subscriptions change the picker and leave stored
+Graphs, execution, and result identity intact.
 
 Grafy's builtin families contain broadly reusable operations: Image, Sequence,
 Value, Text, Schema, Table, and File. A builtin artifact type must have precise,

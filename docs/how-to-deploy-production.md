@@ -81,6 +81,24 @@ To let an account disable and re-enable other users through
 GRAFY_OPERATOR_EMAILS=you@example.org
 ```
 
+To configure Tool packs, mount a TOML file read-only in the API service
+using the site Compose override and set `GRAFY_CATALOG_CONFIG` to its path
+inside the container. The API validates the file on startup.
+
+```toml
+[defaults]
+workspace_packs = ["essentials", "document_ocr"]
+
+[packs]
+label_studio = false
+
+[operators]
+"ocr.filter_tiff_jev" = false
+```
+
+Defaults apply when a Workspace is created. The deployment switches apply
+to discovery in every Workspace. Essentials is always available and subscribed.
+
 Add these PostgreSQL values:
 
 ```dotenv

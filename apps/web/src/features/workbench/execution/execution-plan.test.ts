@@ -51,6 +51,7 @@ function nodeSpec(
   title = operatorId,
 ): NodeSpec {
   return {
+    pack_slugs: [],
     role:
       outputs.length && outputs.every((port) => port.kind === "service")
         ? "provider"

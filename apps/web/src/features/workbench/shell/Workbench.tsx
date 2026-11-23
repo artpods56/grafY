@@ -412,6 +412,9 @@ function WorkbenchBody({
   } = useCanvasLab();
   const { workspace } = useWorkspaceContext();
   const canCreateProject = workspace.capabilities.includes("create_project");
+  const managePacksHref = workspace.capabilities.includes("manage_packs")
+    ? `/workspaces/${encodeURIComponent(workspaceSlug)}/settings#tool-packs`
+    : undefined;
   const canManageSecrets = workspace.capabilities.includes("manage_secrets");
   const canEditProject = workspace.capabilities.includes("edit_project");
   const canStartRun = workspace.capabilities.includes("start_run");
@@ -3845,6 +3848,7 @@ function WorkbenchBody({
         registry={registry ?? null}
         activeGraphId={openGraphId}
         canEdit={localAuthoringEnabled}
+        managePacksHref={managePacksHref}
         selection={canvasMenuSelection}
         nodeMenus={nodeMenus}
         actions={canvasMenuActions}
@@ -3883,6 +3887,7 @@ function WorkbenchBody({
           insertDisabledReason={localAuthoringBlockedMessage}
           onOpenChange={(open) => setLibraryOpen(open, libraryInsertAt)}
           onAddNode={(spec) => addCatalogNode(spec)}
+          managePacksHref={managePacksHref}
         />
       ) : null}
 

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import * as stylex from "@stylexjs/stylex";
 import {
   Circle,
@@ -42,6 +43,7 @@ import {
   catalogNodeKey,
   catalogNodesForFilter,
   catalogNodeSpecs,
+  groupCatalogNodes,
   sortCatalogNodes,
 } from "../../authoring/node-catalog";
 import type { CanvasMenuRequest } from "./canvas-menu-target";
@@ -98,6 +100,7 @@ export function CanvasContextMenu({
   request,
   registry,
   activeGraphId,
+  managePacksHref,
   canEdit,
   selection,
   nodeMenus,
@@ -107,6 +110,7 @@ export function CanvasContextMenu({
   request: CanvasMenuRequest | null;
   registry: NodeRegistry | null;
   activeGraphId: string | null;
+  managePacksHref?: string;
   canEdit: boolean;
   selection: CanvasMenuSelection;
   nodeMenus: NodeMenuRegistry;
@@ -167,6 +171,7 @@ export function CanvasContextMenu({
           <PaneItems
             registry={registry}
             activeGraphId={activeGraphId}
+            managePacksHref={managePacksHref}
             canEdit={canEdit}
             actions={actions}
           />
@@ -229,26 +234,29 @@ export function CanvasContextMenu({
 function PaneItems({
   registry,
   activeGraphId,
+  managePacksHref,
   canEdit,
   actions,
 }: {
   registry: NodeRegistry | null;
   activeGraphId: string | null;
+  managePacksHref?: string;
   canEdit: boolean;
   actions: CanvasMenuActions;
 }) {
-  // The catalog, by source, as the Add node picker groups it.
+  // Use the same pack order and Engines groups as the picker.
   const sources = React.useMemo(() => {
     if (!registry) return [];
     const nodes = catalogNodeSpecs(registry, activeGraphId);
-    return buildSourceFilters(registry)
-      .filter((source) => source.kind !== "all")
-      .map((source) => ({
-        id: source.id,
-        title: source.title,
-        nodes: sortCatalogNodes(catalogNodesForFilter(nodes, source)),
-      }))
-      .filter((source) => source.nodes.length > 0);
+    const filters = buildSourceFilters(registry);
+    return filters.map((source) => ({
+      id: source.id,
+      title: source.title,
+      groups: groupCatalogNodes(
+        sortCatalogNodes(catalogNodesForFilter(nodes, source)),
+        source.kind === "all" ? filters : [],
+      ),
+    }));
   }, [activeGraphId, registry]);
 
   return (
@@ -265,19 +273,33 @@ function PaneItems({
         disabled={!canEdit || sources.length === 0}
       >
         {sources.map((source) => (
-          <Submenu key={source.id} label={source.title}>
-            {source.nodes.map((spec) => (
-              <Item
-                key={catalogNodeKey(spec)}
-                label={spec.title}
-                title={spec.description || undefined}
-                disabled={spec.runnable === false}
-                onClick={() => actions.addNodeHere(spec)}
-              />
+          <Submenu
+            key={source.id}
+            label={source.title}
+            disabled={!source.groups.length}
+          >
+            {source.groups.map((group) => (
+              <MenuGroup key={group.key}>
+                {group.title ? <MenuLabel>{group.title}</MenuLabel> : null}
+                {group.nodes.map((spec) => (
+                  <Item
+                    key={catalogNodeKey(spec)}
+                    label={spec.title}
+                    title={spec.description || undefined}
+                    disabled={spec.runnable === false}
+                    onClick={() => actions.addNodeHere(spec)}
+                  />
+                ))}
+              </MenuGroup>
             ))}
           </Submenu>
         ))}
       </Submenu>
+      {managePacksHref ? (
+        <MenuItem render={<Link href={managePacksHref} />}>
+          Manage packs
+        </MenuItem>
+      ) : null}
       <Submenu icon={StickyNote} label="Annotation" disabled={!canEdit}>
         {ANNOTATIONS.map((annotation) => (
           <Item

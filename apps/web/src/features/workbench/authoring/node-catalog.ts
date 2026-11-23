@@ -22,6 +22,7 @@ import {
   type PortMeta,
 } from "./types";
 import { routesForHandleFeed } from "./connection-feeds";
+import { isProjectGraphCallSpec } from "./project-graphs";
 
 export type CatalogFilterKind =
   | "all"
@@ -29,7 +30,7 @@ export type CatalogFilterKind =
   | "single"
   | "sequence"
   | "any-artifact"
-  | "source"
+  | "pack"
   | "input-nodes";
 
 export type CatalogFilterId =
@@ -39,15 +40,14 @@ export type CatalogFilterId =
   | "any-artifact"
   | "input-nodes"
   | `artifact:${string}@${number}`
-  | `source:${string}`;
+  | `pack:${string}`;
 
 export interface CatalogFilter {
   id: CatalogFilterId;
   kind: CatalogFilterKind;
   title: string;
   artifactKey?: ArtifactTypeKey;
-  /** Provider plugin slug, set for `source` filters. */
-  sourceKey?: string;
+  packSlug?: string;
 }
 
 export interface ContextualRouteChoice {
@@ -72,8 +72,8 @@ export function artifactFilterId(key: ArtifactTypeKey): CatalogFilterId {
   return `artifact:${artifactTypeKey(key)}`;
 }
 
-export function sourceFilterId(slug: string): CatalogFilterId {
-  return `source:${slug}`;
+export function packFilterId(slug: string): CatalogFilterId {
+  return `pack:${slug}`;
 }
 
 /** Restricts results to nodes that take no inputs because they are inputs themselves. */
@@ -134,30 +134,20 @@ function artifactTitle(registry: NodeRegistry, key: ArtifactTypeKey): string {
   );
 }
 
-/** Build the source categories: every provider plugin that ships nodes. */
+/** Pack tabs follow the deployment's curated order. */
 export function buildSourceFilters(
   registry: NodeRegistry,
-): readonly CatalogFilter[] {
-  const slugsWithNodes = new Set(
-    registry.nodes.map((spec) => spec.plugin_slug),
-  );
-  const sources = registry.plugins
-    .filter((plugin) => slugsWithNodes.has(plugin.slug))
-    .slice()
-    .sort(
-      (left, right) =>
-        left.title.localeCompare(right.title) ||
-        left.slug.localeCompare(right.slug),
-    );
-
+): readonly [CatalogFilter, ...CatalogFilter[]] {
   return [
     { id: "all", kind: "all", title: "All" },
-    ...sources.map((plugin): CatalogFilter => ({
-      id: sourceFilterId(plugin.slug),
-      kind: "source",
-      title: plugin.title || "System",
-      sourceKey: plugin.slug,
-    })),
+    ...registry.packs
+      .filter((pack) => pack.subscribed)
+      .map((pack): CatalogFilter => ({
+        id: packFilterId(pack.slug),
+        kind: "pack",
+        title: pack.title,
+        packSlug: pack.slug,
+      })),
   ];
 }
 
@@ -219,10 +209,10 @@ export function catalogNodesForFilter(
       return nodes.filter((spec) => nodeMatchesShapeFilter(spec, "many"));
     case "any-artifact":
       return nodes.filter(nodeMatchesAnyArtifact);
-    case "source":
-      return filter.sourceKey
-        ? nodes.filter((spec) => spec.plugin_slug === filter.sourceKey)
-        : [];
+    case "pack": {
+      const slug = filter.packSlug;
+      return slug ? nodes.filter((spec) => spec.pack_slugs.includes(slug)) : [];
+    }
     case "input-nodes":
       return nodes.filter((spec) => spec.inputs.length === 0);
   }
@@ -252,6 +242,9 @@ export function nodeCatalogSearchText(
     plugin.title,
     plugin.entry_kind,
     plugin.origin,
+    ...registry.packs
+      .filter((pack) => spec.pack_slugs.includes(pack.slug))
+      .map((pack) => pack.title),
     ...spec.inputs.flatMap((port) => portSearchTerms(port, registry)),
     ...spec.outputs.flatMap((port) => portSearchTerms(port, registry)),
     ...fields.flatMap((field) => [
@@ -357,6 +350,56 @@ export function catalogNodeSpecs(
   _activeGraphId?: string | null,
 ): readonly NodeSpec[] {
   return registry.nodes.filter((spec) => spec.catalog_visible !== false);
+}
+
+export interface CatalogNodeGroup {
+  key: string;
+  title: string | null;
+  nodes: readonly NodeSpec[];
+}
+
+/** Shared display order for the full picker and the canvas menu. */
+export function groupCatalogNodes(
+  nodes: readonly NodeSpec[],
+  packs: readonly CatalogFilter[],
+): CatalogNodeGroup[] {
+  const groups: CatalogNodeGroup[] = [];
+  const calls = nodes.filter(isProjectGraphCallSpec);
+  let remaining = nodes.filter((spec) => !isProjectGraphCallSpec(spec));
+
+  function addGroup(
+    key: string,
+    title: string | null,
+    members: readonly NodeSpec[],
+  ) {
+    const operators = members.filter((spec) => spec.role !== "provider");
+    const engines = members.filter((spec) => spec.role === "provider");
+    if (operators.length) groups.push({ key, title, nodes: operators });
+    if (engines.length) {
+      groups.push({
+        key: `${key}-engines`,
+        title: "Engines",
+        nodes: engines,
+      });
+    }
+  }
+
+  for (const pack of packs) {
+    if (pack.kind !== "pack") continue;
+    const members = catalogNodesForFilter(remaining, pack);
+    addGroup(pack.id, pack.title, members);
+    const keys = new Set(members.map(catalogNodeKey));
+    remaining = remaining.filter((spec) => !keys.has(catalogNodeKey(spec)));
+  }
+  addGroup("results", null, remaining);
+  if (calls.length) {
+    groups.push({
+      key: "project-graphs",
+      title: "Project graphs",
+      nodes: calls,
+    });
+  }
+  return groups;
 }
 
 /** Compact purpose-oriented port summary for result rows. */

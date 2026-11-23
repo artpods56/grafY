@@ -54,6 +54,8 @@ from grafy_core.ports.runs import (
 )
 from grafy_core.ports.uploads import UploadRepositoryPort, UploadUnitOfWorkPort
 from grafy_core.ports.workbench import WorkbenchUnitOfWorkPort
+from grafy_core.ports.workspace_packs import WorkspacePackRepositoryPort
+from grafy_persistence.adapters.repositories.workspace_packs import SqlWorkspacePackRepository
 
 from grafy_persistence.adapters.repositories import (
     SqlProjectRepository,
@@ -87,6 +89,7 @@ class _SqlAlchemyUnitOfWorkState:
     agent_turns: AgentTurnRepositoryPort
     identity: IdentityRepositoryPort
     security_audit: SecurityAuditRepositoryPort
+    workspace_packs: WorkspacePackRepositoryPort
     uploads: UploadRepositoryPort
     library_folders: LibraryFolderRepositoryPort
     collaboration: CollaborationRepositoryPort
@@ -284,6 +287,11 @@ class SqlAlchemyUnitOfWork(
 
     @property
     @override
+    def workspace_packs(self) -> WorkspacePackRepositoryPort:
+        return self._entered_state().workspace_packs
+
+    @property
+    @override
     def security_audit(self) -> SecurityAuditRepositoryPort:
         return self._entered_state().security_audit
 
@@ -323,6 +331,7 @@ class SqlAlchemyUnitOfWork(
                 agent_conversations=SqlAgentConversationRepository(session),
                 agent_turns=SqlAgentTurnRepository(session),
                 identity=SqlIdentityRepository(session),
+                workspace_packs=SqlWorkspacePackRepository(session),
                 security_audit=SqlSecurityAuditRepository(session),
                 uploads=SqlUploadRepository(session),
                 library_folders=SqlLibraryFolderRepository(session),

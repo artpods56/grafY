@@ -939,3 +939,50 @@ async def test_role_change_returns_complete_member_after_commit(
             workspace_id=workspace.id, user_id=member.id
         )
     assert persisted == result.membership
+
+
+@pytest.mark.asyncio
+async def test_workspace_pack_defaults_seed_every_creation_path(database: Database) -> None:
+    from sqlalchemy import delete
+
+    from grafy_core.domain.identity import Workspace
+
+    defaults = ("essentials", "maps")
+    service = IdentityService(
+        lambda: SqlAlchemyUnitOfWork(database.sessions),
+        domain_workspace_grants=(_IHPAN_GRANT,),
+        default_workspace_pack_slugs=defaults,
+    )
+    async def provision():
+        return await service.provision_oidc_identity(
+            issuer="https://issuer.example.test",
+            subject="pack-defaults",
+            email="maps@ihpan.edu.pl",
+            display_name="Map researcher",
+            email_verified=True,
+        )
+
+    provisioned = await provision()
+    shared = await service.create_shared_workspace(
+        actor=ActorContext(user_id=provisioned.user.id),
+        slug="another-team",
+        name="Another team",
+    )
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        domain = await uow.identity.lock_workspace_by_slug_for_membership_mutation("ihpan")
+        assert domain is not None
+        for workspace in (provisioned.personal_workspace, shared, domain):
+            assert await uow.workspace_packs.list_slugs(workspace.id) == set(defaults)
+        await uow.workspace_packs.disable(domain.id, "maps")
+        await uow.commit()
+
+    async with database.sessions() as session:
+        await session.execute(delete(Workspace).filter_by(id=provisioned.personal_workspace.id))
+        await session.commit()
+
+    refreshed = await provision()
+    assert refreshed.personal_workspace.id != provisioned.personal_workspace.id
+    async with SqlAlchemyUnitOfWork(database.sessions) as uow:
+        assert await uow.workspace_packs.list_slugs(refreshed.personal_workspace.id) == set(defaults)
+        assert await uow.workspace_packs.list_slugs(provisioned.personal_workspace.id) == set()
+        assert await uow.workspace_packs.list_slugs(domain.id) == {"essentials"}

@@ -46,6 +46,7 @@ function node(
   outputs: readonly Port[],
 ): GraphAuthoringNode {
   const spec: NodeSpec = {
+    pack_slugs: [],
     role: "operator",
     operator_id: `test.${id}`,
     operator_version: 1,

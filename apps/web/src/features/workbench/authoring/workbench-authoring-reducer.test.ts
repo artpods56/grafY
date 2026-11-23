@@ -142,6 +142,7 @@ function stepSpec(
   outputs: readonly Port[],
 ): NodeSpec {
   return {
+    pack_slugs: [],
     role: "operator",
     operator_id: operatorId,
     operator_version: 1,
@@ -161,6 +162,7 @@ function stepSpec(
 
 function mappedStepRegistry(): NodeRegistry {
   return {
+    packs: [],
     plugins: [],
     artifact_types: [],
     artifact_conversions: [],

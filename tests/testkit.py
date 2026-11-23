@@ -33,7 +33,7 @@ from grafy_persistence.database import Database, create_database
 from grafy_persistence.orm import metadata
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from tests.support.factories.identity import IdentitySeeder
-from tests.support.identity import TEST_USER_ID, WORKSPACE_ID
+from tests.support.identity import TEST_USER_ID, WORKSPACE_ID, seed_default_packs
 
 # ---------------------------------------------------------------------------
 # Public type aliases
@@ -149,6 +149,7 @@ async def seed_shared_workspace(
     async with SqlAlchemyUnitOfWork(database.sessions) as uow:
         await uow.identity.add_user(user)
         await uow.identity.add_workspace(workspace)
+        await seed_default_packs(uow.workspace_packs, workspace)
         await uow.identity.add_membership(membership)
         await uow.commit()
     return user, workspace, membership

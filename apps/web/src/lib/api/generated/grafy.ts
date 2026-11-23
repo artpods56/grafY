@@ -897,6 +897,40 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/packs": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Packs */
+        readonly get: operations["list_packs_v1_workspaces__workspace_id__packs_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/packs/{pack_slug}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Set Pack Subscription */
+        readonly put: operations["set_pack_subscription_v1_workspaces__workspace_id__packs__pack_slug__put"];
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/personal-access-tokens": {
         readonly parameters: {
             readonly query?: never;
@@ -2223,6 +2257,25 @@ export interface components {
             /** Turn Id */
             readonly turn_id?: string | null;
         };
+        /** CatalogPackResponse */
+        readonly CatalogPackResponse: {
+            /** Always On */
+            readonly always_on: boolean;
+            /** Description */
+            readonly description: string;
+            /** Includes Project Graphs */
+            readonly includes_project_graphs: boolean;
+            /** Operator Count */
+            readonly operator_count: number;
+            /** Provider Count */
+            readonly provider_count: number;
+            /** Slug */
+            readonly slug: string;
+            /** Subscribed */
+            readonly subscribed: boolean;
+            /** Title */
+            readonly title: string;
+        };
         /** CheckpointProjectRequest */
         readonly CheckpointProjectRequest: {
             /**
@@ -3414,6 +3467,8 @@ export interface components {
             readonly artifact_types: readonly components["schemas"]["ArtifactTypeSpecResponse"][];
             /** Nodes */
             readonly nodes: readonly components["schemas"]["NodeSpecResponse"][];
+            /** Packs */
+            readonly packs: readonly components["schemas"]["CatalogPackResponse"][];
             /** Plugins */
             readonly plugins: readonly components["schemas"]["PluginSpecResponse"][];
             /** Service Contracts */
@@ -3541,6 +3596,8 @@ export interface components {
             };
             /** Outputs */
             readonly outputs: readonly components["schemas"]["PortResponse"][];
+            /** Pack Slugs */
+            readonly pack_slugs: readonly string[];
             /** Plugin Slug */
             readonly plugin_slug: string;
             /**
@@ -4353,6 +4410,11 @@ export interface components {
             /** Node Id */
             readonly node_id: string;
         };
+        /** SetPackSubscriptionRequest */
+        readonly SetPackSubscriptionRequest: {
+            /** Subscribed */
+            readonly subscribed: boolean;
+        };
         /**
          * SharedCredentialBindingMode
          * @enum {string}
@@ -4835,7 +4897,7 @@ export interface components {
          * WorkspaceCapability
          * @enum {string}
          */
-        readonly WorkspaceCapability: "view_project" | "view_artifacts" | "view_runs" | "join_project_room" | "publish_presence" | "create_project" | "edit_project" | "checkpoint_project" | "start_run" | "cancel_run" | "manage_secrets" | "delete_project" | "manage_members" | "rename_workspace";
+        readonly WorkspaceCapability: "view_project" | "view_artifacts" | "view_runs" | "join_project_room" | "publish_presence" | "create_project" | "edit_project" | "checkpoint_project" | "start_run" | "cancel_run" | "manage_secrets" | "delete_project" | "manage_packs" | "manage_members" | "rename_workspace";
         /** WorkspaceCreateRequest */
         readonly WorkspaceCreateRequest: {
             /** Name */
@@ -7511,6 +7573,73 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["NodeRegistryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_packs_v1_workspaces__workspace_id__packs_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": readonly components["schemas"]["CatalogPackResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly set_pack_subscription_v1_workspaces__workspace_id__packs__pack_slug__put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly pack_slug: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SetPackSubscriptionRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CatalogPackResponse"];
                 };
             };
             /** @description Validation Error */

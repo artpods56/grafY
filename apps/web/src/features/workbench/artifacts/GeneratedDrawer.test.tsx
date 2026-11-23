@@ -100,6 +100,7 @@ const REGISTRY = {
     },
   ],
   nodes: [],
+  packs: [],
   plugins: [],
   artifact_conversions: [],
 } satisfies React.ComponentProps<typeof GeneratedDrawer>["registry"];

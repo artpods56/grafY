@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from grafy_api.catalog import CatalogSnapshot
+from grafy_api.catalog_packs import CatalogPolicy
+from grafy_shared.config.catalog import CatalogOverrides
 from grafy_api.services.composition import build_workbench_components
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
 from grafy_core.domain.graph_documents import GraphDocument
@@ -19,8 +21,11 @@ def test_static_registry_supplies_the_catalog(
     components = build_workbench_components(
         workspace=tmp_path, unit_of_work=InMemoryUnitOfWork()
     )
+    policy = CatalogPolicy(components.plugin_registry, CatalogOverrides())
     catalog = NodeRegistryResponse.from_snapshot(
         CatalogSnapshot.from_registry(components.plugin_registry),
+        policy,
+        frozenset(policy.default_workspace_pack_slugs),
     )
     nodes = {node.operator_id: node for node in catalog.nodes}
     assert "gis.raster_scan.import" not in nodes

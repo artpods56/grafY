@@ -1,3 +1,9 @@
+import { packFixture } from "../test-fixtures";
+import {
+  buildSourceFilters,
+  catalogNodeSpecs,
+  groupCatalogNodes,
+} from "./node-catalog";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -93,6 +99,7 @@ function graph(
 
 function catalogSpec(operatorId: string): NodeSpec {
   return {
+    pack_slugs: [],
     role: "operator",
     operator_id: operatorId,
     operator_version: 1,
@@ -112,6 +119,7 @@ function catalogSpec(operatorId: string): NodeSpec {
 
 function registryWith(operatorIds: readonly string[]): NodeRegistry {
   return {
+    packs: [],
     plugins: [
       {
         entry_kind: "plugin",
@@ -316,7 +324,7 @@ describe("project-graphs boundary names", () => {
 
 describe("project-graphs specs", () => {
   it("describes the two boundary operators", () => {
-    const specs = boundaryNodeSpecs();
+    const specs = boundaryNodeSpecs(true);
     const [input, output] = specs;
 
     expect(specs.map((spec) => spec.operator_id)).toEqual([
@@ -463,11 +471,52 @@ describe("project-graphs specs", () => {
       added.map((spec) => [spec.operator_id, spec.catalog_visible]),
     );
     expect(visibility.get("visible")).toBe(true);
+    expect(visibility.get(GRAPH_INPUT_OPERATOR_ID)).toBe(false);
+    expect(visibility.get(GRAPH_OUTPUT_OPERATOR_ID)).toBe(false);
+    expect(
+      buildSourceFilters(withGraphs).map((filter) => filter.title),
+    ).toEqual(["All"]);
+    expect(
+      groupCatalogNodes(catalogNodeSpecs(withGraphs), [])
+        .at(-1)
+        ?.nodes.map((node) => node.operator_id),
+    ).toEqual(["visible"]);
+
+    const subscribed = registryWithProjectGraphs(
+      {
+        ...registry,
+        packs: [
+          packFixture({
+            slug: "subgraphs",
+            title: "Sub-graphs & Constants",
+            includes_project_graphs: true,
+          }),
+        ],
+      },
+      graphs,
+      "open",
+    );
+    expect(
+      buildSourceFilters(subscribed).map((filter) => filter.title),
+    ).toEqual(["All", "Sub-graphs & Constants"]);
+    for (const name of [
+      GRAPH_INPUT_OPERATOR_ID,
+      GRAPH_OUTPUT_OPERATOR_ID,
+      "visible",
+    ]) {
+      expect(
+        subscribed.nodes.find((spec) => spec.operator_id === name),
+      ).toMatchObject({
+        catalog_visible: true,
+        pack_slugs: ["subgraphs"],
+      });
+    }
     // Blocked reaches the open Graph, so calling it back would be a cycle.
     expect(visibility.get("blocked")).toBe(false);
 
     // Re-projecting the result adds the plugin entry once.
     const again = registryWithProjectGraphs(withGraphs, graphs, "open");
+    expect(again.nodes).toHaveLength(withGraphs.nodes.length);
     expect(
       again.plugins.filter(
         (plugin) => plugin.slug === PROJECT_GRAPHS_PLUGIN_SLUG,

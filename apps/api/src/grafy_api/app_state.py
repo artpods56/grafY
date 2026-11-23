@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from grafy_api.runs.service import RunService
     from grafy_api.services.composition import WorkbenchComponents
     from grafy_api.auth import AuthService
+    from grafy_api.catalog_packs import CatalogPolicy
 
 
 @dataclass(slots=True)
@@ -35,6 +36,7 @@ class AppIdentity:
     identity_uow_factory: Callable[[], IdentityUnitOfWorkPort]
     identity_service: IdentityService
     auth_service: AuthService
+    catalog_policy: CatalogPolicy
 
 
 @dataclass(slots=True)

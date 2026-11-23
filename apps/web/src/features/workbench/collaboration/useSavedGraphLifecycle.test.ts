@@ -72,6 +72,7 @@ const GRAPH_B_ID = "00000000-0000-4000-8000-00000000000b";
 const PROJECT_ID = GRAPH_A_ID;
 
 const registry: NodeRegistry = {
+  packs: [],
   plugins: [],
   artifact_types: [],
   artifact_conversions: [],

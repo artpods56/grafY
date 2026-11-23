@@ -78,6 +78,7 @@ function nodeSpec(
   options: SpecOptions = {},
 ): NodeSpec {
   return {
+    pack_slugs: [],
     role: "operator",
     operator_id: operatorId,
     operator_version: 1,

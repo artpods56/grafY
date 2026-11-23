@@ -1,5 +1,7 @@
 import { request } from "./client";
 import type {
+  CatalogPack,
+  SetPackSubscriptionRequest,
   PersonalAccessToken,
   PersonalAccessTokenCreated,
   PersonalAccessTokenCreateRequest,
@@ -13,6 +15,29 @@ import type {
   WorkspaceMember,
   WorkspaceMemberRoleRequest,
 } from "./contract";
+
+export function workspacePacksPath(workspaceId: string): string {
+  return `/v1/workspaces/${encodeURIComponent(workspaceId)}/packs`;
+}
+
+export function listWorkspacePacks(workspaceId: string) {
+  return request<readonly CatalogPack[]>(
+    "GET",
+    workspacePacksPath(workspaceId),
+  );
+}
+
+export function setWorkspacePack(
+  workspaceId: string,
+  slug: string,
+  body: SetPackSubscriptionRequest,
+) {
+  return request<CatalogPack>(
+    "PUT",
+    `${workspacePacksPath(workspaceId)}/${encodeURIComponent(slug)}`,
+    { body },
+  );
+}
 
 export function listWorkspaces(signal?: AbortSignal) {
   return request<readonly Workspace[]>("GET", "/v1/workspaces", { signal });

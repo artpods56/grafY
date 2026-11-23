@@ -15,6 +15,7 @@ import {
 
 function registryWith(nodes: NodeRegistry["nodes"]): NodeRegistry {
   return {
+    packs: [],
     nodes,
     artifact_types: [
       {

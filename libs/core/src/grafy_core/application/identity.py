@@ -102,8 +102,11 @@ class IdentityService:
         uow_factory: Callable[[], IdentityUnitOfWorkPort],
         domain_workspace_grants: Sequence[OidcDomainWorkspaceGrant] = (),
         operator_emails: Sequence[str] = (),
+        *,
+        default_workspace_pack_slugs: Sequence[str] = (),
     ) -> None:
         self._uow_factory = uow_factory
+        self._default_workspace_pack_slugs = tuple(default_workspace_pack_slugs)
         self._domain_workspace_grants = tuple(domain_workspace_grants)
         # Deployment operators may disable and re-enable any user. An operator is
         # recognised by a verified, issuer-asserted email on an active account.
@@ -628,7 +631,7 @@ class IdentityService:
                 )
                 if personal_workspace is None:
                     personal_workspace = Workspace.personal(owner_user_id=user.id)
-                    await uow.identity.add_workspace(personal_workspace)
+                    await self._add_workspace(uow, personal_workspace)
                     await uow.identity.add_membership(
                         WorkspaceMembership(
                             workspace_id=personal_workspace.id,
@@ -661,7 +664,7 @@ class IdentityService:
             )
             await uow.identity.add_user(user)
             await uow.identity.add_oidc_identity(identity)
-            await uow.identity.add_workspace(personal_workspace)
+            await self._add_workspace(uow, personal_workspace)
             await uow.identity.add_membership(personal_membership)
 
             await uow.security_audit.add(
@@ -681,6 +684,15 @@ class IdentityService:
             personal_workspace=personal_workspace,
         )
 
+    async def _add_workspace(
+        self, uow: IdentityUnitOfWorkPort, workspace: Workspace
+    ) -> None:
+        await uow.identity.add_workspace(workspace)
+        for slug in self._default_workspace_pack_slugs:
+            await uow.workspace_packs.enable(
+                workspace.id, slug, enabled_at=workspace.created_at
+            )
+
     async def create_shared_workspace(
         self,
         *,
@@ -697,7 +709,7 @@ class IdentityService:
                 raise IdentityInvariantError("Workspace slug is already in use")
             await self._require_active_user(uow, actor.user_id)
             workspace = Workspace.shared(slug=normalized_slug, name=name)
-            await uow.identity.add_workspace(workspace)
+            await self._add_workspace(uow, workspace)
             await uow.identity.add_membership(
                 WorkspaceMembership(
                     workspace_id=workspace.id,
@@ -1048,7 +1060,7 @@ class IdentityService:
                     slug=grant.workspace_slug,
                     name=grant.workspace_name,
                 )
-                await unit_of_work.identity.add_workspace(workspace)
+                await self._add_workspace(unit_of_work, workspace)
             elif workspace.kind is not WorkspaceKind.SHARED:
                 raise IdentityInvariantError(
                     f"OIDC domain workspace slug {grant.workspace_slug!r} is not shared"

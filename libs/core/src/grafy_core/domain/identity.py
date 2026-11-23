@@ -44,6 +44,7 @@ class WorkspaceCapability(StrEnum):
     CANCEL_RUN = "cancel_run"
     MANAGE_SECRETS = "manage_secrets"
     DELETE_PROJECT = "delete_project"
+    MANAGE_PACKS = "manage_packs"
     MANAGE_MEMBERS = "manage_members"
     RENAME_WORKSPACE = "rename_workspace"
 

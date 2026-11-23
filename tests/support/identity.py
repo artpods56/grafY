@@ -11,6 +11,7 @@ from grafy_core.domain.identity import (
     WorkspaceMembership,
     WorkspaceRole,
 )
+from grafy_core.ports.workspace_packs import WorkspacePackRepositoryPort
 from grafy_persistence.database import create_database
 from grafy_persistence.orm import metadata
 from grafy_persistence.unit_of_work import SqlAlchemyUnitOfWork
@@ -59,6 +60,11 @@ class ActorSwitcher:
         self.user_id = user_id
 
 
+async def seed_default_packs(packs: WorkspacePackRepositoryPort, workspace: Workspace) -> None:
+    for slug in ("essentials", "document_ocr"):
+        await packs.enable(workspace.id, slug, enabled_at=workspace.created_at)
+
+
 async def create_schema(database_url: str) -> None:
     """Create the database schema and seed the shared test user/workspace."""
 
@@ -74,14 +80,14 @@ async def create_schema(database_url: str) -> None:
                     display_name="Owner",
                 )
             )
-            await uow.identity.add_workspace(
-                Workspace(
-                    id=WORKSPACE_ID,
-                    slug="team",
-                    name="Team",
-                    kind="shared",
-                )
+            workspace = Workspace(
+                id=WORKSPACE_ID,
+                slug="team",
+                name="Team",
+                kind="shared",
             )
+            await uow.identity.add_workspace(workspace)
+            await seed_default_packs(uow.workspace_packs, workspace)
             await uow.identity.add_membership(
                 WorkspaceMembership(
                     workspace_id=WORKSPACE_ID,

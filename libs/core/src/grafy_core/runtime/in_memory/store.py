@@ -123,6 +123,9 @@ class InMemoryDataStore:
     workspace_locations: dict[UUID, ProjectBrowserLocation] = field(
         default_factory=dict[UUID, ProjectBrowserLocation]
     )
+    workspace_packs: dict[tuple[UUID, str], tuple[datetime, UUID | None]] = field(
+        default_factory=dict[tuple[UUID, str], tuple[datetime, UUID | None]]
+    )
     workspace_members: dict[UUID, set[UUID]] = field(
         default_factory=dict[UUID, set[UUID]]
     )
@@ -151,5 +154,6 @@ class InMemoryDataStore:
         self.node_results = clone(other.node_results)
         self.pointers = clone(other.pointers)
         self.workspace_locations = clone(other.workspace_locations)
+        self.workspace_packs = clone(other.workspace_packs)
         self.workspace_members = clone(other.workspace_members)
         self.user_display_names = clone(other.user_display_names)

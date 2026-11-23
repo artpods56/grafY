@@ -157,6 +157,7 @@ function port(name: string, overrides: Partial<Port> = {}): Port {
 }
 
 const operatorSpec: NodeSpec = {
+  pack_slugs: [],
   role: "operator",
   operator_id: "test.source",
   operator_version: 1,
@@ -180,6 +181,7 @@ const collectionSpec: NodeSpec = {
   outputs: [port("sequence", { direction: "output", shape: "many" })],
 };
 const registry: NodeRegistry = {
+  packs: [],
   nodes: [operatorSpec, collectionSpec],
   artifact_types: [],
   artifact_conversions: [],

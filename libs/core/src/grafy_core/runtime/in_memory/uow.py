@@ -14,6 +14,7 @@ from grafy_core.ports.collaboration import CollaborationRepositoryPort
 from grafy_core.ports.library_folders import LibraryFolderRepositoryPort
 from grafy_core.ports.projects import ProjectRepositoryPort
 from grafy_core.ports.runs import ResultStoreRepositoryPort, RunRepositoryPort
+from grafy_core.ports.workspace_packs import WorkspacePackRepositoryPort
 
 from grafy_core.runtime.in_memory.agents import (
     InMemoryAgentConversationRepository,
@@ -31,6 +32,7 @@ from grafy_core.runtime.in_memory.runs import (
 )
 from grafy_core.runtime.in_memory.store import InMemoryDataStore
 from grafy_core.runtime.in_memory.uploads import InMemoryUploadRepository
+from grafy_core.runtime.in_memory.workspace_packs import InMemoryWorkspacePackRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +47,7 @@ class _InMemoryUnitOfWorkState:
     results: ResultStoreRepositoryPort
     agent_conversations: AgentConversationRepositoryPort
     agent_turns: AgentTurnRepositoryPort
+    workspace_packs: WorkspacePackRepositoryPort
 
 
 class InMemoryUnitOfWork(UnitOfWorkPort):
@@ -99,6 +102,10 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
     def agent_turns(self) -> AgentTurnRepositoryPort:
         return self._entered_state().agent_turns
 
+    @property
+    def workspace_packs(self) -> WorkspacePackRepositoryPort:
+        return self._entered_state().workspace_packs
+
     @override
     async def __aenter__(self) -> Self:
         if self._state.get() is not None:
@@ -110,6 +117,7 @@ class InMemoryUnitOfWork(UnitOfWorkPort):
             self._state.set(
                 _InMemoryUnitOfWorkState(
                     working_store=working_store,
+                    workspace_packs=InMemoryWorkspacePackRepository(working_store),
                     artifacts=InMemoryArtifactRepository(working_store),
                     uploads=InMemoryUploadRepository(working_store),
                     library_folders=InMemoryLibraryFolderRepository(working_store),

@@ -13,6 +13,8 @@ from grafy_core.domain import (
 )
 from grafy_core.ports import IdentityUnitOfWorkPort
 
+from tests.support.identity import seed_default_packs
+
 
 class UserFactory(DataclassFactory[User]):
     __model__ = User
@@ -87,6 +89,7 @@ class IdentitySeeder:
 
         async with self.unit_of_work_factory() as uow:
             await uow.identity.add_workspace(workspace)
+            await seed_default_packs(uow.workspace_packs, workspace)
             await uow.commit()
 
         return workspace

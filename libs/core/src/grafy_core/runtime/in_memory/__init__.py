@@ -43,6 +43,9 @@ from grafy_core.runtime.in_memory.uploads import (
     InMemoryUploadRepository as InMemoryUploadRepository,
 )
 from grafy_core.runtime.in_memory.uow import InMemoryUnitOfWork as InMemoryUnitOfWork
+from grafy_core.runtime.in_memory.workspace_packs import (
+    InMemoryWorkspacePackRepository as InMemoryWorkspacePackRepository,
+)
 
 __all__ = [
     "InMemoryAgentConversationRepository",
@@ -56,4 +59,5 @@ __all__ = [
     "InMemoryRunRepository",
     "InMemoryUnitOfWork",
     "InMemoryUploadRepository",
+    "InMemoryWorkspacePackRepository",
 ]

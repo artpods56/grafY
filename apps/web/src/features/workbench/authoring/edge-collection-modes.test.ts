@@ -302,6 +302,7 @@ describe("collection modes the graph leaves behind", () => {
 
 function spec(operatorId: string, step: CollectionModeStep): NodeSpec {
   return {
+    pack_slugs: [],
     role:
       step.outputs.length &&
       step.outputs.every((port) => port.kind === "service")
@@ -324,6 +325,7 @@ function spec(operatorId: string, step: CollectionModeStep): NodeSpec {
 }
 
 const REGISTRY: NodeRegistry = {
+  packs: [],
   plugins: [],
   artifact_types: [],
   artifact_conversions: [],

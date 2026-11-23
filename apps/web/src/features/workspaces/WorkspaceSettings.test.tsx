@@ -6,6 +6,7 @@ import { SWRConfig } from "swr";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  CatalogPack,
   Credential,
   PersonalAccessToken,
   PersonalAccessTokenCreated,
@@ -15,6 +16,9 @@ import type {
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const mocks = vi.hoisted(() => ({
+  listPacks: vi.fn(),
+  setPack: vi.fn(),
+  request: vi.fn(),
   listCredentials: vi.fn(),
   deleteCredential: vi.fn(),
   reverifyCredential: vi.fn(),
@@ -27,6 +31,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api", () => ({
+  workspacePacksPath: (id: string) => `/v1/workspaces/${id}/packs`,
+  listWorkspacePacks: mocks.listPacks,
+  setWorkspacePack: mocks.setPack,
   listCredentials: mocks.listCredentials,
   deleteCredential: mocks.deleteCredential,
   reverifyCredential: mocks.reverifyCredential,
@@ -34,6 +41,11 @@ vi.mock("@/lib/api", () => ({
   createPersonalAccessToken: mocks.createToken,
   listPersonalAccessTokens: mocks.listTokens,
   revokePersonalAccessToken: mocks.revokeToken,
+}));
+
+vi.mock("@/lib/api/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/client")>()),
+  request: mocks.request,
 }));
 
 vi.mock("./WorkspaceLayout", () => ({
@@ -72,6 +84,7 @@ function workspace(overrides: Partial<Workspace> = {}): Workspace {
       "manage_secrets",
       "edit_project",
       "manage_members",
+      "manage_packs",
     ],
     ...overrides,
   };
@@ -113,7 +126,7 @@ function credential(overrides: Partial<Credential> = {}): Credential {
   };
 }
 
-async function renderSettings() {
+async function renderSettings(cache = new Map<string, { data?: unknown }>()) {
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -122,7 +135,7 @@ async function renderSettings() {
     root.render(
       <SWRConfig
         value={{
-          provider: () => new Map(),
+          provider: () => cache,
           dedupingInterval: 0,
           revalidateOnFocus: false,
         }}
@@ -156,6 +169,7 @@ afterEach(async () => {
 beforeEach(() => {
   mocks.workspace = workspace();
   mocks.listTokens.mockResolvedValue([token()]);
+  mocks.listPacks.mockResolvedValue([]);
   mocks.listCredentials.mockResolvedValue([]);
   mocks.revokeToken.mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {
@@ -165,7 +179,88 @@ beforeEach(() => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
 });
 
+const essentials: CatalogPack = {
+  slug: "essentials",
+  title: "Essentials",
+  description: "Import tables and work with images.",
+  always_on: true,
+  subscribed: true,
+  operator_count: 8,
+  provider_count: 0,
+  includes_project_graphs: false,
+};
+const maps: CatalogPack = {
+  ...essentials,
+  slug: "maps",
+  title: "Maps & GIS",
+  description: "Assemble map layers.",
+  always_on: false,
+  subscribed: false,
+  operator_count: 10,
+};
+
+function packSwitch(container: HTMLElement, title: string): HTMLElement {
+  const control = [
+    ...container.querySelectorAll<HTMLElement>('[role="switch"]'),
+  ].find((element) => {
+    const label = element.getAttribute("aria-labelledby");
+    return label && document.getElementById(label)?.textContent === title;
+  });
+  if (!control) throw new Error(`Expected pack switch for ${title}`);
+  return control;
+}
+
 describe("WorkspaceSettings", () => {
+  it("updates a Pack subscription and refreshes the Workspace node registry", async () => {
+    mocks.listPacks.mockResolvedValue([essentials, maps]);
+    mocks.setPack.mockImplementation(async () => {
+      const subscribed = { ...maps, subscribed: true };
+      mocks.listPacks.mockResolvedValue([essentials, subscribed]);
+      return subscribed;
+    });
+    const registry = {
+      packs: [essentials, { ...maps, subscribed: true }],
+      plugins: [],
+      nodes: [],
+      artifact_types: [],
+      artifact_conversions: [],
+    };
+    mocks.request.mockResolvedValue(registry);
+    const cache = new Map<string, { data?: unknown }>();
+    const container = await renderSettings(cache);
+    expect(container.querySelector("#tool-packs")?.textContent).toContain(
+      "Always on",
+    );
+    const required = packSwitch(container, "Essentials");
+    expect(required.getAttribute("aria-checked")).toBe("true");
+    expect(required.hasAttribute("data-disabled")).toBe(true);
+
+    const optional = packSwitch(container, "Maps & GIS");
+    expect(optional.getAttribute("aria-checked")).toBe("false");
+    await React.act(async () => optional.click());
+
+    expect(mocks.setPack).toHaveBeenCalledWith("workspace-1", "maps", {
+      subscribed: true,
+    });
+    expect(cache.get("/v1/workspaces/workspace-1/nodes")?.data).toEqual(
+      registry,
+    );
+    expect(optional.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("shows read-only Pack subscriptions to members without manage_packs", async () => {
+    mocks.workspace = workspace({
+      role: "editor",
+      capabilities: ["view_project"],
+    });
+    mocks.listPacks.mockResolvedValue([essentials, maps]);
+    const container = await renderSettings();
+    const optional = packSwitch(container, "Maps & GIS");
+    expect(optional.hasAttribute("data-disabled")).toBe(true);
+    await React.act(async () => optional.click());
+    expect(mocks.setPack).not.toHaveBeenCalled();
+  });
+
   it("lists a Personal credential and re-verifies it from Settings", async () => {
     const row: Credential = {
       id: "provider-key",

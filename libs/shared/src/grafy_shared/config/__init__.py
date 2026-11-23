@@ -10,6 +10,7 @@ configuration. See ``docs/adr/0011-shared-configuration-is-a-leaf-package.md``.
 from grafy_shared.config.agents import AgentsConfig
 from grafy_shared.config.app import AppConfig
 from grafy_shared.config.auth import AuthConfig
+from grafy_shared.config.catalog import CatalogConfig
 from grafy_shared.config.egress import EgressConfig
 from grafy_shared.config.execution import ExecutionConfig
 from grafy_shared.config.keys import KeysConfig
@@ -30,6 +31,7 @@ __all__ = [
     "AgentsConfig",
     "AppConfig",
     "AuthConfig",
+    "CatalogConfig",
     "EgressConfig",
     "ExecutionConfig",
     "KeysConfig",
