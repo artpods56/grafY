@@ -2,7 +2,14 @@
 
 import * as React from "react";
 
-import type { Credential, NodeRegistry, NodeSpec } from "@/lib/api";
+import {
+  getProjectNodeSecrets,
+  setSharedBinding,
+  type Credential,
+  type NodeRegistry,
+  type NodeSpec,
+} from "@/lib/api";
+import { ApiError } from "@/lib/api/client";
 import { useEffectReducer } from "@/lib/state/use-effect-reducer";
 import { createUuid } from "@/features/workbench/authoring/uuid";
 
@@ -11,7 +18,6 @@ import type {
   GraphCommand,
 } from "../authoring/graph-document";
 import { catalogNodeSpecs } from "../authoring/node-catalog";
-import type { NodeCredentialController } from "../authoring/node-secrets";
 import {
   nodeSecretDependencyRevision,
   nodeSecretInputs,
@@ -20,9 +26,9 @@ import {
 import {
   boundWorkspaceKeyNotice,
   partitionPendingBindings,
-  settleBindingFailure,
+  bindingFailureMessage,
   workspaceKeyBindFailedNotice,
-  type QueuedSharedBinding,
+  type PendingSharedBinding,
 } from "../authoring/pending-shared-binding";
 import {
   initialServiceEnginePromptState,
@@ -110,6 +116,8 @@ function fallbackAnchor(): { x: number; y: number } {
  * authoring batch, the shared-key write, and the selection hand-off.
  */
 export function useServiceEnginePrompt({
+  workspaceId,
+  projectId,
   graphId,
   canEdit,
   running,
@@ -125,13 +133,15 @@ export function useServiceEnginePrompt({
   canEditProject,
   applyAuthoringCommands,
   selectNode,
-  selectCredential,
+  refreshCredentials,
   openDiscovery,
   closeDiscovery,
   viewportHandle,
   onRejected,
   clearError,
 }: {
+  workspaceId: string;
+  projectId: string | null;
   graphId: string | null;
   canEdit: boolean;
   running: boolean;
@@ -148,7 +158,7 @@ export function useServiceEnginePrompt({
   canEditProject: boolean;
   applyAuthoringCommands: (commands: readonly GraphCommand[]) => void;
   selectNode: (nodeId: string) => void;
-  selectCredential: NodeCredentialController["selectCredential"];
+  refreshCredentials: () => Promise<void>;
   openDiscovery: (session: ContextualDiscoverySession) => void;
   closeDiscovery: () => void;
   viewportHandle: CellCanvasViewportHandle | null;
@@ -161,7 +171,6 @@ export function useServiceEnginePrompt({
   const viewportRef = React.useRef(viewportHandle);
   const applyRef = React.useRef(applyAuthoringCommands);
   const selectNodeRef = React.useRef(selectNode);
-  const selectCredentialRef = React.useRef(selectCredential);
   const openDiscoveryRef = React.useRef(openDiscovery);
   const closeDiscoveryRef = React.useRef(closeDiscovery);
   const onRejectedRef = React.useRef(onRejected);
@@ -171,7 +180,7 @@ export function useServiceEnginePrompt({
   );
   const noticeRef = React.useRef(notice);
   const graphIdRef = React.useRef(graphId);
-  const pendingRef = React.useRef<QueuedSharedBinding[]>([]);
+  const pendingRef = React.useRef<PendingSharedBinding[]>([]);
   const writingKeysRef = React.useRef<Set<string>>(new Set());
   const bindingGenerationRef = React.useRef(0);
   const graphSeenRef = React.useRef(graphId);
@@ -270,7 +279,7 @@ export function useServiceEnginePrompt({
             );
             completedCountRef.current.set(effect.undoNodeId, 0);
             failedNodeIdsRef.current.delete(effect.undoNodeId);
-            const queued: QueuedSharedBinding[] = effect.bindings.map(
+            const queued: PendingSharedBinding[] = effect.bindings.map(
               (binding) => ({
                 nodeId: effect.undoNodeId,
                 secretName: binding.secretName,
@@ -278,7 +287,6 @@ export function useServiceEnginePrompt({
                 providerTitle: effect.providerTitle,
                 credentialLabel: binding.label,
                 graphId: effect.graphId,
-                saveAttempts: 0,
               }),
             );
             pendingRef.current = [
@@ -313,7 +321,6 @@ export function useServiceEnginePrompt({
     viewportRef.current = viewportHandle;
     applyRef.current = applyAuthoringCommands;
     selectNodeRef.current = selectNode;
-    selectCredentialRef.current = selectCredential;
     openDiscoveryRef.current = openDiscovery;
     closeDiscoveryRef.current = closeDiscovery;
     onRejectedRef.current = onRejected;
@@ -323,10 +330,11 @@ export function useServiceEnginePrompt({
   });
 
   const bindingStillCurrent = React.useCallback(
-    (binding: QueuedSharedBinding, generation: number) =>
+    (binding: PendingSharedBinding, generation: number) =>
       bindingGenerationRef.current === generation &&
       graphIdRef.current === binding.graphId &&
-      !failedNodeIdsRef.current.has(binding.nodeId),
+      !failedNodeIdsRef.current.has(binding.nodeId) &&
+      nodesRef.current.some(({ id }) => id === binding.nodeId),
     [],
   );
 
@@ -340,7 +348,7 @@ export function useServiceEnginePrompt({
   }, []);
 
   const reportBindingFailure = React.useCallback(
-    (binding: QueuedSharedBinding, message: string) => {
+    (binding: PendingSharedBinding, message: string) => {
       failedNodeIdsRef.current.add(binding.nodeId);
       pendingRef.current = pendingRef.current.filter(
         (item) => item.nodeId !== binding.nodeId,
@@ -354,65 +362,100 @@ export function useServiceEnginePrompt({
     [],
   );
 
+  const bindCredential = React.useCallback(
+    async (binding: PendingSharedBinding, generation: number) => {
+      if (!projectId)
+        throw new Error("Save the Graph before binding an engine.");
+      const { graphId, nodeId, secretName: name, credentialId } = binding;
+      const address = { workspaceId, projectId, graphId, nodeId, name };
+
+      const write = async () => {
+        const listing = await getProjectNodeSecrets(
+          workspaceId,
+          projectId,
+          graphId,
+        );
+        if (!bindingStillCurrent(binding, generation)) return;
+        const target = listing.secrets.find(
+          (secret) => secret.node_id === nodeId && secret.name === name,
+        );
+        if (
+          listing.project_id !== projectId ||
+          listing.graph_id !== graphId ||
+          !target
+        ) {
+          throw new Error("The engine credential status is unavailable.");
+        }
+        if (target.shared_binding_mode !== "none") {
+          if (target.shared_credential_id === credentialId && target.configured)
+            return;
+          throw new Error("The engine already has a Shared binding.");
+        }
+        const result = await setSharedBinding(address, {
+          mode: "credential",
+          credential_id: credentialId,
+          expected_head_sequence: listing.head_sequence,
+        });
+        if (!result.configured)
+          throw new Error("The workspace key could not be applied.");
+      };
+
+      try {
+        await write();
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 409) throw error;
+        if (!bindingStillCurrent(binding, generation)) return;
+        await write();
+      }
+      if (bindingStillCurrent(binding, generation)) void refreshCredentials();
+    },
+    [bindingStillCurrent, projectId, refreshCredentials, workspaceId],
+  );
+
   const startWrite = React.useCallback(
-    (binding: QueuedSharedBinding) => {
+    (binding: PendingSharedBinding) => {
       const key = `${binding.nodeId}\0${binding.secretName}`;
       if (writingKeysRef.current.has(key)) return;
       writingKeysRef.current.add(key);
       const generation = bindingGenerationRef.current;
-      void selectCredentialRef
-        .current(binding.nodeId, binding.secretName, {
-          scope: "shared",
-          binding: {
-            mode: "credential",
-            credential_id: binding.credentialId,
-          },
-        })
-        .then(
-          () => {
-            writingKeysRef.current.delete(key);
-            if (!bindingStillCurrent(binding, generation)) return;
-            const labels = expectedLabelsRef.current.get(binding.nodeId);
-            if (!labels) return;
-            const completed =
-              (completedCountRef.current.get(binding.nodeId) ?? 0) + 1;
-            completedCountRef.current.set(binding.nodeId, completed);
-            if (
-              nodeBindingBusy(binding.nodeId) ||
-              completed !== labels.length
-            ) {
-              return;
+      void bindCredential(binding, generation).then(
+        () => {
+          writingKeysRef.current.delete(key);
+          if (!bindingStillCurrent(binding, generation)) return;
+          const labels = expectedLabelsRef.current.get(binding.nodeId);
+          if (!labels) return;
+          const completed =
+            (completedCountRef.current.get(binding.nodeId) ?? 0) + 1;
+          completedCountRef.current.set(binding.nodeId, completed);
+          if (nodeBindingBusy(binding.nodeId) || completed !== labels.length) {
+            return;
+          }
+          const lead = boundWorkspaceKeyNotice(binding.providerTitle, labels);
+          setNotice((current) => {
+            if (!current || current.undoNodeId !== binding.nodeId) {
+              return current;
             }
-            const lead = boundWorkspaceKeyNotice(binding.providerTitle, labels);
-            setNotice((current) => {
-              if (!current || current.undoNodeId !== binding.nodeId) {
-                return current;
-              }
-              return { ...current, lead };
-            });
-          },
-          (error: unknown) => {
-            writingKeysRef.current.delete(key);
-            if (
-              bindingGenerationRef.current !== generation ||
-              graphIdRef.current !== binding.graphId
-            ) {
-              return;
-            }
-            const settled = settleBindingFailure(error, binding.saveAttempts);
-            if (settled.type === "retry") {
-              if (failedNodeIdsRef.current.has(binding.nodeId)) return;
-              pendingRef.current = [
-                ...pendingRef.current,
-                { ...binding, saveAttempts: settled.saveAttempts },
-              ];
-              return;
-            }
-            reportBindingFailure(binding, settled.message);
-          },
-        );
+            return { ...current, lead };
+          });
+        },
+        (error: unknown) => {
+          writingKeysRef.current.delete(key);
+          if (
+            bindingGenerationRef.current !== generation ||
+            graphIdRef.current !== binding.graphId
+          ) {
+            return;
+          }
+          reportBindingFailure(binding, bindingFailureMessage(error));
+        },
+      );
     },
-    [bindingStillCurrent, nodeBindingBusy, reportBindingFailure],
+    [
+      bindCredential,
+      bindingStillCurrent,
+      nodeBindingBusy,
+      reportBindingFailure,
+    ],
   );
 
   React.useEffect(() => {
@@ -431,33 +474,8 @@ export function useServiceEnginePrompt({
       savedNodeIds: new Set((savedNodes ?? []).map((node) => node.id)),
     });
     pendingRef.current = [...partitioned.waiting];
-    for (const binding of partitioned.ready) {
-      if (failedNodeIdsRef.current.has(binding.nodeId)) continue;
-      const status = nodeSecretStatuses[binding.nodeId]?.[binding.secretName];
-      // Saving the node and reading its secret listing are separate requests.
-      // The listing supplies the head sequence required by the binding write.
-      if (status?.remote) {
-        startWrite(binding);
-      } else if (
-        status?.state === "error" ||
-        status?.state === "unconfigured"
-      ) {
-        reportBindingFailure(
-          binding,
-          status.message ?? "The engine credential status is unavailable.",
-        );
-      } else {
-        pendingRef.current.push(binding);
-      }
-    }
-  }, [
-    graphId,
-    nodes,
-    nodeSecretStatuses,
-    reportBindingFailure,
-    savedNodes,
-    startWrite,
-  ]);
+    for (const binding of partitioned.ready) startWrite(binding);
+  }, [graphId, nodes, savedNodes, startWrite]);
 
   const world = React.useMemo<ServiceEngineWorld | null>(() => {
     if (!registry) return null;

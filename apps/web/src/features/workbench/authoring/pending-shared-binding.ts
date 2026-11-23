@@ -16,15 +16,7 @@ export interface PendingSharedBinding {
   readonly graphId: string;
 }
 
-export interface QueuedSharedBinding extends PendingSharedBinding {
-  readonly saveAttempts: number;
-}
-
 export type PendingBindingDecision = "wait" | "drop" | "write";
-
-/** Thrown by the credential writer when the node is not on the saved head yet. */
-export const SAVE_NODE_BEFORE_CREDENTIAL =
-  "Save this node before changing its credential.";
 
 export function decidePendingBinding(input: {
   readonly binding: PendingSharedBinding;
@@ -75,32 +67,6 @@ export function bindingFailureMessage(error: unknown): string {
     if (message.length > 0) return message;
   }
   return "Could not bind the workspace key.";
-}
-
-export function shouldRetryBinding(
-  message: string,
-  saveAttempts: number,
-): boolean {
-  return message === SAVE_NODE_BEFORE_CREDENTIAL && saveAttempts < 1;
-}
-
-export type BindingFailureStep =
-  | { readonly type: "retry"; readonly saveAttempts: number }
-  | { readonly type: "report"; readonly message: string };
-
-/**
- * The save-first rejection is retried once, after the secret listing lands.
- * Every other failure, and a second save-first rejection, is reported.
- */
-export function settleBindingFailure(
-  error: unknown,
-  saveAttempts: number,
-): BindingFailureStep {
-  const message = bindingFailureMessage(error);
-  if (shouldRetryBinding(message, saveAttempts)) {
-    return { type: "retry", saveAttempts: saveAttempts + 1 };
-  }
-  return { type: "report", message };
 }
 
 export function pendingWorkspaceKeyNotice(title: string): string {

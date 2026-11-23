@@ -1898,6 +1898,8 @@ function WorkbenchBody({
     chooseProvider,
     closePrompt,
   } = useServiceEnginePrompt({
+    workspaceId,
+    projectId,
     graphId: openGraphId,
     canEdit: canEditProject && localAuthoringEnabled,
     running,
@@ -1915,7 +1917,7 @@ function WorkbenchBody({
     selectNode: (nodeId) => {
       canvasSelection.selectOnly({ nodeIds: [nodeId] });
     },
-    selectCredential,
+    refreshCredentials,
     openDiscovery: openContextualDiscovery,
     closeDiscovery: closeContextualDiscovery,
     viewportHandle: cellCanvasHandle?.viewportHandle ?? null,

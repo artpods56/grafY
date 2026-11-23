@@ -21,8 +21,7 @@ import {
   decidePendingBinding,
   partitionPendingBindings,
   pendingWorkspaceKeyNotice,
-  SAVE_NODE_BEFORE_CREDENTIAL,
-  settleBindingFailure,
+  bindingFailureMessage,
   type PendingSharedBinding,
 } from "./pending-shared-binding";
 import {
@@ -927,7 +926,7 @@ describe("pending shared binding", () => {
   });
 
   it("drops a queued binding on undo and on a graph switch", () => {
-    const queued = [{ ...binding, saveAttempts: 0 }];
+    const queued = [binding];
     const undone = partitionPendingBindings({
       pending: queued,
       graphId: "graph-1",
@@ -956,30 +955,15 @@ describe("pending shared binding", () => {
   });
 
   it("reports a binding error instead of swallowing it", () => {
-    expect(
-      settleBindingFailure(new Error(SAVE_NODE_BEFORE_CREDENTIAL), 0),
-    ).toEqual({
-      type: "retry",
-      saveAttempts: 1,
-    });
-    expect(
-      settleBindingFailure(new Error(SAVE_NODE_BEFORE_CREDENTIAL), 1),
-    ).toEqual({
-      type: "report",
-      message: SAVE_NODE_BEFORE_CREDENTIAL,
-    });
-    expect(settleBindingFailure(new Error("network down"), 0)).toEqual({
-      type: "report",
-      message: "network down",
-    });
-    expect(settleBindingFailure(new Error("   "), 0)).toEqual({
-      type: "report",
-      message: "Could not bind the workspace key.",
-    });
-    expect(settleBindingFailure(null, 0).type).toBe("report");
-    const reported = settleBindingFailure(null, 0);
-    if (reported.type !== "report") throw new Error("expected a report");
-    expect(reported.message.length).toBeGreaterThan(0);
+    expect(bindingFailureMessage(new Error("network down"))).toBe(
+      "network down",
+    );
+    expect(bindingFailureMessage(new Error("   "))).toBe(
+      "Could not bind the workspace key.",
+    );
+    expect(bindingFailureMessage(null)).toBe(
+      "Could not bind the workspace key.",
+    );
     expect(pendingWorkspaceKeyNotice("Reducto")).toBe(
       "Connected Reducto · binding workspace key…",
     );
