@@ -1,20 +1,26 @@
-import type { Port } from "@/lib/api";
+import type { NodeSpec, Port } from "@/lib/api";
 
-import { serviceContractKey } from "../authoring/service-contract-key";
-import {
-  portIsService,
-  type WorkflowEdge,
-  type WorkflowNodeData,
-} from "../authoring/types";
+import { serviceContractKey } from "./service-contract-key";
+import { portIsService } from "./types";
 
 export interface UnsupportedProviderOutput {
   portName: string;
   providerTitle: string;
 }
 
-interface GraphNode {
-  id: string;
-  data: WorkflowNodeData;
+/** The slice of a node this check reads. A workflow node satisfies it. */
+export interface ProviderOutputNode {
+  readonly id: string;
+  readonly data: { readonly spec: NodeSpec };
+}
+
+/** The slice of an edge this check reads. A workflow edge satisfies it. */
+export interface ProviderOutputEdge {
+  readonly source: string;
+  readonly target: string;
+  readonly sourcePort: string;
+  readonly targetPort: string;
+  readonly data?: { readonly enabled?: boolean };
 }
 
 function portWords(port: Port): string {
@@ -25,9 +31,9 @@ function portWords(port: Port): string {
 /** An optional consumer output the connected provider does not produce. */
 export function unsupportedOutputForPort(
   port: Port,
-  consumer: GraphNode,
-  nodes: readonly GraphNode[],
-  edges: readonly WorkflowEdge[],
+  consumer: ProviderOutputNode,
+  nodes: readonly ProviderOutputNode[],
+  edges: readonly ProviderOutputEdge[],
 ): UnsupportedProviderOutput | null {
   const requirement = port.requires_service_feature;
   if (!requirement || port.direction !== "output") return null;
@@ -72,8 +78,8 @@ export function unsupportedOutputLabel(
  */
 export function notProducedInputReasons(
   nodeId: string,
-  nodes: readonly GraphNode[],
-  edges: readonly WorkflowEdge[],
+  nodes: readonly ProviderOutputNode[],
+  edges: readonly ProviderOutputEdge[],
 ): readonly { portName: string; message: string }[] {
   const node = nodes.find((candidate) => candidate.id === nodeId);
   if (!node) return [];

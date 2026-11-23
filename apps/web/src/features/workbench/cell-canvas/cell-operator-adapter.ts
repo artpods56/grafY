@@ -49,6 +49,14 @@ import {
 } from "../authoring/node-secrets";
 import { schemaFields, validateConfig } from "../config-ui/config-schema";
 import { connectedInputPortsForDocumentNode } from "../config-ui/connected-inputs";
+import {
+  notProducedInputReasons,
+  unsupportedOutputForPort,
+  unsupportedOutputLabel,
+  type ProviderOutputEdge,
+  type ProviderOutputNode,
+} from "../authoring/provider-outputs";
+import { visibleEngineCandidates } from "../authoring/service-engine-prompt";
 
 import { countConfigShelfCells } from "./cell-card-geometry";
 import { buildSchemaConfigEntries } from "./cell-config-plan";
@@ -59,6 +67,7 @@ import type {
   CellResizeCommit,
   CellSecretInputSpec,
   CollectionCardSurfaceData,
+  ServicePortPrompt,
 } from "./cell-contracts";
 import {
   MAX_CARD_HEIGHT_CELLS,
@@ -397,6 +406,8 @@ export function buildOperatorCardsAndSurfaces(
       Record<string, Readonly<Record<string, boolean>>>
     >;
     secrets?: CellNodeSecretState;
+    /** Workspace Settings link for an empty engine port. Owners only. */
+    engineSettingsHref?: string;
   },
 ): {
   cards: CellCardModel[];
@@ -414,6 +425,17 @@ export function buildOperatorCardsAndSurfaces(
     ]),
   );
   const connections = connectionsByNode(document);
+  const outputNodes: ProviderOutputNode[] = document.nodes.flatMap((node) => {
+    const nodeSpec = specsByNode.get(node.id);
+    return nodeSpec ? [{ id: node.id, data: { spec: nodeSpec } }] : [];
+  });
+  const outputEdges: ProviderOutputEdge[] = document.edges.map((edge) => ({
+    source: edge.from_node,
+    target: edge.to_node,
+    sourcePort: edge.from_port,
+    targetPort: edge.to_port,
+    data: { enabled: edge.enabled !== false },
+  }));
   const sources = new Map(
     document.nodes.map((node) => [
       node.id,
@@ -436,7 +458,7 @@ export function buildOperatorCardsAndSurfaces(
       snapPixelsToCell(node.layout?.width ?? defaultWidth),
     );
     const nodeConnections = connections.get(node.id);
-    const { ports, groups, nextRow } = nodePorts(
+    const built = nodePorts(
       node,
       spec,
       nodeConnections,
@@ -444,6 +466,32 @@ export function buildOperatorCardsAndSurfaces(
       isCollection ? undefined : nodeSemantics?.effectiveOutputShapes,
       registry.service_contracts,
     );
+    const inputReasons = spec
+      ? notProducedInputReasons(node.id, outputNodes, outputEdges)
+      : [];
+    const ports = built.ports.map((port) => {
+      const caption = mutedPortCaption(
+        port,
+        node.id,
+        spec,
+        outputNodes,
+        outputEdges,
+        inputReasons,
+      );
+      return caption ? { ...port, mutedCaption: caption } : port;
+    });
+    const groups = built.groups;
+    const nextRow = built.nextRow;
+    const servicePortPrompts =
+      spec && !isCollection
+        ? servicePortPromptsFor(
+            node.id,
+            spec,
+            document,
+            registry,
+            options?.engineSettingsHref,
+          )
+        : undefined;
     const collection = isCollection
       ? collectionSurface(
           node,
@@ -568,6 +616,7 @@ export function buildOperatorCardsAndSurfaces(
         ...(configSections ? { configSections } : {}),
         ...(connectedInputPorts ? { connectedInputPorts } : {}),
         ...(secretInputs.length > 0 ? { secretInputs } : {}),
+        ...(servicePortPrompts ? { servicePortPrompts } : {}),
         instancePlugGroups: groups,
         appendix,
       },
@@ -575,6 +624,91 @@ export function buildOperatorCardsAndSurfaces(
   }
 
   return { cards, surfaces, specsByNode };
+}
+
+function serviceInputIsConnected(
+  document: AuthoredGraphDocument,
+  nodeId: string,
+  portName: string,
+): boolean {
+  if (
+    document.origins.some(
+      (origin) => origin.to_node === nodeId && origin.to_port === portName,
+    )
+  ) {
+    return true;
+  }
+  return document.edges.some(
+    (edge) =>
+      edge.enabled !== false &&
+      edge.to_node === nodeId &&
+      edge.to_port === portName,
+  );
+}
+
+function pickEngineLabel(port: Port): string {
+  const title = port.title?.trim();
+  if (!title || title.toLowerCase() === "engine") return "+ Pick engine";
+  return `+ Pick ${title}`;
+}
+
+function servicePortPromptsFor(
+  nodeId: string,
+  spec: NodeSpec,
+  document: AuthoredGraphDocument,
+  registry: NodeRegistry,
+  settingsHref: string | undefined,
+): Readonly<Record<string, ServicePortPrompt>> | undefined {
+  const prompts: Record<string, ServicePortPrompt> = {};
+  for (const port of spec.inputs) {
+    if (port.direction !== "input" || port.kind !== "service") continue;
+    if (port.required === false) continue;
+    if (serviceInputIsConnected(document, nodeId, port.name)) continue;
+    const visible = visibleEngineCandidates({
+      port,
+      registry,
+      catalogNodes: registry.nodes,
+    });
+    if (visible.length === 0) {
+      prompts[port.name] = {
+        mode: "empty",
+        label: "No engine enabled",
+        title: "No engine enabled in this workspace",
+        ...(settingsHref ? { settingsHref } : {}),
+      };
+      continue;
+    }
+    prompts[port.name] = {
+      mode: "pick",
+      label: pickEngineLabel(port),
+    };
+  }
+  return Object.keys(prompts).length > 0 ? prompts : undefined;
+}
+
+function mutedPortCaption(
+  port: CellPort,
+  nodeId: string,
+  spec: NodeSpec | undefined,
+  nodes: readonly ProviderOutputNode[],
+  edges: readonly ProviderOutputEdge[],
+  inputReasons: readonly { portName: string; message: string }[],
+): string | undefined {
+  if (!spec) return undefined;
+  if (port.direction === "output") {
+    const sourcePort = spec.outputs.find(
+      (candidate) => candidate.name === port.id,
+    );
+    if (!sourcePort) return undefined;
+    const unsupported = unsupportedOutputForPort(
+      sourcePort,
+      { id: nodeId, data: { spec } },
+      nodes,
+      edges,
+    );
+    return unsupported ? unsupportedOutputLabel(unsupported) : undefined;
+  }
+  return inputReasons.find((reason) => reason.portName === port.id)?.message;
 }
 
 export function graphCommandsFromCellMoves(

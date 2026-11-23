@@ -37,6 +37,7 @@ import {
 import type {
   CellResizeEdge,
   OperatorCardSurfaceData,
+  ServicePortPrompt,
 } from "../cell-contracts";
 import {
   cardPlateFill,
@@ -440,6 +441,10 @@ const s = stylex.create({
     pointerEvents: "none",
   },
   portSlot: { minWidth: 0, display: "flex" },
+  portSlotInput: {
+    alignItems: "center",
+    gap: "4px",
+  },
   portSlotInputDrop: { pointerEvents: "auto" },
   portSlotOutput: { justifyContent: "flex-end" },
   // A port's name sits in a tab flush with the plate's edge, square on the
@@ -474,6 +479,39 @@ const s = stylex.create({
     minWidth: 0,
     overflow: "hidden",
     textOverflow: "ellipsis",
+  },
+  portTabMuted: {
+    color: tokens.colorSubtle,
+    backgroundColor: tokens.colorSurfaceSunken,
+  },
+  portCaption: {
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    color: tokens.colorSubtle,
+    fontWeight: 400,
+  },
+  pickEngine: {
+    maxWidth: "100%",
+    minWidth: 0,
+    flexShrink: 1,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    pointerEvents: "auto",
+  },
+  emptyEngine: {
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
+    pointerEvents: "auto",
+    textDecoration: {
+      default: "none",
+      ":hover:not(:disabled)": "underline",
+    },
   },
   portMeta: { flexShrink: 0, color: tokens.colorSubtle, fontWeight: 400 },
   plugRow: {
@@ -1028,9 +1066,11 @@ function CellCardPort({
         y: (port.rowOffset + 0.5) * CELL_SIZE,
       };
   const isService = port.kind === "service";
-  const portColor = isService
-    ? tokens.colorAccent
-    : artifactTypeColor(port.artifactTypeId, tokens.colorMuted);
+  const portColor = port.mutedCaption
+    ? tokens.colorSubtle
+    : isService
+      ? tokens.colorAccent
+      : artifactTypeColor(port.artifactTypeId, tokens.colorMuted);
   const sequence = port.shape === "many";
   const plugSplitIndex =
     port.direction === "input" ? port.id.indexOf("::") : -1;
@@ -1079,6 +1119,8 @@ function CellCardPort({
         data-port-direction={port.direction}
         data-port-well={punched ? "punched" : undefined}
         data-port-kind={port.kind ?? "artifact"}
+        data-port-muted={port.mutedCaption ? "true" : undefined}
+        title={port.mutedCaption}
         data-port-connected={connected ? "true" : "false"}
         data-port-card-id={card.id}
         data-port-hot={hot ? "true" : "false"}
@@ -1160,6 +1202,8 @@ export interface CellOperatorCardProps extends CellCardBaseProps {
   ) => Promise<boolean>;
   onRemoveSecret?: (cardId: string, name: string) => Promise<boolean>;
   onToggleAppendix?: (cardId: string) => void;
+  /** Opens the engine picker for an empty required service input. */
+  onPickServiceEngine?: (cardId: string, portName: string) => void;
 }
 
 const STATUS_TEXT = {
@@ -1172,20 +1216,37 @@ const STATUS_TEXT = {
 function CellPortTab({ port, punched }: { port: CellPort; punched: boolean }) {
   const output = port.direction === "output";
   const isService = port.kind === "service";
+  const muted = Boolean(port.mutedCaption);
   return (
     <span
       data-port-tab={port.id}
       data-port-kind={port.kind ?? "artifact"}
+      data-port-muted={muted ? "true" : undefined}
       title={
-        isService ? port.serviceContractLabel : punched ? port.name : undefined
+        port.mutedCaption
+          ? port.mutedCaption
+          : isService
+            ? port.serviceContractLabel
+            : punched
+              ? port.name
+              : undefined
       }
       {...stylex.props(
         s.portTab,
         output && s.portTabOutput,
         punched && s.portTabPunched,
+        muted && s.portTabMuted,
       )}
     >
       <span {...stylex.props(s.portName)}>{port.name}</span>
+      {port.mutedCaption ? (
+        <span
+          data-port-caption={port.mutedCaption}
+          {...stylex.props(s.portCaption)}
+        >
+          {port.mutedCaption}
+        </span>
+      ) : null}
       {!output && port.required ? (
         <span {...stylex.props(s.portMeta)}>*</span>
       ) : null}
@@ -1195,6 +1256,61 @@ function CellPortTab({ port, punched }: { port: CellPort; punched: boolean }) {
         <span {...stylex.props(s.portMeta)}>· list</span>
       ) : null}
     </span>
+  );
+}
+
+function ServicePortAffordance({
+  cardId,
+  port,
+  connected,
+  prompt,
+  onPick,
+}: {
+  cardId: string;
+  port: CellPort;
+  connected: boolean;
+  prompt: ServicePortPrompt | undefined;
+  onPick?: (cardId: string, portName: string) => void;
+}) {
+  if (!prompt || connected || port.direction !== "input") return null;
+  if (prompt.mode === "empty") {
+    if (prompt.settingsHref) {
+      return (
+        <a
+          href={prompt.settingsHref}
+          data-service-port-empty={port.id}
+          title={prompt.title}
+          onPointerDown={stopCardDrag}
+          {...stylex.props(s.emptyEngine)}
+        >
+          {prompt.label}
+        </a>
+      );
+    }
+    return (
+      <span
+        data-service-port-empty={port.id}
+        title={prompt.title}
+        onPointerDown={stopCardDrag}
+        {...stylex.props(s.emptyEngine)}
+      >
+        {prompt.label}
+      </span>
+    );
+  }
+  if (!onPick) return null;
+  return (
+    <Button
+      size="xs"
+      variant="dashed"
+      data-pick-engine={port.id}
+      title={prompt.label}
+      xstyle={s.pickEngine}
+      onPointerDown={stopCardDrag}
+      onClick={() => onPick(cardId, port.id)}
+    >
+      {prompt.label}
+    </Button>
   );
 }
 
@@ -1211,6 +1327,7 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
     onApplySecret,
     onRemoveSecret,
     onToggleAppendix,
+    onPickServiceEngine,
   } = props;
   const state = useResolvedCardState(card.id, props);
   const punched = props.well === "punched";
@@ -1367,10 +1484,20 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
             }
             {...stylex.props(
               s.portSlot,
+              s.portSlotInput,
               input && input.kind !== "service" && s.portSlotInputDrop,
             )}
           >
             {input ? <CellPortTab port={input} punched={punched} /> : null}
+            {input ? (
+              <ServicePortAffordance
+                cardId={card.id}
+                port={input}
+                connected={isPortConnected(connected, input)}
+                prompt={surface.servicePortPrompts?.[input.id]}
+                onPick={onPickServiceEngine}
+              />
+            ) : null}
           </span>
           <span {...stylex.props(s.portSlot, s.portSlotOutput)}>
             {output ? <CellPortTab port={output} punched={punched} /> : null}

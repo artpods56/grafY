@@ -39,7 +39,9 @@ import {
   type SidePanelViewId,
 } from "../artifacts/side-panel/workbench-side-panel-state";
 import { GraphRoomRecoveryNotice } from "../collaboration/GraphRoomRecoveryNotice";
+import { EngineConnectNotice } from "./EngineConnectNotice";
 import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
+import { useServiceEnginePrompt } from "./use-service-engine-prompt";
 import {
   WorkbenchActivityBar,
   type WorkbenchActivity,
@@ -633,6 +635,8 @@ function WorkbenchBody({
   const {
     nodeSecretStatuses,
     credentials,
+    credentialRowsLoaded,
+    refreshCredentialRows,
     refreshCredentials,
     selectCredential,
     verifyCredential,
@@ -1884,21 +1888,62 @@ function WorkbenchBody({
     [openGraphId, projectGraphs],
   );
 
+  const {
+    notice: engineConnectNotice,
+    dismissNotice: dismissEngineConnectNotice,
+    undoNotice: undoEngineConnect,
+    noteLocalPlacement,
+    noteContinuedNode,
+    pickEngine,
+    chooseProvider,
+    closePrompt,
+  } = useServiceEnginePrompt({
+    workspaceId,
+    projectId,
+    graphId: openGraphId,
+    canEdit: canEditProject && localAuthoringEnabled,
+    running,
+    documentRef: authoredDocumentRef,
+    nodes,
+    savedNodes: activeGraph?.nodes ?? null,
+    edges,
+    origins: authoredDocument.origins,
+    registry,
+    credentials,
+    credentialRowsLoaded,
+    refreshCredentialRows,
+    nodeSecretStatuses,
+    canEditProject,
+    applyAuthoringCommands,
+    selectNode: (nodeId) => {
+      canvasSelection.selectOnly({ nodeIds: [nodeId] });
+    },
+    refreshCredentials,
+    openDiscovery: openContextualDiscovery,
+    closeDiscovery: closeContextualDiscovery,
+    viewportHandle: cellCanvasHandle?.viewportHandle ?? null,
+    onRejected: setRunError,
+    clearError: clearRunError,
+  });
+
   /** Adds a node with its corner at `at`, else centred on the canvas. */
   const addCatalogNode = React.useCallback(
-    (spec: NodeSpec, at?: { x: number; y: number }) => {
+    (spec: NodeSpec, at?: XYPosition, promptForEngine = true) => {
       const id = `node-${createUuid()}`;
       const place = at ?? libraryInsertAt;
       const center = canvasCenter({ x: 600, y: 280 });
+      const position = place ?? { x: center.x - 140, y: center.y - 110 };
       const data = newCatalogNodeData(spec);
-      applyAuthoringCommands([
-        addNodeCommand(
-          id,
-          data,
-          place ?? { x: center.x - 140, y: center.y - 110 },
-        ),
-      ]);
+      applyAuthoringCommands([addNodeCommand(id, data, position)]);
       canvasSelection.selectOnly({ nodeIds: [id] });
+      if (promptForEngine) {
+        noteLocalPlacement({
+          id,
+          position,
+          spec: data.spec,
+          satisfiedInputs: [],
+        });
+      }
       setLibraryOpen(false);
       closeContextualDiscovery();
     },
@@ -1909,6 +1954,7 @@ function WorkbenchBody({
       closeContextualDiscovery,
       libraryInsertAt,
       newCatalogNodeData,
+      noteLocalPlacement,
       setLibraryOpen,
     ],
   );
@@ -2187,6 +2233,12 @@ function WorkbenchBody({
     (candidate: ContextualCandidate, choice: ContextualRouteChoice) => {
       if (!contextualDiscovery || !registry || !canEditProject || running)
         return;
+      // A port prompt places the provider through the engine reducer, which
+      // also writes a shared binding and chooses who stays selected.
+      if (contextualDiscovery.trigger === "port_prompt") {
+        chooseProvider(candidate.spec, choice);
+        return;
+      }
 
       const upstream = contextualDiscovery.direction === "upstream";
       const id = `node-${createUuid()}`;
@@ -2213,12 +2265,13 @@ function WorkbenchBody({
 
       const edgeId = `edge-${createUuid()}`;
       const selection = connectionRouteSelection(choice.route);
-      const nodeCommand = addNodeCommand(id, data, {
+      const placedPosition = {
         x: contextualDiscovery.flowPosition.x,
         y:
           contextualDiscovery.flowPosition.y -
           DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
-      });
+      };
+      const nodeCommand = addNodeCommand(id, data, placedPosition);
 
       if (contextualDiscovery.sourceEndpoint.kind === "artifact-card") {
         const card = activeArtifactViewers.nodes.find(
@@ -2251,6 +2304,12 @@ function WorkbenchBody({
         if (!commands) return;
         applyAuthoringCommands([nodeCommand, ...commands]);
         canvasSelection.selectOnly({ nodeIds: [id] });
+        noteContinuedNode({
+          id,
+          position: placedPosition,
+          spec: data.spec,
+          satisfiedInputs: [choice.candidatePort.name],
+        });
         closeContextualDiscovery();
         clearRunError();
         return;
@@ -2309,6 +2368,12 @@ function WorkbenchBody({
 
       applyAuthoringCommands([nodeCommand, edgeCommand]);
       canvasSelection.selectOnly({ nodeIds: [id] });
+      noteContinuedNode({
+        id,
+        position: placedPosition,
+        spec: data.spec,
+        satisfiedInputs: upstream ? [] : [choice.candidatePort.name],
+      });
       closeContextualDiscovery();
       clearRunError();
     },
@@ -2319,10 +2384,12 @@ function WorkbenchBody({
       canvasSelection,
       canEditProject,
       authoredDocumentRef,
+      chooseProvider,
       clearRunError,
       closeContextualDiscovery,
       contextualDiscovery,
       newCatalogNodeData,
+      noteContinuedNode,
       registry,
       running,
       setRunError,
@@ -2834,6 +2901,7 @@ function WorkbenchBody({
             artifactOriginEdges: artifactOriginCanvasEdges,
             libraryItemsByArtifactId,
             imageNaturalSizes: cellImageNaturalSizes,
+            engineSettingsHref: managePacksHref,
             onOperatorConfigChange: localAuthoringEnabled
               ? updateConfigPatch
               : undefined,
@@ -2859,6 +2927,7 @@ function WorkbenchBody({
       graphSemantics,
       libraryItemsByArtifactId,
       localAuthoringEnabled,
+      managePacksHref,
       nodeInstanceStates,
       nodeSecretStatuses,
       nodes,
@@ -2952,7 +3021,8 @@ function WorkbenchBody({
   };
   const canvasMenuActions: CanvasMenuActions = {
     searchNodes: () => setLibraryOpen(true, canvasMenuPoint),
-    addNodeHere: (spec) => addCatalogNode(spec, canvasMenuPoint ?? undefined),
+    addNodeHere: (spec) =>
+      addCatalogNode(spec, canvasMenuPoint ?? undefined, false),
     addAnnotationHere: (kind) =>
       addAnnotation(kind, canvasMenuPoint ?? undefined),
     selectAll: () => {
@@ -3566,6 +3636,9 @@ function WorkbenchBody({
                 )
               }
               onOperatorToggleAppendix={toggleAppendix}
+              onPickServiceEngine={
+                localAuthoringEnabled ? pickEngine : undefined
+              }
               onAnnotationColorChange={(cardId, color) =>
                 updateAnnotationColor(cardId, annotationHexFromToken(color))
               }
@@ -3604,7 +3677,12 @@ function WorkbenchBody({
                   sourcePoint={discoverySourcePoint}
                   canInsert={localAuthoringEnabled}
                   insertDisabledReason={localAuthoringBlockedMessage}
-                  onClose={closeContextualDiscovery}
+                  onClose={() => {
+                    if (activeContextualDiscovery.trigger === "port_prompt") {
+                      closePrompt();
+                    }
+                    closeContextualDiscovery();
+                  }}
                   onConfirm={confirmContextualDiscovery}
                   onPlaceOutputCard={placeDiscoveredOutputCard}
                 />
@@ -3827,6 +3905,11 @@ function WorkbenchBody({
           onDismiss={dismissGlobalIssue}
         />
       </Toast.Provider>
+      <EngineConnectNotice
+        lead={engineConnectNotice?.lead ?? null}
+        onUndo={undoEngineConnect}
+        onDismiss={dismissEngineConnectNotice}
+      />
 
       {executionHistoryTarget ? (
         <ExecutionHistoryDrawer

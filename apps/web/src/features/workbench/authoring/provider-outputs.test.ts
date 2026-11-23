@@ -12,7 +12,7 @@ import {
   unsupportedOutputForPort,
   unsupportedOutputLabel,
 } from "./provider-outputs";
-import { createWorkflowNodeData, type WorkflowEdge } from "../authoring/types";
+import { createWorkflowNodeData, type WorkflowEdge } from "./types";
 
 const documentContract = { id: "ocr.document", version: 1 };
 

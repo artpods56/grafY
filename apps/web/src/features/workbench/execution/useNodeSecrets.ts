@@ -15,7 +15,6 @@ import {
   setPersonalSelection,
   verifyNodeSecret,
   type Credential,
-  type CredentialVerification,
 } from "@/lib/api/credentials";
 import {
   nodeSecretBindingReady,
@@ -112,6 +111,8 @@ function headMovedUnderTheWrite(error: unknown): boolean {
 
 export interface UseNodeSecretsResult extends NodeCredentialController {
   nodeSecretStatuses: NodeSecretStatusesByNode;
+  credentialRowsLoaded: boolean;
+  refreshCredentialRows: () => Promise<void>;
   refreshNodeSecretStatuses: (
     graph: NodeSecretGraph,
     graphNodes: readonly WorkflowNode[],
@@ -814,6 +815,8 @@ export function useNodeSecrets(
       loadedCredentials?.workspaceId === workspaceId
         ? loadedCredentials.rows
         : EMPTY_CREDENTIALS,
+    credentialRowsLoaded: loadedCredentials?.workspaceId === workspaceId,
+    refreshCredentialRows: refreshCredentials,
     refreshCredentials: refreshVault,
     selectCredential,
     verifyCredential,

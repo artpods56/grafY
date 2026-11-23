@@ -288,6 +288,14 @@ export interface CellExecutionAppendixSpec {
   itemCount?: number;
 }
 
+/** Empty required service input: pick a provider, or say none is enabled. */
+export interface ServicePortPrompt {
+  mode: "pick" | "empty";
+  label: string;
+  title?: string;
+  settingsHref?: string;
+}
+
 export interface OperatorCardSurfaceData {
   kind: "operator";
   statusLabel?: string;
@@ -303,6 +311,8 @@ export interface OperatorCardSurfaceData {
   connectedInputPorts?: ConnectedInputPortMap;
   /** Write-only keys, behind the header's key button rather than in the band. */
   secretInputs?: readonly CellSecretInputSpec[];
+  /** Unconnected required service inputs, keyed by port name. */
+  servicePortPrompts?: Readonly<Record<string, ServicePortPrompt>>;
   instancePlugGroups?: readonly CellInstancePlugGroup[];
   appendix?: CellExecutionAppendixSpec | null;
 }

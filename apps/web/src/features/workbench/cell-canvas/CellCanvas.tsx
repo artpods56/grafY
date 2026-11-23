@@ -215,6 +215,8 @@ export interface CellCanvasProps {
     plugId: string,
   ) => void;
   onOperatorToggleAppendix?: (cardId: string) => void;
+  /** Opens the engine picker for an empty required service input. */
+  onPickServiceEngine?: (cardId: string, portName: string) => void;
   onAnnotationColorChange?: (
     cardId: string,
     color: AnnotationColorToken,
@@ -403,6 +405,7 @@ export function CellCanvas({
   onOperatorAddPlug,
   onOperatorRemovePlug,
   onOperatorToggleAppendix,
+  onPickServiceEngine,
   onAnnotationColorChange,
   onArtifactInspect,
   canMergeArtifactCards,
@@ -1666,6 +1669,7 @@ export function CellCanvas({
             onApplySecret={editable ? onOperatorApplySecret : undefined}
             onRemoveSecret={editable ? onOperatorRemoveSecret : undefined}
             onToggleAppendix={onOperatorToggleAppendix}
+            onPickServiceEngine={editable ? onPickServiceEngine : undefined}
           />
         );
       case "artifact":
