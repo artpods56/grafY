@@ -12,7 +12,11 @@ import type {
 } from "../authoring/graph-document";
 import { catalogNodeSpecs } from "../authoring/node-catalog";
 import type { NodeCredentialController } from "../authoring/node-secrets";
-import type { WorkflowNodeSecretStatuses } from "../authoring/node-secrets";
+import {
+  nodeSecretDependencyRevision,
+  nodeSecretInputs,
+  type WorkflowNodeSecretStatuses,
+} from "../authoring/node-secrets";
 import {
   boundWorkspaceKeyNotice,
   partitionPendingBindings,
@@ -28,6 +32,7 @@ import {
   type ServiceEngineWorld,
 } from "../authoring/service-engine-prompt";
 import {
+  defaultNodeConfig,
   portMetaForPort,
   type WorkflowEdge,
   type WorkflowNode,
@@ -77,11 +82,18 @@ function deploymentDefaults(
   for (const node of nodes) {
     const nodeStatuses = statuses[node.id];
     if (!nodeStatuses) continue;
-    for (const [secretName, status] of Object.entries(nodeStatuses)) {
-      if (!status.remote?.deployment_default_available) continue;
+    const freshConfig = defaultNodeConfig(node.data.spec);
+    for (const secret of nodeSecretInputs(node.data.spec)) {
+      if (!nodeStatuses[secret.name]?.remote?.deployment_default_available)
+        continue;
+      if (
+        nodeSecretDependencyRevision(secret, freshConfig) !==
+        nodeSecretDependencyRevision(secret, node.data.config)
+      )
+        continue;
       defaults.push({
         operatorId: node.data.spec.operator_id,
-        secretName,
+        secretName: secret.name,
       });
     }
   }
@@ -107,6 +119,8 @@ export function useServiceEnginePrompt({
   origins,
   registry,
   credentials,
+  credentialRowsLoaded,
+  refreshCredentialRows,
   nodeSecretStatuses,
   canEditProject,
   applyAuthoringCommands,
@@ -128,6 +142,8 @@ export function useServiceEnginePrompt({
   origins: readonly AuthoredGraphOrigin[];
   registry: NodeRegistry | null | undefined;
   credentials: readonly Credential[];
+  credentialRowsLoaded: boolean;
+  refreshCredentialRows: () => Promise<void>;
   nodeSecretStatuses: Readonly<Record<string, WorkflowNodeSecretStatuses>>;
   canEditProject: boolean;
   applyAuthoringCommands: (commands: readonly GraphCommand[]) => void;
@@ -428,12 +444,14 @@ export function useServiceEnginePrompt({
       catalogNodes: catalogNodeSpecs(registry),
       vault: {
         canEditProject,
-        credentials: credentials.map((credential) => ({
-          id: credential.id,
-          label: credential.label,
-          providerKind: credential.provider_kind,
-          scope: credential.scope,
-        })),
+        credentials: credentials
+          .filter((credential) => credential.usable)
+          .map((credential) => ({
+            id: credential.id,
+            label: credential.label,
+            providerKind: credential.provider_kind,
+            scope: credential.scope,
+          })),
         deploymentDefaults: deploymentDefaults(nodes, nodeSecretStatuses),
       },
     };
@@ -448,12 +466,29 @@ export function useServiceEnginePrompt({
     });
   }, [canEdit, dispatch, graphId, running]);
 
+  const hasKeyedEngines = Boolean(
+    registry?.nodes.some(
+      (spec) =>
+        spec.catalog_visible !== false &&
+        spec.role === "provider" &&
+        nodeSecretInputs(spec).length > 0,
+    ),
+  );
+
+  React.useEffect(() => {
+    if (hasKeyedEngines) void refreshCredentialRows();
+  }, [hasKeyedEngines, refreshCredentialRows]);
+
   React.useLayoutEffect(() => {
     if (state.phase !== "awaiting_placement") return;
     if ((graphId ?? "") !== state.graphId || !canEdit || running) return;
     const node = nodes.find(
       (candidate) => candidate.id === state.consumerNodeId,
     );
+    // The local canvas applies a batch optimistically. Only the room head
+    // carries it after the server accepts the placement.
+    if (node && !savedNodes?.some(({ id }) => id === node.id)) return;
+    if (hasKeyedEngines && !credentialRowsLoaded) return;
     dispatch({
       type: "placement_committed",
       graphId: graphId ?? "",
@@ -472,12 +507,15 @@ export function useServiceEnginePrompt({
     });
   }, [
     canEdit,
+    credentialRowsLoaded,
     dispatch,
     edges,
     graphId,
+    hasKeyedEngines,
     nodes,
     origins,
     running,
+    savedNodes,
     state,
     world,
   ]);

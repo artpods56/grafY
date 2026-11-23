@@ -635,6 +635,8 @@ function WorkbenchBody({
   const {
     nodeSecretStatuses,
     credentials,
+    credentialRowsLoaded,
+    refreshCredentialRows,
     refreshCredentials,
     selectCredential,
     verifyCredential,
@@ -1905,6 +1907,8 @@ function WorkbenchBody({
     origins: authoredDocument.origins,
     registry,
     credentials,
+    credentialRowsLoaded,
+    refreshCredentialRows,
     nodeSecretStatuses,
     canEditProject,
     applyAuthoringCommands,
@@ -1921,7 +1925,7 @@ function WorkbenchBody({
 
   /** Adds a node with its corner at `at`, else centred on the canvas. */
   const addCatalogNode = React.useCallback(
-    (spec: NodeSpec, at?: { x: number; y: number }) => {
+    (spec: NodeSpec, at?: XYPosition, promptForEngine = true) => {
       const id = `node-${createUuid()}`;
       const place = at ?? libraryInsertAt;
       const center = canvasCenter({ x: 600, y: 280 });
@@ -1929,12 +1933,14 @@ function WorkbenchBody({
       const data = newCatalogNodeData(spec);
       applyAuthoringCommands([addNodeCommand(id, data, position)]);
       canvasSelection.selectOnly({ nodeIds: [id] });
-      noteLocalPlacement({
-        id,
-        position,
-        spec: data.spec,
-        satisfiedInputs: [],
-      });
+      if (promptForEngine) {
+        noteLocalPlacement({
+          id,
+          position,
+          spec: data.spec,
+          satisfiedInputs: [],
+        });
+      }
       setLibraryOpen(false);
       closeContextualDiscovery();
     },
@@ -2295,6 +2301,12 @@ function WorkbenchBody({
         if (!commands) return;
         applyAuthoringCommands([nodeCommand, ...commands]);
         canvasSelection.selectOnly({ nodeIds: [id] });
+        noteContinuedNode({
+          id,
+          position: placedPosition,
+          spec: data.spec,
+          satisfiedInputs: [choice.candidatePort.name],
+        });
         closeContextualDiscovery();
         clearRunError();
         return;
@@ -3006,7 +3018,8 @@ function WorkbenchBody({
   };
   const canvasMenuActions: CanvasMenuActions = {
     searchNodes: () => setLibraryOpen(true, canvasMenuPoint),
-    addNodeHere: (spec) => addCatalogNode(spec, canvasMenuPoint ?? undefined),
+    addNodeHere: (spec) =>
+      addCatalogNode(spec, canvasMenuPoint ?? undefined, false),
     addAnnotationHere: (kind) =>
       addAnnotation(kind, canvasMenuPoint ?? undefined),
     selectAll: () => {

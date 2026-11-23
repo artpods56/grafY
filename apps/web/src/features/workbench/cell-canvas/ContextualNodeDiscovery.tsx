@@ -582,10 +582,11 @@ export function CellContextualNodeDiscovery({
     resultRefs.current.get(key)?.focus();
   };
 
-  const dx = Math.max(
-    48,
-    Math.abs(targetPoint.x - (sourcePoint?.x ?? 0)) * 0.45,
-  );
+  const spanX = targetPoint.x - (sourcePoint?.x ?? targetPoint.x);
+  const dx =
+    session.trigger === "port_prompt"
+      ? spanX / 2
+      : Math.max(48, Math.abs(spanX) * 0.45);
   const edgePath =
     sourcePoint && previewedCandidate
       ? `M ${sourcePoint.x} ${sourcePoint.y} C ${sourcePoint.x + dx} ${sourcePoint.y}, ${targetPoint.x - dx} ${targetPoint.y}, ${targetPoint.x} ${targetPoint.y}`
@@ -621,6 +622,7 @@ export function CellContextualNodeDiscovery({
             <div
               key={catalogNodeKey(previewedCandidate.spec)}
               ref={previewRef}
+              data-discovery-preview="true"
               className="grafy-discovery-preview"
               {...stylex.props(s.canvasPreview)}
               style={{

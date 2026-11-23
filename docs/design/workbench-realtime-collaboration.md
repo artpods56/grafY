@@ -612,6 +612,20 @@ so nobody re-derives them:
    the client re-reads the listing and retries once using the sequence returned by
    the server. [`useNodeSecrets.ts`](../../apps/web/src/features/workbench/execution/useNodeSecrets.ts)
 
+### Engine picker and Undo
+
+A local placement arms the picker, which waits for the consumer to appear in
+the confirmed room head. Connecting an engine sends a second batch containing
+the provider and service edge. Undo removes that provider and edge, leaving
+the consumer. A Shared binding lives outside the Graph document. Removing
+the provider leaves its binding unreferenced, and the node-secret service
+resolves bindings only for nodes in the current Graph.
+
+The API reports deployment-default availability for existing nodes on a saved
+Graph. The picker uses that signal when it has a matching configuration.
+A new operator without an observed default needs a unique usable Shared key
+per secret input to auto-connect.
+
 ## Authorization and sensitive state
 
 Login, membership and workspace tenancy belong to the
