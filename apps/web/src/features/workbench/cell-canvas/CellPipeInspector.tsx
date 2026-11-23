@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Surface } from "@/components/ui/surface";
 import { Switch } from "@/components/ui/switch";
 import type { RunEdgeCollectionMode } from "@/lib/api";
@@ -80,13 +81,6 @@ const s = stylex.create({
     fontSize: tokens.fontSizeXs,
     fontWeight: 600,
     color: tokens.colorMuted,
-  },
-  modeRow: {
-    display: "flex",
-    gap: "4px",
-  },
-  modeButton: {
-    flex: 1,
   },
   choiceList: {
     display: "flex",
@@ -309,28 +303,17 @@ function CollectionModeSection({
   return (
     <div {...stylex.props(s.section)}>
       <span {...stylex.props(s.sectionLabel)}>Collection</span>
-      <div {...stylex.props(s.modeRow)}>
-        <Button
-          size="xs"
-          variant="soft"
-          pressed={mode === "direct"}
-          disabled={disabled}
-          xstyle={s.modeButton}
-          onClick={() => onSelect("direct")}
-        >
-          Whole list
-        </Button>
-        <Button
-          size="xs"
-          variant="soft"
-          pressed={mode === "map"}
-          disabled={disabled}
-          xstyle={s.modeButton}
-          onClick={() => onSelect("map")}
-        >
-          Each item (map)
-        </Button>
-      </div>
+      <SegmentedControl
+        size="sm"
+        aria-label="Collection"
+        value={mode}
+        disabled={disabled}
+        options={[
+          { value: "direct", label: "Whole list" },
+          { value: "map", label: "Each item (map)" },
+        ]}
+        onValueChange={onSelect}
+      />
     </div>
   );
 }
