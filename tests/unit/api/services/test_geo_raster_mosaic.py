@@ -13,7 +13,6 @@ from grafy_storage import LocalFileObjectStore
 from pydantic import HttpUrl, SecretStr
 
 from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.artifacts.errors import GeoRasterUnavailableError
 from grafy_api.artifacts.geo import ArtifactGeoService
 from grafy_api.artifacts.geo_tiff import bounds_intersect_tile, fit_min_zoom
 from grafy_api.artifacts.geo_tiles import ArtifactGeoTileService
@@ -146,39 +145,6 @@ class Harness:
             )
         )
 
-    async def raster_scan(self, *, prefix: str | None = None) -> ArtifactObject:
-        return await self.add(
-            ArtifactObject(
-                workspace_id=WS,
-                artifact_type="geo.raster_scan",
-                schema_version=1,
-                content_type="image/tiff; application=geotiff",
-                bucket="test",
-                object_key="scan.cog.tif",
-                byte_size=8,
-                sha256="c" * 64,
-                metadata={
-                    "source_name": "Scan",
-                    "raster_projection": {
-                        "kind": "xyz",
-                        "bucket": "test",
-                        "prefix": prefix,
-                        "extension": "png",
-                        "content_type": "image/png",
-                        "min_zoom": 1,
-                        "max_zoom": 9,
-                        "tile_size": 256,
-                        "bounds": [40.0, 10.0, 50.0, 20.0],
-                        "source_crs": "EPSG:3857",
-                        "width": 1024,
-                        "height": 1024,
-                        "band_count": 3,
-                        "compiler": "fixture",
-                    },
-                },
-            )
-        )
-
     async def mosaic(
         self, sources: list[ArtifactObject], **layer: object
     ) -> ArtifactObject:
@@ -222,8 +188,7 @@ async def test_render_descriptor_points_at_the_layer_and_unions_bounds(
 ) -> None:
     west = await harness.tiff("west.tif")
     east = await harness.tiff("east.tif")
-    scan = await harness.raster_scan()
-    layer = await harness.mosaic([west, scan, east])
+    layer = await harness.mosaic([west, east])
 
     descriptor = await harness.geo.load_geo_render(layer, workspace_id=WS)
 
@@ -235,7 +200,6 @@ async def test_render_descriptor_points_at_the_layer_and_unions_bounds(
     assert rendered.source.tilejson_url == (
         f"/v1/workspaces/{WS}/artifacts/{layer.id}/geo/raster/tilejson.json"
     )
-    # The raster scan's footprint comes from its metadata, not from the tiler.
     assert sorted(harness.tiler.infos) == ["east.tif", "west.tif"]
 
 
@@ -317,14 +281,6 @@ async def test_mosaic_cannot_reach_into_another_workspace(harness: Harness) -> N
     with pytest.raises(ArtifactContentUnavailableError):
         await harness.tiles.load_raster_tile(layer, workspace_id=WS, z=2, x=2, y=1)
     assert harness.tiler.mosaics == harness.tiler.single == []
-
-
-async def test_a_static_tile_pyramid_cannot_join_a_mosaic(harness: Harness) -> None:
-    layer = await harness.mosaic(
-        [await harness.tiff("west.tif"), await harness.raster_scan(prefix="xyz")]
-    )
-    with pytest.raises(GeoRasterUnavailableError, match="static tile pyramid"):
-        await harness.tiles.load_raster_tilejson(layer, workspace_id=WS)
 
 
 @pytest.mark.parametrize(

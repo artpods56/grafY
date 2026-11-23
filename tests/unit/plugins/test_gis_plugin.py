@@ -1,9 +1,6 @@
 import json
 import math
 import socket
-import subprocess
-import sys
-from hashlib import sha256
 from pathlib import Path
 from typing import cast
 from uuid import UUID, uuid4
@@ -12,7 +9,6 @@ import grafy_plugin_gis.wfs as wfs_module
 import httpx
 import pytest
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeSpec
-from grafy_core.bounded_subprocess import BoundedSubprocessError
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.documents import TiffFile
 from grafy_core.file_contracts import BLOB_FILE, TIFF_FILE
@@ -45,10 +41,7 @@ from grafy_plugin_gis.artifacts import (
     GEO_FEATURE_COLLECTION,
     GEO_MAP_DOCUMENT,
     GEO_MAP_LAYER,
-    GEO_RASTER_SCAN,
 )
-from grafy_plugin_gis.gdal import GdalCli, GdalError
-from grafy_plugin_gis.models import GeoRasterScan, RasterProjectionMetadata
 from grafy_core.spatial_contracts import (
     GeoCategorizedPointStyle,
     GeoFeatureArtifactSource,
@@ -57,7 +50,6 @@ from grafy_core.spatial_contracts import (
     GeoRasterMosaicSource,
     GeoRasterStyle,
     GeoVectorStyle,
-    VectorProjectionMetadata,
 )
 from grafy_plugin_gis.nodes import (
     WFS_IMPORT_MAX_FEATURES,
@@ -66,9 +58,6 @@ from grafy_plugin_gis.nodes import (
     GeoFeaturesToTableConfig,
     GeoFeaturesToTableError,
     GeoFeaturesToTableInput,
-    GeoRasterScanImportConfig,
-    GeoRasterScanImportInput,
-    ImportRasterScanNode,
     ImportWfsNode,
     RasterLayerConfig,
     RasterLayerInput,
@@ -93,7 +82,6 @@ from grafy_plugin_gis.nodes import (
 )
 from grafy_plugin_gis.persistence import (
     feature_collection_artifact,
-    raster_scan_artifact,
 )
 from grafy_plugin_gis.plugin import GIS
 from grafy_plugin_gis.wfs import WfsClient, WfsImportError
@@ -149,63 +137,6 @@ def artifact_ref(artifact_type: ArtifactTypeSpec) -> ArtifactRef:
     return ArtifactRef.from_key(artifact_id=uuid4(), key=artifact_type.key)
 
 
-def write_geotiff(path: Path) -> bytes:
-    subprocess.run(
-        [
-            "gdal_create",
-            "-of",
-            "GTiff",
-            "-outsize",
-            "64",
-            "64",
-            "-bands",
-            "3",
-            "-burn",
-            "100",
-            "-burn",
-            "150",
-            "-burn",
-            "200",
-            "-a_srs",
-            "EPSG:4326",
-            "-a_ullr",
-            "13",
-            "53",
-            "14",
-            "52",
-            str(path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return path.read_bytes()
-
-
-def test_gdal_normalizes_cog_and_tiles_to_xyz(tmp_path: Path) -> None:
-    source = tmp_path / "source.tif"
-    cog_path = tmp_path / "normalized.tif"
-    destination_dir = tmp_path / "tiles"
-    _ = write_geotiff(source)
-
-    gdal = GdalCli()
-    cog = gdal.normalize_geotiff_to_cog(source, cog_path)
-
-    assert cog.destination == cog_path
-    assert cog.bounds_wgs84 == (13.0, 52.0, 14.0, 53.0)
-    assert (cog.width, cog.height, cog.bands) == (64, 64, 3)
-
-    tiles = gdal.tile_raster_to_xyz(
-        cog_path,
-        destination_dir,
-        min_zoom=0,
-        max_zoom=0,
-    )
-
-    assert tiles.tile_count == 1
-    assert len(list(destination_dir.rglob("*.png"))) == 1
-
-
 def test_gis_registers_exact_sources_lightweight_layers_and_documents() -> None:
     registry = PluginRegistry()
     registry.install(TABLES)
@@ -215,7 +146,6 @@ def test_gis_registers_exact_sources_lightweight_layers_and_documents() -> None:
     assert GIS.slug == "external.gis"
     assert {artifact.key for artifact in GIS.artifact_types} == {
         GEO_FEATURE_COLLECTION.key,
-        GEO_RASTER_SCAN.key,
         GEO_MAP_LAYER.key,
         GEO_MAP_DOCUMENT.key,
     }
@@ -224,12 +154,6 @@ def test_gis_registers_exact_sources_lightweight_layers_and_documents() -> None:
         .node_class.output_contract.ports["features"]
         .produces
         == GEO_FEATURE_COLLECTION.key
-    )
-    assert (
-        registry.node_registration("gis.raster_scan.import", 1)
-        .node_class.output_contract.ports["raster"]
-        .produces
-        == GEO_RASTER_SCAN.key
     )
     vector_source = registry.node_registration(
         "gis.map.vector_layer", 1
@@ -250,17 +174,12 @@ def test_gis_registers_exact_sources_lightweight_layers_and_documents() -> None:
         "gis.features.to_table", 1
     ).node_class.output_contract.ports["table"]
     assert feature_table_output.produces == TABLE_DATA.key
-    accepted_by_typed_importers = (
+    parsed_file = (
         registry.node_registration("gis.geojson.parse", 1)
         .node_class.input_contract.ports["file"]
-        .accepted_types,
-        registry.node_registration("gis.raster_scan.import", 1)
-        .node_class.input_contract.ports["file"]
-        .accepted_types,
+        .accepted_types
     )
-    assert all(
-        BLOB_FILE.key not in accepted for accepted in accepted_by_typed_importers
-    )
+    assert BLOB_FILE.key not in parsed_file
 
 
 def test_wfs_import_declares_its_configured_http_egress_contract() -> None:
@@ -277,98 +196,6 @@ def test_wfs_import_declares_its_configured_http_egress_contract() -> None:
         NodeHttpEgressInput(config_field="service_url"),
     )
     assert registration.http_egress.dynamic_destinations is False
-
-
-def test_gdal_cli_scrubs_ambient_environment(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("GRAFY_TEST_SECRET_SENTINEL", "must-not-reach-gdal")
-    monkeypatch.setenv("LANG", "allowlisted-locale")
-    monkeypatch.setenv("GDAL_NUM_THREADS", "ALL_CPUS")
-    environment_path = tmp_path / "child-environment.json"
-    executable = tmp_path / "fake-gdal"
-    executable.write_text(
-        f"#!{sys.executable}\n"
-        "import json, os, sys\n"
-        f"with open({str(environment_path)!r}, 'w') as stream:\n"
-        " json.dump([os.getenv(key) for key in "
-        "('GRAFY_TEST_SECRET_SENTINEL', 'LANG', 'HOME', 'GDAL_CONFIG_FILE', "
-        "'GDAL_NUM_THREADS', 'GDAL_CACHEMAX')], stream)\n"
-        "print('GDAL 3.10.3' if '--version' in sys.argv else "
-        "'PMTiles -vector- (rw)\\nCOG -raster- (rw)\\nPNG -raster- (rw)')\n",
-        encoding="utf-8",
-    )
-    executable.chmod(0o755)
-    cli = GdalCli(
-        gdalinfo=str(executable),
-        ogr2ogr=str(executable),
-        gdal_translate=str(executable),
-        gdal2tiles=str(executable),
-    )
-    capabilities = cli.capabilities()
-    assert capabilities.gdalinfo_version == "3.10.3"
-    assert (
-        capabilities.pmtiles_write and capabilities.cog_write and capabilities.png_write
-    )
-    assert json.loads(environment_path.read_text()) == [
-        None,
-        "allowlisted-locale",
-        None,
-        "/dev/null",
-        "1",
-        "64",
-    ]
-
-
-def test_gdal_run_preserves_error_message_shapes(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import grafy_plugin_gis.gdal as gdal_module
-
-    missing = tmp_path / "missing-gdal"
-    with pytest.raises(GdalError) as not_found:
-        GdalCli(gdalinfo=str(missing)).capabilities()
-    assert str(not_found.value) == (
-        "checking gdalinfo version could not start because executable "
-        f"{str(missing)!r} was not found"
-    )
-
-    executable = tmp_path / "fake-gdal"
-    executable.write_text(
-        f"#!{sys.executable}\n"
-        "import sys\n"
-        "print('  bad\\n source  ', file=sys.stderr)\n"
-        "sys.exit(7)\n",
-        encoding="utf-8",
-    )
-    executable.chmod(0o755)
-    cli = GdalCli(gdalinfo=str(executable))
-    with pytest.raises(GdalError) as nonzero:
-        cli.capabilities()
-    assert str(nonzero.value) == (
-        f"checking gdalinfo version failed in executable {str(executable)!r} "
-        "with exit code 7: bad source"
-    )
-
-    def timed_out(
-        *_args: object, **_kwargs: object
-    ) -> subprocess.CompletedProcess[str]:
-        raise BoundedSubprocessError(
-            "checking gdalinfo version",
-            -9,
-            True,
-            "",
-        )
-
-    monkeypatch.setattr(gdal_module, "run_bounded", timed_out)
-    with pytest.raises(GdalError) as timeout:
-        cli.capabilities()
-    assert str(timeout.value) == (
-        f"checking gdalinfo version failed in executable {str(executable)!r} "
-        "because it exceeded the bounded wall-clock limit: no diagnostic output"
-    )
 
 
 def test_bounds_config_schemas_describe_fixed_wgs84_positions() -> None:
@@ -627,7 +454,7 @@ async def test_table_to_features_refuses_an_ambiguous_column_title() -> None:
 @pytest.mark.asyncio
 async def test_builds_typed_vector_raster_and_wms_layers() -> None:
     features_ref = artifact_ref(GEO_FEATURE_COLLECTION)
-    raster_ref = artifact_ref(GEO_RASTER_SCAN)
+    raster_ref = artifact_ref(TIFF_FILE)
 
     vector = await build_vector_layer(
         VectorLayerConfig(
@@ -680,7 +507,7 @@ async def test_builds_typed_vector_raster_and_wms_layers() -> None:
             opacity=0.6,
             style=GeoRasterStyle(contrast=0.25, resampling="nearest"),
         ),
-        RasterLayerInput(raster=cast(Ref[GeoRasterScan], raster_ref)),
+        RasterLayerInput(raster=cast(Ref[TiffFile], raster_ref)),
     )
     wms = await build_wms_layer(
         WmsLayerConfig.model_validate(
@@ -1111,88 +938,7 @@ async def test_wfs_import_rejects_oversized_page_with_context(
 
 
 @pytest.mark.asyncio
-async def test_raster_scan_import_and_raster_persistence_produce_only_cog(
-    tmp_path: Path,
-) -> None:
-    source_content = write_geotiff(tmp_path / "source.tif")
-    uow = InMemoryUnitOfWork()
-    object_root = tmp_path / "objects"
-    storage = LocalFileObjectStore(object_root)
-    raster = await ImportRasterScanNode().run(
-        NodeExecutionContext(workspace_id=TEST_WORKSPACE_ID, node_id="raster_scan"),
-        GeoRasterScanImportConfig(source_name="Historical map"),
-        GeoRasterScanImportInput(
-            file=TiffFile.from_content(
-                source_content,
-                content_type="image/tiff",
-                filename="historical-map.tif",
-            )
-        ),
-    )
-    values = ArtifactValues(
-        (raster_scan_artifact(),),
-        uow=uow,
-        storage=storage,
-        bucket="test",
-        storage_backend="local",
-    )
-    ref = await values.write(
-        GEO_RASTER_SCAN.key,
-        raster.raster,
-        ArtifactWriteContext(
-            node_context=NodeExecutionContext(
-                workspace_id=TEST_WORKSPACE_ID,
-                node_id="raster",
-            ),
-            provenance=MaterializationProvenance(refs_by_input={}),
-        ),
-    )
-    async with uow as uow:
-        artifact = await uow.artifacts.get(TEST_WORKSPACE_ID, ref.artifact_id)
-    assert artifact is not None
-    assert artifact.content_type == (
-        "image/tiff; application=geotiff; profile=cloud-optimized"
-    )
-    assert artifact.bucket == "test"
-    assert artifact.object_key is not None
-    assert artifact.workspace_id == TEST_WORKSPACE_ID
-    assert artifact.object_key.startswith(
-        f"workspaces/{TEST_WORKSPACE_ID}/geo.raster_scan/v1/"
-    )
-    projection = RasterProjectionMetadata.model_validate(
-        artifact.metadata["raster_projection"]
-    )
-    assert projection.kind == "xyz"
-    assert projection.bounds == (13.0, 52.0, 14.0, 53.0)
-    assert projection.source_crs == "EPSG:4326"
-    assert (projection.min_zoom, projection.max_zoom) == (5, 6)
-    assert projection.prefix is None
-    assert list(object_root.rglob("*.png")) == []
-    portable = PortableArtifactBundleMetadata.model_validate(
-        artifact.metadata[PORTABLE_BUNDLE_METADATA_KEY]
-    )
-    assert portable.files[0].object_key == artifact.object_key
-    assert {reference.path for reference in portable.references} == {
-        ("raster_projection", "bucket"),
-    }
-    assert len(portable.files) == 1
-
-    cog_path = object_root / "test" / artifact.object_key
-    info = subprocess.run(
-        ["gdalinfo", "-json", str(cog_path)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert json.loads(info.stdout)["metadata"]["IMAGE_STRUCTURE"]["LAYOUT"] == "COG"
-    resolved = await values.resolve(ref, TEST_WORKSPACE_ID)
-    assert isinstance(resolved, GeoRasterScan)
-    assert resolved.filename == "historical-map.tif"
-    assert sha256(resolved.content).hexdigest() == artifact.sha256
-
-
-@pytest.mark.asyncio
-async def test_feature_collection_storage_keeps_exact_source_and_pmtiles_sidecar(
+async def test_feature_collection_storage_keeps_exact_source(
     tmp_path: Path,
 ) -> None:
     collection = GeoFeatureCollection.from_geojson_bytes(
@@ -1233,31 +979,16 @@ async def test_feature_collection_storage_keeps_exact_source_and_pmtiles_sidecar
     assert artifact.metadata["property_fields"] == [
         {"id": "name", "title": "name", "value_type": "text"}
     ]
-    projection = VectorProjectionMetadata.model_validate(
-        artifact.metadata["vector_projection"]
-    )
-    assert projection.source_layer == "features"
-    assert (
-        await storage.load_range(
-            projection.bucket,
-            projection.object_key,
-            0,
-            7,
-        )
-        == b"PMTiles"
-    )
     portable = PortableArtifactBundleMetadata.model_validate(
         artifact.metadata[PORTABLE_BUNDLE_METADATA_KEY]
     )
-    assert projection.object_key in {file.object_key for file in portable.files}
-    assert {reference.path for reference in portable.references} == {
-        ("vector_projection", "bucket"),
-        ("vector_projection", "object_key"),
-    }
+    assert len(portable.files) == 2
+    assert portable.references == ()
+    assert "vector_projection" not in artifact.metadata
 
 
 @pytest.mark.asyncio
-async def test_empty_feature_source_is_exact_without_invalid_pmtiles(
+async def test_empty_feature_source_is_exact(
     tmp_path: Path,
 ) -> None:
     collection = GeoFeatureCollection(
@@ -1295,44 +1026,6 @@ async def test_empty_feature_source_is_exact_without_invalid_pmtiles(
     )
     assert portable.references == ()
     assert len(portable.files) == 1
-
-
-@pytest.mark.asyncio
-async def test_missing_gdal_driver_error_preserves_source_and_node_context(
-    tmp_path: Path,
-) -> None:
-    collection = GeoFeatureCollection.from_geojson_bytes(
-        feature_collection((13.405, 52.52)),
-        "cities.geojson",
-    )
-    values = ArtifactValues(
-        (
-            feature_collection_artifact(
-                gdal=GdalCli(ogr2ogr="missing-grafy-ogr2ogr"),
-            ),
-        ),
-        uow=InMemoryUnitOfWork(),
-        storage=LocalFileObjectStore(tmp_path / "objects"),
-        bucket="test",
-        storage_backend="local",
-    )
-
-    with pytest.raises(
-        RuntimeError,
-        match=r"PMTiles.*cities.geojson.*node 'feature-node'",
-    ) as error:
-        await values.write(
-            GEO_FEATURE_COLLECTION.key,
-            collection,
-            ArtifactWriteContext(
-                node_context=NodeExecutionContext(
-                    workspace_id=TEST_WORKSPACE_ID,
-                    node_id="feature-node",
-                ),
-                provenance=MaterializationProvenance(refs_by_input={}),
-            ),
-        )
-    assert isinstance(error.value.__cause__, GdalError)
 
 
 @pytest.mark.asyncio
@@ -1410,8 +1103,8 @@ async def test_raster_layer_accepts_a_georeferenced_tiff_directly() -> None:
         RasterLayerInput.model_validate({"raster": tiff_ref.model_dump()}),
     )
 
-    assert contract.accepts == GEO_RASTER_SCAN.key
-    assert contract.also_accepts == (TIFF_FILE.key,)
+    assert contract.accepts == TIFF_FILE.key
+    assert contract.also_accepts == ()
     assert layer.layer.source.kind == "raster_scan"
     assert type(layer.layer.source.artifact) is ArtifactRef
     assert layer.layer.source.artifact == tiff_ref
@@ -1426,7 +1119,7 @@ def _tiff_sequence(*refs: ArtifactRef) -> dict[str, object]:
 @pytest.mark.asyncio
 async def test_raster_mosaic_flattens_refs_and_sequences_bottom_to_top() -> None:
     bottom = artifact_ref(TIFF_FILE)
-    middle = artifact_ref(GEO_RASTER_SCAN)
+    middle = artifact_ref(TIFF_FILE)
     upper = artifact_ref(TIFF_FILE)
     top = artifact_ref(TIFF_FILE)
     contract = derive_input_contract(RasterMosaicInput).ports["rasters"]
@@ -1446,10 +1139,7 @@ async def test_raster_mosaic_flattens_refs_and_sequences_bottom_to_top() -> None
 
     assert contract.instance_plugs is True
     assert contract.spare_plugs is False
-    assert {contract.accepts, *contract.also_accepts} == {
-        TIFF_FILE.key,
-        GEO_RASTER_SCAN.key,
-    }
+    assert {contract.accepts, *contract.also_accepts} == {TIFF_FILE.key}
     source = output.layer.source
     assert isinstance(source, GeoRasterMosaicSource)
     assert source.artifacts == [bottom, middle, upper, top]
@@ -1479,7 +1169,7 @@ async def test_raster_mosaic_rejects_duplicate_and_too_many_rasters() -> None:
 
 
 def test_raster_mosaic_source_rejects_other_artifact_types() -> None:
-    with pytest.raises(ValidationError, match="geo.raster_scan@1 or file.tiff@1"):
+    with pytest.raises(ValidationError, match="must reference file.tiff@1"):
         GeoRasterMosaicSource(artifacts=[artifact_ref(GEO_FEATURE_COLLECTION)])
     with pytest.raises(ValidationError, match="raster style"):
         GeoMapLayer(

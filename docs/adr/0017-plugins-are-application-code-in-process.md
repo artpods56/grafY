@@ -28,7 +28,7 @@ Two reasons justified that machinery, and neither survives.
    against. On this repository that cost more than it returned: roughly 15.8k lines of
    backend production code, 22k lines of tests, four tables, 175 release-pin references,
    nine vendored SDK wheels and two Compose stacks. Worse, it split single domains across
-   a process boundary — a Plugin writes `geo.raster_scan` while the API serves that
+   a process boundary — one side wrote a raster artifact while the API served that
    artifact's tiles — so working on one feature meant working on both sides of a wire
    format and every edge case where they disagreed.
 
@@ -98,11 +98,6 @@ destination now carries that check where it is dialed.
   setting listing exact trusted destinations. Node configuration, a graph and a Workspace
   can never widen it. This is what replaces the sandbox's network namespace: a local
   model server is reachable by declaration, not by default.
-- **Native work stays out of process and gets bounded.** GDAL already ran as
-  `gdalinfo` / `gdal_translate` / `gdal2tiles.py` subprocesses. Those invocations move to
-  a bounded subprocess pool with an address-space and CPU cap, a wall-clock timeout, a
-  concurrency limit and an environment scrubbed of credentials, so a segfault or an OOM
-  kill inside libgdal cannot take down the API worker holding collaboration websockets.
 - **Node secrets are untouched.** The additional authenticated data (v1, v2) covers
   workspace, graph, node, operator id and version, secret name and dependency values —
   never a release pin — so stored ciphertext decrypts as before. Only where a node's
@@ -137,9 +132,8 @@ nothing ever wrote them.
   deploy because its pin had not moved. This is accepted as the price of one identity
   rule; a per-family source digest is the obvious later refinement and is deliberately
   not part of this decision.
-- **The API image grows and moves.** It installs every family and gains GDAL
-  (`gdal-bin`, `python3-gdal`, `python3-numpy`, `python3-pil`). GDAL 3.8 is the floor the
-  GIS plugin needs, so the base moves from Debian bookworm, which ships 3.6, to trixie.
+- **The API image contains the installed families.** TIFF map rendering uses
+  the tiler, which reads the original raster on demand.
 - **The API dials from the host's own network.** With no Docker network namespace behind
   it, the guard is the mechanism and the deployment's egress restriction becomes the
   backstop rather than the enforcement point. `docs/deploy/*` says so.
@@ -150,7 +144,7 @@ nothing ever wrote them.
   documents, catalog responses and secret bindings, and renaming them would rewrite user
   data for no behavioural change.
 - **Domain-module ownership becomes possible.** With the producer and the consumer of
-  `geo.raster_scan` in one process and one dependency layer, a `geo` module can own its
+  one spatial artifact in one process and one dependency layer, a `geo` module can own its
   nodes, its artifact types and its tile route. That move still needs its own decision
   about which layer may own an HTTP router, and this ADR does not settle it: family
   packages keep importing nothing from `grafy_api`, and the boundary test keeps that

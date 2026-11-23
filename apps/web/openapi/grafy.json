@@ -2405,91 +2405,6 @@
         "title": "GeoPointStyle",
         "type": "object"
       },
-      "GeoPropertyFieldResponse": {
-        "properties": {
-          "id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "title": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
-          },
-          "value_type": {
-            "$ref": "#/components/schemas/GeoPropertyValueType"
-          }
-        },
-        "required": [
-          "id",
-          "title",
-          "value_type"
-        ],
-        "title": "GeoPropertyFieldResponse",
-        "type": "object"
-      },
-      "GeoPropertyValueType": {
-        "enum": [
-          "text",
-          "integer",
-          "number",
-          "boolean",
-          "null",
-          "mixed",
-          "unknown"
-        ],
-        "type": "string"
-      },
-      "GeoRasterRenderSourceResponse": {
-        "properties": {
-          "artifact_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Artifact Id"
-          },
-          "attribution": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Attribution"
-          },
-          "bounds": {
-            "$ref": "#/components/schemas/GeoBounds"
-          },
-          "kind": {
-            "const": "raster",
-            "default": "raster",
-            "title": "Kind",
-            "type": "string"
-          },
-          "tilejson_url": {
-            "title": "Tilejson Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "tilejson_url",
-          "bounds"
-        ],
-        "title": "GeoRasterRenderSourceResponse",
-        "type": "object"
-      },
       "GeoRasterStyle": {
         "additionalProperties": false,
         "properties": {
@@ -2644,22 +2559,7 @@
             "type": "number"
           },
           "source": {
-            "discriminator": {
-              "mapping": {
-                "raster": "#/components/schemas/GeoRasterRenderSourceResponse",
-                "vector": "#/components/schemas/GeoVectorRenderSourceResponse"
-              },
-              "propertyName": "kind"
-            },
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/GeoVectorRenderSourceResponse"
-              },
-              {
-                "$ref": "#/components/schemas/GeoRasterRenderSourceResponse"
-              }
-            ],
-            "title": "Source"
+            "$ref": "#/components/schemas/GeoRenderSourceResponse"
           },
           "style": {
             "discriminator": {
@@ -2780,66 +2680,51 @@
         "title": "GeoRenderResponse",
         "type": "object"
       },
-      "GeoVectorRenderSourceResponse": {
+      "GeoRenderSourceResponse": {
         "properties": {
-          "archive_url": {
-            "title": "Archive Url",
-            "type": "string"
-          },
           "artifact_id": {
-            "format": "uuid",
-            "title": "Artifact Id",
-            "type": "string"
-          },
-          "bounds": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/GeoBounds"
+                "format": "uuid",
+                "type": "string"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Artifact Id"
           },
-          "fields": {
-            "items": {
-              "$ref": "#/components/schemas/GeoPropertyFieldResponse"
-            },
-            "title": "Fields",
-            "type": "array"
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution"
+          },
+          "bounds": {
+            "$ref": "#/components/schemas/GeoBounds"
           },
           "kind": {
-            "const": "vector",
-            "default": "vector",
+            "const": "raster",
+            "default": "raster",
             "title": "Kind",
             "type": "string"
           },
-          "max_zoom": {
-            "maximum": 24.0,
-            "minimum": 0.0,
-            "title": "Max Zoom",
-            "type": "integer"
-          },
-          "min_zoom": {
-            "maximum": 24.0,
-            "minimum": 0.0,
-            "title": "Min Zoom",
-            "type": "integer"
-          },
-          "source_layer": {
-            "title": "Source Layer",
+          "tilejson_url": {
+            "title": "Tilejson Url",
             "type": "string"
           }
         },
         "required": [
           "artifact_id",
-          "archive_url",
-          "source_layer",
-          "bounds",
-          "min_zoom",
-          "max_zoom"
+          "tilejson_url",
+          "bounds"
         ],
-        "title": "GeoVectorRenderSourceResponse",
+        "title": "GeoRasterRenderSourceResponse",
         "type": "object"
       },
       "GeoVectorStyle": {
@@ -11334,124 +11219,6 @@
           }
         ],
         "summary": "Get Geo Raster Tile",
-        "tags": [
-          "workbench"
-        ]
-      }
-    },
-    "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/vector.pmtiles": {
-      "get": {
-        "operationId": "get_geo_vector_pmtiles_v1_workspaces__workspace_id__artifacts__source_id__geo_vector_pmtiles_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "source_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Source Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Workspace Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Range",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Range"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid vector source"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
-                }
-              }
-            },
-            "description": "Artifact not found"
-          },
-          "413": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
-                }
-              }
-            },
-            "description": "Response too large"
-          },
-          "416": {
-            "description": "Requested byte range is not satisfiable"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
-                }
-              }
-            },
-            "description": "Vector projection is unavailable"
-          }
-        },
-        "security": [
-          {
-            "APIKeyCookie": []
-          },
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Get Geo Vector Pmtiles",
         "tags": [
           "workbench"
         ]

@@ -155,7 +155,7 @@ async def proxy() -> AsyncIterator[Harness]:
         ("image/tiff", "file.tiff", "workspaces/one/original.tiff"),
         (
             "image/tiff; application=geotiff; profile=cloud-optimized",
-            "geo.raster_scan",
+            "file.tiff",
             "workspaces/one/canonical.tif",
         ),
     ],

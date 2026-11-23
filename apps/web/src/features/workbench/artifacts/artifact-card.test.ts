@@ -204,10 +204,10 @@ describe("artifact card value", () => {
     expect(isImageArtifact(ref("aaaa", "file.tiff"))).toBe(true);
     expect(isImageArtifact(ref("aaaa", "file.csv"))).toBe(false);
     expect(isImageArtifact(ref("aaaa", "file.csv"), "image/png")).toBe(true);
-    expect(isImageArtifact(ref("aaaa", "geo.raster_scan"))).toBe(false);
+    expect(isImageArtifact(ref("aaaa", "geo.map_document"))).toBe(false);
     expect(
       isImageArtifact(
-        ref("aaaa", "geo.raster_scan"),
+        ref("aaaa", "geo.map_document"),
         "image/tiff; application=geotiff",
       ),
     ).toBe(false);
@@ -217,7 +217,9 @@ describe("artifact card value", () => {
     expect(isGeoMapArtifact(ref("a1", "geo.map_layer"))).toBe(true);
     expect(isGeoMapArtifact(ref("a2", "geo.map_document"))).toBe(true);
     expect(isGeoMapArtifact(ref("a3", "geo.feature_collection"))).toBe(true);
-    expect(isGeoMapArtifact(ref("a4", "geo.raster_scan"))).toBe(true);
+    // The retired raster-scan artifact type paints nothing: its TIFF opens in
+    // the TIFF viewer, whose own toggle asks the map for tiles.
+    expect(isGeoMapArtifact(ref("a4", "geo.raster_scan"))).toBe(false);
     expect(isGeoMapArtifact(ref("a5", "geo.map_layer", 2))).toBe(false);
     expect(isGeoMapArtifact(ref("a6", "file.tiff"))).toBe(false);
     expect(isGeoMapArtifact(ref("a7", "table.data"))).toBe(false);

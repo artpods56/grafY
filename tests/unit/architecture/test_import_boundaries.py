@@ -408,8 +408,9 @@ def test_system_plugins_depend_on_core_not_outer_layers() -> None:
     Restored from the guard 93063148 deleted. What kept it out was
     `grafy_plugin_gis.smoke`, which built an `InMemoryUnitOfWork` and a
     `LocalFileObjectStore` inside the family package; constructing an object
-    store is composition-root work (ADR 0011), so that harness is
-    `scripts/smoke_gis.py` now and the guard has nothing left to excuse.
+    store is composition-root work (ADR 0011), so that harness moved to
+    `scripts/smoke_gis.py`, which the family's own suite has since replaced.
+    Either way the guard has nothing left to excuse.
     `grafy_workbench` is not on the forbidden list because ADR 0017 makes a
     Plugin application code beside the builtin families: importing them is
     importing application code, not reaching out to a host.

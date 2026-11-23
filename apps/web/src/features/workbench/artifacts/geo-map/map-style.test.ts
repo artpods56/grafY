@@ -7,150 +7,36 @@
  * a raster source built from a TileJSON without attribution carried
  * `attribution: undefined`, which the optional TypeScript property accepts and
  * the spec does not (`sources.<id>.attribution: string expected, undefined
- * found`). No test here constructs a map, so this file leaves `maplibre-gl` and
- * `pmtiles` un-mocked and hands every emitted style to `validateStyleMin` — the
- * check the library itself makes when a style loads.
+ * found`). No test here constructs a map, so this file leaves `maplibre-gl`
+ * un-mocked and hands every emitted style to `validateStyleMin` — the check the
+ * library itself makes when a style loads.
  */
 import { validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { describe, expect, it } from "vitest";
 
-import type {
-  GeoBounds,
-  GeoRenderCategorizedPointStyle,
-  GeoRenderDescriptor,
-  GeoRenderLabelStyle,
-  GeoRenderLayer,
-  GeoRenderPointCategory,
-} from "@/lib/api";
+import type { GeoBounds, GeoRenderDescriptor, GeoRenderLayer } from "@/lib/api";
 
 import type { ArtifactViewerIncomingBinding } from "../artifact-interactions";
 import {
   applyInteractionOverrides,
   applyLayerOverrides,
 } from "./layer-overrides";
-import { categoryLayerId, layerId } from "./layer-identity";
-import { createGeoMapStyle, pmtilesUrl } from "./map-style";
+import { layerId } from "./layer-identity";
+import { createGeoMapStyle } from "./map-style";
 import { OSM_LAYER_ID, OSM_SOURCE_ID } from "./style-constants";
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const BOUNDS: GeoBounds = [-180, -85, 180, 85];
 
-const LABEL: GeoRenderLabelStyle = {
-  property: "name",
-  color: "#111827",
-  size: 12,
-  halo_color: "#ffffff",
-  halo_width: 1,
-};
-
-const VECTOR_ARCHIVE_URL =
-  "/v1/workspaces/11111111-1111-4111-8111-111111111111/artifacts/22222222-2222-4222-8222-222222222222/download?part=vector";
 const TILEJSON_URL =
   "/api/v1/workspaces/11111111-1111-4111-8111-111111111111/artifacts/44444444-4444-4444-8444-444444444444/tilejson.json";
+const OTHER_TILEJSON_URL =
+  "/api/v1/workspaces/11111111-1111-4111-8111-111111111111/artifacts/66666666-6666-4666-8666-666666666666/tilejson.json";
 
 // --- Fixtures ---------------------------------------------------------------
 
-function vectorLayer(
-  mutate: (layer: GeoRenderLayer) => GeoRenderLayer = (layer) => layer,
-): GeoRenderLayer {
-  return mutate({
-    id: "layer-vector",
-    title: "Countries",
-    visible: true,
-    opacity: 1,
-    min_zoom: 0,
-    max_zoom: 14,
-    source: {
-      kind: "vector",
-      artifact_id: "22222222-2222-4222-8222-222222222222",
-      archive_url: VECTOR_ARCHIVE_URL,
-      bounds: BOUNDS,
-      fields: [],
-      source_layer: "countries",
-      min_zoom: 0,
-      max_zoom: 14,
-    },
-    style: {
-      kind: "vector",
-      fill: { color: "#2563eb", enabled: true, opacity: 0.6 },
-      line: { color: "#1d4ed8", enabled: true, opacity: 1, width: 1.5 },
-      outline: { color: "#0f172a", enabled: true, opacity: 1, width: 0.8 },
-      point: {
-        color: "#dc2626",
-        enabled: true,
-        opacity: 1,
-        radius: 4,
-        stroke_color: "#ffffff",
-        stroke_width: 1,
-      },
-      label: LABEL,
-    },
-  });
-}
-
-function categorizedLayer(
-  mutate: (layer: GeoRenderLayer) => GeoRenderLayer = (layer) => layer,
-): GeoRenderLayer {
-  const style: GeoRenderCategorizedPointStyle = {
-    kind: "categorized_points",
-    category_property: "kind",
-    label: LABEL,
-    categories: [
-      {
-        id: "city",
-        title: "City",
-        min_zoom: 3,
-        max_zoom: 12,
-        values: ["city", "town"],
-        point: {
-          color: "#dc2626",
-          enabled: true,
-          opacity: 1,
-          radius: 5,
-          stroke_color: "#ffffff",
-          stroke_width: 1.5,
-        },
-      },
-      {
-        id: "village",
-        title: "Village",
-        min_zoom: 6,
-        max_zoom: 14,
-        values: ["hamlet", 3, true],
-        point: {
-          color: "#059669",
-          enabled: false,
-          opacity: 0.5,
-          radius: 3,
-          stroke_color: "#0f172a",
-          stroke_width: 0,
-        },
-      },
-    ],
-  };
-  return mutate({
-    id: "layer-points",
-    title: "Places",
-    visible: true,
-    opacity: 0.9,
-    min_zoom: 2,
-    max_zoom: 13,
-    source: {
-      kind: "vector",
-      artifact_id: "33333333-3333-4333-8333-333333333333",
-      archive_url:
-        "/api/v1/artifacts/33333333-3333-4333-8333-333333333333/pmtiles",
-      bounds: null,
-      fields: [],
-      source_layer: "places",
-      min_zoom: 0,
-      max_zoom: 14,
-    },
-    style,
-  });
-}
-
+/** One raster layer: a tilejson the map fetches by tile, as every layer now is. */
 function rasterLayer(
   attribution: string | null = null,
   mutate: (layer: GeoRenderLayer) => GeoRenderLayer = (layer) => layer,
@@ -182,26 +68,32 @@ function rasterLayer(
   });
 }
 
+/** A second raster, so a composed map has more than one layer to order. */
+function otherRasterLayer(
+  attribution: string | null = "© survey",
+  mutate: (layer: GeoRenderLayer) => GeoRenderLayer = (layer) => layer,
+): GeoRenderLayer {
+  return mutate(
+    rasterLayer(attribution, (layer) => ({
+      ...layer,
+      id: "layer-mosaic",
+      title: "Mosaic",
+      min_zoom: 3,
+      max_zoom: 20,
+      source: {
+        ...layer.source,
+        artifact_id: "66666666-6666-4666-8666-666666666666",
+        tilejson_url: OTHER_TILEJSON_URL,
+      },
+    })),
+  );
+}
+
 /** A TileJSON with no attribution at all reaches the client without the key. */
 function withoutAttributionKey(layer: GeoRenderLayer): GeoRenderLayer {
   const source = { ...layer.source } as unknown as Record<string, unknown>;
   delete source.attribution;
   return { ...layer, source } as GeoRenderLayer;
-}
-
-function categoriesOf(
-  layer: GeoRenderLayer,
-): readonly GeoRenderPointCategory[] {
-  if (layer.style.kind !== "categorized_points") {
-    throw new Error(`layer ${layer.id} is not categorized`);
-  }
-  return layer.style.categories;
-}
-
-function categoryOf(layer: GeoRenderLayer, id: string): GeoRenderPointCategory {
-  const category = categoriesOf(layer).find((candidate) => candidate.id === id);
-  if (!category) throw new Error(`layer ${layer.id} has no category ${id}`);
-  return category;
 }
 
 function descriptor(
@@ -229,7 +121,6 @@ type LayerRecord = {
   id: string;
   type?: string;
   source?: string;
-  "source-layer"?: string;
   minzoom?: number;
   maxzoom?: number;
   filter?: unknown;
@@ -406,317 +297,45 @@ describe("createGeoMapStyle", () => {
       ).toBe("none");
       expect(styleErrors(style)).toEqual([]);
     });
-  });
-
-  describe("vector layers", () => {
-    it("publishes one pmtiles vector source per layer", () => {
-      const style = build("none", [vectorLayer()]);
-      const source = sourceOf(style, "grafy-geo-source-layer-vector");
-
-      expect(source.type).toBe("vector");
-      expect(source.url).toBe(pmtilesUrl(WORKSPACE_ID, VECTOR_ARCHIVE_URL));
-      expect(String(source.url).startsWith("pmtiles://")).toBe(true);
-      expect(source.minzoom).toBe(0);
-      expect(source.maxzoom).toBe(14);
-      expect("attribution" in source).toBe(false);
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("emits the fill, outline, line, point, and label layers in order", () => {
-      const style = build("none", [vectorLayer()]);
-
-      expect(style.layers.map((layer) => layer.id)).toEqual([
-        "grafy-geo-layer-vector-fill",
-        "grafy-geo-layer-vector-outline",
-        "grafy-geo-layer-vector-line",
-        "grafy-geo-layer-vector-point",
-        "grafy-geo-layer-vector-label",
-      ]);
-      for (const id of style.layers.map((layer) => layer.id)) {
-        const layer = layerOf(style, id);
-        expect(layer.source).toBe("grafy-geo-source-layer-vector");
-        expect(layer["source-layer"]).toBe("countries");
-        expect(layer.minzoom).toBe(0);
-        expect(layer.maxzoom).toBe(14);
-      }
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("keeps each geometry kind under its own filter and paint", () => {
-      const layer = vectorLayer();
-      const style = build("none", [layer]);
-      const id = (kind: string) => layerId(layer, kind);
-
-      const fill = layerOf(style, id("fill"));
-      expect(fill.type).toBe("fill");
-      expect(fill.filter).toEqual([
-        "any",
-        ["==", ["geometry-type"], "Polygon"],
-        ["==", ["geometry-type"], "MultiPolygon"],
-      ]);
-      expect(fill.paint?.["fill-color"]).toBe("#2563eb");
-      expect(fill.paint?.["fill-opacity"]).toBeCloseTo(0.6, 10);
-
-      const outline = layerOf(style, id("outline"));
-      expect(outline.type).toBe("line");
-      expect(outline.filter).toEqual([
-        "any",
-        ["==", ["geometry-type"], "Polygon"],
-        ["==", ["geometry-type"], "MultiPolygon"],
-      ]);
-      expect(outline.paint?.["line-color"]).toBe("#0f172a");
-      expect(outline.paint?.["line-width"]).toBe(0.8);
-
-      const line = layerOf(style, id("line"));
-      expect(line.type).toBe("line");
-      expect(line.filter).toEqual([
-        "any",
-        ["==", ["geometry-type"], "LineString"],
-        ["==", ["geometry-type"], "MultiLineString"],
-      ]);
-      expect(line.paint?.["line-color"]).toBe("#1d4ed8");
-
-      const point = layerOf(style, id("point"));
-      expect(point.type).toBe("circle");
-      expect(point.filter).toEqual([
-        "any",
-        ["==", ["geometry-type"], "Point"],
-        ["==", ["geometry-type"], "MultiPoint"],
-      ]);
-      expect(point.paint?.["circle-radius"]).toBe(4);
-      expect(point.paint?.["circle-pitch-scale"]).toBe("viewport");
-
-      const label = layerOf(style, id("label"));
-      expect(label.type).toBe("symbol");
-      expect(label.layout?.["text-field"]).toEqual([
-        "coalesce",
-        ["to-string", ["get", "name"]],
-        "",
-      ]);
-      expect(label.layout?.["text-size"]).toBe(12);
-      expect(label.paint?.["text-halo-color"]).toBe("#ffffff");
-      expect(label.paint?.["text-halo-width"]).toBe(1);
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("carries layer opacity into every sub-layer", () => {
-      const layer = vectorLayer();
-      const style = build("none", [
-        vectorLayer((candidate) => ({ ...candidate, opacity: 0.5 })),
-      ]);
-
-      expect(
-        layerOf(style, layerId(layer, "fill")).paint?.["fill-opacity"],
-      ).toBeCloseTo(0.3, 10);
-      expect(
-        layerOf(style, layerId(layer, "point")).paint?.["circle-opacity"],
-      ).toBeCloseTo(0.5, 10);
-      expect(
-        layerOf(style, layerId(layer, "label")).paint?.["text-opacity"],
-      ).toBe(0.5);
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it.each(["fill", "outline", "line", "point"] as const)(
-      "draws %s as none once its own switch is off",
-      (kind) => {
-        const layer = vectorLayer((candidate) => {
-          const style = candidate.style;
-          if (style.kind !== "vector") return candidate;
-          return {
-            ...candidate,
-            style: { ...style, [kind]: { ...style[kind], enabled: false } },
-          };
-        });
-        const style = build("none", [layer]);
-
-        expect(layerOf(style, layerId(layer, kind)).layout?.visibility).toBe(
-          "none",
-        );
-        expect(styleErrors(style)).toEqual([]);
-      },
-    );
 
     it("keeps an invisible layer in the style rather than dropping it", () => {
-      const layer = vectorLayer((candidate) => ({
-        ...candidate,
-        visible: false,
-      }));
-      const style = build("none", [layer]);
-
-      expect(style.layers).toHaveLength(5);
-      for (const id of style.layers.map((candidate) => candidate.id)) {
-        expect(layerOf(style, id).layout?.visibility).toBe("none");
-      }
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("falls back to the default label and hides it when the style has none", () => {
-      const layer = vectorLayer((candidate) => ({
-        ...candidate,
-        style: { ...candidate.style, label: null },
-      }));
-      const style = build("none", [layer]);
-      const label = layerOf(style, layerId(layer, "label"));
-
-      expect(label.layout?.visibility).toBe("none");
-      expect(label.layout?.["text-field"]).toEqual([
-        "coalesce",
-        ["to-string", ["get", "name"]],
-        "",
+      const style = build("none", [
+        rasterLayer(null, (candidate) => ({ ...candidate, visible: false })),
+        otherRasterLayer(),
       ]);
-      expect(label.layout?.["text-size"]).toBe(12);
-      expect(styleErrors(style)).toEqual([]);
-    });
-  });
 
-  describe("categorized point layers", () => {
-    it("emits one point and one label layer per category", () => {
-      const layer = categorizedLayer();
-      const style = build("none", [layer]);
-      const categories = categoriesOf(layer);
-
-      expect(categories).toHaveLength(2);
       expect(style.layers.map((candidate) => candidate.id)).toEqual([
-        "grafy-geo-layer-points-category-city-point",
-        "grafy-geo-layer-points-category-city-label",
-        "grafy-geo-layer-points-category-village-point",
-        "grafy-geo-layer-points-category-village-label",
+        "grafy-geo-layer-raster-raster",
+        "grafy-geo-layer-mosaic-raster",
       ]);
-      for (const category of categories) {
-        expect(
-          layerOf(style, categoryLayerId(layer, category, "point")).type,
-        ).toBe("circle");
-        expect(
-          layerOf(style, categoryLayerId(layer, category, "label")).type,
-        ).toBe("symbol");
-      }
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("intersects the category zoom range with the layer's", () => {
-      const layer = categorizedLayer();
-      const city = categoryOf(layer, "city");
-      const village = categoryOf(layer, "village");
-      const style = build("none", [layer]);
-
-      // Layer 2–13 ∩ city 3–12, and layer 2–13 ∩ village 6–14.
-      for (const id of [
-        categoryLayerId(layer, city, "point"),
-        categoryLayerId(layer, city, "label"),
-      ]) {
-        expect(layerOf(style, id).minzoom).toBe(3);
-        expect(layerOf(style, id).maxzoom).toBe(12);
-      }
-      for (const id of [
-        categoryLayerId(layer, village, "point"),
-        categoryLayerId(layer, village, "label"),
-      ]) {
-        expect(layerOf(style, id).minzoom).toBe(6);
-        expect(layerOf(style, id).maxzoom).toBe(13);
-      }
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("filters each category on its own values", () => {
-      const layer = categorizedLayer();
-      const style = build("none", [layer]);
-      const filter = layerOf(
-        style,
-        "grafy-geo-layer-points-category-city-point",
-      ).filter;
-
-      expect(filter).toEqual([
-        "all",
-        [
-          "any",
-          ["==", ["geometry-type"], "Point"],
-          ["==", ["geometry-type"], "MultiPoint"],
-        ],
-        ["in", ["get", "kind"], ["literal", ["city", "town"]]],
-      ]);
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("paints each category and offsets its label clear of the point", () => {
-      const layer = categorizedLayer();
-      const style = build("none", [layer]);
-      const city = layerOf(style, "grafy-geo-layer-points-category-city-point");
-      const cityLabel = layerOf(
-        style,
-        "grafy-geo-layer-points-category-city-label",
-      );
-
-      expect(city.paint?.["circle-color"]).toBe("#dc2626");
-      expect(city.paint?.["circle-radius"]).toBe(5);
-      expect(city.paint?.["circle-stroke-width"]).toBe(1.5);
-      // Layer opacity 0.9 × city opacity 1.
-      expect(city.paint?.["circle-opacity"]).toBeCloseTo(0.9, 10);
-      expect(cityLabel.layout?.["text-radial-offset"]).toBeCloseTo(
-        5 / LABEL.size + 0.35,
-        10,
-      );
-      expect(cityLabel.layout?.["text-variable-anchor"]).toEqual([
-        "top",
-        "bottom",
-        "left",
-        "right",
-      ]);
-      expect(cityLabel.layout?.["text-justify"]).toBe("auto");
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("hides a disabled category and keeps its layers valid", () => {
-      const layer = categorizedLayer();
-      const style = build("none", [layer]);
-
       expect(
-        layerOf(style, "grafy-geo-layer-points-category-village-point").layout
-          ?.visibility,
+        layerOf(style, "grafy-geo-layer-raster-raster").layout?.visibility,
       ).toBe("none");
       expect(
-        layerOf(style, "grafy-geo-layer-points-category-village-label").layout
-          ?.visibility,
-      ).toBe("none");
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("keeps a layer whose every category is switched off valid", () => {
-      const layer = categorizedLayer((candidate) => {
-        if (candidate.style.kind !== "categorized_points") return candidate;
-        return {
-          ...candidate,
-          style: {
-            ...candidate.style,
-            categories: candidate.style.categories.map((category) => ({
-              ...category,
-              point: { ...category.point, enabled: false },
-            })),
-          },
-        };
-      });
-      const style = build("none", [layer]);
-
-      expect(style.layers).toHaveLength(4);
+        layerOf(style, "grafy-geo-layer-mosaic-raster").layout?.visibility,
+      ).toBe("visible");
       expect(styleErrors(style)).toEqual([]);
     });
   });
 
   describe("composed maps", () => {
-    const layers = [vectorLayer(), categorizedLayer(), rasterLayer("© survey")];
+    const layers = [rasterLayer("© survey"), otherRasterLayer()];
 
     it("adds the openstreetmap basemap underneath the data layers", () => {
       const style = build("openstreetmap", layers);
 
       expect(Object.keys(style.sources)).toEqual([
         OSM_SOURCE_ID,
-        "grafy-geo-source-layer-vector",
-        "grafy-geo-source-layer-points",
         "grafy-geo-source-layer-raster",
+        "grafy-geo-source-layer-mosaic",
       ]);
       const basemapSource = sourceOf(style, OSM_SOURCE_ID);
       expect(basemapSource.attribution).toBe("© OpenStreetMap contributors");
-      expect(style.layers[0]?.id).toBe(OSM_LAYER_ID);
+      expect(style.layers.map((layer) => layer.id)).toEqual([
+        OSM_LAYER_ID,
+        "grafy-geo-layer-raster-raster",
+        "grafy-geo-layer-mosaic-raster",
+      ]);
       expect(styleErrors(style)).toEqual([]);
     });
 
@@ -731,8 +350,8 @@ describe("createGeoMapStyle", () => {
     it("keeps every source and layer id unique", () => {
       const style = build("openstreetmap", [
         ...layers,
-        vectorLayer((layer) => ({ ...layer, id: "layer-vector-2" })),
         rasterLayer(null, (layer) => ({ ...layer, id: "layer-raster-2" })),
+        otherRasterLayer(null, (layer) => ({ ...layer, id: "layer-mosaic-2" })),
       ]);
       const layerIds = style.layers.map((layer) => layer.id);
       const sourceIds = Object.keys(style.sources);
@@ -746,14 +365,12 @@ describe("createGeoMapStyle", () => {
       ["openstreetmap", "openstreetmap"],
       ["none", "none"],
     ] as const)(
-      "validates a raster-only, vector-only, and mixed map on the %s basemap",
+      "validates a one-layer and a many-layer map on the %s basemap",
       (_label, basemap) => {
         const cases: GeoRenderLayer[][] = [
           [rasterLayer(null)],
-          [vectorLayer()],
-          [categorizedLayer()],
-          [vectorLayer(), categorizedLayer()],
-          [categorizedLayer(), rasterLayer("© survey"), vectorLayer()],
+          [rasterLayer("© survey"), otherRasterLayer()],
+          [otherRasterLayer(), rasterLayer(null)],
         ];
         for (const caseLayers of cases) {
           const style = build(basemap, caseLayers);
@@ -767,9 +384,8 @@ describe("createGeoMapStyle", () => {
   describe("overrides applied before the style is read back", () => {
     it("keeps the style valid after applyLayerOverrides repaints it", () => {
       const layers = [
-        vectorLayer(),
-        categorizedLayer(),
-        rasterLayer(null, (layer) => ({ ...layer, visible: false })),
+        rasterLayer("© survey"),
+        otherRasterLayer(null, (layer) => ({ ...layer, visible: false })),
       ];
       const style = build("openstreetmap", layers);
 
@@ -778,36 +394,29 @@ describe("createGeoMapStyle", () => {
       expect(styleErrors(style)).toEqual([]);
       expect(undefinedStylePaths(style)).toEqual([]);
       expect(
-        layerOf(style, "grafy-geo-layer-raster-raster").layout?.visibility,
+        layerOf(style, "grafy-geo-layer-mosaic-raster").layout?.visibility,
       ).toBe("none");
       expect(
-        layerOf(style, "grafy-geo-layer-vector-fill").layout?.visibility,
+        layerOf(style, "grafy-geo-layer-raster-raster").layout?.visibility,
       ).toBe("visible");
     });
 
     it("re-draws the layers an override moved in the card list", () => {
-      const first = vectorLayer();
-      const second = categorizedLayer();
+      const first = rasterLayer("© survey");
+      const second = otherRasterLayer();
       const style = build("none", [first, second]);
 
       applyLayerOverrides(styleAsMap(style), [second, first]);
 
       expect(style.layers.map((layer) => layer.id)).toEqual([
-        "grafy-geo-layer-points-category-city-point",
-        "grafy-geo-layer-points-category-city-label",
-        "grafy-geo-layer-points-category-village-point",
-        "grafy-geo-layer-points-category-village-label",
-        "grafy-geo-layer-vector-fill",
-        "grafy-geo-layer-vector-outline",
-        "grafy-geo-layer-vector-line",
-        "grafy-geo-layer-vector-point",
-        "grafy-geo-layer-vector-label",
+        "grafy-geo-layer-mosaic-raster",
+        "grafy-geo-layer-raster-raster",
       ]);
       expect(styleErrors(style)).toEqual([]);
     });
 
     it("keeps zoom-range and opacity edits inside the spec", () => {
-      const layer = vectorLayer((candidate) => ({
+      const layer = rasterLayer("© survey", (candidate) => ({
         ...candidate,
         opacity: 0.4,
         min_zoom: 4,
@@ -817,70 +426,22 @@ describe("createGeoMapStyle", () => {
 
       applyLayerOverrides(styleAsMap(style), [layer]);
 
-      const fill = layerOf(style, layerId(layer, "fill"));
-      expect(fill.minzoom).toBe(4);
-      expect(fill.maxzoom).toBe(9);
-      expect(fill.paint?.["fill-opacity"]).toBeCloseTo(0.24, 10);
+      const raster = layerOf(style, layerId(layer, "raster"));
+      expect(raster.minzoom).toBe(4);
+      expect(raster.maxzoom).toBe(9);
+      // Layer opacity 0.4 × raster opacity 0.75.
+      expect(raster.paint?.["raster-opacity"]).toBeCloseTo(0.3, 10);
       expect(styleErrors(style)).toEqual([]);
     });
 
-    it("keeps interaction filters and highlight expressions valid", () => {
-      const layers = [vectorLayer(), categorizedLayer(), rasterLayer(null)];
+    it("keeps a selection carrying filters and highlights valid", () => {
+      const layers = [rasterLayer("© survey"), otherRasterLayer()];
       const style = build("openstreetmap", layers);
 
       applyInteractionOverrides(styleAsMap(style), layers, SELECTION);
 
       expect(styleErrors(style)).toEqual([]);
       expect(undefinedStylePaths(style)).toEqual([]);
-    });
-
-    it("combines the selection filter with each layer's own geometry filter", () => {
-      const layer = vectorLayer();
-      const style = build("none", [layer]);
-
-      applyInteractionOverrides(styleAsMap(style), [layer], SELECTION);
-
-      // One incoming binding contributes one OR-group over its selected rows,
-      // and the "filter" effect ANDs the groups together.
-      const selectionFilter: unknown[] = [
-        "all",
-        [
-          "any",
-          [
-            "all",
-            ["==", ["get", "kind"], "city"],
-            ["==", ["get", "population"], 1200],
-            ["==", ["get", "capital"], true],
-          ],
-          ["all", ["==", ["get", "kind"], "town"]],
-        ],
-      ];
-      expect(layerOf(style, layerId(layer, "point")).filter).toEqual([
-        "all",
-        [
-          "any",
-          ["==", ["geometry-type"], "Point"],
-          ["==", ["geometry-type"], "MultiPoint"],
-        ],
-        selectionFilter,
-      ]);
-      // A layer with no geometry filter of its own takes the selection alone.
-      expect(layerOf(style, layerId(layer, "label")).filter).toEqual(
-        selectionFilter,
-      );
-      expect(styleErrors(style)).toEqual([]);
-    });
-
-    it("draws highlighted features with case expressions", () => {
-      const layer = vectorLayer();
-      const style = build("none", [layer]);
-
-      applyInteractionOverrides(styleAsMap(style), [layer], SELECTION);
-
-      const point = layerOf(style, layerId(layer, "point"));
-      expect(Array.isArray(point.paint?.["circle-radius"])).toBe(true);
-      expect((point.paint?.["circle-radius"] as unknown[])[0]).toBe("case");
-      expect(styleErrors(style)).toEqual([]);
     });
 
     it("leaves a raster layer untouched by an interaction", () => {

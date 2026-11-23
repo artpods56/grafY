@@ -53,7 +53,6 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/features/{feature_index}",
         "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/raster/tilejson.json",
         "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/raster/{z}/{x}/{y}.png",
-        "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/vector.pmtiles",
         "/v1/workspaces/{workspace_id}/invitation-candidates/resolve",
         "/v1/workspaces/{workspace_id}/invitations",
         "/v1/workspaces/{workspace_id}/invitations/{invitation_id}",

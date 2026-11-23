@@ -9,11 +9,11 @@ from grafy_core.artifacts import (
     ArtifactRefSequence,
     ArtifactTypeKey,
     ArtifactTypeSpec,
+    JsonObject,
     NoConfig,
     NodeInput,
     NodeOutput,
 )
-from grafy_core.domain.implementation import BuiltinImplementationIdentity
 from grafy_core.nodes import (
     Node,
     NodeExecutionContext,
@@ -563,17 +563,18 @@ async def test_output_persister_rejects_passthrough_key_and_shape_mismatches() -
 
 @pytest.mark.asyncio
 async def test_sequence_items_carry_the_metadata_of_their_port() -> None:
-    """Every item of a sequence port came from the same implementation as its port.
+    """Every item of a sequence port carries what was recorded for its port.
 
-    The implementation identity recorded in artifact metadata is how a later read tells
-    whether an output came from the code now running. It reached a single-value output
+    The persister copies a node's metadata onto each artifact it writes, and the keys
+    are the writer's business, so the fixture uses an ordinary pair. Recording metadata
+    reached a single-value output
     and was dropped from each item written for a MANY port, so every sequence output —
-    a decoded image, a scanned raster — could not read as current to the build that
-    produced it, and the card that follows it fell back to waiting.
+    a decoded image, a scanned raster — lost what its run had recorded about it,
+    and the card that follows it fell back to waiting.
     """
 
     values = _values(_sample_artifact(OUTPUT_VALUE, SampleOut))
-    implementation = BuiltinImplementationIdentity(build_digest="a" * 64)
+    recorded: JsonObject = {"origin": "port", "attempt": 2}
 
     result = await OutputPersister(values).persist(
         derive_output_contract(ManyOutput),
@@ -583,7 +584,7 @@ async def test_sequence_items_carry_the_metadata_of_their_port() -> None:
         ),
         ManyOutput(values=[SampleOut(1), SampleOut(2), SampleOut(3)]),
         MaterializationProvenance(refs_by_input={}),
-        metadata={"implementation": implementation.provenance_document()},
+        metadata=recorded,
     )
 
     assert isinstance(result, PersistedNodeOutput)
@@ -595,11 +596,8 @@ async def test_sequence_items_carry_the_metadata_of_their_port() -> None:
         {"value": 2},
         {"value": 3},
     ]
-    assert [row.row.metadata["implementation"] for row in stored] == [
-        {"kind": "builtin", "build_digest": "a" * 64},
-        {"kind": "builtin", "build_digest": "a" * 64},
-        {"kind": "builtin", "build_digest": "a" * 64},
-    ]
+    assert [row.row.metadata["origin"] for row in stored] == ["port", "port", "port"]
+    assert [row.row.metadata["attempt"] for row in stored] == [2, 2, 2]
 
 
 def test_multiple_map_inputs_validate_and_have_many_shape() -> None:

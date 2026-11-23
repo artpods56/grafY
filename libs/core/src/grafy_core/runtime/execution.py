@@ -12,7 +12,6 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.domain.implementation import ImplementationIdentity
 from grafy_core.nodes import (
     InputContract,
     Node,
@@ -81,7 +80,6 @@ class NodeRuntime:
         inputs: Mapping[str, object],
         config: JsonObject | None = None,
         artifact_type_bindings: Mapping[str, ArtifactTypeKey] | None = None,
-        implementation: ImplementationIdentity | None = None,
         transforms: Mapping[str, Sequence[EdgeTransform]] | None = None,
         metadata: JsonObject | None = None,
         *,
@@ -143,8 +141,6 @@ class NodeRuntime:
         recorded: JsonObject = {} if metadata is None else dict(metadata)
         if context.output_metadata:
             recorded.update(context.output_metadata)
-        if implementation is not None:
-            recorded["implementation"] = implementation.provenance_document()
         persisted = await self._persister.persist_validated(
             contract=output_contract,
             context=context,

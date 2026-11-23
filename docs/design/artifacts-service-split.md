@@ -16,7 +16,6 @@ Baseline check results recorded on `6f9c6cfb7f1eba1acc771ba10af783a461a3bbd5`:
 1. `uv run ruff check`
    - Result: exit 0 (`All checks passed!`).
 2. `uv run ruff format --check`
-   - Repo-wide result: exit 1 because 12 unrelated files on `origin/main` are unformatted (`apps/api/src/grafy_api/auth/service.py`, `apps/api/src/grafy_api/auth/transactions.py`, `infra/db/migrations/versions/0001_baseline.py`, `infra/e2e/openai-provider/server.py`, `libs/core/src/grafy_core/domain/agent_keys.py`, `libs/core/src/grafy_core/runtime/in_memory.py`, `libs/persistence/src/grafy_persistence/adapters/repositories/agent_conversations.py`, `plugins/llm/src/grafy_plugin_llm/openai_compatible_sdk.py`, `tests/unit/agents/test_conversations.py`, `tests/unit/persistence/test_agent_conversation_persistence.py`, `tests/unit/persistence/test_agent_key_persistence.py`, `tests/unit/plugins/test_openai_compatible_provider.py`). Do not touch those 12 files.
    - Scoped result on all files in this specification: exit 0 (`21 files already formatted`).
 3. `uv run pyright`
    - Repo-wide result: exit 1 (`1448 errors` pre-existing across the workspace; CI runs `uv run pyright libs/client`, which exits 0 with `0 errors`).
@@ -93,7 +92,7 @@ Edited test files:
 
 ## Target modules in `apps/api/src/grafy_api/artifacts/`
 
-Note on `geo.py` vs `geo_tiles.py`: non-WMS spatial code in today's `service.py` spans ~810 lines (`L182-320` and `L648-1359`), which cannot fit into one module under the 450-line limit. Splitting spatial operations into `geo.py` (map render descriptors and linked feature queries) and `geo_tiles.py` (PMTiles archives, exact feature reads, and raster TileJSON/XYZ/WMS tiles) keeps every split module under 450 lines without duplicating helpers.
+Note on `geo.py` vs `geo_tiles.py`: non-WMS spatial code in today's `service.py` spans ~810 lines (`L182-320` and `L648-1359`), which cannot fit into one module under the 450-line limit. Splitting spatial operations into `geo.py` (map render descriptors and linked feature queries) and `geo_tiles.py` (exact feature reads, and raster TileJSON/XYZ/WMS tiles) keeps every split module under 450 lines without duplicating helpers.
 
 ### 1. `apps/api/src/grafy_api/artifacts/errors.py` (~35 lines)
 
@@ -224,7 +223,6 @@ Public `__all__` imported by callers:
 
 Moves from `service.py`:
 - `GEO_FEATURE_COLLECTION_ARTIFACT_TYPE = "geo.feature_collection"` (`service.py:84`)
-- `GEO_RASTER_SCAN_ARTIFACT_TYPE = "geo.raster_scan"` (`service.py:85`)
 - `GEO_MAP_LAYER_ARTIFACT_TYPE = "geo.map_layer"` (`service.py:86`)
 - `GEO_MAP_DOCUMENT_ARTIFACT_TYPE = "geo.map_document"` (`service.py:87`)
 - `GEO_INTERACTION_FEATURE_LIMIT = 250_000` (`service.py:94`)
@@ -238,7 +236,7 @@ Moves from `service.py`:
   - `__init__(self, uow: UnitOfWorkPort, storage: FileStoragePort, *, availability: ArtifactAvailability) -> None` (`self._uow = uow`, `self._storage = storage`, `self._availability = availability`)
   - `get(self, workspace_id: UUID, artifact_id: UUID) -> ArtifactObject | None` (`async with self._uow as uow: return await uow.artifacts.get(workspace_id, artifact_id)`)
   - `query_geo_features` (`service.py:709-792`, using `async with self._uow as uow:`, `feature_count(...)`, `interaction_values_equal(...)` from `models.py`, and inlining `_geo_feature_matches` from `L182-194` inside the `for feature in page.collections[0].items:` loop)
-  - `load_geo_render` (`service.py:895-995`, using `source_name(artifact)`, `resolve_exact_artifacts(self._availability, ...)`, `GeoVectorStyle.model_validate(StoredGeoVectorStyle())` in place of `GeoVectorStyle.default()`, and inlining `_raster_render_layer` from `L1063-1093` for the `GEO_RASTER_SCAN_ARTIFACT_TYPE` branch)
+  - `load_geo_render` (`service.py:895-995`, using `source_name(artifact)`, `resolve_exact_artifacts(self._availability, ...)`, `GeoVectorStyle.model_validate(StoredGeoVectorStyle())` in place of `GeoVectorStyle.default()`, and inlining `_raster_render_layer` from `L1063-1093` for the raster branch)
   - `_feature_render_layer` (`service.py:1026-1061`, using `feature_count(artifact)` and inlining `_feature_fields` from `L1005-1024`)
   - `_resolve_render_layer` (`service.py:1095-1170`, using `resolve_exact_artifacts(self._availability, ...)` and inlining `_raster_render_layer` from `L1063-1093` for the `layer.source.kind == "raster_scan"` branch)
 
@@ -248,7 +246,6 @@ Public `__all__` imported by callers:
 - `GEO_INTERACTION_FEATURE_LIMIT`
 - `GEO_MAP_DOCUMENT_ARTIFACT_TYPE`
 - `GEO_MAP_LAYER_ARTIFACT_TYPE`
-- `GEO_RASTER_SCAN_ARTIFACT_TYPE`
 - `feature_count`
 - `resolve_exact_artifacts`
 - `source_name`
@@ -256,23 +253,15 @@ Public `__all__` imported by callers:
 ### 6. `apps/api/src/grafy_api/artifacts/geo_tiles.py` (~370 lines)
 
 Moves from `service.py`:
-- `PMTILES_RESPONSE_MAX_BYTES = 16 * 1_024 * 1_024` (`service.py:91`)
-- `IMMUTABLE_CACHE_CONTROL = "private, max-age=31536000, immutable"` (`service.py:92`)
-- `GeoArchiveRead` frozen slots dataclass (`service.py:97-105`)
-- `_single_byte_range` (`service.py:273-300`)
 - `ArtifactGeoTileService`:
   - `__init__(self, uow: UnitOfWorkPort, storage: FileStoragePort, *, availability: ArtifactAvailability, wms: WmsTileClient) -> None` (`self._uow = uow`, `self._storage = storage`, `self._availability = availability`, `self._wms = wms`)
   - `get(self, workspace_id: UUID, artifact_id: UUID) -> ArtifactObject | None` (`async with self._uow as uow: return await uow.artifacts.get(workspace_id, artifact_id)`)
   - `load_exact_feature` (`service.py:661-707`, using `feature_count(artifact)` from `geo.py`)
-  - `load_vector_archive` (`service.py:794-893`, using `feature_count(artifact)` from `geo.py`, `GeoRangeNotSatisfiableError` and `ArtifactResponseTooLargeError` from `errors.py`, and inlining `_etag` from `L267-270`)
   - `load_raster_tilejson` (`service.py:1206-1269`, using `source_name` and `resolve_exact_artifacts` from `geo.py`)
-  - `load_raster_tile` (`service.py:1271-1359`, inlining `_valid_tile_coordinates` from `L316-320` as `if z < 0 or z > 24 or x < 0 or y < 0 or x >= (1 << z) or y >= (1 << z): return None`, delegating WMS layers to `await self._wms.fetch_tile(layer.source, z=z, x=x, y=y)`, resolving `projection` for both `GEO_RASTER_SCAN_ARTIFACT_TYPE` and `raster_scan` map layers, and running the stored-tile read from `L1333-1359` once inline at the end of `load_raster_tile`)
+  - `load_raster_tile` (`service.py:1271-1359`, inlining `_valid_tile_coordinates` from `L316-320` as `if z < 0 or z > 24 or x < 0 or y < 0 or x >= (1 << z) or y >= (1 << z): return None`, delegating WMS layers to `await self._wms.fetch_tile(layer.source, z=z, x=x, y=y)`, resolving the raster source for `raster_scan` map layers, and running the stored-tile read from `L1333-1359` once inline at the end of `load_raster_tile`)
 
 Public `__all__` imported by callers:
 - `ArtifactGeoTileService`
-- `GeoArchiveRead`
-- `IMMUTABLE_CACHE_CONTROL`
-- `PMTILES_RESPONSE_MAX_BYTES`
 
 ### 7. `apps/api/src/grafy_api/artifacts/models.py` (edited, ~655 lines)
 
@@ -299,8 +288,6 @@ from grafy_api.artifacts.errors import (
 from grafy_api.artifacts.geo import ArtifactGeoService
 from grafy_api.artifacts.geo_tiles import (
     ArtifactGeoTileService,
-    GeoArchiveRead,
-    IMMUTABLE_CACHE_CONTROL,
 )
 from grafy_api.artifacts.tables import ArtifactTableService, TableQueryPage
 from grafy_api.artifacts.wms import GeoTileRead, WmsTileClient
@@ -312,10 +299,8 @@ __all__ = [
     "ArtifactGeoTileService",
     "ArtifactResponseTooLargeError",
     "ArtifactTableService",
-    "GeoArchiveRead",
     "GeoRangeNotSatisfiableError",
     "GeoTileRead",
-    "IMMUTABLE_CACHE_CONTROL",
     "TableQueryPage",
     "WmsTileClient",
 ]
@@ -349,8 +334,6 @@ Note: `apps/api/src/grafy_api/app_state.py`, `apps/api/src/grafy_api/artifact_av
 | 4 | `artifacts/service.py:182` | `_geo_feature_matches` | 1 (`service.py:775`) | **inline** (into `query_geo_features` in `geo.py`) | Single caller; extracting `feature.get("properties")` once per feature in the loop is clearer. |
 | 5 | `artifacts/service.py:197` | `_coordinate_bounds` | 2 (`service.py:212` self, `233`) | **keep** (in `geo.py`) | Recursive traversal over nested GeoJSON coordinate arrays; cannot be inlined. |
 | 6 | `artifacts/service.py:217` | `_geometry_bounds` | 2 (`service.py:230` self, `778`) | **keep** (in `geo.py`) | Recursive `GeometryCollection` and geometry bounds dispatch; cannot be inlined. |
-| 7 | `artifacts/service.py:267` | `_etag` | 1 (`service.py:828`) | **inline** (into `load_vector_archive` in `geo_tiles.py`) | Single caller; 3-line ETag quoting expression. |
-| 8 | `artifacts/service.py:273` | `_single_byte_range` | 1 (`service.py:834`) | **keep** (in `geo_tiles.py`) | Named RFC byte-range parser whose `ValueError` boundary maps cleanly to HTTP 416. |
 | 9 | `artifacts/service.py:303` | `_bounds_union` | 4 (`service.py:214, 226, 789, 979`) | **keep** (in `geo.py`) | 4 callers across geometry traversal, feature queries, and map document bounds. |
 | 10 | `artifacts/service.py:316` | `_valid_tile_coordinates` | 1 (`service.py:1280`) | **inline** (into `load_raster_tile` in `geo_tiles.py`) | Single caller; 2-line coordinate guard reads directly at top of `load_raster_tile`. |
 | 11 | `artifacts/service.py:323` | `_web_mercator_tile_bounds` | 1 (`service.py:1373`) | **inline** (into `WmsTileClient.fetch_tile` in `wms.py`) | Single caller; 6 straight arithmetic lines right above `bbox` parameter assembly. |
@@ -466,10 +449,10 @@ All scoped production files contain zero nested `def` or `async def` blocks at d
 5. **`apps/api/src/grafy_api/v1/routes/artifacts/views.py`**
    - Replace `ArtifactDependency` on each route with the single matching dependency:
      - `ArtifactGeoDependency`: `get_geo_render_descriptor` (`L69`), `query_geo_features` (`L97`)
-     - `ArtifactGeoTileDependency`: `get_geo_vector_pmtiles` (`L131`), `get_geo_exact_feature` (`L189`), `get_geo_raster_tilejson` (`L221`), `get_geo_raster_tile` (`L266`)
+     - `ArtifactGeoTileDependency`: `get_geo_exact_feature` (`L189`), `get_geo_raster_tilejson` (`L221`), `get_geo_raster_tile` (`L266`)
      - `ArtifactTableDependency`: `get_table_artifact_page` (`L317`), `get_table_artifact_schema` (`L378`), `query_table_artifact_page` (`L407`), `get_table_artifact_cell` (`L466`), `create_table_text_artifacts` (`L505`)
      - `ArtifactContentDependency`: `get_artifact_content` (`L545`), `get_artifact_download` (`L580`)
-   - Update imports from `grafy_api.artifacts.service` to `grafy_api.artifacts.errors` (`ArtifactResponseTooLargeError`, `GeoRangeNotSatisfiableError`) and `grafy_api.artifacts.geo_tiles` (`IMMUTABLE_CACHE_CONTROL`).
+   - Update imports from `grafy_api.artifacts.service` to `grafy_api.artifacts.errors` (`ArtifactResponseTooLargeError`) and `grafy_api.artifacts.geo_tiles`.
    - Inline `_artifact_streaming_response` (`L42-54`) into `get_artifact_content` and `get_artifact_download`, and inline `TableSchemaResponse.from_page(page)` (`L392`) as `TableSchemaResponse(columns=[TableColumnResponse(id=col.id, title=col.title, value_type=col.value_type) for col in page.columns], total_rows=page.total_rows)` (importing `TableColumnResponse` from `grafy_api.artifacts.models`).
 
 ### Test callers
@@ -499,7 +482,6 @@ All scoped production files contain zero nested `def` or `async def` blocks at d
 8. **`tests/integration/artifacts/test_gis_artifacts.py`**
    - Import `geo_tiles` (`from grafy_api.artifacts import geo_tiles`), `ArtifactGeoService` (`from grafy_api.artifacts.geo import ArtifactGeoService`), `ArtifactGeoTileService` (`from grafy_api.artifacts.geo_tiles import ArtifactGeoTileService`), `WmsTileClient` (`from grafy_api.artifacts.wms import WmsTileClient`), and `artifact_geo_service, artifact_geo_tile_service` from `grafy_api.v1.routes.artifacts.dependencies`.
    - In `geo_artifact_client` (`L141-166`): construct `availability = ArtifactAvailability(unit_of_work)`, `wms = WmsTileClient()`, `geo = ArtifactGeoService(unit_of_work, storage, availability=availability)`, and `tiles = ArtifactGeoTileService(unit_of_work, storage, availability=availability, wms=wms)`. Override both `artifact_geo_service` and `artifact_geo_tile_service` on `application.dependency_overrides`, and run `asyncio.run(wms.close())` after `yield`.
-   - On `L596`, change `monkeypatch.setattr(artifact_services, "PMTILES_RESPONSE_MAX_BYTES", 8)` to `monkeypatch.setattr(geo_tiles, "PMTILES_RESPONSE_MAX_BYTES", 8)`.
    - In `test_wms_tile_pins_validated_address_against_dns_rebinding` (`L793-891`): construct `mock_client = httpx.AsyncClient(transport=httpx.MockTransport(respond))`, `wms = WmsTileClient(client=mock_client)`, and `tiles = ArtifactGeoTileService(unit_of_work, storage, availability=ArtifactAvailability(unit_of_work), wms=wms)`. Call `await tiles.load_raster_tile(...)` and `await wms.close()` in `finally:`.
 
 ## Ordered commit plan
@@ -669,7 +651,7 @@ Every command below must succeed before finishing:
 
 ## Open questions for the maintainer
 
-1. **`geo.py` + `geo_tiles.py` split vs single `geo.py`.** Non-WMS spatial logic in `service.py` is ~810 lines (`L182-320` and `L648-1359`), so a single `geo.py` cannot meet the <= 450-line cap. This spec splits it into `geo.py` (~420 lines: map render descriptors and linked feature queries) and `geo_tiles.py` (~370 lines: PMTiles archives, exact feature reads, and raster TileJSON/XYZ/WMS tiles). Confirm this 6-module split (`errors`, `wms`, `content`, `tables`, `geo`, `geo_tiles`), or waive the 450-line cap for a single `geo.py`.
+1. **`geo.py` + `geo_tiles.py` split vs single `geo.py`.** Non-WMS spatial logic in `service.py` is ~810 lines (`L182-320` and `L648-1359`), so a single `geo.py` cannot meet the <= 450-line cap. This spec splits it into `geo.py` (~420 lines: map render descriptors and linked feature queries) and `geo_tiles.py` (~370 lines: exact feature reads, and raster TileJSON/XYZ/WMS tiles). Confirm this 6-module split (`errors`, `wms`, `content`, `tables`, `geo`, `geo_tiles`), or waive the 450-line cap for a single `geo.py`.
 2. **Pre-existing `artifacts/models.py` length.** `apps/api/src/grafy_api/artifacts/models.py` is 689 lines on `origin/main` (~645 lines after deleting the 5 orphan wrappers). This spec leaves `models.py` as one file rather than splitting Pydantic models across multiple files. Confirm that the 450-line cap applies only to the service modules extracted from `service.py`.
 
 ## Blockers
