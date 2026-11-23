@@ -23,14 +23,46 @@ WORKSPACE_ID = UUID("11111111-1111-4111-8111-111111111111")
 
 
 def _catalog_payload() -> dict[str, object]:
+    """A trimmed ``GET /workspaces/{id}/nodes`` body: packs, roles, service ports.
+
+    Fields the server always sends but this test does not exercise stay out; the
+    full-body parity check lives in ``test_openapi_contract.py``.
+    """
+    document_ocr = {"id": "ocr.document", "version": 1}
     return {
+        "packs": [
+            {
+                "slug": "essentials",
+                "title": "Essentials",
+                "description": "Import tables, work with images, and handle sequences.",
+                "always_on": True,
+                "subscribed": True,
+                "operator_count": 8,
+                "provider_count": 0,
+                "includes_project_graphs": False,
+            },
+            {
+                "slug": "document_ocr",
+                "title": "Document OCR",
+                "description": "Read scanned documents and extract tables from Markdown.",
+                "always_on": False,
+                "subscribed": False,
+                "operator_count": 2,
+                "provider_count": 1,
+                "includes_project_graphs": False,
+            },
+        ],
         "plugins": [],
         "artifact_types": [],
+        "service_contracts": [
+            {"id": "ocr.document", "version": 1, "title": "Document OCR"}
+        ],
         "nodes": [
             {
                 "operator_id": "text.input",
                 "operator_version": 1,
                 "plugin_slug": "text",
+                "pack_slugs": ["essentials"],
                 "title": "Text",
                 "description": "Produces text.",
                 "config_schema": {},
@@ -50,8 +82,100 @@ def _catalog_payload() -> dict[str, object]:
                     }
                 ],
                 "origin": "builtin",
+                "role": "operator",
                 "runnable": True,
-            }
+            },
+            {
+                "operator_id": "ocr.read_document",
+                "operator_version": 1,
+                "plugin_slug": "ocr",
+                "pack_slugs": ["document_ocr"],
+                "title": "Read document",
+                "description": "Reads a scan or PDF with the connected engine.",
+                "config_schema": {},
+                "input_schema": {},
+                "output_schema": {},
+                "inputs": [
+                    {
+                        "name": "document",
+                        "direction": "input",
+                        "artifact_type": {
+                            "id": "image.raster",
+                            "schema_version": 1,
+                        },
+                        "also_accepts": [{"id": "file.pdf", "schema_version": 1}],
+                        "shape": "one",
+                        "accepted_shapes": ["one"],
+                    },
+                    {
+                        "name": "engine",
+                        "direction": "input",
+                        "kind": "service",
+                        "service_contracts": [document_ocr],
+                        "shape": "one",
+                        "accepted_shapes": ["one"],
+                        "agent_default": "hidden",
+                    },
+                ],
+                "outputs": [
+                    {
+                        "name": "regions",
+                        "direction": "output",
+                        "artifact_type": {
+                            "id": "image.regions",
+                            "schema_version": 1,
+                        },
+                        "requires_service_feature": {
+                            "input_port": "engine",
+                            "feature": "regions",
+                        },
+                        "shape": "one",
+                        "accepted_shapes": ["one"],
+                        "required": False,
+                    }
+                ],
+                "origin": "builtin",
+                "role": "operator",
+                "runnable": True,
+            },
+            {
+                "operator_id": "reducto.ocr.provider",
+                "operator_version": 1,
+                "plugin_slug": "external.reducto",
+                "pack_slugs": ["document_ocr"],
+                "title": "Reducto",
+                "description": "Supplies a Reducto OCR reader.",
+                "config_schema": {},
+                "input_schema": {},
+                "output_schema": {},
+                "inputs": [],
+                "outputs": [
+                    {
+                        "name": "engine",
+                        "direction": "output",
+                        "kind": "service",
+                        "service_contracts": [document_ocr],
+                        "service_features": [
+                            {"contract": document_ocr, "features": ["blocks"]}
+                        ],
+                        "shape": "one",
+                        "accepted_shapes": ["one"],
+                    }
+                ],
+                "secret_inputs": [
+                    {
+                        "name": "api_key",
+                        "config_dependencies": [],
+                        "provider_kind": "reducto",
+                        "supports_verification": True,
+                        "title": "API key",
+                        "description": "Write-only bearer credential for Reducto.",
+                    }
+                ],
+                "origin": "builtin",
+                "role": "provider",
+                "runnable": True,
+            },
         ],
         "artifact_conversions": [
             {
@@ -113,7 +237,35 @@ async def test_catalog_uses_bearer_pat_and_returns_typed_snapshot() -> None:
     async with client:
         catalog = await client.catalog.get(WORKSPACE_ID)
 
+    assert [(pack.slug, pack.always_on, pack.subscribed) for pack in catalog.packs] == [
+        ("essentials", True, True),
+        ("document_ocr", False, False),
+    ]
     assert catalog.nodes[0].operator_id == "text.input"
+    assert catalog.nodes[0].role == "operator"
+    assert catalog.nodes[0].pack_slugs == ("essentials",)
+
+    reader = catalog.nodes[1]
+    assert reader.role == "operator"
+    assert reader.pack_slugs == ("document_ocr",)
+    engine = next(port for port in reader.inputs if port.name == "engine")
+    assert [(key.id, key.version) for key in engine.service_contracts] == [
+        ("ocr.document", 1)
+    ]
+    assert [
+        (contract.id, contract.title) for contract in catalog.service_contracts
+    ] == [("ocr.document", "Document OCR")]
+    regions = next(port for port in reader.outputs if port.name == "regions")
+    requirement = regions.requires_service_feature
+    assert requirement is not None
+    assert (requirement.input_port, requirement.feature) == ("engine", "regions")
+
+    provider = catalog.nodes[2]
+    assert provider.role == "provider"
+    (supplied,) = provider.outputs[0].service_features
+    assert supplied.contract.id == "ocr.document"
+    assert supplied.features == ("blocks",)
+
     assert catalog.artifact_conversions[0].source.id == "scalar.text"
     assert catalog.artifact_conversions[0].target.id == "text.markdown"
     assert "nrt_live_secret" not in repr(client)
