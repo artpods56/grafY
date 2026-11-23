@@ -52,8 +52,8 @@ function LocationRow({ workspace }: { workspace: Workspace }) {
         <strong>{workspaceDisplayName(workspace)}</strong>
         <small>
           {workspace.kind === "personal"
-            ? "Your private graph location"
-            : "A graph location shared with this team"}
+            ? "Your private project location"
+            : "A project location shared with this team"}
         </small>
       </span>
       <span className="grafy-workspace-list__open">Settings</span>
@@ -237,7 +237,7 @@ export default function WorkspacesPage() {
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
               placeholder="Search teams"
-              aria-label="Search teams and graph locations"
+              aria-label="Search teams and project locations"
             />
           </label>
         </div>
@@ -267,7 +267,7 @@ export default function WorkspacesPage() {
             <p>
               {normalizedQuery
                 ? "No teams or locations match that search."
-                : "No graph locations are available to this account."}
+                : "No project locations are available to this account."}
             </p>
             {normalizedQuery ? (
               <Button
@@ -281,20 +281,20 @@ export default function WorkspacesPage() {
           </div>
         ) : (
           <>
-            <LocationSection title="My graphs" workspaces={personal} />
+            <LocationSection title="My projects" workspaces={personal} />
             <LocationSection title="Teams" workspaces={teams} />
           </>
         )}
 
         <aside
           className="grafy-workspace-edu"
-          aria-label="About graph locations"
+          aria-label="About project locations"
         >
           <div>
             <h2>How locations work</h2>
             <p>
-              My graphs is private to you. A Team location shares its graphs
-              with that Team while keeping access and graph data together.
+              My projects is private to you. A Team location shares its projects
+              with that Team while keeping access and project data together.
             </p>
           </div>
           <span className="grafy-workspace-edu__mark" aria-hidden="true" />

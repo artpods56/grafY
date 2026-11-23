@@ -49,6 +49,7 @@ from grafy_api.project_contracts import (
     CheckpointProjectResponse,
     CopyExactHeadRequest,
     CreateProjectRequest,
+    CreateStarterProjectRequest,
     ProjectBrowserListResponse,
     ProjectCheckpointListResponse,
     ProjectCheckpointResponse,
@@ -75,10 +76,12 @@ from grafy_api.v1.routes.auth.dependencies import (
     browser_actor,
     require_workspace_capability,
 )
+from grafy_api.starters import StarterUnavailableError
 from grafy_api.v1.routes.projects.dependencies import (
     CollaborationDependency,
     ProjectDependency,
 )
+from grafy_api.v1.routes.starter_dependencies import StarterDependency
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/projects", tags=["projects"])
 browser_router = APIRouter(prefix="/me/projects", tags=["project browser"])
@@ -258,6 +261,42 @@ async def copy_exact_head(
     ) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ProjectResponse.from_project(copy.project)
+
+
+# Same pair as creation: the service writes checkpoint 1 with the head, and a
+# token's scope is only visible here.
+@router.post(
+    "/starter",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_starter_project(
+    body: CreateStarterProjectRequest,
+    starter: StarterDependency,
+    access: require_workspace_capability(WorkspaceCapability.CREATE_PROJECT),
+    checkpoint_access: require_workspace_capability(
+        WorkspaceCapability.CHECKPOINT_PROJECT
+    ),
+) -> ProjectResponse:
+    del checkpoint_access
+    try:
+        project = await starter.create_starter(
+            actor=access.actor,
+            workspace_id=access.workspace_id,
+            starter_id=body.starter_id,
+        )
+    except StarterUnavailableError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (NotFoundError, MissingProjectHeadError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CollaborationCommandRejectedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (
+        CollaborationHeadConflictError,
+        CollaborationIdempotencyMismatchError,
+    ) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ProjectResponse.from_project(project)
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

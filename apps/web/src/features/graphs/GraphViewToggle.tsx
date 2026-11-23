@@ -12,7 +12,7 @@ import { GRAPH_BROWSER_VIEWS, type GraphBrowserView } from "./browser-filters";
  * Names the group for assistive tech. The graph browsers are addressed through
  * this name, so it lives here rather than at each call site.
  */
-export const GRAPH_VIEW_ARIA_LABEL = "Graph views";
+export const GRAPH_VIEW_ARIA_LABEL = "Project views";
 
 /** One entry per view the address contract allows: a missing label is a type error. */
 const VIEW_LABELS: Record<

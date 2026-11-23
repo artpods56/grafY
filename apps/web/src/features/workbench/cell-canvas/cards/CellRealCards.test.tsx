@@ -722,6 +722,14 @@ describe("CellArtifactCard", () => {
     expect(stemTag(html, "out")).toContain("width:5.5px");
   });
 
+  it("offers + Next step on a card that asks for one, and keeps its ports", () => {
+    expect(renderArtifact(PREVIEWS.image)).not.toContain("Next step");
+    const html = renderArtifact(PREVIEWS.image, { onNextStep: () => {} });
+    expect(html).toContain("+ Next step");
+    expect(html).toContain('data-port-id="in"');
+    expect(html).toContain('data-port-id="out"');
+  });
+
   it("has no inner strip and names its file in the floating header", () => {
     const html = renderArtifact(PREVIEWS.image);
     expect(html).not.toContain("data-card-strip");

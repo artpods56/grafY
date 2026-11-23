@@ -862,6 +862,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/library/starter-sample": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Seed Starter Sample
+         * @description Place the bundled historical page at the Library root, or return it.
+         */
+        readonly post: operations["seed_starter_sample_v1_workspaces__workspace_id__library_starter_sample_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/members": {
         readonly parameters: {
             readonly query?: never;
@@ -1674,6 +1694,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/projects/starter": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Create Starter Project */
+        readonly post: operations["create_starter_project_v1_workspaces__workspace_id__projects_starter_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/uploads": {
         readonly parameters: {
             readonly query?: never;
@@ -2472,6 +2509,10 @@ export interface components {
             readonly name: string;
             /** Project Id */
             readonly project_id?: string | null;
+        };
+        /** CreateStarterProjectRequest */
+        readonly CreateStarterProjectRequest: {
+            readonly starter_id: components["schemas"]["StarterId"];
         };
         /**
          * CreateUploadRequest
@@ -4488,6 +4529,12 @@ export interface components {
              */
             readonly title: string;
         };
+        /**
+         * StarterId
+         * @description Code-defined Projects a historian can open without drawing a graph.
+         * @enum {string}
+         */
+        readonly StarterId: "transcribe_page" | "extract_table";
         /** StartRunRequest */
         readonly StartRunRequest: {
             /** Graph Id */
@@ -7586,6 +7633,37 @@ export interface operations {
             };
         };
     };
+    readonly seed_starter_sample_v1_workspaces__workspace_id__library_starter_sample_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     readonly list_members_v1_workspaces__workspace_id__members_get: {
         readonly parameters: {
             readonly query?: never;
@@ -9388,6 +9466,41 @@ export interface operations {
         readonly requestBody: {
             readonly content: {
                 readonly "application/json": components["schemas"]["CopyExactHeadRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly create_starter_project_v1_workspaces__workspace_id__projects_starter_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateStarterProjectRequest"];
             };
         };
         readonly responses: {

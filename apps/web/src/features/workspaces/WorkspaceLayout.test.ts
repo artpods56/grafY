@@ -220,12 +220,12 @@ describe("workspace route and capability state", () => {
     ).toBe("00000000-0000-0000-0000-000000000001");
   });
 
-  it("labels a personal workspace as My graphs in the UI", () => {
+  it("labels a personal workspace as My projects in the UI", () => {
     expect(
       workspaceDisplayName(
         workspace([], { kind: "personal", name: "Personal workspace" }),
       ),
-    ).toBe("My graphs");
+    ).toBe("My projects");
     expect(workspaceDisplayName(workspace([], { name: "Operations" }))).toBe(
       "Operations",
     );
@@ -249,7 +249,7 @@ describe("workspace route and capability state", () => {
       name: "Personal workspace",
     });
 
-    expect(workspaceMobileContextLabel("/graphs", personal)).toBe("Graphs");
+    expect(workspaceMobileContextLabel("/graphs", personal)).toBe("Projects");
     expect(workspaceMobileContextLabel("/workspaces", personal)).toBe(
       "Teams & access",
     );
@@ -262,7 +262,7 @@ describe("workspace route and capability state", () => {
         workspace([], { name: "Operations" }),
       ),
     ).toBe("Operations");
-    expect(workspaceMobileContextLabel("/unknown", personal)).toBe("Graphs");
+    expect(workspaceMobileContextLabel("/unknown", personal)).toBe("Projects");
   });
 
   it("resolves the selected workspace to the active slug, else personal", () => {
@@ -316,7 +316,7 @@ describe("workspace rail route lifecycle", () => {
     testState.pathname = "/workspaces/operations/projects";
     const { container } = await renderWorkspaceRail();
     const allGraphs = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "All graphs",
+      (button) => button.textContent?.trim() === "All projects",
     );
 
     expect(allGraphs?.classList.contains("is-active")).toBe(true);
@@ -377,10 +377,10 @@ describe("workspace rail route lifecycle", () => {
     );
   });
 
-  it("offers the Artifacts panel only while a workbench is open", async () => {
+  it("offers the Library panel only while a workbench is open", async () => {
     const artifactsButton = (container: HTMLElement) =>
       [...container.querySelectorAll("button")].find(
-        (button) => button.textContent?.trim() === "Artifacts",
+        (button) => button.textContent?.trim() === "Library",
       );
 
     const { container, rerender } = await renderWorkspaceRail();

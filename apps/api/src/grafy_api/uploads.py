@@ -331,6 +331,35 @@ class UploadService:
             # destination: another writer may have published successfully.
             raise
 
+    async def store_reserved_bytes(
+        self,
+        *,
+        workspace_id: UUID,
+        upload_id: UUID,
+        stream: ReadableStream,
+    ) -> None:
+        """Write bytes for an upload this process reserved.
+
+        A client PUT still goes through ``receive_content``, which refuses a
+        deployment that only accepts signed URLs. Seeding a bundled file is not
+        that PUT. The bytes never leave the process, so either transport can
+        take them, and completion still inspects the stored object.
+        """
+
+        record = await self._require_pending(workspace_id, upload_id)
+        command = SaveFileCommand(
+            bucket=record.bucket,
+            path=record.object_key,
+            stream=_LimitedReader(
+                stream,
+                self._config.max_upload_bytes,
+                record.original_filename,
+            ),
+            content_type=record.content_type or "application/octet-stream",
+            metadata={"original_filename": record.original_filename},
+        )
+        _ = await self._storage.save(command)
+
     async def complete_upload(
         self,
         *,

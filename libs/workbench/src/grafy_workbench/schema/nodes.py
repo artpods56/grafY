@@ -137,7 +137,7 @@ class JsonSchemaBuilderOutput(NodeOutput):
 class JsonSchemaBuilderNode(
     Node[JsonSchemaBuilderConfig, JsonSchemaBuilderInput, JsonSchemaBuilderOutput]
 ):
-    """Builds one object JSON Schema with optional connected child schemas."""
+    """Describes the fields a later step should fill in."""
 
     @override
     async def run(

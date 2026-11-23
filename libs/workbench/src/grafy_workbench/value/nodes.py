@@ -39,5 +39,5 @@ class IntegerOutput(NodeOutput):
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def integer(config: IntegerConfig, _inputs: IntegerInput) -> IntegerOutput:
-    """Produces a configured integer value."""
+    """Holds a whole number you type, for a later step to read."""
     return IntegerOutput(value=config.value)

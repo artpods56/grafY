@@ -67,7 +67,7 @@ export const canvasNodeRegistry: NodeRegistry = {
       operator_version: 1,
       plugin_slug: "text",
       title: "Text input",
-      description: "Produces one configured multiline text value.",
+      description: "Holds text you type, for a later step to read.",
       config_schema: {
         additionalProperties: false,
         properties: {
@@ -139,8 +139,7 @@ export const canvasNodeRegistry: NodeRegistry = {
       operator_version: 1,
       plugin_slug: "schema",
       title: "Schema Builder",
-      description:
-        "Builds one object JSON Schema with optional connected child schemas.",
+      description: "Describes the fields a later step should fill in.",
       config_schema: {
         $defs: {
           JsonSchemaBuilderField: {

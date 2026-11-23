@@ -1724,6 +1724,19 @@
         "title": "CreateProjectRequest",
         "type": "object"
       },
+      "CreateStarterProjectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "starter_id": {
+            "$ref": "#/components/schemas/StarterId"
+          }
+        },
+        "required": [
+          "starter_id"
+        ],
+        "title": "CreateStarterProjectRequest",
+        "type": "object"
+      },
       "CreateUploadRequest": {
         "description": "Reserve one upload before the bytes leave the client.",
         "properties": {
@@ -7208,6 +7221,15 @@
         ],
         "title": "StartRunRequest",
         "type": "object"
+      },
+      "StarterId": {
+        "description": "Code-defined Projects a historian can open without drawing a graph.",
+        "enum": [
+          "transcribe_page",
+          "extract_table"
+        ],
+        "title": "StarterId",
+        "type": "string"
       },
       "StorageUploadTargetResponse": {
         "description": "Signed object-storage target; send only the required signed headers.",
@@ -12732,6 +12754,58 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/library/starter-sample": {
+      "post": {
+        "description": "Place the bundled historical page at the Library root, or return it.",
+        "operationId": "seed_starter_sample_v1_workspaces__workspace_id__library_starter_sample_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Seed Starter Sample",
+        "tags": [
+          "library"
+        ]
+      }
+    },
     "/v1/workspaces/{workspace_id}/members": {
       "get": {
         "operationId": "list_members_v1_workspaces__workspace_id__members_get",
@@ -13635,6 +13709,67 @@
           }
         ],
         "summary": "Copy Exact Head",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/starter": {
+      "post": {
+        "operationId": "create_starter_project_v1_workspaces__workspace_id__projects_starter_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStarterProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Starter Project",
         "tags": [
           "projects"
         ]

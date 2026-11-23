@@ -6,11 +6,31 @@ Labels below were read from the components that render them. The app was not exe
 
 ## Summary
 
-The workbench speaks in implementation names. A finished transcription is `Sequence<Markdown>`, a port is `document_url` or `· many`, and the same idea is also `list[Markdown]` in the type popover. OCR cards put the model id, page range, table format, and time limit on the face of the card, with choices `r-1` and `md`. Failures quote plug UUIDs, node ids, and `file_format_mismatch`, and they do not say what to do. Run state says Fresh, Stale, fingerprint, and artifact. A collection’s extra socket is hidden until the card is selected. An empty canvas does not say how to add a step.
+The workbench speaks in implementation names. A finished transcription is `Sequence<Markdown>`, a port is `document_url` or `· many`, and the same idea is also `list[Markdown]` in the type popover. OCR cards put the model id, page range, table format, and time limit on the face of the card, with choices `r-1` and `md`. Failures quote plug UUIDs, node ids, and `file_format_mismatch`, and they do not say what to do. Run state says Fresh, Stale, fingerprint, and artifact. A collection’s extra socket is hidden until the card is selected. A blank canvas now offers a dropzone, a sample historical page, and Browse steps.
 
 Out of scope: canvas edge routing, edge geometry, handle measurement, and connection hit testing. Do not edit `apps/web/src/features/workbench/canvas/edges/`. Do not change artifact type ids, operator ids, stored config keys, or the meaning of stored defaults.
 
 Execute every task whose class is `mechanical`. Leave every `needs-design` task unimplemented. Do not approximate a needs-design task with a partial behavior change.
+
+## Onboarding shipped with the historian copy pass
+
+A Workspace with Document OCR turned on shows two recipes above the project list: Transcribe a scanned page, and Extract a table from a scan. Each recipe creates a Project that starts from the bundled public-domain register page, runs Document OCR, and, for the table recipe, extracts a spreadsheet table. When one visible Document OCR engine has a single matching shared credential, that engine and credential are already bound, so Run is ready on first open. When an engine is visible and the credential is ambiguous, the engine is wired and the canvas asks for the key. When no Document OCR engine is enabled, the engine slot stays empty.
+
+A blank editable canvas shows three ways in, centered, until a file, sample, step, or note is on the canvas: drop a scanned page, PDF, or spreadsheet; try the sample historical page; or browse steps. A file card with one output offers + Next step, which opens the same downstream list as dragging that output.
+
+Browser and shell copy says Projects. The workbench rail says Library and Results. The step picker’s folded card hides the raw schema words string, boolean, and integer. Those words stay inside Technical details.
+
+Catalog sentences shipped with this pass:
+
+- Take a range: Keeps a run of items from a list, from a starting place through as many as you ask for. The first item is place 0.
+- Pick one: Takes one item from a list by its place. The first item is place 0.
+- Schema Builder: Describes the fields a later step should fill in.
+- Text input: Holds text you type, for a later step to read.
+- Integer: Holds a whole number you type, for a later step to read.
+- Geo features to table: Turns map places into a table, and keeps each place's location.
+- Import OGC WFS features: Loads map places from an online map service, inside the area you set.
+
+HX-23 through HX-27 stay needs-design.
 
 ## Task index
 
@@ -174,8 +194,8 @@ Change `title=` and the docstring only. Leave `operator_id` and `version` as the
 | ------------------------------------------------------------------ | ----------------------------------- | ---------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------- |
 | `libs/workbench/src/grafy_workbench/sequence/nodes.py` `collect`   | `Collect`                           | `Collects homogeneous artifact refs without rewriting their payloads.` | `Group into a list`    | `Keeps pages or files together, in the order you add them. Every item has to be the same kind of thing.` |
 | same file `count`                                                  | `Count`                             | `Counts the refs in an artifact sequence.`                             | `Count items`          | `Counts how many items are in a list.`                                                                   |
-| same file `slice_sequence`                                         | `Slice`                             | `Selects a contiguous range from an ordered artifact sequence.`        | `Take a range`         | `Keeps a stretch of items from a list. The first item is number 0.`                                      |
-| same file `item_at`                                                | `Pick item`                         | `Picks one artifact ref from an ordered artifact sequence.`            | `Pick one`             | `Picks one item from a list. The first item is number 0.`                                                |
+| same file `slice_sequence`                                         | `Slice`                             | `Selects a contiguous range from an ordered artifact sequence.`        | `Take a range`         | `Keeps a run of items from a list, from a starting place through as many as you ask for. The first item is place 0.` |
+| same file `item_at`                                                | `Pick item`                         | `Picks one artifact ref from an ordered artifact sequence.`            | `Pick one`             | `Takes one item from a list by its place. The first item is place 0.`                                    |
 | `plugins/llm/src/grafy_plugin_llm/openai_compatible.py`            | `OpenAI-compatible Chat Completion` | `Calls a saved graph's OpenAI-compatible Chat Completions endpoint.`   | `Ask a model`          | `Sends the instructions to a chat model and keeps the answer.`                                           |
 | `plugins/llm/src/grafy_plugin_llm/prompt.py`                       | `Create prompt message`             | (use the current docstring’s first line if you need to find it)        | `Write an instruction` | `The words, and any pictures, you want the model to read.`                                               |
 | same file                                                          | `Draw regions`                      |                                                                        | `Draw boxes`           | `Draws the boxes from a reading onto the page.`                                                          |
