@@ -9,6 +9,11 @@ export const SPIKES = [
     title: "Port types",
     question: "Where should a generic port show its resolved type?",
   },
+  {
+    id: "ui-kit",
+    title: "Component kit",
+    question: "What does each kit part look like at every size it declares?",
+  },
 ] as const;
 
 export type SpikeId = (typeof SPIKES)[number]["id"];
