@@ -80,32 +80,18 @@ from grafy_core.table_contracts import (
     TableColumn,
     TableValueType,
 )
-from grafy_plugin_mistral.ocr import (
-    API_KEY as MISTRAL_API_KEY,
-)
-from grafy_plugin_mistral.ocr import (
-    MistralOcrConfig,
-    MistralOcrInput,
-    MistralOcrNode,
-    MistralReader,
-)
 from grafy_storage import LocalFileObjectStore
+from grafy_plugin_litellm_ocr.plugin import LITELLM_OCR
+from grafy_plugin_map_toponyms.plugin import MAP_TOPONYMS
 from grafy_workbench.ocr import OCR
-from grafy_workbench.ocr.craft import CRAFT_MODEL
-from grafy_workbench.ocr.provider_http import serve_client
-from grafy_workbench.ocr.text_regions import TiffTextRegions
+from grafy_plugin_litellm_ocr.craft import CRAFT_MODEL
+from grafy_core.provider_http import serve_client
+from grafy_plugin_map_toponyms.text_regions import TiffTextRegions
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
 from PIL import Image
 from pydantic import Field, SecretStr
 
-from tests.unit.plugins.test_mistral_ocr import (
-    FakeNodeSecrets as MistralFakeSecrets,
-)
-from tests.unit.plugins.test_mistral_ocr import (
-    FakeProvider,
-    document_payload,
-)
 from tests.unit.runs.fakes import (
     PROJECT_ID,
     USER_ID,
@@ -420,6 +406,8 @@ def harness(tmp_path: Path, tiff_windows):
     registry.install(TABLES)
     registry.install(FIXTURES)
     registry.install(OCR)
+    registry.install(LITELLM_OCR)
+    registry.install(MAP_TOPONYMS)
     registry.freeze()
     secrets = RecordingNodeSecrets()
     values = ArtifactValues(
@@ -535,39 +523,6 @@ async def test_a_contract_violation_names_the_registered_provider(
                 ),
             },
         )
-
-
-async def test_old_and_new_mistral_nodes_share_a_transcription() -> None:
-    payload = document_payload()
-    provider = FakeProvider(payload)
-    secrets = MistralFakeSecrets(SecretStr("key"))
-    context = NodeExecutionContext(
-        workspace_id=UUID("00000000-0000-0000-0000-000000000911"),
-        project_id=uuid4_safe(),
-        graph_id="g",
-        node_id="old",
-    )
-    from grafy_core.nodes import bind_node_secrets
-
-    bound = bind_node_secrets(context, secrets, (MISTRAL_API_KEY,))
-    image = RasterImage.from_content(
-        _png(), content_type="image/png", filename="page.png"
-    )
-    old = MistralOcrNode(provider=provider)
-    old_out = await old.run(bound, MistralOcrConfig(), MistralOcrInput(image=image))
-    reader = MistralReader(
-        config=MistralOcrConfig(),
-        api_key=SecretStr("key"),
-        workspace_id=bound.workspace_id,
-        provider=provider,
-    )
-    new_out = await reader.read(image)
-    assert old_out.markdown == new_out.markdown
-    assert old_out.markdown.markdown == "# Invoice\n\nTotal 10"
-
-
-def uuid4_safe() -> UUID:
-    return UUID("00000000-0000-0000-0000-000000000912")
 
 
 async def test_two_providers_each_supply_their_own_key(harness) -> None:
@@ -788,6 +743,8 @@ async def test_run_service_marks_ocr_stale_when_the_provider_changes(
     registry.install(TABLES)
     registry.install(FIXTURES)
     registry.install(OCR)
+    registry.install(LITELLM_OCR)
+    registry.install(MAP_TOPONYMS)
     registry.freeze()
     secrets = RecordingNodeSecrets({"provider": "k1", "other": "k2"})
     values = ArtifactValues(
@@ -963,7 +920,7 @@ async def test_craft_provider_persists_source_pixel_polygons(
     async def record_retry(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("grafy_workbench.ocr.provider_http.sleep", record_retry)
+    monkeypatch.setattr("grafy_core.provider_http.sleep", record_retry)
 
     def craft(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
@@ -1028,7 +985,7 @@ async def test_craft_provider_persists_source_pixel_polygons(
 
 
 async def test_craft_detector_sends_configured_thresholds_with_each_window():
-    from grafy_workbench.ocr.craft import CraftConfig, CraftDetector
+    from grafy_plugin_litellm_ocr.craft import CraftConfig, CraftDetector
 
     captured: dict[str, object] = {}
 

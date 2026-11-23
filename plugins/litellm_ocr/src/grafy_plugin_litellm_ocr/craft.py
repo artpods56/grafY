@@ -10,18 +10,17 @@ from grafy_core.contracts.ocr import (
     TextBoxDetector,
     TextRegion,
 )
-from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import (
     NodeHttpEgressContract,
-    NodeSecretInput,
 )
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from grafy_workbench.ocr.declaration import OCR
-from grafy_workbench.ocr.provider_http import ProviderRequest, post_json
+from grafy_plugin_litellm_ocr.auth import API_KEY
+from grafy_plugin_litellm_ocr.declaration import LITELLM_OCR
+from grafy_core.provider_http import ProviderRequest, post_json
 
 CRAFT_URL = "https://ai-test.ihpan.edu.pl/v1/ocr/craft/detect"
 CRAFT_MODEL = "craft-mlt-25k@sha256:4a5efbfb48b4081100544e75e1e2b57f8de3d84f213004b14b85fd4b3748db17"
@@ -159,7 +158,7 @@ class CraftOutput(NodeOutput):
     detector: CraftDetector = Field(title="Text detector")
 
 
-@OCR.node(
+@LITELLM_OCR.node(
     operator_id="ocr.craft_provider",
     version=1,
     title="CRAFT text detector",
@@ -170,16 +169,7 @@ class CraftOutput(NodeOutput):
     http_egress=NodeHttpEgressContract(
         fixed_destinations=("https://ai-test.ihpan.edu.pl",)
     ),
-    secret_inputs=(
-        NodeSecretInput(
-            name="api_key",
-            title="LiteLLM API key",
-            provider_kind="litellm",
-            verifier=unsupported_credential_verifier(
-                "This key will be checked on first run."
-            ),
-        ),
-    ),
+    secret_inputs=(API_KEY,),
 )
 @final
 class CraftProviderNode(Node[CraftConfig, CraftInput, CraftOutput]):
@@ -195,7 +185,7 @@ class CraftProviderNode(Node[CraftConfig, CraftInput, CraftOutput]):
     ) -> CraftOutput:
         return CraftOutput(
             detector=CraftDetector(
-                await context.secrets.require("api_key"),
+                await context.secrets.require(API_KEY.name),
                 timeout_ms=config.timeout_ms,
                 max_retries=config.max_retries,
                 text_threshold=config.text_threshold,

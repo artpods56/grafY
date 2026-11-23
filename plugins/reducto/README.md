@@ -7,28 +7,23 @@ Application-owned node family for the Reducto Parse API. Its stable identifier i
 
 ## Using OCR
 
-`reducto.ocr.process@1` calls `POST /parse` synchronously. The API key is a
-write-only node secret named `api_key`.
-
-Connect exactly one input:
-
-- `document_url`, `scalar.text@1`: an HTTPS URL Reducto will fetch. Reducto dials
-  it, not Grafy, so the egress guard does not apply to it.
-- `image`, `image.raster@1`: one BMP, JPEG, PNG, TIFF or WebP image, at most
-  50,000,000 bytes, uploaded to Reducto after its SHA-256 is checked.
+`reducto.ocr.provider@1` (Reducto) provides the engine for Document OCR
+(`ocr.read_document@1`). Set the provider's write-only `api_key` secret and
+connect a raster image or PDF to Document OCR. Reducto uploads the file and calls `POST /parse`. It accepts PDF, BMP, JPEG,
+PNG, TIFF, and WebP files up to 50,000,000 bytes.
 
 Settings: `model` (`r-1` or `r-1-mini`), `page_start`, `page_end`, `table_format`
 (`md` or `html`), and `timeout_s` (10–900, default 300). Requests are never retried,
 because a retry can bill a document twice.
 
-Outputs:
+With this engine, Document OCR can produce:
 
 - `markdown`, `text.markdown@1`: chunk content joined with a blank line.
 - `blocks`, `table.data@1`: one row per block, with columns `index`, `page`,
   `original_page`, `kind`, `text`, `confidence`, `parse_confidence`, `left`, `top`,
   `width`, `height`. Coordinates are Reducto's page-normalized values, unclamped.
 
-No `image.regions@1` is produced, because Reducto does not report page pixel sizes.
+Reducto provides Markdown and blocks. Its result has no page pixel dimensions for region boxes.
 
 ## What the provider keeps
 

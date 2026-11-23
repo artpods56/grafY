@@ -17,8 +17,8 @@ from shapely import (
 )
 
 import grafy_workbench.table.plugin as _table_plugin
-from grafy_workbench.ocr.declaration import OCR
-from grafy_workbench.ocr.tiff_recognition import TiffRecognizedText
+from grafy_plugin_map_toponyms.declaration import MAP_TOPONYMS
+from grafy_plugin_map_toponyms.tiff_recognition import TiffRecognizedText
 
 # The table family notes Table as table.data, which the output port derives from.
 _ = _table_plugin.__name__
@@ -106,7 +106,7 @@ class GeoreferencePlacesOutput(NodeOutput):
     )
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.georeference_places",
     version=1,
     title="Place TIFF text on the map",

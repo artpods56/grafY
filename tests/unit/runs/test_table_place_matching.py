@@ -4,7 +4,7 @@ import pytest
 
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.table_contracts import Table, TableColumn, TableValueType
-from grafy_workbench.table.place_matching import (
+from grafy_plugin_map_toponyms.place_matching import (
     MatchPlacesConfig,
     MatchPlacesInput,
     MatchPlacesNode,

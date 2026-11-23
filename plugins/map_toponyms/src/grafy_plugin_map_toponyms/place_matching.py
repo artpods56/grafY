@@ -13,7 +13,7 @@ from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
 
-from grafy_workbench.table.declaration import TABLES
+from grafy_plugin_map_toponyms.declaration import MAP_TOPONYMS
 
 type ColumnId = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
@@ -285,7 +285,7 @@ _GEO_PASSTHROUGH_COLUMNS = frozenset(
 _STATUS_ORDER = {"matched": 0, "candidate": 1, "unmatched": 2}
 
 
-@TABLES.node(
+@MAP_TOPONYMS.node(
     operator_id="table.match_places",
     version=1,
     title="Match place names (fuzzy Cyrillic)",

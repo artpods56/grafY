@@ -5,7 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
-import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
+import {
+  artifactPortFixture,
+  nodeSpecFixture,
+  servicePortFixture,
+} from "../test-fixtures";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -53,7 +57,6 @@ function registry(): NodeRegistry {
   const tableInput = port("table", "input", "table.data");
   const layerInput = port("layers", "input", "geo.map_layer");
   const mapOutput = port("map", "output", "geo.map_document");
-  const imageInput = port("image", "input", "image.raster");
 
   return {
     plugins: [
@@ -75,18 +78,11 @@ function registry(): NodeRegistry {
       "table.data",
       "geo.map_layer",
       "geo.map_document",
-      "image.raster",
     ].map((id) => ({
       key: { id, schema_version: 1 },
       title: id,
       preview_kind:
-        id === "table.data"
-          ? "table"
-          : id === "image.raster"
-            ? "image"
-            : id.startsWith("geo.")
-              ? "map"
-              : "text",
+        id === "table.data" ? "table" : id.startsWith("geo.") ? "map" : "text",
       bundle: { format: "inline-json" as const, version: 1 },
       payload_schema: {},
       field_projections: [],
@@ -139,11 +135,18 @@ function registry(): NodeRegistry {
         [mapOutput],
       ),
       node(
-        "mistral.ocr.process",
-        "Read image with OCR",
+        "mistral.ocr.provider",
+        "Mistral OCR",
         "external.mistral",
-        [imageInput],
-        [textOutput],
+        [],
+        [
+          servicePortFixture({
+            name: "engine",
+            direction: "output",
+            service_contracts: [{ id: "ocr.document", version: 1 }],
+            service_features: ["blocks", "regions"],
+          }),
+        ],
       ),
     ],
   };
@@ -331,10 +334,10 @@ describe("NodeSelector", () => {
     await enterSearch("OCR");
 
     expect(options()).toHaveLength(1);
-    expect(options()[0]?.textContent).toContain("Read image with OCR");
+    expect(options()[0]?.textContent).toContain("Mistral OCR");
     await React.act(async () => options()[0]?.click());
     expect(dialog().querySelector("aside")?.textContent).toContain(
-      "Read image with OCR description",
+      "Mistral OCR description",
     );
     expect(onAddNode).not.toHaveBeenCalled();
   });

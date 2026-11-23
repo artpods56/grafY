@@ -4,10 +4,10 @@ from grafy_core.config_ui import validate_config_ui_schema
 from grafy_plugin_gis.nodes import VectorLayerConfig
 from grafy_plugin_llm.openai_compatible import OpenAICompatibleConfig
 from grafy_plugin_table.nodes import TableImportConfig
-from grafy_workbench.ocr.label_studio import ExportLabelStudioConfig
-from grafy_workbench.ocr.text_regions import DetectTextConfig, TiffTextRegions
+from grafy_plugin_map_toponyms.label_studio import ExportLabelStudioConfig
+from grafy_plugin_map_toponyms.text_regions import DetectTextConfig, TiffTextRegions
 from grafy_workbench.table.concat import ConcatTablesConfig
-from grafy_workbench.table.place_matching import MatchPlacesConfig
+from grafy_plugin_map_toponyms.place_matching import MatchPlacesConfig
 from pydantic import BaseModel, JsonValue
 
 

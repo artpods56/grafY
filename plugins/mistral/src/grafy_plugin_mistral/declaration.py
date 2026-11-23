@@ -1,14 +1,6 @@
-from grafy_core.artifact_contracts import (
-    IMAGE_REGIONS,
-    MARKDOWN,
-    RASTER_IMAGE,
-    TEXT_VALUE,
-)
 from grafy_core.contracts.ocr import DocumentOcr
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.file_contracts import PDF_FILE
 from grafy_core.plugins import Plugin
-from grafy_core.table_contracts import TABLE_DATA
 
 MISTRAL = Plugin(
     slug="external.mistral",
@@ -18,10 +10,4 @@ MISTRAL = Plugin(
         PluginRuntimeCapability.NODE_SECRETS,
     ),
 )
-MISTRAL.register_artifact_type_dependency(TEXT_VALUE)
-MISTRAL.register_artifact_type_dependency(RASTER_IMAGE)
-MISTRAL.register_artifact_type_dependency(PDF_FILE)
-MISTRAL.register_artifact_type_dependency(TABLE_DATA)
-MISTRAL.register_artifact_type_dependency(IMAGE_REGIONS)
-MISTRAL.register_artifact_type_dependency(MARKDOWN)
 MISTRAL.register_service_contract_dependency(DocumentOcr)

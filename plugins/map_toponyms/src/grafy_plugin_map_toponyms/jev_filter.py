@@ -34,9 +34,9 @@ from pydantic import (
 )
 
 import grafy_workbench.table.plugin as _table_plugin
-from grafy_workbench.ocr.declaration import OCR
-from grafy_workbench.ocr.provider_http import ProviderRequest, post_json
-from grafy_workbench.ocr.text_regions import TiffTextRegions
+from grafy_plugin_map_toponyms.declaration import MAP_TOPONYMS
+from grafy_core.provider_http import ProviderRequest, post_json
+from grafy_plugin_map_toponyms.text_regions import TiffTextRegions
 
 _ = _table_plugin.__name__
 
@@ -361,7 +361,7 @@ def _score_region(
     }
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.filter_tiff_jev",
     version=1,
     title="Filter TIFF regions with Visual Jev",

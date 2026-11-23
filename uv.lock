@@ -11,7 +11,9 @@ members = [
     "grafy-persistence",
     "grafy-plugin-gis",
     "grafy-plugin-image",
+    "grafy-plugin-litellm-ocr",
     "grafy-plugin-llm",
+    "grafy-plugin-map-toponyms",
     "grafy-plugin-mistral",
     "grafy-plugin-reducto",
     "grafy-plugin-table",
@@ -568,6 +570,29 @@ dev = [
 ]
 
 [[package]]
+name = "grafy-plugin-litellm-ocr"
+version = "0.1.0"
+source = { editable = "plugins/litellm_ocr" }
+dependencies = [
+    { name = "grafy-core" },
+    { name = "pydantic" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grafy-core", editable = "libs/core" },
+    { name = "pydantic" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.4.2" }]
+
+[[package]]
 name = "grafy-plugin-llm"
 version = "0.1.0"
 source = { editable = "plugins/llm" }
@@ -587,6 +612,39 @@ requires-dist = [
     { name = "grafy-core", editable = "libs/core" },
     { name = "openai", specifier = ">=3.31,<4" },
     { name = "pydantic" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.4.2" }]
+
+[[package]]
+name = "grafy-plugin-map-toponyms"
+version = "0.1.0"
+source = { editable = "plugins/map_toponyms" }
+dependencies = [
+    { name = "grafy-core" },
+    { name = "grafy-workbench" },
+    { name = "httpx" },
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "pyproj" },
+    { name = "shapely" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grafy-core", editable = "libs/core" },
+    { name = "grafy-workbench", editable = "libs/workbench" },
+    { name = "httpx" },
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "pyproj", specifier = ">=3.7.0" },
+    { name = "shapely", specifier = ">=2.1.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -701,21 +759,13 @@ version = "0.1.0"
 source = { editable = "libs/workbench" }
 dependencies = [
     { name = "grafy-core" },
-    { name = "httpx" },
-    { name = "pillow" },
     { name = "pydantic" },
-    { name = "pyproj" },
-    { name = "shapely" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "grafy-core", editable = "libs/core" },
-    { name = "httpx" },
-    { name = "pillow" },
     { name = "pydantic" },
-    { name = "pyproj", specifier = ">=3.7.0" },
-    { name = "shapely", specifier = ">=2.1.0" },
 ]
 
 [[package]]
@@ -731,7 +781,9 @@ dependencies = [
     { name = "grafy-persistence" },
     { name = "grafy-plugin-gis" },
     { name = "grafy-plugin-image" },
+    { name = "grafy-plugin-litellm-ocr" },
     { name = "grafy-plugin-llm" },
+    { name = "grafy-plugin-map-toponyms" },
     { name = "grafy-plugin-mistral" },
     { name = "grafy-plugin-reducto" },
     { name = "grafy-plugin-table" },
@@ -764,7 +816,9 @@ requires-dist = [
     { name = "grafy-persistence", editable = "libs/persistence" },
     { name = "grafy-plugin-gis", editable = "plugins/gis" },
     { name = "grafy-plugin-image", editable = "plugins/image" },
+    { name = "grafy-plugin-litellm-ocr", editable = "plugins/litellm_ocr" },
     { name = "grafy-plugin-llm", editable = "plugins/llm" },
+    { name = "grafy-plugin-map-toponyms", editable = "plugins/map_toponyms" },
     { name = "grafy-plugin-mistral", editable = "plugins/mistral" },
     { name = "grafy-plugin-reducto", editable = "plugins/reducto" },
     { name = "grafy-plugin-table", editable = "plugins/table" },
