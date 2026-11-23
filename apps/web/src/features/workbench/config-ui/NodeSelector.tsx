@@ -18,12 +18,11 @@ import {
   buildCatalogFilters,
   buildSourceFilters,
   catalogNodeKey,
-  catalogNodesForFilter,
   catalogNodeSpecs,
   filterAndSearchCatalogNodes,
   INPUT_NODES_FILTER,
   nodesCompatibleWithPort,
-  sourceFilterId,
+  groupCatalogNodes,
   type CatalogFilter,
 } from "../authoring/node-catalog";
 import {
@@ -35,7 +34,6 @@ import {
   NodeResultList,
   RESULTS_ID,
   resultOptionId,
-  type NodeResultGroup,
 } from "./node-selector/NodeResultList";
 import { NodeSourceBar } from "./node-selector/NodeSourceBar";
 
@@ -66,6 +64,7 @@ export interface NodeSelectorProps {
   loading?: boolean;
   /** Keeps inspection available while disabling graph mutation for viewers. */
   canInsert?: boolean;
+  managePacksHref?: string;
   insertDisabledReason?: string;
   /** Controlled-dialog opener, forwarded to Base UI's finalFocus contract. */
   returnFocusRef?: React.RefObject<HTMLElement | null>;
@@ -118,6 +117,7 @@ function NodeBrowser({
   errorMessage = null,
   loading = false,
   canInsert = true,
+  managePacksHref,
   insertDisabledReason = "You do not have permission to edit this graph.",
   onAddNode,
   onRetry,
@@ -158,7 +158,7 @@ function NodeBrowser({
   );
   const activeSource =
     sourceFilters.find((filter) => filter.id === activeSourceId) ??
-    sourceFilters[0]!;
+    sourceFilters[0];
   const refinements = React.useMemo((): CatalogFilter[] => {
     const artifact = artifactOptions.find(
       (filter) => filter.id === artifactFilterId,
@@ -220,12 +220,12 @@ function NodeBrowser({
       registry,
     ],
   );
-  // Browsing everything reads by source; a search reads by relevance.
   const groups = React.useMemo(
-    (): NodeResultGroup[] =>
-      activeSource.kind === "all" && !searching
-        ? groupBySource(foundNodes, sourceFilters)
-        : [{ key: "results", title: null, nodes: foundNodes }],
+    () =>
+      groupCatalogNodes(
+        foundNodes,
+        activeSource.kind === "all" && !searching ? sourceFilters : [],
+      ),
     [activeSource.kind, foundNodes, searching, sourceFilters],
   );
   const orderedNodes = React.useMemo(
@@ -336,10 +336,9 @@ function NodeBrowser({
     setActiveKey(null);
   }
 
-  /** Shows a node from "Works with": its own source, nothing filtering it out. */
+  /** Shows a node from "Works with" in the unfiltered list. */
   function inspectCatalogNode(spec: NodeSpec): void {
     resetSearchAndFilters();
-    setActiveSourceId(sourceFilterId(spec.plugin_slug));
     setActiveKey(catalogNodeKey(spec));
   }
 
@@ -356,7 +355,7 @@ function NodeBrowser({
         : `${foundNodes.length} ${foundNodes.length === 1 ? "node" : "nodes"}.`;
   const narrowed =
     searching ||
-    activeSourceId !== "all" ||
+    activeSource.id !== "all" ||
     artifactFilterId !== null ||
     inputNodesOnly;
 
@@ -413,7 +412,8 @@ function NodeBrowser({
           <NodeSourceBar
             sources={sourceFilters}
             counts={sourceCounts}
-            activeSourceId={activeSourceId}
+            activeSourceId={activeSource.id}
+            managePacksHref={managePacksHref}
             artifactOptions={artifactOptions}
             artifactFilterId={artifactFilterId}
             inputNodesOnly={inputNodesOnly}
@@ -534,30 +534,6 @@ function NodeBrowser({
       </div>
     </>
   );
-}
-
-/**
- * Splits nodes into the sources the rail lists, in the rail's order. Anything
- * no source claims still shows, under Other, rather than vanishing.
- */
-function groupBySource(
-  nodes: readonly NodeSpec[],
-  sources: readonly CatalogFilter[],
-): NodeResultGroup[] {
-  const claimed = new Set<string>();
-  const groups: NodeResultGroup[] = [];
-  for (const source of sources) {
-    if (source.kind === "all") continue;
-    const members = catalogNodesForFilter(nodes, source).filter(
-      (spec) => !claimed.has(catalogNodeKey(spec)),
-    );
-    if (!members.length) continue;
-    for (const spec of members) claimed.add(catalogNodeKey(spec));
-    groups.push({ key: source.id, title: source.title, nodes: members });
-  }
-  const rest = nodes.filter((spec) => !claimed.has(catalogNodeKey(spec)));
-  if (rest.length) groups.push({ key: "other", title: "Other", nodes: rest });
-  return groups;
 }
 
 const s = stylex.create({

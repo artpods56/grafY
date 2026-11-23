@@ -232,11 +232,8 @@ describe("artifact content URLs", () => {
       artifactContentUrl(WORKSPACE_ID, "https://private.example/artifact"),
     ).toBe("https://private.example/artifact");
     expect(
-      artifactContentUrl(
-        WORKSPACE_ID,
-        "pmtiles://private.example/archive.pmtiles",
-      ),
-    ).toBe("pmtiles://private.example/archive.pmtiles");
+      artifactContentUrl(WORKSPACE_ID, "asset://private.example/archive.bin"),
+    ).toBe("asset://private.example/archive.bin");
   });
 });
 

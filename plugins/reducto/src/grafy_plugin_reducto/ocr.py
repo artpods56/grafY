@@ -4,15 +4,11 @@ from collections.abc import Callable
 from typing import Annotated, Any, ClassVar, Final, Literal, cast, final, override
 
 import httpx
-from pydantic import Field, SecretStr, model_validator
-from reducto import APIConnectionError, APIStatusError, AsyncReducto
-from reducto.types import SettingsParam
-from reducto.types.shared_params.page_range import PageRange
-
 from grafy_core.artifact_contracts import MarkdownValue
-from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.config_ui import field_ui
+from grafy_core.contracts.ocr import DocumentOcr, DocumentOcrFeature, DocumentOcrResult
+from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressRejectedError, PinnedPublicAddressTransport
@@ -21,7 +17,6 @@ from grafy_core.nodes import (
     NodeExecutionContext,
     UserFacingNodeError,
 )
-from grafy_core.ocr_contracts import OcrFeature, OcrReader, OcrResult
 from grafy_core.plugins import (
     NodeHttpEgressContract,
     NodeSecretInput,
@@ -33,13 +28,13 @@ from grafy_core.table_contracts import (
     TableValue,
     TableValueType,
 )
+from pydantic import Field, SecretStr, model_validator
+from reducto import APIConnectionError, APIStatusError, AsyncReducto
+from reducto.types import SettingsParam
+from reducto.types.shared_params.page_range import PageRange
 
-import grafy_workbench.table.plugin as _table_plugin
-import grafy_workbench.text.nodes as _text_nodes
 from grafy_plugin_reducto.declaration import REDUCTO
 from grafy_plugin_reducto.response import ParseChunk, ParseChunkList
-
-_ = (_table_plugin.__name__, _text_nodes.__name__)  # notes classes before these ports
 
 REDUCTO_BASE_URL: Final = "https://platform.reducto.ai"
 MAX_SOURCE_BYTES: Final = 50_000_000
@@ -133,54 +128,11 @@ class ReductoOcrConfig(NodeConfig):
         return self
 
 
-class ReductoOcrInput(NodeInput):
-    document_url: Annotated[
-        str | None,
-        Field(
-            title="Document link",
-            description=(
-                "Web address of a document Reducto can fetch, including a signed "
-                "link. Leave empty when a scan or PDF is connected."
-            ),
-        ),
-    ] = None
-    image: Annotated[
-        RasterImage | PdfFile | None,
-        Field(
-            title="Scan or PDF",
-            description=(
-                "One scanned page or a PDF. Leave empty when a document link "
-                "is connected."
-            ),
-        ),
-    ] = None
-
-
-class ReductoOcrOutput(NodeOutput):
-    markdown: Annotated[
-        MarkdownValue,
-        Field(
-            title="Transcription",
-            description="The reading, with pages kept in order.",
-        ),
-    ]
-    blocks: Annotated[
-        Table,
-        Field(
-            title="Text blocks",
-            description=(
-                "One row per piece the reader found: page, kind of region, text, "
-                "and box."
-            ),
-        ),
-    ]
-
-
 class ReductoOcrError(UserFacingNodeError):
     pass
 
 
-def build_parse_output(chunks: list[ParseChunk]) -> OcrResult:
+def build_parse_output(chunks: list[ParseChunk]) -> DocumentOcrResult:
     rows: list[dict[str, TableValue]] = []
     for chunk in chunks:
         for block in chunk.blocks:
@@ -202,7 +154,7 @@ def build_parse_output(chunks: list[ParseChunk]) -> OcrResult:
                     "height": block.bbox.height,
                 }
             )
-    return OcrResult(
+    return DocumentOcrResult(
         markdown=MarkdownValue(markdown="\n\n".join(chunk.content for chunk in chunks)),
         blocks=Table(
             columns=[
@@ -215,9 +167,10 @@ def build_parse_output(chunks: list[ParseChunk]) -> OcrResult:
     )
 
 
-class ReductoReader(OcrReader):
-    features: ClassVar[frozenset[OcrFeature]] = frozenset({OcrFeature.BLOCKS})
-    title: ClassVar[str] = "Reducto"
+class ReductoReader(DocumentOcr):
+    features: ClassVar[frozenset[DocumentOcrFeature]] = frozenset(
+        {DocumentOcrFeature.BLOCKS}
+    )
 
     def __init__(
         self,
@@ -230,24 +183,12 @@ class ReductoReader(OcrReader):
         self._api_key = api_key
         self._transport_factory = transport_factory
 
-    async def read(self, document: RasterImage | PdfFile) -> OcrResult:
+    async def read(self, document: RasterImage | PdfFile) -> DocumentOcrResult:
         return await _run_parse(
             config=self._config,
             api_key=self._api_key,
-            document_url=None,
             image=document,
             transport_factory=self._transport_factory,
-            node_id=None,
-        )
-
-    async def read_document_url(self, document_url: str) -> OcrResult:
-        return await _run_parse(
-            config=self._config,
-            api_key=self._api_key,
-            document_url=document_url,
-            image=None,
-            transport_factory=self._transport_factory,
-            node_id=None,
         )
 
 
@@ -256,9 +197,11 @@ class ReductoProviderInput(NodeInput):
 
 
 class ReductoProviderOutput(NodeOutput):
-    reader: Annotated[
+    engine: Annotated[
         ReductoReader,
-        Field(title="OCR reader", description="Reads a scan or PDF with Reducto."),
+        Field(
+            title="Document OCR engine", description="Reads a scan or PDF with Reducto."
+        ),
     ]
 
 
@@ -275,11 +218,6 @@ API_KEY = NodeSecretInput(
 )
 
 
-def build_reducto_ocr_node(context: PluginRuntimeContext) -> "ReductoOcrNode":
-    del context
-    return ReductoOcrNode()
-
-
 def build_reducto_ocr_provider_node(
     context: PluginRuntimeContext,
 ) -> "ReductoOcrProviderNode":
@@ -291,20 +229,9 @@ async def _run_parse(
     *,
     config: ReductoOcrConfig,
     api_key: SecretStr,
-    document_url: str | None,
-    image: RasterImage | PdfFile | None,
+    image: RasterImage | PdfFile,
     transport_factory: Callable[[], httpx.AsyncBaseTransport],
-    node_id: str | None,
-) -> OcrResult:
-    if (document_url is None) == (image is None):
-        raise ReductoOcrError(
-            "Connect either a document link or a page image, not both, and not neither."
-        )
-    # Also keeps the provider's own reducto:// and jobid:// inputs out of graphs.
-    # The URL is never quoted: a presigned one carries its signature.
-    if document_url is not None and not document_url.startswith("https://"):
-        raise ReductoOcrError("The document link has to start with https://.")
-
+) -> DocumentOcrResult:
     settings: SettingsParam = {
         "model": config.model,
         "timeout": float(config.timeout_s),
@@ -336,10 +263,7 @@ async def _run_parse(
                     timeout=HTTP_TIMEOUT,
                 ) as client,
             ):
-                if image is not None:
-                    source = await _upload_image(client, image)
-                else:
-                    source = cast(str, document_url)
+                source = await _upload_image(client, image)
                 # Raw: the typed response picks its class by `response_type` and
                 # would need a dump back to JSON for ParseChunkList anyway.
                 raw = await client.parse.with_raw_response.run(
@@ -385,12 +309,7 @@ async def _run_parse(
             ) from None
         if isinstance(exc, APIConnectionError | httpx.TransportError):
             raise ReductoOcrError("Reducto could not be reached") from None
-        label = (
-            "Reducto OCR failed"
-            if node_id is None
-            else (f"Reducto OCR failed for node {node_id!r}")
-        )
-        raise ReductoOcrError(label) from None
+        raise ReductoOcrError("Reducto OCR failed") from None
 
 
 async def _upload_image(client: AsyncReducto, image: RasterImage | PdfFile) -> str:
@@ -499,71 +418,9 @@ class ReductoOcrProviderNode(
     ) -> ReductoProviderOutput:
         api_key = await context.secrets.require(API_KEY.name)
         return ReductoProviderOutput(
-            reader=ReductoReader(
+            engine=ReductoReader(
                 config=config,
                 api_key=api_key,
                 transport_factory=self._transport_factory,
             )
         )
-
-
-@REDUCTO.node(
-    operator_id="reducto.ocr.process",
-    version=1,
-    title="Read with Reducto",
-    factory=build_reducto_ocr_node,
-    required_capabilities=(
-        PluginRuntimeCapability.NETWORK_EGRESS,
-        PluginRuntimeCapability.NODE_SECRETS,
-    ),
-    secret_inputs=(API_KEY,),
-    http_egress=NodeHttpEgressContract(
-        fixed_destinations=(REDUCTO_BASE_URL,),
-        # A large result comes back as a presigned URL on the provider's storage.
-        dynamic_destinations=True,
-    ),
-)
-@final
-class ReductoOcrNode(Node[ReductoOcrConfig, ReductoOcrInput, ReductoOcrOutput]):
-    """Reads a PDF or a scanned page into text. You need a Reducto key."""
-
-    def __init__(
-        self,
-        *,
-        transport_factory: Callable[
-            [], httpx.AsyncBaseTransport
-        ] = PinnedPublicAddressTransport,
-    ) -> None:
-        self._transport_factory = transport_factory
-
-    @override
-    async def run(
-        self,
-        context: NodeExecutionContext,
-        config: ReductoOcrConfig,
-        inputs: ReductoOcrInput,
-        /,
-    ) -> ReductoOcrOutput:
-        if (inputs.document_url is None) == (inputs.image is None):
-            raise ReductoOcrError(
-                "Connect either a document link or a page image, not both, and "
-                "not neither."
-            )
-        if inputs.document_url is not None and not inputs.document_url.startswith(
-            "https://"
-        ):
-            raise ReductoOcrError("The document link has to start with https://.")
-        api_key = await context.secrets.require(API_KEY.name)
-        reader = ReductoReader(
-            config=config,
-            api_key=api_key,
-            transport_factory=self._transport_factory,
-        )
-        if inputs.document_url is not None:
-            result = await reader.read_document_url(inputs.document_url)
-        else:
-            assert inputs.image is not None
-            result = await reader.read(inputs.image)
-        if result.blocks is None:
-            raise ReductoOcrError("Reducto OCR did not return text blocks")
-        return ReductoOcrOutput(markdown=result.markdown, blocks=result.blocks)

@@ -56,10 +56,7 @@ from shapely.ops import transform
 
 from grafy_plugin_gis.artifacts import GEO_MAP_DOCUMENT, GEO_MAP_LAYER
 from grafy_plugin_gis.declaration import GIS
-from grafy_plugin_gis.persistence import (
-    feature_collection_artifact,
-    raster_scan_artifact,
-)
+from grafy_plugin_gis.persistence import feature_collection_artifact
 from grafy_core.spatial_contracts import (
     MAX_RASTER_MOSAIC_SOURCES,
     BasemapKind,
@@ -77,9 +74,6 @@ from grafy_core.spatial_contracts import (
     WmsImageFormat,
     WmsVersion,
 )
-from grafy_plugin_gis.models import (
-    GeoRasterScan,
-)
 from grafy_plugin_gis.wfs import (
     WFS_IMPORT_MAX_FEATURES,
     WFS_IMPORT_TOTAL_RESPONSE_MAX_BYTES,
@@ -95,7 +89,6 @@ _ = (_documents.__name__, _table_plugin.__name__)  # notes classes before these 
 _HANDLE_READ_LIMIT = 256 * 1024 * 1024
 
 GIS.register(feature_collection_artifact())
-GIS.register(raster_scan_artifact())
 GIS.register(inline_model_artifact(GEO_MAP_LAYER, GeoMapLayer))
 GIS.register(inline_model_artifact(GEO_MAP_DOCUMENT, GeoMapDocument))
 
@@ -107,10 +100,6 @@ _parse_crs = cast(Callable[[str], CRS], CRS.from_user_input)
 
 
 class GeoJsonParseError(RuntimeError):
-    pass
-
-
-class GeoRasterScanImportError(RuntimeError):
     pass
 
 
@@ -200,7 +189,7 @@ async def geo_features_to_table(
     config: GeoFeaturesToTableConfig,
     inputs: GeoFeaturesToTableInput,
 ) -> GeoFeaturesToTableOutput:
-    """Flattens GeoJSON properties and preserves exact WGS84 geometry as WKT."""
+    """Turns map places into a table, and keeps each place's location."""
     property_ids: list[str] = []
     properties_by_feature: list[dict[str, TableValue]] = []
     for feature_index, feature in enumerate(inputs.features.features):
@@ -475,74 +464,6 @@ class ParseGeoJsonNode(Node[NodeConfig, GeoJsonParseInput, GeoJsonParseOutput]):
         return GeoJsonParseOutput(features=features)
 
 
-class GeoRasterScanImportConfig(NodeConfig):
-    source_name: StrictStr = Field(
-        min_length=1,
-        max_length=1_024,
-        description="Display name of the georeferenced raster scan.",
-    )
-
-    @field_validator("source_name")
-    @classmethod
-    def validate_source_name(cls, value: str) -> str:
-        if value != value.strip():
-            raise ValueError("source_name must not have surrounding whitespace")
-        return value
-
-
-class GeoRasterScanImportInput(NodeInput):
-    file: Annotated[
-        TiffFile,
-        Field(description="Georeferenced TIFF file artifact to import."),
-    ]
-
-
-class GeoRasterScanImportOutput(NodeOutput):
-    raster: Annotated[
-        GeoRasterScan,
-        Field(description="Georeferenced raster normalized to COG during persistence."),
-    ]
-
-
-@GIS.node(
-    operator_id="gis.raster_scan.import",
-    version=1,
-    title="Import raster scan",
-    cache_policy=NodeCachePolicy.EXACT,
-    required_capabilities=(PluginRuntimeCapability.NATIVE_GDAL,),
-)
-@final
-class ImportRasterScanNode(
-    Node[GeoRasterScanImportConfig, GeoRasterScanImportInput, GeoRasterScanImportOutput]
-):
-    """Import one persisted GeoTIFF file artifact as a georeferenced scan."""
-
-    @override
-    async def run(
-        self,
-        context: NodeExecutionContext,
-        config: GeoRasterScanImportConfig,
-        inputs: GeoRasterScanImportInput,
-        /,
-    ) -> GeoRasterScanImportOutput:
-        del context
-        content = await inputs.file.read(max_bytes=_HANDLE_READ_LIMIT)
-        label = inputs.file.filename or "this file"
-        try:
-            return GeoRasterScanImportOutput(
-                raster=GeoRasterScan(
-                    content=content,
-                    filename=inputs.file.filename or config.source_name,
-                    source_name=config.source_name,
-                )
-            )
-        except ValueError as exc:
-            raise GeoRasterScanImportError(
-                f"GeoTIFF file {label} cannot be imported as raster "
-                f"scan {config.source_name!r}: {exc}"
-            ) from exc
-
-
 class WfsImportConfig(NodeConfig):
     service_url: AnyHttpUrl
     type_name: StrictStr = Field(min_length=1, max_length=1_024)
@@ -630,7 +551,7 @@ class WfsImportOutput(NodeOutput):
 )
 @final
 class ImportWfsNode(Node[WfsImportConfig, WfsImportInput, WfsImportOutput]):
-    """Import a bounded WGS84 feature collection from an OGC WFS service."""
+    """Loads map places from an online map service, inside the area you set."""
 
     def __init__(self, client: WfsClient) -> None:
         self._client = client
@@ -735,8 +656,8 @@ class RasterLayerConfig(_CommonLayerConfig):
 
 class RasterLayerInput(NodeInput):
     raster: Annotated[
-        Ref[GeoRasterScan] | Ref[TiffFile],
-        Field(description="Georeferenced raster scan or TIFF file artifact reference."),
+        Ref[TiffFile],
+        Field(description="Georeferenced TIFF file artifact reference."),
     ]
 
 
@@ -759,7 +680,7 @@ async def build_raster_layer(
     config: RasterLayerConfig,
     inputs: RasterLayerInput,
 ) -> MapLayerOutput:
-    """Turn a georeferenced raster scan or TIFF into a styled map layer."""
+    """Turn a georeferenced TIFF into a styled map layer."""
 
     return MapLayerOutput(
         layer=GeoMapLayer(
@@ -781,19 +702,14 @@ class RasterMosaicConfig(_CommonLayerConfig):
 
 class RasterMosaicInput(NodeInput):
     rasters: Annotated[
-        list[
-            Ref[TiffFile]
-            | Ref[GeoRasterScan]
-            | RefSequence[TiffFile]
-            | RefSequence[GeoRasterScan]
-        ],
+        list[Ref[TiffFile] | RefSequence[TiffFile]],
         Plugs(variadic=True, instance=True),
         Field(
             min_length=1,
             title="Rasters",
             description=(
-                "Georeferenced TIFF files, raster scans, or lists of them, "
-                "stacked bottom to top on the fly by the tiler."
+                "Georeferenced TIFF files, or lists of them, stacked bottom to "
+                "top on the fly by the tiler."
             ),
         ),
     ]
@@ -824,7 +740,7 @@ async def build_raster_mosaic(
             refs.append(_plain_ref(item))
     if not refs:
         raise UserFacingNodeError(
-            "Raster mosaic requires at least one georeferenced TIFF or raster scan."
+            "Raster mosaic requires at least one georeferenced TIFF."
         )
     if len(refs) > MAX_RASTER_MOSAIC_SOURCES:
         raise UserFacingNodeError(
@@ -950,15 +866,10 @@ __all__ = [
     "GeoJsonParseError",
     "GeoJsonParseInput",
     "GeoJsonParseOutput",
-    "GeoRasterScanImportConfig",
-    "GeoRasterScanImportError",
-    "GeoRasterScanImportInput",
-    "GeoRasterScanImportOutput",
     "GeoFeaturesToTableConfig",
     "GeoFeaturesToTableError",
     "GeoFeaturesToTableInput",
     "GeoFeaturesToTableOutput",
-    "ImportRasterScanNode",
     "ImportWfsNode",
     "MapLayerOutput",
     "ParseGeoJsonNode",

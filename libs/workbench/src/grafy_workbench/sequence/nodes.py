@@ -194,7 +194,7 @@ class SliceOutput(NodeOutput):
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def slice_sequence(config: SliceConfig, inputs: SliceInput) -> SliceOutput:
-    """Keeps a stretch of items from a list. The first item is number 0."""
+    """Keeps a run of items from a list, from a starting place through as many as you ask for. The first item is place 0."""
     source = inputs.items
     if not source.ordered:
         raise UserFacingNodeError(
@@ -257,7 +257,7 @@ class ItemAtOutput(NodeOutput):
     cache_policy=NodeCachePolicy.EXACT,
 )
 async def item_at(config: ItemAtConfig, inputs: ItemAtInput) -> ItemAtOutput:
-    """Picks one item from a list. The first item is number 0."""
+    """Takes one item from a list by its place. The first item is place 0."""
     source = inputs.items
     if not source.ordered:
         raise UserFacingNodeError(

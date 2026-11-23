@@ -82,12 +82,16 @@ function isCallNode(node: SavedGraphNode): boolean {
  * The kind a node placed from `spec` is saved as: the catalog entry of a
  * sibling Graph places a call node, every other entry a builtin.
  */
-export function newNodeKind(spec: NodeSpec): "builtin" | "call" {
-  return spec.plugin_slug === PROJECT_GRAPHS_PLUGIN_SLUG &&
+export function isProjectGraphCallSpec(spec: NodeSpec): boolean {
+  return (
+    spec.plugin_slug === PROJECT_GRAPHS_PLUGIN_SLUG &&
     spec.operator_id !== GRAPH_INPUT_OPERATOR_ID &&
     spec.operator_id !== GRAPH_OUTPUT_OPERATOR_ID
-    ? "call"
-    : "builtin";
+  );
+}
+
+export function newNodeKind(spec: NodeSpec): "builtin" | "call" {
+  return isProjectGraphCallSpec(spec) ? "call" : "builtin";
 }
 
 /** The interface a Graph's boundary nodes declare, in document order. */
@@ -284,12 +288,14 @@ function boundaryConfigSchema(
 }
 
 /** Catalog specs for the two boundary operators. */
-export function boundaryNodeSpecs(): NodeSpec[] {
+export function boundaryNodeSpecs(catalogVisible: boolean): NodeSpec[] {
   return [
     {
+      role: "operator",
       operator_id: GRAPH_INPUT_OPERATOR_ID,
       operator_version: GRAPH_BOUNDARY_OPERATOR_VERSION,
       plugin_slug: PROJECT_GRAPHS_PLUGIN_SLUG,
+      pack_slugs: ["subgraphs"],
       origin: "builtin",
       title: "Graph input",
       description: "A value this Graph receives from whoever calls it.",
@@ -299,12 +305,14 @@ export function boundaryNodeSpecs(): NodeSpec[] {
       input_schema: {},
       output_schema: {},
       runnable: true,
-      catalog_visible: true,
+      catalog_visible: catalogVisible,
     },
     {
+      role: "operator",
       operator_id: GRAPH_OUTPUT_OPERATOR_ID,
       operator_version: GRAPH_BOUNDARY_OPERATOR_VERSION,
       plugin_slug: PROJECT_GRAPHS_PLUGIN_SLUG,
+      pack_slugs: ["subgraphs"],
       origin: "builtin",
       title: "Graph output",
       description: "A value this Graph hands back to whoever calls it.",
@@ -314,7 +322,7 @@ export function boundaryNodeSpecs(): NodeSpec[] {
       input_schema: {},
       output_schema: {},
       runnable: true,
-      catalog_visible: true,
+      catalog_visible: catalogVisible,
     },
   ];
 }
@@ -358,9 +366,11 @@ export function callNodeSpec(
     required: true,
   }));
   return {
+    role: "operator",
     operator_id: graph.id,
     operator_version: CALL_NODE_OPERATOR_VERSION,
     plugin_slug: PROJECT_GRAPHS_PLUGIN_SLUG,
+    pack_slugs: ["subgraphs"],
     origin: "builtin",
     title: graph.name,
     description: `Runs the Graph “${graph.name}” as one step.`,
@@ -377,24 +387,25 @@ export function callNodeSpec(
 /**
  * `registry` extended with the Graphs of this Project as catalog entries.
  *
- * Boundary operators are always offered; a call node is offered for every other
- * Graph, and only for those that may be called without making a cycle. A Graph
- * that is not visible still gets a spec so a saved call node in the document
- * finds its ports — with `openGraphId` null nothing is offered, but every Graph
- * is still described.
+ * Subscribing to Sub-graphs & Constants exposes boundary nodes. Sibling calls
+ * are also offered in multi-Graph Projects, subject to the cycle check.
+ * Hidden specs still describe the ports of nodes already in the Project.
  */
 export function registryWithProjectGraphs(
   registry: NodeRegistry,
   graphs: readonly GraphDefinition[],
   openGraphId: string | null,
 ): NodeRegistry {
+  const showBoundaries = registry.packs.some(
+    (pack) => pack.subscribed && pack.includes_project_graphs,
+  );
   const callable = new Set<string>();
-  if (openGraphId !== null) {
+  if (openGraphId !== null && (showBoundaries || graphs.length > 1)) {
     for (const graph of callableGraphs(graphs, openGraphId)) {
       callable.add(graph.id);
     }
   }
-  const specs = boundaryNodeSpecs();
+  const specs = boundaryNodeSpecs(showBoundaries);
   for (const graph of graphs) {
     if (graph.id === openGraphId) continue;
     specs.push(callNodeSpec(graph, callable.has(graph.id)));
@@ -410,8 +421,11 @@ export function registryWithProjectGraphs(
           entry_kind: "plugin",
           origin: "builtin",
           slug: PROJECT_GRAPHS_PLUGIN_SLUG,
-          title: "Graphs in this Project",
+          title: "Project graphs",
         },
       ];
-  return { ...registry, plugins, nodes: [...registry.nodes, ...specs] };
+  const installedNodes = registry.nodes.filter(
+    (spec) => spec.plugin_slug !== PROJECT_GRAPHS_PLUGIN_SLUG,
+  );
+  return { ...registry, plugins, nodes: [...installedNodes, ...specs] };
 }

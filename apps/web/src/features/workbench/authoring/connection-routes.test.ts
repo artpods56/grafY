@@ -19,19 +19,19 @@ import type { PortMeta } from "./types";
 
 describe("service contract routes", () => {
   const readerOutput: PortMeta = {
-    portName: "reader",
+    portName: "engine",
     shape: "one",
     direction: "output",
-    serviceContracts: [{ id: "ocr.reader", version: 1 }],
+    serviceContracts: [{ id: "ocr.document", version: 1 }],
   };
   const readerInput: PortMeta = {
-    portName: "reader",
+    portName: "engine",
     shape: "one",
     direction: "input",
-    serviceContracts: [{ id: "ocr.reader", version: 1 }],
+    serviceContracts: [{ id: "ocr.document", version: 1 }],
   };
   const mismatchedInput: PortMeta = {
-    portName: "reader",
+    portName: "engine",
     shape: "one",
     direction: "input",
     serviceContracts: [{ id: "other.service", version: 1 }],
@@ -59,7 +59,7 @@ describe("service contract routes", () => {
     ).toBeNull();
     expect(
       connectionRouteForPortSelection(readerOutput, readerInput, [], [], {
-        projection: { path: ["reader"] },
+        projection: { path: ["engine"] },
         conversionPath: [],
       }),
     ).toBeNull();

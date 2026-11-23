@@ -3,7 +3,6 @@ import json
 import socket
 from collections.abc import Iterator
 from hashlib import sha256
-from io import BytesIO
 from pathlib import Path
 from typing import cast
 from uuid import UUID
@@ -41,7 +40,6 @@ from grafy_core.domain.identity import (
 )
 
 from grafy_api.artifact_availability import ArtifactAvailability
-from grafy_api.artifacts import geo_tiles
 from grafy_api.artifacts.geo import ArtifactGeoService
 from grafy_api.artifacts.geo_tiles import ArtifactGeoTileService
 from grafy_api.artifacts.models import (
@@ -66,7 +64,6 @@ from tests.support.clients import GrafyApi
 
 
 FEATURE_KEY = ArtifactTypeKey("geo.feature_collection", 1)
-RASTER_KEY = ArtifactTypeKey("geo.raster_scan", 1)
 LAYER_KEY = ArtifactTypeKey("geo.map_layer", 1)
 DOCUMENT_KEY = ArtifactTypeKey("geo.map_document", 1)
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
@@ -101,7 +98,7 @@ def _tiler_response(request: httpx.Request) -> httpx.Response:
                 "bounds_wgs84": [10, 10, 20, 20] if georeferenced else None,
             },
         )
-    expected_source = b"canonical-cog" if grant.key.endswith("/source.tif") else b"tiff"
+    expected_source = b"tiff"
     assert grant.sha256 == sha256(expected_source).hexdigest()
     assert grant.byte_size == len(expected_source)
     if request.url.path == "/geo/tiles/2/1/1.png":
@@ -377,7 +374,6 @@ async def _feature_artifact(
     source_name: str,
     features: list[JsonObject],
     bounds: tuple[float, float, float, float] | None,
-    pmtiles: bytes | None = b"PMTiles fixture bytes",
 ) -> ArtifactObject:
     stored = await save_json_collections(
         storage,
@@ -422,31 +418,6 @@ async def _feature_artifact(
         ]
     if bounds is not None:
         metadata["bounds"] = list(bounds)
-    if pmtiles is not None:
-        projection_hash = sha256(pmtiles).hexdigest()
-        projection = await storage.save(
-            SaveFileCommand(
-                bucket="test",
-                path=f"projections/{projection_hash}.pmtiles",
-                stream=BytesIO(pmtiles),
-                content_type="application/vnd.pmtiles",
-                metadata={"sha256": projection_hash},
-                allow_overwrite=True,
-            )
-        )
-        metadata["vector_projection"] = {
-            "kind": "pmtiles",
-            "bucket": projection.bucket,
-            "object_key": projection.path,
-            "content_type": "application/vnd.pmtiles",
-            "byte_size": projection.byte_size,
-            "sha256": projection.sha256,
-            "min_zoom": 0,
-            "max_zoom": 14,
-            "source_layer": "features",
-            "bounds": bounds,
-            "compiler": "fixture",
-        }
     return await _add_artifact(
         unit_of_work,
         ArtifactObject(
@@ -459,70 +430,6 @@ async def _feature_artifact(
             byte_size=len(logical_content),
             sha256=sha256(logical_content).hexdigest(),
             metadata=metadata,
-        ),
-    )
-
-
-async def _raster_artifact(
-    unit_of_work: InMemoryUnitOfWork,
-    storage: TrackingStorage,
-    *,
-    dynamic: bool = False,
-) -> ArtifactObject:
-    cog = b"canonical-cog"
-    stored_cog = await storage.save(
-        SaveFileCommand(
-            bucket="test",
-            path="geo.raster_scan/v1/source.tif",
-            stream=BytesIO(cog),
-            content_type="image/tiff",
-            metadata={},
-            allow_overwrite=True,
-        )
-    )
-    tile_prefix = None if dynamic else "geo.raster_scan/v1/projections/source/xyz"
-    if tile_prefix is not None:
-        await storage.save(
-            SaveFileCommand(
-                bucket="test",
-                path=f"{tile_prefix}/2/2/1.png",
-                stream=BytesIO(b"png-tile"),
-                content_type="image/png",
-                metadata={},
-                allow_overwrite=True,
-            )
-        )
-    return await _add_artifact(
-        unit_of_work,
-        ArtifactObject(
-            workspace_id=WORKSPACE_ID,
-            artifact_type=RASTER_KEY.id,
-            schema_version=1,
-            content_type=("image/tiff; application=geotiff; profile=cloud-optimized"),
-            bucket=stored_cog.bucket,
-            object_key=stored_cog.path,
-            byte_size=stored_cog.byte_size,
-            sha256=stored_cog.sha256,
-            metadata={
-                "source_name": "Historical scan",
-                "original_filename": "scan.tif",
-                "raster_projection": {
-                    "kind": "xyz",
-                    "bucket": "test",
-                    "prefix": tile_prefix,
-                    "extension": "png",
-                    "content_type": "image/png",
-                    "min_zoom": 2,
-                    "max_zoom": 6,
-                    "tile_size": 256,
-                    "bounds": [10.0, 10.0, 20.0, 20.0],
-                    "source_crs": "EPSG:3857",
-                    "width": 1024,
-                    "height": 768,
-                    "band_count": 4,
-                    "compiler": "fixture",
-                },
-            },
         ),
     )
 
@@ -576,12 +483,16 @@ def _ref(artifact: ArtifactObject) -> JsonObject:
     return cast(JsonObject, artifact.ref().model_dump(mode="json"))
 
 
-def test_vector_render_archive_ranges_and_exact_feature_are_bounded(
+def test_feature_collection_reads_features_without_rendering_them(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
+    """Exact features stay readable while no renderer draws them.
+
+    The descriptor says what the map would draw, so a collection with no
+    GeoJSON renderer draws nothing while its bounds still position the camera.
+    """
     client, uow, storage = geo_artifact_client
-    api = GrafyApi(client)
-    artifacts = api.workspace(WORKSPACE_ID).artifacts
+    artifacts = GrafyApi(client).workspace(WORKSPACE_ID).artifacts
     features = [
         _point_feature(index, float(index), float(index)) for index in range(65)
     ]
@@ -595,53 +506,15 @@ def test_vector_render_archive_ranges_and_exact_feature_are_bounded(
         )
     )
 
-    render = artifacts.geo_render(artifact.id)
-    assert render.status_code == 200
-    descriptor = render.json()
-    assert descriptor["kind"] == "feature_collection"
-    assert descriptor["initial_bounds"] == [0.0, 0.0, 64.0, 64.0]
-    assert descriptor["layers"][0]["source"] == {
-        "kind": "vector",
+    descriptor = artifacts.geo_render(artifact.id)
+    assert descriptor.status_code == 200
+    assert descriptor.json() == {
         "artifact_id": str(artifact.id),
-        "archive_url": f"/v1/workspaces/00000000-0000-0000-0000-000000000007/artifacts/{artifact.id}/geo/vector.pmtiles",
-        "source_layer": "features",
-        "bounds": [0.0, 0.0, 64.0, 64.0],
-        "min_zoom": 0,
-        "max_zoom": 14,
-        "fields": [{"id": "name", "title": "name", "value_type": "text"}],
+        "kind": "feature_collection",
+        "basemap": "openstreetmap",
+        "initial_bounds": [0.0, 0.0, 64.0, 64.0],
+        "layers": [],
     }
-
-    full = artifacts.geo_vector_pmtiles(artifact.id)
-    partial = artifacts.geo_vector_pmtiles(
-        artifact.id,
-        headers={"Range": "bytes=2-7"},
-    )
-    suffix = artifacts.geo_vector_pmtiles(
-        artifact.id,
-        headers={"Range": "bytes=-4"},
-    )
-    invalid = artifacts.geo_vector_pmtiles(
-        artifact.id,
-        headers={"Range": "bytes=999-1000"},
-    )
-    assert full.status_code == 200
-    assert full.content == b"PMTiles fixture bytes"
-    assert full.headers["accept-ranges"] == "bytes"
-    assert full.headers["content-length"] == str(len(full.content))
-    assert full.headers["cache-control"].endswith("immutable")
-    assert partial.status_code == 206
-    assert partial.content == b"Tiles "
-    assert partial.headers["content-range"] == (f"bytes 2-7/{len(full.content)}")
-    assert suffix.status_code == 206
-    assert suffix.content == b"ytes"
-    assert invalid.status_code == 416
-    assert invalid.headers["content-range"] == f"bytes */{len(full.content)}"
-    projection_path = storage.range_requests[0][0]
-    assert storage.range_requests == [
-        (projection_path, 0, len(full.content)),
-        (projection_path, 2, 8),
-        (projection_path, len(full.content) - 4, len(full.content)),
-    ]
 
     storage.loaded_paths.clear()
     exact = artifacts.geo_exact_feature(artifact.id, 55)
@@ -680,41 +553,76 @@ def test_vector_render_archive_ranges_and_exact_feature_are_bounded(
     assert missing.json()["matched_feature_count"] == 0
 
 
-def test_vector_archive_rejects_oversized_buffered_responses_before_loading(
+def test_rendered_layers_are_raster_sources_only(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A vector layer in a map renders nothing, so no layer carries a vector source."""
     client, uow, storage = geo_artifact_client
-    api = GrafyApi(client)
-    artifacts = api.workspace(WORKSPACE_ID).artifacts
-    artifact = asyncio.run(
+    artifacts = GrafyApi(client).workspace(WORKSPACE_ID).artifacts
+    vector = asyncio.run(
         _feature_artifact(
             uow,
             storage,
-            source_name="Observation points",
-            features=[_point_feature(0, 0.0, 0.0)],
-            bounds=(0.0, 0.0, 0.0, 0.0),
+            source_name="Points",
+            features=[_point_feature(1, 5.0, 25.0)],
+            bounds=(5.0, 25.0, 5.0, 25.0),
         )
     )
-    monkeypatch.setattr(geo_tiles, "PMTILES_RESPONSE_MAX_BYTES", 8)
-
-    full = artifacts.geo_vector_pmtiles(artifact.id)
-    oversized_range = artifacts.geo_vector_pmtiles(
-        artifact.id,
-        headers={"Range": "bytes=0-8"},
+    vector_layer = asyncio.run(
+        _inline_artifact(
+            uow,
+            LAYER_KEY,
+            {
+                "title": "Points as a layer",
+                "visible": True,
+                "opacity": 1.0,
+                "min_zoom": 0,
+                "max_zoom": 22,
+                "source": {"kind": "feature_collection", "artifact": _ref(vector)},
+                "style": _vector_style(),
+            },
+        )
+    )
+    sheet = asyncio.run(_tiff_artifact(uow, key="sheet.tif"))
+    raster_layer = asyncio.run(
+        _inline_artifact(
+            uow,
+            LAYER_KEY,
+            {
+                "title": "Sheet",
+                "visible": True,
+                "opacity": 1.0,
+                "min_zoom": 0,
+                "max_zoom": 22,
+                "source": {"kind": "raster_scan", "artifact": _ref(sheet)},
+                "style": _raster_style(),
+            },
+        )
     )
 
-    assert full.status_code == 413
-    assert str(artifact.id) in full.json()["detail"]
-    assert "8-byte response limit" in full.json()["detail"]
-    assert oversized_range.status_code == 416
-    assert oversized_range.headers["content-range"] == "bytes */21"
-    assert "9 bytes" in oversized_range.json()["detail"]
-    assert "8-byte range limit" in oversized_range.json()["detail"]
-    assert storage.range_requests == []
+    vector_descriptor = artifacts.geo_render(vector_layer.id)
+    assert vector_descriptor.status_code == 200
+    assert vector_descriptor.json()["layers"] == []
+    assert vector_descriptor.json()["initial_bounds"] == [5.0, 25.0, 5.0, 25.0]
+
+    document = asyncio.run(
+        _inline_artifact(
+            uow,
+            DOCUMENT_KEY,
+            {
+                "layers": [_ref(vector_layer), _ref(raster_layer)],
+                "basemap": "openstreetmap",
+                "initial_bounds": None,
+            },
+        )
+    )
+    mixed = artifacts.geo_render(document.id)
+    assert mixed.status_code == 200
+    assert [layer["title"] for layer in mixed.json()["layers"]] == ["Sheet"]
+    assert [layer["source"]["kind"] for layer in mixed.json()["layers"]] == ["raster"]
 
 
-def test_empty_feature_collection_has_clear_non_renderable_descriptor(
+def test_empty_feature_collection_keeps_a_bounded_descriptor(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
     client, uow, storage = geo_artifact_client
@@ -727,7 +635,6 @@ def test_empty_feature_collection_has_clear_non_renderable_descriptor(
             source_name="Empty source",
             features=[],
             bounds=None,
-            pmtiles=None,
         )
     )
 
@@ -736,9 +643,6 @@ def test_empty_feature_collection_has_clear_non_renderable_descriptor(
     assert response.status_code == 200
     assert response.json()["layers"] == []
     assert response.json()["initial_bounds"] is None
-    archive = artifacts.geo_vector_pmtiles(artifact.id)
-    assert archive.status_code == 400
-    assert "empty" in archive.json()["detail"]
 
 
 def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
@@ -765,7 +669,7 @@ def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
             bounds=(5.0, 6.0, 5.0, 6.0),
         )
     )
-    raster_source = asyncio.run(_raster_artifact(uow, storage))
+    raster_source = asyncio.run(_tiff_artifact(uow, key="scan.tif"))
     first_layer = asyncio.run(
         _inline_artifact(
             uow,
@@ -867,18 +771,19 @@ def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
     descriptor = response.json()
     assert descriptor["kind"] == "map_document"
     assert descriptor["initial_bounds"] == [-10.0, -8.0, 30.0, 25.0]
+    # The vector layers contribute their footprint to the camera only: no
+    # GeoJSON renderer exists yet, so nothing is drawn for them.
     assert [layer["title"] for layer in descriptor["layers"]] == [
-        "First observations",
         "Historical scan",
-        "Second observations",
         "Atlas Fontium",
     ]
-    assert descriptor["layers"][0]["style"]["point"]["radius"] == 7.0
-    assert descriptor["layers"][1]["source"]["kind"] == "raster"
-    assert descriptor["layers"][2]["style"]["kind"] == "categorized_points"
-    assert descriptor["layers"][2]["style"]["categories"][1]["min_zoom"] == 10
-    assert descriptor["layers"][3]["source"]["artifact_id"] is None
-    assert descriptor["layers"][3]["source"]["attribution"] == "Atlas Fontium"
+    assert [layer["source"]["kind"] for layer in descriptor["layers"]] == [
+        "raster",
+        "raster",
+    ]
+    assert descriptor["layers"][0]["source"]["artifact_id"] == str(raster_source.id)
+    assert descriptor["layers"][1]["source"]["artifact_id"] is None
+    assert descriptor["layers"][1]["source"]["attribution"] == "Atlas Fontium"
 
     # The `url` query param is not declared by the route (it must be ignored),
     # so the typed client cannot express this request; use the raw client.
@@ -992,52 +897,16 @@ async def test_wms_tile_pins_validated_address_against_dns_rebinding(
     assert requests[0].extensions["sni_hostname"] == "maps.example.com"
 
 
-def test_raster_tilejson_and_tiles_read_only_precomputed_xyz_objects(
-    geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
-) -> None:
-    client, uow, storage = geo_artifact_client
-    api = GrafyApi(client)
-    artifacts = api.workspace(WORKSPACE_ID).artifacts
-    raster = asyncio.run(_raster_artifact(uow, storage))
-    storage.loaded_paths.clear()
-    storage.range_requests.clear()
-
-    tilejson = artifacts.raster_tilejson(raster.id)
-    tile = artifacts.raster_tile(raster.id, z=2, x=2, y=1)
-    blank = artifacts.raster_tile(raster.id, z=2, x=1, y=1)
-
-    assert tilejson.status_code == 200
-    assert tilejson.json()["minzoom"] == 2
-    assert tilejson.json()["maxzoom"] == 6
-    assert tilejson.json()["bounds"] == [10.0, 10.0, 20.0, 20.0]
-    assert tilejson.json()["tiles"] == [
-        f"/api/v1/workspaces/00000000-0000-0000-0000-000000000007/artifacts/{raster.id}/geo/raster/{{z}}/{{x}}/{{y}}.png"
-    ]
-    assert tile.status_code == 200
-    assert tile.content == b"png-tile"
-    assert tile.headers["content-type"] == "image/png"
-    assert tile.headers["cache-control"].endswith("immutable")
-    assert blank.status_code == 404
-    assert storage.loaded_paths == []
-    assert storage.range_requests == [
-        ("geo.raster_scan/v1/projections/source/xyz/2/2/1.png", 0, 8)
-    ]
-
-
-@pytest.mark.parametrize("kind", ["tiff", "cog", "layer", "tiff_layer"])
+@pytest.mark.parametrize("kind", ["tiff", "tiff_layer"])
 def test_dynamic_raster_tiles_use_signed_stored_source(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
     kind: str,
 ) -> None:
     client, uow, storage = geo_artifact_client
     artifacts = GrafyApi(client).workspace(WORKSPACE_ID).artifacts
-    source = asyncio.run(
-        _tiff_artifact(uow)
-        if kind in {"tiff", "tiff_layer"}
-        else _raster_artifact(uow, storage, dynamic=True)
-    )
+    source = asyncio.run(_tiff_artifact(uow))
     artifact = source
-    if kind in {"layer", "tiff_layer"}:
+    if kind == "tiff_layer":
         artifact = asyncio.run(
             _inline_artifact(
                 uow,
@@ -1062,9 +931,7 @@ def test_dynamic_raster_tiles_use_signed_stored_source(
     assert descriptor.status_code == tilejson.status_code == 200
     assert descriptor.json()["initial_bounds"] == [10, 10, 20, 20]
     assert descriptor.json()["layers"][0]["source"]["artifact_id"] == str(source.id)
-    assert (tilejson.json()["minzoom"], tilejson.json()["maxzoom"]) == (
-        (3, 7) if kind in {"tiff", "tiff_layer"} else (2, 6)
-    )
+    assert (tilejson.json()["minzoom"], tilejson.json()["maxzoom"]) == (3, 7)
     assert tile.status_code == 200
     assert tile.content == b"dynamic tile"
     assert tile.headers["etag"] == f'"{sha256(tile.content).hexdigest()}"'
@@ -1114,10 +981,7 @@ def test_combined_render_preserves_layer_order_and_workspace_scope(
     assert descriptor["kind"] == "map_document"
     assert descriptor["basemap"] == "none"
     assert descriptor["initial_bounds"] == [5, 10, 20, 25]
-    assert [layer["title"] for layer in descriptor["layers"]] == [
-        "georeferenced.tif",
-        "Points",
-    ]
+    assert [layer["title"] for layer in descriptor["layers"]] == ["georeferenced.tif"]
     other_workspace = f"/v1/workspaces/{UUID(int=90)}/artifacts/geo/render"
     assert (
         client.post(other_workspace, json={"artifact_ids": [str(tiff.id)]}).status_code
@@ -1126,33 +990,6 @@ def test_combined_render_preserves_layer_order_and_workspace_scope(
     assert client.post(url, json={"artifact_ids": []}).status_code == 422
     assert (
         client.post(url, json={"artifact_ids": [str(tiff.id)] * 65}).status_code == 422
-    )
-
-
-def test_raster_render_validates_source_name_before_projection(
-    geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
-) -> None:
-    client, uow, _ = geo_artifact_client
-    artifact = asyncio.run(
-        _add_artifact(
-            uow,
-            ArtifactObject(
-                workspace_id=WORKSPACE_ID,
-                artifact_type=RASTER_KEY.id,
-                schema_version=1,
-                content_type="image/tiff",
-                metadata={},
-            ),
-        )
-    )
-
-    response = (
-        GrafyApi(client).workspace(WORKSPACE_ID).artifacts.geo_render(artifact.id)
-    )
-
-    assert response.status_code == 500
-    assert response.json()["detail"] == (
-        f"Geo source artifact {artifact.id} has invalid source_name metadata"
     )
 
 

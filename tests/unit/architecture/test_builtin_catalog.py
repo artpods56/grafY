@@ -1,15 +1,16 @@
+from grafy_api.services.families import APPLICATION_FAMILIES, build_application_registry
 from grafy_core.artifact_contracts import (
     HTML_PAGE,
     INTEGER_VALUE,
     RASTER_IMAGE,
     TEXT_VALUE,
 )
+from grafy_core.contracts.ocr import CropTextReader, DocumentOcr, TextBoxDetector
 from grafy_core.plugins import PluginRegistry
 from grafy_core.table_contracts import TABLE_DATA
 from grafy_plugin_image import IMAGES
 from grafy_plugin_table import TABLES
 from grafy_workbench import BUILTIN_FAMILIES, build_builtin_registry
-
 
 EXPECTED_BUILTIN_OPERATORS = {
     ("sequence.collect", 1),
@@ -19,24 +20,9 @@ EXPECTED_BUILTIN_OPERATORS = {
     ("value.integer", 1),
     ("text.input", 1),
     ("schema.builder", 1),
-    ("table.transliterate_cyrillic", 1),
     ("table.concat", 1),
     ("table.extract_from_markdown", 1),
-    ("table.match_places", 1),
-    ("ocr.read", 1),
-    ("ocr.detect_tiff_text", 1),
-    ("ocr.craft_provider", 1),
-    ("ocr.paddle_cyrillic_provider", 1),
-    ("ocr.recognize_tiff_text", 1),
-    ("ocr.georeference_places", 1),
-    ("ocr.filter_tiff_jev", 1),
-    ("ocr.export_label_studio", 1),
-    ("ocr.import_label_studio", 1),
-    ("ocr.georeference_places", 1),
-    ("ocr.prepare_tiff_labels", 1),
-    ("ocr.filter_tiff_readings", 1),
-    ("ocr.places_table", 1),
-    ("ocr.collect_map_places", 1),
+    ("ocr.read_document", 1),
 }
 
 
@@ -44,9 +30,6 @@ def test_builtin_catalog_keeps_artifact_support_without_retired_operators() -> N
     registry = build_builtin_registry()
 
     assert {node.key for node in registry.nodes} == EXPECTED_BUILTIN_OPERATORS
-    transliteration = registry.node_registration("table.transliterate_cyrillic", 1)
-    assert set(transliteration.node_class.input_contract.ports) == {"table"}
-    assert set(transliteration.node_class.output_contract.ports) == {"table"}
     assert {artifact.key for artifact in registry.artifact_types} >= {
         TEXT_VALUE.key,
         HTML_PAGE.key,
@@ -81,3 +64,26 @@ def test_file_plugins_install_alongside_builtin_artifact_contracts() -> None:
     assert registry.node_registration("table.import", 1).plugin_slug == "external.table"
     assert registry.artifact_type_owner(RASTER_IMAGE.key) == "image"
     assert registry.artifact_type_owner(TABLE_DATA.key) == "table"
+
+
+def test_application_catalog_has_explicit_descriptions() -> None:
+    registry = build_application_registry()
+
+    assert len(registry.nodes) == 41
+    for node in registry.nodes:
+        assert node.description.strip(), node.key
+        assert "ABC" not in node.description, node.key
+
+
+def test_builtin_ocr_family_owns_the_shared_service_contracts() -> None:
+    owners = {
+        contract.protocol: plugin.slug
+        for plugin in APPLICATION_FAMILIES
+        for contract in plugin.service_contracts
+        if contract.protocol in {DocumentOcr, TextBoxDetector, CropTextReader}
+    }
+    assert owners == {
+        DocumentOcr: "ocr",
+        TextBoxDetector: "ocr",
+        CropTextReader: "ocr",
+    }

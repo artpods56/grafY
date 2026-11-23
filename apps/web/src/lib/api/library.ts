@@ -38,6 +38,18 @@ export function listLibraryArtifacts(workspaceId: string) {
 }
 
 /**
+ * The bundled historical page, filed at the Library root.
+ *
+ * A second call returns the same artifact when its bytes are already there.
+ */
+export function seedStarterSample(workspaceId: string) {
+  return request<LibraryItem>(
+    "POST",
+    `/v1/workspaces/${encodeURIComponent(workspaceId)}/library/starter-sample`,
+  );
+}
+
+/**
  * Put one stored result's output in the Library.
  *
  * The Library keeps the instance's identity — Graph, node, call path and the

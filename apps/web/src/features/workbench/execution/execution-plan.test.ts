@@ -51,6 +51,11 @@ function nodeSpec(
   title = operatorId,
 ): NodeSpec {
   return {
+    pack_slugs: [],
+    role:
+      outputs.length && outputs.every((port) => port.kind === "service")
+        ? "provider"
+        : "operator",
     operator_id: operatorId,
     operator_version: 1,
     plugin_slug: "test",
@@ -470,10 +475,10 @@ describe("execution validation", () => {
 describe("run targets", () => {
   it("explains a provider-only selection instead of submitting an empty target list", () => {
     const reader: Port = {
-      ...port("reader", "output"),
+      ...port("engine", "output"),
       kind: "service",
       artifact_type: null,
-      service_contracts: [{ id: "ocr.reader", version: 1 }],
+      service_contracts: [{ id: "ocr.document", version: 1 }],
     };
     const provider = workflowNode(
       "mistral",
@@ -497,10 +502,10 @@ describe("run targets", () => {
     "runs OCR without targeting its service provider for %s",
     (scope) => {
       const reader: Port = {
-        ...port("reader", "output"),
+        ...port("engine", "output"),
         kind: "service",
         artifact_type: null,
-        service_contracts: [{ id: "ocr.reader", version: 1 }],
+        service_contracts: [{ id: "ocr.document", version: 1 }],
       };
       const provider = workflowNode(
         "mistral",
@@ -509,7 +514,7 @@ describe("run targets", () => {
       );
       const ocr = workflowNode(
         "ocr",
-        nodeSpec("ocr.read", [{ ...reader, direction: "input" }]),
+        nodeSpec("ocr.read_document", [{ ...reader, direction: "input" }]),
         { selected: true },
       );
       const execution = executionSubgraphFor(

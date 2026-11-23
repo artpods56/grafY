@@ -75,7 +75,18 @@ class OutputPersister:
         provenance: MaterializationProvenance,
         metadata: JsonObject | None = None,
     ) -> PersistedNodeOutput | BaseModel:
-        validated_output = contract.model.model_validate(output)
+        return await self.persist_validated(
+            contract, context, contract.model.model_validate(output), provenance, metadata
+        )
+
+    async def persist_validated(
+        self,
+        contract: OutputContract[Any],
+        context: NodeExecutionContext,
+        validated_output: BaseModel,
+        provenance: MaterializationProvenance,
+        metadata: JsonObject | None = None,
+    ) -> PersistedNodeOutput | BaseModel:
         values = _model_values(validated_output)
 
         for name, spec in contract.ports.items():
@@ -133,7 +144,7 @@ class OutputPersister:
                     f"Output {spec.name!r} expected an ArtifactRefSequence, "
                     "got ArtifactRef"
                 )
-            return value
+            return ArtifactRef.model_validate(value.model_dump())
         if isinstance(value, ArtifactRefSequence):
             if (
                 value.artifact_type != spec.produces.id

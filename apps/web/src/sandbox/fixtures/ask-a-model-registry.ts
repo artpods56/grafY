@@ -9,6 +9,7 @@ import type { NodeRegistry } from "@/lib/api";
 export const ASK_A_MODEL_OPERATOR_ID = "llm.openai_compatible.chat_completion";
 
 export const askAModelRegistry: NodeRegistry = {
+  packs: [],
   plugins: [
     {
       slug: "external.llm",
@@ -350,6 +351,8 @@ export const askAModelRegistry: NodeRegistry = {
   artifact_conversions: [],
   nodes: [
     {
+      pack_slugs: [],
+      role: "operator",
       origin: "builtin",
       operator_id: "llm.openai_compatible.chat_completion",
       operator_version: 1,

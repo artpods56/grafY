@@ -45,6 +45,20 @@ export function createProject(workspaceId: string, body: CreateProjectRequest) {
   });
 }
 
+/** A code-defined Project a historian can open without drawing the graph. */
+export type StarterId = "transcribe_page" | "extract_table";
+
+export function createStarterProject(
+  workspaceId: string,
+  starterId: StarterId,
+) {
+  return request<Project>(
+    "POST",
+    workspacePath(workspaceId, "/projects/starter"),
+    { body: { starter_id: starterId } },
+  );
+}
+
 export function deleteProject(
   workspaceId: string,
   projectId: string,

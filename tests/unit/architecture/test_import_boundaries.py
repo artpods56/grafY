@@ -14,6 +14,8 @@ PUBLISHED_PLUGIN_FAMILIES = (
     "table",
     "gis",
     "llm",
+    "litellm_ocr",
+    "map_toponyms",
     "mistral",
     "reducto",
 )
@@ -104,7 +106,7 @@ def test_plugin_families_are_installed_from_the_workspace() -> None:
     root_dependencies = cast(list[str], root_project["dependencies"])
     assert not root_project.get("optional-dependencies")
     for family in INSTALLED_PLUGIN_FAMILIES:
-        assert f"grafy-plugin-{family}" in root_dependencies
+        assert f"grafy-plugin-{family.replace('_', '-')}" in root_dependencies
 
     workspace = cast(dict[str, object], root_document["tool"])["uv"]
     workspace = cast(dict[str, object], workspace)["workspace"]
@@ -171,9 +173,9 @@ def test_core_does_not_import_outer_layers_or_domain_adapters() -> None:
     dependencies.
 
     Two transport names are deliberately absent. `pydantic` is how the domain models
-    are written, and `httpx` appears once, in `grafy_core/egress.py`, because the egress
-    authority has to build the transport it pins now that families run in-process
-    (ADR 0017) — it dials nothing itself and stays the only such module.
+    are written. `httpx` supports egress pinning and shared provider HTTP clients
+    for in-process families (ADR 0017). The kernel guard keeps transport code out
+    of the Project kernel.
     """
 
     core_root = REPO_ROOT / "libs/core/src/grafy_core"
@@ -376,18 +378,16 @@ def test_system_plugins_do_not_import_other_plugin_implementations() -> None:
     """
 
     offenders: list[str] = []
-
-    for family in SYSTEM_PLUGIN_FAMILIES:
+    for family in PUBLISHED_PLUGIN_FAMILIES:
         source_root = REPO_ROOT / "plugins" / family / "src"
-        forbidden_imports = sorted(
-            set(SYSTEM_PLUGIN_IMPORTS) - {f"grafy_plugin_{family}"}
-        )
+        own_package = f"grafy_plugin_{family}"
         for path in source_root.rglob("*.py"):
             package = ".".join(path.parent.relative_to(source_root).parts)
             for module in _imported_modules(path.read_text(), package):
-                if any(
-                    module == forbidden or module.startswith(f"{forbidden}.")
-                    for forbidden in forbidden_imports
+                imported_package = module.split(".", 1)[0]
+                if (
+                    imported_package.startswith("grafy_plugin_")
+                    and imported_package != own_package
                 ):
                     offenders.append(f"{path.relative_to(REPO_ROOT)}: {module}")
 
@@ -408,8 +408,9 @@ def test_system_plugins_depend_on_core_not_outer_layers() -> None:
     Restored from the guard 93063148 deleted. What kept it out was
     `grafy_plugin_gis.smoke`, which built an `InMemoryUnitOfWork` and a
     `LocalFileObjectStore` inside the family package; constructing an object
-    store is composition-root work (ADR 0011), so that harness is
-    `scripts/smoke_gis.py` now and the guard has nothing left to excuse.
+    store is composition-root work (ADR 0011), so that harness moved to
+    `scripts/smoke_gis.py`, which the family's own suite has since replaced.
+    Either way the guard has nothing left to excuse.
     `grafy_workbench` is not on the forbidden list because ADR 0017 makes a
     Plugin application code beside the builtin families: importing them is
     importing application code, not reaching out to a host.

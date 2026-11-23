@@ -132,7 +132,7 @@ export function WorkspaceGraphPanel({
     <div
       ref={panelRef}
       role="dialog"
-      aria-label="Quick graph switcher"
+      aria-label="Quick project switcher"
       className="grafy-graph-panel"
     >
       <div className="grafy-graph-panel__header">
@@ -152,7 +152,7 @@ export function WorkspaceGraphPanel({
           ) : null}
         </p>
         <IconButton
-          label="Close quick graph switcher"
+          label="Close quick project switcher"
           size="sm"
           xstyle={phoneTouch.square}
           onClick={() => onClose("close-button")}
@@ -167,8 +167,8 @@ export function WorkspaceGraphPanel({
           ref={searchRef}
           type="search"
           value={query}
-          placeholder="Search graphs"
-          aria-label="Search graphs"
+          placeholder="Search projects"
+          aria-label="Search projects"
           onChange={(event) => setQuery(event.currentTarget.value)}
         />
       </div>
@@ -180,7 +180,7 @@ export function WorkspaceGraphPanel({
           <p className="grafy-graph-panel__empty">
             {query.trim()
               ? "No projects match that search."
-              : "No projects in this location yet. Use New graph in the sidebar to start one."}
+              : "No projects in this location yet. Use New project in the sidebar to start one."}
           </p>
         ) : (
           projects.map((project) => (

@@ -21,8 +21,8 @@ test("sign in, create a Graph, and run after a live edit", async ({
     browser.locator(".grafy-workspace-rail__account-email"),
   ).toContainText("owner@grafy.local", { timeout: 120_000 });
 
-  const rail = screen.getByRole("navigation", { name: "Graphs" });
-  await rail.getByRole("button", { name: "New graph" }).click();
+  const rail = screen.getByRole("navigation", { name: "Projects" });
+  await rail.getByRole("button", { name: "New project" }).click();
   await expect(browser).toHaveURL(/\/workspaces\/[^/]+\/projects\/new$/, {
     timeout: 120_000,
   });

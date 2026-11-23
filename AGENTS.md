@@ -48,8 +48,9 @@ elsewhere. Walk this list and say which entries applied:
   committed file lags the schema.
 - **Builtin families vs Plugins.** A node or artifact behavior may live in
   app-owned builtin families under `apps/api` and in one of `plugins/*` (gis,
-  image, llm, mistral, reducto, table). Provider-shaped features
-  need a decision per host, even if the decision is "not here".
+  image, llm, litellm_ocr, map_toponyms, mistral, reducto, table).
+  Provider-shaped features need a decision per host, even if the decision is
+  "not here".
 - **Tenancy and capabilities.** Every graph belongs to exactly one Workspace;
   effective permission is role ∩ PAT scope ∩ capability (`CONTEXT.md`). A new
   route needs a Workspace scoping and a capability decision, not just an id

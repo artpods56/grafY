@@ -219,7 +219,6 @@ const IMAGE_ARTIFACT_TYPES = new Set([
 
 const GEO_MAP_ARTIFACT_TYPES = new Set([
   "geo.feature_collection",
-  "geo.raster_scan",
   "geo.map_layer",
   "geo.map_document",
 ]);

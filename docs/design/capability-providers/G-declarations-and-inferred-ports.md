@@ -134,8 +134,7 @@ Only the owner registers the declaration. A second registration of the same key 
 | `geo.map_layer@1` | `GeoMapLayer` | gis plugin | that plugin |
 | `geo.map_document@1` | `GeoMapDocument` | gis plugin | that plugin |
 | `table.data@1` | `Table` | table plugin | that plugin. Move `TableArtifactWriter.write` and `load_table_artifact` into the declaration. The resolver's row load is deleted. |
-| `geo.feature_collection@1` | `GeoFeatureCollection` | gis plugin | that plugin. Move the body of `FeatureCollectionResolver` after the row load, and `FeatureCollectionOutputWriter.write`. `GdalCli` is an argument of `feature_collection_artifact(gdal=None)`, defaulting to `GdalCli()`. Tests pass the fake there. |
-| `geo.raster_scan@1` | `GeoRasterScan` | gis plugin | same treatment as the feature collection. `RasterScanResolver.resolve` loads the row, checks the ref, then `storage.load`. It does not issue another query. Keep the missing-bucket check, the `source_name` and `original_filename` checks, and `verify_spatial_artifact_content`. The value stays eager. It holds the bytes. |
+| `geo.feature_collection@1` | `GeoFeatureCollection` | gis plugin | that plugin. Move the body of `FeatureCollectionResolver` after the row load, and `FeatureCollectionOutputWriter.write`. |
 | `image.raster@1` | `RasterImage` | workbench image family owns the type and has no writer. External image plugin registers the writer. | workbench image family registers the declaration. `resolve` and `write` live in `grafy_core/documents.py`. Delete `plugins/image/.../persistence.py`'s `register_writer`. |
 | each `file.*` in `BUILTIN_FILE_FORMATS` | its own subclass, below | no plugin owns them. `grafy_workbench.file.declaration` only registers resolvers and dependencies. | core tuple `FILE_ARTIFACTS`, passed straight into `ArtifactValues` beside the plugin list. |
 
@@ -284,15 +283,9 @@ OpenAI-compatible, `plugins/llm/.../openai_compatible.py`.
 | `json_schema` | `JsonSchemaText \| None` | pass `.value` where the code reads the string |
 | `completion` | `CompletionPayload` | drop marker |
 
-Mistral OCR, `plugins/mistral/.../ocr.py`. The old node stays.
-
-| Field | After | Body |
-| --- | --- | --- |
-| `document_url` | `str \| None`, `Plugs(agent_default="hidden")` | still a text port. Hidden stays, so an agent tool does not fill the URL |
-| `image` | `RasterImage \| PdfFile \| None` | replace `_image_data_url`'s artifact load with `read`. Branch on `isinstance(..., PdfFile)`, not on `ref.key()` |
-| `markdown`, `blocks`, `regions` | `MarkdownValue`, `Table`, `ImageRegionSet` | drop markers |
-
-Reducto, `plugins/reducto/.../ocr.py`. Same image and output rows. `document_url` is `str \| None` with no `Plugs`. Reducto does not hide that input today. Do not add `hidden`.
+Document OCR accepts a `RasterImage | PdfFile` and a `DocumentOcr` engine.
+The Mistral and Reducto provider nodes supply that engine. Its declared features
+control which optional block and region outputs can be wired.
 
 GIS, `plugins/gis/.../nodes.py`.
 
@@ -304,11 +297,9 @@ GIS, `plugins/gis/.../nodes.py`.
 | table to features | `features` | `GeoFeatureCollection` | drop marker |
 | parse GeoJSON | `file` | `GeoJsonFile \| JsonFile` | read the handle. Order is GeoJSON then JSON |
 | parse GeoJSON | `features` | `GeoFeatureCollection` | drop marker |
-| raster import | `file` | `TiffFile` | `GeoRasterScanImportInput.file` is `ArtifactRef` with `InPort(TIFF_FILE)` today. `read` the handle |
-| raster import | scan output | `GeoRasterScan` | drop marker |
 | vector layer | `features` | `Ref[GeoFeatureCollection]` | still stored on `GeoFeatureArtifactSource.artifact` |
 | vector layer | `layer` | `GeoMapLayer` | drop marker |
-| raster layer | `raster` | `Ref[GeoRasterScan]` | still stored on `GeoRasterArtifactSource.artifact` |
+| raster layer | `raster` | `Ref[TiffFile]` | still stored on `GeoRasterArtifactSource.artifact` |
 | compose map | `layers` | `RefSequence[GeoMapLayer]` | still reads `.ordered` and `.item_refs` |
 | compose map | `map` | `GeoMapDocument` | drop marker |
 | wfs import | `features` | `GeoFeatureCollection` | drop marker. The body still returns the fetched collection |
@@ -374,7 +365,7 @@ Each commit is green on the commands at the bottom before the next one starts.
 
 1. `feat(core): declare inline artifact values once`. Add `ArtifactValues`, `inline_model_artifact`, and the scalar helper. Register the inline and scalar rows, including `JsonSchemaText`. Materializer and persister use `values` when the key is declared and the old registry otherwise. Delete the Mistral and Reducto writers. A duplicate declaration raises. Tests that construct those foreign writers are updated.
 
-2. `feat(core): declare file, raster, table and gis values`. Add `documents.py`, the file subclasses, `RasterImage`, and move the table and GIS bodies. Delete `FileBytesResolver` and the external raster writer registration. Inject `GdalCli` through the factory. Image, table and GIS tests that built a writer by hand build a declaration instead.
+2. `feat(core): declare file, raster, table and gis values`. Add `documents.py`, the file subclasses, `RasterImage`, and move the table and GIS bodies. Delete `FileBytesResolver` and the external raster writer registration. Image, table and GIS tests that built a writer by hand build a declaration instead.
 
 3. `feat(core): infer node ports from value classes`. Derivation change, inventory migration, `callable_nodes.py`, startup check, delete `InPort` and `OutPort`. Update `tests/unit/core/test_node_contracts.py` and `tests/unit/core/test_invocation.py` in this commit. Node bodies listed above change here, because the field types change here.
 
@@ -386,8 +377,7 @@ Each commit is green on the commands at the bottom before the next one starts.
 - A second declaration of `text.markdown@1` raises at startup.
 - Writing a `MarkdownValue` to `scalar.text@1` raises `TypeError` before storage is called.
 - `schema.builder` input derives JSON Schema, with instance plugs, and does not derive text.
-- `MistralOcrInput.image` derives `image.raster@1` then `file.pdf@1`. Swapping the union members fails the snapshot.
-- `document_url` derives text and `agent_default="hidden"`. Reducto's URL derives text and the default fill.
+- `OcrInput.document` derives `image.raster@1` then `file.pdf@1`. Its engine is a graph-fed service port.
 - Collect derives variable `T`, instance plugs, spare plugs, and preserved ref containers.
 - A `BlobFile` port whose declaration was swapped to `PngFile` fails the startup pass.
 - `read(max_bytes=n)` does not call storage when `byte_size > n`.

@@ -559,23 +559,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/vector.pmtiles": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Geo Vector Pmtiles */
-        readonly get: operations["get_geo_vector_pmtiles_v1_workspaces__workspace_id__artifacts__source_id__geo_vector_pmtiles_get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/v1/workspaces/{workspace_id}/artifacts/geo/render": {
         readonly parameters: {
             readonly query?: never;
@@ -862,6 +845,26 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/library/starter-sample": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /**
+         * Seed Starter Sample
+         * @description Place the bundled historical page at the Library root, or return it.
+         */
+        readonly post: operations["seed_starter_sample_v1_workspaces__workspace_id__library_starter_sample_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/members": {
         readonly parameters: {
             readonly query?: never;
@@ -907,6 +910,40 @@ export interface paths {
         /** List Nodes */
         readonly get: operations["list_nodes_v1_workspaces__workspace_id__nodes_get"];
         readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/packs": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Packs */
+        readonly get: operations["list_packs_v1_workspaces__workspace_id__packs_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/packs/{pack_slug}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        /** Set Pack Subscription */
+        readonly put: operations["set_pack_subscription_v1_workspaces__workspace_id__packs__pack_slug__put"];
         readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
@@ -1640,6 +1677,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/projects/starter": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Create Starter Project */
+        readonly post: operations["create_starter_project_v1_workspaces__workspace_id__projects_starter_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/uploads": {
         readonly parameters: {
             readonly query?: never;
@@ -2240,6 +2294,25 @@ export interface components {
             /** Turn Id */
             readonly turn_id?: string | null;
         };
+        /** CatalogPackResponse */
+        readonly CatalogPackResponse: {
+            /** Always On */
+            readonly always_on: boolean;
+            /** Description */
+            readonly description: string;
+            /** Includes Project Graphs */
+            readonly includes_project_graphs: boolean;
+            /** Operator Count */
+            readonly operator_count: number;
+            /** Provider Count */
+            readonly provider_count: number;
+            /** Slug */
+            readonly slug: string;
+            /** Subscribed */
+            readonly subscribed: boolean;
+            /** Title */
+            readonly title: string;
+        };
         /** CheckpointProjectRequest */
         readonly CheckpointProjectRequest: {
             /**
@@ -2419,6 +2492,10 @@ export interface components {
             readonly name: string;
             /** Project Id */
             readonly project_id?: string | null;
+        };
+        /** CreateStarterProjectRequest */
+        readonly CreateStarterProjectRequest: {
+            readonly starter_id: components["schemas"]["StarterId"];
         };
         /**
          * CreateUploadRequest
@@ -2666,31 +2743,6 @@ export interface components {
             /** Stroke Width */
             readonly stroke_width: number;
         };
-        /** GeoPropertyFieldResponse */
-        readonly GeoPropertyFieldResponse: {
-            /** Id */
-            readonly id: string;
-            /** Title */
-            readonly title: string;
-            readonly value_type: components["schemas"]["GeoPropertyValueType"];
-        };
-        /** @enum {string} */
-        readonly GeoPropertyValueType: "text" | "integer" | "number" | "boolean" | "null" | "mixed" | "unknown";
-        /** GeoRasterRenderSourceResponse */
-        readonly GeoRasterRenderSourceResponse: {
-            /** Artifact Id */
-            readonly artifact_id: string | null;
-            /** Attribution */
-            readonly attribution?: string | null;
-            readonly bounds: components["schemas"]["GeoBounds"];
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            readonly kind: "raster";
-            /** Tilejson Url */
-            readonly tilejson_url: string;
-        };
         /** GeoRasterStyle */
         readonly GeoRasterStyle: {
             /** Brightness Max */
@@ -2752,8 +2804,7 @@ export interface components {
             readonly min_zoom: number;
             /** Opacity */
             readonly opacity: number;
-            /** Source */
-            readonly source: components["schemas"]["GeoVectorRenderSourceResponse"] | components["schemas"]["GeoRasterRenderSourceResponse"];
+            readonly source: components["schemas"]["GeoRenderSourceResponse"];
             /** Style */
             readonly style: components["schemas"]["GeoVectorStyle"] | components["schemas"]["GeoCategorizedPointStyle"] | components["schemas"]["GeoRasterStyle"];
             /** Title */
@@ -2789,29 +2840,21 @@ export interface components {
             /** Layers */
             readonly layers: readonly components["schemas"]["GeoRenderLayerResponse"][];
         };
-        /** GeoVectorRenderSourceResponse */
-        readonly GeoVectorRenderSourceResponse: {
-            /** Archive Url */
-            readonly archive_url: string;
+        /** GeoRasterRenderSourceResponse */
+        readonly GeoRenderSourceResponse: {
+            /** Artifact Id */
+            readonly artifact_id: string | null;
+            /** Attribution */
+            readonly attribution?: string | null;
+            readonly bounds: components["schemas"]["GeoBounds"];
             /**
-             * Artifact Id
-             * Format: uuid
+             * Kind
+             * @default raster
+             * @constant
              */
-            readonly artifact_id: string;
-            readonly bounds: components["schemas"]["GeoBounds"] | null;
-            /** Fields */
-            readonly fields?: readonly components["schemas"]["GeoPropertyFieldResponse"][];
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            readonly kind: "vector";
-            /** Max Zoom */
-            readonly max_zoom: number;
-            /** Min Zoom */
-            readonly min_zoom: number;
-            /** Source Layer */
-            readonly source_layer: string;
+            readonly kind: "raster";
+            /** Tilejson Url */
+            readonly tilejson_url: string;
         };
         /** GeoVectorStyle */
         readonly GeoVectorStyle: {
@@ -3465,6 +3508,8 @@ export interface components {
             readonly artifact_types: readonly components["schemas"]["ArtifactTypeSpecResponse"][];
             /** Nodes */
             readonly nodes: readonly components["schemas"]["NodeSpecResponse"][];
+            /** Packs */
+            readonly packs: readonly components["schemas"]["CatalogPackResponse"][];
             /** Plugins */
             readonly plugins: readonly components["schemas"]["PluginSpecResponse"][];
             /** Service Contracts */
@@ -3592,8 +3637,16 @@ export interface components {
             };
             /** Outputs */
             readonly outputs: readonly components["schemas"]["PortResponse"][];
+            /** Pack Slugs */
+            readonly pack_slugs: readonly string[];
             /** Plugin Slug */
             readonly plugin_slug: string;
+            /**
+             * Role
+             * @default operator
+             * @enum {string}
+             */
+            readonly role: "operator" | "provider";
             /**
              * Runnable
              * @default true
@@ -3741,11 +3794,6 @@ export interface components {
              */
             readonly direction: "input" | "output";
             /**
-             * Features
-             * @description Feature strings a service output's implementation declares, so the workbench can mute ports a connected provider does not produce.
-             */
-            readonly features?: readonly string[];
-            /**
              * Instance Plugs
              * @default false
              */
@@ -3763,8 +3811,11 @@ export interface components {
              * @default true
              */
             readonly required: boolean;
+            readonly requires_service_feature?: components["schemas"]["RequiresServiceFeatureResponse"] | null;
             /** Service Contracts */
             readonly service_contracts?: readonly components["schemas"]["ServiceContractKeyResponse"][];
+            /** Service Features */
+            readonly service_features?: readonly components["schemas"]["ServiceContractFeaturesResponse"][];
             readonly shape: components["schemas"]["PortShape"];
             /**
              * Shape Field
@@ -4196,6 +4247,13 @@ export interface components {
             readonly kind: "replace_presentation";
             readonly presentation: components["schemas"]["GraphPresentationDocument"];
         };
+        /** RequiresServiceFeatureResponse */
+        readonly RequiresServiceFeatureResponse: {
+            /** Feature */
+            readonly feature: string;
+            /** Input Port */
+            readonly input_port: string;
+        };
         /**
          * RunListResponse
          * @description The Runs of one Project, newest first, optionally only the active ones.
@@ -4304,6 +4362,12 @@ export interface components {
             /** Text */
             readonly text: string;
         };
+        /** ServiceContractFeaturesResponse */
+        readonly ServiceContractFeaturesResponse: {
+            readonly contract: components["schemas"]["ServiceContractKeyResponse"];
+            /** Features */
+            readonly features: readonly string[];
+        };
         /** ServiceContractKeyResponse */
         readonly ServiceContractKeyResponse: {
             /** Id */
@@ -4387,6 +4451,11 @@ export interface components {
             /** Node Id */
             readonly node_id: string;
         };
+        /** SetPackSubscriptionRequest */
+        readonly SetPackSubscriptionRequest: {
+            /** Subscribed */
+            readonly subscribed: boolean;
+        };
         /**
          * SharedCredentialBindingMode
          * @enum {string}
@@ -4409,6 +4478,12 @@ export interface components {
              */
             readonly title: string;
         };
+        /**
+         * StarterId
+         * @description Code-defined Projects a historian can open without drawing a graph.
+         * @enum {string}
+         */
+        readonly StarterId: "transcribe_page" | "extract_table";
         /** StartRunRequest */
         readonly StartRunRequest: {
             /** Graph Id */
@@ -4869,7 +4944,7 @@ export interface components {
          * WorkspaceCapability
          * @enum {string}
          */
-        readonly WorkspaceCapability: "view_project" | "view_artifacts" | "view_runs" | "join_project_room" | "publish_presence" | "create_project" | "edit_project" | "checkpoint_project" | "start_run" | "cancel_run" | "manage_secrets" | "delete_project" | "manage_members" | "rename_workspace";
+        readonly WorkspaceCapability: "view_project" | "view_artifacts" | "view_runs" | "join_project_room" | "publish_presence" | "create_project" | "edit_project" | "checkpoint_project" | "start_run" | "cancel_run" | "manage_secrets" | "delete_project" | "manage_packs" | "manage_members" | "rename_workspace";
         /** WorkspaceCreateRequest */
         readonly WorkspaceCreateRequest: {
             /** Name */
@@ -6693,83 +6768,6 @@ export interface operations {
             };
         };
     };
-    readonly get_geo_vector_pmtiles_v1_workspaces__workspace_id__artifacts__source_id__geo_vector_pmtiles_get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: {
-                readonly Range?: string | null;
-            };
-            readonly path: {
-                readonly source_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": unknown;
-                };
-            };
-            /** @description Invalid vector source */
-            readonly 400: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
-                };
-            };
-            /** @description Artifact not found */
-            readonly 404: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
-                };
-            };
-            /** @description Response too large */
-            readonly 413: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
-                };
-            };
-            /** @description Requested byte range is not satisfiable */
-            readonly 416: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Vector projection is unavailable */
-            readonly 500: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
-                };
-            };
-        };
-    };
     readonly render_geo_artifacts_v1_workspaces__workspace_id__artifacts_geo_render_post: {
         readonly parameters: {
             readonly query?: never;
@@ -7507,6 +7505,37 @@ export interface operations {
             };
         };
     };
+    readonly seed_starter_sample_v1_workspaces__workspace_id__library_starter_sample_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     readonly list_members_v1_workspaces__workspace_id__members_get: {
         readonly parameters: {
             readonly query?: never;
@@ -7622,6 +7651,73 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["NodeRegistryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly list_packs_v1_workspaces__workspace_id__packs_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": readonly components["schemas"]["CatalogPackResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly set_pack_subscription_v1_workspaces__workspace_id__packs__pack_slug__put: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly pack_slug: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SetPackSubscriptionRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CatalogPackResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9242,6 +9338,41 @@ export interface operations {
         readonly requestBody: {
             readonly content: {
                 readonly "application/json": components["schemas"]["CopyExactHeadRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly create_starter_project_v1_workspaces__workspace_id__projects_starter_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateStarterProjectRequest"];
             };
         };
         readonly responses: {

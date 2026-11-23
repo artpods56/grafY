@@ -1,0 +1,200 @@
+"""OCR service contracts, results, and pixel-space geometry."""
+
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from enum import StrEnum
+from math import isfinite
+from types import MappingProxyType
+from typing import Annotated, ClassVar, Protocol, cast, runtime_checkable
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+
+from grafy_core.artifact_contracts import ImageRegionSet, MarkdownValue
+from grafy_core.documents import PdfFile, RasterImage
+from grafy_core.service_contracts import service_contract
+from grafy_core.table_contracts import Table
+
+
+class DocumentOcrFeature(StrEnum):
+    BLOCKS = "blocks"
+    REGIONS = "regions"
+
+
+class DocumentOcrResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    markdown: MarkdownValue
+    blocks: Table | None = None
+    regions: ImageRegionSet | None = None
+
+
+@service_contract("ocr.document", version=1, title="Document OCR")
+@runtime_checkable
+class DocumentOcr(Protocol):
+    features: ClassVar[frozenset[DocumentOcrFeature]]
+
+    async def read(self, document: RasterImage | PdfFile) -> DocumentOcrResult: ...
+
+
+type PixelCoordinate = Annotated[float, Field(ge=0, allow_inf_nan=False, strict=True)]
+type PixelPoint = tuple[PixelCoordinate, PixelCoordinate]
+type PixelPolygon = Annotated[list[PixelPoint], Field(min_length=3)]
+
+
+class TextRegion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    polygon: PixelPolygon
+    text: str | None = None
+    score: float | None = Field(default=None, allow_inf_nan=False)
+
+
+type FrozenJson = (
+    None | bool | int | float | str | tuple[FrozenJson, ...] | Mapping[str, FrozenJson]
+)
+
+
+def _freeze_json(value: object, ancestors: set[int]) -> FrozenJson:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if not isfinite(value):
+            raise ValueError("Cache options must contain finite JSON values")
+        return value
+    value_id = id(value)
+    if isinstance(value, (Mapping, list, tuple)):
+        if value_id in ancestors:
+            raise ValueError("Cache options must not contain cycles")
+        ancestors.add(value_id)
+        try:
+            if isinstance(value, Mapping):
+                result: dict[str, FrozenJson] = {}
+                for key, item in cast(Mapping[object, object], value).items():
+                    if not isinstance(key, str):
+                        raise ValueError("Cache option keys must be strings")
+                    result[key] = _freeze_json(item, ancestors)
+                return MappingProxyType(result)
+            return tuple(
+                _freeze_json(item, ancestors) for item in cast(Sequence[object], value)
+            )
+        finally:
+            ancestors.remove(value_id)
+    raise ValueError("Cache options must contain JSON values")
+
+
+def _thaw_json(value: FrozenJson) -> JsonValue:
+    if isinstance(value, Mapping):
+        return {key: _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceCacheIdentity:
+    """Cache identity for one configured provider instance.
+
+    A None revision identifies a moving alias and must bypass ProviderCache.
+    See docs/design/provider-operation-cache.md.
+    """
+
+    deployment: str
+    revision: str | None
+    options: Mapping[str, object] = field(default_factory=lambda: dict[str, object]())
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("deployment", self.deployment),
+            ("revision", self.revision),
+        ):
+            if value is None and name == "revision":
+                continue
+            if (
+                not isinstance(value, str)
+                or not value
+                or value != value.strip()
+                or len(value) > 255
+            ):
+                raise ValueError(f"Invalid cache identity {name}")
+        frozen = _freeze_json(self.options, set())
+        if not isinstance(frozen, Mapping):
+            raise ValueError("Cache options must be a mapping")
+        object.__setattr__(self, "options", frozen)
+
+    def options_payload(self) -> dict[str, JsonValue]:
+        """Return a fresh JSON-compatible copy of the provider options."""
+        return {
+            key: _thaw_json(cast(FrozenJson, value))
+            for key, value in self.options.items()
+        }
+
+
+@service_contract("ocr.box_detector", version=1, title="Text box detector")
+class TextBoxDetector(Protocol):
+    def cache_identity(self) -> ServiceCacheIdentity: ...
+
+    async def detect(
+        self, png: bytes, *, width: int, height: int
+    ) -> list[TextRegion]: ...
+
+
+class TextReading(BaseModel):
+    """A recognizer's raw transcription of a single crop."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    text: str
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    model: str = Field(min_length=1)
+
+
+@service_contract("ocr.crop_reader", version=1, title="Crop text reader")
+class CropTextReader(Protocol):
+    def cache_identity(self) -> ServiceCacheIdentity: ...
+
+    async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
+        """Return one reading per crop in input order."""
+        ...
+
+
+class TiffWindowReader(Protocol):
+    async def __call__(
+        self, *, col: int, row: int, width: int, height: int
+    ) -> bytes: ...
+
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+type PixelAffine = tuple[float, float, float, float, float, float]
+"""GDAL/rasterio ``(a, b, c, d, e, f)``: ``x = a*col + b*row + c`` and
+``y = d*col + e*row + f``, where ``(col, row)`` is a pixel corner of the page."""
+
+
+@dataclass(frozen=True, slots=True)
+class TiffPage:
+    width: int
+    height: int
+    read: TiffWindowReader
+    source_sha256: str
+    page: int
+    # Both are set for a georeferenced page and both are None otherwise.
+    affine: PixelAffine | None = None
+    crs: str | None = None
+
+    def __post_init__(self) -> None:
+        if _SHA256.fullmatch(self.source_sha256) is None:
+            raise ValueError(
+                "TIFF page source_sha256 must be a 64-character lowercase hex digest"
+            )
+        if self.page < 0:
+            raise ValueError("TIFF page index must not be negative")
+        if (self.affine is None) != (self.crs is None):
+            raise ValueError("TIFF page affine and CRS must be present together")
+
+
+class TiffPageOpener(Protocol):
+    async def __call__(
+        self, workspace_id: UUID, artifact_id: UUID, *, page: int
+    ) -> TiffPage: ...

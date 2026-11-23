@@ -33,6 +33,9 @@ const browserState = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   useWorkspaceProjects: vi.fn(),
+  useWorkspacePacks: vi.fn(),
+  useProjectSummaryRefresh: vi.fn(),
+  createStarterProject: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -50,12 +53,22 @@ vi.mock("next/link", () => ({
 vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
   useWorkspaceContext: () => ({ workspace: browserState.workspace }),
   workspaceDisplayName: (workspace: { name: string; kind: string }) =>
-    workspace.kind === "personal" ? "My graphs" : workspace.name,
+    workspace.kind === "personal" ? "My projects" : workspace.name,
 }));
 
 vi.mock("@/hooks/use-api", () => ({
   useWorkspaceProjects: apiMocks.useWorkspaceProjects,
+  useWorkspacePacks: apiMocks.useWorkspacePacks,
+  useProjectSummaryRefresh: apiMocks.useProjectSummaryRefresh,
 }));
+
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    createStarterProject: apiMocks.createStarterProject,
+  };
+});
 
 import { WorkspaceGraphBrowser } from "./WorkspaceGraphBrowser";
 
@@ -138,7 +151,7 @@ function button(container: ParentNode, name: string): HTMLButtonElement {
 
 function searchInput(container: ParentNode): HTMLInputElement {
   const input = container.querySelector<HTMLInputElement>(
-    'input[aria-label="Search graphs"]',
+    'input[aria-label="Search projects"]',
   );
   if (!input) throw new Error("Search input not found");
   return input;
@@ -156,12 +169,12 @@ function rowTitles(container: ParentNode): string[] {
  */
 function viewOption(container: ParentNode, label: string): HTMLElement {
   const group = container.querySelector('[role="radiogroup"]');
-  if (!group) throw new Error("Graph view radio group not found");
-  expect(group.getAttribute("aria-label")).toBe("Graph views");
+  if (!group) throw new Error("Project view radio group not found");
+  expect(group.getAttribute("aria-label")).toBe("Project views");
   const match = Array.from(
     group.querySelectorAll<HTMLElement>('[role="radio"]'),
   ).find((option) => option.textContent?.includes(label));
-  if (!match) throw new Error(`Graph view option not found: ${label}`);
+  if (!match) throw new Error(`Project view option not found: ${label}`);
   return match;
 }
 
@@ -212,6 +225,9 @@ beforeEach(() => {
     isLoading: browserState.isLoading,
     mutate: browserState.mutate,
   }));
+  apiMocks.useWorkspacePacks.mockReturnValue({ data: undefined });
+  apiMocks.useProjectSummaryRefresh.mockReturnValue(async () => undefined);
+  apiMocks.createStarterProject.mockReset();
 });
 
 afterEach(async () => {
@@ -263,14 +279,14 @@ describe("workspace graph browser", () => {
     const search = searchInput(container);
 
     await change(search, "missing");
-    expect(container.textContent).toContain("No graphs match your search");
-    expect(container.textContent).not.toContain("No graphs yet");
+    expect(container.textContent).toContain("No projects match your search");
+    expect(container.textContent).not.toContain("No projects yet");
   });
 
-  it("creates a graph directly in the active workspace", async () => {
+  it("creates a project directly in the active workspace", async () => {
     const container = await renderBrowser();
 
-    await click(button(container, "New graph"));
+    await click(button(container, "New project"));
 
     expect(browserState.push).toHaveBeenCalledWith(
       "/workspaces/atlas/projects/new",
@@ -282,19 +298,19 @@ describe("workspace graph browser", () => {
     browserState.data = undefined;
     browserState.isLoading = true;
     const loading = await renderBrowser();
-    expect(loading.textContent).toContain("Loading graphs…");
+    expect(loading.textContent).toContain("Loading projects…");
 
     browserState.isLoading = false;
     browserState.error = new Error("offline");
     const failed = await renderBrowser();
-    expect(failed.textContent).toContain("Graphs couldn't be loaded");
+    expect(failed.textContent).toContain("Projects couldn't be loaded");
     await click(button(failed, "Retry"));
     expect(browserState.mutate).toHaveBeenCalledOnce();
 
     browserState.data = { projects: [] };
     browserState.error = undefined;
     const empty = await renderBrowser();
-    expect(empty.textContent).toContain("No graphs yet");
+    expect(empty.textContent).toContain("No projects yet");
   });
 
   it("keeps the loaded list and announces a failed refresh with its own retry", async () => {
@@ -304,13 +320,49 @@ describe("workspace graph browser", () => {
 
     const strip = container.querySelector('[role="status"]');
     expect(strip?.textContent).toContain(
-      "The latest graph list could not be refreshed.",
+      "The latest project list could not be refreshed.",
     );
     expect(rowTitles(container)).toEqual(["Invoice intake"]);
 
     if (!strip) throw new Error("Refresh failure was not announced");
     await click(button(strip, "Retry"));
     expect(browserState.mutate).toHaveBeenCalledOnce();
+  });
+
+  it("hides starter recipes until Document OCR is subscribed", async () => {
+    const container = await renderBrowser();
+    expect(container.textContent).not.toContain("Start from a recipe");
+  });
+
+  it("starts a transcription project from a recipe", async () => {
+    apiMocks.useWorkspacePacks.mockReturnValue({
+      data: [{ slug: "document_ocr", subscribed: true }],
+    });
+    apiMocks.createStarterProject.mockResolvedValue({
+      id: "project-transcription",
+      name: "Transcribe a scanned page",
+      created_at: "2026-08-12T10:00:00Z",
+      updated_at: "2026-08-12T10:00:00Z",
+    });
+    const container = await renderBrowser();
+
+    expect(container.textContent).toContain("Start from a recipe");
+    expect(container.textContent).toContain(
+      "Scan or PDF → Document OCR → Text",
+    );
+    expect(container.textContent).toContain(
+      "Scan → Document OCR → Spreadsheet table",
+    );
+
+    await click(button(container, "Transcribe a scanned page"));
+
+    expect(apiMocks.createStarterProject).toHaveBeenCalledWith(
+      "workspace-atlas",
+      "transcribe_page",
+    );
+    expect(browserState.push).toHaveBeenCalledWith(
+      "/workspaces/atlas/projects/project-transcription",
+    );
   });
 });
 
@@ -329,7 +381,7 @@ describe("workspace graph browser address filters", () => {
       "Invoice intake",
       "Invoice archive audit",
     ]);
-    expect(container.textContent).toContain("2 graphs");
+    expect(container.textContent).toContain("2 projects");
   });
 
   it("limits a filtered list to Recent until the address asks for All", async () => {
@@ -402,7 +454,7 @@ describe("workspace graph browser address filters", () => {
 
   it("clears the address through the empty state's own action", async () => {
     const container = await renderBrowser("?q=missing");
-    expect(container.textContent).toContain("No graphs match your search");
+    expect(container.textContent).toContain("No projects match your search");
 
     await click(button(container, "Clear search"));
 

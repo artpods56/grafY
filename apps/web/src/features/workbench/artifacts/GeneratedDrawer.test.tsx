@@ -100,6 +100,7 @@ const REGISTRY = {
     },
   ],
   nodes: [],
+  packs: [],
   plugins: [],
   artifact_conversions: [],
 } satisfies React.ComponentProps<typeof GeneratedDrawer>["registry"];
@@ -623,9 +624,9 @@ describe("GeneratedDrawer", () => {
       container.querySelectorAll('[data-artifact-row="artifact-resized"]'),
     ).toHaveLength(1);
     expect(
-      [
-        ...container.querySelectorAll('[aria-label="Generated artifacts"] *'),
-      ].filter((node) => node.textContent?.trim() === "saved"),
+      [...container.querySelectorAll('[aria-label="Results"] *')].filter(
+        (node) => node.textContent?.trim() === "saved",
+      ),
     ).toHaveLength(1);
   });
 
@@ -849,7 +850,7 @@ describe("GeneratedDrawer", () => {
       new Error("the results are offline"),
     );
     await React.act(async () => {
-      buttonNamed(container, "Refresh Generated artifacts").click();
+      buttonNamed(container, "Refresh results").click();
     });
 
     // The read failed, the rows did not: what was on screen is still there.
@@ -972,7 +973,7 @@ describe("GeneratedDrawer", () => {
     const { container } = await renderDrawer({ onClose });
 
     await React.act(async () => {
-      buttonNamed(container, "Close Generated artifacts").click();
+      buttonNamed(container, "Close results").click();
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);

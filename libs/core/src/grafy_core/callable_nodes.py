@@ -4,10 +4,11 @@ import asyncio
 from collections.abc import Callable, Mapping
 from inspect import (
     Parameter,
-    getdoc,
+    cleandoc,
     isasyncgenfunction,
     iscoroutinefunction,
     isfunction,
+    ismethod,
     isgeneratorfunction,
     signature,
 )
@@ -40,6 +41,20 @@ from grafy_core.nodes import (
     derive_input_contract,
     derive_output_contract,
 )
+
+
+def own_callable_doc(function: Callable[..., object]) -> str | None:
+    """Return a callable's own docstring without inheriting method documentation."""
+    target = function.__func__ if ismethod(function) else function
+    if isfunction(target):
+        doc = target.__doc__
+    else:
+        doc = getattr(target, "__dict__", {}).get("__doc__")
+        if doc is None:
+            doc = type(target).__dict__.get("__doc__")
+    if not isinstance(doc, str):
+        return None
+    return cleandoc(doc).strip() or None
 
 
 def _annotation_parts(annotation: object) -> tuple[object, tuple[object, ...]]:
@@ -264,7 +279,7 @@ def callable_node_class(
 
     CallableNodeAdapter.__name__ = function.__name__
     CallableNodeAdapter.__qualname__ = function.__qualname__
-    CallableNodeAdapter.__doc__ = getdoc(function)
+    CallableNodeAdapter.__doc__ = own_callable_doc(function)
     input_contract = derive_input_contract(input_model)
     output_contract = derive_output_contract(output_model)
     for field_name in input_fields:

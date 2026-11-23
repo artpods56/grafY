@@ -6,6 +6,8 @@ import pytest
 from pydantic import ValidationError
 
 from grafy_api.catalog import CatalogSnapshot
+from grafy_api.catalog_packs import CatalogPolicy
+from grafy_shared.config.catalog import CatalogOverrides
 from grafy_api.services.composition import build_workbench_components
 from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
 from grafy_core.domain.graph_documents import GraphDocument
@@ -19,17 +21,24 @@ def test_static_registry_supplies_the_catalog(
     components = build_workbench_components(
         workspace=tmp_path, unit_of_work=InMemoryUnitOfWork()
     )
+    policy = CatalogPolicy(components.plugin_registry, CatalogOverrides())
     catalog = NodeRegistryResponse.from_snapshot(
         CatalogSnapshot.from_registry(components.plugin_registry),
+        policy,
+        frozenset(policy.default_workspace_pack_slugs),
     )
     nodes = {node.operator_id: node for node in catalog.nodes}
-    assert nodes["gis.raster_scan.import"].origin == "builtin"
+    assert "gis.raster_scan.import" not in nodes
+    assert nodes["gis.map.raster_layer"].catalog_visible is True
     assert (
         nodes["llm.openai_compatible.chat_completion"].secret_inputs[0].name
         == "api_key"
     )
     assert not any(key.startswith(("sql.", "python.")) for key in nodes)
-    assert {"geo.raster_scan", "geo.map_layer", "geo.map_document"} <= {
+    assert {"geo.feature_collection", "geo.map_layer", "geo.map_document"} <= {
+        artifact.key.id for artifact in catalog.artifact_types
+    }
+    assert "geo.raster_scan" not in {
         artifact.key.id for artifact in catalog.artifact_types
     }
     assert {plugin.origin for plugin in catalog.plugins} == {"builtin"}
@@ -45,9 +54,9 @@ def _stored_node(**overrides: object) -> dict[str, object]:
     node: dict[str, object] = {
         "id": "scan",
         "kind": "builtin",
-        "operator_id": "gis.raster_scan.import",
+        "operator_id": "gis.geojson.parse",
         "operator_version": 1,
-        "config": {"source_name": "Scan"},
+        "config": {},
         "position": {"x": 10, "y": 20},
     }
     node.update(overrides)

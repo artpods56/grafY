@@ -7,19 +7,15 @@ import { Cable } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { NodeSpec } from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
-import { catalogNodeKey } from "../../authoring/node-catalog";
+import {
+  catalogNodeKey,
+  type CatalogNodeGroup,
+} from "../../authoring/node-catalog";
 
 export const RESULTS_ID = "node-selector-results";
 
 export function resultOptionId(spec: NodeSpec): string {
   return `node-selector-result-${catalogNodeKey(spec)}`;
-}
-
-/** A run of results under one heading; an untitled group is a flat list. */
-export interface NodeResultGroup {
-  key: string;
-  title: string | null;
-  nodes: readonly NodeSpec[];
 }
 
 /**
@@ -51,7 +47,7 @@ export function NodeResultList({
   status: string;
   errorMessage: string | null;
   loading: boolean;
-  groups: readonly NodeResultGroup[];
+  groups: readonly CatalogNodeGroup[];
   activeKey: string | null;
   /** What an empty, loaded list says instead of rows. */
   empty: React.ReactNode;

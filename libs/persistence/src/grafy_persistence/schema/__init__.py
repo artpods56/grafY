@@ -29,6 +29,7 @@ from .artifacts import (
     artifact_objects as artifact_objects,
 )
 from .uploads import uploads as uploads
+from .workspace_packs import workspace_packs as workspace_packs
 from .base import NAMING_CONVENTION as NAMING_CONVENTION
 from .base import metadata as metadata
 from .identity import (

@@ -5,7 +5,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
-import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
+import {
+  artifactPortFixture,
+  nodeSpecFixture,
+  packFixture,
+  servicePortFixture,
+} from "../test-fixtures";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -38,6 +43,7 @@ function node(
   return nodeSpecFixture({
     operator_id: operatorId,
     plugin_slug: pluginSlug,
+    pack_slugs: pluginSlug === "builtin" ? ["essentials"] : ["document_ocr"],
     title,
     description: `${title} description`,
     inputs,
@@ -53,9 +59,16 @@ function registry(): NodeRegistry {
   const tableInput = port("table", "input", "table.data");
   const layerInput = port("layers", "input", "geo.map_layer");
   const mapOutput = port("map", "output", "geo.map_document");
-  const imageInput = port("image", "input", "image.raster");
 
   return {
+    packs: [
+      packFixture(),
+      packFixture({
+        slug: "document_ocr",
+        title: "Document OCR",
+        always_on: false,
+      }),
+    ],
     plugins: [
       {
         slug: "builtin",
@@ -75,18 +88,11 @@ function registry(): NodeRegistry {
       "table.data",
       "geo.map_layer",
       "geo.map_document",
-      "image.raster",
     ].map((id) => ({
       key: { id, schema_version: 1 },
       title: id,
       preview_kind:
-        id === "table.data"
-          ? "table"
-          : id === "image.raster"
-            ? "image"
-            : id.startsWith("geo.")
-              ? "map"
-              : "text",
+        id === "table.data" ? "table" : id.startsWith("geo.") ? "map" : "text",
       bundle: { format: "inline-json" as const, version: 1 },
       payload_schema: {},
       field_projections: [],
@@ -139,11 +145,24 @@ function registry(): NodeRegistry {
         [mapOutput],
       ),
       node(
-        "mistral.ocr.process",
-        "Read image with OCR",
+        "mistral.ocr.provider",
+        "Mistral OCR",
         "external.mistral",
-        [imageInput],
-        [textOutput],
+        [],
+        [
+          servicePortFixture({
+            name: "engine",
+            direction: "output",
+            service_contracts: [{ id: "ocr.document", version: 1 }],
+            service_features: [
+              {
+                contract: { id: "ocr.document", version: 1 },
+                features: ["blocks", "regions"],
+              },
+            ],
+          }),
+        ],
+        { role: "provider" },
       ),
     ],
   };
@@ -242,8 +261,8 @@ function menuItem(role: string, text: string): HTMLElement {
 async function openDetails() {
   const toggle = [
     ...dialog().querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
-  ].find((button) => button.textContent?.startsWith("Details"));
-  if (!toggle) throw new Error("No Details toggle");
+  ].find((button) => button.textContent?.startsWith("Technical details"));
+  if (!toggle) throw new Error("No Technical details toggle");
   await React.act(async () => toggle.click());
 }
 
@@ -265,7 +284,7 @@ afterEach(async () => {
 });
 
 describe("NodeSelector", () => {
-  it("scopes the list by source, with type and input-node filters", async () => {
+  it("scopes the list by Pack, with type and input-node filters", async () => {
     await renderSelector();
 
     expect(
@@ -280,14 +299,14 @@ describe("NodeSelector", () => {
     ];
     expect(filters.map((filter) => filter.getAttribute("aria-label"))).toEqual([
       "All, 5 nodes",
-      "Built-in, 4 nodes",
-      "Mistral OCR, 1 node",
+      "Essentials, 4 nodes",
+      "Document OCR, 1 node",
     ]);
 
-    // Source category scopes the list to one provider plugin.
-    await React.act(async () => buttonNamed("Built-in, 4 nodes").click());
+    // The Pack tab scopes the list to its members.
+    await React.act(async () => buttonNamed("Essentials, 4 nodes").click());
     expect(
-      dialog().querySelector('section[aria-label="Built-in nodes"]'),
+      dialog().querySelector('section[aria-label="Essentials nodes"]'),
     ).not.toBeNull();
     expect(options().map((option) => option.textContent)).toEqual([
       expect.stringContaining("Compose map"),
@@ -322,6 +341,34 @@ describe("NodeSelector", () => {
     ]);
   });
 
+  it("lists a Pack's steps before searchable engines and links to Settings for owners", async () => {
+    const base = registry();
+    const ocr = node("ocr.read_document", "Read document", "builtin", [], [], {
+      pack_slugs: ["document_ocr"],
+    });
+    await renderSelector({
+      registry: { ...base, nodes: [...base.nodes, ocr] },
+      managePacksHref: "/workspaces/team/settings#tool-packs",
+    });
+    const manage = [...dialog().querySelectorAll("a")].find(
+      (link) => link.textContent === "Manage packs",
+    );
+    expect(manage?.getAttribute("href")).toBe(
+      "/workspaces/team/settings#tool-packs",
+    );
+    await React.act(async () => buttonNamed("Document OCR, 2 nodes").click());
+    expect(options().map((option) => option.textContent)).toEqual([
+      expect.stringContaining("Read document"),
+      expect.stringContaining("Mistral OCR"),
+    ]);
+    expect(
+      dialog().querySelector('[role="listbox"] [role="group"]')?.textContent,
+    ).toContain("Engines");
+    await enterSearch("Mistral");
+    expect(options()).toHaveLength(1);
+    expect(options()[0]?.textContent).toContain("Mistral OCR");
+  });
+
   it("searches the full registry and inspects a result without inserting it", async () => {
     const onAddNode = vi.fn();
     await renderSelector({ onAddNode });
@@ -331,10 +378,10 @@ describe("NodeSelector", () => {
     await enterSearch("OCR");
 
     expect(options()).toHaveLength(1);
-    expect(options()[0]?.textContent).toContain("Read image with OCR");
+    expect(options()[0]?.textContent).toContain("Mistral OCR");
     await React.act(async () => options()[0]?.click());
     expect(dialog().querySelector("aside")?.textContent).toContain(
-      "Read image with OCR description",
+      "Mistral OCR description",
     );
     expect(onAddNode).not.toHaveBeenCalled();
   });
@@ -400,7 +447,7 @@ describe("NodeSelector", () => {
     expect(enterPreview).not.toBeNull();
     expect(enterPreview?.textContent).toContain("Start");
     expect(enterPreview?.textContent).toContain("Text");
-    expect(enterPreview?.textContent).toContain("string");
+    expect(enterPreview?.textContent).not.toContain("string");
     expect(dialog().querySelector("aside")?.textContent).toContain(
       "Nothing. This step starts the work.",
     );
@@ -419,7 +466,7 @@ describe("NodeSelector", () => {
     );
     expect(transformPreview).not.toBeNull();
     expect(transformPreview?.textContent).toContain("Replacement");
-    expect(transformPreview?.textContent).toContain("string");
+    expect(transformPreview?.textContent).not.toContain("string");
   });
 
   it("inserts only through the explicit action", async () => {
@@ -451,6 +498,7 @@ describe("NodeSelector", () => {
     );
     await openDetails();
 
+    expect(dialog().querySelector("aside")?.textContent).toContain("string");
     expect(dialog().querySelector("aside")?.textContent).toContain(
       "Works with:",
     );
@@ -545,7 +593,7 @@ describe("NodeSelector", () => {
     expect(onAddNode.mock.calls[0]?.[0].operator_id).toBe("text.transform");
   });
 
-  it("groups everything by source until a search asks for relevance", async () => {
+  it("groups everything by Pack until a search asks for relevance", async () => {
     await renderSelector();
 
     const headings = () =>
@@ -553,8 +601,8 @@ describe("NodeSelector", () => {
         (group) => group.getAttribute("aria-labelledby"),
       );
     expect(headings()).toEqual([
-      "node-selector-group-source:builtin",
-      "node-selector-group-source:external.mistral",
+      "node-selector-group-pack:essentials",
+      "node-selector-group-pack:document_ocr-engines",
     ]);
 
     await enterSearch("text");

@@ -248,6 +248,9 @@ export type AppliedNodeSecret = Schemas["ConfigureNodeSecretResponse"];
 
 // --- Catalog ---------------------------------------------------------------
 
+export type CatalogPack = Schemas["CatalogPackResponse"];
+export type SetPackSubscriptionRequest = Schemas["SetPackSubscriptionRequest"];
+
 export type NodeRegistry =
   paths["/v1/workspaces/{workspace_id}/nodes"]["get"]["responses"][200]["content"]["application/json"];
 

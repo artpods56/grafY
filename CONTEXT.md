@@ -68,9 +68,9 @@ An artifact type is a payload contract, so two nodes that move the same payload
 share one type. A second type id for an identical contract is a catalog bug, not
 a Plugin namespace: an image Plugin that declares `photos.shot@1` over the
 `image.raster@1` payload cannot connect to nodes that expect a raster.
-Specialized types exist only where the contract differs, as `geo.raster_scan@1`
-(CRS, geotransform, bands) and `geo.map_layer@1` (a drawing recipe rather than
-pixels) do. A node does not escape this by declaring a type variable: `T`
+Specialized types exist only where the contract differs, as `geo.feature_collection@1`
+(exact WGS84 geometry rather than pixels) and `geo.map_layer@1` (a drawing recipe
+rather than pixels) do. A node does not escape this by declaring a type variable: `T`
 belongs to generic operations such as Collect, Slice, and Pick. The same holds
 for file formats: one deployment-wide type per format, so two plugins that read
 CSV share one CSV artifact type instead of each shipping their own.
@@ -405,24 +405,29 @@ materializes only the final target-typed artifact.
 Spatial sources and map presentation are separate artifact roles. A
 `geo.feature_collection@1` is an exact, canonical WGS84 vector dataset whose
 features may contain points, lines, polygons, multipolygons, or geometry
-collections. Its logical source is stored in bounded chunks; a content-addressed
-PMTiles sidecar is a derived rendering projection and never replaces the exact
-features. A `geo.raster_scan@1` is an exact georeferenced scan normalized to a
-Cloud Optimized GeoTIFF. Its browser-ready XYZ pyramid is likewise a derived
-projection, not another workflow artifact.
+collections. Its logical source is stored in bounded chunks and stays the only
+copy of the geometry: no derived rendering projection is written beside it, and
+reading one feature or querying matched features reads the stored chunks. No
+renderer draws vector layers yet, so a vector collection or a vector map layer
+contributes no rendered layer to a descriptor while its exact features, property
+fields and footprint stay readable. A map raster is an uploaded georeferenced
+`file.tiff@1` read on demand by the tiler, which renders one XYZ tile per
+request; nothing precomputes a pyramid or a Cloud Optimized copy.
 
 A `geo.map_layer@1` is an inline, lightweight drawing recipe. It references one
-feature collection or raster scan, or declares one public remote WMS source, and
-owns visibility, zoom range, opacity, attribution, and vector or raster style.
+feature collection, one georeferenced TIFF, or an ordered list of them as a
+mosaic, or declares one public remote WMS source, and owns visibility, zoom
+range, opacity, attribution, and vector or raster style.
 A `geo.map_document@1` contains only an ordered list of map-layer references, an
 optional basemap, and optional initial bounds. It never embeds source geometry,
-pixels, PMTiles, or XYZ tiles. The same exact source can therefore participate in
+pixels, or tiles. The same exact source can therefore participate in
 several independently styled maps without data duplication.
 
 The artifact HTTP adapter resolves those references into one small immutable
-render descriptor. Vector archives are served through byte-range reads and
-raster requests load one stored XYZ tile; storage bucket names and object keys
-never cross the API boundary. Renderer controls are local preview overrides
+render descriptor. Every rendered layer in it is a raster tile source: a TIFF,
+a mosaic or a remote WMS read through TileJSON plus one tile per request;
+storage bucket names and object keys never cross the API boundary. Renderer
+controls are local preview overrides
 unless a workflow deliberately produces another map-layer artifact.
 
 Remote spatial services follow the same ownership split. WFS import takes a
@@ -529,12 +534,35 @@ _Avoid_: egress broker, network policy, sandbox network
 
 ### Pack
 
-A code-defined, task-oriented discovery bundle surfaced in the Workbench Step Picker and managed per Workspace (for example `Essentials`, `Document OCR`, `Maps & GIS`, or `Historical Map Toponyms`). A Pack groups explicit node operator ids across one or more builtin families and Plugins and may automatically include every enabled Provider node satisfying declared Service contracts. Deployment configuration (`GRAFY_CATALOG_CONFIG`) sets default Workspace Packs and deployment-wide Pack or operator-id disablement; Workspace owners subscribe or unsubscribe Packs through `manage_packs`, except `always_on` Packs (`Essentials`). Packs govern discovery only: hiding a node or unsubscribing a Pack sets `catalog_visible: false` without removing the node from the registry, never breaks existing saved Projects, and never enters node fingerprints.
+A code-defined, task-oriented discovery bundle, shown in the Workbench as a
+Tool pack: a curated set of steps and engines managed per Workspace (for
+example `Essentials`, `Document OCR`, `Maps & GIS`, or `Historical Map
+Toponyms`). A Pack groups explicit node operator ids across one or more
+builtin families and Plugins and may automatically include every enabled
+Provider node satisfying declared Service contracts. Deployment configuration
+(`GRAFY_CATALOG_CONFIG`) sets the default subscriptions for new Workspaces and
+deployment-wide Pack or operator-id disablement. Only Workspace owners
+subscribe or unsubscribe Packs through `manage_packs`, except `always_on`
+Packs (`Essentials` is always on). Packs govern discovery only: hiding a node
+or unsubscribing a Pack sets `catalog_visible: false` without removing the
+node from the registry. Subscriptions change the picker and leave stored
+Graphs, execution, and result identity intact; they never break existing saved
+Projects and never enter node fingerprints.
 _Avoid_: plugin bundle, plugin marketplace, artifact bundle contract
 
 ### Node catalog / Add node
 
-The catalog lists every registered node from the builtin families and Plugins installed in this deployment, grouped for browsing into the Workspace's subscribed Packs, plus client-synthesized sibling Graph call nodes and Graph boundary nodes (`Graph input` / `Graph output`, gated by the `subgraphs` Pack). Every registered node remains present in the Workspace catalog response even when hidden by deployment configuration or Pack subscriptions (`catalog_visible: false`), so existing saved Projects hydrate and run cleanly; an operator id absent from the deployment registry is still a compile error.
+The node registry describes every installed operator by id and version. The
+catalog lists every registered node from the builtin families and Plugins
+installed in this deployment, grouped for browsing into the Workspace's
+subscribed Packs, plus client-synthesized sibling Graph call nodes and Graph
+boundary nodes (`Graph input` / `Graph output`, gated by the `subgraphs`
+Pack). Saved Graphs resolve their nodes against that registry, including steps
+hidden from Add node. Every registered node remains present in the Workspace
+catalog response even when hidden by deployment configuration or Pack
+subscriptions (`catalog_visible: false`), so existing saved Projects hydrate
+and run cleanly. An operator id absent from the deployment registry is a
+compile error.
 
 Grafy's builtin families contain broadly reusable, dependency-light, vendor-neutral operations: Image, Sequence, Value, Text, Schema, Table, File, and OCR. A builtin artifact type must have precise, producer-neutral meaning and be independently reusable. A builtin node must be broadly reusable, deterministic, dependency-light, and must not duplicate projection, conversion, mapping, or other edge/runtime behavior.
 Image owns the producer-neutral `image.raster@1` artifact, its storage writer, and the deterministic decode that turns a `file.png@1` or `file.tiff@1` artifact into a raster. Table owns
@@ -559,20 +587,23 @@ _Avoid_: DI service, capability provider object
 
 A node input or output typed as a service contract (or, on an output, a class
 that subclasses one). It carries contract keys, not an artifact type, and on a
-service output carries contract-scoped declared features. A service output feeds
-only a service input, and the reverse. A node with a service output has no input
-ports, exactly one service output port, and implements one service contract in
-v1. The planner never plans a service node; the consumer's runner builds the
-connected provider in-process and validates any `RequiresServiceFeature` optional
-outputs generically. An Agent tool never offers a service input to the model.
+service output carries contract-scoped declared features. Its type identity is
+a service contract key. A service output feeds only a compatible service
+input, and the reverse. A node with a service output has no input ports,
+exactly one service output port, and implements one service contract in v1.
+The planner never plans a service node; the consumer's runner builds the
+connected provider in-process and validates any `RequiresServiceFeature`
+optional outputs generically. An Agent tool never offers a service input to
+the model; it leaves that input to the Graph.
 _Avoid_: OutPort/InPort for services
 
 ### Provider node
 
-A node whose sole output is a service port. It has no artifact inputs. Its
-config and node-scoped secrets shape the live object the consumer builds. The
-planner never schedules it; changing its config or key still enters the
-consumer's fingerprint through `upstream_fingerprints`.
+A node with no input ports and a single service output implementing one
+contract in v1. It has no artifact inputs. Its config and node-scoped secrets
+shape the live object the consumer's runner builds in-process. The planner
+never schedules it. Its config and key enter the consumer's fingerprint
+through `upstream_fingerprints`.
 _Avoid_: capability node, OCR vendor node as a synonym for every provider
 
 ### TIFF text regions
@@ -598,14 +629,15 @@ pixel coordinates.
 ### OCR node
 
 The app-owned builtin (`Document OCR`, `ocr.read_document`) that takes a
-`RasterImage | PdfFile` document and a `DocumentOcr` (`ocr.document@1`) service
-input, and produces transcription markdown plus optional `blocks` and `regions`
-outputs gated by `RequiresServiceFeature`. It names no vendor and accepts no
-remote document URL. An optional output the connected provider does not declare
-is omitted from the stored result and recorded as `unsupported_outputs` by the
-runner; a downstream node fed by that port fails naming the provider, not with
-an empty artifact.
-_Avoid_: Mistral node / Reducto node (those are Provider nodes)
+`RasterImage | PdfFile` document and a `DocumentOcr` (`ocr.document@1`)
+service input. It names no vendor and accepts no remote document URL. It
+produces transcription markdown. Its optional `blocks` and `regions` ports
+each require a feature of that engine's contract (`RequiresServiceFeature`).
+The runner omits an unsupported output from the stored result and records it
+in `unsupported_outputs`, so a downstream node fed by that port fails naming
+the provider, not with an empty artifact.
+_Avoid_: Mistral node / Reducto node (those are Provider nodes or the legacy
+read-with-vendor operators)
 
 ### Port
 

@@ -18,8 +18,6 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import cast
 from uuid import UUID
 
-from pydantic import SecretStr, ValidationError
-
 from grafy_core.artifacts import JsonObject
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
 from grafy_core.kernel.instances import InstanceKey
@@ -37,6 +35,8 @@ from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.runtime.artifact_values import ArtifactValues
 from grafy_core.runtime.execution import NodeRuntime
+from grafy_core.service_contracts import BoundServiceProvider
+from pydantic import SecretStr, ValidationError
 
 from grafy_api.runs.contract import (
     BoundNode,
@@ -124,10 +124,11 @@ class NodeComputationRunner:
             self._node_secrets,
             bound.registration.secret_inputs,
         )
-        service_inputs, provider_records = await self._build_service_inputs(
-            request,
-            bound,
-        )
+        (
+            service_inputs,
+            bound_services,
+            provider_records,
+        ) = await self._build_service_inputs(request, bound)
         assembled = await self._edge_values.assemble_inputs(
             slots=bound.slots,
             ports=bound.ports,
@@ -146,6 +147,7 @@ class NodeComputationRunner:
             transforms=assembled.transforms,
             context=context,
             metadata=metadata,
+            bound_services=bound_services,
         )
 
     async def _unsupported_outputs(
@@ -154,7 +156,7 @@ class NodeComputationRunner:
     ) -> dict[InstanceKey, dict[str, str]]:
         """Read ``unsupported_outputs`` from any sibling artifact of each source.
 
-        An optional OCR output the provider does not produce is omitted from the
+        An optional output the provider does not produce is omitted from the
         stored result and named in that metadata, so a downstream binder can say
         who left the port empty.
         """
@@ -226,7 +228,7 @@ class NodeComputationRunner:
         self,
         request: ComputationRequest,
         bound: BoundNode,
-    ) -> tuple[dict[str, object], list[JsonObject]]:
+    ) -> tuple[dict[str, object], dict[str, BoundServiceProvider], list[JsonObject]]:
         """Build each connected service once, and the credential-free record of it.
 
         The provider does not go through ``NodeRuntime.run_node``. That path
@@ -237,19 +239,23 @@ class NodeComputationRunner:
 
         consumer_id = request.instance.key.node_id
         values: dict[str, object] = {}
+        providers: dict[str, BoundServiceProvider] = {}
         records: list[JsonObject] = []
         for feed in bound.service_feeds:
-            value, record = await self._build_service(consumer_id, request, feed)
+            value, provider, record = await self._build_service(
+                consumer_id, request, feed
+            )
             values[feed.to_port] = value
+            providers[feed.to_port] = provider
             records.append(record)
-        return values, records
+        return values, providers, records
 
     async def _build_service(
         self,
         consumer_id: str,
         request: ComputationRequest,
         feed: ServiceFeed,
-    ) -> tuple[object, JsonObject]:
+    ) -> tuple[object, BoundServiceProvider, JsonObject]:
         source = feed.source
         provider_id = source.key.node_id
         node, registration = self._binder.build_node(source.node)
@@ -289,7 +295,19 @@ class NodeComputationRunner:
             validated_output = node.output_contract.model.model_validate(produced)
         except ValidationError as exc:
             raise _service_build_error(consumer_id, provider_id, exc) from exc
-        return getattr(validated_output, feed.from_port), {
+        output_port = node.output_contract.ports[feed.from_port]
+        (contract,) = output_port.service_contracts
+        provider = BoundServiceProvider(
+            title=registration.title,
+            contract=contract,
+            features=frozenset(
+                feature
+                for entry in output_port.service_features
+                if entry.contract == contract
+                for feature in entry.features
+            ),
+        )
+        return getattr(validated_output, feed.from_port), provider, {
             "input": feed.to_port,
             "operator_id": node.operator_id,
             "operator_version": node.operator_version,

@@ -17,6 +17,7 @@ import grafy_core.runtime.in_memory.runs as runs_module
 import grafy_core.runtime.in_memory.store as store_module
 import grafy_core.runtime.in_memory.uow as uow_module
 import grafy_core.runtime.in_memory.uploads as uploads_module
+import grafy_core.runtime.in_memory.workspace_packs as workspace_packs_module
 from grafy_core.runtime.in_memory import InMemoryDataStore, InMemoryUnitOfWork
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -33,6 +34,7 @@ REPOSITORIES = (
     "projects",
     "runs",
     "uploads",
+    "workspace_packs",
 )
 # Imports flow downwards only: facade -> unit of work -> repositories -> store.
 ALLOWED_IMPORTS: dict[str, frozenset[str]] = {
@@ -49,6 +51,7 @@ MODULES: dict[str, ModuleType] = {
     "store": store_module,
     "uow": uow_module,
     "uploads": uploads_module,
+    "workspace_packs": workspace_packs_module,
 }
 FACADE_CLASSES = (
     "InMemoryAgentConversationRepository",
@@ -62,6 +65,7 @@ FACADE_CLASSES = (
     "InMemoryRunRepository",
     "InMemoryUnitOfWork",
     "InMemoryUploadRepository",
+    "InMemoryWorkspacePackRepository",
 )
 
 

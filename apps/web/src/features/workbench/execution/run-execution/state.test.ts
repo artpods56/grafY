@@ -33,6 +33,8 @@ vi.mock("@/lib/api", () => ({
 
 function nodeSpec(): NodeSpec {
   return {
+    pack_slugs: [],
+    role: "operator",
     operator_id: "test.operator",
     operator_version: 1,
     plugin_slug: "test",

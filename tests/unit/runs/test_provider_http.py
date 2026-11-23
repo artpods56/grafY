@@ -8,7 +8,7 @@ from pydantic import SecretStr
 
 from grafy_core.egress import EgressRejectedError
 from grafy_core.node_context import UserFacingNodeError
-from grafy_workbench.ocr.provider_http import (
+from grafy_core.provider_http import (
     ProviderRequest,
     aclose_provider_clients,
     post_json,
@@ -67,7 +67,7 @@ async def test_a_window_the_provider_never_answered_is_tried_again(
     async def record(delay: float) -> None:
         delays.append(delay)
 
-    monkeypatch.setattr("grafy_workbench.ocr.provider_http.sleep", record)
+    monkeypatch.setattr("grafy_core.provider_http.sleep", record)
     with serve_client(httpx.AsyncClient(transport=httpx.MockTransport(respond))):
         assert json.loads(await post_json(_request())) == {"polygons": []}
     assert calls == 3
@@ -80,7 +80,7 @@ async def test_attempts_run_out_on_an_http_status_and_on_a_timeout(
     async def no_wait(_delay: float) -> None:
         return None
 
-    monkeypatch.setattr("grafy_workbench.ocr.provider_http.sleep", no_wait)
+    monkeypatch.setattr("grafy_core.provider_http.sleep", no_wait)
 
     def always_503(request: httpx.Request) -> httpx.Response:
         del request

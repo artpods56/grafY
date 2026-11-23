@@ -6,6 +6,7 @@ import * as React from "react";
 import useSWR, { useSWRConfig } from "swr";
 import {
   libraryFoldersApi,
+  seedStarterSample,
   uploadFile,
   saveUploadedArtifactToLibrary,
   type PlacedLibraryItem,
@@ -39,7 +40,9 @@ import {
   type SidePanelViewId,
 } from "../artifacts/side-panel/workbench-side-panel-state";
 import { GraphRoomRecoveryNotice } from "../collaboration/GraphRoomRecoveryNotice";
+import { EngineConnectNotice } from "./EngineConnectNotice";
 import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
+import { useServiceEnginePrompt } from "./use-service-engine-prompt";
 import {
   WorkbenchActivityBar,
   type WorkbenchActivity,
@@ -47,6 +50,13 @@ import {
 import { ArtifactFolderDropDialog } from "../artifacts/ArtifactFolderDropDialog";
 import { ConnectionRouteDialog } from "../authoring/ConnectionRouteDialog";
 import { CanvasLabPanel } from "../cell-canvas/CanvasLabPanel";
+import { EmptyCanvasStarter } from "./EmptyCanvasStarter";
+import {
+  advanceDraftSession,
+  canvasPlacementTarget,
+  mayPlaceOnInitiatingCanvas,
+  type CanvasPlacementTarget,
+} from "./initiatingGraphPlacement";
 import { workbenchStyles as s } from "./Workbench.styles";
 import { NodeSelector } from "../config-ui/NodeSelector";
 import {
@@ -412,6 +422,9 @@ function WorkbenchBody({
   } = useCanvasLab();
   const { workspace } = useWorkspaceContext();
   const canCreateProject = workspace.capabilities.includes("create_project");
+  const managePacksHref = workspace.capabilities.includes("manage_packs")
+    ? `/workspaces/${encodeURIComponent(workspaceSlug)}/settings#tool-packs`
+    : undefined;
   const canManageSecrets = workspace.capabilities.includes("manage_secrets");
   const canEditProject = workspace.capabilities.includes("edit_project");
   const canStartRun = workspace.capabilities.includes("start_run");
@@ -425,6 +438,11 @@ function WorkbenchBody({
   );
   const localAuthoringEnabledRef = React.useRef(
     projectId === null && canCreateProject,
+  );
+  const draftSessionRef = React.useRef(1);
+  const placementProjectIdRef = React.useRef<string | null>(projectId);
+  const canvasTargetRef = React.useRef<CanvasPlacementTarget | null>(
+    projectId === null ? { kind: "draft", sessionId: "1" } : null,
   );
   const localAuthoringBlockedMessageRef = React.useRef(
     "Editing is unavailable until this Project is synchronized.",
@@ -522,6 +540,7 @@ function WorkbenchBody({
     setPendingFolderDrop,
     requestCanvasRefit,
   } = authoring;
+  const [samplePending, setSamplePending] = React.useState(false);
   const graphSemantics = React.useMemo(
     () => (registry ? resolveGraphSemantics(authoredDocument, registry) : null),
     [authoredDocument, registry],
@@ -630,6 +649,8 @@ function WorkbenchBody({
   const {
     nodeSecretStatuses,
     credentials,
+    credentialRowsLoaded,
+    refreshCredentialRows,
     refreshCredentials,
     selectCredential,
     verifyCredential,
@@ -932,6 +953,18 @@ function WorkbenchBody({
   }
   React.useLayoutEffect(() => {
     localAuthoringEnabledRef.current = localAuthoringEnabled;
+    const draftSession = advanceDraftSession(
+      placementProjectIdRef.current,
+      projectId,
+      draftSessionRef.current,
+    );
+    draftSessionRef.current = draftSession;
+    placementProjectIdRef.current = projectId;
+    canvasTargetRef.current = canvasPlacementTarget({
+      projectId,
+      graphId: openGraphId,
+      draftSessionId: String(draftSession),
+    });
     localAuthoringBlockedMessageRef.current = localAuthoringBlockedMessage;
     executionRunningRef.current = run.isExecutionRunning;
     closeGraphBrowserRef.current = closeGraphBrowser;
@@ -943,6 +976,8 @@ function WorkbenchBody({
     closeGraphBrowser,
     localAuthoringBlockedMessage,
     localAuthoringEnabled,
+    openGraphId,
+    projectId,
     run.clearRunError,
     run.isExecutionRunning,
     run.setRunError,
@@ -1332,6 +1367,56 @@ function WorkbenchBody({
     [addArtifactCards],
   );
 
+  /** Upload files through the Library, then lay them on the canvas as one drop. */
+  const uploadFilesOntoCanvas = React.useCallback(
+    async (files: readonly File[], point: XYPosition) => {
+      if (files.length === 0 || !localAuthoringEnabledRef.current) return;
+      const initiating = canvasTargetRef.current;
+      const items: PlacedLibraryItem[] = [];
+      try {
+        for (const [index, file] of files.entries()) {
+          setCanvasUpload(`Uploading ${index + 1} of ${files.length}…`);
+          const uploaded = await uploadFile(workspaceId, file);
+          if (!uploaded.artifact_id) {
+            throw new Error(
+              `Upload of ${file.name} completed without an artifact.`,
+            );
+          }
+          const item = await saveUploadedArtifactToLibrary(workspaceId, {
+            artifact_id: uploaded.artifact_id,
+            original_filename: uploaded.filename || file.name,
+          });
+          items.push({ ...item, folder_id: null });
+          void mutateCache(["library-tree", workspaceId]);
+        }
+      } catch (error) {
+        setRunError(error instanceof Error ? error.message : "Upload failed.");
+      } finally {
+        if (
+          items.length &&
+          mayPlaceOnInitiatingCanvas({
+            authoringEnabled: localAuthoringEnabledRef.current,
+            active: canvasTargetRef.current,
+            initiating,
+          })
+        ) {
+          placeArtifactGroups(
+            artifactDropGroups(items).map(artifactDropPayload),
+            point,
+          );
+        }
+        setCanvasUpload(null);
+      }
+    },
+    [
+      mutateCache,
+      placeArtifactGroups,
+      setCanvasUpload,
+      setRunError,
+      workspaceId,
+    ],
+  );
+
   /**
    * Drop the carried artifacts on empty canvas: one card per group they form.
    *
@@ -1375,7 +1460,11 @@ function WorkbenchBody({
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer) return;
       if (libraryDragKind(event.dataTransfer) === "upload") {
-        if (canEditProject && canvasAtPoint(event.clientX, event.clientY)) {
+        if (
+          canEditProject &&
+          localAuthoringEnabled &&
+          canvasAtPoint(event.clientX, event.clientY)
+        ) {
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
         }
@@ -1391,7 +1480,7 @@ function WorkbenchBody({
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
     },
-    [canEditProject],
+    [canEditProject, localAuthoringEnabled],
   );
 
   /** Put one artifact value on an input row, or say why the input refuses it. */
@@ -1439,7 +1528,11 @@ function WorkbenchBody({
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer) return;
       if (libraryDragKind(event.dataTransfer) === "upload") {
-        if (!canEditProject || !canvasAtPoint(event.clientX, event.clientY))
+        if (
+          !canEditProject ||
+          !localAuthoringEnabled ||
+          !canvasAtPoint(event.clientX, event.clientY)
+        )
           return;
         const point = screenToCanvasPoint({
           x: event.clientX,
@@ -1447,37 +1540,7 @@ function WorkbenchBody({
         });
         if (!point) return;
         event.preventDefault();
-        const files = Array.from(event.dataTransfer.files);
-        void (async () => {
-          const items: PlacedLibraryItem[] = [];
-          try {
-            for (const [index, file] of files.entries()) {
-              setCanvasUpload(`Uploading ${index + 1} of ${files.length}…`);
-              const uploaded = await uploadFile(workspaceId, file);
-              if (!uploaded.artifact_id)
-                throw new Error(
-                  `Upload of ${file.name} completed without an artifact.`,
-                );
-              const item = await saveUploadedArtifactToLibrary(workspaceId, {
-                artifact_id: uploaded.artifact_id,
-                original_filename: uploaded.filename || file.name,
-              });
-              items.push({ ...item, folder_id: null });
-              void mutateCache(["library-tree", workspaceId]);
-            }
-          } catch (error) {
-            setRunError(
-              error instanceof Error ? error.message : "Upload failed.",
-            );
-          } finally {
-            if (items.length)
-              placeArtifactGroups(
-                artifactDropGroups(items).map(artifactDropPayload),
-                point,
-              );
-            setCanvasUpload(null);
-          }
-        })();
+        void uploadFilesOntoCanvas(Array.from(event.dataTransfer.files), point);
         return;
       }
       if (!isArtifactDrop(event.dataTransfer)) return;
@@ -1514,15 +1577,13 @@ function WorkbenchBody({
     },
     [
       canEditProject,
+      localAuthoringEnabled,
       dropArtifactOnCanvas,
-      mutateCache,
-      placeArtifactGroups,
       placeArtifactOnInput,
       screenToCanvasPoint,
-      setCanvasUpload,
       setPendingFolderDrop,
       setRunError,
-      workspaceId,
+      uploadFilesOntoCanvas,
     ],
   );
 
@@ -1852,6 +1913,45 @@ function WorkbenchBody({
     [screenToCanvasPoint],
   );
 
+  const placeStarterSample = React.useCallback(async () => {
+    if (samplePending || !localAuthoringEnabledRef.current) return;
+    const initiating = canvasTargetRef.current;
+    setSamplePending(true);
+    try {
+      const item = await seedStarterSample(workspaceId);
+      void mutateCache(["library-tree", workspaceId]);
+      if (
+        mayPlaceOnInitiatingCanvas({
+          authoringEnabled: localAuthoringEnabledRef.current,
+          active: canvasTargetRef.current,
+          initiating,
+        })
+      ) {
+        placeArtifactGroups(
+          artifactDropGroups([
+            { ...item, folder_id: item.folder_id ?? null },
+          ]).map(artifactDropPayload),
+          canvasCenter({ x: 80, y: 80 }),
+        );
+      }
+    } catch (error) {
+      setRunError(
+        error instanceof Error
+          ? error.message
+          : "The sample page could not be added.",
+      );
+    } finally {
+      setSamplePending(false);
+    }
+  }, [
+    canvasCenter,
+    mutateCache,
+    placeArtifactGroups,
+    samplePending,
+    setRunError,
+    workspaceId,
+  ]);
+
   /**
    * The data a freshly placed catalog node starts with. A Graph's boundary node
    * is addressed by its public name, which must be unique among its siblings, so
@@ -1881,21 +1981,62 @@ function WorkbenchBody({
     [openGraphId, projectGraphs],
   );
 
+  const {
+    notice: engineConnectNotice,
+    dismissNotice: dismissEngineConnectNotice,
+    undoNotice: undoEngineConnect,
+    noteLocalPlacement,
+    noteContinuedNode,
+    pickEngine,
+    chooseProvider,
+    closePrompt,
+  } = useServiceEnginePrompt({
+    workspaceId,
+    projectId,
+    graphId: openGraphId,
+    canEdit: canEditProject && localAuthoringEnabled,
+    running,
+    documentRef: authoredDocumentRef,
+    nodes,
+    savedNodes: activeGraph?.nodes ?? null,
+    edges,
+    origins: authoredDocument.origins,
+    registry,
+    credentials,
+    credentialRowsLoaded,
+    refreshCredentialRows,
+    nodeSecretStatuses,
+    canEditProject,
+    applyAuthoringCommands,
+    selectNode: (nodeId) => {
+      canvasSelection.selectOnly({ nodeIds: [nodeId] });
+    },
+    refreshCredentials,
+    openDiscovery: openContextualDiscovery,
+    closeDiscovery: closeContextualDiscovery,
+    viewportHandle: cellCanvasHandle?.viewportHandle ?? null,
+    onRejected: setRunError,
+    clearError: clearRunError,
+  });
+
   /** Adds a node with its corner at `at`, else centred on the canvas. */
   const addCatalogNode = React.useCallback(
-    (spec: NodeSpec, at?: { x: number; y: number }) => {
+    (spec: NodeSpec, at?: XYPosition, promptForEngine = true) => {
       const id = `node-${createUuid()}`;
       const place = at ?? libraryInsertAt;
       const center = canvasCenter({ x: 600, y: 280 });
+      const position = place ?? { x: center.x - 140, y: center.y - 110 };
       const data = newCatalogNodeData(spec);
-      applyAuthoringCommands([
-        addNodeCommand(
-          id,
-          data,
-          place ?? { x: center.x - 140, y: center.y - 110 },
-        ),
-      ]);
+      applyAuthoringCommands([addNodeCommand(id, data, position)]);
       canvasSelection.selectOnly({ nodeIds: [id] });
+      if (promptForEngine) {
+        noteLocalPlacement({
+          id,
+          position,
+          spec: data.spec,
+          satisfiedInputs: [],
+        });
+      }
       setLibraryOpen(false);
       closeContextualDiscovery();
     },
@@ -1906,6 +2047,7 @@ function WorkbenchBody({
       closeContextualDiscovery,
       libraryInsertAt,
       newCatalogNodeData,
+      noteLocalPlacement,
       setLibraryOpen,
     ],
   );
@@ -2180,10 +2322,29 @@ function WorkbenchBody({
     ],
   );
 
+  const continueFromArtifactCard = React.useCallback(
+    (cardId: string, world: XYPosition) => {
+      const client =
+        cellCanvasHandle?.viewportHandle.worldToScreen(world) ?? world;
+      handleArtifactCardConnectionDrop({
+        cardId,
+        clientPoint: client,
+        flowPosition: world,
+      });
+    },
+    [cellCanvasHandle, handleArtifactCardConnectionDrop],
+  );
+
   const confirmContextualDiscovery = React.useCallback(
     (candidate: ContextualCandidate, choice: ContextualRouteChoice) => {
       if (!contextualDiscovery || !registry || !canEditProject || running)
         return;
+      // A port prompt places the provider through the engine reducer, which
+      // also writes a shared binding and chooses who stays selected.
+      if (contextualDiscovery.trigger === "port_prompt") {
+        chooseProvider(candidate.spec, choice);
+        return;
+      }
 
       const upstream = contextualDiscovery.direction === "upstream";
       const id = `node-${createUuid()}`;
@@ -2210,12 +2371,13 @@ function WorkbenchBody({
 
       const edgeId = `edge-${createUuid()}`;
       const selection = connectionRouteSelection(choice.route);
-      const nodeCommand = addNodeCommand(id, data, {
+      const placedPosition = {
         x: contextualDiscovery.flowPosition.x,
         y:
           contextualDiscovery.flowPosition.y -
           DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
-      });
+      };
+      const nodeCommand = addNodeCommand(id, data, placedPosition);
 
       if (contextualDiscovery.sourceEndpoint.kind === "artifact-card") {
         const card = activeArtifactViewers.nodes.find(
@@ -2248,6 +2410,12 @@ function WorkbenchBody({
         if (!commands) return;
         applyAuthoringCommands([nodeCommand, ...commands]);
         canvasSelection.selectOnly({ nodeIds: [id] });
+        noteContinuedNode({
+          id,
+          position: placedPosition,
+          spec: data.spec,
+          satisfiedInputs: [choice.candidatePort.name],
+        });
         closeContextualDiscovery();
         clearRunError();
         return;
@@ -2306,6 +2474,12 @@ function WorkbenchBody({
 
       applyAuthoringCommands([nodeCommand, edgeCommand]);
       canvasSelection.selectOnly({ nodeIds: [id] });
+      noteContinuedNode({
+        id,
+        position: placedPosition,
+        spec: data.spec,
+        satisfiedInputs: upstream ? [] : [choice.candidatePort.name],
+      });
       closeContextualDiscovery();
       clearRunError();
     },
@@ -2316,10 +2490,12 @@ function WorkbenchBody({
       canvasSelection,
       canEditProject,
       authoredDocumentRef,
+      chooseProvider,
       clearRunError,
       closeContextualDiscovery,
       contextualDiscovery,
       newCatalogNodeData,
+      noteContinuedNode,
       registry,
       running,
       setRunError,
@@ -2831,6 +3007,7 @@ function WorkbenchBody({
             artifactOriginEdges: artifactOriginCanvasEdges,
             libraryItemsByArtifactId,
             imageNaturalSizes: cellImageNaturalSizes,
+            engineSettingsHref: managePacksHref,
             onOperatorConfigChange: localAuthoringEnabled
               ? updateConfigPatch
               : undefined,
@@ -2856,6 +3033,7 @@ function WorkbenchBody({
       graphSemantics,
       libraryItemsByArtifactId,
       localAuthoringEnabled,
+      managePacksHref,
       nodeInstanceStates,
       nodeSecretStatuses,
       nodes,
@@ -2949,7 +3127,8 @@ function WorkbenchBody({
   };
   const canvasMenuActions: CanvasMenuActions = {
     searchNodes: () => setLibraryOpen(true, canvasMenuPoint),
-    addNodeHere: (spec) => addCatalogNode(spec, canvasMenuPoint ?? undefined),
+    addNodeHere: (spec) =>
+      addCatalogNode(spec, canvasMenuPoint ?? undefined, false),
     addAnnotationHere: (kind) =>
       addAnnotation(kind, canvasMenuPoint ?? undefined),
     selectAll: () => {
@@ -3473,10 +3652,25 @@ function WorkbenchBody({
           />
         ) : null}
         <NodeMenuRegistryContext.Provider value={nodeMenus}>
-          {canEditProject && !cellScene?.graph.cards.length ? (
+          {canEditProject &&
+          localAuthoringEnabled &&
+          cellScene &&
+          cellScene.graph.cards.length === 0 ? (
             <div {...stylex.props(s.emptyCanvas)}>
-              {canvasUpload ??
-                "Drop scans or files here, or press + to add a step"}
+              <EmptyCanvasStarter
+                status={canvasUpload}
+                samplePending={samplePending}
+                onFiles={(files) => {
+                  void uploadFilesOntoCanvas(
+                    files,
+                    canvasCenter({ x: 80, y: 80 }),
+                  );
+                }}
+                onSample={() => {
+                  void placeStarterSample();
+                }}
+                onBrowseSteps={() => setLibraryOpen(true)}
+              />
             </div>
           ) : canvasUpload ? (
             <div {...stylex.props(s.emptyCanvas)} role="status">
@@ -3518,6 +3712,9 @@ function WorkbenchBody({
                 if (connection) onConnect(connection);
               }}
               onConnectDropEmpty={onCellConnectDropEmpty}
+              onArtifactNextStep={
+                localAuthoringEnabled ? continueFromArtifactCard : undefined
+              }
               onRemoveCards={(ids) => removeCellElements(ids, [])}
               onRemovePipes={(ids) => removeCellElements([], ids)}
               onSelectionChange={(selection) =>
@@ -3563,6 +3760,9 @@ function WorkbenchBody({
                 )
               }
               onOperatorToggleAppendix={toggleAppendix}
+              onPickServiceEngine={
+                localAuthoringEnabled ? pickEngine : undefined
+              }
               onAnnotationColorChange={(cardId, color) =>
                 updateAnnotationColor(cardId, annotationHexFromToken(color))
               }
@@ -3601,7 +3801,12 @@ function WorkbenchBody({
                   sourcePoint={discoverySourcePoint}
                   canInsert={localAuthoringEnabled}
                   insertDisabledReason={localAuthoringBlockedMessage}
-                  onClose={closeContextualDiscovery}
+                  onClose={() => {
+                    if (activeContextualDiscovery.trigger === "port_prompt") {
+                      closePrompt();
+                    }
+                    closeContextualDiscovery();
+                  }}
                   onConfirm={confirmContextualDiscovery}
                   onPlaceOutputCard={placeDiscoveredOutputCard}
                 />
@@ -3824,6 +4029,11 @@ function WorkbenchBody({
           onDismiss={dismissGlobalIssue}
         />
       </Toast.Provider>
+      <EngineConnectNotice
+        lead={engineConnectNotice?.lead ?? null}
+        onUndo={undoEngineConnect}
+        onDismiss={dismissEngineConnectNotice}
+      />
 
       {executionHistoryTarget ? (
         <ExecutionHistoryDrawer
@@ -3845,6 +4055,7 @@ function WorkbenchBody({
         registry={registry ?? null}
         activeGraphId={openGraphId}
         canEdit={localAuthoringEnabled}
+        managePacksHref={managePacksHref}
         selection={canvasMenuSelection}
         nodeMenus={nodeMenus}
         actions={canvasMenuActions}
@@ -3883,6 +4094,7 @@ function WorkbenchBody({
           insertDisabledReason={localAuthoringBlockedMessage}
           onOpenChange={(open) => setLibraryOpen(open, libraryInsertAt)}
           onAddNode={(spec) => addCatalogNode(spec)}
+          managePacksHref={managePacksHref}
         />
       ) : null}
 

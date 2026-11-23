@@ -2,6 +2,7 @@ import type { NodeRegistry } from "@/lib/api";
 
 // Text input and Schema Builder from the builtin catalog response.
 export const canvasNodeRegistry: NodeRegistry = {
+  packs: [],
   plugins: [
     {
       slug: "text",
@@ -59,12 +60,14 @@ export const canvasNodeRegistry: NodeRegistry = {
   artifact_conversions: [],
   nodes: [
     {
+      pack_slugs: [],
+      role: "operator",
       origin: "builtin",
       operator_id: "text.input",
       operator_version: 1,
       plugin_slug: "text",
       title: "Text input",
-      description: "Produces one configured multiline text value.",
+      description: "Holds text you type, for a later step to read.",
       config_schema: {
         additionalProperties: false,
         properties: {
@@ -113,7 +116,8 @@ export const canvasNodeRegistry: NodeRegistry = {
           artifact_type_variable: null,
           also_accepts: [],
           service_contracts: [],
-          features: [],
+          service_features: [],
+          requires_service_feature: null,
           shape: "one",
           accepted_shapes: ["one"],
           instance_plugs: false,
@@ -128,13 +132,14 @@ export const canvasNodeRegistry: NodeRegistry = {
       runnable: true,
     },
     {
+      pack_slugs: [],
+      role: "operator",
       origin: "builtin",
       operator_id: "schema.builder",
       operator_version: 1,
       plugin_slug: "schema",
       title: "Schema Builder",
-      description:
-        "Builds one object JSON Schema with optional connected child schemas.",
+      description: "Describes the fields a later step should fill in.",
       config_schema: {
         $defs: {
           JsonSchemaBuilderField: {
@@ -308,7 +313,8 @@ export const canvasNodeRegistry: NodeRegistry = {
           artifact_type_variable: null,
           also_accepts: [],
           service_contracts: [],
-          features: [],
+          service_features: [],
+          requires_service_feature: null,
           shape: "one",
           accepted_shapes: ["one"],
           instance_plugs: true,
@@ -332,7 +338,8 @@ export const canvasNodeRegistry: NodeRegistry = {
           artifact_type_variable: null,
           also_accepts: [],
           service_contracts: [],
-          features: [],
+          service_features: [],
+          requires_service_feature: null,
           shape: "one",
           accepted_shapes: ["one"],
           instance_plugs: false,

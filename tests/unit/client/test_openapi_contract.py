@@ -8,6 +8,7 @@ from grafy_client import (
     CatalogConversion,
     CatalogConversionKey,
     CatalogNode,
+    CatalogPack,
     CatalogPort,
     CommandReceipt,
     GeoFeatureMatch,
@@ -185,7 +186,7 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             "put",
             ("application/json", "ConfigureNodeSecretRequest"),
             "200",
-            "NodeSecretStatusResponse",
+            "ConfigureNodeSecretResponse",
         ),
         (
             run_base,
@@ -276,6 +277,7 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
     ] = (
         (NodeCatalog, "NodeRegistryResponse", frozenset()),
         (CatalogNode, "NodeSpecResponse", frozenset()),
+        (CatalogPack, "CatalogPackResponse", frozenset()),
         (CatalogPort, "PortResponse", frozenset()),
         (CatalogConversion, "ArtifactConversionSpecResponse", frozenset()),
         (CatalogConversionKey, "ArtifactConversionKeyResponse", frozenset()),
@@ -283,7 +285,7 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
         (ProjectHead, "ProjectHeadResponse", frozenset({"document"})),
         (CommandReceipt, "ProjectCommandReceiptResponse", frozenset()),
         (UploadItem, "ImageUploadItemResponse", frozenset()),
-        (NodeSecretStatus, "NodeSecretStatusResponse", frozenset()),
+        (NodeSecretStatus, "ConfigureNodeSecretResponse", frozenset()),
         (Run, "RunResponse", frozenset()),
         (InstanceKey, "InstanceKeyResponse", frozenset()),
         (InstanceState, "InstanceStateResponse", frozenset()),
@@ -326,3 +328,42 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
                 openapi_properties[field_name],
                 schema,
             ), f"{openapi_name}.{field_name}"
+
+
+
+def test_client_decodes_the_catalogs_ocr_feature_contracts() -> None:
+    from grafy_api.catalog import CatalogSnapshot
+    from grafy_api.catalog_packs import CatalogPolicy
+    from grafy_shared.config.catalog import CatalogOverrides
+    from grafy_api.services.families import build_application_registry
+    from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
+
+    registry = build_application_registry()
+    snapshot = CatalogSnapshot.from_registry(registry)
+    policy = CatalogPolicy(registry, CatalogOverrides())
+    response = NodeRegistryResponse.from_snapshot(
+        snapshot, policy, frozenset(policy.default_workspace_pack_slugs)
+    )
+    catalog = NodeCatalog.model_validate_json(response.model_dump_json())
+    nodes = {node.operator_id: node for node in catalog.nodes}
+    ocr = nodes["ocr.read_document"]
+    assert ocr.role == "operator"
+    assert ocr.pack_slugs == ("document_ocr",)
+    assert catalog.packs[1].slug == "document_ocr"
+    assert catalog.packs[1].provider_count == 2
+    engine = next(port for port in ocr.inputs if port.name == "engine")
+    (contract,) = engine.service_contracts
+    assert (contract.id, contract.version) == ("ocr.document", 1)
+
+    regions = next(port for port in ocr.outputs if port.name == "regions")
+    requirement = regions.requires_service_feature
+    assert requirement is not None
+    assert (requirement.input_port, requirement.feature) == ("engine", "regions")
+
+    reducto = nodes["reducto.ocr.provider"]
+    assert reducto.role == "provider"
+    (output,) = reducto.outputs
+    assert output.name == "engine"
+    (declaration,) = output.service_features
+    assert declaration.contract == contract
+    assert declaration.features == ("blocks",)

@@ -4,6 +4,9 @@ from typing import Final, final, override
 from uuid import UUID
 
 import httpx2 as httpx
+from grafy_core.contracts.ocr import DocumentOcrResult
+from grafy_core.documents import PdfFile, RasterImage
+from grafy_core.egress import EgressPolicy, EgressRejectedError
 from mistralai.client import UNSET, Mistral
 from mistralai.client import errors as mistral_errors
 from mistralai.client.models.documenturlchunk import DocumentURLChunkTypedDict
@@ -11,20 +14,13 @@ from mistralai.client.models.imageurlchunk import ImageURLChunkTypedDict
 from mistralai.client.models.ocrresponse import OCRResponse
 from pydantic import SecretStr
 
-from grafy_core.documents import PdfFile, RasterImage
-from grafy_core.egress import EgressPolicy, EgressRejectedError
-
 from grafy_plugin_mistral.egress_transport import EgressPinnedHttpx2Transport
-from grafy_core.ocr_contracts import OcrResult
-
 from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
-    build_ocr_output,
     MistralOcrProvider,
     MistralOcrProviderError,
-    validate_public_http_url,
+    build_ocr_output,
 )
-
 
 MISTRAL_API_BASE_URL: Final = "https://api.mistral.ai"
 MISTRAL_OCR_MODEL: Final = "mistral-ocr-latest"
@@ -59,44 +55,17 @@ class MistralOcrSdkProvider(MistralOcrProvider):
     async def process(
         self,
         *,
-        document_url: str | None,
-        image: RasterImage | PdfFile | None,
+        image: RasterImage | PdfFile,
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> OcrResult:
-        if (document_url is None) == (image is None):
-            raise MistralOcrProviderError(
-                "Connect either a document link or a page image, not both, and "
-                "not neither."
-            )
+    ) -> DocumentOcrResult:
+        data_url = await self._image_data_url(image)
         document: DocumentURLChunkTypedDict | ImageURLChunkTypedDict
-        if document_url is not None:
-            try:
-                document_url = validate_public_http_url(
-                    document_url,
-                    label="document_url",
-                    allow_query=True,
-                    strip_trailing_slash=False,
-                )
-            except ValueError as exc:
-                raise MistralOcrProviderError(str(exc)) from None
-            url_document: DocumentURLChunkTypedDict = {
-                "type": "document_url",
-                "document_url": document_url,
-            }
-            document = url_document
-        elif image is not None:
-            data_url = await self._image_data_url(image)
-            if isinstance(image, PdfFile):
-                document = {"type": "document_url", "document_url": data_url}
-            else:
-                document = {"type": "image_url", "image_url": data_url}
+        if isinstance(image, PdfFile):
+            document = {"type": "document_url", "document_url": data_url}
         else:
-            raise MistralOcrProviderError(
-                "Connect either a document link or a page image, not both, and "
-                "not neither."
-            )
+            document = {"type": "image_url", "image_url": data_url}
 
         endpoint = f"{MISTRAL_API_BASE_URL}/v1/ocr"
         api_key_value = api_key.get_secret_value()

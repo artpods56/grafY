@@ -46,6 +46,8 @@ function node(
   outputs: readonly Port[],
 ): GraphAuthoringNode {
   const spec: NodeSpec = {
+    pack_slugs: [],
+    role: "operator",
     operator_id: `test.${id}`,
     operator_version: 1,
     plugin_slug: "test",
@@ -327,10 +329,10 @@ describe("connection collection policy", () => {
 
 describe("connection acceptance policy", () => {
   it("rejects a second OCR provider, including a provider proposed by discovery", () => {
-    const output = port("reader", "output", "one", {
+    const output = port("engine", "output", "one", {
       kind: "service",
       artifact_type: null,
-      service_contracts: [{ id: "ocr.reader", version: 1 }],
+      service_contracts: [{ id: "ocr.document", version: 1 }],
     });
     const input = { ...output, direction: "input" as const };
     const mistral = node("mistral", [], [output]);
@@ -339,16 +341,16 @@ describe("connection acceptance policy", () => {
     const existing: WorkflowEdge = {
       id: "first-reader",
       source: "mistral",
-      sourcePort: "reader",
+      sourcePort: "engine",
       target: "ocr",
-      targetPort: "reader",
+      targetPort: "engine",
       data: { enabled: true, collectionMode: "direct" },
     };
     const candidate = connection({
       source: "reducto",
-      sourcePort: "reader",
+      sourcePort: "engine",
       target: "ocr",
-      targetPort: "reader",
+      targetPort: "engine",
     });
     expect(
       isConnectionAccepted(candidate, [mistral, ocr, reducto], [], [], []),

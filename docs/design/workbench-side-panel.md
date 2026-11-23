@@ -7,6 +7,8 @@ view. §3–§5 describe the panel as it is. Templates were later withdrawn from
 product (ADR 0016), so that tab has no successor.
 Update (2026-10-05): the panel also hosts Generated, this canvas's Run
 artifacts. The rail picks the view; there is still no tab strip (see §4).
+Update (2026-11-23): the rail and the panel titles say Library and Results.
+The view ids stay `artifacts` and `generated`.
 
 ## 1. The problem
 
@@ -80,7 +82,7 @@ a slide-over with a backdrop and the shell stops reserving width.
 
 ```
 ┌───────────────────────────────┐
-│ Artifacts            ⊕  ⬆  │ ⇤ │  the view's title and tools · the shell's collapse
+│ Library              ⊕  ⬆  │ ⇤ │  the view's title and tools · the shell's collapse
 │ ⌕ Filter the Library…      ↕  │  filter · sort
 ├───────────────────────────────┤
 │ ▾ 📂 Fieldwork            2  ⋯│  the user's folders, nested to any depth
@@ -105,7 +107,7 @@ a slide-over with a backdrop and the shell stops reserving width.
 └───────────────────────────────┘
 ```
 
-The header belongs to the view: Artifacts puts its title, new folder and upload
+The header belongs to the view: Library puts its title, new folder and upload
 there, and the shell adds only its collapse button at the end. Filter and sort
 sit on the row under it. `⋯` on a folder is new subfolder · rename · delete; on
 an artifact it is open original · copy link · delete. With a mouse the `⋯` stays
@@ -124,14 +126,14 @@ the view one control for its header:
 ```
 
 The shell shows one of the two, whichever `view` (`"artifacts" | "generated"`)
-the rail last asked for. The rail's Artifacts and Generated items are the
+the rail last asked for. The rail's Library and Results items are the
 panel's only openers: each opens its view, or closes the panel when that view is
 already showing; see §5. The shell used to host a tab strip with a second
 library view beside Artifacts; that tab is gone and its feature was withdrawn
 altogether (ADR 0016). A third view brings back a switcher in the header, not a
 registry — see [R41].
 
-The Artifacts view keeps its own data seam one level down:
+The Library view keeps its own data seam one level down:
 
 ```
 libraryFoldersApi.listTree(workspaceId)
@@ -208,7 +210,7 @@ sentence through because the references live in saved revisions and run history,
 neither of which the panel holds: it could not name the graphs itself, and "this
 could not be deleted" would be a worse answer than the one that says which graphs
 to go and detach. Read-only members see the menu item disabled and say so, the
-capability the Generated view already uses to gate saving.
+capability the Results view already uses to gate saving.
 
 **Deleting several.** With two or more selected, `Delete` (or `Backspace`) on a
 selected row, and `Delete` in any selected row's menu, ask about the whole
@@ -313,7 +315,7 @@ graph LR
 
 - `bun run --cwd apps/web --bun test` — the refusal codes mapped to the panel's errors,
   the recursive projection and filter, the panel (create, rename, fold, move,
-  preview, and a delete the server refuses), the shell, and the Generated view
+  preview, and a delete the server refuses), the shell, and the Results view
   keeping its last good read through a refresh that fails.
 - `bun run --cwd apps/web --bun typecheck`, `bun run --cwd apps/web --bun lint`.
 - Visual check at 1600px, 1280px, and 720px: the two columns must read as one

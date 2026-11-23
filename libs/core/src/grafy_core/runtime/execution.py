@@ -12,11 +12,11 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
-from grafy_core.domain.implementation import ImplementationIdentity
 from grafy_core.nodes import (
     InputContract,
     Node,
     NodeExecutionContext,
+    OutputContract,
     UserFacingNodeError,
     bind_node_secret_config,
     resolve_node_contracts,
@@ -24,6 +24,7 @@ from grafy_core.nodes import (
 from grafy_core.runtime.edge_transform import EdgeTransform
 from grafy_core.runtime.materialization import InputMaterializer
 from grafy_core.runtime.persistence import OutputPersister, PersistedNodeOutput
+from grafy_core.service_contracts import BoundServiceProvider
 
 
 class PluginFailureCode(StrEnum):
@@ -79,9 +80,10 @@ class NodeRuntime:
         inputs: Mapping[str, object],
         config: JsonObject | None = None,
         artifact_type_bindings: Mapping[str, ArtifactTypeKey] | None = None,
-        implementation: ImplementationIdentity | None = None,
         transforms: Mapping[str, Sequence[EdgeTransform]] | None = None,
         metadata: JsonObject | None = None,
+        *,
+        bound_services: Mapping[str, BoundServiceProvider] | None = None,
     ) -> PersistedNodeOutput | BaseModel:
         effective_bindings = artifact_type_bindings or {}
         raw_config: JsonObject = {} if config is None else config
@@ -129,16 +131,48 @@ class NodeRuntime:
                 f"({PluginFailureCode.OPERATOR_FAILURE.value})",
                 failure_code=PluginFailureCode.OPERATOR_FAILURE,
             ) from exc
+        output_contract = resolved_contracts.output_contract
+        validated_output = output_contract.model.model_validate(run_output)
+        unsupported = _unsupported_outputs(
+            output_contract, validated_output, bound_services or {}
+        )
+        if unsupported:
+            context.output_metadata["unsupported_outputs"] = unsupported
         recorded: JsonObject = {} if metadata is None else dict(metadata)
         if context.output_metadata:
             recorded.update(context.output_metadata)
-        if implementation is not None:
-            recorded["implementation"] = implementation.provenance_document()
-        persisted = await self._persister.persist(
-            contract=resolved_contracts.output_contract,
+        persisted = await self._persister.persist_validated(
+            contract=output_contract,
             context=context,
-            output=run_output,
+            validated_output=validated_output,
             provenance=provenance,
             metadata=recorded,
         )
         return persisted
+
+
+def _unsupported_outputs(
+    contract: OutputContract[BaseModel],
+    output: BaseModel,
+    bound_services: Mapping[str, BoundServiceProvider],
+) -> dict[str, str]:
+    unsupported: dict[str, str] = {}
+    for port in contract.ports.values():
+        requirement = port.requires_service_feature
+        if requirement is None:
+            continue
+        provider = bound_services[requirement.input_port]
+        feature = requirement.feature
+        value: object = getattr(output, port.name)
+        if feature in provider.features:
+            if value is None:
+                raise UserFacingNodeError(
+                    f"{provider.title} declared {feature} but returned none"
+                )
+        elif value is not None:
+            raise UserFacingNodeError(
+                f"{provider.title} returned {feature} without declaring it"
+            )
+        else:
+            unsupported[port.name] = provider.title
+    return unsupported

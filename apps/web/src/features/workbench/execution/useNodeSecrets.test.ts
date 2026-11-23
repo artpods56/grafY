@@ -38,6 +38,8 @@ const savedBaseUrl = "https://api.openai.com/v1";
 
 function secretNodeSpec(): NodeSpec {
   return {
+    pack_slugs: [],
+    role: "operator",
     operator_id: "llm.openai.completion",
     operator_version: 1,
     plugin_slug: "external.llm",

@@ -13,6 +13,7 @@ import {
 } from "../artifacts/artifact-drop";
 import { portMetaForPort } from "../authoring/types";
 import {
+  catalogNodeKey,
   downstreamCandidatesFromOutput,
   upstreamCandidatesFromInput,
 } from "../authoring/node-catalog";
@@ -68,6 +69,7 @@ function registry(): NodeRegistry {
   const textOut = port("text", "output");
   const altIn = port("body", "input");
   return {
+    packs: [],
     plugins: [
       {
         slug: "builtin",
@@ -541,5 +543,71 @@ describe("ContextualNodeDiscovery", () => {
       container.querySelector('[data-cell-viewport-layer="over-cards"]'),
     ).not.toBeNull();
     expect(document.body.textContent).toContain("Continue from Text");
+  });
+
+  it("asks which engine and shows what each one can produce", async () => {
+    const registryValue = registry();
+    const session = upstreamSessionFor(registryValue);
+    const transform = session.candidates.find(
+      (candidate) => candidate.spec.operator_id === "text.transform",
+    );
+    const annotate = session.candidates.find(
+      (candidate) => candidate.spec.operator_id === "text.annotate",
+    );
+    if (!transform || !annotate) throw new Error("missing engine candidates");
+    await renderDiscovery({
+      session: {
+        ...session,
+        sourcePortTitle: "OCR engine",
+        trigger: "port_prompt",
+        engineRows: {
+          [catalogNodeKey(transform.spec)]: {
+            pills: ["Boxes on the page"],
+            readiness: "Ready (local)",
+          },
+          [catalogNodeKey(annotate.spec)]: {
+            pills: ["Text blocks"],
+            readiness: "Needs API key",
+          },
+        },
+      },
+      onPlaceOutputCard: () => {},
+    });
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.getAttribute("aria-label")).toBe("Choose OCR engine");
+    expect(document.body.textContent).toContain("Choose OCR engine");
+    expect(document.body.textContent).toContain("2 compatible engines");
+    expect(document.body.textContent).not.toContain("Continue from");
+    expect(document.body.textContent).not.toContain("Place output card");
+    expect(
+      document.querySelector('[data-engine-pill="Boxes on the page"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('[data-engine-readiness="Needs API key"]')
+        ?.textContent,
+    ).toBe("Needs API key");
+    expect(
+      document.querySelector('[data-engine-readiness="Ready (local)"]')
+        ?.textContent,
+    ).toBe("Ready (local)");
+
+    const input = document.querySelector(
+      'input[aria-label="Search compatible nodes"]',
+    );
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("missing search");
+    }
+    const setValue = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    await React.act(async () => {
+      setValue?.call(input, "needs api key");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(document.body.textContent).toContain("Annotate text");
+    expect(document.body.textContent).not.toContain("Transform text");
   });
 });

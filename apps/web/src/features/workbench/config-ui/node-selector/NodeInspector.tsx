@@ -154,7 +154,7 @@ export function NodeInspector({
                 detailsOpen ? s.disclosureChevronOpen : null,
               )}
             />
-            Details
+            Technical details
             <span {...stylex.props(s.disclosureHint)}>
               {detailsSummary(fields.length, ports.length)}
             </span>

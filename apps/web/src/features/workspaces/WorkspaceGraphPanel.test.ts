@@ -246,7 +246,7 @@ describe("workspace graph panel interactions", () => {
   it("reports an explicit close", async () => {
     const { container, onClose } = await renderPanel();
     const close = container.querySelector<HTMLButtonElement>(
-      "[aria-label='Close quick graph switcher']",
+      "[aria-label='Close quick project switcher']",
     );
 
     await act(async () => close?.click());
@@ -294,7 +294,7 @@ describe("workspace graph panel interactions", () => {
       );
       const { container } = await renderPanel();
       const search = container.querySelector<HTMLInputElement>(
-        '[aria-label="Search graphs"]',
+        '[aria-label="Search projects"]',
       );
 
       expect(document.activeElement === search).toBe(shouldFocus);

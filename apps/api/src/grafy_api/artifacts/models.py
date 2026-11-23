@@ -27,8 +27,6 @@ from grafy_core.spatial_contracts import (
     GeoBounds,
     GeoFeatureCollectionPayload,
     GeoFeatureCollectionMetadata,
-    GeoVectorProjectionMetadata,
-    GeoRasterProjectionMetadata as StoredGeoRasterProjectionMetadata,
 )
 from grafy_core.spatial_contracts import MAX_RASTER_MOSAIC_SOURCES
 from grafy_core.table_contracts import TablePage, TableValueType
@@ -36,17 +34,15 @@ from grafy_core.table_contracts import TablePage, TableValueType
 from grafy_api.v1.models import ApiResponse
 
 
+# Render-descriptor shapes, named after the stored source they describe.
+# `raster_scan` is the descriptor a georeferenced TIFF is rendered into; the
+# retired geo.raster_scan artifact type is gone.
 type GeoArtifactKind = Literal[
     "feature_collection",
     "raster_scan",
     "map_layer",
     "map_document",
 ]
-
-
-class GeoRasterProjectionMetadata(StoredGeoRasterProjectionMetadata):
-    # The shared model describes legacy static projections. The API also reads COGs.
-    prefix: StrictStr | None = Field(default=None, min_length=1)  # pyright: ignore[reportIncompatibleVariableOverride]
 
 
 class ArtifactExportFormatResponse(ApiResponse):
@@ -572,17 +568,6 @@ class GeoMapDocumentPayload(StrictGeoModel):
         return self
 
 
-class GeoVectorRenderSourceResponse(ApiResponse):
-    kind: Literal["vector"] = "vector"
-    artifact_id: UUID
-    archive_url: str
-    source_layer: str
-    bounds: GeoBounds | None
-    min_zoom: int = Field(ge=0, le=24)
-    max_zoom: int = Field(ge=0, le=24)
-    fields: list[GeoPropertyFieldResponse] = Field(default_factory=list)
-
-
 class GeoRasterRenderSourceResponse(ApiResponse):
     kind: Literal["raster"] = "raster"
     artifact_id: UUID | None
@@ -591,10 +576,9 @@ class GeoRasterRenderSourceResponse(ApiResponse):
     attribution: str | None = None
 
 
-GeoRenderSourceResponse = Annotated[
-    GeoVectorRenderSourceResponse | GeoRasterRenderSourceResponse,
-    Field(discriminator="kind"),
-]
+# A rendered layer always reads raster tiles. Vector layers carry no rendered
+# source until the GeoJSON renderer exists, so they are absent from `layers`.
+type GeoRenderSourceResponse = GeoRasterRenderSourceResponse
 
 
 class GeoRenderLayerResponse(ApiResponse):
@@ -669,15 +653,13 @@ __all__ = [
     "GeoPointCategory",
     "GeoPropertyFieldResponse",
     "GeoRasterMosaicSourcePayload",
-    "GeoRasterProjectionMetadata",
     "GeoRasterRenderSourceResponse",
     "GeoRasterStyle",
     "GeoRasterTileJsonResponse",
     "GeoRenderLayerResponse",
     "GeoRenderRequest",
     "GeoRenderResponse",
-    "GeoVectorProjectionMetadata",
-    "GeoVectorRenderSourceResponse",
+    "GeoRenderSourceResponse",
     "GeoVectorStyle",
     "GeoWmsSourcePayload",
     "interaction_values_equal",

@@ -3,16 +3,19 @@
 import * as React from "react";
 import useSWR, { useSWRConfig, type ScopedMutator } from "swr";
 import {
+  listMyWorkspaceInvitations,
+  listWorkspaceInvitations,
   listWorkspaceMembers,
+  listWorkspacePacks,
   listWorkspaces,
+  workspacePacksPath,
+  type CatalogPack,
   type NodeRegistry,
   type ProjectList,
   type Workspace,
   type WorkspaceInvitation,
   type WorkspaceInvitationForRecipient,
   type WorkspaceMember,
-  listMyWorkspaceInvitations,
-  listWorkspaceInvitations,
 } from "@/lib/api";
 
 /**
@@ -57,17 +60,32 @@ export function useProjectSummaryRefresh(): (
   );
 }
 
+export function workspaceNodeRegistryKey(workspaceId: string): string {
+  return `/v1/workspaces/${encodeURIComponent(workspaceId)}/nodes`;
+}
+
 export function useNodeRegistry(workspaceId?: string) {
   return useSWR<NodeRegistry>(
-    workspaceId
-      ? `/v1/workspaces/${encodeURIComponent(workspaceId)}/nodes`
-      : null,
+    workspaceId ? workspaceNodeRegistryKey(workspaceId) : null,
   );
 }
 
 export function useWorkspaceProjects(workspaceId?: string) {
   return useSWR<ProjectList>(
     workspaceId ? workspaceProjectsKey(workspaceId) : null,
+  );
+}
+
+/** Packs this Workspace can turn on, including whether Document OCR is on. */
+export function useWorkspacePacks(workspaceId?: string) {
+  return useSWR<readonly CatalogPack[]>(
+    workspaceId ? workspacePacksPath(workspaceId) : null,
+    () => {
+      if (!workspaceId) {
+        throw new Error("Workspace packs need a workspace.");
+      }
+      return listWorkspacePacks(workspaceId);
+    },
   );
 }
 

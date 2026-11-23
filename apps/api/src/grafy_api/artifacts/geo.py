@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Collection
+from dataclasses import dataclass
 from typing import cast
 from uuid import UUID
 
@@ -8,19 +9,14 @@ from grafy_core.artifacts import ArtifactObject, ArtifactRef
 from grafy_core.egress import validated_public_destination
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
-from grafy_core.spatial_contracts import (
-    BasemapKind,
-    GeoVectorStyle as StoredGeoVectorStyle,
-)
+from grafy_core.spatial_contracts import BasemapKind
 from grafy_shared.config.tiler import TilerConfig
 
 from grafy_api.artifact_availability import ArtifactAvailability, ArtifactReferenceError
 from grafy_api.artifacts.errors import GeoRenderArtifactNotFoundError
 from grafy_api.artifacts.geo_tiff import (
-    GEO_RASTER_SCAN_ARTIFACT_TYPE,
     TIFF_ARTIFACT_TYPE,
     GeoTiffInfo,
-    load_geo_raster_info,
     load_geo_tiff,
     require_raster_tiler,
     tiff_title,
@@ -35,19 +31,13 @@ from grafy_api.artifacts.models import (
     ArtifactExactMatchRow,
     GeoArtifactRefPayload,
     GeoBounds,
-    GeoCategorizedPointStyle,
     GeoFeatureQueryResponse,
     GeoMapDocumentPayload,
     GeoMapLayerPayload,
-    GeoPropertyFieldResponse,
-    GeoRasterProjectionMetadata,
     GeoRasterRenderSourceResponse,
     GeoRasterStyle,
     GeoRenderLayerResponse,
     GeoRenderResponse,
-    GeoVectorProjectionMetadata,
-    GeoVectorRenderSourceResponse,
-    GeoVectorStyle,
     interaction_values_equal,
 )
 
@@ -56,7 +46,15 @@ GEO_FEATURE_COLLECTION_ARTIFACT_TYPE = "geo.feature_collection"
 GEO_MAP_LAYER_ARTIFACT_TYPE = "geo.map_layer"
 GEO_MAP_DOCUMENT_ARTIFACT_TYPE = "geo.map_document"
 GEO_INTERACTION_FEATURE_LIMIT = 250_000
-RASTER_SOURCE_TYPES = (TIFF_ARTIFACT_TYPE, GEO_RASTER_SCAN_ARTIFACT_TYPE)
+RASTER_SOURCE_TYPES = (TIFF_ARTIFACT_TYPE,)
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedRenderLayer:
+    """One map layer's rendered layer (None when nothing draws it) and footprint."""
+
+    layer: GeoRenderLayerResponse | None
+    bounds: GeoBounds | None
 
 
 def _coordinate_bounds(coordinates: object) -> GeoBounds | None:
@@ -121,13 +119,21 @@ def feature_count(artifact: ArtifactObject) -> int:
     return count
 
 
-def source_name(artifact: ArtifactObject) -> str:
-    name = artifact.metadata.get("source_name")
-    if not isinstance(name, str) or name.strip() == "":
-        raise ArtifactContentUnavailableError(
-            f"Geo source artifact {artifact.id} has invalid source_name metadata"
-        )
-    return name
+def collection_bounds(artifact: ArtifactObject) -> GeoBounds | None:
+    """Footprint recorded when a feature collection was written, if it had one."""
+    value = artifact.metadata.get("bounds")
+    if not isinstance(value, list):
+        return None
+    items = cast(list[object], value)
+    if len(items) != 4:
+        return None
+    numbers: list[float] = []
+    for item in items:
+        if isinstance(item, bool) or not isinstance(item, int | float):
+            return None
+        numbers.append(float(item))
+    west, south, east, north = numbers
+    return (west, south, east, north)
 
 
 async def resolve_exact_artifacts(
@@ -187,7 +193,7 @@ async def load_mosaic_infos(
     )
     return list(
         await asyncio.gather(
-            *(load_geo_raster_info(artifact, tiler) for artifact in artifacts)
+            *(load_geo_tiff(artifact, tiler) for artifact in artifacts)
         )
     )
 
@@ -218,6 +224,52 @@ class ArtifactGeoService:
         async with self._uow as uow:
             return await uow.artifacts.get(workspace_id, artifact_id)
 
+    async def feature_source_ids(
+        self,
+        artifact: ArtifactObject,
+        *,
+        workspace_id: UUID,
+    ) -> list[UUID]:
+        """Feature collections one geo artifact reads, in draw order.
+
+        Feature data and how it is drawn are separate questions: a linked query
+        covers the collections a map references even while the renderer draws no
+        vector layer for them.
+        """
+        if artifact.artifact_type == GEO_FEATURE_COLLECTION_ARTIFACT_TYPE:
+            return [artifact.id]
+        if artifact.artifact_type == GEO_MAP_LAYER_ARTIFACT_TYPE:
+            layer = GeoMapLayerPayload.model_validate(artifact.inline_payload)
+            if layer.source.kind != "feature_collection":
+                return []
+            _ = await resolve_exact_artifacts(
+                self._availability,
+                [layer.source.artifact],
+                expected_type=GEO_FEATURE_COLLECTION_ARTIFACT_TYPE,
+                context=f"Map layer artifact {artifact.id}",
+                workspace_id=workspace_id,
+            )
+            return [layer.source.artifact.artifact_id]
+        if artifact.artifact_type == GEO_MAP_DOCUMENT_ARTIFACT_TYPE:
+            document = GeoMapDocumentPayload.model_validate(artifact.inline_payload)
+            layer_artifacts = await resolve_exact_artifacts(
+                self._availability,
+                document.layers,
+                expected_type=GEO_MAP_LAYER_ARTIFACT_TYPE,
+                context=f"Map document artifact {artifact.id}",
+                workspace_id=workspace_id,
+            )
+            ordered: list[UUID] = []
+            for layer_artifact in layer_artifacts:
+                for source_id in await self.feature_source_ids(
+                    layer_artifact,
+                    workspace_id=workspace_id,
+                ):
+                    if source_id not in ordered:
+                        ordered.append(source_id)
+            return ordered
+        return []
+
     async def query_geo_features(
         self,
         artifact: ArtifactObject,
@@ -225,13 +277,9 @@ class ArtifactGeoService:
         *,
         workspace_id: UUID,
     ) -> GeoFeatureQueryResponse:
-        descriptor = await self.load_geo_render(artifact, workspace_id=workspace_id)
-        source_ids = list(
-            dict.fromkeys(
-                layer.source.artifact_id
-                for layer in descriptor.layers
-                if layer.source.kind == "vector"
-            )
+        source_ids = await self.feature_source_ids(
+            artifact,
+            workspace_id=workspace_id,
         )
         if not source_ids:
             return GeoFeatureQueryResponse(
@@ -366,42 +414,22 @@ class ArtifactGeoService:
             )
         try:
             if artifact.artifact_type == GEO_FEATURE_COLLECTION_ARTIFACT_TYPE:
-                layer = self._feature_render_layer(
-                    artifact,
-                    layer_id=str(artifact.id),
-                    title=source_name(artifact),
-                    visible=True,
-                    opacity=1.0,
-                    min_zoom=0,
-                    max_zoom=22,
-                    style=GeoVectorStyle.model_validate(StoredGeoVectorStyle()),
-                )
-                layers = [] if layer is None else [layer]
+                # Exact features, styles and bounds are all readable; nothing
+                # draws them until a GeoJSON renderer exists (CONTEXT.md, spatial
+                # artifact model).
                 return GeoRenderResponse(
                     artifact_id=artifact.id,
                     kind="feature_collection",
                     basemap="openstreetmap",
-                    initial_bounds=None if layer is None else layer.source.bounds,
-                    layers=layers,
+                    initial_bounds=collection_bounds(artifact),
+                    layers=[],
                 )
-            if artifact.artifact_type in (
-                TIFF_ARTIFACT_TYPE,
-                GEO_RASTER_SCAN_ARTIFACT_TYPE,
-            ):
-                if artifact.artifact_type == TIFF_ARTIFACT_TYPE:
-                    tiler = require_raster_tiler(self._tiler, self._tiler_config)
-                    info = await load_geo_tiff(artifact, tiler)
-                    title = tiff_title(artifact)
-                    bounds = info.bounds
-                else:
-                    title = source_name(artifact)
-                    projection = GeoRasterProjectionMetadata.model_validate(
-                        artifact.metadata.get("raster_projection")
-                    )
-                    bounds = projection.bounds
+            if artifact.artifact_type == TIFF_ARTIFACT_TYPE:
+                tiler = require_raster_tiler(self._tiler, self._tiler_config)
+                info = await load_geo_tiff(artifact, tiler)
                 raster_layer = GeoRenderLayerResponse(
                     id=str(artifact.id),
-                    title=title,
+                    title=tiff_title(artifact),
                     visible=True,
                     opacity=1.0,
                     min_zoom=0,
@@ -412,7 +440,7 @@ class ArtifactGeoService:
                             f"/v1/workspaces/{artifact.workspace_id}/artifacts/"
                             f"{artifact.id}/geo/raster/tilejson.json"
                         ),
-                        bounds=bounds,
+                        bounds=info.bounds,
                     ),
                     style=GeoRasterStyle.default(),
                 )
@@ -424,16 +452,16 @@ class ArtifactGeoService:
                     layers=[raster_layer],
                 )
             if artifact.artifact_type == GEO_MAP_LAYER_ARTIFACT_TYPE:
-                layer = await self._resolve_render_layer(
+                resolved = await self._resolve_render_layer(
                     artifact,
                     workspace_id=workspace_id,
                 )
-                layers = [] if layer is None else [layer]
+                layers = [] if resolved.layer is None else [resolved.layer]
                 return GeoRenderResponse(
                     artifact_id=artifact.id,
                     kind="map_layer",
                     basemap="openstreetmap",
-                    initial_bounds=None if layer is None else layer.source.bounds,
+                    initial_bounds=resolved.bounds,
                     layers=layers,
                 )
             if artifact.artifact_type == GEO_MAP_DOCUMENT_ARTIFACT_TYPE:
@@ -446,20 +474,18 @@ class ArtifactGeoService:
                     workspace_id=workspace_id,
                 )
                 document_layers: list[GeoRenderLayerResponse] = []
+                layer_bounds: list[GeoBounds] = []
                 for layer_artifact in layer_artifacts:
                     resolved = await self._resolve_render_layer(
                         layer_artifact,
                         workspace_id=workspace_id,
                     )
-                    if resolved is not None:
-                        document_layers.append(resolved)
+                    if resolved.layer is not None:
+                        document_layers.append(resolved.layer)
+                    if resolved.bounds is not None:
+                        layer_bounds.append(resolved.bounds)
                 effective_bounds = document.initial_bounds
                 if effective_bounds is None:
-                    layer_bounds = [
-                        resolved.source.bounds
-                        for resolved in document_layers
-                        if resolved.source.bounds is not None
-                    ]
                     effective_bounds = bounds_union(layer_bounds)
                 return GeoRenderResponse(
                     artifact_id=artifact.id,
@@ -478,65 +504,12 @@ class ArtifactGeoService:
             f"Artifact {artifact.id} is not a supported geo artifact"
         )
 
-    def _feature_render_layer(
-        self,
-        artifact: ArtifactObject,
-        *,
-        layer_id: str,
-        title: str,
-        visible: bool,
-        opacity: float,
-        min_zoom: int,
-        max_zoom: int,
-        style: GeoVectorStyle | GeoCategorizedPointStyle,
-    ) -> GeoRenderLayerResponse | None:
-        projection_value = artifact.metadata.get("vector_projection")
-        if projection_value is None and feature_count(artifact) == 0:
-            return None
-        projection = GeoVectorProjectionMetadata.model_validate(projection_value)
-        value = artifact.metadata.get("property_fields", [])
-        if not isinstance(value, list):
-            raise ArtifactContentUnavailableError(
-                f"Geo source artifact {artifact.id} has invalid "
-                "property_fields metadata"
-            )
-        try:
-            fields = [
-                GeoPropertyFieldResponse.model_validate(field)
-                for field in cast(list[object], value)
-            ]
-        except Exception as exc:
-            raise ArtifactContentUnavailableError(
-                f"Geo source artifact {artifact.id} has invalid "
-                "property_fields metadata"
-            ) from exc
-        return GeoRenderLayerResponse(
-            id=layer_id,
-            title=title,
-            visible=visible,
-            opacity=opacity,
-            min_zoom=min_zoom,
-            max_zoom=max_zoom,
-            source=GeoVectorRenderSourceResponse(
-                artifact_id=artifact.id,
-                archive_url=(
-                    f"/v1/workspaces/{artifact.workspace_id}/artifacts/{artifact.id}/geo/vector.pmtiles"
-                ),
-                source_layer=projection.source_layer,
-                bounds=projection.bounds,
-                min_zoom=projection.min_zoom,
-                max_zoom=projection.max_zoom,
-                fields=fields,
-            ),
-            style=style,
-        )
-
     async def _resolve_render_layer(
         self,
         layer_artifact: ArtifactObject,
         *,
         workspace_id: UUID,
-    ) -> GeoRenderLayerResponse | None:
+    ) -> _ResolvedRenderLayer:
         if (
             layer_artifact.artifact_type != GEO_MAP_LAYER_ARTIFACT_TYPE
             or layer_artifact.schema_version != 1
@@ -557,16 +530,10 @@ class ArtifactGeoService:
             )[0]
             if layer.style.kind == "raster":
                 raise ValueError("Feature collection layer has non-vector style")
-            return self._feature_render_layer(
-                source_artifact,
-                layer_id=str(layer_artifact.id),
-                title=layer.title,
-                visible=layer.visible,
-                opacity=layer.opacity,
-                min_zoom=layer.min_zoom,
-                max_zoom=layer.max_zoom,
-                style=layer.style,
-            )
+            # Exact features stay readable through /geo/feature* and the layer
+            # keeps its footprint for the camera; only the rendered layer is
+            # missing, until its GeoJSON renderer exists.
+            return _ResolvedRenderLayer(None, collection_bounds(source_artifact))
         if layer.source.kind == "raster_scan":
             source_artifact = (
                 await resolve_exact_artifacts(
@@ -578,30 +545,28 @@ class ArtifactGeoService:
                 )
             )[0]
             if layer.style.kind != "raster":
-                raise ValueError("Raster scan layer has non-raster style")
-            if source_artifact.artifact_type == TIFF_ARTIFACT_TYPE:
-                tiler = require_raster_tiler(self._tiler, self._tiler_config)
-                bounds = (await load_geo_tiff(source_artifact, tiler)).bounds
-            else:
-                bounds = GeoRasterProjectionMetadata.model_validate(
-                    source_artifact.metadata.get("raster_projection")
-                ).bounds
-            return GeoRenderLayerResponse(
-                id=str(layer_artifact.id),
-                title=layer.title,
-                visible=layer.visible,
-                opacity=layer.opacity,
-                min_zoom=layer.min_zoom,
-                max_zoom=layer.max_zoom,
-                source=GeoRasterRenderSourceResponse(
-                    artifact_id=source_artifact.id,
-                    tilejson_url=(
-                        f"/v1/workspaces/{source_artifact.workspace_id}/artifacts/"
-                        f"{source_artifact.id}/geo/raster/tilejson.json"
+                raise ValueError("Raster layer has non-raster style")
+            tiler = require_raster_tiler(self._tiler, self._tiler_config)
+            bounds = (await load_geo_tiff(source_artifact, tiler)).bounds
+            return _ResolvedRenderLayer(
+                GeoRenderLayerResponse(
+                    id=str(layer_artifact.id),
+                    title=layer.title,
+                    visible=layer.visible,
+                    opacity=layer.opacity,
+                    min_zoom=layer.min_zoom,
+                    max_zoom=layer.max_zoom,
+                    source=GeoRasterRenderSourceResponse(
+                        artifact_id=source_artifact.id,
+                        tilejson_url=(
+                            f"/v1/workspaces/{source_artifact.workspace_id}/artifacts/"
+                            f"{source_artifact.id}/geo/raster/tilejson.json"
+                        ),
+                        bounds=bounds,
                     ),
-                    bounds=bounds,
+                    style=layer.style,
                 ),
-                style=layer.style,
+                bounds,
             )
         if layer.source.kind == "raster_mosaic":
             if layer.style.kind != "raster":
@@ -616,7 +581,31 @@ class ArtifactGeoService:
             )
             bounds = bounds_union([info.bounds for info in infos])
             assert bounds is not None  # a mosaic has at least one source
-            return GeoRenderLayerResponse(
+            return _ResolvedRenderLayer(
+                GeoRenderLayerResponse(
+                    id=str(layer_artifact.id),
+                    title=layer.title,
+                    visible=layer.visible,
+                    opacity=layer.opacity,
+                    min_zoom=layer.min_zoom,
+                    max_zoom=layer.max_zoom,
+                    source=GeoRasterRenderSourceResponse(
+                        artifact_id=layer_artifact.id,
+                        tilejson_url=(
+                            f"/v1/workspaces/{layer_artifact.workspace_id}/artifacts/"
+                            f"{layer_artifact.id}/geo/raster/tilejson.json"
+                        ),
+                        bounds=bounds,
+                    ),
+                    style=layer.style,
+                ),
+                bounds,
+            )
+        if layer.style.kind != "raster":
+            raise ValueError("WMS layer has non-raster style")
+        _ = validated_public_destination(layer.source.url, service_name="WMS")
+        return _ResolvedRenderLayer(
+            GeoRenderLayerResponse(
                 id=str(layer_artifact.id),
                 title=layer.title,
                 visible=layer.visible,
@@ -624,34 +613,17 @@ class ArtifactGeoService:
                 min_zoom=layer.min_zoom,
                 max_zoom=layer.max_zoom,
                 source=GeoRasterRenderSourceResponse(
-                    artifact_id=layer_artifact.id,
+                    artifact_id=None,
                     tilejson_url=(
                         f"/v1/workspaces/{layer_artifact.workspace_id}/artifacts/"
                         f"{layer_artifact.id}/geo/raster/tilejson.json"
                     ),
-                    bounds=bounds,
+                    bounds=layer.source.bounds,
+                    attribution=layer.source.attribution,
                 ),
                 style=layer.style,
-            )
-        if layer.style.kind != "raster":
-            raise ValueError("WMS layer has non-raster style")
-        _ = validated_public_destination(layer.source.url, service_name="WMS")
-        return GeoRenderLayerResponse(
-            id=str(layer_artifact.id),
-            title=layer.title,
-            visible=layer.visible,
-            opacity=layer.opacity,
-            min_zoom=layer.min_zoom,
-            max_zoom=layer.max_zoom,
-            source=GeoRasterRenderSourceResponse(
-                artifact_id=None,
-                tilejson_url=(
-                    f"/v1/workspaces/{layer_artifact.workspace_id}/artifacts/{layer_artifact.id}/geo/raster/tilejson.json"
-                ),
-                bounds=layer.source.bounds,
-                attribution=layer.source.attribution,
             ),
-            style=layer.style,
+            layer.source.bounds,
         )
 
 
@@ -661,11 +633,10 @@ __all__ = [
     "GEO_INTERACTION_FEATURE_LIMIT",
     "GEO_MAP_DOCUMENT_ARTIFACT_TYPE",
     "GEO_MAP_LAYER_ARTIFACT_TYPE",
-    "GEO_RASTER_SCAN_ARTIFACT_TYPE",
     "RASTER_SOURCE_TYPES",
     "bounds_union",
+    "collection_bounds",
     "feature_count",
     "load_mosaic_infos",
     "resolve_exact_artifacts",
-    "source_name",
 ]

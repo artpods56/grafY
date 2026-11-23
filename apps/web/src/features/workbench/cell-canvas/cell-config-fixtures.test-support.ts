@@ -25,6 +25,8 @@ export function fixturePort(name: string, overrides: Partial<Port> = {}): Port {
     direction: "input",
     instance_plugs: false,
     required: true,
+    requires_service_feature: null,
+    service_features: [],
     shape: "one",
     variadic: false,
     ...overrides,
@@ -33,6 +35,8 @@ export function fixturePort(name: string, overrides: Partial<Port> = {}): Port {
 
 function spec(overrides: Partial<NodeSpec>): NodeSpec {
   return {
+    pack_slugs: [],
+    role: "operator",
     operator_id: "test.op",
     operator_version: 1,
     title: "Op",
@@ -217,6 +221,7 @@ export const schemaSourceSpec = spec({
 });
 
 export const richRegistry: NodeRegistry = {
+  packs: [],
   nodes: [vectorLayerSpec, askModelSpec, schemaSourceSpec],
   artifact_types: [],
   artifact_conversions: [],

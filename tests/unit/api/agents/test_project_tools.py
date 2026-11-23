@@ -49,15 +49,15 @@ def arguments(registry, store: InMemoryDataStore) -> ContentAddressedArguments:
 
 def test_ports_come_from_the_registered_operator(registry) -> None:
     ports = RegistryNodePorts(registry)
-    node = make_node("ocr", operator_id="mistral.ocr.process")
+    node = make_node("ocr", operator_id="ocr.read_document")
 
     inputs = {port.name: port for port in ports.input_ports(node) or ()}
     outputs = {port.name: port for port in ports.output_ports(node) or ()}
 
-    assert inputs["document_url"].artifact_type == TEXT
-    assert inputs["image"].artifact_type == ArtifactTypeKey("image.raster", 1)
+    assert set(inputs) == {"document"}
+    assert inputs["document"].artifact_type == ArtifactTypeKey("image.raster", 1)
     assert {"markdown", "blocks", "regions"} <= set(outputs)
-    assert ports.title(node) == "Read with Mistral"
+    assert ports.title(node) == "Document OCR"
 
 
 def test_a_node_this_deployment_does_not_have_has_no_ports(registry) -> None:

@@ -15,7 +15,6 @@ from grafy_core.artifacts import (
     ArtifactObject,
 )
 from grafy_core.documents import FILE_ARTIFACTS
-from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.file_contracts import (
     BMP_FILE,
     CSV_FILE,
@@ -36,14 +35,11 @@ from grafy_core.runtime.resolvers import ArtifactContractError
 from grafy_core.table_contracts import TABLE_DATA
 from grafy_plugin_gis.artifacts import (
     GEO_FEATURE_COLLECTION,
-    GEO_RASTER_SCAN,
+    GEO_MAP_LAYER,
 )
 from grafy_plugin_gis.nodes import (
     GeoJsonParseError,
     GeoJsonParseInput,
-    GeoRasterScanImportConfig,
-    GeoRasterScanImportInput,
-    ImportRasterScanNode,
     ParseGeoJsonNode,
 )
 from grafy_plugin_gis.plugin import GIS
@@ -373,12 +369,13 @@ async def test_geojson_parse_validates_the_document_shape_at_run_time(
 
 
 @pytest.mark.asyncio
-async def test_raster_scan_import_names_the_source_and_keeps_the_original_filename(
+async def test_a_tiff_map_source_is_read_from_the_object_it_already_used(
     tmp_path: Path,
 ) -> None:
+    """A georeferenced TIFF is a map source as stored, with no conversion step."""
     storage = LocalFileObjectStore(tmp_path / "objects")
     uow = InMemoryUnitOfWork()
-    named_ref = await seed_file_artifact(
+    original = await seed_file_artifact(
         storage,
         uow,
         workspace_id=TEST_WORKSPACE_ID,
@@ -386,36 +383,12 @@ async def test_raster_scan_import_names_the_source_and_keeps_the_original_filena
         content=b"II*\x00geotiff-bytes",
         original_filename="scan.tif",
     )
-    unnamed_ref = await seed_file_artifact(
-        storage,
-        uow,
-        workspace_id=TEST_WORKSPACE_ID,
-        spec=TIFF_FILE,
-        content=b"II*\x00geotiff-bytes-again",
-    )
-    node = ImportRasterScanNode()
-    named_document = await file_values(storage, uow).resolve(
-        named_ref, TEST_WORKSPACE_ID
-    )
-    unnamed_document = await file_values(storage, uow).resolve(
-        unnamed_ref, TEST_WORKSPACE_ID
-    )
+    values = file_values(storage, uow)
 
-    named = await node.run(
-        node_context(),
-        GeoRasterScanImportConfig(source_name="Orthophoto 2024"),
-        GeoRasterScanImportInput(file=named_document),
-    )
-    unnamed = await node.run(
-        node_context(),
-        GeoRasterScanImportConfig(source_name="Orthophoto 2024"),
-        GeoRasterScanImportInput(file=unnamed_document),
-    )
+    resolved = await values.resolve(original, TEST_WORKSPACE_ID)
 
-    assert named.raster.content == b"II*\x00geotiff-bytes"
-    assert named.raster.source_name == "Orthophoto 2024"
-    assert named.raster.filename == "scan.tif"
-    assert unnamed.raster.filename == "Orthophoto 2024"
+    assert resolved.filename == "scan.tif"
+    assert await resolved.read(max_bytes=64) == b"II*\x00geotiff-bytes"
 
 
 @pytest.mark.asyncio
@@ -475,19 +448,16 @@ def test_replacement_nodes_declare_their_catalog_contracts() -> None:
     )
     assert parse_geojson.required_capabilities == ()
 
-    import_raster = registry.node_registration("gis.raster_scan.import", 1)
-    raster_file = import_raster.node_class.input_contract.ports["file"]
-    assert raster_file.accepts == TIFF_FILE.key
-    assert raster_file.also_accepts == ()
-    assert raster_file.shape.value == "one"
+    raster_layer = registry.node_registration("gis.map.raster_layer", 1)
+    raster_source = raster_layer.node_class.input_contract.ports["raster"]
+    assert raster_source.accepts == TIFF_FILE.key
+    assert raster_source.also_accepts == ()
+    assert raster_source.shape.value == "one"
     assert (
-        import_raster.node_class.output_contract.ports["raster"].produces
-        == GEO_RASTER_SCAN.key
+        raster_layer.node_class.output_contract.ports["layer"].produces
+        == GEO_MAP_LAYER.key
     )
-    assert list(import_raster.node_class.config_contract.model.model_fields) == [
-        "source_name"
-    ]
-    assert import_raster.required_capabilities == (PluginRuntimeCapability.NATIVE_GDAL,)
+    assert raster_layer.required_capabilities == ()
 
     assert {spec.key for spec in IMAGES.artifact_type_dependencies} == {
         RASTER_IMAGE.key,

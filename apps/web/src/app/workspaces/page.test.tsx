@@ -50,7 +50,7 @@ vi.mock("@/features/auth/AuthSessionBoundary", () => ({
 vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
   WorkspaceRail: () => <aside data-workspace-rail />,
   workspaceDisplayName: (workspace: { name: string; kind: string }) =>
-    workspace.kind === "personal" ? "My graphs" : workspace.name,
+    workspace.kind === "personal" ? "My projects" : workspace.name,
 }));
 
 vi.mock("@/hooks/use-api", () => ({
@@ -94,7 +94,7 @@ it("presents the workspace directory as separate administration", async () => {
   expect(container.querySelector("h1")?.textContent).toBe(
     "Workspace directory",
   );
-  expect(container.textContent).toContain("My graphs");
+  expect(container.textContent).toContain("My projects");
   expect(container.textContent).toContain("Atlas");
   expect(container.textContent).not.toContain("hidden-personal-slug");
   expect(container.textContent).not.toContain("hidden-team-slug");

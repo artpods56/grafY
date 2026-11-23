@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
-import { artifactPortFixture, nodeSpecFixture } from "../test-fixtures";
+import {
+  artifactPortFixture,
+  nodeSpecFixture,
+  packFixture,
+} from "../test-fixtures";
 import { portMetaForPort } from "./types";
 import {
   artifactFilterId,
@@ -16,7 +20,7 @@ import {
   filterAndSearchCatalogNodes,
   INPUT_NODES_FILTER,
   sortCatalogNodes,
-  sourceFilterId,
+  packFilterId,
   upstreamCandidatesFromInput,
 } from "./node-catalog";
 
@@ -51,6 +55,7 @@ function nodeSpec(
     operator_id: operatorId,
     operator_version: operatorVersion,
     plugin_slug: pluginSlug,
+    pack_slugs: pluginSlug === "builtin" ? ["essentials"] : ["document_ocr"],
     title: options.title ?? operatorId,
     description: options.description ?? operatorId,
     inputs: options.inputs ?? [],
@@ -61,6 +66,20 @@ function nodeSpec(
 
 function registry(): NodeRegistry {
   return {
+    packs: [
+      packFixture(),
+      packFixture({
+        slug: "document_ocr",
+        title: "Document OCR",
+        always_on: false,
+      }),
+      packFixture({
+        slug: "maps",
+        title: "Maps & GIS",
+        subscribed: false,
+        always_on: false,
+      }),
+    ],
     plugins: [
       {
         slug: "builtin",
@@ -279,17 +298,17 @@ describe("artifact catalog filters", () => {
     ).toEqual(["text.transform"]);
   });
 
-  it("builds one source category per provider plugin that ships nodes", () => {
+  it("builds All and subscribed Pack tabs in registry order", () => {
     const sources = buildSourceFilters(registry());
 
     expect(sources.map((filter) => [filter.id, filter.title])).toEqual([
       ["all", "All"],
-      [sourceFilterId("builtin"), "Built-in"],
-      [sourceFilterId("external"), "External"],
+      [packFilterId("essentials"), "Essentials"],
+      [packFilterId("document_ocr"), "Document OCR"],
     ]);
   });
 
-  it("matches source and input-node filters", () => {
+  it("matches Pack and input-node filters", () => {
     const nodes = catalogNodeSpecs(registry(), null);
     const sources = buildSourceFilters(registry());
     const byId = Object.fromEntries(
@@ -297,7 +316,7 @@ describe("artifact catalog filters", () => {
     );
 
     expect(
-      catalogNodesForFilter(nodes, byId[sourceFilterId("builtin")]!).map(
+      catalogNodesForFilter(nodes, byId[packFilterId("essentials")]!).map(
         (spec) => spec.operator_id,
       ),
     ).toEqual(["text.input", "text.transform", "table.batch", "generic.pass"]);
@@ -310,10 +329,10 @@ describe("artifact catalog filters", () => {
     ).toEqual(["text.input", "ocr.external"]);
   });
 
-  it("intersects source, artifact, and input-node filters", () => {
+  it("intersects Pack, artifact, and input-node filters", () => {
     const nodes = catalogNodeSpecs(registry(), null);
     const sources = buildSourceFilters(registry());
-    const builtin = sources.find((f) => f.id === sourceFilterId("builtin"))!;
+    const builtin = sources.find((f) => f.id === packFilterId("essentials"))!;
     const textArtifact = buildCatalogFilters(registry()).find(
       (candidate) =>
         candidate.id ===

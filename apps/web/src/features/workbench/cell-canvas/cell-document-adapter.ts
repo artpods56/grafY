@@ -52,6 +52,8 @@ export function cellGraphFromAuthoredDocument(
       Record<string, Readonly<Record<string, boolean>>>
     >;
     secrets?: CellNodeSecretState;
+    /** Owners' link for an empty engine port. */
+    engineSettingsHref?: string;
     originLinks?: readonly CellOriginLink[];
     viewerOutputValues?: ReadonlyMap<
       string,
@@ -90,6 +92,7 @@ export function cellGraphFromAuthoredDocument(
     collapsedAppendices: options?.collapsedAppendices,
     configSections: options?.configSections,
     secrets: options?.secrets,
+    engineSettingsHref: options?.engineSettingsHref,
   });
   const agents = buildAgentCardsAndSurfaces(document);
   const presentation = options?.presentation ?? null;

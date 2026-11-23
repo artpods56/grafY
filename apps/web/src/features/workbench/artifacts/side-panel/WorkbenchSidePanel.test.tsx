@@ -138,7 +138,7 @@ describe("WorkbenchSidePanel", () => {
     await renderPanel(state());
 
     expect(panel()).not.toBeNull();
-    expect(panel()?.querySelector("h2")?.textContent).toBe("Artifacts");
+    expect(panel()?.querySelector("h2")?.textContent).toBe("Library");
     expect(document.querySelector('[role="tablist"]')).toBeNull();
     expect(
       document.querySelector('[role="tree"][aria-label="Workspace Library"]'),
@@ -149,10 +149,8 @@ describe("WorkbenchSidePanel", () => {
     await renderPanel(state({ view: "generated" }));
 
     expect(panel()).not.toBeNull();
-    expect(document.body.textContent).toContain("Generated");
-    expect(
-      panel()?.querySelector('[aria-label="Generated artifacts"]'),
-    ).not.toBeNull();
+    expect(document.body.textContent).toContain("Results");
+    expect(panel()?.querySelector('[aria-label="Results"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("The Library is empty");
   });
 
@@ -161,7 +159,7 @@ describe("WorkbenchSidePanel", () => {
 
     expect(panel()).toBeNull();
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("Generated");
+    expect(document.body.textContent).toContain("Results");
   });
 
   it("collapses the panel from its header", async () => {

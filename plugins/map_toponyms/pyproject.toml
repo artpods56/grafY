@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grafy-plugin-map-toponyms"
+version = "0.1.0"
+requires-python = "==3.14.*"
+dependencies = [
+    "grafy-core==0.1.0",
+    "grafy-workbench",
+    "httpx",
+    "pillow",
+    "pydantic",
+    "pyproj>=3.7.0",
+    "shapely>=2.1.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.4.2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.basedpyright]
+extends = "../../pyproject.toml"
+venvPath = "."
+venv = ".venv"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv.sources]
+grafy-core = { workspace = true }
+grafy-workbench = { workspace = true }

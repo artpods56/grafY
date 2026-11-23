@@ -1,23 +1,22 @@
 import pytest
-from mistralai.client.models.ocrresponse import OCRResponse
-from pydantic import ValidationError
-
 from grafy_core.artifact_contracts import ImageRegion, ImageRegionSet
-from grafy_core.ocr_contracts import OcrResult
+from grafy_core.contracts.ocr import DocumentOcrResult
 from grafy_core.table_contracts import Table, TableValueType
 from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
     MistralOcrProviderError,
     build_ocr_output,
 )
+from mistralai.client.models.ocrresponse import OCRResponse
+from pydantic import ValidationError
 
 
-def _blocks(result: OcrResult) -> Table:
+def _blocks(result: DocumentOcrResult) -> Table:
     assert result.blocks is not None
     return result.blocks
 
 
-def _regions(result: OcrResult) -> ImageRegionSet:
+def _regions(result: DocumentOcrResult) -> ImageRegionSet:
     assert result.regions is not None
     return result.regions
 

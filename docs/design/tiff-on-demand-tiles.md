@@ -100,8 +100,8 @@ because `titiler.core` needs `starlette>=1` while the API pins `starlette<1`.
 
 ### Raster mosaics
 
-A `raster_mosaic` map layer stitches up to 64 georeferenced `file.tiff@1` or
-`geo.raster_scan@1` sources, listed bottom to top, without writing a merged
+A `raster_mosaic` map layer stitches up to 64 georeferenced `file.tiff@1`
+sources, listed bottom to top, without writing a merged
 raster. The API keeps the stitching cheap before it reaches the tiler: it
 pre-filters sources by their WGS84 footprint, answers 204 when none overlaps the
 tile, sends a lone overlapping source to the ordinary `/geo/tiles` route, and

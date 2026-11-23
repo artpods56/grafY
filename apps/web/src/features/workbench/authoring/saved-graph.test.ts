@@ -66,6 +66,7 @@ function registry(
   targetAcceptedShapes: readonly ("one" | "many")[] = [targetShape],
 ): NodeRegistry {
   return {
+    packs: [],
     plugins: [],
     artifact_types: ["x", "y", "z"].map((id) => ({
       key: { id, schema_version: 1 },
@@ -732,6 +733,7 @@ function stepSpec(
 /** Pages, an OCR step that reads them, and the step that paints boxes on them. */
 function mappedStepRegistry(): NodeRegistry {
   return {
+    packs: [],
     plugins: [],
     artifact_types: ["page", "markdown", "boxes"].map((id) => ({
       key: { id, schema_version: 1 },
@@ -848,6 +850,7 @@ function collectRegistry(): NodeRegistry {
     ],
   });
   return {
+    packs: [],
     plugins: [],
     artifact_types: [
       {
@@ -1021,6 +1024,7 @@ function genericCollectRegistry(): NodeRegistry {
     ],
   });
   return {
+    packs: [],
     plugins: [],
     artifact_types: [
       {
@@ -1263,6 +1267,7 @@ describe("saved Module nodes", () => {
 
   function moduleRegistry(spec: NodeSpec | null): NodeRegistry {
     return {
+      packs: [],
       plugins: [
         {
           slug: "builtin",

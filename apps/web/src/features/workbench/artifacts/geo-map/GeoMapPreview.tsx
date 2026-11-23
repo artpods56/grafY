@@ -41,12 +41,7 @@ import {
   layerRenderIds,
 } from "./layer-identity";
 import { mapInteractionProps } from "./map-interaction-props";
-import {
-  createGeoMapStyle,
-  ensurePmtilesProtocol,
-  fitBounds,
-  normalizedMapBounds,
-} from "./map-style";
+import { createGeoMapStyle, fitBounds, normalizedMapBounds } from "./map-style";
 import { s } from "./styles";
 import {
   DEFAULT_LABEL_STYLE,
@@ -129,28 +124,15 @@ export function GeoMapPreview({
   }, [interaction]);
 
   React.useEffect(() => {
-    if (!interaction) return;
-    const fields = new Map<
-      string,
-      { id: string; title: string; valueType: string }
-    >();
-    for (const layer of descriptor.layers) {
-      if (layer.source.kind !== "vector") continue;
-      for (const field of layer.source.fields ?? []) {
-        fields.set(field.id, {
-          id: field.id,
-          title: field.title,
-          valueType: field.value_type,
-        });
-      }
-    }
-    interaction.onFieldsChange([...fields.values()]);
-  }, [descriptor.layers, interaction]);
+    // The render descriptor carries no vector property fields any more, so the
+    // map publishes none: a card linked into it can offer no map-side field to
+    // map a selection onto.
+    interaction?.onFieldsChange([]);
+  }, [interaction]);
 
   React.useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    ensurePmtilesProtocol();
     const interactiveLayerIds = descriptor.layers.flatMap((layer) => {
       if (layer.style.kind === "vector") {
         return [

@@ -31,6 +31,7 @@ export type SwitchProps = {
   name?: string;
   /** Names the control when `label` is an icon or lives elsewhere. */
   "aria-label"?: string;
+  "aria-labelledby"?: string;
   /**
    * A native tooltip, for the case where the row's own text is truncated and the
    * tooltip is what expands it.
@@ -243,7 +244,7 @@ export function Switch({
   // nothing at all.
   const id = React.useId();
   const labelId = label == null ? undefined : id;
-  const on = checked && !disabled;
+  const on = checked;
   const root = stylex.props(
     toggle.root,
     toggle[size],
@@ -281,7 +282,7 @@ export function Switch({
         disabled={disabled}
         name={name}
         aria-label={props["aria-label"]}
-        aria-labelledby={labelId}
+        aria-labelledby={props["aria-labelledby"] ?? labelId}
         className={track.className}
         style={track.style}
       >

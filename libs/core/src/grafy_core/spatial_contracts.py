@@ -37,19 +37,7 @@ from grafy_core.spatial_metadata import (
 )
 from grafy_core.spatial_metadata import GeoPropertyValueType as GeoPropertyValueType
 from grafy_core.spatial_metadata import (
-    GeoRasterProjectionMetadata as GeoRasterProjectionMetadata,
-)
-from grafy_core.spatial_metadata import (
     GeoStoredFeatureCollectionMetadata as GeoStoredFeatureCollectionMetadata,
-)
-from grafy_core.spatial_metadata import (
-    GeoVectorProjectionMetadata as GeoVectorProjectionMetadata,
-)
-from grafy_core.spatial_metadata import (
-    RasterProjectionMetadata as RasterProjectionMetadata,
-)
-from grafy_core.spatial_metadata import (
-    VectorProjectionMetadata as VectorProjectionMetadata,
 )
 from grafy_core.spatial_styles import GeoCategoryValue as GeoCategoryValue
 from grafy_core.spatial_styles import (

@@ -7,17 +7,15 @@ scheduling accidents.
 
 import asyncio
 import contextlib
+import gc
+import inspect
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-import gc
-import inspect
 from typing import cast
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, JsonValue, SecretStr, TypeAdapter
 import pytest
-
 from grafy_core.provider_cache import (
     MAX_CANONICAL_IDENTITY_CHARS,
     CacheSpec,
@@ -28,6 +26,7 @@ from grafy_core.provider_cache import (
     UnstableRequestError,
     cached_call,
 )
+from pydantic import BaseModel, JsonValue, SecretStr, TypeAdapter
 
 WORKSPACE = uuid4()
 OTHER_WORKSPACE = uuid4()
@@ -234,7 +233,7 @@ async def test_an_empty_answer_is_an_answer() -> None:
 async def test_a_structured_result_round_trips_through_its_codec() -> None:
     cache = ProviderCache(InMemoryCacheStore())
     spec = CacheSpec(
-        operation="ocr.read",
+        operation="ocr.read_document",
         deployment="fake.ocr@1",
         revision="rev-aaaa",
         schema_version=1,

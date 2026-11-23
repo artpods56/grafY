@@ -10,7 +10,6 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const maplibreMock = vi.hoisted(() => {
   const instances: Array<Record<string, unknown>> = [];
-  const addProtocol = vi.fn();
 
   class MapMock {
     options: Record<string, unknown>;
@@ -62,21 +61,14 @@ const maplibreMock = vi.hoisted(() => {
     }
   }
 
-  return { addProtocol, instances, MapMock };
+  return { instances, MapMock };
 });
 
 vi.mock("maplibre-gl", () => ({
   default: {
-    addProtocol: maplibreMock.addProtocol,
     Map: maplibreMock.MapMock,
     AttributionControl: class AttributionControl {},
     workerUrl: "",
-  },
-}));
-
-vi.mock("pmtiles", () => ({
-  Protocol: class Protocol {
-    tile = vi.fn();
   },
 }));
 
@@ -153,55 +145,29 @@ const GEO_RENDER_DESCRIPTOR: GeoRenderDescriptor = {
   initial_bounds: [-12, 35, 22, 61],
   layers: [
     {
-      id: "parcels",
-      title: "Parcels",
+      id: "orthophoto",
+      title: "Orthophoto",
       visible: true,
       opacity: 1,
       min_zoom: 2,
       max_zoom: 18,
       source: {
-        kind: "vector",
-        artifact_id: "features-artifact",
-        archive_url: "/v1/artifacts/features-artifact/geo/vector.pmtiles",
-        source_layer: "features",
+        kind: "raster",
+        artifact_id: "orthophoto-artifact",
+        tilejson_url:
+          "/v1/artifacts/orthophoto-artifact/geo/raster/tilejson.json",
         bounds: [100, 10, 110, 20],
-        min_zoom: 0,
-        max_zoom: 14,
-        fields: [
-          { id: "name", title: "Name", value_type: "text" },
-          { id: "sheet", title: "Sheet", value_type: "text" },
-        ],
+        attribution: "City survey",
       },
       style: {
-        kind: "vector",
-        fill: { enabled: true, color: "#2563eb", opacity: 0.4 },
-        line: {
-          enabled: true,
-          color: "#1d4ed8",
-          opacity: 1,
-          width: 2,
-        },
-        outline: {
-          enabled: true,
-          color: "#172554",
-          opacity: 0.8,
-          width: 1,
-        },
-        point: {
-          enabled: true,
-          color: "#dc2626",
-          opacity: 1,
-          radius: 5,
-          stroke_color: "#ffffff",
-          stroke_width: 1,
-        },
-        label: {
-          property: "name",
-          color: "#111827",
-          size: 12,
-          halo_color: "#ffffff",
-          halo_width: 1,
-        },
+        kind: "raster",
+        opacity: 0.8,
+        brightness_min: 0,
+        brightness_max: 1,
+        contrast: 0,
+        saturation: 0,
+        hue: 0,
+        resampling: "linear",
       },
     },
     {
@@ -227,75 +193,6 @@ const GEO_RENDER_DESCRIPTOR: GeoRenderDescriptor = {
         saturation: 0,
         hue: 0,
         resampling: "linear",
-      },
-    },
-  ],
-};
-
-const CATEGORIZED_GEO_RENDER_DESCRIPTOR: GeoRenderDescriptor = {
-  artifact_id: "categorized-map-artifact",
-  kind: "map_document",
-  basemap: "openstreetmap",
-  initial_bounds: [27, 51, 33, 56],
-  layers: [
-    {
-      id: "chrzanowski-symbols",
-      title: "Chrzanowski symbols",
-      visible: true,
-      opacity: 1,
-      min_zoom: 0,
-      max_zoom: 22,
-      source: {
-        kind: "vector",
-        artifact_id: "chrzanowski-features",
-        archive_url: "/v1/artifacts/chrzanowski-features/geo/vector.pmtiles",
-        source_layer: "features",
-        bounds: [27, 51, 33, 56],
-        min_zoom: 0,
-        max_zoom: 14,
-      },
-      style: {
-        kind: "categorized_points",
-        category_property: "type",
-        categories: [
-          {
-            id: "cities",
-            title: "Cities and towns",
-            values: [1, 2, 3],
-            point: {
-              enabled: true,
-              color: "#b91c1c",
-              opacity: 1,
-              radius: 7,
-              stroke_color: "#ffffff",
-              stroke_width: 1,
-            },
-            min_zoom: 6,
-            max_zoom: 22,
-          },
-          {
-            id: "villages",
-            title: "Villages",
-            values: [5, 7, 8, 9, 10],
-            point: {
-              enabled: true,
-              color: "#d6a700",
-              opacity: 0.85,
-              radius: 4,
-              stroke_color: "#ffffff",
-              stroke_width: 1,
-            },
-            min_zoom: 10,
-            max_zoom: 22,
-          },
-        ],
-        label: {
-          property: "transcription",
-          color: "#111827",
-          size: 12,
-          halo_color: "#ffffff",
-          halo_width: 1,
-        },
       },
     },
   ],
@@ -1142,7 +1039,7 @@ describe("GIS map artifact rendering", () => {
                   artifact_id: descriptor.artifact_id,
                   bounds: [29, 53, 29, 53],
                   matched_feature_count: 1,
-                  source_artifact_ids: ["features-artifact"],
+                  source_artifact_ids: ["raster-artifact"],
                 }
               : descriptor,
           ),
@@ -1204,7 +1101,6 @@ describe("GIS map artifact rendering", () => {
     expect(String(fetchMock.mock.calls[0]![0])).not.toContain("/content");
     expect(String(fetchMock.mock.calls[0]![0])).not.toContain("/geo/page");
     expect(maplibreMock.instances).toHaveLength(1);
-    expect(maplibreMock.addProtocol).toHaveBeenCalledTimes(1);
 
     const firstMap = maplibreMock.instances[0] as unknown as {
       remove: ReturnType<typeof vi.fn>;
@@ -1215,11 +1111,10 @@ describe("GIS map artifact rendering", () => {
 
     await clickButton(container, "Load interactive map");
     expect(maplibreMock.instances).toHaveLength(2);
-    expect(maplibreMock.addProtocol).toHaveBeenCalledTimes(1);
     await act(async () => root.unmount());
   });
 
-  it("builds ordered PMTiles and raster layers above the optional basemap", async () => {
+  it("builds one raster layer per descriptor layer above the optional basemap", async () => {
     const { container, root } = await renderGeo();
     await clickButton(container, "Load interactive map");
 
@@ -1235,9 +1130,15 @@ describe("GIS map artifact rendering", () => {
       fitBounds: ReturnType<typeof vi.fn>;
     };
     const { sources, layers } = map.options.style;
-    expect(sources["grafy-geo-source-parcels"]).toMatchObject({
-      type: "vector",
-      url: "pmtiles:///api/v1/artifacts/features-artifact/geo/vector.pmtiles",
+    expect(Object.keys(sources)).toEqual([
+      "grafy-openstreetmap",
+      "grafy-geo-source-orthophoto",
+      "grafy-geo-source-elevation",
+    ]);
+    expect(sources["grafy-geo-source-orthophoto"]).toMatchObject({
+      type: "raster",
+      url: "/api/v1/artifacts/orthophoto-artifact/geo/raster/tilejson.json",
+      attribution: "City survey",
     });
     expect(sources["grafy-geo-source-elevation"]).toMatchObject({
       type: "raster",
@@ -1245,16 +1146,9 @@ describe("GIS map artifact rendering", () => {
     });
     expect(layers.map((layer) => layer.id)).toEqual([
       "grafy-openstreetmap-raster",
-      "grafy-geo-parcels-fill",
-      "grafy-geo-parcels-outline",
-      "grafy-geo-parcels-line",
-      "grafy-geo-parcels-point",
-      "grafy-geo-parcels-label",
+      "grafy-geo-orthophoto-raster",
       "grafy-geo-elevation-raster",
     ]);
-    for (const layer of layers.slice(1, 6)) {
-      expect(layer["source-layer"]).toBe("features");
-    }
     expect(map.options.bounds).toEqual([
       [-12, 35],
       [22, 61],
@@ -1268,7 +1162,7 @@ describe("GIS map artifact rendering", () => {
     await act(async () => root.unmount());
   });
 
-  it("applies linked filters and focuses exact features once per selection", async () => {
+  it("focuses exact features once per selection without filtering rasters", async () => {
     const onActivityChange = vi.fn();
     const interaction: ArtifactViewerInteractionContext = {
       outgoingFields: [],
@@ -1302,16 +1196,14 @@ describe("GIS map artifact rendering", () => {
       setFilter: ReturnType<typeof vi.fn>;
       setPaintProperty: ReturnType<typeof vi.fn>;
     };
-    expect(
-      map.setFilter.mock.calls.some(([, filter]) =>
-        JSON.stringify(filter).includes("Control point 23"),
-      ),
-    ).toBe(true);
+    // A raster layer is one image per tile, so a linked selection cannot filter
+    // it or repaint it with a highlight expression. It moves the camera only.
+    expect(map.setFilter).not.toHaveBeenCalled();
     expect(
       map.setPaintProperty.mock.calls.some(
         ([, , value]) => Array.isArray(value) && value[0] === "case",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(map.fitBounds).toHaveBeenCalledWith(
       [
         [28.98, 52.98],
@@ -1454,255 +1346,11 @@ describe("GIS map artifact rendering", () => {
     await act(async () => root.unmount());
   });
 
-  it("renders categorized point filters and exposes an interactive legend", async () => {
-    const { container, root } = await renderGeo(
-      "map",
-      CATEGORIZED_GEO_RENDER_DESCRIPTOR,
-    );
-    await clickButton(container, "Load interactive map");
-
-    const map = maplibreMock.instances[0] as unknown as {
-      options: {
-        style: {
-          layers: Array<Record<string, unknown>>;
-        };
-      };
-      setLayoutProperty: ReturnType<typeof vi.fn>;
-      setPaintProperty: ReturnType<typeof vi.fn>;
-    };
-    const categorizedLayers = map.options.style.layers.slice(1);
-    expect(categorizedLayers.map((layer) => layer.id)).toEqual([
-      "grafy-geo-chrzanowski-symbols-category-cities-point",
-      "grafy-geo-chrzanowski-symbols-category-cities-label",
-      "grafy-geo-chrzanowski-symbols-category-villages-point",
-      "grafy-geo-chrzanowski-symbols-category-villages-label",
-    ]);
-    expect(categorizedLayers[0]).toMatchObject({
-      minzoom: 6,
-      maxzoom: 22,
-      filter: [
-        "all",
-        [
-          "any",
-          ["==", ["geometry-type"], "Point"],
-          ["==", ["geometry-type"], "MultiPoint"],
-        ],
-        ["in", ["get", "type"], ["literal", [1, 2, 3]]],
-      ],
-      paint: {
-        "circle-color": "#b91c1c",
-        "circle-radius": 7,
-        "circle-pitch-scale": "viewport",
-      },
-    });
-    expect(categorizedLayers[1]).toMatchObject({
-      layout: {
-        "text-variable-anchor": ["top", "bottom", "left", "right"],
-        "text-radial-offset": 7 / 12 + 0.35,
-        "text-justify": "auto",
-      },
-    });
-    expect(categorizedLayers[2]).toMatchObject({
-      minzoom: 10,
-      paint: {
-        "circle-color": "#d6a700",
-        "circle-radius": 4,
-        "circle-pitch-scale": "viewport",
-      },
-    });
-
-    await clickButton(container, "1 layer");
-    await clickButton(container, "1. Chrzanowski symbols");
-    expect(container.textContent).toContain("Categories · type");
-    expect(container.textContent).toContain("Cities and towns");
-    expect(container.textContent).toContain("Villages");
-    expect(container.textContent).toContain("5, 7, 8, 9, 10 · z10–22");
-
-    const citiesRadius = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Cities and towns radius"]',
-    );
-    expect(citiesRadius?.value).toBe("7");
-    await act(async () => {
-      if (citiesRadius) {
-        const valueSetter = Object.getOwnPropertyDescriptor(
-          HTMLInputElement.prototype,
-          "value",
-        )?.set;
-        valueSetter?.call(citiesRadius, "9");
-        citiesRadius.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(map.setPaintProperty).toHaveBeenCalledWith(
-      "grafy-geo-chrzanowski-symbols-category-cities-point",
-      "circle-radius",
-      9,
-    );
-    expect(map.setLayoutProperty).toHaveBeenCalledWith(
-      "grafy-geo-chrzanowski-symbols-category-cities-label",
-      "text-radial-offset",
-      9 / 12 + 0.35,
-    );
-    const paintCallCountBeforeReset = map.setPaintProperty.mock.calls.length;
-    await clickButton(container, "Reset layer");
-    expect(citiesRadius?.value).toBe("7");
-    expect(
-      map.setPaintProperty.mock.calls.slice(paintCallCountBeforeReset),
-    ).toContainEqual([
-      "grafy-geo-chrzanowski-symbols-category-cities-point",
-      "circle-radius",
-      7,
-    ]);
-
-    const villagesToggle = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Show Villages"]',
-    );
-    expect(villagesToggle).not.toBeNull();
-    await act(async () => {
-      villagesToggle?.click();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(map.setLayoutProperty).toHaveBeenCalledWith(
-      "grafy-geo-chrzanowski-symbols-category-villages-point",
-      "visibility",
-      "none",
-    );
-    expect(map.setLayoutProperty).toHaveBeenCalledWith(
-      "grafy-geo-chrzanowski-symbols-category-villages-label",
-      "visibility",
-      "none",
-    );
-    await act(async () => root.unmount());
-  });
-
-  it("uses feature hit-testing to expose a pointer and inspect vector properties", async () => {
-    const onSelectionChange = vi.fn();
-    const onFieldsChange = vi.fn();
-    const { container, root } = await renderGeo("map", GEO_RENDER_DESCRIPTOR, {
-      outgoingFields: ["name", "sheet"],
-      selection: { kind: "key-selection", items: [] },
-      incoming: [],
-      onFieldsChange,
-      onSelectionChange,
-      onActivityChange: vi.fn(),
-    });
-    await clickButton(container, "Load interactive map");
-    expect(onFieldsChange).toHaveBeenCalledWith([
-      { id: "name", title: "Name", valueType: "text" },
-      { id: "sheet", title: "Sheet", valueType: "text" },
-    ]);
-    await clickButton(container, "2 layers");
-
-    const map = maplibreMock.instances[0] as unknown as {
-      canvas: HTMLCanvasElement;
-      canvasContainer: HTMLElement;
-      emit: (event: string, payload: Record<string, unknown>) => void;
-      isStyleLoaded: ReturnType<typeof vi.fn>;
-      queryRenderedFeatures: ReturnType<typeof vi.fn>;
-    };
-    Object.defineProperties(map.canvas, {
-      clientWidth: { configurable: true, value: 800 },
-      clientHeight: { configurable: true, value: 480 },
-    });
-    vi.spyOn(map.canvas, "getBoundingClientRect").mockReturnValue({
-      width: 400,
-      height: 240,
-    } as DOMRect);
-    const pointerEvent = {
-      point: { x: 420, y: 180 },
-      lngLat: { lng: 19.93821, lat: 50.06143 },
-    };
-    map.queryRenderedFeatures.mockReturnValue([
-      {
-        type: "Feature",
-        id: 23,
-        properties: {
-          name: "Control point 23",
-          sheet: "A-17",
-          surveyed: true,
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [19.93821, 50.06143],
-        },
-        layer: { id: "grafy-geo-parcels-point" },
-        source: "grafy-geo-source-parcels",
-        sourceLayer: "features",
-        state: {},
-      },
-    ]);
-    map.isStyleLoaded.mockReturnValue(false);
-
-    map.emit("mousemove", pointerEvent);
-    expect(
-      map.canvasContainer.classList.contains("maplibregl-track-pointer"),
-    ).toBe(true);
-    expect(map.queryRenderedFeatures).toHaveBeenLastCalledWith(
-      [
-        [816, 336],
-        [864, 384],
-      ],
-      {
-        layers: [
-          "grafy-geo-parcels-fill",
-          "grafy-geo-parcels-line",
-          "grafy-geo-parcels-point",
-        ],
-      },
-    );
-
-    await act(async () => {
-      map.emit("click", pointerEvent);
-    });
-    const featureDetails = container.querySelector(
-      '[aria-label="Selected feature details"]',
-    );
-    expect(featureDetails?.textContent).toContain("Parcels · Point");
-    expect(featureDetails?.textContent).toContain("Control point 23");
-    expect(featureDetails?.textContent).toContain("ID 23");
-    expect(featureDetails?.textContent).toContain("19.93821, 50.06143");
-    expect(featureDetails?.textContent).toContain("sheet");
-    expect(featureDetails?.textContent).toContain("A-17");
-    expect(
-      container.querySelector('[aria-label="Map layer inspector"]'),
-    ).toBeNull();
-    expect(onSelectionChange).toHaveBeenCalledWith({
-      kind: "key-selection",
-      items: [
-        {
-          values: {
-            name: "Control point 23",
-            sheet: "A-17",
-            surveyed: true,
-          },
-        },
-      ],
-    });
-
-    map.queryRenderedFeatures.mockReturnValue([]);
-    map.emit("mousemove", pointerEvent);
-    expect(
-      map.canvasContainer.classList.contains("maplibregl-track-pointer"),
-    ).toBe(false);
-    await act(async () => {
-      map.emit("click", pointerEvent);
-    });
-    expect(
-      container.querySelector('[aria-label="Selected feature details"]'),
-    ).toBeNull();
-    expect(onSelectionChange).toHaveBeenLastCalledWith({
-      kind: "key-selection",
-      items: [],
-    });
-
-    await act(async () => root.unmount());
-  });
-
-  it("previews vector and raster inspector overrides locally", async () => {
+  it("previews raster inspector overrides locally", async () => {
     const { container, root } = await renderGeo();
     await clickButton(container, "Load interactive map");
     await clickButton(container, "2 layers");
-    await clickButton(container, "1. Parcels");
+    await clickButton(container, "1. Orthophoto");
 
     // The kit Slider is a labelled group, not a `<label>` element: Base UI
     // names its range input through `aria-labelledby`, so the honest lookup
@@ -1733,26 +1381,19 @@ describe("GIS map artifact rendering", () => {
       setLayoutProperty: ReturnType<typeof vi.fn>;
       setPaintProperty: ReturnType<typeof vi.fn>;
     };
+    // Layer opacity 0.5 × the layer's own raster opacity 0.8.
     expect(map.setPaintProperty).toHaveBeenCalledWith(
-      "grafy-geo-parcels-fill",
-      "fill-opacity",
-      0.2,
+      "grafy-geo-orthophoto-raster",
+      "raster-opacity",
+      0.4,
     );
-    await clickButton(container, "Disable labels");
+    // A raster layer is painted, not drawn from features, so its inspector
+    // offers no feature paint or label switches.
+    expect(container.textContent).not.toContain("Enable labels");
+    expect(container.textContent).toContain("Resampling");
+    await clickButton(container, "Hide Orthophoto");
     expect(map.setLayoutProperty).toHaveBeenCalledWith(
-      "grafy-geo-parcels-label",
-      "visibility",
-      "none",
-    );
-    await clickButton(container, "Enable labels");
-    expect(map.setLayoutProperty).toHaveBeenCalledWith(
-      "grafy-geo-parcels-label",
-      "visibility",
-      "visible",
-    );
-    await clickButton(container, "Hide Parcels");
-    expect(map.setLayoutProperty).toHaveBeenCalledWith(
-      "grafy-geo-parcels-fill",
+      "grafy-geo-orthophoto-raster",
       "visibility",
       "none",
     );
@@ -1792,8 +1433,8 @@ describe("GIS map artifact rendering", () => {
     await clickButton(container, "Load interactive map");
 
     expect(container.textContent).toContain('"kind": "map_document"');
-    expect(container.textContent).toContain('"archive_url"');
     expect(container.textContent).toContain('"tilejson_url"');
+    expect(container.textContent).toContain('"attribution"');
     expect(maplibreMock.instances).toHaveLength(0);
     await act(async () => root.unmount());
   });

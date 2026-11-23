@@ -75,9 +75,8 @@ ArtifactTypeSpec(
 | `txt` | A **text scalar** as bare text (no envelope) | `scalar.text@1`, `text.markdown@1`, `llm.completion` content |
 | `csv` | A **table** streamed as delimited rows (full artifact, not a page) | `table.data@1` |
 | `xlsx` | A table as a workbook | `table.data@1` |
-| `png` / `webp` | Raster / image bytes | `image/*`, `geo.raster_scan` tiles |
+| `png` / `webp` | Raster / image bytes | `image/*`, a map raster's stored TIFF |
 | `geojson` | Feature collection as GeoJSON | `geo.feature_collection@1` |
-| `pmtiles` | Vector archive | `geo.feature_collection@1` projection |
 
 Not every format applies to every type. The type's `export_formats` tuple is
 the **allow-list**; anything outside it is rejected with a clear error. This is
@@ -170,15 +169,15 @@ and serialize columns + rows to RFC-4180 CSV:
 Same full-`Table` reader, then stream to an `.xlsx` workbook. This adds a
 dependency; mark as a later-phase format (see Phase 4).
 
-### `geojson` / `pmtiles` — geo
+### `geojson` — geo
 Reuse the existing geo reconstruction (`GeoFeatureCollectionPayload` →
-GeoJSON) and the existing PMTiles archive loader. `pmtiles` returns the stored
-archive bytes as `application/vnd.pmtiles` — identical to the vector projection
-served by `/geo/vector.pmtiles`, just framed as an attachment.
+GeoJSON). Exact features are the only stored vector form, so there is no
+rendering archive to download alongside them.
 
 ### `png` — raster / image
-Return the stored bytes as `image/png`. For `geo.raster_scan`, the stored
-source raster is the sensible whole-artifact download (not an individual tile).
+Return the stored bytes as `image/png`. For a map raster, the stored
+georeferenced TIFF is the sensible whole-artifact download (not an individual
+tile).
 
 ### Formatting a filename
 `{slug}-{artifact_id_short}.{extension}` where `slug` comes from the format
@@ -229,8 +228,8 @@ artifact id guarantees uniqueness and safety.
 ## 8. Implementation plan (phases)
 
 **Phase 3 — Geo**
-- Declare `geojson` on `geo.feature_collection@1`; `pmtiles` where a vector
-  projection exists; `png` for raster sources. Reuse existing loaders.
+- Declare `geojson` on `geo.feature_collection@1`; `png` for raster sources.
+  Reuse existing loaders.
 
 **Phase 4 — XLSX (optional)**
 - Add workbook writer dependency; declare `xlsx` on `table.data@1`.

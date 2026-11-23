@@ -6,6 +6,13 @@ import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
+import {
+  artifactPortFixture,
+  nodeSpecFixture,
+  servicePortFixture,
+} from "../../test-fixtures";
+
 import { CellViewportLayer } from "../CellCanvasContext";
 import {
   CellDockedBridgeLayer,
@@ -713,6 +720,14 @@ describe("CellArtifactCard", () => {
     }
     expect(stemTag(html, "in")).toContain("width:11.5px");
     expect(stemTag(html, "out")).toContain("width:5.5px");
+  });
+
+  it("offers + Next step on a card that asks for one, and keeps its ports", () => {
+    expect(renderArtifact(PREVIEWS.image)).not.toContain("Next step");
+    const html = renderArtifact(PREVIEWS.image, { onNextStep: () => {} });
+    expect(html).toContain("+ Next step");
+    expect(html).toContain('data-port-id="in"');
+    expect(html).toContain('data-port-id="out"');
   });
 
   it("has no inner strip and names its file in the floating header", () => {
@@ -2165,5 +2180,265 @@ describe("CellOperatorCard schema config fields", () => {
   it("shows no key button on a card without secret inputs", () => {
     const { html } = renderRichOperator({ title: "Roads" });
     expect(html).not.toContain("data-card-credentials");
+  });
+});
+
+const ocrContract = { id: "ocr.document", version: 1 };
+
+function ocrEnginePort(
+  name: string,
+  direction: Port["direction"],
+  title: string,
+  features?: readonly string[],
+): Port {
+  return servicePortFixture({
+    name,
+    title,
+    direction,
+    required: true,
+    service_contracts: [ocrContract],
+    service_features: features ? [{ contract: ocrContract, features }] : [],
+  });
+}
+
+function ocrProvider(
+  id: string,
+  title: string,
+  features: readonly string[],
+  extras: Partial<NodeSpec> = {},
+): NodeSpec {
+  return nodeSpecFixture({
+    operator_id: id,
+    title,
+    description: `${title} reads a page.`,
+    plugin_slug: "ocr",
+    outputs: [ocrEnginePort("engine", "output", title, features)],
+    ...extras,
+  });
+}
+
+const documentOcrSpec = nodeSpecFixture({
+  operator_id: "ocr.read_document",
+  title: "Document OCR",
+  plugin_slug: "ocr",
+  inputs: [ocrEnginePort("engine", "input", "OCR engine")],
+  outputs: [
+    artifactPortFixture({
+      name: "blocks",
+      title: "Text blocks",
+      direction: "output",
+      required: false,
+      requires_service_feature: { input_port: "engine", feature: "blocks" },
+    }),
+    artifactPortFixture({
+      name: "boxes",
+      title: "Boxes on the page",
+      direction: "output",
+      required: false,
+      requires_service_feature: { input_port: "engine", feature: "regions" },
+    }),
+  ],
+});
+
+const mistralOcrSpec = ocrProvider("mistral.ocr", "Mistral OCR", [
+  "blocks",
+  "regions",
+]);
+const reductoOcrSpec = ocrProvider("reducto.ocr", "Reducto", ["blocks"]);
+const hiddenOcrSpec = ocrProvider(
+  "hidden.ocr",
+  "Hidden OCR",
+  ["blocks", "regions"],
+  { catalog_visible: false },
+);
+const drawBoxesSpec = nodeSpecFixture({
+  operator_id: "test.draw_boxes",
+  title: "Draw boxes",
+  plugin_slug: "ocr",
+  inputs: [
+    artifactPortFixture({
+      name: "regions",
+      title: "Boxes",
+      direction: "input",
+      required: true,
+    }),
+  ],
+});
+
+function ocrRegistry(nodes: readonly NodeSpec[]): NodeRegistry {
+  return {
+    packs: [],
+    plugins: [
+      {
+        slug: "ocr",
+        title: "OCR",
+        origin: "builtin",
+        entry_kind: "plugin",
+      },
+    ],
+    artifact_types: [],
+    artifact_conversions: [],
+    nodes: [...nodes],
+  };
+}
+
+function ocrEdge(
+  id: string,
+  fromNode: string,
+  fromPort: string,
+  toNode: string,
+  toPort: string,
+) {
+  return {
+    id,
+    from_node: fromNode,
+    from_port: fromPort,
+    to_node: toNode,
+    to_port: toPort,
+    collection_mode: "direct" as const,
+    conversion_path: [],
+    enabled: true,
+  };
+}
+
+function ocrScene(
+  specs: readonly NodeSpec[],
+  edges: ReturnType<typeof ocrEdge>[] = [],
+  engineSettingsHref?: string,
+) {
+  return buildOperatorCardsAndSurfaces(
+    fixtureDocument(
+      specs.map((spec) => fixtureNode(spec.operator_id, spec)),
+      edges,
+    ),
+    ocrRegistry(specs),
+    engineSettingsHref ? { engineSettingsHref } : undefined,
+  );
+}
+
+function operatorOf(
+  built: ReturnType<typeof buildOperatorCardsAndSurfaces>,
+  id: string,
+) {
+  const card = built.cards.find((candidate) => candidate.id === id);
+  const surface = built.surfaces.get(id);
+  if (!card || surface?.kind !== "operator") {
+    throw new Error(`missing operator card ${id}`);
+  }
+  return { card, surface };
+}
+
+function paintOperator(
+  card: CellCardModel,
+  surface: OperatorCardSurfaceData,
+  extra: Partial<ComponentProps<typeof CellOperatorCard>> = {},
+) {
+  return renderToStaticMarkup(
+    <CellOperatorCard
+      card={card}
+      surface={surface}
+      selected={false}
+      dragging={false}
+      onRun={() => {}}
+      {...extra}
+    />,
+  );
+}
+
+describe("engine picker and pre-run output dimming", () => {
+  it("offers a pick control when a workspace engine can fill the port", () => {
+    const built = ocrScene(
+      [documentOcrSpec, mistralOcrSpec],
+      [],
+      "/workspaces/demo/settings#tool-packs",
+    );
+    const { card, surface } = operatorOf(built, "ocr.read_document");
+    expect(surface.servicePortPrompts?.engine).toEqual({
+      mode: "pick",
+      label: "+ Pick OCR engine",
+    });
+    const withHandler = paintOperator(card, surface, {
+      onPickServiceEngine: () => {},
+    });
+    expect(withHandler).toContain('data-pick-engine="engine"');
+    expect(withHandler).toContain("+ Pick OCR engine");
+    const withoutHandler = paintOperator(card, surface);
+    expect(withoutHandler).not.toContain("data-pick-engine");
+  });
+
+  it("says no engine is enabled, and links owners to tool packs", () => {
+    const linked = ocrScene(
+      [documentOcrSpec, hiddenOcrSpec],
+      [],
+      "/workspaces/demo/settings#tool-packs",
+    );
+    const owner = operatorOf(linked, "ocr.read_document");
+    expect(owner.surface.servicePortPrompts?.engine).toEqual({
+      mode: "empty",
+      label: "No engine enabled",
+      title: "No engine enabled in this workspace",
+      settingsHref: "/workspaces/demo/settings#tool-packs",
+    });
+    const ownerHtml = paintOperator(owner.card, owner.surface);
+    expect(ownerHtml).toContain('data-service-port-empty="engine"');
+    expect(ownerHtml).toContain("No engine enabled");
+    expect(ownerHtml).toContain('title="No engine enabled in this workspace"');
+    expect(ownerHtml).toContain('href="/workspaces/demo/settings#tool-packs"');
+
+    const quiet = ocrScene([documentOcrSpec, hiddenOcrSpec]);
+    const member = operatorOf(quiet, "ocr.read_document");
+    const memberHtml = paintOperator(member.card, member.surface);
+    expect(memberHtml).toContain('data-service-port-empty="engine"');
+    expect(memberHtml).not.toContain("<a ");
+  });
+
+  it("dims an output the connected engine does not produce, before a run", () => {
+    const reducto = ocrScene(
+      [reductoOcrSpec, documentOcrSpec, drawBoxesSpec],
+      [
+        ocrEdge("svc", "reducto.ocr", "engine", "ocr.read_document", "engine"),
+        ocrEdge(
+          "boxes",
+          "ocr.read_document",
+          "boxes",
+          "test.draw_boxes",
+          "regions",
+        ),
+      ],
+    );
+    const ocr = operatorOf(reducto, "ocr.read_document");
+    const boxes = ocr.card.ports.find((port) => port.id === "boxes");
+    const blocks = ocr.card.ports.find((port) => port.id === "blocks");
+    expect(boxes?.mutedCaption).toBe("Not produced by Reducto");
+    expect(blocks?.mutedCaption).toBeUndefined();
+    expect(ocr.surface.servicePortPrompts).toBeUndefined();
+    const ocrHtml = paintOperator(ocr.card, ocr.surface);
+    expect(ocrHtml).toContain('data-port-muted="true"');
+    expect(ocrHtml).toContain('data-port-caption="Not produced by Reducto"');
+    expect(ocrHtml).toContain("Not produced by Reducto");
+
+    const draw = operatorOf(reducto, "test.draw_boxes");
+    expect(
+      draw.card.ports.find((port) => port.id === "regions")?.mutedCaption,
+    ).toBe("Boxes are not produced by Reducto");
+
+    const mistral = ocrScene(
+      [mistralOcrSpec, documentOcrSpec],
+      [ocrEdge("svc", "mistral.ocr", "engine", "ocr.read_document", "engine")],
+    );
+    const restored = operatorOf(mistral, "ocr.read_document");
+    expect(
+      restored.card.ports.find((port) => port.id === "boxes")?.mutedCaption,
+    ).toBeUndefined();
+    expect(paintOperator(restored.card, restored.surface)).not.toContain(
+      "data-port-muted",
+    );
+
+    const unplugged = ocrScene([reductoOcrSpec, documentOcrSpec]);
+    const open = operatorOf(unplugged, "ocr.read_document");
+    expect(
+      open.card.ports.find((port) => port.id === "boxes")?.mutedCaption,
+    ).toBeUndefined();
+    expect(open.surface.servicePortPrompts?.engine?.mode).toBe("pick");
   });
 });

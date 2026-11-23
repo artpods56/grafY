@@ -3,7 +3,9 @@
 from grafy_core.plugins import Plugin, PluginRegistry
 from grafy_plugin_gis.plugin import GIS
 from grafy_plugin_image.plugin import IMAGES
+from grafy_plugin_litellm_ocr.plugin import LITELLM_OCR
 from grafy_plugin_llm.plugin import LLM
+from grafy_plugin_map_toponyms.plugin import MAP_TOPONYMS
 from grafy_plugin_mistral.plugin import MISTRAL
 from grafy_plugin_reducto.plugin import REDUCTO
 from grafy_plugin_table.plugin import TABLES
@@ -18,6 +20,8 @@ APPLICATION_FAMILIES: tuple[Plugin, ...] = (
     LLM,
     MISTRAL,
     REDUCTO,
+    LITELLM_OCR,
+    MAP_TOPONYMS,
 )
 
 

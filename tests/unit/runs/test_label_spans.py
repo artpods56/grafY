@@ -1,19 +1,13 @@
 from math import cos, radians, sin
 from uuid import uuid4
 
-from shapely import Point, Polygon
-
 from grafy_core.artifacts import NoConfig
+from grafy_core.contracts.ocr import PixelPoint, TextReading, TextRegion
 from grafy_core.documents import TiffFile
 from grafy_core.node_context import NodeExecutionContext
 from grafy_core.node_ports import Ref
 from grafy_core.table_contracts import TableValueType
-from grafy_core.text_regions import PixelPoint, TextReading, TextRegion
-from grafy_workbench.ocr.tiff_label_crop import (
-    NATIVE_CROP_PIXEL_LIMIT,
-    crop_pixels,
-)
-from grafy_workbench.ocr.label_nodes import (
+from grafy_plugin_map_toponyms.label_nodes import (
     CollectMapPlacesInput,
     CollectMapPlacesNode,
     FilterReadingsConfig,
@@ -25,16 +19,21 @@ from grafy_workbench.ocr.label_nodes import (
     PrepareLabelsInput,
     PrepareMapLabelsNode,
 )
-from grafy_workbench.ocr.label_spans import (
+from grafy_plugin_map_toponyms.label_spans import (
     filter_readings,
     places_table,
     prepare_labels,
 )
-from grafy_workbench.ocr.tiff_recognition import (
+from grafy_plugin_map_toponyms.text_regions import TiffPixelWindow, TiffTextRegions
+from grafy_plugin_map_toponyms.tiff_label_crop import (
+    NATIVE_CROP_PIXEL_LIMIT,
+    crop_pixels,
+)
+from grafy_plugin_map_toponyms.tiff_recognition import (
     TiffRecognizedRegion,
     TiffRecognizedText,
 )
-from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
+from shapely import Point, Polygon
 
 type Box = list[PixelPoint]
 

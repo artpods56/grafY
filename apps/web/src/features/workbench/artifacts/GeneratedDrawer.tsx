@@ -946,16 +946,16 @@ export function GeneratedDrawer({
   );
 
   return (
-    <section aria-label="Generated artifacts" {...stylex.props(s.drawer)}>
+    <section aria-label="Results" {...stylex.props(s.drawer)}>
       <header {...stylex.props(s.header)}>
         <span {...stylex.props(s.headerCopy)}>
-          <span {...stylex.props(s.title)}>Generated</span>
+          <span {...stylex.props(s.title)}>Results</span>
           <span {...stylex.props(s.subtitle)}>
             Results this Graph stores, by node
           </span>
         </span>
         <IconButton
-          label="Refresh Generated artifacts"
+          label="Refresh results"
           size="md"
           disabled={!graphId || isValidating}
           onClick={refresh}
@@ -967,11 +967,7 @@ export function GeneratedDrawer({
           />
         </IconButton>
         {onClose ? (
-          <IconButton
-            label="Close Generated artifacts"
-            size="md"
-            onClick={onClose}
-          >
+          <IconButton label="Close results" size="md" onClick={onClose}>
             <X size={14} aria-hidden />
           </IconButton>
         ) : null}

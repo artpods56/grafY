@@ -55,7 +55,6 @@ from grafy_plugin_gis.artifacts import (
     GEO_FEATURE_COLLECTION,
     GEO_MAP_DOCUMENT,
     GEO_MAP_LAYER,
-    GEO_RASTER_SCAN,
 )
 from grafy_plugin_gis.declaration import GIS
 from grafy_plugin_image.declaration import IMAGES
@@ -186,7 +185,6 @@ async def test_inline_and_scalar_declarations_round_trip() -> None:
     registry.freeze()
     assert {artifact.spec.key for artifact in GIS.artifacts} == {
         GEO_FEATURE_COLLECTION.key,
-        GEO_RASTER_SCAN.key,
         GEO_MAP_LAYER.key,
         GEO_MAP_DOCUMENT.key,
     }

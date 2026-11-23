@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import useSWR from "swr";
 
-import { IconButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { artifactTypeColor } from "@/features/workbench/config-ui/nodes.css";
 import { COLLECTION_PORT } from "@/features/workbench/authoring/collection-spec";
 import { artifactInlineContentUrl, type ArtifactRef } from "@/lib/api";
@@ -238,6 +238,13 @@ const s = stylex.create({
     position: "absolute",
     inset: 0,
     overflow: "hidden",
+  },
+  // Sits in the plate, clear of the output well on the card's right edge.
+  nextStep: {
+    position: "absolute",
+    left: "8px",
+    bottom: "8px",
+    zIndex: 2,
   },
   // A frame drawn over the picture, inside the plate's border, so a white
   // scan on a white plate still has an edge in both themes.
@@ -560,6 +567,8 @@ function TypeDot({ artifactTypeId }: { artifactTypeId: string }) {
 export interface CellArtifactCardProps extends CellCardBaseProps {
   surface: ArtifactCardSurfaceData;
   onInspect?: (cardId: string) => void;
+  /** Opens the list of steps this card's one output can feed. */
+  onNextStep?: () => void;
   /** Lays a sequence open in place, from its count or its menu. */
   onExpandSequence?: (cardId: string) => void;
   /** Adds "Ungroup" to a sequence's menu: each item onto its own card. */
@@ -689,6 +698,21 @@ function CellArtifactCardImpl(props: CellArtifactCardProps) {
           data-artifact-image-frame="true"
           {...stylex.props(s.imageFrame)}
         />
+      ) : null}
+      {props.onNextStep ? (
+        <Button
+          type="button"
+          variant="secondary"
+          size="xs"
+          xstyle={s.nextStep}
+          onPointerDown={stopCardDrag}
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onNextStep?.();
+          }}
+        >
+          + Next step
+        </Button>
       ) : null}
     </CellCardShell>
   );

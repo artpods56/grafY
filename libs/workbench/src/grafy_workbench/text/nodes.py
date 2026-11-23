@@ -50,7 +50,7 @@ class TextInputOutput(NodeOutput):
 async def text_input(
     config: TextInputConfig, _inputs: TextInputInput
 ) -> TextInputOutput:
-    """Produces one configured multiline text value."""
+    """Holds text you type, for a later step to read."""
     return TextInputOutput(text=config.text)
 
 

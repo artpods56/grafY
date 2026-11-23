@@ -1,79 +1,22 @@
-# Run and verify a GIS raster import
+# View an uploaded TIFF on a map
 
-Use this procedure after the static application registry and web changes from
-ADR 0017 are integrated. Python and SQL nodes stay unavailable.
+1. Start Grafy with the tiler enabled. For native development, follow
+   [the local setup](how-to-run-local.md).
+2. Upload a georeferenced TIFF to the Library in your Workspace.
+3. Open the TIFF and select **Show map**. Confirm the map frames the raster and
+   the tile requests succeed. The tiler renders from the uploaded file.
+4. To use the TIFF in a Graph, connect the `file.tiff` artifact directly to
+   **Raster map layer** and connect that layer to **Compose map**. Run the
+   Graph and open the resulting map.
+5. To join several sheets, connect them to **Raster mosaic layer** in
+   bottom-to-top order. Check the overlap and transparent edges.
 
-## Check native execution
+The retired **Import raster scan** operator produces no artifact any more, so a
+saved Graph that used it fails with an unknown operator until its raster is
+reconnected: wire the uploaded `file.tiff` straight into the layer that consumed
+the scan. Artifacts a past run produced stay in the Library and download
+normally; opening one as a map does not work, because its stored tile pyramid is
+no longer read.
 
-Install GDAL 3.8 or newer with `gdalinfo`, `gdal_create`, `gdal_translate`,
-`ogr2ogr`, and `gdal2tiles.py`. The tools must support writable PMTiles, COG,
-and PNG drivers. On Linux, `gdal2tiles.py` needs system Python bindings, NumPy,
-and Pillow. The API image supplies them.
-
-From the repository root, run:
-
-```bash
-uv sync
-uv run python scripts/smoke_gis.py
-```
-
-The command creates a small GeoTIFF, persists it as a COG with XYZ tiles,
-and resolves the stored artifact. It needs no API, OIDC session, or Docker.
-It does not prove browser viewing, PostgreSQL persistence, or API registration.
-
-To check the production image without starting a server:
-
-```bash
-digest="$(git archive HEAD | shasum -a 256 | cut -d ' ' -f 1)"
-docker build --file infra/docker/api.Dockerfile --target api-release \
-	--build-arg GRAFY_BUILD_DIGEST="$digest" --tag grafy-api:gis-check .
-docker run --rm --network=none \
-  -v "$PWD/scripts/smoke_gis.py:/smoke_gis.py:ro" \
-  --entrypoint .venv/bin/python \
-  grafy-api:gis-check /smoke_gis.py
-```
-
-The release target requires the source archive digest. Build from a clean
-checkout so that digest identifies the source copied into the image.
-
-## Import and view a raster
-
-1. Use a dedicated local data root and disposable database, with the normal
-   local OIDC and secret settings. If an API already owns that root, use it.
-   Do not start a second owner or use production `/etc/grafy` files.
-2. Start the integrated API with `just api-dev` and the web app with `just web`.
-   These commands use the installed application families. No Plugin runtime,
-   registry, publication, or promotion step is needed.
-3. Sign in and create a graph in your Workspace. Confirm **Import raster scan**
-   is available and Python and SQL nodes are absent.
-4. Upload a small georeferenced `.tif` to the Library. Select the resulting
-   `file.tiff` artifact as the **file** input of **Import raster scan**
-   (`gis.raster_scan.import`). Set its source name and execute it.
-5. Open the resulting `geo.raster_scan` artifact. Confirm its map displays
-   precomputed raster tiles and its metadata reports the expected bounds and
-   CRS. Check that the browser's TileJSON and PNG requests succeed.
-6. Add **Raster map layer** (`gis.map.raster_layer`) and **Compose map**
-   (`gis.map.compose`), connect the raster through the layer to the map, and
-   execute. Open the map artifact and confirm the raster is visible. The
-   layer also takes the uploaded `file.tiff` directly. To stitch adjacent
-   sheets, connect two or more georeferenced TIFFs or scans to **Raster mosaic
-   layer** (`gis.map.raster_mosaic`) in bottom-to-top order, and confirm the
-   seams show the lower sheet through the upper sheet's transparent border.
-7. Run the unchanged import again. Confirm a cache hit. Change the source name
-   and confirm a new execution. A different deployment digest also forces a
-   new execution; it leaves historical artifacts and graph checkpoints intact.
-8. Cancel a larger import during GDAL work. Confirm cancellation completes,
-   then run the small import again to verify native capacity was released.
-
-## Native execution limits
-
-The helper admits two children per API process. Each child has a 1 GiB address
-space limit on Linux, 300 CPU seconds, a 600-second wall limit, a 1 GiB limit
-per output file, and 256 open files. It captures at most 1 MiB per output
-stream. GDAL uses one native thread and a 64 MiB cache. Account for both children
-and the API itself when sizing the deployment; the address-space limit is not
-a container-wide memory quota. macOS does not enforce the address-space limit.
-
-Cancellation kills the spawned process group and waits for child exit and pipe
-cleanup before returning the concurrency slot. Children receive an explicit GDAL
-environment rather than API credentials or the user's home configuration.
+Run `uv run pytest tests/unit/plugins/test_gis_plugin.py` to check the GIS
+artifact and node contracts.

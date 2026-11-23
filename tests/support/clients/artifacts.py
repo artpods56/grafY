@@ -49,17 +49,6 @@ class ArtifactsApi:
             headers=headers,
         )
 
-    def geo_vector_pmtiles(
-        self, source_id: UUID, *, headers: Mapping[str, str] | None = None
-    ) -> Response:
-        """Stream the binary pmtiles archive (``Range`` via ``headers``)."""
-
-        return self._client.get(
-            f"/v1/workspaces/{self._workspace_id}"
-            f"/artifacts/{source_id}/geo/vector.pmtiles",
-            headers=headers,
-        )
-
     def geo_exact_feature(
         self,
         source_id: UUID,
