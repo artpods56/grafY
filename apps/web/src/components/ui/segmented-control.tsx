@@ -28,13 +28,16 @@ export type SegmentedOption<Value extends string> = {
   style?: React.CSSProperties;
 };
 
+export type SegmentedControlSize = "dense" | "sm" | "md";
+
 export type SegmentedControlProps<Value extends string> = {
   /** Names the group for assistive tech, e.g. "Model". */
   "aria-label": string;
   value: Value;
   onValueChange: (value: Value) => void;
   options: readonly SegmentedOption<Value>[];
-  size?: "sm" | "md";
+  /** `dense` is the canvas-card step: 21px segments in a 25px well. */
+  size?: SegmentedControlSize;
   disabled?: boolean;
   /** Plain class names added after the StyleX ones, e.g. React Flow's "nodrag". */
   className?: string;
@@ -52,7 +55,14 @@ const segmented = stylex.create({
     position: "relative",
     boxSizing: "border-box",
     borderRadius: tokens.radiusLg,
-    backgroundColor: tokens.colorSurfaceRaised,
+    // The well is recessed and its edge is a hairline, so a `dense` group keeps
+    // its exact 25px: a real border would add 2px to the layout.
+    backgroundColor: tokens.colorSurfaceSunken,
+    boxShadow: `inset 0 0 0 1px ${tokens.colorDivider}`,
+  },
+  // A canvas card rounds its controls a step tighter than the page does.
+  rootDense: {
+    borderRadius: tokens.radiusMd,
   },
   segment: {
     display: "flex",
@@ -79,6 +89,14 @@ const segmented = stylex.create({
       "@media (prefers-reduced-motion: reduce)": "0ms",
     },
   },
+  dense: {
+    // 21px segment + 2 × 2px well padding = the 25px card row.
+    height: "21px",
+    paddingInline: "6px",
+    gap: "4px",
+    borderRadius: tokens.radiusSm,
+    fontSize: "9px",
+  },
   sm: {
     height: "24px",
   },
@@ -102,9 +120,11 @@ const segmented = stylex.create({
     color: tokens.colorTextDisabled,
   },
   on: {
+    // Lifted out of the well in both palettes; `colorChrome` went *darker* than
+    // the well in dark mode, which read as the chosen segment being disabled.
     backgroundColor: {
-      default: tokens.colorChrome,
-      ":hover": tokens.colorChrome,
+      default: tokens.colorSurfaceElevated,
+      ":hover": tokens.colorSurfaceElevated,
     },
     boxShadow: tokens.shadowNode,
     color: {
@@ -135,7 +155,11 @@ export function SegmentedControl<Value extends string>({
   className,
   xstyle,
 }: SegmentedControlProps<Value>) {
-  const styled = stylex.props(segmented.root, xstyle);
+  const styled = stylex.props(
+    segmented.root,
+    size === "dense" ? segmented.rootDense : null,
+    xstyle,
+  );
   return (
     <RadioGroup
       aria-label={ariaLabel}

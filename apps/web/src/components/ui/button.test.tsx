@@ -174,6 +174,24 @@ describe("Button", () => {
     expect(onlyButton(plain).hasAttribute("aria-pressed")).toBe(false);
   });
 
+  it("paints the pressed look on every text variant, and only while pressed", async () => {
+    for (const variant of buttonVariants) {
+      const on = await mount(
+        <Button variant={variant} pressed>
+          Extra fields
+        </Button>,
+      );
+      expect(onlyButton(on).className.split(" ")).toContain("pressed");
+
+      const off = await mount(
+        <Button variant={variant} pressed={false}>
+          Extra fields
+        </Button>,
+      );
+      expect(onlyButton(off).className.split(" ")).not.toContain("pressed");
+    }
+  });
+
   it("keeps xstyle above the pressed look", async () => {
     const container = await mount(
       <Button
@@ -281,6 +299,48 @@ describe("IconButton", () => {
     const offButton = onlyButton(off);
     expect(offButton.getAttribute("aria-pressed")).toBe("false");
     expect(offButton.className.includes("pressed")).toBe(false);
+  });
+
+  it("omits the tooltip when title is given as null", async () => {
+    // `title` is a native HTML attribute too, so the prop type has to drop the
+    // inherited `string` before it can accept `null`.
+    const container = await mount(
+      <IconButton label="Toggle rail" title={null}>
+        <svg />
+      </IconButton>,
+    );
+    const button = onlyButton(container);
+
+    expect(button.hasAttribute("title")).toBe(false);
+    expect(button.getAttribute("aria-label")).toBe("Toggle rail");
+  });
+
+  it("paints the pressed look on every icon variant but the tinted one", async () => {
+    for (const variant of iconButtonVariants) {
+      const container = await mount(
+        <IconButton label="Fullscreen" variant={variant} pressed>
+          <svg />
+        </IconButton>,
+      );
+      const classes = onlyButton(container).className.split(" ");
+
+      if (variant === "accent") {
+        expect(classes).toContain("accentPressed");
+        expect(classes).not.toContain("pressed");
+      } else {
+        expect(classes).toContain("pressed");
+        expect(classes).not.toContain("accentPressed");
+      }
+
+      const off = await mount(
+        <IconButton label="Fullscreen" variant={variant} pressed={false}>
+          <svg />
+        </IconButton>,
+      );
+      const offClasses = onlyButton(off).className.split(" ");
+      expect(offClasses).not.toContain("pressed");
+      expect(offClasses).not.toContain("accentPressed");
+    }
   });
 
   it("works as a Base UI trigger's render target", async () => {

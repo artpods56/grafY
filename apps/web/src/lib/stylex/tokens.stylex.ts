@@ -12,7 +12,16 @@ export const tokens = stylex.defineVars({
   colorBg: "light-dark(#FFFFFF, #111111)",
   colorSurface: "light-dark(#FAFAFA, #1A1A1A)",
   colorSurfaceRaised: "light-dark(#F4F4F4, #222222)",
-  colorSurfaceSunken: "light-dark(#F4F4F4, #1A1A1A)",
+  // A well the controls sit in. It has to read as recessed in both palettes, or
+  // a borderless control on it disappears: #F4F4F4 was `colorSurfaceRaised`.
+  colorSurfaceSunken: "light-dark(#ECECEC, #141414)",
+  /**
+   * The pill that lifts out of a sunken well — the active segment of a
+   * `SegmentedControl`. Crisp white in light mode and lifted above the well in
+   * dark mode, unlike `colorChrome` (which sank into `#222222`) or
+   * `colorSurfaceRaised` (which stays grey in light mode).
+   */
+  colorSurfaceElevated: "light-dark(#FFFFFF, #2B2B2B)",
   colorSurfaceMuted: "light-dark(#FAFAFA, #181818)",
   colorChrome: "light-dark(#FFFFFF, #1A1A1A)",
   // borders

@@ -86,9 +86,31 @@ const slider = stylex.create({
   mdTrack: {
     height: "4px",
   },
+  /**
+   * Base UI puts `disabled` on the range input, not on the track div, so the
+   * `:disabled` cursor on `track` never fires there.
+   */
+  trackDisabled: {
+    cursor: "not-allowed",
+  },
   filled: {
     borderRadius: "9999px",
     backgroundColor: tokens.colorAccent,
+  },
+  /**
+   * A disabled slider has to stop glowing: `colorAccent` is full ink, and a
+   * control that cannot be moved drew as much attention as one that can. The
+   * accent border is still a step above the `colorDivider` track in both
+   * palettes, so the filled part of the range stays readable.
+   */
+  filledDisabled: {
+    backgroundColor: tokens.colorAccentBorder,
+  },
+  thumbDisabled: {
+    backgroundColor: tokens.colorSurfaceMuted,
+    borderColor: tokens.colorDivider,
+    boxShadow: "none",
+    cursor: "not-allowed",
   },
   thumb: {
     boxSizing: "border-box",
@@ -126,6 +148,9 @@ const slider = stylex.create({
   },
   mdValue: {
     fontSize: tokens.fontSizeXs,
+  },
+  valueDisabled: {
+    color: tokens.colorTextDisabled,
   },
 });
 
@@ -190,15 +215,34 @@ export function Slider({
       <div {...stylex.props(slider.row)}>
         <BaseSlider.Control {...stylex.props(slider.control)}>
           <BaseSlider.Track
-            {...stylex.props(slider.track, TRACK_BY_SIZE[size])}
+            {...stylex.props(
+              slider.track,
+              TRACK_BY_SIZE[size],
+              disabled ? slider.trackDisabled : null,
+            )}
           >
-            <BaseSlider.Indicator {...stylex.props(slider.filled)} />
+            <BaseSlider.Indicator
+              {...stylex.props(
+                slider.filled,
+                disabled ? slider.filledDisabled : null,
+              )}
+            />
             <BaseSlider.Thumb
-              {...stylex.props(slider.thumb, THUMB_BY_SIZE[size])}
+              {...stylex.props(
+                slider.thumb,
+                THUMB_BY_SIZE[size],
+                disabled ? slider.thumbDisabled : null,
+              )}
             />
           </BaseSlider.Track>
         </BaseSlider.Control>
-        <BaseSlider.Value {...stylex.props(slider.value, VALUE_BY_SIZE[size])}>
+        <BaseSlider.Value
+          {...stylex.props(
+            slider.value,
+            VALUE_BY_SIZE[size],
+            disabled ? slider.valueDisabled : null,
+          )}
+        >
           {(_formatted, values) => format(values[0] ?? value)}
         </BaseSlider.Value>
       </div>

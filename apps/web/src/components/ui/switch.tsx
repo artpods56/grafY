@@ -105,6 +105,14 @@ const toggle = stylex.create({
       "@media (prefers-reduced-motion: reduce)": "0ms",
     },
   },
+  /** The kit's focus ring, the same outline `IconButton` draws. */
+  focusRing: {
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "1px",
+  },
   denseTrack: {
     width: "22px",
     height: "13px",
@@ -129,10 +137,19 @@ const toggle = stylex.create({
     backgroundColor: tokens.colorSurfaceMuted,
     borderColor: tokens.colorDivider,
   },
+  /**
+   * Centred with `top` / `bottom` and auto margins rather than `top: 50%` and a
+   * negative `marginTop`: the thumb's travel is a `transform`, so the two never
+   * fight, and the same rule centres the 20px phone thumb in the taller phone
+   * pill without a per-size offset.
+   */
   thumb: {
     position: "absolute",
-    top: "50%",
+    top: 0,
+    bottom: 0,
     insetInlineStart: "2px",
+    marginTop: "auto",
+    marginBottom: "auto",
     display: "block",
     boxSizing: "border-box",
     borderRadius: "9999px",
@@ -147,17 +164,14 @@ const toggle = stylex.create({
   denseThumb: {
     width: "9px",
     height: "9px",
-    marginTop: "-4.5px",
   },
   smThumb: {
     width: "11px",
     height: "11px",
-    marginTop: "-5.5px",
   },
   mdThumb: {
     width: "14px",
     height: "14px",
-    marginTop: "-7px",
   },
   thumbDisabled: {
     backgroundColor: tokens.colorTextDisabled,
@@ -177,9 +191,28 @@ const toggle = stylex.create({
     minWidth: { default: "unset", "@media (max-width: 620px)": "20px" },
     minHeight: { default: "unset", "@media (max-width: 620px)": "20px" },
   },
-  phoneShift: {
+  /**
+   * On the phone step the thumb is the 20px mark inside the 44px pill, so every
+   * size travels `translateX(18px)` (44 − 20 − 2 × 2 inset). The `default` keeps
+   * that size's own desktop travel: a shared rule that fell back to
+   * `translateX(0px)` would win StyleX's one-property ranking and pin the thumb
+   * to the left on a desktop viewport, where the media rule never paints.
+   */
+  densePhoneShift: {
     transform: {
-      default: "translateX(0px)",
+      default: "translateX(8px)",
+      "@media (max-width: 620px)": "translateX(18px)",
+    },
+  },
+  smPhoneShift: {
+    transform: {
+      default: "translateX(10px)",
+      "@media (max-width: 620px)": "translateX(18px)",
+    },
+  },
+  mdPhoneShift: {
+    transform: {
+      default: "translateX(13px)",
       "@media (max-width: 620px)": "translateX(18px)",
     },
   },
@@ -211,6 +244,12 @@ const SHIFT_BY_SIZE = {
   dense: toggle.denseShift,
   sm: toggle.smShift,
   md: toggle.mdShift,
+} as const;
+
+const PHONE_SHIFT_BY_SIZE = {
+  dense: toggle.densePhoneShift,
+  sm: toggle.smPhoneShift,
+  md: toggle.mdPhoneShift,
 } as const;
 
 /**
@@ -253,6 +292,7 @@ export function Switch({
   );
   const track = stylex.props(
     toggle.track,
+    toggle.focusRing,
     TRACK_BY_SIZE[size],
     phone ? toggle.phoneTrack : null,
     disabled ? toggle.trackDisabled : checked ? toggle.on : toggle.off,
@@ -261,8 +301,7 @@ export function Switch({
     toggle.thumb,
     THUMB_BY_SIZE[size],
     phone ? toggle.phoneThumb : null,
-    on ? SHIFT_BY_SIZE[size] : null,
-    on && phone ? toggle.phoneShift : null,
+    on ? (phone ? PHONE_SHIFT_BY_SIZE[size] : SHIFT_BY_SIZE[size]) : null,
     disabled ? toggle.thumbDisabled : null,
   );
 

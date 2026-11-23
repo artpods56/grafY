@@ -91,6 +91,14 @@ const box = stylex.create({
       "@media (prefers-reduced-motion: reduce)": "0ms",
     },
   },
+  /** The kit's focus ring, the same outline `IconButton` draws. */
+  focusRing: {
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "1px",
+  },
   denseControl: {
     width: "12px",
     height: "12px",
@@ -175,6 +183,7 @@ export function Checkbox({
   );
   const control = stylex.props(
     box.control,
+    box.focusRing,
     CONTROL_BY_SIZE[size],
     checked && !disabled ? box.checkedControl : null,
     disabled ? box.disabledControl : null,

@@ -48,6 +48,12 @@ async function pick(container: HTMLElement, next: string) {
 
 const sizes: ColorWellSize[] = ["dense", "sm", "md"];
 
+const SQUARE_CLASS_BY_SIZE: Record<ColorWellSize, string> = {
+  dense: "squareDense",
+  sm: "squareSm",
+  md: "squareMd",
+};
+
 describe("ColorWell", () => {
   it("is a native colour input, so the platform picker stays", async () => {
     const container = await mount(
@@ -92,6 +98,31 @@ describe("ColorWell", () => {
       <ColorWell value="#000000" label="Fill" disabled onChange={onChange} />,
     );
     expect(well(container).disabled).toBe(true);
+  });
+
+  it.each(sizes)(
+    "draws a %s square, not a wide swatch, when it does not fill the row",
+    async (size) => {
+      const container = await mount(
+        <ColorWell
+          value="#000000"
+          label="Fill"
+          size={size}
+          block={false}
+          onChange={() => {}}
+        />,
+      );
+      expect(well(container).className).toBe(
+        `input ${size} ${SQUARE_CLASS_BY_SIZE[size]}`,
+      );
+    },
+  );
+
+  it("fills the row when block is left at its default", async () => {
+    const container = await mount(
+      <ColorWell value="#000000" label="Fill" onChange={() => {}} />,
+    );
+    expect(well(container).className).toBe("input md block");
   });
 });
 
