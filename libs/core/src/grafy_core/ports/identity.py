@@ -15,6 +15,7 @@ from grafy_core.domain.identity import (
 )
 from grafy_core.domain.security_audit import SecurityAuditEvent
 from grafy_core.ports.transactions import TransactionPort
+from grafy_core.ports.workspace_packs import WorkspacePackRepositoryPort
 
 
 class IdentityRepositoryPort(Protocol):
@@ -181,6 +182,9 @@ class IdentityUnitOfWorkPort(TransactionPort, Protocol):
 
     @property
     def security_audit(self) -> SecurityAuditRepositoryPort: ...
+
+    @property
+    def workspace_packs(self) -> WorkspacePackRepositoryPort: ...
 
 
 __all__ = [

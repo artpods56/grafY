@@ -14,9 +14,10 @@ import logging
 from pathlib import Path
 
 from grafy_core.application.identity import IdentityService
-from grafy_core.provider_cache import ProviderCache
 from grafy_core.domain.identity import parse_oidc_domain_workspace_grants
 from grafy_core.egress import TRUSTED_DESTINATIONS_ENVIRONMENT_VARIABLE, EgressPolicy
+from grafy_core.plugins import PluginRegistry
+from grafy_core.provider_cache import ProviderCache
 from grafy_persistence.adapters.repositories.provider_operations import (
     SqlProviderOperationStore,
 )
@@ -26,6 +27,7 @@ from grafy_shared.config import EgressConfig, ProviderCacheConfig
 
 from grafy_api.app_state import AppIdentity, AppResources
 from grafy_api.auth import AuthService
+from grafy_api.catalog_packs import CatalogPolicy
 from grafy_api.agents.conversations import AgentConversationService
 from grafy_api.agents.keys import AgentKeyService
 from grafy_api.agents.models import AgentModelResolver
@@ -78,7 +80,9 @@ def acquire_api_owner_lease(workspace: Path, *, required: bool) -> ApiOwnerLease
     return lease
 
 
-def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
+def build_app_identity(
+    settings: Settings, database: Database, *, registry: PluginRegistry | None = None
+) -> AppIdentity:
     """Build the app-lifetime identity and auth services.
 
     These exist before the lifespan starts because FastAPI wires them as request
@@ -88,6 +92,10 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
     def identity_uow_factory() -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork(database.sessions, cleanups=database.cleanups)
 
+    catalog_policy = CatalogPolicy(
+        registry if registry is not None else build_application_registry(),
+        settings.catalog.load_overrides(),
+    )
     identity_service = IdentityService(
         identity_uow_factory,
         # grafy-shared is a leaf package, so the raw deployment grants are parsed here
@@ -96,6 +104,7 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
             settings.auth.oidc_domain_workspaces
         ),
         operator_emails=settings.auth.operator_emails,
+        default_workspace_pack_slugs=catalog_policy.default_workspace_pack_slugs,
     )
     if settings.auth.auth_dev_login:
         logger.warning(
@@ -113,6 +122,7 @@ def build_app_identity(settings: Settings, database: Database) -> AppIdentity:
         identity_uow_factory=identity_uow_factory,
         identity_service=identity_service,
         auth_service=auth_service,
+        catalog_policy=catalog_policy,
     )
 
 
@@ -137,6 +147,7 @@ async def build_app_resources(
     settings: Settings,
     database: Database,
     owner_lease: ApiOwnerLease | None,
+    registry: PluginRegistry | None = None,
 ) -> AppResources:
     """Construct every lifespan resource and recover its execution state.
 
@@ -145,7 +156,8 @@ async def build_app_resources(
     """
 
     app = settings.app
-    registry = build_application_registry()
+    if registry is None:
+        registry = build_application_registry()
     storage = configured_file_storage(settings.storage, app.workspace)
 
     def new_unit_of_work() -> SqlAlchemyUnitOfWork:

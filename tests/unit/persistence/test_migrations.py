@@ -58,7 +58,7 @@ VAULT_TABLES = {
     "node_shared_credential_bindings",
     "node_user_credential_overrides",
 }
-HEAD_TABLES = BASELINE_TABLES | VAULT_TABLES
+HEAD_TABLES = BASELINE_TABLES | VAULT_TABLES | {"workspace_packs"}
 
 
 def _alembic_config() -> Config:
@@ -93,19 +93,25 @@ async def _postgresql_migration_state(
         await engine.dispose()
 
 
-def test_credentials_revision_follows_baseline() -> None:
+def test_workspace_packs_revision_follows_credentials() -> None:
     files = sorted(path.name for path in MIGRATION_DIRECTORY.glob("*.py"))
-    assert files == ["0001_baseline.py", "0002_credentials_and_selections.py"]
+    assert files == [
+        "0001_baseline.py",
+        "0002_credentials_and_selections.py",
+        "0003_workspace_packs.py",
+    ]
 
     script = ScriptDirectory.from_config(_alembic_config())
-    assert script.get_heads() == ["0002_credentials_and_selections"]
+    assert script.get_heads() == ["0003_workspace_packs"]
     revisions = list(script.walk_revisions())
     assert [revision.revision for revision in revisions] == [
+        "0003_workspace_packs",
         "0002_credentials_and_selections",
         "0001_baseline",
     ]
-    assert revisions[0].down_revision == "0001_baseline"
-    assert revisions[1].down_revision is None
+    assert revisions[0].down_revision == "0002_credentials_and_selections"
+    assert revisions[1].down_revision == "0001_baseline"
+    assert revisions[2].down_revision is None
 
 
 def test_fresh_postgresql_database_upgrades_to_head(
@@ -215,4 +221,43 @@ def test_baseline_declares_every_index_the_metadata_declares(
         finally:
             engine.dispose()
     finally:
+        get_settings.cache_clear()
+
+
+def test_workspace_packs_backfill_existing_workspaces(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+    from uuid import UUID
+
+    database_path = tmp_path / "pack-backfill.sqlite3"
+    monkeypatch.setenv("GRAFY_DATABASE_URL", f"sqlite+aiosqlite:///{database_path}")
+    get_settings.cache_clear()
+    config = _alembic_config()
+    engine = create_engine(f"sqlite:///{database_path}")
+    workspace_id = UUID(int=7)
+    now = datetime.now(UTC)
+    try:
+        command.upgrade(config, "0002_credentials_and_selections")
+        with engine.begin() as connection:
+            connection.execute(
+                schema.workspaces.insert().values(
+                    id=workspace_id, slug="existing", name="Existing", kind="shared",
+                    created_at=now, updated_at=now,
+                )
+            )
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            rows = connection.execute(schema.workspace_packs.select()).mappings().all()
+            assert {(r["workspace_id"], r["pack_slug"]) for r in rows} == {
+                (workspace_id, "essentials"), (workspace_id, "document_ocr")
+            }
+            assert all(r["enabled_by_user_id"] is None and r["enabled_at"] is not None for r in rows)
+
+        command.downgrade(config, "0002_credentials_and_selections")
+        with engine.connect() as connection:
+            assert _table_names(connection) == BASELINE_TABLES | VAULT_TABLES | {"alembic_version"}
+            assert connection.scalar(text("SELECT COUNT(*) FROM workspaces")) == 1
+    finally:
+        engine.dispose()
         get_settings.cache_clear()

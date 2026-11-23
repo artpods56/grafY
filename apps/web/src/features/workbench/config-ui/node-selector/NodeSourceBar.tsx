@@ -4,7 +4,7 @@ import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { SlidersHorizontal } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import {
   Menu,
   MenuCheckboxItem,
@@ -32,6 +32,7 @@ export function NodeSourceBar({
   sources,
   counts,
   activeSourceId,
+  managePacksHref,
   artifactOptions,
   artifactFilterId,
   inputNodesOnly,
@@ -42,6 +43,7 @@ export function NodeSourceBar({
   sources: readonly CatalogFilter[];
   counts: ReadonlyMap<string, number>;
   activeSourceId: string;
+  managePacksHref?: string;
   artifactOptions: readonly CatalogFilter[];
   artifactFilterId: string | null;
   inputNodesOnly: boolean;
@@ -65,7 +67,7 @@ export function NodeSourceBar({
     <div {...stylex.props(s.bar)}>
       <div
         role="toolbar"
-        aria-label="Node sources"
+        aria-label="Tool packs"
         aria-orientation="horizontal"
         {...stylex.props(s.chips)}
       >
@@ -114,6 +116,16 @@ export function NodeSourceBar({
           );
         })}
       </div>
+      {managePacksHref ? (
+        <ButtonLink
+          href={managePacksHref}
+          size="sm"
+          variant="ghost"
+          xstyle={s.managePacks}
+        >
+          Manage packs
+        </ButtonLink>
+      ) : null}
       <FiltersMenu
         artifactOptions={artifactOptions}
         artifactFilterId={artifactFilterId}
@@ -250,6 +262,11 @@ const s = stylex.create({
     color: tokens.colorSubtle,
     fontSize: "10.5px",
     fontVariantNumeric: "tabular-nums",
+  },
+  managePacks: {
+    flexShrink: 0,
+    whiteSpace: "nowrap",
+    color: tokens.colorMuted,
   },
   filtersButton: {
     position: "relative",

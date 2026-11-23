@@ -22,6 +22,7 @@ from grafy_shared.config import (
     AgentsConfig,
     AppConfig,
     AuthConfig,
+    CatalogConfig,
     EgressConfig,
     ExecutionConfig,
     KeysConfig,
@@ -59,6 +60,7 @@ class Settings(BaseModel):
     app: AppConfig = Field(default_factory=AppConfig)
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    catalog: CatalogConfig = Field(default_factory=CatalogConfig)
     keys: KeysConfig = Field(default_factory=KeysConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
     providers: ProviderSecretsConfig = Field(default_factory=ProviderSecretsConfig)

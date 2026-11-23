@@ -59,6 +59,7 @@ describe("compatibleNodesForPort service contracts", () => {
       [servicePort("engine", "output", "other.service")],
     );
     const registry: NodeRegistry = {
+      packs: [],
       nodes: [ocr, mistral, reducto, other],
       plugins: [],
       artifact_types: [],

@@ -13,6 +13,7 @@ from grafy_shared.config import (
     AgentsConfig,
     AppConfig,
     AuthConfig,
+    CatalogConfig,
     EgressConfig,
     ExecutionConfig,
     KeysConfig,
@@ -39,6 +40,7 @@ CONFIG_SECTIONS: tuple[type, ...] = (
     AgentsConfig,
     AppConfig,
     AuthConfig,
+    CatalogConfig,
     KeysConfig,
     ExecutionConfig,
     ProviderCacheConfig,
@@ -654,3 +656,22 @@ def test_dev_login_is_refused_in_production() -> None:
             app=AppConfig(environment="production", _env_file=None),  # pyright: ignore[reportCallIssue]
             auth=AuthConfig(auth_dev_login=True, _env_file=None),  # pyright: ignore[reportCallIssue]
         )
+
+
+def test_catalog_config_binds_deployment_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "catalog.toml"
+    path.write_text(
+        '[defaults]\nworkspace_packs = ["maps"]\n'
+        '[packs]\nlabel_studio = false\n'
+        '[operators]\n"ocr.filter_tiff_jev" = false\n'
+    )
+    monkeypatch.setenv("GRAFY_CATALOG_CONFIG", str(path))
+
+    config = Settings().catalog
+    assert config.catalog_config == path
+    overrides = config.load_overrides()
+    assert overrides.defaults.workspace_packs == ["maps"]
+    assert overrides.packs == {"label_studio": False}
+    assert overrides.operators == {"ocr.filter_tiff_jev": False}

@@ -29,6 +29,7 @@ import {
   workspaceCanManageMembers,
   workspaceDisplayName,
 } from "./WorkspaceLayout";
+import { WorkspacePacks } from "./WorkspacePacks";
 import { WorkspaceCredentials } from "./WorkspaceCredentials";
 import { WorkspaceMembersDialog } from "./WorkspaceMembersDialog";
 
@@ -434,6 +435,7 @@ export function WorkspaceSettings() {
           )}
         </div>
       </section>
+      <WorkspacePacks key={workspace.id} workspace={workspace} />
       <WorkspaceCredentials
         workspaceId={workspace.id}
         canManageShared={workspace.capabilities.includes("manage_secrets")}

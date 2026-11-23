@@ -1286,6 +1286,55 @@
         "title": "CancelAgentTurnRequest",
         "type": "object"
       },
+      "CatalogPackResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "always_on": {
+            "title": "Always On",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "includes_project_graphs": {
+            "title": "Includes Project Graphs",
+            "type": "boolean"
+          },
+          "operator_count": {
+            "title": "Operator Count",
+            "type": "integer"
+          },
+          "provider_count": {
+            "title": "Provider Count",
+            "type": "integer"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "subscribed": {
+            "title": "Subscribed",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "description",
+          "always_on",
+          "subscribed",
+          "operator_count",
+          "provider_count",
+          "includes_project_graphs"
+        ],
+        "title": "CatalogPackResponse",
+        "type": "object"
+      },
       "CheckpointProjectRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4790,6 +4839,7 @@
         "type": "object"
       },
       "NodeRegistryResponse": {
+        "additionalProperties": false,
         "properties": {
           "artifact_conversions": {
             "items": {
@@ -4812,6 +4862,13 @@
             "title": "Nodes",
             "type": "array"
           },
+          "packs": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogPackResponse"
+            },
+            "title": "Packs",
+            "type": "array"
+          },
           "plugins": {
             "items": {
               "$ref": "#/components/schemas/PluginSpecResponse"
@@ -4828,6 +4885,7 @@
           }
         },
         "required": [
+          "packs",
           "plugins",
           "artifact_types",
           "artifact_conversions",
@@ -5079,6 +5137,7 @@
         "type": "object"
       },
       "NodeSpecResponse": {
+        "additionalProperties": false,
         "properties": {
           "catalog_visible": {
             "default": true,
@@ -5132,6 +5191,13 @@
             "title": "Outputs",
             "type": "array"
           },
+          "pack_slugs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pack Slugs",
+            "type": "array"
+          },
           "plugin_slug": {
             "title": "Plugin Slug",
             "type": "string"
@@ -5166,6 +5232,7 @@
           "operator_id",
           "operator_version",
           "plugin_slug",
+          "pack_slugs",
           "title",
           "description",
           "config_schema",
@@ -7042,6 +7109,20 @@
         "title": "SetNodeInputPlugsCommand",
         "type": "object"
       },
+      "SetPackSubscriptionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "subscribed": {
+            "title": "Subscribed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "subscribed"
+        ],
+        "title": "SetPackSubscriptionRequest",
+        "type": "object"
+      },
       "SharedCredentialBindingMode": {
         "enum": [
           "credential",
@@ -8305,6 +8386,7 @@
           "cancel_run",
           "manage_secrets",
           "delete_project",
+          "manage_packs",
           "manage_members",
           "rename_workspace"
         ],
@@ -12865,6 +12947,131 @@
           }
         ],
         "summary": "List Nodes",
+        "tags": [
+          "workbench"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/packs": {
+      "get": {
+        "operationId": "list_packs_v1_workspaces__workspace_id__packs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogPackResponse"
+                  },
+                  "title": "Response List Packs V1 Workspaces  Workspace Id  Packs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Packs",
+        "tags": [
+          "workbench"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/packs/{pack_slug}": {
+      "put": {
+        "operationId": "set_pack_subscription_v1_workspaces__workspace_id__packs__pack_slug__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pack_slug",
+            "required": true,
+            "schema": {
+              "title": "Pack Slug",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPackSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPackResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Pack Subscription",
         "tags": [
           "workbench"
         ]

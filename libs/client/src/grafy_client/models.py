@@ -95,6 +95,7 @@ class CatalogNode(ClientModel):
     operator_id: str
     operator_version: int
     plugin_slug: str
+    pack_slugs: tuple[str, ...]
     title: str
     description: str
     config_schema: dict[str, object]
@@ -127,7 +128,19 @@ class CatalogConversion(ClientModel):
         return self.target_artifact_type
 
 
+class CatalogPack(ClientModel):
+    slug: str
+    title: str
+    description: str
+    always_on: bool
+    subscribed: bool
+    operator_count: int
+    provider_count: int
+    includes_project_graphs: bool
+
+
 class NodeCatalog(ClientModel):
+    packs: tuple[CatalogPack, ...]
     plugins: tuple[dict[str, object], ...]
     artifact_types: tuple[dict[str, object], ...]
     service_contracts: tuple[ServiceContract, ...] = ()

@@ -19,12 +19,13 @@ from grafy_core.nodes import (
 )
 from grafy_core.plugins import NodeRegistration, NodeSecretInput
 from grafy_core.service_contracts import ServiceContract
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.errors import PydanticInvalidForJsonSchema
 
 from grafy_api.catalog import (
     CatalogSnapshot,
 )
+from grafy_api.catalog_packs import CatalogPack, CatalogPolicy
 from grafy_api.v1.models import (
     ApiResponse,
     ArtifactTypeKeyResponse,
@@ -435,12 +436,48 @@ class NodeSecretInputResponse(ApiResponse):
         )
 
 
+class CatalogPackResponse(ApiResponse):
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str
+    title: str
+    description: str
+    always_on: bool
+    subscribed: bool
+    operator_count: int
+    provider_count: int
+    includes_project_graphs: bool
+
+    @classmethod
+    def from_pack(cls, pack: CatalogPack, subscribed: bool) -> Self:
+        definition = pack.definition
+        return cls(
+            slug=definition.slug,
+            title=definition.title,
+            description=definition.description,
+            always_on=definition.always_on,
+            subscribed=subscribed,
+            operator_count=pack.operator_count,
+            provider_count=pack.provider_count,
+            includes_project_graphs=definition.includes_project_graphs,
+        )
+
+
+class SetPackSubscriptionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subscribed: bool = Field(strict=True)
+
+
 class NodeSpecResponse(ApiResponse):
+    model_config = ConfigDict(extra="forbid")
+
     origin: CatalogOrigin = "builtin"
     role: Literal["operator", "provider"] = "operator"
     operator_id: str
     operator_version: int
     plugin_slug: str
+    pack_slugs: list[str]
     title: str
     description: str
     config_schema: dict[str, object]
@@ -458,6 +495,8 @@ class NodeSpecResponse(ApiResponse):
         registration: NodeRegistration,
         *,
         origin: CatalogOrigin = "builtin",
+        pack_slugs: tuple[str, ...],
+        catalog_visible: bool,
     ) -> Self:
         node_class = registration.node_class
         return cls(
@@ -466,6 +505,7 @@ class NodeSpecResponse(ApiResponse):
             operator_id=node_class.operator_id,
             operator_version=node_class.operator_version,
             plugin_slug=registration.plugin_slug,
+            pack_slugs=list(pack_slugs),
             title=registration.title,
             description=registration.description,
             config_schema=_model_json_schema(node_class.config_contract.model),
@@ -483,11 +523,14 @@ class NodeSpecResponse(ApiResponse):
                 NodeSecretInputResponse.from_spec(spec)
                 for spec in registration.secret_inputs
             ],
-            catalog_visible=registration.listed,
+            catalog_visible=catalog_visible,
         )
 
 
 class NodeRegistryResponse(ApiResponse):
+    model_config = ConfigDict(extra="forbid")
+
+    packs: list[CatalogPackResponse]
     plugins: list[PluginSpecResponse]
     artifact_types: list[ArtifactTypeSpecResponse]
     artifact_conversions: list[ArtifactConversionSpecResponse]
@@ -498,8 +541,14 @@ class NodeRegistryResponse(ApiResponse):
     def from_snapshot(
         cls,
         snapshot: CatalogSnapshot,
+        policy: CatalogPolicy,
+        subscribed: frozenset[str],
     ) -> Self:
         return cls(
+            packs=[
+                CatalogPackResponse.from_pack(pack, pack.definition.slug in subscribed)
+                for pack in policy.packs
+            ],
             plugins=[
                 PluginSpecResponse.from_builtin(plugin.slug, plugin.title)
                 for plugin in snapshot.builtin_plugins
@@ -517,7 +566,11 @@ class NodeRegistryResponse(ApiResponse):
                 for contract in snapshot.service_contracts
             ],
             nodes=[
-                NodeSpecResponse.from_registration(registration)
+                NodeSpecResponse.from_registration(
+                    registration,
+                    pack_slugs=policy.pack_slugs_for(registration),
+                    catalog_visible=policy.is_visible(registration, subscribed),
+                )
                 for registration in snapshot.builtin_nodes
             ],
         )

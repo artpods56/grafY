@@ -61,6 +61,7 @@ const variableInput = port("incoming", {
   required: false,
 });
 const baseSpec: NodeSpec = {
+  pack_slugs: [],
   role: "operator",
   operator_id: "test.source",
   operator_version: 2,
@@ -97,6 +98,7 @@ const apiKeyInput = {
   supports_verification: true,
 };
 const registry: NodeRegistry = {
+  packs: [],
   nodes: [
     { ...baseSpec, operator_version: 1, title: "Source v1" },
     baseSpec,

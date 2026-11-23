@@ -2,6 +2,7 @@ import type { NodeRegistry } from "@/lib/api";
 
 // Text input and Schema Builder from the builtin catalog response.
 export const canvasNodeRegistry: NodeRegistry = {
+  packs: [],
   plugins: [
     {
       slug: "text",
@@ -59,6 +60,7 @@ export const canvasNodeRegistry: NodeRegistry = {
   artifact_conversions: [],
   nodes: [
     {
+      pack_slugs: [],
       role: "operator",
       origin: "builtin",
       operator_id: "text.input",
@@ -130,6 +132,7 @@ export const canvasNodeRegistry: NodeRegistry = {
       runnable: true,
     },
     {
+      pack_slugs: [],
       role: "operator",
       origin: "builtin",
       operator_id: "schema.builder",

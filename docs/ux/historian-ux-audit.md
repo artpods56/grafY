@@ -122,7 +122,8 @@ Tests: grep the old titles. Update assertions that read these registry titles. D
 
 Set `title` and replace `description` on these fields. Do not rename the Python attribute.
 
-`plugins/reducto/src/grafy_plugin_reducto/ocr.py` and the matching fields in `plugins/mistral/src/grafy_plugin_mistral/ocr.py`:
+Read document (`ocr.read_document`) owns the source and output ports that
+used to live on the Mistral and Reducto execution cards.
 
 | Field                    | New title         | New description                                                             |
 | ------------------------ | ----------------- | --------------------------------------------------------------------------- |
@@ -155,7 +156,8 @@ Set `title` and replace `description` on these fields. Do not rename the Python 
 
 `plugins/llm/src/grafy_plugin_llm/openai_compatible.py`: `messages` title `Instructions`. The schema port already has `title="JSON Schema"`; change that title to `Answer format`. Output title `Answer`.
 
-Acceptance: a Reducto OCR card does not show `document_url`, `markdown`, or `blocks`. A Collect card shows `Documents`.
+Acceptance requires Read document to show readable names for the document and
+transcription ports. A Collect card shows Documents.
 
 Tests: extend `apps/web/src/features/workbench/canvas/nodes/WorkflowNode.test.tsx` if it asserts a raw port name as visible text. Add a focused assertion only where a test already renders one of these cards. Do not add a new snapshot of the whole card.
 
@@ -184,24 +186,19 @@ Acceptance: Add node and the card menu show the new title and the new sentence. 
 
 Tests: any catalog test that asserts these titles. Search `Reducto OCR`, `OpenAI-compatible Chat Completion`, `Create prompt message`.
 
-## HX-05 — Source names in Add node
+## HX-05 — Tool packs in Add node
 
 - Severity: medium
 - Type: copy-only
 - Class: mechanical
-- Files: `title=` on the plugin object.
+- Files include `apps/api/src/grafy_api/catalog_packs.py` and
+  `apps/web/src/features/workbench/authoring/node-catalog.ts`.
 
-| File                                                         | Current    | New              |
-| ------------------------------------------------------------ | ---------- | ---------------- |
-| `plugins/llm/src/grafy_plugin_llm/declaration.py`            | `LLM`      | `Language model` |
-| `plugins/gis/src/grafy_plugin_gis/declaration.py`            | `GIS`      | `Maps`           |
-| `libs/workbench/src/grafy_workbench/sequence/declaration.py` | `Sequence` | `Lists`          |
-
-Leave `Reducto`, `Mistral`, `Image`, `Table`, `Text`, `File`, `Schema`, `Value`. Those are either product names or already plain.
-
-`buildSourceFilters` in `apps/web/src/features/workbench/authoring/node-catalog.ts` shows `plugin.title` in the canvas menu (`CanvasContextMenu` submenu labels). No web change if the plugin title changes.
-
-Tests: update a test that asserts the plugin title `LLM`, `GIS`, or `Sequence` as a menu label.
+Add node and the canvas menu use the Tool pack titles and order from the API.
+Workspace subscriptions determine the tabs after All. Document OCR presents
+Read document as a step and the Mistral and Reducto provider nodes under
+Engines. The provider cards configure engines for Read document, which owns
+the document inputs and transcription outputs.
 
 ## HX-06 — Hide specialist settings behind Advanced
 

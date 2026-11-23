@@ -162,10 +162,12 @@ class TransformNode(Node[NoConfig, TransformInput, TransformOutput]):
 
 def _catalog() -> NodeCatalog:
     return NodeCatalog(
+        packs=(),
         plugins=(),
         artifact_types=(),
         nodes=(
             CatalogNode(
+                pack_slugs=(),
                 origin="builtin",
                 operator_id="text.input",
                 operator_version=1,
@@ -188,6 +190,7 @@ def _catalog() -> NodeCatalog:
                 runnable=True,
             ),
             CatalogNode(
+                pack_slugs=(),
                 origin="builtin",
                 operator_id="test.sequence.collect",
                 operator_version=1,
@@ -220,6 +223,7 @@ def _catalog() -> NodeCatalog:
                 runnable=True,
             ),
             CatalogNode(
+                pack_slugs=(),
                 origin="builtin",
                 operator_id="markdown.consume",
                 operator_version=1,
@@ -242,6 +246,7 @@ def _catalog() -> NodeCatalog:
                 runnable=True,
             ),
             CatalogNode(
+                pack_slugs=(),
                 origin="builtin",
                 operator_id="text.transform",
                 operator_version=1,

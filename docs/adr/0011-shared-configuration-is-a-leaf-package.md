@@ -8,10 +8,12 @@
   model; the split below is unchanged by it. ADR 0023 raises the
   `GRAFY_STAGED_UPLOAD_MAX_BYTES` ceiling to 2 GiB and keeps its 64 MiB default.
 
-`grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of ten
-responsibility-owned `BaseSettings` sections: `AgentsConfig`, `AppConfig`, `AuthConfig`,
-`KeysConfig`, `ExecutionConfig`, `RealtimeConfig`, `StorageConfig`, `UploadConfig`, and
-`EgressConfig`, and `TilerConfig`.
+`grafy_shared.config` holds every operator-facing `GRAFY_*` variable as one of thirteen
+responsibility-owned `BaseSettings` sections. They are `AgentsConfig`, `AppConfig`,
+`AuthConfig`, `CatalogConfig`, `EgressConfig`, `ExecutionConfig`, `KeysConfig`,
+`ProviderCacheConfig`, `ProviderSecretsConfig`, `RealtimeConfig`, `StorageConfig`,
+`TilerConfig`, and `UploadConfig`. `CatalogConfig` reads the deployment TOML.
+The API composition root validates its Pack and operator IDs against the registry.
 `apps/api` composes them into one plain-`BaseModel` `Settings`, and only
 the composition root reads that object.
 

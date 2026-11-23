@@ -115,6 +115,7 @@ function stepSpec(
   outputs: readonly Port[],
 ): NodeSpec {
   return {
+    pack_slugs: [],
     role: "operator",
     operator_id: operatorId,
     operator_version: 1,
@@ -135,6 +136,7 @@ function stepSpec(
 /** Pages, the OCR step that reads them, and the step that paints boxes on them. */
 function mappedStepRegistry(): NodeRegistry {
   return {
+    packs: [],
     plugins: [],
     artifact_types: [],
     artifact_conversions: [],

@@ -57,11 +57,13 @@ export function useProjectSummaryRefresh(): (
   );
 }
 
+export function workspaceNodeRegistryKey(workspaceId: string): string {
+  return `/v1/workspaces/${encodeURIComponent(workspaceId)}/nodes`;
+}
+
 export function useNodeRegistry(workspaceId?: string) {
   return useSWR<NodeRegistry>(
-    workspaceId
-      ? `/v1/workspaces/${encodeURIComponent(workspaceId)}/nodes`
-      : null,
+    workspaceId ? workspaceNodeRegistryKey(workspaceId) : null,
   );
 }
 

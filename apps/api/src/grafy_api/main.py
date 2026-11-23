@@ -19,6 +19,7 @@ from grafy_api.services.application import (
     build_app_resources,
     run_periodic_cleanup,
 )
+from grafy_api.services.families import build_application_registry
 from grafy_api.settings import Settings, get_settings
 from grafy_api.v1.routes.admin.views import router as admin_router
 from grafy_api.v1.routes.agents.views import router as agents_router
@@ -47,7 +48,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         renderer=resolved_settings.app.log_renderer,
     )
     database = create_database(resolved_settings.app.resolved_database_url)
-    identity = build_app_identity(resolved_settings, database)
+    registry = build_application_registry()
+    identity = build_app_identity(resolved_settings, database, registry=registry)
     # Built after diagnostics so the SDK's logging setup finds handlers in place.
     mcp_endpoint = McpEndpoint(build_mcp_server())
 
@@ -62,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 settings=resolved_settings,
                 database=database,
                 owner_lease=owner_lease,
+                registry=registry,
             )
             try:
                 app.state.resources = resources

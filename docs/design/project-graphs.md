@@ -54,8 +54,10 @@ A call node is saved as `kind: "call"`, `operator_id` = the callee Graph's id,
 `operator_version` 1. The picker places it with an ordinary `add_node`;
 `newNodeKind(spec)` is what sets the kind. The server rejects a cycle when the
 Graph is replaced. Specs for Graphs that would close a cycle are kept in the
-registry but hidden from the catalog (`catalog_visible: false`), so a call node
-already in the document still finds its ports.
+registry with `catalog_visible: false` so an existing call node still finds its
+ports. The Sub-graphs & Constants Pack exposes the two boundary steps. Callable
+siblings appear at the bottom of All in multi-Graph Projects and also appear in
+the Sub-graphs & Constants tab when the Workspace subscribes to it.
 
 The extended registry is held in state keyed by what the catalog depends on (each
 Graph's name and interface, which Graphs the open one may call), not recomputed

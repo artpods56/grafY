@@ -8,6 +8,7 @@ import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import {
   artifactPortFixture,
   nodeSpecFixture,
+  packFixture,
   servicePortFixture,
 } from "../test-fixtures";
 
@@ -42,6 +43,7 @@ function node(
   return nodeSpecFixture({
     operator_id: operatorId,
     plugin_slug: pluginSlug,
+    pack_slugs: pluginSlug === "builtin" ? ["essentials"] : ["document_ocr"],
     title,
     description: `${title} description`,
     inputs,
@@ -59,6 +61,14 @@ function registry(): NodeRegistry {
   const mapOutput = port("map", "output", "geo.map_document");
 
   return {
+    packs: [
+      packFixture(),
+      packFixture({
+        slug: "document_ocr",
+        title: "Document OCR",
+        always_on: false,
+      }),
+    ],
     plugins: [
       {
         slug: "builtin",
@@ -144,9 +154,15 @@ function registry(): NodeRegistry {
             name: "engine",
             direction: "output",
             service_contracts: [{ id: "ocr.document", version: 1 }],
-            service_features: ["blocks", "regions"],
+            service_features: [
+              {
+                contract: { id: "ocr.document", version: 1 },
+                features: ["blocks", "regions"],
+              },
+            ],
           }),
         ],
+        { role: "provider" },
       ),
     ],
   };
@@ -268,7 +284,7 @@ afterEach(async () => {
 });
 
 describe("NodeSelector", () => {
-  it("scopes the list by source, with type and input-node filters", async () => {
+  it("scopes the list by Pack, with type and input-node filters", async () => {
     await renderSelector();
 
     expect(
@@ -283,14 +299,14 @@ describe("NodeSelector", () => {
     ];
     expect(filters.map((filter) => filter.getAttribute("aria-label"))).toEqual([
       "All, 5 nodes",
-      "Built-in, 4 nodes",
-      "Mistral OCR, 1 node",
+      "Essentials, 4 nodes",
+      "Document OCR, 1 node",
     ]);
 
-    // Source category scopes the list to one provider plugin.
-    await React.act(async () => buttonNamed("Built-in, 4 nodes").click());
+    // The Pack tab scopes the list to its members.
+    await React.act(async () => buttonNamed("Essentials, 4 nodes").click());
     expect(
-      dialog().querySelector('section[aria-label="Built-in nodes"]'),
+      dialog().querySelector('section[aria-label="Essentials nodes"]'),
     ).not.toBeNull();
     expect(options().map((option) => option.textContent)).toEqual([
       expect.stringContaining("Compose map"),
@@ -323,6 +339,34 @@ describe("NodeSelector", () => {
     expect(options().map((option) => option.textContent)).toEqual([
       expect.stringContaining("Enter text"),
     ]);
+  });
+
+  it("lists a Pack's steps before searchable engines and links to Settings for owners", async () => {
+    const base = registry();
+    const ocr = node("ocr.read_document", "Read document", "builtin", [], [], {
+      pack_slugs: ["document_ocr"],
+    });
+    await renderSelector({
+      registry: { ...base, nodes: [...base.nodes, ocr] },
+      managePacksHref: "/workspaces/team/settings#tool-packs",
+    });
+    const manage = [...dialog().querySelectorAll("a")].find(
+      (link) => link.textContent === "Manage packs",
+    );
+    expect(manage?.getAttribute("href")).toBe(
+      "/workspaces/team/settings#tool-packs",
+    );
+    await React.act(async () => buttonNamed("Document OCR, 2 nodes").click());
+    expect(options().map((option) => option.textContent)).toEqual([
+      expect.stringContaining("Read document"),
+      expect.stringContaining("Mistral OCR"),
+    ]);
+    expect(
+      dialog().querySelector('[role="listbox"] [role="group"]')?.textContent,
+    ).toContain("Engines");
+    await enterSearch("Mistral");
+    expect(options()).toHaveLength(1);
+    expect(options()[0]?.textContent).toContain("Mistral OCR");
   });
 
   it("searches the full registry and inspects a result without inserting it", async () => {
@@ -548,7 +592,7 @@ describe("NodeSelector", () => {
     expect(onAddNode.mock.calls[0]?.[0].operator_id).toBe("text.transform");
   });
 
-  it("groups everything by source until a search asks for relevance", async () => {
+  it("groups everything by Pack until a search asks for relevance", async () => {
     await renderSelector();
 
     const headings = () =>
@@ -556,8 +600,8 @@ describe("NodeSelector", () => {
         (group) => group.getAttribute("aria-labelledby"),
       );
     expect(headings()).toEqual([
-      "node-selector-group-source:builtin",
-      "node-selector-group-source:external.mistral",
+      "node-selector-group-pack:essentials",
+      "node-selector-group-pack:document_ocr-engines",
     ]);
 
     await enterSearch("text");

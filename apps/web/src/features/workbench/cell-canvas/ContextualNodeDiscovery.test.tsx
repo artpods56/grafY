@@ -68,6 +68,7 @@ function registry(): NodeRegistry {
   const textOut = port("text", "output");
   const altIn = port("body", "input");
   return {
+    packs: [],
     plugins: [
       {
         slug: "builtin",

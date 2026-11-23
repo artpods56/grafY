@@ -29,6 +29,7 @@ from grafy_api.auth import (
     ProviderMetadata,
 )
 from grafy_api.services.application import build_app_identity
+from grafy_core.ports.workspace_packs import WorkspacePackRepositoryPort
 from grafy_core.application.identity import IdentityService
 from grafy_core.domain.identity import OidcLoginTransaction, User
 from grafy_core.domain.security_audit import SecurityAuditEvent, SecurityAuditOutcome
@@ -189,6 +190,10 @@ class _FailingCallbackAuditUnitOfWork(IdentityUnitOfWorkPort):
         return self._delegate.identity
 
     @property
+    def workspace_packs(self) -> WorkspacePackRepositoryPort:
+        return self._delegate.workspace_packs
+
+    @property
     def security_audit(self) -> SecurityAuditRepositoryPort:
         if self._audit is None:
             raise RuntimeError("Unit of work is not entered")
@@ -245,6 +250,10 @@ class _FailureOnlyAuditUnitOfWork(IdentityUnitOfWorkPort):
     @property
     def identity(self) -> IdentityRepositoryPort:
         raise AssertionError("Failure audit writes must not use identity storage")
+
+    @property
+    def workspace_packs(self) -> WorkspacePackRepositoryPort:
+        raise AssertionError("Failure audit writes must not use Workspace packs")
 
     @property
     def security_audit(self) -> SecurityAuditRepositoryPort:
