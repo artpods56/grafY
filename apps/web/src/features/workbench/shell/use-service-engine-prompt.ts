@@ -339,6 +339,21 @@ export function useServiceEnginePrompt({
     return false;
   }, []);
 
+  const reportBindingFailure = React.useCallback(
+    (binding: QueuedSharedBinding, message: string) => {
+      failedNodeIdsRef.current.add(binding.nodeId);
+      pendingRef.current = pendingRef.current.filter(
+        (item) => item.nodeId !== binding.nodeId,
+      );
+      onRejectedRef.current(message);
+      const lead = workspaceKeyBindFailedNotice(binding.providerTitle, message);
+      setNotice((current) =>
+        current?.undoNodeId === binding.nodeId ? { ...current, lead } : current,
+      );
+    },
+    [],
+  );
+
   const startWrite = React.useCallback(
     (binding: QueuedSharedBinding) => {
       const key = `${binding.nodeId}\0${binding.secretName}`;
@@ -393,25 +408,11 @@ export function useServiceEnginePrompt({
               ];
               return;
             }
-            failedNodeIdsRef.current.add(binding.nodeId);
-            pendingRef.current = pendingRef.current.filter(
-              (item) => item.nodeId !== binding.nodeId,
-            );
-            onRejectedRef.current(settled.message);
-            const lead = workspaceKeyBindFailedNotice(
-              binding.providerTitle,
-              settled.message,
-            );
-            setNotice((current) => {
-              if (!current || current.undoNodeId !== binding.nodeId) {
-                return current;
-              }
-              return { ...current, lead };
-            });
+            reportBindingFailure(binding, settled.message);
           },
         );
     },
-    [bindingStillCurrent, nodeBindingBusy],
+    [bindingStillCurrent, nodeBindingBusy, reportBindingFailure],
   );
 
   React.useEffect(() => {
@@ -423,10 +424,6 @@ export function useServiceEnginePrompt({
       completedCountRef.current.clear();
       failedNodeIdsRef.current.clear();
     }
-    // The secret listing is read so this effect retries a save-first
-    // rejection once the head sequence arrives. The partition itself only
-    // cares that the provider id is on the saved head.
-    void nodeSecretStatuses;
     const partitioned = partitionPendingBindings({
       pending: pendingRef.current,
       graphId,
@@ -434,8 +431,33 @@ export function useServiceEnginePrompt({
       savedNodeIds: new Set((savedNodes ?? []).map((node) => node.id)),
     });
     pendingRef.current = [...partitioned.waiting];
-    for (const binding of partitioned.ready) startWrite(binding);
-  }, [graphId, nodes, nodeSecretStatuses, savedNodes, startWrite]);
+    for (const binding of partitioned.ready) {
+      if (failedNodeIdsRef.current.has(binding.nodeId)) continue;
+      const status = nodeSecretStatuses[binding.nodeId]?.[binding.secretName];
+      // Saving the node and reading its secret listing are separate requests.
+      // The listing supplies the head sequence required by the binding write.
+      if (status?.remote) {
+        startWrite(binding);
+      } else if (
+        status?.state === "error" ||
+        status?.state === "unconfigured"
+      ) {
+        reportBindingFailure(
+          binding,
+          status.message ?? "The engine credential status is unavailable.",
+        );
+      } else {
+        pendingRef.current.push(binding);
+      }
+    }
+  }, [
+    graphId,
+    nodes,
+    nodeSecretStatuses,
+    reportBindingFailure,
+    savedNodes,
+    startWrite,
+  ]);
 
   const world = React.useMemo<ServiceEngineWorld | null>(() => {
     if (!registry) return null;
