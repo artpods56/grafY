@@ -3,7 +3,9 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 import re
-from typing import Annotated, Protocol
+from math import isfinite
+from types import MappingProxyType
+from typing import Annotated, Protocol, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -23,6 +25,47 @@ class TextRegion(BaseModel):
     score: float | None = Field(default=None, allow_inf_nan=False)
 
 
+type FrozenJson = (
+    None | bool | int | float | str | tuple[FrozenJson, ...] | Mapping[str, FrozenJson]
+)
+
+
+def _freeze_json(value: object, ancestors: set[int]) -> FrozenJson:
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        if not isfinite(value):
+            raise ValueError("Cache options must contain finite JSON values")
+        return value
+    value_id = id(value)
+    if isinstance(value, (Mapping, list, tuple)):
+        if value_id in ancestors:
+            raise ValueError("Cache options must not contain cycles")
+        ancestors.add(value_id)
+        try:
+            if isinstance(value, Mapping):
+                result: dict[str, FrozenJson] = {}
+                for key, item in cast(Mapping[object, object], value).items():
+                    if not isinstance(key, str):
+                        raise ValueError("Cache option keys must be strings")
+                    result[key] = _freeze_json(item, ancestors)
+                return MappingProxyType(result)
+            return tuple(
+                _freeze_json(item, ancestors) for item in cast(Sequence[object], value)
+            )
+        finally:
+            ancestors.remove(value_id)
+    raise ValueError("Cache options must contain JSON values")
+
+
+def _thaw_json(value: FrozenJson) -> JsonValue:
+    if isinstance(value, Mapping):
+        return {key: _thaw_json(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_json(item) for item in value]
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class ServiceCacheIdentity:
     """Cache identity for one configured provider instance.
@@ -33,9 +76,7 @@ class ServiceCacheIdentity:
 
     deployment: str
     revision: str | None
-    options: Mapping[str, JsonValue] = field(
-        default_factory=lambda: dict[str, JsonValue]()
-    )
+    options: Mapping[str, object] = field(default_factory=lambda: dict[str, object]())
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -51,6 +92,17 @@ class ServiceCacheIdentity:
                 or len(value) > 255
             ):
                 raise ValueError(f"Invalid cache identity {name}")
+        frozen = _freeze_json(self.options, set())
+        if not isinstance(frozen, Mapping):
+            raise ValueError("Cache options must be a mapping")
+        object.__setattr__(self, "options", frozen)
+
+    def options_payload(self) -> dict[str, JsonValue]:
+        """Return a fresh JSON-compatible copy of the provider options."""
+        return {
+            key: _thaw_json(cast(FrozenJson, value))
+            for key, value in self.options.items()
+        }
 
 
 @service_contract("ocr.text_detector", version=1, title="Text detector")

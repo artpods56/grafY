@@ -1314,3 +1314,38 @@ def test_function_node_registration_rejects_missing_docstring() -> None:
         plugin.function_node(operator_id="test.missing", version=1, title="Missing")(
             undocumented
         )
+
+
+def test_undocumented_override_does_not_inherit_docstring() -> None:
+    class Base:
+        async def run(self, config: NoConfig, inputs: EmptyInput) -> EmptyOutput:
+            """Document the base implementation."""
+            return EmptyOutput()
+
+    class Child(Base):
+        async def run(self, config: NoConfig, inputs: EmptyInput) -> EmptyOutput:
+            return EmptyOutput()
+
+    plugin = Plugin(slug="test.docs", title="Docs")
+    with pytest.raises(PluginRegistrationError, match="test.docs.*test.override.*run"):
+        plugin.function_node(operator_id="test.override", version=1, title="Override")(
+            Child().run
+        )
+    with pytest.raises(PluginRegistrationError, match="test.docs.*test.override.*run"):
+        plugin.callable_node(operator_id="test.override", version=1, title="Override")(
+            Child().run
+        )
+
+
+def test_undocumented_callable_instance_names_its_type() -> None:
+    class Undocumented:
+        def __call__(self) -> int:
+            return 1
+
+    plugin = Plugin(slug="test.docs", title="Docs")
+    with pytest.raises(
+        PluginRegistrationError, match="test.docs.*test.callable.*Undocumented"
+    ):
+        plugin.callable_node(operator_id="test.callable", version=1, title="Callable")(
+            Undocumented()
+        )

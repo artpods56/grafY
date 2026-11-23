@@ -29,7 +29,11 @@ from grafy_workbench.ocr.paddle_recognizer import (
 )
 from grafy_workbench.ocr.provider_http import serve_client
 from grafy_workbench.ocr.tiff_label_crop import NATIVE_CROP_PIXEL_LIMIT
-from grafy_workbench.ocr.tiff_recognition import ReadTiffTextNode, RecognizeInput
+from grafy_workbench.ocr.tiff_recognition import (
+    ReadTiffTextNode,
+    RecognizeInput,
+    RecognizeOutput,
+)
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
 
 
@@ -539,6 +543,30 @@ async def test_paddle_names_a_provider_that_stops_answering():
         await provider.recognize([b"crop"])
 
 
+async def _run_identity_recognition(
+    cache: ProviderCache, context: NodeExecutionContext, recognizer: TextRecognizer
+) -> RecognizeOutput:
+    async def read(*, col: int, row: int, width: int, height: int) -> bytes:
+        return _window_png(width, height)
+
+    async def open_page(
+        workspace_id: UUID, artifact_id: UUID, *, page: int
+    ) -> TiffPage:
+        return TiffPage(100, 100, read, source_sha256="c" * 64, page=page)
+
+    source = Ref[TiffFile](
+        artifact_id=uuid4(), artifact_type="file.tiff", schema_version=1
+    )
+    regions = TiffTextRegions(
+        source=source,
+        window=TiffPixelWindow(page=0, col=0, row=0, width=100, height=100),
+        regions=[TextRegion(polygon=[(10, 10), (60, 10), (60, 30), (10, 30)])],
+    )
+    return await ReadTiffTextNode(open_page, cache=cache).run(
+        context, NoConfig(), RecognizeInput(regions=regions, recognizer=recognizer)
+    )
+
+
 async def test_recognizer_identities_isolate_cache_entries():
     class Recognizer(TextRecognizer):
         def __init__(self, deployment: str):
@@ -552,12 +580,17 @@ async def test_recognizer_identities_isolate_cache_entries():
             self.calls += 1
             return [TextReading(text=self.deployment, model="1") for _ in crops]
 
-    node = ReadTiffTextNode(None, cache=ProviderCache(InMemoryCacheStore()))
+    cache = ProviderCache(InMemoryCacheStore())
     context = NodeExecutionContext(workspace_id=uuid4())
     first, second = Recognizer("first"), Recognizer("second")
-    assert (await node._recognize(context, first, [b"crop"], []))[0].text == "first"
-    assert (await node._recognize(context, second, [b"crop"], []))[0].text == "second"
-    assert (await node._recognize(context, second, [b"crop"], []))[0].text == "second"
+
+    first_result = await _run_identity_recognition(cache, context, first)
+    second_result = await _run_identity_recognition(cache, context, second)
+    await _run_identity_recognition(cache, context, second)
+    assert first_result.text.regions[0].reading is not None
+    assert first_result.text.regions[0].reading.text == "first"
+    assert second_result.text.regions[0].reading is not None
+    assert second_result.text.regions[0].reading.text == "second"
     assert (first.calls, second.calls) == (1, 1)
 
 
@@ -573,9 +606,10 @@ async def test_recognizer_moving_revision_bypasses_cache():
 
     cache = ProviderCache(InMemoryCacheStore())
     cache.get_or_compute_many = AsyncMock(side_effect=AssertionError("cache accessed"))
-    node = ReadTiffTextNode(None, cache=cache)
-    result = await node._recognize(
-        NodeExecutionContext(workspace_id=uuid4()), Recognizer(), [b"crop"], []
+
+    result = await _run_identity_recognition(
+        cache, NodeExecutionContext(workspace_id=uuid4()), Recognizer()
     )
-    assert result[0].text == "fresh"
+    assert result.text.regions[0].reading is not None
+    assert result.text.regions[0].reading.text == "fresh"
     cache.get_or_compute_many.assert_not_called()

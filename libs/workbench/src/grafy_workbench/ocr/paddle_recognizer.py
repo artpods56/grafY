@@ -9,13 +9,13 @@ from weakref import WeakValueDictionary
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from grafy_core.credential_verification import unsupported_credential_verifier
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import (
     NodeHttpEgressContract,
     NodeSecretInput,
-    PluginRuntimeCapability,
 )
 from grafy_core.text_regions import ServiceCacheIdentity, TextReading, TextRecognizer
 from grafy_workbench.ocr.declaration import OCR
@@ -65,7 +65,7 @@ class PaddleCyrillicRecognizer(TextRecognizer):
         """One reading per crop, in input order.
 
         Deliberately uncached: the node that cuts a crop already keeps its reading
-        against the crop's digest (see `tiff_recognition._paddle_spec`), so a cache
+        against the crop's digest (see `tiff_recognition._recognizer_spec`), so a cache
         here would hold the same answers under a second key and neither one could be
         told stale. What this method owns is the shape of the request: batches the
         route accepts, one of them in flight at a time.

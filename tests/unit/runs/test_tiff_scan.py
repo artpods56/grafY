@@ -6,11 +6,12 @@ from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import SecretStr
 
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.provider_cache import InMemoryCacheStore, ProviderCache
 from grafy_core.text_regions import TextRegion, TiffPage
-from grafy_workbench.ocr.craft import CRAFT_URL
+from grafy_workbench.ocr.craft import CRAFT_URL, CraftDetector
 from grafy_workbench.ocr.tiff_scan import Window, detect_area
 
 
@@ -168,6 +169,15 @@ async def test_invalid_single_crop_fails_before_reading(area: Window, message: s
 
 def test_craft_cache_deployment_names_the_route_host() -> None:
     assert urlsplit(CRAFT_URL).hostname == "ai-test.ihpan.edu.pl"
+    detector = CraftDetector(
+        SecretStr("test"),
+        timeout_ms=1000,
+        max_retries=0,
+        text_threshold=0.7,
+        link_threshold=0.4,
+        low_text=0.3,
+    )
+    assert detector.cache_identity().deployment == "craft.ai-test-ihpan"
 
 
 class CountingDetector:

@@ -121,7 +121,7 @@ def _detector_request(
             "window": [window.col, window.row, window.width, window.height],
             "png": _PNG_VERSION,
             "detect": {"core_edge": _CORE_EDGE, "context": _CONTEXT},
-            "options": dict(identity.options),
+            "options": identity.options_payload(),
         },
     )
 

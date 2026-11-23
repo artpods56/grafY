@@ -2,7 +2,7 @@ import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from inspect import Parameter, cleandoc, getdoc, iscoroutinefunction, signature
+from inspect import Parameter, cleandoc, iscoroutinefunction, signature
 from pathlib import Path
 from typing import (
     Any,
@@ -34,7 +34,7 @@ from grafy_core.artifacts import (
 )
 from grafy_core.runtime.artifact_values import Artifact, ArtifactValues
 from grafy_core.declared_values import note_declaration
-from grafy_core.callable_nodes import callable_node_class
+from grafy_core.callable_nodes import callable_node_class, own_callable_doc
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.provider_cache import ProviderCache
 from grafy_core.text_regions import TiffPageOpener
@@ -425,6 +425,12 @@ class Plugin:
                 raise PluginRegistrationError(
                     f"Plugin {self.slug!r} function node {operator_id!r} must be async"
                 )
+            doc = own_callable_doc(function)
+            if not doc:
+                name = getattr(function, "__name__", type(function).__name__)
+                raise PluginRegistrationError(
+                    f"Plugin {self.slug!r} node {operator_id!r} function {name!r} requires a docstring"
+                )
             function_signature = signature(function)
             parameters = list(function_signature.parameters.values())
             if len(parameters) not in {2, 3} or any(
@@ -507,7 +513,7 @@ class Plugin:
 
             FunctionNodeAdapter.__name__ = function.__name__
             FunctionNodeAdapter.__qualname__ = function.__qualname__
-            FunctionNodeAdapter.__doc__ = getdoc(function)
+            FunctionNodeAdapter.__doc__ = doc
             FunctionNodeAdapter.config_contract = ConfigContract(model=config_model)
             FunctionNodeAdapter.input_contract = derive_input_contract(input_model)
             FunctionNodeAdapter.output_contract = derive_output_contract(output_model)
@@ -550,9 +556,11 @@ class Plugin:
         """
 
         def decorate(function: FunctionT) -> FunctionT:
-            if not getdoc(function):
+            doc = own_callable_doc(function)
+            if not doc:
+                name = getattr(function, "__name__", type(function).__name__)
                 raise PluginRegistrationError(
-                    f"Plugin {self.slug!r} node {operator_id!r} function {function.__name__!r} requires a docstring"
+                    f"Plugin {self.slug!r} node {operator_id!r} function {name!r} requires a docstring"
                 )
             try:
                 node_class = callable_node_class(

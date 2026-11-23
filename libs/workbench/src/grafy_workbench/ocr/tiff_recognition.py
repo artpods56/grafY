@@ -194,7 +194,7 @@ class ReadTiffTextNode(Node[NoConfig, RecognizeInput, RecognizeOutput]):
                 self._cache_ttl_seconds, identity.deployment, identity.revision
             ),
             [
-                _crop_request(png, identity.revision, dict(identity.options))
+                _crop_request(png, identity.revision, identity.options_payload())
                 for png in pngs
             ],
             compute,
