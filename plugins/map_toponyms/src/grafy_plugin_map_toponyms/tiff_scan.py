@@ -22,7 +22,7 @@ from shapely import (
 )
 from shapely.geometry.base import BaseGeometry
 
-from grafy_workbench.ocr.progress import cached_progress
+from grafy_plugin_map_toponyms.progress import cached_progress
 
 _READ_EDGE = 1000
 _CONTEXT = 200

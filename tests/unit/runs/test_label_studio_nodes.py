@@ -24,7 +24,7 @@ from grafy_core.node_ports import Ref
 from grafy_core.plugins import NodeSecretInput
 from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
 from grafy_core.table_contracts import Table, TableColumn, TableValue
-from grafy_workbench.ocr.label_studio import (
+from grafy_plugin_map_toponyms.label_studio import (
     ExportLabelStudioConfig,
     ExportLabelStudioInput,
     ExportLabelStudioNode,
@@ -34,7 +34,7 @@ from grafy_workbench.ocr.label_studio import (
     ImportLabelStudioNode,
     _sign_s3_put,  # pyright: ignore[reportPrivateUsage]
 )
-from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
+from grafy_plugin_map_toponyms.text_regions import TiffPixelWindow, TiffTextRegions
 from PIL import Image
 from pydantic import AnyHttpUrl, SecretStr
 

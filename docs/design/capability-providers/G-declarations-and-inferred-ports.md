@@ -283,15 +283,9 @@ OpenAI-compatible, `plugins/llm/.../openai_compatible.py`.
 | `json_schema` | `JsonSchemaText \| None` | pass `.value` where the code reads the string |
 | `completion` | `CompletionPayload` | drop marker |
 
-Mistral OCR, `plugins/mistral/.../ocr.py`. The old node stays.
-
-| Field | After | Body |
-| --- | --- | --- |
-| `document_url` | `str \| None`, `Plugs(agent_default="hidden")` | still a text port. Hidden stays, so an agent tool does not fill the URL |
-| `image` | `RasterImage \| PdfFile \| None` | replace `_image_data_url`'s artifact load with `read`. Branch on `isinstance(..., PdfFile)`, not on `ref.key()` |
-| `markdown`, `blocks`, `regions` | `MarkdownValue`, `Table`, `ImageRegionSet` | drop markers |
-
-Reducto, `plugins/reducto/.../ocr.py`. Same image and output rows. `document_url` is `str \| None` with no `Plugs`. Reducto does not hide that input today. Do not add `hidden`.
+Document OCR accepts a `RasterImage | PdfFile` and a `DocumentOcr` engine.
+The Mistral and Reducto provider nodes supply that engine. Its declared features
+control which optional block and region outputs can be wired.
 
 GIS, `plugins/gis/.../nodes.py`.
 
@@ -383,8 +377,7 @@ Each commit is green on the commands at the bottom before the next one starts.
 - A second declaration of `text.markdown@1` raises at startup.
 - Writing a `MarkdownValue` to `scalar.text@1` raises `TypeError` before storage is called.
 - `schema.builder` input derives JSON Schema, with instance plugs, and does not derive text.
-- `MistralOcrInput.image` derives `image.raster@1` then `file.pdf@1`. Swapping the union members fails the snapshot.
-- `document_url` derives text and `agent_default="hidden"`. Reducto's URL derives text and the default fill.
+- `OcrInput.document` derives `image.raster@1` then `file.pdf@1`. Its engine is a graph-fed service port.
 - Collect derives variable `T`, instance plugs, spare plugs, and preserved ref containers.
 - A `BlobFile` port whose declaration was swapped to `PngFile` fails the startup pass.
 - `read(max_bytes=n)` does not call storage when `byte_size > n`.

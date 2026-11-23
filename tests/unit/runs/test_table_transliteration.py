@@ -4,7 +4,7 @@ import pytest
 
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.table_contracts import Table, TableColumn, TableValueType
-from grafy_workbench.table.transliteration import (
+from grafy_plugin_map_toponyms.transliteration import (
     TransliterateConfig,
     TransliterateCyrillicNode,
     TransliterateInput,

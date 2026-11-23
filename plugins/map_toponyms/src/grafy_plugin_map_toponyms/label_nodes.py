@@ -8,14 +8,14 @@ from grafy_core.artifacts import NoConfig, NodeConfig, NodeInput, NodeOutput
 from grafy_core.nodes import Node, NodeExecutionContext, Plugs
 from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
 
-from grafy_workbench.ocr.declaration import OCR
-from grafy_workbench.ocr.label_spans import (
+from grafy_plugin_map_toponyms.declaration import MAP_TOPONYMS
+from grafy_plugin_map_toponyms.label_spans import (
     filter_readings,
     places_table,
     prepare_labels,
 )
-from grafy_workbench.ocr.tiff_recognition import TiffRecognizedText
-from grafy_workbench.ocr.text_regions import TiffTextRegions
+from grafy_plugin_map_toponyms.tiff_recognition import TiffRecognizedText
+from grafy_plugin_map_toponyms.text_regions import TiffTextRegions
 import grafy_workbench.table.plugin as _table_plugin
 
 # The table family notes Table as table.data, which these ports derive from.
@@ -76,7 +76,7 @@ class PrepareLabelsOutput(NodeOutput):
     regions: TiffTextRegions = Field(title="Text regions")
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.prepare_tiff_labels",
     version=1,
     title="Prepare map labels",
@@ -139,7 +139,7 @@ class FilterReadingsOutput(NodeOutput):
     text: TiffRecognizedText = Field(title="Recognized text")
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.filter_tiff_readings",
     version=1,
     title="Filter recognized labels",
@@ -180,7 +180,7 @@ class PlacesTableOutput(NodeOutput):
     places: Table = Field(title="Places")
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.places_table",
     version=1,
     title="Map places table",
@@ -206,7 +206,7 @@ class CollectMapPlacesInput(NodeInput):
     ] = Field(min_length=1, title="Recognized TIFF sheets")
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.collect_map_places",
     version=1,
     title="Collect map places from TIFF sheets",

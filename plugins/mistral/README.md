@@ -7,16 +7,10 @@ Application-owned node family for the Mistral OCR API. Its stable identifier is
 
 ## Using OCR
 
-`mistral.ocr.process@1`, titled Mistral OCR, calls
-`https://api.mistral.ai/v1/ocr` with model `mistral-ocr-latest`. The API key is a
-write-only node secret named `api_key`.
-
-Connect exactly one input:
-
-- `document_url`, `scalar.text@1`: an HTTPS document URL for a PDF, presentation,
-  or another document container Mistral can fetch. Query parameters are supported.
-- `image`, `image.raster@1`: one raster image. The node verifies its workspace,
-  size, and available SHA-256 metadata before sending a data URL.
+`mistral.ocr.provider@1` (Mistral OCR) provides the engine for Document OCR
+(`ocr.read_document@1`). Set the provider's write-only `api_key` secret and
+connect a raster image or PDF to Document OCR. Mistral sends the image or PDF as a data URL to
+`https://api.mistral.ai/v1/ocr` using model `mistral-ocr-latest`.
 
 The six settings are:
 
@@ -31,7 +25,7 @@ The six settings are:
   a billable request. Retries cover connection failures, timeouts, and HTTP 408,
   429, 500, 502, 503, and 504. Redirects are disabled; cancellation propagates.
 
-The three outputs are single values, so the node can run under a map edge:
+With this engine, Document OCR can produce three single-value outputs:
 
 - `markdown`, `text.markdown@1`: page Markdown joined in order with blank lines.
   Table placeholders are replaced with table content; image links stay intact.
@@ -67,4 +61,4 @@ it is a workspace member. Run its own suite with
 When upgrading the SDK, verify serialized requests through its HTTP transport
 and conversion of responses into the three outputs. The SDK distinguishes omitted
 fields from null. Chat, embeddings, uploads, and other endpoints are outside this
-release. Document input uses URLs; there is no PDF upload lifecycle.
+release.

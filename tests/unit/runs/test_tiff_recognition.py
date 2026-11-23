@@ -19,15 +19,15 @@ from grafy_core.documents import TiffFile
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.node_ports import Ref
 from grafy_core.provider_cache import InMemoryCacheStore, ProviderCache
-from grafy_workbench.ocr.paddle_recognizer import (
+from grafy_plugin_litellm_ocr.paddle_recognizer import (
     PADDLE_MODEL,
     PADDLE_URL,
     PaddleCyrillicRecognizer,
 )
-from grafy_workbench.ocr.provider_http import serve_client
-from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
-from grafy_workbench.ocr.tiff_label_crop import NATIVE_CROP_PIXEL_LIMIT
-from grafy_workbench.ocr.tiff_recognition import (
+from grafy_core.provider_http import serve_client
+from grafy_plugin_map_toponyms.text_regions import TiffPixelWindow, TiffTextRegions
+from grafy_plugin_map_toponyms.tiff_label_crop import NATIVE_CROP_PIXEL_LIMIT
+from grafy_plugin_map_toponyms.tiff_recognition import (
     ReadTiffTextNode,
     RecognizeInput,
     RecognizeOutput,

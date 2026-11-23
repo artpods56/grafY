@@ -15,12 +15,12 @@ from grafy_plugin_gis.nodes import (
     TableToGeoFeaturesOutput,
     table_to_geo_features,
 )
-from grafy_workbench.ocr.georeference import (
+from grafy_plugin_map_toponyms.georeference import (
     GeoreferencePlacesInput,
     GeoreferencePlacesNode,
 )
-from grafy_workbench.ocr.text_regions import TiffPixelWindow
-from grafy_workbench.ocr.tiff_recognition import (
+from grafy_plugin_map_toponyms.text_regions import TiffPixelWindow
+from grafy_plugin_map_toponyms.tiff_recognition import (
     TiffRecognizedRegion,
     TiffRecognizedText,
 )

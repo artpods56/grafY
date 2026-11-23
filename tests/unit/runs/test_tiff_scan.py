@@ -8,8 +8,8 @@ import pytest
 from grafy_core.contracts.ocr import ServiceCacheIdentity, TextRegion, TiffPage
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.provider_cache import InMemoryCacheStore, ProviderCache
-from grafy_workbench.ocr.craft import CRAFT_URL, CraftDetector
-from grafy_workbench.ocr.tiff_scan import Window, detect_area
+from grafy_plugin_litellm_ocr.craft import CRAFT_URL, CraftDetector
+from grafy_plugin_map_toponyms.tiff_scan import Window, detect_area
 from pydantic import SecretStr
 
 

@@ -1,4 +1,4 @@
-"""The Reducto OCR node, driven through `run` against a stand-in Reducto."""
+"""The Reducto OCR provider, driven against a stand-in Reducto."""
 
 import asyncio
 import io
@@ -12,9 +12,8 @@ import pytest
 from pydantic import SecretStr, TypeAdapter, ValidationError
 
 from grafy_core import egress
-from grafy_core.artifact_contracts import MARKDOWN, RASTER_IMAGE, TEXT_VALUE
+from grafy_core.contracts.ocr import DocumentOcrResult
 from grafy_core.documents import PdfFile, RasterImage
-from grafy_core.file_contracts import PDF_FILE
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressPolicy, PinnedPublicAddressTransport
 from grafy_core.nodes import (
@@ -25,16 +24,14 @@ from grafy_core.nodes import (
 from grafy_core.plugins import PluginRegistry
 from grafy_core.ports.node_secrets import NodeSecretResolverPort
 from grafy_core.ports.storage import FileStoragePort
-from grafy_core.table_contracts import TABLE_DATA
 
 from grafy_plugin_reducto import ocr
 from grafy_plugin_reducto.declaration import REDUCTO
 from grafy_plugin_reducto.ocr import (
     ReductoOcrConfig,
     ReductoOcrError,
-    ReductoOcrInput,
-    ReductoOcrNode,
-    ReductoOcrOutput,
+    ReductoProviderInput,
+    ReductoOcrProviderNode,
     build_parse_output,
 )
 from grafy_plugin_reducto.plugin import REDUCTO as INSTALLED
@@ -45,7 +42,7 @@ STORAGE_HOST = "provider-storage.test"
 RESULT_PATH = "/results/result-1.json"
 STORAGE_URL = f"https://{STORAGE_HOST}{RESULT_PATH}"
 API_KEY = "sek_reducto_test_key"
-DOCUMENT_URL = "https://documents.example.test/report.pdf"
+UPLOADED_FILE_ID = "reducto://file-1"
 RASTER = b"\x89PNG\r\n\x1a\n a raster artifact"
 REQUEST_BODY = TypeAdapter(dict[str, object])
 
@@ -74,7 +71,7 @@ class FakeReducto:
         self.parse_body: Callable[[str], dict[str, object]] | None = None
         self.parse_arrived: dict[str, asyncio.Event] = {}
         self.parse_gate: asyncio.Event | None = None
-        self.upload_file_id = "reducto://file-1"
+        self.upload_file_id = UPLOADED_FILE_ID
         self.result_status = 200
         self.result_headers: dict[str, str] = {}
         self.result_body: bytes | None = None
@@ -161,20 +158,24 @@ class Env:
         self.use_transport(httpx.MockTransport(self.fake.handle))
 
     def use_transport(self, transport: httpx.AsyncBaseTransport) -> None:
-        self.node = ReductoOcrNode(transport_factory=lambda: transport)
+        self.node = ReductoOcrProviderNode(transport_factory=lambda: transport)
 
     async def run(
         self,
         *,
-        url: str | None = DOCUMENT_URL,
         image: RasterImage | PdfFile | None = None,
         config: ReductoOcrConfig | None = None,
-    ) -> ReductoOcrOutput:
-        return await self.node.run(
+    ) -> DocumentOcrResult:
+        provider = await self.node.run(
             self.context,
             ReductoOcrConfig() if config is None else config,
-            ReductoOcrInput(document_url=url, image=image),
+            ReductoProviderInput(),
         )
+        if image is None:
+            image = RasterImage.from_content(
+                RASTER, content_type="image/png", filename="page.png"
+            )
+        return await provider.engine.read(image)
 
 
 @pytest.fixture
@@ -214,30 +215,17 @@ def test_the_family_installs_its_ocr_operators() -> None:
     registry.freeze()
     keys = {registration.key for registration in REDUCTO.nodes}
     assert REDUCTO.slug == "external.reducto"
-    assert keys == {("reducto.ocr.process", 1), ("reducto.ocr.provider", 1)}
+    assert keys == {("reducto.ocr.provider", 1)}
 
 
 def test_the_node_declares_exactly_its_ports(env: Env) -> None:
-    made = env.node.output_contract.ports
-    took = env.node.input_contract.ports
-    assert [(port.name, port.produces) for port in made.values()] == [
-        ("markdown", MARKDOWN.key),
-        ("blocks", TABLE_DATA.key),
-    ]
-    assert [(port.name, port.accepts) for port in took.values()] == [
-        ("document_url", TEXT_VALUE.key),
-        ("image", RASTER_IMAGE.key),
-    ]
-    assert took["image"].also_accepts == (PDF_FILE.key,)
-    assert took["document_url"].agent_default == "fill"
-    assert took["image"].agent_default == "fill"
-    assert [port.title for port in made.values()] == ["Transcription", "Text blocks"]
-    assert [port.title for port in took.values()] == ["Document link", "Scan or PDF"]
+    assert not env.node.input_contract.ports
+    assert env.node.output_contract.ports["engine"].kind == "service"
 
 
 def test_the_family_needs_egress_and_secrets() -> None:
     registration = next(
-        node for node in REDUCTO.nodes if node.key == ("reducto.ocr.process", 1)
+        node for node in REDUCTO.nodes if node.key == ("reducto.ocr.provider", 1)
     )
     assert REDUCTO.capabilities == (
         PluginRuntimeCapability.NETWORK_EGRESS,
@@ -249,11 +237,12 @@ def test_the_family_needs_egress_and_secrets() -> None:
 
 def test_the_family_declares_one_secret_and_its_destinations() -> None:
     registration = next(
-        node for node in REDUCTO.nodes if node.key == ("reducto.ocr.process", 1)
+        node for node in REDUCTO.nodes if node.key == ("reducto.ocr.provider", 1)
     )
     destinations = registration.http_egress
     assert [secret.name for secret in registration.secret_inputs] == ["api_key"]
     assert registration.secret_inputs[0].config_dependencies == ()
+    assert registration.secret_inputs[0].provider_kind == "reducto"
     assert destinations is not None
     assert destinations.fixed_destinations == (ocr.REDUCTO_BASE_URL,)
     assert destinations.dynamic_destinations
@@ -287,33 +276,6 @@ def test_config_pages_are_positive_and_ordered() -> None:
         ReductoOcrConfig(page_end=0)
 
 
-async def test_no_inputs_and_both_inputs_are_answered_locally(env: Env) -> None:
-    both = ReductoOcrInput(
-        document_url=DOCUMENT_URL,
-        image=RasterImage.from_content(
-            RASTER, content_type="image/png", filename="raster.png"
-        ),
-    )
-    for inputs in (ReductoOcrInput(), both):
-        with pytest.raises(ReductoOcrError, match="not both, and not neither"):
-            await env.node.run(env.context, ReductoOcrConfig(), inputs)
-    assert env.secrets.lookups == []
-    assert env.fake.requests == []
-
-
-@pytest.mark.parametrize(
-    "url", ["http://x.test/a.pdf", "reducto://file-1", "jobid://abc", ""]
-)
-async def test_a_document_url_that_is_not_https_is_refused_unquoted(
-    env: Env, url: str
-) -> None:
-    with pytest.raises(ReductoOcrError, match="has to start with https://") as recorded:
-        await env.run(url=url)
-    assert url == "" or url not in str(recorded.value)
-    assert env.secrets.lookups == []
-    assert env.fake.requests == []
-
-
 async def test_the_key_is_resolved_for_the_node_that_asked(env: Env) -> None:
     await env.run()
     assert env.secrets.lookups == [
@@ -342,7 +304,7 @@ async def test_the_parse_request_is_exactly_the_decided_body(env: Env) -> None:
     )
     assert env.fake.parse_bodies == [
         {
-            "input": DOCUMENT_URL,
+            "input": UPLOADED_FILE_ID,
             "formatting": {"table_output_format": "html"},
             "retrieval": {"chunking": {"chunk_mode": "disabled", "chunk_overlap": 0}},
             "settings": {
@@ -364,7 +326,7 @@ async def test_the_page_range_is_sent_only_when_it_is_set(env: Env) -> None:
 
 async def test_the_platform_is_dialed_with_the_nodes_own_key(env: Env) -> None:
     await env.run()
-    request = env.fake.requests[0]
+    (request,) = env.fake.to("/parse")
     assert request.url.host == PLATFORM_HOST
     assert request.headers["authorization"] == f"Bearer {API_KEY}"
 
@@ -388,7 +350,6 @@ async def test_a_refusal_is_said_once_without_the_providers_own_words(
 async def test_pdf_is_uploaded_as_a_document(env: Env) -> None:
     content = b"%PDF-example"
     await env.run(
-        url=None,
         image=PdfFile.from_content(
             content, content_type="application/pdf", filename="report.pdf"
         ),
@@ -403,7 +364,6 @@ async def test_an_uploaded_image_goes_as_its_own_bytes(env: Env) -> None:
     content = b"\x89PNG\r\n\x1a\n marker-bytes"
     env.fake.upload_file_id = "reducto://file-9"
     output = await env.run(
-        url=None,
         image=RasterImage.from_content(
             content, content_type="image/png", filename="page.png"
         ),
@@ -421,7 +381,7 @@ async def test_an_unsupported_image_stops_before_any_request(env: Env) -> None:
         b"GIF89a", content_type="image/gif", filename="page.gif"
     )
     with pytest.raises(ReductoOcrError, match="unsupported content type"):
-        await env.run(url=None, image=image)
+        await env.run(image=image)
     assert env.fake.requests == []
 
 
@@ -433,7 +393,7 @@ async def test_a_source_above_the_product_limit_stops_before_any_request(
         RASTER, content_type="image/png", filename="raster.png"
     )
     with pytest.raises(ReductoOcrError, match="8-byte source limit"):
-        await env.run(url=None, image=image)
+        await env.run(image=image)
     assert env.fake.requests == []
 
 
@@ -450,7 +410,7 @@ async def test_an_unreadable_raster_names_no_storage_path(env: Env) -> None:
         object_key="objects/raster.png",
     )
     with pytest.raises(ReductoOcrError, match="could not read") as recorded:
-        await env.run(url=None, image=image)
+        await env.run(image=image)
     assert "workbench-artifacts" not in str(recorded.value)
     assert "objects/raster.png" not in str(recorded.value)
     assert env.fake.requests == []
@@ -460,7 +420,7 @@ async def test_inline_and_url_results_give_the_same_output(env: Env) -> None:
     inline = await env.run()
     other = Env()
     other.fake.parse_body = lambda source: url_body(STORAGE_URL)
-    other.fake.result_document = [chunk_document(f"document of {DOCUMENT_URL}")]
+    other.fake.result_document = [chunk_document(f"document of {UPLOADED_FILE_ID}")]
     assert (await other.run()).model_dump() == inline.model_dump()
 
 
@@ -480,6 +440,7 @@ async def test_an_unknown_block_kind_reaches_the_table(env: Env, via_url: bool) 
     else:
         env.fake.parse_body = lambda source: inline_body([chunk])
     output = await env.run()
+    assert output.blocks is not None
     assert output.blocks.rows[0]["kind"] == "Handwritten Note"
 
 
@@ -490,7 +451,8 @@ async def test_the_storage_host_gets_neither_the_key_nor_a_cookie(env: Env) -> N
     assert len(stored) == 1
     assert "authorization" not in stored[0].headers
     assert "cookie" not in stored[0].headers
-    assert env.fake.requests[0].headers["authorization"] == f"Bearer {API_KEY}"
+    (parse_request,) = env.fake.to("/parse")
+    assert parse_request.headers["authorization"] == f"Bearer {API_KEY}"
 
 
 async def test_a_redirect_from_storage_is_not_followed(env: Env) -> None:
@@ -509,7 +471,10 @@ async def test_a_result_url_that_is_not_https_is_refused_unquoted(env: Env) -> N
     with pytest.raises(ReductoOcrError, match="not HTTPS") as recorded:
         await env.run()
     assert url not in str(recorded.value)
-    assert [request.method for request in env.fake.requests] == ["POST"]
+    assert [(request.method, request.url.path) for request in env.fake.requests] == [
+        ("POST", "/upload"),
+        ("POST", "/parse"),
+    ]
 
 
 async def test_an_oversized_result_is_stopped_while_it_streams(
@@ -592,7 +557,7 @@ async def test_a_result_download_that_resolves_into_the_deployment_is_never_made
 
 async def test_a_cancelled_run_leaves_no_task_behind(env: Env) -> None:
     arrived = asyncio.Event()
-    env.fake.parse_arrived[DOCUMENT_URL] = arrived
+    env.fake.parse_arrived[UPLOADED_FILE_ID] = arrived
     env.fake.parse_gate = asyncio.Event()
     started = {
         task for task in asyncio.all_tasks() if task is not asyncio.current_task()
@@ -632,6 +597,7 @@ def test_no_chunks_make_an_empty_document_in_both_artifacts() -> None:
     names = "index page original_page kind text confidence parse_confidence left"
     names += " top width height"
     assert output.markdown.markdown == ""
+    assert output.blocks is not None
     assert output.blocks.rows == []
     assert [column.id for column in output.blocks.columns] == names.split()
 
@@ -645,7 +611,9 @@ def test_blocks_carry_the_providers_own_vocabulary() -> None:
     )
     later = chunk_json(content="next page", blocks=[block_json(content="later")])
     chunks = parse_chunks(chunk_json(blocks=[named, scored]), later)
-    rows = build_parse_output(chunks).blocks.rows
+    blocks = build_parse_output(chunks).blocks
+    assert blocks is not None
+    rows = blocks.rows
     assert [row["index"] for row in rows] == [0, 1, 2]
     assert [row["kind"] for row in rows] == ["Handwritten Note", "Text", "Text"]
     assert [row["text"] for row in rows] == ["scrawled", "plain", "later"]
@@ -660,7 +628,9 @@ def test_blocks_carry_the_providers_own_vocabulary() -> None:
 def test_blocks_preserve_box_numbers_without_clamping_them() -> None:
     box = bbox_json(left=-0.04, top=1.28, width=1.4, height=1.05)
     chunks = parse_chunks(chunk_json(blocks=[block_json(bbox=box)]))
-    row = build_parse_output(chunks).blocks.rows[0]
+    blocks = build_parse_output(chunks).blocks
+    assert blocks is not None
+    row = blocks.rows[0]
     assert (row["left"], row["top"], row["width"], row["height"]) == (
         -0.04,
         1.28,

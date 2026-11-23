@@ -23,8 +23,8 @@ from grafy_core.provider_cache import ProviderCache
 from grafy_core.runtime.artifact_values import inline_model_artifact
 from pydantic import BaseModel, ConfigDict, Field
 
-from grafy_workbench.ocr.declaration import OCR
-from grafy_workbench.ocr.tiff_scan import Window, detect_area
+from grafy_plugin_map_toponyms.declaration import MAP_TOPONYMS
+from grafy_plugin_map_toponyms.tiff_scan import Window, detect_area
 
 
 class TiffPixelWindow(BaseModel):
@@ -88,9 +88,7 @@ class TiffTextRegions(BaseModel):
     regions: list[TextRegion]
 
 
-OCR.register_service_contract(TextBoxDetector)
-OCR.register_artifact_type_dependency(TIFF_FILE)
-OCR.register(
+MAP_TOPONYMS.register(
     inline_model_artifact(
         ArtifactTypeSpec(
             key=ArtifactTypeKey("ocr.tiff_text_regions", 1),
@@ -117,7 +115,7 @@ class DetectTextOutput(NodeOutput):
     regions: TiffTextRegions = Field(title="Text regions")
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.detect_tiff_text",
     version=1,
     title="Detect text in TIFF window",

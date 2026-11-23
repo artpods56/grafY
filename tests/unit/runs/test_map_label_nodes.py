@@ -13,7 +13,7 @@ from grafy_core.contracts.ocr import (
 from grafy_core.documents import TiffFile
 from grafy_core.node_context import NodeExecutionContext
 from grafy_core.node_ports import Ref
-from grafy_workbench.ocr.label_nodes import (
+from grafy_plugin_map_toponyms.label_nodes import (
     FilterReadingsConfig,
     FilterReadingsInput,
     FilterReadingsNode,
@@ -23,8 +23,8 @@ from grafy_workbench.ocr.label_nodes import (
     PrepareLabelsInput,
     PrepareMapLabelsNode,
 )
-from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
-from grafy_workbench.ocr.tiff_recognition import ReadTiffTextNode, RecognizeInput
+from grafy_plugin_map_toponyms.text_regions import TiffPixelWindow, TiffTextRegions
+from grafy_plugin_map_toponyms.tiff_recognition import ReadTiffTextNode, RecognizeInput
 from PIL import Image, ImageDraw
 
 

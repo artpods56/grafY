@@ -16,6 +16,8 @@ dependencies = [
     "grafy-plugin-gis",
     "grafy-plugin-image",
     "grafy-plugin-llm",
+    "grafy-plugin-litellm-ocr",
+    "grafy-plugin-map-toponyms",
     "grafy-plugin-mistral",
     "grafy-plugin-reducto",
     "grafy-plugin-table",
@@ -37,6 +39,8 @@ members = [
     "plugins/gis",
     "plugins/image",
     "plugins/llm",
+    "plugins/litellm_ocr",
+    "plugins/map_toponyms",
     "plugins/mistral",
     "plugins/reducto",
     "plugins/table",
@@ -58,6 +62,8 @@ grafy-shared = { workspace = true }
 grafy-plugin-gis = { workspace = true }
 grafy-plugin-image = { workspace = true }
 grafy-plugin-llm = { workspace = true }
+grafy-plugin-litellm-ocr = { workspace = true }
+grafy-plugin-map-toponyms = { workspace = true }
 grafy-plugin-mistral = { workspace = true }
 grafy-plugin-reducto = { workspace = true }
 grafy-plugin-table = { workspace = true }
@@ -92,6 +98,8 @@ include = [
     "plugins/image/*",
     "plugins/table/*",
     "plugins/llm/*",
+    "plugins/litellm_ocr/*",
+    "plugins/map_toponyms/*",
     "plugins/mistral/*",
     "plugins/reducto/*",
     "plugins/gis/*",
@@ -118,6 +126,8 @@ executionEnvironments = [
         "plugins/image/src",
         "plugins/table/src",
         "plugins/llm/src",
+        "plugins/litellm_ocr/src",
+        "plugins/map_toponyms/src",
         "plugins/mistral/src",
         "plugins/reducto/src",
         "plugins/gis/src",

@@ -59,9 +59,9 @@ from pydantic import (
     field_validator,
 )
 
-from grafy_workbench.ocr.declaration import OCR
-from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
-from grafy_workbench.ocr.tiff_scan import Window
+from grafy_plugin_map_toponyms.declaration import MAP_TOPONYMS
+from grafy_plugin_map_toponyms.text_regions import TiffPixelWindow, TiffTextRegions
+from grafy_plugin_map_toponyms.tiff_scan import Window
 from grafy_workbench.table import plugin as _table_plugin
 
 _ = _table_plugin.__name__
@@ -750,7 +750,7 @@ async def _open_tiff(
     return await opener(context.workspace_id, source.artifact_id, page=page)
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.export_label_studio",
     version=1,
     title="Export TIFF regions to Label Studio",
@@ -1046,7 +1046,7 @@ def _result_polygon(result: _Result, data: dict[str, object]) -> PixelPolygon:
     ]
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.import_label_studio",
     version=1,
     title="Import Label Studio annotations",

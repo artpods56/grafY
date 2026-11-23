@@ -170,8 +170,6 @@ Change `title=` and the docstring only. Leave `operator_id` and `version` as the
 
 | File                                                               | Current title                       | Current docstring (first line)                                         | New title              | New docstring                                                                                            |
 | ------------------------------------------------------------------ | ----------------------------------- | ---------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------- |
-| `plugins/reducto/src/grafy_plugin_reducto/ocr.py` `ReductoOcrNode` | `Reducto OCR`                       | `Parses a document URL or raster image with the Reducto Parse API.`    | `Read with Reducto`    | `Reads a PDF or a scanned page into text. You need a Reducto key.`                                       |
-| `plugins/mistral/src/grafy_plugin_mistral/ocr.py` `MistralOcrNode` | `Mistral OCR`                       | `Recognizes a document URL or raster image with Mistral OCR.`          | `Read with Mistral`    | `Reads a PDF or a scanned page into text. You need a Mistral key.`                                       |
 | `libs/workbench/src/grafy_workbench/sequence/nodes.py` `collect`   | `Collect`                           | `Collects homogeneous artifact refs without rewriting their payloads.` | `Group into a list`    | `Keeps pages or files together, in the order you add them. Every item has to be the same kind of thing.` |
 | same file `count`                                                  | `Count`                             | `Counts the refs in an artifact sequence.`                             | `Count items`          | `Counts how many items are in a list.`                                                                   |
 | same file `slice_sequence`                                         | `Slice`                             | `Selects a contiguous range from an ordered artifact sequence.`        | `Take a range`         | `Keeps a stretch of items from a list. The first item is number 0.`                                      |
@@ -763,7 +761,7 @@ Current footer: `` `${data.spec.operator_id}@${data.spec.operator_version}` `` i
 
 New: pass no `aboutFooter` from these two call sites. The id remains in Add node Details (HX-16). If `operatorCopy` has no remaining use, delete it from `styles.ts`.
 
-Acceptance: opening a card’s menu does not show `reducto.ocr.process@1` or any `operator_id@version`.
+Acceptance: opening a card’s menu keeps internal `operator_id@version` labels out of the menu.
 
 Tests: a render of `NodeHeader` or the workflow card, asserting the menu text does not include `@1`.
 

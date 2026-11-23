@@ -11,7 +11,7 @@ from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
 
-from grafy_workbench.table.declaration import TABLES
+from grafy_plugin_map_toponyms.declaration import MAP_TOPONYMS
 
 _LATIN = {
     "а": "a",
@@ -94,7 +94,7 @@ class TransliterateOutput(NodeOutput):
     table: Table = Field(title="Transliterated table")
 
 
-@TABLES.node(
+@MAP_TOPONYMS.node(
     operator_id="table.transliterate_cyrillic",
     version=1,
     title="Transliterate Cyrillic column",

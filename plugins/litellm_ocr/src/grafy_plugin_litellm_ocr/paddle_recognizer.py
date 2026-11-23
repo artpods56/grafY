@@ -8,18 +8,17 @@ from weakref import WeakValueDictionary
 
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.contracts.ocr import CropTextReader, ServiceCacheIdentity, TextReading
-from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import (
     NodeHttpEgressContract,
-    NodeSecretInput,
 )
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from grafy_workbench.ocr.declaration import OCR
-from grafy_workbench.ocr.provider_http import ProviderRequest, post_json
+from grafy_plugin_litellm_ocr.auth import API_KEY
+from grafy_plugin_litellm_ocr.declaration import LITELLM_OCR
+from grafy_core.provider_http import ProviderRequest, post_json
 
 PADDLE_URL = "https://ai-test.ihpan.edu.pl/v1/ocr/cyrillic/recognize"
 PADDLE_MODEL = (
@@ -150,7 +149,7 @@ class PaddleOutput(NodeOutput):
     recognizer: PaddleCyrillicRecognizer = Field(title="Text recognizer")
 
 
-@OCR.node(
+@LITELLM_OCR.node(
     operator_id="ocr.paddle_cyrillic_provider",
     version=1,
     title="PaddleOCR Cyrillic recognizer",
@@ -161,16 +160,7 @@ class PaddleOutput(NodeOutput):
     http_egress=NodeHttpEgressContract(
         fixed_destinations=("https://ai-test.ihpan.edu.pl",)
     ),
-    secret_inputs=(
-        NodeSecretInput(
-            name="api_key",
-            title="LiteLLM API key",
-            provider_kind="litellm",
-            verifier=unsupported_credential_verifier(
-                "This key will be checked on first run."
-            ),
-        ),
-    ),
+    secret_inputs=(API_KEY,),
 )
 @final
 class PaddleProviderNode(Node[PaddleConfig, PaddleInput, PaddleOutput]):
@@ -186,7 +176,7 @@ class PaddleProviderNode(Node[PaddleConfig, PaddleInput, PaddleOutput]):
     ) -> PaddleOutput:
         return PaddleOutput(
             recognizer=PaddleCyrillicRecognizer(
-                await context.secrets.require("api_key"),
+                await context.secrets.require(API_KEY.name),
                 timeout_ms=config.timeout_ms,
                 max_retries=config.max_retries,
             )

@@ -19,13 +19,13 @@ from grafy_core.node_context import (
 from grafy_core.node_ports import Ref
 from grafy_core.plugins import NodeSecretInput
 from grafy_core.provider_cache import InMemoryCacheStore, ProviderCache
-from grafy_workbench.ocr.jev_filter import (
+from grafy_plugin_map_toponyms.jev_filter import (
     FilterTiffJevConfig,
     FilterTiffJevInput,
     FilterTiffJevNode,
 )
-from grafy_workbench.ocr.provider_http import ProviderRequest, post_json, serve_client
-from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
+from grafy_core.provider_http import ProviderRequest, post_json, serve_client
+from grafy_plugin_map_toponyms.text_regions import TiffPixelWindow, TiffTextRegions
 from PIL import Image
 from pydantic import JsonValue, SecretStr
 
@@ -360,7 +360,7 @@ async def test_provider_http_retries_529_and_protects_bearer_header(
         assert request.headers["TypeSafe-Danger-Zone-Images"] == "true"
         return httpx.Response(next(statuses), content=b"{}")
 
-    monkeypatch.setattr("grafy_workbench.ocr.provider_http.sleep", skip_backoff)
+    monkeypatch.setattr("grafy_core.provider_http.sleep", skip_backoff)
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         with serve_client(client):
             result = await post_json(

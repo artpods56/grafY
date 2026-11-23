@@ -32,10 +32,10 @@ from grafy_core.provider_cache import CacheSpec, ProviderCache
 from grafy_core.runtime.artifact_values import inline_model_artifact
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
-from grafy_workbench.ocr.declaration import OCR
-from grafy_workbench.ocr.progress import cached_progress
-from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
-from grafy_workbench.ocr.tiff_label_crop import read_label_crop
+from grafy_plugin_map_toponyms.declaration import MAP_TOPONYMS
+from grafy_plugin_map_toponyms.progress import cached_progress
+from grafy_plugin_map_toponyms.text_regions import TiffPixelWindow, TiffTextRegions
+from grafy_plugin_map_toponyms.tiff_label_crop import read_label_crop
 
 
 class TiffRecognizedRegion(TextRegion):
@@ -90,8 +90,7 @@ def _crop_request(
     }
 
 
-OCR.register_service_contract(CropTextReader)
-OCR.register(
+MAP_TOPONYMS.register(
     inline_model_artifact(
         ArtifactTypeSpec(
             key=ArtifactTypeKey("ocr.tiff_recognized_text", 1),
@@ -139,7 +138,7 @@ class RecognizeOutput(NodeOutput):
     text: TiffRecognizedText = Field(title="Recognized text")
 
 
-@OCR.node(
+@MAP_TOPONYMS.node(
     operator_id="ocr.recognize_tiff_text",
     version=1,
     title="Read detected TIFF text",
