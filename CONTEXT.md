@@ -527,59 +527,49 @@ unreachable from a graph. A trusted private destination comes from operator
 configuration only; a node, a graph and a Workspace can never widen it.
 _Avoid_: egress broker, network policy, sandbox network
 
+### Pack
+
+A code-defined, task-oriented discovery bundle surfaced in the Workbench Step Picker and managed per Workspace (for example `Essentials`, `Document OCR`, `Maps & GIS`, or `Historical Map Toponyms`). A Pack groups explicit node operator ids across one or more builtin families and Plugins and may automatically include every enabled Provider node satisfying declared Service contracts. Deployment configuration (`GRAFY_CATALOG_CONFIG`) sets default Workspace Packs and deployment-wide Pack or operator-id disablement; Workspace owners subscribe or unsubscribe Packs through `manage_packs`, except `always_on` Packs (`Essentials`). Packs govern discovery only: hiding a node or unsubscribing a Pack sets `catalog_visible: false` without removing the node from the registry, never breaks existing saved Projects, and never enters node fingerprints.
+_Avoid_: plugin bundle, plugin marketplace, artifact bundle contract
+
 ### Node catalog / Add node
 
-The catalog lists the builtin families, the Plugin families installed in this
-deployment, and, as a separate entry kind, the sibling Graphs of the open Project that can be placed as call nodes. Every insertable node
-carries its operator id and version plus the deployment's build digest; an
-operator that is not in the registry is a compile error, not a disabled entry
-waiting for a release.
+The catalog lists every registered node from the builtin families and Plugins installed in this deployment, grouped for browsing into the Workspace's subscribed Packs, plus client-synthesized sibling Graph call nodes and Graph boundary nodes (`Graph input` / `Graph output`, gated by the `subgraphs` Pack). Every registered node remains present in the Workspace catalog response even when hidden by deployment configuration or Pack subscriptions (`catalog_visible: false`), so existing saved Projects hydrate and run cleanly; an operator id absent from the deployment registry is still a compile error.
 
-Grafy's builtin families contain broadly reusable operations: Image, Sequence,
-Value, Text, Schema, Table, and File. A builtin artifact type must have precise,
-producer-neutral meaning and be independently reusable. A builtin node must be
-broadly reusable, deterministic, dependency-light, and must not duplicate
-projection, conversion, mapping, or other edge/runtime behavior.
-Image owns the producer-neutral `image.raster@1` artifact, its storage writer,
-and the deterministic decode that turns a `file.png@1` or `file.tiff@1` artifact
-into a raster. Table owns
+Grafy's builtin families contain broadly reusable, dependency-light, vendor-neutral operations: Image, Sequence, Value, Text, Schema, Table, File, and OCR. A builtin artifact type must have precise, producer-neutral meaning and be independently reusable. A builtin node must be broadly reusable, deterministic, dependency-light, and must not duplicate projection, conversion, mapping, or other edge/runtime behavior.
+Image owns the producer-neutral `image.raster@1` artifact, its storage writer, and the deterministic decode that turns a `file.png@1` or `file.tiff@1` artifact into a raster. Table owns
 the producer-neutral `table.data@1` artifact: stable ordered columns with
 duplicate-friendly display titles, declared value types, and rectangular rows
-keyed by column id. Source-specific table interpretation remains with its
-producer.
+keyed by column id, plus generic Markdown table extraction (`table.extract_from_markdown`) and concatenation.
 
 Sequence provides `Collect<T>`, Count, Slice, and Pick item; image- and
 text-specific collectors are not separate builtin nodes. Schema provides one
 recursive JSON Schema Builder, and the LLM Plugin provides deterministic
 prompt-message construction; provider-backed execution stays in the
-`external.llm` Plugin.
-OCR table fragments remain Mistral-owned because deciding how Markdown rows become
-headers, columns, and inferred values is a source-specific normalization rather
-than a shape-preserving artifact conversion. Plugin families provide remote and
-domain-specific nodes through the same registry as the builtin families.
+`external.llm` Plugin. Plugin families provide vendor/gateway providers, heavy
+native-dependency domains, and experimental project-specific vertical pipelines
+through the same registry as the builtin families.
 
 ### Service contract
 
-A nominal protocol a Plugin registers with an id, version and title. A class
-implements the contract only by subclassing it; a matching method name is not
-enough. The object that satisfies it is built while a consumer runs and is gone
-when that computation ends. It is never an artifact: it is never stored, never
-logged, and never part of metadata.
+A nominal protocol under `grafy_core.contracts` registered with an id, version and title (such as `DocumentOcr` / `ocr.document@1`, `TextBoxDetector` / `ocr.box_detector@1`, and `CropTextReader` / `ocr.crop_reader@1`). A class implements the contract only by subclassing it; a matching method name is not enough. The object that satisfies it is built while a consumer runs and is gone when that computation ends. It is never an artifact: it is never stored, never logged, and never part of metadata. Contracts whose consumers cache per-tile or per-crop calls expose `cache_identity()` returning deployment, optional immutable revision, and request options; a `None` revision bypasses the provider cache.
 _Avoid_: DI service, capability provider object
 
 ### Service port
 
 A node input or output typed as a service contract (or, on an output, a class
-that subclasses one or more). It carries contract keys, not an artifact type. A
-service output feeds only a service input, and the reverse. A node with a
-service output has no input ports. The planner never plans a service node; the
-consumer's runner builds the connected provider in-process. An Agent tool never
-offers a service input to the model.
+that subclasses one). It carries contract keys, not an artifact type, and on a
+service output carries contract-scoped declared features. A service output feeds
+only a service input, and the reverse. A node with a service output has no input
+ports, exactly one service output port, and implements one service contract in
+v1. The planner never plans a service node; the consumer's runner builds the
+connected provider in-process and validates any `RequiresServiceFeature` optional
+outputs generically. An Agent tool never offers a service input to the model.
 _Avoid_: OutPort/InPort for services
 
 ### Provider node
 
-A node whose only outputs are service ports. It has no artifact inputs. Its
+A node whose sole output is a service port. It has no artifact inputs. Its
 config and node-scoped secrets shape the live object the consumer builds. The
 planner never schedules it; changing its config or key still enters the
 consumer's fingerprint through `upstream_fingerprints`.
@@ -589,7 +579,7 @@ _Avoid_: capability node, OCR vendor node as a synonym for every provider
 
 A result on one page of a stored TIFF. It records the native window that was
 read and the detected polygons in full-resolution source page pixels, with the
-top-left as the origin. A text detector takes the window PNG and returns
+top-left as the origin. A `TextBoxDetector` takes the window PNG and returns
 window-relative polygons, optionally with readings. The detection node places
 them in source pixels before persistence. The result references the exact
 Workspace artifact so its card can overlay the polygons on that page as it zooms.
@@ -597,23 +587,25 @@ Workspace artifact so its card can overlay the polygons on that page as it zooms
 A prepare node joins boxes on one baseline into a span in source pixels. The
 join can cover several words. When the rotated envelope would extend past the
 members' pixel bounds, the span uses their convex hull. Recognition reads the
-span once, stitching native TIFF reads for larger crops. A filter node keeps
-name-like readings. The places table gives each candidate's name, confidence,
-page, and centroid. It strips explicit Cyrillic settlement prefixes and skips
-readings with explicit water-feature prefixes. The collection node combines
-readings from multiple TIFF sheets into one places table. Each row includes
-the source TIFF artifact ID alongside its page and pixel coordinates.
+span once through a `CropTextReader`, stitching native TIFF reads for larger
+crops. A filter node keeps name-like readings. The places table gives each
+candidate's name, confidence, page, and centroid. It strips explicit Cyrillic
+settlement prefixes and skips readings with explicit water-feature prefixes.
+The collection node combines readings from multiple TIFF sheets into one places
+table. Each row includes the source TIFF artifact ID alongside its page and
+pixel coordinates.
 
 ### OCR node
 
-The app-owned builtin that takes a `RasterImage | PdfFile` document and an
-`OcrReader` service input, and produces transcription markdown plus optional
-blocks and regions. It names no vendor. An optional output the connected
-provider does not declare is omitted from the stored result and recorded as
-`unsupported_outputs`; a downstream node fed by that port fails naming the
-provider, not with an empty artifact.
-_Avoid_: Mistral node / Reducto node (those are provider nodes or the legacy
-read-with-vendor operators)
+The app-owned builtin (`Document OCR`, `ocr.read_document`) that takes a
+`RasterImage | PdfFile` document and a `DocumentOcr` (`ocr.document@1`) service
+input, and produces transcription markdown plus optional `blocks` and `regions`
+outputs gated by `RequiresServiceFeature`. It names no vendor and accepts no
+remote document URL. An optional output the connected provider does not declare
+is omitted from the stored result and recorded as `unsupported_outputs` by the
+runner; a downstream node fed by that port fails naming the provider, not with
+an empty artifact.
+_Avoid_: Mistral node / Reducto node (those are Provider nodes)
 
 ### Port
 
