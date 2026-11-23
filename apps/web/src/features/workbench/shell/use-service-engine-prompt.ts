@@ -14,6 +14,7 @@ import { useEffectReducer } from "@/lib/state/use-effect-reducer";
 import { createUuid } from "@/features/workbench/authoring/uuid";
 
 import type {
+  AuthoredGraphDocument,
   AuthoredGraphOrigin,
   GraphCommand,
 } from "../authoring/graph-document";
@@ -121,6 +122,7 @@ export function useServiceEnginePrompt({
   graphId,
   canEdit,
   running,
+  documentRef,
   nodes,
   savedNodes,
   edges,
@@ -145,6 +147,7 @@ export function useServiceEnginePrompt({
   graphId: string | null;
   canEdit: boolean;
   running: boolean;
+  documentRef: React.RefObject<AuthoredGraphDocument>;
   nodes: readonly WorkflowNode[];
   /** Nodes on the saved head. Null until this graph has a checkpoint. */
   savedNodes: readonly { readonly id: string }[] | null;
@@ -334,8 +337,8 @@ export function useServiceEnginePrompt({
       bindingGenerationRef.current === generation &&
       graphIdRef.current === binding.graphId &&
       !failedNodeIdsRef.current.has(binding.nodeId) &&
-      nodesRef.current.some(({ id }) => id === binding.nodeId),
-    [],
+      documentRef.current.nodes.some(({ id }) => id === binding.nodeId),
+    [documentRef],
   );
 
   const nodeBindingBusy = React.useCallback((nodeId: string) => {
@@ -470,12 +473,14 @@ export function useServiceEnginePrompt({
     const partitioned = partitionPendingBindings({
       pending: pendingRef.current,
       graphId,
-      canvasNodeIds: new Set(nodes.map((node) => node.id)),
+      // A layout effect can connect the engine before this render's passive
+      // effects run. The authored document already contains the provider.
+      canvasNodeIds: new Set(documentRef.current.nodes.map(({ id }) => id)),
       savedNodeIds: new Set((savedNodes ?? []).map((node) => node.id)),
     });
     pendingRef.current = [...partitioned.waiting];
     for (const binding of partitioned.ready) startWrite(binding);
-  }, [graphId, nodes, savedNodes, startWrite]);
+  }, [documentRef, graphId, nodes, savedNodes, startWrite]);
 
   const world = React.useMemo<ServiceEngineWorld | null>(() => {
     if (!registry) return null;

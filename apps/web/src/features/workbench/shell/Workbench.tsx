@@ -1903,6 +1903,7 @@ function WorkbenchBody({
     graphId: openGraphId,
     canEdit: canEditProject && localAuthoringEnabled,
     running,
+    documentRef: authoredDocumentRef,
     nodes,
     savedNodes: activeGraph?.nodes ?? null,
     edges,
