@@ -112,18 +112,49 @@ export function serializeNodeLayout(
  */
 export const SERVICE_PROVIDER_GAP = DEFAULT_NODE_WIDTH / 6;
 
+/**
+ * Operator-card port rows. These match cell-canvas/cell-model.ts
+ * (`CELL_SIZE`, `FIRST_PORT_ROW`, `PORT_ROW_PITCH`). Authoring cannot import
+ * the canvas, so the numbers are copied. A test checks they still match.
+ */
+export const OPERATOR_PORT_CELL_SIZE = 25;
+export const OPERATOR_FIRST_PORT_ROW = 2;
+export const OPERATOR_PORT_ROW_PITCH = 2;
+
 export interface NodeTopLeft {
   readonly x: number;
   readonly y: number;
 }
 
+/** Distance from a card's top to the center of fixed port `index`. */
+export function operatorPortCenterOffset(index: number): number {
+  const row = OPERATOR_FIRST_PORT_ROW + index * OPERATOR_PORT_ROW_PITCH;
+  return (row + 0.5) * OPERATOR_PORT_CELL_SIZE;
+}
+
+/**
+ * How far to move the provider's top so its output sits on the consumer's
+ * service-input row. Both indexes count that card's fixed ports. Index 0
+ * against index 0 is 0.
+ */
+export function serviceProviderPortAlignY(
+  consumerInputIndex: number,
+  providerOutputIndex: number,
+): number {
+  return (
+    operatorPortCenterOffset(consumerInputIndex) -
+    operatorPortCenterOffset(providerOutputIndex)
+  );
+}
+
 /** Top-left of a provider card sitting to the left of a consumer. */
 export function serviceProviderPositionLeftOf(
   consumer: NodeTopLeft,
+  alignY = 0,
 ): NodeTopLeft {
   return {
     x: consumer.x - DEFAULT_NODE_WIDTH - SERVICE_PROVIDER_GAP,
-    y: consumer.y,
+    y: consumer.y + alignY,
   };
 }
 

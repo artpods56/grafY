@@ -14,6 +14,13 @@ import { catalogNodeSpecs } from "../authoring/node-catalog";
 import type { NodeCredentialController } from "../authoring/node-secrets";
 import type { WorkflowNodeSecretStatuses } from "../authoring/node-secrets";
 import {
+  boundWorkspaceKeyNotice,
+  partitionPendingBindings,
+  settleBindingFailure,
+  workspaceKeyBindFailedNotice,
+  type QueuedSharedBinding,
+} from "../authoring/pending-shared-binding";
+import {
   initialServiceEnginePromptState,
   serviceEnginePromptReducer,
   type ServiceEngineConsumer,
@@ -95,6 +102,7 @@ export function useServiceEnginePrompt({
   canEdit,
   running,
   nodes,
+  savedNodes,
   edges,
   origins,
   registry,
@@ -114,6 +122,8 @@ export function useServiceEnginePrompt({
   canEdit: boolean;
   running: boolean;
   nodes: readonly WorkflowNode[];
+  /** Nodes on the saved head. Null until this graph has a checkpoint. */
+  savedNodes: readonly { readonly id: string }[] | null;
   edges: readonly WorkflowEdge[];
   origins: readonly AuthoredGraphOrigin[];
   registry: NodeRegistry | null | undefined;
@@ -144,6 +154,16 @@ export function useServiceEnginePrompt({
     null,
   );
   const noticeRef = React.useRef(notice);
+  const graphIdRef = React.useRef(graphId);
+  const pendingRef = React.useRef<QueuedSharedBinding[]>([]);
+  const writingKeysRef = React.useRef<Set<string>>(new Set());
+  const bindingGenerationRef = React.useRef(0);
+  const graphSeenRef = React.useRef(graphId);
+  const expectedLabelsRef = React.useRef<Map<string, readonly string[]>>(
+    new Map(),
+  );
+  const completedCountRef = React.useRef<Map<string, number>>(new Map());
+  const failedNodeIdsRef = React.useRef<Set<string>>(new Set());
   const [noticeGraphId, setNoticeGraphId] = React.useState(graphId);
   if (noticeGraphId !== graphId) {
     setNoticeGraphId(graphId);
@@ -227,19 +247,30 @@ export function useServiceEnginePrompt({
             undoNodeId: effect.undoNodeId,
             consumerNodeId: effect.consumerNodeId,
           });
-          for (const binding of effect.bindings) {
-            void selectCredentialRef
-              .current(effect.undoNodeId, binding.secretName, {
-                scope: "shared",
-                binding: {
-                  mode: "credential",
-                  credential_id: binding.credentialId,
-                },
-              })
-              .catch(() => {
-                // The node may not be on the saved head yet. The card still
-                // offers the vault control.
-              });
+          if (effect.bindings.length > 0) {
+            expectedLabelsRef.current.set(
+              effect.undoNodeId,
+              effect.bindings.map((binding) => binding.label),
+            );
+            completedCountRef.current.set(effect.undoNodeId, 0);
+            failedNodeIdsRef.current.delete(effect.undoNodeId);
+            const queued: QueuedSharedBinding[] = effect.bindings.map(
+              (binding) => ({
+                nodeId: effect.undoNodeId,
+                secretName: binding.secretName,
+                credentialId: binding.credentialId,
+                providerTitle: effect.providerTitle,
+                credentialLabel: binding.label,
+                graphId: effect.graphId,
+                saveAttempts: 0,
+              }),
+            );
+            pendingRef.current = [
+              ...pendingRef.current.filter(
+                (item) => item.nodeId !== effect.undoNodeId,
+              ),
+              ...queued,
+            ];
           }
           return;
         }
@@ -272,7 +303,123 @@ export function useServiceEnginePrompt({
     onRejectedRef.current = onRejected;
     clearErrorRef.current = clearError;
     noticeRef.current = notice;
+    graphIdRef.current = graphId;
   });
+
+  const bindingStillCurrent = React.useCallback(
+    (binding: QueuedSharedBinding, generation: number) =>
+      bindingGenerationRef.current === generation &&
+      graphIdRef.current === binding.graphId &&
+      !failedNodeIdsRef.current.has(binding.nodeId),
+    [],
+  );
+
+  const nodeBindingBusy = React.useCallback((nodeId: string) => {
+    if (pendingRef.current.some((item) => item.nodeId === nodeId)) return true;
+    const prefix = `${nodeId}\0`;
+    for (const key of writingKeysRef.current) {
+      if (key.startsWith(prefix)) return true;
+    }
+    return false;
+  }, []);
+
+  const startWrite = React.useCallback(
+    (binding: QueuedSharedBinding) => {
+      const key = `${binding.nodeId}\0${binding.secretName}`;
+      if (writingKeysRef.current.has(key)) return;
+      writingKeysRef.current.add(key);
+      const generation = bindingGenerationRef.current;
+      void selectCredentialRef
+        .current(binding.nodeId, binding.secretName, {
+          scope: "shared",
+          binding: {
+            mode: "credential",
+            credential_id: binding.credentialId,
+          },
+        })
+        .then(
+          () => {
+            writingKeysRef.current.delete(key);
+            if (!bindingStillCurrent(binding, generation)) return;
+            const labels = expectedLabelsRef.current.get(binding.nodeId);
+            if (!labels) return;
+            const completed =
+              (completedCountRef.current.get(binding.nodeId) ?? 0) + 1;
+            completedCountRef.current.set(binding.nodeId, completed);
+            if (
+              nodeBindingBusy(binding.nodeId) ||
+              completed !== labels.length
+            ) {
+              return;
+            }
+            const lead = boundWorkspaceKeyNotice(binding.providerTitle, labels);
+            setNotice((current) => {
+              if (!current || current.undoNodeId !== binding.nodeId) {
+                return current;
+              }
+              return { ...current, lead };
+            });
+          },
+          (error: unknown) => {
+            writingKeysRef.current.delete(key);
+            if (
+              bindingGenerationRef.current !== generation ||
+              graphIdRef.current !== binding.graphId
+            ) {
+              return;
+            }
+            const settled = settleBindingFailure(error, binding.saveAttempts);
+            if (settled.type === "retry") {
+              if (failedNodeIdsRef.current.has(binding.nodeId)) return;
+              pendingRef.current = [
+                ...pendingRef.current,
+                { ...binding, saveAttempts: settled.saveAttempts },
+              ];
+              return;
+            }
+            failedNodeIdsRef.current.add(binding.nodeId);
+            pendingRef.current = pendingRef.current.filter(
+              (item) => item.nodeId !== binding.nodeId,
+            );
+            onRejectedRef.current(settled.message);
+            const lead = workspaceKeyBindFailedNotice(
+              binding.providerTitle,
+              settled.message,
+            );
+            setNotice((current) => {
+              if (!current || current.undoNodeId !== binding.nodeId) {
+                return current;
+              }
+              return { ...current, lead };
+            });
+          },
+        );
+    },
+    [bindingStillCurrent, nodeBindingBusy],
+  );
+
+  React.useEffect(() => {
+    if (graphSeenRef.current !== graphId) {
+      graphSeenRef.current = graphId;
+      bindingGenerationRef.current += 1;
+      pendingRef.current = [];
+      expectedLabelsRef.current.clear();
+      completedCountRef.current.clear();
+      failedNodeIdsRef.current.clear();
+    }
+    // The secret listing is read so this effect retries a save-first
+    // rejection once the head sequence arrives. The partition itself only
+    // cares that the provider id is on the saved head.
+    void nodeSecretStatuses;
+    const partitioned = partitionPendingBindings({
+      pending: pendingRef.current,
+      graphId,
+      canvasNodeIds: new Set(nodes.map((node) => node.id)),
+      savedNodeIds: new Set((savedNodes ?? []).map((node) => node.id)),
+    });
+    pendingRef.current = [...partitioned.waiting];
+    for (const binding of partitioned.ready) startWrite(binding);
+  }, [graphId, nodes, nodeSecretStatuses, savedNodes, startWrite]);
 
   const world = React.useMemo<ServiceEngineWorld | null>(() => {
     if (!registry) return null;
@@ -401,6 +548,7 @@ export function useServiceEnginePrompt({
         portName,
         world,
         draftIds: draftIds(),
+        openPicker: true,
       });
     },
     [canEdit, dispatch, graphId, running, world],
@@ -440,6 +588,13 @@ export function useServiceEnginePrompt({
       { kind: "remove_nodes", node_ids: [current.undoNodeId] },
     ]);
     selectNodeRef.current(current.consumerNodeId);
+    pendingRef.current = pendingRef.current.filter(
+      (item) => item.nodeId !== current.undoNodeId,
+    );
+    bindingGenerationRef.current += 1;
+    expectedLabelsRef.current.delete(current.undoNodeId);
+    completedCountRef.current.delete(current.undoNodeId);
+    failedNodeIdsRef.current.delete(current.undoNodeId);
     setNotice(null);
   }, []);
 

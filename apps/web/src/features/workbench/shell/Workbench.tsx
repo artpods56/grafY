@@ -1900,6 +1900,7 @@ function WorkbenchBody({
     canEdit: canEditProject && localAuthoringEnabled,
     running,
     nodes,
+    savedNodes: activeGraph?.nodes ?? null,
     edges,
     origins: authoredDocument.origins,
     registry,
@@ -3888,13 +3889,11 @@ function WorkbenchBody({
           onDismiss={dismissGlobalIssue}
         />
       </Toast.Provider>
-      {engineConnectNotice ? (
-        <EngineConnectNotice
-          lead={engineConnectNotice.lead}
-          onUndo={undoEngineConnect}
-          onDismiss={dismissEngineConnectNotice}
-        />
-      ) : null}
+      <EngineConnectNotice
+        lead={engineConnectNotice?.lead ?? null}
+        onUndo={undoEngineConnect}
+        onDismiss={dismissEngineConnectNotice}
+      />
 
       {executionHistoryTarget ? (
         <ExecutionHistoryDrawer

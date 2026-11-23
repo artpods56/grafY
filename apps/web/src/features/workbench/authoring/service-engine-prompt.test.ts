@@ -4,10 +4,27 @@ import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import { runEffectReducer } from "@/lib/state/effect-reducer";
 
 import {
+  CELL_SIZE,
+  FIRST_PORT_ROW,
+  PORT_ROW_PITCH,
+} from "../cell-canvas/cell-model";
+import {
   DEFAULT_NODE_PLACEMENT_HEIGHT,
   DEFAULT_NODE_WIDTH,
+  OPERATOR_FIRST_PORT_ROW,
+  OPERATOR_PORT_CELL_SIZE,
+  OPERATOR_PORT_ROW_PITCH,
   SERVICE_PROVIDER_GAP,
 } from "./node-layout";
+import {
+  boundWorkspaceKeyNotice,
+  decidePendingBinding,
+  partitionPendingBindings,
+  pendingWorkspaceKeyNotice,
+  SAVE_NODE_BEFORE_CREDENTIAL,
+  settleBindingFailure,
+  type PendingSharedBinding,
+} from "./pending-shared-binding";
 import {
   initialServiceEnginePromptState,
   serviceEnginePromptReducer,
@@ -244,6 +261,7 @@ describe("service engine prompt", () => {
         portName: "engine",
         world: scene,
         draftIds: DRAFTS,
+        openPicker: true,
       });
       expect(picked.state).toBe(IDLE);
       expect(picked.effects).toEqual([]);
@@ -367,7 +385,7 @@ describe("service engine prompt", () => {
     });
   });
 
-  it("auto-binds the single shared workspace key and names it in the notice", () => {
+  it("auto-connects the single shared key and waits to name it until the write lands", () => {
     const armed = step(IDLE, place()).state;
     const result = step(
       armed,
@@ -388,9 +406,15 @@ describe("service engine prompt", () => {
     );
     const effect = connectOf(result.effects);
     expect(effect.selectNodeId).toBe("node-ocr");
-    expect(effect.toast).toBe(
-      "Connected Reducto using workspace key 'Team Reducto'",
-    );
+    expect(effect.toast).toBe(pendingWorkspaceKeyNotice("Reducto"));
+    expect(effect.providerTitle).toBe("Reducto");
+    expect(effect.graphId).toBe("graph-1");
+    expect(
+      boundWorkspaceKeyNotice(
+        effect.providerTitle,
+        effect.bindings.map((binding) => binding.label),
+      ),
+    ).toBe("Connected Reducto using workspace key 'Team Reducto'");
     expect(effect.bindings).toEqual([
       {
         secretName: "api_key",
@@ -654,6 +678,7 @@ describe("service engine prompt", () => {
       portName: "engine",
       world: scene,
       draftIds: DRAFTS,
+      openPicker: true,
     });
     expect(picked.state.phase).toBe("prompting");
     expect(openOf(picked.effects).servicePortName).toBe("engine");
@@ -666,6 +691,7 @@ describe("service engine prompt", () => {
       portName: "engine",
       world: scene,
       draftIds: DRAFTS,
+      openPicker: true,
     });
     expect(ignored.state).toBe(IDLE);
   });
@@ -702,10 +728,266 @@ describe("service engine prompt", () => {
       portName: "engine",
       world: scene,
       draftIds: DRAFTS,
+      openPicker: true,
     }).state;
     const closed = step(prompting, { type: "prompt_closed" });
     expect(closed.state).toEqual({ phase: "idle" });
     expect(closed.effects).toEqual([{ type: "close_prompt" }]);
     expect(step(IDLE, { type: "prompt_closed" }).state).toBe(IDLE);
+  });
+
+  it("opens the picker from Pick engine even when the only provider would auto-connect", () => {
+    const scene = world([localEngine]);
+    const picked = step(IDLE, {
+      type: "pick_engine",
+      graphId: "graph-1",
+      canEdit: true,
+      running: false,
+      consumer: consumer(),
+      portName: "engine",
+      world: scene,
+      draftIds: DRAFTS,
+      openPicker: true,
+    });
+    expect(picked.state.phase).toBe("prompting");
+    expect(
+      picked.effects.some((effect) => effect.type === "connect_provider"),
+    ).toBe(false);
+    expect(openOf(picked.effects).servicePortName).toBe("engine");
+
+    const direct = step(IDLE, {
+      type: "pick_engine",
+      graphId: "graph-1",
+      canEdit: true,
+      running: false,
+      consumer: consumer(),
+      portName: "engine",
+      world: scene,
+      draftIds: DRAFTS,
+      openPicker: false,
+    });
+    expect(direct.state).toEqual({ phase: "idle" });
+    expect(connectOf(direct.effects).toast).toBe("Connected Local OCR");
+
+    const candidate = openOf(picked.effects).candidates[0];
+    const choice = candidate?.choices[0];
+    if (!candidate || !choice || picked.state.phase !== "prompting") {
+      throw new Error("picker did not open");
+    }
+    const chosen = step(picked.state, {
+      type: "provider_chosen",
+      graphId: "graph-1",
+      canEdit: true,
+      running: false,
+      spec: candidate.spec,
+      choice,
+      world: scene,
+      draftIds: DRAFTS,
+    });
+    expect(connectOf(chosen.effects).toast).toBe("Connected Local OCR");
+    expect(connectOf(chosen.effects).undoNodeId).toBe("node-provider");
+  });
+
+  it("stays idle when Pick engine has no visible provider", () => {
+    const picked = step(IDLE, {
+      type: "pick_engine",
+      graphId: "graph-1",
+      canEdit: true,
+      running: false,
+      consumer: consumer(),
+      portName: "engine",
+      world: world([hidden]),
+      draftIds: DRAFTS,
+      openPicker: true,
+    });
+    expect(picked.state).toBe(IDLE);
+    expect(picked.effects).toEqual([]);
+  });
+
+  it("lines the provider up with a service port that is not the first input", () => {
+    const scan = artifactPortFixture({
+      name: "scan",
+      title: "Scan",
+      direction: "input",
+      required: false,
+    });
+    const spec: NodeSpec = {
+      ...documentOcr,
+      inputs: [scan, documentOcr.inputs[0]!],
+    };
+    const shift = OPERATOR_PORT_ROW_PITCH * OPERATOR_PORT_CELL_SIZE;
+    const armed = step(IDLE, place("node_selector", consumer(spec))).state;
+    const result = step(
+      armed,
+      commit(armed, consumer(spec), world([localEngine])),
+    );
+    const node = connectOf(result.effects).commands[0];
+    if (node?.kind !== "add_node") throw new Error("expected add_node");
+    expect(node.node.position).toEqual({
+      x: POSITION.x - DEFAULT_NODE_WIDTH - SERVICE_PROVIDER_GAP,
+      y: POSITION.y + shift,
+    });
+
+    const opened = step(IDLE, {
+      type: "pick_engine",
+      graphId: "graph-1",
+      canEdit: true,
+      running: false,
+      consumer: consumer(spec),
+      portName: "engine",
+      world: world([localEngine]),
+      draftIds: DRAFTS,
+      openPicker: true,
+    });
+    expect(openOf(opened.effects).flowPosition).toEqual({
+      x: POSITION.x - DEFAULT_NODE_WIDTH - SERVICE_PROVIDER_GAP,
+      y: POSITION.y + shift + DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
+    });
+  });
+
+  it("lines a picked provider up when its service output is not the first port", () => {
+    const log = artifactPortFixture({
+      name: "log",
+      title: "Log",
+      direction: "output",
+      required: false,
+    });
+    const shifted = providerSpec("shifted.ocr", "Shifted OCR", ["blocks"], {
+      outputs: [log, enginePort("ocr", "output", "Shifted OCR", ["blocks"])],
+    });
+    const scene = world([mistral, shifted]);
+    const prompting = step(
+      step(IDLE, place()).state,
+      commit(step(IDLE, place()).state, consumer(), scene),
+    );
+    const candidate = openOf(prompting.effects).candidates.find(
+      (entry) => entry.spec.operator_id === "shifted.ocr",
+    );
+    const choice = candidate?.choices.find(
+      (entry) => entry.candidatePort.name === "ocr",
+    );
+    if (!candidate || !choice || prompting.state.phase !== "prompting") {
+      throw new Error("picker did not open");
+    }
+    const chosen = step(prompting.state, {
+      type: "provider_chosen",
+      graphId: "graph-1",
+      canEdit: true,
+      running: false,
+      spec: candidate.spec,
+      choice,
+      world: scene,
+      draftIds: DRAFTS,
+    });
+    const node = connectOf(chosen.effects).commands[0];
+    if (node?.kind !== "add_node") throw new Error("expected add_node");
+    expect(node.node.position).toEqual({
+      x: POSITION.x - DEFAULT_NODE_WIDTH - SERVICE_PROVIDER_GAP,
+      y: POSITION.y - OPERATOR_PORT_ROW_PITCH * OPERATOR_PORT_CELL_SIZE,
+    });
+  });
+
+  it("keeps the copied port pitch equal to the cell canvas", () => {
+    expect(OPERATOR_PORT_CELL_SIZE).toBe(CELL_SIZE);
+    expect(OPERATOR_FIRST_PORT_ROW).toBe(FIRST_PORT_ROW);
+    expect(OPERATOR_PORT_ROW_PITCH).toBe(PORT_ROW_PITCH);
+  });
+});
+
+describe("pending shared binding", () => {
+  const binding: PendingSharedBinding = {
+    nodeId: "node-provider",
+    secretName: "api_key",
+    credentialId: "cred-1",
+    providerTitle: "Reducto",
+    credentialLabel: "Team Reducto",
+    graphId: "graph-1",
+  };
+  const canvas = new Set(["node-ocr", "node-provider"]);
+  const savedWithout = new Set(["node-ocr"]);
+  const savedWith = new Set(["node-ocr", "node-provider"]);
+
+  it("waits until the provider appears on the saved head", () => {
+    expect(
+      decidePendingBinding({
+        binding,
+        graphId: "graph-1",
+        canvasNodeIds: canvas,
+        savedNodeIds: savedWithout,
+      }),
+    ).toBe("wait");
+    expect(
+      decidePendingBinding({
+        binding,
+        graphId: "graph-1",
+        canvasNodeIds: canvas,
+        savedNodeIds: savedWith,
+      }),
+    ).toBe("write");
+  });
+
+  it("drops a queued binding on undo and on a graph switch", () => {
+    const queued = [{ ...binding, saveAttempts: 0 }];
+    const undone = partitionPendingBindings({
+      pending: queued,
+      graphId: "graph-1",
+      canvasNodeIds: new Set(["node-ocr"]),
+      savedNodeIds: savedWith,
+    });
+    expect(undone.waiting).toEqual([]);
+    expect(undone.ready).toEqual([]);
+
+    const switched = partitionPendingBindings({
+      pending: queued,
+      graphId: "graph-2",
+      canvasNodeIds: canvas,
+      savedNodeIds: savedWith,
+    });
+    expect(switched.waiting).toEqual([]);
+    expect(switched.ready).toEqual([]);
+    expect(
+      decidePendingBinding({
+        binding,
+        graphId: null,
+        canvasNodeIds: canvas,
+        savedNodeIds: savedWith,
+      }),
+    ).toBe("drop");
+  });
+
+  it("reports a binding error instead of swallowing it", () => {
+    expect(
+      settleBindingFailure(new Error(SAVE_NODE_BEFORE_CREDENTIAL), 0),
+    ).toEqual({
+      type: "retry",
+      saveAttempts: 1,
+    });
+    expect(
+      settleBindingFailure(new Error(SAVE_NODE_BEFORE_CREDENTIAL), 1),
+    ).toEqual({
+      type: "report",
+      message: SAVE_NODE_BEFORE_CREDENTIAL,
+    });
+    expect(settleBindingFailure(new Error("network down"), 0)).toEqual({
+      type: "report",
+      message: "network down",
+    });
+    expect(settleBindingFailure(new Error("   "), 0)).toEqual({
+      type: "report",
+      message: "Could not bind the workspace key.",
+    });
+    expect(settleBindingFailure(null, 0).type).toBe("report");
+    const reported = settleBindingFailure(null, 0);
+    if (reported.type !== "report") throw new Error("expected a report");
+    expect(reported.message.length).toBeGreaterThan(0);
+    expect(pendingWorkspaceKeyNotice("Reducto")).toBe(
+      "Connected Reducto · binding workspace key…",
+    );
+    expect(boundWorkspaceKeyNotice("Reducto", ["Team Reducto"])).toBe(
+      "Connected Reducto using workspace key 'Team Reducto'",
+    );
+    expect(boundWorkspaceKeyNotice("Reducto", ["A", "B"])).toBe(
+      "Connected Reducto using workspace keys 'A', 'B'",
+    );
   });
 });

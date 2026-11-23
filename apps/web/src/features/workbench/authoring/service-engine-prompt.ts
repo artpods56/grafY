@@ -23,10 +23,12 @@ import {
 } from "./node-catalog";
 import {
   serviceProviderFlowPosition,
+  serviceProviderPortAlignY,
   serviceProviderPositionLeftOf,
   type NodeTopLeft,
 } from "./node-layout";
 import { nodeSecretInputs } from "./node-secrets";
+import { pendingWorkspaceKeyNotice } from "./pending-shared-binding";
 import { serviceContractKey } from "./service-contract-key";
 import {
   createWorkflowNodeData,
@@ -95,7 +97,8 @@ export type ServiceEnginePromptState =
       readonly graphId: string;
       readonly consumerNodeId: string;
       readonly servicePortName: string;
-      readonly providerPosition: NodeTopLeft;
+      readonly consumerPosition: NodeTopLeft;
+      readonly consumerPortIndex: number;
     };
 
 export type ServiceEnginePromptAction =
@@ -125,6 +128,8 @@ export type ServiceEnginePromptAction =
       readonly portName: string;
       readonly world: ServiceEngineWorld | null;
       readonly draftIds: ServiceEngineDraftIds;
+      /** Skip the single-provider auto-wire and open the picker. */
+      readonly openPicker: boolean;
     }
   | { readonly type: "abort" }
   | { readonly type: "prompt_closed" }
@@ -171,6 +176,8 @@ export type ServiceEnginePromptEffect =
       readonly toast: string;
       readonly undoNodeId: string;
       readonly consumerNodeId: string;
+      readonly providerTitle: string;
+      readonly graphId: string;
       readonly bindings: readonly ServiceEngineSharedBinding[];
     };
 
@@ -384,13 +391,9 @@ function connectToast(
   title: string,
   bindings: readonly ServiceEngineSharedBinding[],
 ): string {
-  const first = bindings[0];
-  if (!first) return `Connected ${title}`;
-  if (bindings.length === 1) {
-    return `Connected ${title} using workspace key '${first.label}'`;
-  }
-  const labels = bindings.map((binding) => `'${binding.label}'`).join(", ");
-  return `Connected ${title} using workspace keys ${labels}`;
+  if (bindings.length === 0) return `Connected ${title}`;
+  // The key is not bound yet. The host confirms the label after the write.
+  return pendingWorkspaceKeyNotice(title);
 }
 
 function portMetaOrNull(port: Port): PortMeta | null {
@@ -419,6 +422,7 @@ export function visibleEngineCandidates(input: {
 }
 
 interface ConnectInput {
+  readonly graphId: string;
   readonly consumerId: string;
   readonly portName: string;
   readonly providerPosition: NodeTopLeft;
@@ -477,8 +481,41 @@ function connectEffect(
     toast: connectToast(input.spec.title, input.plan.bindings),
     undoNodeId: input.draftIds.nodeId,
     consumerNodeId: input.consumerId,
+    providerTitle: input.spec.title,
+    graphId: input.graphId,
     bindings: input.plan.bindings,
   };
+}
+
+/** Fixed inputs skip instance plugs, matching the operator card's port rows. */
+function fixedInputIndex(spec: NodeSpec, portName: string): number {
+  let index = 0;
+  for (const port of spec.inputs) {
+    if (port.instance_plugs === true) continue;
+    if (port.name === portName) return index;
+    index += 1;
+  }
+  return 0;
+}
+
+function outputPortIndex(spec: NodeSpec, portName: string): number {
+  const index = spec.outputs.findIndex((port) => port.name === portName);
+  return index < 0 ? 0 : index;
+}
+
+function providerTopLeft(
+  consumer: ServiceEngineConsumer,
+  consumerPortName: string,
+  provider: NodeSpec,
+  providerPortName: string,
+): NodeTopLeft {
+  return serviceProviderPositionLeftOf(
+    consumer.position,
+    serviceProviderPortAlignY(
+      fixedInputIndex(consumer.spec, consumerPortName),
+      outputPortIndex(provider, providerPortName),
+    ),
+  );
 }
 
 interface DecideInput {
@@ -490,6 +527,8 @@ interface DecideInput {
   };
   readonly world: ServiceEngineWorld;
   readonly draftIds: ServiceEngineDraftIds;
+  /** The Pick engine pill sets this so one auto-bindable provider still opens. */
+  readonly skipAuto: boolean;
 }
 
 interface DecideOutcome {
@@ -521,20 +560,23 @@ function decide(input: DecideInput): DecideOutcome {
   });
   if (candidates.length === 0) return { state: IDLE, effect: null };
 
-  const providerPosition = serviceProviderPositionLeftOf(
-    input.consumer.position,
-  );
   const sole = candidates.length === 1 ? candidates[0] : undefined;
   const onlyChoice = sole?.choices.length === 1 ? sole.choices[0] : undefined;
-  if (sole && onlyChoice) {
+  if (!input.skipAuto && sole && onlyChoice) {
     const plan = secretPlan(sole.spec, input.world.vault);
     if (plan.auto) {
       return {
         state: IDLE,
         effect: connectEffect({
+          graphId: input.graphId,
           consumerId: input.consumer.id,
           portName: input.port.name,
-          providerPosition,
+          providerPosition: providerTopLeft(
+            input.consumer,
+            input.port.name,
+            sole.spec,
+            onlyChoice.candidatePort.name,
+          ),
           spec: sole.spec,
           choice: onlyChoice,
           draftIds: input.draftIds,
@@ -545,13 +587,22 @@ function decide(input: DecideInput): DecideOutcome {
     }
   }
 
+  // The ghost has no chosen provider yet, so its output row is the first one.
+  const ghostPosition = serviceProviderPositionLeftOf(
+    input.consumer.position,
+    serviceProviderPortAlignY(
+      fixedInputIndex(input.consumer.spec, input.port.name),
+      0,
+    ),
+  );
   return {
     state: {
       phase: "prompting",
       graphId: input.graphId,
       consumerNodeId: input.consumer.id,
       servicePortName: input.port.name,
-      providerPosition,
+      consumerPosition: input.consumer.position,
+      consumerPortIndex: fixedInputIndex(input.consumer.spec, input.port.name),
     },
     effect: {
       type: "open_prompt",
@@ -559,8 +610,8 @@ function decide(input: DecideInput): DecideOutcome {
       consumerNodeId: input.consumer.id,
       servicePortName: input.port.name,
       portTitle: input.port.title?.trim() || input.port.name,
-      flowPosition: serviceProviderFlowPosition(providerPosition),
-      providerPosition,
+      flowPosition: serviceProviderFlowPosition(ghostPosition),
+      providerPosition: ghostPosition,
       candidates,
       rows: candidateRows(
         candidates,
@@ -629,6 +680,7 @@ export function serviceEnginePromptReducer(
           port,
           world: action.world,
           draftIds: action.draftIds,
+          skipAuto: false,
         }),
         exec,
       );
@@ -650,6 +702,7 @@ export function serviceEnginePromptReducer(
           port,
           world: action.world,
           draftIds: action.draftIds,
+          skipAuto: action.openPicker,
         }),
         exec,
       );
@@ -676,14 +729,22 @@ export function serviceEnginePromptReducer(
         return idleFrom(state, exec);
       }
       const plan = secretPlan(action.spec, action.world.vault);
+      const providerPosition = serviceProviderPositionLeftOf(
+        state.consumerPosition,
+        serviceProviderPortAlignY(
+          state.consumerPortIndex,
+          outputPortIndex(action.spec, action.choice.candidatePort.name),
+        ),
+      );
       return finish(
         state,
         {
           state: IDLE,
           effect: connectEffect({
+            graphId: action.graphId,
             consumerId: state.consumerNodeId,
             portName: state.servicePortName,
-            providerPosition: state.providerPosition,
+            providerPosition,
             spec: action.spec,
             choice: action.choice,
             draftIds: action.draftIds,

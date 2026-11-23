@@ -440,9 +440,8 @@ const s = stylex.create({
     columnGap: "8px",
     pointerEvents: "none",
   },
-  portSlot: {
-    minWidth: 0,
-    display: "flex",
+  portSlot: { minWidth: 0, display: "flex" },
+  portSlotInput: {
     alignItems: "center",
     gap: "4px",
   },
@@ -1485,6 +1484,7 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
             }
             {...stylex.props(
               s.portSlot,
+              s.portSlotInput,
               input && input.kind !== "service" && s.portSlotInputDrop,
             )}
           >
