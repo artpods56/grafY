@@ -143,6 +143,27 @@ describe("SegmentedControl", () => {
     expect(radios[1]?.className).toBe("segment md disabled");
   });
 
+  it("draws the dense step for canvas cards", async () => {
+    const container = await mount(
+      <SegmentedControl
+        aria-label="Layer"
+        value="one"
+        options={[
+          { value: "one", label: "One" },
+          { value: "two", label: "Two" },
+        ]}
+        onValueChange={() => {}}
+        size="dense"
+      />,
+    );
+
+    expect(groupIn(container).className).toBe("root rootDense");
+    expect(radiosIn(container).map((radio) => radio.className)).toEqual([
+      "segment dense enabled on",
+      "segment dense enabled",
+    ]);
+  });
+
   it("takes a size and overrides", async () => {
     const sized = await mount(
       <SegmentedControl

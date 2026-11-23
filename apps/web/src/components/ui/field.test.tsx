@@ -245,6 +245,54 @@ describe("TextInput", () => {
       "control override",
     );
   });
+
+  it("draws the error ring on a TextInput the field rejected", async () => {
+    const container = await mount(
+      <Field label="Name" error="Already taken">
+        <TextInput value="" onChange={() => {}} />
+      </Field>,
+    );
+
+    expect(container.querySelector("input")?.className).toBe("control invalid");
+  });
+
+  it("draws the error ring on a TextInput marked invalid by hand", async () => {
+    const invalid = await mount(
+      <TextInput aria-invalid="true" value="" onChange={() => {}} />,
+    );
+    expect(invalid.querySelector("input")?.className).toBe("control invalid");
+
+    const flag = await mount(
+      <TextInput aria-invalid value="" onChange={() => {}} />,
+    );
+    expect(flag.querySelector("input")?.className).toBe("control invalid");
+  });
+
+  it("leaves a valid input without the error ring", async () => {
+    const plain = await mount(
+      <Field label="Name">
+        <TextInput value="" onChange={() => {}} />
+      </Field>,
+    );
+    expect(plain.querySelector("input")?.className).toBe("control");
+
+    const valid = await mount(
+      <TextInput aria-invalid={false} value="" onChange={() => {}} />,
+    );
+    expect(valid.querySelector("input")?.className).toBe("control");
+  });
+
+  it("keeps the error ring with the dense step it was given", async () => {
+    const container = await mount(
+      <Field label="Name" size="dense" error="Already taken">
+        <TextInput value="" onChange={() => {}} />
+      </Field>,
+    );
+
+    expect(container.querySelector("input")?.className).toBe(
+      "control controlDense invalid",
+    );
+  });
 });
 
 describe("TextArea", () => {
@@ -319,6 +367,30 @@ describe("TextArea", () => {
     expect(container.querySelector("textarea")?.className).toBe(
       "control textarea controlDense textareaDense",
     );
+  });
+
+  it("draws the error ring on a TextArea the field rejected", async () => {
+    const container = await mount(
+      <Field label="Notes" error="Too long">
+        <TextArea value="" onChange={() => {}} />
+      </Field>,
+    );
+
+    expect(container.querySelector("textarea")?.className).toBe(
+      "control textarea invalid",
+    );
+  });
+
+  it("draws the error ring on a TextArea marked invalid by hand", async () => {
+    const invalid = await mount(
+      <TextArea aria-invalid="true" value="" onChange={() => {}} />,
+    );
+    expect(invalid.querySelector("textarea")?.className).toBe(
+      "control textarea invalid",
+    );
+
+    const valid = await mount(<TextArea value="" onChange={() => {}} />);
+    expect(valid.querySelector("textarea")?.className).toBe("control textarea");
   });
 
   it("forwards its ref to the textarea", async () => {

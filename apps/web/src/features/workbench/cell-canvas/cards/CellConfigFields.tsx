@@ -179,13 +179,8 @@ const s = stylex.create({
       ":focus-visible": "none",
     },
   },
-  /**
-   * The branch picker shares the frame's 25px header row. The segmented
-   * control's `sm` step is 24px segments in a 2px well, 28px in all, so here
-   * the well loses its padding to fit the row.
-   */
+  /** The branch picker shares the frame's 25px header row and may not win it. */
   selector: { flexShrink: 0, maxWidth: "62%" },
-  selectorSegmented: { padding: 0 },
   /** A segment's label: truncates inside its segment instead of spilling. */
   segmentLabel: {
     minWidth: 0,
@@ -514,7 +509,7 @@ function ScalarControl({
       <div {...stylex.props(s.cell, s.labelled)}>
         <FieldLabel field={field} issue={issue} />
         <SegmentedControl
-          size="sm"
+          size="dense"
           aria-label={fieldDisplayTitle(field)}
           disabled={readOnly}
           value={typeof effective === "string" ? effective : ""}
@@ -1320,7 +1315,7 @@ function UnionControl({
         </span>
         {segmented ? (
           <SegmentedControl
-            size="sm"
+            size="dense"
             aria-label={`${title} mode`}
             disabled={context.readOnly}
             value={branch.tag}
@@ -1332,7 +1327,7 @@ function UnionControl({
                 </span>
               ),
             }))}
-            xstyle={[s.selector, s.selectorSegmented]}
+            xstyle={s.selector}
             onValueChange={selectBranch}
           />
         ) : (

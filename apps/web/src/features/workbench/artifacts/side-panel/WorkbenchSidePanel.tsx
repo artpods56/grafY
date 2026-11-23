@@ -32,7 +32,7 @@ const s = stylex.create({
     zIndex: 45,
     insetBlock: 0,
     insetInlineStart: "var(--grafy-rail-width, 0px)",
-    width: "var(--grafy-side-panel-expanded-width, 276px)",
+    width: "var(--grafy-side-panel-expanded-width, 360px)",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",

@@ -34,6 +34,13 @@ function rangeInput(container: HTMLElement): HTMLInputElement {
   return el;
 }
 
+/** One painted part of the slider, named by the StyleX rule every part carries. */
+function partClasses(container: HTMLElement, part: string): string[] {
+  const el = container.querySelector<HTMLElement>(`[class~="${part}"]`);
+  if (!el) throw new Error(`expected a ${part} part`);
+  return Array.from(el.classList);
+}
+
 /** The way a browser changes an input: set the value, then let the framework see it. */
 async function setRange(container: HTMLElement, next: string) {
   const input = rangeInput(container);
@@ -158,6 +165,39 @@ describe("Slider", () => {
       />,
     );
     expect(rangeInput(container).disabled).toBe(true);
+  });
+
+  it("dims the track, the fill, the thumb and the readout when disabled", async () => {
+    const disabled = await mount(
+      <Slider
+        label="Radius"
+        value={7}
+        min={0}
+        max={40}
+        step={1}
+        disabled
+        onValueChange={() => {}}
+      />,
+    );
+    expect(partClasses(disabled, "track")).toContain("trackDisabled");
+    expect(partClasses(disabled, "filled")).toContain("filledDisabled");
+    expect(partClasses(disabled, "thumb")).toContain("thumbDisabled");
+    expect(partClasses(disabled, "value")).toContain("valueDisabled");
+
+    const enabled = await mount(
+      <Slider
+        label="Radius"
+        value={7}
+        min={0}
+        max={40}
+        step={1}
+        onValueChange={() => {}}
+      />,
+    );
+    expect(partClasses(enabled, "track")).not.toContain("trackDisabled");
+    expect(partClasses(enabled, "filled")).not.toContain("filledDisabled");
+    expect(partClasses(enabled, "thumb")).not.toContain("thumbDisabled");
+    expect(partClasses(enabled, "value")).not.toContain("valueDisabled");
   });
 
   it("keeps canvas pointer classes on the control", async () => {

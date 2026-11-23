@@ -81,7 +81,9 @@ const box = stylex.create({
     boxSizing: "border-box",
     borderWidth: 1,
     borderStyle: "solid",
-    borderRadius: tokens.radiusSm,
+    // Keep a checkbox visibly square even when `radiusSm` grows (6px on a 12px
+    // dense box would turn it into a radio circle).
+    borderRadius: "4px",
     backgroundColor: tokens.colorSurfaceSunken,
     borderColor: tokens.colorBorderStrong,
     color: tokens.colorOnAccent,
@@ -91,9 +93,18 @@ const box = stylex.create({
       "@media (prefers-reduced-motion: reduce)": "0ms",
     },
   },
+  /** The kit's focus ring, the same outline `IconButton` draws. */
+  focusRing: {
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "1px",
+  },
   denseControl: {
     width: "12px",
     height: "12px",
+    borderRadius: "3px",
   },
   smControl: {
     width: "14px",
@@ -175,6 +186,7 @@ export function Checkbox({
   );
   const control = stylex.props(
     box.control,
+    box.focusRing,
     CONTROL_BY_SIZE[size],
     checked && !disabled ? box.checkedControl : null,
     disabled ? box.disabledControl : null,

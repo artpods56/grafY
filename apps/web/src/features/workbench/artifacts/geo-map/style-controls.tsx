@@ -13,6 +13,7 @@ import type {
   GeoRenderVectorStyle,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ColorField, ColorWell } from "@/components/ui/color-field";
 import { Field, TextInput } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
@@ -93,7 +94,7 @@ export function LineControls({
           value={value.color}
           onChange={(color) => onChange({ ...value, color })}
         />
-        <Field label="Width" className="nodrag nopan nowheel">
+        <Field label="Width" size="dense" className="nodrag nopan nowheel">
           <TextInput
             type="number"
             value={value.width}
@@ -153,7 +154,7 @@ export function PointControls({
           value={value.stroke_color}
           onChange={(stroke_color) => onChange({ ...value, stroke_color })}
         />
-        <Field label="Radius" className="nodrag nopan nowheel">
+        <Field label="Radius" size="dense" className="nodrag nopan nowheel">
           <TextInput
             type="number"
             value={value.radius}
@@ -165,7 +166,11 @@ export function PointControls({
             )}
           />
         </Field>
-        <Field label="Stroke width" className="nodrag nopan nowheel">
+        <Field
+          label="Stroke width"
+          size="dense"
+          className="nodrag nopan nowheel"
+        >
           <TextInput
             type="number"
             value={value.stroke_width}
@@ -206,6 +211,7 @@ export function LabelControls({
       <div {...stylex.props(s.controlGrid)}>
         <Field
           label="Property"
+          size="dense"
           xstyle={s.controlWide}
           className="nodrag nopan nowheel"
         >
@@ -230,7 +236,7 @@ export function LabelControls({
           value={value.halo_color}
           onChange={(halo_color) => onChange({ ...value, halo_color })}
         />
-        <Field label="Size" className="nodrag nopan nowheel">
+        <Field label="Size" size="dense" className="nodrag nopan nowheel">
           <TextInput
             type="number"
             value={value.size}
@@ -242,7 +248,7 @@ export function LabelControls({
             )}
           />
         </Field>
-        <Field label="Halo width" className="nodrag nopan nowheel">
+        <Field label="Halo width" size="dense" className="nodrag nopan nowheel">
           <TextInput
             type="number"
             value={value.halo_width}
@@ -347,16 +353,17 @@ export function CategorizedPointControls({
         <div {...stylex.props(s.categoryList)}>
           {value.categories.map((category) => (
             <div key={category.id} {...stylex.props(s.categoryRow)}>
-              <input
-                type="checkbox"
+              <Checkbox
+                size="dense"
+                className="nodrag nopan nowheel"
                 checked={category.point.enabled}
                 aria-label={`Show ${category.title}`}
-                onChange={(event) =>
+                onCheckedChange={(enabled) =>
                   updateCategory(category.id, (current) => ({
                     ...current,
                     point: {
                       ...current.point,
-                      enabled: event.currentTarget.checked,
+                      enabled,
                     },
                   }))
                 }

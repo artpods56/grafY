@@ -96,6 +96,17 @@ describe("Checkbox", () => {
     ).toHaveLength(1);
   });
 
+  it("stays one focusable control and carries the kit's focus ring", async () => {
+    const container = await mount(
+      <Checkbox checked={false} label="Grid" onCheckedChange={() => {}} />,
+    );
+    const control = box(container);
+    expect(control.getAttribute("tabindex")).toBe("0");
+    // `focusRing` is the rule carrying the `:focus-visible` outline; without it
+    // a keyboard user only has the tick to see the box.
+    expect(control.className.split(" ")).toContain("focusRing");
+  });
+
   it("does nothing when disabled", async () => {
     const onCheckedChange = vi.fn();
     const container = await mount(

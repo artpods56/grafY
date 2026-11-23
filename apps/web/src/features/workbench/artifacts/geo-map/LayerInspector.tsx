@@ -99,7 +99,11 @@ export function LayerInspector({
               step={0.05}
               onValueChange={(opacity) => onChange({ ...layer, opacity })}
             />
-            <Field label="Min zoom" className="nodrag nopan nowheel">
+            <Field
+              label="Min zoom"
+              size="dense"
+              className="nodrag nopan nowheel"
+            >
               <TextInput
                 type="number"
                 value={layer.min_zoom}
@@ -111,7 +115,11 @@ export function LayerInspector({
                 )}
               />
             </Field>
-            <Field label="Max zoom" className="nodrag nopan nowheel">
+            <Field
+              label="Max zoom"
+              size="dense"
+              className="nodrag nopan nowheel"
+            >
               <TextInput
                 type="number"
                 value={layer.max_zoom}

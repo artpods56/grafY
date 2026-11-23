@@ -19,7 +19,7 @@ export type ColorWellProps = {
   label: string;
   disabled?: boolean;
   size?: ColorWellSize;
-  /** Fill the row (`true`, a styled layer) or stay a small square (a toolbar). */
+  /** Fill the row (`true`, the default — a styled layer) or pass `false` for a square matching `size` (a toolbar). */
   block?: boolean;
   /** Plain class names added after the StyleX ones, e.g. React Flow's "nodrag nopan". */
   className?: string;
@@ -48,7 +48,17 @@ const well = stylex.create({
   block: {
     width: "100%",
   },
-  square: {
+  // A square well is its own height on every side, so each step repeats it as
+  // its width: a 32px-wide `dense` swatch is a rectangle in a 25px row.
+  squareDense: {
+    width: "25px",
+    flexShrink: 0,
+  },
+  squareSm: {
+    width: "28px",
+    flexShrink: 0,
+  },
+  squareMd: {
     width: "32px",
     flexShrink: 0,
   },
@@ -72,6 +82,12 @@ const SIZE_BY_STEP = {
   dense: well.dense,
   sm: well.sm,
   md: well.md,
+} as const;
+
+const SQUARE_BY_STEP = {
+  dense: well.squareDense,
+  sm: well.squareSm,
+  md: well.squareMd,
 } as const;
 
 /**
@@ -98,7 +114,7 @@ export const ColorWell = React.forwardRef<HTMLInputElement, ColorWellProps>(
     const styled = stylex.props(
       well.input,
       SIZE_BY_STEP[size],
-      block ? well.block : well.square,
+      block ? well.block : SQUARE_BY_STEP[size],
       disabled ? well.disabled : null,
       xstyle,
     );

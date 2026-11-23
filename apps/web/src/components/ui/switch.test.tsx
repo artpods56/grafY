@@ -118,6 +118,30 @@ describe("Switch", () => {
     expect(container.querySelector("label")?.className).not.toContain("on");
   });
 
+  it.each(sizes)(
+    "shifts a checked switch to the phone mark at size %s, without pinning the desktop thumb to the left",
+    async (size) => {
+      const container = await mount(
+        <Switch
+          checked
+          size={size}
+          label="Snap to grid"
+          phoneTouch
+          onCheckedChange={() => {}}
+        />,
+      );
+      const thumb = switchEl(container).querySelector('[class*="thumb"]');
+      const classes = thumb?.className.split(" ") ?? [];
+      // The size's own phone rule: `default` is that size's desktop travel and
+      // the media query the 18px phone travel.
+      expect(classes).toContain(`${size}PhoneShift`);
+      // A single shared rule whose `default` was `translateX(0px)` would win
+      // StyleX's one-property ranking for `transform` and leave the thumb stuck
+      // on the left on a desktop viewport.
+      expect(classes).not.toContain("phoneShift");
+    },
+  );
+
   it.each(sizes)("keeps one focusable element at size %s", async (size) => {
     const container = await mount(
       <Switch
@@ -129,6 +153,15 @@ describe("Switch", () => {
     );
     expect(container.querySelectorAll('[role="switch"]')).toHaveLength(1);
     expect(switchEl(container).getAttribute("tabindex")).toBe("0");
+  });
+
+  it("draws the kit's focus ring on the track", async () => {
+    const container = await mount(
+      <Switch checked={false} label="Grid" onCheckedChange={() => {}} />,
+    );
+    // `focusRing` is the rule carrying the `:focus-visible` outline; without it
+    // a keyboard user only has the colour flip to see the switch.
+    expect(switchEl(container).className.split(" ")).toContain("focusRing");
   });
 
   it("leaves the switch alone when it is disabled", async () => {

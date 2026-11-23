@@ -69,6 +69,15 @@ function buttonWithText(
   return match;
 }
 
+/** A `SegmentedControl` segment is a `role="radio"`, never a `<button>`. */
+function radioWithText(container: HTMLElement, text: string): HTMLElement {
+  const match = Array.from(
+    container.querySelectorAll<HTMLElement>('[role="radio"]'),
+  ).find((radio) => radio.textContent?.includes(text));
+  if (!match) throw new Error(`No radio matching ${text}`);
+  return match;
+}
+
 describe("CellPipeInspector", () => {
   it("edits workflow enabled state, collection mode, feed routes, and removal", () => {
     const workflowEdge: WorkflowEdge = {
@@ -118,7 +127,7 @@ describe("CellPipeInspector", () => {
     });
 
     React.act(() => {
-      buttonWithText(container, "Each item (map)").click();
+      radioWithText(container, "Each item (map)").click();
     });
     expect(props.onUpdateWorkflowEdge).toHaveBeenCalledWith("edge-1", {
       collectionMode: "map",
@@ -164,7 +173,9 @@ describe("CellPipeInspector", () => {
     expect(
       container.querySelector('[role="switch"]')?.getAttribute("aria-disabled"),
     ).toBe("true");
-    expect(buttonWithText(container, "Each item (map)").disabled).toBe(true);
+    expect(
+      radioWithText(container, "Each item (map)").getAttribute("aria-disabled"),
+    ).toBe("true");
     expect(buttonWithText(container, "Remove connection").disabled).toBe(false);
 
     React.act(() => {
@@ -192,7 +203,7 @@ describe("CellPipeInspector", () => {
     });
 
     React.act(() => {
-      buttonWithText(container, "Each item (map)").click();
+      radioWithText(container, "Each item (map)").click();
     });
     expect(props.onUpdateOriginCollectionMode).toHaveBeenCalledWith(
       "o1",

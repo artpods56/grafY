@@ -24,7 +24,7 @@
    * up this width and the panel paints it. Closed means 0, so the canvas takes
    * the space back instead of being covered. */
   --grafy-side-panel-width: 0px;
-  --grafy-side-panel-expanded-width: 276px;
+  --grafy-side-panel-expanded-width: 360px;
   --grafy-mobile-header-height: 56px;
   --grafy-mobile-overlay-top: 68px;
   --grafy-mobile-page-top: 80px;
@@ -96,8 +96,8 @@ body.grafy-side-panel-resizing {
   body {
     line-height: 1.5;
     overflow: hidden;
-    background: light-dark(#ffffff, #111111);
-    color: light-dark(#111111, #f5f5f5);
+    background: light-dark(#f6f7f9, #0f1114);
+    color: light-dark(#1f2328, #eceff4);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;

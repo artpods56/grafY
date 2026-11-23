@@ -41,7 +41,10 @@ export type ButtonProps = SharedProps & {
   block?: boolean;
 };
 
-export type IconButtonProps = Omit<SharedProps, "children" | "aria-label"> & {
+export type IconButtonProps = Omit<
+  SharedProps,
+  "children" | "aria-label" | "title"
+> & {
   /** Required: becomes aria-label, and the title unless `title` is given. */
   label: string;
   /**
@@ -139,7 +142,13 @@ const button = stylex.create({
       ":hover:not(:disabled)": tokens.colorAccentHover,
       ":disabled": tokens.colorAccentDisabled,
     },
-    color: tokens.colorOnAccent,
+    // On the disabled accent the ink has to drop with the ground: `colorOnAccent`
+    // is near-white on a light disabled fill and near-black on a dark one, which
+    // is the pair a person reads as unreadable rather than as inactive.
+    color: {
+      default: tokens.colorOnAccent,
+      ":disabled": tokens.colorMuted,
+    },
     fontWeight: 600,
   },
   secondary: {
@@ -235,11 +244,15 @@ const button = stylex.create({
    * and invent a colour for it. Applied over the variant, under `xstyle`.
    */
   pressed: {
+    // `colorHover` over a `soft` or `ghost` ground is a 5% wash: the control that
+    // is switched on does not visibly differ from its neighbours. It takes the
+    // strongest hover step plus a ring, so the state reads without a colour.
     backgroundColor: {
-      default: tokens.colorHover,
+      default: tokens.colorHoverStrong,
       ":hover:not(:disabled)": tokens.colorHoverStrong,
     },
-    color: tokens.colorText,
+    boxShadow: `inset 0 0 0 1px ${tokens.colorAccentBorder}`,
+    color: tokens.colorTextEmphasis,
   },
   swatch: {
     display: "block",
@@ -334,7 +347,10 @@ const icon = stylex.create({
       ":hover:not(:disabled)": tokens.colorAccentHover,
       ":disabled": tokens.colorAccentDisabled,
     },
-    color: tokens.colorOnAccent,
+    color: {
+      default: tokens.colorOnAccent,
+      ":disabled": tokens.colorMuted,
+    },
   },
   danger: {
     backgroundColor: {
@@ -349,10 +365,11 @@ const icon = stylex.create({
   },
   pressed: {
     backgroundColor: {
-      default: tokens.colorHover,
+      default: tokens.colorHoverStrong,
       ":hover:not(:disabled)": tokens.colorHoverStrong,
     },
-    color: tokens.colorText,
+    boxShadow: `inset 0 0 0 1px ${tokens.colorAccentBorder}`,
+    color: tokens.colorTextEmphasis,
   },
   /**
    * The rail's tint: the accent at a wash, for the dock's main action and for the

@@ -94,6 +94,18 @@ const field = stylex.create({
     outlineOffset: "-2px",
     "::placeholder": { color: tokens.colorSubtle },
   },
+  /**
+   * The field said the value was rejected. `Select` draws the same weight of
+   * warning with `tokens.colorDanger`, so a form mixing the two does not report
+   * one failure in red and the other in nothing.
+   */
+  invalid: {
+    boxShadow: `inset 0 0 0 1px ${tokens.colorDanger}`,
+    outline: {
+      default: "none",
+      ":focus": `2px solid ${tokens.colorDanger}`,
+    },
+  },
   /** The canvas-card step: the row a control sits in is 25px and its type is 9px. */
   controlDense: {
     height: "25px",
@@ -250,10 +262,15 @@ export const TextInput = React.forwardRef<HTMLInputElement, TextInputProps>(
     { mono = false, size = "md", className, xstyle, ...props },
     ref,
   ) {
+    // A <Field error> clones `aria-invalid` onto the control, so the flag is read
+    // back from the props rather than taken from a prop of its own.
+    const invalid =
+      props["aria-invalid"] === true || props["aria-invalid"] === "true";
     const styled = stylex.props(
       field.control,
       size === "dense" ? field.controlDense : null,
       mono ? field.mono : null,
+      invalid ? field.invalid : null,
       xstyle,
     );
     return (
@@ -284,12 +301,15 @@ export const TextArea = React.forwardRef<HTMLTextAreaElement, TextAreaProps>(
     { mono = false, rows = 4, size = "md", className, xstyle, ...props },
     ref,
   ) {
+    const invalid =
+      props["aria-invalid"] === true || props["aria-invalid"] === "true";
     const styled = stylex.props(
       field.control,
       field.textarea,
       size === "dense" ? field.controlDense : null,
       size === "dense" ? field.textareaDense : null,
       mono ? field.mono : null,
+      invalid ? field.invalid : null,
       xstyle,
     );
     return (

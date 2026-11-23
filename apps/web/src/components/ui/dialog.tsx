@@ -6,6 +6,8 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import { cx } from "@/lib/utils";
+import { IconButton } from "./button";
+import { phoneTouch } from "./touch-target";
 
 const s = stylex.create({
   overlay: {
@@ -129,6 +131,10 @@ const s = stylex.create({
     overflow: "auto",
     flex: 1,
   },
+  /**
+   * Only the anchor. The box, the quiet colour, and the 44px phone target come
+   * from `IconButton size="md"` and `phoneTouch.square`, not from here.
+   */
   close: {
     position: "absolute",
     top: {
@@ -139,22 +145,6 @@ const s = stylex.create({
       default: tokens.space3,
       "@media (max-width: 620px)": `calc(${tokens.space1} + env(safe-area-inset-right, 0px))`,
     },
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    height: {
-      default: "28px",
-      "@media (max-width: 620px)": "44px",
-    },
-    width: {
-      default: "28px",
-      "@media (max-width: 620px)": "44px",
-    },
-    borderRadius: tokens.radiusSm,
-    color: tokens.colorMuted,
-    backgroundColor: "transparent",
-    border: "none",
-    cursor: "pointer",
   },
 });
 
@@ -196,7 +186,16 @@ export const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close {...stylex.props(s.close)} aria-label="Close">
+      <DialogPrimitive.Close
+        render={
+          <IconButton
+            label="Close"
+            variant="ghost"
+            size="md"
+            xstyle={[s.close, phoneTouch.square]}
+          />
+        }
+      >
         <X size={16} />
       </DialogPrimitive.Close>
     </DialogPrimitive.Popup>
