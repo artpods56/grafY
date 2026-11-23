@@ -32,10 +32,12 @@ from grafy_core.application.identity import IdentityService
 from grafy_core.domain.collaboration import RenameProjectCommand
 from grafy_core.domain.identity import User, Workspace, WorkspaceKind, WorkspaceRole
 from grafy_api.project_contracts import (
+    StarterId,
     AssignProjectFolderRequest,
     CheckpointProjectRequest,
     CopyExactHeadRequest,
     CreateProjectRequest,
+    CreateStarterProjectRequest,
     ProjectFolderWriteRequest,
     ProjectHeadResponse,
     SubmitProjectCommandRequest,
@@ -457,6 +459,13 @@ FOREIGN: tuple[Call, ...] = (
         ),
     ),
     Call(
+        "open a starter in a workspace the caller is not a member of",
+        lambda s: s.projects(s.b).starter(
+            CreateStarterProjectRequest(starter_id=StarterId.TRANSCRIBE_PAGE),
+            headers=s.as_("owner_a"),
+        ),
+    ),
+    Call(
         "copy from a workspace the caller is not a member of",
         lambda s: s.projects(s.b).copy(
             CopyExactHeadRequest(
@@ -478,6 +487,13 @@ VIEWER_DENIED: tuple[Call, ...] = (
         "create project",
         lambda s: s.projects(s.a).create(
             CreateProjectRequest(name="Viewer"), headers=s.as_("viewer_a")
+        ),
+    ),
+    Call(
+        "open a starter",
+        lambda s: s.projects(s.a).starter(
+            CreateStarterProjectRequest(starter_id=StarterId.TRANSCRIBE_PAGE),
+            headers=s.as_("viewer_a"),
         ),
     ),
     Call(
@@ -779,6 +795,36 @@ def test_a_token_that_may_edit_but_not_checkpoint_cannot_restore(
                 stage.project_a, headers=headers
             ).checkpoints
         ] == [1, 2]
+
+
+def test_a_token_that_may_create_and_checkpoint_but_not_edit_cannot_open_a_starter(
+    tmp_path: Path,
+) -> None:
+    """A starter files the sample and may bind a credential, so it needs edit."""
+
+    with stage_for(tmp_path, "pat-starter.sqlite3") as stage:
+        headers = stage.scoped_token(
+            "create-checkpoint",
+            PersonalAccessTokenScope.CREATE_PROJECT,
+            PersonalAccessTokenScope.CHECKPOINT_PROJECT,
+        )
+        refused = stage.projects(stage.a).starter(
+            CreateStarterProjectRequest(starter_id=StarterId.TRANSCRIBE_PAGE),
+            headers=headers,
+        )
+
+        _assert_status(refused, 403, "starter without edit scope")
+        assert refused.json()["code"] == "identity.capability_denied"
+        owner = stage.as_("owner_a")
+        assert [
+            item.id for item in stage.projects(stage.a).list_ok(headers=owner).projects
+        ] == [stage.project_a]
+        library = stage.api.raw.get(
+            f"/v1/workspaces/{stage.a}/library/artifacts",
+            headers=owner,
+        )
+        _assert_status(library, 200, "library after a refused starter")
+        assert library.json()["items"] == []
 
 
 def test_a_token_that_may_create_but_not_checkpoint_cannot_create(

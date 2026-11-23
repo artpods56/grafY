@@ -222,6 +222,11 @@ export interface CellCanvasProps {
     color: AnnotationColorToken,
   ) => void;
   onArtifactInspect?: (cardId: string) => void;
+  /**
+   * Opens downstream discovery from an artifact card that has one output.
+   * The point sits just to the right of that card.
+   */
+  onArtifactNextStep?: (cardId: string, world: WorldPoint) => void;
   /** Whether one artifact card's items may join another's sequence. */
   canMergeArtifactCards?: (
     sourceCardId: string,
@@ -408,6 +413,7 @@ export function CellCanvas({
   onPickServiceEngine,
   onAnnotationColorChange,
   onArtifactInspect,
+  onArtifactNextStep,
   canMergeArtifactCards,
   onMergeArtifactCards,
   onReorderArtifactCardItem,
@@ -1686,6 +1692,18 @@ export function CellCanvas({
             mergeHover={mergeTarget?.cardId === card.id}
             merging={mergeTarget !== null && draggedCardId === card.id}
             onInspect={onArtifactInspect}
+            onNextStep={
+              editable &&
+              onArtifactNextStep &&
+              card.ports.filter((port) => port.direction === "output")
+                .length === 1
+                ? () =>
+                    onArtifactNextStep(card.id, {
+                      x: (card.col + card.widthCells) * CELL_SIZE + 48,
+                      y: (card.row + card.heightCells / 2) * CELL_SIZE,
+                    })
+                : undefined
+            }
             onExpandSequence={toggleSequence}
             onUngroup={editable ? onUngroupArtifactCard : undefined}
             onImageLoad={onArtifactImageLoad}

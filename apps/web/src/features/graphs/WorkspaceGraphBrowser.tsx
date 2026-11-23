@@ -23,8 +23,17 @@ import {
   NEW_PROJECT_ROUTE_ID,
   workbenchProjectPath,
 } from "@/features/workbench/routes";
-import { useWorkspaceProjects } from "@/hooks/use-api";
-import type { SavedGraphSummary } from "@/lib/api";
+import {
+  useProjectSummaryRefresh,
+  useWorkspacePacks,
+  useWorkspaceProjects,
+} from "@/hooks/use-api";
+import {
+  createStarterProject,
+  type SavedGraphSummary,
+  type StarterId,
+} from "@/lib/api";
+import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { GraphViewToggle } from "./GraphViewToggle";
 import { useGraphBrowserFilters } from "./use-graph-browser-filters";
@@ -36,7 +45,69 @@ const browserStyles = stylex.create({
   partialNotice: {
     margin: "16px 0 4px",
   },
+  recipes: {
+    display: "grid",
+    gap: "10px",
+    margin: "4px 0 18px",
+  },
+  recipeHeading: {
+    margin: 0,
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 560,
+  },
+  recipeRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: "10px",
+  },
+  recipe: {
+    display: "grid",
+    gap: "4px",
+    padding: "12px 14px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusMd,
+    backgroundColor: {
+      default:
+        "light-dark(color-mix(in srgb, white 88%, transparent), color-mix(in srgb, white 8%, transparent))",
+      ":hover:not(:disabled)": tokens.colorHover,
+    },
+    color: tokens.colorText,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeSm,
+    textAlign: "start",
+    cursor: {
+      default: "pointer",
+      ":disabled": "default",
+    },
+  },
+  recipeTitle: {
+    fontWeight: 560,
+  },
+  recipePath: {
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeXs,
+  },
 });
+
+const RECIPES: readonly {
+  id: StarterId;
+  title: string;
+  path: string;
+}[] = [
+  {
+    id: "transcribe_page",
+    title: "Transcribe a scanned page",
+    path: "Scan or PDF → Document OCR → Text",
+  },
+  {
+    id: "extract_table",
+    title: "Extract a table from a scan",
+    path: "Scan → Document OCR → Spreadsheet table",
+  },
+];
 
 function GraphRow({
   graph,
@@ -94,11 +165,20 @@ function WorkspaceGraphBrowserContent() {
   const router = useRouter();
   const { workspace } = useWorkspaceContext();
   const { data, error, isLoading, mutate } = useWorkspaceProjects(workspace.id);
+  const { data: packs } = useWorkspacePacks(workspace.id);
+  const refreshProjects = useProjectSummaryRefresh();
   const { query, view, setQuery, setView, searchFieldRef } =
     useGraphBrowserFilters();
+  const [startingRecipe, setStartingRecipe] = React.useState<StarterId | null>(
+    null,
+  );
+  const [recipeError, setRecipeError] = React.useState<string | null>(null);
 
   const workspaceName = workspaceDisplayName(workspace);
   const canCreate = workspace.capabilities.includes("create_project");
+  const documentOcrReady =
+    packs?.some((pack) => pack.slug === "document_ocr" && pack.subscribed) ??
+    false;
   const graphs = React.useMemo(
     () => filterGraphsByQuery(sortGraphsByRecency(data?.projects ?? []), query),
     [data, query],
@@ -111,15 +191,34 @@ function WorkspaceGraphBrowserContent() {
     router.push(workbenchProjectPath(workspace.slug, NEW_PROJECT_ROUTE_ID));
   };
 
+  const openRecipe = (starterId: StarterId) => {
+    if (!canCreate || startingRecipe) return;
+    setRecipeError(null);
+    setStartingRecipe(starterId);
+    void createStarterProject(workspace.id, starterId)
+      .then(async (project) => {
+        await refreshProjects(workspace.id);
+        router.push(workbenchProjectPath(workspace.slug, project.id));
+      })
+      .catch((caught: unknown) => {
+        setRecipeError(
+          caught instanceof Error
+            ? caught.message
+            : "The project could not be started.",
+        );
+        setStartingRecipe(null);
+      });
+  };
+
   return (
     <div className="grafy-graphs">
       <main className="grafy-graphs__main">
         <header className="grafy-graphs__header">
           <div>
             <p className="grafy-graphs__eyebrow">{workspaceName}</p>
-            <h1>Graphs</h1>
+            <h1>Projects</h1>
             <p className="grafy-graphs__intro">
-              Find and open graphs in this workspace.
+              Open or start a project in this workspace.
             </p>
           </div>
           <Button
@@ -130,14 +229,48 @@ function WorkspaceGraphBrowserContent() {
             title={
               canCreate
                 ? undefined
-                : "You do not have permission to create a graph in this workspace."
+                : "You do not have permission to create a project in this workspace."
             }
             onClick={startGraph}
           >
             <Plus size={15} aria-hidden="true" />
-            New graph
+            New project
           </Button>
         </header>
+
+        {canCreate && documentOcrReady ? (
+          <section
+            aria-label="Start from a recipe"
+            {...stylex.props(browserStyles.recipes)}
+          >
+            <h2 {...stylex.props(browserStyles.recipeHeading)}>
+              Start from a recipe
+            </h2>
+            <div {...stylex.props(browserStyles.recipeRow)}>
+              {RECIPES.map((recipe) => (
+                <button
+                  key={recipe.id}
+                  type="button"
+                  disabled={startingRecipe !== null}
+                  {...stylex.props(browserStyles.recipe)}
+                  onClick={() => openRecipe(recipe.id)}
+                >
+                  <span {...stylex.props(browserStyles.recipeTitle)}>
+                    {recipe.title}
+                  </span>
+                  <span {...stylex.props(browserStyles.recipePath)}>
+                    {recipe.path}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {recipeError ? (
+              <Notice tone="danger" variant="inline">
+                {recipeError}
+              </Notice>
+            ) : null}
+          </section>
+        ) : null}
 
         <div className="grafy-graphs__toolbar grafy-graphs__toolbar--scoped">
           <label className="grafy-graphs__search">
@@ -146,8 +279,8 @@ function WorkspaceGraphBrowserContent() {
               ref={searchFieldRef}
               type="search"
               defaultValue={query}
-              aria-label="Search graphs"
-              placeholder="Search graphs"
+              aria-label="Search projects"
+              placeholder="Search projects"
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
           </label>
@@ -157,18 +290,18 @@ function WorkspaceGraphBrowserContent() {
           <GraphViewToggle value={view} onValueChange={setView} />
           {data ? (
             <span className="grafy-graphs__count">
-              {graphs.length} {graphs.length === 1 ? "graph" : "graphs"}
+              {graphs.length} {graphs.length === 1 ? "project" : "projects"}
             </span>
           ) : null}
         </div>
 
         {!data && isLoading ? (
-          <GraphBrowserLoadingBlock label="Loading graphs" />
+          <GraphBrowserLoadingBlock label="Loading projects" />
         ) : !data && error ? (
           <section className="grafy-graphs__state" role="alert">
             <Workflow size={22} aria-hidden="true" />
             <div>
-              <h2>Graphs couldn&apos;t be loaded</h2>
+              <h2>Projects couldn&apos;t be loaded</h2>
               <p>Check your connection, then try again.</p>
             </div>
             <Button
@@ -184,8 +317,8 @@ function WorkspaceGraphBrowserContent() {
           <section className="grafy-graphs__state grafy-graphs__state--empty">
             <Workflow size={22} aria-hidden="true" />
             <div>
-              <h2>No graphs yet</h2>
-              <p>Create your first graph in {workspaceName}.</p>
+              <h2>No projects yet</h2>
+              <p>Create your first project in {workspaceName}.</p>
             </div>
             {canCreate ? (
               <Button
@@ -194,7 +327,7 @@ function WorkspaceGraphBrowserContent() {
                 className="grafy-graphs__state-action"
                 onClick={startGraph}
               >
-                <Plus size={14} aria-hidden="true" /> New graph
+                <Plus size={14} aria-hidden="true" /> New project
               </Button>
             ) : null}
           </section>
@@ -202,8 +335,8 @@ function WorkspaceGraphBrowserContent() {
           <section className="grafy-graphs__state grafy-graphs__state--empty">
             <Search size={22} aria-hidden="true" />
             <div>
-              <h2>No graphs match your search</h2>
-              <p>Try another graph name.</p>
+              <h2>No projects match your search</h2>
+              <p>Try another project name.</p>
             </div>
             <Button
               variant="secondary"
@@ -217,7 +350,7 @@ function WorkspaceGraphBrowserContent() {
         ) : (
           <ul
             className="grafy-graphs__list"
-            aria-label={`${view === "recent" ? "Recent" : "All"} graphs`}
+            aria-label={`${view === "recent" ? "Recent" : "All"} projects`}
           >
             {visibleGraphs.map((graph) => (
               <GraphRow
@@ -241,7 +374,7 @@ function WorkspaceGraphBrowserContent() {
               </Button>
             }
           >
-            The latest graph list could not be refreshed.
+            The latest project list could not be refreshed.
           </Notice>
         ) : null}
       </main>
@@ -263,7 +396,7 @@ function GraphBrowserLoadingShell() {
   return (
     <div className="grafy-graphs">
       <main className="grafy-graphs__main">
-        <GraphBrowserLoadingBlock label="Loading graphs" />
+        <GraphBrowserLoadingBlock label="Loading projects" />
       </main>
     </div>
   );

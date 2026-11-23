@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from typing import ClassVar
 from uuid import UUID
 
@@ -33,6 +34,17 @@ class ProjectApiModel(BaseModel):
         extra="forbid",
         allow_inf_nan=False,
     )
+
+
+class StarterId(StrEnum):
+    """Code-defined Projects a historian can open without drawing a graph."""
+
+    TRANSCRIBE_PAGE = "transcribe_page"
+    EXTRACT_TABLE = "extract_table"
+
+
+class CreateStarterProjectRequest(ProjectApiModel):
+    starter_id: StarterId
 
 
 class CreateProjectRequest(ProjectApiModel):

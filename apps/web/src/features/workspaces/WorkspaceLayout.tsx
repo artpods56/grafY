@@ -173,7 +173,7 @@ export function workspaceRouteAccessState(
 export function workspaceDisplayName(
   workspace: Pick<Workspace, "name" | "kind">,
 ): string {
-  if (workspace.kind === "personal") return "My graphs";
+  if (workspace.kind === "personal") return "My projects";
   return workspace.name;
 }
 
@@ -191,7 +191,7 @@ export function workspaceMobileContextLabel(
   workspace: Pick<Workspace, "kind" | "name"> | undefined,
 ): string {
   if (pathname === "/" || pathname === "/graphs" || pathname === "/projects")
-    return "Graphs";
+    return "Projects";
   if (/^\/workspaces\/[^/]+\/settings\/?$/.test(pathname)) return "Settings";
   if (pathname === "/workspaces" || /^\/workspaces\/[^/]+\/?$/.test(pathname)) {
     return "Teams & access";
@@ -199,7 +199,7 @@ export function workspaceMobileContextLabel(
   if (/^\/workspaces\/[^/]+\/projects(?:\/|$)/.test(pathname)) {
     return workspaceSelectorLabel(workspace);
   }
-  return "Graphs";
+  return "Projects";
 }
 
 /** The workspace the switcher should present, defaulting to the personal one. */
@@ -698,7 +698,7 @@ export function WorkspaceRail({
         <button
           type="button"
           className="grafy-mobile-nav__brand"
-          aria-label="Graphs"
+          aria-label="Projects"
           onClick={activateBrand}
         >
           <BrandWordmark height={22} />
@@ -733,7 +733,7 @@ export function WorkspaceRail({
         <button
           type="button"
           className="grafy-workspace-rail__brand"
-          aria-label="Graphs"
+          aria-label="Projects"
           onClick={activateBrand}
         >
           <BrandWordmark
@@ -870,22 +870,22 @@ export function WorkspaceRail({
           </DialogContent>
         </Dialog>
 
-        <nav className="grafy-workspace-rail__nav" aria-label="Graphs">
-          <p className="grafy-workspace-rail__section-label">Graphs</p>
+        <nav className="grafy-workspace-rail__nav" aria-label="Projects">
+          <p className="grafy-workspace-rail__section-label">Projects</p>
           <button
             type="button"
             className={`grafy-workspace-rail__item${graphBrowserActive ? " is-active" : ""}`}
-            title="Browse all graphs"
+            title="Browse all projects"
             onClick={goGraphs}
           >
             <Workflow size={15} aria-hidden="true" />
-            <span>All graphs</span>
+            <span>All projects</span>
           </button>
           {activeWorkspace || onNewGraph ? (
             <button
               type="button"
               className="grafy-workspace-rail__item"
-              title="New graph"
+              title="New project"
               onClick={() => {
                 closeMobileNavigation(true);
                 if (onNewGraph) {
@@ -903,7 +903,7 @@ export function WorkspaceRail({
               }}
             >
               <Plus size={15} aria-hidden="true" />
-              <span>New graph</span>
+              <span>New project</span>
             </button>
           ) : null}
           {activeWorkspace && chrome ? (
@@ -946,7 +946,7 @@ export function WorkspaceRail({
             <button
               type="button"
               className={`grafy-workspace-rail__item${chrome.sidePanelOpen ? " is-active" : ""}`}
-              title={chrome.sidePanelOpen ? "Hide artifacts" : "Show artifacts"}
+              title={chrome.sidePanelOpen ? "Hide library" : "Show library"}
               aria-expanded={chrome.sidePanelOpen}
               aria-controls={
                 chrome.sidePanelOpen ? SIDE_PANEL_ELEMENT_ID : undefined
@@ -959,18 +959,18 @@ export function WorkspaceRail({
               }}
             >
               <FolderTree size={15} aria-hidden="true" />
-              <span>Artifacts</span>
+              <span>Library</span>
             </button>
           ) : null}
           {activeWorkspace && chrome ? (
             <button
               type="button"
               className={`grafy-workspace-rail__item${chrome.generatedPanelOpen ? " is-active" : ""}`}
-              aria-label="Generated artifacts"
+              aria-label="Results"
               title={
                 chrome.generatedPanelOpen
-                  ? "Hide generated artifacts"
-                  : "Show Run artifacts from this canvas"
+                  ? "Hide results"
+                  : "Show results from this canvas"
               }
               aria-expanded={chrome.generatedPanelOpen}
               aria-controls={
@@ -983,7 +983,7 @@ export function WorkspaceRail({
               }}
             >
               <Layers size={15} aria-hidden="true" />
-              <span>Generated</span>
+              <span>Results</span>
             </button>
           ) : null}
         </nav>
@@ -991,7 +991,7 @@ export function WorkspaceRail({
         {activeWorkspace && !visuallyCollapsed && recentGraphs.length ? (
           <nav
             className="grafy-workspace-rail__nav grafy-workspace-rail__nav--open"
-            aria-label="Recent graphs"
+            aria-label="Recent projects"
           >
             <p className="grafy-workspace-rail__section-label">Recent</p>
             <div className="grafy-workspace-rail__items">

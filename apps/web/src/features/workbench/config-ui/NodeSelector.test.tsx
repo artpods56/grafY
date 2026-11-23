@@ -261,8 +261,8 @@ function menuItem(role: string, text: string): HTMLElement {
 async function openDetails() {
   const toggle = [
     ...dialog().querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
-  ].find((button) => button.textContent?.startsWith("Details"));
-  if (!toggle) throw new Error("No Details toggle");
+  ].find((button) => button.textContent?.startsWith("Technical details"));
+  if (!toggle) throw new Error("No Technical details toggle");
   await React.act(async () => toggle.click());
 }
 
@@ -447,7 +447,7 @@ describe("NodeSelector", () => {
     expect(enterPreview).not.toBeNull();
     expect(enterPreview?.textContent).toContain("Start");
     expect(enterPreview?.textContent).toContain("Text");
-    expect(enterPreview?.textContent).toContain("string");
+    expect(enterPreview?.textContent).not.toContain("string");
     expect(dialog().querySelector("aside")?.textContent).toContain(
       "Nothing. This step starts the work.",
     );
@@ -466,7 +466,7 @@ describe("NodeSelector", () => {
     );
     expect(transformPreview).not.toBeNull();
     expect(transformPreview?.textContent).toContain("Replacement");
-    expect(transformPreview?.textContent).toContain("string");
+    expect(transformPreview?.textContent).not.toContain("string");
   });
 
   it("inserts only through the explicit action", async () => {
@@ -498,6 +498,7 @@ describe("NodeSelector", () => {
     );
     await openDetails();
 
+    expect(dialog().querySelector("aside")?.textContent).toContain("string");
     expect(dialog().querySelector("aside")?.textContent).toContain(
       "Works with:",
     );

@@ -73,6 +73,15 @@ export function fieldTypeLabel(field: SchemaField): string {
   return field.type;
 }
 
+/** Type text for the folded preview. Raw schema primitives stay in the details. */
+function previewFieldType(field: SchemaField): string | null {
+  const label = fieldTypeLabel(field);
+  if (label === "string" || label === "boolean" || label === "integer") {
+    return null;
+  }
+  return label;
+}
+
 /**
  * The preview is a node as it sits on the canvas, picked up: its name above
  * the plate, port names inside the plate's edges, and each port's ring out on
@@ -466,14 +475,19 @@ export function CatalogNodePreview({
         </div>
         {visibleFields.length ? (
           <div {...stylex.props(s.previewBody)}>
-            {visibleFields.map((field) => (
-              <div key={field.name} {...stylex.props(s.previewField)}>
-                <span>{fieldDisplayTitle(field)}</span>
-                <span {...stylex.props(s.previewFieldMeta)}>
-                  {fieldTypeLabel(field)}
-                </span>
-              </div>
-            ))}
+            {visibleFields.map((field) => {
+              const typeLabel = previewFieldType(field);
+              return (
+                <div key={field.name} {...stylex.props(s.previewField)}>
+                  <span>{fieldDisplayTitle(field)}</span>
+                  {typeLabel ? (
+                    <span {...stylex.props(s.previewFieldMeta)}>
+                      {typeLabel}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
             {fields.length > visibleFields.length ? (
               <div {...stylex.props(s.previewField)}>
                 <span>+{fields.length - visibleFields.length} more</span>

@@ -474,7 +474,7 @@ export function LibraryPanel({
   return (
     <div {...stylex.props(s.view)}>
       <header {...stylex.props(s.header)}>
-        <h2 {...stylex.props(s.title)}>Artifacts</h2>
+        <h2 {...stylex.props(s.title)}>Library</h2>
         <IconButton
           label="New folder"
           size="sm"

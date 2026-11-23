@@ -189,7 +189,7 @@ async def geo_features_to_table(
     config: GeoFeaturesToTableConfig,
     inputs: GeoFeaturesToTableInput,
 ) -> GeoFeaturesToTableOutput:
-    """Flattens GeoJSON properties and preserves exact WGS84 geometry as WKT."""
+    """Turns map places into a table, and keeps each place's location."""
     property_ids: list[str] = []
     properties_by_feature: list[dict[str, TableValue]] = []
     for feature_index, feature in enumerate(inputs.features.features):
@@ -551,7 +551,7 @@ class WfsImportOutput(NodeOutput):
 )
 @final
 class ImportWfsNode(Node[WfsImportConfig, WfsImportInput, WfsImportOutput]):
-    """Import a bounded WGS84 feature collection from an OGC WFS service."""
+    """Loads map places from an online map service, inside the area you set."""
 
     def __init__(self, client: WfsClient) -> None:
         self._client = client

@@ -5,6 +5,7 @@ from grafy_core.domain.identity import WorkspaceCapability
 
 from grafy_api.services.errors import WorkbenchOperationError
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
+from grafy_api.v1.routes.starter_dependencies import StarterDependency
 
 from .dependencies import LibraryDependency, LibraryFoldersDependency
 from grafy_api.library.models import (
@@ -28,6 +29,23 @@ folders_router = APIRouter(
 
 
 # [TODO] we should probably check what are these services throwing and ensure that we handle these errors correctly
+
+
+@router.post(
+    "/starter-sample",
+    response_model=LibraryItemResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def seed_starter_sample(
+    starter: StarterDependency,
+    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
+) -> LibraryItemResponse:
+    """Place the bundled historical page at the Library root, or return it."""
+
+    return await starter.seed_sample(
+        workspace_id=access.workspace_id,
+        created_by_user_id=access.actor.user_id,
+    )
 
 
 @router.get("/artifacts", response_model=LibraryListResponse)
