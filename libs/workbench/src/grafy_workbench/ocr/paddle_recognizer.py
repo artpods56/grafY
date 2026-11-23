@@ -17,7 +17,7 @@ from grafy_core.plugins import (
     NodeSecretInput,
     PluginRuntimeCapability,
 )
-from grafy_core.text_regions import TextReading, TextRecognizer
+from grafy_core.text_regions import ServiceCacheIdentity, TextReading, TextRecognizer
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.provider_http import ProviderRequest, post_json
 
@@ -51,6 +51,9 @@ class PaddleBatchResponse(BaseModel):
 
 @final
 class PaddleCyrillicRecognizer(TextRecognizer):
+    def cache_identity(self) -> ServiceCacheIdentity:
+        return ServiceCacheIdentity("paddle.ai-test-ihpan", PADDLE_MODEL, {})
+
     def __init__(
         self, api_key: SecretStr, *, timeout_ms: int, max_retries: int
     ) -> None:
@@ -171,6 +174,8 @@ class PaddleOutput(NodeOutput):
 )
 @final
 class PaddleProviderNode(Node[PaddleConfig, PaddleInput, PaddleOutput]):
+    """Provide a Paddle Cyrillic text recognizer."""
+
     @override
     async def run(
         self,

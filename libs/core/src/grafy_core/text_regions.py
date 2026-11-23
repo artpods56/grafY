@@ -1,12 +1,12 @@
 """Pixel-space contracts for text localization and recognition."""
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 import re
-from typing import Annotated, Protocol, cast
+from typing import Annotated, Protocol
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from grafy_core.service_contracts import service_contract
 
@@ -23,30 +23,43 @@ class TextRegion(BaseModel):
     score: float | None = Field(default=None, allow_inf_nan=False)
 
 
+@dataclass(frozen=True, slots=True)
+class ServiceCacheIdentity:
+    """Cache identity for one configured provider instance.
+
+    A None revision identifies a moving alias and must bypass ProviderCache.
+    See docs/design/provider-operation-cache.md.
+    """
+
+    deployment: str
+    revision: str | None
+    options: Mapping[str, JsonValue] = field(
+        default_factory=lambda: dict[str, JsonValue]()
+    )
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("deployment", self.deployment),
+            ("revision", self.revision),
+        ):
+            if value is None and name == "revision":
+                continue
+            if (
+                not isinstance(value, str)
+                or not value
+                or value != value.strip()
+                or len(value) > 255
+            ):
+                raise ValueError(f"Invalid cache identity {name}")
+
+
 @service_contract("ocr.text_detector", version=1, title="Text detector")
 class TextDetector(Protocol):
+    def cache_identity(self) -> ServiceCacheIdentity: ...
+
     async def detect(
         self, png: bytes, *, width: int, height: int
     ) -> list[TextRegion]: ...
-
-
-def detector_request_options(detector: TextDetector) -> dict[str, float]:
-    """Tuning parameters a detector sends with every request, e.g. CRAFT thresholds.
-
-    Detectors that accept them expose a ``request_options`` mapping; the scan
-    mirrors it into the provider cache key so two configurations never share
-    cached detections.
-    """
-    options = cast(
-        "dict[str, object] | None", getattr(detector, "request_options", None)
-    )
-    if options is None:
-        return {}
-    cleaned: dict[str, float] = {}
-    for key, value in options.items():
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            cleaned[key] = float(value)
-    return cleaned
 
 
 class TextReading(BaseModel):
@@ -61,6 +74,8 @@ class TextReading(BaseModel):
 
 @service_contract("ocr.text_recognizer", version=1, title="Text recognizer")
 class TextRecognizer(Protocol):
+    def cache_identity(self) -> ServiceCacheIdentity: ...
+
     async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
         """Return one reading per crop in input order."""
         ...

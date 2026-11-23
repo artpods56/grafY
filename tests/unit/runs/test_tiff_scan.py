@@ -1,3 +1,4 @@
+from grafy_core.text_regions import ServiceCacheIdentity
 import asyncio
 import json
 from dataclasses import replace
@@ -10,7 +11,7 @@ from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.provider_cache import InMemoryCacheStore, ProviderCache
 from grafy_core.text_regions import TextRegion, TiffPage
 from grafy_workbench.ocr.craft import CRAFT_URL
-from grafy_workbench.ocr.tiff_scan import Window, _CRAFT_DEPLOYMENT, detect_area
+from grafy_workbench.ocr.tiff_scan import Window, detect_area
 
 
 class PageReads:
@@ -24,6 +25,9 @@ class PageReads:
 
 
 class Labels:
+    def cache_identity(self) -> ServiceCacheIdentity:
+        return ServiceCacheIdentity("test.labels", "1")
+
     labels = [
         ("boundary", 350, 270, 440, 350),
         ("outside", 190, 320, 240, 340),
@@ -111,6 +115,9 @@ async def test_whole_page_reads_stop_at_real_edges_and_run_sixteen_at_a_time():
     release_batch = asyncio.Event()
 
     class Detector:
+        def cache_identity(self):
+            return ServiceCacheIdentity("test", "1")
+
         concurrent = 0
 
         async def detect(
@@ -161,10 +168,12 @@ async def test_invalid_single_crop_fails_before_reading(area: Window, message: s
 
 def test_craft_cache_deployment_names_the_route_host() -> None:
     assert urlsplit(CRAFT_URL).hostname == "ai-test.ihpan.edu.pl"
-    assert _CRAFT_DEPLOYMENT == "craft.ai-test-ihpan"
 
 
 class CountingDetector:
+    def cache_identity(self):
+        return ServiceCacheIdentity("test", "1", getattr(self, "request_options", {}))
+
     def __init__(self) -> None:
         self.calls = 0
 
@@ -289,3 +298,38 @@ async def test_whole_sheet_scan_accepts_the_largest_mohilew_sheet() -> None:
     assert len(source.windows) == 1080
     assert source.windows[-1].right == 21208
     assert source.windows[-1].bottom == 17752
+
+
+async def test_detector_identities_isolate_cache_entries():
+    source = _page(100, 100, "a" * 64)
+    cache = ProviderCache(InMemoryCacheStore())
+    workspace = uuid4()
+    area = Window(0, 0, 100, 100)
+
+    class OtherDetector(CountingDetector):
+        def cache_identity(self) -> ServiceCacheIdentity:
+            return ServiceCacheIdentity("other", "1")
+
+    first, second = CountingDetector(), OtherDetector()
+    await _cached_scan(source, first, area, cache, workspace)
+    await _cached_scan(source, second, area, cache, workspace)
+    await _cached_scan(source, second, area, cache, workspace)
+    assert first.calls == 1
+    assert second.calls == 1
+
+
+async def test_detector_moving_revision_bypasses_cache():
+    from unittest.mock import AsyncMock
+
+    source = _page(100, 100, "b" * 64)
+    cache = ProviderCache(InMemoryCacheStore())
+    cache.get_or_compute = AsyncMock(side_effect=AssertionError("cache accessed"))
+
+    class MovingDetector(CountingDetector):
+        def cache_identity(self) -> ServiceCacheIdentity:
+            return ServiceCacheIdentity("moving", None)
+
+    detector = MovingDetector()
+    await _cached_scan(source, detector, Window(0, 0, 100, 100), cache, uuid4())
+    assert detector.calls == 1
+    cache.get_or_compute.assert_not_called()

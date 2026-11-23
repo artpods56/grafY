@@ -109,6 +109,8 @@ def test_registration_rejects_a_service_node_with_inputs() -> None:
 
         @plugin.node(operator_id="test.bad_provider", version=1, title="Bad")
         class BadProvider(Node[ProviderConfig, BadProviderInput, BadProviderOutput]):
+            """Provide a test node."""
+
             @override
             async def run(
                 self,
@@ -142,3 +144,12 @@ def test_a_duplicate_service_contract_is_refused() -> None:
     with pytest.raises(PluginRegistrationError, match="already installed"):
         registry.install(second)
 
+
+@pytest.mark.parametrize("value", ["", " ", " padded", "padded ", "x" * 256])
+def test_service_cache_identity_rejects_invalid_names(value: str) -> None:
+    from grafy_core.text_regions import ServiceCacheIdentity
+
+    with pytest.raises(ValueError):
+        ServiceCacheIdentity(value, "revision")
+    with pytest.raises(ValueError):
+        ServiceCacheIdentity("deployment", value)

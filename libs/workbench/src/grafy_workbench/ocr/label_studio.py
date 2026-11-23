@@ -769,6 +769,8 @@ async def _open_tiff(
 class ExportLabelStudioNode(
     Node[ExportLabelStudioConfig, ExportLabelStudioInput, ExportLabelStudioOutput]
 ):
+    """Export TIFF labels to Label Studio."""
+
     def __init__(
         self,
         open_page: TiffPageOpener | None,
@@ -1060,6 +1062,8 @@ def _result_polygon(result: _Result, data: dict[str, object]) -> PixelPolygon:
 class ImportLabelStudioNode(
     Node[ImportLabelStudioConfig, ImportLabelStudioInput, ImportLabelStudioOutput]
 ):
+    """Import TIFF labels from Label Studio."""
+
     def __init__(
         self,
         open_page: TiffPageOpener | None = None,

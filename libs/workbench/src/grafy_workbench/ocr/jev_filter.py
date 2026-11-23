@@ -390,6 +390,8 @@ def _score_region(
 class FilterTiffJevNode(
     Node[FilterTiffJevConfig, FilterTiffJevInput, FilterTiffJevOutput]
 ):
+    """Filter TIFF text regions with Jev."""
+
     def __init__(
         self,
         open_page: TiffPageOpener | None,

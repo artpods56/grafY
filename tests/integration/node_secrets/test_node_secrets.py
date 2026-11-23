@@ -92,6 +92,8 @@ WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000007")
     required_capabilities=(PluginRuntimeCapability.NODE_SECRETS,),
 )
 class SecretTestNode(Node[SecretTestConfig, EmptyInput, EmptyOutput]):
+    """Provide a test node."""
+
     captured_contexts: ClassVar[list[NodeExecutionContext]] = []
 
     @override
@@ -112,6 +114,8 @@ class SecretTestNode(Node[SecretTestConfig, EmptyInput, EmptyOutput]):
     title="Plain node",
 )
 class PlainTestNode(Node[NodeConfig, EmptyInput, EmptyOutput]):
+    """Provide a test node."""
+
     captured_contexts: ClassVar[list[NodeExecutionContext]] = []
 
     @override

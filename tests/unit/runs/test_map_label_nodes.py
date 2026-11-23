@@ -1,3 +1,4 @@
+from grafy_core.text_regions import ServiceCacheIdentity
 from collections.abc import Sequence
 from io import BytesIO
 from uuid import UUID, uuid4
@@ -55,6 +56,9 @@ async def test_map_label_nodes_pass_through_place_coordinates():
         return TiffPage(180, 220, read, source_sha256="0" * 64, page=page)
 
     class Recognizer(TextRecognizer):
+        def cache_identity(self):
+            return ServiceCacheIdentity("test", "1")
+
         async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
             assert len(crops) == 1
             return [TextReading(text="сел: Махово", confidence=0.81, model="test")]

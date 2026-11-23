@@ -17,12 +17,11 @@ from shapely.geometry.base import BaseGeometry
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.provider_cache import CacheSpec, ProviderCache
 from grafy_core.text_regions import (
+    ServiceCacheIdentity,
     TextDetector,
     TextRegion,
     TiffPage,
-    detector_request_options,
 )
-from grafy_workbench.ocr.craft import CRAFT_MODEL
 from grafy_workbench.ocr.progress import cached_progress
 
 _READ_EDGE = 1000
@@ -33,7 +32,6 @@ _MAX_REPAIRS = 32
 _PARALLEL_READS = 16
 _EDGE_TOLERANCE = 4
 _CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
-_CRAFT_DEPLOYMENT = "craft.ai-test-ihpan"
 _PNG_VERSION = "window-png@1"
 _REGION_CODEC: TypeAdapter[list[TextRegion]] = TypeAdapter(list[TextRegion])
 
@@ -99,18 +97,22 @@ def _plan(area: Window, page: TiffPage, single: bool) -> list[Window]:
     ]
 
 
-def _craft_spec(ttl_seconds: int) -> CacheSpec[list[TextRegion]]:
+def _detector_spec(
+    ttl_seconds: int, deployment: str, revision: str
+) -> CacheSpec[list[TextRegion]]:
     return CacheSpec(
-        operation="ocr.craft.detect_window",
-        deployment=_CRAFT_DEPLOYMENT,
-        revision=CRAFT_MODEL,
+        operation="ocr.box_detector.detect_window",
+        deployment=deployment,
+        revision=revision,
         schema_version=1,
         codec=_REGION_CODEC,
         ttl_seconds=ttl_seconds,
     )
 
 
-def _craft_request(page: TiffPage, window: Window, detector: TextDetector) -> JsonValue:
+def _detector_request(
+    page: TiffPage, window: Window, identity: ServiceCacheIdentity
+) -> JsonValue:
     return cast(
         JsonValue,
         {
@@ -119,7 +121,7 @@ def _craft_request(page: TiffPage, window: Window, detector: TextDetector) -> Js
             "window": [window.col, window.row, window.width, window.height],
             "png": _PNG_VERSION,
             "detect": {"core_edge": _CORE_EDGE, "context": _CONTEXT},
-            "options": detector_request_options(detector),
+            "options": dict(identity.options),
         },
     )
 
@@ -145,13 +147,14 @@ async def _detect(
                 f"TIFF window at ({window.col}, {window.row}): {exc}"
             ) from exc
 
-    if cache is None:
+    identity = detector.cache_identity()
+    if cache is None or identity.revision is None:
         local_regions = await compute()
     else:
         local_regions, hit = await cache.get_or_compute(
             context.workspace_id,
-            _craft_spec(cache_ttl_seconds),
-            _craft_request(page, window, detector),
+            _detector_spec(cache_ttl_seconds, identity.deployment, identity.revision),
+            _detector_request(page, window, identity),
             compute,
         )
         hits.append(hit)

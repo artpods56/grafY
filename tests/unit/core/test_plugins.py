@@ -75,6 +75,8 @@ class DefaultNode(Node[NoConfig, EmptyInput, EmptyOutput]):
 
 
 class ContextNode(Node[NoConfig, EmptyInput, EmptyOutput]):
+    """Provide a test node."""
+
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace
 
@@ -94,6 +96,8 @@ class SecretConfig(NodeConfig):
 
 
 class SecretNode(Node[SecretConfig, EmptyInput, EmptyOutput]):
+    """Provide a test node."""
+
     @override
     async def run(
         self,
@@ -123,6 +127,8 @@ class ConcretePortInput(NodeInput):
 
 
 class ConcretePortNode(Node[NoConfig, ConcretePortInput, EmptyOutput]):
+    """Provide a test node."""
+
     @override
     async def run(
         self,
@@ -150,6 +156,7 @@ async def context_function_node(
     _config: NoConfig,
     _inputs: EmptyInput,
 ) -> EmptyOutput:
+    """Record the execution context."""
     _context_function_calls.append(context)
     return EmptyOutput()
 
@@ -1268,3 +1275,42 @@ def test_registry_rejected_install_leaves_no_partial_family_state() -> None:
     registry.freeze()
     assert [plugin.slug for plugin in registry.plugins] == [first.slug, rejected.slug]
     assert registry.nodes == ()
+
+
+def test_node_registration_rejects_inherited_docstring() -> None:
+    class UndocumentedNode(DefaultNode):
+        pass
+
+    plugin = Plugin(slug="test.docs", title="Docs")
+    with pytest.raises(
+        PluginRegistrationError, match="test.docs.*test.missing.*UndocumentedNode"
+    ):
+        plugin.node(operator_id="test.missing", version=1, title="Missing")(
+            UndocumentedNode
+        )
+
+
+def test_callable_registration_rejects_missing_docstring() -> None:
+    def undocumented() -> int:
+        return 1
+
+    plugin = Plugin(slug="test.docs", title="Docs")
+    with pytest.raises(
+        PluginRegistrationError, match="test.docs.*test.missing.*undocumented"
+    ):
+        plugin.callable_node(operator_id="test.missing", version=1, title="Missing")(
+            undocumented
+        )
+
+
+def test_function_node_registration_rejects_missing_docstring() -> None:
+    async def undocumented(_config: NoConfig, _inputs: EmptyInput) -> EmptyOutput:
+        return EmptyOutput()
+
+    plugin = Plugin(slug="test.docs", title="Docs")
+    with pytest.raises(
+        PluginRegistrationError, match="test.docs.*test.missing.*undocumented"
+    ):
+        plugin.function_node(operator_id="test.missing", version=1, title="Missing")(
+            undocumented
+        )

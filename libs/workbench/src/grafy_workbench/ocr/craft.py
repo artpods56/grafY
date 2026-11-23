@@ -14,7 +14,12 @@ from grafy_core.plugins import (
     NodeSecretInput,
     PluginRuntimeCapability,
 )
-from grafy_core.text_regions import PixelPolygon, TextDetector, TextRegion
+from grafy_core.text_regions import (
+    ServiceCacheIdentity,
+    PixelPolygon,
+    TextDetector,
+    TextRegion,
+)
 
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.provider_http import ProviderRequest, post_json
@@ -35,6 +40,11 @@ class CraftResponse(BaseModel):
 
 @final
 class CraftDetector(TextDetector):
+    def cache_identity(self) -> ServiceCacheIdentity:
+        return ServiceCacheIdentity(
+            "craft.ai-test-ihpan", CRAFT_MODEL, dict(self.request_options)
+        )
+
     def __init__(
         self,
         api_key: SecretStr,
@@ -174,6 +184,8 @@ class CraftOutput(NodeOutput):
 )
 @final
 class CraftProviderNode(Node[CraftConfig, CraftInput, CraftOutput]):
+    """Provide a CRAFT text detector."""
+
     @override
     async def run(
         self,

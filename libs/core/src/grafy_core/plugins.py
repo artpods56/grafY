@@ -2,7 +2,7 @@ import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from inspect import Parameter, getdoc, iscoroutinefunction, signature
+from inspect import Parameter, cleandoc, getdoc, iscoroutinefunction, signature
 from pathlib import Path
 from typing import (
     Any,
@@ -301,7 +301,12 @@ class Plugin:
             node_class.operator_version = version
             node_class.plugin_slug = self.slug
             node_class.title = title
-            node_class.description = getdoc(node_class) or ""
+            own_doc = node_class.__dict__.get("__doc__")
+            if own_doc is None or not cleandoc(own_doc).strip():
+                raise PluginRegistrationError(
+                    f"Plugin {self.slug!r} node {operator_id!r} class {node_class.__name__!r} requires its own docstring"
+                )
+            node_class.description = cleandoc(own_doc)
             secret_names = [secret_input.name for secret_input in secret_inputs]
             if len(secret_names) != len(set(secret_names)):
                 raise PluginRegistrationError(
@@ -545,6 +550,10 @@ class Plugin:
         """
 
         def decorate(function: FunctionT) -> FunctionT:
+            if not getdoc(function):
+                raise PluginRegistrationError(
+                    f"Plugin {self.slug!r} node {operator_id!r} function {function.__name__!r} requires a docstring"
+                )
             try:
                 node_class = callable_node_class(
                     function,

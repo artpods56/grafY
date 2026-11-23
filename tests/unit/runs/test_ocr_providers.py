@@ -222,6 +222,8 @@ class ProviderConfig(NodeConfig):
 )
 @final
 class FullProvider(Node[ProviderConfig, EmptyInput, FullProviderOutput]):
+    """Provide a test node."""
+
     @override
     async def run(
         self,
@@ -245,6 +247,8 @@ class FullProvider(Node[ProviderConfig, EmptyInput, FullProviderOutput]):
 )
 @final
 class BlocksProvider(Node[ProviderConfig, EmptyInput, BlocksProviderOutput]):
+    """Provide a test node."""
+
     @override
     async def run(
         self,
@@ -268,6 +272,8 @@ class BoxesOutput(NodeOutput):
 @FIXTURES.node(operator_id="test.draw_boxes", version=1, title="Draw boxes")
 @final
 class DrawBoxes(Node[NodeConfig, BoxesInput, BoxesOutput]):
+    """Provide a test node."""
+
     @override
     async def run(
         self,
