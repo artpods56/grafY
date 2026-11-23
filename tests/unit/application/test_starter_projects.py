@@ -1,5 +1,6 @@
 """Starter Projects: sample seeding, Document OCR wiring, and credential binding."""
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from tests.unit.application.project_fakes import (
 )
 
 from grafy_api.catalog_packs import CatalogPolicy
+from grafy_api.library.models import LibraryItemResponse
 from grafy_api.library.service import LibraryService
 from grafy_api.project_contracts import StarterId
 from grafy_api.services.composition import build_workbench_components
@@ -33,11 +35,12 @@ from grafy_api.starters import (
     StarterService,
     StarterUnavailableError,
 )
+from grafy_api.uploads import UploadService
 from grafy_core.application.collaboration import CollaborationService
 from grafy_core.artifacts import ArtifactRef
 from grafy_core.canonical_conversions import PNG_FILE_TO_RASTER
 from grafy_core.domain.credentials import SharedCredentialBindingMode
-from grafy_core.domain.errors import CapabilityDeniedError
+from grafy_core.domain.errors import CapabilityDeniedError, NotFoundError
 from grafy_core.domain.identity import ActorContext, Workspace, WorkspaceRole
 from grafy_core.egress import EgressPolicy
 from grafy_core.plugins import PluginRegistry
@@ -69,8 +72,9 @@ class _Credentials:
 
 
 class _Bindings:
-    def __init__(self) -> None:
+    def __init__(self, *, missing: NotFoundError | None = None) -> None:
         self.calls: list[dict[str, object]] = []
+        self.missing = missing
 
     async def set_shared_binding(
         self,
@@ -98,6 +102,8 @@ class _Bindings:
                 "expected_head_sequence": expected_head_sequence,
             }
         )
+        if self.missing is not None:
+            raise self.missing
 
 
 class _Packs:
@@ -128,6 +134,7 @@ class _World:
     collaboration: CollaborationService
     store: ProjectStore
     bindings: _Bindings
+    uploads: UploadService
     workspace: Workspace
     actor: ActorContext
 
@@ -155,6 +162,7 @@ def _world(
     credentials: list[_Credential] | None = None,
     operators: dict[str, bool] | None = None,
     packs: dict[str, bool] | None = None,
+    missing_binding: NotFoundError | None = None,
 ) -> _World:
     directory = IdentityDirectory()
     store = ProjectStore(directory)
@@ -174,7 +182,7 @@ def _world(
         CatalogOverrides(operators=operators or {}, packs=packs or {}),
     )
     subscribed = slugs if slugs is not None else frozenset({"document_ocr"})
-    bindings = _Bindings()
+    bindings = _Bindings(missing=missing_binding)
     collaboration = CollaborationService(
         ProjectUnitOfWorkFactory(store),
         command_hmac_key=HMAC_KEY,
@@ -199,9 +207,49 @@ def _world(
         collaboration=collaboration,
         store=store,
         bindings=bindings,
+        uploads=components.uploads,
         workspace=workspace,
         actor=ActorContext(user_id=user.id, credential_reference="session:test"),
     )
+
+
+def _peer_service(world: _World, registry: PluginRegistry) -> StarterService:
+    """A second request's service: same Library and uploads, its own instance."""
+
+    return StarterService(
+        uploads=world.uploads,
+        library=world.library,
+        collaboration=world.collaboration,
+        credentials=_Credentials([]),
+        node_secrets=world.bindings,
+        registry=registry,
+        policy=CatalogPolicy(registry, CatalogOverrides()),
+        identity_uow_factory=cast(
+            Callable[[], IdentityUnitOfWorkPort],
+            lambda: _PackUow(frozenset({"document_ocr"})),
+        ),
+    )
+
+
+def _ref(item: LibraryItemResponse) -> ArtifactRef:
+    artifact = item.artifact
+    return ArtifactRef(
+        artifact_id=artifact.artifact_id,
+        artifact_type=artifact.artifact_type,
+        schema_version=artifact.schema_version,
+        content_hash=artifact.sha256,
+    )
+
+
+def _stored_objects(root: Path) -> list[Path]:
+    base = root / "objects"
+    if not base.exists():
+        return []
+    return [
+        path
+        for path in base.rglob("*")
+        if path.is_file() and ".tmp-" not in path.name and not path.name.startswith(".")
+    ]
 
 
 def _graph(world: _World, project_id: UUID):
@@ -400,6 +448,68 @@ async def test_viewer_cannot_open_a_starter(
 ) -> None:
     world = _world(tmp_path, registry, role=WorkspaceRole.VIEWER)
     with pytest.raises(CapabilityDeniedError):
+        await world.service.create_starter(
+            actor=world.actor,
+            workspace_id=world.workspace.id,
+            starter_id=StarterId.TRANSCRIBE_PAGE,
+        )
+
+
+async def test_concurrent_seeds_share_one_library_artifact(
+    tmp_path: Path, registry: PluginRegistry
+) -> None:
+    world = _world(tmp_path, registry)
+    peer = _peer_service(world, registry)
+    first, second = await asyncio.gather(
+        world.service.seed_sample(
+            workspace_id=world.workspace.id, created_by_user_id=world.actor.user_id
+        ),
+        peer.seed_sample(
+            workspace_id=world.workspace.id, created_by_user_id=world.actor.user_id
+        ),
+    )
+    assert _ref(first) == _ref(second)
+    listed = await world.library.list_items(world.workspace.id)
+    assert len(listed) == 1
+    assert _ref(listed[0]) == _ref(first)
+    assert len(_stored_objects(tmp_path)) == 1
+
+
+async def test_a_vanished_credential_still_returns_the_project(
+    tmp_path: Path, registry: PluginRegistry
+) -> None:
+    """The route maps a returned Project to 201. An escaping NotFoundError is a 404."""
+
+    credential = _Credential(id=uuid4(), provider_kind="mistral")
+    world = _world(
+        tmp_path,
+        registry,
+        credentials=[credential],
+        missing_binding=NotFoundError("Credential", str(credential.id)),
+    )
+    project = await world.service.create_starter(
+        actor=world.actor,
+        workspace_id=world.workspace.id,
+        starter_id=StarterId.TRANSCRIBE_PAGE,
+    )
+    assert project.name == "Transcribe a scanned page"
+    document = _graph(world, project.id)
+    assert document.nodes[1].operator_id == "mistral.ocr.provider"
+    assert len(world.bindings.calls) == 1
+    assert world.bindings.calls[0]["credential_id"] == credential.id
+
+
+async def test_a_missing_project_during_binding_still_fails(
+    tmp_path: Path, registry: PluginRegistry
+) -> None:
+    credential = _Credential(id=uuid4(), provider_kind="mistral")
+    world = _world(
+        tmp_path,
+        registry,
+        credentials=[credential],
+        missing_binding=NotFoundError("Project", "gone"),
+    )
+    with pytest.raises(NotFoundError, match="Project"):
         await world.service.create_starter(
             actor=world.actor,
             workspace_id=world.workspace.id,

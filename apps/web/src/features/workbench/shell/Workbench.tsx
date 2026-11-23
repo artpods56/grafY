@@ -51,6 +51,7 @@ import { ArtifactFolderDropDialog } from "../artifacts/ArtifactFolderDropDialog"
 import { ConnectionRouteDialog } from "../authoring/ConnectionRouteDialog";
 import { CanvasLabPanel } from "../cell-canvas/CanvasLabPanel";
 import { EmptyCanvasStarter } from "./EmptyCanvasStarter";
+import { mayPlaceOnInitiatingGraph } from "./initiatingGraphPlacement";
 import { workbenchStyles as s } from "./Workbench.styles";
 import { NodeSelector } from "../config-ui/NodeSelector";
 import {
@@ -433,6 +434,7 @@ function WorkbenchBody({
   const localAuthoringEnabledRef = React.useRef(
     projectId === null && canCreateProject,
   );
+  const openGraphIdRef = React.useRef<string | null>(null);
   const localAuthoringBlockedMessageRef = React.useRef(
     "Editing is unavailable until this Project is synchronized.",
   );
@@ -942,6 +944,7 @@ function WorkbenchBody({
   }
   React.useLayoutEffect(() => {
     localAuthoringEnabledRef.current = localAuthoringEnabled;
+    openGraphIdRef.current = openGraphId;
     localAuthoringBlockedMessageRef.current = localAuthoringBlockedMessage;
     executionRunningRef.current = run.isExecutionRunning;
     closeGraphBrowserRef.current = closeGraphBrowser;
@@ -953,6 +956,7 @@ function WorkbenchBody({
     closeGraphBrowser,
     localAuthoringBlockedMessage,
     localAuthoringEnabled,
+    openGraphId,
     run.clearRunError,
     run.isExecutionRunning,
     run.setRunError,
@@ -1345,7 +1349,8 @@ function WorkbenchBody({
   /** Upload files through the Library, then lay them on the canvas as one drop. */
   const uploadFilesOntoCanvas = React.useCallback(
     async (files: readonly File[], point: XYPosition) => {
-      if (files.length === 0) return;
+      if (files.length === 0 || !localAuthoringEnabledRef.current) return;
+      const initiatingGraphId = openGraphIdRef.current;
       const items: PlacedLibraryItem[] = [];
       try {
         for (const [index, file] of files.entries()) {
@@ -1366,7 +1371,14 @@ function WorkbenchBody({
       } catch (error) {
         setRunError(error instanceof Error ? error.message : "Upload failed.");
       } finally {
-        if (items.length) {
+        if (
+          items.length &&
+          mayPlaceOnInitiatingGraph({
+            authoringEnabled: localAuthoringEnabledRef.current,
+            activeGraphId: openGraphIdRef.current,
+            initiatingGraphId,
+          })
+        ) {
           placeArtifactGroups(
             artifactDropGroups(items).map(artifactDropPayload),
             point,
@@ -1427,7 +1439,11 @@ function WorkbenchBody({
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer) return;
       if (libraryDragKind(event.dataTransfer) === "upload") {
-        if (canEditProject && canvasAtPoint(event.clientX, event.clientY)) {
+        if (
+          canEditProject &&
+          localAuthoringEnabled &&
+          canvasAtPoint(event.clientX, event.clientY)
+        ) {
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
         }
@@ -1443,7 +1459,7 @@ function WorkbenchBody({
       event.preventDefault();
       event.dataTransfer.dropEffect = "copy";
     },
-    [canEditProject],
+    [canEditProject, localAuthoringEnabled],
   );
 
   /** Put one artifact value on an input row, or say why the input refuses it. */
@@ -1491,7 +1507,11 @@ function WorkbenchBody({
     (event: DragEvent | React.DragEvent<HTMLElement>) => {
       if (!event.dataTransfer) return;
       if (libraryDragKind(event.dataTransfer) === "upload") {
-        if (!canEditProject || !canvasAtPoint(event.clientX, event.clientY))
+        if (
+          !canEditProject ||
+          !localAuthoringEnabled ||
+          !canvasAtPoint(event.clientX, event.clientY)
+        )
           return;
         const point = screenToCanvasPoint({
           x: event.clientX,
@@ -1536,6 +1556,7 @@ function WorkbenchBody({
     },
     [
       canEditProject,
+      localAuthoringEnabled,
       dropArtifactOnCanvas,
       placeArtifactOnInput,
       screenToCanvasPoint,
@@ -1872,17 +1893,26 @@ function WorkbenchBody({
   );
 
   const placeStarterSample = React.useCallback(async () => {
-    if (samplePending) return;
+    if (samplePending || !localAuthoringEnabledRef.current) return;
+    const initiatingGraphId = openGraphIdRef.current;
     setSamplePending(true);
     try {
       const item = await seedStarterSample(workspaceId);
       void mutateCache(["library-tree", workspaceId]);
-      placeArtifactGroups(
-        artifactDropGroups([
-          { ...item, folder_id: item.folder_id ?? null },
-        ]).map(artifactDropPayload),
-        canvasCenter({ x: 80, y: 80 }),
-      );
+      if (
+        mayPlaceOnInitiatingGraph({
+          authoringEnabled: localAuthoringEnabledRef.current,
+          activeGraphId: openGraphIdRef.current,
+          initiatingGraphId,
+        })
+      ) {
+        placeArtifactGroups(
+          artifactDropGroups([
+            { ...item, folder_id: item.folder_id ?? null },
+          ]).map(artifactDropPayload),
+          canvasCenter({ x: 80, y: 80 }),
+        );
+      }
     } catch (error) {
       setRunError(
         error instanceof Error
@@ -3601,7 +3631,10 @@ function WorkbenchBody({
           />
         ) : null}
         <NodeMenuRegistryContext.Provider value={nodeMenus}>
-          {canEditProject && cellScene && cellScene.graph.cards.length === 0 ? (
+          {canEditProject &&
+          localAuthoringEnabled &&
+          cellScene &&
+          cellScene.graph.cards.length === 0 ? (
             <div {...stylex.props(s.emptyCanvas)}>
               <EmptyCanvasStarter
                 status={canvasUpload}

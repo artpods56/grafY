@@ -6,7 +6,9 @@ Labels below were read from the components that render them. The app was not exe
 
 ## Summary
 
-The workbench speaks in implementation names. A finished transcription is `Sequence<Markdown>`, a port is `document_url` or `· many`, and the same idea is also `list[Markdown]` in the type popover. OCR cards put the model id, page range, table format, and time limit on the face of the card, with choices `r-1` and `md`. Failures quote plug UUIDs, node ids, and `file_format_mismatch`, and they do not say what to do. Run state says Fresh, Stale, fingerprint, and artifact. A collection’s extra socket is hidden until the card is selected. A blank canvas now offers a dropzone, a sample historical page, and Browse steps.
+This summary is the pre-slice baseline, written before the historian copy pass. The next section records what that pass shipped.
+
+The workbench speaks in implementation names. A finished transcription is `Sequence<Markdown>`, a port is `document_url` or `· many`, and the same idea is also `list[Markdown]` in the type popover. OCR cards put the model id, page range, table format, and time limit on the face of the card, with choices `r-1` and `md`. Failures quote plug UUIDs, node ids, and `file_format_mismatch`, and they do not say what to do. Run state says Fresh, Stale, fingerprint, and artifact. A collection’s extra socket is hidden until the card is selected. A blank canvas stays empty until a step is placed.
 
 Out of scope: canvas edge routing, edge geometry, handle measurement, and connection hit testing. Do not edit `apps/web/src/features/workbench/canvas/edges/`. Do not change artifact type ids, operator ids, stored config keys, or the meaning of stored defaults.
 

@@ -5,6 +5,7 @@ keeps Library folders with the people who make them, so the sample is filed at
 the Library root and never under a folder this server invents.
 """
 
+import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from io import BytesIO
@@ -16,6 +17,7 @@ from grafy_core.application.project_creation import MAIN_GRAPH_ID, MAIN_GRAPH_NA
 from grafy_core.artifacts import ArtifactRef
 from grafy_core.canonical_conversions import PNG_FILE_TO_RASTER
 from grafy_core.domain.credentials import SharedCredentialBindingMode
+from grafy_core.domain.errors import NotFoundError
 from grafy_core.domain.graph_documents import (
     GraphConversion,
     GraphDocument,
@@ -65,6 +67,22 @@ _TRANSCRIBE_RESULT_POINT = GraphPoint(x=800, y=80)
 _EXTRACT_RESULT_POINT = GraphPoint(x=1180, y=80)
 _NODE_LAYOUT = GraphNodeLayout(width=300, body_height=180)
 _VIEWER_LAYOUT = GraphPresentationViewerLayout(width=300, body_height=220)
+
+# One API process owns a workspace's writes, and each request builds its own
+# StarterService. The lock is therefore on the process, keyed by the workspace
+# and the sample digest, and it covers the lookup and the save together.
+_sample_locks: dict[tuple[UUID, str], asyncio.Lock] = {}
+_sample_locks_guard = asyncio.Lock()
+
+
+async def _lock_for_sample(workspace_id: UUID, digest: str) -> asyncio.Lock:
+    key = (workspace_id, digest)
+    async with _sample_locks_guard:
+        lock = _sample_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _sample_locks[key] = lock
+        return lock
 
 
 STARTER_NAMES = {
@@ -143,15 +161,16 @@ class StarterService:
         """Return the Library root copy of the bundled scan, creating it once."""
 
         digest = sample_sha256()
-        for item in await self._library.list_items(workspace_id):
-            artifact = item.artifact
-            if (
-                artifact.artifact_type == PNG_TYPE[0]
-                and artifact.schema_version == PNG_TYPE[1]
-                and artifact.sha256 == digest
-            ):
-                return item
-        return await self._persist_sample(workspace_id, created_by_user_id)
+        async with await _lock_for_sample(workspace_id, digest):
+            for item in await self._library.list_items(workspace_id):
+                artifact = item.artifact
+                if (
+                    artifact.artifact_type == PNG_TYPE[0]
+                    and artifact.schema_version == PNG_TYPE[1]
+                    and artifact.sha256 == digest
+                ):
+                    return item
+            return await self._persist_sample(workspace_id, created_by_user_id)
 
     async def create_starter(
         self,
@@ -180,17 +199,24 @@ class StarterService:
         )
         if choice is not None and choice.credential is not None:
             secret = choice.registration.secret_inputs[0]
-            await self._node_secrets.set_shared_binding(
-                workspace_id=workspace_id,
-                project_id=creation.project.id,
-                graph_id=MAIN_GRAPH_ID,
-                node_id=ENGINE_NODE_ID,
-                name=secret.name,
-                mode=SharedCredentialBindingMode.CREDENTIAL,
-                credential_id=choice.credential.id,
-                actor_user_id=actor.user_id,
-                expected_head_sequence=creation.head.collaboration_sequence,
-            )
+            # A credential deleted after the Vault read must not fail the
+            # Project already opened. The provider stays on the canvas and
+            # still asks for a key.
+            try:
+                await self._node_secrets.set_shared_binding(
+                    workspace_id=workspace_id,
+                    project_id=creation.project.id,
+                    graph_id=MAIN_GRAPH_ID,
+                    node_id=ENGINE_NODE_ID,
+                    name=secret.name,
+                    mode=SharedCredentialBindingMode.CREDENTIAL,
+                    credential_id=choice.credential.id,
+                    actor_user_id=actor.user_id,
+                    expected_head_sequence=creation.head.collaboration_sequence,
+                )
+            except NotFoundError as exc:
+                if exc.resource != "Credential":
+                    raise
         return creation.project
 
     async def _persist_sample(

@@ -12,6 +12,7 @@ from grafy_api.project_contracts import (
     CheckpointProjectResponse,
     CopyExactHeadRequest,
     CreateProjectRequest,
+    CreateStarterProjectRequest,
     ProjectBrowserListResponse,
     ProjectCheckpointListResponse,
     ProjectCheckpointResponse,
@@ -170,6 +171,20 @@ class ProjectsApi:
     ) -> ProjectResponse:
         return _parse(
             ProjectResponse, _expect(self.create(payload, headers=headers), 201)
+        )
+
+    def starter(
+        self,
+        payload: CreateStarterProjectRequest,
+        *,
+        headers: Mapping[str, str] | None = None,
+    ) -> Response:
+        return _request(
+            self._client,
+            "POST",
+            self._path("/starter"),
+            payload=payload,
+            headers=headers,
         )
 
     def copy(

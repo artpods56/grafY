@@ -263,8 +263,9 @@ async def copy_exact_head(
     return ProjectResponse.from_project(copy.project)
 
 
-# Same pair as creation: the service writes checkpoint 1 with the head, and a
-# token's scope is only visible here.
+# Creation's pair, plus edit. The service writes checkpoint 1, files the sample
+# in the Library, and may bind a Shared credential. A token's scope is only
+# visible here, so create and checkpoint alone must not reach those writes.
 @router.post(
     "/starter",
     response_model=ProjectResponse,
@@ -277,8 +278,9 @@ async def create_starter_project(
     checkpoint_access: require_workspace_capability(
         WorkspaceCapability.CHECKPOINT_PROJECT
     ),
+    edit_access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
 ) -> ProjectResponse:
-    del checkpoint_access
+    del checkpoint_access, edit_access
     try:
         project = await starter.create_starter(
             actor=access.actor,
