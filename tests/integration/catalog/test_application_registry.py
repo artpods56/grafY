@@ -47,7 +47,8 @@ def test_same_catalog_in_every_environment_without_releases(
         response = client.get(workspace_api_path("/nodes"))
         assert response.status_code == 200, response.text
         nodes = {node["operator_id"]: node for node in response.json()["nodes"]}
-        assert nodes["gis.raster_scan.import"]["origin"] == "builtin"
+        assert "gis.raster_scan.import" not in nodes
+        assert nodes["gis.map.raster_layer"]["origin"] == "builtin"
         assert nodes["image.draw_regions"]["origin"] == "builtin"
         assert (
             nodes["llm.openai_compatible.chat_completion"]["secret_inputs"][0]["name"]

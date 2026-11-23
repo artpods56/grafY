@@ -23,7 +23,9 @@ export function applyInteractionOverrides(
   const highlight = interactionEffectFilter(incoming, "highlight");
 
   for (const layer of layers) {
-    if (layer.source.kind !== "vector" || layer.style.kind === "raster") {
+    // Only a feature layer can answer a selection: a raster layer is one image
+    // per tile, so a filter would have nothing to test.
+    if (layer.style.kind === "raster") {
       continue;
     }
     for (const renderId of layerRenderIds(layer)) {

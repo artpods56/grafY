@@ -559,23 +559,6 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
-    readonly "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/vector.pmtiles": {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: never;
-            readonly path?: never;
-            readonly cookie?: never;
-        };
-        /** Get Geo Vector Pmtiles */
-        readonly get: operations["get_geo_vector_pmtiles_v1_workspaces__workspace_id__artifacts__source_id__geo_vector_pmtiles_get"];
-        readonly put?: never;
-        readonly post?: never;
-        readonly delete?: never;
-        readonly options?: never;
-        readonly head?: never;
-        readonly patch?: never;
-        readonly trace?: never;
-    };
     readonly "/v1/workspaces/{workspace_id}/artifacts/geo/render": {
         readonly parameters: {
             readonly query?: never;
@@ -2666,31 +2649,6 @@ export interface components {
             /** Stroke Width */
             readonly stroke_width: number;
         };
-        /** GeoPropertyFieldResponse */
-        readonly GeoPropertyFieldResponse: {
-            /** Id */
-            readonly id: string;
-            /** Title */
-            readonly title: string;
-            readonly value_type: components["schemas"]["GeoPropertyValueType"];
-        };
-        /** @enum {string} */
-        readonly GeoPropertyValueType: "text" | "integer" | "number" | "boolean" | "null" | "mixed" | "unknown";
-        /** GeoRasterRenderSourceResponse */
-        readonly GeoRasterRenderSourceResponse: {
-            /** Artifact Id */
-            readonly artifact_id: string | null;
-            /** Attribution */
-            readonly attribution?: string | null;
-            readonly bounds: components["schemas"]["GeoBounds"];
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            readonly kind: "raster";
-            /** Tilejson Url */
-            readonly tilejson_url: string;
-        };
         /** GeoRasterStyle */
         readonly GeoRasterStyle: {
             /** Brightness Max */
@@ -2752,8 +2710,7 @@ export interface components {
             readonly min_zoom: number;
             /** Opacity */
             readonly opacity: number;
-            /** Source */
-            readonly source: components["schemas"]["GeoVectorRenderSourceResponse"] | components["schemas"]["GeoRasterRenderSourceResponse"];
+            readonly source: components["schemas"]["GeoRenderSourceResponse"];
             /** Style */
             readonly style: components["schemas"]["GeoVectorStyle"] | components["schemas"]["GeoCategorizedPointStyle"] | components["schemas"]["GeoRasterStyle"];
             /** Title */
@@ -2789,29 +2746,21 @@ export interface components {
             /** Layers */
             readonly layers: readonly components["schemas"]["GeoRenderLayerResponse"][];
         };
-        /** GeoVectorRenderSourceResponse */
-        readonly GeoVectorRenderSourceResponse: {
-            /** Archive Url */
-            readonly archive_url: string;
+        /** GeoRasterRenderSourceResponse */
+        readonly GeoRenderSourceResponse: {
+            /** Artifact Id */
+            readonly artifact_id: string | null;
+            /** Attribution */
+            readonly attribution?: string | null;
+            readonly bounds: components["schemas"]["GeoBounds"];
             /**
-             * Artifact Id
-             * Format: uuid
+             * Kind
+             * @default raster
+             * @constant
              */
-            readonly artifact_id: string;
-            readonly bounds: components["schemas"]["GeoBounds"] | null;
-            /** Fields */
-            readonly fields?: readonly components["schemas"]["GeoPropertyFieldResponse"][];
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            readonly kind: "vector";
-            /** Max Zoom */
-            readonly max_zoom: number;
-            /** Min Zoom */
-            readonly min_zoom: number;
-            /** Source Layer */
-            readonly source_layer: string;
+            readonly kind: "raster";
+            /** Tilejson Url */
+            readonly tilejson_url: string;
         };
         /** GeoVectorStyle */
         readonly GeoVectorStyle: {
@@ -6690,83 +6639,6 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    readonly get_geo_vector_pmtiles_v1_workspaces__workspace_id__artifacts__source_id__geo_vector_pmtiles_get: {
-        readonly parameters: {
-            readonly query?: never;
-            readonly header?: {
-                readonly Range?: string | null;
-            };
-            readonly path: {
-                readonly source_id: string;
-                readonly workspace_id: string;
-            };
-            readonly cookie?: never;
-        };
-        readonly requestBody?: never;
-        readonly responses: {
-            /** @description Successful Response */
-            readonly 200: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": unknown;
-                };
-            };
-            /** @description Invalid vector source */
-            readonly 400: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
-                };
-            };
-            /** @description Artifact not found */
-            readonly 404: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
-                };
-            };
-            /** @description Response too large */
-            readonly 413: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
-                };
-            };
-            /** @description Requested byte range is not satisfiable */
-            readonly 416: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            readonly 422: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Vector projection is unavailable */
-            readonly 500: {
-                headers: {
-                    readonly [name: string]: unknown;
-                };
-                content: {
-                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
-                };
             };
         };
     };

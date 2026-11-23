@@ -7,10 +7,7 @@ from grafy_core.table_contracts import TABLE_DATA
 GIS = Plugin(
     slug="external.gis",
     title="Maps",
-    capabilities=(
-        PluginRuntimeCapability.NATIVE_GDAL,
-        PluginRuntimeCapability.NETWORK_EGRESS,
-    ),
+    capabilities=(PluginRuntimeCapability.NETWORK_EGRESS,),
 )
 GIS.register_artifact_type_dependency(TABLE_DATA)
 GIS.register_artifact_type_dependency(GEOJSON_FILE)

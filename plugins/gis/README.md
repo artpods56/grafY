@@ -3,12 +3,10 @@
 Installed application family for GIS imports, layers, and map documents. Its
 stable identifier is `external.gis`.
 
-Install the Python workspace with `uv sync`. Local execution also needs GDAL
-3.8 or newer with writable PMTiles and COG drivers.
-The API image supplies these tools. GDAL runs in bounded subprocesses; it does
-not need a Plugin image, a registry, or a Docker socket.
+Install the Python workspace with `uv sync`. The GIS family uses stored TIFFs
+directly in map layers. The tiler renders their map tiles on demand.
 
-Run `uv run python scripts/smoke_gis.py` from the repository root to check the
-native raster path.
+Run `uv run pytest tests/unit/plugins/test_gis_plugin.py` from the repository
+root to check the raster and vector contracts.
 See [the GIS smoke procedure](../../docs/how-to-run-gis.md) for the application
 and artifact-viewing checks.

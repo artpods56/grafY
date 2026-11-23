@@ -55,10 +55,10 @@ flowchart LR
 - `libs/workbench` owns the app-built-in node families: Image, Sequence, Value,
   Text, Schema, Table, and File. These run in-process with the API and are
   not Plugin packages.
-- `plugins/gis` owns exact WGS84 vector sources, georeferenced raster scans,
-  OGC WFS/WMS integration, lightweight map-layer recipes, and ordered map
-  composition. MapLibre renders derived PMTiles and XYZ projections without
-  downloading complete source artifacts into the browser.
+- `plugins/gis` owns exact WGS84 vector sources, OGC WFS/WMS integration,
+  lightweight map-layer recipes, and ordered map composition. Map sources are
+  uploaded georeferenced TIFFs; MapLibre draws tiles the tiler renders on demand
+  without downloading complete source artifacts into the browser.
 - `plugins/llm` owns provider-backed generation. Its generic OpenAI-compatible
   Chat Completions node wraps the official OpenAI Python SDK, consumes exact
   prompt messages and an optional runtime JSON Schema, and keeps credentials
@@ -96,7 +96,7 @@ The GIS workflow separates exact data from rendering instructions:
 flowchart LR
   SQL["SQL table with WKT"] --> F["Table to geo features"]
   WFS["Import OGC WFS"] --> F2["Exact feature collection"]
-  TIFF["Import GeoTIFF"] --> R["Exact raster scan"]
+  TIFF["Uploaded GeoTIFF"] --> R["file.tiff"]
   F --> VL["Vector map layer"]
   F2 --> VL2["Vector map layer"]
   R --> RL["Raster map layer"]
@@ -107,10 +107,11 @@ flowchart LR
   C --> M["Compose map"]
 ```
 
-`geo.feature_collection@1` is the exact WGS84 vector source. Its stored JSON
-chunks remain authoritative; a PMTiles archive is generated only as a browser
-projection. `geo.raster_scan@1` is a canonical Cloud Optimized GeoTIFF, with a
-derived XYZ pyramid for browser rendering. `geo.map_layer@1` references one
+`geo.feature_collection@1` is the exact WGS84 vector source, and its stored JSON
+chunks are the only copy of its geometry. A georeferenced `file.tiff@1` is a map
+raster: the tiler renders each requested tile from the stored file. No vector
+renderer exists yet, so a vector layer contributes its footprint to a map but no
+rendered layer. `geo.map_layer@1` references one
 source and owns its style, visibility, opacity, attribution, and zoom range.
 `geo.map_document@1` contains only an ordered list of layer references, a
 basemap choice, and optional initial bounds.

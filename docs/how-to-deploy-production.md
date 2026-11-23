@@ -2,7 +2,8 @@
 
 This guide deploys one reviewed `main` commit to a single Linux host from
 pre-built container images. Application deployment needs no Git checkout or host
-build. The API image contains the installed application families and GDAL.
+build. The API image contains the installed application families. The tiler
+renders TIFF previews on demand.
 PostgreSQL runs inside the Grafy Compose project and stores its data in a
 dedicated Docker volume. The database has no host port.
 
@@ -36,9 +37,7 @@ images and pushes them to GitHub Container Registry, tagged with the full
 | `ghcr.io/artpods56/grafy-tiler` | `tiler.Dockerfile`, `tiler` target | `tiler` |
 
 Because images are pushed only after green CI on `main`, a SHA that has images
-is an approved commit. `GRAFY_BUILD_DIGEST` is the SHA-256 digest of
-`git archive <sha>`, computed by CI and baked into the API image. Do not set it
-on the host: Compose would override or remove the baked value.
+is an approved commit.
 
 The first publish creates each package as private. Either make the four
 packages public in the GitHub package settings, or run `docker login ghcr.io`
@@ -193,8 +192,8 @@ failure; do not pipe a running deployment into `head` or another command that
 closes its input early.
 
 Every family updates with the API image. Do not run Plugin publication,
-promotion, or selection commands. Deploying a different source digest invalidates
-node invocation caches, including GIS and provider calls.
+promotion, or selection commands. Invocation cache keys include the
+operator implementation fingerprint.
 
 Node requests now leave from the API network. Set
 `GRAFY_EGRESS_TRUSTED_DESTINATIONS` only for deployment-owned private
@@ -328,17 +327,8 @@ curl --fail --silent --show-error --output /dev/null \
 
 Confirm that API, web, and gateway use the target SHA and report healthy.
 Verify catalog readiness in each affected Workspace. Python and SQL nodes must
-be absent. Run the [GIS raster smoke procedure](how-to-run-gis.md) with a small
+be absent. Run [View an uploaded TIFF on a map](how-to-run-gis.md) with a small
 GeoTIFF and open its artifact before declaring the deployment usable.
-
-Verify the source digest when release identity needs an independent check:
-
-```bash
-git archive <sha> --output=/tmp/grafy-release.tar
-shasum -a 256 /tmp/grafy-release.tar
-ssh ai-ihpan 'docker exec grafy-api-1 .venv/bin/python -c \
-	"import os; print(os.environ[\"GRAFY_BUILD_DIGEST\"])"'
-```
 
 Keep the SHA, previous SHA, database dump path, deployment log, and verification
 results in the operation directory. Keep database dumps protected. Never include environment contents or bearer

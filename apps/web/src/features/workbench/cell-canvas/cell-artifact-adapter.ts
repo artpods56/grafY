@@ -238,7 +238,6 @@ function fallbackPreviewKind(artifactTypeId: string): ArtifactPreviewKind {
     case "text.markdown":
       return "markdown";
     case "geo.feature_collection":
-    case "geo.raster_scan":
     case "geo.map_layer":
     case "geo.map_document":
       return "map";

@@ -44,13 +44,6 @@ vi.mock("maplibre-gl", () => ({
         this.options = options;
       }
     },
-    addProtocol: vi.fn(),
-  },
-}));
-
-vi.mock("pmtiles", () => ({
-  Protocol: class {
-    tile = vi.fn();
   },
 }));
 
