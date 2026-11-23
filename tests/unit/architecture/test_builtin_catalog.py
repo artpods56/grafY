@@ -69,7 +69,7 @@ def test_file_plugins_install_alongside_builtin_artifact_contracts() -> None:
 def test_application_catalog_has_explicit_descriptions() -> None:
     registry = build_application_registry()
 
-    assert len(registry.nodes) == 41
+    assert len(registry.nodes) == 40
     for node in registry.nodes:
         assert node.description.strip(), node.key
         assert "ABC" not in node.description, node.key

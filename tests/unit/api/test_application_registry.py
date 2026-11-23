@@ -29,7 +29,9 @@ def test_static_registry_supplies_the_catalog(
     )
     nodes = {node.operator_id: node for node in catalog.nodes}
     assert "gis.raster_scan.import" not in nodes
-    assert nodes["gis.map.raster_layer"].catalog_visible is True
+    raster_layer = nodes["gis.map.raster_layer"]
+    assert raster_layer.pack_slugs == ["maps"]
+    assert raster_layer.catalog_visible is False
     assert (
         nodes["llm.openai_compatible.chat_completion"].secret_inputs[0].name
         == "api_key"

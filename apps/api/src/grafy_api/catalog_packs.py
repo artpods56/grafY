@@ -64,7 +64,6 @@ PACKS = (
             "gis.features.to_table",
             "gis.table.to_features",
             "gis.geojson.parse",
-            "gis.raster_scan.import",
             "gis.wfs.import",
             "gis.map.vector_layer",
             "gis.map.raster_layer",
