@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Amends:** ADR 0020 (a node may produce a live object with no stored result)
+- **Amended by:** [ADR 0025](0025-packs-and-ocr-provider-architecture.md) (contract-scoped service features, single-contract providers in v1, and runner-level `RequiresServiceFeature` checks)
 - **Related:** `docs/design/capability-providers/C-service-outputs.md`,
   `CONTEXT.md` (service contract, service port)
 

@@ -5,6 +5,7 @@
 - **Supersedes:** ADR 0005, ADR 0006, ADR 0012, ADR 0013, ADR 0015
 - **Amends:** ADR 0007 (its builtin-family / Plugin split collapses into one kind of
   application-owned node family)
+- **Amended by:** [ADR 0025](0025-packs-and-ocr-provider-architecture.md) (separates UI discovery into Packs while keeping `plugins/` as code packaging)
 - **Related:** `docs/design/plugin-unification.md`, `docs/design/plugin-development.md`,
   `CONTEXT.md` (Plugin, Builtin family)
 
