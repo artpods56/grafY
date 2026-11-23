@@ -1398,8 +1398,14 @@ export function CellCanvas({
       const target = event.target;
       if (
         target instanceof HTMLElement &&
-        (target.isContentEditable || target.closest("input, textarea, select"))
+        (target.isContentEditable ||
+          target.closest(
+            'input, textarea, select, [role="dialog"], [role="alertdialog"]',
+          ))
       ) {
+        // A dialog over the canvas owns its keys. Deleting the card behind an
+        // open dialog, or dropping its selection while the person presses
+        // Escape to leave a field, is data loss the canvas cannot undo.
         return;
       }
       if (event.key === "Escape") {

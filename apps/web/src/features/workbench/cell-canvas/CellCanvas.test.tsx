@@ -362,6 +362,43 @@ describe("CellCanvas", () => {
     expect(onRemovePipes).not.toHaveBeenCalled();
   });
 
+  it("leaves the canvas alone when a key arrives from inside a dialog", () => {
+    const onRemoveCards = vi.fn();
+    const onSelectionChange = vi.fn();
+    mountCanvas({
+      selectedCardIds: new Set(["source"]),
+      onRemoveCards,
+      onSelectionChange,
+    });
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const inside = document.createElement("button");
+    dialog.appendChild(inside);
+    document.body.append(dialog);
+
+    for (const key of ["Backspace", "Delete", "Escape"]) {
+      React.act(() => {
+        inside.dispatchEvent(
+          new KeyboardEvent("keydown", { key, bubbles: true }),
+        );
+      });
+    }
+    expect(onRemoveCards).not.toHaveBeenCalled();
+    expect(onSelectionChange).not.toHaveBeenCalled();
+
+    // The same keys on the canvas do fire, so the guard is what stopped them.
+    React.act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
+    });
+    expect(onRemoveCards).toHaveBeenCalledWith(["source"]);
+    React.act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(onSelectionChange).toHaveBeenCalled();
+
+    dialog.remove();
+  });
+
   it("renders remote peer cursors and keeps onHandleReady referentially stable across viewport moves", () => {
     const onHandleReady = vi.fn<(handle: CellCanvasHandle | null) => void>();
     const peers: CellRemotePeerState[] = [
