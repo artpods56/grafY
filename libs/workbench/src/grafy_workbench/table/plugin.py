@@ -1,8 +1,8 @@
 from grafy_workbench.table.declaration import TABLES
 from grafy_workbench.table.persistence import table_artifact
 
-# Note Table before the node class is created. Port derivation runs at class
-# table port.
+# Port derivation runs at class definition, so Table must be registered before
+# the node modules import.
 TABLES.register(table_artifact())
 
 from grafy_workbench.table import concat  # noqa: E402, F401  # pyright: ignore[reportUnusedImport]

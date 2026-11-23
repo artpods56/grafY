@@ -287,16 +287,22 @@ _NOT_EXECUTABLE = "the Run service never executes an operator itself"
 
 
 class ValueNode(Node[ValueConfig, NoInput, NoOutput]):
+    """Stands in for a plain operator whose whole job is its configured value."""
+
     async def run(self, context: object, config: object, inputs: object, /) -> NoOutput:
         raise AssertionError(_NOT_EXECUTABLE)
 
 
 class NeverNode(Node[ValueConfig, NoInput, NoOutput]):
+    """Stands in for an operator whose runs are never cached."""
+
     async def run(self, context: object, config: object, inputs: object, /) -> NoOutput:
         raise AssertionError(_NOT_EXECUTABLE)
 
 
 class SecretNode(Node[CredentialConfig, NoInput, NoOutput]):
+    """Stands in for an operator that needs a node secret to run."""
+
     async def run(self, context: object, config: object, inputs: object, /) -> NoOutput:
         raise AssertionError(_NOT_EXECUTABLE)
 
