@@ -41,13 +41,13 @@ import { Surface } from "@/components/ui/surface";
 import { Switch } from "@/components/ui/switch";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
-import { studioEmeraldTheme, studioTheme } from "./themes";
+import { previousMonochromeTheme, studioEmeraldTheme } from "./themes";
 
-type ThemePreset = "current" | "studio" | "emerald";
+type ThemePreset = "previous" | "studio" | "emerald";
 
 const THEME_BY_PRESET = {
-  current: null,
-  studio: studioTheme,
+  previous: previousMonochromeTheme,
+  studio: null,
   emerald: studioEmeraldTheme,
 } as const;
 
@@ -127,8 +127,8 @@ export function StudioThemeSpike() {
             value={preset}
             onValueChange={setPreset}
             options={[
-              { value: "current", label: "Current kit" },
-              { value: "studio", label: "Studio (Charcoal)" },
+              { value: "previous", label: "Previous" },
+              { value: "studio", label: "Studio (Default)" },
               { value: "emerald", label: "Studio (Emerald)" },
             ]}
           />

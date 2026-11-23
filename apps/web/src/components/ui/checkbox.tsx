@@ -81,7 +81,9 @@ const box = stylex.create({
     boxSizing: "border-box",
     borderWidth: 1,
     borderStyle: "solid",
-    borderRadius: tokens.radiusSm,
+    // Keep a checkbox visibly square even when `radiusSm` grows (6px on a 12px
+    // dense box would turn it into a radio circle).
+    borderRadius: "4px",
     backgroundColor: tokens.colorSurfaceSunken,
     borderColor: tokens.colorBorderStrong,
     color: tokens.colorOnAccent,
@@ -102,6 +104,7 @@ const box = stylex.create({
   denseControl: {
     width: "12px",
     height: "12px",
+    borderRadius: "3px",
   },
   smControl: {
     width: "14px",
