@@ -48,6 +48,7 @@ import {
 import { credentialVerificationFailure } from "@/lib/api/credentials";
 import { useEffectReducer } from "@/lib/state/use-effect-reducer";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { workspaceSettingsStyles as settings } from "./workspace-settings.styles";
 
 const spin = stylex.keyframes({
   from: { transform: "rotate(0deg)" },
@@ -672,18 +673,27 @@ export function WorkspaceCredentials({
   );
   return (
     <section
-      className="grafy-workspace-settings__section"
+      {...stylex.props(settings.section)}
       aria-labelledby="workspace-credentials-heading"
     >
-      <div className="grafy-workspace-settings__section-heading">
+      <div {...stylex.props(settings.sectionHeading)}>
         <div>
-          <h2 id="workspace-credentials-heading">Provider credentials</h2>
-          <p>
+          <h2
+            id="workspace-credentials-heading"
+            {...stylex.props(settings.headingTitle)}
+          >
+            Provider credentials
+          </h2>
+          <p {...stylex.props(settings.headingText)}>
             Keys that nodes use to call model and document providers. A saved
             key is never shown again, only its last characters.
           </p>
         </div>
-        <Vault size={18} aria-hidden="true" />
+        <Vault
+          size={18}
+          aria-hidden="true"
+          {...stylex.props(settings.headingIcon)}
+        />
       </div>
       <div {...stylex.props(styles.lists)}>
         <CredentialList

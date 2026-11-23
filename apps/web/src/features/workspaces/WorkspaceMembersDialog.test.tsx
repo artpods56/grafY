@@ -210,9 +210,8 @@ describe("WorkspaceMembersDialog invitation behavior", () => {
     await act(async () => root.render(<WorkspaceMembersDialog />));
     await openDialog(container);
 
-    const select = document.body.querySelector<HTMLSelectElement>(
-      ".grafy-member-form select",
-    );
+    const select =
+      document.body.querySelector<HTMLSelectElement>("form select");
     expect(select).toBeInstanceOf(HTMLSelectElement);
     const label = document.body.querySelector(`label[for="${select?.id}"]`);
     expect(label?.textContent).toContain("Requested role");

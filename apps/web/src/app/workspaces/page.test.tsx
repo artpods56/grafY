@@ -121,9 +121,7 @@ it("announces a team that could not be created as an alert", async () => {
 
   await act(async () => buttonByText(container, "Create team").click());
 
-  const nameInput = container.querySelector<HTMLInputElement>(
-    ".grafy-workspace-create input",
-  )!;
+  const nameInput = container.querySelector<HTMLInputElement>("form input")!;
   await act(async () => setInputValue(nameInput, "Atlas"));
   await act(async () => {
     container

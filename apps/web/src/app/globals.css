@@ -257,76 +257,6 @@ body.grafy-side-panel-resizing {
   --grafy-brand-filter: invert(1);
 }
 
-/* Rail workspace select. The control is the kit Select; these rules
-   are the rail's face (icon padding, collapsed transparency, phone row)
-   and stay unlayered so they keep beating it. */
-
-.grafy-workspace-rail__workspace-select select {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 100%;
-  height: 36px;
-  padding: 0 28px 0
-    calc(var(--grafy-rail-icon-center) + var(--grafy-rail-icon) / 2 + 10px);
-  overflow: hidden;
-  border: 1px solid light-dark(#e8e8e8, #2a2a2a);
-  border-radius: 8px;
-  outline: 0;
-  background: light-dark(#fafafa, #171717);
-  color: light-dark(#111111, #f5f5f5);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  color-scheme: inherit;
-  transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
-}
-
-.grafy-workspace-rail__workspace-select select::-ms-expand {
-  display: none;
-}
-
-.grafy-workspace-rail__workspace-select:hover select {
-  border-color: light-dark(#d0d0d0, #3a3a3a);
-  background: light-dark(#f4f4f4, #1a1a1a);
-}
-
-.grafy-workspace-rail__workspace-select select:focus,
-.grafy-workspace-rail__workspace-select select:focus-visible {
-  border-color: light-dark(#111111, #f5f5f5);
-  background: light-dark(#ffffff, #111111);
-}
-
-.grafy-workspace-rail.is-collapsed
-  .grafy-workspace-rail__workspace-select
-  select {
-  color: transparent;
-  border-color: transparent;
-  background: transparent;
-  padding-right: var(--grafy-rail-item-pad);
-}
-
-.grafy-workspace-rail.is-collapsed
-  .grafy-workspace-rail__workspace-select:hover
-  select,
-.grafy-workspace-rail.is-collapsed
-  .grafy-workspace-rail__workspace-select:focus-within
-  select {
-  background: light-dark(#f4f4f4, #1a1a1a);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .grafy-workspace-rail__workspace-select select {
-    transition: none;
-  }
-}
-
 /*
  * `DialogBody` owns padding, not the spacing between its children. A dialog
  * that stacks a form, a message slot, and a list needs that rhythm from here:
@@ -354,38 +284,12 @@ body.grafy-side-panel-resizing {
   :root {
     --grafy-rail-width: 64px;
   }
-
-  .grafy-workspace-rail__workspace-select select {
-    color: transparent;
-    border-color: transparent;
-    background: transparent;
-    padding-right: var(--grafy-rail-item-pad);
-  }
-
-  .grafy-workspace-rail__workspace-select:hover select,
-  .grafy-workspace-rail__workspace-select:focus-within select {
-    background: light-dark(#f4f4f4, #1a1a1a);
-  }
 }
 
 @media (max-width: 620px) {
   :root,
   :root[data-rail-collapsed="true"] {
     --grafy-rail-width: 0px;
-  }
-
-  .grafy-workspace-rail__workspace-select select {
-    min-height: 44px;
-  }
-
-  .grafy-workspace-rail__workspace-select select,
-  .grafy-workspace-rail.is-collapsed
-    .grafy-workspace-rail__workspace-select
-    select {
-    color: light-dark(#111111, #f5f5f5);
-    border-color: light-dark(#e8e8e8, #2a2a2a);
-    background: light-dark(#fafafa, #171717);
-    padding-right: 32px;
   }
 }
 

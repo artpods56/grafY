@@ -33,64 +33,12 @@ import {
   type SavedGraphSummary,
   type StarterId,
 } from "@/lib/api";
-import { tokens } from "@/lib/stylex/tokens.stylex";
 
 import { GraphViewToggle } from "./GraphViewToggle";
+import { browserStyles } from "./WorkspaceGraphBrowser.styles";
 import { useGraphBrowserFilters } from "./use-graph-browser-filters";
 
 const RECENT_GRAPH_LIMIT = 8;
-
-const browserStyles = stylex.create({
-  /** Keeps the strip's own spacing around the list; Notice carries none. */
-  partialNotice: {
-    margin: "16px 0 4px",
-  },
-  recipes: {
-    display: "grid",
-    gap: "10px",
-    margin: "4px 0 18px",
-  },
-  recipeHeading: {
-    margin: 0,
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 560,
-  },
-  recipeRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "10px",
-  },
-  recipe: {
-    display: "grid",
-    gap: "4px",
-    padding: "12px 14px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: {
-      default:
-        "light-dark(color-mix(in srgb, white 88%, transparent), color-mix(in srgb, white 8%, transparent))",
-      ":hover:not(:disabled)": tokens.colorHover,
-    },
-    color: tokens.colorText,
-    fontFamily: "inherit",
-    fontSize: tokens.fontSizeSm,
-    textAlign: "start",
-    cursor: {
-      default: "pointer",
-      ":disabled": "default",
-    },
-  },
-  recipeTitle: {
-    fontWeight: 560,
-  },
-  recipePath: {
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeXs,
-  },
-});
 
 const RECIPES: readonly {
   id: StarterId;
@@ -119,25 +67,43 @@ function GraphRow({
   workspaceName: string;
 }) {
   return (
-    <li>
+    <li {...stylex.props(browserStyles.listItem)}>
+      {/* The marker is what lets `rowArrow` answer this row's own hover. */}
       <Link
         href={workbenchProjectPath(workspaceSlug, graph.id)}
-        className="grafy-graphs__row"
         aria-label={`Open ${graph.name} in ${workspaceName}`}
+        {...stylex.props(browserStyles.row, stylex.defaultMarker())}
       >
-        <span className="grafy-graphs__row-icon" aria-hidden="true">
+        <span {...stylex.props(browserStyles.rowIcon)} aria-hidden="true">
           <Workflow size={16} />
         </span>
-        <span className="grafy-graphs__row-title">{graph.name}</span>
-        <span className="grafy-graphs__row-location">{workspaceName}</span>
-        <span className="grafy-graphs__row-meta">
+        <span
+          {...stylex.props(browserStyles.rowTruncate, browserStyles.rowTitle)}
+        >
+          {graph.name}
+        </span>
+        <span
+          {...stylex.props(
+            browserStyles.rowTruncate,
+            browserStyles.rowLocation,
+          )}
+        >
+          {workspaceName}
+        </span>
+        <span
+          {...stylex.props(browserStyles.rowTruncate, browserStyles.rowMeta)}
+        >
           {graphAgeLabel(graph.updated_at)}
         </span>
-        <span className="grafy-graphs__row-meta">{graphCountLabel(graph)}</span>
+        <span
+          {...stylex.props(browserStyles.rowTruncate, browserStyles.rowMeta)}
+        >
+          {graphCountLabel(graph)}
+        </span>
         <ArrowUpRight
-          className="grafy-graphs__row-arrow"
           size={15}
           aria-hidden="true"
+          {...stylex.props(browserStyles.rowArrow)}
         />
       </Link>
     </li>
@@ -211,20 +177,20 @@ function WorkspaceGraphBrowserContent() {
   };
 
   return (
-    <div className="grafy-graphs">
-      <main className="grafy-graphs__main">
-        <header className="grafy-graphs__header">
+    <div {...stylex.props(browserStyles.root)}>
+      <main {...stylex.props(browserStyles.main)}>
+        <header {...stylex.props(browserStyles.header)}>
           <div>
-            <p className="grafy-graphs__eyebrow">{workspaceName}</p>
-            <h1>Projects</h1>
-            <p className="grafy-graphs__intro">
+            <p {...stylex.props(browserStyles.eyebrow)}>{workspaceName}</p>
+            <h1 {...stylex.props(browserStyles.pageTitle)}>Projects</h1>
+            <p {...stylex.props(browserStyles.intro)}>
               Open or start a project in this workspace.
             </p>
           </div>
           <Button
             variant="primary"
             size="lg"
-            className="grafy-graphs__header-action"
+            xstyle={browserStyles.headerAction}
             disabled={!canCreate}
             title={
               canCreate
@@ -272,8 +238,8 @@ function WorkspaceGraphBrowserContent() {
           </section>
         ) : null}
 
-        <div className="grafy-graphs__toolbar grafy-graphs__toolbar--scoped">
-          <label className="grafy-graphs__search">
+        <div {...stylex.props(browserStyles.toolbar)}>
+          <label {...stylex.props(browserStyles.search)}>
             <Search size={16} aria-hidden="true" />
             <input
               ref={searchFieldRef}
@@ -281,15 +247,16 @@ function WorkspaceGraphBrowserContent() {
               defaultValue={query}
               aria-label="Search projects"
               placeholder="Search projects"
+              {...stylex.props(browserStyles.searchInput)}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
           </label>
         </div>
 
-        <div className="grafy-graphs__view-bar">
+        <div {...stylex.props(browserStyles.viewBar)}>
           <GraphViewToggle value={view} onValueChange={setView} />
           {data ? (
-            <span className="grafy-graphs__count">
+            <span {...stylex.props(browserStyles.count)}>
               {graphs.length} {graphs.length === 1 ? "project" : "projects"}
             </span>
           ) : null}
@@ -298,33 +265,51 @@ function WorkspaceGraphBrowserContent() {
         {!data && isLoading ? (
           <GraphBrowserLoadingBlock label="Loading projects" />
         ) : !data && error ? (
-          <section className="grafy-graphs__state" role="alert">
-            <Workflow size={22} aria-hidden="true" />
+          <section role="alert" {...stylex.props(browserStyles.state)}>
+            <Workflow
+              size={22}
+              aria-hidden="true"
+              {...stylex.props(browserStyles.stateIcon)}
+            />
             <div>
-              <h2>Projects couldn&apos;t be loaded</h2>
-              <p>Check your connection, then try again.</p>
+              <h2 {...stylex.props(browserStyles.stateTitle)}>
+                Projects couldn&apos;t be loaded
+              </h2>
+              <p {...stylex.props(browserStyles.stateBody)}>
+                Check your connection, then try again.
+              </p>
             </div>
             <Button
               variant="secondary"
               size="lg"
-              className="grafy-graphs__state-action"
+              xstyle={browserStyles.stateAction}
               onClick={() => void mutate()}
             >
               <RotateCcw size={14} aria-hidden="true" /> Retry
             </Button>
           </section>
         ) : data?.projects.length === 0 ? (
-          <section className="grafy-graphs__state grafy-graphs__state--empty">
-            <Workflow size={22} aria-hidden="true" />
+          <section
+            {...stylex.props(browserStyles.state, browserStyles.stateEmpty)}
+          >
+            <Workflow
+              size={22}
+              aria-hidden="true"
+              {...stylex.props(browserStyles.stateIcon)}
+            />
             <div>
-              <h2>No projects yet</h2>
-              <p>Create your first project in {workspaceName}.</p>
+              <h2 {...stylex.props(browserStyles.stateTitle)}>
+                No projects yet
+              </h2>
+              <p {...stylex.props(browserStyles.stateBody)}>
+                Create your first project in {workspaceName}.
+              </p>
             </div>
             {canCreate ? (
               <Button
                 variant="secondary"
                 size="lg"
-                className="grafy-graphs__state-action"
+                xstyle={browserStyles.stateAction}
                 onClick={startGraph}
               >
                 <Plus size={14} aria-hidden="true" /> New project
@@ -332,16 +317,26 @@ function WorkspaceGraphBrowserContent() {
             ) : null}
           </section>
         ) : visibleGraphs.length === 0 ? (
-          <section className="grafy-graphs__state grafy-graphs__state--empty">
-            <Search size={22} aria-hidden="true" />
+          <section
+            {...stylex.props(browserStyles.state, browserStyles.stateEmpty)}
+          >
+            <Search
+              size={22}
+              aria-hidden="true"
+              {...stylex.props(browserStyles.stateIcon)}
+            />
             <div>
-              <h2>No projects match your search</h2>
-              <p>Try another project name.</p>
+              <h2 {...stylex.props(browserStyles.stateTitle)}>
+                No projects match your search
+              </h2>
+              <p {...stylex.props(browserStyles.stateBody)}>
+                Try another project name.
+              </p>
             </div>
             <Button
               variant="secondary"
               size="lg"
-              className="grafy-graphs__state-action"
+              xstyle={browserStyles.stateAction}
               onClick={() => setQuery("")}
             >
               Clear search
@@ -349,8 +344,8 @@ function WorkspaceGraphBrowserContent() {
           </section>
         ) : (
           <ul
-            className="grafy-graphs__list"
             aria-label={`${view === "recent" ? "Recent" : "All"} projects`}
+            {...stylex.props(browserStyles.list)}
           >
             {visibleGraphs.map((graph) => (
               <GraphRow
@@ -385,7 +380,7 @@ function WorkspaceGraphBrowserContent() {
 /** The list's own loading state, and the shell shown while the address settles. */
 function GraphBrowserLoadingBlock({ label }: { label: string }) {
   return (
-    <div className="grafy-graphs__loading" role="status">
+    <div role="status" {...stylex.props(browserStyles.loading)}>
       <BrandLoader size={36} label={label} />
       <span>{label}…</span>
     </div>
@@ -394,8 +389,8 @@ function GraphBrowserLoadingBlock({ label }: { label: string }) {
 
 function GraphBrowserLoadingShell() {
   return (
-    <div className="grafy-graphs">
-      <main className="grafy-graphs__main">
+    <div {...stylex.props(browserStyles.root)}>
+      <main {...stylex.props(browserStyles.main)}>
         <GraphBrowserLoadingBlock label="Loading projects" />
       </main>
     </div>

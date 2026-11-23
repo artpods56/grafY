@@ -319,7 +319,7 @@ describe("workspace rail route lifecycle", () => {
       (button) => button.textContent?.trim() === "All projects",
     );
 
-    expect(allGraphs?.classList.contains("is-active")).toBe(true);
+    expect(allGraphs?.getAttribute("data-active")).toBe("true");
     await act(async () => allGraphs?.click());
 
     expect(testState.push).toHaveBeenCalledWith(
@@ -404,7 +404,7 @@ describe("workspace rail route lifecycle", () => {
     await rerender();
     const button = artifactsButton(container);
     expect(button?.getAttribute("aria-expanded")).toBe("false");
-    expect(button?.className).not.toContain("is-active");
+    expect(button?.getAttribute("data-active")).toBeNull();
 
     await act(async () => button?.click());
     expect(toggleSidePanel).toHaveBeenCalledTimes(1);
@@ -417,7 +417,9 @@ describe("workspace rail route lifecycle", () => {
     expect(artifactsButton(container)?.getAttribute("aria-controls")).toBe(
       "grafy-side-panel",
     );
-    expect(artifactsButton(container)?.className).toContain("is-active");
+    expect(artifactsButton(container)?.getAttribute("data-active")).toBe(
+      "true",
+    );
   });
 
   it("does not reopen a mobile drawer after navigating away and back", async () => {
@@ -425,29 +427,29 @@ describe("workspace rail route lifecycle", () => {
     const openNavigation = container.querySelector<HTMLButtonElement>(
       "[aria-label='Open navigation']",
     );
+    // The rail is stubbed to a phone viewport, so an open drawer is a dialog.
+    const drawer = () =>
+      container.querySelector<HTMLElement>("#grafy-primary-navigation");
 
     await act(async () => openNavigation?.click());
-    expect(
-      container.querySelector(".grafy-workspace-rail.is-mobile-open"),
-    ).not.toBeNull();
+    expect(drawer()?.getAttribute("role")).toBe("dialog");
+    expect(drawer()?.getAttribute("aria-modal")).toBe("true");
 
     testState.pathname = "/workspaces/operations/projects/graph-b";
     await rerender();
-    expect(
-      container.querySelector(".grafy-workspace-rail.is-mobile-open"),
-    ).toBeNull();
+    expect(drawer()?.getAttribute("role")).toBeNull();
+    expect(drawer()?.getAttribute("aria-modal")).toBeNull();
 
     testState.pathname = "/workspaces/operations/projects/graph-a";
     await rerender();
-    expect(
-      container.querySelector(".grafy-workspace-rail.is-mobile-open"),
-    ).toBeNull();
+    expect(drawer()?.getAttribute("role")).toBeNull();
+    expect(drawer()?.getAttribute("aria-modal")).toBeNull();
   });
 
   it("keeps the mobile navigation toggle a named button with its expanded state", async () => {
     const { container } = await renderWorkspaceRail();
     const toggle = container.querySelector<HTMLButtonElement>(
-      ".grafy-mobile-nav__menu",
+      "button[aria-controls='grafy-primary-navigation']",
     );
 
     expect(toggle?.getAttribute("aria-label")).toBe("Open navigation");

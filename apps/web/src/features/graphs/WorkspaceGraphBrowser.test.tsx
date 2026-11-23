@@ -157,9 +157,23 @@ function searchInput(container: ParentNode): HTMLInputElement {
   return input;
 }
 
+/**
+ * One row per Project: the link inside a list item of the labelled project list.
+ * Rows are read off the accessible structure rather than a class name, because
+ * the list's styling is StyleX and carries no hook to select.
+ */
+function rowLinks(container: ParentNode): HTMLAnchorElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLAnchorElement>(
+      '[aria-label="Recent projects"] > li > a, [aria-label="All projects"] > li > a',
+    ),
+  );
+}
+
+/** The project name leads the row; only the icon span ahead of it is hidden. */
 function rowTitles(container: ParentNode): string[] {
-  return Array.from(container.querySelectorAll(".grafy-graphs__row-title")).map(
-    (title) => title.textContent ?? "",
+  return rowLinks(container).map(
+    (row) => row.querySelector("span:not([aria-hidden])")?.textContent ?? "",
   );
 }
 
@@ -258,10 +272,10 @@ describe("workspace graph browser", () => {
     expect(
       container.querySelector('[aria-label="Filter by location"]'),
     ).toBeNull();
-    expect(container.querySelectorAll(".grafy-graphs__row")).toHaveLength(8);
+    expect(rowLinks(container)).toHaveLength(8);
 
     await click(viewOption(container, "All"));
-    expect(container.querySelectorAll(".grafy-graphs__row")).toHaveLength(9);
+    expect(rowLinks(container)).toHaveLength(9);
     expect(
       container
         .querySelector<HTMLAnchorElement>(

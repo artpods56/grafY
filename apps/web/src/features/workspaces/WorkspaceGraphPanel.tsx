@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import * as stylex from "@stylexjs/stylex";
 import { Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -11,6 +12,150 @@ import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import type { SavedGraphSummary } from "@/lib/api";
 import { workbenchProjectPath } from "@/features/workbench/routes";
 import { GraphRowMenu } from "./GraphRowMenu";
+import { graphRowMarker } from "./workspace-rail.stylex";
+
+/**
+ * StyleX port of the `.grafy-graph-panel*` rules that used to live in
+ * globals.css; values (including the 620px breakpoint) are copied verbatim.
+ */
+const panelStyles = stylex.create({
+  panel: {
+    position: "fixed",
+    zIndex: 60,
+    top: "12px",
+    left: "calc(var(--grafy-rail-width) + 10px)",
+    width: "276px",
+    maxHeight: "calc(100svh - 24px)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "8px",
+    padding: "14px 12px 12px",
+    border: "1px solid light-dark(#d9d9d9, #2a2a2a)",
+    borderRadius: "12px",
+    background: "light-dark(#ffffff, #171717)",
+    boxShadow:
+      "0 18px 48px light-dark(rgba(17, 17, 17, 0.14), rgba(0, 0, 0, 0.55))",
+    "@media (max-width: 620px)": {
+      top: "calc(var(--grafy-mobile-header-height) + 8px + env(safe-area-inset-top))",
+      right: "calc(12px + env(safe-area-inset-right))",
+      left: "calc(12px + env(safe-area-inset-left))",
+      width: "auto",
+      maxHeight:
+        "calc(100dvh - var(--grafy-mobile-header-height) - 20px - env(safe-area-inset-top) - env(safe-area-inset-bottom))",
+    },
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+    paddingInline: "4px",
+  },
+  title: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    color: "light-dark(#111111, #f5f5f5)",
+    fontSize: "13px",
+    fontWeight: 600,
+  },
+  count: {
+    color: "light-dark(#6b6b6b, #8a8a8a)",
+    fontSize: "11px",
+    fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
+  },
+  search: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    minHeight: "34px",
+    paddingInline: "10px",
+    border: "1px solid light-dark(#d9d9d9, #333333)",
+    borderRadius: "8px",
+    color: "light-dark(#6b6b6b, #8a8a8a)",
+    ":focus-within": {
+      borderColor: "light-dark(#111111, #f5f5f5)",
+    },
+    "@media (max-width: 620px)": {
+      minHeight: "44px",
+    },
+  },
+  searchInput: {
+    width: "100%",
+    minWidth: 0,
+    border: 0,
+    outline: "none",
+    background: "transparent",
+    color: "light-dark(#111111, #f5f5f5)",
+    fontFamily: "inherit",
+    fontSize: "13px",
+    "@media (max-width: 620px)": {
+      height: "44px",
+    },
+  },
+  list: {
+    display: "grid",
+    alignContent: "start",
+    gap: "1px",
+    overflowX: "hidden",
+    overflowY: "auto",
+    marginTop: "2px",
+    paddingTop: "8px",
+    borderTop: "1px solid light-dark(#d9d9d9, #2a2a2a)",
+  },
+  empty: {
+    padding: "10px",
+    color: "light-dark(#6b6b6b, #8a8a8a)",
+    fontSize: "12px",
+    lineHeight: 1.5,
+  },
+  row: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    alignItems: "center",
+    gap: "2px",
+    padding: "2px 4px 2px 2px",
+    borderRadius: "6px",
+    ":hover": {
+      background: "light-dark(#f4f4f4, #1a1a1a)",
+    },
+  },
+  rowActive: {
+    background: "light-dark(#f4f4f4, #1a1a1a)",
+  },
+  rowOpen: {
+    display: "grid",
+    gap: "2px",
+    minWidth: 0,
+    padding: "5px 6px",
+    border: 0,
+    borderRadius: "6px",
+    background: "transparent",
+    cursor: "pointer",
+    textAlign: "left",
+    "@media (max-width: 620px)": {
+      minHeight: "44px",
+    },
+  },
+  rowName: {
+    overflow: "hidden",
+    color: "light-dark(#111111, #f5f5f5)",
+    fontSize: "13px",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  rowNameActive: {
+    fontWeight: 500,
+  },
+  rowMeta: {
+    overflow: "hidden",
+    color: "light-dark(#6b6b6b, #8a8a8a)",
+    fontSize: "11px",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+});
 
 export type WorkspaceGraphPanelCloseReason =
   "close-button" | "escape" | "graph-selected" | "outside-pointer";
@@ -101,7 +246,7 @@ export function WorkspaceGraphPanel({
       if (
         target instanceof Element &&
         (target.closest("[data-graph-panel-trigger]") ||
-          target.closest(".grafy-workspace-rail__account-menu"))
+          target.closest("[data-account-menu]"))
       ) {
         return;
       }
@@ -133,17 +278,19 @@ export function WorkspaceGraphPanel({
       ref={panelRef}
       role="dialog"
       aria-label="Quick project switcher"
-      className="grafy-graph-panel"
+      className={stylex.props(panelStyles.panel).className}
     >
-      <div className="grafy-graph-panel__header">
-        <p className="grafy-graph-panel__title">
+      <div className={stylex.props(panelStyles.header).className}>
+        <p className={stylex.props(panelStyles.title).className}>
           Quick switch
           {total > 0 ? (
-            <span className="grafy-graph-panel__count">{total}</span>
+            <span className={stylex.props(panelStyles.count).className}>
+              {total}
+            </span>
           ) : null}
           {isRefreshing ? (
             <span
-              className="grafy-graph-panel__count"
+              className={stylex.props(panelStyles.count).className}
               role="status"
               aria-live="polite"
             >
@@ -161,7 +308,7 @@ export function WorkspaceGraphPanel({
         </IconButton>
       </div>
 
-      <div className="grafy-graph-panel__search">
+      <div className={stylex.props(panelStyles.search).className}>
         <Search size={14} aria-hidden="true" />
         <input
           ref={searchRef}
@@ -170,14 +317,17 @@ export function WorkspaceGraphPanel({
           placeholder="Search projects"
           aria-label="Search projects"
           onChange={(event) => setQuery(event.currentTarget.value)}
+          className={stylex.props(panelStyles.searchInput).className}
         />
       </div>
 
-      <div className="grafy-graph-panel__list">
+      <div className={stylex.props(panelStyles.list).className}>
         {isLoading ? (
-          <p className="grafy-graph-panel__empty">Loading projects…</p>
+          <p className={stylex.props(panelStyles.empty).className}>
+            Loading projects…
+          </p>
         ) : projects.length === 0 ? (
-          <p className="grafy-graph-panel__empty">
+          <p className={stylex.props(panelStyles.empty).className}>
             {query.trim()
               ? "No projects match that search."
               : "No projects in this location yet. Use New project in the sidebar to start one."}
@@ -186,17 +336,31 @@ export function WorkspaceGraphPanel({
           projects.map((project) => (
             <div
               key={project.id}
-              className={`grafy-graph-panel__row${activeGraphId === project.id ? " is-active" : ""}`}
+              className={
+                stylex.props(
+                  panelStyles.row,
+                  graphRowMarker,
+                  activeGraphId === project.id && panelStyles.rowActive,
+                ).className
+              }
+              data-active={activeGraphId === project.id ? true : undefined}
             >
               <button
                 type="button"
-                className="grafy-graph-panel__row-open"
+                className={stylex.props(panelStyles.rowOpen).className}
                 onClick={() => openProject(project.id)}
               >
-                <span className="grafy-graph-panel__row-name">
+                <span
+                  className={
+                    stylex.props(
+                      panelStyles.rowName,
+                      activeGraphId === project.id && panelStyles.rowNameActive,
+                    ).className
+                  }
+                >
                   {project.name}
                 </span>
-                <span className="grafy-graph-panel__row-meta">
+                <span className={stylex.props(panelStyles.rowMeta).className}>
                   {`${graphAgeLabel(project.updated_at)} · ${graphCountLabel(project)}`}
                 </span>
               </button>
