@@ -18,7 +18,6 @@ const ARTIFACT_TYPE_COLOR: Record<string, string> = {
   "tabular.csv_bundle": "light-dark(#c08549, #f0a65a)",
   "export.dataset": "light-dark(#8663c9, #a78bfa)",
   "geo.feature_collection": "light-dark(#27865f, #3fbf88)",
-  "geo.raster_scan": "light-dark(#758c2c, #a4c83e)",
   "geo.map_layer": "light-dark(#1f8892, #35b7c3)",
   "geo.map_document": "light-dark(#2370a8, #45a1df)",
 };

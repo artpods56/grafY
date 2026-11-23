@@ -170,8 +170,9 @@ and the WMS client stay in `grafy_api.artifacts`.
 Core owns producer-neutral stored contracts, including spatial payloads, styles,
 map references, and feature metadata. GIS public aliases reuse those contracts.
 API models retain explicit compatibility differences where required response
-fields or historical reader acceptance differ from producer validation. GDAL,
-provider calls, and raw raster upload inputs remain in GIS.
+fields or historical reader acceptance differ from producer validation. Provider
+calls remain in GIS; a georeferenced TIFF enters a map as the stored
+`file.tiff@1` and the tiler renders its tiles on demand.
 
 Core `spatial_storage` shares feature-page reconstruction and canonical byte/hash
 validation. `stored_models` shares typed stored-model reads. Format-specific table

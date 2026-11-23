@@ -52,7 +52,6 @@ export function libraryFileKey(artifactId: string): string {
 const ICON_BY_ARTIFACT_TYPE: Readonly<Record<string, LibraryFileIcon>> = {
   "image.raster": "image",
   "image.pixmap": "image",
-  "geo.raster_scan": "image",
 
   "table.data": "table",
   "table.csv": "table",

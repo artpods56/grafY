@@ -8,26 +8,11 @@ class GeoRasterUnavailableError(WorkbenchOperationError):
 
 
 class GeoRasterTileNotFoundError(WorkbenchOperationError):
-    """A tile requested from a legacy raster source does not exist."""
+    """A tile outside the rendered range of a raster source was requested."""
 
 
 class GeoRenderArtifactNotFoundError(WorkbenchOperationError):
     """A requested render artifact is unavailable in the workspace."""
-
-
-class GeoRangeNotSatisfiableError(ValueError):
-    def __init__(
-        self,
-        *,
-        total_size: int,
-        etag: str,
-        reason: str | None = None,
-    ) -> None:
-        super().__init__(
-            reason or f"Requested byte range is not satisfiable for {total_size} bytes"
-        )
-        self.total_size = total_size
-        self.etag = etag
 
 
 class ArtifactResponseTooLargeError(WorkbenchOperationError):
@@ -48,7 +33,6 @@ class ArtifactResponseTooLargeError(WorkbenchOperationError):
 
 __all__ = [
     "ArtifactResponseTooLargeError",
-    "GeoRangeNotSatisfiableError",
     "GeoRasterTileNotFoundError",
     "GeoRasterUnavailableError",
     "GeoRenderArtifactNotFoundError",

@@ -1,7 +1,7 @@
 from typing import Annotated, get_args
 from uuid import UUID
 
-from fastapi import APIRouter, Header, HTTPException, Path, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 from fastapi.responses import Response, StreamingResponse
 
 from grafy_api.artifacts.models import (
@@ -28,12 +28,10 @@ from grafy_api.services.errors import (
 
 from grafy_api.artifacts.errors import (
     ArtifactResponseTooLargeError,
-    GeoRangeNotSatisfiableError,
     GeoRasterTileNotFoundError,
     GeoRasterUnavailableError,
     GeoRenderArtifactNotFoundError,
 )
-from grafy_api.artifacts.geo_tiles import IMMUTABLE_CACHE_CONTROL
 from grafy_api.artifacts.images import ImageProxyError
 from .dependencies import (
     ArtifactContentDependency,
@@ -158,65 +156,6 @@ async def query_geo_features(
 
 
 @router.get(
-    "/artifacts/{source_id}/geo/vector.pmtiles",
-    responses={
-        400: {"model": WorkbenchErrorResponse, "description": "Invalid vector source"},
-        404: {"model": WorkbenchErrorResponse, "description": "Artifact not found"},
-        413: {"model": WorkbenchErrorResponse, "description": "Response too large"},
-        416: {"description": "Requested byte range is not satisfiable"},
-        500: {
-            "model": WorkbenchErrorResponse,
-            "description": "Vector projection is unavailable",
-        },
-    },
-)
-async def get_geo_vector_pmtiles(
-    source_id: UUID,
-    service: ArtifactGeoTileDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
-    range_header: Annotated[str | None, Header(alias="Range")] = None,
-) -> Response:
-    artifact = await service.get(access.workspace_id, source_id)
-    if artifact is None:
-        raise HTTPException(status_code=404, detail="Artifact not found")
-    try:
-        archive = await service.load_vector_archive(artifact, range_header)
-    except GeoRangeNotSatisfiableError as exc:
-        raise HTTPException(
-            status_code=416,
-            detail=str(exc),
-            headers={
-                "Accept-Ranges": "bytes",
-                "Content-Range": f"bytes */{exc.total_size}",
-                "ETag": exc.etag,
-                "Cache-Control": IMMUTABLE_CACHE_CONTROL,
-            },
-        ) from exc
-    except ArtifactResponseTooLargeError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
-    except ArtifactContentUnavailableError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except WorkbenchOperationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    headers = {
-        "Accept-Ranges": "bytes",
-        "Content-Length": str(len(archive.content)),
-        "ETag": archive.etag,
-        "Cache-Control": IMMUTABLE_CACHE_CONTROL,
-    }
-    if archive.status_code == 206:
-        headers["Content-Range"] = (
-            f"bytes {archive.start}-{archive.end_exclusive - 1}/{archive.total_size}"
-        )
-    return Response(
-        content=archive.content,
-        status_code=archive.status_code,
-        media_type=archive.content_type,
-        headers=headers,
-    )
-
-
-@router.get(
     "/artifacts/{source_id}/geo/features/{feature_index}",
     response_model=GeoExactFeatureResponse,
     responses={
@@ -335,9 +274,7 @@ async def get_geo_raster_tile(
         )
     headers = {
         "Content-Length": str(len(tile.content)),
-        "Cache-Control": IMMUTABLE_CACHE_CONTROL
-        if tile.immutable
-        else "private, max-age=300",
+        "Cache-Control": "private, max-age=300",
     }
     if tile.etag is not None:
         headers["ETag"] = tile.etag
@@ -684,7 +621,6 @@ __all__ = [
     "get_geo_raster_tile",
     "get_geo_raster_tilejson",
     "get_geo_render_descriptor",
-    "get_geo_vector_pmtiles",
     "query_geo_features",
     "get_table_artifact_cell",
     "get_table_artifact_page",

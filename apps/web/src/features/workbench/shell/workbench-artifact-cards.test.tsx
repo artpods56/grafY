@@ -745,8 +745,8 @@ describe("artifactCardFootprint", () => {
     ).toEqual({ width: 600, height: 350 });
     expect(
       box({
-        artifact_id: "scan",
-        artifact_type: "geo.raster_scan",
+        artifact_id: "map",
+        artifact_type: "geo.map_document",
         schema_version: 1,
       }),
     ).toEqual({ width: 450, height: 350 });

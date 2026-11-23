@@ -25,13 +25,10 @@ CMD [".venv/bin/uvicorn", "grafy_api.main:app", "--host", "0.0.0.0", "--port", "
 
 FROM source AS api
 
-# GDAL's Python tools use Debian's system interpreter and bindings. The API
-# uses uv's Python 3.14 and the installed application families.
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates gdal-bin python3-gdal python3-numpy python3-pil \
+    && apt-get install --no-install-recommends -y ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 RUN uv sync --locked --no-dev
-RUN .venv/bin/python -c "from grafy_plugin_gis.gdal import GdalCli; c = GdalCli().capabilities(); assert c.pmtiles_write and c.cog_write and c.png_write, c"
 
 # Release image for deployment. The digest identifies the exact source archive
 # the built-in node implementations were built from, so it is fixed at build

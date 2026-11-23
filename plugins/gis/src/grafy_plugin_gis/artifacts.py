@@ -21,13 +21,6 @@ GEO_FEATURE_COLLECTION = ArtifactTypeSpec(
     preview_kind=ArtifactPreviewKind.MAP,
 )
 
-GEO_RASTER_SCAN = ArtifactTypeSpec(
-    key=ArtifactTypeKey("geo.raster_scan", 1),
-    title="Georeferenced raster scan",
-    bundle=ArtifactBundleContract(format="object-set", version=1),
-    preview_kind=ArtifactPreviewKind.MAP,
-)
-
 GEO_MAP_LAYER = ArtifactTypeSpec(
     key=ArtifactTypeKey("geo.map_layer", 1),
     title="Map layer",

@@ -10,10 +10,8 @@ from grafy_shared.config.tiler import TilerConfig
 
 from grafy_api.artifacts.errors import GeoRasterUnavailableError
 from grafy_api.artifacts.images import TiffSource, TilerPort, stored_tiff_source
-from grafy_api.artifacts.models import GeoRasterProjectionMetadata
 
 TIFF_ARTIFACT_TYPE = "file.tiff"
-GEO_RASTER_SCAN_ARTIFACT_TYPE = "geo.raster_scan"
 _INFO_CACHE_ENTRIES: Final = 512
 
 
@@ -85,34 +83,8 @@ def fit_min_zoom(bounds: GeoBounds) -> int:
     return max(0, math.floor(-math.log2(max(span_x, span_y, 2.0**-22))) - 2)
 
 
-async def load_geo_raster_info(
-    artifact: ArtifactObject, tiler: TilerPort
-) -> GeoTiffInfo:
-    """Footprint and zoom range of a file.tiff@1 or tiler-read geo.raster_scan@1."""
-    if artifact.artifact_type == TIFF_ARTIFACT_TYPE:
-        return await load_geo_tiff(artifact, tiler)
-    if artifact.artifact_type != GEO_RASTER_SCAN_ARTIFACT_TYPE:
-        raise GeoRasterUnavailableError(
-            f"Artifact {artifact.id} is not a georeferenced raster"
-        )
-    projection = GeoRasterProjectionMetadata.model_validate(
-        artifact.metadata.get("raster_projection")
-    )
-    if projection.prefix is not None:
-        # A legacy static tile pyramid has no source the tiler can composite.
-        raise GeoRasterUnavailableError(
-            f"Raster scan {artifact.id} uses a static tile pyramid and cannot "
-            "be read by the tiler"
-        )
-    return GeoTiffInfo(
-        stored_tiff_source(artifact, page=0),
-        projection.bounds,
-        projection.min_zoom,
-        projection.max_zoom,
-    )
-
-
 async def load_geo_tiff(artifact: ArtifactObject, tiler: TilerPort) -> GeoTiffInfo:
+    """Footprint and zoom range of one file.tiff@1 read by the tiler."""
     source = stored_tiff_source(artifact, page=0)
     known_infos = _infos.setdefault(tiler, OrderedDict())
     key: _InfoKey = (

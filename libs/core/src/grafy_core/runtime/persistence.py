@@ -133,7 +133,7 @@ class OutputPersister:
                     f"Output {spec.name!r} expected an ArtifactRefSequence, "
                     "got ArtifactRef"
                 )
-            return value
+            return ArtifactRef.model_validate(value.model_dump())
         if isinstance(value, ArtifactRefSequence):
             if (
                 value.artifact_type != spec.produces.id

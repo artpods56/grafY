@@ -68,9 +68,9 @@ An artifact type is a payload contract, so two nodes that move the same payload
 share one type. A second type id for an identical contract is a catalog bug, not
 a Plugin namespace: an image Plugin that declares `photos.shot@1` over the
 `image.raster@1` payload cannot connect to nodes that expect a raster.
-Specialized types exist only where the contract differs, as `geo.raster_scan@1`
-(CRS, geotransform, bands) and `geo.map_layer@1` (a drawing recipe rather than
-pixels) do. A node does not escape this by declaring a type variable: `T`
+Specialized types exist only where the contract differs, as `geo.feature_collection@1`
+(exact WGS84 geometry rather than pixels) and `geo.map_layer@1` (a drawing recipe
+rather than pixels) do. A node does not escape this by declaring a type variable: `T`
 belongs to generic operations such as Collect, Slice, and Pick. The same holds
 for file formats: one deployment-wide type per format, so two plugins that read
 CSV share one CSV artifact type instead of each shipping their own.
@@ -405,24 +405,29 @@ materializes only the final target-typed artifact.
 Spatial sources and map presentation are separate artifact roles. A
 `geo.feature_collection@1` is an exact, canonical WGS84 vector dataset whose
 features may contain points, lines, polygons, multipolygons, or geometry
-collections. Its logical source is stored in bounded chunks; a content-addressed
-PMTiles sidecar is a derived rendering projection and never replaces the exact
-features. A `geo.raster_scan@1` is an exact georeferenced scan normalized to a
-Cloud Optimized GeoTIFF. Its browser-ready XYZ pyramid is likewise a derived
-projection, not another workflow artifact.
+collections. Its logical source is stored in bounded chunks and stays the only
+copy of the geometry: no derived rendering projection is written beside it, and
+reading one feature or querying matched features reads the stored chunks. No
+renderer draws vector layers yet, so a vector collection or a vector map layer
+contributes no rendered layer to a descriptor while its exact features, property
+fields and footprint stay readable. A map raster is an uploaded georeferenced
+`file.tiff@1` read on demand by the tiler, which renders one XYZ tile per
+request; nothing precomputes a pyramid or a Cloud Optimized copy.
 
 A `geo.map_layer@1` is an inline, lightweight drawing recipe. It references one
-feature collection or raster scan, or declares one public remote WMS source, and
-owns visibility, zoom range, opacity, attribution, and vector or raster style.
+feature collection, one georeferenced TIFF, or an ordered list of them as a
+mosaic, or declares one public remote WMS source, and owns visibility, zoom
+range, opacity, attribution, and vector or raster style.
 A `geo.map_document@1` contains only an ordered list of map-layer references, an
 optional basemap, and optional initial bounds. It never embeds source geometry,
-pixels, PMTiles, or XYZ tiles. The same exact source can therefore participate in
+pixels, or tiles. The same exact source can therefore participate in
 several independently styled maps without data duplication.
 
 The artifact HTTP adapter resolves those references into one small immutable
-render descriptor. Vector archives are served through byte-range reads and
-raster requests load one stored XYZ tile; storage bucket names and object keys
-never cross the API boundary. Renderer controls are local preview overrides
+render descriptor. Every rendered layer in it is a raster tile source: a TIFF,
+a mosaic or a remote WMS read through TileJSON plus one tile per request;
+storage bucket names and object keys never cross the API boundary. Renderer
+controls are local preview overrides
 unless a workflow deliberately produces another map-layer artifact.
 
 Remote spatial services follow the same ownership split. WFS import takes a

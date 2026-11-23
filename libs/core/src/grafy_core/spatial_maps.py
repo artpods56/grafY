@@ -28,7 +28,7 @@ BasemapKind = Literal["openstreetmap", "none"]
 
 
 MAX_RASTER_MOSAIC_SOURCES = 64
-RASTER_SOURCE_ARTIFACT_TYPES = ("geo.raster_scan", "file.tiff")
+RASTER_SOURCE_ARTIFACT_TYPES = ("file.tiff",)
 
 
 def _validate_ref(
@@ -63,6 +63,13 @@ class GeoFeatureArtifactSource(BaseModel):
 
 
 class GeoRasterArtifactSource(BaseModel):
+    """One georeferenced TIFF read on demand by the tiler.
+
+    The ``raster_scan`` discriminator is the stored name of this source shape in
+    geo.map_layer payloads; the retired geo.raster_scan artifact type is gone and
+    only file.tiff@1 satisfies it.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["raster_scan"] = "raster_scan"
@@ -76,8 +83,8 @@ class GeoRasterArtifactSource(BaseModel):
             or ref.schema_version != 1
         ):
             raise ValueError(
-                "raster source artifact must reference geo.raster_scan@1 or "
-                f"file.tiff@1, got {ref.artifact_type}@{ref.schema_version}"
+                "raster source artifact must reference file.tiff@1, got "
+                f"{ref.artifact_type}@{ref.schema_version}"
             )
         return self
 
@@ -101,9 +108,8 @@ class GeoRasterMosaicSource(BaseModel):
                 or artifact.schema_version != 1
             ):
                 raise ValueError(
-                    "raster mosaic source artifact must reference geo.raster_scan@1 "
-                    f"or file.tiff@1, got {artifact.artifact_type}@"
-                    f"{artifact.schema_version}"
+                    "raster mosaic source artifact must reference file.tiff@1, "
+                    f"got {artifact.artifact_type}@{artifact.schema_version}"
                 )
             if artifact.artifact_id in seen:
                 raise ValueError(
