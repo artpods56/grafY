@@ -2,8 +2,6 @@
 
 from typing import Literal, cast, final, override
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from grafy_core.artifacts import (
     ArtifactPreviewKind,
     ArtifactReferenceContract,
@@ -15,6 +13,7 @@ from grafy_core.artifacts import (
     NodeOutput,
 )
 from grafy_core.config_ui import field_ui, when_field_eq
+from grafy_core.contracts.ocr import TextBoxDetector, TextRegion, TiffPageOpener
 from grafy_core.documents import TiffFile
 from grafy_core.file_contracts import TIFF_FILE
 from grafy_core.node_context import UserFacingNodeError
@@ -22,7 +21,7 @@ from grafy_core.node_ports import Ref
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.provider_cache import ProviderCache
 from grafy_core.runtime.artifact_values import inline_model_artifact
-from grafy_core.text_regions import TextDetector, TextRegion, TiffPageOpener
+from pydantic import BaseModel, ConfigDict, Field
 
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.tiff_scan import Window, detect_area
@@ -89,7 +88,7 @@ class TiffTextRegions(BaseModel):
     regions: list[TextRegion]
 
 
-OCR.register_service_contract(TextDetector)
+OCR.register_service_contract(TextBoxDetector)
 OCR.register_artifact_type_dependency(TIFF_FILE)
 OCR.register(
     inline_model_artifact(
@@ -111,7 +110,7 @@ OCR.register(
 
 class DetectTextInput(NodeInput):
     tiff: Ref[TiffFile] = Field(title="TIFF")
-    detector: TextDetector = Field(title="Detector")
+    detector: TextBoxDetector = Field(title="Detector")
 
 
 class DetectTextOutput(NodeOutput):

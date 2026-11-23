@@ -142,6 +142,7 @@ function stepSpec(
   outputs: readonly Port[],
 ): NodeSpec {
   return {
+    role: "operator",
     operator_id: operatorId,
     operator_version: 1,
     plugin_slug: "test",

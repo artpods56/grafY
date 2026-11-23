@@ -3544,6 +3544,12 @@ export interface components {
             /** Plugin Slug */
             readonly plugin_slug: string;
             /**
+             * Role
+             * @default operator
+             * @enum {string}
+             */
+            readonly role: "operator" | "provider";
+            /**
              * Runnable
              * @default true
              */
@@ -3690,11 +3696,6 @@ export interface components {
              */
             readonly direction: "input" | "output";
             /**
-             * Features
-             * @description Feature strings a service output's implementation declares, so the workbench can mute ports a connected provider does not produce.
-             */
-            readonly features?: readonly string[];
-            /**
              * Instance Plugs
              * @default false
              */
@@ -3712,8 +3713,11 @@ export interface components {
              * @default true
              */
             readonly required: boolean;
+            readonly requires_service_feature?: components["schemas"]["RequiresServiceFeatureResponse"] | null;
             /** Service Contracts */
             readonly service_contracts?: readonly components["schemas"]["ServiceContractKeyResponse"][];
+            /** Service Features */
+            readonly service_features?: readonly components["schemas"]["ServiceContractFeaturesResponse"][];
             readonly shape: components["schemas"]["PortShape"];
             /**
              * Shape Field
@@ -4145,6 +4149,13 @@ export interface components {
             readonly kind: "replace_presentation";
             readonly presentation: components["schemas"]["GraphPresentationDocument"];
         };
+        /** RequiresServiceFeatureResponse */
+        readonly RequiresServiceFeatureResponse: {
+            /** Feature */
+            readonly feature: string;
+            /** Input Port */
+            readonly input_port: string;
+        };
         /**
          * RunListResponse
          * @description The Runs of one Project, newest first, optionally only the active ones.
@@ -4252,6 +4263,12 @@ export interface components {
             readonly client_turn_id: string;
             /** Text */
             readonly text: string;
+        };
+        /** ServiceContractFeaturesResponse */
+        readonly ServiceContractFeaturesResponse: {
+            readonly contract: components["schemas"]["ServiceContractKeyResponse"];
+            /** Features */
+            readonly features: readonly string[];
         };
         /** ServiceContractKeyResponse */
         readonly ServiceContractKeyResponse: {

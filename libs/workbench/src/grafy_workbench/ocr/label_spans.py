@@ -1,14 +1,14 @@
 """Group detected label boxes into spans and keep the readings that name places."""
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from math import atan2, cos, degrees, floor, hypot, isfinite, radians, sin
-import re
 
+from grafy_core.contracts.ocr import PixelPoint, TextRegion
+from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
 from shapely import Polygon, make_valid  # pyright: ignore[reportUnknownVariableType]
 
-from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
-from grafy_core.text_regions import PixelPoint, TextRegion
 from grafy_workbench.ocr.tiff_recognition import (
     TiffRecognizedRegion,
     TiffRecognizedText,

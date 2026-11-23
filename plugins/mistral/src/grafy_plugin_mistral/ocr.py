@@ -16,6 +16,7 @@ from grafy_core.artifact_contracts import (
 )
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.config_ui import field_ui
+from grafy_core.contracts.ocr import DocumentOcr, DocumentOcrFeature, DocumentOcrResult
 from grafy_core.credential_verification import verify_http_credential
 from grafy_core.declared_values import note_declaration
 from grafy_core.documents import PdfFile, RasterImage
@@ -28,7 +29,6 @@ from grafy_core.nodes import (
     Plugs,
     UserFacingNodeError,
 )
-from grafy_core.ocr_contracts import OcrFeature, OcrReader, OcrResult
 from grafy_core.plugins import (
     NodeHttpEgressContract,
     NodeSecretInput,
@@ -174,7 +174,7 @@ class MistralOcrProvider(Protocol):
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> OcrResult: ...
+    ) -> DocumentOcrResult: ...
 
 
 class MistralOcrProviderError(UserFacingNodeError):
@@ -185,11 +185,10 @@ class MistralOcrExecutionError(UserFacingNodeError):
     pass
 
 
-class MistralReader(OcrReader):
-    features: ClassVar[frozenset[OcrFeature]] = frozenset(
-        {OcrFeature.BLOCKS, OcrFeature.REGIONS}
+class MistralReader(DocumentOcr):
+    features: ClassVar[frozenset[DocumentOcrFeature]] = frozenset(
+        {DocumentOcrFeature.BLOCKS, DocumentOcrFeature.REGIONS}
     )
-    title: ClassVar[str] = "Mistral OCR"
 
     def __init__(
         self,
@@ -204,7 +203,7 @@ class MistralReader(OcrReader):
         self._workspace_id = workspace_id
         self._provider = provider
 
-    async def read(self, document: RasterImage | PdfFile) -> OcrResult:
+    async def read(self, document: RasterImage | PdfFile) -> DocumentOcrResult:
         return await self._provider.process(
             document_url=None,
             image=document,
@@ -213,7 +212,7 @@ class MistralReader(OcrReader):
             workspace_id=self._workspace_id,
         )
 
-    async def read_document_url(self, document_url: str) -> OcrResult:
+    async def read_document_url(self, document_url: str) -> DocumentOcrResult:
         return await self._provider.process(
             document_url=document_url,
             image=None,
@@ -228,9 +227,9 @@ class MistralProviderInput(NodeInput):
 
 
 class MistralProviderOutput(NodeOutput):
-    reader: Annotated[
+    engine: Annotated[
         MistralReader,
-        Field(title="OCR reader", description="Reads a scan or PDF with Mistral OCR."),
+        Field(title="Document OCR engine", description="Reads a scan or PDF with Mistral OCR."),
     ]
 
 
@@ -346,7 +345,7 @@ class MistralOcrProviderNode(
     ) -> MistralProviderOutput:
         api_key = await context.secrets.require(API_KEY.name)
         return MistralProviderOutput(
-            reader=MistralReader(
+            engine=MistralReader(
                 config=config,
                 api_key=api_key,
                 workspace_id=context.workspace_id,
@@ -508,7 +507,7 @@ _BLOCK_COLUMNS = (
 )
 
 
-def build_ocr_output(response: OCRResponse, config: MistralOcrConfig) -> OcrResult:
+def build_ocr_output(response: OCRResponse, config: MistralOcrConfig) -> DocumentOcrResult:
     markdown_pages: list[str] = []
     rows: list[dict[str, TableValue]] = []
     pages: list[ImagePage] = []
@@ -579,7 +578,7 @@ def build_ocr_output(response: OCRResponse, config: MistralOcrConfig) -> OcrResu
         response.usage_info.pages_processed,
         response.usage_info.doc_size_bytes,
     )
-    return OcrResult(
+    return DocumentOcrResult(
         markdown=MarkdownValue(markdown="\n\n".join(markdown_pages)),
         blocks=Table(
             columns=[

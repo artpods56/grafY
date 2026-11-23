@@ -8,10 +8,8 @@ from typing import cast
 from uuid import UUID, uuid4
 
 import httpx
-from PIL import Image
-from pydantic import JsonValue, SecretStr
 import pytest
-
+from grafy_core.contracts.ocr import TextRegion, TiffPage
 from grafy_core.documents import TiffFile
 from grafy_core.node_context import (
     NodeExecutionContext,
@@ -21,7 +19,6 @@ from grafy_core.node_context import (
 from grafy_core.node_ports import Ref
 from grafy_core.plugins import NodeSecretInput
 from grafy_core.provider_cache import InMemoryCacheStore, ProviderCache
-from grafy_core.text_regions import TextRegion, TiffPage
 from grafy_workbench.ocr.jev_filter import (
     FilterTiffJevConfig,
     FilterTiffJevInput,
@@ -29,6 +26,8 @@ from grafy_workbench.ocr.jev_filter import (
 )
 from grafy_workbench.ocr.provider_http import ProviderRequest, post_json, serve_client
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
+from PIL import Image
+from pydantic import JsonValue, SecretStr
 
 
 class _Secrets:

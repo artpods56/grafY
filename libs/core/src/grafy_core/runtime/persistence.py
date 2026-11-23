@@ -75,7 +75,18 @@ class OutputPersister:
         provenance: MaterializationProvenance,
         metadata: JsonObject | None = None,
     ) -> PersistedNodeOutput | BaseModel:
-        validated_output = contract.model.model_validate(output)
+        return await self.persist_validated(
+            contract, context, contract.model.model_validate(output), provenance, metadata
+        )
+
+    async def persist_validated(
+        self,
+        contract: OutputContract[Any],
+        context: NodeExecutionContext,
+        validated_output: BaseModel,
+        provenance: MaterializationProvenance,
+        metadata: JsonObject | None = None,
+    ) -> PersistedNodeOutput | BaseModel:
         values = _model_values(validated_output)
 
         for name, spec in contract.ports.items():

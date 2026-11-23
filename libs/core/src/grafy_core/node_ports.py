@@ -60,6 +60,26 @@ class ServiceContractKey:
             raise ValueError("Service contract version must be a positive integer")
 
 
+@dataclass(frozen=True, slots=True)
+class ServiceContractFeatures:
+    contract: ServiceContractKey
+    features: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RequiresServiceFeature:
+    """An optional output whose presence depends on a connected service."""
+
+    input_port: str
+    feature: str
+
+    def __post_init__(self) -> None:
+        if not self.input_port.strip() or not self.feature.strip():
+            raise NodeContractError("Service feature and input port must not be blank")
+        object.__setattr__(self, "input_port", str(self.input_port))
+        object.__setattr__(self, "feature", str(self.feature))
+
+
 class Ref[T](ArtifactRef):
     """A stored artifact ref. ``T`` is the value class, or ``Any`` when bound."""
 
@@ -210,8 +230,8 @@ class OutputPortSpec:
     shape_field: str | None = None
     kind: Literal["artifact", "service"] = "artifact"
     service_contracts: tuple[ServiceContractKey, ...] = ()
-    # Feature strings a service implementation declares (for example OCR blocks).
-    features: tuple[str, ...] = ()
+    service_features: tuple[ServiceContractFeatures, ...] = ()
+    requires_service_feature: RequiresServiceFeature | None = None
 
     def __post_init__(self) -> None:
         if self.kind == "service":

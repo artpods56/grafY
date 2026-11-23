@@ -1,5 +1,5 @@
-import json
 import asyncio
+import json
 from collections.abc import Mapping
 from io import BytesIO
 from pathlib import Path
@@ -8,29 +8,29 @@ from uuid import UUID, uuid4
 
 import httpx2 as httpx
 import pytest
-from pydantic import SecretStr, ValidationError
-
 from grafy_core.artifact_contracts import (
+    IMAGE_REGIONS,
+    MARKDOWN,
     RASTER_IMAGE,
     TEXT_VALUE,
-    MARKDOWN,
-    IMAGE_REGIONS,
 )
+from grafy_core.contracts.ocr import DocumentOcrResult
 from grafy_core.documents import PdfFile, RasterImage
-from grafy_core.file_contracts import PDF_FILE
+from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.file_contracts import PDF_FILE
 from grafy_core.nodes import NodeExecutionContext, PortShape, bind_node_secrets
+from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
+from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
+from grafy_core.runtime.in_memory import InMemoryUnitOfWork
 from grafy_core.runtime.invocation import (
     InvocationMode,
     NodeInvocation,
     validate_invocation,
 )
-from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
-from grafy_core.domain.node_secrets import JsonValue
-from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
-from grafy_core.runtime.in_memory import InMemoryUnitOfWork
+from grafy_core.table_contracts import TABLE_DATA
+from grafy_plugin_mistral import ocr_sdk
 from grafy_plugin_mistral.declaration import MISTRAL
-from grafy_core.ocr_contracts import OcrResult
 from grafy_plugin_mistral.ocr import (
     API_KEY,
     MistralOcrConfig,
@@ -38,18 +38,17 @@ from grafy_plugin_mistral.ocr import (
     MistralOcrInput,
     MistralOcrNode,
     MistralOcrProviderError,
+    build_ocr_output,
 )
-from grafy_plugin_mistral import ocr_sdk
 from grafy_plugin_mistral.ocr_sdk import MistralOcrSdkProvider
+from mistralai.client.models.ocrresponse import OCRResponse
+from pydantic import SecretStr, ValidationError
+
 from tests.support.egress import (
     loopback_http_listener,
     no_grants,
     trusted_loopback_destination,
 )
-from grafy_core.table_contracts import TABLE_DATA
-from mistralai.client.models.ocrresponse import OCRResponse
-from grafy_plugin_mistral.ocr import build_ocr_output
-
 
 WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000911")
 
@@ -92,7 +91,7 @@ class FakeNodeSecrets:
 
 
 class FakeProvider:
-    def __init__(self, document: OcrResult) -> None:
+    def __init__(self, document: DocumentOcrResult) -> None:
         self._document = document
         self.api_key: SecretStr | None = None
         self.document_url: str | None = None
@@ -105,7 +104,7 @@ class FakeProvider:
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> OcrResult:
+    ) -> DocumentOcrResult:
         del image, config
         assert workspace_id == WORKSPACE_ID
         self.document_url = document_url
@@ -199,7 +198,7 @@ class FakeStorage:
         raise AssertionError(f"Unexpected delete from {bucket}/{path}")
 
 
-def document_payload() -> OcrResult:
+def document_payload() -> DocumentOcrResult:
     return build_ocr_output(
         OCRResponse.model_validate(ocr_response().json()), MistralOcrConfig()
     )

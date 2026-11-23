@@ -21,13 +21,15 @@ function portDefaults({
     variadic: false,
     required: true,
     artifact_type_variable: null,
+    service_features: [],
+    requires_service_feature: null,
   };
 }
 
 export function artifactPortFixture<Direction extends Port["direction"]>(
   options: Omit<
     PortFixtureOptions<Direction>,
-    "service_contracts" | "features"
+    "service_contracts" | "service_features"
   >,
 ): Port & { direction: Direction; kind: "artifact" } {
   return {
@@ -61,6 +63,11 @@ export function nodeSpecFixture(
   options: Pick<NodeSpec, "operator_id"> & Partial<NodeSpec>,
 ): NodeSpec {
   return {
+    role:
+      options.outputs?.length &&
+      options.outputs.every((port) => port.kind === "service")
+        ? "provider"
+        : "operator",
     title: options.operator_id,
     description: "",
     operator_version: 1,

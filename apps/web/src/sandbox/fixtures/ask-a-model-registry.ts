@@ -350,6 +350,7 @@ export const askAModelRegistry: NodeRegistry = {
   artifact_conversions: [],
   nodes: [
     {
+      role: "operator",
       origin: "builtin",
       operator_id: "llm.openai_compatible.chat_completion",
       operator_version: 1,

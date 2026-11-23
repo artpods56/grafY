@@ -287,6 +287,7 @@ function boundaryConfigSchema(
 export function boundaryNodeSpecs(): NodeSpec[] {
   return [
     {
+      role: "operator",
       operator_id: GRAPH_INPUT_OPERATOR_ID,
       operator_version: GRAPH_BOUNDARY_OPERATOR_VERSION,
       plugin_slug: PROJECT_GRAPHS_PLUGIN_SLUG,
@@ -302,6 +303,7 @@ export function boundaryNodeSpecs(): NodeSpec[] {
       catalog_visible: true,
     },
     {
+      role: "operator",
       operator_id: GRAPH_OUTPUT_OPERATOR_ID,
       operator_version: GRAPH_BOUNDARY_OPERATOR_VERSION,
       plugin_slug: PROJECT_GRAPHS_PLUGIN_SLUG,
@@ -358,6 +360,7 @@ export function callNodeSpec(
     required: true,
   }));
   return {
+    role: "operator",
     operator_id: graph.id,
     operator_version: CALL_NODE_OPERATOR_VERSION,
     plugin_slug: PROJECT_GRAPHS_PLUGIN_SLUG,

@@ -157,6 +157,7 @@ function port(name: string, overrides: Partial<Port> = {}): Port {
 }
 
 const operatorSpec: NodeSpec = {
+  role: "operator",
   operator_id: "test.source",
   operator_version: 1,
   title: "Source",

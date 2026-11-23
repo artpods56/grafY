@@ -1,40 +1,39 @@
-from grafy_core.text_regions import ServiceCacheIdentity
+import json
 from base64 import b64decode
 from collections.abc import Sequence
 from io import BytesIO
-import json
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from PIL import Image, ImageDraw
-from pydantic import SecretStr
-
 from grafy_core.artifacts import NoConfig
+from grafy_core.contracts.ocr import (
+    CropTextReader,
+    PixelPoint,
+    ServiceCacheIdentity,
+    TextReading,
+    TextRegion,
+    TiffPage,
+)
 from grafy_core.documents import TiffFile
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.node_ports import Ref
 from grafy_core.provider_cache import InMemoryCacheStore, ProviderCache
-from grafy_core.text_regions import (
-    PixelPoint,
-    TextReading,
-    TextRecognizer,
-    TextRegion,
-    TiffPage,
-)
 from grafy_workbench.ocr.paddle_recognizer import (
     PADDLE_MODEL,
     PADDLE_URL,
     PaddleCyrillicRecognizer,
 )
 from grafy_workbench.ocr.provider_http import serve_client
+from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
 from grafy_workbench.ocr.tiff_label_crop import NATIVE_CROP_PIXEL_LIMIT
 from grafy_workbench.ocr.tiff_recognition import (
     ReadTiffTextNode,
     RecognizeInput,
     RecognizeOutput,
 )
-from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
+from PIL import Image, ImageDraw
+from pydantic import SecretStr
 
 
 class ReadProgress:
@@ -69,7 +68,7 @@ async def test_reads_rotated_polygons_without_losing_their_source_coordinates():
         assert (workspace, artifact, page) == (workspace_id, artifact_id, 2)
         return TiffPage(100, 100, read, source_sha256="0" * 64, page=page)
 
-    class Recognizer(TextRecognizer):
+    class Recognizer(CropTextReader):
         def cache_identity(self):
             return ServiceCacheIdentity("test", "1")
 
@@ -127,7 +126,7 @@ async def test_a_repeated_crop_does_not_call_the_recognizer_again():
         del workspace, artifact
         return TiffPage(100, 100, read, source_sha256="ab" * 32, page=page)
 
-    class Recognizer(TextRecognizer):
+    class Recognizer(CropTextReader):
         def cache_identity(self):
             return ServiceCacheIdentity("test", "1")
 
@@ -185,7 +184,7 @@ async def test_distinct_misses_go_to_the_recognizer_in_one_call():
         del workspace, artifact
         return TiffPage(100, 100, read, source_sha256="cd" * 32, page=page)
 
-    class Recognizer(TextRecognizer):
+    class Recognizer(CropTextReader):
         def cache_identity(self):
             return ServiceCacheIdentity("test", "1")
 
@@ -259,7 +258,7 @@ async def test_a_second_scan_of_the_same_labels_reads_the_cache_not_the_provider
         del workspace_id, artifact_id
         return TiffPage(page_side, page_side, read, source_sha256="ef" * 32, page=page)
 
-    class Recognizer(TextRecognizer):
+    class Recognizer(CropTextReader):
         def cache_identity(self):
             return ServiceCacheIdentity("test", "1")
 
@@ -415,7 +414,7 @@ async def test_a_label_wider_than_one_native_read_is_stitched_from_several_reads
 
     crops: list[bytes] = []
 
-    class Recognizer(TextRecognizer):
+    class Recognizer(CropTextReader):
         def cache_identity(self):
             return ServiceCacheIdentity("test", "1")
 
@@ -544,7 +543,7 @@ async def test_paddle_names_a_provider_that_stops_answering():
 
 
 async def _run_identity_recognition(
-    cache: ProviderCache, context: NodeExecutionContext, recognizer: TextRecognizer
+    cache: ProviderCache, context: NodeExecutionContext, recognizer: CropTextReader
 ) -> RecognizeOutput:
     async def read(*, col: int, row: int, width: int, height: int) -> bytes:
         return _window_png(width, height)
@@ -568,7 +567,7 @@ async def _run_identity_recognition(
 
 
 async def test_recognizer_identities_isolate_cache_entries():
-    class Recognizer(TextRecognizer):
+    class Recognizer(CropTextReader):
         def __init__(self, deployment: str):
             self.deployment = deployment
             self.calls = 0
@@ -597,7 +596,7 @@ async def test_recognizer_identities_isolate_cache_entries():
 async def test_recognizer_moving_revision_bypasses_cache():
     from unittest.mock import AsyncMock
 
-    class Recognizer(TextRecognizer):
+    class Recognizer(CropTextReader):
         def cache_identity(self) -> ServiceCacheIdentity:
             return ServiceCacheIdentity("moving", None)
 

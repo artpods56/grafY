@@ -1,16 +1,42 @@
-"""Pixel-space contracts for text localization and recognition."""
+"""OCR service contracts, results, and pixel-space geometry."""
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-import re
+from enum import StrEnum
 from math import isfinite
 from types import MappingProxyType
-from typing import Annotated, Protocol, cast
+from typing import Annotated, ClassVar, Protocol, cast, runtime_checkable
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from grafy_core.artifact_contracts import ImageRegionSet, MarkdownValue
+from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.service_contracts import service_contract
+from grafy_core.table_contracts import Table
+
+
+class DocumentOcrFeature(StrEnum):
+    BLOCKS = "blocks"
+    REGIONS = "regions"
+
+
+class DocumentOcrResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    markdown: MarkdownValue
+    blocks: Table | None = None
+    regions: ImageRegionSet | None = None
+
+
+@service_contract("ocr.document", version=1, title="Document OCR")
+@runtime_checkable
+class DocumentOcr(Protocol):
+    features: ClassVar[frozenset[DocumentOcrFeature]]
+
+    async def read(self, document: RasterImage | PdfFile) -> DocumentOcrResult: ...
+
 
 type PixelCoordinate = Annotated[float, Field(ge=0, allow_inf_nan=False, strict=True)]
 type PixelPoint = tuple[PixelCoordinate, PixelCoordinate]
@@ -105,8 +131,8 @@ class ServiceCacheIdentity:
         }
 
 
-@service_contract("ocr.text_detector", version=1, title="Text detector")
-class TextDetector(Protocol):
+@service_contract("ocr.box_detector", version=1, title="Text box detector")
+class TextBoxDetector(Protocol):
     def cache_identity(self) -> ServiceCacheIdentity: ...
 
     async def detect(
@@ -124,8 +150,8 @@ class TextReading(BaseModel):
     model: str = Field(min_length=1)
 
 
-@service_contract("ocr.text_recognizer", version=1, title="Text recognizer")
-class TextRecognizer(Protocol):
+@service_contract("ocr.crop_reader", version=1, title="Crop text reader")
+class CropTextReader(Protocol):
     def cache_identity(self) -> ServiceCacheIdentity: ...
 
     async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:

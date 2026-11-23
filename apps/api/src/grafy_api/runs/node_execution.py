@@ -22,11 +22,12 @@ from grafy_core.artifacts import (
     JsonObject,
 )
 from grafy_core.domain.artifact_outputs import ArtifactOutputValue
-from grafy_core.nodes import NodeExecutionContext, PortShape
+from grafy_core.nodes import NodeExecutionContext, PortShape, UserFacingNodeError
 from grafy_core.runtime.edge_transform import EdgeTransform, EdgeTransformError
 from grafy_core.runtime.execution import NodeRunError, NodeRuntime
 from grafy_core.runtime.invocation import InvocationMode
 from grafy_core.runtime.persistence import PersistedNodeOutput
+from grafy_core.service_contracts import BoundServiceProvider
 
 from grafy_api.runs.contract import BoundNode
 from grafy_api.runs.errors import NodeComputationError
@@ -55,7 +56,7 @@ class _MappedItemError(NodeComputationError):
                 f"{name}={ref.artifact_id}" for name, ref in mapped_refs.items()
             )
             message = f"Node {operator_id!r} MAP inputs failed at item {index} ({refs})"
-        if isinstance(cause, NodeRunError):
+        if isinstance(cause, NodeRunError | UserFacingNodeError):
             message = f"{message}: {cause}"
         super().__init__(message)
 
@@ -82,6 +83,7 @@ class NodeExecutionService:
         context: NodeExecutionContext,
         transforms: Mapping[str, Sequence[EdgeTransform]] | None = None,
         metadata: JsonObject | None = None,
+        bound_services: Mapping[str, BoundServiceProvider] | None = None,
     ) -> dict[str, ArtifactOutputValue]:
         if bound.invocation.mode is InvocationMode.MAP:
             return await self._run_mapped(
@@ -90,6 +92,7 @@ class NodeExecutionService:
                 transforms=transforms or {},
                 context=context,
                 metadata=metadata,
+                bound_services=bound_services,
             )
         result = await self._runtime.run_node(
             bound.node,
@@ -99,6 +102,7 @@ class NodeExecutionService:
             artifact_type_bindings=bound.artifact_type_bindings,
             transforms=transforms,
             metadata=metadata,
+            bound_services=bound_services,
         )
         return _persisted_outputs(bound, result)
 
@@ -110,6 +114,7 @@ class NodeExecutionService:
         transforms: Mapping[str, Sequence[EdgeTransform]],
         context: NodeExecutionContext,
         metadata: JsonObject | None = None,
+        bound_services: Mapping[str, BoundServiceProvider] | None = None,
     ) -> dict[str, ArtifactOutputValue]:
         node = bound.node
         map_inputs = bound.invocation.map_inputs
@@ -206,6 +211,7 @@ class NodeExecutionService:
                         artifact_type_bindings=bound.artifact_type_bindings,
                         transforms=transforms,
                         metadata=metadata,
+                        bound_services=bound_services,
                     )
                 except EdgeTransformError as exc:
                     # NodeComputationError carries the conversion sentence out of

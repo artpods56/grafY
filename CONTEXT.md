@@ -574,20 +574,18 @@ _Avoid_: DI service, capability provider object
 
 ### Service port
 
-A node input or output typed as a service contract (or, on an output, a class
-that subclasses one or more). It carries contract keys, not an artifact type. A
-service output feeds only a service input, and the reverse. A node with a
-service output has no input ports. The planner never plans a service node; the
-consumer's runner builds the connected provider in-process. An Agent tool never
-offers a service input to the model.
+A node input typed as a service contract or an output typed as a class
+implementing that contract. Its type identity is a service contract key. A
+service output feeds a compatible service input. An Agent tool leaves a service
+input to the Graph.
 _Avoid_: OutPort/InPort for services
 
 ### Provider node
 
-A node whose only outputs are service ports. It has no artifact inputs. Its
-config and node-scoped secrets shape the live object the consumer builds. The
-planner never schedules it; changing its config or key still enters the
-consumer's fingerprint through `upstream_fingerprints`.
+A node with no input ports and a single service output implementing one contract
+in v1. Its config and node-scoped secrets shape the live object the consumer's
+runner builds in-process. The planner never schedules it. Its config and key
+enter the consumer's fingerprint through `upstream_fingerprints`.
 _Avoid_: capability node, OCR vendor node as a synonym for every provider
 
 ### TIFF text regions
@@ -611,12 +609,12 @@ the source TIFF artifact ID alongside its page and pixel coordinates.
 
 ### OCR node
 
-The app-owned builtin that takes a `RasterImage | PdfFile` document and an
-`OcrReader` service input, and produces transcription markdown plus optional
-blocks and regions. It names no vendor. An optional output the connected
-provider does not declare is omitted from the stored result and recorded as
-`unsupported_outputs`; a downstream node fed by that port fails naming the
-provider, not with an empty artifact.
+The app-owned builtin that takes a `RasterImage | PdfFile` document and a
+`DocumentOcr` engine. It produces transcription markdown. Its optional blocks
+and regions ports each require a feature of that engine's contract. The runner
+omits an unsupported output and records it in `unsupported_outputs`, so a
+downstream node connected to that port can name the provider when the input is
+unavailable.
 _Avoid_: Mistral node / Reducto node (those are provider nodes or the legacy
 read-with-vendor operators)
 

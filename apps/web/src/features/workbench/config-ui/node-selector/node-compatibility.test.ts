@@ -8,7 +8,7 @@ import { compatibleNodesForPort } from "./node-compatibility";
 function servicePort(
   name: string,
   direction: Port["direction"],
-  contractId = "ocr.reader",
+  contractId = "ocr.document",
 ): Port {
   return servicePortFixture({
     name,
@@ -34,24 +34,29 @@ function node(
 
 describe("compatibleNodesForPort service contracts", () => {
   it("lists providers that produce the OCR reader contract", () => {
-    const ocr = node("ocr.read", "OCR", [servicePort("reader", "input")], []);
+    const ocr = node(
+      "ocr.read_document",
+      "Document OCR",
+      [servicePort("engine", "input")],
+      [],
+    );
     const mistral = node(
       "mistral.ocr.provider",
       "Mistral OCR",
       [],
-      [servicePort("reader", "output")],
+      [servicePort("engine", "output")],
     );
     const reducto = node(
       "reducto.ocr.provider",
       "Reducto",
       [],
-      [servicePort("reader", "output")],
+      [servicePort("engine", "output")],
     );
     const other = node(
       "other.provider",
       "Other",
       [],
-      [servicePort("reader", "output", "other.service")],
+      [servicePort("engine", "output", "other.service")],
     );
     const registry: NodeRegistry = {
       nodes: [ocr, mistral, reducto, other],
@@ -59,7 +64,7 @@ describe("compatibleNodesForPort service contracts", () => {
       artifact_types: [],
       artifact_conversions: [],
       service_contracts: [
-        { id: "ocr.reader", version: 1, title: "OCR service" },
+        { id: "ocr.document", version: 1, title: "Document OCR" },
       ],
     };
 

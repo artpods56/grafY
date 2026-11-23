@@ -89,6 +89,7 @@ function unavailableNodeSpec(savedNode: SavedGraphNode): NodeSpec {
     savedNode.operator_version,
   );
   return {
+    role: "operator",
     operator_id: savedNode.operator_id,
     operator_version: savedNode.operator_version,
     plugin_slug: "unavailable",

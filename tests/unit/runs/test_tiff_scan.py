@@ -1,4 +1,3 @@
-from grafy_core.text_regions import ServiceCacheIdentity
 import asyncio
 import json
 from dataclasses import replace
@@ -6,13 +5,12 @@ from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import SecretStr
-
+from grafy_core.contracts.ocr import ServiceCacheIdentity, TextRegion, TiffPage
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.provider_cache import InMemoryCacheStore, ProviderCache
-from grafy_core.text_regions import TextRegion, TiffPage
 from grafy_workbench.ocr.craft import CRAFT_URL, CraftDetector
 from grafy_workbench.ocr.tiff_scan import Window, detect_area
+from pydantic import SecretStr
 
 
 class PageReads:

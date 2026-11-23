@@ -3,16 +3,14 @@ import json
 from collections.abc import Callable
 from typing import Annotated, Any, ClassVar, Final, Literal, cast, final, override
 
+import grafy_workbench.table.plugin as _table_plugin
+import grafy_workbench.text.nodes as _text_nodes
 import httpx
-from pydantic import Field, SecretStr, model_validator
-from reducto import APIConnectionError, APIStatusError, AsyncReducto
-from reducto.types import SettingsParam
-from reducto.types.shared_params.page_range import PageRange
-
 from grafy_core.artifact_contracts import MarkdownValue
-from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.config_ui import field_ui
+from grafy_core.contracts.ocr import DocumentOcr, DocumentOcrFeature, DocumentOcrResult
+from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressRejectedError, PinnedPublicAddressTransport
@@ -21,7 +19,6 @@ from grafy_core.nodes import (
     NodeExecutionContext,
     UserFacingNodeError,
 )
-from grafy_core.ocr_contracts import OcrFeature, OcrReader, OcrResult
 from grafy_core.plugins import (
     NodeHttpEgressContract,
     NodeSecretInput,
@@ -33,9 +30,11 @@ from grafy_core.table_contracts import (
     TableValue,
     TableValueType,
 )
+from pydantic import Field, SecretStr, model_validator
+from reducto import APIConnectionError, APIStatusError, AsyncReducto
+from reducto.types import SettingsParam
+from reducto.types.shared_params.page_range import PageRange
 
-import grafy_workbench.table.plugin as _table_plugin
-import grafy_workbench.text.nodes as _text_nodes
 from grafy_plugin_reducto.declaration import REDUCTO
 from grafy_plugin_reducto.response import ParseChunk, ParseChunkList
 
@@ -180,7 +179,7 @@ class ReductoOcrError(UserFacingNodeError):
     pass
 
 
-def build_parse_output(chunks: list[ParseChunk]) -> OcrResult:
+def build_parse_output(chunks: list[ParseChunk]) -> DocumentOcrResult:
     rows: list[dict[str, TableValue]] = []
     for chunk in chunks:
         for block in chunk.blocks:
@@ -202,7 +201,7 @@ def build_parse_output(chunks: list[ParseChunk]) -> OcrResult:
                     "height": block.bbox.height,
                 }
             )
-    return OcrResult(
+    return DocumentOcrResult(
         markdown=MarkdownValue(markdown="\n\n".join(chunk.content for chunk in chunks)),
         blocks=Table(
             columns=[
@@ -215,9 +214,8 @@ def build_parse_output(chunks: list[ParseChunk]) -> OcrResult:
     )
 
 
-class ReductoReader(OcrReader):
-    features: ClassVar[frozenset[OcrFeature]] = frozenset({OcrFeature.BLOCKS})
-    title: ClassVar[str] = "Reducto"
+class ReductoReader(DocumentOcr):
+    features: ClassVar[frozenset[DocumentOcrFeature]] = frozenset({DocumentOcrFeature.BLOCKS})
 
     def __init__(
         self,
@@ -230,7 +228,7 @@ class ReductoReader(OcrReader):
         self._api_key = api_key
         self._transport_factory = transport_factory
 
-    async def read(self, document: RasterImage | PdfFile) -> OcrResult:
+    async def read(self, document: RasterImage | PdfFile) -> DocumentOcrResult:
         return await _run_parse(
             config=self._config,
             api_key=self._api_key,
@@ -240,7 +238,7 @@ class ReductoReader(OcrReader):
             node_id=None,
         )
 
-    async def read_document_url(self, document_url: str) -> OcrResult:
+    async def read_document_url(self, document_url: str) -> DocumentOcrResult:
         return await _run_parse(
             config=self._config,
             api_key=self._api_key,
@@ -256,9 +254,9 @@ class ReductoProviderInput(NodeInput):
 
 
 class ReductoProviderOutput(NodeOutput):
-    reader: Annotated[
+    engine: Annotated[
         ReductoReader,
-        Field(title="OCR reader", description="Reads a scan or PDF with Reducto."),
+        Field(title="Document OCR engine", description="Reads a scan or PDF with Reducto."),
     ]
 
 
@@ -295,7 +293,7 @@ async def _run_parse(
     image: RasterImage | PdfFile | None,
     transport_factory: Callable[[], httpx.AsyncBaseTransport],
     node_id: str | None,
-) -> OcrResult:
+) -> DocumentOcrResult:
     if (document_url is None) == (image is None):
         raise ReductoOcrError(
             "Connect either a document link or a page image, not both, and not neither."
@@ -499,7 +497,7 @@ class ReductoOcrProviderNode(
     ) -> ReductoProviderOutput:
         api_key = await context.secrets.require(API_KEY.name)
         return ReductoProviderOutput(
-            reader=ReductoReader(
+            engine=ReductoReader(
                 config=config,
                 api_key=api_key,
                 transport_factory=self._transport_factory,

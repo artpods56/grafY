@@ -121,7 +121,7 @@ describe("resolveGraphSemantics", () => {
 
   it("cascades map repairs from a sequence origin through downstream operators and widens output shapes", () => {
     const readSpec = nodeSpecFixture({
-      operator_id: "ocr.read",
+      operator_id: "ocr.read_document",
       inputs: [
         artifactPortFixture({
           name: "scan",
@@ -138,7 +138,7 @@ describe("resolveGraphSemantics", () => {
         servicePortFixture({
           name: "reader_service",
           direction: "output",
-          service_contracts: [{ id: "ocr.reader", version: 1 }],
+          service_contracts: [{ id: "ocr.document", version: 1 }],
         }),
       ],
     });
@@ -172,7 +172,7 @@ describe("resolveGraphSemantics", () => {
           {
             id: "read",
             kind: "builtin",
-            operator_id: "ocr.read",
+            operator_id: "ocr.read_document",
             operator_version: 1,
             config: {},
             input_plugs: [],

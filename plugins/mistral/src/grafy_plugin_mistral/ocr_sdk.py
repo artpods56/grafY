@@ -4,6 +4,9 @@ from typing import Final, final, override
 from uuid import UUID
 
 import httpx2 as httpx
+from grafy_core.contracts.ocr import DocumentOcrResult
+from grafy_core.documents import PdfFile, RasterImage
+from grafy_core.egress import EgressPolicy, EgressRejectedError
 from mistralai.client import UNSET, Mistral
 from mistralai.client import errors as mistral_errors
 from mistralai.client.models.documenturlchunk import DocumentURLChunkTypedDict
@@ -11,20 +14,14 @@ from mistralai.client.models.imageurlchunk import ImageURLChunkTypedDict
 from mistralai.client.models.ocrresponse import OCRResponse
 from pydantic import SecretStr
 
-from grafy_core.documents import PdfFile, RasterImage
-from grafy_core.egress import EgressPolicy, EgressRejectedError
-
 from grafy_plugin_mistral.egress_transport import EgressPinnedHttpx2Transport
-from grafy_core.ocr_contracts import OcrResult
-
 from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
-    build_ocr_output,
     MistralOcrProvider,
     MistralOcrProviderError,
+    build_ocr_output,
     validate_public_http_url,
 )
-
 
 MISTRAL_API_BASE_URL: Final = "https://api.mistral.ai"
 MISTRAL_OCR_MODEL: Final = "mistral-ocr-latest"
@@ -64,7 +61,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         config: MistralOcrConfig,
         api_key: SecretStr,
         workspace_id: UUID,
-    ) -> OcrResult:
+    ) -> DocumentOcrResult:
         if (document_url is None) == (image is None):
             raise MistralOcrProviderError(
                 "Connect either a document link or a page image, not both, and "

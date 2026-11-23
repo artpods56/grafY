@@ -2,10 +2,18 @@
 
 import asyncio
 from collections.abc import Sequence
-from typing import cast
 from dataclasses import dataclass
 from math import ceil, floor
+from typing import cast
 
+from grafy_core.contracts.ocr import (
+    ServiceCacheIdentity,
+    TextBoxDetector,
+    TextRegion,
+    TiffPage,
+)
+from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
+from grafy_core.provider_cache import CacheSpec, ProviderCache
 from pydantic import JsonValue, TypeAdapter
 from shapely import (
     Polygon,
@@ -14,14 +22,6 @@ from shapely import (
 )
 from shapely.geometry.base import BaseGeometry
 
-from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
-from grafy_core.provider_cache import CacheSpec, ProviderCache
-from grafy_core.text_regions import (
-    ServiceCacheIdentity,
-    TextDetector,
-    TextRegion,
-    TiffPage,
-)
 from grafy_workbench.ocr.progress import cached_progress
 
 _READ_EDGE = 1000
@@ -129,7 +129,7 @@ def _detector_request(
 async def _detect(
     context: NodeExecutionContext,
     page: TiffPage,
-    detector: TextDetector,
+    detector: TextBoxDetector,
     window: Window,
     *,
     cache: ProviderCache | None,
@@ -178,7 +178,7 @@ async def _detect(
 async def _detect_many(
     context: NodeExecutionContext,
     page: TiffPage,
-    detector: TextDetector,
+    detector: TextBoxDetector,
     windows: Sequence[Window],
     message: str,
     *,
@@ -327,7 +327,7 @@ def _repair_windows(
 async def detect_area(
     context: NodeExecutionContext,
     page: TiffPage,
-    detector: TextDetector,
+    detector: TextBoxDetector,
     area: Window,
     *,
     single: bool,

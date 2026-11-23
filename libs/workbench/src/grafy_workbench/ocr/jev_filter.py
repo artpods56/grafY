@@ -8,6 +8,18 @@ from math import ceil, floor, isclose
 from typing import Annotated, Literal, Self, final, override
 from uuid import uuid4
 
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.contracts.ocr import PixelPolygon, TextRegion, TiffPage, TiffPageOpener
+from grafy_core.credential_verification import unsupported_credential_verifier
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
+from grafy_core.node_context import UserFacingNodeError
+from grafy_core.nodes import Node, NodeExecutionContext
+from grafy_core.plugins import (
+    NodeHttpEgressContract,
+    NodeSecretInput,
+)
+from grafy_core.provider_cache import CacheSpec, ProviderCache
+from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
 from PIL import Image, ImageDraw, ImageOps
 from pydantic import (
     BaseModel,
@@ -21,22 +33,10 @@ from pydantic import (
     model_validator,
 )
 
-from grafy_core.credential_verification import unsupported_credential_verifier
-from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
-from grafy_core.node_context import UserFacingNodeError
-from grafy_core.nodes import Node, NodeExecutionContext
-from grafy_core.plugins import (
-    NodeHttpEgressContract,
-    NodeSecretInput,
-    PluginRuntimeCapability,
-)
-from grafy_core.provider_cache import CacheSpec, ProviderCache
-from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
-from grafy_core.text_regions import PixelPolygon, TextRegion, TiffPage, TiffPageOpener
+import grafy_workbench.table.plugin as _table_plugin
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.provider_http import ProviderRequest, post_json
 from grafy_workbench.ocr.text_regions import TiffTextRegions
-import grafy_workbench.table.plugin as _table_plugin
 
 _ = _table_plugin.__name__
 

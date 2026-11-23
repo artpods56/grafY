@@ -30,6 +30,15 @@ class ServiceContract:
         return ServiceContractKey(self.id, self.version)
 
 
+@dataclass(frozen=True, slots=True)
+class BoundServiceProvider:
+    """Catalog metadata for the provider connected to one service input."""
+
+    title: str
+    contract: ServiceContractKey
+    features: frozenset[str]
+
+
 def service_contract(
     contract_id: str,
     *,
@@ -129,6 +138,7 @@ def _install_nominal_schema(protocol: type[object]) -> None:
 
 
 __all__ = [
+    "BoundServiceProvider",
     "ServiceContract",
     "implements_service_contract",
     "marked_contract",

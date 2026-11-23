@@ -1,20 +1,18 @@
 """OCR node and provider readers through the Run service and the runner."""
 
+import json
 from base64 import b64decode, b64encode
 from collections.abc import Mapping, Sequence
 from io import BytesIO
-import json
 from pathlib import Path
 from typing import ClassVar, final, override
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from PIL import Image
-from pydantic import Field, SecretStr
-
 from grafy_api.runs.errors import NodeComputationError
-from grafy_api.runs.node_runner import NodeComputationRunnerFactory
+from grafy_api.runs.facts import ApplicationFactsFactory
+from grafy_api.runs.node_runner import NodeComputationRunner, NodeComputationRunnerFactory
 from grafy_api.runs.service import RunService
 from grafy_core.artifact_contracts import (
     IMAGE_REGIONS,
@@ -32,6 +30,12 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
+from grafy_core.contracts.ocr import (
+    DocumentOcr,
+    DocumentOcrFeature,
+    DocumentOcrResult,
+    TiffPage,
+)
 from grafy_core.documents import (
     FILE_ARTIFACTS,
     RASTER_IMAGE_ARTIFACT,
@@ -39,7 +43,6 @@ from grafy_core.documents import (
     RasterImage,
     TiffFile,
 )
-from grafy_core.file_contracts import TIFF_FILE
 from grafy_core.domain.graph_documents import (
     GraphDocument,
     GraphEdge,
@@ -50,19 +53,15 @@ from grafy_core.domain.graph_documents import (
 from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.domain.runs import RunStatus, RunTarget
+from grafy_core.file_contracts import TIFF_FILE
 from grafy_core.kernel.expansion import expand_graph
+from grafy_core.kernel.implementation_identity import RegistryImplementationDigests
 from grafy_core.kernel.instances import ExpandedGraph
 from grafy_core.kernel.memory_results import InMemoryResultStore
 from grafy_core.kernel.project import GraphDefinition, ProjectDocument
 from grafy_core.kernel.scheduler import ComputationRequest
 from grafy_core.kernel.state import InstanceState
 from grafy_core.nodes import Node, NodeExecutionContext, UserFacingNodeError
-from grafy_core.ocr_contracts import (
-    OcrFeature,
-    OcrReader,
-    OcrResult,
-    check_ocr_result,
-)
 from grafy_core.plugins import (
     NodeSecretInput,
     Plugin,
@@ -81,26 +80,29 @@ from grafy_core.table_contracts import (
     TableColumn,
     TableValueType,
 )
-from grafy_api.runs.facts import ApplicationFactsFactory
-from grafy_core.kernel.implementation_identity import RegistryImplementationDigests
+from grafy_plugin_mistral.ocr import (
+    API_KEY as MISTRAL_API_KEY,
+)
 from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
-    MistralOcrNode,
     MistralOcrInput,
+    MistralOcrNode,
     MistralReader,
-    API_KEY as MISTRAL_API_KEY,
 )
 from grafy_storage import LocalFileObjectStore
 from grafy_workbench.ocr import OCR
 from grafy_workbench.ocr.craft import CRAFT_MODEL
 from grafy_workbench.ocr.provider_http import serve_client
 from grafy_workbench.ocr.text_regions import TiffTextRegions
-from grafy_core.text_regions import TiffPage
 from grafy_workbench.table import TABLES
 from grafy_workbench.text import TEXT
+from PIL import Image
+from pydantic import Field, SecretStr
 
 from tests.unit.plugins.test_mistral_ocr import (
     FakeNodeSecrets as MistralFakeSecrets,
+)
+from tests.unit.plugins.test_mistral_ocr import (
     FakeProvider,
     document_payload,
 )
@@ -121,7 +123,7 @@ PROJECT_KEY = str(PROJECT_ID)
 API_KEY = NodeSecretInput(name="api_key", title="API key", config_dependencies=())
 
 FIXTURES = Plugin(slug="test.ocr_fixtures", title="OCR fixtures")
-FIXTURES.register_service_contract_dependency(OcrReader)
+FIXTURES.register_service_contract_dependency(DocumentOcr)
 FIXTURES.register_artifact_type_dependency(MARKDOWN)
 FIXTURES.register_artifact_type_dependency(TABLE_DATA)
 FIXTURES.register_artifact_type_dependency(TEXT_VALUE)
@@ -146,20 +148,19 @@ def _regions() -> ImageRegionSet:
     )
 
 
-class FullReader(OcrReader):
-    features: ClassVar[frozenset[OcrFeature]] = frozenset(
-        {OcrFeature.BLOCKS, OcrFeature.REGIONS}
+class FullReader(DocumentOcr):
+    features: ClassVar[frozenset[DocumentOcrFeature]] = frozenset(
+        {DocumentOcrFeature.BLOCKS, DocumentOcrFeature.REGIONS}
     )
-    title: ClassVar[str] = "Full OCR"
 
     def __init__(self, *, api_key: SecretStr, label: str = "full") -> None:
         self.api_key = api_key
         self.label = label
 
-    async def read(self, document: RasterImage | PdfFile) -> OcrResult:
+    async def read(self, document: RasterImage | PdfFile) -> DocumentOcrResult:
         del document
         READ_KEYS.append(self.api_key.get_secret_value())
-        return OcrResult(
+        return DocumentOcrResult(
             markdown=MarkdownValue(
                 markdown=f"{self.label}:{self.api_key.get_secret_value()}"
             ),
@@ -168,32 +169,37 @@ class FullReader(OcrReader):
         )
 
 
-class BlocksOnlyReader(OcrReader):
-    features: ClassVar[frozenset[OcrFeature]] = frozenset({OcrFeature.BLOCKS})
-    title: ClassVar[str] = "Reducto"
+class BlocksOnlyReader(DocumentOcr):
+    features: ClassVar[frozenset[DocumentOcrFeature]] = frozenset({DocumentOcrFeature.BLOCKS})
 
     def __init__(self, *, api_key: SecretStr) -> None:
         self.api_key = api_key
 
-    async def read(self, document: RasterImage | PdfFile) -> OcrResult:
+    async def read(self, document: RasterImage | PdfFile) -> DocumentOcrResult:
         del document
-        return OcrResult(
+        return DocumentOcrResult(
             markdown=MarkdownValue(markdown="blocks-only"),
             blocks=_empty_blocks(),
             regions=None,
         )
 
 
-class LyingReader(OcrReader):
-    features: ClassVar[frozenset[OcrFeature]] = frozenset({OcrFeature.REGIONS})
-    title: ClassVar[str] = "Liar OCR"
+class MissingRegionsReader(DocumentOcr):
+    features: ClassVar[frozenset[DocumentOcrFeature]] = frozenset(
+        {DocumentOcrFeature.REGIONS}
+    )
 
-    async def read(self, document: RasterImage | PdfFile) -> OcrResult:
-        del document
-        return OcrResult(
-            markdown=MarkdownValue(markdown="lie"),
-            blocks=None,
-            regions=None,
+    async def read(self, document: RasterImage | PdfFile) -> DocumentOcrResult:
+        return DocumentOcrResult(markdown=MarkdownValue(markdown="missing regions"))
+
+
+class UndeclaredRegionsReader(DocumentOcr):
+    features: ClassVar[frozenset[DocumentOcrFeature]] = frozenset()
+
+    async def read(self, document: RasterImage | PdfFile) -> DocumentOcrResult:
+        return DocumentOcrResult(
+            markdown=MarkdownValue(markdown="undeclared regions"),
+            regions=_regions(),
         )
 
 
@@ -202,11 +208,11 @@ class EmptyInput(NodeInput):
 
 
 class FullProviderOutput(NodeOutput):
-    reader: FullReader
+    engine: FullReader
 
 
 class BlocksProviderOutput(NodeOutput):
-    reader: BlocksOnlyReader
+    engine: BlocksOnlyReader
 
 
 class ProviderConfig(NodeConfig):
@@ -234,7 +240,7 @@ class FullProvider(Node[ProviderConfig, EmptyInput, FullProviderOutput]):
     ) -> FullProviderOutput:
         api_key = await context.secrets.require(API_KEY.name)
         return FullProviderOutput(
-            reader=FullReader(api_key=api_key, label=config.label)
+            engine=FullReader(api_key=api_key, label=config.label)
         )
 
 
@@ -258,7 +264,7 @@ class BlocksProvider(Node[ProviderConfig, EmptyInput, BlocksProviderOutput]):
         /,
     ) -> BlocksProviderOutput:
         api_key = await context.secrets.require(API_KEY.name)
-        return BlocksProviderOutput(reader=BlocksOnlyReader(api_key=api_key))
+        return BlocksProviderOutput(engine=BlocksOnlyReader(api_key=api_key))
 
 
 class BoxesInput(NodeInput):
@@ -475,20 +481,59 @@ def test_features_appear_on_provider_service_outputs() -> None:
     from grafy_plugin_reducto.ocr import ReductoOcrProviderNode
 
     mistral = PortResponse.from_output_port(
-        MistralOcrProviderNode.output_contract.ports["reader"]
+        MistralOcrProviderNode.output_contract.ports["engine"]
     )
     reducto = PortResponse.from_output_port(
-        ReductoOcrProviderNode.output_contract.ports["reader"]
+        ReductoOcrProviderNode.output_contract.ports["engine"]
     )
-    assert mistral.features == ["blocks", "regions"]
-    assert reducto.features == ["blocks"]
+    assert [entry.model_dump() for entry in mistral.service_features] == [
+        {"contract": {"id": "ocr.document", "version": 1}, "features": ["blocks", "regions"]}
+    ]
+    assert [entry.model_dump() for entry in reducto.service_features] == [
+        {"contract": {"id": "ocr.document", "version": 1}, "features": ["blocks"]}
+    ]
 
 
-def test_a_contract_violation_names_the_provider() -> None:
-    with pytest.raises(UserFacingNodeError, match="Liar OCR declared regions"):
-        check_ocr_result(
-            LyingReader(),
-            OcrResult(markdown=MarkdownValue(markdown="x"), regions=None),
+@pytest.mark.parametrize(
+    ("reader", "features", "message"),
+    [
+        (MissingRegionsReader(), frozenset({"regions"}), "declared regions but returned none"),
+        (UndeclaredRegionsReader(), frozenset[str](), "returned regions without declaring it"),
+    ],
+)
+async def test_a_contract_violation_names_the_registered_provider(
+    harness: tuple[
+        NodeComputationRunner,
+        RecordingNodeSecrets,
+        InMemoryUnitOfWork,
+        ArtifactValues,
+        InMemoryResultStore,
+        PluginRegistry,
+    ],
+    reader: DocumentOcr,
+    features: frozenset[str],
+    message: str,
+) -> None:
+    from grafy_core.node_ports import ServiceContractKey
+    from grafy_core.service_contracts import BoundServiceProvider
+    from grafy_workbench.ocr.nodes import OcrNode
+
+    _runner, _secrets, _uow, values, _store, _registry = harness
+    runtime = NodeRuntime(
+        materializer=InputMaterializer(values),
+        persister=OutputPersister(values),
+    )
+    raster = await _write_raster(values)
+    with pytest.raises(UserFacingNodeError, match=f"Registered OCR {message}"):
+        await runtime.run_node(
+            OcrNode(),
+            NodeExecutionContext(workspace_id=WORKSPACE_ID, node_id="ocr"),
+            {"document": raster, "engine": reader},
+            bound_services={
+                "engine": BoundServiceProvider(
+                    "Registered OCR", ServiceContractKey("ocr.document", 1), features
+                ),
+            },
         )
 
 
@@ -533,11 +578,11 @@ async def test_two_providers_each_supply_their_own_key(harness) -> None:
     graph = _expand(
         _node("left-provider", "test.full_ocr_provider", config={"label": "shared"}),
         _node("right-provider", "test.full_ocr_provider", config={"label": "shared"}),
-        _node("left", "ocr.read"),
-        _node("right", "ocr.read"),
+        _node("left", "ocr.read_document"),
+        _node("right", "ocr.read_document"),
         edges=(
-            _edge("left-provider", "reader", "left", "reader"),
-            _edge("right-provider", "reader", "right", "reader"),
+            _edge("left-provider", "engine", "left", "engine"),
+            _edge("right-provider", "engine", "right", "engine"),
         ),
         origins=(
             GraphOrigin(
@@ -591,10 +636,10 @@ async def test_reducto_style_provider_leaves_boxes_unsupported(harness, mapped) 
     raster = await _write_raster(values)
     graph = _expand(
         _node("provider", "test.blocks_ocr_provider"),
-        _node("ocr", "ocr.read"),
+        _node("ocr", "ocr.read_document"),
         _node("draw", "test.draw_boxes"),
         edges=(
-            _edge("provider", "reader", "ocr", "reader"),
+            _edge("provider", "engine", "ocr", "engine"),
             _edge("ocr", "regions", "draw", "regions"),
         ),
         origins=(
@@ -660,7 +705,7 @@ async def test_an_unfed_reader_plug_is_refused(harness) -> None:
     runner, _secrets, _uow, values, _store, _registry = harness
     raster = await _write_raster(values)
     graph = _expand(
-        _node("ocr", "ocr.read"),
+        _node("ocr", "ocr.read_document"),
         origins=(
             GraphOrigin(
                 id="o-doc",
@@ -706,8 +751,8 @@ async def test_a_scan_and_a_pdf_both_reach_the_reader(harness) -> None:
     for label, document in (("scan", raster), ("pdf", pdf)):
         graph = _expand(
             _node("provider", "test.full_ocr_provider", config={"label": label}),
-            _node("ocr", "ocr.read"),
-            edges=(_edge("provider", "reader", "ocr", "reader"),),
+            _node("ocr", "ocr.read_document"),
+            edges=(_edge("provider", "engine", "ocr", "engine"),),
             origins=(
                 GraphOrigin(
                     id=f"o-{label}",
@@ -783,9 +828,9 @@ async def test_run_service_marks_ocr_stale_when_the_provider_changes(
                 document=GraphDocument(
                     nodes=(
                         _node("provider", "test.full_ocr_provider"),
-                        _node("ocr", "ocr.read"),
+                        _node("ocr", "ocr.read_document"),
                     ),
-                    edges=(_edge("provider", "reader", "ocr", "reader"),),
+                    edges=(_edge("provider", "engine", "ocr", "engine"),),
                     origins=(
                         GraphOrigin(
                             id="o-doc",
@@ -851,9 +896,9 @@ async def test_run_service_marks_ocr_stale_when_the_provider_changes(
                     document=GraphDocument(
                         nodes=(
                             _node("other", "test.blocks_ocr_provider"),
-                            _node("ocr", "ocr.read"),
+                            _node("ocr", "ocr.read_document"),
                         ),
-                        edges=(_edge("other", "reader", "ocr", "reader"),),
+                        edges=(_edge("other", "engine", "ocr", "engine"),),
                         origins=(
                             GraphOrigin(
                                 id="o-doc",

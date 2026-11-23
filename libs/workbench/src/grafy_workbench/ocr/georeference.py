@@ -3,6 +3,11 @@
 from math import isfinite
 from typing import final, override
 
+from grafy_core.artifacts import NoConfig, NodeInput, NodeOutput
+from grafy_core.contracts.ocr import PixelAffine, PixelPoint, TiffPageOpener
+from grafy_core.node_context import UserFacingNodeError
+from grafy_core.nodes import Node, NodeExecutionContext
+from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
 from pydantic import Field
 from pyproj import CRS, Transformer
 from pyproj.exceptions import CRSError
@@ -10,12 +15,6 @@ from shapely import (
     Polygon,
     make_valid,  # pyright: ignore[reportUnknownVariableType]
 )
-
-from grafy_core.artifacts import NoConfig, NodeInput, NodeOutput
-from grafy_core.node_context import UserFacingNodeError
-from grafy_core.nodes import Node, NodeExecutionContext
-from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
-from grafy_core.text_regions import PixelAffine, PixelPoint, TiffPageOpener
 
 import grafy_workbench.table.plugin as _table_plugin
 from grafy_workbench.ocr.declaration import OCR

@@ -65,6 +65,7 @@ const input: Port = {
   instance_plugs: true,
 };
 const spec: NodeSpec = {
+  role: "operator",
   operator_id: "test.text",
   operator_version: 1,
   title: "Text",

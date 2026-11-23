@@ -8,12 +8,13 @@ import {
 } from "../test-fixtures";
 
 import {
-  connectedServiceProvider,
   notProducedInputReasons,
   unsupportedOutputForPort,
   unsupportedOutputLabel,
 } from "./provider-outputs";
 import { createWorkflowNodeData, type WorkflowEdge } from "../authoring/types";
+
+const documentContract = { id: "ocr.document", version: 1 };
 
 function servicePort(
   name: string,
@@ -24,8 +25,10 @@ function servicePort(
     name,
     title: name,
     direction,
-    service_contracts: [{ id: "ocr.reader", version: 1 }],
-    features: features ? [...features] : undefined,
+    service_contracts: [documentContract],
+    service_features: features
+      ? [{ contract: documentContract, features }]
+      : [],
   });
 }
 
@@ -34,12 +37,14 @@ function artifactPort(
   direction: Port["direction"],
   required: boolean,
   title?: string,
+  requires_service_feature: Port["requires_service_feature"] = null,
 ): Port {
   return artifactPortFixture({
     name,
     title: title ?? name,
     direction,
     required,
+    requires_service_feature,
   });
 }
 
@@ -76,9 +81,43 @@ function edge(
 }
 
 describe("provider-dependent outputs", () => {
-  it("reads the connected provider title and features", () => {
-    const providerOut = servicePort("reader", "output", ["blocks"]);
-    const consumerIn = servicePort("reader", "input");
+  it("checks the declared feature on the exact connected input and contract", () => {
+    const decoyOut = servicePort("engine", "output", ["regions"]);
+    const providerOut = servicePortFixture({
+      name: "engine",
+      direction: "output",
+      service_contracts: [documentContract],
+      service_features: [
+        {
+          contract: { ...documentContract, version: 2 },
+          features: ["regions"],
+        },
+        { contract: documentContract, features: ["blocks"] },
+      ],
+    });
+    const comparison = servicePort("comparison", "input");
+    const engine = servicePort("engine", "input");
+    const regions = artifactPort(
+      "boxes",
+      "output",
+      false,
+      "Boxes on the page",
+      {
+        input_port: "engine",
+        feature: "regions",
+      },
+    );
+    const blocks = artifactPort("rows", "output", false, "Text blocks", {
+      input_port: "engine",
+      feature: "blocks",
+    });
+    const unrelated = artifactPort("optional", "output", false);
+    const decoy = {
+      id: "decoy",
+      data: createWorkflowNodeData(
+        spec("test.full", "Full OCR", [], [decoyOut]),
+      ),
+    };
     const provider = {
       id: "provider",
       data: createWorkflowNodeData(
@@ -89,73 +128,43 @@ describe("provider-dependent outputs", () => {
       id: "ocr",
       data: createWorkflowNodeData(
         spec(
-          "ocr.read",
-          "OCR",
-          [consumerIn],
-          [artifactPort("regions", "output", false, "Boxes on the page")],
+          "ocr.read_document",
+          "Document OCR",
+          [comparison, engine],
+          [regions, blocks, unrelated],
         ),
       ),
     };
+    const nodes = [decoy, provider, ocr];
+    const comparisonEdge = edge("e1", decoy.id, decoyOut, ocr.id, comparison);
+    const edges = [
+      comparisonEdge,
+      edge("e2", provider.id, providerOut, ocr.id, engine),
+    ];
 
-    expect(
-      connectedServiceProvider(
-        "ocr",
-        [provider, ocr],
-        [edge("e1", "provider", providerOut, "ocr", consumerIn)],
-      ),
-    ).toEqual({
-      nodeId: "provider",
-      title: "Reducto",
-      features: ["blocks"],
-    });
-  });
-
-  it("mutes an optional output absent from the provider features", () => {
-    const provider = {
-      nodeId: "provider",
-      title: "Reducto",
-      features: ["blocks"],
-    };
-    expect(
-      unsupportedOutputForPort(
-        artifactPort("regions", "output", false, "Boxes on the page"),
-        provider,
-      ),
-    ).toEqual({
-      portName: "regions",
+    const unsupported = unsupportedOutputForPort(regions, ocr, nodes, edges);
+    expect(unsupported).toEqual({
+      portName: "boxes",
       providerTitle: "Reducto",
     });
+    if (!unsupported) throw new Error("Expected unsupported boxes");
+    expect(unsupportedOutputLabel(unsupported)).toBe("Not produced by Reducto");
+    expect(unsupportedOutputForPort(blocks, ocr, nodes, edges)).toBeNull();
+    expect(unsupportedOutputForPort(unrelated, ocr, nodes, edges)).toBeNull();
     expect(
-      unsupportedOutputLabel({
-        portName: "regions",
-        providerTitle: "Reducto",
-      }),
-    ).toBe("Not produced by Reducto");
-    expect(
-      unsupportedOutputForPort(
-        artifactPort("blocks", "output", false, "Text blocks"),
-        provider,
-      ),
-    ).toBeNull();
-    expect(
-      unsupportedOutputForPort(
-        artifactPort("markdown", "output", true, "Transcription"),
-        provider,
-      ),
-    ).toBeNull();
-    expect(
-      unsupportedOutputForPort(artifactPort("regions", "output", false), null),
+      unsupportedOutputForPort(regions, ocr, nodes, [comparisonEdge]),
     ).toBeNull();
   });
 
   it("names the downstream input when a muted output is wired", () => {
-    const providerOut = servicePort("reader", "output", ["blocks"]);
-    const readerIn = servicePort("reader", "input");
+    const providerOut = servicePort("engine", "output", ["blocks"]);
+    const engineIn = servicePort("engine", "input");
     const regionsOut = artifactPort(
       "regions",
       "output",
       false,
       "Boxes on the page",
+      { input_port: "engine", feature: "regions" },
     );
     const boxesIn = artifactPort("regions", "input", true, "Boxes");
     const provider = {
@@ -167,7 +176,7 @@ describe("provider-dependent outputs", () => {
     const ocr = {
       id: "ocr",
       data: createWorkflowNodeData(
-        spec("ocr.read", "OCR", [readerIn], [regionsOut]),
+        spec("ocr.read_document", "Document OCR", [engineIn], [regionsOut]),
       ),
     };
     const draw = {
@@ -182,7 +191,7 @@ describe("provider-dependent outputs", () => {
         "draw",
         [provider, ocr, draw],
         [
-          edge("e1", "provider", providerOut, "ocr", readerIn),
+          edge("e1", "provider", providerOut, "ocr", engineIn),
           edge("e2", "ocr", regionsOut, "draw", boxesIn),
         ],
       ),

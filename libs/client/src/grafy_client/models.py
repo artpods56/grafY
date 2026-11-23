@@ -27,6 +27,16 @@ class ServiceContract(ClientModel):
     title: str
 
 
+class ServiceContractFeatures(ClientModel):
+    contract: ServiceContractKey
+    features: tuple[str, ...]
+
+
+class RequiresServiceFeature(ClientModel):
+    input_port: str
+    feature: str
+
+
 class CatalogPort(ClientModel):
     name: str
     title: str | None = None
@@ -37,7 +47,8 @@ class CatalogPort(ClientModel):
     artifact_type_variable: str | None = None
     also_accepts: tuple[ArtifactTypeKey, ...] = ()
     service_contracts: tuple[ServiceContractKey, ...] = ()
-    features: tuple[str, ...] = ()
+    service_features: tuple[ServiceContractFeatures, ...] = ()
+    requires_service_feature: RequiresServiceFeature | None = None
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...]
     instance_plugs: bool = False
@@ -80,6 +91,7 @@ class CatalogPort(ClientModel):
 
 class CatalogNode(ClientModel):
     origin: Literal["builtin"] = "builtin"
+    role: Literal["operator", "provider"] = "operator"
     operator_id: str
     operator_version: int
     plugin_slug: str

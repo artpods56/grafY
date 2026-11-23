@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal, Union, cast, get_args, get_origin
 from pydantic import BaseModel, StrictInt, StrictStr
 
 from grafy_core.artifacts import ArtifactRef, ArtifactRefSequence, ArtifactTypeKey
+from grafy_core.declared_values import declared_key
 from grafy_core.node_ports import (
     ArtifactTypeContract,
     ArtifactTypeVariable,
@@ -17,9 +18,10 @@ from grafy_core.node_ports import (
     PortShape,
     Ref,
     RefSequence,
+    RequiresServiceFeature,
+    ServiceContractFeatures,
     ServiceContractKey,
 )
-from grafy_core.declared_values import declared_key
 from grafy_core.service_contracts import marked_contract, produced_contracts
 
 
@@ -60,8 +62,22 @@ def derive_output_contract[T: BaseModel](model: type[T]) -> OutputContract[T]:
     ports: dict[str, OutputPortSpec] = {}
     for name, field in model.model_fields.items():
         plugs, binds = _markers(model, name, field.metadata)
+        requirements = [
+            marker
+            for marker in field.metadata
+            if isinstance(marker, RequiresServiceFeature)
+        ]
+        if len(requirements) > 1:
+            raise NodeContractError(
+                f"{model.__name__}.{name} declares multiple service feature requirements"
+            )
         described = _describe(model, name, field.annotation, plugs, binds, output=True)
         if described is None:
+            if requirements:
+                raise NodeContractError(
+                    f"{model.__name__}.{name} requires a service feature "
+                    "but is not an output port"
+                )
             continue
         ports[name] = OutputPortSpec(
             name=name,
@@ -73,7 +89,8 @@ def derive_output_contract[T: BaseModel](model: type[T]) -> OutputContract[T]:
             value_type=described.value_type,
             kind=described.kind,
             service_contracts=described.service_contracts,
-            features=described.features,
+            service_features=described.service_features,
+            requires_service_feature=requirements[0] if requirements else None,
         )
     return OutputContract(model=model, ports=ports)
 
@@ -92,7 +109,7 @@ class _Described:
         value_type: type[object] | None,
         kind: Literal["artifact", "service"] = "artifact",
         service_contracts: tuple[ServiceContractKey, ...] = (),
-        features: tuple[str, ...] = (),
+        service_features: tuple[ServiceContractFeatures, ...] = (),
     ) -> None:
         self.shape = shape
         self.accepted_shapes = accepted_shapes
@@ -104,7 +121,7 @@ class _Described:
         self.value_type = value_type
         self.kind = kind
         self.service_contracts = service_contracts
-        self.features = features
+        self.service_features = service_features
 
 
 def _markers(
@@ -237,7 +254,13 @@ def _service_port(
     member = members[0]
     if output:
         keys = tuple(spec.key for spec in produced_contracts(member))
-        features = _service_features(member)
+        # V1 accepts one contract per provider. A class's feature declaration
+        # belongs to that contract.
+        features = (
+            (ServiceContractFeatures(keys[0], _service_features(member)),)
+            if len(keys) == 1
+            else ()
+        )
     else:
         own = marked_contract(member)
         if own is None:
@@ -258,7 +281,7 @@ def _service_port(
         value_type=member if output else None,
         kind="service",
         service_contracts=keys,
-        features=features,
+        service_features=features,
     )
 
 
@@ -600,6 +623,21 @@ def validate_service_node(
                 f"{name}.{port.name} service port must be one value, not "
                 "variadic or instance plugs"
             )
+    for port in outputs.ports.values():
+        requirement = port.requires_service_feature
+        if requirement is None:
+            continue
+        if port.required or port.kind == "service":
+            raise NodeContractError(
+                f"{name}.{port.name} requires a service feature but is not "
+                "an optional artifact output"
+            )
+        service_input = inputs.ports.get(requirement.input_port)
+        if service_input is None or service_input.kind != "service":
+            raise NodeContractError(
+                f"{name}.{port.name} requires a service feature from "
+                f"{requirement.input_port!r}, which is not a service input"
+            )
     for port in service_outputs:
         if port.shape is not PortShape.ONE:
             raise NodeContractError(
@@ -615,6 +653,14 @@ def validate_service_node(
     if any(port.kind != "service" for port in outputs.ports.values()):
         raise NodeContractError(
             f"{name} declares a service output and cannot declare an artifact output"
+        )
+    if len(service_outputs) != 1:
+        raise NodeContractError(f"{name} must declare a single service output")
+    port = service_outputs[0]
+    if len(port.service_contracts) != 1:
+        raise NodeContractError(
+            f"{name}.{port.name} declares multiple service contracts; "
+            "v1 providers must declare exactly one"
         )
 
 

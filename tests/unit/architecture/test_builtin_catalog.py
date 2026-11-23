@@ -10,7 +10,6 @@ from grafy_plugin_image import IMAGES
 from grafy_plugin_table import TABLES
 from grafy_workbench import BUILTIN_FAMILIES, build_builtin_registry
 
-
 EXPECTED_BUILTIN_OPERATORS = {
     ("sequence.collect", 1),
     ("sequence.count", 1),
@@ -23,7 +22,7 @@ EXPECTED_BUILTIN_OPERATORS = {
     ("table.concat", 1),
     ("table.extract_from_markdown", 1),
     ("table.match_places", 1),
-    ("ocr.read", 1),
+    ("ocr.read_document", 1),
     ("ocr.detect_tiff_text", 1),
     ("ocr.craft_provider", 1),
     ("ocr.paddle_cyrillic_provider", 1),
