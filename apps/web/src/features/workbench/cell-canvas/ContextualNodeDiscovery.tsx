@@ -24,6 +24,7 @@ import {
   type ContextualCandidate,
   type ContextualRouteChoice,
 } from "../authoring/node-catalog";
+import type { ServiceEngineCandidateRow } from "../authoring/service-engine-prompt";
 import {
   CATALOG_PREVIEW_WIDTH,
   CatalogNodePreview,
@@ -52,8 +53,16 @@ export interface ContextualDiscoverySession {
   sourcePortTitle: string;
   direction: ContextualDiscoveryDirection;
   clientAnchor: { x: number; y: number };
+  /**
+   * Left edge and vertical center of the ghost card. A port prompt computes
+   * this to the left of the consumer so the ghost never covers it.
+   */
   flowPosition: { x: number; y: number };
   candidates: readonly ContextualCandidate[];
+  /** Drag keeps the continue-from heading. A port prompt asks for the engine. */
+  trigger?: "drag" | "port_prompt";
+  /** Capability pills and credential readiness, keyed by catalog node key. */
+  engineRows?: Readonly<Record<string, ServiceEngineCandidateRow>>;
 }
 
 export interface ContextualNodeDiscoveryProps {
@@ -216,6 +225,26 @@ const s = stylex.create({
     lineHeight: 1.4,
     WebkitBoxOrient: "vertical",
     WebkitLineClamp: 2,
+  },
+  pills: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "4px",
+  },
+  pill: {
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorSurfaceSunken,
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.4,
+    padding: "1px 6px",
+  },
+  badge: {
+    fontSize: tokens.fontSizeXs,
+    color: tokens.colorSubtle,
+  },
+  badgeNeedsKey: {
+    color: tokens.colorWarning,
   },
   empty: {
     padding: "28px 16px",
@@ -427,11 +456,14 @@ export function CellContextualNodeDiscovery({
   const normalized = query.trim().toLowerCase();
   const candidates = session.candidates.filter((candidate) => {
     if (!normalized) return true;
+    const engineRow = session.engineRows?.[catalogNodeKey(candidate.spec)];
     const haystack = [
       candidate.spec.title,
       candidate.spec.description,
       catalogNodeProviderLabel(candidate.spec, registry),
       catalogNodePortSummary(candidate.spec, registry),
+      ...(engineRow?.pills ?? []),
+      engineRow?.readiness ?? "",
       ...candidate.choices.flatMap((choice) => [
         // Match both what the choice reads as and the raw identity behind it.
         choiceLabel(
@@ -522,6 +554,10 @@ export function CellContextualNodeDiscovery({
   const compactPopupTop = `max(${position.top}px, calc(${MOBILE_OVERLAY_TOP} + ${SAFE_AREA_TOP}))`;
   const compactPopupLeft = `max(${position.left}px, calc(${POPUP_MARGIN}px + ${SAFE_AREA_LEFT}))`;
   const compactPopupMaxHeight = `min(${popupHeight}px, calc(100dvh - ${MOBILE_OVERLAY_TOP} - ${POPUP_MARGIN}px - ${SAFE_AREA_TOP} - ${SAFE_AREA_BOTTOM}))`;
+  const portPrompt = session.trigger === "port_prompt";
+  const browseTitle = portPrompt
+    ? `Choose ${session.sourcePortTitle}`
+    : `Continue from ${session.sourcePortTitle}`;
 
   const selectCandidate = (candidate: ContextualCandidate) => {
     if (!canInsert) return;
@@ -611,7 +647,7 @@ export function CellContextualNodeDiscovery({
       <div
         ref={rootRef}
         role="dialog"
-        aria-label={`Continue from ${session.sourcePortTitle}`}
+        aria-label={browseTitle}
         {...stylex.props(overlay.popup, s.popup)}
         style={{
           left: compactViewport ? compactPopupLeft : position.left,
@@ -624,14 +660,16 @@ export function CellContextualNodeDiscovery({
             <div {...stylex.props(s.title)}>
               {pendingCandidate
                 ? `Connect ${pendingCandidate.spec.title}`
-                : `Continue from ${session.sourcePortTitle}`}
+                : browseTitle}
             </div>
             <div {...stylex.props(s.subtitle)}>
               {pendingCandidate
                 ? session.direction === "upstream"
                   ? "Choose which result fills this input"
                   : "Choose how this result arrives"
-                : `${candidates.length} compatible ${candidates.length === 1 ? "node" : "nodes"}`}
+                : portPrompt
+                  ? `${candidates.length} compatible ${candidates.length === 1 ? "engine" : "engines"}`
+                  : `${candidates.length} compatible ${candidates.length === 1 ? "node" : "nodes"}`}
             </div>
           </div>
           {!pendingCandidate ? (
@@ -652,7 +690,7 @@ export function CellContextualNodeDiscovery({
           ) : null}
         </div>
 
-        {onPlaceOutputCard && !pendingCandidate ? (
+        {onPlaceOutputCard && !pendingCandidate && !portPrompt ? (
           <Button
             size="sm"
             variant="ghost"
@@ -696,6 +734,7 @@ export function CellContextualNodeDiscovery({
           ) : candidates.length ? (
             candidates.map((candidate, index) => {
               const key = catalogNodeKey(candidate.spec);
+              const engineRow = session.engineRows?.[key];
               const active =
                 catalogNodeKey(previewedCandidate?.spec ?? candidate.spec) ===
                 key;
@@ -738,12 +777,37 @@ export function CellContextualNodeDiscovery({
                   <span {...stylex.props(s.itemTitle)}>
                     {candidate.spec.title}
                   </span>
+                  {engineRow && engineRow.pills.length > 0 ? (
+                    <span {...stylex.props(s.pills)}>
+                      {engineRow.pills.map((pill) => (
+                        <span
+                          key={pill}
+                          data-engine-pill={pill}
+                          {...stylex.props(s.pill)}
+                        >
+                          {pill}
+                        </span>
+                      ))}
+                    </span>
+                  ) : null}
                   <span {...stylex.props(s.itemDescription)}>
                     {candidate.spec.description || "No description yet."}
                     {candidate.choices.length > 1
                       ? ` · ${candidate.choices.length} ways to connect`
                       : ""}
                   </span>
+                  {engineRow ? (
+                    <span
+                      data-engine-readiness={engineRow.readiness}
+                      {...stylex.props(
+                        s.badge,
+                        engineRow.readiness === "Needs API key" &&
+                          s.badgeNeedsKey,
+                      )}
+                    >
+                      {engineRow.readiness}
+                    </span>
+                  ) : null}
                 </Button>
               );
             })

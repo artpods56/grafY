@@ -105,6 +105,41 @@ export function serializeNodeLayout(
   };
 }
 
+/**
+ * Clearance between a service consumer and the provider placed on its input
+ * side. One sixth of the shared card width, so the pair stays readable without
+ * a second magic gap.
+ */
+export const SERVICE_PROVIDER_GAP = DEFAULT_NODE_WIDTH / 6;
+
+export interface NodeTopLeft {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Top-left of a provider card sitting to the left of a consumer. */
+export function serviceProviderPositionLeftOf(
+  consumer: NodeTopLeft,
+): NodeTopLeft {
+  return {
+    x: consumer.x - DEFAULT_NODE_WIDTH - SERVICE_PROVIDER_GAP,
+    y: consumer.y,
+  };
+}
+
+/**
+ * Discovery treats `flowPosition.y` as the card's vertical center and subtracts
+ * half {@link DEFAULT_NODE_PLACEMENT_HEIGHT} when it commits. This is the flow
+ * point whose ghost and placed card land on `topLeft` and stay clear of the
+ * consumer.
+ */
+export function serviceProviderFlowPosition(topLeft: NodeTopLeft): NodeTopLeft {
+  return {
+    x: topLeft.x,
+    y: topLeft.y + DEFAULT_NODE_PLACEMENT_HEIGHT / 2,
+  };
+}
+
 export function hydrateNodeLayout(
   layout: SavedNodeLayout | null | undefined,
   bounds?: LayoutClampBounds,

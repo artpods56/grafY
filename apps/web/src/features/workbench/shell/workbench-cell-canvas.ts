@@ -293,6 +293,7 @@ export function buildWorkbenchCellScene({
   collapsedAppendices,
   configSections,
   secrets,
+  engineSettingsHref,
   canRun,
   canvasEdges,
   artifactViewerEdges,
@@ -315,6 +316,8 @@ export function buildWorkbenchCellScene({
   configSections?: Readonly<Record<string, Readonly<Record<string, boolean>>>>;
   /** Key statuses and the saved nodes they are bound to. */
   secrets?: CellNodeSecretState;
+  /** Owners' Workspace Settings link for an empty engine port. */
+  engineSettingsHref?: string;
   canRun: boolean;
   canvasEdges?: readonly WorkflowEdge[];
   artifactViewerEdges?: readonly ArtifactViewerEdge[];
@@ -626,6 +629,7 @@ export function buildWorkbenchCellScene({
     collapsedAppendices,
     configSections,
     secrets,
+    engineSettingsHref,
     originLinks,
     viewerOutputValues,
     pipeMetadataById,

@@ -116,6 +116,8 @@ export interface CellPort {
   required?: boolean;
   kind?: "artifact" | "service";
   serviceContractLabel?: string;
+  /** Why this port cannot carry a result yet, shown before a run. */
+  mutedCaption?: string;
 }
 
 export interface CellCardModel {
