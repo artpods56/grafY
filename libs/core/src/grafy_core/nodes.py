@@ -36,7 +36,9 @@ from grafy_core.node_ports import (
     PortShape as PortShape,
     Ref as Ref,
     RefSequence as RefSequence,
+    RequiresServiceFeature as RequiresServiceFeature,
     ResolvedNodeContracts as ResolvedNodeContracts,
+    ServiceContractFeatures as ServiceContractFeatures,
     ServiceContractKey as ServiceContractKey,
 )
 from grafy_core.service_contracts import (

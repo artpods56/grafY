@@ -6,10 +6,10 @@ from typing import Literal, Protocol, Self
 from uuid import UUID
 
 from grafy_core.artifacts import ArtifactObject
-from grafy_core.node_context import UserFacingNodeError
+from grafy_core.contracts.ocr import TiffPage
 from grafy_core.domain.identity import WorkspaceAccess, WorkspaceCapability
+from grafy_core.node_context import UserFacingNodeError
 from grafy_core.ports.artifacts import UnitOfWorkPort
-from grafy_core.text_regions import TiffPage
 from grafy_shared.config.tiler import TilerConfig
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 

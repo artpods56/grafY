@@ -61,6 +61,7 @@ const variableInput = port("incoming", {
   required: false,
 });
 const baseSpec: NodeSpec = {
+  role: "operator",
   operator_id: "test.source",
   operator_version: 2,
   title: "Source v2",

@@ -5136,6 +5136,15 @@
             "title": "Plugin Slug",
             "type": "string"
           },
+          "role": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "provider"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
           "runnable": {
             "default": true,
             "title": "Runnable",
@@ -5510,14 +5519,6 @@
             "title": "Direction",
             "type": "string"
           },
-          "features": {
-            "description": "Feature strings a service output's implementation declares, so the workbench can mute ports a connected provider does not produce.",
-            "items": {
-              "type": "string"
-            },
-            "title": "Features",
-            "type": "array"
-          },
           "instance_plugs": {
             "default": false,
             "title": "Instance Plugs",
@@ -5541,11 +5542,28 @@
             "title": "Required",
             "type": "boolean"
           },
+          "requires_service_feature": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequiresServiceFeatureResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "service_contracts": {
             "items": {
               "$ref": "#/components/schemas/ServiceContractKeyResponse"
             },
             "title": "Service Contracts",
+            "type": "array"
+          },
+          "service_features": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceContractFeaturesResponse"
+            },
+            "title": "Service Features",
             "type": "array"
           },
           "shape": {
@@ -6500,6 +6518,24 @@
         "title": "ReplacePresentationCommand",
         "type": "object"
       },
+      "RequiresServiceFeatureResponse": {
+        "properties": {
+          "feature": {
+            "title": "Feature",
+            "type": "string"
+          },
+          "input_port": {
+            "title": "Input Port",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input_port",
+          "feature"
+        ],
+        "title": "RequiresServiceFeatureResponse",
+        "type": "object"
+      },
       "RunListResponse": {
         "additionalProperties": false,
         "description": "The Runs of one Project, newest first, optionally only the active ones.",
@@ -6768,6 +6804,26 @@
           "text"
         ],
         "title": "SendAgentTurnRequest",
+        "type": "object"
+      },
+      "ServiceContractFeaturesResponse": {
+        "properties": {
+          "contract": {
+            "$ref": "#/components/schemas/ServiceContractKeyResponse"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Features",
+            "type": "array"
+          }
+        },
+        "required": [
+          "contract",
+          "features"
+        ],
+        "title": "ServiceContractFeaturesResponse",
         "type": "object"
       },
       "ServiceContractKeyResponse": {

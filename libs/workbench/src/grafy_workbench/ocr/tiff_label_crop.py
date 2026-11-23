@@ -3,11 +3,10 @@
 from io import BytesIO
 from math import atan2, ceil, degrees, floor, hypot
 
+from grafy_core.contracts.ocr import PixelPolygon, TiffPage
+from grafy_core.node_context import UserFacingNodeError
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from shapely import Polygon
-
-from grafy_core.node_context import UserFacingNodeError
-from grafy_core.text_regions import PixelPolygon, TiffPage
 
 CROP_MARGIN = 4
 NATIVE_CROP_PIXEL_LIMIT = 1_000_000

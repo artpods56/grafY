@@ -185,7 +185,7 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             "put",
             ("application/json", "ConfigureNodeSecretRequest"),
             "200",
-            "NodeSecretStatusResponse",
+            "ConfigureNodeSecretResponse",
         ),
         (
             run_base,
@@ -283,7 +283,7 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
         (ProjectHead, "ProjectHeadResponse", frozenset({"document"})),
         (CommandReceipt, "ProjectCommandReceiptResponse", frozenset()),
         (UploadItem, "ImageUploadItemResponse", frozenset()),
-        (NodeSecretStatus, "NodeSecretStatusResponse", frozenset()),
+        (NodeSecretStatus, "ConfigureNodeSecretResponse", frozenset()),
         (Run, "RunResponse", frozenset()),
         (InstanceKey, "InstanceKeyResponse", frozenset()),
         (InstanceState, "InstanceStateResponse", frozenset()),
@@ -326,3 +326,33 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
                 openapi_properties[field_name],
                 schema,
             ), f"{openapi_name}.{field_name}"
+
+
+
+def test_client_decodes_the_catalogs_ocr_feature_contracts() -> None:
+    from grafy_api.catalog import CatalogSnapshot
+    from grafy_api.services.families import build_application_registry
+    from grafy_api.v1.routes.catalog.models import NodeRegistryResponse
+
+    snapshot = CatalogSnapshot.from_registry(build_application_registry())
+    response = NodeRegistryResponse.from_snapshot(snapshot)
+    catalog = NodeCatalog.model_validate_json(response.model_dump_json())
+    nodes = {node.operator_id: node for node in catalog.nodes}
+    ocr = nodes["ocr.read_document"]
+    assert ocr.role == "operator"
+    engine = next(port for port in ocr.inputs if port.name == "engine")
+    (contract,) = engine.service_contracts
+    assert (contract.id, contract.version) == ("ocr.document", 1)
+
+    regions = next(port for port in ocr.outputs if port.name == "regions")
+    requirement = regions.requires_service_feature
+    assert requirement is not None
+    assert (requirement.input_port, requirement.feature) == ("engine", "regions")
+
+    reducto = nodes["reducto.ocr.provider"]
+    assert reducto.role == "provider"
+    (output,) = reducto.outputs
+    assert output.name == "engine"
+    (declaration,) = output.service_features
+    assert declaration.contract == contract
+    assert declaration.features == ("blocks",)

@@ -79,6 +79,7 @@ function state(): WorkbenchAuthoringState {
 describe("Workbench authored document adapter", () => {
   it("authors a deployed family at the requested insertion position", () => {
     const data = createWorkflowNodeData({
+      role: "operator",
       operator_id: "reports.render",
       operator_version: 7,
       plugin_slug: "reports",

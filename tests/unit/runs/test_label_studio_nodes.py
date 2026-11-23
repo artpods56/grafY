@@ -8,9 +8,7 @@ from xml.etree.ElementTree import fromstring
 
 import httpx
 import pytest
-from PIL import Image
-from pydantic import AnyHttpUrl, SecretStr
-
+from grafy_core.contracts.ocr import TextRegion, TiffPage
 from grafy_core.documents import TiffFile
 from grafy_core.egress import (
     EgressPolicy,
@@ -26,7 +24,6 @@ from grafy_core.node_ports import Ref
 from grafy_core.plugins import NodeSecretInput
 from grafy_core.ports.node_secrets import UnavailableNodeSecretResolver
 from grafy_core.table_contracts import Table, TableColumn, TableValue
-from grafy_core.text_regions import TextRegion, TiffPage
 from grafy_workbench.ocr.label_studio import (
     ExportLabelStudioConfig,
     ExportLabelStudioInput,
@@ -38,6 +35,8 @@ from grafy_workbench.ocr.label_studio import (
     _sign_s3_put,  # pyright: ignore[reportPrivateUsage]
 )
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
+from PIL import Image
+from pydantic import AnyHttpUrl, SecretStr
 
 _CROPS = "Region crops (fast triage)"
 _TILES = "Tiled windows (polygons)"

@@ -78,6 +78,7 @@ function nodeSpec(
   options: SpecOptions = {},
 ): NodeSpec {
   return {
+    role: "operator",
     operator_id: operatorId,
     operator_version: 1,
     plugin_slug: "test",
@@ -515,28 +516,28 @@ describe("reading what a Graph's node instances hold", () => {
 describe("asking for a Run", () => {
   it("submits OCR as the target while leaving its reader as an upstream dependency", async () => {
     const reader: Port = {
-      ...port("reader", "output"),
+      ...port("engine", "output"),
       kind: "service",
       artifact_type: null,
-      service_contracts: [{ id: "ocr.reader", version: 1 }],
+      service_contracts: [{ id: "ocr.document", version: 1 }],
     };
     const canvas = canvasState([
       workflowNode("mistral", {
         spec: nodeSpec("mistral.ocr.provider", { outputs: [reader] }),
       }),
       workflowNode("ocr", {
-        spec: nodeSpec("ocr.read", {
+        spec: nodeSpec("ocr.read_document", {
           inputs: [{ ...reader, direction: "input" }],
         }),
         selected: true,
       }),
     ]);
     const connection: WorkflowEdge = {
-      id: "reader",
+      id: "engine",
       source: "mistral",
-      sourcePort: "reader",
+      sourcePort: "engine",
       target: "ocr",
-      targetPort: "reader",
+      targetPort: "engine",
       targetPlug: null,
       data: { enabled: true, collectionMode: "direct" },
     };

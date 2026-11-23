@@ -6,8 +6,6 @@ from collections.abc import Sequence
 from itertools import batched
 from typing import cast, final, override
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
-
 from grafy_core.artifacts import (
     ArtifactPreviewKind,
     ArtifactReferenceContract,
@@ -18,6 +16,13 @@ from grafy_core.artifacts import (
     NodeInput,
     NodeOutput,
 )
+from grafy_core.contracts.ocr import (
+    CropTextReader,
+    TextReading,
+    TextRegion,
+    TiffPage,
+    TiffPageOpener,
+)
 from grafy_core.documents import TiffFile
 from grafy_core.file_contracts import TIFF_FILE
 from grafy_core.node_context import UserFacingNodeError
@@ -25,17 +30,12 @@ from grafy_core.node_ports import Ref
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.provider_cache import CacheSpec, ProviderCache
 from grafy_core.runtime.artifact_values import inline_model_artifact
-from grafy_core.text_regions import (
-    TextReading,
-    TextRecognizer,
-    TextRegion,
-    TiffPage,
-    TiffPageOpener,
-)
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.progress import cached_progress
-from grafy_workbench.ocr.tiff_label_crop import read_label_crop
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
+from grafy_workbench.ocr.tiff_label_crop import read_label_crop
 
 
 class TiffRecognizedRegion(TextRegion):
@@ -90,7 +90,7 @@ def _crop_request(
     }
 
 
-OCR.register_service_contract(TextRecognizer)
+OCR.register_service_contract(CropTextReader)
 OCR.register(
     inline_model_artifact(
         ArtifactTypeSpec(
@@ -132,7 +132,7 @@ def _checked(readings: Sequence[TextReading], asked: int) -> list[TextReading]:
 
 class RecognizeInput(NodeInput):
     regions: TiffTextRegions = Field(title="Text regions")
-    recognizer: TextRecognizer = Field(title="Recognizer")
+    recognizer: CropTextReader = Field(title="Recognizer")
 
 
 class RecognizeOutput(NodeOutput):
@@ -167,7 +167,7 @@ class ReadTiffTextNode(Node[NoConfig, RecognizeInput, RecognizeOutput]):
     async def _recognize(
         self,
         context: NodeExecutionContext,
-        recognizer: TextRecognizer,
+        recognizer: CropTextReader,
         pngs: Sequence[bytes],
         hits: list[bool],
     ) -> list[TextReading]:

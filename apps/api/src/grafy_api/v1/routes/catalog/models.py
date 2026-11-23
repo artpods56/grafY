@@ -218,6 +218,16 @@ class ServiceContractResponse(ApiResponse):
         return cls(id=contract.id, version=contract.version, title=contract.title)
 
 
+class ServiceContractFeaturesResponse(ApiResponse):
+    contract: ServiceContractKeyResponse
+    features: list[str]
+
+
+class RequiresServiceFeatureResponse(ApiResponse):
+    input_port: str
+    feature: str
+
+
 class PortResponse(ApiResponse):
     name: str
     title: str | None = None
@@ -228,13 +238,10 @@ class PortResponse(ApiResponse):
     artifact_type_variable: ArtifactTypeVariableIdentifier | None = None
     also_accepts: list[ArtifactTypeKeyResponse] = Field(default_factory=list)
     service_contracts: list[ServiceContractKeyResponse] = Field(default_factory=list)
-    features: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Feature strings a service output's implementation declares, so the "
-            "workbench can mute ports a connected provider does not produce."
-        ),
+    service_features: list[ServiceContractFeaturesResponse] = Field(
+        default_factory=lambda: list[ServiceContractFeaturesResponse]()
     )
+    requires_service_feature: RequiresServiceFeatureResponse | None = None
     shape: PortShape
     accepted_shapes: list[PortShape]
     instance_plugs: bool = False
@@ -299,7 +306,6 @@ class PortResponse(ApiResponse):
                     ServiceContractKeyResponse.from_key(key)
                     for key in port.service_contracts
                 ],
-                features=[],
                 shape=port.shape,
                 accepted_shapes=list(port.accepted_shapes),
                 instance_plugs=port.instance_plugs,
@@ -357,7 +363,13 @@ class PortResponse(ApiResponse):
                     ServiceContractKeyResponse.from_key(key)
                     for key in port.service_contracts
                 ],
-                features=list(port.features),
+                service_features=[
+                    ServiceContractFeaturesResponse(
+                        contract=ServiceContractKeyResponse.from_key(entry.contract),
+                        features=list(entry.features),
+                    )
+                    for entry in port.service_features
+                ],
                 shape=port.shape,
                 accepted_shapes=[port.shape],
                 instance_plugs=False,
@@ -377,6 +389,7 @@ class PortResponse(ApiResponse):
                 )
             artifact_type = ArtifactTypeKeyResponse.from_key(port.produces)
             artifact_type_variable = None
+        requirement = port.requires_service_feature
         return cls(
             name=port.name,
             title=port.title,
@@ -386,6 +399,13 @@ class PortResponse(ApiResponse):
             artifact_type=artifact_type,
             artifact_type_variable=artifact_type_variable,
             service_contracts=[],
+            requires_service_feature=(
+                RequiresServiceFeatureResponse(
+                    input_port=requirement.input_port, feature=requirement.feature
+                )
+                if requirement is not None
+                else None
+            ),
             shape=port.shape,
             accepted_shapes=[port.shape],
             instance_plugs=False,
@@ -417,6 +437,7 @@ class NodeSecretInputResponse(ApiResponse):
 
 class NodeSpecResponse(ApiResponse):
     origin: CatalogOrigin = "builtin"
+    role: Literal["operator", "provider"] = "operator"
     operator_id: str
     operator_version: int
     plugin_slug: str
@@ -441,6 +462,7 @@ class NodeSpecResponse(ApiResponse):
         node_class = registration.node_class
         return cls(
             origin=origin,
+            role=registration.role,
             operator_id=node_class.operator_id,
             operator_version=node_class.operator_version,
             plugin_slug=registration.plugin_slug,

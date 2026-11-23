@@ -3,23 +3,22 @@
 from base64 import b64encode
 from typing import final, override
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
-
-from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.contracts.ocr import (
+    PixelPolygon,
+    ServiceCacheIdentity,
+    TextBoxDetector,
+    TextRegion,
+)
+from grafy_core.credential_verification import unsupported_credential_verifier
+from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import (
     NodeHttpEgressContract,
     NodeSecretInput,
-    PluginRuntimeCapability,
 )
-from grafy_core.text_regions import (
-    ServiceCacheIdentity,
-    PixelPolygon,
-    TextDetector,
-    TextRegion,
-)
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.provider_http import ProviderRequest, post_json
@@ -39,7 +38,7 @@ class CraftResponse(BaseModel):
 
 
 @final
-class CraftDetector(TextDetector):
+class CraftDetector(TextBoxDetector):
     def cache_identity(self) -> ServiceCacheIdentity:
         return ServiceCacheIdentity(
             "craft.ai-test-ihpan", CRAFT_MODEL, dict(self.request_options)

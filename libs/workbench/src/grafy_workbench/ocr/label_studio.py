@@ -18,6 +18,13 @@ from weakref import WeakValueDictionary
 import httpx
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.config_ui import field_ui, when_field_eq
+from grafy_core.contracts.ocr import (
+    PixelPoint,
+    PixelPolygon,
+    TextRegion,
+    TiffPage,
+    TiffPageOpener,
+)
 from grafy_core.credential_verification import (
     UNREACHABLE,
     unsupported_credential_verifier,
@@ -39,13 +46,6 @@ from grafy_core.plugins import (
     NodeSecretInput,
 )
 from grafy_core.table_contracts import Table, TableColumn, TableValue, TableValueType
-from grafy_core.text_regions import (
-    PixelPoint,
-    PixelPolygon,
-    TextRegion,
-    TiffPage,
-    TiffPageOpener,
-)
 from PIL import Image, ImageDraw
 from pydantic import (
     AliasChoices,

@@ -9,6 +9,7 @@ import { catalogNodeSpecs } from "./node-catalog";
 import { toRoomGraphCommand } from "../collaboration/room-command-bridge";
 
 const raster: NodeSpec = {
+  role: "operator",
   operator_id: "gis.raster.import",
   operator_version: 1,
   plugin_slug: "external.gis",

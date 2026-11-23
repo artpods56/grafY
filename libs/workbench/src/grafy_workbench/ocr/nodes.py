@@ -1,14 +1,13 @@
 from typing import Annotated, final, override
 
-from pydantic import Field
-
 from grafy_core.artifact_contracts import IMAGE_REGIONS, ImageRegionSet, MarkdownValue
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.contracts.ocr import DocumentOcr, DocumentOcrFeature
 from grafy_core.declared_values import note_declaration
 from grafy_core.documents import PdfFile, RasterImage
-from grafy_core.nodes import Node, NodeExecutionContext
-from grafy_core.ocr_contracts import OcrReader, OcrResult, check_ocr_result
+from grafy_core.nodes import Node, NodeExecutionContext, RequiresServiceFeature
 from grafy_core.table_contracts import Table
+from pydantic import Field
 
 import grafy_workbench.table.plugin as _table_plugin
 import grafy_workbench.text.nodes as _text_nodes
@@ -32,11 +31,11 @@ class OcrInput(NodeInput):
             description="One scanned page or a PDF to read.",
         ),
     ]
-    reader: Annotated[
-        OcrReader,
+    engine: Annotated[
+        DocumentOcr,
         Field(
-            title="Reader",
-            description="An OCR provider that reads the document.",
+            title="OCR engine",
+            description="A Document OCR engine that reads the page or PDF.",
         ),
     ]
 
@@ -51,6 +50,7 @@ class OcrOutput(NodeOutput):
     ]
     blocks: Annotated[
         Table | None,
+        RequiresServiceFeature("engine", DocumentOcrFeature.BLOCKS),
         Field(
             default=None,
             title="Text blocks",
@@ -62,6 +62,7 @@ class OcrOutput(NodeOutput):
     ] = None
     regions: Annotated[
         ImageRegionSet | None,
+        RequiresServiceFeature("engine", DocumentOcrFeature.REGIONS),
         Field(
             default=None,
             title="Boxes on the page",
@@ -71,9 +72,9 @@ class OcrOutput(NodeOutput):
 
 
 @OCR.node(
-    operator_id="ocr.read",
+    operator_id="ocr.read_document",
     version=1,
-    title="OCR",
+    title="Document OCR",
 )
 @final
 class OcrNode(Node[OcrConfig, OcrInput, OcrOutput]):
@@ -82,15 +83,12 @@ class OcrNode(Node[OcrConfig, OcrInput, OcrOutput]):
     @override
     async def run(
         self,
-        context: NodeExecutionContext,
+        _context: NodeExecutionContext,
         _config: OcrConfig,
         inputs: OcrInput,
         /,
     ) -> OcrOutput:
-        result: OcrResult = await inputs.reader.read(inputs.document)
-        unsupported = check_ocr_result(inputs.reader, result)
-        if unsupported:
-            context.output_metadata["unsupported_outputs"] = unsupported
+        result = await inputs.engine.read(inputs.document)
         return OcrOutput(
             markdown=result.markdown,
             blocks=result.blocks,

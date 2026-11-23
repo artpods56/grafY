@@ -10,6 +10,7 @@ import {
 
 function secretNodeSpec(): NodeSpec {
   return {
+    role: "operator",
     operator_id: "llm.openai.completion",
     operator_version: 1,
     plugin_slug: "external.llm",

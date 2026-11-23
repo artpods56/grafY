@@ -1,15 +1,18 @@
-from grafy_core.text_regions import ServiceCacheIdentity
 from collections.abc import Sequence
 from io import BytesIO
 from uuid import UUID, uuid4
 
-from PIL import Image, ImageDraw
-
 from grafy_core.artifacts import NoConfig
+from grafy_core.contracts.ocr import (
+    CropTextReader,
+    ServiceCacheIdentity,
+    TextReading,
+    TextRegion,
+    TiffPage,
+)
 from grafy_core.documents import TiffFile
 from grafy_core.node_context import NodeExecutionContext
 from grafy_core.node_ports import Ref
-from grafy_core.text_regions import TextReading, TextRecognizer, TextRegion, TiffPage
 from grafy_workbench.ocr.label_nodes import (
     FilterReadingsConfig,
     FilterReadingsInput,
@@ -22,6 +25,7 @@ from grafy_workbench.ocr.label_nodes import (
 )
 from grafy_workbench.ocr.text_regions import TiffPixelWindow, TiffTextRegions
 from grafy_workbench.ocr.tiff_recognition import ReadTiffTextNode, RecognizeInput
+from PIL import Image, ImageDraw
 
 
 async def test_map_label_nodes_pass_through_place_coordinates():
@@ -55,7 +59,7 @@ async def test_map_label_nodes_pass_through_place_coordinates():
         )
         return TiffPage(180, 220, read, source_sha256="0" * 64, page=page)
 
-    class Recognizer(TextRecognizer):
+    class Recognizer(CropTextReader):
         def cache_identity(self):
             return ServiceCacheIdentity("test", "1")
 

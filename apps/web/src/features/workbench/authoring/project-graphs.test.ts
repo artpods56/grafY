@@ -93,6 +93,7 @@ function graph(
 
 function catalogSpec(operatorId: string): NodeSpec {
   return {
+    role: "operator",
     operator_id: operatorId,
     operator_version: 1,
     plugin_slug: "builtin",

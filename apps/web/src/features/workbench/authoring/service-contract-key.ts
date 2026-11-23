@@ -7,7 +7,7 @@ export interface ServiceContractIdentity {
   version: number;
 }
 
-/** `ocr.reader@1`. */
+/** `ocr.document@1`. */
 export type ServiceContractId = `${string}@${number}`;
 
 export function serviceContractKey(

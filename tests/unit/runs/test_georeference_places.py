@@ -4,14 +4,11 @@ from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
-from pyproj import CRS
-from shapely import Polygon, wkt
-
 from grafy_core.artifacts import NoConfig
+from grafy_core.contracts.ocr import PixelAffine, TextReading, TiffPage
 from grafy_core.documents import TiffFile
 from grafy_core.node_context import NodeExecutionContext, UserFacingNodeError
 from grafy_core.node_ports import Ref
-from grafy_core.text_regions import PixelAffine, TextReading, TiffPage
 from grafy_plugin_gis.nodes import (
     TableToGeoFeaturesConfig,
     TableToGeoFeaturesInput,
@@ -27,6 +24,8 @@ from grafy_workbench.ocr.tiff_recognition import (
     TiffRecognizedRegion,
     TiffRecognizedText,
 )
+from pyproj import CRS
+from shapely import Polygon, wkt
 
 # Web Mercator metres for one degree of longitude and of latitude at the equator.
 _DEGREE_X = 111319.49079327357

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import (
     Any,
     Final,
+    Literal,
     Protocol,
     TypeAlias,
     cast,
@@ -37,7 +38,7 @@ from grafy_core.declared_values import note_declaration
 from grafy_core.callable_nodes import callable_node_class, own_callable_doc
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.provider_cache import ProviderCache
-from grafy_core.text_regions import TiffPageOpener
+from grafy_core.contracts.ocr import TiffPageOpener
 from grafy_core.nodes import (
     ArtifactTypeContract,
     ArtifactTypeVariable,
@@ -208,6 +209,15 @@ class NodeRegistration:
     @property
     def title(self) -> str:
         return self.node_class.title
+
+    @property
+    def role(self) -> Literal["operator", "provider"]:
+        outputs = self.node_class.output_contract.ports
+        return (
+            "provider"
+            if outputs and all(port.kind == "service" for port in outputs.values())
+            else "operator"
+        )
 
     @property
     def description(self) -> str:
@@ -1009,10 +1019,7 @@ class PluginRegistry:
         return frozenset(
             registration.key
             for registration in self._nodes.values()
-            if any(
-                port.kind == "service"
-                for port in registration.node_class.output_contract.ports.values()
-            )
+            if registration.role == "provider"
         )
 
     @property

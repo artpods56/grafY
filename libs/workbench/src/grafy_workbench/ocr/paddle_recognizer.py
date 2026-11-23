@@ -6,18 +6,18 @@ from collections.abc import Sequence
 from typing import final, override
 from weakref import WeakValueDictionary
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
-
+from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
+from grafy_core.contracts.ocr import CropTextReader, ServiceCacheIdentity, TextReading
 from grafy_core.credential_verification import unsupported_credential_verifier
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
 from grafy_core.plugins import (
     NodeHttpEgressContract,
     NodeSecretInput,
 )
-from grafy_core.text_regions import ServiceCacheIdentity, TextReading, TextRecognizer
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
+
 from grafy_workbench.ocr.declaration import OCR
 from grafy_workbench.ocr.provider_http import ProviderRequest, post_json
 
@@ -50,7 +50,7 @@ class PaddleBatchResponse(BaseModel):
 
 
 @final
-class PaddleCyrillicRecognizer(TextRecognizer):
+class PaddleCyrillicRecognizer(CropTextReader):
     def cache_identity(self) -> ServiceCacheIdentity:
         return ServiceCacheIdentity("paddle.ai-test-ihpan", PADDLE_MODEL, {})
 
