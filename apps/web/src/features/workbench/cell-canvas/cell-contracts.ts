@@ -288,6 +288,25 @@ export interface CellExecutionAppendixSpec {
   itemCount?: number;
 }
 
+/** One streamed `node.progress` frame. */
+export interface CellNodeProgressFrame {
+  sequence: number;
+  message: string;
+  current: number | null;
+  total: number | null;
+}
+
+/**
+ * The newest progress frames for a node that is running or queued.
+ * `recentMessages` is newest first.
+ */
+export interface CellNodeLiveProgress {
+  latestMessage: string;
+  current: number | null;
+  total: number | null;
+  recentMessages: readonly CellNodeProgressFrame[];
+}
+
 /** Empty required service input: pick a provider, or say none is enabled. */
 export interface ServicePortPrompt {
   mode: "pick" | "empty";
@@ -300,6 +319,17 @@ export interface OperatorCardSurfaceData {
   kind: "operator";
   statusLabel?: string;
   runDisabled?: boolean;
+  /**
+   * Streamed events while this node is running or queued. Omitted once the
+   * node leaves that state, so a finished card does not keep the last frame.
+   */
+  progress?: CellNodeLiveProgress | null;
+  /** The run that owns this node is cancelling. */
+  cancelling?: boolean;
+  /** This node's run can be cancelled from the header. */
+  canCancel?: boolean;
+  /** Cancels the run that owns this node. */
+  onCancelRun?: () => void;
   configFields?: readonly CellConfigFieldSpec[];
   /**
    * Open or closed, by section key, wherever the person chose: a group, the

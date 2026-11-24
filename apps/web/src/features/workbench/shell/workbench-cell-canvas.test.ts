@@ -30,9 +30,10 @@ import type {
   AuthoredGraphDocument,
   AuthoredGraphNode,
 } from "../authoring/graph-document";
-import type {
-  PresenceParticipant,
-  RoomInstanceState,
+import {
+  instanceKeyText,
+  type PresenceParticipant,
+  type RoomInstanceState,
 } from "../collaboration/protocol";
 import {
   buildWorkbenchCellScene,
@@ -264,6 +265,233 @@ describe("buildWorkbenchCellScene", () => {
     expect(scene("failed").surfaceById.source).toMatchObject({
       appendix: { collapsed: true, summaryText: "Broken", kindBadge: "Error" },
     });
+  });
+
+  it("attaches live progress and cancel only while the node is running on this call trail", () => {
+    const key = instanceKeyText({
+      project_id: "project",
+      graph_id: "graph",
+      call_path: [],
+      node_id: "source",
+      map_index: null,
+    });
+    const otherKey = instanceKeyText({
+      project_id: "project",
+      graph_id: "graph",
+      call_path: ["other"],
+      node_id: "source",
+      map_index: null,
+    });
+    const entries = [
+      {
+        sequence: 2,
+        message: "Parsing OCR pages…",
+        current: 3,
+        total: 12,
+        fingerprint: "instance",
+      },
+      {
+        sequence: 1,
+        message: "Sending document to Mistral OCR…",
+        current: null,
+        total: null,
+        fingerprint: "instance",
+      },
+    ];
+    const progress = new Map([
+      [key, { entries }],
+      [
+        otherKey,
+        {
+          entries: [
+            {
+              sequence: 9,
+              message: "Wrong trail",
+              current: 1,
+              total: 2,
+              fingerprint: "instance",
+            },
+          ],
+        },
+      ],
+    ]);
+    const runs = [
+      {
+        run_id: "run-1",
+        graph_id: "graph",
+        targets: [{ node_id: "source", call_path: [] as string[] }],
+        starter: null,
+        started_at: "2026-08-07T10:00:00Z",
+        cancellable: true,
+      },
+    ];
+    const cancelled: string[] = [];
+    const liveRun = {
+      projectId: "project",
+      graphId: "graph",
+      callPath: [] as readonly string[],
+      progress,
+      runs,
+      cancellingRunId: null,
+      canCancelRun: true,
+      onCancelNodeRun: (nodeId: string) => cancelled.push(nodeId),
+    };
+    const withLive = (state: RoomInstanceState["state"]) =>
+      buildWorkbenchCellScene({
+        document: graph,
+        registry,
+        presentation,
+        nodes: [
+          { ...sourceNode, data: { ...sourceNode.data, run } },
+          targetNode,
+        ],
+        nodeInstanceStates: {
+          source: { ...instance, state, error: null },
+        },
+        collapsedAppendices: new Set(),
+        canRun: true,
+        liveRun,
+      });
+
+    const running = withLive("running").surfaceById.source;
+    expect(running).toMatchObject({
+      kind: "operator",
+      progress: {
+        latestMessage: "Parsing OCR pages…",
+        current: 3,
+        total: 12,
+        recentMessages: [
+          {
+            sequence: 2,
+            message: "Parsing OCR pages…",
+            current: 3,
+            total: 12,
+          },
+          {
+            sequence: 1,
+            message: "Sending document to Mistral OCR…",
+            current: null,
+            total: null,
+          },
+        ],
+      },
+      cancelling: false,
+      canCancel: true,
+    });
+    if (running?.kind === "operator") running.onCancelRun?.();
+    expect(cancelled).toEqual(["source"]);
+
+    const finished = withLive("fresh").surfaceById.source;
+    expect(finished).not.toHaveProperty("progress");
+    expect(finished).not.toHaveProperty("canCancel");
+
+    const staleFrame = withLive("running");
+    const mismatched = buildWorkbenchCellScene({
+      document: graph,
+      registry,
+      presentation,
+      nodes: [{ ...sourceNode, data: { ...sourceNode.data, run } }, targetNode],
+      nodeInstanceStates: {
+        source: { ...instance, state: "running", fingerprint: "next" },
+      },
+      collapsedAppendices: new Set(),
+      canRun: true,
+      liveRun,
+    }).surfaceById.source;
+    expect(staleFrame.surfaceById.source).toHaveProperty("progress");
+    expect(mismatched).not.toHaveProperty("progress");
+    expect(mismatched).toMatchObject({ canCancel: true });
+
+    const otherTrail = buildWorkbenchCellScene({
+      document: graph,
+      registry,
+      presentation,
+      nodes: [{ ...sourceNode, data: { ...sourceNode.data, run } }, targetNode],
+      nodeInstanceStates: {
+        source: { ...instance, state: "running" },
+      },
+      collapsedAppendices: new Set(),
+      canRun: true,
+      liveRun: { ...liveRun, callPath: ["other"], progress: new Map() },
+    }).surfaceById.source;
+    expect(otherTrail).not.toHaveProperty("progress");
+    expect(otherTrail).toMatchObject({ canCancel: false });
+  });
+
+  it("cancels the sole run from an upstream node and refuses a second cancel", () => {
+    const runs = [
+      {
+        run_id: "run-1",
+        graph_id: "graph",
+        targets: [{ node_id: "target", call_path: [] as string[] }],
+        starter: null,
+        started_at: "2026-08-07T10:00:00Z",
+        cancellable: true,
+      },
+    ];
+    const base = {
+      document: graph,
+      registry,
+      presentation,
+      nodes: [{ ...sourceNode, data: { ...sourceNode.data, run } }, targetNode],
+      collapsedAppendices: new Set<string>(),
+      canRun: true,
+    };
+    const instances = {
+      source: { ...instance, state: "queued" as const },
+      target: {
+        ...instance,
+        node_id: "target",
+        state: "running" as const,
+      },
+    };
+    const live = (
+      cancellingRunId: string | null,
+      canCancelRun = true,
+      nextRuns = runs,
+    ) =>
+      buildWorkbenchCellScene({
+        ...base,
+        nodeInstanceStates: instances,
+        liveRun: {
+          projectId: "project",
+          graphId: "graph",
+          callPath: [],
+          runs: nextRuns,
+          cancellingRunId,
+          canCancelRun,
+          onCancelNodeRun: () => {},
+        },
+      });
+
+    expect(live(null).surfaceById.source).toMatchObject({
+      canCancel: true,
+      cancelling: false,
+    });
+    expect(live(null).surfaceById.target).toMatchObject({
+      canCancel: true,
+      cancelling: false,
+    });
+    expect(live("run-1").surfaceById.source).toMatchObject({
+      canCancel: false,
+      cancelling: true,
+    });
+    expect(live(null, false).surfaceById.target).toMatchObject({
+      canCancel: false,
+    });
+    const first = runs[0];
+    if (!first) throw new Error("expected a run");
+    expect(
+      live(null, true, [
+        first,
+        {
+          ...first,
+          run_id: "run-2",
+          targets: [{ node_id: "elsewhere", call_path: [] }],
+          started_at: "2026-08-07T11:00:00Z",
+        },
+      ]).surfaceById.source,
+    ).toMatchObject({ canCancel: false });
   });
 });
 

@@ -42,11 +42,8 @@ import {
 import { GraphRoomRecoveryNotice } from "../collaboration/GraphRoomRecoveryNotice";
 import { EngineConnectNotice } from "./EngineConnectNotice";
 import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
+import { LinkedViewActivityToast } from "./LinkedViewActivityToast";
 import { useServiceEnginePrompt } from "./use-service-engine-prompt";
-import {
-  WorkbenchActivityBar,
-  type WorkbenchActivity,
-} from "./WorkbenchActivityBar";
 import { ArtifactFolderDropDialog } from "../artifacts/ArtifactFolderDropDialog";
 import { ConnectionRouteDialog } from "../authoring/ConnectionRouteDialog";
 import { CanvasLabPanel } from "../cell-canvas/CanvasLabPanel";
@@ -258,6 +255,7 @@ import {
   type WorldPoint,
 } from "../cell-canvas/cell-model";
 import {
+  activeRunForNode,
   buildWorkbenchCellScene,
   cellConnectionToWorkbenchConnection,
   cellRemotePeersFromParticipants,
@@ -923,8 +921,6 @@ function WorkbenchBody({
     openGraphId,
     callTrail,
     setNodes,
-    nodeTitles,
-    canCancelRun,
     authoringError: authoring.authoringError,
     onClearAuthoringError: authoring.clearAuthoringError,
     onDismissAuthoringError: authoring.dismissAuthoringError,
@@ -938,7 +934,8 @@ function WorkbenchBody({
     dismissRunError,
     runWorkflow,
     nodeInstanceStates,
-    runActivityDescriptor,
+    openGraphRuns,
+    cancellingRunId,
     cancelGraphRun,
     executionHistoryTarget,
     openExecutionHistory,
@@ -2884,59 +2881,14 @@ function WorkbenchBody({
   const firefoxDynamicButtonProps: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     autoComplete: "off";
   } = { autoComplete: "off" };
-  const cancelAction = runActivityDescriptor?.cancelAction;
-  const runActivity: WorkbenchActivity | null = runActivityDescriptor
-    ? {
-        eyebrow: runActivityDescriptor.eyebrow,
-        title: runActivityDescriptor.title,
-        message: runActivityDescriptor.message,
-        tone: runActivityDescriptor.tone,
-        action: cancelAction
-          ? {
-              kind: "cancel",
-              label: cancelAction.label,
-              ariaLabel: cancelAction.ariaLabel,
-              disabled: cancelAction.disabled,
-              onInvoke: () => cancelGraphRun(cancelAction.runId),
-            }
-          : undefined,
-      }
-    : null;
   const viewerActivity = latestArtifactViewerActivity?.value.activity ?? null;
-  let viewerActivityAction: WorkbenchActivity["action"];
-  if (latestArtifactViewerActivity && viewerActivity?.retry) {
-    viewerActivityAction = {
-      kind: "retry",
-      label: "Retry",
-      ariaLabel: `Retry ${viewerActivity.title}`,
-      onInvoke: viewerActivity.retry,
-    };
-  } else if (
-    latestArtifactViewerActivity &&
-    (viewerActivity?.state === "warning" || viewerActivity?.state === "error")
-  ) {
-    viewerActivityAction = {
-      kind: "dismiss",
-      label: "Dismiss",
-      ariaLabel: `Dismiss ${viewerActivity.title}`,
-      onInvoke: () =>
-        dismissArtifactViewerActivity(
-          latestArtifactViewerActivity.nodeId,
-          latestArtifactViewerActivity.value.revision,
-        ),
-    };
-  }
-  const workbenchActivity: WorkbenchActivity | null = runActivity
-    ? runActivity
-    : viewerActivity
-      ? {
-          eyebrow: "Linked view",
-          title: viewerActivity.title,
-          message: viewerActivity.message,
-          tone: viewerActivity.state,
-          action: viewerActivityAction,
-        }
-      : null;
+  const dismissLinkedView = React.useCallback(() => {
+    if (!latestArtifactViewerActivity) return;
+    dismissArtifactViewerActivity(
+      latestArtifactViewerActivity.nodeId,
+      latestArtifactViewerActivity.value.revision,
+    );
+  }, [dismissArtifactViewerActivity, latestArtifactViewerActivity]);
 
   // The Library panel's cached tree names the files artifact cards show.
   const { data: libraryTree } = useSWR(["library-tree", workspaceId], () =>
@@ -2970,6 +2922,20 @@ function WorkbenchBody({
       });
     },
     [],
+  );
+
+  const callPath = React.useMemo(
+    () => callTrail.map((entry) => entry.nodeId),
+    [callTrail],
+  );
+  const onCancelNodeRun = React.useCallback(
+    (nodeId: string) => {
+      if (!canCancelRun || cancellingRunId !== null) return;
+      const active = activeRunForNode(openGraphRuns, nodeId, callPath);
+      if (!active?.cancellable) return;
+      cancelGraphRun(active.run_id);
+    },
+    [callPath, canCancelRun, cancelGraphRun, cancellingRunId, openGraphRuns],
   );
 
   const cellScene = React.useMemo(
@@ -3011,6 +2977,19 @@ function WorkbenchBody({
             onOperatorConfigChange: localAuthoringEnabled
               ? updateConfigPatch
               : undefined,
+            liveRun:
+              projectId && openGraphId
+                ? {
+                    projectId,
+                    graphId: openGraphId,
+                    callPath,
+                    progress: projectRoom.nodeProgress,
+                    runs: openGraphRuns,
+                    cancellingRunId,
+                    canCancelRun,
+                    onCancelNodeRun,
+                  }
+                : undefined,
           })
         : null,
     [
@@ -3019,6 +2998,9 @@ function WorkbenchBody({
       artifactOriginCanvasEdges,
       artifactViewerCanvasEdges,
       authoredDocument,
+      callPath,
+      canCancelRun,
+      cancellingRunId,
       canEditProject,
       canManageSecrets,
       canStartRun,
@@ -3037,8 +3019,12 @@ function WorkbenchBody({
       nodeInstanceStates,
       nodeSecretStatuses,
       nodes,
+      onCancelNodeRun,
       openGraphId,
+      openGraphRuns,
       projectEditsTrusted,
+      projectId,
+      projectRoom.nodeProgress,
       registry,
       running,
       sharedPresentation,
@@ -3840,9 +3826,17 @@ function WorkbenchBody({
         </NodeMenuRegistryContext.Provider>
       </section>
 
-      {workbenchActivity ? (
-        <WorkbenchActivityBar activity={workbenchActivity} />
-      ) : null}
+      <LinkedViewActivityToast
+        activity={viewerActivity}
+        onRetry={viewerActivity?.retry}
+        onDismiss={
+          viewerActivity &&
+          (viewerActivity.state === "warning" ||
+            viewerActivity.state === "error")
+            ? dismissLinkedView
+            : undefined
+        }
+      />
 
       {canvasLabEnabled && labPanelOpen && (
         <CanvasLabPanel

@@ -305,6 +305,81 @@ describe("CellOperatorCard", () => {
     expect(held).not.toContain('data-card-menu="true"');
   });
 
+  it("shows streamed progress and cancel on a running node that is not selected", () => {
+    const surface = operatorSurface({
+      statusLabel: "Running",
+      progress: {
+        latestMessage: "Parsing OCR pages…",
+        current: 3,
+        total: 12,
+        recentMessages: [
+          {
+            sequence: 2,
+            message: "Parsing OCR pages…",
+            current: 3,
+            total: 12,
+          },
+          {
+            sequence: 1,
+            message: "Sending document…",
+            current: null,
+            total: null,
+          },
+        ],
+      },
+      canCancel: true,
+      cancelling: false,
+      onCancelRun: () => {},
+    });
+    const card = { ...operatorCard(surface), status: "working" as const };
+    const header = (selected: boolean) => {
+      const html = renderOperator(surface, { card, selected }).html;
+      return html.slice(
+        html.indexOf('data-card-header="true"'),
+        html.indexOf("<article"),
+      );
+    };
+    const rest = header(false);
+    expect(rest).toContain('data-card-live-event="true"');
+    expect(rest).toContain("Parsing OCR pages…");
+    expect(rest).toContain("3/12");
+    expect(rest).toContain('data-card-run-spinner="true"');
+    expect(rest).toContain('aria-label="Cancel run for Merge"');
+    expect(rest).toContain('title="Cancel run"');
+    expect(rest).not.toContain("data-card-header-actions");
+    expect(rest).not.toContain('data-card-status="working"');
+
+    const selected = header(true);
+    expect(selected).toContain('data-card-live-event="true"');
+    expect(selected).toContain('data-card-header-actions="true"');
+    expect(selected).toContain("Cancel run");
+    expect(selected).not.toContain('data-card-status="working"');
+  });
+
+  it("falls back to a queued mark when no progress frame has arrived", () => {
+    const surface = operatorSurface({ statusLabel: "Queued" });
+    const card = { ...operatorCard(surface), status: "working" as const };
+    const { html } = renderOperator(surface, { card, selected: false });
+    expect(html).toContain("Queued…");
+    expect(html).toContain('data-card-run-queued="true"');
+    expect(html).not.toContain("Cancel run for Merge");
+    expect(html).not.toContain('data-card-header-actions="true"');
+  });
+
+  it("keeps a failed node visible while it is not selected", () => {
+    const surface = operatorSurface({ statusLabel: "Error" });
+    const card = { ...operatorCard(surface), status: "error" as const };
+    const rest = renderOperator(surface, { card, selected: false }).html;
+    expect(rest).toContain('data-card-run-error="true"');
+    expect(rest).toContain('aria-label="Merge failed"');
+    expect(rest).not.toContain('data-card-status="error"');
+
+    const selected = renderOperator(surface, { card, selected: true }).html;
+    expect(selected).toContain('data-card-status="error"');
+    expect(selected).toContain("Error");
+    expect(selected).not.toContain('data-card-run-error="true"');
+  });
+
   it("omits the run action without an onRun handler", () => {
     const { html } = renderOperator(operatorSurface(), {
       selected: true,

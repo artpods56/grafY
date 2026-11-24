@@ -5,9 +5,11 @@ import * as stylex from "@stylexjs/stylex";
 import {
   ChevronDown,
   ChevronUp,
+  LoaderCircle,
   MoreHorizontal,
   Play,
   Plus,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
@@ -35,6 +37,7 @@ import {
   plugRowOffset,
 } from "../cell-card-geometry";
 import type {
+  CellNodeLiveProgress,
   CellResizeEdge,
   OperatorCardSurfaceData,
   ServicePortPrompt,
@@ -173,6 +176,22 @@ const LIQUID_BORDER =
 
 const NO_CONNECTED_PORTS: ReadonlySet<string> = new Set();
 const NO_MENU_ITEMS: readonly CellCardMenuItem[] = [];
+
+const spin = stylex.keyframes({
+  from: { transform: "rotate(0deg)" },
+  to: { transform: "rotate(360deg)" },
+});
+
+const pulse = stylex.keyframes({
+  "0%": { opacity: 0.35 },
+  "50%": { opacity: 1 },
+  "100%": { opacity: 0.35 },
+});
+
+const eventIn = stylex.keyframes({
+  from: { opacity: 0, transform: "translateX(6px)" },
+  to: { opacity: 1, transform: "translateX(0)" },
+});
 
 const s = stylex.create({
   root: {
@@ -424,6 +443,165 @@ const s = stylex.create({
     color: tokens.colorMuted,
     fontSize: tokens.fontSizeXs,
     whiteSpace: "nowrap",
+  },
+  // A running title keeps a readable stub. The live event takes the rest of
+  // the row and fades instead of pushing the card wider.
+  titleShare: {
+    minWidth: "52px",
+    maxWidth: "46%",
+    marginRight: 0,
+  },
+  headerRaised: {
+    position: "relative",
+    zIndex: 4,
+  },
+  headerLiveSlot: {
+    flexShrink: 0,
+    minWidth: 0,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: "4px",
+  },
+  headerLiveShare: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: "0%",
+  },
+  liveRow: {
+    position: "relative",
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: "0%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: "4px",
+  },
+  liveEvent: {
+    minWidth: 0,
+    maxWidth: "100%",
+    height: "20px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: "6px",
+    paddingInline: "7px",
+    borderWidth: 0,
+    borderRadius: "9999px",
+    backgroundColor: {
+      default: tokens.colorSurfaceSunken,
+      ":hover:not(:disabled)": tokens.colorHoverStrong,
+      ":focus-visible": tokens.colorHoverStrong,
+    },
+    color: tokens.colorMuted,
+    fontFamily: MONO_FONT,
+    fontSize: "10px",
+    lineHeight: "20px",
+    cursor: "pointer",
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "1px",
+  },
+  liveMessage: {
+    minWidth: 0,
+    overflow: "hidden",
+    whiteSpace: "nowrap",
+    maskImage: "linear-gradient(90deg, black 72%, transparent)",
+    WebkitMaskImage: "linear-gradient(90deg, black 72%, transparent)",
+    animationName: eventIn,
+    animationDuration: {
+      default: "180ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    animationTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+  },
+  liveCount: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+    fontVariantNumeric: "tabular-nums",
+  },
+  spinner: {
+    animationName: spin,
+    animationDuration: {
+      default: "900ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    animationIterationCount: "infinite",
+    animationTimingFunction: "linear",
+  },
+  queuedDot: {
+    width: "6px",
+    height: "6px",
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorInfo,
+    animationName: pulse,
+    animationDuration: {
+      default: "1.4s",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    animationIterationCount: "infinite",
+  },
+  errorMark: {
+    flexShrink: 0,
+    width: "8px",
+    height: "8px",
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorDanger,
+    boxShadow: `0 0 0 3px ${tokens.colorDangerHover}`,
+  },
+  trail: {
+    position: "absolute",
+    top: "calc(100% + 4px)",
+    right: 0,
+    zIndex: 5,
+    width: "220px",
+    maxWidth: "70vw",
+    display: "grid",
+    gap: "4px",
+    padding: "8px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: "10px",
+    backgroundColor: tokens.colorSurface,
+    boxShadow: tokens.shadowNode,
+    color: tokens.colorText,
+    textAlign: "left",
+    cursor: "default",
+  },
+  trailTitle: {
+    margin: 0,
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 650,
+    lineHeight: 1.3,
+  },
+  trailList: {
+    margin: 0,
+    padding: 0,
+    listStyle: "none",
+    display: "grid",
+    gap: "3px",
+    maxHeight: "140px",
+    overflowY: "auto",
+    color: tokens.colorMuted,
+    fontFamily: MONO_FONT,
+    fontSize: "10px",
+    lineHeight: 1.35,
+  },
+  trailRow: {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+  trailMessage: {
+    minWidth: 0,
+    overflowWrap: "anywhere",
   },
 
   // Operator body.
@@ -701,6 +879,13 @@ export interface CellCardShellProps extends CellCardBaseProps {
   headerExtra?: React.ReactNode;
   /** Quiet facts after the title in the floating header, always shown. */
   headerMeta?: React.ReactNode;
+  /**
+   * Run status that stays in the header while the node is running, queued,
+   * or failed, including while the card is not selected.
+   */
+  headerLive?: React.ReactNode;
+  /** The title keeps a minimum and the live readout takes the remaining row. */
+  shareTitle?: boolean;
   /** Painted under the plate inside the card box, e.g. a sequence's card backs. */
   behindPlate?: React.ReactNode;
   /** The plate's 23px top strip, under the plate's top edge. */
@@ -743,6 +928,8 @@ export function CellCardShell({
   onRemove,
   headerExtra,
   headerMeta,
+  headerLive,
+  shareTitle = false,
   behindPlate,
   strip,
   resizable,
@@ -813,6 +1000,7 @@ export function CellCardShell({
             cursor: dragging ? "grabbing" : "grab",
           },
           s.header,
+          headerLive ? s.headerRaised : null,
         )}
       >
         <span
@@ -822,11 +1010,20 @@ export function CellCardShell({
             s.title,
             kind === "artifact" && s.titleFixed,
             active && s.titleSelected,
+            shareTitle && s.titleShare,
           )}
         >
           {card.title}
         </span>
         {headerMeta}
+        {headerLive ? (
+          <span
+            data-card-header-live="true"
+            {...stylex.props(s.headerLiveSlot, shareTitle && s.headerLiveShare)}
+          >
+            {headerLive}
+          </span>
+        ) : null}
         {showHeaderActions ? (
           <span
             data-card-header-actions="true"
@@ -1314,6 +1511,166 @@ function ServicePortAffordance({
   );
 }
 
+function progressCounter(
+  current: number | null,
+  total: number | null,
+): string | null {
+  if (current === null || total === null || total <= 0) return null;
+  return `${current}/${total}`;
+}
+
+function CellRunIndicator({
+  title,
+  queued,
+  cancelling,
+  canCancel,
+  onCancel,
+}: {
+  title: string;
+  queued: boolean;
+  cancelling: boolean;
+  canCancel: boolean;
+  onCancel?: () => void;
+}) {
+  const [armed, setArmed] = React.useState(false);
+  const mark = queued ? (
+    <span
+      aria-hidden="true"
+      data-card-run-queued="true"
+      {...stylex.props(s.queuedDot)}
+    />
+  ) : (
+    <LoaderCircle
+      aria-hidden="true"
+      size={12}
+      data-card-run-spinner="true"
+      {...stylex.props(s.spinner)}
+    />
+  );
+  if (!canCancel && !cancelling) {
+    return (
+      <span
+        aria-hidden="true"
+        data-card-run-indicator={queued ? "queued" : "running"}
+      >
+        {mark}
+      </span>
+    );
+  }
+  const showStop = armed && canCancel && !cancelling;
+  return (
+    <IconButton
+      size="2xs"
+      variant="danger"
+      label={
+        cancelling ? `Cancelling run for ${title}` : `Cancel run for ${title}`
+      }
+      title="Cancel run"
+      disabled={cancelling || !canCancel}
+      data-card-cancel-run={cancelling ? "cancelling" : "ready"}
+      onPointerDown={stopCardDrag}
+      onMouseEnter={() => setArmed(true)}
+      onMouseLeave={() => setArmed(false)}
+      onFocus={() => setArmed(true)}
+      onBlur={() => setArmed(false)}
+      onClick={() => onCancel?.()}
+    >
+      {showStop ? <Square size={9} fill="currentColor" /> : mark}
+    </IconButton>
+  );
+}
+
+function CellLiveRunHeader({
+  title,
+  queued,
+  progress,
+  cancelling,
+  canCancel,
+  onCancel,
+}: {
+  title: string;
+  queued: boolean;
+  progress: CellNodeLiveProgress | null;
+  cancelling: boolean;
+  canCancel: boolean;
+  onCancel?: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const fallback = queued ? "Queued…" : "Running…";
+  const message = progress?.latestMessage ?? fallback;
+  const counter = progress
+    ? progressCounter(progress.current, progress.total)
+    : null;
+  const rows = progress?.recentMessages ?? [];
+  return (
+    <span data-card-live="true" {...stylex.props(s.liveRow)}>
+      <button
+        type="button"
+        data-card-live-event="true"
+        aria-expanded={open}
+        aria-label={counter ? `${message}, ${counter}` : message}
+        title={`${title}: ${message}`}
+        onPointerDown={stopCardDrag}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.stopPropagation();
+          setOpen(false);
+        }}
+        {...stylex.props(s.liveEvent)}
+      >
+        <span
+          key={rows[0]?.sequence ?? message}
+          {...stylex.props(s.liveMessage)}
+        >
+          {message}
+        </span>
+        {counter ? (
+          <span data-card-live-count="true" {...stylex.props(s.liveCount)}>
+            {counter}
+          </span>
+        ) : null}
+      </button>
+      <CellRunIndicator
+        title={title}
+        queued={queued}
+        cancelling={cancelling}
+        canCancel={canCancel}
+        onCancel={onCancel}
+      />
+      {open ? (
+        <div
+          role="dialog"
+          aria-label={`Live events for ${title}`}
+          data-card-live-trail="true"
+          onPointerDown={stopCardDrag}
+          onWheel={(event) => event.stopPropagation()}
+          {...stylex.props(s.trail)}
+        >
+          <p {...stylex.props(s.trailTitle)}>{title}</p>
+          <ol {...stylex.props(s.trailList)}>
+            {rows.length === 0 ? (
+              <li>{fallback}</li>
+            ) : (
+              rows.map((row) => {
+                const rowCount = progressCounter(row.current, row.total);
+                return (
+                  <li key={row.sequence} {...stylex.props(s.trailRow)}>
+                    <span {...stylex.props(s.trailMessage)}>{row.message}</span>
+                    {rowCount ? (
+                      <span {...stylex.props(s.liveCount)}>{rowCount}</span>
+                    ) : null}
+                  </li>
+                );
+              })
+            )}
+          </ol>
+        </div>
+      ) : null}
+    </span>
+  );
+}
+
 function CellOperatorCardImpl(props: CellOperatorCardProps) {
   const {
     card,
@@ -1382,13 +1739,16 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
     portRows.set(port.rowOffset, row);
   }
 
+  const working = card.status === "working";
+  const failed = card.status === "error";
+  const showChrome = state.selected && !state.dragging;
   const statusText = surface.statusLabel ?? STATUS_TEXT[card.status ?? "idle"];
   const statusAriaWord =
     card.status === "done"
       ? "done"
-      : card.status === "working"
+      : working
         ? "working"
-        : card.status === "error"
+        : failed
           ? "failed"
           : (statusText ?? "").toLowerCase();
   // Always shown, not only while selected: a card that still needs a key
@@ -1411,9 +1771,43 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
         />
       </span>
     ) : null;
+  const queued = surface.statusLabel === "Queued";
+  const headerLive = working ? (
+    <CellLiveRunHeader
+      title={card.title}
+      queued={queued}
+      progress={surface.progress ?? null}
+      cancelling={surface.cancelling === true}
+      canCancel={surface.canCancel === true}
+      onCancel={surface.onCancelRun}
+    />
+  ) : failed && !showChrome ? (
+    <span
+      role="status"
+      aria-label={`${card.title} failed`}
+      data-card-run-error="true"
+      title={`${card.title} failed`}
+      {...stylex.props(s.errorMark)}
+    />
+  ) : null;
+  const cancelMenuItems: readonly CellCardMenuItem[] =
+    working && (surface.canCancel || surface.cancelling)
+      ? [
+          {
+            id: "cancel-run",
+            label: "Cancel run",
+            icon: <Square size={12} fill="currentColor" />,
+            danger: true,
+            disabled: surface.cancelling === true || surface.canCancel !== true,
+            onSelect: () => {
+              surface.onCancelRun?.();
+            },
+          },
+        ]
+      : NO_MENU_ITEMS;
   const headerExtra = (
     <>
-      {statusText ? (
+      {statusText && !working ? (
         <span
           role="status"
           aria-label={`${card.title} ${statusAriaWord}`}
@@ -1459,6 +1853,9 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
       connectedPortIds={connected}
       headerExtra={headerExtra}
       headerMeta={headerMeta}
+      headerLive={headerLive}
+      shareTitle={working}
+      menuItems={cancelMenuItems}
       resizable={card.resizable === true}
     >
       {[...portRows].map(([rowOffset, { input, output }]) => (
