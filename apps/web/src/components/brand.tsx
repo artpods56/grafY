@@ -11,12 +11,18 @@ export const BRAND_ICON_INTRINSIC = { width: 231, height: 284 } as const;
  * The brand mark's own box. The ink stays a black asset and `--grafy-brand-filter`
  * inverts it for a dark document; those `:root` / `prefers-color-scheme` rules stay
  * in `globals.css` because a component cannot declare a variable it only reads.
+ * A mark sitting on an always-dark surface asks for `tone="light"` instead, which
+ * overrides that variable with a forced white regardless of the document palette.
  */
 const styles = stylex.create({
   mark: {
     display: "block",
     objectFit: "contain",
     filter: "var(--grafy-brand-filter)",
+  },
+  /** White ink for the always-dark rail, in both light and dark modes. */
+  markLight: {
+    filter: "invert(1) brightness(1.06)",
   },
   loader: {
     display: "inline-grid",
@@ -49,18 +55,29 @@ function joinClassNames(...names: Array<string | undefined>) {
   return names.filter(Boolean).join(" ");
 }
 
+/**
+ * How a mark gets its ink. `auto` follows `--grafy-brand-filter`, so the mark
+ * flips with the document palette; `light` forces white for always-dark chrome.
+ */
+export type BrandTone = "auto" | "light";
+
 type BrandMarkProps = {
   size?: number;
   className?: string;
   alt?: string;
+  tone?: BrandTone;
 };
 
 export function BrandIcon({
   size = 28,
   className,
   alt = BRAND_NAME_DISPLAY,
+  tone = "auto",
 }: BrandMarkProps) {
-  const styled = stylex.props(styles.mark);
+  const styled = stylex.props(
+    styles.mark,
+    tone === "light" && styles.markLight,
+  );
   return (
     // eslint-disable-next-line @next/next/no-img-element -- static brand asset in public/
     <img
@@ -78,13 +95,18 @@ export function BrandWordmark({
   height = 22,
   className,
   alt = BRAND_NAME_DISPLAY,
+  tone = "auto",
 }: {
   height?: number;
   className?: string;
   alt?: string;
+  tone?: BrandTone;
 }) {
   const width = Math.round(height * (1157 / 392));
-  const styled = stylex.props(styles.mark);
+  const styled = stylex.props(
+    styles.mark,
+    tone === "light" && styles.markLight,
+  );
   return (
     // eslint-disable-next-line @next/next/no-img-element -- static brand asset in public/
     <img
