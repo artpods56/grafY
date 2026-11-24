@@ -151,6 +151,9 @@ export interface CellCanvasHandle {
   ): void;
   zoomAtCenter(nextZoom: number): void;
   zoomBy(factor: number): void;
+  zoomIn(): void;
+  zoomOut(): void;
+  resetZoom(): void;
   viewAt(
     worldX: number,
     worldY: number,
@@ -437,6 +440,9 @@ export function CellCanvas({
     flushPan,
     zoomAtCenter,
     zoomBy,
+    zoomIn,
+    zoomOut,
+    resetZoom,
     fitRect,
     viewAt,
     screenToWorld,
@@ -1073,6 +1079,9 @@ export function CellCanvas({
       fitCards,
       zoomAtCenter,
       zoomBy,
+      zoomIn,
+      zoomOut,
+      resetZoom,
       viewAt,
       cancelGesture: () => dispatch({ kind: "cancelGesture" }),
     }),
@@ -1081,11 +1090,14 @@ export function CellCanvas({
       fitCards,
       fitGraph,
       fitRect,
+      resetZoom,
       screenToWorld,
       viewAt,
       worldToScreen,
       zoomAtCenter,
       zoomBy,
+      zoomIn,
+      zoomOut,
     ],
   );
 

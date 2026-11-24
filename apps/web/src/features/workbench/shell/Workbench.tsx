@@ -23,8 +23,8 @@ import {
   Copy,
   History,
   Layers,
+  LayoutGrid,
   LoaderCircle,
-  Maximize2,
   Play,
   Plus,
   Square,
@@ -244,6 +244,7 @@ import {
   type CellCanvasHandle,
   type CellCanvasProps,
 } from "../cell-canvas/CellCanvas";
+import { CanvasZoomControls } from "../cell-canvas/CanvasZoomControls";
 import {
   annotationHexFromToken,
   graphCommandsFromCellResizeForDocument,
@@ -660,6 +661,7 @@ function WorkbenchBody({
   } = useNodeSecrets(workspaceId, nodes);
   const [cellCanvasHandle, setCellCanvasHandle] =
     React.useState<CellCanvasHandle | null>(null);
+  const [viewportZoom, setViewportZoom] = React.useState(1);
   const canvasReady = cellCanvasHandle !== null;
   const screenToCanvasPoint = React.useCallback(
     (point: XYPosition) =>
@@ -3454,7 +3456,7 @@ function WorkbenchBody({
         <span {...stylex.props(s.selectionLabel)}>
           {selectedNodeCount} selected
         </span>
-        <span {...stylex.props(s.selectionDivider)} />
+        <span aria-hidden="true" {...stylex.props(s.selectionDivider)} />
         {collectSpec ? (
           selectedCollectionSources.length > 1 ? (
             <Button
@@ -3509,7 +3511,8 @@ function WorkbenchBody({
             xstyle={phoneTouch.rail}
             onClick={tidySelectedArtifacts}
           >
-            Tidy-up
+            <LayoutGrid size={13} />
+            Tidy up
           </Button>
         ) : null}
         {selectedWorkflowCount ? (
@@ -3678,6 +3681,7 @@ function WorkbenchBody({
               autoFitOnMount={false}
               exposeDebugApi={process.env.NODE_ENV !== "production"}
               onHandleReady={setCellCanvasHandle}
+              onViewportZoomChange={setViewportZoom}
               onMoveCards={moveCellCards}
               onDragCardsProgress={onDragCardsProgress}
               onResizeCard={resizeCellCard}
@@ -3848,10 +3852,12 @@ function WorkbenchBody({
       <aside aria-label="Canvas actions" {...stylex.props(s.toolDock)}>
         <IconButton
           size="lg"
-          variant="accent"
+          variant="ghost"
           label="Add node"
+          title="Add node"
+          aria-pressed={libraryOpen}
           disabled={!registry || !localAuthoringEnabled}
-          xstyle={phoneTouch.rail}
+          xstyle={[phoneTouch.rail, libraryOpen && s.dockButtonActive]}
           {...firefoxDynamicButtonProps}
           onClick={() => {
             closeGraphBrowser();
@@ -3864,13 +3870,14 @@ function WorkbenchBody({
         <div {...stylex.props(s.shapesMenuWrap)}>
           <IconButton
             size="lg"
-            variant={shapesMenuOpen ? "accent" : "ghost"}
+            variant="ghost"
             label="Add shape or text"
             title="Add documentation shapes"
+            aria-pressed={shapesMenuOpen}
             disabled={!localAuthoringEnabled}
             aria-expanded={shapesMenuOpen}
             aria-haspopup="menu"
-            xstyle={phoneTouch.rail}
+            xstyle={[phoneTouch.rail, shapesMenuOpen && s.dockButtonActive]}
             onClick={() => {
               closeGraphBrowser();
               setLibraryOpen(false);
@@ -3949,20 +3956,10 @@ function WorkbenchBody({
         >
           <Bot size={14} />
         </IconButton>
+        <span aria-hidden="true" {...stylex.props(s.railDivider)} />
         <IconButton
           size="lg"
-          label="Fit"
-          title="Fit workflow"
-          disabled={!canvasReady}
-          xstyle={phoneTouch.rail}
-          {...firefoxDynamicButtonProps}
-          onClick={() => fitCanvasView(WORKBENCH_FIT_VIEW)}
-        >
-          <Maximize2 size={14} />
-        </IconButton>
-        <span {...stylex.props(s.railDivider)} />
-        <IconButton
-          size="lg"
+          variant="ghost"
           label="Runs"
           title={
             projectId
@@ -3980,9 +3977,10 @@ function WorkbenchBody({
         >
           <History size={14} />
         </IconButton>
-        <span {...stylex.props(s.railDivider)} />
+        <span aria-hidden="true" {...stylex.props(s.railDivider)} />
         <IconButton
           size="lg"
+          variant="ghost"
           label="Duplicate"
           title={
             selectedWorkflowCount || selectedViewerCount
@@ -4016,6 +4014,15 @@ function WorkbenchBody({
           <Trash2 size={14} />
         </IconButton>
       </aside>
+
+      <CanvasZoomControls
+        zoom={viewportZoom}
+        disabled={!canvasReady}
+        onZoomIn={() => cellCanvasHandle?.zoomIn()}
+        onZoomOut={() => cellCanvasHandle?.zoomOut()}
+        onResetZoom={() => cellCanvasHandle?.resetZoom()}
+        onFitView={() => fitCanvasView(WORKBENCH_FIT_VIEW)}
+      />
 
       <Toast.Provider timeout={8000} limit={3}>
         <GlobalIssueToastList
