@@ -464,24 +464,24 @@ class ExtractMarkdownTablesNode(
                 _clean_cell(cell, strip_leader_dots=config.strip_leader_dots)
                 for cell in raw_cells
             ]
-            row: dict[str, TableValue] = {}
+            out_row: dict[str, TableValue] = {}
             for col_idx, column in enumerate(data_columns):
                 value = (
                     cleaned[col_idx]
                     if col_idx < col_count and col_idx < len(cleaned)
                     else ""
                 )
-                row[column.id] = value or None
-            if all(val is None for val in row.values()):
+                out_row[column.id] = value or None
+            if all(val is None for val in out_row.values()):
                 continue
             if config.include_section_column:
-                row["section"] = section
+                out_row["section"] = section
             if any(
-                row.get(req_id) is None or row.get(req_id) == ""
+                out_row.get(req_id) is None or out_row.get(req_id) == ""
                 for req_id in required_ids
             ):
                 continue
-            out_rows.append(row)
+            out_rows.append(out_row)
 
         return ExtractMarkdownTablesOutput(
             table=Table(columns=out_columns, rows=out_rows)
