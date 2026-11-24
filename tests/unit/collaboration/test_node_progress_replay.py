@@ -7,10 +7,15 @@ not written anywhere, and a refresh must not show it as still running.
 
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
-from grafy_api.realtime.hub import ProjectRoomHub
+from pydantic import BaseModel
+from starlette.websockets import WebSocketState
+
+from grafy_api.realtime.hub import ProjectRoomHub, ProjectRoomSession
 from grafy_api.realtime.protocol import (
+    ActorPresentation,
     InstanceKeyEntry,
     InstanceStateEntry,
     InstanceStateName,
@@ -52,6 +57,37 @@ def _progress(
         current=sequence,
         total=30,
     )
+
+
+def _session(workspace_id: UUID, project_id: UUID) -> ProjectRoomSession:
+    """A registered room member whose sender task nobody started.
+
+    The frames stay in the outbound queue, which is what makes them readable.
+    """
+
+    websocket = AsyncMock()
+    websocket.application_state = WebSocketState.CONNECTED
+    return ProjectRoomSession(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        project_room_session_id=uuid4(),
+        actor_user_id=uuid4(),
+        credential_reference="test-session",
+        authorization_version=1,
+        actor_presentation=ActorPresentation(
+            actor_id=uuid4(), display_name="Operator", color="teal"
+        ),
+        websocket=websocket,
+    )
+
+
+def _delivered(session: ProjectRoomSession) -> list[str]:
+    types: list[str] = []
+    while not session.outbound.empty():
+        frame = session.outbound.get_nowait()
+        assert isinstance(frame, BaseModel), "a shutdown sentinel reached a fan-out"
+        types.append(str(frame.model_dump(mode="json")["type"]))
+    return types
 
 
 def _state(
@@ -311,6 +347,54 @@ async def test_snapshot_prunes_a_removed_instance_and_a_stale_fingerprint() -> N
 
     assert first == ()
     assert second == ()
+
+
+async def test_the_buffer_does_not_replace_live_delivery() -> None:
+    hub = ProjectRoomHub()
+    workspace_id = uuid4()
+    project_id = uuid4()
+    session = _session(workspace_id, project_id)
+    await hub.join(session)
+    frame = _progress(project_id, "ocr", sequence=1, computation_id=uuid4())
+
+    await _publish(hub, workspace_id, project_id, frame)
+    await hub.publish_run_finished(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        message=RunFinishedMessage(run_id=uuid4(), status="succeeded"),
+    )
+    await hub.publish_instances_changed(
+        workspace_id=workspace_id,
+        project_id=project_id,
+        message=InstancesChangedMessage(
+            changed=(_state(project_id, "ocr", "fresh"),),
+            removed=(),
+            head_sequence=3,
+        ),
+    )
+
+    assert _delivered(session) == ["node.progress", "run.finished", "instances.changed"]
+
+
+async def test_close_project_forgets_the_buffered_frames() -> None:
+    hub = ProjectRoomHub()
+    workspace_id = uuid4()
+    project_id = uuid4()
+    await _publish(
+        hub,
+        workspace_id,
+        project_id,
+        _progress(project_id, "ocr", sequence=1, computation_id=uuid4()),
+    )
+
+    await hub.close_project(workspace_id=workspace_id, project_id=project_id)
+
+    frames = await hub.snapshot_node_progress(
+        workspace_id,
+        project_id,
+        active_instances=(_state(project_id, "ocr", "running"),),
+    )
+    assert frames == ()
 
 
 def test_room_ready_accepts_a_payload_that_omits_node_progress() -> None:
