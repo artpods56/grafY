@@ -8,15 +8,18 @@ import {
   ChevronRight,
   Download,
   File as FileIcon,
+  FileCode,
   FileText,
   Folder,
   FolderOpen,
   FolderPlus,
+  GripVertical,
   Image as ImageIcon,
   Link2,
+  Map as MapIcon,
   MoreHorizontal,
   Pencil,
-  Table,
+  Table2,
   Trash2,
   TriangleAlert,
   type LucideIcon,
@@ -41,19 +44,22 @@ import {
 } from "./library-selection";
 import {
   flattenLibraryRows,
-  isItemImage,
+  isBrowserRenderableImage,
+  libraryFileBadge,
   libraryFileDisplayName,
-  libraryFileSubtitle,
+  libraryFileRowMeta,
   libraryFolderKey,
-  type LibraryFileIcon,
+  type LibraryFileBadgeKind,
   type LibraryFileNode,
   type LibraryFolderNode,
   type LibraryTreeNode,
 } from "./library-tree";
 
-const FILE_ICONS: Record<LibraryFileIcon, LucideIcon> = {
+const BADGE_ICONS: Record<LibraryFileBadgeKind, LucideIcon> = {
   image: ImageIcon,
-  table: Table,
+  map: MapIcon,
+  table: Table2,
+  code: FileCode,
   text: FileText,
   model: Boxes,
   other: FileIcon,
@@ -410,9 +416,17 @@ function FolderRow({ folder }: { folder: LibraryFolderNode }) {
           {...stylex.props(s.chevron, open ? s.chevronOpen : null)}
         />
         {open ? (
-          <FolderOpen size={13} aria-hidden="true" />
+          <FolderOpen
+            size={14}
+            aria-hidden="true"
+            {...stylex.props(s.folderIcon)}
+          />
         ) : (
-          <Folder size={13} aria-hidden="true" />
+          <Folder
+            size={14}
+            aria-hidden="true"
+            {...stylex.props(s.folderIcon)}
+          />
         )}
         {renaming ? (
           <FolderNameInput initialName={folder.name} onDone={finishRename} />
@@ -562,14 +576,21 @@ function FileRow({ file }: { file: LibraryFileNode }) {
     >
       <FileThumbnail file={file} contentUrl={contentUrl} />
       <span {...stylex.props(s.fileCopy)}>
-        <span {...stylex.props(s.fileName)}>{displayName}</span>
-        <span {...stylex.props(s.fileMeta)}>{libraryFileSubtitle(item)}</span>
+        <span
+          {...stylex.props(s.fileName, selected ? s.fileNameSelected : null)}
+        >
+          {displayName}
+        </span>
+        <span {...stylex.props(s.fileMeta)}>{libraryFileRowMeta(item)}</span>
         {blob ? (
           <span role="status" {...stylex.props(s.fileMeta, s.fileWarning)}>
             <TriangleAlert size={10} aria-hidden="true" />
             {BLOB_ARTIFACT_NOTICE}
           </span>
         ) : null}
+      </span>
+      <span aria-hidden="true" {...stylex.props(s.dragGrip)}>
+        <GripVertical size={12} />
       </span>
       <RowMenu label={`Actions for ${displayName}`} pinned={selected}>
         <RowMenuItem
@@ -603,6 +624,25 @@ function FileRow({ file }: { file: LibraryFileNode }) {
   );
 }
 
+function badgeToneStyle(kind: LibraryFileBadgeKind) {
+  switch (kind) {
+    case "image":
+      return s.badgeImage;
+    case "map":
+      return s.badgeMap;
+    case "table":
+      return s.badgeTable;
+    case "code":
+      return s.badgeCode;
+    case "text":
+      return s.badgeText;
+    case "model":
+      return s.badgeModel;
+    case "other":
+      return s.badgeOther;
+  }
+}
+
 function FileThumbnail({
   file,
   contentUrl,
@@ -610,12 +650,25 @@ function FileThumbnail({
   file: LibraryFileNode;
   contentUrl: string | null;
 }) {
+  const [loaded, setLoaded] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
-  const TypeIcon = FILE_ICONS[file.icon];
-  const showImage = isItemImage(file.item) && contentUrl !== null && !failed;
+  const badge = libraryFileBadge(file.item);
+  const BadgeIcon = BADGE_ICONS[badge.kind];
+  const showImage =
+    isBrowserRenderableImage(file.item) && contentUrl !== null && !failed;
 
   return (
-    <span {...stylex.props(s.fileThumb)}>
+    <span {...stylex.props(s.fileThumb, badgeToneStyle(badge.kind))}>
+      <span {...stylex.props(s.fileBadgeInner)}>
+        <BadgeIcon
+          size={badge.ext ? 13 : 15}
+          strokeWidth={1.75}
+          aria-hidden="true"
+        />
+        {badge.ext ? (
+          <span {...stylex.props(s.fileBadgeExt)}>{badge.ext}</span>
+        ) : null}
+      </span>
       {showImage ? (
         /* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */
         <img
@@ -624,12 +677,14 @@ function FileThumbnail({
           loading="lazy"
           decoding="async"
           draggable={false}
+          onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
-          {...stylex.props(s.fileThumbImage)}
+          {...stylex.props(
+            s.fileThumbImage,
+            loaded ? s.fileThumbImageLoaded : null,
+          )}
         />
-      ) : (
-        <TypeIcon size={11} aria-hidden="true" />
-      )}
+      ) : null}
     </span>
   );
 }
@@ -717,52 +772,56 @@ function RowMenuItem({
 }
 
 /**
- * The numbers are the Workspace rail's: 6px radius, 12px labels,
- * `colorSurfaceSunken` hover, no shadow. See `panel-styles.ts`.
+ * Tier 2 Gray Subsidebar tree rows: 2-line scannable files with 32×32
+ * thumbnails/type badges, crisp `colorSubrailActive` selection, and clean
+ * folder hierarchy.
  */
 const s = stylex.create({
   tree: {
     display: "grid",
     alignContent: "start",
-    gap: "1px",
+    gap: "2px",
   },
   row: {
     width: "100%",
     minWidth: 0,
+    boxSizing: "border-box",
     display: "flex",
     alignItems: "center",
-    borderRadius: "6px",
+    borderRadius: tokens.radiusSm,
     backgroundColor: {
       default: "transparent",
-      ":hover": tokens.colorSurfaceSunken,
+      ":hover": tokens.colorSubrailHover,
     },
     textAlign: "left",
     outlineWidth: 0,
+    transitionProperty: "background-color, box-shadow",
+    transitionDuration: "110ms",
     ":focus-visible": {
-      outline: `2px solid ${tokens.colorAccent}`,
+      outline: `2px solid ${tokens.colorAccentBorder}`,
       outlineOffset: "-2px",
     },
   },
   folderRow: {
-    gap: "5px",
-    padding: "4px 4px 4px 6px",
+    gap: "6px",
+    padding: "5px 6px",
     color: tokens.colorMuted,
     cursor: "pointer",
     fontSize: tokens.fontSizeSm,
     fontWeight: 560,
   },
   fileRow: {
-    gap: "7px",
-    padding: "4px 4px 4px 6px",
+    gap: "9px",
+    padding: "5px 6px",
     color: tokens.colorText,
     cursor: "grab",
   },
   rowSelected: {
     backgroundColor: {
-      default: tokens.colorSurfaceRaised,
-      ":hover": tokens.colorSurfaceRaised,
+      default: tokens.colorSubrailActive,
+      ":hover": tokens.colorSubrailActive,
     },
-    boxShadow: `inset 0 0 0 1px ${tokens.colorBorder}`,
+    boxShadow: `inset 0 0 0 1px ${tokens.colorSubrailBorder}, 0 1px 2px light-dark(rgba(15, 23, 42, 0.05), rgba(0, 0, 0, 0.28))`,
   },
   /** A row a drag is over: the folder the drop will file into. */
   rowDropTarget: {
@@ -778,6 +837,10 @@ const s = stylex.create({
     transition: "transform 140ms ease",
   },
   chevronOpen: { transform: "rotate(90deg)" },
+  folderIcon: {
+    flexShrink: 0,
+    color: tokens.colorMuted,
+  },
   folderName: {
     minWidth: 0,
     overflow: "hidden",
@@ -788,54 +851,119 @@ const s = stylex.create({
   count: {
     marginLeft: "auto",
     flexShrink: 0,
-    paddingInline: "4px",
-    color: tokens.colorSubtle,
+    padding: "1px 6px",
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorSubrailHover,
+    color: tokens.colorMuted,
     fontSize: "10px",
+    fontWeight: 600,
+    lineHeight: 1.4,
     fontVariantNumeric: "tabular-nums",
   },
   /** A folder's contents, hung from a guide under the folder's chevron. */
   group: {
     display: "grid",
-    gap: "1px",
-    marginInlineStart: "11.5px",
-    paddingInlineStart: "2px",
+    gap: "2px",
+    marginInlineStart: "12px",
+    paddingInlineStart: "6px",
     borderInlineStartWidth: 1,
     borderInlineStartStyle: "solid",
-    borderInlineStartColor: tokens.colorDivider,
+    borderInlineStartColor: tokens.colorSubrailBorder,
   },
   fileThumb: {
-    width: "18px",
-    height: "18px",
+    position: "relative",
+    width: "32px",
+    height: "32px",
     display: "grid",
     placeItems: "center",
     flexShrink: 0,
     overflow: "hidden",
-    borderRadius: "4px",
+    borderRadius: tokens.radiusSm,
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    backgroundColor: tokens.colorSurfaceMuted,
+    borderColor: tokens.colorSubrailBorder,
+    backgroundColor: tokens.colorSurface,
     color: tokens.colorMuted,
   },
+  badgeImage: {
+    backgroundColor: `color-mix(in srgb, ${tokens.colorInfo} 11%, ${tokens.colorSurface})`,
+    color: tokens.colorInfo,
+  },
+  badgeMap: {
+    backgroundColor: `color-mix(in srgb, ${tokens.colorSuccess} 11%, ${tokens.colorSurface})`,
+    color: tokens.colorSuccess,
+  },
+  badgeTable: {
+    backgroundColor: `color-mix(in srgb, ${tokens.colorSuccess} 11%, ${tokens.colorSurface})`,
+    color: tokens.colorSuccess,
+  },
+  badgeCode: {
+    backgroundColor: tokens.colorAccentSoft,
+    color: tokens.colorText,
+  },
+  badgeText: {
+    backgroundColor: `color-mix(in srgb, ${tokens.colorWarning} 11%, ${tokens.colorSurface})`,
+    color: tokens.colorWarning,
+  },
+  badgeModel: {
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
+  },
+  badgeOther: {
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
+  },
+  fileBadgeInner: {
+    display: "grid",
+    justifyItems: "center",
+    gap: "2px",
+    lineHeight: 1,
+  },
+  fileBadgeExt: {
+    fontSize: "7.5px",
+    fontWeight: 700,
+    letterSpacing: "0.04em",
+    lineHeight: 1,
+    textTransform: "uppercase",
+  },
   fileThumbImage: {
+    position: "absolute",
+    inset: 0,
     width: "100%",
     height: "100%",
     display: "block",
     objectFit: "cover",
+    opacity: 0,
+    transitionProperty: "opacity",
+    transitionDuration: "120ms",
   },
-  fileCopy: { minWidth: 0, flex: 1, display: "grid", gap: "1px" },
+  fileThumbImageLoaded: {
+    opacity: 1,
+  },
+  fileCopy: {
+    minWidth: 0,
+    flex: 1,
+    display: "grid",
+    gap: "2px",
+  },
   fileName: {
     overflow: "hidden",
-    color: tokens.colorTextEmphasis,
+    color: tokens.colorText,
     fontSize: tokens.fontSizeSm,
     fontWeight: 500,
+    lineHeight: 1.3,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
+  fileNameSelected: {
+    color: tokens.colorTextEmphasis,
+    fontWeight: 600,
+  },
   fileMeta: {
     overflow: "hidden",
-    color: tokens.colorSubtle,
+    color: tokens.colorMuted,
     fontSize: "10.5px",
+    lineHeight: 1.25,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
@@ -845,6 +973,20 @@ const s = stylex.create({
     gap: "3px",
     color: tokens.colorWarning,
   },
+  dragGrip: {
+    flexShrink: 0,
+    display: "grid",
+    placeItems: "center",
+    color: tokens.colorSubtle,
+    pointerEvents: "none",
+    opacity: {
+      default: 0,
+      [stylex.when.ancestor(":hover")]: 0.75,
+      [stylex.when.ancestor(":focus-visible")]: 0.75,
+    },
+    transitionProperty: "opacity",
+    transitionDuration: "100ms",
+  },
   renameInput: {
     minWidth: 0,
     flex: 1,
@@ -852,7 +994,7 @@ const s = stylex.create({
     borderStyle: "solid",
     borderColor: tokens.colorBorderStrong,
     borderRadius: "4px",
-    backgroundColor: tokens.colorBg,
+    backgroundColor: tokens.colorSubrailActive,
     color: tokens.colorTextEmphasis,
     font: "inherit",
     fontWeight: 560,
@@ -874,9 +1016,12 @@ const s = stylex.create({
     borderRadius: "5px",
     backgroundColor: {
       default: "transparent",
-      ":hover": tokens.colorHoverStrong,
+      ":hover:not(:disabled)": tokens.colorSubrailHover,
     },
-    color: { default: tokens.colorSubtle, ":hover": tokens.colorText },
+    color: {
+      default: tokens.colorSubtle,
+      ":hover:not(:disabled)": tokens.colorTextEmphasis,
+    },
     cursor: "pointer",
     opacity: {
       default: 1,

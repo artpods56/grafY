@@ -6,6 +6,7 @@ import { Drawer } from "@base-ui/react/drawer";
 import { PanelLeftClose } from "lucide-react";
 
 import { IconButton } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   beginSidePanelResize,
@@ -15,6 +16,7 @@ import {
   SIDE_PANEL_DEFAULT_WIDTH,
   SIDE_PANEL_ELEMENT_ID,
   SIDE_PANEL_MOTION_MS,
+  type SidePanelViewId,
   type WorkbenchSidePanelState,
 } from "./workbench-side-panel-state";
 import { LibraryPanel } from "./LibraryPanel";
@@ -25,8 +27,8 @@ import type { NodeRegistry } from "@/lib/api";
 const RESIZE_STEP = 16;
 
 const s = stylex.create({
-  /* The second pane of the sidebar: same surface and hairline as the rail, and
-   * deliberately no shadow, because a docked pane never floats. */
+  /* The Tier 2 Gray Subsidebar: sits between the dark left rail and the main
+   * workflow canvas, with no floating shadow while docked. */
   dock: {
     position: "fixed",
     zIndex: 45,
@@ -36,10 +38,10 @@ const s = stylex.create({
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
-    backgroundColor: tokens.colorBg,
+    backgroundColor: tokens.colorSubrailBg,
     borderInlineEndWidth: 1,
     borderInlineEndStyle: "solid",
-    borderInlineEndColor: tokens.colorDivider,
+    borderInlineEndColor: tokens.colorSubrailBorder,
     color: tokens.colorText,
     // Parked behind the rail (which paints above it) until it slides out, and
     // hidden once it is back there. Its left edge follows the rail when the
@@ -53,6 +55,31 @@ const s = stylex.create({
       "var(--grafy-side-panel-ease, ease), linear, ease",
   },
   dockOpen: { transform: "none", visibility: "visible" },
+  generatedHost: {
+    minHeight: 0,
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+  },
+  header: {
+    flexShrink: 0,
+    height: "52px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "6px",
+    padding: "0 8px 0 10px",
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: tokens.colorSubrailBorder,
+    backgroundColor: tokens.colorSubrailBg,
+  },
+  headerStart: {
+    minWidth: 0,
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+  },
   resizer: {
     position: "absolute",
     insetBlock: 0,
@@ -91,10 +118,10 @@ const s = stylex.create({
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
-    backgroundColor: tokens.colorBg,
+    backgroundColor: tokens.colorSubrailBg,
     borderInlineEndWidth: 1,
     borderInlineEndStyle: "solid",
-    borderInlineEndColor: tokens.colorDivider,
+    borderInlineEndColor: tokens.colorSubrailBorder,
     color: tokens.colorText,
     boxShadow: tokens.shadowNode,
     // It follows the finger while swiped and eases in and out otherwise.
@@ -155,18 +182,43 @@ export function WorkbenchSidePanel({
       <PanelLeftClose size={14} />
     </IconButton>
   );
+  const activeView: SidePanelViewId =
+    sidePanel.view === "generated" && projectId !== null
+      ? "generated"
+      : "artifacts";
+  const viewSwitcher = (
+    <SegmentedControl<SidePanelViewId>
+      aria-label="Side panel view"
+      size="sm"
+      value={activeView}
+      onValueChange={sidePanel.setView}
+      options={[
+        { value: "artifacts", label: "Library" },
+        {
+          value: "generated",
+          label: "Results",
+          disabled: projectId === null,
+        },
+      ]}
+    />
+  );
   const body =
-    sidePanel.view === "generated" && projectId !== null ? (
-      <GeneratedDrawer
-        workspaceId={workspaceId}
-        projectId={projectId}
-        graphId={graphId}
-        nodeTitles={nodeTitles}
-        registry={registry}
-        canSave={canSave}
-        refreshToken={generatedRefreshToken}
-        onClose={() => sidePanel.setOpen(false)}
-      />
+    activeView === "generated" && projectId !== null ? (
+      <div {...stylex.props(s.generatedHost)}>
+        <header {...stylex.props(s.header)}>
+          <div {...stylex.props(s.headerStart)}>{viewSwitcher}</div>
+          {collapse}
+        </header>
+        <GeneratedDrawer
+          workspaceId={workspaceId}
+          projectId={projectId}
+          graphId={graphId}
+          nodeTitles={nodeTitles}
+          registry={registry}
+          canSave={canSave}
+          refreshToken={generatedRefreshToken}
+        />
+      </div>
     ) : (
       <LibraryPanel
         workspaceId={workspaceId}
@@ -174,6 +226,7 @@ export function WorkbenchSidePanel({
         // Saving an artifact and changing the Library are the same capability,
         // so the Generated view's `canSave` is the Library's `canEdit`.
         canEdit={canSave}
+        headerStart={viewSwitcher}
         headerEnd={collapse}
       />
     );

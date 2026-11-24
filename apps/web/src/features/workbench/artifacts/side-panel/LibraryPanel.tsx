@@ -48,9 +48,11 @@ import {
   buildLibraryTree,
   countLibraryArtifacts,
   flattenLibraryRows,
+  libraryArtifactCategory,
   libraryFileDisplayName,
   libraryFolderKey,
   uniqueLibraryFolderName,
+  type LibraryArtifactCategory,
   type LibrarySort,
 } from "./library-tree";
 import {
@@ -69,6 +71,16 @@ import { panelStyles } from "./panel-styles";
 import { useCollapsedFolderKeys } from "./workbench-side-panel-state";
 
 const NO_KEYS: ReadonlySet<string> = new Set();
+
+const CATEGORY_OPTIONS: readonly {
+  value: LibraryArtifactCategory;
+  label: string;
+}[] = [
+  { value: "image", label: "Images" },
+  { value: "table", label: "Tables" },
+  { value: "doc", label: "Docs" },
+  { value: "other", label: "Other" },
+];
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -123,18 +135,21 @@ function operationErrorMessage(
 
 /**
  * The Workspace Library as a folder tree: the Artifacts view of the side panel.
- * `headerEnd` is the shell's own control, placed at the end of the header row.
+ * `headerStart` and `headerEnd` are the shell's own controls (view switcher
+ * and collapse button), placed at the start and end of the header row.
  */
 export function LibraryPanel({
   workspaceId,
   onOpenInstance,
   canEdit = true,
+  headerStart,
   headerEnd,
 }: {
   workspaceId: string;
   onOpenInstance: (graphId: string, resultFingerprint: string | null) => void;
   /** The capability behind every Library change. Read-only members are told, not refused later. */
   canEdit?: boolean;
+  headerStart?: React.ReactNode;
   headerEnd?: React.ReactNode;
 }) {
   // The canvas reads the same key, so a change here reaches its cards too.
@@ -146,6 +161,9 @@ export function LibraryPanel({
 
   const [query, setQuery] = React.useState("");
   const [sort, setSort] = React.useState<LibrarySort>("name");
+  const [typeFilter, setTypeFilter] = React.useState<
+    LibraryArtifactCategory | "all"
+  >("all");
   // Several artifacts are selected at once, with the row a shift range measures
   // from kept beside them. What the Library holds changes under it, so the
   // selection is pruned where it is read rather than corrected after a render.
@@ -173,16 +191,35 @@ export function LibraryPanel({
   const uploadingRef = React.useRef(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const availableCategories = React.useMemo(() => {
+    const present = new Set<LibraryArtifactCategory>();
+    for (const item of items) present.add(libraryArtifactCategory(item));
+    return CATEGORY_OPTIONS.filter((option) => present.has(option.value));
+  }, [items]);
+
+  const activeCategory: LibraryArtifactCategory | "all" =
+    availableCategories.length >= 2 &&
+    availableCategories.some((option) => option.value === typeFilter)
+      ? typeFilter
+      : "all";
+
   // Folds are remembered. A filter opens every folder instead, and the folds
   // made while it is on are forgotten with it.
   const [savedCollapsed, setSavedCollapsed] = useCollapsedFolderKeys();
   const [filterCollapsed, setFilterCollapsed] = React.useState(NO_KEYS);
-  const filtering = query.trim() !== "";
+  const filtering = query.trim() !== "" || activeCategory !== "all";
   const collapsed = filtering ? filterCollapsed : savedCollapsed;
 
   const tree = React.useMemo(
-    () => buildLibraryTree({ folders, items, query, sort }),
-    [folders, items, query, sort],
+    () =>
+      buildLibraryTree({
+        folders,
+        items,
+        query,
+        sort,
+        category: activeCategory,
+      }),
+    [folders, items, query, sort, activeCategory],
   );
   /**
    * The rows the tree renders, top to bottom — a filter and the open folders
@@ -256,6 +293,7 @@ export function LibraryPanel({
   async function createFolder(parentId: string | null): Promise<void> {
     // The new folder is named in place, so nothing may filter it out of view.
     changeQuery("");
+    setTypeFilter("all");
     await run(async () => {
       const folder = await libraryFoldersApi.createFolder({
         workspaceId,
@@ -474,90 +512,140 @@ export function LibraryPanel({
   return (
     <div {...stylex.props(s.view)}>
       <header {...stylex.props(s.header)}>
-        <h2 {...stylex.props(s.title)}>Library</h2>
-        <IconButton
-          label="New folder"
-          size="sm"
-          xstyle={panelStyles.iconButton}
-          onClick={() => void createFolder(null)}
-        >
-          <FolderPlus size={14} />
-        </IconButton>
-        <IconButton
-          label="Upload files to the Library"
-          size="sm"
-          xstyle={panelStyles.iconButton}
-          disabled={upload !== null}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {upload ? (
-            <LoaderCircle size={14} {...stylex.props(panelStyles.spinner)} />
-          ) : (
-            <Upload size={14} />
-          )}
-        </IconButton>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          hidden
-          tabIndex={-1}
-          onChange={(event) => {
-            const picked = Array.from(event.target.files ?? []);
-            event.target.value = "";
-            void uploadFiles(picked, null);
-          }}
-        />
-        {headerEnd ? (
-          <>
-            <span aria-hidden="true" {...stylex.props(s.headerDivider)} />
-            {headerEnd}
-          </>
-        ) : null}
+        <div {...stylex.props(s.headerStart)}>
+          {headerStart ?? <h2 {...stylex.props(s.title)}>Library</h2>}
+        </div>
+        <div {...stylex.props(s.headerActions)}>
+          <IconButton
+            label="New folder"
+            size="sm"
+            xstyle={panelStyles.iconButton}
+            onClick={() => void createFolder(null)}
+          >
+            <FolderPlus size={14} />
+          </IconButton>
+          <IconButton
+            label="Upload files to the Library"
+            size="sm"
+            xstyle={panelStyles.iconButton}
+            disabled={upload !== null}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {upload ? (
+              <LoaderCircle size={14} {...stylex.props(panelStyles.spinner)} />
+            ) : (
+              <Upload size={14} />
+            )}
+          </IconButton>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            tabIndex={-1}
+            onChange={(event) => {
+              const picked = Array.from(event.target.files ?? []);
+              event.target.value = "";
+              void uploadFiles(picked, null);
+            }}
+          />
+          {headerEnd ? (
+            <>
+              <span aria-hidden="true" {...stylex.props(s.headerDivider)} />
+              {headerEnd}
+            </>
+          ) : null}
+        </div>
       </header>
 
-      <div {...stylex.props(s.searchRow)}>
-        <label {...stylex.props(s.search)}>
-          <Search size={12} aria-hidden="true" />
-          <input
-            type="search"
-            value={query}
-            placeholder="Filter the Library"
-            aria-label="Filter the Library"
-            onChange={(event) => changeQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape" && query !== "") {
-                event.preventDefault();
-                event.stopPropagation();
-                changeQuery("");
-              }
-            }}
-            {...stylex.props(s.searchInput)}
-          />
-          {query ? (
-            <IconButton
-              label="Clear Library filter"
-              size="xs"
-              xstyle={panelStyles.iconButton}
-              onClick={() => changeQuery("")}
+      <div {...stylex.props(s.toolbar)}>
+        <div {...stylex.props(s.searchRow)}>
+          <label {...stylex.props(s.search)}>
+            <Search size={12} aria-hidden="true" />
+            <input
+              type="search"
+              value={query}
+              placeholder="Filter files…"
+              aria-label="Filter the Library"
+              onChange={(event) => changeQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && query !== "") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  changeQuery("");
+                }
+              }}
+              {...stylex.props(s.searchInput)}
+            />
+            {query ? (
+              <IconButton
+                label="Clear Library filter"
+                size="xs"
+                xstyle={panelStyles.iconButton}
+                onClick={() => changeQuery("")}
+              >
+                <X size={12} />
+              </IconButton>
+            ) : null}
+          </label>
+          <button
+            type="button"
+            aria-label={
+              sort === "name"
+                ? "Sort artifacts by newest"
+                : "Sort artifacts by name"
+            }
+            title={sort === "name" ? "Sorted A–Z" : "Sorted by most recent"}
+            onClick={() => setSort(sort === "name" ? "recent" : "name")}
+            {...stylex.props(s.sortButton)}
+          >
+            {sort === "name" ? (
+              <>
+                <ArrowDownAZ size={13} aria-hidden="true" />
+                <span>A–Z</span>
+              </>
+            ) : (
+              <>
+                <Clock size={13} aria-hidden="true" />
+                <span>Recent</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {availableCategories.length >= 2 ? (
+          <div
+            role="group"
+            aria-label="Filter by file type"
+            {...stylex.props(s.chipRow)}
+          >
+            <button
+              type="button"
+              aria-pressed={activeCategory === "all"}
+              onClick={() => setTypeFilter("all")}
+              {...stylex.props(
+                s.chip,
+                activeCategory === "all" ? s.chipActive : null,
+              )}
             >
-              <X size={12} />
-            </IconButton>
-          ) : null}
-        </label>
-        <IconButton
-          label={
-            sort === "name"
-              ? "Sort artifacts by newest"
-              : "Sort artifacts by name"
-          }
-          title={sort === "name" ? "Sorted by name" : "Sorted by newest"}
-          size="sm"
-          xstyle={panelStyles.iconButton}
-          onClick={() => setSort(sort === "name" ? "recent" : "name")}
-        >
-          {sort === "name" ? <ArrowDownAZ size={14} /> : <Clock size={14} />}
-        </IconButton>
+              All
+            </button>
+            {availableCategories.map((option) => {
+              const active = activeCategory === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setTypeFilter(option.value)}
+                  {...stylex.props(s.chip, active ? s.chipActive : null)}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       <div
@@ -632,7 +720,20 @@ export function LibraryPanel({
               ) : null}
               {data && filtering && tree.length === 0 && !emptyLibrary ? (
                 <p {...stylex.props(s.notice)}>
-                  Nothing in the Library matches “{query.trim()}”.
+                  {query.trim() !== "" ? (
+                    `Nothing in the Library matches “${query.trim()}”.`
+                  ) : (
+                    <>
+                      No files in this category.{" "}
+                      <button
+                        type="button"
+                        onClick={() => setTypeFilter("all")}
+                        {...stylex.props(s.inlineAction)}
+                      >
+                        Show all
+                      </button>
+                    </>
+                  )}
                 </p>
               ) : null}
               <LibraryTree
@@ -738,13 +839,30 @@ const s = stylex.create({
     height: "52px",
     display: "flex",
     alignItems: "center",
+    justifyContent: "space-between",
+    gap: "6px",
+    padding: "0 8px 0 10px",
+    borderBottomWidth: 1,
+    borderBottomStyle: "solid",
+    borderBottomColor: tokens.colorSubrailBorder,
+  },
+  headerStart: {
+    minWidth: 0,
+    flex: 1,
+    display: "flex",
+    alignItems: "center",
+  },
+  headerActions: {
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
     gap: "2px",
-    padding: "0 6px 0 14px",
   },
   title: {
     minWidth: 0,
     flex: 1,
     margin: 0,
+    paddingInlineStart: "4px",
     overflow: "hidden",
     color: tokens.colorTextEmphasis,
     fontSize: "13px",
@@ -755,15 +873,19 @@ const s = stylex.create({
   headerDivider: {
     width: "1px",
     height: "16px",
-    marginInline: "4px",
-    backgroundColor: tokens.colorDivider,
+    marginInline: "3px",
+    backgroundColor: tokens.colorSubrailBorder,
+  },
+  toolbar: {
+    flexShrink: 0,
+    display: "grid",
+    gap: "6px",
+    padding: "8px 8px 6px",
   },
   searchRow: {
-    flexShrink: 0,
     display: "flex",
     alignItems: "center",
-    gap: "4px",
-    padding: "0 6px 6px 8px",
+    gap: "5px",
   },
   search: {
     minWidth: 0,
@@ -772,19 +894,20 @@ const s = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: "6px",
-    paddingInline: "8px 2px",
+    paddingInline: "8px 3px",
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: {
-      default: tokens.colorBorder,
-      ":focus-within": tokens.colorBorderStrong,
+      default: tokens.colorSubrailBorder,
+      ":focus-within": tokens.colorAccentBorder,
     },
-    borderRadius: "6px",
-    backgroundColor: {
-      default: tokens.colorSurface,
-      ":focus-within": tokens.colorBg,
+    borderRadius: tokens.radiusSm,
+    backgroundColor: tokens.colorSubrailActive,
+    color: tokens.colorMuted,
+    boxShadow: {
+      default: "none",
+      ":focus-within": `0 0 0 1px ${tokens.colorAccentBorder}`,
     },
-    color: tokens.colorSubtle,
   },
   searchInput: {
     minWidth: 0,
@@ -798,8 +921,85 @@ const s = stylex.create({
     fontFamily: "inherit",
     fontSize: tokens.fontSizeSm,
     outline: "none",
+    "::placeholder": { color: tokens.colorSubtle },
     // The field has its own clear button; the browser's would be a second one.
     "::-webkit-search-cancel-button": { appearance: "none" },
+  },
+  sortButton: {
+    flexShrink: 0,
+    height: "28px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    paddingInline: "8px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorSubrailBorder,
+    borderRadius: tokens.radiusSm,
+    backgroundColor: {
+      default: tokens.colorSubrailActive,
+      ":hover:not(:disabled)": tokens.colorSubrailHover,
+    },
+    color: {
+      default: tokens.colorMuted,
+      ":hover:not(:disabled)": tokens.colorTextEmphasis,
+    },
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 560,
+    whiteSpace: "nowrap",
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "-1px",
+  },
+  chipRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "4px",
+  },
+  chip: {
+    height: "20px",
+    display: "inline-flex",
+    alignItems: "center",
+    paddingInline: "8px",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "transparent",
+    borderRadius: "9999px",
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorSubrailHover,
+    },
+    color: {
+      default: tokens.colorMuted,
+      ":hover:not(:disabled)": tokens.colorTextEmphasis,
+    },
+    cursor: "pointer",
+    fontFamily: "inherit",
+    fontSize: "10.5px",
+    fontWeight: 500,
+    lineHeight: 1,
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+  },
+  chipActive: {
+    borderColor: tokens.colorSubrailBorder,
+    backgroundColor: {
+      default: tokens.colorSubrailActive,
+      ":hover:not(:disabled)": tokens.colorSubrailActive,
+    },
+    color: {
+      default: tokens.colorTextEmphasis,
+      ":hover:not(:disabled)": tokens.colorTextEmphasis,
+    },
+    fontWeight: 600,
+    boxShadow: `0 1px 2px light-dark(rgba(15, 23, 42, 0.04), rgba(0, 0, 0, 0.25))`,
   },
   /** The drop area: the positioned parent of the drop hint. */
   dropRegion: {
@@ -808,9 +1008,6 @@ const s = stylex.create({
     flex: 1,
     display: "flex",
     flexDirection: "column",
-    borderTopWidth: 1,
-    borderTopStyle: "solid",
-    borderTopColor: tokens.colorDivider,
   },
   dropRegionActive: {
     backgroundColor: tokens.colorAccentSoft,
@@ -822,7 +1019,7 @@ const s = stylex.create({
     display: "grid",
     placeItems: "center",
     pointerEvents: "none",
-    borderRadius: "8px",
+    borderRadius: tokens.radiusMd,
     borderWidth: 1,
     borderStyle: "dashed",
     borderColor: tokens.colorAccentBorder,
@@ -842,7 +1039,7 @@ const s = stylex.create({
     display: "grid",
     alignContent: "start",
     gap: "4px",
-    padding: "6px 6px 12px",
+    padding: "4px 6px 12px",
   },
   scrollbar: {
     display: "flex",
@@ -857,8 +1054,8 @@ const s = stylex.create({
   },
   notice: {
     margin: 0,
-    padding: "6px 8px",
-    color: tokens.colorSubtle,
+    padding: "8px 8px",
+    color: tokens.colorMuted,
     fontSize: tokens.fontSizeSm,
     lineHeight: 1.45,
   },
@@ -883,7 +1080,10 @@ const s = stylex.create({
     borderWidth: 0,
     borderStyle: "none",
     backgroundColor: "transparent",
-    color: { default: tokens.colorMuted, ":hover": tokens.colorText },
+    color: {
+      default: tokens.colorMuted,
+      ":hover:not(:disabled)": tokens.colorTextEmphasis,
+    },
     cursor: "pointer",
     fontFamily: "inherit",
     fontSize: tokens.fontSizeSm,
@@ -891,13 +1091,13 @@ const s = stylex.create({
   },
   statusBar: {
     flexShrink: 0,
-    padding: "5px 10px",
+    padding: "6px 10px",
     borderTopWidth: 1,
     borderTopStyle: "solid",
-    borderTopColor: tokens.colorDivider,
-    color: tokens.colorSubtle,
-    fontSize: "10px",
-    letterSpacing: "0.04em",
+    borderTopColor: tokens.colorSubrailBorder,
+    color: tokens.colorMuted,
+    fontSize: "10.5px",
+    letterSpacing: "0.02em",
     fontVariantNumeric: "tabular-nums",
     whiteSpace: "nowrap",
     overflow: "hidden",

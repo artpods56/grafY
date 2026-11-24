@@ -2,7 +2,20 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { ArrowUpRight, Download, LoaderCircle, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  Boxes,
+  Download,
+  File as FileIcon,
+  FileCode,
+  FileText,
+  Image as ImageIcon,
+  LoaderCircle,
+  Map as MapIcon,
+  Table2,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 import { Button, ButtonLink, IconButton } from "@/components/ui/button";
 import {
@@ -18,13 +31,25 @@ import {
 import { useArtifactTypeCatalog } from "../use-artifact-type-catalog";
 import {
   formatLibraryByteSize,
-  isItemImage,
+  isBrowserRenderableImage,
   isItemText,
+  libraryFileBadge,
   libraryFileDisplayName,
   libraryFolderPath,
   libraryProvenanceLine,
+  type LibraryFileBadgeKind,
 } from "./library-tree";
 import { panelStyles } from "./panel-styles";
+
+const BADGE_ICONS: Record<LibraryFileBadgeKind, LucideIcon> = {
+  image: ImageIcon,
+  map: MapIcon,
+  table: Table2,
+  code: FileCode,
+  text: FileText,
+  model: Boxes,
+  other: FileIcon,
+};
 
 /** How much of a text artifact the preview reads before it stops. */
 const PREVIEW_TEXT_LIMIT = 20_000;
@@ -64,96 +89,111 @@ export function LibraryArtifactTile({
     id: item.artifact.artifact_type,
     schema_version: item.artifact.schema_version,
   };
+  const badge = libraryFileBadge(item);
+  const TypeIcon = BADGE_ICONS[badge.kind];
   const preview = useTextHead(isItemText(item) ? contentUrl : null);
 
   return (
-    <aside aria-label="Selected artifact" {...stylex.props(s.tile)}>
-      <div {...stylex.props(s.header)}>
-        <span {...stylex.props(s.title)} title={name}>
-          {name}
+    <aside aria-label="Selected artifact" {...stylex.props(s.dock)}>
+      <div {...stylex.props(s.card)}>
+        <div {...stylex.props(s.header)}>
+          <span aria-hidden="true" {...stylex.props(s.typeBadge)}>
+            <TypeIcon size={12} strokeWidth={1.75} />
+          </span>
+          <span {...stylex.props(s.title)} title={name}>
+            {name}
+          </span>
+          <IconButton
+            label="Close preview"
+            size="xs"
+            xstyle={[panelStyles.iconButton, s.close]}
+            onClick={onClose}
+          >
+            <X size={13} />
+          </IconButton>
+        </div>
+
+        <span {...stylex.props(s.facts)}>
+          {location.join(" / ")}
+          {" · "}
+          <span
+            title={formatArtifactTypeTooltip(artifactType)}
+            {...stylex.props(s.mono)}
+          >
+            {formatArtifactTypeLabel(artifactType, artifactTypes)}
+          </span>
+          {size ? ` · ${size}` : null}
         </span>
-        <IconButton
-          label="Close preview"
-          size="xs"
-          xstyle={[panelStyles.iconButton, s.close]}
-          onClick={onClose}
-        >
-          <X size={13} />
-        </IconButton>
+
+        {isBrowserRenderableImage(item) &&
+        contentUrl !== null &&
+        !imageFailed ? (
+          <span {...stylex.props(s.imageFrame)}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */}
+            <img
+              src={contentUrl}
+              alt={`Preview of ${name}`}
+              decoding="async"
+              onError={() => setImageFailed(true)}
+              {...stylex.props(s.image)}
+            />
+          </span>
+        ) : null}
+        {preview.loading ? (
+          <span role="status" {...stylex.props(s.text, s.reading)}>
+            <LoaderCircle
+              size={11}
+              aria-hidden="true"
+              {...stylex.props(panelStyles.spinner)}
+            />
+            Reading preview…
+          </span>
+        ) : null}
+        {preview.text ? (
+          <pre {...stylex.props(s.textPreview)}>{preview.text}</pre>
+        ) : null}
+
+        <div {...stylex.props(s.provenance)}>
+          <span {...stylex.props(s.label)}>Provenance</span>
+          <span {...stylex.props(s.text)}>{libraryProvenanceLine(item)}</span>
+          <span {...stylex.props(s.dateText)}>
+            Saved {formatDateTime(provenance.saved_at)}
+          </span>
+        </div>
+
+        {contentUrl || fromGraph ? (
+          <span {...stylex.props(s.actions)}>
+            {contentUrl ? (
+              <ButtonLink
+                href={contentUrl}
+                target="_blank"
+                rel="noreferrer"
+                variant="secondary"
+                size="xs"
+              >
+                <Download size={11} aria-hidden="true" />
+                Open original
+              </ButtonLink>
+            ) : null}
+            {fromGraph ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="xs"
+                onClick={() =>
+                  onOpenInstance(
+                    fromGraph,
+                    provenance.result_fingerprint ?? null,
+                  )
+                }
+              >
+                <ArrowUpRight size={11} aria-hidden="true" />
+                Where it came from
+              </Button>
+            ) : null}
+          </span>
+        ) : null}
       </div>
-      <span {...stylex.props(s.facts)}>
-        {location.join(" / ")}
-        {" · "}
-        <span
-          title={formatArtifactTypeTooltip(artifactType)}
-          {...stylex.props(s.mono)}
-        >
-          {formatArtifactTypeLabel(artifactType, artifactTypes)}
-        </span>
-        {size ? ` · ${size}` : null}
-      </span>
-
-      {isItemImage(item) && contentUrl !== null && !imageFailed ? (
-        <span {...stylex.props(s.imageFrame)}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer */}
-          <img
-            src={contentUrl}
-            alt={`Preview of ${name}`}
-            decoding="async"
-            onError={() => setImageFailed(true)}
-            {...stylex.props(s.image)}
-          />
-        </span>
-      ) : null}
-      {preview.loading ? (
-        <span role="status" {...stylex.props(s.text, s.reading)}>
-          <LoaderCircle
-            size={11}
-            aria-hidden="true"
-            {...stylex.props(panelStyles.spinner)}
-          />
-          Reading preview…
-        </span>
-      ) : null}
-      {preview.text ? (
-        <pre {...stylex.props(s.textPreview)}>{preview.text}</pre>
-      ) : null}
-
-      <span {...stylex.props(s.label)}>Provenance</span>
-      <span {...stylex.props(s.text)}>{libraryProvenanceLine(item)}</span>
-      <span {...stylex.props(s.text)}>
-        Saved {formatDateTime(provenance.saved_at)}
-      </span>
-
-      {contentUrl || fromGraph ? (
-        <span {...stylex.props(s.actions)}>
-          {contentUrl ? (
-            <ButtonLink
-              href={contentUrl}
-              target="_blank"
-              rel="noreferrer"
-              variant="secondary"
-              size="xs"
-            >
-              <Download size={11} aria-hidden="true" />
-              Open original
-            </ButtonLink>
-          ) : null}
-          {fromGraph ? (
-            <Button
-              type="button"
-              variant="secondary"
-              size="xs"
-              onClick={() =>
-                onOpenInstance(fromGraph, provenance.result_fingerprint ?? null)
-              }
-            >
-              <ArrowUpRight size={11} aria-hidden="true" />
-              Where it came from
-            </Button>
-          ) : null}
-        </span>
-      ) : null}
     </aside>
   );
 }
@@ -223,24 +263,44 @@ function clip(text: string): string {
 }
 
 const s = stylex.create({
-  tile: {
+  dock: {
     flexShrink: 0,
-    // The tile never takes the tree's whole column; what does not fit scrolls.
-    maxHeight: "55%",
-    overflowY: "auto",
-    display: "grid",
-    gap: "6px",
-    padding: "8px 10px 12px",
+    maxHeight: "48%",
+    display: "flex",
+    flexDirection: "column",
+    padding: "8px 8px 6px",
     borderTopWidth: 1,
     borderTopStyle: "solid",
-    borderTopColor: tokens.colorDivider,
-    backgroundColor: tokens.colorSurfaceMuted,
+    borderTopColor: tokens.colorSubrailBorder,
+  },
+  card: {
+    minHeight: 0,
+    overflowY: "auto",
+    display: "grid",
+    gap: "7px",
+    padding: "10px",
+    borderRadius: tokens.radiusMd,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    backgroundColor: tokens.colorSurface,
+    boxShadow: tokens.shadowNode,
   },
   header: {
     minWidth: 0,
     display: "flex",
     alignItems: "center",
     gap: "6px",
+  },
+  typeBadge: {
+    width: "20px",
+    height: "20px",
+    flexShrink: 0,
+    display: "grid",
+    placeItems: "center",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
   },
   title: {
     minWidth: 0,
@@ -252,20 +312,23 @@ const s = stylex.create({
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  close: { marginRight: "-4px" },
+  close: { marginRight: "-2px" },
   facts: {
-    marginTop: "-4px",
-    color: tokens.colorSubtle,
+    marginTop: "-3px",
+    color: tokens.colorMuted,
     fontSize: "10.5px",
-    lineHeight: 1.45,
+    lineHeight: 1.4,
     overflowWrap: "anywhere",
   },
-  mono: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" },
+  mono: {
+    fontFamily:
+      "var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)",
+  },
   imageFrame: {
     display: "grid",
     placeItems: "center",
-    padding: "6px",
-    borderRadius: "6px",
+    padding: "5px",
+    borderRadius: tokens.radiusSm,
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: tokens.colorDivider,
@@ -274,15 +337,16 @@ const s = stylex.create({
   image: {
     display: "block",
     maxWidth: "100%",
-    maxHeight: "200px",
-    borderRadius: "3px",
+    maxHeight: "140px",
+    objectFit: "contain",
+    borderRadius: "4px",
   },
   textPreview: {
-    maxHeight: "132px",
+    maxHeight: "104px",
     overflowY: "auto",
     margin: 0,
-    padding: "6px 7px",
-    borderRadius: "6px",
+    padding: "6px 8px",
+    borderRadius: tokens.radiusSm,
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: tokens.colorDivider,
@@ -294,25 +358,37 @@ const s = stylex.create({
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
   },
+  provenance: {
+    display: "grid",
+    gap: "2px",
+    paddingTop: "6px",
+    borderTopWidth: 1,
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+  },
   label: {
-    marginTop: "2px",
     color: tokens.colorSubtle,
-    fontSize: "10px",
-    fontWeight: 620,
+    fontSize: "9.5px",
+    fontWeight: 640,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
   },
   text: {
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeSm,
-    lineHeight: 1.4,
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.35,
     overflowWrap: "anywhere",
+  },
+  dateText: {
+    color: tokens.colorMuted,
+    fontSize: "10.5px",
+    lineHeight: 1.35,
   },
   reading: { display: "flex", alignItems: "center", gap: "6px" },
   actions: {
     display: "flex",
     flexWrap: "wrap",
     gap: "6px",
-    marginTop: "2px",
+    marginTop: "1px",
   },
 });
