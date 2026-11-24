@@ -20,10 +20,10 @@ const browserState = vi.hoisted(() => ({
     id: "workspace-atlas",
     name: "Atlas",
     slug: "atlas",
-    kind: "shared" as const,
-    role: "editor" as const,
+    kind: "shared",
+    role: "editor",
     capabilities: ["view_project", "create_project"],
-  } satisfies Workspace,
+  } as Workspace,
   /** The address the page is mounted on, as the browser would report it. */
   pathname: "/workspaces/atlas/projects",
   search: "",
@@ -377,6 +377,29 @@ describe("workspace graph browser", () => {
     expect(browserState.push).toHaveBeenCalledWith(
       "/workspaces/atlas/projects/project-transcription",
     );
+  });
+
+  it("shows Personal badge and step count without repeating the workspace column on rows", async () => {
+    browserState.workspace = {
+      id: "workspace-personal",
+      name: "Personal workspace",
+      slug: "personal",
+      kind: "personal",
+      role: "owner",
+      capabilities: ["view_project", "create_project"],
+    };
+    browserState.data = {
+      projects: [project("project-1", "Parish register transcription")],
+    };
+    const container = await renderBrowser();
+
+    expect(container.querySelector("header")?.textContent).toContain(
+      "Personal",
+    );
+    const link = rowLinks(container)[0];
+    expect(link?.textContent).toContain("Parish register transcription");
+    expect(link?.textContent).toContain("3 steps");
+    expect(link?.textContent).not.toContain("My projects");
   });
 });
 

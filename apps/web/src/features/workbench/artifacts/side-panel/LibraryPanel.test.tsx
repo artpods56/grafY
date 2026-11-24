@@ -1009,6 +1009,58 @@ describe("LibraryPanel", () => {
       BLOB_ARTIFACT_NOTICE,
     );
   });
+
+  it("renders a crisp TIF badge instead of a broken img for TIFF scans", async () => {
+    const tiffItem: PlacedLibraryItem = {
+      artifact: {
+        artifact_id: "artifact-tiff",
+        artifact_type: "file.tiff",
+        schema_version: 1,
+        content_type: "image/tiff",
+        byte_size: 54_525_952,
+        sha256: null,
+        content_url: "./artifacts/artifact-tiff/content",
+        download_formats: [],
+        metadata: {},
+      },
+      name: "folio-01.tif",
+      provenance: {
+        source: "upload",
+        call_path: [],
+        saved_at: "2026-09-11T12:00:00Z",
+        original_filename: "folio-01.tif",
+      },
+      folder_id: null,
+    };
+    await renderPanel({ folders: [], items: [tiffItem] });
+
+    const row = fileRow("artifact-tiff");
+    expect(row.querySelector("img")).toBeNull();
+    expect(row.textContent).toContain("TIF");
+    expect(row.textContent).toContain("52 MB · TIFF");
+  });
+
+  it("shows quick type filter chips when multiple categories exist and filters rows", async () => {
+    await renderPanel({ folders: [], items: [RUN_ITEM, UPLOAD_ITEM] });
+
+    const group = document.querySelector<HTMLElement>(
+      '[role="group"][aria-label="Filter by file type"]',
+    );
+    expect(group).not.toBeNull();
+    const imagesChip = [...group!.querySelectorAll("button")].find(
+      (btn) => btn.textContent === "Images",
+    );
+    expect(imagesChip).toBeDefined();
+
+    await React.act(async () => {
+      imagesChip!.click();
+    });
+
+    expect(rows().map((el) => el.dataset.treeLabel)).toEqual([
+      "harbour-front.jpg",
+    ]);
+    expect(document.body.textContent).toContain("1 of 2 artifacts");
+  });
 });
 
 /**

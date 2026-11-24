@@ -3,11 +3,16 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import {
+  AlertCircle,
+  ArrowUpRight,
+  Check,
   ChevronDown,
-  ChevronUp,
+  Copy,
+  LoaderCircle,
   MoreHorizontal,
   Play,
   Plus,
+  Square,
   Trash2,
   X,
 } from "lucide-react";
@@ -35,6 +40,9 @@ import {
   plugRowOffset,
 } from "../cell-card-geometry";
 import type {
+  CellExecutionAppendixOutput,
+  CellExecutionAppendixSpec,
+  CellNodeLiveProgress,
   CellResizeEdge,
   OperatorCardSurfaceData,
   ServicePortPrompt,
@@ -173,6 +181,22 @@ const LIQUID_BORDER =
 
 const NO_CONNECTED_PORTS: ReadonlySet<string> = new Set();
 const NO_MENU_ITEMS: readonly CellCardMenuItem[] = [];
+
+const spin = stylex.keyframes({
+  from: { transform: "rotate(0deg)" },
+  to: { transform: "rotate(360deg)" },
+});
+
+const pulse = stylex.keyframes({
+  "0%": { opacity: 0.35 },
+  "50%": { opacity: 1 },
+  "100%": { opacity: 0.35 },
+});
+
+const eventIn = stylex.keyframes({
+  from: { opacity: 0, transform: "translateX(6px)" },
+  to: { opacity: 1, transform: "translateX(0)" },
+});
 
 const s = stylex.create({
   root: {
@@ -425,6 +449,164 @@ const s = stylex.create({
     fontSize: tokens.fontSizeXs,
     whiteSpace: "nowrap",
   },
+  // A running title keeps a readable stub. The live event takes the rest of
+  // the row and fades instead of pushing the card wider.
+  titleShare: {
+    minWidth: "52px",
+    maxWidth: "46%",
+    marginRight: 0,
+  },
+  headerRaised: {
+    position: "relative",
+    zIndex: 4,
+  },
+  headerLiveSlot: {
+    flexShrink: 0,
+    minWidth: 0,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: "4px",
+  },
+  headerLiveShare: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: "0%",
+  },
+  liveRow: {
+    position: "relative",
+    minWidth: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: "0%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: "4px",
+  },
+  liveEvent: {
+    minWidth: 0,
+    maxWidth: "100%",
+    height: "20px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    gap: "6px",
+    paddingInline: "7px",
+    borderWidth: 0,
+    borderRadius: "9999px",
+    backgroundColor: {
+      default: tokens.colorSurfaceSunken,
+      ":hover:not(:disabled)": tokens.colorHoverStrong,
+      ":focus-visible": tokens.colorHoverStrong,
+    },
+    color: tokens.colorMuted,
+    fontFamily: MONO_FONT,
+    fontSize: "10px",
+    lineHeight: "20px",
+    cursor: "pointer",
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "1px",
+  },
+  liveMessage: {
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    animationName: eventIn,
+    animationDuration: {
+      default: "180ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    animationTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+  },
+  liveCount: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+    fontVariantNumeric: "tabular-nums",
+  },
+  spinner: {
+    animationName: spin,
+    animationDuration: {
+      default: "900ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    animationIterationCount: "infinite",
+    animationTimingFunction: "linear",
+  },
+  queuedDot: {
+    width: "6px",
+    height: "6px",
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorInfo,
+    animationName: pulse,
+    animationDuration: {
+      default: "1.4s",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    animationIterationCount: "infinite",
+  },
+  errorMark: {
+    flexShrink: 0,
+    width: "8px",
+    height: "8px",
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorDanger,
+    boxShadow: `0 0 0 3px ${tokens.colorDangerHover}`,
+  },
+  trail: {
+    position: "absolute",
+    top: "calc(100% + 4px)",
+    right: 0,
+    zIndex: 5,
+    width: "220px",
+    maxWidth: "70vw",
+    display: "grid",
+    gap: "4px",
+    padding: "8px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: "10px",
+    backgroundColor: tokens.colorSurface,
+    boxShadow: tokens.shadowNode,
+    color: tokens.colorText,
+    textAlign: "left",
+    cursor: "default",
+  },
+  trailTitle: {
+    margin: 0,
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 650,
+    lineHeight: 1.3,
+  },
+  trailList: {
+    margin: 0,
+    padding: 0,
+    listStyle: "none",
+    display: "grid",
+    gap: "3px",
+    maxHeight: "140px",
+    overflowY: "auto",
+    color: tokens.colorMuted,
+    fontFamily: MONO_FONT,
+    fontSize: "10px",
+    lineHeight: 1.35,
+  },
+  trailRow: {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+  trailMessage: {
+    minWidth: 0,
+    overflowWrap: "anywhere",
+  },
 
   // Operator body.
   band: {
@@ -550,36 +732,246 @@ const s = stylex.create({
     paddingInline: "10px",
   },
   appendix: {
+    boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
-    backgroundColor: tokens.colorSurfaceSunken,
+    paddingTop: "4px",
+    paddingBottom: "5px",
+    gap: "2px",
+    backgroundColor: tokens.colorSurfaceMuted,
     borderTopWidth: "1px",
     borderTopStyle: "solid",
     borderTopColor: tokens.colorDivider,
+    fontFamily: "var(--font-geist-sans)",
+  },
+  appendixExpanded: {
+    paddingBottom: "6px",
+    gap: "4px",
+  },
+  appendixCollapsedCentered: {
+    justifyContent: "center",
+  },
+  appendixError: {
+    backgroundColor: tokens.colorDangerHover,
+    borderTopColor: `color-mix(in srgb, ${tokens.colorDanger} 26%, transparent)`,
+    boxShadow: `inset 3px 0 0 ${tokens.colorDanger}`,
   },
   appendixHeader: {
     flexShrink: 0,
     boxSizing: "border-box",
-    height: "24px",
+    height: "20px",
     display: "flex",
     alignItems: "center",
     gap: "6px",
-    paddingInline: "10px 4px",
+    paddingInline: "10px 6px",
+  },
+  appendixDotCluster: {
+    flexShrink: 0,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "3px",
+  },
+  appendixDot: {
+    flexShrink: 0,
+    width: "6px",
+    height: "6px",
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorMuted,
+  },
+  appendixTitle: {
+    flexShrink: 0,
+    color: tokens.colorText,
     fontSize: "10px",
     fontWeight: 600,
+    lineHeight: 1,
+    letterSpacing: "0.01em",
+  },
+  appendixErrorTitle: {
+    color: tokens.colorTextEmphasis,
+  },
+  appendixErrorIcon: {
+    flexShrink: 0,
+    color: tokens.colorDanger,
+  },
+  appendixCountPill: {
+    flexShrink: 0,
+    boxSizing: "border-box",
+    minWidth: "16px",
+    height: "15px",
+    paddingInline: "5px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "9999px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorDivider,
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
+    fontSize: "9px",
+    fontWeight: 600,
+    lineHeight: 1,
+    fontVariantNumeric: "tabular-nums",
+  },
+  appendixTimestamp: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+    fontSize: "9px",
+    fontWeight: 400,
+    lineHeight: 1,
+    fontVariantNumeric: "tabular-nums",
+    whiteSpace: "nowrap",
+  },
+  appendixActions: {
+    flexShrink: 0,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "2px",
+  },
+  appendixCopyDone: {
+    color: tokens.colorSuccess,
+  },
+  appendixChevron: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transform: "rotate(0deg)",
+    transitionProperty: "transform",
+    transitionDuration: {
+      default: "150ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+    transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+  },
+  appendixChevronOpen: {
+    transform: "rotate(180deg)",
+  },
+  appendixSummaryLine: {
+    flexShrink: 0,
+    margin: 0,
+    height: "13px",
+    paddingInline: "10px",
+    color: tokens.colorSubtle,
+    fontSize: "9.5px",
+    fontWeight: 400,
+    lineHeight: "13px",
+  },
+  appendixErrorSummaryLine: {
     color: tokens.colorMuted,
   },
-  appendixSummary: {
-    flexShrink: 0,
-    paddingInline: "10px",
-    paddingBottom: "4px",
-    color: tokens.colorSubtle,
-    fontSize: "10px",
+  appendixOutputs: {
+    flexGrow: 1,
+    minHeight: 0,
+    overflowY: "auto",
+    margin: 0,
+    paddingInline: "6px",
+    paddingTop: 0,
+    paddingBottom: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "3px",
+    listStyle: "none",
   },
-  appendixSummaryInline: {
-    fontWeight: 400,
+  appendixOutputItem: {
+    flexShrink: 0,
+    minWidth: 0,
+  },
+  appendixOutputRow: {
+    boxSizing: "border-box",
+    width: "100%",
+    height: "22px",
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    paddingInline: "6px",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorHover,
+    },
+    transitionProperty: "background-color",
+    transitionDuration: {
+      default: "100ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+  },
+  appendixOutputButton: {
+    margin: 0,
+    paddingBlock: 0,
+    borderWidth: 0,
+    fontFamily: "inherit",
+    textAlign: "left",
+    cursor: "pointer",
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "-1px",
+  },
+  appendixOutputLabel: {
+    flexGrow: 0,
+    flexShrink: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    color: tokens.colorText,
+    fontSize: "10px",
+    fontWeight: 500,
+    lineHeight: 1.2,
+  },
+  appendixOutputType: {
+    flexGrow: 1,
+    flexShrink: 2,
+    flexBasis: 0,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
     color: tokens.colorSubtle,
+    fontSize: "9px",
+    fontWeight: 400,
+    lineHeight: 1.2,
+  },
+  appendixOutputCount: {
+    flexShrink: 0,
+    boxSizing: "border-box",
+    minWidth: "18px",
+    height: "15px",
+    paddingInline: "5px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "9999px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorDivider,
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
+    fontSize: "9px",
+    fontWeight: 600,
+    lineHeight: 1,
+    fontVariantNumeric: "tabular-nums",
+  },
+  appendixOutputArrow: {
+    flexShrink: 0,
+    color: tokens.colorSubtle,
+  },
+  appendixErrorBody: {
+    flexGrow: 1,
+    minHeight: 0,
+    overflowY: "auto",
+    margin: 0,
+    paddingInline: "10px",
+    paddingBottom: "2px",
+    color: tokens.colorText,
+    fontSize: "10.5px",
+    lineHeight: 1.45,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+    userSelect: "text",
+    cursor: "text",
   },
   appendixPreview: {
     flexGrow: 1,
@@ -587,11 +979,10 @@ const s = stylex.create({
     overflowY: "auto",
     margin: 0,
     paddingInline: "10px",
-    paddingBottom: "6px",
+    paddingBottom: "2px",
     color: tokens.colorMuted,
-    fontFamily: MONO_FONT,
-    fontSize: "9.5px",
-    lineHeight: 1.5,
+    fontSize: "10px",
+    lineHeight: 1.45,
     listStyle: "none",
   },
 });
@@ -701,6 +1092,13 @@ export interface CellCardShellProps extends CellCardBaseProps {
   headerExtra?: React.ReactNode;
   /** Quiet facts after the title in the floating header, always shown. */
   headerMeta?: React.ReactNode;
+  /**
+   * Run status that stays in the header while the node is running, queued,
+   * or failed, including while the card is not selected.
+   */
+  headerLive?: React.ReactNode;
+  /** The title keeps a minimum and the live readout takes the remaining row. */
+  shareTitle?: boolean;
   /** Painted under the plate inside the card box, e.g. a sequence's card backs. */
   behindPlate?: React.ReactNode;
   /** The plate's 23px top strip, under the plate's top edge. */
@@ -743,6 +1141,8 @@ export function CellCardShell({
   onRemove,
   headerExtra,
   headerMeta,
+  headerLive,
+  shareTitle = false,
   behindPlate,
   strip,
   resizable,
@@ -813,6 +1213,7 @@ export function CellCardShell({
             cursor: dragging ? "grabbing" : "grab",
           },
           s.header,
+          headerLive ? s.headerRaised : null,
         )}
       >
         <span
@@ -822,11 +1223,20 @@ export function CellCardShell({
             s.title,
             kind === "artifact" && s.titleFixed,
             active && s.titleSelected,
+            shareTitle && s.titleShare,
           )}
         >
           {card.title}
         </span>
         {headerMeta}
+        {headerLive ? (
+          <span
+            data-card-header-live="true"
+            {...stylex.props(s.headerLiveSlot, shareTitle && s.headerLiveShare)}
+          >
+            {headerLive}
+          </span>
+        ) : null}
         {showHeaderActions ? (
           <span
             data-card-header-actions="true"
@@ -1202,6 +1612,11 @@ export interface CellOperatorCardProps extends CellCardBaseProps {
   ) => Promise<boolean>;
   onRemoveSecret?: (cardId: string, name: string) => Promise<boolean>;
   onToggleAppendix?: (cardId: string) => void;
+  /** Inspects or materializes one output port from the execution tray. */
+  onOutputPortClick?: (
+    cardId: string,
+    output: CellExecutionAppendixOutput,
+  ) => void;
   /** Opens the engine picker for an empty required service input. */
   onPickServiceEngine?: (cardId: string, portName: string) => void;
 }
@@ -1314,6 +1729,528 @@ function ServicePortAffordance({
   );
 }
 
+function progressCounter(
+  current: number | null,
+  total: number | null,
+): string | null {
+  if (current === null || total === null || total <= 0) return null;
+  return `${current}/${total}`;
+}
+
+function CellRunIndicator({
+  title,
+  queued,
+  cancelling,
+  canCancel,
+  onCancel,
+}: {
+  title: string;
+  queued: boolean;
+  cancelling: boolean;
+  canCancel: boolean;
+  onCancel?: () => void;
+}) {
+  const [armed, setArmed] = React.useState(false);
+  const mark = queued ? (
+    <span
+      aria-hidden="true"
+      data-card-run-queued="true"
+      {...stylex.props(s.queuedDot)}
+    />
+  ) : (
+    <LoaderCircle
+      aria-hidden="true"
+      size={12}
+      data-card-run-spinner="true"
+      {...stylex.props(s.spinner)}
+    />
+  );
+  if (!canCancel && !cancelling) {
+    return (
+      <span
+        aria-hidden="true"
+        data-card-run-indicator={queued ? "queued" : "running"}
+      >
+        {mark}
+      </span>
+    );
+  }
+  const showStop = armed && canCancel && !cancelling;
+  return (
+    <IconButton
+      size="2xs"
+      variant="danger"
+      label={
+        cancelling ? `Cancelling run for ${title}` : `Cancel run for ${title}`
+      }
+      title="Cancel run"
+      disabled={cancelling || !canCancel}
+      data-card-cancel-run={cancelling ? "cancelling" : "ready"}
+      onPointerDown={stopCardDrag}
+      onMouseEnter={() => setArmed(true)}
+      onMouseLeave={() => setArmed(false)}
+      onFocus={() => setArmed(true)}
+      onBlur={() => setArmed(false)}
+      onClick={() => onCancel?.()}
+    >
+      {showStop ? <Square size={9} fill="currentColor" /> : mark}
+    </IconButton>
+  );
+}
+
+function CellLiveRunHeader({
+  title,
+  queued,
+  progress,
+  cancelling,
+  canCancel,
+  onCancel,
+}: {
+  title: string;
+  queued: boolean;
+  progress: CellNodeLiveProgress | null;
+  cancelling: boolean;
+  canCancel: boolean;
+  onCancel?: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const fallback = queued ? "Queued…" : "Running…";
+  const message = progress?.latestMessage ?? fallback;
+  const counter = progress
+    ? progressCounter(progress.current, progress.total)
+    : null;
+  const rows = progress?.recentMessages ?? [];
+  return (
+    <span data-card-live="true" {...stylex.props(s.liveRow)}>
+      <button
+        type="button"
+        data-card-live-event="true"
+        aria-expanded={open}
+        aria-label={counter ? `${message}, ${counter}` : message}
+        title={`${title}: ${message}`}
+        onPointerDown={stopCardDrag}
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.stopPropagation();
+          setOpen(false);
+        }}
+        {...stylex.props(s.liveEvent)}
+      >
+        <span
+          key={rows[0]?.sequence ?? message}
+          {...stylex.props(s.liveMessage)}
+        >
+          {message}
+        </span>
+        {counter ? (
+          <span data-card-live-count="true" {...stylex.props(s.liveCount)}>
+            {counter}
+          </span>
+        ) : null}
+      </button>
+      <CellRunIndicator
+        title={title}
+        queued={queued}
+        cancelling={cancelling}
+        canCancel={canCancel}
+        onCancel={onCancel}
+      />
+      {open ? (
+        <div
+          role="dialog"
+          aria-label={`Live events for ${title}`}
+          data-card-live-trail="true"
+          onPointerDown={stopCardDrag}
+          onWheel={(event) => event.stopPropagation()}
+          {...stylex.props(s.trail)}
+        >
+          <p {...stylex.props(s.trailTitle)}>{title}</p>
+          <ol {...stylex.props(s.trailList)}>
+            {rows.length === 0 ? (
+              <li>{fallback}</li>
+            ) : (
+              rows.map((row) => {
+                const rowCount = progressCounter(row.current, row.total);
+                return (
+                  <li key={row.sequence} {...stylex.props(s.trailRow)}>
+                    <span {...stylex.props(s.trailMessage)}>{row.message}</span>
+                    {rowCount ? (
+                      <span {...stylex.props(s.liveCount)}>{rowCount}</span>
+                    ) : null}
+                  </li>
+                );
+              })
+            )}
+          </ol>
+        </div>
+      ) : null}
+    </span>
+  );
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to execCommand fallback.
+    }
+  }
+  if (typeof document !== "undefined" && document.body) {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    try {
+      return document.execCommand("copy");
+    } catch {
+      return false;
+    } finally {
+      area.remove();
+    }
+  }
+  return false;
+}
+
+function stopWheelIfScrollable(event: React.WheelEvent<HTMLElement>): void {
+  const element = event.currentTarget;
+  if (element.scrollHeight > element.clientHeight + 1) {
+    event.stopPropagation();
+  }
+}
+
+function CellExecutionAppendix({
+  cardId,
+  appendix,
+  bandLayoutStyle,
+  onToggleAppendix,
+  onOutputPortClick,
+}: {
+  cardId: string;
+  appendix: CellExecutionAppendixSpec;
+  bandLayoutStyle: React.CSSProperties;
+  onToggleAppendix?: (cardId: string) => void;
+  onOutputPortClick?: (
+    cardId: string,
+    output: CellExecutionAppendixOutput,
+  ) => void;
+}) {
+  const isError =
+    appendix.kind === "error" ||
+    (appendix.kind == null && Boolean(appendix.errorText));
+  const outputs = appendix.outputs ?? [];
+  const errorMessage = appendix.errorText ?? appendix.summaryText;
+  const totalCount =
+    appendix.itemCount ??
+    (outputs.length > 0
+      ? outputs.reduce((sum, item) => sum + item.count, 0)
+      : undefined);
+
+  const [copiedErrorText, setCopiedErrorText] = React.useState<string | null>(
+    null,
+  );
+  const copied = copiedErrorText === errorMessage;
+  const copyTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyError = () => {
+    const target = errorMessage;
+    void copyTextToClipboard(target).then((ok) => {
+      if (!ok) return;
+      setCopiedErrorText(target);
+      if (copyTimerRef.current !== null) {
+        clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = setTimeout(() => {
+        setCopiedErrorText((current) => (current === target ? null : current));
+        copyTimerRef.current = null;
+      }, 1600);
+    });
+  };
+
+  const collapsedSummary = isError
+    ? errorMessage
+    : outputs.length > 0
+      ? outputs.length === 1
+        ? (() => {
+            const only = outputs[0]!;
+            return only.typeLabel &&
+              only.typeLabel.toLowerCase() !== only.label.toLowerCase()
+              ? `${only.label} · ${only.typeLabel}`
+              : only.label;
+          })()
+        : outputs.map((item) => item.label).join(" · ")
+      : appendix.summaryText;
+
+  const headerTitle = isError
+    ? appendix.title || "Run failed"
+    : appendix.title || "Outputs";
+  const toggleLabel = isError
+    ? appendix.collapsed
+      ? "Expand error"
+      : "Collapse error"
+    : appendix.collapsed
+      ? "Expand outputs"
+      : "Collapse outputs";
+
+  const showCollapsedSummary = Boolean(appendix.collapsed && collapsedSummary);
+
+  return (
+    <section
+      data-appendix-band={appendix.collapsed ? "collapsed" : "expanded"}
+      data-appendix-kind={isError ? "error" : "output"}
+      {...styled(
+        bandLayoutStyle,
+        s.band,
+        s.appendix,
+        !appendix.collapsed && s.appendixExpanded,
+        appendix.collapsed &&
+          !showCollapsedSummary &&
+          s.appendixCollapsedCentered,
+        isError && s.appendixError,
+      )}
+    >
+      <div {...stylex.props(s.appendixHeader)}>
+        {isError ? (
+          <AlertCircle
+            size={12}
+            aria-hidden="true"
+            {...stylex.props(s.appendixErrorIcon)}
+          />
+        ) : outputs.length > 0 ? (
+          <span
+            aria-hidden="true"
+            data-appendix-dot-cluster="true"
+            {...stylex.props(s.appendixDotCluster)}
+          >
+            {outputs.slice(0, 4).map((output) => (
+              <span
+                key={output.port}
+                {...(output.toneColor
+                  ? styled({ backgroundColor: output.toneColor }, s.appendixDot)
+                  : stylex.props(s.appendixDot))}
+              />
+            ))}
+          </span>
+        ) : null}
+        <span
+          {...stylex.props(
+            s.ellipsis,
+            s.appendixTitle,
+            isError && s.appendixErrorTitle,
+          )}
+        >
+          {headerTitle}
+        </span>
+        {!isError && totalCount != null ? (
+          <span
+            data-appendix-count="true"
+            {...stylex.props(s.appendixCountPill)}
+          >
+            {totalCount}
+          </span>
+        ) : null}
+        <span {...stylex.props(s.grow)} />
+        {appendix.completedAtLabel ? (
+          <span
+            data-appendix-timestamp="true"
+            {...stylex.props(s.appendixTimestamp)}
+          >
+            {appendix.completedAtLabel}
+          </span>
+        ) : null}
+        <span {...stylex.props(s.appendixActions)}>
+          {isError && errorMessage ? (
+            <IconButton
+              size="2xs"
+              variant="ghost"
+              data-appendix-copy-error="true"
+              label={copied ? "Error copied" : "Copy error"}
+              title={copied ? "Copied" : "Copy error"}
+              onPointerDown={stopCardDrag}
+              onClick={handleCopyError}
+            >
+              {copied ? (
+                <Check size={11} {...stylex.props(s.appendixCopyDone)} />
+              ) : (
+                <Copy size={11} />
+              )}
+            </IconButton>
+          ) : null}
+          <IconButton
+            size="2xs"
+            variant="ghost"
+            aria-expanded={!appendix.collapsed}
+            label={toggleLabel}
+            onPointerDown={stopCardDrag}
+            onClick={() => onToggleAppendix?.(cardId)}
+          >
+            <span
+              aria-hidden="true"
+              {...stylex.props(
+                s.appendixChevron,
+                !appendix.collapsed && s.appendixChevronOpen,
+              )}
+            >
+              <ChevronDown size={11} />
+            </span>
+          </IconButton>
+        </span>
+      </div>
+
+      {appendix.collapsed ? (
+        showCollapsedSummary ? (
+          <p
+            data-appendix-summary="true"
+            data-appendix-error-text={isError ? "true" : undefined}
+            title={
+              isError ? errorMessage : appendix.summaryText || collapsedSummary
+            }
+            {...stylex.props(
+              s.ellipsis,
+              s.appendixSummaryLine,
+              isError && s.appendixErrorSummaryLine,
+            )}
+          >
+            {collapsedSummary}
+          </p>
+        ) : null
+      ) : isError ? (
+        <div
+          data-appendix-error-text="true"
+          onPointerDown={stopCardDrag}
+          onWheel={stopWheelIfScrollable}
+          {...stylex.props(s.appendixErrorBody)}
+        >
+          {errorMessage}
+        </div>
+      ) : outputs.length > 0 ? (
+        <ul
+          data-appendix-outputs="true"
+          onPointerDown={stopCardDrag}
+          onWheel={stopWheelIfScrollable}
+          {...stylex.props(s.appendixOutputs)}
+        >
+          {outputs.map((output) => {
+            const showTypeHint = Boolean(
+              output.typeLabel &&
+              output.typeLabel.toLowerCase() !== output.label.toLowerCase(),
+            );
+            const countText = `${output.count} ${output.count === 1 ? "item" : "items"}`;
+            const rowTooltip = output.typeLabel
+              ? `${output.label} · ${output.typeLabel}${output.typeKey ? ` (${output.typeKey})` : ""} · ${countText}`
+              : `${output.label} · ${countText}`;
+            const rowInner = (
+              <>
+                <span
+                  aria-hidden="true"
+                  data-appendix-output-dot={output.port}
+                  {...(output.toneColor
+                    ? styled(
+                        { backgroundColor: output.toneColor },
+                        s.appendixDot,
+                      )
+                    : stylex.props(s.appendixDot))}
+                />
+                <span {...stylex.props(s.appendixOutputLabel)}>
+                  {output.label}
+                </span>
+                {showTypeHint ? (
+                  <span {...stylex.props(s.appendixOutputType)}>
+                    {output.typeLabel}
+                  </span>
+                ) : (
+                  <span {...stylex.props(s.grow)} />
+                )}
+                <span
+                  data-appendix-output-count={output.port}
+                  {...stylex.props(s.appendixOutputCount)}
+                >
+                  {output.count}
+                </span>
+                {onOutputPortClick ? (
+                  <ArrowUpRight
+                    size={10}
+                    aria-hidden="true"
+                    {...stylex.props(s.appendixOutputArrow)}
+                  />
+                ) : null}
+              </>
+            );
+            return (
+              <li
+                key={output.port}
+                data-appendix-output={output.port}
+                {...stylex.props(s.appendixOutputItem)}
+              >
+                {onOutputPortClick ? (
+                  <button
+                    type="button"
+                    data-appendix-output-action={output.port}
+                    title={rowTooltip}
+                    onPointerDown={stopCardDrag}
+                    onClick={() => onOutputPortClick(cardId, output)}
+                    {...stylex.props(
+                      s.appendixOutputRow,
+                      s.appendixOutputButton,
+                    )}
+                  >
+                    {rowInner}
+                  </button>
+                ) : (
+                  <div
+                    title={rowTooltip}
+                    {...stylex.props(s.appendixOutputRow)}
+                  >
+                    {rowInner}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <>
+          {appendix.summaryText ? (
+            <p
+              data-appendix-summary="true"
+              {...stylex.props(s.ellipsis, s.appendixSummaryLine)}
+            >
+              {appendix.summaryText}
+            </p>
+          ) : null}
+          {appendix.previewLines?.length ? (
+            <ul
+              data-appendix-preview="true"
+              onPointerDown={stopCardDrag}
+              onWheel={stopWheelIfScrollable}
+              {...stylex.props(s.appendixPreview)}
+            >
+              {appendix.previewLines.map((line, index) => (
+                <li key={index} {...stylex.props(s.ellipsis)}>
+                  {line}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
 function CellOperatorCardImpl(props: CellOperatorCardProps) {
   const {
     card,
@@ -1327,6 +2264,7 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
     onApplySecret,
     onRemoveSecret,
     onToggleAppendix,
+    onOutputPortClick,
     onPickServiceEngine,
   } = props;
   const state = useResolvedCardState(card.id, props);
@@ -1382,13 +2320,16 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
     portRows.set(port.rowOffset, row);
   }
 
+  const working = card.status === "working";
+  const failed = card.status === "error";
+  const showChrome = state.selected && !state.dragging;
   const statusText = surface.statusLabel ?? STATUS_TEXT[card.status ?? "idle"];
   const statusAriaWord =
     card.status === "done"
       ? "done"
-      : card.status === "working"
+      : working
         ? "working"
-        : card.status === "error"
+        : failed
           ? "failed"
           : (statusText ?? "").toLowerCase();
   // Always shown, not only while selected: a card that still needs a key
@@ -1411,9 +2352,43 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
         />
       </span>
     ) : null;
+  const queued = surface.statusLabel === "Queued";
+  const headerLive = working ? (
+    <CellLiveRunHeader
+      title={card.title}
+      queued={queued}
+      progress={surface.progress ?? null}
+      cancelling={surface.cancelling === true}
+      canCancel={surface.canCancel === true}
+      onCancel={surface.onCancelRun}
+    />
+  ) : failed && !showChrome ? (
+    <span
+      role="status"
+      aria-label={`${card.title} failed`}
+      data-card-run-error="true"
+      title={`${card.title} failed`}
+      {...stylex.props(s.errorMark)}
+    />
+  ) : null;
+  const cancelMenuItems: readonly CellCardMenuItem[] =
+    working && (surface.canCancel || surface.cancelling)
+      ? [
+          {
+            id: "cancel-run",
+            label: "Cancel run",
+            icon: <Square size={12} fill="currentColor" />,
+            danger: true,
+            disabled: surface.cancelling === true || surface.canCancel !== true,
+            onSelect: () => {
+              surface.onCancelRun?.();
+            },
+          },
+        ]
+      : NO_MENU_ITEMS;
   const headerExtra = (
     <>
-      {statusText ? (
+      {statusText && !working ? (
         <span
           role="status"
           aria-label={`${card.title} ${statusAriaWord}`}
@@ -1459,6 +2434,9 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
       connectedPortIds={connected}
       headerExtra={headerExtra}
       headerMeta={headerMeta}
+      headerLive={headerLive}
+      shareTitle={working}
+      menuItems={cancelMenuItems}
       resizable={card.resizable === true}
     >
       {[...portRows].map(([rowOffset, { input, output }]) => (
@@ -1608,73 +2586,16 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
       ) : null}
 
       {layout.appendixBand && appendix ? (
-        <section
-          data-appendix-band={appendix.collapsed ? "collapsed" : "expanded"}
-          {...styled(
-            bandStyle(
-              layout.appendixBand.startRow,
-              layout.appendixBand.heightCells,
-            ),
-            s.band,
-            s.appendix,
+        <CellExecutionAppendix
+          cardId={card.id}
+          appendix={appendix}
+          bandLayoutStyle={bandStyle(
+            layout.appendixBand.startRow,
+            layout.appendixBand.heightCells,
           )}
-        >
-          <div {...stylex.props(s.appendixHeader)}>
-            <span {...stylex.props(s.ellipsis)}>{appendix.title}</span>
-            <span {...stylex.props(s.chip)}>{appendix.kindBadge}</span>
-            {appendix.itemCount != null ? (
-              <span {...stylex.props(s.chip)}>{appendix.itemCount}</span>
-            ) : null}
-            {appendix.collapsed ? (
-              <span
-                data-appendix-summary="true"
-                {...stylex.props(s.ellipsis, s.grow, s.appendixSummaryInline)}
-              >
-                {appendix.summaryText}
-              </span>
-            ) : (
-              <span {...stylex.props(s.grow)} />
-            )}
-            <IconButton
-              size="2xs"
-              variant="ghost"
-              label={
-                appendix.collapsed ? "Expand appendix" : "Collapse appendix"
-              }
-              onPointerDown={stopCardDrag}
-              onClick={() => onToggleAppendix?.(card.id)}
-            >
-              {appendix.collapsed ? (
-                <ChevronDown size={11} />
-              ) : (
-                <ChevronUp size={11} />
-              )}
-            </IconButton>
-          </div>
-          {appendix.collapsed ? null : (
-            <>
-              <div
-                data-appendix-summary="true"
-                {...stylex.props(s.appendixSummary, s.ellipsis)}
-              >
-                {appendix.summaryText}
-              </div>
-              {appendix.previewLines?.length ? (
-                <ul
-                  data-appendix-preview="true"
-                  onPointerDown={stopCardDrag}
-                  {...stylex.props(s.appendixPreview)}
-                >
-                  {appendix.previewLines.map((line, index) => (
-                    <li key={index} {...stylex.props(s.ellipsis)}>
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
-          )}
-        </section>
+          onToggleAppendix={onToggleAppendix}
+          onOutputPortClick={onOutputPortClick}
+        />
       ) : null}
     </CellCardShell>
   );

@@ -2,13 +2,22 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { ArrowUpRight, Plus, RotateCcw, Search, Workflow } from "lucide-react";
+import {
+  ArrowUpRight,
+  FileText,
+  Plus,
+  RotateCcw,
+  Search,
+  Table2,
+  Workflow,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { BrandLoader } from "@/components/brand";
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
+import { phoneTouch } from "@/components/ui/touch-target";
 import {
   useWorkspaceContext,
   workspaceDisplayName,
@@ -16,7 +25,6 @@ import {
 import {
   filterGraphsByQuery,
   graphAgeLabel,
-  graphCountLabel,
   sortGraphsByRecency,
 } from "@/features/workspaces/WorkspaceGraphPanel";
 import {
@@ -57,6 +65,17 @@ const RECIPES: readonly {
   },
 ];
 
+function recipeIcon(id: StarterId) {
+  if (id === "extract_table") {
+    return <Table2 size={16} aria-hidden="true" />;
+  }
+  return <FileText size={16} aria-hidden="true" />;
+}
+
+function projectStepLabel(count: number): string {
+  return `${count} ${count === 1 ? "step" : "steps"}`;
+}
+
 function GraphRow({
   graph,
   workspaceSlug,
@@ -75,7 +94,7 @@ function GraphRow({
         {...stylex.props(browserStyles.row, stylex.defaultMarker())}
       >
         <span {...stylex.props(browserStyles.rowIcon)} aria-hidden="true">
-          <Workflow size={16} />
+          <Workflow size={15} />
         </span>
         <span
           {...stylex.props(browserStyles.rowTruncate, browserStyles.rowTitle)}
@@ -83,22 +102,14 @@ function GraphRow({
           {graph.name}
         </span>
         <span
-          {...stylex.props(
-            browserStyles.rowTruncate,
-            browserStyles.rowLocation,
-          )}
+          {...stylex.props(browserStyles.rowTruncate, browserStyles.rowMeta)}
         >
-          {workspaceName}
+          {projectStepLabel(graph.node_count)}
         </span>
         <span
-          {...stylex.props(browserStyles.rowTruncate, browserStyles.rowMeta)}
+          {...stylex.props(browserStyles.rowTruncate, browserStyles.rowAge)}
         >
           {graphAgeLabel(graph.updated_at)}
-        </span>
-        <span
-          {...stylex.props(browserStyles.rowTruncate, browserStyles.rowMeta)}
-        >
-          {graphCountLabel(graph)}
         </span>
         <ArrowUpRight
           size={15}
@@ -141,6 +152,8 @@ function WorkspaceGraphBrowserContent() {
   const [recipeError, setRecipeError] = React.useState<string | null>(null);
 
   const workspaceName = workspaceDisplayName(workspace);
+  const workspaceBadgeLabel =
+    workspace.kind === "personal" ? "Personal" : workspaceName;
   const canCreate = workspace.capabilities.includes("create_project");
   const documentOcrReady =
     packs?.some((pack) => pack.slug === "document_ocr" && pack.subscribed) ??
@@ -178,32 +191,47 @@ function WorkspaceGraphBrowserContent() {
 
   return (
     <div {...stylex.props(browserStyles.root)}>
-      <main {...stylex.props(browserStyles.main)}>
-        <header {...stylex.props(browserStyles.header)}>
-          <div>
-            <p {...stylex.props(browserStyles.eyebrow)}>{workspaceName}</p>
+      <header {...stylex.props(browserStyles.topBar)}>
+        <div {...stylex.props(browserStyles.topBarInner)}>
+          <div {...stylex.props(browserStyles.topBarTitleGroup)}>
             <h1 {...stylex.props(browserStyles.pageTitle)}>Projects</h1>
-            <p {...stylex.props(browserStyles.intro)}>
-              Open or start a project in this workspace.
-            </p>
+            <span {...stylex.props(browserStyles.workspaceBadge)}>
+              {workspaceBadgeLabel}
+            </span>
           </div>
-          <Button
-            variant="primary"
-            size="lg"
-            xstyle={browserStyles.headerAction}
-            disabled={!canCreate}
-            title={
-              canCreate
-                ? undefined
-                : "You do not have permission to create a project in this workspace."
-            }
-            onClick={startGraph}
-          >
-            <Plus size={15} aria-hidden="true" />
-            New project
-          </Button>
-        </header>
+          <div {...stylex.props(browserStyles.topBarActions)}>
+            <label {...stylex.props(browserStyles.search)}>
+              <Search size={14} aria-hidden="true" />
+              <input
+                ref={searchFieldRef}
+                type="search"
+                defaultValue={query}
+                aria-label="Search projects"
+                placeholder="Search projects…"
+                {...stylex.props(browserStyles.searchInput)}
+                onChange={(event) => setQuery(event.currentTarget.value)}
+              />
+            </label>
+            <Button
+              variant="primary"
+              size="md"
+              xstyle={[phoneTouch.on, browserStyles.headerAction]}
+              disabled={!canCreate}
+              title={
+                canCreate
+                  ? undefined
+                  : "You do not have permission to create a project in this workspace."
+              }
+              onClick={startGraph}
+            >
+              <Plus size={14} aria-hidden="true" />
+              New project
+            </Button>
+          </div>
+        </div>
+      </header>
 
+      <main {...stylex.props(browserStyles.main)}>
         {canCreate && documentOcrReady ? (
           <section
             aria-label="Start from a recipe"
@@ -221,11 +249,19 @@ function WorkspaceGraphBrowserContent() {
                   {...stylex.props(browserStyles.recipe)}
                   onClick={() => openRecipe(recipe.id)}
                 >
-                  <span {...stylex.props(browserStyles.recipeTitle)}>
-                    {recipe.title}
+                  <span
+                    {...stylex.props(browserStyles.recipeIcon)}
+                    aria-hidden="true"
+                  >
+                    {recipeIcon(recipe.id)}
                   </span>
-                  <span {...stylex.props(browserStyles.recipePath)}>
-                    {recipe.path}
+                  <span {...stylex.props(browserStyles.recipeBody)}>
+                    <span {...stylex.props(browserStyles.recipeTitle)}>
+                      {recipe.title}
+                    </span>
+                    <span {...stylex.props(browserStyles.recipePath)}>
+                      {recipe.path}
+                    </span>
                   </span>
                 </button>
               ))}
@@ -238,125 +274,118 @@ function WorkspaceGraphBrowserContent() {
           </section>
         ) : null}
 
-        <div {...stylex.props(browserStyles.toolbar)}>
-          <label {...stylex.props(browserStyles.search)}>
-            <Search size={16} aria-hidden="true" />
-            <input
-              ref={searchFieldRef}
-              type="search"
-              defaultValue={query}
-              aria-label="Search projects"
-              placeholder="Search projects"
-              {...stylex.props(browserStyles.searchInput)}
-              onChange={(event) => setQuery(event.currentTarget.value)}
-            />
-          </label>
-        </div>
+        <section
+          aria-label="Workspace projects"
+          {...stylex.props(browserStyles.card)}
+        >
+          <div {...stylex.props(browserStyles.viewBar)}>
+            <GraphViewToggle value={view} onValueChange={setView} />
+            {data ? (
+              <span {...stylex.props(browserStyles.count)}>
+                {graphs.length} {graphs.length === 1 ? "project" : "projects"}
+              </span>
+            ) : null}
+          </div>
 
-        <div {...stylex.props(browserStyles.viewBar)}>
-          <GraphViewToggle value={view} onValueChange={setView} />
-          {data ? (
-            <span {...stylex.props(browserStyles.count)}>
-              {graphs.length} {graphs.length === 1 ? "project" : "projects"}
-            </span>
-          ) : null}
-        </div>
-
-        {!data && isLoading ? (
-          <GraphBrowserLoadingBlock label="Loading projects" />
-        ) : !data && error ? (
-          <section role="alert" {...stylex.props(browserStyles.state)}>
-            <Workflow
-              size={22}
-              aria-hidden="true"
-              {...stylex.props(browserStyles.stateIcon)}
-            />
-            <div>
-              <h2 {...stylex.props(browserStyles.stateTitle)}>
-                Projects couldn&apos;t be loaded
-              </h2>
-              <p {...stylex.props(browserStyles.stateBody)}>
-                Check your connection, then try again.
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="lg"
-              xstyle={browserStyles.stateAction}
-              onClick={() => void mutate()}
-            >
-              <RotateCcw size={14} aria-hidden="true" /> Retry
-            </Button>
-          </section>
-        ) : data?.projects.length === 0 ? (
-          <section
-            {...stylex.props(browserStyles.state, browserStyles.stateEmpty)}
-          >
-            <Workflow
-              size={22}
-              aria-hidden="true"
-              {...stylex.props(browserStyles.stateIcon)}
-            />
-            <div>
-              <h2 {...stylex.props(browserStyles.stateTitle)}>
-                No projects yet
-              </h2>
-              <p {...stylex.props(browserStyles.stateBody)}>
-                Create your first project in {workspaceName}.
-              </p>
-            </div>
-            {canCreate ? (
+          {!data && isLoading ? (
+            <GraphBrowserLoadingBlock label="Loading projects" />
+          ) : !data && error ? (
+            <section role="alert" {...stylex.props(browserStyles.state)}>
+              <span
+                {...stylex.props(browserStyles.stateIcon)}
+                aria-hidden="true"
+              >
+                <Workflow size={16} />
+              </span>
+              <div>
+                <h2 {...stylex.props(browserStyles.stateTitle)}>
+                  Projects couldn&apos;t be loaded
+                </h2>
+                <p {...stylex.props(browserStyles.stateBody)}>
+                  Check your connection, then try again.
+                </p>
+              </div>
               <Button
                 variant="secondary"
-                size="lg"
-                xstyle={browserStyles.stateAction}
-                onClick={startGraph}
+                size="md"
+                xstyle={[phoneTouch.on, browserStyles.stateAction]}
+                onClick={() => void mutate()}
               >
-                <Plus size={14} aria-hidden="true" /> New project
+                <RotateCcw size={14} aria-hidden="true" /> Retry
               </Button>
-            ) : null}
-          </section>
-        ) : visibleGraphs.length === 0 ? (
-          <section
-            {...stylex.props(browserStyles.state, browserStyles.stateEmpty)}
-          >
-            <Search
-              size={22}
-              aria-hidden="true"
-              {...stylex.props(browserStyles.stateIcon)}
-            />
-            <div>
-              <h2 {...stylex.props(browserStyles.stateTitle)}>
-                No projects match your search
-              </h2>
-              <p {...stylex.props(browserStyles.stateBody)}>
-                Try another project name.
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="lg"
-              xstyle={browserStyles.stateAction}
-              onClick={() => setQuery("")}
+            </section>
+          ) : data?.projects.length === 0 ? (
+            <section
+              {...stylex.props(browserStyles.state, browserStyles.stateEmpty)}
             >
-              Clear search
-            </Button>
-          </section>
-        ) : (
-          <ul
-            aria-label={`${view === "recent" ? "Recent" : "All"} projects`}
-            {...stylex.props(browserStyles.list)}
-          >
-            {visibleGraphs.map((graph) => (
-              <GraphRow
-                key={graph.id}
-                graph={graph}
-                workspaceSlug={workspace.slug}
-                workspaceName={workspaceName}
-              />
-            ))}
-          </ul>
-        )}
+              <span
+                {...stylex.props(browserStyles.stateIcon)}
+                aria-hidden="true"
+              >
+                <Workflow size={16} />
+              </span>
+              <div>
+                <h2 {...stylex.props(browserStyles.stateTitle)}>
+                  No projects yet
+                </h2>
+                <p {...stylex.props(browserStyles.stateBody)}>
+                  Create your first project in {workspaceName}.
+                </p>
+              </div>
+              {canCreate ? (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  xstyle={[phoneTouch.on, browserStyles.stateAction]}
+                  onClick={startGraph}
+                >
+                  <Plus size={14} aria-hidden="true" /> New project
+                </Button>
+              ) : null}
+            </section>
+          ) : visibleGraphs.length === 0 ? (
+            <section
+              {...stylex.props(browserStyles.state, browserStyles.stateEmpty)}
+            >
+              <span
+                {...stylex.props(browserStyles.stateIcon)}
+                aria-hidden="true"
+              >
+                <Search size={16} />
+              </span>
+              <div>
+                <h2 {...stylex.props(browserStyles.stateTitle)}>
+                  No projects match your search
+                </h2>
+                <p {...stylex.props(browserStyles.stateBody)}>
+                  Try another project name.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="md"
+                xstyle={[phoneTouch.on, browserStyles.stateAction]}
+                onClick={() => setQuery("")}
+              >
+                Clear search
+              </Button>
+            </section>
+          ) : (
+            <ul
+              aria-label={`${view === "recent" ? "Recent" : "All"} projects`}
+              {...stylex.props(browserStyles.list)}
+            >
+              {visibleGraphs.map((graph) => (
+                <GraphRow
+                  key={graph.id}
+                  graph={graph}
+                  workspaceSlug={workspace.slug}
+                  workspaceName={workspaceName}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
 
         {data && error ? (
           <Notice
@@ -390,8 +419,17 @@ function GraphBrowserLoadingBlock({ label }: { label: string }) {
 function GraphBrowserLoadingShell() {
   return (
     <div {...stylex.props(browserStyles.root)}>
+      <header {...stylex.props(browserStyles.topBar)}>
+        <div {...stylex.props(browserStyles.topBarInner)}>
+          <div {...stylex.props(browserStyles.topBarTitleGroup)}>
+            <h1 {...stylex.props(browserStyles.pageTitle)}>Projects</h1>
+          </div>
+        </div>
+      </header>
       <main {...stylex.props(browserStyles.main)}>
-        <GraphBrowserLoadingBlock label="Loading projects" />
+        <section {...stylex.props(browserStyles.card)}>
+          <GraphBrowserLoadingBlock label="Loading projects" />
+        </section>
       </main>
     </div>
   );

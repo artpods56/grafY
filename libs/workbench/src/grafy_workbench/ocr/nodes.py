@@ -5,7 +5,12 @@ from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.contracts.ocr import DocumentOcr, DocumentOcrFeature
 from grafy_core.declared_values import note_declaration
 from grafy_core.documents import PdfFile, RasterImage
-from grafy_core.nodes import Node, NodeExecutionContext, RequiresServiceFeature
+from grafy_core.nodes import (
+    Node,
+    NodeExecutionContext,
+    RequiresServiceFeature,
+    bind_active_node,
+)
 from grafy_core.table_contracts import Table
 from pydantic import Field
 
@@ -83,12 +88,16 @@ class OcrNode(Node[OcrConfig, OcrInput, OcrOutput]):
     @override
     async def run(
         self,
-        _context: NodeExecutionContext,
+        context: NodeExecutionContext,
         _config: OcrConfig,
         inputs: OcrInput,
         /,
     ) -> OcrOutput:
-        result = await inputs.engine.read(inputs.document)
+        # The engine was built by another node. Bind this run so its API calls
+        # report here, on the card that stays working while the read happens.
+        async with bind_active_node(context):
+            await context.progress("Reading document…")
+            result = await inputs.engine.read(inputs.document)
         return OcrOutput(
             markdown=result.markdown,
             blocks=result.blocks,

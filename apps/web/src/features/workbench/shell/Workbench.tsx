@@ -23,8 +23,8 @@ import {
   Copy,
   History,
   Layers,
+  LayoutGrid,
   LoaderCircle,
-  Maximize2,
   Play,
   Plus,
   Square,
@@ -42,11 +42,8 @@ import {
 import { GraphRoomRecoveryNotice } from "../collaboration/GraphRoomRecoveryNotice";
 import { EngineConnectNotice } from "./EngineConnectNotice";
 import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
+import { LinkedViewActivityToast } from "./LinkedViewActivityToast";
 import { useServiceEnginePrompt } from "./use-service-engine-prompt";
-import {
-  WorkbenchActivityBar,
-  type WorkbenchActivity,
-} from "./WorkbenchActivityBar";
 import { ArtifactFolderDropDialog } from "../artifacts/ArtifactFolderDropDialog";
 import { ConnectionRouteDialog } from "../authoring/ConnectionRouteDialog";
 import { CanvasLabPanel } from "../cell-canvas/CanvasLabPanel";
@@ -247,6 +244,7 @@ import {
   type CellCanvasHandle,
   type CellCanvasProps,
 } from "../cell-canvas/CellCanvas";
+import { CanvasZoomControls } from "../cell-canvas/CanvasZoomControls";
 import {
   annotationHexFromToken,
   graphCommandsFromCellResizeForDocument,
@@ -258,6 +256,7 @@ import {
   type WorldPoint,
 } from "../cell-canvas/cell-model";
 import {
+  activeRunForNode,
   buildWorkbenchCellScene,
   cellConnectionToWorkbenchConnection,
   cellRemotePeersFromParticipants,
@@ -662,6 +661,7 @@ function WorkbenchBody({
   } = useNodeSecrets(workspaceId, nodes);
   const [cellCanvasHandle, setCellCanvasHandle] =
     React.useState<CellCanvasHandle | null>(null);
+  const [viewportZoom, setViewportZoom] = React.useState(1);
   const canvasReady = cellCanvasHandle !== null;
   const screenToCanvasPoint = React.useCallback(
     (point: XYPosition) =>
@@ -923,8 +923,6 @@ function WorkbenchBody({
     openGraphId,
     callTrail,
     setNodes,
-    nodeTitles,
-    canCancelRun,
     authoringError: authoring.authoringError,
     onClearAuthoringError: authoring.clearAuthoringError,
     onDismissAuthoringError: authoring.dismissAuthoringError,
@@ -938,7 +936,8 @@ function WorkbenchBody({
     dismissRunError,
     runWorkflow,
     nodeInstanceStates,
-    runActivityDescriptor,
+    openGraphRuns,
+    cancellingRunId,
     cancelGraphRun,
     executionHistoryTarget,
     openExecutionHistory,
@@ -2884,59 +2883,14 @@ function WorkbenchBody({
   const firefoxDynamicButtonProps: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     autoComplete: "off";
   } = { autoComplete: "off" };
-  const cancelAction = runActivityDescriptor?.cancelAction;
-  const runActivity: WorkbenchActivity | null = runActivityDescriptor
-    ? {
-        eyebrow: runActivityDescriptor.eyebrow,
-        title: runActivityDescriptor.title,
-        message: runActivityDescriptor.message,
-        tone: runActivityDescriptor.tone,
-        action: cancelAction
-          ? {
-              kind: "cancel",
-              label: cancelAction.label,
-              ariaLabel: cancelAction.ariaLabel,
-              disabled: cancelAction.disabled,
-              onInvoke: () => cancelGraphRun(cancelAction.runId),
-            }
-          : undefined,
-      }
-    : null;
   const viewerActivity = latestArtifactViewerActivity?.value.activity ?? null;
-  let viewerActivityAction: WorkbenchActivity["action"];
-  if (latestArtifactViewerActivity && viewerActivity?.retry) {
-    viewerActivityAction = {
-      kind: "retry",
-      label: "Retry",
-      ariaLabel: `Retry ${viewerActivity.title}`,
-      onInvoke: viewerActivity.retry,
-    };
-  } else if (
-    latestArtifactViewerActivity &&
-    (viewerActivity?.state === "warning" || viewerActivity?.state === "error")
-  ) {
-    viewerActivityAction = {
-      kind: "dismiss",
-      label: "Dismiss",
-      ariaLabel: `Dismiss ${viewerActivity.title}`,
-      onInvoke: () =>
-        dismissArtifactViewerActivity(
-          latestArtifactViewerActivity.nodeId,
-          latestArtifactViewerActivity.value.revision,
-        ),
-    };
-  }
-  const workbenchActivity: WorkbenchActivity | null = runActivity
-    ? runActivity
-    : viewerActivity
-      ? {
-          eyebrow: "Linked view",
-          title: viewerActivity.title,
-          message: viewerActivity.message,
-          tone: viewerActivity.state,
-          action: viewerActivityAction,
-        }
-      : null;
+  const dismissLinkedView = React.useCallback(() => {
+    if (!latestArtifactViewerActivity) return;
+    dismissArtifactViewerActivity(
+      latestArtifactViewerActivity.nodeId,
+      latestArtifactViewerActivity.value.revision,
+    );
+  }, [dismissArtifactViewerActivity, latestArtifactViewerActivity]);
 
   // The Library panel's cached tree names the files artifact cards show.
   const { data: libraryTree } = useSWR(["library-tree", workspaceId], () =>
@@ -2970,6 +2924,20 @@ function WorkbenchBody({
       });
     },
     [],
+  );
+
+  const callPath = React.useMemo(
+    () => callTrail.map((entry) => entry.nodeId),
+    [callTrail],
+  );
+  const onCancelNodeRun = React.useCallback(
+    (nodeId: string) => {
+      if (!canCancelRun || cancellingRunId !== null) return;
+      const active = activeRunForNode(openGraphRuns, nodeId, callPath);
+      if (!active?.cancellable) return;
+      cancelGraphRun(active.run_id);
+    },
+    [callPath, canCancelRun, cancelGraphRun, cancellingRunId, openGraphRuns],
   );
 
   const cellScene = React.useMemo(
@@ -3011,6 +2979,19 @@ function WorkbenchBody({
             onOperatorConfigChange: localAuthoringEnabled
               ? updateConfigPatch
               : undefined,
+            liveRun:
+              projectId && openGraphId
+                ? {
+                    projectId,
+                    graphId: openGraphId,
+                    callPath,
+                    progress: projectRoom.nodeProgress,
+                    runs: openGraphRuns,
+                    cancellingRunId,
+                    canCancelRun,
+                    onCancelNodeRun,
+                  }
+                : undefined,
           })
         : null,
     [
@@ -3019,6 +3000,9 @@ function WorkbenchBody({
       artifactOriginCanvasEdges,
       artifactViewerCanvasEdges,
       authoredDocument,
+      callPath,
+      canCancelRun,
+      cancellingRunId,
       canEditProject,
       canManageSecrets,
       canStartRun,
@@ -3037,8 +3021,12 @@ function WorkbenchBody({
       nodeInstanceStates,
       nodeSecretStatuses,
       nodes,
+      onCancelNodeRun,
       openGraphId,
+      openGraphRuns,
       projectEditsTrusted,
+      projectId,
+      projectRoom.nodeProgress,
       registry,
       running,
       sharedPresentation,
@@ -3468,7 +3456,7 @@ function WorkbenchBody({
         <span {...stylex.props(s.selectionLabel)}>
           {selectedNodeCount} selected
         </span>
-        <span {...stylex.props(s.selectionDivider)} />
+        <span aria-hidden="true" {...stylex.props(s.selectionDivider)} />
         {collectSpec ? (
           selectedCollectionSources.length > 1 ? (
             <Button
@@ -3523,7 +3511,8 @@ function WorkbenchBody({
             xstyle={phoneTouch.rail}
             onClick={tidySelectedArtifacts}
           >
-            Tidy-up
+            <LayoutGrid size={13} />
+            Tidy up
           </Button>
         ) : null}
         {selectedWorkflowCount ? (
@@ -3692,6 +3681,7 @@ function WorkbenchBody({
               autoFitOnMount={false}
               exposeDebugApi={process.env.NODE_ENV !== "production"}
               onHandleReady={setCellCanvasHandle}
+              onViewportZoomChange={setViewportZoom}
               onMoveCards={moveCellCards}
               onDragCardsProgress={onDragCardsProgress}
               onResizeCard={resizeCellCard}
@@ -3840,9 +3830,17 @@ function WorkbenchBody({
         </NodeMenuRegistryContext.Provider>
       </section>
 
-      {workbenchActivity ? (
-        <WorkbenchActivityBar activity={workbenchActivity} />
-      ) : null}
+      <LinkedViewActivityToast
+        activity={viewerActivity}
+        onRetry={viewerActivity?.retry}
+        onDismiss={
+          viewerActivity &&
+          (viewerActivity.state === "warning" ||
+            viewerActivity.state === "error")
+            ? dismissLinkedView
+            : undefined
+        }
+      />
 
       {canvasLabEnabled && labPanelOpen && (
         <CanvasLabPanel
@@ -3854,10 +3852,16 @@ function WorkbenchBody({
       <aside aria-label="Canvas actions" {...stylex.props(s.toolDock)}>
         <IconButton
           size="lg"
-          variant="accent"
+          variant="ghost"
           label="Add node"
+          title="Add node"
+          aria-pressed={libraryOpen}
           disabled={!registry || !localAuthoringEnabled}
-          xstyle={phoneTouch.rail}
+          xstyle={[
+            phoneTouch.rail,
+            s.dockButton,
+            libraryOpen && s.dockButtonActive,
+          ]}
           {...firefoxDynamicButtonProps}
           onClick={() => {
             closeGraphBrowser();
@@ -3870,13 +3874,18 @@ function WorkbenchBody({
         <div {...stylex.props(s.shapesMenuWrap)}>
           <IconButton
             size="lg"
-            variant={shapesMenuOpen ? "accent" : "ghost"}
+            variant="ghost"
             label="Add shape or text"
             title="Add documentation shapes"
+            aria-pressed={shapesMenuOpen}
             disabled={!localAuthoringEnabled}
             aria-expanded={shapesMenuOpen}
             aria-haspopup="menu"
-            xstyle={phoneTouch.rail}
+            xstyle={[
+              phoneTouch.rail,
+              s.dockButton,
+              shapesMenuOpen && s.dockButtonActive,
+            ]}
             onClick={() => {
               closeGraphBrowser();
               setLibraryOpen(false);
@@ -3930,7 +3939,7 @@ function WorkbenchBody({
           label="Add Agent"
           title="Add an Agent to chat with on the canvas"
           disabled={!canEditProject}
-          xstyle={phoneTouch.rail}
+          xstyle={[phoneTouch.rail, s.dockButton]}
           {...firefoxDynamicButtonProps}
           onClick={() => {
             const id = createUuid();
@@ -3955,20 +3964,10 @@ function WorkbenchBody({
         >
           <Bot size={14} />
         </IconButton>
+        <span aria-hidden="true" {...stylex.props(s.railDivider)} />
         <IconButton
           size="lg"
-          label="Fit"
-          title="Fit workflow"
-          disabled={!canvasReady}
-          xstyle={phoneTouch.rail}
-          {...firefoxDynamicButtonProps}
-          onClick={() => fitCanvasView(WORKBENCH_FIT_VIEW)}
-        >
-          <Maximize2 size={14} />
-        </IconButton>
-        <span {...stylex.props(s.railDivider)} />
-        <IconButton
-          size="lg"
+          variant="ghost"
           label="Runs"
           title={
             projectId
@@ -3976,7 +3975,7 @@ function WorkbenchBody({
               : "Save the Project to browse its Runs"
           }
           disabled={!projectId}
-          xstyle={phoneTouch.rail}
+          xstyle={[phoneTouch.rail, s.dockButton]}
           onClick={(event) => {
             setLibraryOpen(false);
             setLabPanelOpen(false);
@@ -3986,9 +3985,10 @@ function WorkbenchBody({
         >
           <History size={14} />
         </IconButton>
-        <span {...stylex.props(s.railDivider)} />
+        <span aria-hidden="true" {...stylex.props(s.railDivider)} />
         <IconButton
           size="lg"
+          variant="ghost"
           label="Duplicate"
           title={
             selectedWorkflowCount || selectedViewerCount
@@ -3999,7 +3999,7 @@ function WorkbenchBody({
             (!selectedWorkflowCount && !selectedViewerCount) ||
             !localAuthoringEnabled
           }
-          xstyle={phoneTouch.rail}
+          xstyle={[phoneTouch.rail, s.dockButton]}
           onClick={duplicateSelectedNodes}
         >
           <Copy size={14} />
@@ -4016,12 +4016,21 @@ function WorkbenchBody({
           disabled={
             !canvasReady || !selectedNodeCount || !localAuthoringEnabled
           }
-          xstyle={phoneTouch.rail}
+          xstyle={[phoneTouch.rail, s.dockDangerButton]}
           onClick={deleteSelectedNodes}
         >
           <Trash2 size={14} />
         </IconButton>
       </aside>
+
+      <CanvasZoomControls
+        zoom={viewportZoom}
+        disabled={!canvasReady}
+        onZoomIn={() => cellCanvasHandle?.zoomIn()}
+        onZoomOut={() => cellCanvasHandle?.zoomOut()}
+        onResetZoom={() => cellCanvasHandle?.resetZoom()}
+        onFitView={() => fitCanvasView(WORKBENCH_FIT_VIEW)}
+      />
 
       <Toast.Provider timeout={8000} limit={3}>
         <GlobalIssueToastList

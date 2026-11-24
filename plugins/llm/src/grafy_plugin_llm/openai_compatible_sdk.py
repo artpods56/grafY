@@ -34,6 +34,7 @@ from grafy_core.egress import (
     EgressRejectedError,
     PinnedPublicAddressTransport,
 )
+from grafy_core.nodes import active_node_context, emit_node_progress
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.prompt_contracts import PromptMessage, PromptMessageRole
 from grafy_core.schema_contracts import (
@@ -158,6 +159,9 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                     text=message.text,
                 )
             ]
+            prepared_images = sum(
+                len(earlier.image_refs) for earlier in messages[:index]
+            )
             for image_ref in message.image_refs:
                 try:
                     image_url, image_bytes = await image_loader.data_url(
@@ -171,6 +175,14 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                     cause = exc.__cause__ if exc.__cause__ is not None else exc
                     raise OpenAICompatibleProviderError(str(exc)) from cause
                 total_image_bytes += image_bytes
+                prepared_images += 1
+                if image_count > 1:
+                    await emit_node_progress(
+                        active_node_context(),
+                        f"Preparing image {prepared_images} of {image_count}",
+                        current=prepared_images,
+                        total=image_count,
+                    )
                 content_parts.append(
                     ChatCompletionContentPartImageParam(
                         type="image_url",
@@ -241,6 +253,7 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                     default_headers=cast(dict[str, str], safe_default_headers),
                     http_client=http_client,
                 ) as client:
+                    await emit_node_progress(active_node_context(), "Calling LLM…")
                     completion = await client.chat.completions.create(**request)
         except APITimeoutError:
             raise OpenAICompatibleProviderError(

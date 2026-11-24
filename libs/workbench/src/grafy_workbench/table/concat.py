@@ -74,7 +74,6 @@ class ConcatTablesNode(Node[ConcatTablesConfig, ConcatTablesInput, ConcatTablesO
         inputs: ConcatTablesInput,
         /,
     ) -> ConcatTablesOutput:
-        del context
         column_order: list[str] = []
         titles: dict[str, str] = {}
         types: dict[str, TableValueType] = {}
@@ -111,7 +110,16 @@ class ConcatTablesNode(Node[ConcatTablesConfig, ConcatTablesInput, ConcatTablesO
         )
 
         out_rows: list[dict[str, TableValue]] = []
+        table_total = len(inputs.tables)
+        if table_total:
+            await context.progress("Stacking tables…", current=0, total=table_total)
         for source_index, table in enumerate(inputs.tables, start=1):
+            if table_total > 1:
+                await context.progress(
+                    f"Stacking table {source_index} of {table_total}",
+                    current=source_index,
+                    total=table_total,
+                )
             for raw_row in table.rows:
                 row: dict[str, TableValue] = {}
                 if config.add_source_index:

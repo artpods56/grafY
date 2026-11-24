@@ -12,7 +12,12 @@ from grafy_core.contracts.ocr import (
 )
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.node_context import UserFacingNodeError
-from grafy_core.nodes import Node, NodeExecutionContext
+from grafy_core.nodes import (
+    Node,
+    NodeExecutionContext,
+    active_node_context,
+    emit_node_progress,
+)
 from grafy_core.plugins import (
     NodeHttpEgressContract,
 )
@@ -69,6 +74,7 @@ class CraftDetector(TextBoxDetector):
             or width * height > 2048**2
         ):
             raise UserFacingNodeError("The TIFF window exceeds CRAFT's image limits")
+        await emit_node_progress(active_node_context(), "Calling CRAFT…")
         body = await post_json(
             ProviderRequest(
                 service="CRAFT",

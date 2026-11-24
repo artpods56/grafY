@@ -9,7 +9,6 @@ import { instanceKeyText, type RoomInstanceState } from "../collaboration";
 import type { RunScope } from "./execution-plan";
 import { useRunExecution } from "./useRunExecution";
 import {
-  deriveRunActivity,
   initialWorkbenchRunState,
   workbenchRunReducer,
   type ExecutionHistoryTarget,
@@ -30,10 +29,8 @@ type UseWorkbenchRunReducerOptions = Omit<
   > & {
     readonly openGraphId: string | null;
     readonly callTrail: readonly { readonly nodeId: string }[];
-    readonly canCancelRun: boolean;
     readonly roomActiveRuns: readonly ActiveRunSummary[];
     readonly roomInstances: ReadonlyMap<string, RoomInstanceState>;
-    readonly nodeTitles: Readonly<Record<string, string>>;
     readonly authoringError: string | null;
     readonly onClearAuthoringError: () => void;
     readonly onDismissAuthoringError: (message: string) => void;
@@ -43,9 +40,7 @@ type UseWorkbenchRunReducerOptions = Omit<
 export function useWorkbenchRunReducer({
   openGraphId,
   callTrail,
-  canCancelRun,
   roomInstances,
-  nodeTitles,
   authoringError,
   onClearAuthoringError,
   onDismissAuthoringError,
@@ -231,14 +226,6 @@ export function useWorkbenchRunReducer({
     closeExecutionHistory,
     openGraphRuns,
     nodeInstanceStates,
-    runActivityDescriptor: deriveRunActivity({
-      openGraphRuns,
-      running: state.running,
-      runningScope: state.runningScope,
-      cancelPhase,
-      canCancelRun,
-      nodeTitles,
-    }),
     ownRunStatus,
     activeRuns,
     instanceStates,

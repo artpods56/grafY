@@ -41,8 +41,9 @@ export interface OperatorCardLayoutPlan {
 
 /** The empty cell row between two bands, and under the last one. */
 const BAND_GAP_CELLS = 1;
-/** An expanded appendix is never shorter than its header and two lines. */
+/** An expanded appendix is never shorter than its header and two lines, except single-output cards which take three cells. */
 const APPENDIX_MIN_CELLS = 4;
+const APPENDIX_SINGLE_OUTPUT_MIN_CELLS = 3;
 /** A collapsed appendix is its 24px header with the plate's bottom inset under it. */
 const APPENDIX_COLLAPSED_CELLS = 2;
 
@@ -156,13 +157,19 @@ export function computeOperatorCardLayout(
     : afterPortsAndPlugsRow;
 
   const appendix = surface.appendix;
+  const appendixMinCells =
+    appendix != null &&
+    appendix.kind !== "error" &&
+    (appendix.outputs?.length ?? 0) === 1
+      ? APPENDIX_SINGLE_OUTPUT_MIN_CELLS
+      : APPENDIX_MIN_CELLS;
   const appendixBand: CellBand | null =
     appendix != null
       ? {
           startRow: afterConfigRow,
           heightCells: appendix.collapsed
             ? APPENDIX_COLLAPSED_CELLS
-            : Math.max(APPENDIX_MIN_CELLS, appendix.heightCells),
+            : Math.max(appendixMinCells, appendix.heightCells),
         }
       : null;
   const computedEndRow = appendixBand

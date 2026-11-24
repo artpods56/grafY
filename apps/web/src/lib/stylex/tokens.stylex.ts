@@ -25,6 +25,26 @@ export const tokens = stylex.defineVars({
   colorSurfaceElevated: "light-dark(#FFFFFF, #2A2F38)",
   colorSurfaceMuted: "light-dark(#F6F7F9, #15181D)",
   colorChrome: "light-dark(#FFFFFF, #171A1F)",
+  // primary dark rail (always dark charcoal; deepens in dark mode)
+  colorRailBg: "light-dark(#14171B, #0B0D10)",
+  colorRailSurface: "light-dark(#1D2128, #13161B)",
+  colorRailActive:
+    "light-dark(rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.09))",
+  colorRailHover:
+    "light-dark(rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.055))",
+  colorRailBorder:
+    "light-dark(rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.08))",
+  colorRailText: "light-dark(#E5E9F0, #E5E9F0)",
+  colorRailTextEmphasis: "light-dark(#FFFFFF, #FFFFFF)",
+  colorRailMuted: "light-dark(#949CA9, #87909E)",
+  colorRailSubtle: "light-dark(#6C7484, #636B7A)",
+  // secondary subsidebar (gray in light mode, depth-1 slate in dark mode)
+  colorSubrailBg: "light-dark(#F3F4F6, #12151A)",
+  colorSubrailActive: "light-dark(#FFFFFF, #1F242D)",
+  colorSubrailHover:
+    "light-dark(rgba(15, 23, 42, 0.045), rgba(255, 255, 255, 0.055))",
+  colorSubrailBorder:
+    "light-dark(rgba(15, 23, 42, 0.085), rgba(255, 255, 255, 0.08))",
   // borders — whisper hairlines so elevation and typography do the grouping
   colorBorder: "light-dark(rgba(15, 23, 42, 0.09), rgba(255, 255, 255, 0.1))",
   colorBorderStrong:

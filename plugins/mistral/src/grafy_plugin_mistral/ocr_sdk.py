@@ -7,6 +7,7 @@ import httpx2 as httpx
 from grafy_core.contracts.ocr import DocumentOcrResult
 from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.egress import EgressPolicy, EgressRejectedError
+from grafy_core.nodes import active_node_context, emit_node_progress
 from mistralai.client import UNSET, Mistral
 from mistralai.client import errors as mistral_errors
 from mistralai.client.models.documenturlchunk import DocumentURLChunkTypedDict
@@ -19,7 +20,7 @@ from grafy_plugin_mistral.ocr import (
     MistralOcrConfig,
     MistralOcrProvider,
     MistralOcrProviderError,
-    build_ocr_output,
+    assemble_ocr_output,
 )
 
 MISTRAL_API_BASE_URL: Final = "https://api.mistral.ai"
@@ -60,6 +61,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         api_key: SecretStr,
         workspace_id: UUID,
     ) -> DocumentOcrResult:
+        await emit_node_progress(active_node_context(), "Preparing document…")
         data_url = await self._image_data_url(image)
         document: DocumentURLChunkTypedDict | ImageURLChunkTypedDict
         if isinstance(image, PdfFile):
@@ -70,6 +72,9 @@ class MistralOcrSdkProvider(MistralOcrProvider):
         endpoint = f"{MISTRAL_API_BASE_URL}/v1/ocr"
         api_key_value = api_key.get_secret_value()
         attempts = config.max_retries + 1
+        await emit_node_progress(
+            active_node_context(), "Reading document with Mistral OCR…"
+        )
 
         try:
             async with httpx.AsyncClient(
@@ -123,7 +128,7 @@ class MistralOcrSdkProvider(MistralOcrProvider):
                 f"OCR request to {endpoint!r} produced no response for model "
                 f"{MISTRAL_OCR_MODEL!r}"
             )
-        return build_ocr_output(response, config)
+        return await assemble_ocr_output(response, config)
 
     async def _image_data_url(self, image: RasterImage | PdfFile) -> str:
         label = image.filename or "this file"

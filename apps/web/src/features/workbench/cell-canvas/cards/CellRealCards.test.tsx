@@ -189,13 +189,45 @@ function operatorSurface(
     configFields: CONFIG_FIELDS,
     instancePlugGroups: PLUGS,
     appendix: {
-      title: "Last run",
-      kindBadge: "table",
+      kind: "output",
+      title: "Outputs",
+      kindBadge: "Output",
       heightCells: 6,
       collapsed: true,
-      summaryText: "120 rows in 0.4s",
-      previewLines: ["id,name", "1,alpha", "2,beta"],
-      itemCount: 120,
+      summaryText: "3 outputs · 6 items",
+      itemCount: 6,
+      outputs: [
+        {
+          port: "markdown",
+          label: "Transcription",
+          count: 1,
+          kind: "single",
+          typeLabel: "Markdown",
+          typeKey: "text.markdown@1",
+          toneColor: "light-dark(#b46735, #e88a50)",
+          artifactIds: ["art-1"],
+        },
+        {
+          port: "blocks",
+          label: "Text blocks",
+          count: 2,
+          kind: "sequence",
+          typeLabel: "Text blocks",
+          typeKey: "ocr.document_result@1",
+          toneColor: "light-dark(#7b63c9, #9a7cf2)",
+          artifactIds: ["art-2", "art-3"],
+        },
+        {
+          port: "regions",
+          label: "Boxes on the page",
+          count: 3,
+          kind: "sequence",
+          typeLabel: "Page regions · v2",
+          typeKey: "ocr.tiff_text_regions@2",
+          toneColor: "light-dark(#2a9d7c, #43c59e)",
+          artifactIds: ["art-4", "art-5", "art-6"],
+        },
+      ],
     },
     ...overrides,
   };
@@ -303,6 +335,81 @@ describe("CellOperatorCard", () => {
     expect(held).not.toContain("data-card-header-actions");
     expect(held).not.toContain('aria-label="Run Merge"');
     expect(held).not.toContain('data-card-menu="true"');
+  });
+
+  it("shows streamed progress and cancel on a running node that is not selected", () => {
+    const surface = operatorSurface({
+      statusLabel: "Running",
+      progress: {
+        latestMessage: "Parsing OCR pages…",
+        current: 3,
+        total: 12,
+        recentMessages: [
+          {
+            sequence: 2,
+            message: "Parsing OCR pages…",
+            current: 3,
+            total: 12,
+          },
+          {
+            sequence: 1,
+            message: "Sending document…",
+            current: null,
+            total: null,
+          },
+        ],
+      },
+      canCancel: true,
+      cancelling: false,
+      onCancelRun: () => {},
+    });
+    const card = { ...operatorCard(surface), status: "working" as const };
+    const header = (selected: boolean) => {
+      const html = renderOperator(surface, { card, selected }).html;
+      return html.slice(
+        html.indexOf('data-card-header="true"'),
+        html.indexOf("<article"),
+      );
+    };
+    const rest = header(false);
+    expect(rest).toContain('data-card-live-event="true"');
+    expect(rest).toContain("Parsing OCR pages…");
+    expect(rest).toContain("3/12");
+    expect(rest).toContain('data-card-run-spinner="true"');
+    expect(rest).toContain('aria-label="Cancel run for Merge"');
+    expect(rest).toContain('title="Cancel run"');
+    expect(rest).not.toContain("data-card-header-actions");
+    expect(rest).not.toContain('data-card-status="working"');
+
+    const selected = header(true);
+    expect(selected).toContain('data-card-live-event="true"');
+    expect(selected).toContain('data-card-header-actions="true"');
+    expect(selected).toContain("Cancel run");
+    expect(selected).not.toContain('data-card-status="working"');
+  });
+
+  it("falls back to a queued mark when no progress frame has arrived", () => {
+    const surface = operatorSurface({ statusLabel: "Queued" });
+    const card = { ...operatorCard(surface), status: "working" as const };
+    const { html } = renderOperator(surface, { card, selected: false });
+    expect(html).toContain("Queued…");
+    expect(html).toContain('data-card-run-queued="true"');
+    expect(html).not.toContain("Cancel run for Merge");
+    expect(html).not.toContain('data-card-header-actions="true"');
+  });
+
+  it("keeps a failed node visible while it is not selected", () => {
+    const surface = operatorSurface({ statusLabel: "Error" });
+    const card = { ...operatorCard(surface), status: "error" as const };
+    const rest = renderOperator(surface, { card, selected: false }).html;
+    expect(rest).toContain('data-card-run-error="true"');
+    expect(rest).toContain('aria-label="Merge failed"');
+    expect(rest).not.toContain('data-card-status="error"');
+
+    const selected = renderOperator(surface, { card, selected: true }).html;
+    expect(selected).toContain('data-card-status="error"');
+    expect(selected).toContain("Error");
+    expect(selected).not.toContain('data-card-run-error="true"');
   });
 
   it("omits the run action without an onRun handler", () => {
@@ -428,31 +535,117 @@ describe("CellOperatorCard", () => {
     expect(html).toContain('role="switch"');
   });
 
-  it("renders a collapsed appendix as two cells with an inline summary", () => {
+  it("renders a collapsed outputs tray as two cells with dot cluster, count pill, and port summary", () => {
     const { html } = renderOperator(operatorSurface());
     // The last band stops at the plate's content edge: 5px short of its cell
     // for the plate's bottom border and the card's 4px bottom inset.
     expect(html).toMatch(
-      /data-appendix-band="collapsed"[^>]*top:373px;height:45px/,
+      /data-appendix-band="collapsed"[^>]*data-appendix-kind="output"[^>]*top:373px;height:45px/,
     );
-    expect(html).toContain("Last run");
-    expect(html).toContain("120 rows in 0.4s");
-    expect(html).toContain('aria-label="Expand appendix"');
-    expect(html).not.toContain('data-appendix-preview="true"');
+    expect(html).toContain('data-appendix-dot-cluster="true"');
+    expect(html).toContain("Outputs");
+    expect(html).toContain('data-appendix-count="true"');
+    expect(html).toContain(">6<");
+    expect(html).toContain("Transcription · Text blocks · Boxes on the page");
+    expect(html).toContain('aria-label="Expand outputs"');
+    expect(html).not.toContain('data-appendix-outputs="true"');
+    expect(html).not.toContain("Execution output");
+    expect(html).not.toContain("output ports");
   });
 
-  it("renders an expanded appendix over its own cell rows", () => {
+  it("renders an expanded outputs list over its own cell rows with port colors and counts", () => {
     const surface = operatorSurface({
-      appendix: { ...operatorSurface().appendix!, collapsed: false },
+      appendix: {
+        ...operatorSurface().appendix!,
+        collapsed: false,
+        completedAtLabel: "2m ago",
+      },
     });
     const { html } = renderOperator(surface);
     expectExactBox(html, 12, 22);
     expect(html).toMatch(
-      /data-appendix-band="expanded"[^>]*top:373px;height:145px/,
+      /data-appendix-band="expanded"[^>]*data-appendix-kind="output"[^>]*top:373px;height:145px/,
     );
+    expect(html).toContain('data-appendix-outputs="true"');
+    expect(html).toContain('data-appendix-output="markdown"');
+    expect(html).toContain("Transcription");
+    expect(html).toContain("Markdown");
+    expect(html).toContain('data-appendix-output="blocks"');
+    expect(html).toContain("Text blocks");
+    expect(html).toContain('data-appendix-output="regions"');
+    expect(html).toContain("Boxes on the page");
+    expect(html).toContain("Page regions · v2");
+    expect(html).toContain("2m ago");
+    expect(html).toContain('aria-label="Collapse outputs"');
+    expect(html).toContain(
+      'style="background-color:light-dark(#b46735, #e88a50)"',
+    );
+    // Deduplicates type hint when it matches the port label (`Text blocks`).
+    expect(count(html, />Text blocks</)).toBe(1);
+  });
+
+  it("renders a calm Run failed error strip with copy control and no legacy jargon", () => {
+    const collapsedError = renderOperator(
+      operatorSurface({
+        appendix: {
+          kind: "error",
+          title: "Run failed",
+          kindBadge: "Error",
+          heightCells: 4,
+          collapsed: true,
+          summaryText: "Rate limit exceeded on upstream provider",
+          errorText: "Rate limit exceeded on upstream provider",
+        },
+      }),
+    ).html;
+    expect(collapsedError).toMatch(
+      /data-appendix-band="collapsed"[^>]*data-appendix-kind="error"/,
+    );
+    expect(collapsedError).toContain("Run failed");
+    expect(collapsedError).toContain(
+      "Rate limit exceeded on upstream provider",
+    );
+    expect(collapsedError).toContain('aria-label="Copy error"');
+    expect(collapsedError).toContain('aria-label="Expand error"');
+    expect(collapsedError).not.toContain("Execution error");
+
+    const expandedError = renderOperator(
+      operatorSurface({
+        appendix: {
+          kind: "error",
+          title: "Run failed",
+          kindBadge: "Error",
+          heightCells: 4,
+          collapsed: false,
+          summaryText: "Rate limit exceeded on upstream provider",
+          errorText: "Rate limit exceeded on upstream provider",
+        },
+      }),
+    ).html;
+    expect(expandedError).toMatch(
+      /data-appendix-band="expanded"[^>]*data-appendix-kind="error"/,
+    );
+    expect(expandedError).toContain('aria-label="Collapse error"');
+    expect(expandedError).toContain('data-appendix-error-text="true"');
+  });
+
+  it("retains legacy previewLines fallback when structured outputs are absent", () => {
+    const { html } = renderOperator(
+      operatorSurface({
+        appendix: {
+          title: "Last run",
+          kindBadge: "table",
+          heightCells: 5,
+          collapsed: false,
+          summaryText: "120 rows in 0.4s",
+          previewLines: ["id,name", "1,alpha"],
+          itemCount: 120,
+        },
+      }),
+    );
+    expect(html).toContain("Last run");
     expect(html).toContain('data-appendix-preview="true"');
-    expect(html).toContain("2,beta");
-    expect(html).toContain('aria-label="Collapse appendix"');
+    expect(html).toContain("1,alpha");
   });
 
   it("keeps every port pinned whatever config and appendix it shows", () => {
@@ -2145,21 +2338,54 @@ describe("CellOperatorCard schema config fields", () => {
   it("folds untouched advanced fields behind a toggle, and opens them in place", () => {
     const folded = renderRichOperator({ title: "Roads" });
     expect(folded.html).toMatch(
-      /aria-expanded="false" data-config-section="advanced"[^>]*>[\s\S]*Advanced[\s\S]*2 hidden/,
+      /aria-expanded="false"[^>]*data-config-section="advanced"[^>]*data-config-advanced="closed"/,
+    );
+    // The row names the section and counts what it hides; the state is in
+    // `aria-expanded`, not in wording that moves around the card.
+    expect(folded.html).toContain(">Advanced<");
+    expect(folded.html).toContain(
+      'title="2 advanced parameters at their default"',
     );
     expect(folded.html).not.toContain('data-config-field="min_zoom"');
+    expect(folded.html).not.toContain("data-config-advanced-group");
 
     const opened = renderRichOperator(
       { title: "Roads" },
       { configSections: { node: { advanced: true } } },
     );
     expect(opened.html).toMatch(
-      /aria-expanded="true" data-config-section="advanced"/,
+      /aria-expanded="true"[^>]*data-config-section="advanced"[^>]*data-config-advanced="open"/,
     );
-    expect(opened.html).toContain("Hide advanced");
-    expect(opened.html).toContain('data-config-field="min_zoom"');
-    expect(opened.html).toContain('data-config-field="max_zoom"');
+    expect(opened.html).toContain(">Advanced<");
+    expect(opened.html).not.toContain(">Hide advanced<");
+    // The disclosure keeps the head of its group: the tray of advanced fields
+    // starts on the row straight below it, and covers exactly its own rows.
+    expect(opened.html).toMatch(
+      /data-config-field=":advanced"[^>]*grid-row:10 \/ span 1/,
+    );
+    expect(opened.html).toMatch(
+      /data-config-advanced-group="advanced"[^>]*grid-row:11 \/ span 2/,
+    );
+    const band = opened.html.slice(opened.html.indexOf("data-config-band"));
+    expect(band.indexOf('data-config-field="min_zoom"')).toBeGreaterThan(
+      band.indexOf('data-config-field=":advanced"'),
+    );
+    // Two more shelves, counted into the plate: nothing is clipped at the bottom.
+    expect(opened.html).toMatch(/data-config-band="true"[^>]*height:300px/);
     expect(opened.card.heightCells).toBe(folded.card.heightCells + 2);
+  });
+
+  it("keeps an advanced field the person changed under the closed toggle", () => {
+    const { html } = renderRichOperator({ title: "Roads", min_zoom: 6 });
+    const band = html.slice(html.indexOf("data-config-band"));
+    expect(band).toContain('aria-expanded="false"');
+    expect(band).toContain('title="1 advanced parameter at their default"');
+    // Visible without opening, framed as part of the section it belongs to.
+    expect(band.indexOf('data-config-field="min_zoom"')).toBeGreaterThan(
+      band.indexOf('data-config-field=":advanced"'),
+    );
+    expect(band).toContain('data-config-advanced-group="advanced"');
+    expect(band).not.toContain('data-config-field="max_zoom"');
   });
 
   it("puts the API key behind a header key button instead of in the band", () => {

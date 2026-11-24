@@ -496,7 +496,7 @@ describe("WorkspaceSettings", () => {
       capabilities: ["edit_project"],
     });
     mocks.createToken.mockResolvedValue({
-      ...token(),
+      ...token({ id: "token-2" }),
       token: "nrt_created.secret-value",
     });
 
@@ -554,5 +554,65 @@ describe("WorkspaceSettings", () => {
       "Your role does not allow the supported automation workflows",
     );
     expect(container.querySelector("form")).toBeNull();
+  });
+
+  it("navigates sections via the settings subsidebar and omits Members for personal workspaces", async () => {
+    const container = await renderSettings();
+    const subnav = container.querySelector(
+      'nav[aria-label="Settings sections"]',
+    );
+    expect(subnav).not.toBeNull();
+
+    const labels = [...(subnav?.querySelectorAll("button") ?? [])].map((btn) =>
+      btn.textContent?.trim(),
+    );
+    expect(labels).toEqual([
+      "General",
+      "Tool packs",
+      "Provider credentials",
+      "Members",
+      "Access tokens",
+    ]);
+
+    const generalButton = subnav?.querySelector<HTMLButtonElement>(
+      'button[data-section-id="general"]',
+    );
+    const packsButton = subnav?.querySelector<HTMLButtonElement>(
+      'button[data-section-id="tool-packs"]',
+    );
+    expect(generalButton?.getAttribute("data-active")).toBe("true");
+    expect(packsButton?.getAttribute("data-active")).toBeNull();
+
+    const packsSection = container.querySelector<HTMLElement>("#tool-packs");
+    const scrollIntoView = vi.fn();
+    if (packsSection) {
+      packsSection.scrollIntoView = scrollIntoView;
+    }
+
+    await React.act(async () => packsButton?.click());
+
+    expect(packsButton?.getAttribute("data-active")).toBe("true");
+    expect(packsButton?.getAttribute("aria-current")).toBe("location");
+    expect(generalButton?.getAttribute("data-active")).toBeNull();
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    mocks.workspace = workspace({
+      kind: "personal",
+      name: "Personal workspace",
+    });
+    const personalContainer = await renderSettings();
+    const personalSubnav = personalContainer.querySelector(
+      'nav[aria-label="Settings sections"]',
+    );
+    const personalLabels = [
+      ...(personalSubnav?.querySelectorAll("button") ?? []),
+    ].map((btn) => btn.textContent?.trim());
+    expect(personalLabels).toEqual([
+      "General",
+      "Tool packs",
+      "Provider credentials",
+      "Access tokens",
+    ]);
+    expect(personalContainer.querySelector("#members")).toBeNull();
   });
 });

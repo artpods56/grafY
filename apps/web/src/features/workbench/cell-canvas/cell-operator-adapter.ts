@@ -93,8 +93,31 @@ import {
   collectionHeightCells,
 } from "./cell-model";
 
-/** An expanded execution appendix is never shorter than four cells. */
+/** An expanded execution appendix is never shorter than four cells, except single-output cards which use three. */
 const MIN_APPENDIX_CELLS = 4;
+const MIN_SINGLE_OUTPUT_APPENDIX_CELLS = 3;
+/** A collapsed execution appendix sits in two cells (45px inside the plate). */
+const COLLAPSED_APPENDIX_CELLS = 2;
+/** Up to six materialized output rows fit before the list scrolls internally. */
+const APPENDIX_MAX_VISIBLE_OUTPUTS = 6;
+
+/**
+ * Computes the expanded cell height for an execution appendix so structured
+ * output lists never clip on cards with up to six materialized output ports.
+ */
+export function appendixExpandedHeightCells(
+  appendix: Pick<CellExecutionAppendixSpec, "heightCells" | "outputs" | "kind">,
+): number {
+  const outputsCount = appendix.outputs?.length ?? 0;
+  if (appendix.kind !== "error" && outputsCount > 0) {
+    const outputCells = Math.min(
+      Math.max(MIN_SINGLE_OUTPUT_APPENDIX_CELLS, 2 + outputsCount),
+      2 + APPENDIX_MAX_VISIBLE_OUTPUTS,
+    );
+    return Math.max(outputCells, appendix.heightCells);
+  }
+  return Math.max(MIN_APPENDIX_CELLS, appendix.heightCells);
+}
 
 export interface CellNodeRunState {
   status?: CellCardModel["status"];
@@ -540,7 +563,8 @@ export function buildOperatorCardsAndSurfaces(
         ? runState.appendix
         : savedAppendixCells > 0
           ? {
-              title: "Execution output",
+              kind: "output",
+              title: "Outputs",
               kindBadge: "Output",
               heightCells: savedAppendixCells,
               summaryText: "",
@@ -550,17 +574,31 @@ export function buildOperatorCardsAndSurfaces(
     const isAppendixCollapsed =
       rawAppendix != null &&
       (collapsedFromSet || rawAppendix.collapsed === true);
+    const expandedAppendixCells = rawAppendix
+      ? appendixExpandedHeightCells(rawAppendix)
+      : 0;
     const appendix: CellExecutionAppendixSpec | null = rawAppendix
-      ? isAppendixCollapsed || rawAppendix.collapsed !== undefined
-        ? { ...rawAppendix, collapsed: isAppendixCollapsed }
+      ? isAppendixCollapsed ||
+        rawAppendix.collapsed !== undefined ||
+        expandedAppendixCells !== rawAppendix.heightCells
+        ? {
+            ...rawAppendix,
+            heightCells: expandedAppendixCells,
+            ...(isAppendixCollapsed || rawAppendix.collapsed !== undefined
+              ? { collapsed: isAppendixCollapsed }
+              : {}),
+          }
         : rawAppendix
       : null;
     const effectiveAppendixCells = appendix
       ? isAppendixCollapsed
-        ? 2
-        : Math.max(MIN_APPENDIX_CELLS, appendix.heightCells)
+        ? COLLAPSED_APPENDIX_CELLS
+        : expandedAppendixCells
       : 0;
-    // Counted the way the card lays its two-column shelves out.
+    // Counted the way the card lays its two-column shelves out. The `Advanced`
+    // row is one of those shelves in both states and the fields it discloses
+    // are counted with it, so opening the section grows the card by whole
+    // cells and the ports above the band never shift.
     const configCells = countConfigShelfCells(configFields);
     // Config shelves end on an empty row so the plate's bottom inset never
     // clips their last control; an appendix closes the card itself.

@@ -58,7 +58,7 @@ const spin = stylex.keyframes({
 const MONO = "var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace";
 
 const styles = stylex.create({
-  lists: { display: "grid", gap: "28px", marginTop: "22px" },
+  lists: { display: "grid", gap: "24px" },
   list: { display: "grid", gap: "12px" },
   listHeading: {
     display: "flex",
@@ -103,21 +103,21 @@ const styles = stylex.create({
     listStyle: "none",
     borderWidth: "1px",
     borderStyle: "solid",
-    borderColor: tokens.colorDivider,
+    borderColor: tokens.colorBorder,
     borderRadius: tokens.radiusLg,
     overflow: "hidden",
   },
   row: {
     display: "grid",
     gap: "10px",
-    padding: "12px 14px",
+    padding: "12px 16px",
     borderTopWidth: "1px",
     borderTopStyle: "solid",
     borderTopColor: {
       default: tokens.colorDivider,
       ":first-child": "transparent",
     },
-    backgroundColor: tokens.colorBg,
+    backgroundColor: tokens.colorSurface,
   },
   rowMain: {
     minWidth: 0,
@@ -191,7 +191,7 @@ const styles = stylex.create({
     gap: "10px",
     padding: "12px",
     borderRadius: tokens.radiusMd,
-    backgroundColor: tokens.colorSurface,
+    backgroundColor: tokens.colorBg,
     boxShadow: `inset 0 0 0 1px ${tokens.colorBorder}`,
   },
   editFields: {
@@ -673,6 +673,7 @@ export function WorkspaceCredentials({
   );
   return (
     <section
+      id="credentials"
       {...stylex.props(settings.section)}
       aria-labelledby="workspace-credentials-heading"
     >

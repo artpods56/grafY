@@ -308,10 +308,12 @@ class ExtractMarkdownTablesNode(
         inputs: ExtractMarkdownTablesInput,
         /,
     ) -> ExtractMarkdownTablesOutput:
-        del context
         markdown = inputs.markdown.markdown
         segments = _split_markdown_segments(markdown)
         has_html_tables = any(kind == "table" for kind, _ in segments)
+        table_total = sum(kind == "table" for kind, _ in segments)
+        await context.progress("Extracting tables…")
+        seen_tables = 0
 
         current_section: str | None = None
         first_header_rows: list[_ParsedGridRow] = []
@@ -323,6 +325,13 @@ class ExtractMarkdownTablesNode(
                 if kind == "text":
                     current_section = _extract_heading_from_text(chunk, current_section)
                     continue
+                seen_tables += 1
+                if table_total > 1:
+                    await context.progress(
+                        f"Extracting table {seen_tables} of {table_total}",
+                        current=seen_tables,
+                        total=table_total,
+                    )
                 parser = _HtmlTableParser()
                 parser.feed(chunk)
                 parser.close()

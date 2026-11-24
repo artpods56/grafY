@@ -10,7 +10,12 @@ from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.contracts.ocr import CropTextReader, ServiceCacheIdentity, TextReading
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.node_context import UserFacingNodeError
-from grafy_core.nodes import Node, NodeExecutionContext
+from grafy_core.nodes import (
+    Node,
+    NodeExecutionContext,
+    active_node_context,
+    emit_node_progress,
+)
 from grafy_core.plugins import (
     NodeHttpEgressContract,
 )
@@ -73,6 +78,23 @@ class PaddleCyrillicRecognizer(CropTextReader):
         results: list[TextReading] = []
         batch: list[str] = []
         encoded_size = 0
+        total = len(crops)
+        context = active_node_context()
+
+        async def flush() -> None:
+            nonlocal batch, encoded_size
+            if not batch:
+                return
+            await emit_node_progress(
+                context,
+                "Calling Cyrillic OCR…",
+                current=len(results),
+                total=total,
+            )
+            results.extend(await self._recognize_batch(batch))
+            batch = []
+            encoded_size = 0
+
         for crop in crops:
             if len(crop) > _MAX_PNG_BYTES:
                 raise UserFacingNodeError("A TIFF crop exceeds the OCR image limit")
@@ -81,13 +103,17 @@ class PaddleCyrillicRecognizer(CropTextReader):
                 len(batch) == _MAX_BATCH_SIZE
                 or encoded_size + len(encoded) > _MAX_ENCODED_BYTES
             ):
-                results.extend(await self._recognize_batch(batch))
-                batch = []
-                encoded_size = 0
+                await flush()
             batch.append(encoded)
             encoded_size += len(encoded)
-        if batch:
-            results.extend(await self._recognize_batch(batch))
+        await flush()
+        if total:
+            await emit_node_progress(
+                context,
+                "Calling Cyrillic OCR…",
+                current=len(results),
+                total=total,
+            )
         return results
 
     async def _recognize_batch(self, batch: list[str]) -> list[TextReading]:

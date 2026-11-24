@@ -138,11 +138,39 @@ describe("WorkbenchSidePanel", () => {
     await renderPanel(state());
 
     expect(panel()).not.toBeNull();
-    expect(panel()?.querySelector("h2")?.textContent).toBe("Library");
+    const switcher = panel()?.querySelector(
+      '[role="radiogroup"][aria-label="Side panel view"]',
+    );
+    expect(switcher).not.toBeNull();
+    expect(
+      switcher?.querySelector('[role="radio"][aria-checked="true"]')
+        ?.textContent,
+    ).toBe("Library");
     expect(document.querySelector('[role="tablist"]')).toBeNull();
     expect(
       document.querySelector('[role="tree"][aria-label="Workspace Library"]'),
     ).not.toBeNull();
+  });
+
+  it("switches cleanly between Library and Results via the header SegmentedControl", async () => {
+    const sidePanel = state();
+    await renderPanel(sidePanel);
+
+    const radios = [
+      ...panel()!.querySelectorAll<HTMLElement>(
+        '[role="radiogroup"][aria-label="Side panel view"] [role="radio"]',
+      ),
+    ];
+    const resultsRadio = radios.find(
+      (radio) => radio.textContent === "Results",
+    );
+    expect(resultsRadio).toBeDefined();
+
+    await React.act(async () => {
+      resultsRadio!.click();
+    });
+
+    expect(sidePanel.setView).toHaveBeenCalledWith("generated");
   });
 
   it("hosts Generated in the same docked column", async () => {

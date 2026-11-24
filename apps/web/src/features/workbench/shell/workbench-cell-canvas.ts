@@ -1,5 +1,6 @@
 import {
   artifactInlineContentUrl,
+  type ActiveRunSummary,
   type ArtifactRef,
   type NodeRegistry,
   type PlacedLibraryItem,
@@ -11,6 +12,8 @@ import {
   declaredArtifactContentType,
   isImageArtifact,
 } from "../artifacts/artifact-card";
+import { artifactTypeKey } from "../artifacts/artifact-type-key";
+import { formatArtifactTypeLabel } from "../artifacts/artifact-type-label";
 import {
   ARTIFACT_CARD_OUTPUT_HANDLE,
   artifactCardConnectionValue,
@@ -34,6 +37,7 @@ import {
   isServiceProviderNode,
   portArtifactType,
   portMetaForPort,
+  resolvedPortArtifactType,
   workflowNodeIsSupported,
   type GraphConnection,
   type WorkflowEdge,
@@ -50,9 +54,14 @@ import type {
 } from "../cell-canvas/CellCanvas";
 import type {
   ArtifactCardSurfaceData,
+  CellExecutionAppendixOutput,
+  CellExecutionAppendixSpec,
+  CellNodeLiveProgress,
   CellRemotePeerState,
   CellSelectionSnapshot,
 } from "../cell-canvas/cell-contracts";
+import { artifactTypeColor } from "../config-ui/nodes.css";
+import { appendixExpandedHeightCells } from "../cell-canvas/cell-operator-adapter";
 import {
   cellGraphFromAuthoredDocument,
   cellOriginFromWorld,
@@ -69,9 +78,10 @@ import { CELL_SIZE, cellToWorldOrigin } from "../cell-canvas/cell-model";
 import type { AuthoredGraphDocument } from "../authoring/graph-document";
 import type { ResolvedGraphSemantics } from "../authoring/graph-semantics";
 import { changeOriginCardReferences } from "../artifacts/origin-card-commands";
-import type {
-  PresenceParticipant,
-  RoomInstanceState,
+import {
+  instanceKeyText,
+  type PresenceParticipant,
+  type RoomInstanceState,
 } from "../collaboration/protocol";
 import { actorColor } from "../collaboration/remote-selection";
 import type { CanvasSelection } from "../authoring/workbench-canvas-selection";
@@ -107,6 +117,151 @@ function cellNodeStatus(
       }
       return { status: "idle" };
   }
+}
+
+interface CellLiveProgressEntry {
+  readonly sequence: number;
+  readonly message: string;
+  readonly current: number | null;
+  readonly total: number | null;
+  readonly fingerprint: string;
+}
+
+/** Progress and cancel for the nodes on the open graph and call trail. */
+export interface CellLiveRunInput {
+  readonly projectId: string;
+  readonly graphId: string;
+  readonly callPath: readonly string[];
+  readonly progress?: {
+    get(
+      key: string,
+    ): { readonly entries: readonly CellLiveProgressEntry[] } | undefined;
+  };
+  readonly runs: readonly ActiveRunSummary[];
+  readonly cancellingRunId: string | null;
+  readonly canCancelRun: boolean;
+  readonly onCancelNodeRun: (nodeId: string) => void;
+}
+
+function sameCallPath(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((segment, index) => segment === right[index])
+  );
+}
+
+function newestRun(runs: readonly ActiveRunSummary[]): ActiveRunSummary | null {
+  let match: ActiveRunSummary | null = null;
+  for (const run of runs) {
+    if (!match || run.started_at > match.started_at) match = run;
+  }
+  return match;
+}
+
+/**
+ * The run a node may cancel. A node named as a target uses the newest such
+ * run. A running node that is only upstream uses the run when it is the only
+ * one on this call trail, which is the demand that put it to work.
+ */
+export function activeRunForNode(
+  runs: readonly ActiveRunSummary[],
+  nodeId: string,
+  callPath: readonly string[],
+): ActiveRunSummary | null {
+  const targeted: ActiveRunSummary[] = [];
+  const onView: ActiveRunSummary[] = [];
+  for (const run of runs) {
+    if (
+      run.targets.some(
+        (target) =>
+          target.node_id === nodeId && sameCallPath(target.call_path, callPath),
+      )
+    ) {
+      targeted.push(run);
+    }
+    if (
+      run.targets.length === 0 ||
+      run.targets.every((target) => sameCallPath(target.call_path, callPath))
+    ) {
+      onView.push(run);
+    }
+  }
+  const sole = onView.length === 1 ? onView[0] : undefined;
+  return newestRun(targeted) ?? sole ?? null;
+}
+
+function liveProgressFor(
+  liveRun: CellLiveRunInput,
+  nodeId: string,
+  fingerprint: string,
+): CellNodeLiveProgress | null {
+  const history = liveRun.progress?.get(
+    instanceKeyText({
+      project_id: liveRun.projectId,
+      graph_id: liveRun.graphId,
+      call_path: liveRun.callPath,
+      node_id: nodeId,
+      map_index: null,
+    }),
+  );
+  const latest = history?.entries[0];
+  if (!latest || latest.fingerprint !== fingerprint) return null;
+  return {
+    latestMessage: latest.message,
+    current: latest.current,
+    total: latest.total,
+    recentMessages: history.entries.map((entry) => ({
+      sequence: entry.sequence,
+      message: entry.message,
+      current: entry.current,
+      total: entry.total,
+    })),
+  };
+}
+
+function applyLiveRun(
+  scene: ReturnType<typeof cellGraphFromAuthoredDocument>,
+  nodeInstanceStates: Readonly<Record<string, RoomInstanceState>>,
+  liveRun: CellLiveRunInput,
+): ReturnType<typeof cellGraphFromAuthoredDocument> {
+  let surfaceById = scene.surfaceById;
+  let changed = false;
+  for (const card of scene.graph.cards) {
+    if (card.status !== "working") continue;
+    const surface = surfaceById[card.id];
+    if (!surface || surface.kind !== "operator") continue;
+    if (!changed) {
+      surfaceById = { ...surfaceById };
+      changed = true;
+    }
+    const instance = nodeInstanceStates[card.id];
+    const progress = instance
+      ? liveProgressFor(liveRun, card.id, instance.fingerprint)
+      : null;
+    const run = activeRunForNode(liveRun.runs, card.id, liveRun.callPath);
+    // Instance state has no cancelling value. The in-flight cancel is the
+    // run id the reducer is already sending.
+    const cancelling = run !== null && liveRun.cancellingRunId === run.run_id;
+    const canCancel =
+      !cancelling &&
+      liveRun.cancellingRunId === null &&
+      liveRun.canCancelRun &&
+      run !== null &&
+      run.cancellable;
+    surfaceById[card.id] = {
+      ...surface,
+      ...(progress ? { progress } : {}),
+      cancelling,
+      canCancel,
+      ...(canCancel
+        ? { onCancelRun: () => liveRun.onCancelNodeRun(card.id) }
+        : {}),
+    };
+  }
+  return changed ? { ...scene, surfaceById } : scene;
 }
 
 /** Fanned card backs a sequence shows behind its first picture. */
@@ -282,6 +437,168 @@ function linkedTiffWindow(
   return { artifactId: lead.artifact_id, selection };
 }
 
+const APPENDIX_MIN_CELLS = 4;
+const APPENDIX_ERROR_MAX_CELLS = 6;
+
+function formatRelativeCompletedAt(
+  iso: string | null | undefined,
+  nowMs: number,
+): string | null {
+  if (!iso) return null;
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) return null;
+  const diffSeconds = Math.max(0, Math.floor((nowMs - timestamp) / 1000));
+  if (diffSeconds < 45) return "Just now";
+  if (diffSeconds < 3600) {
+    return `${Math.max(1, Math.round(diffSeconds / 60))}m ago`;
+  }
+  if (diffSeconds < 86400) {
+    return `${Math.round(diffSeconds / 3600)}h ago`;
+  }
+  return `${Math.round(diffSeconds / 86400)}d ago`;
+}
+
+function estimateErrorAppendixCells(errorText: string): number {
+  const lines = errorText.split(/\r?\n/);
+  const wrappedLines = lines.reduce(
+    (total, line) => total + Math.max(1, Math.ceil(line.length / 42)),
+    0,
+  );
+  if (wrappedLines <= 3) return APPENDIX_MIN_CELLS;
+  if (wrappedLines <= 5) return 5;
+  return APPENDIX_ERROR_MAX_CELLS;
+}
+
+export function buildAppendixSpec({
+  node,
+  status,
+  instance,
+  registry,
+  nowMs,
+}: {
+  node: WorkflowNode;
+  status?: CellNodeRunState["status"];
+  instance?: RoomInstanceState;
+  registry?: NodeRegistry | null;
+  nowMs?: number;
+}): CellExecutionAppendixSpec | undefined {
+  const resolvedStatus = status ?? cellNodeStatus(node, instance).status;
+  const { run, execution, layout, spec, artifactTypeBindings } = node.data;
+  const currentNow = nowMs ?? Date.now();
+  const savedAppendixCells =
+    (layout?.appendixHeight ?? 0) > 0
+      ? Math.max(
+          APPENDIX_MIN_CELLS,
+          Math.ceil((layout?.appendixHeight ?? 0) / CELL_SIZE),
+        )
+      : 0;
+
+  if (resolvedStatus === "error") {
+    const error =
+      instance?.error || execution.error || run?.error || "Execution failed.";
+    const completedAtLabel =
+      run?.status === "failed" &&
+      (!instance?.error || instance.error === run.error)
+        ? formatRelativeCompletedAt(run.created_at, currentNow)
+        : null;
+    return {
+      kind: "error",
+      title: "Run failed",
+      kindBadge: "Error",
+      summaryText: error,
+      errorText: error,
+      completedAtLabel,
+      heightCells: Math.max(
+        savedAppendixCells,
+        estimateErrorAppendixCells(error),
+      ),
+    };
+  }
+
+  const runOutputs = run?.outputs ?? [];
+  if (runOutputs.length === 0) return undefined;
+
+  const specOutputs = spec?.outputs ?? [];
+  const portOrder = new Map(
+    specOutputs.map((port, index) => [port.name, index]),
+  );
+  const orderedOutputs = [...runOutputs].sort((left, right) => {
+    const leftIndex = portOrder.get(left.port) ?? Number.MAX_SAFE_INTEGER;
+    const rightIndex = portOrder.get(right.port) ?? Number.MAX_SAFE_INTEGER;
+    return leftIndex - rightIndex;
+  });
+  const catalogTypes = registry?.artifact_types ?? null;
+
+  const outputs: CellExecutionAppendixOutput[] = orderedOutputs.map(
+    (output) => {
+      const portDef = specOutputs.find(
+        (candidate) => candidate.name === output.port,
+      );
+      const label = portDef?.title?.trim() || output.port;
+      const firstArtifact = output.artifacts[0];
+      const portType = portDef
+        ? resolvedPortArtifactType(portDef, artifactTypeBindings)
+        : null;
+      const resolvedType = firstArtifact
+        ? {
+            id: firstArtifact.artifact_type,
+            schema_version: firstArtifact.schema_version,
+          }
+        : output.value
+          ? {
+              id: output.value.artifact_type,
+              schema_version: output.value.schema_version,
+            }
+          : portType;
+      const typeLabel = resolvedType
+        ? formatArtifactTypeLabel(resolvedType, catalogTypes)
+        : null;
+      const typeKey = resolvedType ? artifactTypeKey(resolvedType) : null;
+      const colorTypeId =
+        portType?.id ??
+        portDef?.artifact_type_variable ??
+        resolvedType?.id ??
+        null;
+      const toneColor = colorTypeId
+        ? artifactTypeColor(colorTypeId, "") || null
+        : null;
+      return {
+        port: output.port,
+        label,
+        count: output.artifacts.length,
+        kind: output.kind,
+        typeLabel,
+        typeKey,
+        toneColor,
+        artifactIds: output.artifacts.map((artifact) => artifact.artifact_id),
+      };
+    },
+  );
+
+  const itemCount = outputs.reduce((count, row) => count + row.count, 0);
+  const itemText = `${itemCount} ${itemCount === 1 ? "item" : "items"}`;
+  const summaryText =
+    outputs.length > 1 ? `${outputs.length} outputs · ${itemText}` : itemText;
+  return {
+    kind: "output",
+    title: "Outputs",
+    kindBadge: "Output",
+    summaryText,
+    previewLines: outputs.map(
+      (row) =>
+        `${row.label}: ${row.count} ${row.count === 1 ? "item" : "items"}`,
+    ),
+    itemCount,
+    outputs,
+    completedAtLabel: formatRelativeCompletedAt(run?.created_at, currentNow),
+    heightCells: appendixExpandedHeightCells({
+      kind: "output",
+      heightCells: savedAppendixCells,
+      outputs,
+    }),
+  };
+}
+
 export function buildWorkbenchCellScene({
   workspaceId,
   document,
@@ -302,6 +619,7 @@ export function buildWorkbenchCellScene({
   libraryItemsByArtifactId,
   imageNaturalSizes,
   onOperatorConfigChange,
+  liveRun,
 }: {
   /** Names the content route for inline pictures; without it cards stay placeholders. */
   workspaceId?: string | null;
@@ -329,52 +647,23 @@ export function buildWorkbenchCellScene({
   imageNaturalSizes?: ReadonlyMap<string, { width: number; height: number }>;
   /** Writes the TIFF window fields as one configuration patch. */
   onOperatorConfigChange?: ConfigPatch;
+  /** Live progress and per-node cancel for the open graph. */
+  liveRun?: CellLiveRunInput;
 }) {
   const nodeRunState: Record<string, CellNodeRunState> = {};
   for (const node of nodes) {
     const instance = nodeInstanceStates[node.id];
-    const { run, execution, layout } = node.data;
     const isProvider = isServiceProviderNode(node.data.spec);
     const status = cellNodeStatus(node, instance);
-    const error =
-      status.status === "error"
-        ? instance?.error ||
-          execution.error ||
-          run?.error ||
-          "Execution failed."
-        : null;
-    const outputs = run?.outputs ?? [];
-    const itemCount = outputs.reduce(
-      (count, output) => count + output.artifacts.length,
-      0,
-    );
-    const heightCells = Math.max(
-      4,
-      Math.ceil((layout?.appendixHeight ?? 0) / CELL_SIZE),
-    );
     nodeRunState[node.id] = {
       ...status,
       runDisabled: !canRun || !workflowNodeIsSupported(node.data) || isProvider,
-      appendix: error
-        ? {
-            title: "Execution error",
-            kindBadge: "Error",
-            summaryText: error,
-            heightCells,
-          }
-        : outputs.length
-          ? {
-              title: "Execution output",
-              kindBadge: "Output",
-              summaryText: `${outputs.length} output port${outputs.length === 1 ? "" : "s"}`,
-              previewLines: outputs.map(
-                ({ port, artifacts }) =>
-                  `${port}: ${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"}`,
-              ),
-              itemCount,
-              heightCells,
-            }
-          : undefined,
+      appendix: buildAppendixSpec({
+        node,
+        status: status.status,
+        instance,
+        registry,
+      }),
     };
   }
 
@@ -622,7 +911,7 @@ export function buildWorkbenchCellScene({
     }
   }
 
-  return cellGraphFromAuthoredDocument(document, registry, {
+  const scene = cellGraphFromAuthoredDocument(document, registry, {
     semantics: semantics ?? undefined,
     presentation,
     nodeRunState,
@@ -640,6 +929,7 @@ export function buildWorkbenchCellScene({
     viewerTiffWindows,
     viewerTiffTexts,
   });
+  return liveRun ? applyLiveRun(scene, nodeInstanceStates, liveRun) : scene;
 }
 
 export function cellRemotePeersFromParticipants(

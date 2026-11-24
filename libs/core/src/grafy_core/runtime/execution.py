@@ -18,6 +18,7 @@ from grafy_core.nodes import (
     NodeExecutionContext,
     OutputContract,
     UserFacingNodeError,
+    bind_active_node,
     bind_node_secret_config,
     resolve_node_contracts,
 )
@@ -108,11 +109,14 @@ class NodeRuntime:
             item_index=context.invocation_index,
         )
         try:
-            run_output = await node.run(
-                context,
-                cast(ConfigT, validated_config),
-                materialized_inputs,
-            )
+            # Providers called from this run publish on this node, not on the
+            # service node that only built them.
+            async with bind_active_node(context):
+                run_output = await node.run(
+                    context,
+                    cast(ConfigT, validated_config),
+                    materialized_inputs,
+                )
         except UserFacingNodeError as exc:
             raise NodeRunError(
                 f"Node {context.node_id!r} operator {node.operator_id}@"

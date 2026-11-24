@@ -15,6 +15,7 @@ from grafy_core.nodes import (
     Node,
     NodeExecutionContext,
     UserFacingNodeError,
+    bind_active_node,
 )
 from grafy_core.plugins import (
     NodeHttpEgressContract,
@@ -312,14 +313,22 @@ class OpenAICompatibleNode(
             ) from exc
 
         schema_text = None if inputs.json_schema is None else inputs.json_schema.value
+        image_total = sum(len(message.image_refs) for message in inputs.messages)
         try:
-            response = await self._provider.complete(
-                inputs.messages,
-                schema_text,
-                config,
-                api_key,
-                workspace_id=context.workspace_id,
-            )
+            async with bind_active_node(context):
+                if image_total:
+                    await context.progress(
+                        "Preparing images…", current=0, total=image_total
+                    )
+                await context.progress("Calling LLM…")
+                response = await self._provider.complete(
+                    inputs.messages,
+                    schema_text,
+                    config,
+                    api_key,
+                    workspace_id=context.workspace_id,
+                )
+            await context.progress("Parsing response…")
             return OpenAICompatibleOutput(
                 completion=CompletionPayload(
                     content=response.content,

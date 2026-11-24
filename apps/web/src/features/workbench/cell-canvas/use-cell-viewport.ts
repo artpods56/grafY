@@ -42,6 +42,9 @@ export interface UseCellViewportResult {
   flushPan: (commit?: boolean) => void;
   zoomAtCenter: (nextZoom: number) => void;
   zoomBy: (factor: number) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetZoom: () => void;
   fitRect: (
     bounds: WorldBounds,
     paddingRatio?: number,
@@ -59,6 +62,9 @@ export interface UseCellViewportResult {
   onBackgroundPointerDown: (event: React.PointerEvent<HTMLElement>) => void;
 }
 
+export const MIN_CELL_ZOOM = 0.15;
+export const MAX_CELL_ZOOM = 2;
+const ZOOM_STEP_FACTOR = 1.25;
 const DEFAULT_VIEWPORT: StageViewport = { x: 0, y: 0, zoom: 1 };
 /** Container size assumed before it is mounted or laid out. */
 const FALLBACK_WIDTH = 1400;
@@ -118,8 +124,8 @@ export function useCellViewport(
   options: UseCellViewportOptions = {},
 ): UseCellViewportResult {
   const {
-    minZoom = 0.15,
-    maxZoom = 2,
+    minZoom = MIN_CELL_ZOOM,
+    maxZoom = MAX_CELL_ZOOM,
     initialViewport,
     fitLeftClearance = 0,
   } = options;
@@ -337,6 +343,15 @@ export function useCellViewport(
     [zoomAtCenter],
   );
 
+  const zoomIn = React.useCallback(() => zoomBy(ZOOM_STEP_FACTOR), [zoomBy]);
+
+  const zoomOut = React.useCallback(
+    () => zoomBy(1 / ZOOM_STEP_FACTOR),
+    [zoomBy],
+  );
+
+  const resetZoom = React.useCallback(() => zoomAtCenter(1), [zoomAtCenter]);
+
   const fitRect = React.useCallback(
     (bounds: WorldBounds, paddingRatio = 0.14, fitMaxZoom = 0.92) => {
       const box = containerBox(containerRef.current);
@@ -397,6 +412,9 @@ export function useCellViewport(
     flushPan,
     zoomAtCenter,
     zoomBy,
+    zoomIn,
+    zoomOut,
+    resetZoom,
     fitRect,
     viewAt,
     screenToWorld,

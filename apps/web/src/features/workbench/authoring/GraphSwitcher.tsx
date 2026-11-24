@@ -55,16 +55,16 @@ const s = stylex.create({
     position: "absolute",
     // On a phone the app's own header sits over the canvas; stay below it.
     top: {
-      default: "12px",
+      default: "14px",
       "@media (max-width: 720px)":
         "calc(var(--grafy-mobile-overlay-top, 68px) + env(safe-area-inset-top))",
     },
-    left: "12px",
+    left: "14px",
     zIndex: 20,
     display: "flex",
     flexDirection: "column",
     gap: "6px",
-    maxWidth: "calc(100% - 24px)",
+    maxWidth: "calc(100% - 28px)",
   },
   bar: {
     display: "flex",
@@ -73,9 +73,13 @@ const s = stylex.create({
     padding: "3px",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusLg,
-    backgroundColor: tokens.colorSurfaceRaised,
+    borderColor: "light-dark(rgba(15, 23, 42, 0.1), rgba(255, 255, 255, 0.15))",
+    borderRadius: tokens.radiusMd,
+    backgroundColor:
+      "light-dark(rgba(255, 255, 255, 0.94), rgba(30, 35, 44, 0.92))",
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+    boxShadow: tokens.shadowNode,
   },
   /**
    * The Back row, above the bar. Same surface so the two read as one floating
@@ -88,12 +92,17 @@ const s = stylex.create({
     padding: "3px",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusLg,
-    backgroundColor: tokens.colorSurfaceRaised,
+    borderColor: "light-dark(rgba(15, 23, 42, 0.1), rgba(255, 255, 255, 0.15))",
+    borderRadius: tokens.radiusMd,
+    backgroundColor:
+      "light-dark(rgba(255, 255, 255, 0.94), rgba(30, 35, 44, 0.92))",
+    backdropFilter: "blur(12px)",
+    WebkitBackdropFilter: "blur(12px)",
+    boxShadow: tokens.shadowNode,
   },
   /** Where the call came from, spelled out: `Main › Report › Clean`. */
   trail: {
+    paddingRight: "6px",
     fontSize: tokens.fontSizeXs,
     color: tokens.colorMuted,
     whiteSpace: "nowrap",
@@ -104,8 +113,10 @@ const s = stylex.create({
   tabs: {
     display: "flex",
     alignItems: "center",
+    gap: "2px",
     overflowX: "auto",
     minWidth: 0,
+    scrollbarWidth: "none",
   },
   tab: {
     margin: 0,
@@ -116,15 +127,30 @@ const s = stylex.create({
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
-    borderWidth: 0,
-    borderRadius: tokens.radiusMd,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "transparent",
+    borderRadius: tokens.radiusSm,
     fontFamily: "inherit",
     fontSize: tokens.fontSizeSm,
+    fontWeight: 500,
     lineHeight: 1,
     cursor: "pointer",
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "1px",
+    transitionProperty: "background-color, border-color, color, box-shadow",
+    transitionDuration: {
+      default: "120ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
   },
   tabSelected: {
-    backgroundColor: tokens.colorAccentSoft,
+    backgroundColor: tokens.colorSurfaceElevated,
+    borderColor: tokens.colorBorder,
+    boxShadow: tokens.shadowNode,
     color: tokens.colorTextEmphasis,
   },
   tabUnselected: {
@@ -132,7 +158,17 @@ const s = stylex.create({
       default: "transparent",
       ":hover:not(:disabled)": tokens.colorHover,
     },
-    color: tokens.colorMuted,
+    color: {
+      default: tokens.colorMuted,
+      ":hover:not(:disabled)": tokens.colorText,
+    },
+  },
+  divider: {
+    width: "1px",
+    height: "16px",
+    flexShrink: 0,
+    marginInline: "3px",
+    backgroundColor: tokens.colorDivider,
   },
 });
 
@@ -210,6 +246,7 @@ export function GraphSwitcher({
             );
           })}
         </div>
+        <span aria-hidden="true" {...stylex.props(s.divider)} />
         <IconButton label="Add Graph" disabled={!canEdit} onClick={onAdd}>
           <Plus size={14} />
         </IconButton>
@@ -228,6 +265,7 @@ export function GraphSwitcher({
           <Pencil size={14} />
         </IconButton>
         <IconButton
+          variant="danger"
           label="Delete Graph"
           disabled={!canEdit || openGraph === null}
           onClick={() => {

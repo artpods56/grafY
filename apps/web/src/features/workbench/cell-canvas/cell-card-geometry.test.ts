@@ -184,6 +184,24 @@ describe("computeOperatorCardLayout", () => {
       kind: "operator",
       appendix: { ...appendix, heightCells: 1 },
     });
+    const singleOutput = computeOperatorCardLayout(card, {
+      kind: "operator",
+      appendix: {
+        ...appendix,
+        kind: "output",
+        heightCells: 3,
+        outputs: [
+          {
+            port: "text",
+            label: "Text",
+            count: 1,
+            kind: "single",
+            typeLabel: "Text",
+            artifactIds: ["art-1"],
+          },
+        ],
+      },
+    });
 
     // An appendix closes the card itself: no empty row under it.
     expect(open.appendixBand).toEqual({ startRow: 8, heightCells: 4 });
@@ -191,6 +209,8 @@ describe("computeOperatorCardLayout", () => {
     expect(collapsed.appendixBand).toEqual({ startRow: 8, heightCells: 2 });
     expect(collapsed.totalHeightCells).toBe(10);
     expect(short.appendixBand?.heightCells).toBe(4);
+    expect(singleOutput.appendixBand).toEqual({ startRow: 8, heightCells: 3 });
+    expect(singleOutput.totalHeightCells).toBe(11);
   });
 
   it("never shrinks below the model's own height", () => {

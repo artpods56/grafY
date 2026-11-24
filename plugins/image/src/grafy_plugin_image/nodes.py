@@ -221,7 +221,7 @@ class DrawRegionsNode(Node[DrawRegionsConfig, DrawRegionsInput, DrawRegionsOutpu
         inputs: DrawRegionsInput,
         /,
     ) -> DrawRegionsOutput:
-        del context
+        await context.progress("Drawing boxes…")
         image = await _open_image(inputs.image)
         filename = "regions.png"
         if inputs.image.filename:
@@ -286,7 +286,6 @@ class CropRegionsNode(Node[CropRegionsConfig, CropRegionsInput, CropRegionsOutpu
         inputs: CropRegionsInput,
         /,
     ) -> CropRegionsOutput:
-        del context
         page = inputs.regions.page(config.page)
         if page is None:
             raise DrawRegionsError(
@@ -303,12 +302,22 @@ class CropRegionsNode(Node[CropRegionsConfig, CropRegionsInput, CropRegionsOutpu
         sx = image.width / page.width
         sy = image.height / page.height
         kinds = set(config.kinds.split(",")) if config.kinds is not None else None
+        selected = [
+            region
+            for region in inputs.regions.regions
+            if region.page == config.page and (kinds is None or region.kind in kinds)
+        ]
+        total = len(selected)
+        if total == 1:
+            await context.progress("Cropping regions…")
         crops: list[RasterImage] = []
-        for region in inputs.regions.regions:
-            if region.page != config.page or (
-                kinds is not None and region.kind not in kinds
-            ):
-                continue
+        for index, region in enumerate(selected, start=1):
+            if total > 1:
+                await context.progress(
+                    f"Cropping region {index} of {total}",
+                    current=index,
+                    total=total,
+                )
             left = max(0, min(round(region.x0 * sx) - config.padding, image.width))
             top = max(0, min(round(region.y0 * sy) - config.padding, image.height))
             right = max(0, min(round(region.x1 * sx) + config.padding, image.width))

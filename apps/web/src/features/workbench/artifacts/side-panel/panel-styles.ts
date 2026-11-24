@@ -5,22 +5,18 @@ import { tokens } from "@/lib/stylex/tokens.stylex";
 /**
  * The chrome the side panel's parts share.
  *
- * The numbers are the Workspace rail's on purpose: 8px row padding, a 6px
- * radius, 12–13px labels, `colorSurfaceSunken` hover, and no shadow. The rail
- * and the panel are one sidebar with two panes, and the only way they read that
- * way is by agreeing about every one of these. Each part keeps the rest of its
- * styles beside its markup.
+ * Designed for the Tier 2 Gray Subsidebar (`colorSubrailBg`), sitting cleanly
+ * between the always-dark left rail and the main workflow canvas.
  */
 export const panelStyles = stylex.create({
-  // The rail's colours on the shared IconButton: pass it as `xstyle`.
   iconButton: {
     backgroundColor: {
       default: "transparent",
-      ":hover:not(:disabled)": tokens.colorSurfaceSunken,
+      ":hover:not(:disabled)": tokens.colorSubrailHover,
     },
     color: {
       default: tokens.colorMuted,
-      ":hover:not(:disabled)": tokens.colorText,
+      ":hover:not(:disabled)": tokens.colorTextEmphasis,
       ":disabled": tokens.colorTextDisabled,
     },
   },

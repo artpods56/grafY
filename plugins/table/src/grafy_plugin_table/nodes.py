@@ -256,7 +256,7 @@ class ImportTableNode(Node[TableImportConfig, TableImportInput, TableImportOutpu
         inputs: TableImportInput,
         /,
     ) -> TableImportOutput:
-        del context
+        await context.progress("Reading spreadsheet…")
         content = await inputs.file.read(max_bytes=_HANDLE_READ_LIMIT)
         if isinstance(inputs.file, CsvFile):
             matrix = _csv_matrix(content, config.delimiter)

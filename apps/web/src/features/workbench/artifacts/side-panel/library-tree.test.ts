@@ -7,8 +7,12 @@ import {
   countLibraryArtifacts,
   flattenLibraryRows,
   formatLibraryByteSize,
+  isBrowserRenderableImage,
+  libraryArtifactCategory,
+  libraryFileBadge,
   libraryFileDisplayName,
   libraryFileIcon,
+  libraryFileRowMeta,
   libraryFileSubtitle,
   libraryFolderPath,
   libraryProvenanceLine,
@@ -399,5 +403,107 @@ describe("the rows keep the Library's file naming", () => {
     expect(formatLibraryByteSize(2048)).toBe("2.0 KB");
     expect(formatLibraryByteSize(5_400_000)).toBe("5.1 MB");
     expect(formatLibraryByteSize(null)).toBeNull();
+  });
+});
+
+describe("file-type badges, renderable images, and category filtering", () => {
+  it("distinguishes browser-renderable images from archival TIFF/JP2 scans", () => {
+    expect(
+      isBrowserRenderableImage(
+        item("jpg", {
+          content_type: "image/jpeg",
+          original_filename: "folio.jpg",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isBrowserRenderableImage(
+        item("tif", {
+          content_type: "image/tiff",
+          original_filename: "folio-01.tif",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("derives crisp badge extensions, icons, and 2-line row metadata", () => {
+    const tiff = item("scan", {
+      artifact_type: "file.tiff@1",
+      content_type: "image/tiff",
+      byte_size: 54_525_952,
+      original_filename: "cartulary-01.tiff",
+    });
+    expect(libraryFileBadge(tiff)).toEqual({
+      kind: "image",
+      ext: "TIF",
+      typeLabel: "TIFF",
+    });
+    expect(libraryFileRowMeta(tiff)).toBe("52 MB · TIFF");
+
+    const geo = item("map", {
+      artifact_type: "geo.feature_collection@1",
+      content_type: "application/geo+json",
+      byte_size: 4096,
+      original_filename: "parishes.geojson",
+    });
+    expect(libraryFileBadge(geo)).toEqual({
+      kind: "map",
+      ext: "GEO",
+      typeLabel: "GeoJSON",
+    });
+    expect(libraryArtifactCategory(geo)).toBe("image");
+
+    const csv = item("tbl", {
+      artifact_type: "table.csv@1",
+      content_type: "text/csv",
+      byte_size: 1024,
+      original_filename: "census.csv",
+    });
+    expect(libraryFileBadge(csv)).toEqual({
+      kind: "table",
+      ext: "CSV",
+      typeLabel: "CSV",
+    });
+    expect(libraryArtifactCategory(csv)).toBe("table");
+
+    const pdf = item("doc", {
+      artifact_type: "file.pdf@1",
+      content_type: "application/pdf",
+      byte_size: 8192,
+      original_filename: "charter.pdf",
+    });
+    expect(libraryFileBadge(pdf)).toEqual({
+      kind: "text",
+      ext: "PDF",
+      typeLabel: "PDF",
+    });
+    expect(libraryArtifactCategory(pdf)).toBe("doc");
+  });
+
+  it("filters tree nodes by category while hiding folders with no matching files", () => {
+    const folders = [
+      folder("scans", "Scans", null),
+      folder("tables", "Tables", null),
+    ];
+    const items = [
+      item("img", {
+        folder_id: "scans",
+        content_type: "image/tiff",
+        original_filename: "page-1.tif",
+      }),
+      item("csv", {
+        folder_id: "tables",
+        artifact_type: "table.csv@1",
+        content_type: "text/csv",
+        original_filename: "index.csv",
+      }),
+    ];
+
+    const imagesOnly = buildLibraryTree({
+      folders,
+      items,
+      category: "image",
+    });
+    expect(imagesOnly.map((node) => node.key)).toEqual(["folder:scans"]);
   });
 });

@@ -14,6 +14,17 @@ export type LibrarySort = "name" | "recent";
 
 export type LibraryFileIcon = "image" | "table" | "text" | "model" | "other";
 
+export type LibraryArtifactCategory = "image" | "table" | "doc" | "other";
+
+export type LibraryFileBadgeKind =
+  "image" | "map" | "table" | "code" | "text" | "model" | "other";
+
+export interface LibraryFileBadge {
+  readonly kind: LibraryFileBadgeKind;
+  readonly ext: string | null;
+  readonly typeLabel: string;
+}
+
 export type LibraryFileNode = {
   kind: "file";
   key: string;
@@ -101,6 +112,27 @@ export function isItemImage(item: PlacedLibraryItem): boolean {
   return contentTypeOf(item).startsWith("image/");
 }
 
+const BROWSER_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+  "image/svg+xml",
+  "image/bmp",
+  "image/x-icon",
+]);
+
+/**
+ * Image formats browsers decode directly in an `<img>`. Archival TIFFs and
+ * JPEG 2000 scans render as file-type badges in the tree instead of blank boxes.
+ */
+export function isBrowserRenderableImage(item: PlacedLibraryItem): boolean {
+  const mime = contentTypeOf(item).split(";")[0]?.trim() ?? "";
+  return BROWSER_IMAGE_TYPES.has(mime);
+}
+
 /** Bytes a browser can show as text: the preview reads the head of these. */
 export function isItemText(item: PlacedLibraryItem): boolean {
   const contentType = contentTypeOf(item);
@@ -111,6 +143,188 @@ export function isItemText(item: PlacedLibraryItem): boolean {
     contentType === "application/csv" ||
     contentType === "application/x-ndjson"
   );
+}
+
+const BADGE_FROM_CONTENT_TYPE: Readonly<
+  Record<string, { ext: string; typeLabel: string }>
+> = {
+  "image/tiff": { ext: "TIF", typeLabel: "TIFF" },
+  "image/x-tiff": { ext: "TIF", typeLabel: "TIFF" },
+  "image/jpeg": { ext: "JPG", typeLabel: "JPEG" },
+  "image/jpg": { ext: "JPG", typeLabel: "JPEG" },
+  "image/png": { ext: "PNG", typeLabel: "PNG" },
+  "image/webp": { ext: "WEBP", typeLabel: "WebP" },
+  "image/gif": { ext: "GIF", typeLabel: "GIF" },
+  "image/svg+xml": { ext: "SVG", typeLabel: "SVG" },
+  "image/avif": { ext: "AVIF", typeLabel: "AVIF" },
+  "image/jp2": { ext: "JP2", typeLabel: "JP2" },
+  "application/pdf": { ext: "PDF", typeLabel: "PDF" },
+  "text/csv": { ext: "CSV", typeLabel: "CSV" },
+  "application/csv": { ext: "CSV", typeLabel: "CSV" },
+  "text/tab-separated-values": { ext: "TSV", typeLabel: "TSV" },
+  "application/geo+json": { ext: "GEO", typeLabel: "GeoJSON" },
+  "application/json": { ext: "JSON", typeLabel: "JSON" },
+  "application/x-ndjson": { ext: "NDJ", typeLabel: "NDJSON" },
+  "text/markdown": { ext: "MD", typeLabel: "Markdown" },
+  "text/plain": { ext: "TXT", typeLabel: "Text" },
+  "text/html": { ext: "HTML", typeLabel: "HTML" },
+  "application/xml": { ext: "XML", typeLabel: "XML" },
+  "text/xml": { ext: "XML", typeLabel: "XML" },
+};
+
+const EXT_NORMALIZE: Readonly<
+  Record<string, { ext: string; typeLabel: string }>
+> = {
+  tif: { ext: "TIF", typeLabel: "TIFF" },
+  tiff: { ext: "TIF", typeLabel: "TIFF" },
+  jpeg: { ext: "JPG", typeLabel: "JPEG" },
+  jpg: { ext: "JPG", typeLabel: "JPEG" },
+  png: { ext: "PNG", typeLabel: "PNG" },
+  webp: { ext: "WEBP", typeLabel: "WebP" },
+  gif: { ext: "GIF", typeLabel: "GIF" },
+  svg: { ext: "SVG", typeLabel: "SVG" },
+  jp2: { ext: "JP2", typeLabel: "JP2" },
+  pdf: { ext: "PDF", typeLabel: "PDF" },
+  csv: { ext: "CSV", typeLabel: "CSV" },
+  tsv: { ext: "TSV", typeLabel: "TSV" },
+  parquet: { ext: "PRQ", typeLabel: "Parquet" },
+  xlsx: { ext: "XLSX", typeLabel: "Excel" },
+  json: { ext: "JSON", typeLabel: "JSON" },
+  geojson: { ext: "GEO", typeLabel: "GeoJSON" },
+  shp: { ext: "SHP", typeLabel: "Shapefile" },
+  gpkg: { ext: "GPKG", typeLabel: "GeoPackage" },
+  kml: { ext: "KML", typeLabel: "KML" },
+  md: { ext: "MD", typeLabel: "Markdown" },
+  txt: { ext: "TXT", typeLabel: "Text" },
+  xml: { ext: "XML", typeLabel: "XML" },
+  yaml: { ext: "YAML", typeLabel: "YAML" },
+  yml: { ext: "YML", typeLabel: "YAML" },
+};
+
+const GEO_EXTS = new Set(["GEO", "SHP", "GPKG", "KML"]);
+const CODE_EXTS = new Set(["JSON", "NDJ", "XML", "YAML", "YML", "HTML"]);
+const DOC_EXTS = new Set(["PDF", "TXT", "MD", "DOC", "DOCX", "RTF"]);
+const IMAGE_EXTS = new Set([
+  "TIF",
+  "JPG",
+  "PNG",
+  "WEBP",
+  "GIF",
+  "SVG",
+  "JP2",
+  "AVIF",
+  "BMP",
+]);
+const TABLE_EXTS = new Set(["CSV", "TSV", "TBL", "PRQ", "XLSX"]);
+
+function rawExtensionOf(item: PlacedLibraryItem): string | null {
+  const filename = item.provenance.original_filename ?? item.name;
+  const dot = filename.lastIndexOf(".");
+  if (dot <= 0 || dot === filename.length - 1) return null;
+  const ext = filename.slice(dot + 1).toLowerCase();
+  if (!/^[a-z0-9]{1,8}$/.test(ext)) return null;
+  return ext;
+}
+
+/**
+ * File-type badge metadata for the 32x32 thumbnail slot and compact row meta.
+ */
+export function libraryFileBadge(item: PlacedLibraryItem): LibraryFileBadge {
+  const mime = contentTypeOf(item).split(";")[0]?.trim() ?? "";
+  const typeId = artifactTypeId(item);
+  const rawExt = rawExtensionOf(item);
+  const fromExt = rawExt ? EXT_NORMALIZE[rawExt] : undefined;
+  const fromMime =
+    BADGE_FROM_CONTENT_TYPE[mime] ??
+    (mime.endsWith("+json") ? { ext: "JSON", typeLabel: "JSON" } : undefined);
+
+  let ext: string | null = fromExt?.ext ?? fromMime?.ext ?? null;
+  let typeLabel: string = fromExt?.typeLabel ?? fromMime?.typeLabel ?? "";
+
+  if (!typeLabel) {
+    if (typeId === "geo.feature_collection") {
+      ext = ext ?? "GEO";
+      typeLabel = "GeoJSON";
+    } else if (typeId === "table.data" || typeId === "table.csv") {
+      ext = ext ?? "TBL";
+      typeLabel = "Table";
+    } else if (typeId === "document.page") {
+      ext = ext ?? "DOC";
+      typeLabel = "Document";
+    } else if (typeId === "scalar.text" || typeId === "text.txt") {
+      ext = ext ?? "TXT";
+      typeLabel = "Text";
+    } else if (typeId === "image.raster" || typeId === "image.pixmap") {
+      ext = ext ?? "IMG";
+      typeLabel = "Image";
+    } else if (
+      typeId.startsWith("model.") ||
+      typeId === "module.reference" ||
+      typeId === "graph.reference"
+    ) {
+      ext = ext ?? "MDL";
+      typeLabel = "Model";
+    } else if (typeId === "file.blob") {
+      ext = ext ?? (rawExt ? rawExt.toUpperCase().slice(0, 4) : "FILE");
+      typeLabel = rawExt ? rawExt.toUpperCase() : "Blob";
+    } else if (typeId.startsWith("file.")) {
+      const suffix = typeId.slice("file.".length);
+      ext = ext ?? suffix.toUpperCase().slice(0, 4);
+      typeLabel = suffix.toUpperCase();
+    } else if (rawExt) {
+      ext = rawExt.toUpperCase().slice(0, 4);
+      typeLabel = rawExt.toUpperCase();
+    } else {
+      typeLabel = item.provenance.source === "upload" ? "File" : "Node output";
+    }
+  }
+
+  let kind: LibraryFileBadgeKind;
+  if (
+    typeId === "geo.feature_collection" ||
+    mime === "application/geo+json" ||
+    (ext !== null && GEO_EXTS.has(ext))
+  ) {
+    kind = "map";
+  } else if (isItemImage(item) || (ext !== null && IMAGE_EXTS.has(ext))) {
+    kind = "image";
+  } else if (
+    typeId.startsWith("table.") ||
+    (ext !== null && TABLE_EXTS.has(ext))
+  ) {
+    kind = "table";
+  } else if (ext !== null && CODE_EXTS.has(ext)) {
+    kind = "code";
+  } else if (
+    typeId === "document.page" ||
+    typeId === "scalar.text" ||
+    typeId === "text.txt" ||
+    isItemText(item) ||
+    (ext !== null && DOC_EXTS.has(ext))
+  ) {
+    kind = "text";
+  } else if (
+    typeId.startsWith("model.") ||
+    typeId === "module.reference" ||
+    typeId === "graph.reference"
+  ) {
+    kind = "model";
+  } else {
+    kind = "other";
+  }
+
+  return { kind, ext, typeLabel };
+}
+
+/** High-level category for quick type filter pills in the Library toolbar. */
+export function libraryArtifactCategory(
+  item: PlacedLibraryItem,
+): LibraryArtifactCategory {
+  const { kind } = libraryFileBadge(item);
+  if (kind === "image" || kind === "map") return "image";
+  if (kind === "table") return "table";
+  if (kind === "text" || kind === "code") return "doc";
+  return "other";
 }
 
 function matchesQuery(item: PlacedLibraryItem, needle: string): boolean {
@@ -157,8 +371,10 @@ export function buildLibraryTree(input: {
   items: readonly PlacedLibraryItem[];
   query?: string;
   sort?: LibrarySort;
+  category?: LibraryArtifactCategory | "all";
 }): LibraryTreeNode[] {
   const needle = (input.query ?? "").trim().toLowerCase();
+  const category = input.category ?? "all";
   const itemOrder = input.sort === "recent" ? byRecent : byName;
 
   const knownFolders = new Set(input.folders.map((folder) => folder.folder_id));
@@ -177,7 +393,11 @@ export function buildLibraryTree(input: {
   ): LibraryFileNode[] {
     return [...(childItems.get(folderId) ?? [])]
       .sort(itemOrder)
-      .filter((item) => revealed || matchesQuery(item, needle))
+      .filter(
+        (item) =>
+          (category === "all" || libraryArtifactCategory(item) === category) &&
+          (revealed || matchesQuery(item, needle)),
+      )
       .map((item) => ({
         kind: "file",
         key: libraryFileKey(item.artifact.artifact_id),
@@ -219,7 +439,7 @@ export function buildLibraryTree(input: {
     nodes.push(...files);
 
     return {
-      shown: revealed || matched > 0,
+      shown: category === "all" ? revealed || matched > 0 : matched > 0,
       node: {
         kind: "folder",
         key,
@@ -322,6 +542,13 @@ export function libraryFileSubtitle(item: PlacedLibraryItem): string {
   const origin =
     item.provenance.source === "upload" ? "uploaded" : "saved from a node";
   return size ? `${size} · ${origin}` : origin;
+}
+
+/** Compact 2-line row metadata for the subsidebar: size and format (e.g. `791 KB · JPEG`). */
+export function libraryFileRowMeta(item: PlacedLibraryItem): string {
+  const size = formatLibraryByteSize(item.artifact.byte_size);
+  const { typeLabel } = libraryFileBadge(item);
+  return size ? `${size} · ${typeLabel}` : typeLabel;
 }
 
 /** "New folder", or the first "New folder N" no sibling already uses. */

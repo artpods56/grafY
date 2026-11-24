@@ -32,6 +32,8 @@ import {
 import { configControlKind } from "../../config-ui/field-footprints";
 import { configShelfPlacements, fieldDenseRows } from "../cell-card-geometry";
 import {
+  ADVANCED_SECTION_KEY,
+  advancedGroupIndices,
   branchDefault,
   childPath,
   nestedFieldPlan,
@@ -41,6 +43,7 @@ import {
   objectListItems,
   objectListTitleField,
   objectSectionKey,
+  schemaFieldDenseRows,
   sectionOpen,
   stringListValues,
   titledBranchValue,
@@ -64,6 +67,18 @@ import type { CellConfigFieldSpec } from "../cell-contracts";
 
 /** One dense row: a control row of the band, and one card cell. */
 const ROW = 25;
+/** A labelled control's block: its 9px/1.3 label, the dense gap, the control. */
+const LABELLED_BLOCK_HEIGHT = 12 + 3 + ROW;
+
+/**
+ * The space a labelled control keeps under itself when it is centred in a
+ * shelf taller than its block. A control shorter than its shelf stands on that
+ * same line, so a checkbox joins the select it shares the shelf with instead
+ * of floating beside the select's label.
+ */
+function shelfBottomInset(rows: number): number {
+  return Math.max(0, (rows * ROW - LABELLED_BLOCK_HEIGHT) / 2);
+}
 
 const s = stylex.create({
   band: {
@@ -88,6 +103,32 @@ const s = stylex.create({
   },
   /** A child of a composite, all of its rows, one column or both. */
   cell: { minWidth: 0, minHeight: 0, alignSelf: "stretch", display: "grid" },
+  /** A control shorter than its shelf: it stands on the shelf's bottom. */
+  cellOnShelfBottom: { alignContent: "end" },
+  /**
+   * The fields the `Advanced` row discloses, framed as the group it heads: a
+   * recessed tray the colour of a well, kept off the plate's edge by less than
+   * the band's own gutter so its two columns land on the primary ones. Its
+   * counted rows are the tray's whole height, so nothing is clipped and no
+   * dead space is left under the last control.
+   */
+  advancedGroup: {
+    minWidth: 0,
+    alignSelf: "stretch",
+    width: "calc(100% + 12px)",
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gridAutoRows: `${ROW}px`,
+    columnGap: "8px",
+    rowGap: 0,
+    alignItems: "center",
+    marginInline: "-6px",
+    paddingInline: "6px",
+    boxSizing: "border-box",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: `color-mix(in oklab, ${tokens.colorSurfaceSunken} 45%, transparent)`,
+    boxShadow: `inset 2px 0 0 0 ${tokens.colorBorder}, inset -1px 0 0 0 ${tokens.colorDivider}, inset 0 -1px 0 0 ${tokens.colorDivider}`,
+  },
   /** A labelled control: the label on the first row, the control under it. */
   labelled: {
     minWidth: 0,
@@ -119,8 +160,10 @@ const s = stylex.create({
    */
   rowControl: { height: "22px" },
   textarea: { height: "78px", minHeight: 0 },
+  /** One control row tall, so a boolean shares a shelf row with a select. */
   toggleRow: {
     minWidth: 0,
+    height: `${ROW}px`,
     display: "flex",
     alignItems: "center",
   },
@@ -278,7 +321,7 @@ const s = stylex.create({
     gridTemplateColumns: "minmax(0, 2fr) minmax(0, 3fr)",
     gap: "5px",
   },
-  /** A group header or the advanced fold: one quiet full-width row. */
+  /** A group header: one quiet full-width row above the fields it opens. */
   sectionRow: {
     width: "100%",
     minWidth: 0,
@@ -299,12 +342,69 @@ const s = stylex.create({
     borderBottomColor: tokens.colorDivider,
     borderRadius: 0,
   },
+  /**
+   * The `Advanced` disclosure. A hairline above it parts the primary
+   * parameters from the section it heads, in both states: nothing is left
+   * hanging under the row once the fields it discloses appear.
+   */
+  advancedRow: {
+    // Six past the column pair on each side, the gutter the band keeps free:
+    // the row's text starts where the fields' do, and its pill and separator
+    // read as the card's rather than as a control among the controls.
+    minWidth: 0,
+    width: "calc(100% + 12px)",
+    height: "24px",
+    alignSelf: "center",
+    justifyContent: "flex-start",
+    gap: "5px",
+    marginInline: "-6px",
+    paddingInline: "6px",
+    boxSizing: "border-box",
+    borderRadius: tokens.radiusSm,
+    color: tokens.colorMuted,
+    fontSize: "9px",
+    fontWeight: 600,
+    textAlign: "left",
+    textDecoration: {
+      default: "none",
+      ":hover:not(:disabled)": "none",
+      ":focus-visible": "none",
+    },
+    borderTopWidth: "1px",
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
+  },
+  /** What the disclosure row says about its contents, pushed to the right. */
+  sectionAside: {
+    flexShrink: 0,
+    marginLeft: "auto",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+  },
   sectionCount: {
     flexShrink: 0,
     color: tokens.colorSubtle,
     fontWeight: 400,
     fontVariantNumeric: "tabular-nums",
   },
+  /** The count of what a disclosure folds away, in a chip of its own. */
+  countPill: {
+    flexShrink: 0,
+    height: "13px",
+    paddingInline: "4px",
+    boxSizing: "border-box",
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
+    fontWeight: 500,
+    fontVariantNumeric: "tabular-nums",
+    lineHeight: 1,
+  },
+  /** The open section's quiet way out, shown while the row is hovered. */
+  hideHint: { color: tokens.colorSubtle, fontWeight: 500 },
   sectionIssues: { flexShrink: 0, color: tokens.colorDanger },
   issuesRow: {
     minWidth: 0,
@@ -326,16 +426,25 @@ interface FieldContext {
   readOnly: boolean;
 }
 
-/** A child's rows on its composite's lattice, from the plan it was counted by. */
+/**
+ * A child's rows on its composite's lattice, from the plan it was counted by.
+ * `spareRows` is what its shelf gives it beyond its own rows: a control
+ * shorter than the shelf it shares stands on that shelf's bottom.
+ */
 function placementStyle(
   placement: ShelfPlacement,
   firstRow: number,
+  spareRows = 0,
 ): React.CSSProperties {
-  return {
+  const style: React.CSSProperties = {
     gridRow: `${firstRow + placement.row} / span ${placement.rows}`,
     gridColumn:
       placement.column === null ? "1 / -1" : `${placement.column} / span 1`,
   };
+  if (spareRows > 0) {
+    style.paddingBottom = `${shelfBottomInset(placement.rows)}px`;
+  }
+  return style;
 }
 
 function rowsStyle(firstRow: number, rows: number): React.CSSProperties {
@@ -1097,12 +1206,22 @@ function NestedFields({
       {plan.fields.map((child, index) => {
         const placement = plan.placements[index];
         if (!placement) return null;
+        const ownRows = schemaFieldDenseRows(
+          child,
+          value[child.name],
+          childPath(path, child.name),
+          context,
+        );
+        const spareRows = placement.rows - ownRows;
         return (
           <div
             key={child.name}
             data-config-field={childPath(path, child.name)}
-            {...stylex.props(s.cell)}
-            style={placementStyle(placement, 1)}
+            {...stylex.props(
+              s.cell,
+              spareRows > 0 ? s.cellOnShelfBottom : null,
+            )}
+            style={placementStyle(placement, 1, spareRows)}
           >
             <SchemaFieldControl
               field={child}
@@ -1637,7 +1756,7 @@ function PlainFieldControl({
   }
 }
 
-/** A group header or the advanced fold: chevron, name, count. */
+/** A group header or the advanced fold: chevron, name, and what it holds. */
 function SectionRow({
   field,
   onToggleSection,
@@ -1646,34 +1765,67 @@ function SectionRow({
   onToggleSection?: ToggleSection;
 }) {
   const section = field.section;
+  // The way out of an open section stays quiet until the row is hovered or
+  // focused, so the row reads as the section's name first and "Hide" second.
+  const [revealed, setRevealed] = React.useState(false);
   if (!section) return null;
   const advanced = field.kind === "advanced";
+  const reveal = () => setRevealed(true);
+  const conceal = () => setRevealed(false);
   return (
     <Button
       variant="plain"
       size="text"
       aria-expanded={section.open}
+      aria-label={
+        advanced
+          ? `${section.open ? "Hide" : "Show"} ${field.label.toLowerCase()} parameters`
+          : undefined
+      }
+      title={
+        advanced
+          ? `${section.count} advanced ${
+              section.count === 1 ? "parameter" : "parameters"
+            } at their default`
+          : field.description
+      }
       disabled={!onToggleSection}
       data-config-section={section.key}
-      xstyle={s.sectionRow}
+      {...(advanced
+        ? {
+            "data-config-advanced": section.open ? "open" : "closed",
+            onPointerEnter: reveal,
+            onPointerLeave: conceal,
+            onFocus: reveal,
+            onBlur: conceal,
+          }
+        : {})}
+      xstyle={advanced ? s.advancedRow : s.sectionRow}
       onClick={() => onToggleSection?.(section.key, !section.open)}
     >
       <ChevronRight
-        size={11}
+        size={advanced ? 10 : 11}
         aria-hidden="true"
         {...stylex.props(s.chevron, section.open ? s.chevronOpen : null)}
       />
       <span {...stylex.props(s.labelText)}>{field.label}</span>
-      <span {...stylex.props(s.sectionCount)}>
-        {advanced && !section.open ? `${section.count} hidden` : section.count}
-      </span>
-      {section.issueCount > 0 ? (
-        <span {...stylex.props(s.sectionIssues)}>
-          {section.issueCount === 1
-            ? "1 issue"
-            : `${section.issueCount} issues`}
+      <span {...stylex.props(s.sectionAside)}>
+        {section.issueCount > 0 ? (
+          <span {...stylex.props(s.sectionIssues)}>
+            {section.issueCount === 1
+              ? "1 issue"
+              : `${section.issueCount} issues`}
+          </span>
+        ) : null}
+        {advanced && section.open && revealed ? (
+          <span aria-hidden="true" {...stylex.props(s.hideHint)}>
+            Hide
+          </span>
+        ) : null}
+        <span {...stylex.props(advanced ? s.countPill : s.sectionCount)}>
+          {section.count}
         </span>
-      ) : null}
+      </span>
     </Button>
   );
 }
@@ -1696,6 +1848,11 @@ export interface CellConfigBandProps {
  * The config band: each entry on the shelves its row count was planned for.
  * A schema entry draws its real control; an entry without a schema (a test
  * fixture, a sandbox surface) draws the plain control its `kind` names.
+ *
+ * The fields the `Advanced` row discloses are drawn last, but never below it:
+ * they share one recessed tray that starts on the row under the disclosure and
+ * spans exactly the rows the plan counted for them, so opening the section
+ * grows the card by those rows and nothing else.
  */
 export function CellConfigBand({
   fields,
@@ -1715,6 +1872,72 @@ export function CellConfigBand({
     readOnly: onChange === undefined,
   };
   const band = stylex.props(s.band);
+
+  const groupIndices = advancedGroupIndices(fields);
+  const groupHead = groupIndices[0];
+  const groupStart =
+    groupHead === undefined ? 0 : (placements[groupHead]?.row ?? 0);
+  let groupRows = 0;
+  for (const index of groupIndices) {
+    const placement = placements[index];
+    if (placement) {
+      groupRows = Math.max(
+        groupRows,
+        placement.row + placement.rows - groupStart,
+      );
+    }
+  }
+  const inGroup = new Set(groupIndices);
+
+  const entryCell = (index: number, firstRow: number): React.ReactNode => {
+    const field = fields[index];
+    const placement = placements[index];
+    if (!field || !placement) return null;
+    let control: React.ReactNode;
+    if (field.kind === "group" || field.kind === "advanced") {
+      control = <SectionRow field={field} onToggleSection={onToggleSection} />;
+    } else if (field.kind === "issues") {
+      control = (
+        <span role="alert" {...stylex.props(s.issuesRow)}>
+          <AlertTriangle size={11} aria-hidden="true" />
+          <span {...stylex.props(s.labelText)} title={field.label}>
+            {field.label}
+          </span>
+        </span>
+      );
+    } else if (field.schemaField) {
+      control = (
+        <SchemaFieldControl
+          field={field.schemaField}
+          value={field.rawValue}
+          path={field.id}
+          context={context}
+          issue={field.issue}
+          onChange={(next) => onChange?.(field.id, next)}
+        />
+      );
+    } else {
+      control = (
+        <PlainFieldControl
+          field={field}
+          onChange={(next) => onChange?.(field.id, next)}
+        />
+      );
+    }
+    const spareRows = placement.rows - fieldDenseRows(field);
+    return (
+      <div
+        key={field.id}
+        data-config-field={field.id}
+        data-config-rows={fieldDenseRows(field)}
+        {...stylex.props(s.cell, spareRows > 0 ? s.cellOnShelfBottom : null)}
+        style={placementStyle(placement, firstRow, spareRows)}
+      >
+        {control}
+      </div>
+    );
+  };
+
   return (
     <div
       data-config-band="true"
@@ -1723,50 +1946,20 @@ export function CellConfigBand({
       style={{ ...band.style, ...style }}
     >
       {fields.map((field, index) => {
-        const placement = placements[index];
-        if (!placement) return null;
-        let control: React.ReactNode;
-        if (field.kind === "group" || field.kind === "advanced") {
-          control = (
-            <SectionRow field={field} onToggleSection={onToggleSection} />
-          );
-        } else if (field.kind === "issues") {
-          control = (
-            <span role="alert" {...stylex.props(s.issuesRow)}>
-              <AlertTriangle size={11} aria-hidden="true" />
-              <span {...stylex.props(s.labelText)} title={field.label}>
-                {field.label}
-              </span>
-            </span>
-          );
-        } else if (field.schemaField) {
-          control = (
-            <SchemaFieldControl
-              field={field.schemaField}
-              value={field.rawValue}
-              path={field.id}
-              context={context}
-              issue={field.issue}
-              onChange={(next) => onChange?.(field.id, next)}
-            />
-          );
-        } else {
-          control = (
-            <PlainFieldControl
-              field={field}
-              onChange={(next) => onChange?.(field.id, next)}
-            />
-          );
-        }
+        if (!inGroup.has(index)) return entryCell(index, 1);
+        // One tray for the whole section, drawn where its first field sits.
+        if (index !== groupHead || groupRows <= 0) return null;
         return (
           <div
-            key={field.id}
-            data-config-field={field.id}
-            data-config-rows={fieldDenseRows(field)}
-            {...stylex.props(s.cell)}
-            style={placementStyle(placement, 1)}
+            key={`:${ADVANCED_SECTION_KEY}:group`}
+            data-config-advanced-group={ADVANCED_SECTION_KEY}
+            {...stylex.props(s.advancedGroup)}
+            style={{
+              gridRow: `${groupStart + 1} / span ${groupRows}`,
+              gridColumn: "1 / -1",
+            }}
           >
-            {control}
+            {groupIndices.map((grouped) => entryCell(grouped, 1 - groupStart))}
           </div>
         );
       })}

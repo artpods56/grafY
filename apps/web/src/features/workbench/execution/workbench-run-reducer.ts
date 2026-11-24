@@ -1,4 +1,3 @@
-import type { ActiveRunSummary } from "@/lib/api";
 import type { EffectReducer } from "@/lib/state/effect-reducer";
 
 import type { RunScope } from "./execution-plan";
@@ -65,19 +64,6 @@ export type WorkbenchRunEffect =
       readonly runId: string;
     }
   | { readonly kind: "closeGraphBrowser" };
-
-export interface RunActivityDescriptor {
-  readonly eyebrow: string;
-  readonly title: string;
-  readonly message: string;
-  readonly tone: "working" | "cancelling";
-  readonly cancelAction?: {
-    readonly runId: string;
-    readonly label: string;
-    readonly ariaLabel: string;
-    readonly disabled: boolean;
-  };
-}
 
 export function initialWorkbenchRunState(): WorkbenchRunState {
   return {
@@ -181,66 +167,3 @@ export const workbenchRunReducer: EffectReducer<
       };
   }
 };
-
-export function deriveRunActivity({
-  openGraphRuns,
-  running,
-  runningScope,
-  cancelPhase,
-  canCancelRun,
-  nodeTitles,
-}: {
-  openGraphRuns: readonly ActiveRunSummary[];
-  running: boolean;
-  runningScope: RunScope | null;
-  cancelPhase: RunCancelPhase;
-  canCancelRun: boolean;
-  nodeTitles: Readonly<Record<string, string>>;
-}): RunActivityDescriptor | null {
-  const newestRun = openGraphRuns.at(-1);
-  if (!newestRun) {
-    if (!running) return null;
-    return {
-      eyebrow: "Run",
-      title: runningScope === "all" ? "The whole graph" : "The selection",
-      message: "Starting",
-      tone: "working",
-    };
-  }
-
-  const [firstTarget] = newestRun.targets;
-  let newestRunTitle: string | null = null;
-  if (firstTarget) {
-    const title = Object.hasOwn(nodeTitles, firstTarget.node_id)
-      ? nodeTitles[firstTarget.node_id]
-      : undefined;
-    const firstTitle = title ?? "A node";
-    const rest = newestRun.targets.length - 1;
-    newestRunTitle = rest > 0 ? `${firstTitle} and ${rest} more` : firstTitle;
-  }
-
-  const cancelling =
-    cancelPhase.kind === "cancelling" && cancelPhase.runId === newestRun.run_id;
-  return {
-    eyebrow:
-      openGraphRuns.length > 1 ? `Runs · ${openGraphRuns.length}` : "Run",
-    title: newestRunTitle ?? "Running",
-    message: cancelling
-      ? "Waiting for the computation to stop"
-      : newestRun.starter
-        ? `Started by ${newestRun.starter.display_name}`
-        : "Running",
-    tone: cancelling ? "cancelling" : "working",
-    cancelAction: {
-      runId: newestRun.run_id,
-      label: cancelling ? "Cancelling" : "Cancel",
-      ariaLabel: cancelling
-        ? "Cancelling this Run"
-        : "Cancel this Run for everyone",
-      disabled:
-        !canCancelRun ||
-        !newestRun.cancellable ||
-        cancelPhase.kind === "cancelling",
-    },
-  };
-}

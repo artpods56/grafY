@@ -3,199 +3,150 @@ import * as stylex from "@stylexjs/stylex";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
 /**
- * The graph browser's own layout, type, and spacing.
+ * Simple, calm, full-width Projects browser styles on the Tier 3 surface.
  *
- * These rules used to live in `apps/web/src/app/globals.css` under the
- * `.grafy-graphs*` class names, in `@layer legacy`. They are reproduced here
- * value for value, including the 860px and 620px breakpoints and the
- * `prefers-reduced-motion` block, so moving them changes nothing on screen.
- *
- * Two things stay in `globals.css` on purpose:
- *
- * - `@keyframes grafy-graphs-enter`, which `@keyframes` cannot leave, and which
- *   this module references by name.
- * - The `:root` declarations of `--grafy-rail-width` and
- *   `--grafy-mobile-page-top`, including their breakpoint overrides. Padding
- *   here reads those variables instead of restating widths.
+ * Content sits beside the primary dark rail using `--grafy-rail-width` and
+ * `--grafy-rail-transition` from `globals.css`.
  */
 export const browserStyles = stylex.create({
-  /** Keeps the strip's own spacing around the list; Notice carries none. */
   partialNotice: {
-    margin: "16px 0 4px",
+    margin: "12px 0 0",
   },
 
   root: {
-    minHeight: "100svh",
-    overflow: "auto",
-  },
-  main: {
-    maxWidth: "1160px",
-    minHeight: "100svh",
-    margin: "0 auto",
-    // The gutter follows the rail's live width, so resizing it moves the copy.
-    padding: {
-      default: "44px 48px 64px calc(var(--grafy-rail-width, 200px) + 52px)",
-      "@media (max-width: 860px)":
-        "28px 18px 48px calc(var(--grafy-rail-width, 64px) + 18px)",
-      // Below 620px the mobile header replaces the rail gutter entirely.
+    height: {
+      default: "100svh",
       "@media (max-width: 620px)":
-        "calc(var(--grafy-mobile-page-top) + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))",
+        "calc(100svh - var(--grafy-mobile-header-height) - env(safe-area-inset-top))",
     },
-    transition: {
-      default: "padding 180ms ease",
-      "@media (prefers-reduced-motion: reduce)": "none",
+    marginTop: {
+      default: "0",
+      "@media (max-width: 620px)":
+        "calc(var(--grafy-mobile-header-height) + env(safe-area-inset-top))",
     },
-  },
-
-  header: {
+    overflow: "auto",
     display: "flex",
-    alignItems: {
-      default: "flex-end",
-      "@media (max-width: 860px)": "flex-start",
+    flexDirection: "column",
+    backgroundColor: tokens.colorBg,
+    color: tokens.colorText,
+    paddingLeft: {
+      default: "var(--grafy-rail-width, 220px)",
+      "@media (max-width: 860px)": "var(--grafy-rail-width, 64px)",
+      "@media (max-width: 620px)": "0",
     },
+    transitionProperty: "padding-left",
+    transitionDuration: "var(--grafy-rail-transition, 180ms)",
+    transitionTimingFunction: "ease",
+  },
+
+  topBar: {
+    position: {
+      default: "sticky",
+      "@media (max-width: 620px)": "static",
+    },
+    top: 0,
+    zIndex: 10,
+    flexShrink: 0,
+    minHeight: "56px",
+    display: "flex",
+    alignItems: "center",
+    backgroundColor: tokens.colorSurface,
+    borderBottomWidth: "1px",
+    borderBottomStyle: "solid",
+    borderBottomColor: tokens.colorBorder,
+  },
+  topBarInner: {
+    marginInline: "auto",
+    width: "100%",
+    maxWidth: "1120px",
+    minHeight: "36px",
+    padding: {
+      default: "10px 32px",
+      "@media (max-width: 860px)": "10px 20px",
+      "@media (max-width: 620px)": "12px 16px",
+    },
+    display: "flex",
+    alignItems: "center",
     justifyContent: "space-between",
-    flexDirection: {
-      default: "row",
-      "@media (max-width: 860px)": "column",
+    flexWrap: {
+      default: "nowrap",
+      "@media (max-width: 720px)": "wrap",
     },
-    gap: { default: "24px", "@media (max-width: 620px)": "18px" },
-    marginBottom: { default: "28px", "@media (max-width: 620px)": "22px" },
-    animationName: {
-      default: "grafy-graphs-enter",
-      "@media (prefers-reduced-motion: reduce)": "none",
-    },
-    animationDuration: "220ms",
-    animationTimingFunction: "ease-out",
-    animationFillMode: "both",
+    gap: "12px 20px",
   },
-  /** The workspace name above the page title. */
-  eyebrow: {
-    marginBottom: "5px",
-    color: tokens.colorSubtle,
-    fontSize: tokens.fontSizeXs,
-    fontWeight: 600,
-    letterSpacing: "0.09em",
-    textTransform: "uppercase",
-  },
-  pageTitle: {
-    color: tokens.colorText,
-    fontSize: "clamp(1.9rem, 3.5vw, 2.7rem)",
-    fontWeight: 500,
-    letterSpacing: "-0.04em",
-    lineHeight: 1.08,
-  },
-  intro: {
-    marginTop: "8px",
-    color: tokens.colorMuted,
-    fontSize: "14px",
-  },
-  /**
-   * The header's `New project`. The kit `Button` keeps its own skin and its
-   * 44px phone height; on a phone the row is what stretches, and the kit's
-   * `flex-shrink: 0` is left alone because the global shorthand lost to it
-   * before this file existed.
-   */
-  headerAction: {
-    minWidth: { default: "auto", "@media (max-width: 620px)": "0" },
-    flexGrow: { default: 0, "@media (max-width: 620px)": 1 },
-    flexBasis: { default: "auto", "@media (max-width: 620px)": "100%" },
-    width: { default: "auto", "@media (max-width: 620px)": "100%" },
-  },
-
-  recipes: {
-    display: "grid",
-    gap: "10px",
-    margin: "4px 0 18px",
-  },
-  recipeHeading: {
-    margin: 0,
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeSm,
-    fontWeight: 560,
-  },
-  recipeRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "10px",
-  },
-  recipe: {
-    display: "grid",
-    gap: "4px",
-    padding: "12px 14px",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: tokens.colorBorder,
-    borderRadius: tokens.radiusMd,
-    backgroundColor: {
-      default:
-        "light-dark(color-mix(in srgb, white 88%, transparent), color-mix(in srgb, white 8%, transparent))",
-      ":hover:not(:disabled)": tokens.colorHover,
-    },
-    color: tokens.colorText,
-    fontFamily: "inherit",
-    fontSize: tokens.fontSizeSm,
-    textAlign: "start",
-    cursor: {
-      default: "pointer",
-      ":disabled": "default",
-    },
-  },
-  recipeTitle: {
-    fontWeight: 560,
-  },
-  recipePath: {
-    color: tokens.colorMuted,
-    fontSize: tokens.fontSizeXs,
-  },
-
-  /**
-   * The filter strip. Only the single-column form is rendered here, so the
-   * retired `--scoped` modifier's column list is the plain value.
-   */
-  toolbar: {
-    display: "grid",
-    gridTemplateColumns: {
-      default: "minmax(240px, 1fr)",
-      "@media (max-width: 620px)": "1fr",
-    },
-    alignItems: "end",
-    gap: { default: "12px", "@media (max-width: 620px)": "14px" },
-    marginBottom: { default: "24px", "@media (max-width: 620px)": "18px" },
-    animationName: {
-      default: "grafy-graphs-enter",
-      "@media (prefers-reduced-motion: reduce)": "none",
-    },
-    animationDelay: "40ms",
-    animationDuration: "220ms",
-    animationTimingFunction: "ease-out",
-    animationFillMode: "both",
-  },
-  /**
-   * The search field is drawn here rather than by the kit `Field`, so it keeps
-   * the label-as-box look. Its 44px phone floor is this field's own promise,
-   * not a kit control's, and it stays keyed to 620px.
-   */
-  search: {
-    minHeight: { default: "40px", "@media (max-width: 620px)": "44px" },
+  topBarTitleGroup: {
     display: "flex",
     alignItems: "center",
     gap: "10px",
-    padding: "0 13px",
-    borderWidth: 1,
+    flexShrink: 0,
+    minWidth: 0,
+  },
+  pageTitle: {
+    margin: 0,
+    color: tokens.colorTextEmphasis,
+    fontSize: "16px",
+    fontWeight: 600,
+    letterSpacing: "-0.01em",
+    lineHeight: 1.3,
+  },
+  workspaceBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: "22px",
+    paddingInline: "9px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorDivider,
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 500,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    maxWidth: "220px",
+  },
+  topBarActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    flexWrap: {
+      default: "nowrap",
+      "@media (max-width: 720px)": "wrap",
+    },
+    minWidth: 0,
+    width: {
+      default: "auto",
+      "@media (max-width: 720px)": "100%",
+    },
+  },
+  search: {
+    height: { default: "32px", "@media (max-width: 620px)": "44px" },
+    width: {
+      default: "260px",
+      "@media (max-width: 720px)": "100%",
+    },
+    minWidth: { default: "180px", "@media (max-width: 720px)": "0" },
+    flexGrow: { default: 0, "@media (max-width: 720px)": 1 },
+    flexShrink: 1,
+    flexBasis: { default: "auto", "@media (max-width: 720px)": "100%" },
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    paddingInline: "10px",
+    borderWidth: "1px",
     borderStyle: "solid",
     borderColor: {
       default: tokens.colorBorder,
-      ":focus-within": tokens.colorText,
+      ":focus-within": tokens.colorAccentBorder,
     },
-    borderRadius: tokens.radiusLg,
+    borderRadius: tokens.radiusMd,
     backgroundColor: tokens.colorBg,
     color: tokens.colorSubtle,
-    boxShadow: {
-      default: "none",
-      ":focus-within":
-        "0 0 0 3px light-dark(rgba(17, 17, 17, 0.06), rgba(245, 245, 245, 0.08))",
-    },
-    transition: "border-color 140ms ease, box-shadow 140ms ease",
+    transitionProperty: "border-color, background-color",
+    transitionDuration: "120ms",
+    transitionTimingFunction: "ease",
   },
   searchInput: {
     width: "100%",
@@ -206,67 +157,182 @@ export const browserStyles = stylex.create({
     backgroundColor: "transparent",
     color: tokens.colorText,
     font: "inherit",
-    fontSize: "14px",
+    fontSize: tokens.fontSizeMd,
+    "::placeholder": {
+      color: tokens.colorSubtle,
+    },
+  },
+  headerAction: {
+    flexShrink: 0,
+    whiteSpace: "nowrap",
+    width: { default: "auto", "@media (max-width: 620px)": "100%" },
+  },
+
+  main: {
+    marginInline: "auto",
+    width: "100%",
+    maxWidth: "1120px",
+    flex: "1 0 auto",
+    display: "grid",
+    alignContent: "start",
+    gap: "24px",
+    padding: {
+      default: "24px 32px 56px",
+      "@media (max-width: 860px)": "20px 20px 44px",
+      "@media (max-width: 620px)":
+        "16px calc(16px + env(safe-area-inset-right)) calc(36px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))",
+    },
+  },
+
+  recipes: {
+    display: "grid",
+    gap: "10px",
+  },
+  recipeHeading: {
+    margin: 0,
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 600,
+    letterSpacing: "0.01em",
+  },
+  recipeRow: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "12px",
+  },
+  recipe: {
+    display: "grid",
+    gridTemplateColumns: "32px minmax(0, 1fr)",
+    alignItems: "start",
+    gap: "12px",
+    padding: "14px 16px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: {
+      default: tokens.colorBorder,
+      ":hover:not(:disabled)": tokens.colorBorderStrong,
+    },
+    borderRadius: tokens.radiusLg,
+    backgroundColor: {
+      default: tokens.colorSurface,
+      ":hover:not(:disabled)": tokens.colorSurfaceRaised,
+    },
+    color: tokens.colorText,
+    fontFamily: "inherit",
+    fontSize: tokens.fontSizeSm,
+    textAlign: "start",
+    cursor: {
+      default: "pointer",
+      ":disabled": "default",
+    },
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "-2px",
+    transitionProperty: "background-color, border-color",
+    transitionDuration: {
+      default: "120ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+  },
+  recipeIcon: {
+    width: "32px",
+    height: "32px",
+    display: "grid",
+    placeItems: "center",
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
+  },
+  recipeBody: {
+    display: "grid",
+    gap: "3px",
+    minWidth: 0,
+  },
+  recipeTitle: {
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
+    fontWeight: 600,
+    lineHeight: 1.35,
+  },
+  recipePath: {
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.4,
+  },
+
+  card: {
+    backgroundColor: tokens.colorSurface,
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusLg,
+    overflow: "hidden",
   },
 
   viewBar: {
-    minHeight: "38px",
+    minHeight: "48px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: "16px",
-    borderBottomWidth: 1,
+    padding: "10px 16px",
+    borderBottomWidth: "1px",
     borderBottomStyle: "solid",
     borderBottomColor: tokens.colorDivider,
+    backgroundColor: tokens.colorSurface,
   },
   count: {
     color: tokens.colorSubtle,
     fontSize: tokens.fontSizeSm,
+    fontWeight: 500,
     fontVariantNumeric: "tabular-nums",
   },
 
   loading: {
-    minHeight: "240px",
+    minHeight: "220px",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     gap: "12px",
+    padding: "32px 20px",
     color: tokens.colorSubtle,
     fontSize: tokens.fontSizeMd,
   },
 
-  /** Icon, copy, action: one row each, aligned to the copy's first line. */
   state: {
-    minHeight: { default: "220px", "@media (max-width: 620px)": "180px" },
+    minHeight: { default: "200px", "@media (max-width: 620px)": "172px" },
     display: "grid",
     gridTemplateColumns: {
-      default: "28px minmax(0, 1fr) auto",
-      "@media (max-width: 620px)": "28px minmax(0, 1fr)",
+      default: "32px minmax(0, 1fr) auto",
+      "@media (max-width: 620px)": "32px minmax(0, 1fr)",
     },
     alignContent: "center",
     alignItems: "start",
     gap: "6px 14px",
-    paddingBlock: "42px",
-    paddingInline: { default: "8px", "@media (max-width: 620px)": "0" },
+    padding: { default: "36px 24px", "@media (max-width: 620px)": "28px 16px" },
     color: tokens.colorMuted,
   },
-  /** An end-of-list state, so it closes the surface above it. */
-  stateEmpty: {
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: tokens.colorDivider,
-  },
+  stateEmpty: {},
   stateIcon: {
     gridRow: "1 / 3",
-    color: tokens.colorText,
+    width: "32px",
+    height: "32px",
+    display: "grid",
+    placeItems: "center",
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
   },
   stateTitle: {
-    color: tokens.colorText,
-    fontSize: "15px",
-    fontWeight: 550,
+    margin: 0,
+    color: tokens.colorTextEmphasis,
+    fontSize: "14px",
+    fontWeight: 600,
   },
   stateBody: {
-    marginTop: "4px",
+    marginTop: "3px",
     fontSize: tokens.fontSizeMd,
     lineHeight: 1.5,
   },
@@ -281,54 +347,45 @@ export const browserStyles = stylex.create({
   list: {
     display: "grid",
     listStyle: "none",
+    margin: 0,
+    padding: 0,
   },
-  /** Each row enters on the same clock, the first three staggered by 20ms. */
   listItem: {
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    // Not tokens.colorDivider: this divider sits between list rows.
-    borderBottomColor: "light-dark(#e5e5e5, #242424)",
-    animationName: {
-      default: "grafy-graphs-enter",
-      "@media (prefers-reduced-motion: reduce)": "none",
+    borderTopWidth: "1px",
+    borderTopStyle: "solid",
+    borderTopColor: {
+      default: tokens.colorDivider,
+      ":first-child": "transparent",
     },
-    animationDelay: {
-      default: "0ms",
-      ":nth-child(2)": "20ms",
-      ":nth-child(3)": "40ms",
-    },
-    animationDuration: "180ms",
-    animationTimingFunction: "ease-out",
-    animationFillMode: "both",
   },
   row: {
     display: "grid",
     gridTemplateColumns: {
-      default: "32px minmax(170px, 1fr) minmax(120px, 0.55fr) 86px 174px 18px",
-      "@media (max-width: 860px)": "32px minmax(0, 1fr) 18px",
+      default: "30px minmax(180px, 1fr) auto 92px 16px",
+      "@media (max-width: 860px)": "30px minmax(0, 1fr) auto 16px",
     },
     alignItems: "center",
-    gap: { default: "12px", "@media (max-width: 860px)": "3px 10px" },
+    gap: { default: "12px", "@media (max-width: 860px)": "2px 10px" },
     minHeight: {
-      default: "64px",
-      "@media (max-width: 860px)": "62px",
-      "@media (max-width: 620px)": "68px",
+      default: "56px",
+      "@media (max-width: 620px)": "62px",
     },
-    padding: "10px 8px",
+    padding: { default: "10px 16px", "@media (max-width: 620px)": "10px 14px" },
     color: "inherit",
     backgroundColor: {
       default: "transparent",
-      ":hover:not(:disabled)": "light-dark(#fafafa, #171717)",
-      ":focus-visible": "light-dark(#fafafa, #171717)",
+      ":hover:not(:disabled)": tokens.colorHover,
+      ":focus-visible": tokens.colorHover,
     },
     outline: {
       default: "none",
-      ":focus-visible": `2px solid ${tokens.colorText}`,
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
     },
     outlineOffset: { default: "0", ":focus-visible": "-2px" },
-    transition: {
-      default: "background-color 140ms ease",
-      "@media (prefers-reduced-motion: reduce)": "none",
+    transitionProperty: "background-color",
+    transitionDuration: {
+      default: "120ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
     },
   },
   rowIcon: {
@@ -336,46 +393,43 @@ export const browserStyles = stylex.create({
     height: "30px",
     display: "grid",
     placeItems: "center",
-    borderRadius: "7px",
-    backgroundColor: tokens.colorSurfaceSunken,
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorSurfaceRaised,
     color: tokens.colorMuted,
     gridRow: { default: "auto", "@media (max-width: 860px)": "1 / 3" },
   },
-  /** A narrow column of one-line copy: it truncates instead of wrapping. */
   rowTruncate: {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
   rowTitle: {
-    color: tokens.colorText,
-    fontSize: "14px",
-    fontWeight: 500,
+    color: tokens.colorTextEmphasis,
+    fontSize: "13.5px",
+    fontWeight: 550,
     gridColumn: { default: "auto", "@media (max-width: 860px)": "2" },
-  },
-  rowLocation: {
-    color: "light-dark(#444444, #d4d4d4)",
-    fontSize: tokens.fontSizeSm,
-    gridColumn: { default: "auto", "@media (max-width: 860px)": "2" },
-    gridRow: { default: "auto", "@media (max-width: 860px)": "2" },
   },
   rowMeta: {
-    color: tokens.colorSubtle,
-    fontSize: tokens.fontSizeXs,
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
     fontVariantNumeric: "tabular-nums",
     display: { default: "block", "@media (max-width: 860px)": "none" },
   },
-  /**
-   * The arrow answers the row's own hover and keyboard focus, which is why the
-   * row carries `stylex.defaultMarker()`: the marker is what tells this
-   * condition which ancestor to watch.
-   */
+  rowAge: {
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeSm,
+    fontVariantNumeric: "tabular-nums",
+    textAlign: "right",
+    gridColumn: { default: "auto", "@media (max-width: 860px)": "2" },
+    gridRow: { default: "auto", "@media (max-width: 860px)": "2" },
+    justifySelf: { default: "end", "@media (max-width: 860px)": "start" },
+  },
   rowArrow: {
     justifySelf: "end",
     color: {
-      default: "light-dark(#8a8a8a, #6b6b6b)",
-      [stylex.when.ancestor(":hover")]: "light-dark(#111111, #f5f5f5)",
-      [stylex.when.ancestor(":focus-visible")]: "light-dark(#111111, #f5f5f5)",
+      default: tokens.colorSubtle,
+      [stylex.when.ancestor(":hover")]: tokens.colorTextEmphasis,
+      [stylex.when.ancestor(":focus-visible")]: tokens.colorTextEmphasis,
     },
     transform: {
       default: "none",
@@ -383,11 +437,12 @@ export const browserStyles = stylex.create({
       [stylex.when.ancestor(":focus-visible")]: "translate(1px, -1px)",
       "@media (prefers-reduced-motion: reduce)": "none",
     },
-    transition: {
-      default: "color 140ms ease, transform 140ms ease",
-      "@media (prefers-reduced-motion: reduce)": "none",
+    transitionProperty: "color, transform",
+    transitionDuration: {
+      default: "120ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
     },
-    gridColumn: { default: "auto", "@media (max-width: 860px)": "3" },
+    gridColumn: { default: "auto", "@media (max-width: 860px)": "4" },
     gridRow: { default: "auto", "@media (max-width: 860px)": "1 / 3" },
   },
 });

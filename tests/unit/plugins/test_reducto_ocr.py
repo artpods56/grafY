@@ -4,6 +4,7 @@ import asyncio
 import io
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from typing import cast, final
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ from grafy_core.egress import EgressPolicy, PinnedPublicAddressTransport
 from grafy_core.nodes import (
     NodeExecutionContext,
     UserFacingNodeError,
+    bind_active_node,
     bind_node_secrets,
 )
 from grafy_core.plugins import PluginRegistry
@@ -581,6 +583,78 @@ async def test_a_budget_that_expires_before_an_answer_is_a_budget(
     with pytest.raises(ReductoOcrError, match="time budget") as recorded:
         await env.run()
     assert "does not resubmit" in str(recorded.value)
+
+
+class _Progress:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, int | None, int | None]] = []
+
+    async def report_progress(
+        self,
+        context: NodeExecutionContext,
+        message: str,
+        *,
+        current: int | None,
+        total: int | None,
+    ) -> None:
+        del context
+        self.events.append((message, current, total))
+
+
+def _with_progress(env: Env) -> _Progress:
+    reporter = _Progress()
+    env.context = replace(env.context, fingerprint="fp-1", progress_reporter=reporter)
+    return reporter
+
+
+async def test_a_multi_page_parse_counts_pages_in_the_header(env: Env) -> None:
+    reporter = _with_progress(env)
+    second: dict[str, object] = {
+        "content": "second",
+        "embed": "second",
+        "blocks": [
+            {
+                "type": "Title",
+                "content": "second",
+                "bbox": {
+                    "left": 0.0,
+                    "top": 0.1,
+                    "width": 0.5,
+                    "height": 0.2,
+                    "page": 2,
+                },
+            }
+        ],
+    }
+    env.fake.parse_body = lambda _source: inline_body([chunk_document("first"), second])
+    async with bind_active_node(env.context):
+        output = await env.run()
+
+    assert output.markdown.markdown == "first\n\nsecond"
+    assert [message for message, _, _ in reporter.events] == [
+        "Preparing document…",
+        "Calling Reducto OCR…",
+        "Parsing OCR layout…",
+        "Processing page 1 of 2",
+        "Processing page 2 of 2",
+    ]
+    assert reporter.events[3][1:] == (1, 2)
+    assert reporter.events[4][1:] == (2, 2)
+    assert all(len(message) <= 42 for message, _, _ in reporter.events)
+
+
+async def test_a_downloaded_result_says_it_is_downloading(env: Env) -> None:
+    reporter = _with_progress(env)
+    env.fake.parse_body = lambda _source: url_body(STORAGE_URL)
+    async with bind_active_node(env.context):
+        await env.run()
+
+    assert [message for message, _, _ in reporter.events] == [
+        "Preparing document…",
+        "Calling Reducto OCR…",
+        "Downloading OCR result…",
+        "Parsing OCR layout…",
+    ]
 
 
 def test_markdown_joins_chunk_content_in_order_with_a_blank_line() -> None:

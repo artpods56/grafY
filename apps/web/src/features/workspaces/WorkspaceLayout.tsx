@@ -11,9 +11,14 @@ import {
   LogOut,
   Mail,
   Menu,
+  Monitor,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Save,
   Settings,
+  Sun,
   Users,
   Workflow,
   X,
@@ -23,9 +28,10 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
 
 import { BrandIcon, BrandWordmark } from "@/components/brand";
-import { useTheme } from "@/components/theme";
+import { type ThemePreference, useTheme } from "@/components/theme";
 import { ThresholdStatus } from "@/components/threshold-status";
 import { Button, IconButton } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select } from "@/components/ui/select";
 import { phoneTouch } from "@/components/ui/touch-target";
 import { Notice, type NoticeTone } from "@/components/ui/notice";
@@ -73,9 +79,9 @@ export interface WorkspaceContextValue {
 export type WorkspaceRouteAccessState = "available" | "missing" | "revoked";
 
 const RAIL_COLLAPSED_KEY = "grafy-workspace-rail-collapsed";
-const RAIL_EXPANDED_WIDTH = 200;
+const RAIL_EXPANDED_WIDTH = 220;
 const RAIL_COLLAPSED_WIDTH = 64;
-const RAIL_COLLAPSE_THRESHOLD = 132;
+const RAIL_COLLAPSE_THRESHOLD = 140;
 const RAIL_DESKTOP_QUERY = "(min-width: 861px)";
 const RAIL_MOBILE_QUERY = "(max-width: 620px)";
 const roleDescriptionsForInvitation: Record<WorkspaceRole, string> = {
@@ -301,8 +307,9 @@ export function WorkspaceRail({
   const router = useRouter();
   const { mutate: mutateCache } = useSWRConfig();
   const pathname = usePathname() ?? "";
-  const { cycleTheme, preference } = useTheme();
+  const { cycleTheme, preference, setPreference } = useTheme();
   const [collapsed, setCollapsed] = useRailCollapsed();
+  const thisProjectHeadingId = React.useId();
   const mobileViewport = useMediaQuery(RAIL_MOBILE_QUERY);
   const [accountMenuPath, setAccountMenuPath] = React.useState<string | null>(
     null,
@@ -582,12 +589,6 @@ export function WorkspaceRail({
     };
   }, [closeMobileNavigation, mobileOpen, mobileViewport]);
 
-  const themeLabel =
-    preference === "light"
-      ? "Light theme"
-      : preference === "dark"
-        ? "Dark theme"
-        : "System theme";
   const displayName = sessionDisplayName(session);
   const initials = sessionInitials(session);
   const email = session.email?.trim() || null;
@@ -761,22 +762,55 @@ export function WorkspaceRail({
           </span>
           <X size={18} aria-hidden="true" className={railIconClass} />
         </button>
-        <button
-          type="button"
-          className={stylex.props(railStyles.railBrand).className}
-          aria-label="Projects"
-          onClick={activateBrand}
+        <div
+          className={
+            stylex.props(
+              railStyles.railHeader,
+              visuallyCollapsed && railStyles.railHeaderCollapsed,
+            ).className
+          }
         >
-          <BrandWordmark
-            className={stylex.props(railStyles.brandWordmark).className}
-            height={24}
-          />
-          <BrandIcon
-            className={stylex.props(railStyles.brandIcon).className}
-            size={28}
-            alt=""
-          />
-        </button>
+          <button
+            type="button"
+            className={
+              stylex.props(
+                railStyles.railBrand,
+                visuallyCollapsed && railStyles.railBrandCollapsed,
+              ).className
+            }
+            aria-label="Projects"
+            onClick={activateBrand}
+          >
+            <BrandWordmark
+              tone="light"
+              className={stylex.props(railStyles.brandWordmark).className}
+              height={22}
+            />
+            <BrandIcon
+              tone="light"
+              className={stylex.props(railStyles.brandIcon).className}
+              size={26}
+              alt=""
+            />
+          </button>
+          <button
+            type="button"
+            className={stylex.props(railStyles.collapseToggle).className}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => {
+              clearRailWidthOverride();
+              setCollapsed(!collapsed);
+            }}
+          >
+            {visuallyCollapsed ? (
+              <PanelLeftOpen size={15} aria-hidden="true" />
+            ) : (
+              <PanelLeftClose size={15} aria-hidden="true" />
+            )}
+          </button>
+        </div>
 
         <nav
           className={stylex.props(railStyles.railNav).className}
@@ -790,7 +824,7 @@ export function WorkspaceRail({
               ).className
             }
           >
-            Workspaces
+            Workspace
           </p>
           <label className={stylex.props(railStyles.workspaceSelect).className}>
             <span
@@ -1008,131 +1042,152 @@ export function WorkspaceRail({
             </button>
           ) : null}
           {activeWorkspace && chrome ? (
-            <button
-              type="button"
-              className={
-                stylex.props(
-                  railStyles.railItem,
-                  chrome.isDirty && railStyles.railItemActive,
-                ).className
-              }
-              data-active={chrome.isDirty ? true : undefined}
-              title={
-                chrome.saving
-                  ? "Saving graph…"
-                  : chrome.isDirty || !chrome.activeGraphId
-                    ? chrome.activeGraphId
-                      ? "Graph changes are unsynchronized"
-                      : "Save graph"
-                    : "All changes are saved"
-              }
-              disabled={!chrome.canSave}
-              onClick={() => void chrome.save()}
+            <div
+              role="group"
+              aria-labelledby={thisProjectHeadingId}
+              className={stylex.props(railStyles.thisProjectGroup).className}
             >
-              {chrome.saving ? (
-                <LoaderCircle
+              <p
+                id={thisProjectHeadingId}
+                className={
+                  stylex.props(
+                    railStyles.sectionLabel,
+                    visuallyCollapsed && railStyles.copyHidden,
+                  ).className
+                }
+              >
+                This project
+              </p>
+              <button
+                type="button"
+                className={
+                  stylex.props(
+                    railStyles.railItem,
+                    chrome.isDirty && railStyles.railItemActive,
+                  ).className
+                }
+                data-active={chrome.isDirty ? true : undefined}
+                title={
+                  chrome.saving
+                    ? "Saving graph…"
+                    : chrome.isDirty || !chrome.activeGraphId
+                      ? chrome.activeGraphId
+                        ? "Graph changes are unsynchronized"
+                        : "Save graph"
+                      : "All changes are saved"
+                }
+                disabled={!chrome.canSave}
+                onClick={() => void chrome.save()}
+              >
+                {chrome.saving ? (
+                  <LoaderCircle
+                    size={15}
+                    aria-hidden="true"
+                    className={stylex.props(railStyles.railSpin).className}
+                  />
+                ) : (
+                  <Save
+                    size={15}
+                    aria-hidden="true"
+                    className={railIconClass}
+                  />
+                )}
+                <span
+                  className={
+                    stylex.props(
+                      railStyles.itemSpan,
+                      visuallyCollapsed && railStyles.copyHidden,
+                    ).className
+                  }
+                >
+                  {chrome.saving
+                    ? "Saving…"
+                    : chrome.isDirty || !chrome.activeGraphId
+                      ? chrome.activeGraphId
+                        ? "Unsynced"
+                        : "Save"
+                      : "Saved"}
+                </span>
+              </button>
+              <button
+                type="button"
+                className={
+                  stylex.props(
+                    railStyles.railItem,
+                    chrome.sidePanelOpen && railStyles.railItemActive,
+                  ).className
+                }
+                data-active={chrome.sidePanelOpen ? true : undefined}
+                title={chrome.sidePanelOpen ? "Hide library" : "Show library"}
+                aria-expanded={chrome.sidePanelOpen}
+                aria-controls={
+                  chrome.sidePanelOpen ? SIDE_PANEL_ELEMENT_ID : undefined
+                }
+                data-side-panel-toggle=""
+                onClick={() => {
+                  // On a phone the navigation drawer gives way to the panel's own.
+                  closeMobileNavigation(false);
+                  chrome.toggleSidePanel();
+                }}
+              >
+                <FolderTree
                   size={15}
                   aria-hidden="true"
-                  className={stylex.props(railStyles.railSpin).className}
+                  className={railIconClass}
                 />
-              ) : (
-                <Save size={15} aria-hidden="true" className={railIconClass} />
-              )}
-              <span
+                <span
+                  className={
+                    stylex.props(
+                      railStyles.itemSpan,
+                      visuallyCollapsed && railStyles.copyHidden,
+                    ).className
+                  }
+                >
+                  Library
+                </span>
+              </button>
+              <button
+                type="button"
                 className={
                   stylex.props(
-                    railStyles.itemSpan,
-                    visuallyCollapsed && railStyles.copyHidden,
+                    railStyles.railItem,
+                    chrome.generatedPanelOpen && railStyles.railItemActive,
                   ).className
                 }
-              >
-                {chrome.saving
-                  ? "Saving…"
-                  : chrome.isDirty || !chrome.activeGraphId
-                    ? chrome.activeGraphId
-                      ? "Unsynced"
-                      : "Save"
-                    : "Saved"}
-              </span>
-            </button>
-          ) : null}
-          {activeWorkspace && chrome ? (
-            <button
-              type="button"
-              className={
-                stylex.props(
-                  railStyles.railItem,
-                  chrome.sidePanelOpen && railStyles.railItemActive,
-                ).className
-              }
-              data-active={chrome.sidePanelOpen ? true : undefined}
-              title={chrome.sidePanelOpen ? "Hide library" : "Show library"}
-              aria-expanded={chrome.sidePanelOpen}
-              aria-controls={
-                chrome.sidePanelOpen ? SIDE_PANEL_ELEMENT_ID : undefined
-              }
-              data-side-panel-toggle=""
-              onClick={() => {
-                // On a phone the navigation drawer gives way to the panel's own.
-                closeMobileNavigation(false);
-                chrome.toggleSidePanel();
-              }}
-            >
-              <FolderTree
-                size={15}
-                aria-hidden="true"
-                className={railIconClass}
-              />
-              <span
-                className={
-                  stylex.props(
-                    railStyles.itemSpan,
-                    visuallyCollapsed && railStyles.copyHidden,
-                  ).className
+                data-active={chrome.generatedPanelOpen ? true : undefined}
+                aria-label="Results"
+                title={
+                  chrome.generatedPanelOpen
+                    ? "Hide results"
+                    : "Show results from this canvas"
                 }
-              >
-                Library
-              </span>
-            </button>
-          ) : null}
-          {activeWorkspace && chrome ? (
-            <button
-              type="button"
-              className={
-                stylex.props(
-                  railStyles.railItem,
-                  chrome.generatedPanelOpen && railStyles.railItemActive,
-                ).className
-              }
-              data-active={chrome.generatedPanelOpen ? true : undefined}
-              aria-label="Results"
-              title={
-                chrome.generatedPanelOpen
-                  ? "Hide results"
-                  : "Show results from this canvas"
-              }
-              aria-expanded={chrome.generatedPanelOpen}
-              aria-controls={
-                chrome.generatedPanelOpen ? SIDE_PANEL_ELEMENT_ID : undefined
-              }
-              data-side-panel-toggle=""
-              onClick={() => {
-                closeMobileNavigation(false);
-                chrome.toggleGeneratedPanel();
-              }}
-            >
-              <Layers size={15} aria-hidden="true" className={railIconClass} />
-              <span
-                className={
-                  stylex.props(
-                    railStyles.itemSpan,
-                    visuallyCollapsed && railStyles.copyHidden,
-                  ).className
+                aria-expanded={chrome.generatedPanelOpen}
+                aria-controls={
+                  chrome.generatedPanelOpen ? SIDE_PANEL_ELEMENT_ID : undefined
                 }
+                data-side-panel-toggle=""
+                onClick={() => {
+                  closeMobileNavigation(false);
+                  chrome.toggleGeneratedPanel();
+                }}
               >
-                Results
-              </span>
-            </button>
+                <Layers
+                  size={15}
+                  aria-hidden="true"
+                  className={railIconClass}
+                />
+                <span
+                  className={
+                    stylex.props(
+                      railStyles.itemSpan,
+                      visuallyCollapsed && railStyles.copyHidden,
+                    ).className
+                  }
+                >
+                  Results
+                </span>
+              </button>
+            </div>
           ) : null}
         </nav>
 
@@ -1172,6 +1227,8 @@ export function WorkspaceRail({
                       stylex.props(
                         railStyles.railItem,
                         railStyles.graphRowItem,
+                        activeGraphId === graph.id &&
+                          railStyles.graphRowItemActive,
                         railStyles.graphRowOpen,
                       ).className
                     }
@@ -1274,7 +1331,7 @@ export function WorkspaceRail({
                 </span>
                 {email ? (
                   <span
-                    className={stylex.props(railStyles.accountEmail).className}
+                    className={`${stylex.props(railStyles.accountEmail).className} grafy-workspace-rail__account-email`}
                   >
                     {email}
                   </span>
@@ -1292,19 +1349,66 @@ export function WorkspaceRail({
                   className={stylex.props(railStyles.accountMenu).className}
                   data-account-menu=""
                 >
-                  <button
-                    type="button"
+                  <div
                     className={
-                      stylex.props(railStyles.accountMenuItem).className
+                      stylex.props(railStyles.accountThemeBlock).className
                     }
-                    onClick={() => {
-                      cycleTheme();
-                      setAccountMenuPath(null);
-                    }}
                   >
-                    <Settings size={14} aria-hidden="true" />
-                    {themeLabel}
-                  </button>
+                    <span
+                      className={
+                        stylex.props(railStyles.accountThemeLabel).className
+                      }
+                    >
+                      Theme
+                    </span>
+                    <SegmentedControl<ThemePreference>
+                      aria-label="Theme"
+                      size="sm"
+                      value={preference}
+                      options={[
+                        {
+                          value: "light",
+                          label: (
+                            <>
+                              <Sun size={12} aria-hidden="true" />
+                              Light
+                            </>
+                          ),
+                        },
+                        {
+                          value: "dark",
+                          label: (
+                            <>
+                              <Moon size={12} aria-hidden="true" />
+                              Dark
+                            </>
+                          ),
+                        },
+                        {
+                          value: "system",
+                          label: (
+                            <>
+                              <Monitor size={12} aria-hidden="true" />
+                              System
+                            </>
+                          ),
+                        },
+                      ]}
+                      onValueChange={(next) => {
+                        if (setPreference) {
+                          setPreference(next);
+                        } else {
+                          cycleTheme();
+                        }
+                      }}
+                    />
+                  </div>
+                  <div
+                    className={
+                      stylex.props(railStyles.accountMenuDivider).className
+                    }
+                    role="separator"
+                  />
                   <button
                     type="button"
                     className={

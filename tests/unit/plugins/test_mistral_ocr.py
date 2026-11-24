@@ -12,7 +12,7 @@ from grafy_core.contracts.ocr import DocumentOcrResult
 from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
-from grafy_core.nodes import NodeExecutionContext, bind_node_secrets
+from grafy_core.nodes import NodeExecutionContext, bind_active_node, bind_node_secrets
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.ports.storage import SaveFileCommand, StoredFile, StoredObjectInfo
 from grafy_core.runtime.in_memory import InMemoryUnitOfWork
@@ -555,3 +555,51 @@ async def test_provider_dials_a_self_hosted_endpoint_only_when_the_operator_allo
 
         assert "127.0.0.1" in str(raised.value)
         assert len(listener.requests) == 1
+
+
+class _Progress:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, int | None, int | None]] = []
+
+    async def report_progress(
+        self,
+        context: NodeExecutionContext,
+        message: str,
+        *,
+        current: int | None,
+        total: int | None,
+    ) -> None:
+        del context
+        self.events.append((message, current, total))
+
+
+async def test_the_sdk_reports_preparation_the_call_and_layout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = RequestRecorder(ocr_response())
+    recorder.install(monkeypatch)
+    reporter = _Progress()
+    context = NodeExecutionContext(
+        workspace_id=WORKSPACE_ID,
+        project_id=uuid4(),
+        graph_id="drafts",
+        node_id="ocr-1",
+        fingerprint="fp-1",
+        progress_reporter=reporter,
+    )
+
+    async with bind_active_node(context):
+        output = await MistralOcrSdkProvider().process(
+            image=pdf_document(),
+            config=MistralOcrConfig(),
+            api_key=SecretStr("secret-provider-key"),
+            workspace_id=WORKSPACE_ID,
+        )
+
+    assert output.markdown.markdown == "# Invoice\n\nTotal 10"
+    assert [message for message, _, _ in reporter.events] == [
+        "Preparing document…",
+        "Reading document with Mistral OCR…",
+        "Parsing OCR layout…",
+    ]
+    assert all(len(message) <= 42 for message, _, _ in reporter.events)
