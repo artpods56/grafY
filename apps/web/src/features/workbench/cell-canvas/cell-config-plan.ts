@@ -590,15 +590,16 @@ export function buildSchemaConfigEntries({
       issueByField.set(issue.fieldName, issue.message);
     }
   }
-  const quietAdvanced = new Set(
-    visible.filter((field) =>
-      isQuietAdvanced(field, config[field.name], invalidFields),
-    ),
+  // The row counts the loose advanced fields, which are exactly the ones its
+  // fold holds. A named group is a container of its own, so a field it carries
+  // stays with the group instead of being counted here and shown nowhere.
+  const foldable = advancedFoldFields(visible);
+  const quietFold = foldable.filter((field) =>
+    isQuietAdvanced(field, config[field.name], invalidFields),
   );
+  const quietAdvanced = new Set(quietFold);
   const advancedOpen = sectionOpen(sections, ADVANCED_SECTION_KEY, false);
-  // The fold holds the loose advanced fields. What it hides counts towards its
-  // row whether a group carries it or not, so the number stays the card's own.
-  const fold = quietAdvanced.size > 0 ? advancedFoldFields(visible) : [];
+  const fold = quietFold.length > 0 ? foldable : [];
   const inFold = new Set(fold);
   const foldShown = advancedOpen
     ? fold

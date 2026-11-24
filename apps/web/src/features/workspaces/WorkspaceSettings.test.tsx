@@ -496,7 +496,7 @@ describe("WorkspaceSettings", () => {
       capabilities: ["edit_project"],
     });
     mocks.createToken.mockResolvedValue({
-      ...token(),
+      ...token({ id: "token-2" }),
       token: "nrt_created.secret-value",
     });
 

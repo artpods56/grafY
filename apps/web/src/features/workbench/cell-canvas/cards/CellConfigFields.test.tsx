@@ -55,6 +55,32 @@ const ocrFields: SchemaField[] = schemaFields({
   },
 });
 
+/** The same node with one advanced field carried by a named group. */
+const groupedFields: SchemaField[] = schemaFields({
+  type: "object",
+  properties: {
+    document: { type: "string", title: "Document" },
+    language: {
+      type: "string",
+      title: "Language",
+      default: "ru",
+      "x-grafy-advanced": true,
+      "x-grafy-group": "Recognition",
+    },
+    dictionary: {
+      type: "string",
+      title: "Dictionary",
+      "x-grafy-group": "Recognition",
+    },
+    confidence: {
+      type: "string",
+      title: "Confidence detail",
+      enum: ["page", "block"],
+      "x-grafy-advanced": true,
+    },
+  },
+});
+
 function entries(
   config: Record<string, unknown>,
   options: { open?: boolean; issues?: readonly ConfigValidationIssue[] } = {},
@@ -213,6 +239,30 @@ describe("the config band's advanced disclosure", () => {
     expect(select).not.toContain("cellOnShelfBottom");
     expect(checkbox).toContain("cellOnShelfBottom");
     expect(checkbox).toContain("padding-bottom:5px");
+  });
+
+  it("leaves a named group's own advanced fields to that group", () => {
+    const closed = buildSchemaConfigEntries({
+      fields: groupedFields,
+      config: {},
+    });
+
+    // The row counts the fields its fold can hold, so a quiet field a group
+    // carries stays inside the group rather than being counted and hidden.
+    expect(ids(closed)).toEqual([
+      "document",
+      "group:Recognition",
+      "language",
+      "dictionary",
+      ":advanced",
+    ]);
+    expect(closed[1]?.section).toMatchObject({ count: 2 });
+    expect(closed[4]?.section).toMatchObject({
+      key: ADVANCED_SECTION_KEY,
+      count: 1,
+    });
+    // Closed, the row discloses nothing: the group already shows its own field.
+    expect(advancedGroupIndices(closed)).toEqual([]);
   });
 
   it("pairs two changed checkboxes on one shelf of their own", () => {

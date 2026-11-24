@@ -514,9 +514,8 @@ const s = stylex.create({
   liveMessage: {
     minWidth: 0,
     overflow: "hidden",
+    textOverflow: "ellipsis",
     whiteSpace: "nowrap",
-    maskImage: "linear-gradient(90deg, black 72%, transparent)",
-    WebkitMaskImage: "linear-gradient(90deg, black 72%, transparent)",
     animationName: eventIn,
     animationDuration: {
       default: "180ms",
@@ -1899,7 +1898,7 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
       // Fall through to execCommand fallback.
     }
   }
-  if (typeof document !== "undefined") {
+  if (typeof document !== "undefined" && document.body) {
     const area = document.createElement("textarea");
     area.value = text;
     area.setAttribute("readonly", "");

@@ -609,7 +609,7 @@ def _with_progress(env: Env) -> _Progress:
 
 async def test_a_multi_page_parse_counts_pages_in_the_header(env: Env) -> None:
     reporter = _with_progress(env)
-    second = {
+    second: dict[str, object] = {
         "content": "second",
         "embed": "second",
         "blocks": [

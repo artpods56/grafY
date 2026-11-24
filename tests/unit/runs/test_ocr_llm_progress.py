@@ -383,13 +383,13 @@ async def test_craft_and_paddle_report_the_provider_call(
         ).encode()
 
     async def paddle_post(request: ProviderRequest) -> bytes:
-        encoded = request.payload["images_base64"]
-        assert isinstance(encoded, list)
+        images: list[str] = request.payload["images_base64"]
+        assert images
         return json.dumps(
             {
                 "results": [
                     {"text": "а", "confidence": 0.9, "model": PADDLE_MODEL}
-                    for _ in encoded
+                    for _ in images
                 ]
             }
         ).encode()
