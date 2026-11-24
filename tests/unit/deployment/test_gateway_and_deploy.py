@@ -139,15 +139,14 @@ def test_gateway_keeps_an_upstream_forwarded_proto() -> None:
     assert 'proxy_set_header Cookie "";' in storage
     assert 'proxy_set_header Authorization "";' in storage
     assert "access_log off;" in storage
-    assert (
-        '"~^/storage(?<grafy_storage_rest>/workbench-artifacts/[^?]+\\?.+)$"'
-        in text
-    )
+    assert '"~^/storage(?<grafy_storage_rest>/workbench-artifacts/[^?]+\\?.+)$"' in text
 
 
 def test_agent_defaults_are_omitted_unless_the_host_set_them() -> None:
     text = (REPOSITORY / "infra/docker/compose.yaml").read_text()
-    environment = cast(dict[str, object], _load("infra/docker/compose.yaml")["x-api-environment"])
+    environment = cast(
+        dict[str, object], _load("infra/docker/compose.yaml")["x-api-environment"]
+    )
 
     for name in AGENT_DEFAULTS:
         assert environment[name] is None
@@ -269,7 +268,9 @@ def _run_deploy(
     )
 
 
-def test_pull_mode_still_fetches_compose_and_prunes_old_grafy_images(tmp_path: Path) -> None:
+def test_pull_mode_still_fetches_compose_and_prunes_old_grafy_images(
+    tmp_path: Path,
+) -> None:
     revision = "a" * 40
     previous = "b" * 40
     older = "c" * 40
@@ -332,14 +333,29 @@ def _commit_checkout(repo: Path) -> str:
     docker_dir.mkdir(parents=True)
     (docker_dir / "compose.yaml").write_text("name: from-archive\nservices: {}\n")
     (docker_dir / "compose.postgres.yaml").write_text("services:\n  postgres: {}\n")
-    for name in ("gateway.Dockerfile", "api.Dockerfile", "tiler.Dockerfile", "web.Dockerfile"):
+    for name in (
+        "gateway.Dockerfile",
+        "api.Dockerfile",
+        "tiler.Dockerfile",
+        "web.Dockerfile",
+    ):
         (docker_dir / name).write_text("FROM scratch\n")
-    git = ["git", "-C", str(repo), "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
+    git = [
+        "git",
+        "-C",
+        str(repo),
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+    ]
     subprocess.run([*git, "init"], check=True, capture_output=True, text=True)
     subprocess.run([*git, "config", "user.email", "deploy@example.com"], check=True)
     subprocess.run([*git, "config", "user.name", "Deploy Test"], check=True)
     subprocess.run([*git, "add", "."], check=True)
-    subprocess.run([*git, "commit", "-m", "release"], check=True, capture_output=True, text=True)
+    subprocess.run(
+        [*git, "commit", "-m", "release"], check=True, capture_output=True, text=True
+    )
     return subprocess.run(
         [*git, "rev-parse", "HEAD"],
         check=True,
@@ -349,7 +365,9 @@ def _commit_checkout(repo: Path) -> str:
 
 
 @pytest.mark.parametrize("via", ["flag", "env"])
-def test_build_mode_archives_the_sha_and_does_not_call_github(tmp_path: Path, via: str) -> None:
+def test_build_mode_archives_the_sha_and_does_not_call_github(
+    tmp_path: Path, via: str
+) -> None:
     repo = tmp_path / "repo"
     revision = _commit_checkout(repo)
     archive = subprocess.run(
@@ -384,7 +402,9 @@ def test_build_mode_archives_the_sha_and_does_not_call_github(tmp_path: Path, vi
         f"grafy-tiler:{revision}",
     ]
     release = tmp_path / "state" / "releases" / revision
-    assert (release / "compose.yaml").read_text() == "name: from-archive\nservices: {}\n"
+    assert (
+        release / "compose.yaml"
+    ).read_text() == "name: from-archive\nservices: {}\n"
     assert stat.S_IMODE((release / "compose.yaml").stat().st_mode) == 0o600
     contexts = (tmp_path / "contexts").read_text().splitlines()
     assert len(contexts) == 4
@@ -392,7 +412,9 @@ def test_build_mode_archives_the_sha_and_does_not_call_github(tmp_path: Path, vi
     assert not Path(contexts[0]).exists()
 
 
-def test_a_failed_build_removes_its_archive_and_leaves_the_release(tmp_path: Path) -> None:
+def test_a_failed_build_removes_its_archive_and_leaves_the_release(
+    tmp_path: Path,
+) -> None:
     repo = tmp_path / "repo"
     revision = _commit_checkout(repo)
     previous = "b" * 40
