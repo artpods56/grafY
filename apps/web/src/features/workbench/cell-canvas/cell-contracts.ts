@@ -291,7 +291,7 @@ export interface CellExecutionAppendixOutput {
 export interface CellExecutionAppendixSpec {
   title: string;
   kindBadge: string;
-  /** Exact cell rows allocated to the appendix body (min 2 when collapsed, min 4 when open). */
+  /** Exact cell rows allocated to the appendix body (min 2 when collapsed, 3 for single-output, min 4 otherwise). */
   heightCells: number;
   collapsed?: boolean;
   summaryText: string;

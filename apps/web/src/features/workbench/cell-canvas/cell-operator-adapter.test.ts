@@ -380,34 +380,51 @@ describe("operator execution appendix layout", () => {
   it("sizes expanded outputs accurately up to 6 rows and caps at 8 cells", () => {
     expect(
       appendixExpandedHeightCells({
-        heightCells: 4,
+        kind: "output",
+        heightCells: 0,
         outputs: sampleOutputs(1),
       }),
-    ).toBe(4);
+    ).toBe(3);
     expect(
       appendixExpandedHeightCells({
-        heightCells: 4,
+        kind: "output",
+        heightCells: 0,
         outputs: sampleOutputs(2),
       }),
     ).toBe(4);
     expect(
       appendixExpandedHeightCells({
-        heightCells: 4,
+        kind: "output",
+        heightCells: 0,
         outputs: sampleOutputs(3),
       }),
     ).toBe(5);
     expect(
       appendixExpandedHeightCells({
-        heightCells: 4,
+        kind: "output",
+        heightCells: 0,
         outputs: sampleOutputs(6),
       }),
     ).toBe(8);
     expect(
       appendixExpandedHeightCells({
-        heightCells: 4,
+        kind: "output",
+        heightCells: 0,
         outputs: sampleOutputs(9),
       }),
     ).toBe(8);
+    expect(
+      appendixExpandedHeightCells({
+        kind: "error",
+        heightCells: 0,
+      }),
+    ).toBe(4);
+    expect(
+      appendixExpandedHeightCells({
+        kind: "output",
+        heightCells: 0,
+      }),
+    ).toBe(4);
   });
 
   it("shrinks the card cleanly when the appendix collapses and expands to fit outputs", () => {

@@ -47,30 +47,38 @@ export const browserStyles = stylex.create({
     top: 0,
     zIndex: 10,
     flexShrink: 0,
+    minHeight: "56px",
+    display: "flex",
+    alignItems: "center",
     backgroundColor: tokens.colorSurface,
     borderBottomWidth: "1px",
     borderBottomStyle: "solid",
     borderBottomColor: tokens.colorBorder,
+  },
+  topBarInner: {
+    marginInline: "auto",
+    width: "100%",
+    maxWidth: "1120px",
+    minHeight: "36px",
     padding: {
       default: "10px 32px",
       "@media (max-width: 860px)": "10px 20px",
       "@media (max-width: 620px)": "12px 16px",
     },
-  },
-  topBarInner: {
-    width: "100%",
-    maxWidth: "1120px",
-    minHeight: "36px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    flexWrap: "wrap",
+    flexWrap: {
+      default: "nowrap",
+      "@media (max-width: 720px)": "wrap",
+    },
     gap: "12px 20px",
   },
   topBarTitleGroup: {
     display: "flex",
     alignItems: "center",
     gap: "10px",
+    flexShrink: 0,
     minWidth: 0,
   },
   pageTitle: {
@@ -103,19 +111,26 @@ export const browserStyles = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: "10px",
-    flexWrap: "wrap",
+    flexWrap: {
+      default: "nowrap",
+      "@media (max-width: 720px)": "wrap",
+    },
+    minWidth: 0,
     width: {
       default: "auto",
-      "@media (max-width: 620px)": "100%",
+      "@media (max-width: 720px)": "100%",
     },
   },
   search: {
     height: { default: "32px", "@media (max-width: 620px)": "44px" },
-    flex: {
-      default: "0 1 250px",
-      "@media (max-width: 620px)": "1 1 100%",
+    width: {
+      default: "260px",
+      "@media (max-width: 720px)": "100%",
     },
-    minWidth: { default: "210px", "@media (max-width: 620px)": "0" },
+    minWidth: { default: "180px", "@media (max-width: 720px)": "0" },
+    flexGrow: { default: 0, "@media (max-width: 720px)": 1 },
+    flexShrink: 1,
+    flexBasis: { default: "auto", "@media (max-width: 720px)": "100%" },
     display: "flex",
     alignItems: "center",
     gap: "8px",
@@ -148,10 +163,13 @@ export const browserStyles = stylex.create({
     },
   },
   headerAction: {
+    flexShrink: 0,
+    whiteSpace: "nowrap",
     width: { default: "auto", "@media (max-width: 620px)": "100%" },
   },
 
   main: {
+    marginInline: "auto",
     width: "100%",
     maxWidth: "1120px",
     flex: "1 0 auto",
@@ -179,7 +197,7 @@ export const browserStyles = stylex.create({
   },
   recipeRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: "12px",
   },
   recipe: {

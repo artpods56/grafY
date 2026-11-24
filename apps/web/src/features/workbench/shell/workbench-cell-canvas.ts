@@ -592,6 +592,7 @@ export function buildAppendixSpec({
     outputs,
     completedAtLabel: formatRelativeCompletedAt(run?.created_at, currentNow),
     heightCells: appendixExpandedHeightCells({
+      kind: "output",
       heightCells: savedAppendixCells,
       outputs,
     }),

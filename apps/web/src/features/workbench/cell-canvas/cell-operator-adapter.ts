@@ -93,8 +93,9 @@ import {
   collectionHeightCells,
 } from "./cell-model";
 
-/** An expanded execution appendix is never shorter than four cells. */
+/** An expanded execution appendix is never shorter than four cells, except single-output cards which use three. */
 const MIN_APPENDIX_CELLS = 4;
+const MIN_SINGLE_OUTPUT_APPENDIX_CELLS = 3;
 /** A collapsed execution appendix sits in two cells (45px inside the plate). */
 const COLLAPSED_APPENDIX_CELLS = 2;
 /** Up to six materialized output rows fit before the list scrolls internally. */
@@ -105,14 +106,17 @@ const APPENDIX_MAX_VISIBLE_OUTPUTS = 6;
  * output lists never clip on cards with up to six materialized output ports.
  */
 export function appendixExpandedHeightCells(
-  appendix: Pick<CellExecutionAppendixSpec, "heightCells" | "outputs">,
+  appendix: Pick<CellExecutionAppendixSpec, "heightCells" | "outputs" | "kind">,
 ): number {
   const outputsCount = appendix.outputs?.length ?? 0;
-  const outputMinCells =
-    outputsCount > 0
-      ? 2 + Math.min(outputsCount, APPENDIX_MAX_VISIBLE_OUTPUTS)
-      : 0;
-  return Math.max(MIN_APPENDIX_CELLS, appendix.heightCells, outputMinCells);
+  if (appendix.kind !== "error" && outputsCount > 0) {
+    const outputCells = Math.min(
+      Math.max(MIN_SINGLE_OUTPUT_APPENDIX_CELLS, 2 + outputsCount),
+      2 + APPENDIX_MAX_VISIBLE_OUTPUTS,
+    );
+    return Math.max(outputCells, appendix.heightCells);
+  }
+  return Math.max(MIN_APPENDIX_CELLS, appendix.heightCells);
 }
 
 export interface CellNodeRunState {

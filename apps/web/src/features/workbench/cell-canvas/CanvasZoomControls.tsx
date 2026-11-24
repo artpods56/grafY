@@ -38,12 +38,20 @@ const s = stylex.create({
     paddingInline: "6px",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: tokens.colorBorder,
+    borderColor: "light-dark(rgba(15, 23, 42, 0.1), rgba(255, 255, 255, 0.15))",
     borderRadius: tokens.radiusLg,
-    backgroundColor: tokens.colorFlowControls,
+    backgroundColor:
+      "light-dark(rgba(255, 255, 255, 0.94), rgba(30, 35, 44, 0.92))",
     backdropFilter: "blur(12px)",
     WebkitBackdropFilter: "blur(12px)",
     boxShadow: tokens.shadowNodeRaised,
+  },
+  iconButton: {
+    color: {
+      default: tokens.colorText,
+      ":hover:not(:disabled)": tokens.colorTextEmphasis,
+      ":disabled": "light-dark(#9CA3AF, #687385)",
+    },
   },
   zoomReset: {
     minWidth: "50px",
@@ -54,7 +62,7 @@ const s = stylex.create({
     color: {
       default: tokens.colorText,
       ":hover:not(:disabled)": tokens.colorTextEmphasis,
-      ":disabled": tokens.colorTextDisabled,
+      ":disabled": "light-dark(#9CA3AF, #687385)",
     },
   },
   divider: {
@@ -96,6 +104,7 @@ export function CanvasZoomControls({
         label="Zoom out"
         title="Zoom out"
         disabled={disabled || atMinZoom}
+        xstyle={s.iconButton}
         onClick={onZoomOut}
       >
         <Minus size={14} />
@@ -118,6 +127,7 @@ export function CanvasZoomControls({
         label="Zoom in"
         title="Zoom in"
         disabled={disabled || atMaxZoom}
+        xstyle={s.iconButton}
         onClick={onZoomIn}
       >
         <Plus size={14} />
@@ -129,6 +139,7 @@ export function CanvasZoomControls({
         label="Fit view"
         title="Fit workflow"
         disabled={disabled}
+        xstyle={s.iconButton}
         onClick={onFitView}
       >
         <Maximize2 size={14} />

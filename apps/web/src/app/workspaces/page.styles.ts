@@ -40,30 +40,38 @@ export const workspacesPageStyles = stylex.create({
     top: 0,
     zIndex: 10,
     flexShrink: 0,
+    minHeight: "56px",
+    display: "flex",
+    alignItems: "center",
     backgroundColor: tokens.colorSurface,
     borderBottomWidth: "1px",
     borderBottomStyle: "solid",
     borderBottomColor: tokens.colorBorder,
+  },
+  topBarInner: {
+    marginInline: "auto",
+    width: "100%",
+    maxWidth: "1120px",
+    minHeight: "36px",
     padding: {
       default: "10px 32px",
       "@media (max-width: 860px)": "10px 20px",
       "@media (max-width: 620px)": "12px 16px",
     },
-  },
-  topBarInner: {
-    width: "100%",
-    maxWidth: "1120px",
-    minHeight: "36px",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    flexWrap: "wrap",
+    flexWrap: {
+      default: "nowrap",
+      "@media (max-width: 720px)": "wrap",
+    },
     gap: "12px 20px",
   },
   topBarTitleGroup: {
     display: "flex",
     alignItems: "center",
     gap: "10px",
+    flexShrink: 0,
     minWidth: 0,
   },
   headerTitle: {
@@ -92,28 +100,37 @@ export const workspacesPageStyles = stylex.create({
   actions: {
     display: "flex",
     alignItems: "center",
-    flexWrap: "wrap",
-    gap: "8px",
+    flexWrap: {
+      default: "nowrap",
+      "@media (max-width: 720px)": "wrap",
+    },
+    gap: "10px",
+    minWidth: 0,
     width: {
       default: "auto",
-      "@media (max-width: 620px)": "100%",
+      "@media (max-width: 720px)": "100%",
     },
   },
   actionItem: {
+    flexShrink: 0,
+    whiteSpace: "nowrap",
     minWidth: { default: "auto", "@media (max-width: 620px)": 0 },
     flexGrow: { default: 0, "@media (max-width: 620px)": 1 },
     flexBasis: {
       default: "auto",
-      "@media (max-width: 620px)": "calc(50% - 4px)",
+      "@media (max-width: 620px)": "calc(50% - 5px)",
     },
   },
   search: {
     height: { default: "32px", "@media (max-width: 620px)": "44px" },
-    flex: {
-      default: "0 1 220px",
-      "@media (max-width: 620px)": "1 1 100%",
+    width: {
+      default: "260px",
+      "@media (max-width: 720px)": "100%",
     },
-    minWidth: { default: "180px", "@media (max-width: 620px)": "0" },
+    minWidth: { default: "180px", "@media (max-width: 720px)": "0" },
+    flexGrow: { default: 0, "@media (max-width: 720px)": 1 },
+    flexShrink: 1,
+    flexBasis: { default: "auto", "@media (max-width: 720px)": "100%" },
     display: "flex",
     alignItems: "center",
     gap: "8px",
@@ -143,6 +160,7 @@ export const workspacesPageStyles = stylex.create({
   },
 
   main: {
+    marginInline: "auto",
     width: "100%",
     maxWidth: "1120px",
     flex: "1 0 auto",

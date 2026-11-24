@@ -79,15 +79,30 @@ export const workbenchStyles = stylex.create({
     scrollbarWidth: "none",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: tokens.colorBorder,
+    borderColor: "light-dark(rgba(15, 23, 42, 0.1), rgba(255, 255, 255, 0.15))",
     borderRadius: tokens.radiusLg,
-    backgroundColor: tokens.colorFlowControls,
+    backgroundColor:
+      "light-dark(rgba(255, 255, 255, 0.94), rgba(30, 35, 44, 0.92))",
     backdropFilter: "blur(12px)",
     WebkitBackdropFilter: "blur(12px)",
     boxShadow: tokens.shadowNodeRaised,
     transform: {
       default: "translateX(-50%)",
       "@media (max-width: 720px)": "none",
+    },
+  },
+  dockButton: {
+    color: {
+      default: tokens.colorText,
+      ":hover:not(:disabled)": tokens.colorTextEmphasis,
+      ":disabled": "light-dark(#9CA3AF, #687385)",
+    },
+  },
+  dockDangerButton: {
+    color: {
+      default: tokens.colorText,
+      ":hover:not(:disabled)": tokens.colorDanger,
+      ":disabled": "light-dark(#9CA3AF, #687385)",
     },
   },
   dockButtonActive: {
@@ -148,9 +163,10 @@ export const workbenchStyles = stylex.create({
     padding: "6px",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: tokens.colorBorder,
+    borderColor: "light-dark(rgba(15, 23, 42, 0.1), rgba(255, 255, 255, 0.15))",
     borderRadius: tokens.radiusLg,
-    backgroundColor: tokens.colorFlowControls,
+    backgroundColor:
+      "light-dark(rgba(255, 255, 255, 0.94), rgba(30, 35, 44, 0.92))",
     backdropFilter: "blur(12px)",
     WebkitBackdropFilter: "blur(12px)",
     boxShadow: tokens.shadowNodeRaised,
@@ -176,9 +192,10 @@ export const workbenchStyles = stylex.create({
     scrollbarWidth: "none",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: tokens.colorBorder,
+    borderColor: "light-dark(rgba(15, 23, 42, 0.1), rgba(255, 255, 255, 0.15))",
     borderRadius: tokens.radiusLg,
-    backgroundColor: tokens.colorFlowControls,
+    backgroundColor:
+      "light-dark(rgba(255, 255, 255, 0.94), rgba(30, 35, 44, 0.92))",
     backdropFilter: "blur(12px)",
     WebkitBackdropFilter: "blur(12px)",
     boxShadow: tokens.shadowNodeRaised,

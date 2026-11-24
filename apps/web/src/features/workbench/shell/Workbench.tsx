@@ -3857,7 +3857,11 @@ function WorkbenchBody({
           title="Add node"
           aria-pressed={libraryOpen}
           disabled={!registry || !localAuthoringEnabled}
-          xstyle={[phoneTouch.rail, libraryOpen && s.dockButtonActive]}
+          xstyle={[
+            phoneTouch.rail,
+            s.dockButton,
+            libraryOpen && s.dockButtonActive,
+          ]}
           {...firefoxDynamicButtonProps}
           onClick={() => {
             closeGraphBrowser();
@@ -3877,7 +3881,11 @@ function WorkbenchBody({
             disabled={!localAuthoringEnabled}
             aria-expanded={shapesMenuOpen}
             aria-haspopup="menu"
-            xstyle={[phoneTouch.rail, shapesMenuOpen && s.dockButtonActive]}
+            xstyle={[
+              phoneTouch.rail,
+              s.dockButton,
+              shapesMenuOpen && s.dockButtonActive,
+            ]}
             onClick={() => {
               closeGraphBrowser();
               setLibraryOpen(false);
@@ -3931,7 +3939,7 @@ function WorkbenchBody({
           label="Add Agent"
           title="Add an Agent to chat with on the canvas"
           disabled={!canEditProject}
-          xstyle={phoneTouch.rail}
+          xstyle={[phoneTouch.rail, s.dockButton]}
           {...firefoxDynamicButtonProps}
           onClick={() => {
             const id = createUuid();
@@ -3967,7 +3975,7 @@ function WorkbenchBody({
               : "Save the Project to browse its Runs"
           }
           disabled={!projectId}
-          xstyle={phoneTouch.rail}
+          xstyle={[phoneTouch.rail, s.dockButton]}
           onClick={(event) => {
             setLibraryOpen(false);
             setLabPanelOpen(false);
@@ -3991,7 +3999,7 @@ function WorkbenchBody({
             (!selectedWorkflowCount && !selectedViewerCount) ||
             !localAuthoringEnabled
           }
-          xstyle={phoneTouch.rail}
+          xstyle={[phoneTouch.rail, s.dockButton]}
           onClick={duplicateSelectedNodes}
         >
           <Copy size={14} />
@@ -4008,7 +4016,7 @@ function WorkbenchBody({
           disabled={
             !canvasReady || !selectedNodeCount || !localAuthoringEnabled
           }
-          xstyle={phoneTouch.rail}
+          xstyle={[phoneTouch.rail, s.dockDangerButton]}
           onClick={deleteSelectedNodes}
         >
           <Trash2 size={14} />

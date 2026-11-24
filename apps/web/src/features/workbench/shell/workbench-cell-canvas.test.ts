@@ -262,7 +262,7 @@ describe("buildWorkbenchCellScene", () => {
         collapsed: true,
         itemCount: 1,
         summaryText: "1 item",
-        heightCells: 4,
+        heightCells: 3,
         outputs: [
           {
             port: "result",
@@ -501,6 +501,25 @@ describe("buildWorkbenchCellScene", () => {
       registry: null,
     });
     expect(noCatalog?.outputs?.[0]?.typeLabel).toBe("text.markdown@1");
+
+    // 1 output port sizes expanded height to 3 cells (header + 1 row, no extra padding).
+    const singleOutputNode: WorkflowNode = {
+      ...ocrNode,
+      data: {
+        ...ocrNode.data,
+        run: {
+          ...ocrNode.data.run!,
+          outputs: [ocrNode.data.run!.outputs[0]!],
+        },
+      },
+    };
+    expect(
+      buildAppendixSpec({
+        node: singleOutputNode,
+        status: "done",
+        registry: ocrRegistry,
+      })?.heightCells,
+    ).toBe(3);
 
     // 8 output ports cap expanded height at 8 cells (header + 6 visible rows).
     const manyOutputsNode: WorkflowNode = {
