@@ -11,7 +11,10 @@ import {
   schemaSourceSpec,
   vectorLayerSpec,
 } from "./cell-config-fixtures.test-support";
-import { countConfigShelfCells } from "./cell-card-geometry";
+import {
+  countConfigShelfCells,
+  computeOperatorCardLayout,
+} from "./cell-card-geometry";
 import type { OperatorCardSurfaceData } from "./cell-contracts";
 import {
   buildOperatorCardsAndSurfaces,
@@ -40,6 +43,15 @@ function fieldIds(surface: OperatorCardSurfaceData): string[] {
 
 function rowsOf(surface: OperatorCardSurfaceData, id: string) {
   return surface.configFields?.find((field) => field.id === id)?.denseRows;
+}
+
+/** Where an entry sits in the band's order, or -1 when the card hides it. */
+function fieldIndex(surface: OperatorCardSurfaceData, id: string): number {
+  return (surface.configFields ?? []).findIndex((field) => field.id === id);
+}
+
+function advancedRow(surface: OperatorCardSurfaceData) {
+  return surface.configFields?.find((field) => field.id === ":advanced");
 }
 
 const ask = fixtureNode("ask", askModelSpec, {
@@ -187,7 +199,7 @@ describe("operator config fields: rich schema metadata", () => {
       "style",
       ":advanced",
     ]);
-    expect(folded.surface.configFields?.at(-1)).toMatchObject({
+    expect(advancedRow(folded.surface)).toMatchObject({
       kind: "advanced",
       label: "Advanced",
       denseRows: 1,
@@ -197,16 +209,22 @@ describe("operator config fields: rich schema metadata", () => {
     const opened = operator(fixtureDocument([layer]), "layer", {
       configSections: { layer: { advanced: true } },
     });
+    // Opening the fold adds its fields under its own row: the header stays at
+    // the head of the section instead of dropping below what it discloses.
     expect(fieldIds(opened.surface)).toEqual([
       "title",
       "visible",
       "opacity",
       "blend",
-      "min_zoom",
-      "max_zoom",
       "style",
       ":advanced",
+      "min_zoom",
+      "max_zoom",
     ]);
+    expect(advancedRow(opened.surface)).toMatchObject({
+      label: "Advanced",
+      section: { key: "advanced", open: true, count: 2 },
+    });
     expect(opened.surface.configSections).toEqual({ advanced: true });
     // Min and max zoom pair on one more 2-row shelf.
     expect(opened.card.heightCells - folded.card.heightCells).toBe(2);
@@ -220,7 +238,48 @@ describe("operator config fields: rich schema metadata", () => {
     const { surface } = operator(fixtureDocument([zoomed]), "layer");
     expect(fieldIds(surface)).toContain("min_zoom");
     expect(fieldIds(surface)).not.toContain("max_zoom");
-    expect(surface.configFields?.at(-1)?.section?.count).toBe(1);
+    // The row counts only what is still folded away, and its own field shows
+    // beneath it rather than in the primary parameters above.
+    expect(advancedRow(surface)?.section).toMatchObject({
+      open: false,
+      count: 1,
+    });
+    expect(fieldIndex(surface, ":advanced")).toBeLessThan(
+      fieldIndex(surface, "min_zoom"),
+    );
+    expect(fieldIndex(surface, "min_zoom")).toBe(
+      (surface.configFields?.length ?? 0) - 1,
+    );
+  });
+
+  it("sizes the card for the fold's rows in both states", () => {
+    const folded = operator(fixtureDocument([layer]), "layer");
+    const opened = operator(fixtureDocument([layer]), "layer", {
+      configSections: { layer: { advanced: true } },
+    });
+    const counted = (surface: OperatorCardSurfaceData) =>
+      countConfigShelfCells(surface.configFields ?? []);
+    const foldedBand = computeOperatorCardLayout(
+      folded.card,
+      folded.surface,
+    ).configBand;
+    const openedBand = computeOperatorCardLayout(
+      opened.card,
+      opened.surface,
+    ).configBand;
+    assert(foldedBand && openedBand);
+
+    // The band the card is sized for is the one its entries describe, so the
+    // tray of disclosed fields can neither be clipped nor leave a dead row.
+    expect(foldedBand.heightCells).toBe(counted(folded.surface));
+    expect(openedBand.heightCells).toBe(counted(opened.surface));
+    // The ports sit above the band, so opening the section moves nothing.
+    expect(openedBand.startRow).toBe(foldedBand.startRow);
+    // Disclosed fields are min and max zoom on one 2-row shelf, nothing more.
+    expect(openedBand.startRow + openedBand.heightCells).toBe(
+      foldedBand.startRow + foldedBand.heightCells + 2,
+    );
+    expect(opened.card.heightCells - folded.card.heightCells).toBe(2);
   });
 
   it("names a field validation rejects", () => {

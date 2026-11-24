@@ -560,7 +560,10 @@ export function buildOperatorCardsAndSurfaces(
         ? 2
         : Math.max(MIN_APPENDIX_CELLS, appendix.heightCells)
       : 0;
-    // Counted the way the card lays its two-column shelves out.
+    // Counted the way the card lays its two-column shelves out. The `Advanced`
+    // row is one of those shelves in both states and the fields it discloses
+    // are counted with it, so opening the section grows the card by whole
+    // cells and the ports above the band never shift.
     const configCells = countConfigShelfCells(configFields);
     // Config shelves end on an empty row so the plate's bottom inset never
     // clips their last control; an appendix closes the card itself.

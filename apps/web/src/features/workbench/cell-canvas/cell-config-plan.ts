@@ -37,6 +37,15 @@ import type {
 /** The section key of the row that folds untouched advanced fields away. */
 export const ADVANCED_SECTION_KEY = "advanced";
 
+/**
+ * The fold's title. It names the section, so it reads the same opened and
+ * closed; `aria-expanded` carries the state instead of the wording.
+ */
+export const ADVANCED_SECTION_LABEL = "Advanced";
+
+/** Config field names are identifiers, so a colon never collides with one. */
+export const ADVANCED_TOGGLE_ID = ":advanced";
+
 export function groupSectionKey(name: string): string {
   return `group:${name}`;
 }
@@ -72,6 +81,12 @@ export interface ShelfPlacement {
   row: number;
   /** 1 or 2 for a half-width item; `null` for one across the shelf. */
   column: 1 | 2 | null;
+  /**
+   * Rows of the grid area the item occupies: its own rows, except on a shared
+   * shelf, where it is the whole shelf. A control shorter than its shelf gets
+   * the area either way, which is what lets the renderer stand it on the
+   * shelf's bottom instead of floating it beside its neighbour's label.
+   */
   rows: number;
 }
 
@@ -85,28 +100,32 @@ export function placeShelves(items: readonly ShelfItem[]): {
 } {
   const placements: ShelfPlacement[] = [];
   let row = 0;
-  let pendingRows: number | null = null;
+  let pending: { index: number; rows: number } | null = null;
   for (const item of items) {
     const rows = Math.max(1, item.rows);
     if (item.span === 1) {
-      if (pendingRows === null) {
+      if (pending === null) {
+        const index = placements.length;
         placements.push({ row, column: 1, rows });
-        pendingRows = rows;
-      } else {
-        placements.push({ row, column: 2, rows });
-        row += Math.max(pendingRows, rows);
-        pendingRows = null;
+        pending = { index, rows };
+        continue;
       }
+      const shelfRows = Math.max(pending.rows, rows);
+      const first = placements[pending.index];
+      if (first) first.rows = shelfRows;
+      placements.push({ row, column: 2, rows: shelfRows });
+      row += shelfRows;
+      pending = null;
       continue;
     }
-    if (pendingRows !== null) {
-      row += pendingRows;
-      pendingRows = null;
+    if (pending !== null) {
+      row += pending.rows;
+      pending = null;
     }
     placements.push({ row, column: null, rows });
     row += rows;
   }
-  if (pendingRows !== null) row += pendingRows;
+  if (pending !== null) row += pending.rows;
   return { placements, totalRows: row };
 }
 
@@ -460,6 +479,15 @@ function groupStartsOpen(
   );
 }
 
+/**
+ * The fields the `Advanced` row discloses: the loose ones marked advanced. A
+ * named group is a container of its own already, so its advanced members stay
+ * with it instead of moving under the fold.
+ */
+function advancedFoldFields(fields: readonly SchemaField[]): SchemaField[] {
+  return fields.filter((field) => field.advanced && !field.group);
+}
+
 const COARSE_KINDS: Record<ConfigControlKind, CellConfigFieldKind> = {
   text: "text",
   number: "number",
@@ -526,9 +554,15 @@ function schemaEntry(
 
 /**
  * The rows of a node's config band, in order: its visible fields, the header
- * of each named group, the row that folds untouched advanced fields away, and
- * a notice for issues no shown field can display. A field hidden by its
+ * of each named group, the `Advanced` row with the advanced fields it heads,
+ * and a notice for issues no shown field can display. A field hidden by its
  * `visibleWhen` takes no row at all, unless it holds an issue to fix.
+ *
+ * The `Advanced` row is emitted before the fields it discloses, opened or
+ * closed, so the header stays at the head of its group instead of dropping
+ * below the fields the click revealed. An advanced field the person changed,
+ * or one with something to fix, is never folded away: it shows under the row
+ * while the rest stay hidden.
  */
 export function buildSchemaConfigEntries({
   fields,
@@ -562,9 +596,17 @@ export function buildSchemaConfigEntries({
     ),
   );
   const advancedOpen = sectionOpen(sections, ADVANCED_SECTION_KEY, false);
-  const shown = advancedOpen
-    ? visible
-    : visible.filter((field) => !quietAdvanced.has(field));
+  // The fold holds the loose advanced fields. What it hides counts towards its
+  // row whether a group carries it or not, so the number stays the card's own.
+  const fold = quietAdvanced.size > 0 ? advancedFoldFields(visible) : [];
+  const inFold = new Set(fold);
+  const foldShown = advancedOpen
+    ? fold
+    : fold.filter((field) => !quietAdvanced.has(field));
+  const shown = visible.filter(
+    (field) =>
+      !inFold.has(field) && (advancedOpen || !quietAdvanced.has(field)),
+  );
 
   const entries: CellConfigFieldSpec[] = [];
   for (const segment of configSegments(shown)) {
@@ -602,9 +644,8 @@ export function buildSchemaConfigEntries({
 
   if (quietAdvanced.size > 0) {
     entries.push({
-      // Config field names are identifiers, so a colon never collides.
-      id: ":advanced",
-      label: advancedOpen ? "Hide advanced" : "Advanced",
+      id: ADVANCED_TOGGLE_ID,
+      label: ADVANCED_SECTION_LABEL,
       kind: "advanced",
       value: "",
       span: 2,
@@ -616,9 +657,16 @@ export function buildSchemaConfigEntries({
         issueCount: 0,
       },
     });
+    for (const field of foldShown) {
+      entries.push(
+        schemaEntry(field, config, context, issueByField.get(field.name)),
+      );
+    }
   }
 
-  const shownNames = new Set(shown.map((field) => field.name));
+  const shownNames = new Set(
+    [...shown, ...foldShown].map((field) => field.name),
+  );
   const unshownIssues = issues.filter(
     (issue) => issue.fieldName === null || !shownNames.has(issue.fieldName),
   );
@@ -636,4 +684,33 @@ export function buildSchemaConfigEntries({
     });
   }
   return entries;
+}
+
+// --- What the `Advanced` row heads -------------------------------------------
+
+/** A section header ends the entries its own row heads. */
+const GROUP_STARTING_KINDS: ReadonlySet<CellConfigFieldSpec["kind"]> = new Set([
+  "group",
+  "advanced",
+  "issues",
+]);
+
+/**
+ * The entries the card's `Advanced` row discloses: the ones emitted after it,
+ * up to the next header. The band frames them as one group from this alone, so
+ * the frozen cross-lane contract needs no flag for a purely presentational
+ * grouping. Empty when the card has nothing folded away, or nothing open.
+ */
+export function advancedGroupIndices(
+  entries: readonly CellConfigFieldSpec[],
+): number[] {
+  const toggle = entries.findIndex((entry) => entry.id === ADVANCED_TOGGLE_ID);
+  if (toggle < 0) return [];
+  const indices: number[] = [];
+  for (let index = toggle + 1; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!entry || GROUP_STARTING_KINDS.has(entry.kind)) break;
+    indices.push(index);
+  }
+  return indices;
 }

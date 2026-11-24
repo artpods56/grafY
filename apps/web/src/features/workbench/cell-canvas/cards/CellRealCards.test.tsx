@@ -2145,21 +2145,54 @@ describe("CellOperatorCard schema config fields", () => {
   it("folds untouched advanced fields behind a toggle, and opens them in place", () => {
     const folded = renderRichOperator({ title: "Roads" });
     expect(folded.html).toMatch(
-      /aria-expanded="false" data-config-section="advanced"[^>]*>[\s\S]*Advanced[\s\S]*2 hidden/,
+      /aria-expanded="false"[^>]*data-config-section="advanced"[^>]*data-config-advanced="closed"/,
+    );
+    // The row names the section and counts what it hides; the state is in
+    // `aria-expanded`, not in wording that moves around the card.
+    expect(folded.html).toContain(">Advanced<");
+    expect(folded.html).toContain(
+      'title="2 advanced parameters at their default"',
     );
     expect(folded.html).not.toContain('data-config-field="min_zoom"');
+    expect(folded.html).not.toContain("data-config-advanced-group");
 
     const opened = renderRichOperator(
       { title: "Roads" },
       { configSections: { node: { advanced: true } } },
     );
     expect(opened.html).toMatch(
-      /aria-expanded="true" data-config-section="advanced"/,
+      /aria-expanded="true"[^>]*data-config-section="advanced"[^>]*data-config-advanced="open"/,
     );
-    expect(opened.html).toContain("Hide advanced");
-    expect(opened.html).toContain('data-config-field="min_zoom"');
-    expect(opened.html).toContain('data-config-field="max_zoom"');
+    expect(opened.html).toContain(">Advanced<");
+    expect(opened.html).not.toContain(">Hide advanced<");
+    // The disclosure keeps the head of its group: the tray of advanced fields
+    // starts on the row straight below it, and covers exactly its own rows.
+    expect(opened.html).toMatch(
+      /data-config-field=":advanced"[^>]*grid-row:10 \/ span 1/,
+    );
+    expect(opened.html).toMatch(
+      /data-config-advanced-group="advanced"[^>]*grid-row:11 \/ span 2/,
+    );
+    const band = opened.html.slice(opened.html.indexOf("data-config-band"));
+    expect(band.indexOf('data-config-field="min_zoom"')).toBeGreaterThan(
+      band.indexOf('data-config-field=":advanced"'),
+    );
+    // Two more shelves, counted into the plate: nothing is clipped at the bottom.
+    expect(opened.html).toMatch(/data-config-band="true"[^>]*height:300px/);
     expect(opened.card.heightCells).toBe(folded.card.heightCells + 2);
+  });
+
+  it("keeps an advanced field the person changed under the closed toggle", () => {
+    const { html } = renderRichOperator({ title: "Roads", min_zoom: 6 });
+    const band = html.slice(html.indexOf("data-config-band"));
+    expect(band).toContain('aria-expanded="false"');
+    expect(band).toContain('title="1 advanced parameter at their default"');
+    // Visible without opening, framed as part of the section it belongs to.
+    expect(band.indexOf('data-config-field="min_zoom"')).toBeGreaterThan(
+      band.indexOf('data-config-field=":advanced"'),
+    );
+    expect(band).toContain('data-config-advanced-group="advanced"');
+    expect(band).not.toContain('data-config-field="max_zoom"');
   });
 
   it("puts the API key behind a header key button instead of in the band", () => {
