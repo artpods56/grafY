@@ -80,7 +80,7 @@ the gateway that sets `Host $host` is fine on the default HTTPS port.
   limit of at least the configured value;
 - request and response streaming (`proxy_request_buffering off`,
   `proxy_buffering off`), cookies and Authorization headers stripped;
-- 60 s idle timeouts while receiving and forwarding the body. Open-source
+- 600 s idle timeouts while receiving and forwarding the body. Open-source
   nginx cannot cap the total duration of one request, so a body trickled
   slowly can outlast `GRAFY_UPLOAD_RECEIVE_TIMEOUT_SECONDS`; upload cleanup
   remains the backstop for bytes that land late;
@@ -127,7 +127,7 @@ direct route is opt-in; the default `/storage/` route remains available.
 The direct route permits PUT only, limits bodies to 64 MiB (the default upload
 limit), strips cookies and
 Authorization headers, and disables access and error logging. It uses
-1800-second inactivity timeouts rather than the default route's 60 seconds;
+1800-second inactivity timeouts rather than the default route's 600 seconds;
 lower these when the API upload limits are lower. Neither route imposes a total
 receive-duration deadline. Configure the outer TLS proxy to omit signed query
 strings too.

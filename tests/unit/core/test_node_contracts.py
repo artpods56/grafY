@@ -15,11 +15,14 @@ from grafy_core.nodes import (
     MAX_NODE_ERROR_MESSAGE_LENGTH,
     ArtifactTypeVariable,
     Binds,
+    InputContract,
     InputPortSpec,
     Node,
     NodeContractError,
     NodeContractResolutionError,
     NodeExecutionContext,
+    OutputContract,
+    OutputPortSpec,
     Plugs,
     PortShape,
     Ref,
@@ -410,3 +413,76 @@ def test_node_contract_resolution_consults_the_binding_validation_hook() -> None
 
     resolved = resolve_node_contracts(ClaimedFormatNode(), {"T": jpeg})
     assert resolved.output_contract.ports["items"].produces == jpeg
+
+
+class ShapeChoiceNode(ExampleNode):
+    """A node whose ports take their shape from a config field they name."""
+
+    operator_id = "example.shape_choice"
+
+
+# No annotation derives a `shape_field`, so these ports are built by hand, and
+# `Node.__init_subclass__` re-derives the contracts of every subclass from its
+# models, so they are installed once the class exists.
+ShapeChoiceNode.input_contract = InputContract(
+    model=ExampleInput,
+    ports={
+        "pages": InputPortSpec(
+            name="pages",
+            accepts=RASTER_IMAGE.key,
+            shape_field="page_shape",
+        )
+    },
+)
+ShapeChoiceNode.output_contract = OutputContract(
+    model=ExampleOutput,
+    ports={
+        "pages": OutputPortSpec(
+            name="pages",
+            produces=RASTER_IMAGE.key,
+            shape_field="page_shape",
+        )
+    },
+)
+
+
+def test_shape_field_port_takes_the_shape_the_config_names() -> None:
+    resolved = resolve_node_contracts(ShapeChoiceNode(), {}, {"page_shape": "many"})
+
+    input_port = resolved.input_contract.ports["pages"]
+    assert input_port.shape is PortShape.MANY
+    assert input_port.accepted_shapes == (PortShape.MANY,)
+    assert resolved.output_contract.ports["pages"].shape is PortShape.MANY
+
+
+def test_shape_field_port_without_its_config_field_keeps_the_declared_shape() -> None:
+    for config in ({}, {"other": "many"}, None):
+        resolved = resolve_node_contracts(ShapeChoiceNode(), {}, config)
+
+        assert resolved.input_contract.ports["pages"].shape is PortShape.ONE
+        assert resolved.input_contract.ports["pages"].accepted_shapes == (
+            PortShape.ONE,
+        )
+        assert resolved.output_contract.ports["pages"].shape is PortShape.ONE
+
+
+def test_shape_field_refusal_names_the_port_the_field_and_the_value() -> None:
+    with pytest.raises(NodeContractResolutionError) as captured:
+        resolve_node_contracts(ShapeChoiceNode(), {}, {"page_shape": "both"})
+
+    assert str(captured.value) == (
+        "Node 'example.shape_choice' port 'pages' shape field 'page_shape' "
+        "must be 'one' or 'many', got 'both'"
+    )
+
+
+@pytest.mark.parametrize("raw_shape", ["", "MANY", 2, 2.0, None, ["many"]])
+def test_shape_field_refuses_a_value_that_names_no_shape(raw_shape: object) -> None:
+    with pytest.raises(
+        NodeContractResolutionError,
+        match=(
+            r"Node 'example\.shape_choice' port 'pages' shape field 'page_shape' "
+            r"must be 'one' or 'many', got "
+        ),
+    ):
+        resolve_node_contracts(ShapeChoiceNode(), {}, {"page_shape": raw_shape})

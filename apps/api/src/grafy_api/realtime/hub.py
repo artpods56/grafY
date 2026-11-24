@@ -2,7 +2,8 @@ import asyncio
 import contextlib
 import logging
 import time
-from collections.abc import Callable
+from collections import OrderedDict, deque
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
@@ -14,6 +15,10 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from grafy_api.realtime.protocol import (
     ActorPresentation,
+    InstanceKeyEntry,
+    InstanceStateEntry,
+    InstancesChangedMessage,
+    NodeProgressMessage,
     ProjectCheckpointedMessage,
     ProjectCommandAcceptedMessage,
     ProjectCommandReceiptMessage,
@@ -23,6 +28,7 @@ from grafy_api.realtime.protocol import (
     PresenceUpdateMessage,
     PresenceUpdateSubmitMessage,
     RoomRehydrateMessage,
+    RunFinishedMessage,
 )
 
 
@@ -47,6 +53,95 @@ CLOSE_PROJECT_DELETED = (4010, "project_deleted")
 
 DEFAULT_PRESENCE_TTL_SECONDS = 5.0
 DEFAULT_PRESENCE_MAX_UPDATES_PER_SECOND = 20.0
+
+# InstanceStateName is fresh, stale, queued, running, or failed. A card shows
+# "working" while the instance is queued or running; those two are the active
+# ones a joiner still needs progress for.
+_ACTIVE_PROGRESS_STATES = frozenset({"queued", "running"})
+_PROGRESS_FRAMES_PER_INSTANCE = 20
+_PROGRESS_INSTANCES_PER_PROJECT = 128
+
+type _InstanceIdentity = tuple[UUID, str, tuple[str, ...], str, int | None]
+type _RoomKey = tuple[UUID, UUID]
+
+
+def _instance_identity(instance: InstanceKeyEntry) -> _InstanceIdentity:
+    return (
+        instance.project_id,
+        instance.graph_id,
+        instance.call_path,
+        instance.node_id,
+        instance.map_index,
+    )
+
+
+@dataclass(slots=True)
+class _ProgressFrame:
+    order: int
+    message: NodeProgressMessage
+
+
+@dataclass(slots=True)
+class _InstanceProgress:
+    computation_id: UUID
+    fingerprint: str
+    frames: deque[_ProgressFrame] = field(
+        default_factory=lambda: deque(maxlen=_PROGRESS_FRAMES_PER_INSTANCE)
+    )
+
+
+@dataclass(slots=True)
+class _ProjectProgress:
+    """Recent ``node.progress`` frames for one project, oldest frame first per instance."""
+
+    next_order: int = 0
+    instances: OrderedDict[_InstanceIdentity, _InstanceProgress] = field(
+        default_factory=OrderedDict
+    )
+
+    def record(self, message: NodeProgressMessage) -> None:
+        identity = _instance_identity(message.instance)
+        bucket = self.instances.get(identity)
+        if (
+            bucket is None
+            or bucket.computation_id != message.computation_id
+            or bucket.fingerprint != message.fingerprint
+        ):
+            bucket = _InstanceProgress(
+                computation_id=message.computation_id,
+                fingerprint=message.fingerprint,
+            )
+            self.instances[identity] = bucket
+        self.instances.move_to_end(identity)
+        self.next_order += 1
+        bucket.frames.append(_ProgressFrame(order=self.next_order, message=message))
+        while len(self.instances) > _PROGRESS_INSTANCES_PER_PROJECT:
+            self.instances.popitem(last=False)
+
+    def evict(self, message: InstancesChangedMessage) -> None:
+        for entry in message.removed:
+            self.instances.pop(_instance_identity(entry), None)
+        for entry in message.changed:
+            if entry.state not in _ACTIVE_PROGRESS_STATES:
+                self.instances.pop(_instance_identity(entry), None)
+
+    def snapshot(
+        self, active_instances: Sequence[InstanceStateEntry]
+    ) -> tuple[NodeProgressMessage, ...]:
+        live: dict[_InstanceIdentity, str] = {}
+        for entry in active_instances:
+            if entry.state not in _ACTIVE_PROGRESS_STATES:
+                continue
+            live[_instance_identity(entry)] = entry.fingerprint
+        kept: list[_ProgressFrame] = []
+        for identity, bucket in list(self.instances.items()):
+            fingerprint = live.get(identity)
+            if fingerprint is None or bucket.fingerprint != fingerprint:
+                del self.instances[identity]
+                continue
+            kept.extend(bucket.frames)
+        kept.sort(key=lambda frame: frame.order)
+        return tuple(frame.message for frame in kept)
 
 
 @dataclass(slots=True)
@@ -107,6 +202,7 @@ class ProjectRoomHub:
         )
         self._heartbeat_seconds = heartbeat_seconds
         self.on_room_empty: Callable[[UUID, UUID], None] | None = None
+        self._progress: dict[_RoomKey, _ProjectProgress] = {}
 
     @classmethod
     def from_settings(cls, cfg: RealtimeConfig) -> "ProjectRoomHub":
@@ -389,6 +485,102 @@ class ProjectRoomHub:
         for session in await self._sessions_for(workspace_id, project_id):
             await self._enqueue(session, message)
 
+    async def publish_node_progress(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID,
+        message: NodeProgressMessage,
+    ) -> None:
+        """Fan out one progress frame and keep it for the next ``room.ready``."""
+
+        async with self._lock:
+            room = self._progress.setdefault(
+                (workspace_id, project_id), _ProjectProgress()
+            )
+            room.record(message)
+        await self.publish_transient(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            message=message,
+        )
+
+    async def publish_instances_changed(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID,
+        message: InstancesChangedMessage,
+    ) -> None:
+        """Fan out instance deltas and drop progress for instances that left the run."""
+
+        async with self._lock:
+            self._evict_progress(workspace_id, project_id, message)
+        await self.publish_model(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            message=message,
+        )
+
+    async def publish_run_finished(
+        self,
+        *,
+        workspace_id: UUID,
+        project_id: UUID,
+        message: RunFinishedMessage,
+    ) -> None:
+        """Fan out a finished Run.
+
+        Which instances that Run was driving is on the following
+        ``instances.changed``. Progress for a sibling Run stays until that
+        delta, or until ``snapshot_node_progress`` sees they are no longer
+        queued or running.
+        """
+
+        await self.publish_model(
+            workspace_id=workspace_id,
+            project_id=project_id,
+            message=message,
+        )
+
+    async def snapshot_node_progress(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        active_instances: Sequence[InstanceStateEntry] = (),
+    ) -> tuple[NodeProgressMessage, ...]:
+        """Buffered frames for instances that are still queued or running.
+
+        Oldest first. The match is the instance key and, when the snapshot
+        carries one, the fingerprint. Anything else is dropped, so a refresh
+        does not replay a computation that already finished.
+        """
+
+        async with self._lock:
+            room = self._progress.get((workspace_id, project_id))
+            if room is None:
+                return ()
+            frames = room.snapshot(active_instances)
+            self._drop_progress_if_empty(workspace_id, project_id)
+            return frames
+
+    def _evict_progress(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        message: InstancesChangedMessage,
+    ) -> None:
+        room = self._progress.get((workspace_id, project_id))
+        if room is None:
+            return
+        room.evict(message)
+        self._drop_progress_if_empty(workspace_id, project_id)
+
+    def _drop_progress_if_empty(self, workspace_id: UUID, project_id: UUID) -> None:
+        room = self._progress.get((workspace_id, project_id))
+        if room is not None and not room.instances:
+            self._progress.pop((workspace_id, project_id), None)
+
     async def publish_transient(
         self, *, workspace_id: UUID, project_id: UUID, message: BaseModel
     ) -> None:
@@ -413,6 +605,8 @@ class ProjectRoomHub:
         code: int = CLOSE_PROJECT_DELETED[0],
         reason: str = CLOSE_PROJECT_DELETED[1],
     ) -> None:
+        async with self._lock:
+            self._progress.pop((workspace_id, project_id), None)
         for session in await self._sessions_for(workspace_id, project_id):
             await self._close_session(session, code=code, reason=reason)
 
@@ -443,6 +637,7 @@ class ProjectRoomHub:
                 for member in room.values()
             ]
             self._rooms.clear()
+            self._progress.clear()
         for session in sessions:
             await self._close_session(session, code=1001, reason="shutdown")
 

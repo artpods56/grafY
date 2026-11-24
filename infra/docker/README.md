@@ -90,23 +90,35 @@ registered public origin.
 Checked configuration lives at `infra/docker/gateway/nginx.conf`:
 
 The checked gateway listens on plain HTTP port 8080. Its forwarding-header
-rules describe the direct gateway-to-API hop only; they overwrite incoming
-forwarded headers with the gateway's direct peer and scheme. Do not treat this
-file as TLS termination or as a complete two-proxy configuration.
+rules describe the gateway-to-upstream hop: `X-Forwarded-For` is always
+overwritten with `$remote_addr`, and `X-Forwarded-Proto` keeps what an upstream
+TLS terminator sent, falling back to `$scheme` when the request arrived with no
+such header. Do not treat this file as TLS termination or as a complete
+two-proxy configuration.
 
 - `/` proxies to the Next.js web process.
 - `/api/` proxies to the API process with a trailing-slash `proxy_pass` that
   strips only `/api`, so public `/api/v1/...` becomes FastAPI `/v1/...`.
 - Preserve WebSocket upgrade on graph-room paths and disable proxy buffering
   for SSE and long-lived responses.
-- For this direct plain-HTTP hop, overwrite rather than append forwarding
-  headers:
+- Write one value per forwarding header instead of appending to a client's:
 
   ```nginx
+  map $http_x_forwarded_proto $grafy_forwarded_proto {
+      "" $scheme;
+      default $http_x_forwarded_proto;
+  }
+
   proxy_set_header Host $host;
   proxy_set_header X-Forwarded-For $remote_addr;
-  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_set_header X-Forwarded-Proto $grafy_forwarded_proto;
   ```
+
+  The `map` is what lets a TLS terminator in front of the loopback listener
+  stay authoritative for the scheme without a second nginx file. The listener
+  itself is plain HTTP and trusts whatever `X-Forwarded-Proto` a request
+  arrives with, so the loopback default of `GRAFY_BIND_ADDRESS` is what keeps
+  that header unforgeable in practice.
 
   The Compose network uses subnet `172.30.0.0/24` with bridge gateway
   `172.30.0.1`. Because the gateway container receives a dynamic address in

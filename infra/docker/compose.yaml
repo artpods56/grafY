@@ -13,6 +13,12 @@ x-persistence-environment: &persistence-environment
 x-api-environment: &api-environment
   <<: *persistence-environment
   OPENAI_CUSTOM_HEADERS: ${OPENAI_CUSTOM_HEADERS:-}
+  # A null Compose value imports the variable when present and leaves it unset.
+  # AgentsConfig does not treat an empty string as unset: an empty
+  # GRAFY_AGENT_DEFAULT_BASE_URL fails API startup. Set all three, or none.
+  GRAFY_AGENT_DEFAULT_BASE_URL:
+  GRAFY_AGENT_DEFAULT_MODEL:
+  GRAFY_AGENT_DEFAULT_API_KEY:
   GRAFY_ENVIRONMENT: ${GRAFY_ENVIRONMENT:-development}
   GRAFY_LOG_LEVEL: ${GRAFY_LOG_LEVEL:-INFO}
   GRAFY_LOG_RENDERER: ${GRAFY_LOG_RENDERER:-json}

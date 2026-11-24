@@ -204,7 +204,10 @@ export function useWorkbenchRunReducer({
     return states;
   }, [callTrail, nodes, openGraphId, projectId, roomInstances]);
 
-  const { cancelPhase } = state;
+  const cancellingRunIds = React.useMemo(
+    () => new Set(state.cancellingRunIds),
+    [state.cancellingRunIds],
+  );
   return {
     state,
     dispatch,
@@ -218,8 +221,7 @@ export function useWorkbenchRunReducer({
     isExecutionRunning,
     announcement: state.announcement,
     runWorkflow,
-    cancellingRunId:
-      cancelPhase.kind === "cancelling" ? cancelPhase.runId : null,
+    cancellingRunIds,
     cancelGraphRun,
     executionHistoryTarget: state.historyTarget,
     openExecutionHistory,

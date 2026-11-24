@@ -138,7 +138,7 @@ export interface CellLiveRunInput {
     ): { readonly entries: readonly CellLiveProgressEntry[] } | undefined;
   };
   readonly runs: readonly ActiveRunSummary[];
-  readonly cancellingRunId: string | null;
+  readonly cancellingRunIds: ReadonlySet<string>;
   readonly canCancelRun: boolean;
   readonly onCancelNodeRun: (nodeId: string) => void;
 }
@@ -243,14 +243,11 @@ function applyLiveRun(
       : null;
     const run = activeRunForNode(liveRun.runs, card.id, liveRun.callPath);
     // Instance state has no cancelling value. The in-flight cancel is the
-    // run id the reducer is already sending.
-    const cancelling = run !== null && liveRun.cancellingRunId === run.run_id;
+    // run id the reducer is already sending. Another node's run stays
+    // cancellable while this one waits on its own request.
+    const cancelling = run !== null && liveRun.cancellingRunIds.has(run.run_id);
     const canCancel =
-      !cancelling &&
-      liveRun.cancellingRunId === null &&
-      liveRun.canCancelRun &&
-      run !== null &&
-      run.cancellable;
+      !cancelling && liveRun.canCancelRun && run !== null && run.cancellable;
     surfaceById[card.id] = {
       ...surface,
       ...(progress ? { progress } : {}),
