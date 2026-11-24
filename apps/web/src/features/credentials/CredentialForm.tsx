@@ -52,7 +52,6 @@ const styles = stylex.create({
     backgroundColor: tokens.colorSurface,
   },
   formMd: { gap: "12px", padding: "14px", borderRadius: tokens.radiusLg },
-  formDense: { gap: "7px", padding: "8px", borderRadius: tokens.radiusMd },
   header: {
     minWidth: 0,
     display: "flex",
@@ -63,23 +62,27 @@ const styles = stylex.create({
   title: {
     margin: 0,
     color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
     fontWeight: 600,
   },
-  titleMd: { fontSize: tokens.fontSizeMd },
-  titleDense: { fontSize: "9.5px" },
   scope: { display: "grid", gap: "3px" },
-  helper: { margin: 0, color: tokens.colorSubtle, lineHeight: 1.4 },
-  helperMd: { fontSize: tokens.fontSizeXs },
-  helperDense: { fontSize: "9px" },
+  helper: {
+    margin: 0,
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
+    lineHeight: 1.4,
+  },
   fields: { display: "grid", gap: "8px" },
-  fieldsMd: {
+  /** Two columns where there is room: the full-page credential manager. */
+  fieldsGrid: {
     gridTemplateColumns: {
       default: "minmax(0, 1fr)",
       "@media (min-width: 720px)": "repeat(2, minmax(0, 1fr))",
     },
     gap: "10px 12px",
   },
-  fieldsDense: { gap: "6px" },
+  /** One column: a narrow dialog, where a URL needs the whole line. */
+  fieldsStack: { gridTemplateColumns: "minmax(0, 1fr)", gap: "10px" },
   actions: {
     display: "flex",
     alignItems: "center",
@@ -150,17 +153,10 @@ function Spinner({ size }: { size: number }) {
   );
 }
 
-function CheckCallout({
-  check,
-  dense,
-}: {
-  check: CredentialCheck;
-  dense: boolean;
-}) {
-  const size = dense ? "dense" : "md";
+function CheckCallout({ check }: { check: CredentialCheck }) {
   if (check.kind === "error") {
     return (
-      <CredentialCallout tone="danger" title="Test failed" size={size}>
+      <CredentialCallout tone="danger" title="Test failed">
         {check.message}
       </CredentialCallout>
     );
@@ -170,7 +166,6 @@ function CheckCallout({
     <CredentialCallout
       tone={credentialStatusTone(status)}
       title={credentialStatusLabel[status]}
-      size={size}
     >
       {[message, account_hint].filter(Boolean).join(" · ")}
     </CredentialCallout>
@@ -186,14 +181,15 @@ export function CredentialForm({
   workspaceId,
   providers,
   scopes,
-  dense = false,
+  layout = "grid",
   keyLabel = "API key",
   onSaved,
 }: {
   workspaceId: string;
   providers: readonly CredentialProvider[];
   scopes: readonly CredentialScope[];
-  dense?: boolean;
+  /** The field grid: `grid` for the full page, `stack` for a narrow dialog. */
+  layout?: "grid" | "stack";
   /** The key field's label, e.g. the node's own name for its secret. */
   keyLabel?: string;
   onSaved: (saved: Credential) => Promise<unknown>;
@@ -229,8 +225,7 @@ export function CredentialForm({
   const provider = providers.find((item) => item.kind === kind) ?? providers[0];
   const activeScope =
     scope && scopes.includes(scope) ? scope : (scopes[0] ?? "personal");
-  const size = dense ? "dense" : "md";
-  const iconSize = dense ? 10 : 13;
+  const iconSize = 13;
   if (!provider || scopes.length === 0) return null;
 
   if (state.kind === "closed" || state.kind === "saved") {
@@ -240,7 +235,6 @@ export function CredentialForm({
           <CredentialCallout
             tone={credentialStatusTone(state.saved.verification_status)}
             title={`Saved “${state.saved.label}”`}
-            size={size}
           >
             {state.saved.verification_message ??
               credentialStatusLabel[state.saved.verification_status]}
@@ -248,7 +242,7 @@ export function CredentialForm({
         )}
         <Button
           type="button"
-          size={dense ? "xs" : "sm"}
+          size="sm"
           variant="dashed"
           block
           onClick={() => dispatch({ kind: "open" })}
@@ -272,7 +266,7 @@ export function CredentialForm({
     <form
       aria-label="Add credential"
       data-credential-form={state.kind}
-      {...stylex.props(styles.form, dense ? styles.formDense : styles.formMd)}
+      {...stylex.props(styles.form, styles.formMd)}
       onChange={(event) => {
         const target = event.target;
         dispatch({
@@ -303,16 +297,9 @@ export function CredentialForm({
       }}
     >
       <div {...stylex.props(styles.header)}>
-        <h4
-          {...stylex.props(
-            styles.title,
-            dense ? styles.titleDense : styles.titleMd,
-          )}
-        >
-          New credential
-        </h4>
+        <h4 {...stylex.props(styles.title)}>New credential</h4>
         {providers.length === 1 && (
-          <CredentialBadge tone="outline" size={size}>
+          <CredentialBadge tone="outline">
             {providerDisplayName(provider.kind)}
           </CredentialBadge>
         )}
@@ -320,7 +307,7 @@ export function CredentialForm({
       {scopes.length > 1 && (
         <div {...stylex.props(styles.scope)}>
           <SegmentedControl
-            size="sm"
+            size="md"
             aria-label="Credential scope"
             value={activeScope}
             disabled={busy}
@@ -330,24 +317,17 @@ export function CredentialForm({
             }))}
             onValueChange={setScope}
           />
-          <p
-            {...stylex.props(
-              styles.helper,
-              dense ? styles.helperDense : styles.helperMd,
-            )}
-          >
-            {SCOPE_HELP[activeScope]}
-          </p>
+          <p {...stylex.props(styles.helper)}>{SCOPE_HELP[activeScope]}</p>
         </div>
       )}
       <div
         {...stylex.props(
           styles.fields,
-          dense ? styles.fieldsDense : styles.fieldsMd,
+          layout === "stack" ? styles.fieldsStack : styles.fieldsGrid,
         )}
       >
         {providers.length > 1 && (
-          <Field label="Provider" size={size}>
+          <Field label="Provider">
             <Select
               value={provider.kind}
               disabled={busy}
@@ -361,7 +341,7 @@ export function CredentialForm({
             </Select>
           </Field>
         )}
-        <Field label="Label" size={size}>
+        <Field label="Label">
           <TextInput
             name="label"
             placeholder="e.g. Team gateway"
@@ -370,7 +350,7 @@ export function CredentialForm({
             required
           />
         </Field>
-        <Field label={keyLabel} size={size}>
+        <Field label={keyLabel}>
           <TextInput
             name="value"
             placeholder="Paste key"
@@ -390,7 +370,6 @@ export function CredentialForm({
           <Field
             key={`${provider.kind}:${field}`}
             label={credentialFieldLabel(field)}
-            size={size}
           >
             <TextInput
               name={field}
@@ -404,18 +383,17 @@ export function CredentialForm({
           </Field>
         ))}
       </div>
-      {check && <CheckCallout check={check} dense={dense} />}
+      {check && <CheckCallout check={check} />}
       {state.kind === "failed" && (
         <CredentialCallout
           tone={state.canSave ? "warning" : "danger"}
           title={state.canSave ? "Not verified" : "Not saved"}
-          size={size}
         >
           {state.message}
         </CredentialCallout>
       )}
       <div {...stylex.props(styles.actions)}>
-        <Button type="submit" size="xs" variant="primary" disabled={busy}>
+        <Button type="submit" size="sm" variant="primary" disabled={busy}>
           {saving ? <Spinner size={iconSize} /> : null}
           {saving ? "Verifying…" : "Verify & save"}
         </Button>
@@ -423,7 +401,7 @@ export function CredentialForm({
           <Button
             type="submit"
             value="save-anyway"
-            size="xs"
+            size="sm"
             variant="secondary"
             disabled={busy}
           >
@@ -433,7 +411,7 @@ export function CredentialForm({
         {canTest && (
           <Button
             type="button"
-            size="xs"
+            size="sm"
             variant="ghost"
             disabled={busy}
             onClick={(event) => {
@@ -472,7 +450,7 @@ export function CredentialForm({
         )}
         <Button
           type="button"
-          size="xs"
+          size="sm"
           variant="ghost"
           disabled={busy}
           xstyle={styles.push}

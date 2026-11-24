@@ -70,7 +70,7 @@ import {
 } from "../punched-port";
 
 import { CellConfigBand } from "./CellConfigFields";
-import { CellCredentialsPopover } from "./CellCredentialsPopover";
+import { CellCredentialsDialog } from "./CellCredentialsDialog";
 
 /**
  * The operator card, and the card shell every real card on the cell canvas is
@@ -1396,7 +1396,7 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
   const headerMeta =
     secretInputs.length > 0 ? (
       <span data-card-credentials="true" onPointerDown={stopCardDrag}>
-        <CellCredentialsPopover
+        <CellCredentialsDialog
           cardId={card.id}
           cardTitle={card.title}
           inputs={secretInputs}

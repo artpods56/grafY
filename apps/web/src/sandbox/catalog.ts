@@ -20,6 +20,11 @@ export const SPIKES = [
     question:
       "How do the app shell and UI kit feel when aligned with the cool, floating studio aesthetic of the canvas?",
   },
+  {
+    id: "credentials",
+    title: "Node credentials dialog",
+    question: "How does a node's credentials dialog read in each state?",
+  },
 ] as const;
 
 export type SpikeId = (typeof SPIKES)[number]["id"];
