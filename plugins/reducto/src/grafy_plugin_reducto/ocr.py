@@ -16,6 +16,8 @@ from grafy_core.nodes import (
     Node,
     NodeExecutionContext,
     UserFacingNodeError,
+    active_node_context,
+    emit_node_progress,
 )
 from grafy_core.plugins import (
     NodeHttpEgressContract,
@@ -225,6 +227,26 @@ def build_reducto_ocr_provider_node(
     return ReductoOcrProviderNode()
 
 
+async def _report_parsed_pages(chunks: list[ParseChunk]) -> None:
+    context = active_node_context()
+    await emit_node_progress(context, "Parsing OCR layout…")
+    seen: list[int] = []
+    for chunk in chunks:
+        for block in chunk.blocks:
+            if block.bbox.page not in seen:
+                seen.append(block.bbox.page)
+    total = len(seen)
+    if total <= 1:
+        return
+    for number in range(1, total + 1):
+        await emit_node_progress(
+            context,
+            f"Processing page {number} of {total}",
+            current=number,
+            total=total,
+        )
+
+
 async def _run_parse(
     *,
     config: ReductoOcrConfig,
@@ -232,6 +254,7 @@ async def _run_parse(
     image: RasterImage | PdfFile,
     transport_factory: Callable[[], httpx.AsyncBaseTransport],
 ) -> DocumentOcrResult:
+    await emit_node_progress(active_node_context(), "Preparing document…")
     settings: SettingsParam = {
         "model": config.model,
         "timeout": float(config.timeout_s),
@@ -264,6 +287,7 @@ async def _run_parse(
                 ) as client,
             ):
                 source = await _upload_image(client, image)
+                await emit_node_progress(active_node_context(), "Calling Reducto OCR…")
                 # Raw: the typed response picks its class by `response_type` and
                 # would need a dump back to JSON for ParseChunkList anyway.
                 raw = await client.parse.with_raw_response.run(
@@ -276,11 +300,15 @@ async def _run_parse(
                 )
                 result = cast(dict[str, Any], await raw.json())["result"]
                 if result["type"] == "url":
+                    await emit_node_progress(
+                        active_node_context(), "Downloading OCR result…"
+                    )
                     chunks = await _download_chunks(
                         result["url"], transport_factory=transport_factory
                     )
                 else:
                     chunks = ParseChunkList.validate_python(result["chunks"])
+                await _report_parsed_pages(chunks)
                 return build_parse_output(chunks)
     except ReductoOcrError:
         raise

@@ -41,6 +41,11 @@ from grafy_core.node_ports import (
     ServiceContractFeatures as ServiceContractFeatures,
     ServiceContractKey as ServiceContractKey,
 )
+from grafy_core.node_progress import (
+    active_node_context as active_node_context,
+    bind_active_node as bind_active_node,
+    emit_node_progress as emit_node_progress,
+)
 from grafy_core.service_contracts import (
     ServiceContract as ServiceContract,
     implements_service_contract as implements_service_contract,

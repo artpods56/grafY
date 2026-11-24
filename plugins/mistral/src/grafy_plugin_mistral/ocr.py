@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Mapping
-from typing import Annotated, ClassVar, Literal, Protocol, final, override
+from typing import Annotated, Any, ClassVar, Literal, Protocol, final, override
 from uuid import UUID
 
 import httpx
@@ -22,6 +22,8 @@ from grafy_core.nodes import (
     Node,
     NodeExecutionContext,
     UserFacingNodeError,
+    active_node_context,
+    emit_node_progress,
 )
 from grafy_core.plugins import (
     NodeHttpEgressContract,
@@ -313,74 +315,83 @@ _BLOCK_COLUMNS = (
 )
 
 
-def build_ocr_output(
-    response: OCRResponse, config: MistralOcrConfig
+def _consume_page(
+    sdk_page: Any,
+    config: MistralOcrConfig,
+    markdown_pages: list[str],
+    rows: list[dict[str, TableValue]],
+    pages: list[ImagePage],
+    regions: list[ImageRegion],
+) -> None:
+    page = OcrPage.model_validate(sdk_page.model_dump(mode="json", by_alias=True))
+    tables = {table.id: table.content for table in page.tables or []}
+    markdown = page.markdown
+    for table_id, content in tables.items():
+        markdown = markdown.replace(f"[{table_id}]({table_id})", content)
+    markdown_pages.append(markdown)
+    dims = page.dimensions
+    if dims is None or dims.width <= 0 or dims.height <= 0:
+        raise MistralOcrProviderError(
+            f"OCR page {page.index} reports no pixel dimensions"
+        )
+    pages.append(ImagePage(index=page.index, width=dims.width, height=dims.height))
+    regions.extend(_page_regions(page))
+    for index, block in enumerate(page.blocks or []):
+        box = _normalise_box(
+            block.top_left_x,
+            block.top_left_y,
+            block.bottom_right_x,
+            block.bottom_right_y,
+        )
+        ref = None
+        text = block.content
+        if block.type == "image":
+            ref = block.image_id
+            text = block.image_id
+        elif block.type == "table":
+            ref = block.table_id
+            text = tables.get(ref, text) if ref is not None else text
+        scores = (
+            block.confidence_scores
+            if config.confidence_scores_granularity == "block"
+            else None
+        )
+        page_scores = (
+            page.confidence_scores
+            if config.confidence_scores_granularity == "page"
+            else None
+        )
+        rows.append(
+            {
+                "page": page.index,
+                "index": index,
+                "kind": block.type,
+                "x0": box[0],
+                "y0": box[1],
+                "x1": box[2],
+                "y1": box[3],
+                "text": text,
+                "ref": ref,
+                "confidence": scores.average_content_confidence_score
+                if scores is not None
+                else None,
+                "min_confidence": scores.minimum_content_confidence_score
+                if scores is not None
+                else None,
+                "page_confidence": page_scores.average_page_confidence_score
+                if page_scores is not None
+                else None,
+            }
+        )
+
+
+def _assembled_ocr_output(
+    response: OCRResponse,
+    markdown_pages: list[str],
+    rows: list[dict[str, TableValue]],
+    pages: list[ImagePage],
+    regions: list[ImageRegion],
 ) -> DocumentOcrResult:
-    markdown_pages: list[str] = []
-    rows: list[dict[str, TableValue]] = []
-    pages: list[ImagePage] = []
-    regions: list[ImageRegion] = []
-    for sdk_page in response.pages:
-        page = OcrPage.model_validate(sdk_page.model_dump(mode="json", by_alias=True))
-        tables = {table.id: table.content for table in page.tables or []}
-        markdown = page.markdown
-        for table_id, content in tables.items():
-            markdown = markdown.replace(f"[{table_id}]({table_id})", content)
-        markdown_pages.append(markdown)
-        dims = page.dimensions
-        if dims is None or dims.width <= 0 or dims.height <= 0:
-            raise MistralOcrProviderError(
-                f"OCR page {page.index} reports no pixel dimensions"
-            )
-        pages.append(ImagePage(index=page.index, width=dims.width, height=dims.height))
-        regions.extend(_page_regions(page))
-        for index, block in enumerate(page.blocks or []):
-            box = _normalise_box(
-                block.top_left_x,
-                block.top_left_y,
-                block.bottom_right_x,
-                block.bottom_right_y,
-            )
-            ref = None
-            text = block.content
-            if block.type == "image":
-                ref = block.image_id
-                text = block.image_id
-            elif block.type == "table":
-                ref = block.table_id
-                text = tables.get(ref, text) if ref is not None else text
-            scores = (
-                block.confidence_scores
-                if config.confidence_scores_granularity == "block"
-                else None
-            )
-            page_scores = (
-                page.confidence_scores
-                if config.confidence_scores_granularity == "page"
-                else None
-            )
-            rows.append(
-                {
-                    "page": page.index,
-                    "index": index,
-                    "kind": block.type,
-                    "x0": box[0],
-                    "y0": box[1],
-                    "x1": box[2],
-                    "y1": box[3],
-                    "text": text,
-                    "ref": ref,
-                    "confidence": scores.average_content_confidence_score
-                    if scores is not None
-                    else None,
-                    "min_confidence": scores.minimum_content_confidence_score
-                    if scores is not None
-                    else None,
-                    "page_confidence": page_scores.average_page_confidence_score
-                    if page_scores is not None
-                    else None,
-                }
-            )
     logger.info(
         "Mistral OCR processed %s pages, document size %s bytes",
         response.usage_info.pages_processed,
@@ -397,3 +408,39 @@ def build_ocr_output(
         ),
         regions=ImageRegionSet(pages=pages, regions=regions),
     )
+
+
+def build_ocr_output(
+    response: OCRResponse, config: MistralOcrConfig
+) -> DocumentOcrResult:
+    markdown_pages: list[str] = []
+    rows: list[dict[str, TableValue]] = []
+    pages: list[ImagePage] = []
+    regions: list[ImageRegion] = []
+    for sdk_page in response.pages:
+        _consume_page(sdk_page, config, markdown_pages, rows, pages, regions)
+    return _assembled_ocr_output(response, markdown_pages, rows, pages, regions)
+
+
+async def assemble_ocr_output(
+    response: OCRResponse, config: MistralOcrConfig
+) -> DocumentOcrResult:
+    """The same assembly as ``build_ocr_output``, with a line per page."""
+
+    context = active_node_context()
+    markdown_pages: list[str] = []
+    rows: list[dict[str, TableValue]] = []
+    pages: list[ImagePage] = []
+    regions: list[ImageRegion] = []
+    total = len(response.pages)
+    await emit_node_progress(context, "Parsing OCR layout…")
+    for number, sdk_page in enumerate(response.pages, start=1):
+        if total > 1:
+            await emit_node_progress(
+                context,
+                f"Processing page {number} of {total}",
+                current=number,
+                total=total,
+            )
+        _consume_page(sdk_page, config, markdown_pages, rows, pages, regions)
+    return _assembled_ocr_output(response, markdown_pages, rows, pages, regions)
