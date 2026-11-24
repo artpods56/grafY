@@ -1,31 +1,27 @@
 import * as stylex from "@stylexjs/stylex";
 
+import { tokens } from "@/lib/stylex/tokens.stylex";
+
 /**
- * StyleX port of the `.grafy-workspace-frame*`, `.grafy-mobile-nav*`,
- * `.grafy-workspace-rail*`, and `.grafy-graph-row*` rules that used to live in
- * globals.css. Values are copied verbatim, including the 860px / 620px
- * breakpoints and the prefers-reduced-motion overrides. The 860px rules that
- * the 620px block restores are expressed as a `min-width: 621px and max-width:
- * 860px` range so the two never compete for the same property.
+ * Tier 1 Primary Dark Sidebar (`WorkspaceRail`) and shell frame styles.
  *
- * `--grafy-rail-width`, `--grafy-mobile-header-height`, and
- * `--grafy-mobile-overlay-top` stay as `:root` variables in globals.css; the
- * `--grafy-rail-*` geometry below is scoped to the rail element as before.
+ * The rail is always dark charcoal (`tokens.colorRailBg`) in both light and
+ * dark palettes, preserving `--grafy-rail-width`, `--grafy-mobile-header-height`,
+ * and `--grafy-mobile-overlay-top` from `globals.css` as the single width
+ * contract shared with the workbench and page layouts.
  */
 
 /**
- * The default marker, applied to a graph row (in the rail's recent list or in
- * the graph panel) so the row's menu trigger can reveal on row hover / focus,
- * as the old `.grafy-graph-row:hover .grafy-graph-row__menu-trigger` rules
- * did. `graphRowMarker` is passed to `stylex.props` next to the row style.
+ * Applied to a graph row (in the rail's recent list or in `WorkspaceGraphPanel`)
+ * so the row's menu trigger can reveal on row hover / focus.
  */
 export const graphRowMarker = stylex.defaultMarker();
 
 export const railStyles = stylex.create({
   frame: {
     minHeight: "100svh",
-    backgroundColor: "light-dark(#ffffff, #111111)",
-    color: "light-dark(#111111, #f5f5f5)",
+    backgroundColor: tokens.colorBg,
+    color: tokens.colorText,
   },
   frameMain: {
     minHeight: "100svh",
@@ -51,10 +47,8 @@ export const railStyles = stylex.create({
         "env(safe-area-inset-top) calc(12px + env(safe-area-inset-right)) 6px calc(12px + env(safe-area-inset-left))",
       borderBottomWidth: "1px",
       borderBottomStyle: "solid",
-      borderBottomColor: "light-dark(#d9d9d9, #2a2a2a)",
-      backgroundColor:
-        "light-dark(rgba(255, 255, 255, 0.96), rgba(17, 17, 17, 0.96))",
-      backdropFilter: "blur(14px)",
+      borderBottomColor: tokens.colorBorder,
+      backgroundColor: tokens.colorSurface,
     },
   },
   mobileBrand: {
@@ -66,9 +60,9 @@ export const railStyles = stylex.create({
       paddingInline: "4px",
       borderWidth: 0,
       borderStyle: "none",
-      borderRadius: "8px",
+      borderRadius: tokens.radiusMd,
       backgroundColor: "transparent",
-      color: "light-dark(#111111, #f5f5f5)",
+      color: tokens.colorTextEmphasis,
       cursor: "pointer",
     },
   },
@@ -77,8 +71,9 @@ export const railStyles = stylex.create({
       minWidth: 0,
       alignSelf: "center",
       overflow: "hidden",
-      color: "light-dark(#6b6b6b, #a3a3a3)",
-      fontSize: "12px",
+      color: tokens.colorMuted,
+      fontSize: tokens.fontSizeSm,
+      fontWeight: 500,
       textAlign: "right",
       textOverflow: "ellipsis",
       whiteSpace: "nowrap",
@@ -98,7 +93,7 @@ export const railStyles = stylex.create({
       borderWidth: 0,
       borderStyle: "none",
       backgroundColor:
-        "light-dark(rgba(17, 17, 17, 0.28), rgba(0, 0, 0, 0.56))",
+        "light-dark(rgba(15, 23, 42, 0.36), rgba(0, 0, 0, 0.62))",
       cursor: "pointer",
       opacity: 0,
       pointerEvents: "none",
@@ -116,9 +111,9 @@ export const railStyles = stylex.create({
   },
 
   rail: {
-    "--grafy-rail-expanded": "200px",
+    "--grafy-rail-expanded": "220px",
     "--grafy-rail-pad": "12px",
-    "--grafy-rail-item-pad": "10px",
+    "--grafy-rail-item-pad": "12px",
     "--grafy-rail-icon": "15px",
     "--grafy-rail-icon-center":
       "calc(var(--grafy-rail-item-pad) + var(--grafy-rail-icon) / 2)",
@@ -139,16 +134,15 @@ export const railStyles = stylex.create({
     width: "var(--grafy-rail-width)",
     display: "flex",
     flexDirection: "column",
-    gap: "20px",
-    padding: "20px var(--grafy-rail-pad) 14px",
+    gap: "16px",
+    padding: "16px var(--grafy-rail-pad) 12px",
     overflow: "hidden",
     borderRightWidth: "1px",
     borderRightStyle: "solid",
-    borderRightColor: "light-dark(#d9d9d9, #2a2a2a)",
-    backgroundColor: "light-dark(#ffffff, #111111)",
+    borderRightColor: tokens.colorRailBorder,
+    backgroundColor: tokens.colorRailBg,
+    color: tokens.colorRailText,
     transition: "width 180ms ease",
-    // The 860px block only re-faded the copy; its other declarations restated
-    // the base values, so only the copy variables are ported here.
     "@media (min-width: 621px) and (max-width: 860px)": {
       "--grafy-rail-copy": "0",
       "--grafy-rail-copy-delay": "0ms",
@@ -165,8 +159,7 @@ export const railStyles = stylex.create({
         "calc(var(--grafy-mobile-overlay-top) + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left))",
       overflowX: "hidden",
       overflowY: "auto",
-      boxShadow:
-        "18px 0 48px light-dark(rgba(17, 17, 17, 0.12), rgba(0, 0, 0, 0.45))",
+      boxShadow: "18px 0 48px rgba(0, 0, 0, 0.48)",
       transform: "translateX(calc(-100% - 12px))",
       visibility: "hidden",
       transition: "transform 180ms ease, visibility 0s linear 180ms",
@@ -194,18 +187,47 @@ export const railStyles = stylex.create({
     transition: "none",
   },
 
-  railBrand: {
-    position: "relative",
-    flex: "0 0 36px",
-    width: "100%",
-    padding: 0,
-    borderWidth: 0,
-    borderStyle: "none",
-    backgroundColor: "transparent",
-    cursor: "pointer",
+  railHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "6px",
+    minHeight: "36px",
+    flexShrink: 0,
     "@media (max-width: 620px)": {
       display: "none",
     },
+  },
+  railHeaderCollapsed: {
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "6px",
+    minHeight: "auto",
+    "@media (min-width: 621px) and (max-width: 860px)": {
+      flexDirection: "row",
+      minHeight: "36px",
+    },
+  },
+  railBrand: {
+    position: "relative",
+    flex: "1 1 auto",
+    minWidth: 0,
+    height: "36px",
+    padding: 0,
+    borderWidth: 0,
+    borderStyle: "none",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: "transparent",
+    cursor: "pointer",
+    outline: {
+      default: "none",
+      ":focus-visible": "2px solid rgba(255, 255, 255, 0.35)",
+    },
+  },
+  railBrandCollapsed: {
+    flex: "0 0 36px",
+    width: "100%",
+    height: "36px",
   },
   brandWordmark: {
     position: "absolute",
@@ -214,7 +236,7 @@ export const railStyles = stylex.create({
     maxWidth: "none",
     left: "var(--grafy-rail-item-pad)",
     width: "auto",
-    height: "24px",
+    height: "22px",
     transform: "translateY(-50%)",
     opacity: "var(--grafy-rail-copy)",
     transition: "opacity 140ms ease var(--grafy-rail-copy-delay)",
@@ -228,11 +250,42 @@ export const railStyles = stylex.create({
     display: "block",
     maxWidth: "none",
     left: "var(--grafy-rail-icon-center)",
-    width: "28px",
-    height: "28px",
+    width: "26px",
+    height: "26px",
     transform: "translate(-50%, -50%)",
     opacity: "calc(1 - var(--grafy-rail-copy))",
     transition: "opacity 140ms ease var(--grafy-rail-copy-delay)",
+    "@media (prefers-reduced-motion: reduce)": {
+      transition: "none",
+    },
+  },
+  collapseToggle: {
+    display: {
+      default: "inline-grid",
+      "@media (max-width: 860px)": "none",
+    },
+    placeItems: "center",
+    flexShrink: 0,
+    width: "28px",
+    height: "28px",
+    padding: 0,
+    borderWidth: 0,
+    borderStyle: "none",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorRailHover,
+    },
+    color: {
+      default: tokens.colorRailMuted,
+      ":hover:not(:disabled)": tokens.colorRailTextEmphasis,
+    },
+    cursor: "pointer",
+    outline: {
+      default: "none",
+      ":focus-visible": "2px solid rgba(255, 255, 255, 0.35)",
+    },
+    transition: "background-color 140ms ease, color 140ms ease",
     "@media (prefers-reduced-motion: reduce)": {
       transition: "none",
     },
@@ -261,13 +314,13 @@ export const railStyles = stylex.create({
       transition: "background-color 140ms ease",
     },
     ":hover::after": {
-      backgroundColor: "light-dark(#111111, #ffffff)",
+      backgroundColor: tokens.colorRailMuted,
     },
   },
-  /** The `body.grafy-rail-resizing` half of the old resize-handle rule. */
+  /** The `body.grafy-rail-resizing` half of the resize-handle rule. */
   railResizeActive: {
     "::after": {
-      backgroundColor: "light-dark(#111111, #ffffff)",
+      backgroundColor: tokens.colorRailTextEmphasis,
     },
   },
 
@@ -282,13 +335,24 @@ export const railStyles = stylex.create({
       display: "none",
     },
   },
+  thisProjectGroup: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr)",
+    gap: "2px",
+    minWidth: 0,
+    marginTop: "10px",
+    paddingTop: "12px",
+    borderTopWidth: "1px",
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorRailBorder,
+  },
 
   sectionLabel: {
-    margin: "0 var(--grafy-rail-item-pad) 6px",
+    margin: "0 var(--grafy-rail-item-pad) 4px",
     overflow: "hidden",
-    color: "light-dark(#6b6b6b, #8a8a8a)",
-    fontSize: "11px",
-    fontWeight: 500,
+    color: tokens.colorRailSubtle,
+    fontSize: "10px",
+    fontWeight: 600,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
     whiteSpace: "nowrap",
@@ -323,26 +387,37 @@ export const railStyles = stylex.create({
   railItem: {
     borderWidth: 0,
     borderStyle: "none",
-    backgroundColor: "transparent",
-    color: "light-dark(#6b6b6b, #a3a3a3)",
-    cursor: "pointer",
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorRailHover,
+    },
+    color: {
+      default: tokens.colorRailMuted,
+      ":hover:not(:disabled)": tokens.colorRailTextEmphasis,
+      ":disabled": tokens.colorRailSubtle,
+    },
+    cursor: {
+      default: "pointer",
+      ":disabled": "default",
+    },
     width: "100%",
     minWidth: 0,
     display: "flex",
     alignItems: "center",
     justifyContent: "flex-start",
     gap: "10px",
-    padding: "8px var(--grafy-rail-item-pad)",
+    padding: "7px var(--grafy-rail-item-pad)",
     overflow: "hidden",
-    borderRadius: "6px",
+    borderRadius: tokens.radiusSm,
     textAlign: "left",
-    fontSize: "13px",
-    fontWeight: 400,
-    transition: "background-color 140ms ease, color 140ms ease",
-    ":hover:not(:disabled)": {
-      backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
-      color: "light-dark(#111111, #f5f5f5)",
+    fontSize: tokens.fontSizeMd,
+    fontWeight: 450,
+    outline: {
+      default: "none",
+      ":focus-visible": "2px solid rgba(255, 255, 255, 0.35)",
     },
+    outlineOffset: "-2px",
+    transition: "background-color 140ms ease, color 140ms ease",
     "@media (prefers-reduced-motion: reduce)": {
       transition: "none",
     },
@@ -351,18 +426,20 @@ export const railStyles = stylex.create({
     },
   },
   railItemActive: {
-    backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
-    color: "light-dark(#111111, #ffffff)",
-    fontWeight: 500,
-    ":hover:not(:disabled)": {
-      color: "light-dark(#111111, #ffffff)",
+    backgroundColor: {
+      default: tokens.colorRailActive,
+      ":hover:not(:disabled)": tokens.colorRailActive,
     },
+    color: {
+      default: tokens.colorRailTextEmphasis,
+      ":hover:not(:disabled)": tokens.colorRailTextEmphasis,
+    },
+    fontWeight: 550,
   },
   railSettings: {
     flexShrink: 0,
     marginTop: "auto",
-    // Pull back most of the rail's 20px gap so it sits close to the divider.
-    marginBottom: "-12px",
+    marginBottom: "-8px",
   },
   itemSpan: {
     flex: "0 0 auto",
@@ -390,7 +467,7 @@ export const railStyles = stylex.create({
       display: "flex",
       minHeight: "44px",
       justifyContent: "space-between",
-      color: "light-dark(#111111, #f5f5f5)",
+      color: tokens.colorRailTextEmphasis,
     },
   },
   mobileCloseSpan: {
@@ -414,14 +491,12 @@ export const railStyles = stylex.create({
     borderWidth: 0,
     borderStyle: "none",
     backgroundColor: "transparent",
-    // The icon and chevron inherit this colour, which is how the old
-    // `.workspace-select:hover .icon` rules reached them.
-    color: "light-dark(#6b6b6b, #a3a3a3)",
+    color: tokens.colorRailMuted,
     ":hover": {
-      color: "light-dark(#111111, #f5f5f5)",
+      color: tokens.colorRailTextEmphasis,
     },
     ":focus-within": {
-      color: "light-dark(#111111, #f5f5f5)",
+      color: tokens.colorRailTextEmphasis,
     },
   },
   selectIcon: {
@@ -464,17 +539,10 @@ export const railStyles = stylex.create({
     maxWidth: "none",
   },
 
-  /**
-   * The rail's face on the kit `Select`, passed as `xstyle`. The old unlayered
-   * `.grafy-workspace-rail__workspace-select select` rules in globals.css are
-   * deleted; this replaces them, including the icon inset, the 36px height,
-   * the collapsed transparency (React state and the 621–860px range), and the
-   * 44px phone row at 620px.
-   */
   workspaceSelectControl: {
     appearance: "none",
     width: "100%",
-    height: "36px",
+    height: "34px",
     paddingBlock: 0,
     paddingInlineStart:
       "calc(var(--grafy-rail-icon-center) + var(--grafy-rail-icon) / 2 + 10px)",
@@ -482,23 +550,23 @@ export const railStyles = stylex.create({
     overflow: "hidden",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: "light-dark(#e8e8e8, #2a2a2a)",
-    borderRadius: "8px",
+    borderColor: tokens.colorRailBorder,
+    borderRadius: tokens.radiusMd,
     outline: {
       default: "none",
-      ":focus-visible": "none",
+      ":focus-visible": "2px solid rgba(255, 255, 255, 0.35)",
     },
-    backgroundColor: "light-dark(#fafafa, #171717)",
-    color: "light-dark(#111111, #f5f5f5)",
+    outlineOffset: "-2px",
+    backgroundColor: tokens.colorRailSurface,
+    color: tokens.colorRailTextEmphasis,
+    colorScheme: "dark",
     fontFamily: "inherit",
-    fontSize: "13px",
+    fontSize: tokens.fontSizeMd,
     fontWeight: 500,
     textAlign: "left",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
     cursor: "pointer",
-    // `color-scheme: inherit` from the old rule: the property inherits, so the
-    // page's `:root { color-scheme: light dark }` already reaches the control.
     transitionProperty: "background-color, border-color, color",
     transitionDuration: {
       default: "140ms",
@@ -506,39 +574,37 @@ export const railStyles = stylex.create({
     },
     transitionTimingFunction: "ease",
     ":hover:not(:disabled)": {
-      borderColor: "light-dark(#d0d0d0, #3a3a3a)",
-      backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+      borderColor: "rgba(255, 255, 255, 0.18)",
+      backgroundColor: tokens.colorRailHover,
     },
     ":focus": {
-      borderColor: "light-dark(#111111, #f5f5f5)",
-      backgroundColor: "light-dark(#ffffff, #111111)",
+      borderColor: "rgba(255, 255, 255, 0.3)",
+      backgroundColor: tokens.colorRailSurface,
     },
     ":focus-visible": {
-      borderColor: "light-dark(#111111, #f5f5f5)",
-      backgroundColor: "light-dark(#ffffff, #111111)",
+      borderColor: "rgba(255, 255, 255, 0.3)",
+      backgroundColor: tokens.colorRailSurface,
     },
-    // Collapsed rail between 621px and 860px (at 620px the phone block below
-    // restores the visible chrome).
     "@media (min-width: 621px) and (max-width: 860px)": {
       color: "transparent",
       borderColor: "transparent",
       backgroundColor: "transparent",
       paddingInlineEnd: "var(--grafy-rail-item-pad)",
       ":hover:not(:disabled)": {
-        backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+        backgroundColor: tokens.colorRailHover,
       },
       ":focus": {
-        backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+        backgroundColor: tokens.colorRailHover,
       },
       ":focus-visible": {
-        backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+        backgroundColor: tokens.colorRailHover,
       },
     },
     "@media (max-width: 620px)": {
       minHeight: "44px",
-      color: "light-dark(#111111, #f5f5f5)",
-      borderColor: "light-dark(#e8e8e8, #2a2a2a)",
-      backgroundColor: "light-dark(#fafafa, #171717)",
+      color: tokens.colorRailTextEmphasis,
+      borderColor: tokens.colorRailBorder,
+      backgroundColor: tokens.colorRailSurface,
       paddingInlineEnd: "32px",
     },
   },
@@ -549,26 +615,28 @@ export const railStyles = stylex.create({
     backgroundColor: "transparent",
     paddingInlineEnd: "var(--grafy-rail-item-pad)",
     ":hover:not(:disabled)": {
-      backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+      backgroundColor: tokens.colorRailHover,
     },
     ":focus": {
-      backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+      backgroundColor: tokens.colorRailHover,
     },
     ":focus-visible": {
-      backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+      backgroundColor: tokens.colorRailHover,
     },
   },
 
   badge: {
     minWidth: "18px",
     marginLeft: "auto",
-    padding: "1px 5px",
-    borderRadius: "999px",
-    backgroundColor: "light-dark(#111111, #f5f5f5)",
-    color: "light-dark(#ffffff, #111111)",
+    padding: "1px 6px",
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorRailTextEmphasis,
+    color: tokens.colorRailBg,
     fontSize: "10px",
+    fontWeight: 600,
     lineHeight: "16px",
     textAlign: "center",
+    fontVariantNumeric: "tabular-nums",
   },
 
   railSpin: {
@@ -586,13 +654,16 @@ export const railStyles = stylex.create({
     padding: "10px var(--grafy-rail-pad) 0",
     borderTopWidth: "1px",
     borderTopStyle: "solid",
-    borderTopColor: "light-dark(#d9d9d9, #2a2a2a)",
+    borderTopColor: tokens.colorRailBorder,
   },
   railAccount: {
     borderWidth: 0,
     borderStyle: "none",
-    backgroundColor: "transparent",
-    color: "light-dark(#6b6b6b, #a3a3a3)",
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorRailHover,
+    },
+    color: tokens.colorRailMuted,
     cursor: "pointer",
     width: "100%",
     display: "flex",
@@ -600,14 +671,15 @@ export const railStyles = stylex.create({
     gap: "10px",
     padding: "6px var(--grafy-rail-avatar-pad)",
     overflow: "hidden",
-    borderRadius: "8px",
+    borderRadius: tokens.radiusMd,
     textAlign: "left",
-    transition: "background-color 140ms ease",
-    ":hover:not(:disabled)": {
-      backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+    outline: {
+      default: "none",
+      ":focus-visible": "2px solid rgba(255, 255, 255, 0.35)",
     },
+    transition: "background-color 140ms ease",
     "[data-popup-open]": {
-      backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+      backgroundColor: tokens.colorRailActive,
     },
     "@media (max-width: 620px)": {
       minHeight: "44px",
@@ -619,12 +691,15 @@ export const railStyles = stylex.create({
     height: "var(--grafy-rail-avatar)",
     display: "grid",
     placeItems: "center",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorRailBorder,
     borderRadius: "7px",
-    backgroundColor: "light-dark(#111111, #f5f5f5)",
-    color: "light-dark(#ffffff, #111111)",
+    backgroundColor: tokens.colorRailActive,
+    color: tokens.colorRailTextEmphasis,
     fontFamily: "var(--font-geist-sans)",
-    fontSize: "11px",
-    fontWeight: 500,
+    fontSize: tokens.fontSizeXs,
+    fontWeight: 600,
     letterSpacing: "0.02em",
   },
   accountCopy: {
@@ -649,8 +724,8 @@ export const railStyles = stylex.create({
   },
   accountName: {
     overflow: "hidden",
-    color: "light-dark(#111111, #f5f5f5)",
-    fontSize: "13px",
+    color: tokens.colorRailTextEmphasis,
+    fontSize: tokens.fontSizeMd,
     fontWeight: 500,
     lineHeight: 1.3,
     textOverflow: "ellipsis",
@@ -658,8 +733,8 @@ export const railStyles = stylex.create({
   },
   accountEmail: {
     overflow: "hidden",
-    color: "light-dark(#6b6b6b, #8a8a8a)",
-    fontSize: "11px",
+    color: tokens.colorRailMuted,
+    fontSize: tokens.fontSizeXs,
     lineHeight: 1.3,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
@@ -669,40 +744,62 @@ export const railStyles = stylex.create({
     zIndex: 80,
   },
   accountMenu: {
-    minWidth: "148px",
+    minWidth: "212px",
     padding: "6px",
     borderWidth: "1px",
     borderStyle: "solid",
-    borderColor: "light-dark(#d9d9d9, #333333)",
-    borderRadius: "8px",
-    backgroundColor: "light-dark(#ffffff, #1a1a1a)",
-    color: "light-dark(#111111, #f5f5f5)",
-    boxShadow:
-      "0 8px 24px light-dark(rgba(17, 17, 17, 0.08), rgba(0, 0, 0, 0.4))",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusLg,
+    backgroundColor: tokens.colorSurface,
+    color: tokens.colorText,
+    boxShadow: tokens.shadowNodeRaised,
+  },
+  accountThemeBlock: {
+    display: "grid",
+    gap: "6px",
+    padding: "4px 4px 6px",
+  },
+  accountThemeLabel: {
+    paddingInline: "4px",
+    color: tokens.colorSubtle,
+    fontSize: "10px",
+    fontWeight: 600,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
+  accountMenuDivider: {
+    height: "1px",
+    margin: "4px 2px",
+    backgroundColor: tokens.colorDivider,
   },
   accountMenuItem: {
     width: "100%",
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    padding: "8px 10px",
+    padding: "7px 10px",
     borderWidth: 0,
     borderStyle: "none",
-    borderRadius: "6px",
-    backgroundColor: "transparent",
-    color: "light-dark(#111111, #f5f5f5)",
-    cursor: "pointer",
-    fontSize: "13px",
-    textAlign: "left",
-    ":hover:not(:disabled)": {
-      backgroundColor: "light-dark(#f4f4f4, #222222)",
+    borderRadius: tokens.radiusSm,
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorHover,
     },
+    color: tokens.colorText,
+    cursor: "pointer",
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 500,
+    textAlign: "left",
     "@media (max-width: 620px)": {
       minHeight: "44px",
     },
   },
   accountMenuItemDanger: {
-    color: "light-dark(#dc5c5c, #f87171)",
+    color: tokens.colorDanger,
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorDangerHover,
+    },
   },
 
   graphRow: {
@@ -710,13 +807,16 @@ export const railStyles = stylex.create({
     gridTemplateColumns: "minmax(0, 1fr) auto",
     alignItems: "center",
     minWidth: 0,
-    borderRadius: "6px",
+    borderRadius: tokens.radiusSm,
     ":hover": {
-      backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+      backgroundColor: tokens.colorRailHover,
     },
   },
   graphRowActive: {
-    backgroundColor: "light-dark(#f4f4f4, #1a1a1a)",
+    backgroundColor: {
+      default: tokens.colorRailActive,
+      ":hover": tokens.colorRailActive,
+    },
   },
   /** Keeps the row's own hover background from painting under the item. */
   graphRowItem: {
@@ -724,6 +824,13 @@ export const railStyles = stylex.create({
     ":hover:not(:disabled)": {
       backgroundColor: "transparent",
     },
+  },
+  graphRowItemActive: {
+    color: {
+      default: tokens.colorRailTextEmphasis,
+      ":hover:not(:disabled)": tokens.colorRailTextEmphasis,
+    },
+    fontWeight: 550,
   },
   graphRowOpen: {
     minWidth: 0,
@@ -737,9 +844,9 @@ export const railStyles = stylex.create({
     marginRight: "4px",
     borderWidth: 0,
     borderStyle: "none",
-    borderRadius: "6px",
+    borderRadius: tokens.radiusSm,
     backgroundColor: "transparent",
-    color: "light-dark(#6b6b6b, #8a8a8a)",
+    color: tokens.colorRailMuted,
     cursor: "pointer",
     opacity: 0,
     transition:
@@ -757,16 +864,21 @@ export const railStyles = stylex.create({
       opacity: 1,
     },
     ":hover:not(:disabled)": {
-      backgroundColor: "light-dark(#ededed, #242424)",
-      color: "light-dark(#111111, #f5f5f5)",
+      backgroundColor: tokens.colorRailActive,
+      color: tokens.colorRailTextEmphasis,
     },
-    // The phone row: the panel's trigger grows to 44px at 620px. (Rail rows
-    // are hidden inside the closed drawer at 620px, so this is inert there.)
     "@media (max-width: 620px)": {
       width: "44px",
       height: "44px",
       marginRight: 0,
       opacity: 1,
+    },
+  },
+  menuTriggerSurface: {
+    color: tokens.colorSubtle,
+    ":hover:not(:disabled)": {
+      backgroundColor: tokens.colorHoverStrong,
+      color: tokens.colorTextEmphasis,
     },
   },
 });

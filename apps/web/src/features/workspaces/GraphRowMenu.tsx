@@ -11,11 +11,13 @@ import { railStyles } from "./workspace-rail.stylex";
 export function GraphRowMenu({
   graph,
   busy = false,
+  tone = "rail",
   onRename,
   onDelete,
 }: {
   graph: SavedGraphSummary;
   busy?: boolean;
+  tone?: "rail" | "surface";
   onRename: (graph: SavedGraphSummary) => void;
   onDelete: (graph: SavedGraphSummary) => void;
 }) {
@@ -24,7 +26,12 @@ export function GraphRowMenu({
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
-        className={stylex.props(railStyles.menuTrigger).className}
+        className={
+          stylex.props(
+            railStyles.menuTrigger,
+            tone === "surface" && railStyles.menuTriggerSurface,
+          ).className
+        }
         disabled={busy}
         aria-label={`Actions for ${graph.name}`}
         title="Graph actions"

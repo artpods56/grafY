@@ -25,6 +25,8 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const testState = vi.hoisted(() => ({
   pathname: "/workspaces/operations/projects/graph-a",
   push: vi.fn(),
+  setPreference: vi.fn(),
+  logout: vi.fn(async () => undefined),
   /** What an open workbench publishes to the rail; null with none open. */
   chrome: null as Record<string, unknown> | null,
   savedProjects: [] as Array<{
@@ -56,7 +58,11 @@ vi.mock("@/components/brand", () => ({
 }));
 
 vi.mock("@/components/theme", () => ({
-  useTheme: () => ({ cycleTheme: vi.fn(), preference: "system" }),
+  useTheme: () => ({
+    cycleTheme: vi.fn(),
+    setPreference: testState.setPreference,
+    preference: "system",
+  }),
 }));
 
 vi.mock("@/components/threshold-status", () => ({
@@ -110,8 +116,12 @@ afterEach(async () => {
   document.body.replaceChildren();
   testState.pathname = "/workspaces/operations/projects/graph-a";
   testState.push.mockReset();
+  testState.setPreference.mockReset();
+  testState.logout.mockClear();
   testState.savedProjects = [];
   testState.chrome = null;
+  window.localStorage.clear();
+  delete document.documentElement.dataset.railCollapsed;
   vi.unstubAllGlobals();
 });
 
@@ -492,5 +502,78 @@ describe("workspace rail route lifecycle", () => {
     expect(testState.push).toHaveBeenCalledWith(
       "/workspaces/operations/projects/project-a",
     );
+  });
+
+  it("toggles collapsed state via the explicit sidebar header button", async () => {
+    const { container } = await renderWorkspaceRail();
+    const collapseButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Collapse sidebar"]',
+    );
+    expect(collapseButton).not.toBeNull();
+    expect(collapseButton?.getAttribute("aria-expanded")).toBe("true");
+    expect(document.documentElement.dataset.railCollapsed).toBe("false");
+
+    await act(async () => collapseButton?.click());
+
+    const expandButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Expand sidebar"]',
+    );
+    expect(expandButton).not.toBeNull();
+    expect(expandButton?.getAttribute("aria-expanded")).toBe("false");
+    expect(document.documentElement.dataset.railCollapsed).toBe("true");
+
+    await act(async () => expandButton?.click());
+    expect(document.documentElement.dataset.railCollapsed).toBe("false");
+  });
+
+  it("groups Save, Library, and Results inside the Projects navigation when a workbench is open", async () => {
+    testState.chrome = {
+      activeGraphId: "graph-a",
+      graphName: "Graph A",
+      isDirty: false,
+      saving: false,
+      canSave: false,
+      save: vi.fn(),
+      renameGraph: vi.fn(),
+      deleteGraph: vi.fn(),
+      sidePanelOpen: false,
+      toggleSidePanel: vi.fn(),
+      generatedPanelOpen: true,
+      toggleGeneratedPanel: vi.fn(),
+    };
+    const { container } = await renderWorkspaceRail();
+    const projectsNav = container.querySelector('nav[aria-label="Projects"]');
+    const thisProjectGroup = projectsNav?.querySelector('[role="group"]');
+    expect(thisProjectGroup).not.toBeNull();
+    expect(thisProjectGroup?.textContent).toContain("This project");
+    expect(thisProjectGroup?.textContent).toContain("Saved");
+    expect(thisProjectGroup?.textContent).toContain("Library");
+    expect(thisProjectGroup?.textContent).toContain("Results");
+  });
+
+  it("exposes Light, Dark, and System theme options in the account popover", async () => {
+    const { container } = await renderWorkspaceRail();
+    const accountTrigger = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Account menu"]',
+    );
+    expect(
+      container.querySelector(".grafy-workspace-rail__account-email")
+        ?.textContent,
+    ).toBe("ada@example.test");
+
+    await act(async () => accountTrigger?.click());
+
+    const themeGroup = document.body.querySelector(
+      '[role="radiogroup"][aria-label="Theme"]',
+    );
+    expect(themeGroup).not.toBeNull();
+    const darkOption = [
+      ...(themeGroup?.querySelectorAll('[role="radio"]') ?? []),
+    ].find((option) => option.textContent?.includes("Dark")) as
+      HTMLElement | undefined;
+    expect(darkOption).toBeDefined();
+
+    await act(async () => darkOption?.click());
+    expect(testState.setPreference).toHaveBeenCalledWith("dark");
   });
 });

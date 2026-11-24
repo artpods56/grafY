@@ -19,7 +19,8 @@
   --font-geist-sans: Geist, Inter, ui-sans-serif, system-ui, sans-serif;
   --font-geist-mono:
     "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --grafy-rail-width: 200px;
+  --grafy-rail-width: 220px;
+  --grafy-rail-transition: 180ms;
   /* The workbench side panel is the second pane of the sidebar: the shell gives
    * up this width and the panel paints it. Closed means 0, so the canvas takes
    * the space back instead of being covered. */
@@ -32,6 +33,16 @@
 
 :root[data-rail-collapsed="true"] {
   --grafy-rail-width: 64px;
+}
+
+:root.grafy-rail-resizing {
+  --grafy-rail-transition: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --grafy-rail-transition: 0ms;
+  }
 }
 
 /* First visit on a wide canvas: the panel opens on its own, before React paints. */

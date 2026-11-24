@@ -1,120 +1,340 @@
 import * as stylex from "@stylexjs/stylex";
 
-/**
- * The workspace settings screen's own layout, moved off the
- * `.grafy-workspace-settings` rules in `globals.css` onto StyleX.
- * `WorkspaceSettings`, `WorkspacePacks`, and `WorkspaceCredentials` share the
- * section contract from here; each component keeps the rest of its styles
- * beside its markup.
- */
+import { tokens } from "@/lib/stylex/tokens.stylex";
 
 const MONO =
   "var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace";
 
+/**
+ * Tier 2 (gray subsidebar) + Tier 3 (clean surface) single-page Settings styles.
+ */
 export const workspaceSettingsStyles = stylex.create({
-  main: {
-    maxWidth: "960px",
-    minHeight: "100svh",
-    margin: "0 auto",
-    padding: {
-      default: "40px 40px 72px calc(var(--grafy-rail-width, 200px) + 48px)",
-      "@media (max-width: 860px)":
-        "28px 18px 40px calc(var(--grafy-rail-width, 64px) + 16px)",
+  page: {
+    height: {
+      default: "100svh",
       "@media (max-width: 620px)":
-        "calc(var(--grafy-mobile-page-top) + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))",
+        "calc(100svh - var(--grafy-mobile-header-height) - env(safe-area-inset-top))",
     },
-    transition: {
-      default: "padding 180ms ease",
-      "@media (prefers-reduced-motion: reduce)": "none",
+    marginTop: {
+      default: "0",
+      "@media (max-width: 620px)":
+        "calc(var(--grafy-mobile-header-height) + env(safe-area-inset-top))",
     },
+    overflow: "auto",
+    display: "flex",
+    flexDirection: "column",
+    backgroundColor: tokens.colorSurface,
+    color: tokens.colorText,
+    paddingLeft: {
+      default: "var(--grafy-rail-width, 220px)",
+      "@media (max-width: 860px)": "var(--grafy-rail-width, 64px)",
+      "@media (max-width: 620px)": "0",
+    },
+    transitionProperty: "padding-left",
+    transitionDuration: "var(--grafy-rail-transition, 180ms)",
+    transitionTimingFunction: "ease",
   },
-  header: {
-    paddingBottom: "22px",
-    borderBottomWidth: 1,
+
+  topBar: {
+    position: {
+      default: "sticky",
+      "@media (max-width: 620px)": "static",
+    },
+    top: 0,
+    zIndex: 20,
+    flexShrink: 0,
+    minHeight: "56px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "16px",
+    flexWrap: "wrap",
+    padding: {
+      default: "10px 28px",
+      "@media (max-width: 860px)": "10px 20px",
+      "@media (max-width: 620px)": "12px 16px",
+    },
+    backgroundColor: tokens.colorSurface,
+    borderBottomWidth: "1px",
     borderBottomStyle: "solid",
-    borderBottomColor: "light-dark(#d9d9d9, #2a2a2a)",
-  },
-  eyebrow: {
-    color: "light-dark(#6b6b6b, #a3a3a3)",
-    fontSize: "11px",
-    fontWeight: 500,
-    letterSpacing: "0.12em",
-    textTransform: "uppercase",
+    borderBottomColor: tokens.colorBorder,
   },
   headerTitle: {
-    marginTop: "5px",
-    fontSize: "30px",
-    fontWeight: 560,
-    letterSpacing: "0",
+    margin: 0,
+    color: tokens.colorTextEmphasis,
+    fontSize: "16px",
+    fontWeight: 600,
+    letterSpacing: "-0.01em",
+    lineHeight: 1.3,
   },
-  headerText: {
-    marginTop: "8px",
-    color: "light-dark(#6b6b6b, #a3a3a3)",
-    fontSize: "14px",
-  },
-  headerStrong: {
-    color: "light-dark(#111111, #f5f5f5)",
+  workspacePill: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: "24px",
+    paddingInline: "10px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorDivider,
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
     fontWeight: 500,
+    whiteSpace: "nowrap",
+    maxWidth: "240px",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   },
+
+  body: {
+    flex: "1 0 auto",
+    display: "grid",
+    gridTemplateColumns: {
+      default: "220px minmax(0, 1fr)",
+      "@media (max-width: 860px)": "minmax(0, 1fr)",
+    },
+    alignItems: "stretch",
+    minHeight: 0,
+  },
+
+  subrail: {
+    position: "sticky",
+    top: {
+      default: "56px",
+      "@media (max-width: 620px)": "0",
+    },
+    zIndex: 15,
+    alignSelf: "start",
+    height: {
+      default: "calc(100svh - 56px)",
+      "@media (max-width: 860px)": "auto",
+    },
+    overflowY: { default: "auto", "@media (max-width: 860px)": "visible" },
+    overflowX: { default: "hidden", "@media (max-width: 860px)": "auto" },
+    backgroundColor: tokens.colorSubrailBg,
+    borderRightWidth: { default: "1px", "@media (max-width: 860px)": "0" },
+    borderRightStyle: "solid",
+    borderRightColor: tokens.colorSubrailBorder,
+    borderBottomWidth: { default: "0", "@media (max-width: 860px)": "1px" },
+    borderBottomStyle: "solid",
+    borderBottomColor: tokens.colorSubrailBorder,
+    padding: {
+      default: "20px 12px",
+      "@media (max-width: 860px)": "8px 16px",
+    },
+  },
+  subrailNav: {
+    display: {
+      default: "grid",
+      "@media (max-width: 860px)": "flex",
+    },
+    alignItems: {
+      default: "stretch",
+      "@media (max-width: 860px)": "center",
+    },
+    gap: {
+      default: "2px",
+      "@media (max-width: 860px)": "6px",
+    },
+    minWidth: {
+      default: "0",
+      "@media (max-width: 860px)": "max-content",
+    },
+  },
+  subrailItem: {
+    display: "flex",
+    alignItems: "center",
+    gap: "9px",
+    flexShrink: 0,
+    width: {
+      default: "100%",
+      "@media (max-width: 860px)": "auto",
+    },
+    minHeight: {
+      default: "34px",
+      "@media (max-width: 620px)": "44px",
+    },
+    padding: {
+      default: "7px 10px",
+      "@media (max-width: 860px)": "6px 12px",
+    },
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: "transparent",
+    borderRadius: tokens.radiusMd,
+    backgroundColor: {
+      default: "transparent",
+      ":hover:not(:disabled)": tokens.colorSubrailHover,
+    },
+    color: {
+      default: tokens.colorMuted,
+      ":hover:not(:disabled)": tokens.colorText,
+    },
+    fontSize: tokens.fontSizeMd,
+    fontWeight: 450,
+    textAlign: "left",
+    whiteSpace: "nowrap",
+    cursor: "pointer",
+    outline: {
+      default: "none",
+      ":focus-visible": `2px solid ${tokens.colorAccentBorder}`,
+    },
+    outlineOffset: "-2px",
+    transitionProperty: "background-color, color, border-color",
+    transitionDuration: {
+      default: "120ms",
+      "@media (prefers-reduced-motion: reduce)": "0ms",
+    },
+  },
+  subrailItemActive: {
+    backgroundColor: {
+      default: tokens.colorSubrailActive,
+      ":hover:not(:disabled)": tokens.colorSubrailActive,
+    },
+    borderColor: tokens.colorSubrailBorder,
+    boxShadow: tokens.shadowNode,
+    color: {
+      default: tokens.colorTextEmphasis,
+      ":hover:not(:disabled)": tokens.colorTextEmphasis,
+    },
+    fontWeight: 550,
+  },
+  subrailIcon: {
+    flexShrink: 0,
+  },
+
+  main: {
+    minWidth: 0,
+    backgroundColor: tokens.colorSurface,
+  },
+  content: {
+    width: "100%",
+    maxWidth: "820px",
+    padding: {
+      default: "24px 40px 80px",
+      "@media (max-width: 860px)": "20px 20px 56px",
+      "@media (max-width: 620px)":
+        "18px calc(16px + env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))",
+    },
+  },
+
   section: {
     padding: "28px 0",
-    borderBottomWidth: 1,
+    borderBottomWidth: "1px",
     borderBottomStyle: "solid",
-    borderBottomColor: "light-dark(#d9d9d9, #2a2a2a)",
+    borderBottomColor: tokens.colorDivider,
+    scrollMarginTop: {
+      default: "72px",
+      "@media (max-width: 860px)": "124px",
+      "@media (max-width: 620px)": "68px",
+    },
+  },
+  sectionFirst: {
+    paddingTop: "4px",
+  },
+  sectionLast: {
+    borderBottomWidth: 0,
   },
   sectionHeading: {
     display: "flex",
     alignItems: "start",
     justifyContent: "space-between",
-    gap: "24px",
+    gap: "20px",
+    marginBottom: "18px",
   },
   headingIcon: {
     flex: "0 0 auto",
-    color: "light-dark(#777777, #999999)",
+    color: tokens.colorSubtle,
+    marginTop: "2px",
   },
   headingTitle: {
+    margin: 0,
+    color: tokens.colorTextEmphasis,
     fontSize: "16px",
-    fontWeight: 560,
-    letterSpacing: "0",
+    fontWeight: 600,
+    letterSpacing: "-0.01em",
   },
   headingText: {
-    marginTop: "6px",
-    color: "light-dark(#6b6b6b, #a3a3a3)",
-    fontSize: "13px",
+    margin: 0,
+    marginTop: "4px",
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeMd,
     lineHeight: 1.5,
   },
   muted: {
+    margin: 0,
     marginTop: "6px",
-    color: "light-dark(#6b6b6b, #a3a3a3)",
-    fontSize: "13px",
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeMd,
     lineHeight: 1.5,
   },
+
   details: {
     display: "grid",
-    marginTop: "18px",
+    margin: 0,
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusLg,
+    overflow: "hidden",
   },
   detailsRow: {
     display: "grid",
     gridTemplateColumns: {
-      default: "minmax(120px, 0.38fr) 1fr",
-      "@media (max-width: 620px)": "96px minmax(0, 1fr)",
+      default: "minmax(0, 1fr) auto",
+      "@media (max-width: 620px)": "minmax(0, 1fr)",
     },
-    gap: "20px",
-    padding: "11px 0",
-    borderTopWidth: 1,
+    alignItems: "center",
+    gap: "8px 24px",
+    padding: "14px 16px",
+    borderTopWidth: "1px",
     borderTopStyle: "solid",
-    borderTopColor: "light-dark(#ececec, #242424)",
-    fontSize: "13px",
+    borderTopColor: {
+      default: tokens.colorDivider,
+      ":first-child": "transparent",
+    },
+    backgroundColor: tokens.colorSurface,
+  },
+  detailsLabelGroup: {
+    display: "grid",
+    gap: "2px",
+    minWidth: 0,
   },
   detailsTerm: {
-    color: "light-dark(#6b6b6b, #999999)",
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
+    fontWeight: 550,
+  },
+  detailsHint: {
+    margin: 0,
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
+    lineHeight: 1.45,
   },
   detailsValue: {
-    color: "light-dark(#111111, #f5f5f5)",
+    margin: 0,
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
     fontWeight: 500,
     textTransform: "capitalize",
   },
-  sectionAction: {
+  detailsBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    height: "24px",
+    paddingInline: "10px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorDivider,
+    borderRadius: "9999px",
+    backgroundColor: tokens.colorSurfaceRaised,
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeSm,
+    fontWeight: 500,
+    textTransform: "capitalize",
+  },
+
+  sectionActionCard: {
     display: "flex",
     alignItems: {
       default: "center",
@@ -125,13 +345,28 @@ export const workspaceSettingsStyles = stylex.create({
       default: "row",
       "@media (max-width: 620px)": "column",
     },
-    gap: "20px",
-    marginTop: "18px",
+    gap: "16px 24px",
+    padding: "16px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusLg,
+    backgroundColor: tokens.colorSurface,
+  },
+  sectionActionCopy: {
+    display: "grid",
+    gap: "2px",
+    minWidth: 0,
+  },
+  sectionActionTitle: {
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
+    fontWeight: 550,
   },
   sectionActionText: {
-    marginTop: "0",
-    color: "light-dark(#6b6b6b, #a3a3a3)",
-    fontSize: "13px",
+    margin: 0,
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
     lineHeight: 1.5,
   },
   /** The section action's own button: full width on a phone. Pass as `xstyle`. */
@@ -141,44 +376,25 @@ export const workspaceSettingsStyles = stylex.create({
       "@media (max-width: 620px)": "100%",
     },
   },
+
+  tokenFormCard: {
+    padding: "16px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusLg,
+    backgroundColor: tokens.colorBg,
+  },
   tokenForm: {
     display: "grid",
     gridTemplateColumns: {
-      default: "minmax(180px, 1fr) minmax(150px, 0.8fr) 132px auto",
+      default: "minmax(180px, 1fr) minmax(150px, 0.8fr) 128px auto",
       "@media (max-width: 860px)": "1fr 132px",
       "@media (max-width: 620px)": "1fr",
     },
     alignItems: "end",
     gap: "10px",
-    marginTop: "20px",
   },
-  tokenFormLabel: {
-    display: "grid",
-    gap: "6px",
-    color: "light-dark(#6b6b6b, #a3a3a3)",
-    fontSize: "12px",
-    fontWeight: 500,
-  },
-  tokenInput: {
-    width: "100%",
-    minHeight: "36px",
-    padding: "0 10px",
-    borderWidth: "1px",
-    borderStyle: "solid",
-    borderColor: {
-      default: "light-dark(#d9d9d9, #333333)",
-      ":focus": "light-dark(#111111, #ffffff)",
-    },
-    borderRadius: "6px",
-    outline: "0",
-    backgroundColor: "light-dark(#ffffff, #111111)",
-    color: "light-dark(#111111, #f5f5f5)",
-    fontFamily: "inherit",
-    fontWeight: "inherit",
-    lineHeight: "inherit",
-    fontSize: "13px",
-  },
-  /** The token form's submit button: full width from the 860px breakpoint down. */
   tokenFormButton: {
     width: {
       default: "unset",
@@ -193,42 +409,49 @@ export const workspaceSettingsStyles = stylex.create({
     display: "block",
     minWidth: 0,
     overflowWrap: "anywhere",
+    marginTop: "8px",
     padding: "9px 10px",
-    borderWidth: 1,
+    borderWidth: "1px",
     borderStyle: "solid",
-    borderColor: "light-dark(#cde2d3, #2c543b)",
-    borderRadius: "5px",
-    backgroundColor: "light-dark(#ffffff, #0c170f)",
-    color: "light-dark(#183321, #d7f2df)",
+    borderColor: `color-mix(in oklab, ${tokens.colorSuccess} 32%, transparent)`,
+    borderRadius: tokens.radiusSm,
+    backgroundColor: tokens.colorSurface,
+    color: tokens.colorTextEmphasis,
     fontFamily: MONO,
-    fontSize: "12px",
+    fontSize: tokens.fontSizeSm,
     userSelect: "all",
   },
   tokenList: {
     display: "grid",
-    marginTop: "20px",
-    borderTopWidth: 1,
-    borderTopStyle: "solid",
-    borderTopColor: "light-dark(#e5e5e5, #2a2a2a)",
+    marginTop: "16px",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusLg,
+    overflow: "hidden",
   },
   tokenRow: {
     display: "grid",
     gridTemplateColumns: {
-      default: "minmax(180px, 0.8fr) minmax(240px, 1.2fr) 34px",
+      default: "minmax(180px, 0.85fr) minmax(220px, 1.15fr) 34px",
       "@media (max-width: 860px)": "minmax(0, 1fr) 34px",
     },
     alignItems: "center",
-    gap: "18px",
-    minHeight: "66px",
-    padding: "10px 0",
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: "light-dark(#e5e5e5, #2a2a2a)",
+    gap: "14px 18px",
+    minHeight: "62px",
+    padding: "12px 16px",
+    borderTopWidth: "1px",
+    borderTopStyle: "solid",
+    borderTopColor: {
+      default: tokens.colorDivider,
+      ":first-child": "transparent",
+    },
+    backgroundColor: tokens.colorSurface,
   },
   tokenRowMain: {
     minWidth: 0,
     display: "grid",
-    gap: "5px",
+    gap: "4px",
   },
   tokenRowMainLine: {
     minWidth: 0,
@@ -239,27 +462,27 @@ export const workspaceSettingsStyles = stylex.create({
   tokenRowLabel: {
     minWidth: 0,
     overflow: "hidden",
-    color: "light-dark(#111111, #f5f5f5)",
-    fontSize: "13px",
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
     fontWeight: 550,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
   tokenRowPrefix: {
-    color: "light-dark(#6b6b6b, #999999)",
+    color: tokens.colorSubtle,
     fontFamily: MONO,
-    fontSize: "11px",
+    fontSize: tokens.fontSizeXs,
   },
   tokenStatus: {
-    padding: "2px 5px",
+    padding: "2px 6px",
     borderRadius: "4px",
     backgroundColor: {
-      default: "light-dark(#f1f1f1, #242424)",
-      ":is([data-state='active'])": "light-dark(#eaf6ed, #173020)",
+      default: tokens.colorSurfaceRaised,
+      ":is([data-state='active'])": `color-mix(in oklab, ${tokens.colorSuccess} 14%, transparent)`,
     },
     color: {
-      default: "light-dark(#555555, #bbbbbb)",
-      ":is([data-state='active'])": "light-dark(#28623a, #93d0a3)",
+      default: tokens.colorMuted,
+      ":is([data-state='active'])": tokens.colorSuccess,
     },
     fontSize: "10px",
     fontWeight: 600,
@@ -268,9 +491,9 @@ export const workspaceSettingsStyles = stylex.create({
   tokenMeta: {
     minWidth: 0,
     display: "grid",
-    gap: "5px",
-    color: "light-dark(#6b6b6b, #999999)",
-    fontSize: "11px",
+    gap: "4px",
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
     gridColumn: {
       default: "auto",
       "@media (max-width: 860px)": "1",
@@ -295,5 +518,12 @@ export const workspaceSettingsStyles = stylex.create({
       default: "auto",
       "@media (max-width: 860px)": "1 / span 2",
     },
+  },
+  tokenEmpty: {
+    margin: 0,
+    padding: "16px",
+    backgroundColor: tokens.colorSurface,
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
   },
 });

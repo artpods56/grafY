@@ -11,12 +11,12 @@ import { useWorkspaceProjects } from "@/hooks/use-api";
 import { FINE_POINTER_QUERY, useMediaQuery } from "@/hooks/use-media-query";
 import type { SavedGraphSummary } from "@/lib/api";
 import { workbenchProjectPath } from "@/features/workbench/routes";
+import { tokens } from "@/lib/stylex/tokens.stylex";
 import { GraphRowMenu } from "./GraphRowMenu";
 import { graphRowMarker } from "./workspace-rail.stylex";
 
 /**
- * StyleX port of the `.grafy-graph-panel*` rules that used to live in
- * globals.css; values (including the 620px breakpoint) are copied verbatim.
+ * Floating quick-project switcher panel beside the rail.
  */
 const panelStyles = stylex.create({
   panel: {
@@ -30,11 +30,13 @@ const panelStyles = stylex.create({
     flexDirection: "column",
     gap: "8px",
     padding: "14px 12px 12px",
-    border: "1px solid light-dark(#d9d9d9, #2a2a2a)",
-    borderRadius: "12px",
-    background: "light-dark(#ffffff, #171717)",
-    boxShadow:
-      "0 18px 48px light-dark(rgba(17, 17, 17, 0.14), rgba(0, 0, 0, 0.55))",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusLg,
+    backgroundColor: tokens.colorSurface,
+    color: tokens.colorText,
+    boxShadow: tokens.shadowNodeDragged,
     "@media (max-width: 620px)": {
       top: "calc(var(--grafy-mobile-header-height) + 8px + env(safe-area-inset-top))",
       right: "calc(12px + env(safe-area-inset-right))",
@@ -55,13 +57,13 @@ const panelStyles = stylex.create({
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    color: "light-dark(#111111, #f5f5f5)",
-    fontSize: "13px",
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
     fontWeight: 600,
   },
   count: {
-    color: "light-dark(#6b6b6b, #8a8a8a)",
-    fontSize: "11px",
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
     fontWeight: 500,
     fontVariantNumeric: "tabular-nums",
   },
@@ -71,12 +73,15 @@ const panelStyles = stylex.create({
     gap: "8px",
     minHeight: "34px",
     paddingInline: "10px",
-    border: "1px solid light-dark(#d9d9d9, #333333)",
-    borderRadius: "8px",
-    color: "light-dark(#6b6b6b, #8a8a8a)",
-    ":focus-within": {
-      borderColor: "light-dark(#111111, #f5f5f5)",
+    borderWidth: "1px",
+    borderStyle: "solid",
+    borderColor: {
+      default: tokens.colorBorder,
+      ":focus-within": tokens.colorAccentBorder,
     },
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorBg,
+    color: tokens.colorSubtle,
     "@media (max-width: 620px)": {
       minHeight: "44px",
     },
@@ -87,9 +92,9 @@ const panelStyles = stylex.create({
     border: 0,
     outline: "none",
     background: "transparent",
-    color: "light-dark(#111111, #f5f5f5)",
+    color: tokens.colorText,
     fontFamily: "inherit",
-    fontSize: "13px",
+    fontSize: tokens.fontSizeMd,
     "@media (max-width: 620px)": {
       height: "44px",
     },
@@ -102,12 +107,14 @@ const panelStyles = stylex.create({
     overflowY: "auto",
     marginTop: "2px",
     paddingTop: "8px",
-    borderTop: "1px solid light-dark(#d9d9d9, #2a2a2a)",
+    borderTopWidth: "1px",
+    borderTopStyle: "solid",
+    borderTopColor: tokens.colorDivider,
   },
   empty: {
     padding: "10px",
-    color: "light-dark(#6b6b6b, #8a8a8a)",
-    fontSize: "12px",
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
     lineHeight: 1.5,
   },
   row: {
@@ -116,13 +123,13 @@ const panelStyles = stylex.create({
     alignItems: "center",
     gap: "2px",
     padding: "2px 4px 2px 2px",
-    borderRadius: "6px",
+    borderRadius: tokens.radiusSm,
     ":hover": {
-      background: "light-dark(#f4f4f4, #1a1a1a)",
+      backgroundColor: tokens.colorHover,
     },
   },
   rowActive: {
-    background: "light-dark(#f4f4f4, #1a1a1a)",
+    backgroundColor: tokens.colorAccentSoft,
   },
   rowOpen: {
     display: "grid",
@@ -130,7 +137,7 @@ const panelStyles = stylex.create({
     minWidth: 0,
     padding: "5px 6px",
     border: 0,
-    borderRadius: "6px",
+    borderRadius: tokens.radiusSm,
     background: "transparent",
     cursor: "pointer",
     textAlign: "left",
@@ -140,18 +147,19 @@ const panelStyles = stylex.create({
   },
   rowName: {
     overflow: "hidden",
-    color: "light-dark(#111111, #f5f5f5)",
-    fontSize: "13px",
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeMd,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
   rowNameActive: {
+    color: tokens.colorTextEmphasis,
     fontWeight: 500,
   },
   rowMeta: {
     overflow: "hidden",
-    color: "light-dark(#6b6b6b, #8a8a8a)",
-    fontSize: "11px",
+    color: tokens.colorSubtle,
+    fontSize: tokens.fontSizeXs,
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
@@ -367,6 +375,7 @@ export function WorkspaceGraphPanel({
               <GraphRowMenu
                 graph={project}
                 busy={busyGraphId === project.id}
+                tone="surface"
                 onRename={onRename}
                 onDelete={onDelete}
               />

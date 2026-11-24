@@ -15,7 +15,9 @@ import { useRouter } from "next/navigation";
 
 import { BrandLoader } from "@/components/brand";
 import { Button } from "@/components/ui/button";
+import { Field, TextInput } from "@/components/ui/field";
 import { Notice } from "@/components/ui/notice";
+import { phoneTouch } from "@/components/ui/touch-target";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
 import {
   WorkspaceRail,
@@ -49,9 +51,9 @@ function LocationRow({ workspace }: { workspace: Workspace }) {
         aria-hidden="true"
       >
         {workspace.kind === "personal" ? (
-          <Workflow size={16} />
+          <Workflow size={15} />
         ) : (
-          <Users size={16} />
+          <Users size={15} />
         )}
       </span>
       <span className={stylex.props(styles.rowCopy).className}>
@@ -167,29 +169,33 @@ export default function WorkspacesPage() {
           onLogout={logout}
         />
       ) : null}
-      <main className={stylex.props(styles.main).className}>
-        <header className={stylex.props(styles.header).className}>
-          <div>
-            <p
-              className={
-                stylex.props(styles.eyebrow, styles.headerText).className
-              }
-            >
-              Administration
-            </p>
+
+      <header className={stylex.props(styles.topBar).className}>
+        <div className={stylex.props(styles.topBarInner).className}>
+          <div className={stylex.props(styles.topBarTitleGroup).className}>
             <h1 className={stylex.props(styles.headerTitle).className}>
               Workspace directory
             </h1>
-            <p className={stylex.props(styles.headerText).className}>
-              Manage the locations that own your graphs and control who can work
-              with them.
-            </p>
+            <span className={stylex.props(styles.badge).className}>
+              Administration
+            </span>
           </div>
           <div className={stylex.props(styles.actions).className}>
+            <label className={stylex.props(styles.search).className}>
+              <Search size={14} aria-hidden="true" />
+              <input
+                className={stylex.props(styles.searchInput).className}
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.currentTarget.value)}
+                placeholder="Search teams…"
+                aria-label="Search teams and project locations"
+              />
+            </label>
             <Button
               variant="primary"
-              size="lg"
-              xstyle={styles.actionItem}
+              size="md"
+              xstyle={[phoneTouch.on, styles.actionItem]}
               onClick={() => {
                 setCreateOpen((current) => !current);
                 setJoinOpen(false);
@@ -199,8 +205,8 @@ export default function WorkspacesPage() {
             </Button>
             <Button
               variant="secondary"
-              size="lg"
-              xstyle={styles.actionItem}
+              size="md"
+              xstyle={[phoneTouch.on, styles.actionItem]}
               onClick={() => {
                 setJoinOpen((current) => !current);
                 setCreateOpen(false);
@@ -209,38 +215,51 @@ export default function WorkspacesPage() {
               <Share2 size={14} aria-hidden="true" /> Join a team
             </Button>
           </div>
-        </header>
+        </div>
+      </header>
+
+      <main className={stylex.props(styles.main).className}>
+        <p className={stylex.props(styles.intro).className}>
+          Manage the locations that own your projects and control who can work
+          with them.
+        </p>
 
         {createOpen ? (
-          <form
-            className={stylex.props(styles.createForm).className}
-            onSubmit={(event) => void submit(event)}
-          >
-            <label className={stylex.props(styles.createLabel).className}>
-              Team name
-              <input
-                className={stylex.props(styles.createInput).className}
-                value={name}
-                onChange={(event) => setName(event.currentTarget.value)}
-                placeholder="Planning"
-                autoFocus
-              />
-            </label>
-            <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              disabled={busy || name.trim() === ""}
+          <div className={stylex.props(styles.panelCard).className}>
+            <form
+              className={stylex.props(styles.createForm).className}
+              onSubmit={(event) => void submit(event)}
             >
-              {busy ? "Creating…" : "Create team"}
-            </Button>
-            {message ? <Notice tone="danger">{message}</Notice> : null}
-          </form>
+              <Field label="Team name" xstyle={styles.createField}>
+                <TextInput
+                  value={name}
+                  onChange={(event) => setName(event.currentTarget.value)}
+                  placeholder="Planning"
+                  autoFocus
+                  xstyle={phoneTouch.on}
+                />
+              </Field>
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                xstyle={phoneTouch.on}
+                disabled={busy || name.trim() === ""}
+              >
+                {busy ? "Creating…" : "Create team"}
+              </Button>
+            </form>
+            {message ? (
+              <Notice tone="danger" variant="inline">
+                {message}
+              </Notice>
+            ) : null}
+          </div>
         ) : null}
 
         {joinOpen ? (
           <div
-            className={stylex.props(styles.joinForm).className}
+            className={stylex.props(styles.panelCard).className}
             role="region"
             aria-label="Join a team"
           >
@@ -250,20 +269,6 @@ export default function WorkspacesPage() {
             </p>
           </div>
         ) : null}
-
-        <div className={stylex.props(styles.toolbar).className}>
-          <label className={stylex.props(styles.search).className}>
-            <Search size={15} aria-hidden="true" />
-            <input
-              className={stylex.props(styles.searchInput).className}
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
-              placeholder="Search teams"
-              aria-label="Search teams and project locations"
-            />
-          </label>
-        </div>
 
         {error ? (
           <Notice
@@ -281,8 +286,10 @@ export default function WorkspacesPage() {
             Teams and access couldn&apos;t be loaded.
           </Notice>
         ) : !workspaces ? (
-          <div className={stylex.props(styles.loading).className}>
-            <BrandLoader size={40} label="Loading teams and access" />
+          <div
+            className={stylex.props(styles.section, styles.loading).className}
+          >
+            <BrandLoader size={36} label="Loading teams and access" />
             <span>Loading teams &amp; access…</span>
           </div>
         ) : filtered.length === 0 ? (
@@ -295,7 +302,8 @@ export default function WorkspacesPage() {
             {normalizedQuery ? (
               <Button
                 variant="secondary"
-                size="lg"
+                size="md"
+                xstyle={phoneTouch.on}
                 onClick={() => setQuery("")}
               >
                 Clear search
@@ -325,7 +333,9 @@ export default function WorkspacesPage() {
           <span
             className={stylex.props(styles.eduMark).className}
             aria-hidden="true"
-          />
+          >
+            <Workflow size={18} />
+          </span>
         </aside>
       </main>
     </div>

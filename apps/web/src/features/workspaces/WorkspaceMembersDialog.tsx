@@ -30,6 +30,7 @@ import {
   type WorkspaceRole,
 } from "@/lib/api";
 import { ApiError } from "@/lib/api/client";
+import { tokens } from "@/lib/stylex/tokens.stylex";
 import {
   executeMemberMutation,
   MemberListRefreshError,
@@ -75,8 +76,8 @@ const s = stylex.create({
     display: "grid",
     flex: "1",
     gap: "5px",
-    color: "light-dark(#6b6b6b, #a3a3a3)",
-    fontSize: "12px",
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
     fontWeight: 500,
   },
   formInput: {
@@ -88,18 +89,18 @@ const s = stylex.create({
     borderWidth: "1px",
     borderStyle: "solid",
     borderColor: {
-      default: "light-dark(#d9d9d9, #333333)",
-      ":focus": "light-dark(#111111, #ffffff)",
+      default: tokens.colorBorder,
+      ":focus": tokens.colorAccentBorder,
     },
-    borderRadius: "6px",
+    borderRadius: tokens.radiusSm,
     outline: "0",
-    backgroundColor: "light-dark(#ffffff, #1a1a1a)",
-    color: "light-dark(#111111, #f5f5f5)",
-    fontSize: "13px",
+    backgroundColor: tokens.colorSurface,
+    color: tokens.colorText,
+    fontSize: tokens.fontSizeMd,
   },
   memberEmpty: {
-    color: "light-dark(#6b6b6b, #8a8a8a)",
-    fontSize: "13px",
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeMd,
   },
   memberList: {
     display: "grid",
@@ -119,7 +120,7 @@ const s = stylex.create({
     padding: "11px 0",
     borderTopWidth: 1,
     borderTopStyle: "solid",
-    borderTopColor: "light-dark(#d9d9d9, #2a2a2a)",
+    borderTopColor: tokens.colorDivider,
   },
   memberRowMain: {
     display: "grid",
@@ -128,16 +129,16 @@ const s = stylex.create({
   },
   memberRowName: {
     overflow: "hidden",
-    color: "light-dark(#111111, #f5f5f5)",
-    fontSize: "13px",
+    color: tokens.colorTextEmphasis,
+    fontSize: tokens.fontSizeMd,
     fontWeight: 500,
     textOverflow: "ellipsis",
   },
   memberRowDetail: {
     overflow: "hidden",
-    color: "light-dark(#6b6b6b, #8a8a8a)",
+    color: tokens.colorMuted,
     fontFamily: MONO,
-    fontSize: "11px",
+    fontSize: tokens.fontSizeXs,
     textOverflow: "ellipsis",
   },
   /** The role select's grid placement from the 860px breakpoint down. */
@@ -169,14 +170,14 @@ const s = stylex.create({
     padding: "14px",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: "light-dark(#d9d9d9, #333333)",
-    borderRadius: "8px",
-    backgroundColor: "light-dark(#fafafa, #1a1a1a)",
-    fontSize: "13px",
+    borderColor: tokens.colorBorder,
+    borderRadius: tokens.radiusMd,
+    backgroundColor: tokens.colorBg,
+    fontSize: tokens.fontSizeMd,
   },
   invitationConfirmEmail: {
-    color: "light-dark(#6b6b6b, #8a8a8a)",
-    fontSize: "12px",
+    color: tokens.colorMuted,
+    fontSize: tokens.fontSizeSm,
   },
   invitationActions: {
     display: "flex",
@@ -365,8 +366,8 @@ export function WorkspaceMembersDialog() {
     <>
       <Button
         variant="secondary"
-        size="lg"
-        xstyle={settings.action}
+        size="md"
+        xstyle={[phoneTouch.on, settings.action]}
         disabled={authorityUncertain}
         onClick={() => setOpen(true)}
       >
