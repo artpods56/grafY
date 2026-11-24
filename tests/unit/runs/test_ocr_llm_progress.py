@@ -88,7 +88,7 @@ class RecordingHub:
     def __init__(self) -> None:
         self.messages: list[NodeProgressMessage] = []
 
-    async def publish_transient(
+    async def publish_node_progress(
         self,
         *,
         workspace_id: object,

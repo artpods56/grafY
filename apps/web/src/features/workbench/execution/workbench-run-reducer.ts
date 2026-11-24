@@ -7,13 +7,10 @@ export interface ExecutionHistoryTarget {
   readonly executionId: string | null;
 }
 
-export type RunCancelPhase =
-  | { readonly kind: "idle" }
-  | { readonly kind: "cancelling"; readonly runId: string };
-
 export interface WorkbenchRunState {
   readonly error: string | null;
-  readonly cancelPhase: RunCancelPhase;
+  /** Run ids with a cancel request in flight. Two nodes can cancel at once. */
+  readonly cancellingRunIds: readonly string[];
   readonly historyTarget: ExecutionHistoryTarget | null;
   readonly running: boolean;
   readonly runningScope: RunScope | null;
@@ -68,7 +65,7 @@ export type WorkbenchRunEffect =
 export function initialWorkbenchRunState(): WorkbenchRunState {
   return {
     error: null,
-    cancelPhase: { kind: "idle" },
+    cancellingRunIds: [],
     historyTarget: null,
     running: false,
     runningScope: null,
@@ -118,7 +115,7 @@ export const workbenchRunReducer: EffectReducer<
         announcement: action.announcement,
       };
     case "requestCancelRun":
-      if (!action.projectId || state.cancelPhase.kind === "cancelling") {
+      if (!action.projectId || state.cancellingRunIds.includes(action.runId)) {
         return state;
       }
       exec({
@@ -128,19 +125,16 @@ export const workbenchRunReducer: EffectReducer<
       });
       return {
         ...state,
-        cancelPhase: { kind: "cancelling", runId: action.runId },
+        cancellingRunIds: [...state.cancellingRunIds, action.runId],
       };
     case "cancelRunSucceeded":
     case "cancelRunFailed":
-      if (
-        state.cancelPhase.kind !== "cancelling" ||
-        state.cancelPhase.runId !== action.runId
-      ) {
-        return state;
-      }
+      if (!state.cancellingRunIds.includes(action.runId)) return state;
       return {
         ...state,
-        cancelPhase: { kind: "idle" },
+        cancellingRunIds: state.cancellingRunIds.filter(
+          (runId) => runId !== action.runId,
+        ),
         error: action.kind === "cancelRunFailed" ? action.message : state.error,
       };
     case "openHistory":
@@ -154,7 +148,7 @@ export const workbenchRunReducer: EffectReducer<
       void action.projectId;
       if (
         state.error === null &&
-        state.cancelPhase.kind === "idle" &&
+        state.cancellingRunIds.length === 0 &&
         state.historyTarget === null
       ) {
         return state;
@@ -162,7 +156,7 @@ export const workbenchRunReducer: EffectReducer<
       return {
         ...state,
         error: null,
-        cancelPhase: { kind: "idle" },
+        cancellingRunIds: [],
         historyTarget: null,
       };
   }

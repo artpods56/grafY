@@ -128,7 +128,7 @@ describe("workbenchRunReducer", () => {
     );
     expect(state).toEqual({
       error: "Run error",
-      cancelPhase: { kind: "idle" },
+      cancellingRunIds: [],
       historyTarget: null,
       running: true,
       runningScope: "selected",
@@ -152,30 +152,56 @@ describe("workbenchRunReducer", () => {
     });
   });
 
-  it("requires a project and allows only one cancellation at a time", () => {
+  it("requires a project and ignores a second click on a run already cancelling", () => {
     const idle = initialWorkbenchRunState();
     const missingProject = step(idle, { ...requestCancel, projectId: null });
     expect(missingProject.state).toBe(idle);
     expect(missingProject.effects).toEqual([]);
 
     const requested = step(idle, requestCancel);
-    expect(requested.state.cancelPhase).toEqual({
-      kind: "cancelling",
-      runId: "run-1",
-    });
+    expect(requested.state.cancellingRunIds).toEqual(["run-1"]);
     expect(requested.effects).toEqual([
       { kind: "cancelGraphRun", projectId: "project", runId: "run-1" },
     ]);
 
-    const concurrent = step(requested.state, {
-      ...requestCancel,
-      runId: "run-2",
-    });
-    expect(concurrent.state).toBe(requested.state);
-    expect(concurrent.effects).toEqual([]);
+    const duplicate = step(requested.state, requestCancel);
+    expect(duplicate.state).toBe(requested.state);
+    expect(duplicate.effects).toEqual([]);
   });
 
-  it("accepts success only for the pending cancellation and keeps the existing error", () => {
+  it("cancels two runs at once and clears only the run that finished", () => {
+    const first = step(initialWorkbenchRunState(), requestCancel);
+    const second = step(first.state, { ...requestCancel, runId: "run-2" });
+    expect(second.state.cancellingRunIds).toEqual(["run-1", "run-2"]);
+    expect(second.effects).toEqual([
+      { kind: "cancelGraphRun", projectId: "project", runId: "run-2" },
+    ]);
+
+    const finished = step(second.state, {
+      kind: "cancelRunSucceeded",
+      runId: "run-1",
+    });
+    expect(finished.state.cancellingRunIds).toEqual(["run-2"]);
+    expect(finished.state.error).toBeNull();
+    expect(finished.effects).toEqual([]);
+
+    const failed = step(finished.state, {
+      kind: "cancelRunFailed",
+      runId: "run-2",
+      message: "Cancellation failed",
+    });
+    expect(failed.state.cancellingRunIds).toEqual([]);
+    expect(failed.state.error).toBe("Cancellation failed");
+    expect(
+      step(failed.state, {
+        kind: "cancelRunFailed",
+        runId: "run-2",
+        message: "Cancellation failed",
+      }).state,
+    ).toBe(failed.state);
+  });
+
+  it("accepts success only for a run that is cancelling and keeps the existing error", () => {
     const { state } = sequence(
       { kind: "setError", message: "Existing error" },
       requestCancel,
@@ -188,7 +214,7 @@ describe("workbenchRunReducer", () => {
     expect(stale.effects).toEqual([]);
 
     const matched = step(state, { kind: "cancelRunSucceeded", runId: "run-1" });
-    expect(matched.state.cancelPhase).toEqual({ kind: "idle" });
+    expect(matched.state.cancellingRunIds).toEqual([]);
     expect(matched.state.error).toBe("Existing error");
     expect(matched.effects).toEqual([]);
     expect(
@@ -196,8 +222,11 @@ describe("workbenchRunReducer", () => {
     ).toBe(matched.state);
   });
 
-  it("returns to idle with an error only when the pending cancellation fails", () => {
-    const { state } = sequence(requestCancel);
+  it("records an error only when that run's cancellation fails", () => {
+    const { state } = sequence(requestCancel, {
+      ...requestCancel,
+      runId: "run-2",
+    });
     const failed = {
       kind: "cancelRunFailed",
       runId: "run-1",
@@ -208,7 +237,7 @@ describe("workbenchRunReducer", () => {
     expect(stale.effects).toEqual([]);
 
     const matched = step(state, failed);
-    expect(matched.state.cancelPhase).toEqual({ kind: "idle" });
+    expect(matched.state.cancellingRunIds).toEqual(["run-2"]);
     expect(matched.state.error).toBe("Cancellation failed");
     expect(matched.effects).toEqual([]);
     expect(step(matched.state, failed).state).toBe(matched.state);

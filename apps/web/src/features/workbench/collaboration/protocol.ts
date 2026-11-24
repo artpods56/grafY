@@ -158,6 +158,11 @@ export interface RoomReadyMessage {
   readonly participants: readonly PresenceParticipant[];
   readonly active_runs: readonly ActiveRunSummary[];
   readonly instances: readonly RoomInstanceState[];
+  /**
+   * In-flight `node.progress` frames, oldest first. Absent on an older server,
+   * which the parser reads as an empty list.
+   */
+  readonly node_progress?: readonly NodeProgressMessage[];
   readonly registry_marker: string;
 }
 
@@ -589,6 +594,75 @@ function parseActiveRun(value: unknown): ActiveRunSummary | null {
   };
 }
 
+function parseCount(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  if (isNonNegativeInt(value)) return value;
+  return undefined;
+}
+
+function parseInvocationPath(value: unknown): readonly number[] | null {
+  if (!Array.isArray(value)) return null;
+  const path: number[] = [];
+  for (const step of value) {
+    if (!isNonNegativeInt(step)) return null;
+    path.push(step);
+  }
+  return path;
+}
+
+function parseNodeProgressMessage(value: unknown): NodeProgressMessage | null {
+  if (!isRecord(value) || value.protocol_version !== ROOM_PROTOCOL_VERSION) {
+    return null;
+  }
+  if (value.type !== "node.progress") return null;
+  const instance = parseInstanceKey(value.instance);
+  const current = parseCount(value.current);
+  const total = parseCount(value.total);
+  const invocationPath = parseInvocationPath(value.invocation_path);
+  if (
+    !instance ||
+    !isString(value.fingerprint) ||
+    !isString(value.computation_id) ||
+    !isPositiveInt(value.sequence) ||
+    !isString(value.message) ||
+    value.message.length === 0 ||
+    value.message.length > 1000 ||
+    current === undefined ||
+    total === undefined ||
+    (current !== null && total !== null && current > total) ||
+    invocationPath === null
+  ) {
+    return null;
+  }
+  return {
+    protocol_version: 1,
+    type: "node.progress",
+    instance,
+    fingerprint: value.fingerprint,
+    computation_id: value.computation_id,
+    sequence: value.sequence,
+    message: value.message,
+    current,
+    total,
+    invocation_path: invocationPath,
+  };
+}
+
+/** Missing or null is an older server. Any other non-array is a bad frame. */
+function parseNodeProgressList(
+  value: unknown,
+): readonly NodeProgressMessage[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) return null;
+  const frames: NodeProgressMessage[] = [];
+  for (const item of value) {
+    const frame = parseNodeProgressMessage(item);
+    if (!frame) return null;
+    frames.push(frame);
+  }
+  return frames;
+}
+
 function parseCommandList(
   value: unknown,
 ): readonly RoomProjectCommand[] | null {
@@ -631,6 +705,8 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
     if (activeRuns.some((run) => run === null)) return null;
     const instances = raw.instances.map(parseInstanceState);
     if (instances.some((instance) => instance === null)) return null;
+    const nodeProgress = parseNodeProgressList(raw.node_progress);
+    if (nodeProgress === null) return null;
     return {
       protocol_version: 1,
       type: "room.ready",
@@ -643,6 +719,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
       participants: participants as PresenceParticipant[],
       active_runs: activeRuns as ActiveRunSummary[],
       instances: instances as RoomInstanceState[],
+      node_progress: nodeProgress,
       registry_marker: raw.registry_marker,
     };
   }
@@ -691,35 +768,7 @@ export function parseServerRoomMessage(raw: unknown): ServerRoomMessage | null {
   }
 
   if (type === "node.progress") {
-    const instance = parseInstanceKey(raw.instance);
-    if (
-      !instance ||
-      !isString(raw.fingerprint) ||
-      !isString(raw.computation_id) ||
-      !isNonNegativeInt(raw.sequence) ||
-      raw.sequence === 0 ||
-      !isString(raw.message) ||
-      raw.message.length === 0 ||
-      raw.message.length > 1000 ||
-      (raw.current !== null && !isNonNegativeInt(raw.current)) ||
-      (raw.total !== null && !isNonNegativeInt(raw.total)) ||
-      (raw.current !== null && raw.total !== null && raw.current > raw.total) ||
-      !Array.isArray(raw.invocation_path) ||
-      !raw.invocation_path.every(isNonNegativeInt)
-    )
-      return null;
-    return {
-      protocol_version: 1,
-      type,
-      instance,
-      fingerprint: raw.fingerprint,
-      computation_id: raw.computation_id,
-      sequence: raw.sequence,
-      message: raw.message,
-      current: raw.current,
-      total: raw.total,
-      invocation_path: raw.invocation_path,
-    };
+    return parseNodeProgressMessage(raw);
   }
 
   if (type === "instances.changed") {

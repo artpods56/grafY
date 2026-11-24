@@ -350,6 +350,9 @@ class RoomReadyMessage(RoomProtocolModel):
     participants: list[PresenceParticipant] = Field(default_factory=list)
     active_runs: tuple[ActiveRunSummary, ...] = ()
     instances: tuple[InstanceStateEntry, ...] = ()
+    # In-flight ``node.progress`` frames for instances that are still queued or
+    # running. Older servers omit it; an empty tuple is the same as omission.
+    node_progress: tuple[NodeProgressMessage, ...] = ()
     registry_marker: str = "builtin"
 
 

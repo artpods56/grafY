@@ -937,7 +937,7 @@ function WorkbenchBody({
     runWorkflow,
     nodeInstanceStates,
     openGraphRuns,
-    cancellingRunId,
+    cancellingRunIds,
     cancelGraphRun,
     executionHistoryTarget,
     openExecutionHistory,
@@ -2932,12 +2932,12 @@ function WorkbenchBody({
   );
   const onCancelNodeRun = React.useCallback(
     (nodeId: string) => {
-      if (!canCancelRun || cancellingRunId !== null) return;
+      if (!canCancelRun) return;
       const active = activeRunForNode(openGraphRuns, nodeId, callPath);
-      if (!active?.cancellable) return;
+      if (!active?.cancellable || cancellingRunIds.has(active.run_id)) return;
       cancelGraphRun(active.run_id);
     },
-    [callPath, canCancelRun, cancelGraphRun, cancellingRunId, openGraphRuns],
+    [callPath, canCancelRun, cancelGraphRun, cancellingRunIds, openGraphRuns],
   );
 
   const cellScene = React.useMemo(
@@ -2987,7 +2987,7 @@ function WorkbenchBody({
                     callPath,
                     progress: projectRoom.nodeProgress,
                     runs: openGraphRuns,
-                    cancellingRunId,
+                    cancellingRunIds,
                     canCancelRun,
                     onCancelNodeRun,
                   }
@@ -3002,7 +3002,7 @@ function WorkbenchBody({
       authoredDocument,
       callPath,
       canCancelRun,
-      cancellingRunId,
+      cancellingRunIds,
       canEditProject,
       canManageSecrets,
       canStartRun,

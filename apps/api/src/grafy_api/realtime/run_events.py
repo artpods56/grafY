@@ -89,7 +89,7 @@ class ProjectNodeProgress:
         ):
             return
         self._sequence += 1
-        await self._hub.publish_transient(
+        await self._hub.publish_node_progress(
             workspace_id=context.workspace_id,
             project_id=context.project_id,
             message=NodeProgressMessage(
@@ -134,7 +134,7 @@ class ProjectRunEvents:
 
     async def run_finished(self, run: Run) -> None:
         try:
-            await self._hub.publish_model(
+            await self._hub.publish_run_finished(
                 workspace_id=run.workspace_id,
                 project_id=run.project_id,
                 message=RunFinishedMessage(
@@ -159,7 +159,7 @@ class ProjectRunEvents:
                 head = await uow.collaboration.get_head(workspace_id, project_id)
             if head is None:
                 return
-            await self._hub.publish_model(
+            await self._hub.publish_instances_changed(
                 workspace_id=workspace_id,
                 project_id=project_id,
                 message=InstancesChangedMessage(
