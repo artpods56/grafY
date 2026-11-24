@@ -12,6 +12,8 @@ import {
   declaredArtifactContentType,
   isImageArtifact,
 } from "../artifacts/artifact-card";
+import { artifactTypeKey } from "../artifacts/artifact-type-key";
+import { formatArtifactTypeLabel } from "../artifacts/artifact-type-label";
 import {
   ARTIFACT_CARD_OUTPUT_HANDLE,
   artifactCardConnectionValue,
@@ -35,6 +37,7 @@ import {
   isServiceProviderNode,
   portArtifactType,
   portMetaForPort,
+  resolvedPortArtifactType,
   workflowNodeIsSupported,
   type GraphConnection,
   type WorkflowEdge,
@@ -51,10 +54,14 @@ import type {
 } from "../cell-canvas/CellCanvas";
 import type {
   ArtifactCardSurfaceData,
+  CellExecutionAppendixOutput,
+  CellExecutionAppendixSpec,
   CellNodeLiveProgress,
   CellRemotePeerState,
   CellSelectionSnapshot,
 } from "../cell-canvas/cell-contracts";
+import { artifactTypeColor } from "../config-ui/nodes.css";
+import { appendixExpandedHeightCells } from "../cell-canvas/cell-operator-adapter";
 import {
   cellGraphFromAuthoredDocument,
   cellOriginFromWorld,
@@ -430,6 +437,167 @@ function linkedTiffWindow(
   return { artifactId: lead.artifact_id, selection };
 }
 
+const APPENDIX_MIN_CELLS = 4;
+const APPENDIX_ERROR_MAX_CELLS = 6;
+
+function formatRelativeCompletedAt(
+  iso: string | null | undefined,
+  nowMs: number,
+): string | null {
+  if (!iso) return null;
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) return null;
+  const diffSeconds = Math.max(0, Math.floor((nowMs - timestamp) / 1000));
+  if (diffSeconds < 45) return "Just now";
+  if (diffSeconds < 3600) {
+    return `${Math.max(1, Math.round(diffSeconds / 60))}m ago`;
+  }
+  if (diffSeconds < 86400) {
+    return `${Math.round(diffSeconds / 3600)}h ago`;
+  }
+  return `${Math.round(diffSeconds / 86400)}d ago`;
+}
+
+function estimateErrorAppendixCells(errorText: string): number {
+  const lines = errorText.split(/\r?\n/);
+  const wrappedLines = lines.reduce(
+    (total, line) => total + Math.max(1, Math.ceil(line.length / 42)),
+    0,
+  );
+  if (wrappedLines <= 3) return APPENDIX_MIN_CELLS;
+  if (wrappedLines <= 5) return 5;
+  return APPENDIX_ERROR_MAX_CELLS;
+}
+
+export function buildAppendixSpec({
+  node,
+  status,
+  instance,
+  registry,
+  nowMs,
+}: {
+  node: WorkflowNode;
+  status?: CellNodeRunState["status"];
+  instance?: RoomInstanceState;
+  registry?: NodeRegistry | null;
+  nowMs?: number;
+}): CellExecutionAppendixSpec | undefined {
+  const resolvedStatus = status ?? cellNodeStatus(node, instance).status;
+  const { run, execution, layout, spec, artifactTypeBindings } = node.data;
+  const currentNow = nowMs ?? Date.now();
+  const savedAppendixCells =
+    (layout?.appendixHeight ?? 0) > 0
+      ? Math.max(
+          APPENDIX_MIN_CELLS,
+          Math.ceil((layout?.appendixHeight ?? 0) / CELL_SIZE),
+        )
+      : 0;
+
+  if (resolvedStatus === "error") {
+    const error =
+      instance?.error || execution.error || run?.error || "Execution failed.";
+    const completedAtLabel =
+      run?.status === "failed" &&
+      (!instance?.error || instance.error === run.error)
+        ? formatRelativeCompletedAt(run.created_at, currentNow)
+        : null;
+    return {
+      kind: "error",
+      title: "Run failed",
+      kindBadge: "Error",
+      summaryText: error,
+      errorText: error,
+      completedAtLabel,
+      heightCells: Math.max(
+        savedAppendixCells,
+        estimateErrorAppendixCells(error),
+      ),
+    };
+  }
+
+  const runOutputs = run?.outputs ?? [];
+  if (runOutputs.length === 0) return undefined;
+
+  const specOutputs = spec?.outputs ?? [];
+  const portOrder = new Map(
+    specOutputs.map((port, index) => [port.name, index]),
+  );
+  const orderedOutputs = [...runOutputs].sort((left, right) => {
+    const leftIndex = portOrder.get(left.port) ?? Number.MAX_SAFE_INTEGER;
+    const rightIndex = portOrder.get(right.port) ?? Number.MAX_SAFE_INTEGER;
+    return leftIndex - rightIndex;
+  });
+  const catalogTypes = registry?.artifact_types ?? null;
+
+  const outputs: CellExecutionAppendixOutput[] = orderedOutputs.map(
+    (output) => {
+      const portDef = specOutputs.find(
+        (candidate) => candidate.name === output.port,
+      );
+      const label = portDef?.title?.trim() || output.port;
+      const firstArtifact = output.artifacts[0];
+      const portType = portDef
+        ? resolvedPortArtifactType(portDef, artifactTypeBindings)
+        : null;
+      const resolvedType = firstArtifact
+        ? {
+            id: firstArtifact.artifact_type,
+            schema_version: firstArtifact.schema_version,
+          }
+        : output.value
+          ? {
+              id: output.value.artifact_type,
+              schema_version: output.value.schema_version,
+            }
+          : portType;
+      const typeLabel = resolvedType
+        ? formatArtifactTypeLabel(resolvedType, catalogTypes)
+        : null;
+      const typeKey = resolvedType ? artifactTypeKey(resolvedType) : null;
+      const colorTypeId =
+        portType?.id ??
+        portDef?.artifact_type_variable ??
+        resolvedType?.id ??
+        null;
+      const toneColor = colorTypeId
+        ? artifactTypeColor(colorTypeId, "") || null
+        : null;
+      return {
+        port: output.port,
+        label,
+        count: output.artifacts.length,
+        kind: output.kind,
+        typeLabel,
+        typeKey,
+        toneColor,
+        artifactIds: output.artifacts.map((artifact) => artifact.artifact_id),
+      };
+    },
+  );
+
+  const itemCount = outputs.reduce((count, row) => count + row.count, 0);
+  const itemText = `${itemCount} ${itemCount === 1 ? "item" : "items"}`;
+  const summaryText =
+    outputs.length > 1 ? `${outputs.length} outputs · ${itemText}` : itemText;
+  return {
+    kind: "output",
+    title: "Outputs",
+    kindBadge: "Output",
+    summaryText,
+    previewLines: outputs.map(
+      (row) =>
+        `${row.label}: ${row.count} ${row.count === 1 ? "item" : "items"}`,
+    ),
+    itemCount,
+    outputs,
+    completedAtLabel: formatRelativeCompletedAt(run?.created_at, currentNow),
+    heightCells: appendixExpandedHeightCells({
+      heightCells: savedAppendixCells,
+      outputs,
+    }),
+  };
+}
+
 export function buildWorkbenchCellScene({
   workspaceId,
   document,
@@ -484,48 +652,17 @@ export function buildWorkbenchCellScene({
   const nodeRunState: Record<string, CellNodeRunState> = {};
   for (const node of nodes) {
     const instance = nodeInstanceStates[node.id];
-    const { run, execution, layout } = node.data;
     const isProvider = isServiceProviderNode(node.data.spec);
     const status = cellNodeStatus(node, instance);
-    const error =
-      status.status === "error"
-        ? instance?.error ||
-          execution.error ||
-          run?.error ||
-          "Execution failed."
-        : null;
-    const outputs = run?.outputs ?? [];
-    const itemCount = outputs.reduce(
-      (count, output) => count + output.artifacts.length,
-      0,
-    );
-    const heightCells = Math.max(
-      4,
-      Math.ceil((layout?.appendixHeight ?? 0) / CELL_SIZE),
-    );
     nodeRunState[node.id] = {
       ...status,
       runDisabled: !canRun || !workflowNodeIsSupported(node.data) || isProvider,
-      appendix: error
-        ? {
-            title: "Execution error",
-            kindBadge: "Error",
-            summaryText: error,
-            heightCells,
-          }
-        : outputs.length
-          ? {
-              title: "Execution output",
-              kindBadge: "Output",
-              summaryText: `${outputs.length} output port${outputs.length === 1 ? "" : "s"}`,
-              previewLines: outputs.map(
-                ({ port, artifacts }) =>
-                  `${port}: ${artifacts.length} artifact${artifacts.length === 1 ? "" : "s"}`,
-              ),
-              itemCount,
-              heightCells,
-            }
-          : undefined,
+      appendix: buildAppendixSpec({
+        node,
+        status: status.status,
+        instance,
+        registry,
+      }),
     };
   }
 

@@ -277,15 +277,30 @@ export interface CellInstancePlugGroup {
   canAdd?: boolean;
 }
 
+export interface CellExecutionAppendixOutput {
+  port: string;
+  label: string;
+  count: number;
+  kind: "single" | "sequence";
+  typeLabel: string | null;
+  typeKey?: string | null;
+  toneColor?: string | null;
+  artifactIds: readonly string[];
+}
+
 export interface CellExecutionAppendixSpec {
   title: string;
   kindBadge: string;
-  /** Exact cell rows allocated to the appendix body (min 2, default 3). */
+  /** Exact cell rows allocated to the appendix body (min 2 when collapsed, min 4 when open). */
   heightCells: number;
   collapsed?: boolean;
   summaryText: string;
   previewLines?: readonly string[];
   itemCount?: number;
+  kind?: "output" | "error";
+  outputs?: readonly CellExecutionAppendixOutput[];
+  errorText?: string | null;
+  completedAtLabel?: string | null;
 }
 
 /** One streamed `node.progress` frame. */

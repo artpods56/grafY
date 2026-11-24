@@ -17,6 +17,7 @@ import {
 } from "./cell-card-geometry";
 import type { OperatorCardSurfaceData } from "./cell-contracts";
 import {
+  appendixExpandedHeightCells,
   buildOperatorCardsAndSurfaces,
   type CellNodeSecretState,
 } from "./cell-operator-adapter";
@@ -361,5 +362,112 @@ describe("operator config fields: rows for composite fields", () => {
       ["features", 2],
       ["layer", 2],
     ]);
+  });
+});
+
+describe("operator execution appendix layout", () => {
+  const sampleOutputs = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      port: `out_${index}`,
+      label: `Output ${index + 1}`,
+      count: 1,
+      kind: "single" as const,
+      typeLabel: "Text",
+      toneColor: "light-dark(#b46735, #e88a50)",
+      artifactIds: [`art-${index}`],
+    }));
+
+  it("sizes expanded outputs accurately up to 6 rows and caps at 8 cells", () => {
+    expect(
+      appendixExpandedHeightCells({
+        heightCells: 4,
+        outputs: sampleOutputs(1),
+      }),
+    ).toBe(4);
+    expect(
+      appendixExpandedHeightCells({
+        heightCells: 4,
+        outputs: sampleOutputs(2),
+      }),
+    ).toBe(4);
+    expect(
+      appendixExpandedHeightCells({
+        heightCells: 4,
+        outputs: sampleOutputs(3),
+      }),
+    ).toBe(5);
+    expect(
+      appendixExpandedHeightCells({
+        heightCells: 4,
+        outputs: sampleOutputs(6),
+      }),
+    ).toBe(8);
+    expect(
+      appendixExpandedHeightCells({
+        heightCells: 4,
+        outputs: sampleOutputs(9),
+      }),
+    ).toBe(8);
+  });
+
+  it("shrinks the card cleanly when the appendix collapses and expands to fit outputs", () => {
+    const node = fixtureNode("ask", askModelSpec, {
+      base_url: "https://api.example.test/v1",
+    });
+    const base = operator(fixtureDocument([node]), "ask");
+    const expanded = operator(fixtureDocument([node]), "ask", {
+      nodeRunState: {
+        ask: {
+          status: "done",
+          appendix: {
+            kind: "output",
+            title: "Outputs",
+            kindBadge: "Output",
+            heightCells: 4,
+            summaryText: "5 outputs · 5 items",
+            itemCount: 5,
+            outputs: sampleOutputs(5),
+          },
+        },
+      },
+    });
+    const collapsed = operator(fixtureDocument([node]), "ask", {
+      collapsedAppendices: new Set(["ask"]),
+      nodeRunState: {
+        ask: {
+          status: "done",
+          appendix: {
+            kind: "output",
+            title: "Outputs",
+            kindBadge: "Output",
+            heightCells: 7,
+            summaryText: "5 outputs · 5 items",
+            itemCount: 5,
+            outputs: sampleOutputs(5),
+          },
+        },
+      },
+    });
+
+    // Without an appendix, config shelves take 1 tail cell; 7-cell appendix adds 6 cells.
+    expect(expanded.surface.appendix?.heightCells).toBe(7);
+    expect(expanded.card.heightCells).toBe(base.card.heightCells + 6);
+    // Collapsed appendix uses 2 cells (1 more than the 1 config tail cell).
+    expect(collapsed.surface.appendix?.collapsed).toBe(true);
+    expect(collapsed.card.heightCells).toBe(base.card.heightCells + 1);
+    expect(expanded.card.heightCells - collapsed.card.heightCells).toBe(5);
+  });
+
+  it("uses clean non-jargon fallback title when only saved appendix_height exists", () => {
+    const savedNode = {
+      ...fixtureNode("ask", askModelSpec),
+      layout: { width: 300, body_height: null, appendix_height: 120 },
+    };
+    const { surface } = operator(fixtureDocument([savedNode]), "ask");
+    expect(surface.appendix).toMatchObject({
+      kind: "output",
+      title: "Outputs",
+      heightCells: 5,
+    });
   });
 });

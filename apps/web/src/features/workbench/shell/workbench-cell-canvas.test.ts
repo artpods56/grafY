@@ -36,6 +36,7 @@ import {
   type RoomInstanceState,
 } from "../collaboration/protocol";
 import {
+  buildAppendixSpec,
   buildWorkbenchCellScene,
   cellConnectionToWorkbenchConnection,
   cellRemotePeersFromParticipants,
@@ -256,14 +257,308 @@ describe("buildWorkbenchCellScene", () => {
     expect(scene("fresh", false).surfaceById.source).toMatchObject({
       runDisabled: true,
       appendix: {
+        kind: "output",
+        title: "Outputs",
         collapsed: true,
         itemCount: 1,
-        summaryText: "1 output port",
-        previewLines: ["result: 1 artifact"],
+        summaryText: "1 item",
+        heightCells: 4,
+        outputs: [
+          {
+            port: "result",
+            label: "result",
+            count: 1,
+            kind: "single",
+            typeLabel: "scalar.text@2",
+            typeKey: "scalar.text@2",
+            toneColor: "light-dark(#b46735, #e88a50)",
+            artifactIds: ["a"],
+          },
+        ],
       },
     });
     expect(scene("failed").surfaceById.source).toMatchObject({
-      appendix: { collapsed: true, summaryText: "Broken", kindBadge: "Error" },
+      appendix: {
+        kind: "error",
+        title: "Run failed",
+        collapsed: true,
+        summaryText: "Broken",
+        errorText: "Broken",
+        kindBadge: "Error",
+        heightCells: 4,
+      },
+    });
+  });
+
+  it("resolves human port labels, catalog artifact type labels, port tones, and bounded cell heights", () => {
+    const ocrSpec: NodeSpec = {
+      ...spec,
+      operator_id: "ocr.document",
+      title: "Document OCR",
+      inputs: [],
+      outputs: [
+        {
+          ...output,
+          name: "markdown",
+          title: "Transcription",
+          artifact_type: { id: "text.markdown", schema_version: 1 },
+          shape: "one",
+        },
+        {
+          ...output,
+          name: "blocks",
+          title: "Text blocks",
+          artifact_type: { id: "ocr.document_result", schema_version: 1 },
+          shape: "many",
+        },
+        {
+          ...output,
+          name: "regions",
+          title: "Boxes on the page",
+          artifact_type: { id: "ocr.tiff_text_regions", schema_version: 2 },
+          shape: "many",
+        },
+      ],
+    };
+    const ocrRegistry: NodeRegistry = {
+      ...registry,
+      nodes: [ocrSpec],
+      artifact_types: [
+        {
+          key: { id: "text.markdown", schema_version: 1 },
+          title: "Markdown",
+          preview_kind: "markdown",
+          bundle: { format: "inline-json", version: 1 },
+          field_projections: [],
+          payload_schema: {},
+        },
+        {
+          key: { id: "ocr.document_result", schema_version: 1 },
+          title: "Document OCR blocks",
+          preview_kind: "text",
+          bundle: { format: "inline-json", version: 1 },
+          field_projections: [],
+          payload_schema: {},
+        },
+        {
+          key: { id: "ocr.tiff_text_regions", schema_version: 2 },
+          title: "Page regions",
+          preview_kind: "tiff-text",
+          bundle: { format: "inline-json", version: 1 },
+          field_projections: [],
+          payload_schema: {},
+        },
+      ],
+    };
+    const ocrNode: WorkflowNode = {
+      ...sourceNode,
+      id: "ocr",
+      data: {
+        ...sourceNode.data,
+        spec: ocrSpec,
+        run: {
+          node_id: "ocr",
+          status: "succeeded",
+          error: null,
+          // Intentionally scrambled order relative to spec.outputs
+          outputs: [
+            {
+              port: "regions",
+              kind: "sequence",
+              artifacts: [
+                {
+                  artifact_id: "r1",
+                  artifact_type: "ocr.tiff_text_regions",
+                  schema_version: 2,
+                  content_hash: null,
+                },
+                {
+                  artifact_id: "r2",
+                  artifact_type: "ocr.tiff_text_regions",
+                  schema_version: 2,
+                  content_hash: null,
+                },
+              ],
+              value: {
+                artifact_type: "ocr.tiff_text_regions",
+                schema_version: 2,
+                index_key: "index",
+                ordered: true,
+                item_refs: [],
+              },
+            },
+            {
+              port: "blocks",
+              kind: "sequence",
+              artifacts: [
+                {
+                  artifact_id: "b1",
+                  artifact_type: "ocr.document_result",
+                  schema_version: 1,
+                  content_hash: null,
+                },
+                {
+                  artifact_id: "b2",
+                  artifact_type: "ocr.document_result",
+                  schema_version: 1,
+                  content_hash: null,
+                },
+                {
+                  artifact_id: "b3",
+                  artifact_type: "ocr.document_result",
+                  schema_version: 1,
+                  content_hash: null,
+                },
+              ],
+              value: {
+                artifact_type: "ocr.document_result",
+                schema_version: 1,
+                index_key: "index",
+                ordered: true,
+                item_refs: [],
+              },
+            },
+            {
+              port: "markdown",
+              kind: "single",
+              artifacts: [
+                {
+                  artifact_id: "m1",
+                  artifact_type: "text.markdown",
+                  schema_version: 1,
+                  content_hash: null,
+                },
+              ],
+              value: {
+                artifact_id: "m1",
+                artifact_type: "text.markdown",
+                schema_version: 1,
+              },
+            },
+          ],
+          result_fingerprint: "ocr-res",
+          created_at: "2026-11-24T01:55:00.000Z",
+        },
+      },
+    };
+    const appendix = buildAppendixSpec({
+      node: ocrNode,
+      status: "done",
+      registry: ocrRegistry,
+      nowMs: Date.parse("2026-11-24T02:00:00.000Z"),
+    });
+    expect(appendix).toEqual({
+      kind: "output",
+      title: "Outputs",
+      kindBadge: "Output",
+      summaryText: "3 outputs · 6 items",
+      previewLines: [
+        "Transcription: 1 item",
+        "Text blocks: 3 items",
+        "Boxes on the page: 2 items",
+      ],
+      itemCount: 6,
+      completedAtLabel: "5m ago",
+      heightCells: 5,
+      outputs: [
+        {
+          port: "markdown",
+          label: "Transcription",
+          count: 1,
+          kind: "single",
+          typeLabel: "Markdown",
+          typeKey: "text.markdown@1",
+          toneColor: "light-dark(#b46735, #e88a50)",
+          artifactIds: ["m1"],
+        },
+        {
+          port: "blocks",
+          label: "Text blocks",
+          count: 3,
+          kind: "sequence",
+          typeLabel: "Document OCR blocks",
+          typeKey: "ocr.document_result@1",
+          toneColor: "light-dark(#7b63c9, #9a7cf2)",
+          artifactIds: ["b1", "b2", "b3"],
+        },
+        {
+          port: "regions",
+          label: "Boxes on the page",
+          count: 2,
+          kind: "sequence",
+          typeLabel: "Page regions · v2",
+          typeKey: "ocr.tiff_text_regions@2",
+          toneColor: "light-dark(#7b63c9, #9a7cf2)",
+          artifactIds: ["r1", "r2"],
+        },
+      ],
+    });
+
+    // Without a registry catalog, typeLabel falls back to full id@version.
+    const noCatalog = buildAppendixSpec({
+      node: ocrNode,
+      status: "done",
+      registry: null,
+    });
+    expect(noCatalog?.outputs?.[0]?.typeLabel).toBe("text.markdown@1");
+
+    // 8 output ports cap expanded height at 8 cells (header + 6 visible rows).
+    const manyOutputsNode: WorkflowNode = {
+      ...ocrNode,
+      data: {
+        ...ocrNode.data,
+        run: {
+          ...ocrNode.data.run!,
+          outputs: Array.from({ length: 8 }, (_, index) => ({
+            port: `out_${index}`,
+            kind: "single" as const,
+            artifacts: [
+              {
+                artifact_id: `art-${index}`,
+                artifact_type: "text.markdown",
+                schema_version: 1,
+                content_hash: null,
+              },
+            ],
+            value: {
+              artifact_id: `art-${index}`,
+              artifact_type: "text.markdown",
+              schema_version: 1,
+            },
+          })),
+        },
+      },
+    };
+    expect(
+      buildAppendixSpec({
+        node: manyOutputsNode,
+        status: "done",
+        registry: ocrRegistry,
+      })?.heightCells,
+    ).toBe(8);
+
+    // Multi-line errors grow up to 6 cells without overflowing the card.
+    const longErrorNode: WorkflowNode = {
+      ...ocrNode,
+      data: {
+        ...ocrNode.data,
+        run: {
+          ...ocrNode.data.run!,
+          status: "failed",
+          error: Array.from(
+            { length: 7 },
+            (_, idx) =>
+              `Line ${idx + 1}: provider returned an unexpected failure`,
+          ).join("\n"),
+        },
+      },
+    };
+    expect(
+      buildAppendixSpec({ node: longErrorNode, status: "error" }),
+    ).toMatchObject({
+      kind: "error",
+      title: "Run failed",
+      heightCells: 6,
     });
   });
 

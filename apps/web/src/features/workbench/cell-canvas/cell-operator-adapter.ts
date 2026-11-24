@@ -95,6 +95,25 @@ import {
 
 /** An expanded execution appendix is never shorter than four cells. */
 const MIN_APPENDIX_CELLS = 4;
+/** A collapsed execution appendix sits in two cells (45px inside the plate). */
+const COLLAPSED_APPENDIX_CELLS = 2;
+/** Up to six materialized output rows fit before the list scrolls internally. */
+const APPENDIX_MAX_VISIBLE_OUTPUTS = 6;
+
+/**
+ * Computes the expanded cell height for an execution appendix so structured
+ * output lists never clip on cards with up to six materialized output ports.
+ */
+export function appendixExpandedHeightCells(
+  appendix: Pick<CellExecutionAppendixSpec, "heightCells" | "outputs">,
+): number {
+  const outputsCount = appendix.outputs?.length ?? 0;
+  const outputMinCells =
+    outputsCount > 0
+      ? 2 + Math.min(outputsCount, APPENDIX_MAX_VISIBLE_OUTPUTS)
+      : 0;
+  return Math.max(MIN_APPENDIX_CELLS, appendix.heightCells, outputMinCells);
+}
 
 export interface CellNodeRunState {
   status?: CellCardModel["status"];
@@ -540,7 +559,8 @@ export function buildOperatorCardsAndSurfaces(
         ? runState.appendix
         : savedAppendixCells > 0
           ? {
-              title: "Execution output",
+              kind: "output",
+              title: "Outputs",
               kindBadge: "Output",
               heightCells: savedAppendixCells,
               summaryText: "",
@@ -550,15 +570,26 @@ export function buildOperatorCardsAndSurfaces(
     const isAppendixCollapsed =
       rawAppendix != null &&
       (collapsedFromSet || rawAppendix.collapsed === true);
+    const expandedAppendixCells = rawAppendix
+      ? appendixExpandedHeightCells(rawAppendix)
+      : 0;
     const appendix: CellExecutionAppendixSpec | null = rawAppendix
-      ? isAppendixCollapsed || rawAppendix.collapsed !== undefined
-        ? { ...rawAppendix, collapsed: isAppendixCollapsed }
+      ? isAppendixCollapsed ||
+        rawAppendix.collapsed !== undefined ||
+        expandedAppendixCells !== rawAppendix.heightCells
+        ? {
+            ...rawAppendix,
+            heightCells: expandedAppendixCells,
+            ...(isAppendixCollapsed || rawAppendix.collapsed !== undefined
+              ? { collapsed: isAppendixCollapsed }
+              : {}),
+          }
         : rawAppendix
       : null;
     const effectiveAppendixCells = appendix
       ? isAppendixCollapsed
-        ? 2
-        : Math.max(MIN_APPENDIX_CELLS, appendix.heightCells)
+        ? COLLAPSED_APPENDIX_CELLS
+        : expandedAppendixCells
       : 0;
     // Counted the way the card lays its two-column shelves out. The `Advanced`
     // row is one of those shelves in both states and the fields it discloses

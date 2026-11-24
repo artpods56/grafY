@@ -189,13 +189,45 @@ function operatorSurface(
     configFields: CONFIG_FIELDS,
     instancePlugGroups: PLUGS,
     appendix: {
-      title: "Last run",
-      kindBadge: "table",
+      kind: "output",
+      title: "Outputs",
+      kindBadge: "Output",
       heightCells: 6,
       collapsed: true,
-      summaryText: "120 rows in 0.4s",
-      previewLines: ["id,name", "1,alpha", "2,beta"],
-      itemCount: 120,
+      summaryText: "3 outputs · 6 items",
+      itemCount: 6,
+      outputs: [
+        {
+          port: "markdown",
+          label: "Transcription",
+          count: 1,
+          kind: "single",
+          typeLabel: "Markdown",
+          typeKey: "text.markdown@1",
+          toneColor: "light-dark(#b46735, #e88a50)",
+          artifactIds: ["art-1"],
+        },
+        {
+          port: "blocks",
+          label: "Text blocks",
+          count: 2,
+          kind: "sequence",
+          typeLabel: "Text blocks",
+          typeKey: "ocr.document_result@1",
+          toneColor: "light-dark(#7b63c9, #9a7cf2)",
+          artifactIds: ["art-2", "art-3"],
+        },
+        {
+          port: "regions",
+          label: "Boxes on the page",
+          count: 3,
+          kind: "sequence",
+          typeLabel: "Page regions · v2",
+          typeKey: "ocr.tiff_text_regions@2",
+          toneColor: "light-dark(#2a9d7c, #43c59e)",
+          artifactIds: ["art-4", "art-5", "art-6"],
+        },
+      ],
     },
     ...overrides,
   };
@@ -503,31 +535,117 @@ describe("CellOperatorCard", () => {
     expect(html).toContain('role="switch"');
   });
 
-  it("renders a collapsed appendix as two cells with an inline summary", () => {
+  it("renders a collapsed outputs tray as two cells with dot cluster, count pill, and port summary", () => {
     const { html } = renderOperator(operatorSurface());
     // The last band stops at the plate's content edge: 5px short of its cell
     // for the plate's bottom border and the card's 4px bottom inset.
     expect(html).toMatch(
-      /data-appendix-band="collapsed"[^>]*top:373px;height:45px/,
+      /data-appendix-band="collapsed"[^>]*data-appendix-kind="output"[^>]*top:373px;height:45px/,
     );
-    expect(html).toContain("Last run");
-    expect(html).toContain("120 rows in 0.4s");
-    expect(html).toContain('aria-label="Expand appendix"');
-    expect(html).not.toContain('data-appendix-preview="true"');
+    expect(html).toContain('data-appendix-dot-cluster="true"');
+    expect(html).toContain("Outputs");
+    expect(html).toContain('data-appendix-count="true"');
+    expect(html).toContain(">6<");
+    expect(html).toContain("Transcription · Text blocks · Boxes on the page");
+    expect(html).toContain('aria-label="Expand outputs"');
+    expect(html).not.toContain('data-appendix-outputs="true"');
+    expect(html).not.toContain("Execution output");
+    expect(html).not.toContain("output ports");
   });
 
-  it("renders an expanded appendix over its own cell rows", () => {
+  it("renders an expanded outputs list over its own cell rows with port colors and counts", () => {
     const surface = operatorSurface({
-      appendix: { ...operatorSurface().appendix!, collapsed: false },
+      appendix: {
+        ...operatorSurface().appendix!,
+        collapsed: false,
+        completedAtLabel: "2m ago",
+      },
     });
     const { html } = renderOperator(surface);
     expectExactBox(html, 12, 22);
     expect(html).toMatch(
-      /data-appendix-band="expanded"[^>]*top:373px;height:145px/,
+      /data-appendix-band="expanded"[^>]*data-appendix-kind="output"[^>]*top:373px;height:145px/,
     );
+    expect(html).toContain('data-appendix-outputs="true"');
+    expect(html).toContain('data-appendix-output="markdown"');
+    expect(html).toContain("Transcription");
+    expect(html).toContain("Markdown");
+    expect(html).toContain('data-appendix-output="blocks"');
+    expect(html).toContain("Text blocks");
+    expect(html).toContain('data-appendix-output="regions"');
+    expect(html).toContain("Boxes on the page");
+    expect(html).toContain("Page regions · v2");
+    expect(html).toContain("2m ago");
+    expect(html).toContain('aria-label="Collapse outputs"');
+    expect(html).toContain(
+      'style="background-color:light-dark(#b46735, #e88a50)"',
+    );
+    // Deduplicates type hint when it matches the port label (`Text blocks`).
+    expect(count(html, />Text blocks</)).toBe(1);
+  });
+
+  it("renders a calm Run failed error strip with copy control and no legacy jargon", () => {
+    const collapsedError = renderOperator(
+      operatorSurface({
+        appendix: {
+          kind: "error",
+          title: "Run failed",
+          kindBadge: "Error",
+          heightCells: 4,
+          collapsed: true,
+          summaryText: "Rate limit exceeded on upstream provider",
+          errorText: "Rate limit exceeded on upstream provider",
+        },
+      }),
+    ).html;
+    expect(collapsedError).toMatch(
+      /data-appendix-band="collapsed"[^>]*data-appendix-kind="error"/,
+    );
+    expect(collapsedError).toContain("Run failed");
+    expect(collapsedError).toContain(
+      "Rate limit exceeded on upstream provider",
+    );
+    expect(collapsedError).toContain('aria-label="Copy error"');
+    expect(collapsedError).toContain('aria-label="Expand error"');
+    expect(collapsedError).not.toContain("Execution error");
+
+    const expandedError = renderOperator(
+      operatorSurface({
+        appendix: {
+          kind: "error",
+          title: "Run failed",
+          kindBadge: "Error",
+          heightCells: 4,
+          collapsed: false,
+          summaryText: "Rate limit exceeded on upstream provider",
+          errorText: "Rate limit exceeded on upstream provider",
+        },
+      }),
+    ).html;
+    expect(expandedError).toMatch(
+      /data-appendix-band="expanded"[^>]*data-appendix-kind="error"/,
+    );
+    expect(expandedError).toContain('aria-label="Collapse error"');
+    expect(expandedError).toContain('data-appendix-error-text="true"');
+  });
+
+  it("retains legacy previewLines fallback when structured outputs are absent", () => {
+    const { html } = renderOperator(
+      operatorSurface({
+        appendix: {
+          title: "Last run",
+          kindBadge: "table",
+          heightCells: 5,
+          collapsed: false,
+          summaryText: "120 rows in 0.4s",
+          previewLines: ["id,name", "1,alpha"],
+          itemCount: 120,
+        },
+      }),
+    );
+    expect(html).toContain("Last run");
     expect(html).toContain('data-appendix-preview="true"');
-    expect(html).toContain("2,beta");
-    expect(html).toContain('aria-label="Collapse appendix"');
+    expect(html).toContain("1,alpha");
   });
 
   it("keeps every port pinned whatever config and appendix it shows", () => {
