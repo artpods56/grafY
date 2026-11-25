@@ -53,6 +53,8 @@ import {
 } from "../cell-config-plan";
 import type { CellConfigFieldSpec } from "../cell-contracts";
 
+import { TextareaFieldModal } from "./TextareaFieldModal";
+
 /**
  * The controls of an operator card's config band, every kind a config schema
  * declares, drawn on the card's 25px lattice.
@@ -63,6 +65,10 @@ import type { CellConfigFieldSpec } from "../cell-contracts";
  * the adapter sized always holds exactly what it draws. Controls use the
  * kit's `dense` step; the segmented control has no dense step, so it takes
  * `sm` (24px), which still fits its row.
+ *
+ * A textarea is the one control given a way out of its rows: the expand
+ * control of `TextareaFieldModal` rides the field's label row, so the longer
+ * editor costs the card no row of its own.
  */
 
 /** One dense row: a control row of the band, and one card cell. */
@@ -150,6 +156,21 @@ const s = stylex.create({
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+  },
+  /**
+   * The right end of a label row. A textarea's expand control is a 20px icon
+   * box and the row is one 9px/1.3 line: 4px of negative margin on each side
+   * keeps the row's layout height, so the control grows sideways and the
+   * field keeps the rows its shelf counted.
+   */
+  labelAside: {
+    minWidth: 0,
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: "3px",
+    marginBlock: "-4px",
   },
   labelInvalid: { color: tokens.colorDanger },
   required: { flexShrink: 0, color: tokens.colorSubtle },
@@ -672,6 +693,7 @@ function ScalarControl({
   }
 
   let control: React.ReactNode;
+  let labelAside: React.ReactNode = null;
   if (enumValues) {
     const saved =
       typeof value === "string" || typeof value === "number" ? value : null;
@@ -713,11 +735,12 @@ function ScalarControl({
       </Select>
     );
   } else if (kind === "textarea") {
+    const text = typeof value === "string" ? value : "";
     control = (
       <TextArea
         size="dense"
         rows={3}
-        value={typeof value === "string" ? value : ""}
+        value={text}
         placeholder={
           typeof field.defaultValue === "string"
             ? field.defaultValue
@@ -729,6 +752,18 @@ function ScalarControl({
         xstyle={s.textarea}
         onChange={(event) => onChange(event.currentTarget.value)}
       />
+    );
+    // The dense box stays for quick edits; the modal is where a long prompt
+    // is read and written.
+    labelAside = (
+      <span {...stylex.props(s.labelAside)}>
+        <TextareaFieldModal
+          field={field}
+          value={text}
+          readOnly={readOnly}
+          onApply={onChange}
+        />
+      </span>
     );
   } else if (field.type === "integer" && field.widget === "one-based-integer") {
     // Stored zero-based, shown the way a person counts: page 1 is index 0.
@@ -787,6 +822,7 @@ function ScalarControl({
     <Field
       size="dense"
       label={<FieldLabel field={field} issue={issue} />}
+      aside={labelAside}
       xstyle={s.labelled}
     >
       {issue

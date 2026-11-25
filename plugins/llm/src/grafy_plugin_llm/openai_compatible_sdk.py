@@ -69,7 +69,7 @@ OPENAI_COMPATIBLE_SUPPORTED_IMAGE_CONTENT_TYPES: Final = frozenset(
 )
 
 
-def _egress_rejection(exc: BaseException) -> EgressRejectedError | None:
+def egress_rejection(exc: BaseException) -> EgressRejectedError | None:
     """The egress refusal inside a wrapped connection error, if there was one."""
 
     current: BaseException | None = exc
@@ -78,6 +78,24 @@ def _egress_rejection(exc: BaseException) -> EgressRejectedError | None:
             return current
         current = current.__cause__
     return None
+
+
+def safe_default_headers(api_key_value: str) -> dict[str, str | Omit]:
+    """Send this request's bearer token and drop ambient OpenAI environment headers."""
+
+    custom_headers_env = os.environ.get("OPENAI_CUSTOM_HEADERS")
+    headers: dict[str, str | Omit] = {}
+    if custom_headers_env is not None:
+        for line in custom_headers_env.split("\n"):
+            colon = line.find(":")
+            if colon >= 0:
+                header_name = line[:colon].strip()
+                if header_name:
+                    headers[header_name] = Omit()
+    headers["OpenAI-Organization"] = Omit()
+    headers["OpenAI-Project"] = Omit()
+    headers["Authorization"] = f"Bearer {api_key_value}"
+    return headers
 
 
 @final
@@ -219,18 +237,7 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
 
         endpoint = f"{config.base_url}/chat/completions"
         api_key_value = api_key.get_secret_value()
-        custom_headers_env = os.environ.get("OPENAI_CUSTOM_HEADERS")
-        safe_default_headers: dict[str, str | Omit] = {}
-        if custom_headers_env is not None:
-            for line in custom_headers_env.split("\n"):
-                colon = line.find(":")
-                if colon >= 0:
-                    header_name = line[:colon].strip()
-                    if header_name:
-                        safe_default_headers[header_name] = Omit()
-        safe_default_headers["OpenAI-Organization"] = Omit()
-        safe_default_headers["OpenAI-Project"] = Omit()
-        safe_default_headers["Authorization"] = f"Bearer {api_key_value}"
+        default_headers = safe_default_headers(api_key_value)
 
         try:
             async with httpx.AsyncClient(
@@ -250,7 +257,7 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                     base_url=config.base_url,
                     timeout=config.timeout_ms / 1_000,
                     max_retries=config.max_retries,
-                    default_headers=cast(dict[str, str], safe_default_headers),
+                    default_headers=cast(dict[str, str], default_headers),
                     # The SDK dials through either HTTP library: it accepts a legacy
                     # `httpx` client as readily as an `httpx2` one, and translates that
                     # library's exceptions into its own, which is how the egress pin
@@ -307,7 +314,7 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
             # refusal this deployment made is about the author's own configuration
             # and belongs in the message, while a provider that will not answer
             # does not get to put its text in front of them.
-            rejection = _egress_rejection(exc)
+            rejection = egress_rejection(exc)
             if rejection is not None:
                 raise OpenAICompatibleProviderError(
                     f"Chat Completions request to {endpoint!r} may not be dialed "

@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   Map as MapIcon,
   Maximize,
+  Maximize2,
   Minus,
   Plus,
   RotateCw,
@@ -24,6 +25,7 @@ import {
   type ImageInfo,
 } from "@/lib/api/images";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { WorkbenchModal } from "../authoring/WorkbenchModal";
 import {
   TiffWindowSelector,
   type TiffWindowSelection,
@@ -99,6 +101,14 @@ const s = stylex.create({
     color: tokens.colorMuted,
     fontSize: tokens.fontSizeXs,
     padding: 6,
+  },
+  // The fullscreen modal's body host: the viewer fills it edge to edge.
+  fullscreenHost: {
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    minHeight: 0,
+    flex: 1,
   },
 });
 
@@ -358,6 +368,9 @@ export function TiffArtifactView({
   overlay,
   selection,
   onSize,
+  inModal = false,
+  initialPage,
+  onPageChange,
 }: {
   workspaceId: string;
   artifactId: string;
@@ -366,27 +379,73 @@ export function TiffArtifactView({
   selection?: TiffWindowSelection;
   /** The page's pixel size, once its tile pyramid describes it. */
   onSize?: (width: number, height: number) => void;
+  /** True inside a fullscreen modal: no nested fullscreen button or modal. */
+  inModal?: boolean;
+  /** The page to open on; a fullscreen copy also follows later changes. */
+  initialPage?: number;
+  /** Called whenever the viewer pages, so a fullscreen copy can sync its card. */
+  onPageChange?: (page: number) => void;
 }) {
-  const [currentPage, setPage] = useState(0);
-  const page = selection?.window.page ?? overlay?.page ?? currentPage;
+  const [pageState, setPageState] = useState({
+    source: initialPage,
+    page: initialPage ?? 0,
+  });
+  // A fullscreen copy is handed the card's page as `initialPage` and reports
+  // its own paging back through `onPageChange`, so the two views follow each
+  // other: adopt a changed `initialPage` while rendering, the same way the
+  // rest of the workbench adopts a changed prop.
+  if (initialPage !== pageState.source) {
+    setPageState({ source: initialPage, page: initialPage ?? 0 });
+  }
+  const page = selection?.window.page ?? overlay?.page ?? pageState.page;
   const [attempt, setAttempt] = useState(0);
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
+  const changePage = (next: number) => {
+    if (selection) selection.onChange({ ...selection.window, page: next });
+    else {
+      setPageState((previous) => ({ source: previous.source, page: next }));
+      onPageChange?.(next);
+    }
+  };
   return (
-    <TiffPage
-      key={`${workspaceId}:${artifactId}:${page}:${attempt}`}
-      artifactId={artifactId}
-      path={imagePath(workspaceId, artifactId)}
-      page={page}
-      name={name}
-      onPage={(next) => {
-        if (selection) selection.onChange({ ...selection.window, page: next });
-        else setPage(next);
-      }}
-      overlay={overlay?.page === page ? overlay : undefined}
-      selection={selection}
-      allowPageChange={Boolean(selection || !overlay)}
-      onSize={onSize}
-      onRetry={() => setAttempt(attempt + 1)}
-    />
+    <>
+      <TiffPage
+        key={`${workspaceId}:${artifactId}:${page}:${attempt}`}
+        artifactId={artifactId}
+        path={imagePath(workspaceId, artifactId)}
+        page={page}
+        name={name}
+        onPage={changePage}
+        overlay={overlay?.page === page ? overlay : undefined}
+        selection={selection}
+        allowPageChange={Boolean(selection || !overlay)}
+        onSize={onSize}
+        onRetry={() => setAttempt(attempt + 1)}
+        onOpenFullscreen={inModal ? undefined : () => setFullscreenOpen(true)}
+      />
+      {!inModal && fullscreenOpen ? (
+        <WorkbenchModal
+          open={fullscreenOpen}
+          onOpenChange={setFullscreenOpen}
+          title={name}
+          size="viewport"
+          bodyLayout="fill"
+        >
+          <div {...stylex.props(s.fullscreenHost)}>
+            <TiffArtifactView
+              workspaceId={workspaceId}
+              artifactId={artifactId}
+              name={name}
+              overlay={overlay}
+              selection={selection}
+              inModal
+              initialPage={page}
+              onPageChange={changePage}
+            />
+          </div>
+        </WorkbenchModal>
+      ) : null}
+    </>
   );
 }
 
@@ -401,6 +460,7 @@ function TiffPage({
   selection,
   allowPageChange,
   onSize,
+  onOpenFullscreen,
 }: {
   artifactId: string;
   path: string;
@@ -412,6 +472,7 @@ function TiffPage({
   overlay?: TiffOverlay;
   selection?: TiffWindowSelection;
   allowPageChange: boolean;
+  onOpenFullscreen?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const viewer = useRef<OpenSeadragon.Viewer | null>(null);
@@ -592,7 +653,12 @@ function TiffPage({
       className={`nodrag nopan nowheel ${root.className ?? ""}`}
       style={root.style}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && selectedReading) setSelectedReading(null);
+        if (event.key === "Escape" && selectedReading) {
+          // The reading was dismissed by this view, so the keypress must not
+          // reach the fullscreen modal around it and close it.
+          event.stopPropagation();
+          setSelectedReading(null);
+        }
         if (editing && event.key === "Escape") {
           event.stopPropagation();
           setEditing(false);
@@ -671,6 +737,16 @@ function TiffPage({
             onClick={toggleMap}
           >
             {showMap ? <ImageIcon size={14} /> : <MapIcon size={14} />}
+          </IconButton>
+        )}
+        {onOpenFullscreen && (
+          <IconButton
+            size="2xs"
+            label="Open fullscreen"
+            className="nodrag nopan"
+            onClick={onOpenFullscreen}
+          >
+            <Maximize2 size={14} />
           </IconButton>
         )}
         {!showMap && (

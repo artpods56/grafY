@@ -350,7 +350,7 @@ def test_client_decodes_the_catalogs_ocr_feature_contracts() -> None:
     assert ocr.role == "operator"
     assert ocr.pack_slugs == ("document_ocr",)
     assert catalog.packs[1].slug == "document_ocr"
-    assert catalog.packs[1].provider_count == 2
+    assert catalog.packs[1].provider_count == 3
     engine = next(port for port in ocr.inputs if port.name == "engine")
     (contract,) = engine.service_contracts
     assert (contract.id, contract.version) == ("ocr.document", 1)
