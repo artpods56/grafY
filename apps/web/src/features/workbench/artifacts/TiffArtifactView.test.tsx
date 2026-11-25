@@ -27,6 +27,11 @@ vi.mock("@/components/ui/button", () => ({
     label: string;
     pressed?: boolean;
   }) => <button aria-label={label} aria-pressed={pressed} {...props} />,
+  Button: ({ children, ...props }: React.ComponentProps<"button">) => (
+    <button type="button" {...props}>
+      {children}
+    </button>
+  ),
 }));
 
 const open = vi.hoisted(() => ({
@@ -312,6 +317,96 @@ describe("TIFF map mode", () => {
       });
       expect(host.textContent).not.toContain("Loading image");
       expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+});
+
+describe("fullscreen modal", () => {
+  const expandButton = () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Open fullscreen"]');
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+  const viewers = () =>
+    document.querySelectorAll('section[aria-label="Scan scan"]');
+
+  it("offers Open fullscreen in the card and in map mode", async () => {
+    const { root } = await openedTiffView(true);
+    try {
+      const button = expandButton();
+      expect(button).not.toBeNull();
+      expect(button?.classList.contains("nodrag")).toBe(true);
+      expect(button?.classList.contains("nopan")).toBe(true);
+      expect(dialog()).toBeNull();
+
+      await act(async () =>
+        host
+          .querySelector<HTMLButtonElement>('[aria-label="Show map"]')!
+          .click(),
+      );
+      // Map mode hides the zoom controls but keeps the fullscreen button.
+      expect(host.querySelector('[aria-label="Zoom in"]')).toBeNull();
+      expect(expandButton()).not.toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("opens a viewport fill modal hosting a nested viewer with no second fullscreen button", async () => {
+    const { root, sizes, fetchMock } = await openedTiffView();
+    try {
+      await act(async () => expandButton()!.click());
+
+      const popup = dialog();
+      expect(popup).not.toBeNull();
+      expect(popup?.classList.contains("sizeViewport")).toBe(true);
+      expect(popup?.textContent).toContain("Scan");
+      expect(
+        document.querySelector('[data-body-layout="fill"]'),
+      ).not.toBeNull();
+      // The card's viewer and the modal's viewer are both mounted, but only
+      // the card offers the fullscreen button: no nested modals.
+      expect(viewers()).toHaveLength(2);
+      expect(document.querySelectorAll("[data-tiff-viewport]")).toHaveLength(2);
+      expect(
+        document.querySelectorAll('[aria-label="Open fullscreen"]'),
+      ).toHaveLength(1);
+      // The modal's viewer must not report size back to the card's onSize.
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      expect(sizes).toEqual([[800, 600]]);
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("closes through the dialog Close button and unmounts the fullscreen viewer", async () => {
+    const { root } = await openedTiffView();
+    try {
+      await act(async () => expandButton()!.click());
+      expect(viewers()).toHaveLength(2);
+
+      const close = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Close"]',
+      );
+      expect(close).not.toBeNull();
+      await act(async () => close!.click());
+
+      expect(dialog()).toBeNull();
+      expect(viewers()).toHaveLength(1);
+      expect(expandButton()).not.toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("renders no fullscreen button when mounted inside a modal", async () => {
+    const { root } = await openedTiffView();
+    try {
+      await act(async () => expandButton()!.click());
+      const popup = dialog();
+      expect(
+        popup?.querySelectorAll('[aria-label="Open fullscreen"]'),
+      ).toHaveLength(0);
     } finally {
       await act(async () => root.unmount());
     }
