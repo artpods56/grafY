@@ -334,6 +334,8 @@ export interface OperatorCardSurfaceData {
   kind: "operator";
   statusLabel?: string;
   runDisabled?: boolean;
+  /** Why the header run control is unavailable, when the graph itself cannot run. */
+  runDisabledReason?: string;
   /**
    * Streamed events while this node is running or queued. Omitted once the
    * node leaves that state, so a finished card does not keep the last frame.

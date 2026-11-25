@@ -609,6 +609,7 @@ export function buildWorkbenchCellScene({
   secrets,
   engineSettingsHref,
   canRun,
+  runDisabledReason,
   canvasEdges,
   artifactViewerEdges,
   artifactViewerNodes,
@@ -634,6 +635,8 @@ export function buildWorkbenchCellScene({
   /** Owners' Workspace Settings link for an empty engine port. */
   engineSettingsHref?: string;
   canRun: boolean;
+  /** Shown on each operator run control while `canRun` is false. */
+  runDisabledReason?: string;
   canvasEdges?: readonly WorkflowEdge[];
   artifactViewerEdges?: readonly ArtifactViewerEdge[];
   artifactViewerNodes?: readonly ArtifactViewerNode[];
@@ -655,6 +658,7 @@ export function buildWorkbenchCellScene({
     nodeRunState[node.id] = {
       ...status,
       runDisabled: !canRun || !workflowNodeIsSupported(node.data) || isProvider,
+      ...(!canRun && runDisabledReason ? { runDisabledReason } : {}),
       appendix: buildAppendixSpec({
         node,
         status: status.status,

@@ -218,7 +218,11 @@ describe("buildWorkbenchCellScene", () => {
     last_result_fingerprint: "result",
     error: null,
   } satisfies RoomInstanceState;
-  const scene = (state: RoomInstanceState["state"], canRun = true) =>
+  const scene = (
+    state: RoomInstanceState["state"],
+    canRun = true,
+    runDisabledReason?: string,
+  ) =>
     buildWorkbenchCellScene({
       document: graph,
       registry,
@@ -233,6 +237,7 @@ describe("buildWorkbenchCellScene", () => {
       },
       collapsedAppendices: new Set(["source"]),
       canRun,
+      runDisabledReason,
     });
   it.each([
     ["queued", "working", "Queued"],
@@ -253,6 +258,17 @@ describe("buildWorkbenchCellScene", () => {
       });
     },
   );
+  it("explains a blocked run on the operator surface only while running is unavailable", () => {
+    const reason = "Save the graph before running it.";
+    expect(scene("fresh", false, reason).surfaceById.source).toMatchObject({
+      runDisabled: true,
+      runDisabledReason: reason,
+    });
+    expect(scene("fresh", true, reason).surfaceById.source).not.toHaveProperty(
+      "runDisabledReason",
+    );
+  });
+
   it("builds output and error appendices with the saved collapse state", () => {
     expect(scene("fresh", false).surfaceById.source).toMatchObject({
       runDisabled: true,

@@ -412,6 +412,33 @@ describe("CellOperatorCard", () => {
     expect(selected).not.toContain('data-card-run-error="true"');
   });
 
+  it("names why the run button is unavailable and keeps its accessible name", () => {
+    const reason = "Waiting for recent edits to finish saving before running.";
+    const headerOf = (html: string) =>
+      html.slice(
+        html.indexOf('data-card-header="true"'),
+        html.indexOf("<article"),
+      );
+    const blocked = headerOf(
+      renderOperator(
+        operatorSurface({ runDisabled: true, runDisabledReason: reason }),
+        { selected: true },
+      ).html,
+    );
+    expect(blocked).toContain('aria-label="Run Merge"');
+    expect(blocked).toContain(`title="${reason}"`);
+    expect(blocked).toContain("disabled");
+
+    const unnamed = headerOf(
+      renderOperator(operatorSurface({ runDisabled: true }), {
+        selected: true,
+      }).html,
+    );
+    expect(unnamed).toContain('aria-label="Run Merge"');
+    expect(unnamed).toContain('title="Run Merge"');
+    expect(unnamed).not.toContain(reason);
+  });
+
   it("omits the run action without an onRun handler", () => {
     const { html } = renderOperator(operatorSurface(), {
       selected: true,

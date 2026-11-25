@@ -4,6 +4,7 @@ import type {
   CollaborativeHead,
   WorkspaceCapability,
 } from "@/lib/api";
+import { ApiError } from "@/lib/api/client";
 
 import {
   ProjectRoomCommandError,
@@ -129,6 +130,14 @@ export interface ProjectRoomSessionOptions extends ProjectRoomSessionListeners {
   maxReconnectAttempts?: number;
   createCommandId?: () => string;
   presenceStore?: ProjectRoomPresenceStore;
+  /**
+   * Confirm the browser session after a lost socket or an access-revoked
+   * close. One call per failure episode: further drops while reconnecting do
+   * not ask again until the room is ready. Reject with an `ApiError` 401 to
+   * stop reconnects. Resolve, or reject with anything else, and recovery
+   * continues.
+   */
+  probeSession?: (signal: AbortSignal) => Promise<void>;
 }
 
 type ProjectRoomFailureDetail = Omit<
@@ -155,6 +164,14 @@ export class ProjectRoomSession {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private generation = 0;
+  private readonly sessionProbe:
+    ((signal: AbortSignal) => Promise<void>) | null;
+  private sessionProbeController: AbortController | null = null;
+  private sessionProbePending = false;
+  /** True after this episode has asked once. Cleared when the room is ready. */
+  private sessionProbeConsumedEpisode = false;
+  /** A newer episode started while a probe was still in flight. */
+  private sessionProbeQueued = false;
 
   private ready: RoomReadyMessage | null = null;
   private head: CollaborativeHead | null = null;
@@ -174,6 +191,7 @@ export class ProjectRoomSession {
       options.webSocketFactory ?? ((url) => new WebSocket(url));
     this.reconnectDelayMs = options.reconnectDelayMs ?? 750;
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? 5;
+    this.sessionProbe = options.probeSession ?? null;
     this.presenceStore =
       options.presenceStore ??
       new ProjectRoomPresenceStore({
@@ -328,11 +346,13 @@ export class ProjectRoomSession {
     this.terminalReason = null;
     this.intentionallyClosed = false;
     this.reconnectAttempts = 0;
+    this.sessionProbeConsumedEpisode = false;
     this.clearReconnectTimer();
     this.openSocket();
   }
 
   disconnect(): void {
+    this.abortSessionProbe();
     this.intentionallyClosed = true;
     this.clearReconnectTimer();
     this.generation += 1;
@@ -722,6 +742,7 @@ export class ProjectRoomSession {
       ]),
     );
     this.reconnectAttempts = 0;
+    this.sessionProbeConsumedEpisode = false;
     this.setFailure(null);
     this.setStatus("ready");
     this.listeners.onReady?.(ready);
@@ -801,6 +822,9 @@ export class ProjectRoomSession {
         detail:
           reason || `The server closed the Project room (${classifiedReason}).`,
       });
+      if (classifiedReason === "access_revoked") {
+        this.considerSessionProbe();
+      }
       return;
     }
     if (this.intentionallyClosed) {
@@ -842,6 +866,9 @@ export class ProjectRoomSession {
     }
     this.setStatus("unsynchronized");
     this.scheduleReconnect();
+    if (failure.reason === "connection_lost") {
+      this.considerSessionProbe();
+    }
   }
 
   private stopTraffic(
@@ -902,6 +929,84 @@ export class ProjectRoomSession {
     }, delay);
   }
 
+  /**
+   * A failed handshake hides its HTTP status, and a reconnect loop would
+   * otherwise keep opening sockets for an expired cookie. Ask once per
+   * episode. A 401 stops the loop; a live session or a non-401 failure does
+   * not.
+   */
+  private considerSessionProbe(): void {
+    if (this.sessionProbe === null) return;
+    if (this.sessionProbePending) {
+      if (!this.sessionProbeConsumedEpisode) this.sessionProbeQueued = true;
+      return;
+    }
+    if (this.sessionProbeConsumedEpisode) return;
+    this.startSessionProbe();
+  }
+
+  private startSessionProbe(): void {
+    const probe = this.sessionProbe;
+    if (probe === null) return;
+    this.sessionProbePending = true;
+    this.sessionProbeConsumedEpisode = true;
+    this.sessionProbeQueued = false;
+    const controller = new AbortController();
+    this.sessionProbeController = controller;
+    void Promise.resolve()
+      .then(() => probe(controller.signal))
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        if (!isUnauthorizedSession(error)) return;
+        this.haltReconnectForExpiredSession();
+      })
+      .finally(() => {
+        if (this.sessionProbeController !== controller) return;
+        this.sessionProbePending = false;
+        this.sessionProbeController = null;
+        if (
+          this.sessionProbeQueued &&
+          !this.sessionProbeConsumedEpisode &&
+          !this.intentionallyClosed
+        ) {
+          this.sessionProbeQueued = false;
+          this.considerSessionProbe();
+          return;
+        }
+        this.sessionProbeQueued = false;
+      });
+  }
+
+  private abortSessionProbe(): void {
+    const controller = this.sessionProbeController;
+    this.sessionProbeController = null;
+    this.sessionProbePending = false;
+    this.sessionProbeQueued = false;
+    this.sessionProbeConsumedEpisode = false;
+    controller?.abort();
+  }
+
+  /** Drop a reconnect that can only fail again once the session is gone. */
+  private haltReconnectForExpiredSession(): void {
+    this.clearReconnectTimer();
+    this.intentionallyClosed = true;
+    if (this.terminalReason !== null) return;
+    this.generation += 1;
+    const socket = this.socket;
+    this.socket = null;
+    if (socket && socket.readyState < WebSocket.CLOSING) {
+      socket.close();
+    }
+    this.outbox.rejectAll(
+      new ProjectRoomCommandError(
+        "",
+        "disconnected",
+        "The Project room disconnected before the command completed.",
+      ),
+    );
+  }
+
   private clearReconnectTimer(): void {
     if (this.reconnectTimer === null) return;
     clearTimeout(this.reconnectTimer);
@@ -932,4 +1037,8 @@ export class ProjectRoomSession {
       ...failure,
     };
   }
+}
+
+function isUnauthorizedSession(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
 }

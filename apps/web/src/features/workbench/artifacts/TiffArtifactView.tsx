@@ -16,7 +16,7 @@ import {
   RotateCw,
 } from "lucide-react";
 import { IconButton } from "@/components/ui/button";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, notifyUnauthorized } from "@/lib/api/client";
 import {
   getImageInfo,
   imagePath,
@@ -528,6 +528,8 @@ function TiffPage({
         const element = host.current;
         const instance = osd({
           element,
+          // Firefox caps WebGL contexts per tab, so use the 2D canvas drawer.
+          drawer: "canvas",
           showNavigationControl: false,
           showNavigator: false,
           loadTilesWithAjax: true,
@@ -565,9 +567,11 @@ function TiffPage({
           setOpened({ viewer: instance, Point: osd.Point });
         });
         instance.addHandler("tile-loaded", () => setLoaded(true));
-        instance.addHandler("tile-load-failed", (event) =>
-          setError(imageFailure(event.tileRequest?.status ?? 0)),
-        );
+        instance.addHandler("tile-load-failed", (event) => {
+          const status = event.tileRequest?.status ?? 0;
+          if (status === 401) notifyUnauthorized();
+          setError(imageFailure(status));
+        });
         if (typeof ResizeObserver !== "undefined") {
           surfaceResize = new ResizeObserver(() =>
             keepScaleOnSurfaceResize({

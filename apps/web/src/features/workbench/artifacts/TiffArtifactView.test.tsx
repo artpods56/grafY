@@ -3,10 +3,13 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { onUnauthorized } from "@/lib/api/client";
 
 import type { GeoRenderDescriptor } from "@/lib/api";
 import { TiffTextArtifact } from "./artifact-renderers/tiff-text-renderer";
 import { createTiffOverlay, TiffArtifactView } from "./TiffArtifactView";
+
+type OsdHandlerEvent = { tileRequest?: { status?: number } };
 
 vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
   useWorkspaceContext: () => ({ workspace: { id: "test-space" } }),
@@ -35,7 +38,7 @@ vi.mock("@/components/ui/button", () => ({
 }));
 
 const open = vi.hoisted(() => ({
-  handlers: new Map<string, () => void>(),
+  handlers: new Map<string, (event?: OsdHandlerEvent) => void>(),
   imageRectangle: vi.fn((x: number, y: number, w: number, h: number) => ({
     x: x / 800,
     y: y / 800,
@@ -141,8 +144,10 @@ vi.mock("openseadragon", () => ({
       open.options.push(options);
       const viewport = open.viewport();
       const viewer = {
-        addHandler: (name: string, handler: () => void) =>
-          open.handlers.set(name, handler),
+        addHandler: (
+          name: string,
+          handler: (event?: OsdHandlerEvent) => void,
+        ) => open.handlers.set(name, handler),
         viewport,
         world: {
           getItemAt: () => ({
@@ -413,6 +418,54 @@ describe("fullscreen modal", () => {
   });
 });
 
+describe("tile load failures", () => {
+  function failTile(event: OsdHandlerEvent = {}) {
+    const handler = open.handlers.get("tile-load-failed");
+    if (!handler) throw new Error("tile-load-failed handler missing");
+    handler(event);
+  }
+
+  it("opens OpenSeadragon with the 2D canvas drawer", async () => {
+    const { root } = await openedTiffView();
+    try {
+      expect(open.options[0]?.drawer).toBe("canvas");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  });
+
+  it("forwards a 401 tile failure to the session boundary and ignores other statuses", async () => {
+    const { root } = await openedTiffView();
+    const unauthorized = vi.fn();
+    const stop = onUnauthorized(unauthorized);
+    try {
+      await act(async () => failTile({ tileRequest: { status: 503 } }));
+      expect(unauthorized).not.toHaveBeenCalled();
+      expect(host.textContent).toContain(
+        "Image service unavailable. Try again shortly.",
+      );
+
+      await act(async () => failTile({ tileRequest: { status: 0 } }));
+      expect(unauthorized).not.toHaveBeenCalled();
+      expect(host.textContent).toContain(
+        "Could not load this image. Try again.",
+      );
+
+      await act(async () => failTile());
+      expect(unauthorized).not.toHaveBeenCalled();
+
+      await act(async () => failTile({ tileRequest: { status: 401 } }));
+      expect(unauthorized).toHaveBeenCalledTimes(1);
+      expect(host.textContent).toContain(
+        "This image is no longer available to you.",
+      );
+    } finally {
+      stop();
+      await act(async () => root.unmount());
+    }
+  });
+});
+
 describe("resizing the card", () => {
   it("grows the view rather than the page, and holds it under the top-left", async () => {
     const { root, surface } = await openedTiffView();
@@ -470,6 +523,7 @@ describe("resizing the card", () => {
     expect(sizes).toEqual([[800, 600]]);
     expect(open.options[0]).toMatchObject({
       autoResize: false,
+      drawer: "canvas",
       minZoomImageRatio: 0.25,
       visibilityRatio: 1,
     });

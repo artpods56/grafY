@@ -24,13 +24,10 @@ import {
   History,
   Layers,
   LayoutGrid,
-  LoaderCircle,
-  Play,
   Plus,
   Square,
   Trash2,
   Type,
-  Workflow,
 } from "lucide-react";
 
 import { ExecutionHistoryDrawer } from "../execution/ExecutionHistoryDrawer";
@@ -109,6 +106,7 @@ import {
   useWorkbenchSyncReducer,
   type PresentationRoomSync,
 } from "../collaboration/useWorkbenchSyncReducer";
+import { savedGraphRunBlockedReason } from "../execution/useRunExecution";
 import { useWorkbenchRunReducer } from "../execution/useWorkbenchRunReducer";
 import {
   addNodeCommand,
@@ -218,10 +216,7 @@ import {
   type AuthoredGraphDocument,
   type GraphCommand,
 } from "../authoring/graph-document";
-import {
-  selectedNodeAndAncestorIds,
-  type WorkflowNode,
-} from "../execution/execution-plan";
+import { type WorkflowNode } from "../execution/execution-plan";
 import {
   catalogNodeSpecs,
   downstreamCandidatesFromOutput,
@@ -901,12 +896,20 @@ function WorkbenchBody({
     onCanvasPointerMove,
     onCanvasPointerLeave,
     onDragCardsProgress,
+    unsyncedRoomEdits,
   } = sync;
   const canSubmitRoomCommands = projectRoom.canSubmitCommands;
   const submitRoomBatch = projectRoom.submitCommands;
   const savedProjectName = projectRoom.head?.name ?? "";
   const canRunSavedGraph =
     activeGraph !== null && canStartRun && projectEditsTrusted && !isDirty;
+  const runBlockedReason = savedGraphRunBlockedReason({
+    activeGraph: activeGraph !== null,
+    canStartRun,
+    projectEditsTrusted,
+    hasUnsyncedRoomEdits: unsyncedRoomEdits,
+    isDirty,
+  });
 
   const run = useWorkbenchRunReducer({
     workspaceId,
@@ -918,6 +921,7 @@ function WorkbenchBody({
     activeGraph,
     currentExecutionFingerprint,
     canRunSavedGraph,
+    runBlockedReason,
     nodeSecretStatuses,
     roomConnected: projectRoom.status === "ready",
     roomActiveRuns: projectRoom.activeRuns,
@@ -934,7 +938,6 @@ function WorkbenchBody({
   });
   const {
     running,
-    runningScope,
     announcement: executionAnnouncement,
     runError,
     dismissRunError,
@@ -1023,22 +1026,6 @@ function WorkbenchBody({
               .length === 0),
       ),
     [nodes],
-  );
-  const selectedWithDependencyIds = React.useMemo(
-    () => selectedNodeAndAncestorIds(nodes, edges),
-    [nodes, edges],
-  );
-  const selectedWithDependenciesCount = selectedWithDependencyIds.size;
-  const selectedWithDependenciesAreRunnable = React.useMemo(
-    () =>
-      nodes.every(
-        (node) =>
-          !selectedWithDependencyIds.has(node.id) ||
-          (workflowNodeIsSupported(node.data) &&
-            validateConfig(node.data.spec.config_schema, node.data.config)
-              .length === 0),
-      ),
-    [nodes, selectedWithDependencyIds],
   );
   const selectedWorkflowCount = React.useMemo(
     () => nodes.filter((node) => node.selected).length,
@@ -1184,10 +1171,6 @@ function WorkbenchBody({
   const runSelectionBusy = !registry || running || selectedWorkflowCount === 0;
   const runSelectedDisabled =
     !canRunSavedGraph || runSelectionBusy || !selectedNodesAreRunnable;
-  const runSelectedWithDependenciesDisabled =
-    !canRunSavedGraph ||
-    runSelectionBusy ||
-    !selectedWithDependenciesAreRunnable;
   const globalIssues = React.useMemo<GlobalIssue[]>(() => {
     const issues: GlobalIssue[] = [];
     if (registryError) {
@@ -1952,6 +1935,7 @@ function WorkbenchBody({
     placeArtifactGroups,
     samplePending,
     setRunError,
+    setSamplePending,
     workspaceId,
   ]);
 
@@ -2864,7 +2848,7 @@ function WorkbenchBody({
         return next;
       });
     },
-    [],
+    [setArtifactViewerActivities],
   );
 
   React.useEffect(() => {
@@ -2972,7 +2956,8 @@ function WorkbenchBody({
               savedNodes: activeGraph?.nodes ?? null,
               scope: `${openGraphId ?? "unsaved"}:${activeGraph?.roomEpoch ?? "none"}`,
             },
-            canRun: canStartRun && projectEditsTrusted && !running,
+            canRun: canRunSavedGraph && !running,
+            runDisabledReason: runBlockedReason ?? undefined,
             canvasEdges,
             artifactViewerEdges: artifactViewerCanvasEdges,
             artifactViewerNodes: activeArtifactViewers.nodes,
@@ -3028,8 +3013,9 @@ function WorkbenchBody({
       onCancelNodeRun,
       openGraphId,
       openGraphRuns,
-      projectEditsTrusted,
       projectId,
+      canRunSavedGraph,
+      runBlockedReason,
       projectRoom.nodeProgress,
       registry,
       running,
@@ -3480,11 +3466,14 @@ function WorkbenchBody({
         }
       : undefined;
 
+  const showArtifactCollect =
+    collectSpec !== null
+      ? selectedCollectionSources.length > 1
+      : collectsIntoSequence;
+  const showArtifactTidy =
+    !selectedWorkflowCount && selectedArtifactCards.length > 1;
   const selectionToolbar =
-    selectedWorkflowCount ||
-    collectsIntoSequence ||
-    selectedArtifactCards.length > 1 ||
-    selectedCollectionSources.length > 1 ? (
+    showArtifactCollect || showArtifactTidy ? (
       <>
         <span {...stylex.props(s.selectionLabel)}>
           {selectedNodeCount} selected
@@ -3546,56 +3535,6 @@ function WorkbenchBody({
           >
             <LayoutGrid size={13} />
             Tidy up
-          </Button>
-        ) : null}
-        {selectedWorkflowCount ? (
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            disabled={runSelectedDisabled}
-            title={
-              !projectEditsTrusted
-                ? "Run is unavailable until the displayed graph is current"
-                : selectedNodesAreRunnable
-                  ? "Run only the selected nodes; latest accessible upstream outputs are pinned"
-                  : "Unavailable or invalid selected nodes cannot run"
-            }
-            xstyle={phoneTouch.rail}
-            onClick={() => void runWorkflow("selected")}
-          >
-            {runningScope === "selected" ? (
-              <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-            ) : (
-              <Play size={13} />
-            )}
-            {runningScope === "selected" ? "Running…" : "Run"}
-          </Button>
-        ) : null}
-        {selectedWorkflowCount ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={runSelectedWithDependenciesDisabled}
-            title={
-              !projectEditsTrusted
-                ? "Run is unavailable until the displayed graph is current"
-                : selectedWithDependenciesAreRunnable
-                  ? `Run the selection and every upstream dependency (${selectedWithDependenciesCount} total)`
-                  : "Unavailable or invalid upstream dependencies cannot run"
-            }
-            xstyle={phoneTouch.rail}
-            onClick={() => void runWorkflow("selected-with-dependencies")}
-          >
-            {runningScope === "selected-with-dependencies" ? (
-              <LoaderCircle size={13} {...stylex.props(s.spinner)} />
-            ) : (
-              <Workflow size={13} />
-            )}
-            {runningScope === "selected-with-dependencies"
-              ? "Running…"
-              : "With dependencies"}
           </Button>
         ) : null}
       </>
