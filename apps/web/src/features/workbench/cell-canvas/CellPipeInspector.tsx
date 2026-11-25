@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
-import { X } from "lucide-react";
+import { Eye, X } from "lucide-react";
 
 import { Button, IconButton } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
@@ -126,10 +126,18 @@ export type CellInspectedPipe =
   | { kind: "origin"; edge: ArtifactOriginEdge }
   | { kind: "viewer"; edge: ArtifactViewerEdge };
 
+export interface CellServicePipePreviewAction {
+  readonly summary: string;
+  readonly hint?: string;
+  readonly actionLabel: string;
+  readonly onInspect: () => void;
+}
+
 export interface CellPipeInspectorProps {
   pipe: CellInspectedPipe;
   anchor: WorldPoint;
   editable: boolean;
+  servicePreview?: CellServicePipePreviewAction | null;
   onClose: () => void;
   onUpdateWorkflowEdge: (edgeId: string, update: WorkflowEdgeUpdate) => void;
   onUpdateOriginCollectionMode: (
@@ -171,6 +179,7 @@ export function CellPipeInspector({
   pipe,
   anchor,
   editable,
+  servicePreview = null,
   onClose,
   onUpdateWorkflowEdge,
   onUpdateOriginCollectionMode,
@@ -259,6 +268,8 @@ export function CellPipeInspector({
           <WorkflowPipeInspectorBody
             edge={pipe.edge}
             editable={editable}
+            servicePreview={servicePreview}
+            onClose={onClose}
             onUpdate={onUpdateWorkflowEdge}
             onRemove={(edgeId) => {
               onRemovePipe(edgeId);
@@ -321,11 +332,15 @@ function CollectionModeSection({
 function WorkflowPipeInspectorBody({
   edge,
   editable,
+  servicePreview,
+  onClose,
   onUpdate,
   onRemove,
 }: {
   edge: WorkflowEdge;
   editable: boolean;
+  servicePreview?: CellServicePipePreviewAction | null;
+  onClose: () => void;
   onUpdate: (edgeId: string, update: WorkflowEdgeUpdate) => void;
   onRemove: (edgeId: string) => void;
 }) {
@@ -414,6 +429,33 @@ function WorkflowPipeInspectorBody({
               );
             })}
           </div>
+        </div>
+      ) : null}
+
+      {servicePreview ? (
+        <div {...stylex.props(s.section)} data-service-pipe-preview="">
+          <span {...stylex.props(s.sectionLabel)}>Engine input</span>
+          <span {...stylex.props(s.choiceDescription)}>
+            {servicePreview.summary}
+          </span>
+          {servicePreview.hint ? (
+            <span {...stylex.props(s.choiceDescription)}>
+              {servicePreview.hint}
+            </span>
+          ) : null}
+          <Button
+            type="button"
+            size="xs"
+            variant="secondary"
+            block
+            onClick={() => {
+              onClose();
+              servicePreview.onInspect();
+            }}
+          >
+            <Eye size={13} />
+            {servicePreview.actionLabel}
+          </Button>
         </div>
       ) : null}
 

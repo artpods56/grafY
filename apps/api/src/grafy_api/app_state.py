@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from grafy_api.node_secrets import NodeSecretService
     from grafy_api.realtime.checkpointing import ProjectAutoCheckpointer
     from grafy_api.realtime.hub import ProjectRoomHub
+    from grafy_api.realtime.preview_stream import NodePreviewHub
     from grafy_api.runs.service import RunService
     from grafy_api.services.composition import WorkbenchComponents
     from grafy_api.auth import AuthService
@@ -59,12 +60,14 @@ class AppResources:
     # it is the one with something to stop, and it is what startup recovery marks interrupted.
     agent_turns: AgentService
     project_room_hub: ProjectRoomHub
+    node_preview_hub: NodePreviewHub
     auto_checkpointer: ProjectAutoCheckpointer
 
     async def cleanup(self) -> None:
         # Turns first, while the room still exists: a turn's last act is to publish the
         # text it finished with, and a hub that has already shut down cannot carry it.
         await self.agent_turns.close()
+        await self.node_preview_hub.shutdown()
         await self.project_room_hub.shutdown()
         await self.auto_checkpointer.shutdown()
         await self.runs.close()

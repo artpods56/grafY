@@ -26,6 +26,7 @@ from grafy_core.kernel.results import ResultStore
 from grafy_core.kernel.scheduler import ComputationRequest, ComputationRunner
 from grafy_core.nodes import (
     NodeExecutionContext,
+    NodePreviewReporter,
     NodeProgressReporter,
     UserFacingNodeError,
     bind_node_secret_config,
@@ -63,6 +64,7 @@ class NodeComputationRunner:
         node_execution: NodeExecutionService,
         node_secrets: NodeSecretResolverPort,
         progress_reporter_factory: Callable[[], NodeProgressReporter] | None = None,
+        preview_reporter_factory: Callable[[], NodePreviewReporter] | None = None,
     ) -> None:
         self._workspace_id = workspace_id
         self._project_id = project_id
@@ -72,6 +74,7 @@ class NodeComputationRunner:
         self._node_execution = node_execution
         self._node_secrets = node_secrets
         self._progress_reporter_factory = progress_reporter_factory
+        self._preview_reporter_factory = preview_reporter_factory
 
     async def __call__(
         self,
@@ -90,6 +93,11 @@ class NodeComputationRunner:
             progress_reporter=(
                 self._progress_reporter_factory()
                 if self._progress_reporter_factory
+                else None
+            ),
+            preview_reporter=(
+                self._preview_reporter_factory()
+                if self._preview_reporter_factory
                 else None
             ),
         )
@@ -379,6 +387,7 @@ class NodeComputationRunnerFactory:
         max_map_concurrency: int = 1,
         plugin_context: PluginRuntimeContext | None = None,
         progress_reporter_factory: Callable[[], NodeProgressReporter] | None = None,
+        preview_reporter_factory: Callable[[], NodePreviewReporter] | None = None,
     ) -> None:
         self._binder = NodeContractBinder(
             registry=registry,
@@ -391,6 +400,7 @@ class NodeComputationRunnerFactory:
         )
         self._node_secrets = node_secrets
         self._progress_reporter_factory = progress_reporter_factory
+        self._preview_reporter_factory = preview_reporter_factory
 
     def for_project(
         self,
@@ -408,6 +418,7 @@ class NodeComputationRunnerFactory:
             node_execution=self._node_execution,
             node_secrets=self._node_secrets,
             progress_reporter_factory=self._progress_reporter_factory,
+            preview_reporter_factory=self._preview_reporter_factory,
         )
 
 

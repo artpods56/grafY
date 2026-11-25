@@ -15,6 +15,7 @@ from fastapi import Depends, Request, WebSocket
 from grafy_core.domain.projects import Project
 
 from grafy_api.app_state import get_resources
+from grafy_api.realtime.preview_stream import NodePreviewHub
 from grafy_api.runs.service import RunService
 
 
@@ -24,6 +25,10 @@ def run_service(request: Request) -> RunService:
 
 def run_service_ws(websocket: WebSocket) -> RunService:
     return get_resources(websocket.app).runs
+
+
+def node_preview_hub(request: Request) -> NodePreviewHub:
+    return get_resources(request.app).node_preview_hub
 
 
 async def project_in_workspace(
@@ -46,13 +51,16 @@ async def project_in_workspace(
 
 RunServiceDependency = Annotated[RunService, Depends(run_service)]
 RunServiceWsDependency = Annotated[RunService, Depends(run_service_ws)]
+NodePreviewHubDependency = Annotated[NodePreviewHub, Depends(node_preview_hub)]
 ProjectScopeDependency = Annotated[Project, Depends(project_in_workspace)]
 
 
 __all__ = [
+    "NodePreviewHubDependency",
     "ProjectScopeDependency",
     "RunServiceDependency",
     "RunServiceWsDependency",
+    "node_preview_hub",
     "project_in_workspace",
     "run_service",
     "run_service_ws",

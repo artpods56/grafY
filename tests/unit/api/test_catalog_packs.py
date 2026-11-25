@@ -70,7 +70,7 @@ def test_pack_definitions_cover_the_registry_and_validate_references() -> None:
     registry = build_application_registry()
     overrides = CatalogOverrides()
     policy = CatalogPolicy(registry, overrides)
-    assert len(registry.nodes) == 41
+    assert len(registry.nodes) == 42
     assert policy.default_workspace_pack_slugs == ("essentials", "document_ocr")
     assert [
         (p.definition.slug, p.operator_count, p.provider_count) for p in policy.packs
@@ -79,7 +79,7 @@ def test_pack_definitions_cover_the_registry_and_validate_references() -> None:
         ("document_ocr", 2, 3),
         ("ai", 4, 0),
         ("maps", 9, 0),
-        ("map_toponyms", 10, 2),
+        ("map_toponyms", 10, 3),
         ("label_studio", 2, 0),
         ("subgraphs", 2, 0),
     ]
@@ -162,7 +162,7 @@ def test_pack_subscriptions_change_discovery_without_omitting_nodes(
             return {node["operator_id"]: node for node in response.json()["nodes"]}
 
         before = get_nodes()
-        assert len(before) == 41
+        assert len(before) == 42
         assert before["table.import"]["catalog_visible"]
         assert before["mistral.ocr.provider"]["catalog_visible"]
         assert not before["text.input"]["catalog_visible"]

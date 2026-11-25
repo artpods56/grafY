@@ -9,7 +9,7 @@ from grafy_core.documents import FILE_ARTIFACTS
 from grafy_core.file_contracts import BUILTIN_FILE_FORMATS, build_extension_table
 from grafy_core.plugins import PluginRegistry, PluginRuntimeContext
 from grafy_core.provider_cache import ProviderCache
-from grafy_core.node_context import NodeProgressReporter
+from grafy_core.node_context import NodePreviewReporter, NodeProgressReporter
 from grafy_core.ports.library import LibraryUnitOfWorkPort
 from grafy_core.ports.node_secrets import (
     NodeSecretResolverPort,
@@ -91,6 +91,7 @@ def build_workbench_components(
     node_secrets: NodeSecretResolverPort | None = None,
     egress_policy: EgressPolicy | None = None,
     progress_reporter_factory: Callable[[], NodeProgressReporter] | None = None,
+    preview_reporter_factory: Callable[[], NodePreviewReporter] | None = None,
     provider_cache: ProviderCache | None = None,
     provider_cache_ttl_seconds: int = DEFAULT_TTL_SECONDS,
 ) -> WorkbenchComponents:
@@ -201,6 +202,7 @@ def build_workbench_components(
         values=values,
         max_map_concurrency=resolved_limits.map_max_concurrency,
         progress_reporter_factory=progress_reporter_factory,
+        preview_reporter_factory=preview_reporter_factory,
     )
     return WorkbenchComponents(
         plugin_registry=plugin_registry,

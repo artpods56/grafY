@@ -14,7 +14,6 @@ from openai import (
     OpenAIError,
 )
 from openai.types.chat import (
-    ChatCompletion,
     ChatCompletionContentPartImageParam,
     ChatCompletionContentPartParam,
     ChatCompletionContentPartTextParam,
@@ -26,7 +25,7 @@ from openai.types.chat.completion_create_params import (
     CompletionCreateParamsNonStreaming,
 )
 from openai.types.shared_params import ResponseFormatJSONSchema
-from pydantic import SecretStr, ValidationError
+from pydantic import SecretStr
 
 from grafy_core.artifacts import JsonObject
 from grafy_core.egress import (
@@ -43,6 +42,10 @@ from grafy_core.schema_contracts import (
 )
 from grafy_core.ports.storage import FileStoragePort
 
+from grafy_plugin_llm.completion_response import (
+    check_choice_error,
+    parse_chat_completion,
+)
 from grafy_plugin_llm.openai_compatible import (
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
@@ -335,27 +338,34 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                 f"{config.model!r} with {exc.__class__.__name__}"
             ) from None
 
-        try:
-            completion = ChatCompletion.model_validate(completion.model_dump())
-        except ValidationError:
-            raise OpenAICompatibleProviderError(
-                f"Chat Completions response from {endpoint!r} did not match the "
-                f"SDK response model for {config.model!r}"
-            ) from None
+        parsed = parse_chat_completion(
+            completion,
+            endpoint=endpoint,
+            model=config.model,
+            service_name="Chat Completions",
+            error_type=OpenAICompatibleProviderError,
+        )
 
-        if not completion.choices:
+        if not parsed.choices:
             raise OpenAICompatibleProviderError(
                 f"Chat Completions response from {endpoint!r} contained no choices "
                 f"for model {config.model!r}"
             )
 
-        choice = completion.choices[0]
+        choice = parsed.choices[0]
+        check_choice_error(
+            choice,
+            endpoint=endpoint,
+            model=config.model,
+            service_name="Chat Completions",
+            error_type=OpenAICompatibleProviderError,
+        )
         if choice.message.refusal is not None and choice.message.refusal != "":
             raise OpenAICompatibleProviderError(
                 f"Chat Completions choice {choice.index} was refused for model "
                 f"{config.model!r}"
             )
-        assistant_content = choice.message.content
+        assistant_content = choice.message.text_content()
         if assistant_content is None:
             raise OpenAICompatibleProviderError(
                 f"Chat Completions choice {choice.index} did not contain text for "
@@ -388,17 +398,18 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                 ) from None
 
         safe_usage: JsonObject = {}
-        if completion.usage is not None:
+        if parsed.usage is not None:
             safe_usage = {
-                "prompt_tokens": completion.usage.prompt_tokens,
-                "completion_tokens": completion.usage.completion_tokens,
-                "total_tokens": completion.usage.total_tokens,
+                "prompt_tokens": parsed.usage.prompt_tokens,
+                "completion_tokens": parsed.usage.completion_tokens,
+                "total_tokens": parsed.usage.total_tokens,
             }
+        resolved_model = (parsed.model or "").strip() or config.model
         return OpenAICompatibleProviderResponse(
             content=assistant_content,
             structured_value=structured_value,
-            model=completion.model,
-            response_id=completion.id,
+            model=resolved_model,
+            response_id=parsed.id,
             finish_reason=choice.finish_reason,
             usage=safe_usage,
         )

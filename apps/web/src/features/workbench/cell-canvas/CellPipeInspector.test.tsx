@@ -300,4 +300,40 @@ describe("CellPipeInspector", () => {
     });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
+
+  it("renders the engine input preview action on service workflow edges", () => {
+    const onInspect = vi.fn();
+    const onClose = vi.fn();
+    const serviceEdge: WorkflowEdge = {
+      id: "edge-service",
+      source: "vlm-1",
+      sourcePort: "recognizer",
+      target: "read-1",
+      targetPort: "recognizer",
+      data: { enabled: true, collectionMode: "direct" },
+    };
+
+    const { container } = renderInspector(
+      { kind: "workflow", edge: serviceEdge },
+      {
+        onClose,
+        servicePreview: {
+          summary: "Up to 16 crops/sheet · max 1536 px · 4 parallel",
+          hint: "Preview the exact contact sheets and prompt sent to the model.",
+          actionLabel: "Inspect sheets & prompt",
+          onInspect,
+        },
+      },
+    );
+
+    expect(
+      container.querySelector("[data-service-pipe-preview]")?.textContent,
+    ).toContain("Up to 16 crops/sheet");
+
+    React.act(() => {
+      buttonWithText(container, "Inspect sheets & prompt").click();
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onInspect).toHaveBeenCalledTimes(1);
+  });
 });

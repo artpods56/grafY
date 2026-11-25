@@ -14,6 +14,7 @@ from grafy_core.nodes import (
     Node,
     NodeExecutionContext,
     active_node_context,
+    emit_node_preview,
     emit_node_progress,
 )
 from grafy_core.plugins import (
@@ -77,12 +78,14 @@ class PaddleCyrillicRecognizer(CropTextReader):
 
         results: list[TextReading] = []
         batch: list[str] = []
+        batch_raw: list[bytes] = []
         encoded_size = 0
         total = len(crops)
         context = active_node_context()
+        model_label = PADDLE_MODEL.split("@", 1)[0]
 
         async def flush() -> None:
-            nonlocal batch, encoded_size
+            nonlocal batch, batch_raw, encoded_size
             if not batch:
                 return
             await emit_node_progress(
@@ -91,8 +94,16 @@ class PaddleCyrillicRecognizer(CropTextReader):
                 current=len(results),
                 total=total,
             )
+            for offset, raw_crop in enumerate(batch_raw, start=1):
+                await emit_node_preview(
+                    context,
+                    f"Crop {len(results) + offset}/{total}",
+                    data=raw_crop,
+                    detail=model_label,
+                )
             results.extend(await self._recognize_batch(batch))
             batch = []
+            batch_raw = []
             encoded_size = 0
 
         for crop in crops:
@@ -105,6 +116,7 @@ class PaddleCyrillicRecognizer(CropTextReader):
             ):
                 await flush()
             batch.append(encoded)
+            batch_raw.append(crop)
             encoded_size += len(encoded)
         await flush()
         if total:

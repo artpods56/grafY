@@ -75,6 +75,10 @@ import {
   CellPipeInspector,
   type CellInspectedPipe,
 } from "../cell-canvas/CellPipeInspector";
+import {
+  NodeLivePreviewModal,
+  type NodeLivePreviewTarget,
+} from "../artifacts/NodeLivePreviewModal";
 import type {
   ContextualCandidate,
   ContextualRouteChoice,
@@ -3388,6 +3392,9 @@ function WorkbenchBody({
     }
   }
 
+  const [livePreviewTarget, setLivePreviewTarget] =
+    React.useState<NodeLivePreviewTarget | null>(null);
+
   const activeInspectedPipe = React.useMemo<{
     pipe: CellInspectedPipe;
     anchor: WorldPoint;
@@ -3431,6 +3438,32 @@ function WorkbenchBody({
     inspectedPipe,
     openGraphId,
   ]);
+
+  const activeInspectedServicePreview = React.useMemo<{
+    readonly providerTitle: string;
+    readonly consumerTitle: string;
+    readonly target: NodeLivePreviewTarget;
+  } | null>(() => {
+    if (activeInspectedPipe?.pipe.kind !== "workflow") return null;
+    if (!projectId || !openGraphId) return null;
+    const edge = activeInspectedPipe.pipe.edge;
+    const sourceNode = nodes.find((node) => node.id === edge.source);
+    const targetNode = nodes.find((node) => node.id === edge.target);
+    if (!sourceNode || !targetNode) return null;
+    const targetPort = targetNode.data.spec.inputs.find(
+      (port) => port.name === edge.targetPort,
+    );
+    if (targetPort?.kind !== "service") return null;
+    return {
+      providerTitle: sourceNode.data.spec.title,
+      consumerTitle: targetNode.data.spec.title,
+      target: {
+        nodeId: targetNode.id,
+        nodeTitle: targetNode.data.spec.title,
+        subtitle: `${sourceNode.data.spec.title} → ${targetNode.data.spec.title}`,
+      },
+    };
+  }, [activeInspectedPipe, nodes, openGraphId, projectId]);
 
   // Offered when a dragged output has no compatible node: show its artifacts.
   const placeDiscoveredOutputCard =
@@ -3806,6 +3839,19 @@ function WorkbenchBody({
                   pipe={activeInspectedPipe.pipe}
                   anchor={activeInspectedPipe.anchor}
                   editable={localAuthoringEnabled && !running}
+                  servicePreview={
+                    activeInspectedServicePreview
+                      ? {
+                          summary: `${activeInspectedServicePreview.providerTitle} → ${activeInspectedServicePreview.consumerTitle}`,
+                          hint: "Stream live frames (contact sheets, crops, or pages) processed by this node.",
+                          actionLabel: "Live preview",
+                          onInspect: () =>
+                            setLivePreviewTarget(
+                              activeInspectedServicePreview.target,
+                            ),
+                        }
+                      : null
+                  }
                   onClose={closeInspectedPipe}
                   onUpdateWorkflowEdge={updateEdge}
                   onUpdateOriginCollectionMode={(originId, collectionMode) =>
@@ -4106,6 +4152,17 @@ function WorkbenchBody({
           managePacksHref={managePacksHref}
         />
       ) : null}
+
+      <NodeLivePreviewModal
+        open={livePreviewTarget !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setLivePreviewTarget(null);
+        }}
+        workspaceId={workspaceId}
+        projectId={projectId}
+        graphId={openGraphId}
+        target={livePreviewTarget}
+      />
 
       <ArtifactFolderDropDialog
         pending={pendingFolderDrop?.drop ?? null}

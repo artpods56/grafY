@@ -15330,6 +15330,84 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/preview-stream": {
+      "get": {
+        "description": "Opt-in Server-Sent Events stream of ephemeral live preview frames for one node.\n\nReplays the bounded in-memory ring buffer for the node's latest computation\nand streams new frames as the node or its connected service providers emit\nthem. Requires both ``view_runs`` and ``view_artifacts`` because frames may\nshow cropped image regions or prompt text derived from workspace artifacts.",
+        "operationId": "stream_node_preview_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__preview_stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stream Node Preview",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}": {
       "delete": {
         "operationId": "delete_node_secret_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__secrets__name__delete",

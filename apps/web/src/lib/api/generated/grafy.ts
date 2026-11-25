@@ -1430,6 +1430,31 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/preview-stream": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Stream Node Preview
+         * @description Opt-in Server-Sent Events stream of ephemeral live preview frames for one node.
+         *
+         *     Replays the bounded in-memory ring buffer for the node's latest computation
+         *     and streams new frames as the node or its connected service providers emit
+         *     them. Requires both ``view_runs`` and ``view_artifacts`` because frames may
+         *     show cropped image regions or prompt text derived from workspace artifacts.
+         */
+        readonly get: operations["stream_node_preview_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__preview_stream_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}": {
         readonly parameters: {
             readonly query?: never;
@@ -8786,6 +8811,40 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["InstanceStateListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly stream_node_preview_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__preview_stream_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly graph_id: string;
+                readonly node_id: string;
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": unknown;
                 };
             };
             /** @description Validation Error */
