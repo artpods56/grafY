@@ -36,6 +36,7 @@ const apiMocks = vi.hoisted(() => ({
   useWorkspacePacks: vi.fn(),
   useProjectSummaryRefresh: vi.fn(),
   createStarterProject: vi.fn(),
+  importProject: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -67,6 +68,7 @@ vi.mock("@/lib/api", async () => {
   return {
     ...actual,
     createStarterProject: apiMocks.createStarterProject,
+    importProject: apiMocks.importProject,
   };
 });
 
@@ -560,5 +562,135 @@ describe("workspace graph browser address filters", () => {
     expect(searchInput(container).value).toBe("nightly");
     expect(viewChecked(container, "All")).toBe("true");
     expect(browserState.replace).not.toHaveBeenCalled();
+  });
+
+  it("shows an error notice when importing invalid JSON", async () => {
+    const container = await renderBrowser();
+    const fileInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Import project JSON file"]',
+    );
+    expect(fileInput).not.toBeNull();
+    const badFile = new File(["{not-valid-json"], "broken.json", {
+      type: "application/json",
+    });
+    Object.defineProperty(badFile, "text", {
+      value: () => Promise.resolve("{not-valid-json"),
+    });
+    Object.defineProperty(fileInput!, "files", {
+      value: [badFile],
+      configurable: true,
+    });
+
+    await act(async () => {
+      fileInput!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(apiMocks.importProject).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "The selected file is not valid JSON.",
+    );
+  });
+
+  it("imports a valid portable project JSON and navigates on clean success", async () => {
+    apiMocks.importProject.mockResolvedValue({
+      project: {
+        id: "project-imported",
+        name: "Imported pipeline",
+        created_at: "2026-11-25T10:00:00Z",
+        updated_at: "2026-11-25T10:00:00Z",
+      },
+      warnings: [],
+    });
+    const container = await renderBrowser();
+    const fileInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Import project JSON file"]',
+    );
+    const payload = JSON.stringify({
+      format: "grafy.project",
+      format_version: 1,
+      name: "Imported pipeline",
+      document: { graphs: [] },
+    });
+    const validFile = new File([payload], "pipeline.grafy.json", {
+      type: "application/json",
+    });
+    Object.defineProperty(validFile, "text", {
+      value: () => Promise.resolve(payload),
+    });
+    Object.defineProperty(fileInput!, "files", {
+      value: [validFile],
+      configurable: true,
+    });
+
+    await act(async () => {
+      fileInput!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(apiMocks.importProject).toHaveBeenCalledWith(
+      "workspace-atlas",
+      expect.objectContaining({
+        format: "grafy.project",
+        format_version: 1,
+        name: "Imported pipeline",
+      }),
+    );
+    expect(browserState.push).toHaveBeenCalledWith(
+      "/workspaces/atlas/projects/project-imported",
+    );
+  });
+
+  it("surfaces import warnings and offers an action to open the imported project", async () => {
+    apiMocks.importProject.mockResolvedValue({
+      project: {
+        id: "project-warned",
+        name: "Warned pipeline",
+        created_at: "2026-11-25T10:00:00Z",
+        updated_at: "2026-11-25T10:00:00Z",
+      },
+      warnings: [
+        {
+          code: "unknown_operator",
+          message: "Operator custom.missing@1 is not installed.",
+          graph_id: "main",
+          node_id: "n1",
+          operator_id: "custom.missing",
+          operator_version: 1,
+          agent_id: null,
+        },
+      ],
+    });
+    const container = await renderBrowser();
+    const fileInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Import project JSON file"]',
+    );
+    const payload = JSON.stringify({
+      format: "grafy.project",
+      format_version: 1,
+      name: "Warned pipeline",
+      document: { graphs: [] },
+    });
+    const validFile = new File([payload], "warned.grafy.json", {
+      type: "application/json",
+    });
+    Object.defineProperty(validFile, "text", {
+      value: () => Promise.resolve(payload),
+    });
+    Object.defineProperty(fileInput!, "files", {
+      value: [validFile],
+      configurable: true,
+    });
+
+    await act(async () => {
+      fileInput!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(browserState.push).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Operator custom.missing@1 is not installed.",
+    );
+    await click(button(container, "Open project"));
+    expect(browserState.push).toHaveBeenCalledWith(
+      "/workspaces/atlas/projects/project-warned",
+    );
   });
 });

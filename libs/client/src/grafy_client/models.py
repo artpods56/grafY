@@ -196,6 +196,42 @@ class ProjectHead(ClientModel):
     document: ProjectDocument
 
 
+class ProjectExport(ClientModel):
+    """Versioned portable JSON envelope for a whole Project."""
+
+    format: Literal["grafy.project"] = "grafy.project"
+    format_version: Literal[1] = 1
+    name: str
+    document: ProjectDocument
+
+
+ProjectImportWarningCode = Literal[
+    "unknown_operator",
+    "stripped_origins",
+    "stripped_artifact_cards",
+    "stripped_library_context_links",
+    "stripped_card_context_links",
+    "stripped_legacy_config_keys",
+    "credentials_required",
+    "custom_agent_model",
+]
+
+
+class ProjectImportWarning(ClientModel):
+    code: ProjectImportWarningCode
+    message: str
+    graph_id: str | None = None
+    node_id: str | None = None
+    operator_id: str | None = None
+    operator_version: int | None = None
+    agent_id: str | None = None
+
+
+class ImportedProject(ClientModel):
+    project: Project
+    warnings: tuple[ProjectImportWarning, ...] = ()
+
+
 class CommandReceipt(ClientModel):
     command_id: UUID
     outcome: Literal["accepted", "idempotent_replay"]
@@ -347,13 +383,17 @@ __all__ = [
     "CommandReceipt",
     "GeoFeatureMatch",
     "GeoRender",
+    "ImportedProject",
     "InstanceKey",
     "InstanceResult",
     "InstanceState",
     "NodeCatalog",
     "NodeSecretStatus",
     "Project",
+    "ProjectExport",
     "ProjectHead",
+    "ProjectImportWarning",
+    "ProjectImportWarningCode",
     "ProjectSummary",
     "Run",
     "RunTarget",

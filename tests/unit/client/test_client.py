@@ -856,3 +856,104 @@ async def test_an_in_process_client_still_sends_bytes_to_its_own_api_route() -> 
         f"/v1/workspaces/{WORKSPACE_ID}/uploads/{upload_id}/content",
         f"/v1/workspaces/{WORKSPACE_ID}/uploads/{upload_id}/complete",
     ]
+
+
+async def test_project_export_and_import_client_methods() -> None:
+    project_id = UUID("33333333-3333-4333-8333-333333333333")
+    imported_id = UUID("44444444-4444-4444-8444-444444444444")
+    command_id = UUID("55555555-5555-4555-8555-555555555555")
+    requests_seen: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content) if request.content else None
+        requests_seen.append((request.method, str(request.url.raw_path, "utf-8"), body))
+        if request.method == "GET" and "/export" in request.url.path:
+            return httpx.Response(
+                200,
+                json={
+                    "format": "grafy.project",
+                    "format_version": 1,
+                    "name": "Dev Project",
+                    "document": {
+                        "graphs": [
+                            {
+                                "id": "main",
+                                "name": "Main",
+                                "document": {
+                                    "schema_version": 7,
+                                    "agents": [],
+                                    "nodes": [],
+                                    "edges": [],
+                                    "origins": [],
+                                    "presentation": {
+                                        "viewers": [],
+                                        "links": [],
+                                        "bindings": [],
+                                        "annotations": [],
+                                    },
+                                },
+                                "refresh_generations": {},
+                            }
+                        ]
+                    },
+                },
+            )
+        if request.method == "POST" and request.url.path.endswith("/projects/import"):
+            return httpx.Response(
+                201,
+                json={
+                    "project": {
+                        "id": str(imported_id),
+                        "name": body["name"],
+                        "created_at": "2026-11-25T10:00:00Z",
+                        "updated_at": "2026-11-25T10:00:00Z",
+                    },
+                    "warnings": [
+                        {
+                            "code": "unknown_operator",
+                            "message": "Operator custom.op@1 is not installed.",
+                            "graph_id": "main",
+                            "node_id": "n1",
+                            "operator_id": "custom.op",
+                            "operator_version": 1,
+                            "agent_id": None,
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(404)
+
+    async with GrafyClient(
+        base_url="http://127.0.0.1",
+        token=SecretStr("grafy_pat_test"),
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        exported = await client.projects.export_project(
+            WORKSPACE_ID, project_id, revision=2
+        )
+        imported = await client.projects.import_project(
+            WORKSPACE_ID,
+            exported,
+            name="Prod Project",
+            project_id=imported_id,
+            command_id=command_id,
+        )
+
+    assert exported.format == "grafy.project"
+    assert exported.format_version == 1
+    assert exported.name == "Dev Project"
+    assert imported.project.id == imported_id
+    assert imported.project.name == "Prod Project"
+    assert len(imported.warnings) == 1
+    assert imported.warnings[0].code == "unknown_operator"
+    assert requests_seen[0][0] == "GET"
+    assert (
+        requests_seen[0][1]
+        == f"/v1/workspaces/{WORKSPACE_ID}/projects/{project_id}/export?revision=2"
+    )
+    assert requests_seen[1][0] == "POST"
+    assert requests_seen[1][1] == f"/v1/workspaces/{WORKSPACE_ID}/projects/import"
+    assert requests_seen[1][2] is not None
+    assert requests_seen[1][2]["name"] == "Prod Project"
+    assert requests_seen[1][2]["project_id"] == str(imported_id)
+    assert requests_seen[1][2]["command_id"] == str(command_id)

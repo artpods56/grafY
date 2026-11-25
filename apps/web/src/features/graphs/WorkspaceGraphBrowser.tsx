@@ -9,6 +9,7 @@ import {
   RotateCcw,
   Search,
   Table2,
+  Upload,
   Workflow,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,6 +39,9 @@ import {
 } from "@/hooks/use-api";
 import {
   createStarterProject,
+  importProject,
+  type ImportProjectRequest,
+  type ProjectImportWarning,
   type SavedGraphSummary,
   type StarterId,
 } from "@/lib/api";
@@ -74,6 +78,19 @@ function recipeIcon(id: StarterId) {
 
 function projectStepLabel(count: number): string {
   return `${count} ${count === 1 ? "step" : "steps"}`;
+}
+
+function readFileText(file: File): Promise<string> {
+  if (typeof file.text === "function") {
+    return file.text();
+  }
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Could not read file."));
+    reader.readAsText(file);
+  });
 }
 
 function GraphRow({
@@ -150,6 +167,15 @@ function WorkspaceGraphBrowserContent() {
     null,
   );
   const [recipeError, setRecipeError] = React.useState<string | null>(null);
+  const importInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [importing, setImporting] = React.useState(false);
+  const [importError, setImportError] = React.useState<string | null>(null);
+  const [importResultWithWarnings, setImportResultWithWarnings] =
+    React.useState<{
+      projectId: string;
+      projectName: string;
+      warnings: readonly ProjectImportWarning[];
+    } | null>(null);
 
   const workspaceName = workspaceDisplayName(workspace);
   const workspaceBadgeLabel =
@@ -168,6 +194,64 @@ function WorkspaceGraphBrowserContent() {
   const startGraph = () => {
     if (!canCreate) return;
     router.push(workbenchProjectPath(workspace.slug, NEW_PROJECT_ROUTE_ID));
+  };
+
+  const triggerImportPicker = () => {
+    if (!canCreate || importing) return;
+    importInputRef.current?.click();
+  };
+
+  const handleImportFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !canCreate || importing) return;
+
+    setImportError(null);
+    setImportResultWithWarnings(null);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFileText(file));
+    } catch {
+      setImportError("The selected file is not valid JSON.");
+      return;
+    }
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      setImportError("The selected file is not a valid Grafy project export.");
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const response = await importProject(
+        workspace.id,
+        parsed as ImportProjectRequest,
+      );
+      await refreshProjects(workspace.id);
+      if (response.warnings && response.warnings.length > 0) {
+        setImportResultWithWarnings({
+          projectId: response.project.id,
+          projectName: response.project.name,
+          warnings: response.warnings,
+        });
+      } else {
+        router.push(workbenchProjectPath(workspace.slug, response.project.id));
+      }
+    } catch (caught: unknown) {
+      setImportError(
+        caught instanceof Error
+          ? caught.message
+          : "The project could not be imported.",
+      );
+    } finally {
+      setImporting(false);
+    }
   };
 
   const openRecipe = (starterId: StarterId) => {
@@ -212,6 +296,29 @@ function WorkspaceGraphBrowserContent() {
                 onChange={(event) => setQuery(event.currentTarget.value)}
               />
             </label>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              aria-label="Import project JSON file"
+              {...stylex.props(browserStyles.hiddenFileInput)}
+              onChange={(event) => void handleImportFileChange(event)}
+            />
+            <Button
+              variant="secondary"
+              size="md"
+              xstyle={[phoneTouch.on, browserStyles.headerAction]}
+              disabled={!canCreate || importing}
+              title={
+                canCreate
+                  ? "Import a portable Grafy project JSON file"
+                  : "You do not have permission to create a project in this workspace."
+              }
+              onClick={triggerImportPicker}
+            >
+              <Upload size={14} aria-hidden="true" />
+              {importing ? "Importing…" : "Import JSON"}
+            </Button>
             <Button
               variant="primary"
               size="md"
@@ -232,6 +339,54 @@ function WorkspaceGraphBrowserContent() {
       </header>
 
       <main {...stylex.props(browserStyles.main)}>
+        {importError ? (
+          <Notice
+            tone="danger"
+            variant="inline"
+            xstyle={browserStyles.importNotice}
+            onDismiss={() => setImportError(null)}
+          >
+            {importError}
+          </Notice>
+        ) : null}
+        {importResultWithWarnings ? (
+          <Notice
+            tone="warning"
+            variant="inline"
+            xstyle={browserStyles.importNotice}
+            action={
+              <Button
+                size="xs"
+                variant="secondary"
+                onClick={() =>
+                  router.push(
+                    workbenchProjectPath(
+                      workspace.slug,
+                      importResultWithWarnings.projectId,
+                    ),
+                  )
+                }
+              >
+                Open project
+              </Button>
+            }
+            onDismiss={() => setImportResultWithWarnings(null)}
+          >
+            <div>
+              Imported &ldquo;{importResultWithWarnings.projectName}&rdquo; with{" "}
+              {importResultWithWarnings.warnings.length}{" "}
+              {importResultWithWarnings.warnings.length === 1
+                ? "warning"
+                : "warnings"}
+              :
+              <ul {...stylex.props(browserStyles.importWarningList)}>
+                {importResultWithWarnings.warnings.map((warning, index) => (
+                  <li key={`${warning.code}-${index}`}>{warning.message}</li>
+                ))}
+              </ul>
+            </div>
+          </Notice>
+        ) : null}
         {canCreate && documentOcrReady ? (
           <section
             aria-label="Start from a recipe"

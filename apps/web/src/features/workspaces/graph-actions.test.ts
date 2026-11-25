@@ -1,11 +1,17 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { deleteProjectRemote, renameProjectRemote } from "./graph-actions";
+import {
+  deleteProjectRemote,
+  exportProjectRemote,
+  projectExportFilename,
+  renameProjectRemote,
+} from "./graph-actions";
 
 const api = vi.hoisted(() => ({
   checkpointProject: vi.fn(),
   deleteProject: vi.fn(),
+  exportProject: vi.fn(),
   getCollaborativeHead: vi.fn(),
   submitProjectCommand: vi.fn(),
 }));
@@ -93,5 +99,41 @@ describe("deleteProjectRemote", () => {
     await expect(deleteProjectRemote("team", project)).resolves.toBe(false);
     expect(api.getCollaborativeHead).not.toHaveBeenCalled();
     expect(api.deleteProject).not.toHaveBeenCalled();
+  });
+});
+
+describe("exportProjectRemote", () => {
+  it("builds safe filenames for project exports", () => {
+    expect(projectExportFilename("Signal / Map: v1")).toBe(
+      "Signal - Map- v1.grafy.json",
+    );
+    expect(projectExportFilename("   ")).toBe("project.grafy.json");
+  });
+
+  it("downloads the exported project JSON envelope", async () => {
+    api.exportProject.mockResolvedValue({
+      format: "grafy.project",
+      format_version: 1,
+      name: "Signal map",
+      document: { graphs: [] },
+    });
+    const createObjectURL = vi.fn(() => "blob:project-export");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL,
+    });
+    const clickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+
+    await exportProjectRemote("team", "project-1", "Fallback");
+
+    expect(api.exportProject).toHaveBeenCalledWith("team", "project-1");
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:project-export");
+    clickSpy.mockRestore();
   });
 });
