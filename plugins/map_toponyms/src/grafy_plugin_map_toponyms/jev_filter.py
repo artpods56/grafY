@@ -2,15 +2,19 @@
 
 import asyncio
 from base64 import b64encode
+from collections.abc import Mapping
 from hashlib import sha256
 from io import BytesIO
 from math import ceil, floor, isclose
 from typing import Annotated, Literal, Self, final, override
 from uuid import uuid4
 
+import httpx
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.contracts.ocr import PixelPolygon, TextRegion, TiffPage, TiffPageOpener
-from grafy_core.credential_verification import unsupported_credential_verifier
+from grafy_core.credential_verification import verify_http_credential
+from grafy_core.domain.credentials import CredentialVerificationResult
+from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.node_context import UserFacingNodeError
 from grafy_core.nodes import Node, NodeExecutionContext
@@ -25,7 +29,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    JsonValue,
     SecretStr,
     StringConstraints,
     TypeAdapter,
@@ -40,7 +43,8 @@ from grafy_plugin_map_toponyms.text_regions import TiffTextRegions
 
 _ = _table_plugin.__name__
 
-JEV_URL = "https://api.typesafe.ai/v1/systemone"
+_JEV_ORIGIN = "https://api.typesafe.ai"
+JEV_URL = f"{_JEV_ORIGIN}/v1/systemone"
 DEFAULT_JEV_MODEL = "jev-1.14.0"
 _JEV_DEPLOYMENT = "jev.typesafe-ai"
 _CROP_VERSION = "jev-context-crop@1"
@@ -361,6 +365,17 @@ def _score_region(
     }
 
 
+async def _verify_jev_api_key(
+    key: SecretStr, _config: Mapping[str, JsonValue], client: httpx.AsyncClient
+) -> CredentialVerificationResult:
+    return await verify_http_credential(
+        client,
+        f"{_JEV_ORIGIN}/v1/models",
+        f"Bearer {key.get_secret_value()}",
+        message="TypeSafe AI accepted the API key.",
+    )
+
+
 @MAP_TOPONYMS.node(
     operator_id="ocr.filter_tiff_jev",
     version=1,
@@ -369,15 +384,13 @@ def _score_region(
         PluginRuntimeCapability.NETWORK_EGRESS,
         PluginRuntimeCapability.NODE_SECRETS,
     ),
-    http_egress=NodeHttpEgressContract(fixed_destinations=("https://api.typesafe.ai",)),
+    http_egress=NodeHttpEgressContract(fixed_destinations=(_JEV_ORIGIN,)),
     secret_inputs=(
         NodeSecretInput(
             name="api_key",
             title="TypeSafe AI (Jev) API key",
             provider_kind="jev",
-            verifier=unsupported_credential_verifier(
-                "This key will be checked on first run."
-            ),
+            verifier=_verify_jev_api_key,
         ),
     ),
     factory=lambda context: FilterTiffJevNode(

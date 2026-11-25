@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Annotated, Any, ClassVar, Final, Literal, cast, final, override
 
 import httpx
@@ -8,8 +8,10 @@ from grafy_core.artifact_contracts import MarkdownValue
 from grafy_core.artifacts import NodeConfig, NodeInput, NodeOutput
 from grafy_core.config_ui import field_ui
 from grafy_core.contracts.ocr import DocumentOcr, DocumentOcrFeature, DocumentOcrResult
-from grafy_core.credential_verification import unsupported_credential_verifier
+from grafy_core.credential_verification import verify_http_credential
 from grafy_core.documents import PdfFile, RasterImage
+from grafy_core.domain.credentials import CredentialVerificationResult
+from grafy_core.domain.node_secrets import JsonValue
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.egress import EgressRejectedError, PinnedPublicAddressTransport
 from grafy_core.nodes import (
@@ -205,6 +207,17 @@ class ReductoProviderOutput(NodeOutput):
     ]
 
 
+async def _verify_reducto_api_key(
+    key: SecretStr, _config: Mapping[str, JsonValue], client: httpx.AsyncClient
+) -> CredentialVerificationResult:
+    return await verify_http_credential(
+        client,
+        f"{REDUCTO_BASE_URL}/jobs?limit=1&exclude_configs=true",
+        f"Bearer {key.get_secret_value()}",
+        message="Reducto accepted the API key.",
+    )
+
+
 #: The credential this node reads with `context.secrets.require(API_KEY.name)`.
 API_KEY = NodeSecretInput(
     name="api_key",
@@ -212,9 +225,7 @@ API_KEY = NodeSecretInput(
     description="Write-only bearer credential for the Reducto platform API.",
     config_dependencies=(),
     provider_kind="reducto",
-    verifier=unsupported_credential_verifier(
-        "Reducto has no free verification endpoint; key will be checked on first run."
-    ),
+    verifier=_verify_reducto_api_key,
 )
 
 

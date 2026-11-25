@@ -575,6 +575,7 @@ version = "0.1.0"
 source = { editable = "plugins/litellm_ocr" }
 dependencies = [
     { name = "grafy-core" },
+    { name = "httpx" },
     { name = "pydantic" },
 ]
 
@@ -586,6 +587,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "grafy-core", editable = "libs/core" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic" },
 ]
 
