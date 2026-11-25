@@ -25,7 +25,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from fastapi.responses import Response
-from grafy_core.domain.collaboration import CommandReceiptOutcome
+from grafy_core.domain.collaboration import (
+    CommandReceiptOutcome,
+    PortableSanitizationSummary,
+    sanitize_project_for_portable_export,
+    sanitize_project_for_portable_transfer,
+)
 from grafy_core.domain.errors import (
     CollaborationCommandRejectedError,
     CollaborationHeadConflictError,
@@ -36,11 +41,19 @@ from grafy_core.domain.errors import (
     ProjectCheckpointConflictError,
     ProjectFolderNameConflictError,
 )
+from grafy_core.domain.graph_documents import CustomAgentModel
 from grafy_core.domain.identity import (
     ActorContext,
     WorkspaceAccess,
     WorkspaceCapability,
 )
+from grafy_core.kernel.project import (
+    CALL_NODE_KIND,
+    GRAPH_INPUT_OPERATOR_ID,
+    GRAPH_OUTPUT_OPERATOR_ID,
+    ProjectDocument,
+)
+from grafy_core.plugins import PluginRegistry, UnknownOperatorError
 
 from grafy_api.app_state import get_resources
 from grafy_api.project_contracts import (
@@ -50,14 +63,18 @@ from grafy_api.project_contracts import (
     CopyExactHeadRequest,
     CreateProjectRequest,
     CreateStarterProjectRequest,
+    ImportProjectRequest,
+    ImportProjectResponse,
     ProjectBrowserListResponse,
     ProjectCheckpointListResponse,
     ProjectCheckpointResponse,
     ProjectCommandReceiptResponse,
+    ProjectExportResponse,
     ProjectFolderListResponse,
     ProjectFolderResponse,
     ProjectFolderWriteRequest,
     ProjectHeadResponse,
+    ProjectImportWarning,
     ProjectListResponse,
     ProjectOrganizationResponse,
     ProjectResponse,
@@ -299,6 +316,219 @@ async def create_starter_project(
     ) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ProjectResponse.from_project(project)
+
+
+_STRUCTURAL_BOUNDARY_OPERATORS = frozenset(
+    {GRAPH_INPUT_OPERATOR_ID, GRAPH_OUTPUT_OPERATOR_ID}
+)
+
+
+def _collect_import_warnings(
+    *,
+    document: ProjectDocument,
+    sanitization: PortableSanitizationSummary,
+    registry: PluginRegistry,
+) -> list[ProjectImportWarning]:
+    warnings: list[ProjectImportWarning] = []
+    if sanitization.stripped_origins:
+        count = sanitization.stripped_origins
+        noun = "origin" if count == 1 else "origins"
+        warnings.append(
+            ProjectImportWarning(
+                code="stripped_origins",
+                message=(
+                    f"Removed {count} workspace artifact {noun}; reconnect inputs "
+                    "using Library artifacts in this workspace."
+                ),
+            )
+        )
+    if sanitization.stripped_artifact_cards:
+        count = sanitization.stripped_artifact_cards
+        noun = "artifact card" if count == 1 else "artifact cards"
+        warnings.append(
+            ProjectImportWarning(
+                code="stripped_artifact_cards",
+                message=(
+                    f"Removed {count} workspace {noun} referencing artifacts from "
+                    "another environment."
+                ),
+            )
+        )
+    if sanitization.stripped_library_context_links:
+        count = sanitization.stripped_library_context_links
+        noun = "link" if count == 1 else "links"
+        warnings.append(
+            ProjectImportWarning(
+                code="stripped_library_context_links",
+                message=(
+                    f"Removed {count} Agent Library context {noun} referencing "
+                    "artifacts from another environment."
+                ),
+            )
+        )
+    if sanitization.stripped_card_context_links:
+        count = sanitization.stripped_card_context_links
+        noun = "link" if count == 1 else "links"
+        warnings.append(
+            ProjectImportWarning(
+                code="stripped_card_context_links",
+                message=(
+                    f"Removed {count} Agent context {noun} pointing to removed "
+                    "artifact cards."
+                ),
+            )
+        )
+    if sanitization.stripped_legacy_config_keys:
+        count = sanitization.stripped_legacy_config_keys
+        noun = "reference" if count == 1 else "references"
+        warnings.append(
+            ProjectImportWarning(
+                code="stripped_legacy_config_keys",
+                message=(
+                    f"Removed {count} legacy upload or artifact config {noun} "
+                    "from node configurations."
+                ),
+            )
+        )
+
+    for graph in document.graphs:
+        for node in graph.document.nodes:
+            if (
+                node.kind == CALL_NODE_KIND
+                or node.operator_id in _STRUCTURAL_BOUNDARY_OPERATORS
+            ):
+                continue
+            try:
+                registration = registry.node_registration(
+                    node.operator_id, node.operator_version
+                )
+            except UnknownOperatorError:
+                warnings.append(
+                    ProjectImportWarning(
+                        code="unknown_operator",
+                        graph_id=graph.id,
+                        node_id=node.id,
+                        operator_id=node.operator_id,
+                        operator_version=node.operator_version,
+                        message=(
+                            f"Operator {node.operator_id}@{node.operator_version} "
+                            f"in graph '{graph.name}' is not installed in this "
+                            "deployment."
+                        ),
+                    )
+                )
+                continue
+            if registration.secret_inputs:
+                warnings.append(
+                    ProjectImportWarning(
+                        code="credentials_required",
+                        graph_id=graph.id,
+                        node_id=node.id,
+                        operator_id=node.operator_id,
+                        operator_version=node.operator_version,
+                        message=(
+                            f"Node '{node.id}' ({registration.title}) in graph "
+                            f"'{graph.name}' requires credentials to be configured "
+                            "in this workspace."
+                        ),
+                    )
+                )
+        for agent in graph.document.agents:
+            if isinstance(agent.model, CustomAgentModel):
+                warnings.append(
+                    ProjectImportWarning(
+                        code="custom_agent_model",
+                        graph_id=graph.id,
+                        agent_id=agent.id,
+                        message=(
+                            f"Agent '{agent.name}' in graph '{graph.name}' uses a "
+                            "custom model endpoint; configure its API key in this "
+                            "workspace if required."
+                        ),
+                    )
+                )
+    return warnings
+
+
+# Import stages a new Project with checkpoint 1 and its own head, so it needs both
+# create_project and checkpoint_project for PAT scope intersection, matching create_project.
+@router.post(
+    "/import",
+    response_model=ImportProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_project(
+    request: ImportProjectRequest,
+    http_request: Request,
+    collaboration: CollaborationDependency,
+    access: require_workspace_capability(WorkspaceCapability.CREATE_PROJECT),
+    checkpoint_access: require_workspace_capability(
+        WorkspaceCapability.CHECKPOINT_PROJECT
+    ),
+) -> ImportProjectResponse:
+    del checkpoint_access
+    _, sanitization = sanitize_project_for_portable_transfer(request.document)
+    try:
+        imported = await collaboration.import_project(
+            actor=access.actor,
+            workspace_id=access.workspace_id,
+            name=request.name,
+            document=request.document,
+            project_id=request.project_id,
+            command_id=request.command_id,
+        )
+    except (NotFoundError, MissingProjectHeadError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CollaborationCommandRejectedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (
+        CollaborationHeadConflictError,
+        CollaborationIdempotencyMismatchError,
+    ) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    registry = get_resources(http_request.app).workbench.plugin_registry
+    warnings = _collect_import_warnings(
+        document=imported.head.document,
+        sanitization=sanitization,
+        registry=registry,
+    )
+    return ImportProjectResponse(
+        project=ProjectResponse.from_project(imported.project),
+        warnings=warnings,
+    )
+
+
+@router.get("/{project_id}/export", response_model=ProjectExportResponse)
+async def export_project(
+    project_id: UUID,
+    collaboration: CollaborationDependency,
+    service: ProjectDependency,
+    access: require_workspace_capability(WorkspaceCapability.VIEW_PROJECT),
+    revision: Annotated[int | None, Query(ge=1)] = None,
+) -> ProjectExportResponse:
+    try:
+        if revision is None:
+            head = await collaboration.get_head(
+                actor=access.actor,
+                workspace_id=access.workspace_id,
+                project_id=project_id,
+            )
+            name = head.name
+            document = head.document
+        else:
+            checkpoint = await service.get_checkpoint(
+                workspace_id=access.workspace_id,
+                project_id=project_id,
+                revision=revision,
+            )
+            name = checkpoint.name
+            document = checkpoint.document
+    except (NotFoundError, MissingProjectHeadError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ProjectExportResponse(
+        name=name,
+        document=sanitize_project_for_portable_export(document),
+    )
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

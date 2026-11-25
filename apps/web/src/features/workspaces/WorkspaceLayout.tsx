@@ -5,6 +5,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Popover } from "@base-ui/react/popover";
 import {
   ChevronsUpDown,
+  Download,
   FolderTree,
   Layers,
   LoaderCircle,
@@ -65,7 +66,11 @@ import {
   type Workspace,
   type WorkspaceRole,
 } from "@/lib/api";
-import { deleteProjectRemote, renameProjectRemote } from "./graph-actions";
+import {
+  deleteProjectRemote,
+  exportProjectRemote,
+  renameProjectRemote,
+} from "./graph-actions";
 import { GraphRowMenu, promptGraphRename } from "./GraphRowMenu";
 import { sortGraphsByRecency } from "./WorkspaceGraphPanel";
 import { graphRowMarker, railStyles } from "./workspace-rail.stylex";
@@ -674,6 +679,25 @@ export function WorkspaceRail({
     [activeWorkspace, chrome, refreshGraphSummaries],
   );
 
+  const exportProjectJson = React.useCallback(
+    async (projectId: string, projectName: string) => {
+      if (!activeWorkspace) return;
+      setGraphActionBusyId(projectId);
+      try {
+        await exportProjectRemote(activeWorkspace.id, projectId, projectName);
+      } catch (error) {
+        window.alert(
+          error instanceof Error
+            ? error.message
+            : "The project could not be exported.",
+        );
+      } finally {
+        setGraphActionBusyId(null);
+      }
+    },
+    [activeWorkspace],
+  );
+
   return (
     <>
       <header className={stylex.props(railStyles.mobileNav).className}>
@@ -1187,6 +1211,43 @@ export function WorkspaceRail({
                   Results
                 </span>
               </button>
+              <button
+                type="button"
+                className={stylex.props(railStyles.railItem).className}
+                title={
+                  chrome.activeGraphId
+                    ? "Export this project as portable JSON"
+                    : "Save the project before exporting"
+                }
+                disabled={
+                  !chrome.activeGraphId ||
+                  graphActionBusyId === chrome.activeGraphId
+                }
+                onClick={() => {
+                  if (!chrome.activeGraphId) return;
+                  closeMobileNavigation(false);
+                  void exportProjectJson(
+                    chrome.activeGraphId,
+                    chrome.graphName,
+                  );
+                }}
+              >
+                <Download
+                  size={15}
+                  aria-hidden="true"
+                  className={railIconClass}
+                />
+                <span
+                  className={
+                    stylex.props(
+                      railStyles.itemSpan,
+                      visuallyCollapsed && railStyles.copyHidden,
+                    ).className
+                  }
+                >
+                  Export JSON
+                </span>
+              </button>
             </div>
           ) : null}
         </nav>
@@ -1255,6 +1316,9 @@ export function WorkspaceRail({
                   <GraphRowMenu
                     graph={graph}
                     busy={graphActionBusyId === graph.id}
+                    onExport={(entry) =>
+                      void exportProjectJson(entry.id, entry.name)
+                    }
                     onRename={(entry) => void renameGraph(entry)}
                     onDelete={(entry) => void deleteGraph(entry)}
                   />
