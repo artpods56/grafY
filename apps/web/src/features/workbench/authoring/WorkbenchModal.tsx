@@ -179,10 +179,17 @@ export function WorkbenchModal({
     workbenchModalInitialState,
   );
 
-  // The controlled `open` prop is authoritative from the outside.
-  React.useEffect(() => {
+  // The controlled `open` prop is authoritative whenever it moves, and it is
+  // read while rendering rather than in an effect: an effect runs after the
+  // commit that opened the modal, when the phase is still the one it reached
+  // while closed, and the report below would read that stale phase and hand
+  // back a close for a modal the person had just opened. A phase the reducer
+  // chose on its own is left alone, so the two never fight over `open`.
+  const [propWasOpen, setPropWasOpen] = React.useState(open);
+  if (propWasOpen !== open) {
+    setPropWasOpen(open);
     dispatch({ type: "sync_open", open });
-  }, [open]);
+  }
 
   // A close the reducer accepted is reported back through `onOpenChange`.
   React.useEffect(() => {

@@ -99,6 +99,49 @@ describe("WorkbenchModal", () => {
     expect(popup()).toBeNull();
   });
 
+  it("opens from a closed mount without reporting a close of its own", async () => {
+    // The shell mounts closed and the consumer opens it, which is how a card
+    // uses it. The phase the modal reached while closed must not be read back
+    // as a dismissal the person never asked for.
+    const openChanges: boolean[] = [];
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            Expand the prompt
+          </button>
+          <WorkbenchModal
+            title="Edit system prompt"
+            open={open}
+            onOpenChange={(next) => {
+              openChanges.push(next);
+              setOpen(next);
+            }}
+          >
+            <div>editor surface</div>
+          </WorkbenchModal>
+        </>
+      );
+    }
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    mountedRoots.add(root);
+    await act(async () => root.render(<Harness />));
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button")!.click();
+    });
+
+    expect(popup()?.textContent).toContain("editor surface");
+    expect(openChanges).toEqual([]);
+
+    await act(async () => closeButton().click());
+    expect(openChanges).toEqual([false]);
+    expect(popup()).toBeNull();
+  });
+
   it("defaults the DialogContent size to wide", async () => {
     await mountModal({});
     expect(popup()?.classList.contains("sizeWide")).toBe(true);
