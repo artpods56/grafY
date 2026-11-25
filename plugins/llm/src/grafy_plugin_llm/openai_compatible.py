@@ -48,6 +48,42 @@ _ = (_prompt.__name__, _schema_nodes.__name__)  # notes classes before these por
 LLM.register(inline_model_artifact(COMPLETION, CompletionPayload))
 
 
+def validate_openai_base_url(value: str) -> str:
+    """Accept an OpenAI-compatible base URL and return it without a trailing slash.
+
+    HTTPS is required except for localhost and loopback addresses. User info,
+    a query, and a fragment are rejected so a credential cannot hide in the URL.
+    """
+
+    if value != value.strip():
+        raise ValueError("base_url must not have surrounding whitespace")
+    url = TypeAdapter(AnyHttpUrl).validate_python(value)
+    if url.username is not None or url.password is not None:
+        raise ValueError("base_url must not include user information")
+    if url.query is not None:
+        raise ValueError("base_url must not include a query")
+    if url.fragment is not None:
+        raise ValueError("base_url must not include a fragment")
+    host = url.host
+    if host is None:
+        raise ValueError("base_url must include a host")
+    if url.scheme == "http":
+        is_loopback = host == "localhost"
+        if host.startswith("[") and host.endswith("]"):
+            host = host[1:-1]
+        if not is_loopback:
+            try:
+                is_loopback = ip_address(host).is_loopback
+            except ValueError:
+                is_loopback = False
+        if not is_loopback:
+            raise ValueError(
+                "base_url must use HTTPS unless it targets localhost or a "
+                "loopback IP address"
+            )
+    return str(url).rstrip("/")
+
+
 class OpenAICompatibleConfig(NodeConfig):
     base_url: StrictStr = Field(
         default="https://api.openai.com/v1",
@@ -110,33 +146,7 @@ class OpenAICompatibleConfig(NodeConfig):
     @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, value: str) -> str:
-        if value != value.strip():
-            raise ValueError("base_url must not have surrounding whitespace")
-        url = TypeAdapter(AnyHttpUrl).validate_python(value)
-        if url.username is not None or url.password is not None:
-            raise ValueError("base_url must not include user information")
-        if url.query is not None:
-            raise ValueError("base_url must not include a query")
-        if url.fragment is not None:
-            raise ValueError("base_url must not include a fragment")
-        host = url.host
-        if host is None:
-            raise ValueError("base_url must include a host")
-        if url.scheme == "http":
-            is_loopback = host == "localhost"
-            if host.startswith("[") and host.endswith("]"):
-                host = host[1:-1]
-            if not is_loopback:
-                try:
-                    is_loopback = ip_address(host).is_loopback
-                except ValueError:
-                    is_loopback = False
-            if not is_loopback:
-                raise ValueError(
-                    "base_url must use HTTPS unless it targets localhost or a "
-                    "loopback IP address"
-                )
-        return str(url).rstrip("/")
+        return validate_openai_base_url(value)
 
 
 class OpenAICompatibleInput(NodeInput):
@@ -220,14 +230,16 @@ def _model_count(body: object) -> str | None:
     return None
 
 
-async def _verify_api_key(
+async def verify_openai_compatible_api_key(
     key: SecretStr, config: Mapping[str, JsonValue], client: httpx.AsyncClient
 ) -> CredentialVerificationResult:
+    """Confirm a bearer key against the configured origin's ``/models`` endpoint."""
+
     base_url = config.get("base_url", "https://api.openai.com/v1")
     if not isinstance(base_url, str):
         return UNREACHABLE
     try:
-        base_url = OpenAICompatibleConfig.validate_base_url(base_url)
+        base_url = validate_openai_base_url(base_url)
     except ValueError:
         return UNREACHABLE
     return await verify_http_credential(
@@ -258,7 +270,7 @@ async def _verify_api_key(
             ),
             config_dependencies=("base_url",),
             provider_kind="openai_compatible",
-            verifier=_verify_api_key,
+            verifier=verify_openai_compatible_api_key,
         ),
     ),
     http_egress=NodeHttpEgressContract(
