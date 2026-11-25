@@ -258,7 +258,12 @@ class OpenAICompatibleSdkProvider(OpenAICompatibleProvider):
                     timeout=config.timeout_ms / 1_000,
                     max_retries=config.max_retries,
                     default_headers=cast(dict[str, str], default_headers),
-                    # The SDK stub types this as httpx2; runtime accepts this httpx client.
+                    # The SDK dials through either HTTP library: it accepts a legacy
+                    # `httpx` client as readily as an `httpx2` one, and translates that
+                    # library's exceptions into its own, which is how the egress pin
+                    # under this client keeps retrying a destination's other addresses.
+                    # Only the annotation of this parameter names `httpx2` alone, so the
+                    # check the SDK makes itself stands in for the one waived here.
                     http_client=http_client,  # pyright: ignore[reportArgumentType]
                 ) as client:
                     await emit_node_progress(active_node_context(), "Calling LLM…")

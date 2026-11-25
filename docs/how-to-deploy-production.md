@@ -1,9 +1,11 @@
 # Deploy Grafy from GitHub
 
-This guide deploys one reviewed `main` commit to a single Linux host from
-pre-built container images. Application deployment needs no Git checkout or host
-build. The API image contains the installed application families. The tiler
-renders TIFF previews on demand.
+This guide deploys one reviewed `main` commit to a single Linux host. The
+default path uses pre-built container images and needs no Git checkout or host
+build. When the registry has no image for that commit, the same script builds
+from a local checkout. The API image contains the installed application
+families. The tiler renders TIFF previews on demand.
+
 PostgreSQL runs inside the Grafy Compose project and stores its data in a
 dedicated Docker volume. The database has no host port.
 
@@ -35,6 +37,13 @@ images and pushes them to GitHub Container Registry, tagged with the full
 | `ghcr.io/artpods56/grafy-web` | `web.Dockerfile` | `web` |
 | `ghcr.io/artpods56/grafy-gateway` | `gateway.Dockerfile` (nginx config baked in) | `gateway` |
 | `ghcr.io/artpods56/grafy-tiler` | `tiler.Dockerfile`, `tiler` target | `tiler` |
+
+The gateway image bakes in `infra/docker/gateway/nginx.conf`. If a request
+already has `X-Forwarded-Proto`, the gateway keeps it, so a TLS terminator in
+front of the loopback listener uses the published image. Do not bind-mount a
+host copy of `nginx.conf`. When the header is absent, the gateway reports its
+own scheme. The `/storage/` route still allows only a 64 MiB `PUT` to the
+artifact bucket, and it waits up to 600 seconds while that body is transferred.
 
 Because images are pushed only after green CI on `main`, a SHA that has images
 is an approved commit.
@@ -140,15 +149,40 @@ Run the deployment script:
 /opt/graphy/deploy-production.sh <40-character-commit-sha>
 ```
 
-The script downloads that commit's `compose.yaml` and `compose.postgres.yaml`
-into `/opt/graphy/.deployment/releases/<sha>/`, renders the merged Compose
-configuration, and pulls the active services' SHA-tagged images before stopping
-API traffic. Plugins run as application code and are included in the API image.
-A SHA without published images fails at the pull, while the previous release is
-still serving. The script then creates a PostgreSQL dump and removes the previous one-shot `migrate`
-container. Compose runs Alembic once before it starts the API, waits for every
-long-lived service, and requests `/api/ready` through the configured loopback
-gateway port. A migration failure leaves the gateway stopped.
+By default the script downloads that commit's `compose.yaml` and
+`compose.postgres.yaml` into `/opt/graphy/.deployment/releases/<sha>/`, renders
+the merged Compose configuration, and pulls the active services' SHA-tagged
+images before stopping API traffic. Plugins run as application code and are
+included in the API image. A SHA without published images fails at the pull,
+while the previous release is still serving. The script then creates a
+PostgreSQL dump and removes the previous one-shot `migrate` container. Compose
+runs Alembic once before it starts the API, waits for every long-lived
+service, and requests `/api/ready` through the configured loopback gateway
+port. A migration failure leaves the gateway stopped.
+
+When `/api/ready` succeeds, the script deletes unused Grafy images tagged with
+anything other than this SHA and the previous SHA. That includes `grafy-*` and
+images under `GRAFY_IMAGE_REGISTRY` (default `ghcr.io/artpods56`). It does not
+delete other images, including `postgres`, `minio`, `mape2`, and `registry`.
+An image that is still in use is left in place, and that does not fail the
+deploy.
+
+To build on the host instead of pulling, pass the checkout that contains the
+commit:
+
+```bash
+/opt/graphy/deploy-production.sh --build /opt/graphy/src <40-character-commit-sha>
+```
+
+`GRAFY_BUILD_REPO_DIR` selects the same checkout when `--build` is omitted.
+The script extracts `git archive` of that SHA into a temporary directory,
+removes the directory when it exits, and builds `grafy-gateway:<sha>`,
+`grafy-api:<sha>` (target `api-release`), `grafy-tiler:<sha>` (target `tiler`),
+and `grafy-web:<sha>`. `GRAFY_BUILD_DIGEST` is the SHA-256 of that archive, and
+the API image receives it as a build argument. Compose files are copied from
+the archive. This mode does not fetch them from GitHub and does not pull
+registry images. It never drops the database. Resetting production data stays
+a manual step outside this script.
 
 On the first cutover, the dump contains the new empty PostgreSQL database. On
 later deployments, the dump contains the pre-migration production database.
@@ -221,7 +255,10 @@ the application guard validates and pins graph-configured destinations.
 An Agent uses the deployment default model unless whoever configured it gave it an
 endpoint and key of its own, so set all three of `GRAFY_AGENT_DEFAULT_BASE_URL`,
 `GRAFY_AGENT_DEFAULT_MODEL` and `GRAFY_AGENT_DEFAULT_API_KEY` or no Agent can answer.
-The default endpoint may be a private model server listed in
+Compose imports each of those variables into the API when it is set and leaves
+it unset when it is absent. Do not set `GRAFY_AGENT_DEFAULT_BASE_URL` to an
+empty string. The API rejects that at startup. Leave all three commented out,
+or set all three. The default endpoint may be a private model server listed in
 `GRAFY_EGRESS_TRUSTED_DESTINATIONS`; an Agent's own endpoint is not, and goes through the
 same pinned public-address guard as an LLM node's `base_url`. Agents do not fall back to
 the deployment key: an Agent that names its own endpoint needs its own key set, and
@@ -359,8 +396,9 @@ The script records the deployed and previous SHAs in `/opt/graphy/.deployment`.
 Database dumps use the timestamp and previous SHA in their filenames.
 
 If the release fails before Alembic changes the database, run the script with
-the previous SHA. Rollback targets must have published images, so they must be
-commits from after the images were introduced. If Alembic changed the database, stop Grafy and restore the
+the previous SHA. A pull deploy can roll back only to a SHA that still has
+published images. `--build` can roll back to any commit in the local checkout.
+If Alembic changed the database, stop Grafy and restore the
 matching dump before you start the previous commit. Do not run an older binary
 against a newer schema. The schema is one baseline revision and its downgrade drops
 every table, so never downgrade a deployed database to roll a release back: restore

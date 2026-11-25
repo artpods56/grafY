@@ -531,6 +531,78 @@ it("keeps ordered, project-scoped progress and starts a fresh history each compu
   expect(room().nodeProgress.get(key)?.omittedCount).toBe(0);
 });
 
+it("hydrates node progress from room.ready and drops it when the next ready does not carry it", async () => {
+  const instance = instanceKey(GRAPH_ID, "detect");
+  const frame = {
+    protocol_version: 1,
+    type: "node.progress",
+    instance,
+    fingerprint: "scan-fingerprint",
+    computation_id: "first-scan",
+    sequence: 1,
+    message: "Scanning TIFF windows",
+    current: 1,
+    total: 12,
+    invocation_path: [],
+  };
+  const { room, push, socket, reconnect } = await openRoom({
+    ready: {
+      node_progress: [
+        frame,
+        { ...frame, sequence: 2, message: "Parsing OCR pages", current: 2 },
+      ],
+    },
+  });
+  const key = instanceKeyText(instance);
+  expect(
+    room()
+      .nodeProgress.get(key)
+      ?.entries.map((entry) => entry.sequence),
+  ).toEqual([2, 1]);
+  expect(room().nodeProgress.get(key)?.entries[0]?.message).toBe(
+    "Parsing OCR pages",
+  );
+
+  await push({
+    ...frame,
+    sequence: 3,
+    message: "Still parsing",
+    current: 3,
+  });
+  expect(
+    room()
+      .nodeProgress.get(key)
+      ?.entries.map((entry) => entry.sequence),
+  ).toEqual([3, 2, 1]);
+
+  await settle(() => socket.emitClose(1006, "connection_lost"));
+  expect(room().nodeProgress.size).toBe(0);
+
+  const next = await reconnect();
+  const other = instanceKey(GRAPH_ID, "label");
+  await settle(() =>
+    next.emitMessage(
+      roomReady({
+        head: projectHead({ collaboration_sequence: 6 }),
+        node_progress: [
+          {
+            ...frame,
+            instance: other,
+            computation_id: "label-pass",
+            sequence: 1,
+            message: "Reading labels",
+            current: 0,
+          },
+        ],
+      }),
+    ),
+  );
+  expect(room().nodeProgress.has(key)).toBe(false);
+  expect(
+    room().nodeProgress.get(instanceKeyText(other))?.entries[0]?.message,
+  ).toBe("Reading labels");
+});
+
 describe("useProjectRoomSession instances", () => {
   it("keeps the instances an `instances.changed` delta did not name", async () => {
     const openFresh = instanceState(GRAPH_ID, "n1", "fresh");

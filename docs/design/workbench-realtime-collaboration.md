@@ -237,11 +237,11 @@ flat head or a Graph document without its Graphs rather than papering over them.
 | Direction       | Types                                                                                                                                                                                                                                                                                                                                                     |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | client → server | `project.command.submit`, `presence.update` — and nothing else ([`realtime/protocol.py:294-303`](../../apps/api/src/grafy_api/realtime/protocol.py))                                                                                                                                                                                                      |
-| server → client | `room.ready`, `room.rehydrate`, `room.heartbeat`, `project.command.accepted`, `project.command.receipt`, `project.command.rejected`, `project.checkpointed`, `presence.join`, `presence.leave`, `presence.update`, `run.started`, `run.finished`, `instances.changed`, `agent.turn.started`, `agent.event.appended`, `agent.delta`, `agent.turn.finished` |
+| server → client | `room.ready`, `room.rehydrate`, `room.heartbeat`, `project.command.accepted`, `project.command.receipt`, `project.command.rejected`, `project.checkpointed`, `presence.join`, `presence.leave`, `presence.update`, `run.started`, `run.finished`, `instances.changed`, `node.progress`, `agent.turn.started`, `agent.event.appended`, `agent.delta`, `agent.turn.finished` |
 
 `room.ready` carries workspace id, project id, room session id, actor presentation, the
 capability snapshot with its authorization version, the complete head, the current
-participants, `active_runs`, `instances`, and a `registry_marker` the client parses but
+participants, `active_runs`, `instances`, optional `node_progress`, and a `registry_marker` the client parses but
 does not yet act on. A message type the
 client does not know is ignored. A wrong protocol version stops the session terminally
 (`protocol_incompatible`) and the user must reload; a known type that fails to parse — a
@@ -365,6 +365,8 @@ Graph of the head. If instance derivation fails — the document names an operat
 deployment does not register — the room opens with **no** instances rather than locking
 a participant out of the only room that could repair the document
 ([`views.py:337-363`](../../apps/api/src/grafy_api/v1/routes/collaboration/views.py)).
+
+`room.ready` also carries `node_progress`, the `node.progress` frames for instances that are still `queued` or `running`. The hub keeps that list in memory only: 20 frames for one instance and 128 instances for one project. It drops an instance when `instances.changed` removes it or moves it off those states, and a snapshot drops a frame whose fingerprint no longer matches. A server that omits the field is an empty list. Nothing is written to the database.
 
 **Frames are events, not answers.** A delta says _read the results again_; REST is the
 source of truth: `GET …/projects/{id}/runs`, `GET …/runs/{run_id}`, `POST …/runs`,

@@ -48,6 +48,46 @@ const MAX_PROGRESS_ENTRIES = 20;
 const MAX_PROGRESS_NODES = 128;
 const EMPTY_PROGRESS: ReadonlyMap<string, NodeProgressHistory> = new Map();
 
+function insertNodeProgress(
+  current: ReadonlyMap<string, NodeProgressHistory>,
+  event: NodeProgressMessage,
+): ReadonlyMap<string, NodeProgressHistory> {
+  const key = instanceKeyText(event.instance);
+  const history = current.get(key);
+  const latest = history?.entries[0];
+  const sameComputation = latest?.computation_id === event.computation_id;
+  if (sameComputation && latest.sequence >= event.sequence) return current;
+  const entries = [
+    event,
+    ...(sameComputation
+      ? (history?.entries ?? []).slice(0, MAX_PROGRESS_ENTRIES - 1)
+      : []),
+  ];
+  const next = new Map(current);
+  next.delete(key);
+  next.set(key, {
+    entries,
+    omittedCount: event.sequence - entries.length,
+  });
+  if (next.size > MAX_PROGRESS_NODES) {
+    const oldest = next.keys().next();
+    if (!oldest.done) next.delete(oldest.value);
+  }
+  return next;
+}
+
+/** Apply `room.ready` frames oldest-first so `entries[0]` stays the newest. */
+function nodeProgressFromReplay(
+  frames: readonly NodeProgressMessage[] | undefined,
+): ReadonlyMap<string, NodeProgressHistory> {
+  if (frames === undefined || frames.length === 0) return EMPTY_PROGRESS;
+  let next: ReadonlyMap<string, NodeProgressHistory> = EMPTY_PROGRESS;
+  for (const frame of frames) {
+    next = insertNodeProgress(next, frame);
+  }
+  return next;
+}
+
 export interface UseProjectRoomSessionResult {
   readonly status: ProjectRoomStatus;
   readonly terminalReason: ProjectRoomTerminalReason | null;
@@ -245,6 +285,7 @@ export function useProjectRoomSession({
         setLocalSessionId(ready.project_room_session_id);
         setActiveRuns(ready.active_runs);
         setInstances(instanceMap(ready.instances));
+        setNodeProgress(nodeProgressFromReplay(ready.node_progress));
         onReadyRef.current?.(ready);
       },
       onRehydrate: (nextHead) => {
@@ -290,32 +331,7 @@ export function useProjectRoomSession({
         onRunFinishedRef.current?.(message);
       },
       onNodeProgress: (event) => {
-        setNodeProgress((current) => {
-          const key = instanceKeyText(event.instance);
-          const history = current.get(key);
-          const latest = history?.entries[0];
-          const sameComputation =
-            latest?.computation_id === event.computation_id;
-          if (sameComputation && latest.sequence >= event.sequence)
-            return current;
-          const entries = [
-            event,
-            ...(sameComputation
-              ? (history?.entries ?? []).slice(0, MAX_PROGRESS_ENTRIES - 1)
-              : []),
-          ];
-          const next = new Map(current);
-          next.delete(key);
-          next.set(key, {
-            entries,
-            omittedCount: event.sequence - entries.length,
-          });
-          if (next.size > MAX_PROGRESS_NODES) {
-            const oldest = next.keys().next();
-            if (!oldest.done) next.delete(oldest.value);
-          }
-          return next;
-        });
+        setNodeProgress((current) => insertNodeProgress(current, event));
       },
       onInstancesChange: (message) => {
         // `changed` is a delta and `removed` was already applied inside the

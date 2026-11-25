@@ -646,7 +646,7 @@ describe("buildWorkbenchCellScene", () => {
       callPath: [] as readonly string[],
       progress,
       runs,
-      cancellingRunId: null,
+      cancellingRunIds: new Set<string>(),
       canCancelRun: true,
       onCancelNodeRun: (nodeId: string) => cancelled.push(nodeId),
     };
@@ -760,7 +760,7 @@ describe("buildWorkbenchCellScene", () => {
       },
     };
     const live = (
-      cancellingRunId: string | null,
+      cancellingRunIds: ReadonlySet<string>,
       canCancelRun = true,
       nextRuns = runs,
     ) =>
@@ -772,31 +772,36 @@ describe("buildWorkbenchCellScene", () => {
           graphId: "graph",
           callPath: [],
           runs: nextRuns,
-          cancellingRunId,
+          cancellingRunIds,
           canCancelRun,
           onCancelNodeRun: () => {},
         },
       });
 
-    expect(live(null).surfaceById.source).toMatchObject({
+    const idle = new Set<string>();
+    expect(live(idle).surfaceById.source).toMatchObject({
       canCancel: true,
       cancelling: false,
     });
-    expect(live(null).surfaceById.target).toMatchObject({
+    expect(live(idle).surfaceById.target).toMatchObject({
       canCancel: true,
       cancelling: false,
     });
-    expect(live("run-1").surfaceById.source).toMatchObject({
+    expect(live(new Set(["run-1"])).surfaceById.source).toMatchObject({
       canCancel: false,
       cancelling: true,
     });
-    expect(live(null, false).surfaceById.target).toMatchObject({
+    expect(live(new Set(["run-1"])).surfaceById.target).toMatchObject({
+      canCancel: false,
+      cancelling: true,
+    });
+    expect(live(idle, false).surfaceById.target).toMatchObject({
       canCancel: false,
     });
     const first = runs[0];
     if (!first) throw new Error("expected a run");
     expect(
-      live(null, true, [
+      live(idle, true, [
         first,
         {
           ...first,
@@ -806,6 +811,61 @@ describe("buildWorkbenchCellScene", () => {
         },
       ]).surfaceById.source,
     ).toMatchObject({ canCancel: false });
+  });
+
+  it("keeps a second node's run cancellable while the first run is cancelling", () => {
+    const scene = buildWorkbenchCellScene({
+      document: graph,
+      registry,
+      presentation,
+      nodes: [{ ...sourceNode, data: { ...sourceNode.data, run } }, targetNode],
+      collapsedAppendices: new Set<string>(),
+      canRun: true,
+      nodeInstanceStates: {
+        source: { ...instance, state: "running" },
+        target: {
+          ...instance,
+          node_id: "target",
+          state: "running",
+          fingerprint: "target-instance",
+        },
+      },
+      liveRun: {
+        projectId: "project",
+        graphId: "graph",
+        callPath: [],
+        runs: [
+          {
+            run_id: "run-1",
+            graph_id: "graph",
+            targets: [{ node_id: "source", call_path: [] }],
+            starter: null,
+            started_at: "2026-08-07T10:00:00Z",
+            cancellable: true,
+          },
+          {
+            run_id: "run-2",
+            graph_id: "graph",
+            targets: [{ node_id: "target", call_path: [] }],
+            starter: null,
+            started_at: "2026-08-07T10:01:00Z",
+            cancellable: true,
+          },
+        ],
+        cancellingRunIds: new Set(["run-1"]),
+        canCancelRun: true,
+        onCancelNodeRun: () => {},
+      },
+    });
+
+    expect(scene.surfaceById.source).toMatchObject({
+      cancelling: true,
+      canCancel: false,
+    });
+    expect(scene.surfaceById.target).toMatchObject({
+      cancelling: false,
+      canCancel: true,
+    });
   });
 });
 

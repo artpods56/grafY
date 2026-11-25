@@ -216,6 +216,7 @@ async def join_project_room(
             project_id=project_id,
         )
 
+        instances = await _instances(runs, workspace_id, project_id)
         ready = RoomReadyMessage(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -230,7 +231,12 @@ async def join_project_room(
             head=ProjectHeadResponse.from_head(head),
             participants=participants,
             active_runs=await _active_runs(runs, workspace_id, project_id, uow_factory),
-            instances=await _instances(runs, workspace_id, project_id),
+            instances=instances,
+            node_progress=await hub.snapshot_node_progress(
+                workspace_id,
+                project_id,
+                active_instances=instances,
+            ),
         )
         heartbeat_seconds = hub.heartbeat_seconds
         await websocket.send_json(ready.model_dump(mode="json"))

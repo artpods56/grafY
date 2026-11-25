@@ -126,6 +126,33 @@ class Node[
         """
 
 
+def _shape_from_config(
+    operator_id: str,
+    port_name: str,
+    shape_field: str,
+    raw_shape: object,
+) -> PortShape:
+    """The shape one config field names for a port.
+
+    A ``shape_field`` carries the text of a :class:`PortShape`. Anything else is a
+    mistake about the node's own configuration, so it is refused here rather than
+    resolved to the port's declared default.
+    """
+
+    parsed_shape: PortShape | None = None
+    if isinstance(raw_shape, str):
+        try:
+            parsed_shape = PortShape(raw_shape)
+        except ValueError:
+            pass
+    if parsed_shape is None:
+        raise NodeContractResolutionError(
+            f"Node {operator_id!r} port {port_name!r} shape field "
+            f"{shape_field!r} must be 'one' or 'many', got {raw_shape!r}"
+        )
+    return parsed_shape
+
+
 def resolve_node_contracts(
     node: Node[Any, Any, Any],
     bindings: Mapping[str, ArtifactTypeKey],
@@ -203,19 +230,9 @@ def resolve_node_contracts(
                 shape = port.shape
             else:
                 raw_shape = config[port.shape_field]
-                parsed_shape: PortShape | None = None
-                if isinstance(raw_shape, str):
-                    try:
-                        parsed_shape = PortShape(raw_shape)
-                    except ValueError:
-                        pass
-                if parsed_shape is None:
-                    raise NodeContractResolutionError(
-                        f"Node {node.operator_id!r} port {name!r} shape field "
-                        f"{port.shape_field!r} must be 'one' or 'many', got "
-                        f"{raw_shape!r}"
-                    )
-                shape = parsed_shape
+                shape = _shape_from_config(
+                    node.operator_id, name, port.shape_field, raw_shape
+                )
             port = replace(port, shape=shape, accepted_shapes=(shape,))
         input_ports[name] = port
     output_ports: dict[str, OutputPortSpec] = {}
@@ -227,19 +244,9 @@ def resolve_node_contracts(
                 shape = port.shape
             else:
                 raw_shape = config[port.shape_field]
-                parsed_shape: PortShape | None = None
-                if isinstance(raw_shape, str):
-                    try:
-                        parsed_shape = PortShape(raw_shape)
-                    except ValueError:
-                        pass
-                if parsed_shape is None:
-                    raise NodeContractResolutionError(
-                        f"Node {node.operator_id!r} port {name!r} shape field "
-                        f"{port.shape_field!r} must be 'one' or 'many', got "
-                        f"{raw_shape!r}"
-                    )
-                shape = parsed_shape
+                shape = _shape_from_config(
+                    node.operator_id, name, port.shape_field, raw_shape
+                )
             port = replace(port, shape=shape)
         output_ports[name] = port
     return ResolvedNodeContracts(
