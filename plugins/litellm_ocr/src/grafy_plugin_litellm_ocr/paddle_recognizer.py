@@ -21,11 +21,11 @@ from grafy_core.plugins import (
 )
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from grafy_plugin_litellm_ocr.auth import API_KEY
+from grafy_plugin_litellm_ocr.auth import API_KEY, LITELLM_ORIGIN
 from grafy_plugin_litellm_ocr.declaration import LITELLM_OCR
 from grafy_core.provider_http import ProviderRequest, post_json
 
-PADDLE_URL = "https://ai-test.ihpan.edu.pl/v1/ocr/cyrillic/recognize"
+PADDLE_URL = f"{LITELLM_ORIGIN}/v1/ocr/cyrillic/recognize"
 PADDLE_MODEL = (
     "cyrillic_PP-OCRv5_mobile_rec@sha256:"
     "434dc9fa2a99fa3653e08f8cf793ae56be7dd41c35c4980e6255147cc02bbc80"
@@ -184,7 +184,7 @@ class PaddleOutput(NodeOutput):
         PluginRuntimeCapability.NODE_SECRETS,
     ),
     http_egress=NodeHttpEgressContract(
-        fixed_destinations=("https://ai-test.ihpan.edu.pl",)
+        fixed_destinations=(LITELLM_ORIGIN,)
     ),
     secret_inputs=(API_KEY,),
 )
