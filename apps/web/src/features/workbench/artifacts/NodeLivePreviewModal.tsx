@@ -361,13 +361,11 @@ export function NodeLivePreviewModal({
                   </span>
                 </div>
               ) : currentFrame.data_url ? (
-                <img
+                <img /* eslint-disable-line @next/next/no-img-element -- streamed data URL frame */
                   src={currentFrame.data_url}
                   alt={currentFrame.label}
                   {...stylex.props(
-                    state.zoom === "fit"
-                      ? styles.imageFit
-                      : styles.imageActual,
+                    state.zoom === "fit" ? styles.imageFit : styles.imageActual,
                   )}
                 />
               ) : (
