@@ -37,9 +37,11 @@ import {
 } from "../collaboration/protocol";
 import {
   buildAppendixSpec,
+  buildCleanupUndoPlan,
   buildWorkbenchCellScene,
   cellConnectionToWorkbenchConnection,
   cellRemotePeersFromParticipants,
+  planWorkbenchCanvasCleanup,
   resolveCellPortEndpoint,
   partitionCellMoves,
   partitionCellRemovals,
@@ -1963,5 +1965,97 @@ describe("artifact card pictures", () => {
     const { surfaceById } = build(null);
     expect(surfaceById.png).not.toHaveProperty("imageUrl");
     expect(surfaceById.follow).not.toHaveProperty("imageUrl");
+  });
+});
+
+describe("planWorkbenchCanvasCleanup", () => {
+  it("plans left-to-right cleanup with live node state and restores via buildCleanupUndoPlan", () => {
+    const scrambled: AuthoredGraphDocument = {
+      ...graph,
+      agents: [],
+      nodes: [
+        { ...source, id: "source", position: { x: 920, y: 640 } },
+        {
+          ...source,
+          id: "target",
+          position: { x: 80, y: 40 },
+          input_plugs: [{ port: "items", id: "plug-a" }],
+          artifact_type_bindings: [{ variable: "T", artifact_type: type }],
+        },
+      ],
+      edges: [
+        {
+          id: "edge-1",
+          from_node: "source",
+          from_port: "result",
+          to_node: "target",
+          to_port: "items",
+          to_plug: "plug-a",
+          enabled: true,
+          collection_mode: "direct",
+          projection: null,
+          conversion_path: [],
+          route_offset: { x: 75, y: -25 },
+        },
+      ],
+    };
+    const hydrated = hydrateAuthoredGraphDocument(scrambled, registry);
+    const viewers = artifactViewersFromPresentation({
+      viewers: [
+        {
+          id: "card-stray",
+          position: { x: 1400, y: 900 },
+          layout: { width: 900, body_height: 700 },
+          mode: "artifact",
+          artifact_ref: artifact,
+        },
+      ],
+      links: [],
+      bindings: [],
+      annotations: [],
+    });
+
+    const plan = planWorkbenchCanvasCleanup({
+      workspaceId: "ws-1",
+      document: scrambled,
+      artifactViewers: viewers,
+      registry,
+      nodes: hydrated.nodes,
+      nodeInstanceStates: {},
+      collapsedAppendices: new Set(),
+    });
+
+    expect(plan.changed).toBe(true);
+    expect(plan.affectedCardCount).toBe(3);
+    expect(plan.experimentCount).toBe(1);
+    const moveCmd = plan.graphCommands.find((cmd) => cmd.kind === "move_nodes");
+    assert(moveCmd && moveCmd.kind === "move_nodes");
+    const sourcePos = moveCmd.positions.find((p) => p.node_id === "source");
+    const targetPos = moveCmd.positions.find((p) => p.node_id === "target");
+    assert(sourcePos && targetPos);
+    expect(sourcePos.x).toBeLessThan(targetPos.x);
+
+    const movedDocument: AuthoredGraphDocument = {
+      ...scrambled,
+      nodes: scrambled.nodes.map((node) => {
+        const moved = moveCmd.positions.find((p) => p.node_id === node.id);
+        return moved ? { ...node, position: { x: moved.x, y: moved.y } } : node;
+      }),
+      edges: scrambled.edges.map((edge) => ({ ...edge, route_offset: null })),
+    };
+    const undo = buildCleanupUndoPlan(
+      movedDocument,
+      plan.nextArtifactViewers,
+      plan.undoSnapshot,
+    );
+    expect(undo.changed).toBe(true);
+    expect(undo.nextArtifactViewers.nodes[0]?.position).toEqual({
+      x: 1400,
+      y: 900,
+    });
+    expect(undo.nextArtifactViewers.nodes[0]?.data.layout).toMatchObject({
+      width: 900,
+      bodyHeight: 700,
+    });
   });
 });
