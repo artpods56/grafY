@@ -12,9 +12,8 @@ dependencies = [
     "rasterio>=1.5.2",
 ]
 
-# This project has its own lock on purpose: titiler.core needs starlette>=1,
-# while the API workspace pins starlette<1. It is not a member of the root
-# uv workspace.
+# This project has its own lock on purpose: it targets Python 3.13 while the
+# root uv workspace targets Python 3.14. It is not a member of that workspace.
 [tool.uv]
 package = true
 
