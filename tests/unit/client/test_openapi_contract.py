@@ -5,29 +5,47 @@ from typing import cast
 from pydantic import BaseModel
 
 from grafy_client import (
+    ActiveAgentTurn,
+    AgentConversation,
+    AgentConversationEvent,
+    AgentConversationEvents,
+    AgentModel,
+    AgentTurn,
     CatalogConversion,
     CatalogConversionKey,
     CatalogNode,
     CatalogPack,
     CatalogPort,
     CommandReceipt,
+    CredentialVerification,
     GeoFeatureMatch,
     GeoRender,
+    ImageInfo,
     InstanceKey,
     InstanceResult,
     InstanceState,
+    LibraryFolder,
     NodeCatalog,
+    NodeSecretDetail,
+    NodeSecretResolution,
     NodeSecretStatus,
     Project,
+    ProjectCheckpoint,
+    ProjectCheckpointSummary,
+    ProjectFolder,
     ProjectHead,
+    ProjectNodeSecrets,
+    ProjectOrganization,
     ProjectSummary,
     Run,
     TableCell,
+    TableCellValue,
     TableColumn,
     TablePage,
     TableSchema,
     UploadItem,
     UploadTarget,
+    UserProjectState,
     Workspace,
 )
 
@@ -79,25 +97,44 @@ def _operation_json_schema_ref(
     operation: dict[str, object],
     *,
     status: str,
-) -> str:
+) -> object:
     responses = cast(dict[str, object], operation["responses"])
     response = cast(dict[str, object], responses[status])
     content = cast(dict[str, object], response["content"])
     media_type = cast(dict[str, object], content["application/json"])
-    response_schema = cast(dict[str, object], media_type["schema"])
-    return cast(str, response_schema["$ref"])
+    return media_type["schema"]
 
 
 def _operation_request_schema_ref(
     operation: dict[str, object],
     *,
     media_type: str,
-) -> str:
+) -> object:
     request_body = cast(dict[str, object], operation["requestBody"])
     content = cast(dict[str, object], request_body["content"])
     media = cast(dict[str, object], content[media_type])
-    request_schema = cast(dict[str, object], media["schema"])
-    return cast(str, request_schema["$ref"])
+    return media["schema"]
+
+
+def _assert_schema_target(actual: object, expected: object) -> None:
+    if isinstance(expected, str):
+        assert actual == {"$ref": f"#/components/schemas/{expected}"}
+        return
+    kind, name = cast(tuple[str, str], expected)
+    if kind == "array":
+        actual_dict = cast(dict[str, object], actual)
+        assert actual_dict["type"] == "array"
+        assert actual_dict["items"] == {"$ref": f"#/components/schemas/{name}"}
+        return
+    if kind == "nullable":
+        actual_dict = cast(dict[str, object], actual)
+        any_of = cast(list[object], actual_dict["anyOf"])
+        assert set(map(repr, any_of)) == {
+            repr({"$ref": f"#/components/schemas/{name}"}),
+            repr({"type": "null"}),
+        }
+        return
+    raise AssertionError(f"Unsupported expected schema target {expected!r}")
 
 
 def test_python_client_operations_match_checked_in_openapi() -> None:
@@ -111,13 +148,27 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
     base = "/v1/workspaces/{workspace_id}/projects"
     run_base = base + "/{project_id}/runs"
     artifacts = "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}"
-    operations = (
+    secrets_base = (
+        base + "/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}"
+    )
+    library_base = "/v1/workspaces/{workspace_id}/library"
+    agent_base = base + "/{project_id}/graphs/{graph_id}/agents/{agent_id}"
+    operations: tuple[
+        tuple[str, str, tuple[str, object] | None, str, object | None], ...
+    ] = (
         (
             "/v1/workspaces/{workspace_id}/nodes",
             "get",
             None,
             "200",
             "NodeRegistryResponse",
+        ),
+        (
+            "/v1/workspaces/{workspace_id}/packs",
+            "get",
+            None,
+            "200",
+            ("array", "CatalogPackResponse"),
         ),
         (
             "/v1/workspaces/{workspace_id}/uploads",
@@ -127,6 +178,34 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             "UploadTargetResponse",
         ),
         (
+            "/v1/workspaces/{workspace_id}/project-folders",
+            "get",
+            None,
+            "200",
+            "ProjectFolderListResponse",
+        ),
+        (
+            "/v1/workspaces/{workspace_id}/project-folders",
+            "post",
+            ("application/json", "ProjectFolderWriteRequest"),
+            "201",
+            "ProjectFolderResponse",
+        ),
+        (
+            "/v1/workspaces/{workspace_id}/project-folders/{folder_id}",
+            "patch",
+            ("application/json", "ProjectFolderWriteRequest"),
+            "200",
+            "ProjectFolderResponse",
+        ),
+        (
+            "/v1/workspaces/{workspace_id}/project-folders/{folder_id}",
+            "delete",
+            None,
+            "204",
+            None,
+        ),
+        (
             base,
             "post",
             ("application/json", "CreateProjectRequest"),
@@ -134,6 +213,13 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             "ProjectResponse",
         ),
         (base, "get", None, "200", "ProjectListResponse"),
+        (
+            base + "/copies",
+            "post",
+            ("application/json", "CopyExactHeadRequest"),
+            "201",
+            "ProjectResponse",
+        ),
         (
             "/v1/workspaces/{workspace_id}/uploads/{upload_id}/complete",
             "post",
@@ -150,6 +236,8 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             "200",
             "TablePageResponse",
         ),
+        (artifacts + "/table/cell", "get", None, "200", "TableCellResponse"),
+        (artifacts + "/image/info", "get", None, "200", "ImageInfoResponse"),
         (artifacts + "/geo/render", "get", None, "200", "GeoRenderResponse"),
         (
             artifacts + "/geo/query",
@@ -159,13 +247,97 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             "GeoFeatureQueryResponse",
         ),
         (
-            "/v1/workspaces/{workspace_id}/library/artifacts",
+            library_base + "/artifacts",
             "get",
             None,
             "200",
             "LibraryListResponse",
         ),
+        (
+            library_base + "/artifacts/{artifact_id}",
+            "delete",
+            None,
+            "204",
+            None,
+        ),
+        (
+            library_base + "/folders",
+            "get",
+            None,
+            "200",
+            "LibraryFolderListResponse",
+        ),
+        (
+            library_base + "/folders",
+            "post",
+            ("application/json", "CreateLibraryFolderRequest"),
+            "201",
+            "LibraryFolderResponse",
+        ),
+        (
+            library_base + "/folders/{folder_id}",
+            "patch",
+            ("application/json", "RenameLibraryFolderRequest"),
+            "200",
+            "LibraryFolderResponse",
+        ),
+        (
+            library_base + "/folders/{folder_id}",
+            "delete",
+            None,
+            "204",
+            None,
+        ),
+        (
+            library_base + "/folders/{folder_id}/parent",
+            "put",
+            ("application/json", "MoveLibraryFolderRequest"),
+            "200",
+            "LibraryFolderResponse",
+        ),
+        (
+            library_base + "/placements",
+            "put",
+            ("application/json", "MoveLibraryArtifactsRequest"),
+            "204",
+            None,
+        ),
         (base + "/{project_id}", "get", None, "200", "ProjectResponse"),
+        (
+            base + "/{project_id}/folder",
+            "put",
+            ("application/json", "AssignProjectFolderRequest"),
+            "200",
+            "ProjectOrganizationResponse",
+        ),
+        (
+            base + "/{project_id}/archive",
+            "put",
+            None,
+            "200",
+            "ProjectOrganizationResponse",
+        ),
+        (
+            base + "/{project_id}/archive",
+            "delete",
+            None,
+            "200",
+            "ProjectOrganizationResponse",
+        ),
+        (
+            base + "/{project_id}/star",
+            "put",
+            None,
+            "200",
+            "UserProjectStateResponse",
+        ),
+        (
+            base + "/{project_id}/star",
+            "delete",
+            None,
+            "200",
+            "UserProjectStateResponse",
+        ),
         (base + "/{project_id}/head", "get", None, "200", "ProjectHeadResponse"),
         (
             base + "/{project_id}/commands",
@@ -176,17 +348,73 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
         ),
         (
             base + "/{project_id}/checkpoints",
+            "get",
+            None,
+            "200",
+            "ProjectCheckpointListResponse",
+        ),
+        (
+            base + "/{project_id}/checkpoints",
             "post",
             ("application/json", "CheckpointProjectRequest"),
             "200",
             "CheckpointProjectResponse",
         ),
         (
-            base + "/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/{name}",
+            base + "/{project_id}/checkpoints/{revision}",
+            "get",
+            None,
+            "200",
+            "ProjectCheckpointResponse",
+        ),
+        (
+            base + "/{project_id}/checkpoints/{revision}/restore",
+            "post",
+            ("application/json", "CheckpointProjectRequest"),
+            "200",
+            "CheckpointProjectResponse",
+        ),
+        (
+            base + "/{project_id}/node-secrets",
+            "get",
+            None,
+            "200",
+            "ProjectNodeSecretsResponse",
+        ),
+        (
+            secrets_base,
             "put",
             ("application/json", "ConfigureNodeSecretRequest"),
             "200",
             "ConfigureNodeSecretResponse",
+        ),
+        (
+            secrets_base,
+            "delete",
+            None,
+            "204",
+            None,
+        ),
+        (
+            secrets_base + "/shared-binding",
+            "put",
+            ("application/json", "SharedCredentialBindingRequest"),
+            "200",
+            "NodeSecretStatusResponse",
+        ),
+        (
+            secrets_base + "/personal-selection",
+            "put",
+            ("application/json", "PersonalCredentialSelectionRequest"),
+            "200",
+            "NodeSecretStatusResponse",
+        ),
+        (
+            secrets_base + "/verify",
+            "post",
+            ("application/json", ("nullable", "VerifyNodeSecretRequest")),
+            "200",
+            "CredentialVerificationResponse",
         ),
         (
             run_base,
@@ -212,22 +440,83 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
             "200",
             "InstanceResultResponse",
         ),
+        (
+            agent_base + "/conversations",
+            "post",
+            ("application/json", "StartAgentConversationRequest"),
+            "201",
+            "AgentConversationResponse",
+        ),
+        (
+            agent_base + "/conversations",
+            "get",
+            None,
+            "200",
+            "AgentConversationListResponse",
+        ),
+        (
+            agent_base + "/conversations/{conversation_id}",
+            "get",
+            None,
+            "200",
+            "AgentConversationResponse",
+        ),
+        (
+            agent_base + "/conversations/{conversation_id}/turns",
+            "post",
+            ("application/json", "SendAgentTurnRequest"),
+            "201",
+            "AgentTurnResponse",
+        ),
+        (
+            agent_base + "/conversations/{conversation_id}/active-turn",
+            "get",
+            None,
+            "200",
+            ("nullable", "ActiveAgentTurnResponse"),
+        ),
+        (
+            agent_base + "/conversations/{conversation_id}/events",
+            "get",
+            None,
+            "200",
+            "AgentConversationEventListResponse",
+        ),
+        (
+            agent_base + "/conversations/{conversation_id}/cancel",
+            "post",
+            ("application/json", ("nullable", "CancelAgentTurnRequest")),
+            "200",
+            "AgentTurnResponse",
+        ),
+        (
+            agent_base + "/model",
+            "get",
+            None,
+            "200",
+            "AgentModelResponse",
+        ),
     )
     for path, method, request_contract, status, response_model in operations:
         operation = cast(dict[str, object], paths[path][method])
         security = cast(list[dict[str, object]], operation["security"])
         assert {"HTTPBearer": []} in security
-        assert _operation_json_schema_ref(operation, status=status) == (
-            f"#/components/schemas/{response_model}"
-        )
+        if response_model is None:
+            responses = cast(dict[str, object], operation["responses"])
+            assert status in responses
+        else:
+            _assert_schema_target(
+                _operation_json_schema_ref(operation, status=status),
+                response_model,
+            )
         if request_contract is not None:
             media_type, request_model = request_contract
-            assert (
+            _assert_schema_target(
                 _operation_request_schema_ref(
                     operation,
                     media_type=media_type,
-                )
-                == f"#/components/schemas/{request_model}"
+                ),
+                request_model,
             )
 
     components = cast(dict[str, object], schema["components"])
@@ -301,6 +590,24 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
         (TablePage, "TablePageResponse", frozenset({"rows"})),
         (GeoRender, "GeoRenderResponse", frozenset({"initial_bounds", "layers"})),
         (GeoFeatureMatch, "GeoFeatureQueryResponse", frozenset({"bounds"})),
+        (ProjectFolder, "ProjectFolderResponse", frozenset()),
+        (ProjectOrganization, "ProjectOrganizationResponse", frozenset()),
+        (UserProjectState, "UserProjectStateResponse", frozenset()),
+        (ProjectCheckpointSummary, "ProjectCheckpointSummaryResponse", frozenset()),
+        (ProjectCheckpoint, "ProjectCheckpointResponse", frozenset({"document"})),
+        (NodeSecretDetail, "NodeSecretStatusResponse", frozenset()),
+        (NodeSecretResolution, "NodeSecretResolutionResponse", frozenset()),
+        (ProjectNodeSecrets, "ProjectNodeSecretsResponse", frozenset()),
+        (CredentialVerification, "CredentialVerificationResponse", frozenset()),
+        (LibraryFolder, "LibraryFolderResponse", frozenset()),
+        (TableCellValue, "TableCellResponse", frozenset()),
+        (ImageInfo, "ImageInfoResponse", frozenset({"bounds_wgs84"})),
+        (AgentConversation, "AgentConversationResponse", frozenset()),
+        (AgentConversationEvent, "AgentConversationEventResponse", frozenset()),
+        (AgentConversationEvents, "AgentConversationEventListResponse", frozenset()),
+        (AgentTurn, "AgentTurnResponse", frozenset()),
+        (ActiveAgentTurn, "ActiveAgentTurnResponse", frozenset()),
+        (AgentModel, "AgentModelResponse", frozenset()),
     )
     for client_model, openapi_name, opaque_fields in wire_models:
         client_schema = cast(
@@ -328,7 +635,6 @@ def test_python_client_operations_match_checked_in_openapi() -> None:
                 openapi_properties[field_name],
                 schema,
             ), f"{openapi_name}.{field_name}"
-
 
 
 def test_client_decodes_the_catalogs_ocr_feature_contracts() -> None:

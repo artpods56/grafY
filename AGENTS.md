@@ -77,8 +77,7 @@ for setup and token revocation.
   `bun run --cwd apps/web --bun test <file>` for the web suite. Architecture
   changes run `tests/unit/architecture/` locally; CI owns everything else.
 - **`apps/tiler` is a second uv project** (Python 3.13, own lock, excluded from
-  the root workspace because `titiler.core` needs `starlette>=1` and the API
-  pins `starlette<1`). Verify it with `just test-tiler`, `just lint-tiler`, and
+  the root workspace, which targets Python 3.14). Verify it with `just test-tiler`, `just lint-tiler`, and
   `just typecheck-tiler`, which run in `apps/tiler/.venv` the way the CI `tiler`
   job does. Root `uv run pytest` and root `basedpyright` do not reach it at all —
   `apps/tiler` is outside the root `testpaths` and the root pyright `include` —

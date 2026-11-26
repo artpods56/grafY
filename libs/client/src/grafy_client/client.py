@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from mimetypes import guess_type
 from pathlib import Path
 from types import TracebackType
-from typing import Self, cast
+from typing import Literal, Self, cast
 from uuid import UUID, uuid4
 
 import httpx
@@ -16,29 +16,45 @@ from grafy_core.domain.collaboration import (
     RenameGraphCommand,
     ReplaceDocumentCommand,
 )
+from grafy_core.domain.credentials import (
+    SharedCredentialBindingMode,
+    UserCredentialOverrideMode,
+)
 from grafy_core.domain.graph_documents import GraphDocument
 
+from .agents import AgentClient
 from .errors import ExecutionTimeoutError, GrafyClientError
 from .library import LibraryClient
 from .models import (
+    CatalogPack,
+    CredentialVerification,
     GeoFeatureMatch,
     GeoRender,
+    ImageInfo,
     ImportedProject,
     InstanceResult,
     InstanceState,
     NodeCatalog,
+    NodeSecretDetail,
     NodeSecretStatus,
     Project,
+    ProjectCheckpoint,
+    ProjectCheckpointSummary,
     ProjectExport,
+    ProjectFolder,
     ProjectHead,
+    ProjectNodeSecrets,
+    ProjectOrganization,
     ProjectSummary,
     Run,
     RunTarget,
     SubmittedCommands,
+    TableCellValue,
     TablePage,
     TableSchema,
     UploadItem,
     UploadTarget,
+    UserProjectState,
     Workspace,
 )
 from .transport import HttpTransport
@@ -94,6 +110,14 @@ class CatalogClient:
             path=f"/v1/workspaces/{workspace_id}/nodes",
         )
         return NodeCatalog.model_validate(payload)
+
+    async def packs(self, workspace_id: UUID) -> list[CatalogPack]:
+        payload = await self._transport.request_json(
+            operation="list workspace catalog packs",
+            method="GET",
+            path=f"/v1/workspaces/{workspace_id}/packs",
+        )
+        return [CatalogPack.model_validate(item) for item in _items(payload)]
 
 
 class ProjectClient:
@@ -350,6 +374,321 @@ class ProjectClient:
             sensitive_values=(secret,),
         )
         return NodeSecretStatus.model_validate(payload)
+
+    async def list_folders(self, workspace_id: UUID) -> list[ProjectFolder]:
+        payload = await self._transport.request_json(
+            operation="list project folders",
+            method="GET",
+            path=f"/v1/workspaces/{workspace_id}/project-folders",
+        )
+        return [
+            ProjectFolder.model_validate(item)
+            for item in _items(_mapping(payload)["folders"])
+        ]
+
+    async def create_folder(
+        self,
+        workspace_id: UUID,
+        *,
+        name: str,
+    ) -> ProjectFolder:
+        payload = await self._transport.request_json(
+            operation="create project folder",
+            method="POST",
+            path=f"/v1/workspaces/{workspace_id}/project-folders",
+            json_payload={"name": name},
+        )
+        return ProjectFolder.model_validate(payload)
+
+    async def rename_folder(
+        self,
+        workspace_id: UUID,
+        folder_id: UUID,
+        *,
+        name: str,
+    ) -> ProjectFolder:
+        payload = await self._transport.request_json(
+            operation="rename project folder",
+            method="PATCH",
+            path=f"/v1/workspaces/{workspace_id}/project-folders/{folder_id}",
+            json_payload={"name": name},
+        )
+        return ProjectFolder.model_validate(payload)
+
+    async def delete_folder(self, workspace_id: UUID, folder_id: UUID) -> None:
+        _ = await self._transport.send(
+            operation="delete project folder",
+            method="DELETE",
+            path=f"/v1/workspaces/{workspace_id}/project-folders/{folder_id}",
+        )
+
+    async def assign_folder(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        folder_id: UUID | None,
+    ) -> ProjectOrganization:
+        payload = await self._transport.request_json(
+            operation="assign project folder",
+            method="PUT",
+            path=self._path(workspace_id, f"/{project_id}/folder"),
+            json_payload={
+                "folder_id": str(folder_id) if folder_id is not None else None,
+            },
+        )
+        return ProjectOrganization.model_validate(payload)
+
+    async def archive(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> ProjectOrganization:
+        payload = await self._transport.request_json(
+            operation="archive project",
+            method="PUT",
+            path=self._path(workspace_id, f"/{project_id}/archive"),
+        )
+        return ProjectOrganization.model_validate(payload)
+
+    async def unarchive(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> ProjectOrganization:
+        payload = await self._transport.request_json(
+            operation="unarchive project",
+            method="DELETE",
+            path=self._path(workspace_id, f"/{project_id}/archive"),
+        )
+        return ProjectOrganization.model_validate(payload)
+
+    async def star(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> UserProjectState:
+        payload = await self._transport.request_json(
+            operation="star project",
+            method="PUT",
+            path=self._path(workspace_id, f"/{project_id}/star"),
+        )
+        return UserProjectState.model_validate(payload)
+
+    async def unstar(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> UserProjectState:
+        payload = await self._transport.request_json(
+            operation="unstar project",
+            method="DELETE",
+            path=self._path(workspace_id, f"/{project_id}/star"),
+        )
+        return UserProjectState.model_validate(payload)
+
+    async def copy(
+        self,
+        workspace_id: UUID,
+        source_project_id: UUID,
+        *,
+        head: ProjectHead,
+        source_workspace_id: UUID | None = None,
+        name: str | None = None,
+        project_id: UUID | None = None,
+        command_id: UUID | None = None,
+    ) -> Project:
+        body: dict[str, object] = {
+            "source_workspace_id": str(source_workspace_id or workspace_id),
+            "source_project_id": str(source_project_id),
+            "project_id": str(project_id or uuid4()),
+            "expected_room_epoch": str(head.room_epoch),
+            "expected_sequence": head.collaboration_sequence,
+            "command_id": str(command_id or uuid4()),
+        }
+        if name is not None:
+            body["name"] = name
+        payload = await self._transport.request_json(
+            operation="copy project",
+            method="POST",
+            path=self._path(workspace_id, "/copies"),
+            json_payload=body,
+        )
+        return Project.model_validate(payload)
+
+    async def list_checkpoints(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+    ) -> list[ProjectCheckpointSummary]:
+        payload = await self._transport.request_json(
+            operation="list project checkpoints",
+            method="GET",
+            path=self._path(workspace_id, f"/{project_id}/checkpoints"),
+        )
+        return [
+            ProjectCheckpointSummary.model_validate(item)
+            for item in _items(_mapping(payload)["checkpoints"])
+        ]
+
+    async def get_checkpoint(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        revision: int,
+    ) -> ProjectCheckpoint:
+        payload = await self._transport.request_json(
+            operation="get project checkpoint",
+            method="GET",
+            path=self._path(workspace_id, f"/{project_id}/checkpoints/{revision}"),
+        )
+        return ProjectCheckpoint.model_validate(payload)
+
+    async def restore_checkpoint(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        revision: int,
+        *,
+        head: ProjectHead,
+    ) -> ProjectHead:
+        payload = await self._transport.request_json(
+            operation="restore project checkpoint",
+            method="POST",
+            path=self._path(
+                workspace_id, f"/{project_id}/checkpoints/{revision}/restore"
+            ),
+            json_payload={
+                "expected_room_epoch": str(head.room_epoch),
+                "expected_sequence": head.collaboration_sequence,
+            },
+        )
+        return ProjectHead.model_validate(_mapping(payload)["head"])
+
+    async def secret_status(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        graph_id: str = "main",
+    ) -> ProjectNodeSecrets:
+        payload = await self._transport.request_json(
+            operation="get node secret status",
+            method="GET",
+            path=self._path(workspace_id, f"/{project_id}/node-secrets"),
+            params={"graph_id": graph_id},
+        )
+        return ProjectNodeSecrets.model_validate(payload)
+
+    async def delete_secret(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        graph_id: str,
+        node_id: str,
+        secret_name: str,
+        head: ProjectHead,
+    ) -> None:
+        _ = await self._transport.send(
+            operation="delete node secret",
+            method="DELETE",
+            path=self._path(
+                workspace_id,
+                f"/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/"
+                f"{secret_name}",
+            ),
+            params={"expected_head_sequence": head.collaboration_sequence},
+        )
+
+    async def set_secret_shared_binding(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        graph_id: str,
+        node_id: str,
+        secret_name: str,
+        mode: SharedCredentialBindingMode | Literal["none"],
+        head: ProjectHead,
+        credential_id: UUID | None = None,
+    ) -> NodeSecretDetail:
+        payload = await self._transport.request_json(
+            operation="set node secret shared binding",
+            method="PUT",
+            path=self._path(
+                workspace_id,
+                f"/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/"
+                f"{secret_name}/shared-binding",
+            ),
+            json_payload={
+                "mode": str(mode),
+                "credential_id": (
+                    str(credential_id) if credential_id is not None else None
+                ),
+                "expected_head_sequence": head.collaboration_sequence,
+            },
+        )
+        return NodeSecretDetail.model_validate(payload)
+
+    async def set_secret_personal_selection(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        graph_id: str,
+        node_id: str,
+        secret_name: str,
+        mode: UserCredentialOverrideMode | Literal["none"],
+        credential_id: UUID | None = None,
+    ) -> NodeSecretDetail:
+        payload = await self._transport.request_json(
+            operation="set node secret personal selection",
+            method="PUT",
+            path=self._path(
+                workspace_id,
+                f"/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/"
+                f"{secret_name}/personal-selection",
+            ),
+            json_payload={
+                "mode": str(mode),
+                "credential_id": (
+                    str(credential_id) if credential_id is not None else None
+                ),
+            },
+        )
+        return NodeSecretDetail.model_validate(payload)
+
+    async def verify_secret(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        graph_id: str,
+        node_id: str,
+        secret_name: str,
+        value: SecretStr | None = None,
+    ) -> CredentialVerification:
+        json_payload: dict[str, object] | None = None
+        sensitive_values: tuple[str, ...] = ()
+        if value is not None:
+            secret = value.get_secret_value()
+            if secret == "":
+                raise ValueError("Node secret value must not be empty")
+            json_payload = {"value": secret}
+            sensitive_values = (secret,)
+        payload = await self._transport.request_json(
+            operation="verify node secret",
+            method="POST",
+            path=self._path(
+                workspace_id,
+                f"/{project_id}/graphs/{graph_id}/nodes/{node_id}/secrets/"
+                f"{secret_name}/verify",
+            ),
+            json_payload=json_payload,
+            sensitive_values=sensitive_values,
+        )
+        return CredentialVerification.model_validate(payload)
 
 
 class RunClient:
@@ -669,6 +1008,37 @@ class ArtifactClient:
         )
         return TablePage.model_validate(payload)
 
+    async def table_cell(
+        self,
+        workspace_id: UUID,
+        artifact_id: UUID,
+        *,
+        row_index: int,
+        column_id: str,
+    ) -> TableCellValue:
+        payload = await self._transport.request_json(
+            operation="read table cell",
+            method="GET",
+            path=self._path(workspace_id, artifact_id, "/table/cell"),
+            params={"row_index": row_index, "column_id": column_id},
+        )
+        return TableCellValue.model_validate(payload)
+
+    async def image_info(
+        self,
+        workspace_id: UUID,
+        artifact_id: UUID,
+        *,
+        page: int = 0,
+    ) -> ImageInfo:
+        payload = await self._transport.request_json(
+            operation="read image info",
+            method="GET",
+            path=self._path(workspace_id, artifact_id, "/image/info"),
+            params={"page": page},
+        )
+        return ImageInfo.model_validate(payload)
+
     async def geo_render(self, workspace_id: UUID, artifact_id: UUID) -> GeoRender:
         payload = await self._transport.request_json(
             operation="read geo render descriptor",
@@ -715,6 +1085,7 @@ class GrafyClient:
         self.uploads = UploadClient(self._transport)
         self.library = LibraryClient(self._transport)
         self.artifacts = ArtifactClient(self._transport)
+        self.agents = AgentClient(self._transport)
 
     def __repr__(self) -> str:
         return f"GrafyClient(base_url={self._transport.base_url!r}, token=<redacted>)"
@@ -735,6 +1106,7 @@ class GrafyClient:
 
 
 __all__ = [
+    "AgentClient",
     "ArtifactClient",
     "CatalogClient",
     "GrafyClient",

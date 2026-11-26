@@ -96,7 +96,7 @@ Stock TiTiler does not work for non-georeferenced images (`ImageReader.info()`
 fails without a CRS), so the tiler is a thin FastAPI app on rio-tiler.
 `titiler.core` is kept only for its error handlers and middleware. The tiler has
 its own project and lock file in `apps/tiler`, outside the root uv workspace,
-because `titiler.core` needs `starlette>=1` while the API pins `starlette<1`.
+because it targets Python 3.13 while the workspace targets Python 3.14.
 
 ### Raster mosaics
 

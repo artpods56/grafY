@@ -82,11 +82,14 @@ adapters remain under collaboration routes.
 
 ## MCP
 
-`grafy_api.mcp` serves stateless Streamable HTTP at `/mcp` for a Workspace PAT only
-(ADR 0023). Its tools hold no application logic: each one calls the REST routes in
-process through `grafy_client`, so authorization, tenancy, command-batch validation and
-room publication are the routes' own. Authoring goes through `GraphBuilder` before the
-batch is sent.
+`grafy_api.mcp` is a FastMCP server at `/mcp` (stateless Streamable HTTP) for a
+Workspace PAT only (ADR 0023). Its tools hold no application logic: each one calls the
+REST routes in process through `grafy_client` (`grafy_api.mcp.context.grafy`), so
+authorization, tenancy, command-batch validation and room publication are the routes'
+own. Tools are grouped by Workbench area under `grafy_api.mcp.tools`, each module
+exporting `TOOLS`. Authoring goes through `GraphBuilder` before the batch is sent; a
+canvas edit goes through `GraphBuilder.from_document` and leaves as the fine-grained
+commands `grafy_client.graph_commands` derives, never as a document swap.
 
 ## Node families and the catalog
 

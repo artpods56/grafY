@@ -20,12 +20,12 @@ dependencies = [
     "grafy-shared",
     "pillow",
     "pydantic",
-    "starlette<1.0.0",
     "structlog>=25.5.0",
     "truststore>=0.10.4",
     "uvicorn[standard]>=0.38.0",
     "ijson>=3.5.1",
     "pydantic-ai-slim[openai]==2.65.0",
+    "fastmcp==4.2.6",
     "mcp>=2.3,<3",
 ]
 
