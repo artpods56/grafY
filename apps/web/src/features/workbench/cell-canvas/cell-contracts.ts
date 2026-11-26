@@ -334,6 +334,8 @@ export interface OperatorCardSurfaceData {
   kind: "operator";
   statusLabel?: string;
   runDisabled?: boolean;
+  /** Why the header run control is unavailable, when the graph itself cannot run. */
+  runDisabledReason?: string;
   /**
    * Streamed events while this node is running or queued. Omitted once the
    * node leaves that state, so a finished card does not keep the last frame.
@@ -365,8 +367,17 @@ export interface OperatorCardSurfaceData {
 /** One artifact of a sequence card, as its spread shows it. */
 export interface ArtifactStackItem {
   artifactId: string;
+  /** The item's artifact ref so spread slots can render its artifact view. */
+  artifact?: ArtifactRef;
   imageUrl?: string | null;
   label: string;
+  byteSizeLabel?: string;
+}
+
+export interface InlineArtifactEditingProps {
+  inlineEditingCardId?: string | null;
+  onSetInlineEditingCardId?: (cardId: string | null) => void;
+  onInlineArtifactSaved?: (cardId: string, nextRef: ArtifactRef) => void;
 }
 
 export interface ArtifactCardSurfaceData {
@@ -399,6 +410,17 @@ export interface ArtifactCardSurfaceData {
    */
   workspaceId?: string;
   artifact?: ArtifactRef;
+  /** Format-aware download choices for a single artifact. */
+  downloadFormats?: readonly {
+    readonly format: string;
+    readonly label: string;
+  }[];
+  /** Whether this single artifact is present in the Workspace Library. */
+  inLibrary?: boolean;
+  /** Catalog `authorable` for this card's type, when the registry lists it. */
+  authorable?: boolean;
+  /** The card follows a producer output rather than holding its own ref. */
+  producerLinked?: boolean;
   /** Crop window a single TIFF card edits on the one node that consumes it. */
   tiffWindow?: { artifactId: string; selection: TiffWindowSelection };
   /** TIFF text overlay, and the scan window it is read against when one is wired. */

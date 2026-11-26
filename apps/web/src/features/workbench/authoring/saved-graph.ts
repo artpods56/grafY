@@ -337,17 +337,6 @@ export function hydrateSavedGraph(
           (port) => port.name === savedEdge.to_port,
         )
       : undefined;
-    if (sourceSupported && !sourcePort) {
-      throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”. A connection points at an input that is not on that step.`,
-      );
-    }
-    if (targetSupported && !targetPort) {
-      throw new SavedGraphHydrationError(
-        `Cannot open “${savedGraph.name}”. A connection points at an input that is not on that step.`,
-      );
-    }
-
     const compatibilityIssues: string[] = [];
     if (!sourceSupported || !targetSupported) {
       if (sourceNode.data.compatibility.status !== "supported") {
@@ -364,12 +353,18 @@ export function hydrateSavedGraph(
           ),
         );
       }
-    } else {
-      if (!sourcePort || !targetPort) {
-        throw new SavedGraphHydrationError(
-          `Cannot open “${savedGraph.name}”. A connection points at an input that is not on that step.`,
+    } else if (!sourcePort || !targetPort) {
+      if (!sourcePort) {
+        compatibilityIssues.push(
+          `Output "${savedEdge.from_port}" is not on ${sourceNode.data.spec.title}.`,
         );
       }
+      if (!targetPort) {
+        compatibilityIssues.push(
+          `Input "${savedEdge.to_port}" is not on ${targetNode.data.spec.title}.`,
+        );
+      }
+    } else {
       if (portHasInstancePlugs(targetPort)) {
         const targetPlug = targetNode.data.inputPlugs.find(
           (plug) =>
@@ -420,8 +415,8 @@ export function hydrateSavedGraph(
       if (
         !connectionRouteIsValid(savedEdge, sourceNode, targetNode, registry)
       ) {
-        throw new SavedGraphHydrationError(
-          `Cannot open “${savedGraph.name}”. A connection joins two kinds of document that do not fit.`,
+        compatibilityIssues.push(
+          "This connection joins two kinds of document that do not fit.",
         );
       }
     }

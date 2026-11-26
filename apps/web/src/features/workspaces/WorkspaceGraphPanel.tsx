@@ -214,6 +214,7 @@ export function WorkspaceGraphPanel({
   workspaceSlug,
   activeGraphId,
   busyGraphId = null,
+  onExport,
   onRename,
   onDelete,
   onClose,
@@ -222,6 +223,7 @@ export function WorkspaceGraphPanel({
   workspaceSlug: string;
   activeGraphId: string | null;
   busyGraphId?: string | null;
+  onExport?: (graph: SavedGraphSummary) => void;
   onRename: (graph: SavedGraphSummary) => void;
   onDelete: (graph: SavedGraphSummary) => void;
   onClose: (reason: WorkspaceGraphPanelCloseReason) => void;
@@ -376,6 +378,7 @@ export function WorkspaceGraphPanel({
                 graph={project}
                 busy={busyGraphId === project.id}
                 tone="surface"
+                onExport={onExport}
                 onRename={onRename}
                 onDelete={onDelete}
               />

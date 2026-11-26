@@ -227,6 +227,7 @@ export interface SpreadHitScene {
   layoutTotalCols: number;
   card: CellCardModel;
   foregroundCards: readonly CellCardModel[];
+  canReorder?: boolean;
   canExtract: boolean;
 }
 
@@ -1274,6 +1275,9 @@ function modeAt(
   const leftStackActive = scene.windowed && start > 0;
   const rightStackActive = scene.windowed && start < last;
   if (inside) {
+    if (scene.canReorder === false) {
+      return { mode: "none", targetSlot: drag.targetSlot, landing: null };
+    }
     if (leftStackActive && point.x < scene.originX + scene.cardWidth) {
       return { mode: "left", targetSlot: drag.targetSlot, landing: null };
     }
@@ -1426,8 +1430,13 @@ function onItemPointerMove(
     activated = true;
   }
   const at = modeAt(action.world, drag, state, action.scene);
+  const freeFollow =
+    at.mode === "none" &&
+    action.scene.canReorder === false &&
+    action.scene.canExtract;
   const changedTarget =
     activated ||
+    freeFollow ||
     at.mode !== drag.mode ||
     at.targetSlot !== drag.targetSlot ||
     !sameCell(at.landing, drag.landing);
@@ -1437,14 +1446,19 @@ function onItemPointerMove(
     at.mode,
     exec,
   );
-  const nextPoint = targetPointForDrag(
-    at.mode,
-    at.targetSlot,
-    at.landing,
-    drag.slot,
-    action.scene,
-    state.visibleCount,
-  );
+  const nextPoint = freeFollow
+    ? {
+        x: action.world.x - drag.grab.x - action.scene.originX,
+        y: action.world.y - drag.grab.y - action.scene.originY,
+      }
+    : targetPointForDrag(
+        at.mode,
+        at.targetSlot,
+        at.landing,
+        drag.slot,
+        action.scene,
+        state.visibleCount,
+      );
   drag = {
     ...drag,
     draggedSettle: retargetSettle(

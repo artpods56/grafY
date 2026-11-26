@@ -3,7 +3,7 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Popover } from "@base-ui/react/popover";
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Download, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 import type { SavedGraphSummary } from "@/lib/api";
 import { railStyles } from "./workspace-rail.stylex";
@@ -12,12 +12,14 @@ export function GraphRowMenu({
   graph,
   busy = false,
   tone = "rail",
+  onExport,
   onRename,
   onDelete,
 }: {
   graph: SavedGraphSummary;
   busy?: boolean;
   tone?: "rail" | "surface";
+  onExport?: (graph: SavedGraphSummary) => void;
   onRename: (graph: SavedGraphSummary) => void;
   onDelete: (graph: SavedGraphSummary) => void;
 }) {
@@ -53,6 +55,19 @@ export function GraphRowMenu({
             className={stylex.props(railStyles.accountMenu).className}
             data-account-menu=""
           >
+            {onExport ? (
+              <button
+                type="button"
+                className={stylex.props(railStyles.accountMenuItem).className}
+                onClick={() => {
+                  setOpen(false);
+                  onExport(graph);
+                }}
+              >
+                <Download size={14} aria-hidden="true" />
+                Export JSON
+              </button>
+            ) : null}
             <button
               type="button"
               className={stylex.props(railStyles.accountMenuItem).className}

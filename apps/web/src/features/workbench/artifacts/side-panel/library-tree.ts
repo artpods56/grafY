@@ -275,7 +275,8 @@ export function libraryFileBadge(item: PlacedLibraryItem): LibraryFileBadge {
       ext = rawExt.toUpperCase().slice(0, 4);
       typeLabel = rawExt.toUpperCase();
     } else {
-      typeLabel = item.provenance.source === "upload" ? "File" : "Node output";
+      typeLabel =
+        item.provenance.source === "instance" ? "Node output" : "File";
     }
   }
 
@@ -494,6 +495,7 @@ export function countLibraryArtifacts(
 /** The birth record line the Library keeps under an artifact name. */
 export function libraryProvenanceLine(item: PlacedLibraryItem): string {
   const { provenance } = item;
+  if (provenance.source === "authored") return "Saved from canvas";
   if (provenance.source === "upload") {
     return provenance.original_filename
       ? `uploaded · ${provenance.original_filename}`
@@ -539,10 +541,15 @@ export function libraryFileDisplayName(item: PlacedLibraryItem): string {
 /** The secondary line under a file name: size, then where it came from. */
 export function libraryFileSubtitle(item: PlacedLibraryItem): string {
   const size = formatLibraryByteSize(item.artifact.byte_size);
-  const origin =
-    item.provenance.source === "upload" ? "uploaded" : "saved from a node";
+  const origin = LIBRARY_SOURCE_LABELS[item.provenance.source];
   return size ? `${size} · ${origin}` : origin;
 }
+
+const LIBRARY_SOURCE_LABELS = {
+  upload: "uploaded",
+  instance: "saved from a node",
+  authored: "saved from canvas",
+} satisfies Record<PlacedLibraryItem["provenance"]["source"], string>;
 
 /** Compact 2-line row metadata for the subsidebar: size and format (e.g. `791 KB · JPEG`). */
 export function libraryFileRowMeta(item: PlacedLibraryItem): string {

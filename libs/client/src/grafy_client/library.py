@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+from datetime import datetime
 from typing import cast
 from uuid import UUID
 
@@ -6,6 +8,15 @@ from pydantic import Field
 from grafy_core.artifacts import ArtifactRef, LibraryProvenance
 from .models import ClientModel
 from .transport import HttpTransport
+
+
+class LibraryFolder(ClientModel):
+    folder_id: UUID
+    workspace_id: UUID
+    parent_id: UUID | None
+    name: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class LibraryArtifactSummary(ClientModel):
@@ -105,3 +116,111 @@ class LibraryClient:
             },
         )
         return LibraryItem.model_validate(payload)
+
+    async def delete(self, workspace_id: UUID, artifact_id: UUID) -> None:
+        """Delete one Library artifact."""
+        _ = await self._transport.send(
+            operation="delete Library artifact",
+            method="DELETE",
+            path=f"/v1/workspaces/{workspace_id}/library/artifacts/{artifact_id}",
+        )
+
+    async def list_folders(self, workspace_id: UUID) -> list[LibraryFolder]:
+        payload = await self._transport.request_json(
+            operation="list Library folders",
+            method="GET",
+            path=f"/v1/workspaces/{workspace_id}/library/folders",
+        )
+        if not isinstance(payload, dict):
+            raise TypeError("Expected a Library folder listing object")
+        folders = cast(dict[str, object], payload).get("folders")
+        if not isinstance(folders, list):
+            raise TypeError("Expected a Library folder listing with folders")
+        return [
+            LibraryFolder.model_validate(folder)
+            for folder in cast(list[object], folders)
+        ]
+
+    async def create_folder(
+        self,
+        workspace_id: UUID,
+        *,
+        name: str,
+        parent_id: UUID | None = None,
+    ) -> LibraryFolder:
+        payload = await self._transport.request_json(
+            operation="create Library folder",
+            method="POST",
+            path=f"/v1/workspaces/{workspace_id}/library/folders",
+            json_payload={
+                "name": name,
+                "parent_id": str(parent_id) if parent_id is not None else None,
+            },
+        )
+        return LibraryFolder.model_validate(payload)
+
+    async def rename_folder(
+        self,
+        workspace_id: UUID,
+        folder_id: UUID,
+        *,
+        name: str,
+    ) -> LibraryFolder:
+        payload = await self._transport.request_json(
+            operation="rename Library folder",
+            method="PATCH",
+            path=f"/v1/workspaces/{workspace_id}/library/folders/{folder_id}",
+            json_payload={"name": name},
+        )
+        return LibraryFolder.model_validate(payload)
+
+    async def delete_folder(self, workspace_id: UUID, folder_id: UUID) -> None:
+        _ = await self._transport.send(
+            operation="delete Library folder",
+            method="DELETE",
+            path=f"/v1/workspaces/{workspace_id}/library/folders/{folder_id}",
+        )
+
+    async def move_folder(
+        self,
+        workspace_id: UUID,
+        folder_id: UUID,
+        *,
+        parent_id: UUID | None,
+    ) -> LibraryFolder:
+        payload = await self._transport.request_json(
+            operation="move Library folder",
+            method="PUT",
+            path=f"/v1/workspaces/{workspace_id}/library/folders/{folder_id}/parent",
+            json_payload={
+                "parent_id": str(parent_id) if parent_id is not None else None,
+            },
+        )
+        return LibraryFolder.model_validate(payload)
+
+    async def move_artifacts(
+        self,
+        workspace_id: UUID,
+        *,
+        artifact_ids: Sequence[UUID],
+        folder_id: UUID | None,
+    ) -> None:
+        if not artifact_ids:
+            raise ValueError("At least one artifact_id is required")
+        _ = await self._transport.send(
+            operation="move Library artifacts",
+            method="PUT",
+            path=f"/v1/workspaces/{workspace_id}/library/placements",
+            json_payload={
+                "artifact_ids": [str(artifact_id) for artifact_id in artifact_ids],
+                "folder_id": str(folder_id) if folder_id is not None else None,
+            },
+        )
+
+
+__all__ = [
+    "LibraryArtifactSummary",
+    "LibraryClient",
+    "LibraryFolder",
+    "LibraryItem",
+]

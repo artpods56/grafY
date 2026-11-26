@@ -1416,4 +1416,53 @@ describe("call nodes whose callee interface moved", () => {
     expect(hydrated.edges).toHaveLength(1);
     expect(hydrated.edges[0]?.data?.compatibilityIssues).toHaveLength(1);
   });
+
+  it("hydrates a port-type mismatch as an incompatible edge instead of blocking open", () => {
+    const base = graphWithCollectionMode("direct");
+    const mismatchedGraph: SavedGraph = {
+      ...base,
+      document: {
+        ...base.document,
+        edges: base.document.edges.map((edge: SavedGraphEdge) => ({
+          ...edge,
+          conversion_path: [],
+        })),
+      },
+    };
+    const liveRegistry: NodeRegistry = {
+      ...registry("one", "one"),
+      artifact_conversions: [],
+    };
+
+    const hydrated = hydrateSavedGraph(mismatchedGraph, liveRegistry);
+
+    expect(hydrated.nodes).toHaveLength(2);
+    expect(hydrated.edges).toHaveLength(1);
+    expect(hydrated.edges[0]?.data?.compatibilityIssues).toEqual([
+      "This connection joins two kinds of document that do not fit.",
+    ]);
+  });
+
+  it("hydrates an edge pointing at a removed port on a supported operator as incompatible", () => {
+    const base = graphWithCollectionMode("direct");
+    const stalePortGraph: SavedGraph = {
+      ...base,
+      document: {
+        ...base.document,
+        edges: base.document.edges.map((edge: SavedGraphEdge) => ({
+          ...edge,
+          to_port: "removed_input",
+          conversion_path: [],
+        })),
+      },
+    };
+
+    const hydrated = hydrateSavedGraph(stalePortGraph, registry("one", "one"));
+
+    expect(hydrated.nodes).toHaveLength(2);
+    expect(hydrated.edges).toHaveLength(1);
+    expect(hydrated.edges[0]?.data?.compatibilityIssues).toEqual([
+      "target-node: A saved connection points at an input this step no longer has.",
+    ]);
+  });
 });

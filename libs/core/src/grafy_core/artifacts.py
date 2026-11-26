@@ -310,7 +310,7 @@ class ArtifactRefSequence(BaseModel):
         return self
 
 
-type LibrarySource = Literal["instance", "upload"]
+type LibrarySource = Literal["instance", "upload", "authored"]
 
 _GRAPH_TITLE_MAX_LENGTH = 160
 _NODE_TITLE_MAX_LENGTH = 160
@@ -331,7 +331,7 @@ def _required_text(value: str, *, label: str, max_length: int) -> str:
 
 
 class LibraryProvenance(BaseModel):
-    """Immutable source of the exact node result or upload saved to the Library."""
+    """Immutable record of how an exact artifact was saved to the Library."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -401,24 +401,26 @@ class LibraryProvenance(BaseModel):
                 raise ValueError(
                     "Instance Library provenance cannot carry an upload filename"
                 )
-        else:
+            return self
+        if (
+            any(
+                value is not None
+                for value in (*instance_fields, self.map_index, self.item_index)
+            )
+            or self.call_path
+        ):
+            raise ValueError(
+                "Only instance Library provenance can carry instance facts"
+            )
+        if self.source == "upload":
             if self.original_filename is None:
                 raise ValueError("Upload Library provenance requires a filename")
-            if (
-                any(
-                    value is not None
-                    for value in (
-                        *instance_fields,
-                        self.map_index,
-                        self.item_index,
-                        self.name,
-                    )
-                )
-                or self.call_path
-            ):
-                raise ValueError(
-                    "Upload Library provenance cannot carry instance facts"
-                )
+            if self.name is not None:
+                raise ValueError("Upload Library provenance uses its original filename")
+        elif self.original_filename is not None or self.name is None:
+            raise ValueError(
+                "Authored Library provenance requires a name without an upload filename"
+            )
         return self
 
     @classmethod
@@ -460,6 +462,14 @@ class LibraryProvenance(BaseModel):
     def from_upload(cls, *, saved_at: datetime, original_filename: str) -> Self:
         return cls(
             source="upload", saved_at=saved_at, original_filename=original_filename
+        )
+
+    @classmethod
+    def from_authored(cls, *, saved_at: datetime, name: str) -> Self:
+        return cls(
+            source="authored",
+            saved_at=saved_at,
+            name=_required_text(name, label="name", max_length=_LIBRARY_NAME_MAX_LENGTH),
         )
 
 

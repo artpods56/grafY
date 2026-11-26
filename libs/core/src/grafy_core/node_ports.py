@@ -80,6 +80,38 @@ class RequiresServiceFeature:
         object.__setattr__(self, "feature", str(self.feature))
 
 
+@dataclass(frozen=True, slots=True)
+class RequiresInput:
+    """An optional output produced only when the named artifact input is connected."""
+
+    input_port: str
+
+    def __post_init__(self) -> None:
+        if not self.input_port.strip() or self.input_port != self.input_port.strip():
+            raise NodeContractError(
+                "Required input port name must be non-empty without surrounding whitespace"
+            )
+        object.__setattr__(self, "input_port", str(self.input_port))
+
+
+@dataclass(frozen=True, slots=True)
+class ExclusiveGroup:
+    """Optional artifact inputs sharing a group are mutually exclusive."""
+
+    name: str
+
+    def __post_init__(self) -> None:
+        if not self.name.strip() or self.name != self.name.strip():
+            raise NodeContractError(
+                "Exclusive group name must be non-empty without surrounding whitespace"
+            )
+        if len(self.name) > 255:
+            raise NodeContractError(
+                "Exclusive group name must be at most 255 characters"
+            )
+        object.__setattr__(self, "name", str(self.name))
+
+
 class Ref[T](ArtifactRef):
     """A stored artifact ref. ``T`` is the value class, or ``Any`` when bound."""
 
@@ -156,6 +188,7 @@ class InputPortSpec:
     agent_default: Literal["fill", "hidden"] = "fill"
     kind: Literal["artifact", "service"] = "artifact"
     service_contracts: tuple[ServiceContractKey, ...] = ()
+    exclusive_group: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind == "service":
@@ -174,7 +207,17 @@ class InputPortSpec:
                     f"Input port {self.name!r} service port must be one value, "
                     "not variadic or instance plugs"
                 )
+            if self.exclusive_group is not None:
+                raise NodeContractError(
+                    f"Input port {self.name!r} is a service port and cannot "
+                    "declare an exclusive group"
+                )
             return
+        if self.exclusive_group is not None and self.required:
+            raise NodeContractError(
+                f"Input port {self.name!r} in exclusive group "
+                f"{self.exclusive_group!r} must be optional"
+            )
         if self.service_contracts:
             raise NodeContractError(
                 f"Input port {self.name!r} is an artifact port and cannot "
@@ -232,9 +275,15 @@ class OutputPortSpec:
     service_contracts: tuple[ServiceContractKey, ...] = ()
     service_features: tuple[ServiceContractFeatures, ...] = ()
     requires_service_feature: RequiresServiceFeature | None = None
+    requires_input: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind == "service":
+            if self.requires_input is not None:
+                raise NodeContractError(
+                    f"Output port {self.name!r} is a service port and cannot "
+                    "require an input port"
+                )
             if self.produces is not None:
                 raise NodeContractError(
                     f"Output port {self.name!r} is a service port and cannot "

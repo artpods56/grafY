@@ -22,8 +22,10 @@ from contextlib import (
     AbstractAsyncContextManager,
     asynccontextmanager,
     contextmanager,
+    suppress,
 )
 from dataclasses import dataclass
+from logging import getLogger
 from random import uniform
 from typing import Any, Final
 from weakref import WeakKeyDictionary
@@ -45,6 +47,10 @@ _CONNECT_TIMEOUT_SECONDS: Final = 5.0
 _MAX_BACKOFF_SECONDS: Final = 2.0
 _JITTER_SECONDS: Final = 0.25
 _RETRYABLE_STATUS: Final = frozenset({429, 500, 502, 503, 504, 529})
+_LOGGED_REPLY_BYTES: Final = 8192
+_LOGGED_REPLY_CHARACTERS: Final = 1000
+
+logger = getLogger(__name__)
 
 _pooled: WeakKeyDictionary[AbstractEventLoop, dict[str, httpx.AsyncClient]] = (
     WeakKeyDictionary()
@@ -150,6 +156,7 @@ async def post_json(request: ProviderRequest) -> bytes:
                 if response.status_code not in _RETRYABLE_STATUS or (
                     attempt + 1 >= request.attempts
                 ):
+                    await _log_refusal(request, response)
                     raise UserFacingNodeError(
                         f"{request.service} returned HTTP {response.status_code}"
                     )
@@ -164,6 +171,30 @@ async def post_json(request: ProviderRequest) -> bytes:
                     message += f" through {request.connection_route}"
                 raise UserFacingNodeError(message) from exc
     raise AssertionError(f"{request.service} request attempts exhausted")
+
+
+async def _log_refusal(request: ProviderRequest, response: httpx.Response) -> None:
+    """Say in the server log why a provider refused a request.
+
+    Graph users only see the status, because provider replies are not theirs to
+    read. The log gets a short excerpt with the API key removed.
+    """
+    body = bytearray()
+    # An unreadable reply must not replace the status the caller is about to report.
+    with suppress(httpx.HTTPError):
+        async for chunk in response.aiter_bytes():
+            body.extend(chunk)
+            if len(body) >= _LOGGED_REPLY_BYTES:
+                break
+    reply = body.decode(errors="replace").replace(
+        request.api_key.get_secret_value(), "<redacted>"
+    )
+    logger.warning(
+        "provider_request_refused service=%s status=%s reply=%r",
+        request.service,
+        response.status_code,
+        reply[:_LOGGED_REPLY_CHARACTERS],
+    )
 
 
 async def _read_limited(request: ProviderRequest, response: httpx.Response) -> bytes:

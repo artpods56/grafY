@@ -1130,6 +1130,10 @@
       },
       "ArtifactTypeSpecResponse": {
         "properties": {
+          "authorable": {
+            "title": "Authorable",
+            "type": "boolean"
+          },
           "bundle": {
             "$ref": "#/components/schemas/ArtifactBundleContractResponse"
           },
@@ -1587,6 +1591,109 @@
           "command_id"
         ],
         "title": "CopyExactHeadRequest",
+        "type": "object"
+      },
+      "CreateArtifactRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_type": {
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "derived_from_artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived From Artifact Id"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "schema_version": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "artifact_type",
+          "payload"
+        ],
+        "title": "CreateArtifactRequest",
+        "type": "object"
+      },
+      "CreateArtifactResponse": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "artifact_type": {
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "content_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Hash"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "derived_from_artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived From Artifact Id"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "artifact_type",
+          "schema_version",
+          "derived_from_artifact_id",
+          "created_at"
+        ],
+        "title": "CreateArtifactResponse",
         "type": "object"
       },
       "CreateCredentialRequest": {
@@ -2292,6 +2399,56 @@
         "title": "GeoFillStyle",
         "type": "object"
       },
+      "GeoJsonRenderSourceResponse": {
+        "description": "A stored feature collection the browser fetches whole and draws itself.",
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "bounds": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoBounds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data_url": {
+            "title": "Data Url",
+            "type": "string"
+          },
+          "feature_count": {
+            "minimum": 0.0,
+            "title": "Feature Count",
+            "type": "integer"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/GeoPropertyFieldResponse"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "kind": {
+            "const": "geojson",
+            "default": "geojson",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "data_url",
+          "bounds",
+          "feature_count"
+        ],
+        "title": "GeoJsonRenderSourceResponse",
+        "type": "object"
+      },
       "GeoLabelStyle": {
         "additionalProperties": false,
         "properties": {
@@ -2467,6 +2624,91 @@
         "title": "GeoPointStyle",
         "type": "object"
       },
+      "GeoPropertyFieldResponse": {
+        "properties": {
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/GeoPropertyValueType"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "value_type"
+        ],
+        "title": "GeoPropertyFieldResponse",
+        "type": "object"
+      },
+      "GeoPropertyValueType": {
+        "enum": [
+          "text",
+          "integer",
+          "number",
+          "boolean",
+          "null",
+          "mixed",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "GeoRasterRenderSourceResponse": {
+        "properties": {
+          "artifact_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution"
+          },
+          "bounds": {
+            "$ref": "#/components/schemas/GeoBounds"
+          },
+          "kind": {
+            "const": "raster",
+            "default": "raster",
+            "title": "Kind",
+            "type": "string"
+          },
+          "tilejson_url": {
+            "title": "Tilejson Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "tilejson_url",
+          "bounds"
+        ],
+        "title": "GeoRasterRenderSourceResponse",
+        "type": "object"
+      },
       "GeoRasterStyle": {
         "additionalProperties": false,
         "properties": {
@@ -2621,7 +2863,22 @@
             "type": "number"
           },
           "source": {
-            "$ref": "#/components/schemas/GeoRenderSourceResponse"
+            "discriminator": {
+              "mapping": {
+                "geojson": "#/components/schemas/GeoJsonRenderSourceResponse",
+                "raster": "#/components/schemas/GeoRasterRenderSourceResponse"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GeoJsonRenderSourceResponse"
+              },
+              {
+                "$ref": "#/components/schemas/GeoRasterRenderSourceResponse"
+              }
+            ],
+            "title": "Source"
           },
           "style": {
             "discriminator": {
@@ -2740,53 +2997,6 @@
           "layers"
         ],
         "title": "GeoRenderResponse",
-        "type": "object"
-      },
-      "GeoRenderSourceResponse": {
-        "properties": {
-          "artifact_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Artifact Id"
-          },
-          "attribution": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Attribution"
-          },
-          "bounds": {
-            "$ref": "#/components/schemas/GeoBounds"
-          },
-          "kind": {
-            "const": "raster",
-            "default": "raster",
-            "title": "Kind",
-            "type": "string"
-          },
-          "tilejson_url": {
-            "title": "Tilejson Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact_id",
-          "tilejson_url",
-          "bounds"
-        ],
-        "title": "GeoRasterRenderSourceResponse",
         "type": "object"
       },
       "GeoVectorStyle": {
@@ -2977,7 +3187,43 @@
         "title": "GraphConversion",
         "type": "object"
       },
-      "GraphDefinition": {
+      "GraphDefinition-Input": {
+        "additionalProperties": false,
+        "description": "One Graph of a Project: its interface, its nodes, its layout.\n\nA call node is a ``GraphNode`` with ``kind == \"call\"``, ``operator_id``\nset to the callee Graph's id and ``operator_version == 1``. Boundary nodes\ndeclare the interface: a builtin running ``graph.input`` or ``graph.output``\nwhose config carries ``public_name`` and, for inputs only, ``required``.",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/GraphDocument"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "refresh_generations": {
+            "additionalProperties": {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Refresh Generations",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "document"
+        ],
+        "title": "GraphDefinition",
+        "type": "object"
+      },
+      "GraphDefinition-Output": {
         "additionalProperties": false,
         "description": "One Graph of a Project: its interface, its nodes, its layout.\n\nA call node is a ``GraphNode`` with ``kind == \"call\"``, ``operator_id``\nset to the callee Graph's id and ``operator_version == 1``. Boundary nodes\ndeclare the interface: a builtin running ``graph.input`` or ``graph.output``\nwhose config carries ``public_name`` and, for inputs only, ``required``.",
         "properties": {
@@ -3917,6 +4163,84 @@
         "title": "ImageUploadItemResponse",
         "type": "object"
       },
+      "ImportProjectRequest": {
+        "additionalProperties": false,
+        "description": "Portable whole-Project JSON envelope with optional replay identifiers.",
+        "properties": {
+          "command_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Id"
+          },
+          "document": {
+            "$ref": "#/components/schemas/ProjectDocument-Input"
+          },
+          "format": {
+            "const": "grafy.project",
+            "title": "Format",
+            "type": "string"
+          },
+          "format_version": {
+            "const": 1,
+            "title": "Format Version",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "required": [
+          "format",
+          "format_version",
+          "name",
+          "document"
+        ],
+        "title": "ImportProjectRequest",
+        "type": "object"
+      },
+      "ImportProjectResponse": {
+        "additionalProperties": false,
+        "description": "The newly created Project plus any non-fatal import warnings.",
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/ProjectResponse"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectImportWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "title": "ImportProjectResponse",
+        "type": "object"
+      },
       "InGraphCommand": {
         "additionalProperties": false,
         "description": "Apply one per-graph command to one Graph of the Project.",
@@ -4515,7 +4839,8 @@
       "LibrarySource": {
         "enum": [
           "instance",
-          "upload"
+          "upload",
+          "authored"
         ],
         "type": "string"
       },
@@ -5484,6 +5809,17 @@
             "title": "Direction",
             "type": "string"
           },
+          "exclusive_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusive Group"
+          },
           "instance_plugs": {
             "default": false,
             "title": "Instance Plugs",
@@ -5506,6 +5842,17 @@
             "default": true,
             "title": "Required",
             "type": "boolean"
+          },
+          "requires_input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Input"
           },
           "requires_service_feature": {
             "anyOf": [
@@ -5814,7 +6161,7 @@
             "type": "string"
           },
           "document": {
-            "$ref": "#/components/schemas/ProjectDocument"
+            "$ref": "#/components/schemas/ProjectDocument-Output"
           },
           "name": {
             "title": "Name",
@@ -5895,20 +6242,67 @@
         "title": "ProjectCommandReceiptResponse",
         "type": "object"
       },
-      "ProjectDocument": {
+      "ProjectDocument-Input": {
         "additionalProperties": false,
         "description": "The document of a Project: its Graphs and the calls between them.",
         "properties": {
           "graphs": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/GraphDefinition"
+              "$ref": "#/components/schemas/GraphDefinition-Input"
             },
             "title": "Graphs",
             "type": "array"
           }
         },
         "title": "ProjectDocument",
+        "type": "object"
+      },
+      "ProjectDocument-Output": {
+        "additionalProperties": false,
+        "description": "The document of a Project: its Graphs and the calls between them.",
+        "properties": {
+          "graphs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphDefinition-Output"
+            },
+            "title": "Graphs",
+            "type": "array"
+          }
+        },
+        "title": "ProjectDocument",
+        "type": "object"
+      },
+      "ProjectExportResponse": {
+        "additionalProperties": false,
+        "description": "Portable, versioned whole-Project JSON envelope.",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/ProjectDocument-Output"
+          },
+          "format": {
+            "const": "grafy.project",
+            "default": "grafy.project",
+            "title": "Format",
+            "type": "string"
+          },
+          "format_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Format Version",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "document"
+        ],
+        "title": "ProjectExportResponse",
         "type": "object"
       },
       "ProjectFolderListResponse": {
@@ -5993,7 +6387,7 @@
             "type": "integer"
           },
           "document": {
-            "$ref": "#/components/schemas/ProjectDocument"
+            "$ref": "#/components/schemas/ProjectDocument-Output"
           },
           "name": {
             "title": "Name",
@@ -6026,6 +6420,91 @@
           "document"
         ],
         "title": "ProjectHeadResponse",
+        "type": "object"
+      },
+      "ProjectImportWarning": {
+        "additionalProperties": false,
+        "description": "One non-fatal compatibility or portability note produced during import.",
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "code": {
+            "enum": [
+              "unknown_operator",
+              "stripped_origins",
+              "stripped_artifact_cards",
+              "stripped_library_context_links",
+              "stripped_card_context_links",
+              "stripped_legacy_config_keys",
+              "credentials_required",
+              "custom_agent_model"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "graph_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Id"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "operator_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Id"
+          },
+          "operator_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Version"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ProjectImportWarning",
         "type": "object"
       },
       "ProjectListResponse": {
@@ -6642,6 +7121,27 @@
           "node_id"
         ],
         "title": "RunTargetRequest",
+        "type": "object"
+      },
+      "SaveArtifactRequest": {
+        "properties": {
+          "artifact_id": {
+            "format": "uuid",
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "name"
+        ],
+        "title": "SaveArtifactRequest",
         "type": "object"
       },
       "SaveInstanceArtifactRequest": {
@@ -9554,6 +10054,70 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/artifacts": {
+      "post": {
+        "operationId": "create_artifact_v1_workspaces__workspace_id__artifacts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateArtifactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateArtifactResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Referenced artifact not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Artifact",
+        "tags": [
+          "workbench"
+        ]
+      }
+    },
     "/v1/workspaces/{workspace_id}/artifacts/geo/render": {
       "post": {
         "operationId": "render_geo_artifacts_v1_workspaces__workspace_id__artifacts_geo_render_post",
@@ -11008,6 +11572,104 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/features.geojson": {
+      "get": {
+        "description": "Every stored feature of one collection, as the GeoJSON the map draws.",
+        "operationId": "get_geo_features_geojson_v1_workspaces__workspace_id__artifacts__source_id__geo_features_geojson_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/geo+json": {}
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Not a feature collection"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Artifact not found"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Too many features to draw on a map"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbenchErrorResponse"
+                }
+              }
+            },
+            "description": "Feature content is unavailable"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Geo Features Geojson",
+        "tags": [
+          "workbench"
+        ]
+      }
+    },
     "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/features/{feature_index}": {
       "get": {
         "operationId": "get_geo_exact_feature_v1_workspaces__workspace_id__artifacts__source_id__geo_features__feature_index__get",
@@ -11979,6 +12641,67 @@
           }
         ],
         "summary": "List Library Artifacts",
+        "tags": [
+          "library"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/library/artifacts/from-artifact": {
+      "post": {
+        "operationId": "save_library_artifact_from_artifact_v1_workspaces__workspace_id__library_artifacts_from_artifact_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveArtifactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryItemResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Library Artifact From Artifact",
         "tags": [
           "library"
         ]
@@ -13481,6 +14204,67 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/import": {
+      "post": {
+        "operationId": "import_project_v1_workspaces__workspace_id__projects_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportProjectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/starter": {
       "post": {
         "operationId": "create_starter_project_v1_workspaces__workspace_id__projects_starter_post",
@@ -14158,6 +14942,84 @@
           }
         ],
         "summary": "Submit Project Commands",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/export": {
+      "get": {
+        "operationId": "export_project_v1_workspaces__workspace_id__projects__project_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "revision",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Project",
         "tags": [
           "projects"
         ]
@@ -15325,6 +16187,84 @@
           }
         ],
         "summary": "List Graph Instances",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/preview-stream": {
+      "get": {
+        "description": "Opt-in Server-Sent Events stream of ephemeral live preview frames for one node.\n\nReplays the bounded in-memory ring buffer for the node's latest computation\nand streams new frames as the node or its connected service providers emit\nthem. Requires both ``view_runs`` and ``view_artifacts`` because frames may\nshow cropped image regions or prompt text derived from workspace artifacts.",
+        "operationId": "stream_node_preview_v1_workspaces__workspace_id__projects__project_id__graphs__graph_id__nodes__node_id__preview_stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stream Node Preview",
         "tags": [
           "runs"
         ]

@@ -46,7 +46,7 @@ members = [
     "plugins/table",
 ]
 exclude = [
-    # Own lock: titiler.core needs starlette>=1, the API pins starlette<1.
+    # Own lock: the tiler targets Python 3.13, the workspace Python 3.14.
     "apps/tiler",
 ]
 

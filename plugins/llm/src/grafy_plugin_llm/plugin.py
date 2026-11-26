@@ -1,3 +1,4 @@
+from grafy_plugin_llm import crop_reader  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from grafy_plugin_llm import ocr  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from grafy_plugin_llm import openai_compatible  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from grafy_plugin_llm import prompt  # noqa: F401  # pyright: ignore[reportUnusedImport]

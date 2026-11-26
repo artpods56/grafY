@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 from collections.abc import Sequence
 from itertools import batched
-from typing import cast, final, override
+from typing import Protocol, cast, final, override, runtime_checkable
 
 from grafy_core.artifacts import (
     ArtifactPreviewKind,
@@ -108,15 +108,34 @@ MAP_TOPONYMS.register(
 )
 
 
+_DEFAULT_BATCH_SIZE = 8
+_MAX_CONCURRENT_CROP_READS = 8
+
+
+@runtime_checkable
+class _BatchSizedRecognizer(Protocol):
+    @property
+    def preferred_batch_size(self) -> int: ...
+
+
+def _recognizer_batch_size(recognizer: CropTextReader) -> int:
+    if isinstance(recognizer, _BatchSizedRecognizer):
+        size = recognizer.preferred_batch_size
+        if size >= 1:
+            return size
+    return _DEFAULT_BATCH_SIZE
+
+
 async def _prepare(
-    page: TiffPage, region: TextRegion
+    page: TiffPage, region: TextRegion, semaphore: asyncio.Semaphore
 ) -> bytes | None | UserFacingNodeError:
     # A normal crop failure stays a user-facing error rather than being hidden in
     # TaskGroup's ExceptionGroup. Unexpected failures still cancel sibling reads.
-    try:
-        return await read_label_crop(page, region.polygon)
-    except UserFacingNodeError as exc:
-        return exc
+    async with semaphore:
+        try:
+            return await read_label_crop(page, region.polygon)
+        except UserFacingNodeError as exc:
+            return exc
 
 
 def _checked(readings: Sequence[TextReading], asked: int) -> list[TextReading]:
@@ -226,9 +245,14 @@ class ReadTiffTextNode(Node[NoConfig, RecognizeInput, RecognizeOutput]):
             )
             hits: list[bool] = []
             crops = 0
-            for batch in batched(detected.regions, 8):
+            batch_size = _recognizer_batch_size(inputs.recognizer)
+            crop_reads = asyncio.Semaphore(_MAX_CONCURRENT_CROP_READS)
+            for batch in batched(detected.regions, batch_size):
                 async with asyncio.TaskGroup() as group:
-                    tasks = [group.create_task(_prepare(page, item)) for item in batch]
+                    tasks = [
+                        group.create_task(_prepare(page, item, crop_reads))
+                        for item in batch
+                    ]
                 prepared = [task.result() for task in tasks]
                 for crop in prepared:
                     if isinstance(crop, UserFacingNodeError):

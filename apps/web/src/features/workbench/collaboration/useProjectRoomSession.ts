@@ -7,6 +7,8 @@ import type {
   CollaborativeHead,
   WorkspaceCapability,
 } from "@/lib/api";
+import { getSession } from "@/lib/api/auth";
+import { ApiError, notifyUnauthorized } from "@/lib/api/client";
 
 import {
   ProjectRoomSession,
@@ -149,6 +151,24 @@ interface UseProjectRoomSessionOptions {
 
 const EMPTY_RUNS: readonly ActiveRunSummary[] = [];
 const EMPTY_INSTANCES: ReadonlyMap<string, RoomInstanceState> = new Map();
+
+/**
+ * The room learns about an expired session only as a failed socket: browsers
+ * hide the handshake status, and the server closes a dead session with
+ * `access_revoked`. Ask `/v1/auth/session` and, on 401, tell the auth boundary.
+ * Any other result leaves the room's own reconnect alone.
+ */
+function probeRoomAuthSession(signal: AbortSignal): Promise<void> {
+  return getSession(signal).then(
+    () => undefined,
+    (error: unknown) => {
+      if (error instanceof ApiError && error.status === 401) {
+        notifyUnauthorized();
+      }
+      throw error;
+    },
+  );
+}
 
 export function useProjectRoomSession({
   workspaceId,
@@ -352,6 +372,7 @@ export function useProjectRoomSession({
         onTerminalCloseRef.current?.(reason);
       },
       presenceStore,
+      probeSession: probeRoomAuthSession,
     });
     sessionRef.current = session;
     session.connect();

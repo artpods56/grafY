@@ -3,7 +3,7 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import { Toast } from "@base-ui/react/toast";
-import { CircleAlert, X } from "lucide-react";
+import { Check, CircleAlert, X } from "lucide-react";
 
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
@@ -68,6 +68,10 @@ const s = stylex.create({
     display: "grid",
     gap: "3px",
     paddingTop: "1px",
+  },
+  successIcon: {
+    backgroundColor: tokens.colorSurfaceSunken,
+    color: tokens.colorSuccess,
   },
   toastTitle: {
     color: tokens.colorTextEmphasis,
@@ -149,8 +153,18 @@ export function GlobalIssueToastList({
             className={`grafy-workbench-toast ${stylex.props(s.toastRoot).className}`}
           >
             <Toast.Content {...stylex.props(s.toastContent)}>
-              <span aria-hidden="true" {...stylex.props(s.toastIcon)}>
-                <CircleAlert size={15} />
+              <span
+                aria-hidden="true"
+                {...stylex.props(
+                  s.toastIcon,
+                  toast.type === "success" && s.successIcon,
+                )}
+              >
+                {toast.type === "success" ? (
+                  <Check size={15} />
+                ) : (
+                  <CircleAlert size={15} />
+                )}
               </span>
               <span {...stylex.props(s.toastCopy)}>
                 <Toast.Title {...stylex.props(s.toastTitle)} />

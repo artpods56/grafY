@@ -2,7 +2,14 @@ from datetime import datetime
 from typing import ClassVar, Literal, Self
 from uuid import UUID
 
-from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
+from grafy_core.domain.agent_conversations import AgentConversationEventPayload
+from grafy_core.domain.agent_turns import AgentTurnStatus
+from grafy_core.domain.credentials import (
+    CredentialVerificationStatus,
+    SharedCredentialBindingMode,
+    UserCredentialOverrideMode,
+)
 from grafy_core.kernel.project import ProjectDocument
 from grafy_core.nodes import PortShape
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -14,6 +21,11 @@ class ClientModel(BaseModel):
         frozen=True,
         populate_by_name=True,
     )
+
+
+class CreatedArtifact(ArtifactRef):
+    derived_from_artifact_id: UUID | None
+    created_at: datetime
 
 
 class ServiceContractKey(ClientModel):
@@ -49,6 +61,8 @@ class CatalogPort(ClientModel):
     service_contracts: tuple[ServiceContractKey, ...] = ()
     service_features: tuple[ServiceContractFeatures, ...] = ()
     requires_service_feature: RequiresServiceFeature | None = None
+    requires_input: str | None = None
+    exclusive_group: str | None = None
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...]
     instance_plugs: bool = False
@@ -74,9 +88,7 @@ class CatalogPort(ClientModel):
                 )
             return self
         if self.service_contracts:
-            raise ValueError(
-                "Catalog artifact port cannot declare a service contract"
-            )
+            raise ValueError("Catalog artifact port cannot declare a service contract")
         if (self.artifact_type is None) == (self.artifact_type_variable is None):
             raise ValueError(
                 "Catalog port must declare exactly one artifact type or variable"
@@ -194,6 +206,42 @@ class ProjectHead(ClientModel):
     name: str
     updated_at: datetime
     document: ProjectDocument
+
+
+class ProjectExport(ClientModel):
+    """Versioned portable JSON envelope for a whole Project."""
+
+    format: Literal["grafy.project"] = "grafy.project"
+    format_version: Literal[1] = 1
+    name: str
+    document: ProjectDocument
+
+
+ProjectImportWarningCode = Literal[
+    "unknown_operator",
+    "stripped_origins",
+    "stripped_artifact_cards",
+    "stripped_library_context_links",
+    "stripped_card_context_links",
+    "stripped_legacy_config_keys",
+    "credentials_required",
+    "custom_agent_model",
+]
+
+
+class ProjectImportWarning(ClientModel):
+    code: ProjectImportWarningCode
+    message: str
+    graph_id: str | None = None
+    node_id: str | None = None
+    operator_id: str | None = None
+    operator_version: int | None = None
+    agent_id: str | None = None
+
+
+class ImportedProject(ClientModel):
+    project: Project
+    warnings: tuple[ProjectImportWarning, ...] = ()
 
 
 class CommandReceipt(ClientModel):
@@ -339,21 +387,203 @@ class InstanceResult(ClientModel):
     created_at: datetime | None
 
 
+class ProjectFolder(ClientModel):
+    id: UUID
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProjectOrganization(ClientModel):
+    folder_id: UUID | None
+    archived: bool
+    archived_at: datetime | None
+    updated_at: datetime
+
+
+class UserProjectState(ClientModel):
+    starred: bool
+    last_opened_at: datetime | None
+
+
+class ProjectCheckpointSummary(ClientModel):
+    """One retained checkpoint without its document."""
+
+    revision: int
+    name: str
+    created_at: datetime
+
+
+class ProjectCheckpoint(ProjectCheckpointSummary):
+    """One retained checkpoint with the exact document it froze."""
+
+    document: ProjectDocument
+
+
+class NodeSecretDetail(ClientModel):
+    node_id: str
+    name: str
+    configured: bool
+    provider_kind: str = "generic"
+    effective_source: Literal[
+        "personal_credential",
+        "shared_credential",
+        "deployment_default",
+        "inline_legacy",
+        "none",
+    ] = "none"
+    effective_credential_id: UUID | None = None
+    effective_credential_label: str | None = None
+    effective_verification_status: CredentialVerificationStatus | None = None
+    shared_binding_mode: SharedCredentialBindingMode | Literal["none"] = "none"
+    shared_credential_id: UUID | None = None
+    shared_credential_label: str | None = None
+    shared_credential_missing: bool = False
+    personal_override_mode: UserCredentialOverrideMode | Literal["none"] = "none"
+    personal_credential_id: UUID | None = None
+    personal_credential_label: str | None = None
+    deployment_default_available: bool = False
+    supports_verification: bool = False
+
+
+class NodeSecretResolution(ClientModel):
+    node_id: str
+    status: Literal["unresolved"]
+    reason: Literal["contract_unavailable", "invalid_configuration"]
+
+
+class ProjectNodeSecrets(ClientModel):
+    """Secret status for one Graph of a Project's live head."""
+
+    project_id: UUID
+    graph_id: str
+    head_sequence: int
+    secrets: tuple[NodeSecretDetail, ...]
+    unresolved_nodes: tuple[NodeSecretResolution, ...]
+
+
+class CredentialVerification(ClientModel):
+    status: CredentialVerificationStatus
+    message: str
+    account_hint: str | None
+
+
+class TableCellValue(ClientModel):
+    row_index: int
+    column_id: str
+    value: str | float | bool | None
+    encoding: Literal["native", "integer", "json"] = "native"
+
+
+class ImageInfo(ClientModel):
+    width: int
+    height: int
+    page_count: int
+    has_alpha: bool
+    tile_size: Literal[256, 512]
+    min_level: int
+    max_level: int
+    tile_format: Literal["jpg", "png"]
+    georeferenced: bool = False
+    bounds_wgs84: tuple[float, float, float, float] | None = None
+
+
+class AgentConversation(ClientModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    graph_id: str
+    agent_id: str
+    author_user_id: UUID
+    title: str
+    source_conversation_id: UUID | None
+    source_sequence: int | None
+    last_sequence: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgentConversationEvent(ClientModel):
+    sequence: int
+    turn_id: UUID
+    payload: AgentConversationEventPayload
+    created_at: datetime
+
+
+class AgentConversationEvents(ClientModel):
+    events: tuple[AgentConversationEvent, ...]
+    next_sequence: int
+    last_sequence: int
+
+
+class AgentTurn(ClientModel):
+    id: UUID
+    conversation_id: UUID
+    client_turn_id: str
+    status: AgentTurnStatus
+    model_source: str
+    model_name: str
+    requested_by_user_id: UUID
+    user_message_sequence: int
+    outcome_detail: str | None
+    created_at: datetime
+    finished_at: datetime | None
+
+    @property
+    def terminal(self) -> bool:
+        return self.status != AgentTurnStatus.RUNNING
+
+
+class ActiveAgentTurn(ClientModel):
+    turn: AgentTurn
+    message_id: UUID | None
+    partial_offset: int
+    partial_text: str
+
+
+class AgentModel(ClientModel):
+    source: str
+    model_name: str
+    base_url: str
+    key_configured: bool
+
+
 __all__ = [
+    "ActiveAgentTurn",
+    "AgentConversation",
+    "AgentConversationEvent",
+    "AgentConversationEvents",
+    "AgentModel",
+    "AgentTurn",
+    "CreatedArtifact",
     "CatalogConversion",
     "CatalogConversionKey",
     "CatalogNode",
+    "CatalogPack",
     "CatalogPort",
     "CommandReceipt",
+    "CredentialVerification",
     "GeoFeatureMatch",
     "GeoRender",
+    "ImageInfo",
+    "ImportedProject",
     "InstanceKey",
     "InstanceResult",
     "InstanceState",
     "NodeCatalog",
+    "NodeSecretDetail",
+    "NodeSecretResolution",
     "NodeSecretStatus",
     "Project",
+    "ProjectCheckpoint",
+    "ProjectCheckpointSummary",
+    "ProjectExport",
+    "ProjectFolder",
     "ProjectHead",
+    "ProjectImportWarning",
+    "ProjectImportWarningCode",
+    "ProjectNodeSecrets",
+    "ProjectOrganization",
     "ProjectSummary",
     "Run",
     "RunTarget",
@@ -361,10 +591,12 @@ __all__ = [
     "ServiceContractKey",
     "SubmittedCommands",
     "TableCell",
+    "TableCellValue",
     "TableColumn",
     "TablePage",
     "TableSchema",
     "UploadItem",
     "UploadTarget",
+    "UserProjectState",
     "Workspace",
 ]

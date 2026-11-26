@@ -50,11 +50,16 @@ import {
 import { schemaFields, validateConfig } from "../config-ui/config-schema";
 import { connectedInputPortsForDocumentNode } from "../config-ui/connected-inputs";
 import {
+  exclusiveInputLabel,
+  exclusiveInputReason,
+  gatedOutputForPort,
+  gatedOutputLabel,
   notProducedInputReasons,
   unsupportedOutputForPort,
   unsupportedOutputLabel,
   type ProviderOutputEdge,
   type ProviderOutputNode,
+  type ProviderOutputOrigin,
 } from "../authoring/provider-outputs";
 import { visibleEngineCandidates } from "../authoring/service-engine-prompt";
 
@@ -123,6 +128,8 @@ export interface CellNodeRunState {
   status?: CellCardModel["status"];
   statusLabel?: string;
   runDisabled?: boolean;
+  /** Why the header run control is unavailable, when the graph itself cannot run. */
+  runDisabledReason?: string;
   appendix?: CellExecutionAppendixSpec | null;
 }
 
@@ -490,7 +497,12 @@ export function buildOperatorCardsAndSurfaces(
       registry.service_contracts,
     );
     const inputReasons = spec
-      ? notProducedInputReasons(node.id, outputNodes, outputEdges)
+      ? notProducedInputReasons(
+          node.id,
+          outputNodes,
+          outputEdges,
+          document.origins,
+        )
       : [];
     const ports = built.ports.map((port) => {
       const caption = mutedPortCaption(
@@ -499,6 +511,7 @@ export function buildOperatorCardsAndSurfaces(
         spec,
         outputNodes,
         outputEdges,
+        document.origins,
         inputReasons,
       );
       return caption ? { ...port, mutedCaption: caption } : port;
@@ -650,6 +663,9 @@ export function buildOperatorCardsAndSurfaces(
         ...(runState?.runDisabled !== undefined
           ? { runDisabled: runState.runDisabled }
           : {}),
+        ...(runState?.runDisabledReason
+          ? { runDisabledReason: runState.runDisabledReason }
+          : {}),
         configFields,
         ...(configSections ? { configSections } : {}),
         ...(connectedInputPorts ? { connectedInputPorts } : {}),
@@ -730,9 +746,11 @@ function mutedPortCaption(
   spec: NodeSpec | undefined,
   nodes: readonly ProviderOutputNode[],
   edges: readonly ProviderOutputEdge[],
+  origins: readonly ProviderOutputOrigin[],
   inputReasons: readonly { portName: string; message: string }[],
 ): string | undefined {
   if (!spec) return undefined;
+  const currentNode: ProviderOutputNode = { id: nodeId, data: { spec } };
   if (port.direction === "output") {
     const sourcePort = spec.outputs.find(
       (candidate) => candidate.name === port.id,
@@ -740,13 +758,24 @@ function mutedPortCaption(
     if (!sourcePort) return undefined;
     const unsupported = unsupportedOutputForPort(
       sourcePort,
-      { id: nodeId, data: { spec } },
+      currentNode,
       nodes,
       edges,
     );
-    return unsupported ? unsupportedOutputLabel(unsupported) : undefined;
+    if (unsupported) return unsupportedOutputLabel(unsupported);
+    const gated = gatedOutputForPort(sourcePort, currentNode, edges, origins);
+    return gated ? gatedOutputLabel(gated) : undefined;
   }
-  return inputReasons.find((reason) => reason.portName === port.id)?.message;
+  const upstreamReason = inputReasons.find(
+    (reason) => reason.portName === port.id,
+  )?.message;
+  if (upstreamReason) return upstreamReason;
+  const targetPort = spec.inputs.find(
+    (candidate) => candidate.name === port.id,
+  );
+  if (!targetPort) return undefined;
+  const blocked = exclusiveInputReason(targetPort, currentNode, edges, origins);
+  return blocked ? exclusiveInputLabel(blocked) : undefined;
 }
 
 export function graphCommandsFromCellMoves(

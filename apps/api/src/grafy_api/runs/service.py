@@ -217,6 +217,13 @@ class RunService:
             service_operators=self._service_operators,
             actor_user_id=started_by_user_id,
         )
+        for key in keys:
+            target_fingerprint = fingerprints[key]
+            if target_fingerprint in plan.computations:
+                continue
+            if await runtime.store.get_result(target_fingerprint) is not None:
+                await runtime.store.record_success(key, target_fingerprint)
+
         run = Run(
             workspace_id=workspace_id,
             project_id=project_id,
@@ -517,11 +524,12 @@ class RunService:
         project_id: UUID,
         key: InstanceKey,
     ) -> tuple[InstanceStateSnapshot, StoredResult | None]:
-        """An instance's current state and the last result it produced.
+        """An instance's current state and the result it should display.
 
-        The result is read through the instance's pointer, not through the
-        current fingerprint, which is what lets a stale instance keep showing what
-        it last produced.
+        When the instance is fresh, its current fingerprint has a stored result
+        and takes precedence over any older pointer left from a previous config.
+        Otherwise the result is read through the instance's pointer, which lets
+        a stale instance keep showing what it last produced.
         """
         snapshots = await self._snapshots(
             workspace_id=workspace_id,
@@ -536,12 +544,12 @@ class RunService:
                 "unknown_target",
                 f"{_describe_key(key)} is not an instance of project {project_id}",
             )
-        pointer = await self._result_store_factory(workspace_id).get_pointer(key)
-        if pointer is None or pointer.last_result_fingerprint is None:
+        result_fingerprint = snapshot.last_result_fingerprint
+        if result_fingerprint is None:
             return snapshot, None
         result = await self._result_store_factory(
             workspace_id,
-        ).get_result(pointer.last_result_fingerprint)
+        ).get_result(result_fingerprint)
         return snapshot, result
 
     async def project_changed(
@@ -770,14 +778,17 @@ class RunService:
                     # and no failure at this fingerprint, it shows no instance state.
                     continue
                 pointer = await store.get_pointer(key)
+                last_result_fingerprint = (
+                    fingerprint
+                    if state is InstanceState.FRESH
+                    else (None if pointer is None else pointer.last_result_fingerprint)
+                )
                 snapshots.append(
                     InstanceStateSnapshot(
                         key=key,
                         state=state,
                         fingerprint=fingerprint,
-                        last_result_fingerprint=(
-                            None if pointer is None else pointer.last_result_fingerprint
-                        ),
+                        last_result_fingerprint=last_result_fingerprint,
                         error=_pointer_error(state, pointer),
                     )
                 )

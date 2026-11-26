@@ -235,8 +235,6 @@ async function mount() {
     );
     const artifactViewerActivityRevisionRef = React.useRef(0);
     const [, setRunErrorState] = React.useState<string | null>(null);
-    const [, setArtifactViewerSelections] = React.useState({});
-    const [, setArtifactViewerFields] = React.useState({});
     const [, setArtifactViewerActivities] = React.useState({});
 
     const roomCommandSyncRef = React.useRef<WorkbenchRoomCommandSync>({
@@ -294,8 +292,6 @@ async function mount() {
       localAuthoringEnabledRef,
       presentationRoomSyncRef,
       setArtifactViewerActivities,
-      setArtifactViewerFields,
-      setArtifactViewerSelections,
       setArtifactViewers,
       setRunError: setRunErrorState,
     });

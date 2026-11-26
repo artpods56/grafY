@@ -900,6 +900,7 @@ class NodeSecretService(NodeSecretResolverPort):
         elif operator_id in {
             "llm.openai_compatible.chat_completion",
             "llm.ocr.provider",
+            "llm.crop_reader.provider",
         }:
             endpoint = dependencies.get("base_url")
             if config.openai_base_url is None or not isinstance(endpoint, str):

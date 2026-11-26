@@ -40,6 +40,8 @@ export type ArtifactRef = Schemas["ArtifactRef"];
 export type ArtifactRefSequence = Schemas["ArtifactRefSequence"];
 export type ArtifactOutputValue = Schemas["ArtifactOutputValue"];
 export type ArtifactSummary = Schemas["ArtifactSummaryResponse"];
+export type CreateArtifactRequest = Schemas["CreateArtifactRequest"];
+export type CreateArtifactResponse = Schemas["CreateArtifactResponse"];
 export type ArtifactExportFormat = Schemas["ArtifactExportFormatResponse"];
 export type TablePage = Schemas["TablePageResponse"];
 export type TableCell = Schemas["TableCellResponse"];
@@ -77,7 +79,7 @@ export type SavedGraphOrigin = Schemas["GraphOrigin"];
 export type GraphPresentationDocument = Schemas["GraphPresentationDocument"];
 
 /** A Graph inside a Project document: its own id, name and document. */
-export type GraphDefinition = Schemas["GraphDefinition"];
+export type GraphDefinition = Schemas["GraphDefinition-Output"];
 
 /**
  * The authoring view of one Graph inside a Project. The revision is the
@@ -117,6 +119,10 @@ export type ProjectCheckpointList = Schemas["ProjectCheckpointListResponse"];
 export type ProjectCheckpoint = Schemas["ProjectCheckpointResponse"];
 
 export type CopyExactHeadRequest = Schemas["CopyExactHeadRequest"];
+export type ProjectExport = Schemas["ProjectExportResponse"];
+export type ImportProjectRequest = Schemas["ImportProjectRequest"];
+export type ProjectImportWarning = Schemas["ProjectImportWarning"];
+export type ImportProjectResponse = Schemas["ImportProjectResponse"];
 
 export type ProjectBrowserList = Schemas["ProjectBrowserListResponse"];
 export type SavedGraphSummary = ProjectSummary;
@@ -261,6 +267,7 @@ export type LibraryList = Schemas["LibraryListResponse"];
 export type LibraryFolder = Schemas["LibraryFolderResponse"];
 export type SaveInstanceArtifactRequest =
   Schemas["SaveInstanceArtifactRequest"];
+export type SaveArtifactRequest = Schemas["SaveArtifactRequest"];
 export type SaveUploadedArtifactRequest =
   Schemas["SaveUploadedArtifactRequest"];
 

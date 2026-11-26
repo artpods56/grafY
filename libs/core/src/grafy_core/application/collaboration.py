@@ -45,6 +45,7 @@ from grafy_core.domain.collaboration import (
     command_hmac_digest,
     command_requires_exact_sequence,
     sanitize_project_for_cross_workspace_copy,
+    sanitize_project_for_portable_export,
 )
 from grafy_core.domain.errors import (
     CapabilityDeniedError,
@@ -129,6 +130,18 @@ class ProjectCopy(NamedTuple):
 
     ``receipt`` is present only when the caller passed the ``command_id`` that makes a
     retried copy replayable.
+    """
+
+    project: Project
+    head: ProjectHead
+    receipt: ProjectCommandReceipt | None
+
+
+class ProjectImport(NamedTuple):
+    """The new Project a portable JSON import produced, with its own head.
+
+    ``receipt`` is present only when the caller passed the ``command_id`` that makes a
+    retried import replayable.
     """
 
     project: Project
@@ -791,6 +804,111 @@ class CollaborationService:
             await uow.commit()
         return ProjectCopy(project=staged.project, head=staged.head, receipt=receipt)
 
+    async def import_project(
+        self,
+        *,
+        actor: ActorContext,
+        workspace_id: UUID,
+        name: str,
+        document: ProjectDocument,
+        project_id: UUID | None = None,
+        command_id: UUID | None = None,
+    ) -> ProjectImport:
+        """Create a new Project from a portable multi-graph ProjectDocument.
+
+        Sanitizes workspace- and deployment-local references on entry (defense in
+        depth), requires at least one Graph, and stages checkpoint 1, the head, and
+        the checkpoint mapping atomically. Pass ``project_id`` and ``command_id``
+        together to make retries idempotent.
+        """
+
+        self._require_id_pair(project_id=project_id, command_id=command_id)
+        normalized_name = validated_project_name(name)
+        if not document.graphs:
+            raise CollaborationCommandRejectedError(
+                code="empty_project",
+                message="Imported project must contain at least one graph",
+            )
+        sanitized_document = sanitize_project_for_portable_export(document)
+        resolved_project_id = uuid4() if project_id is None else project_id
+        project = Project(
+            workspace_id=workspace_id,
+            name=normalized_name,
+            created_by_user_id=actor.user_id,
+            id=resolved_project_id,
+        )
+        opening_batch: tuple[ProjectCommand, ...] = tuple(
+            AddGraphCommand(
+                graph_id=graph.id,
+                name=graph.name,
+                document=graph.document,
+            )
+            for graph in sanitized_document.graphs
+        )
+        async with self._uow_factory() as uow:
+            access = await self._authorize(
+                uow,
+                actor=actor,
+                workspace_id=workspace_id,
+                capability=WorkspaceCapability.CREATE_PROJECT,
+                operation="collaboration.project.import",
+                resource_id=str(project.id),
+            )
+            try:
+                access.require(WorkspaceCapability.CHECKPOINT_PROJECT)
+            except CapabilityDeniedError:
+                await self._reject(
+                    uow,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    operation="collaboration.project.import",
+                    error_code="capability_denied",
+                    resource_id=str(project.id),
+                )
+                raise
+
+            replay = await self._opening_replay(
+                uow,
+                actor=actor,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                name=project.name,
+                commands=opening_batch,
+                command_id=command_id,
+                operation="collaboration.project.import",
+            )
+            if replay is not None:
+                return ProjectImport(
+                    project=replay.project,
+                    head=replay.head,
+                    receipt=replay.receipt,
+                )
+
+            staged = await stage_project(
+                project,
+                sanitized_document,
+                projects=uow.projects,
+                collaboration=uow.collaboration,
+            )
+            receipt = await self._stage_opening_receipt(
+                uow,
+                actor=actor,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                head=staged.head,
+                commands=opening_batch,
+                command_id=command_id,
+            )
+            await self._success(
+                uow,
+                actor=actor,
+                workspace_id=workspace_id,
+                operation="collaboration.project.import",
+                resource_id=str(project.id),
+            )
+            await uow.commit()
+        return ProjectImport(project=staged.project, head=staged.head, receipt=receipt)
+
     async def delete_project(
         self,
         *,
@@ -1188,4 +1306,5 @@ __all__ = [
     "CommandSubmission",
     "ProjectCopy",
     "ProjectCreation",
+    "ProjectImport",
 ]

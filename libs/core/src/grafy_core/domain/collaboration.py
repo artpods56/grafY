@@ -526,19 +526,198 @@ def _binding_for_variable(
     return None
 
 
-def _sanitize_config_value(value: object) -> object:
+def _sanitize_config_value_with_count(value: object) -> tuple[object, int]:
     if isinstance(value, dict):
         sanitized: dict[str, object] = {}
+        removed = 0
         for key, item in value.items():
             if key in {"upload_key", "artifact_id"}:
+                removed += 1
                 continue
             if key == "uploads" and isinstance(item, list):
+                removed += 1
                 continue
-            sanitized[key] = _sanitize_config_value(item)
-        return sanitized
+            clean_item, nested_removed = _sanitize_config_value_with_count(item)
+            sanitized[key] = clean_item
+            removed += nested_removed
+        return sanitized, removed
     if isinstance(value, list):
-        return [_sanitize_config_value(item) for item in value]
-    return value
+        items: list[object] = []
+        removed = 0
+        for item in value:
+            clean_item, nested_removed = _sanitize_config_value_with_count(item)
+            items.append(clean_item)
+            removed += nested_removed
+        return items, removed
+    return value, 0
+
+
+def _sanitize_config_value(value: object) -> object:
+    sanitized, _ = _sanitize_config_value_with_count(value)
+    return sanitized
+
+
+PROJECT_EXPORT_FORMAT: Literal["grafy.project"] = "grafy.project"
+PROJECT_EXPORT_FORMAT_VERSION: Literal[1] = 1
+
+
+class ProjectExportDocument(CollaborationValue):
+    """Versioned portable JSON envelope for transferring a whole Project."""
+
+    format: Literal["grafy.project"] = PROJECT_EXPORT_FORMAT
+    format_version: Literal[1] = PROJECT_EXPORT_FORMAT_VERSION
+    name: str
+    document: ProjectDocument
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return validated_project_name(value)
+
+
+@dataclass(frozen=True, slots=True)
+class PortableSanitizationSummary:
+    """Counts of workspace- or deployment-local entries removed during portable transfer."""
+
+    stripped_origins: int = 0
+    stripped_artifact_cards: int = 0
+    stripped_library_context_links: int = 0
+    stripped_card_context_links: int = 0
+    stripped_legacy_config_keys: int = 0
+    reset_refresh_generations: int = 0
+
+
+def sanitize_document_for_portable_transfer(
+    document: GraphDocument,
+) -> tuple[GraphDocument, PortableSanitizationSummary]:
+    """Strip all workspace- and deployment-local references from one Graph."""
+
+    sanitized_nodes: list[GraphNode] = []
+    stripped_legacy_config_keys = 0
+    for node in document.nodes:
+        clean_config, removed_keys = _sanitize_config_value_with_count(
+            node.config_dict()
+        )
+        stripped_legacy_config_keys += removed_keys
+        sanitized_nodes.append(node.model_copy(update={"config": clean_config}))
+
+    known_nodes = {node.id for node in sanitized_nodes}
+    removed_viewer_ids = {
+        viewer.id
+        for viewer in document.presentation.viewers
+        if viewer.artifact_ref is not None
+    }
+    presentation = GraphPresentationDocument(
+        viewers=tuple(
+            viewer
+            for viewer in document.presentation.viewers
+            if viewer.artifact_ref is None
+        ),
+        links=tuple(
+            link
+            for link in document.presentation.links
+            if link.source_node_id in known_nodes
+            and link.target_viewer_id not in removed_viewer_ids
+        ),
+        bindings=tuple(
+            binding
+            for binding in document.presentation.bindings
+            if binding.source_viewer_id not in removed_viewer_ids
+            and binding.target_viewer_id not in removed_viewer_ids
+        ),
+        annotations=document.presentation.annotations,
+    )
+
+    stripped_library_context_links = 0
+    stripped_card_context_links = 0
+    sanitized_agents: list[GraphAgent] = []
+    for agent in document.agents:
+        kept_context = []
+        for link in agent.context:
+            if link.kind == "library_item":
+                stripped_library_context_links += 1
+                continue
+            if link.kind == "card" and link.card_id in removed_viewer_ids:
+                stripped_card_context_links += 1
+                continue
+            kept_context.append(link)
+        sanitized_agents.append(
+            agent.model_copy(update={"context": tuple(kept_context)})
+        )
+
+    sanitized = GraphDocument(
+        agents=tuple(sanitized_agents),
+        nodes=tuple(sanitized_nodes),
+        edges=document.edges,
+        presentation=presentation,
+    )
+    summary = PortableSanitizationSummary(
+        stripped_origins=len(document.origins),
+        stripped_artifact_cards=len(removed_viewer_ids),
+        stripped_library_context_links=stripped_library_context_links,
+        stripped_card_context_links=stripped_card_context_links,
+        stripped_legacy_config_keys=stripped_legacy_config_keys,
+    )
+    return sanitized, summary
+
+
+def sanitize_project_for_portable_transfer(
+    document: ProjectDocument,
+) -> tuple[ProjectDocument, PortableSanitizationSummary]:
+    """Strip workspace-local state and refresh generations from every Graph of a Project."""
+
+    sanitized_graphs: list[GraphDefinition] = []
+    stripped_origins = 0
+    stripped_artifact_cards = 0
+    stripped_library_context_links = 0
+    stripped_card_context_links = 0
+    stripped_legacy_config_keys = 0
+    reset_refresh_generations = 0
+
+    for graph in document.graphs:
+        clean_graph_doc, graph_summary = sanitize_document_for_portable_transfer(
+            graph.document
+        )
+        stripped_origins += graph_summary.stripped_origins
+        stripped_artifact_cards += graph_summary.stripped_artifact_cards
+        stripped_library_context_links += graph_summary.stripped_library_context_links
+        stripped_card_context_links += graph_summary.stripped_card_context_links
+        stripped_legacy_config_keys += graph_summary.stripped_legacy_config_keys
+        reset_refresh_generations += len(graph.refresh_generations)
+        sanitized_graphs.append(
+            GraphDefinition(
+                id=graph.id,
+                name=graph.name,
+                document=clean_graph_doc,
+                refresh_generations={},
+            )
+        )
+
+    return (
+        ProjectDocument(graphs=tuple(sanitized_graphs)),
+        PortableSanitizationSummary(
+            stripped_origins=stripped_origins,
+            stripped_artifact_cards=stripped_artifact_cards,
+            stripped_library_context_links=stripped_library_context_links,
+            stripped_card_context_links=stripped_card_context_links,
+            stripped_legacy_config_keys=stripped_legacy_config_keys,
+            reset_refresh_generations=reset_refresh_generations,
+        ),
+    )
+
+
+def sanitize_document_for_portable_export(document: GraphDocument) -> GraphDocument:
+    """Return a single Graph sanitized for portable cross-environment export/import."""
+
+    sanitized, _ = sanitize_document_for_portable_transfer(document)
+    return sanitized
+
+
+def sanitize_project_for_portable_export(document: ProjectDocument) -> ProjectDocument:
+    """Return a ProjectDocument sanitized for portable cross-environment export/import."""
+
+    sanitized, _ = sanitize_project_for_portable_transfer(document)
+    return sanitized
 
 
 def sanitize_document_for_cross_workspace_copy(
@@ -1385,10 +1564,14 @@ __all__ = [
     "MoveNodePosition",
     "MoveNodesCommand",
     "PROJECT_COMMAND_ADAPTER",
+    "PROJECT_EXPORT_FORMAT",
+    "PROJECT_EXPORT_FORMAT_VERSION",
+    "PortableSanitizationSummary",
     "ProjectCheckpointMapping",
     "ProjectCommand",
     "ProjectCommandKind",
     "ProjectCommandReceipt",
+    "ProjectExportDocument",
     "ProjectHead",
     "RefreshNodeCommand",
     "RemoveEdgesCommand",
@@ -1413,5 +1596,9 @@ __all__ = [
     "command_requires_exact_sequence",
     "empty_project_document",
     "sanitize_document_for_cross_workspace_copy",
+    "sanitize_document_for_portable_export",
+    "sanitize_document_for_portable_transfer",
     "sanitize_project_for_cross_workspace_copy",
+    "sanitize_project_for_portable_export",
+    "sanitize_project_for_portable_transfer",
 ]

@@ -60,6 +60,17 @@ describe("EmptyCanvasStarter", () => {
     );
     expect(container.textContent).toContain("Try a sample historical page");
     expect(container.textContent).toContain("Browse steps");
+    expect(container.textContent).not.toContain("Create artifact");
+  });
+
+  it("offers creating an artifact when that action is provided", async () => {
+    const onCreateArtifact = vi.fn();
+    const { container } = await renderStarter({ onCreateArtifact });
+    expect(container.textContent).toContain("Create artifact");
+    await act(async () => {
+      buttonNamed(container, "Create artifact").click();
+    });
+    expect(onCreateArtifact).toHaveBeenCalledTimes(1);
   });
 
   it("sends a chosen file, the sample, and a request to browse steps", async () => {

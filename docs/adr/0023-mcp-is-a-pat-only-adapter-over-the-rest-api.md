@@ -22,10 +22,12 @@ constant that was both the default and the maximum.
 
 ## Decision
 
-**Transport.** The official MCP Python SDK (`mcp` 2.x `MCPServer`) serves stateless
-Streamable HTTP with JSON responses at FastAPI `/mcp` (public `/api/mcp`). Its session
-manager runs inside the API lifespan, one per lifespan. There is no stdio server and no
-second port.
+**Transport.** A FastMCP server (`fastmcp` 4.x, over the `mcp` 2.x protocol types)
+serves stateless Streamable HTTP with JSON responses at FastAPI `/mcp` (public
+`/api/mcp`). Its HTTP app, and the session manager inside it, is built and run once per
+API lifespan. There is no stdio server and no second port. FastMCP needs Starlette 1, so
+the API no longer pins `starlette<1`; that pin only ever served Prefect, which is gone.
+The gate in front of it reads at most 4 MiB of body and answers `413` beyond that.
 
 **Admission is PAT-only.** A request needs exactly one `Authorization: Bearer` personal
 access token, resolved by the same `AuthService` the REST routes use. A request that also
@@ -42,14 +44,34 @@ route's `403`, relayed as a tool error. The Workspace comes from the token, neve
 tool argument. `tests/unit/architecture/test_import_boundaries.py` forbids the adapter
 from importing routes, services, runs, persistence or storage.
 
+**The tool set is what a person can do in the Workbench**, over the routes a PAT
+reaches: file, star, archive, copy, export and import Projects; restore checkpoints;
+edit a canvas; run and read results; keep results and folders in the Library; manage
+node secrets; talk to canvas Agents. Routes a PAT cannot reach (identity, members,
+personal credentials) have no tool, and a scope a token lacks is the route's `403`.
+
 **Authoring is validated twice.** `author_graph` builds the Graph with `GraphBuilder`
 against the live node catalog (operator identity, config schema, port shapes, artifact
 types, conversions, required inputs, cycles), then writes it as one `add_graph` or
 `replace_document` batch and checkpoints it. The server validates that batch again.
+
+**A canvas edit is the Workbench's own commands.** The canvas tools (`move_items`,
+`connect`, `configure_node`, `remove_items`, `add_card`, `arrange_graph`, ...) edit a
+copy of one Graph's live document and submit the difference that
+`grafy_client.graph_commands` derives: `move_nodes` for a drag, `add_edge` for a wire,
+`update_node_configuration` per changed field, each carrying the value it expects to
+replace. Peers in the room see the same events a collaborator's gestures produce, and a
+stale edit is refused rather than overwriting someone else's change. A whole-document
+`replace_document` is reserved for `author_graph`. Wiring is checked first by
+`GraphBuilder.from_document`, which loads the live Graph (keeping nodes the catalog
+cannot describe, layouts, annotations and Agents untouched) so `connect` and `place`
+validate against the catalog exactly as they do for a new Graph.
 Origins carry the exact `ArtifactRef`, content hash included; the tool resolves a
-missing hash from the Library. Artifact cards are authored only in the two forms the
-Workbench creates (a Library card and a card following an output), plus card-to-card
-interaction bindings; the deprecated standalone viewer is not authorable.
+missing hash from the Library. `create_artifact` writes a new Workspace artifact
+through REST with `edit_project` and returns the exact reference. To place that
+artifact on the canvas, pass its hash and versioned type to `author_graph` as a
+standalone card. The graph spec can also bind the card to node inputs and other
+cards, or define a card that follows a node output.
 
 **Workspace listing accepts a PAT.** `GET /v1/workspaces` answers a token with its one
 Workspace and the capabilities it holds there (scopes ∩ role). Identity, credential and
@@ -82,8 +104,17 @@ content route refuses an expired target before reading the body. The gateway's
 intersection and post-commit publication that live in the routes, and a missed step
 leaves a room or instance state silently stale.
 
-**Expose every REST operation as a tool automatically.** Rejected: agents need a small
-set of task-shaped tools with validated authoring, not ninety endpoints.
+**Expose every REST operation as a tool automatically** (FastMCP's OpenAPI import).
+Rejected: agents need task-shaped tools with validated authoring, not ninety
+endpoints; one tool per Workbench gesture is the unit, and most gestures are command
+batches, not routes.
+
+**Submit every canvas edit as `replace_document`.** Rejected: peers would see the
+Graph swapped wholesale and any concurrent edit anywhere in it would conflict.
+
+**Keep the official SDK's `MCPServer`.** Rejected once the tool set grew: FastMCP adds
+tool annotations (read-only, destructive, idempotent), tags, resource templates and
+prompts the agent clients use, with the same wire protocol.
 
 **Accept the browser session on `/mcp`.** Rejected: it would let a cross-site page drive
 MCP with the user's cookie.

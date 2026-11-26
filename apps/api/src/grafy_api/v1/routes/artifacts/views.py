@@ -4,7 +4,10 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Path, Query
 from fastapi.responses import Response, StreamingResponse
 
+from grafy_api.artifacts.authoring import InvalidArtifactPayloadError
 from grafy_api.artifacts.models import (
+    CreateArtifactRequest,
+    CreateArtifactResponse,
     GeoExactFeatureResponse,
     GeoFeatureQueryRequest,
     GeoFeatureQueryResponse,
@@ -34,6 +37,7 @@ from grafy_api.artifacts.errors import (
 )
 from grafy_api.artifacts.images import ImageProxyError
 from .dependencies import (
+    ArtifactAuthoringDependency,
     ArtifactContentDependency,
     ArtifactGeoDependency,
     ArtifactGeoTileDependency,
@@ -51,6 +55,47 @@ ViewArtifacts = Annotated[
     WorkspaceAccess,
     get_args(require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS))[1],
 ]
+
+EditProject = Annotated[
+    WorkspaceAccess,
+    get_args(require_workspace_capability(WorkspaceCapability.EDIT_PROJECT))[1],
+]
+
+
+@router.post(
+    "/artifacts",
+    status_code=201,
+    response_model=CreateArtifactResponse,
+    responses={404: {"description": "Referenced artifact not found"}},
+)
+async def create_artifact(
+    body: CreateArtifactRequest,
+    service: ArtifactAuthoringDependency,
+    access: EditProject,
+) -> CreateArtifactResponse:
+    try:
+        artifact, created_at = await service.create(
+            access.workspace_id,
+            artifact_type=body.artifact_type,
+            schema_version=body.schema_version,
+            payload=body.payload,
+            derived_from_artifact_id=body.derived_from_artifact_id,
+            title=body.title,
+            author_id=access.actor.user_id,
+            authored_by=(
+                "agent" if access.actor.credential_workspace_id is not None else "user"
+            ),
+        )
+    except InvalidArtifactPayloadError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return CreateArtifactResponse(
+        artifact_id=artifact.id,
+        artifact_type=artifact.artifact_type,
+        schema_version=artifact.schema_version,
+        content_hash=artifact.sha256,
+        derived_from_artifact_id=body.derived_from_artifact_id,
+        created_at=created_at,
+    )
 
 
 def _geo_error(exc: WorkbenchOperationError | ImageProxyError) -> HTTPException:
@@ -170,7 +215,7 @@ async def query_geo_features(
 async def get_geo_exact_feature(
     source_id: UUID,
     service: ArtifactGeoTileDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
     feature_index: Annotated[int, Path(ge=0)],
 ) -> GeoExactFeatureResponse:
     artifact = await service.get(access.workspace_id, source_id)
@@ -185,6 +230,56 @@ async def get_geo_exact_feature(
     if feature is None:
         raise HTTPException(status_code=404, detail="Feature not found")
     return feature
+
+
+@router.get(
+    "/artifacts/{source_id}/geo/features.geojson",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/geo+json": {}}},
+        400: {
+            "model": WorkbenchErrorResponse,
+            "description": "Not a feature collection",
+        },
+        404: {"model": WorkbenchErrorResponse, "description": "Artifact not found"},
+        413: {
+            "model": WorkbenchErrorResponse,
+            "description": "Too many features to draw on a map",
+        },
+        500: {
+            "model": WorkbenchErrorResponse,
+            "description": "Feature content is unavailable",
+        },
+    },
+)
+async def get_geo_features_geojson(
+    source_id: UUID,
+    service: ArtifactGeoTileDependency,
+    access: ViewArtifacts,
+) -> Response:
+    """Every stored feature of one collection, as the GeoJSON the map draws."""
+    artifact = await service.get(access.workspace_id, source_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    try:
+        content = await service.load_feature_geojson(artifact)
+    except ArtifactResponseTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except ArtifactContentUnavailableError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except WorkbenchOperationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    headers = {
+        "Content-Length": str(len(content)),
+        "Cache-Control": "private, max-age=300",
+    }
+    if artifact.sha256 is not None:
+        headers["ETag"] = f'"{artifact.sha256}"'
+    return Response(
+        content=content,
+        media_type="application/geo+json",
+        headers=headers,
+    )
 
 
 @router.get(
@@ -300,7 +395,7 @@ async def get_geo_raster_tile(
 async def get_table_artifact_page(
     artifact_id: UUID,
     service: ArtifactTableDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     column_offset: Annotated[int, Query(ge=0)] = 0,
@@ -361,7 +456,7 @@ async def get_table_artifact_page(
 async def get_table_artifact_schema(
     artifact_id: UUID,
     service: ArtifactTableDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
 ) -> TableSchemaResponse:
     artifact = await service.get(access.workspace_id, artifact_id)
     if artifact is None:
@@ -397,7 +492,7 @@ async def query_table_artifact_page(
     artifact_id: UUID,
     query: TableQueryRequest,
     service: ArtifactTableDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
 ) -> TablePageResponse:
     requested_column_count = (
         len(query.column_ids) if query.column_ids is not None else query.column_limit
@@ -455,7 +550,7 @@ async def query_table_artifact_page(
 async def get_table_artifact_cell(
     artifact_id: UUID,
     service: ArtifactTableDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
     row_index: Annotated[int, Query(ge=0)],
     column_id: Annotated[str, Query(min_length=1)],
 ) -> TableCellResponse:
@@ -496,7 +591,7 @@ async def create_table_text_artifacts(
     body: TableTextArtifactsRequest,
     service: ArtifactTableDependency,
     # It writes artifacts, and what it is for is placing one on a canvas.
-    access: require_workspace_capability(WorkspaceCapability.EDIT_PROJECT),
+    access: EditProject,
 ) -> TableTextArtifactsResponse:
     artifact = await service.get(access.workspace_id, artifact_id)
     if artifact is None:
@@ -534,7 +629,7 @@ async def create_table_text_artifacts(
 async def get_artifact_content(
     artifact_id: UUID,
     service: ArtifactContentDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
 ) -> StreamingResponse:
     artifact = await service.get(access.workspace_id, artifact_id)
     if artifact is None:
@@ -571,7 +666,7 @@ async def get_artifact_content(
 async def get_artifact_download(
     artifact_id: UUID,
     service: ArtifactContentDependency,
-    access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+    access: ViewArtifacts,
     format: Annotated[
         str,
         Query(min_length=1, max_length=32, pattern=r"^[a-z0-9_.-]+$"),
@@ -614,10 +709,12 @@ async def get_artifact_download(
 
 
 __all__ = [
+    "create_artifact",
     "create_table_text_artifacts",
     "get_artifact_content",
     "get_artifact_download",
     "get_geo_exact_feature",
+    "get_geo_features_geojson",
     "get_geo_raster_tile",
     "get_geo_raster_tilejson",
     "get_geo_render_descriptor",

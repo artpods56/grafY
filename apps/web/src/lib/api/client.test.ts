@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, onUnauthorized, readBrowserCookie, request } from "./client";
+import {
+  ApiError,
+  notifyUnauthorized,
+  onUnauthorized,
+  readBrowserCookie,
+  request,
+} from "./client";
 
 const csrfSentinel = "csrf-sentinel-value";
 
@@ -194,5 +200,28 @@ describe("browser API transport", () => {
     expect(notified).toBe(true);
     bodyController?.error(new Error("stop test stream"));
     await expect(pendingRequest).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("notifyUnauthorized", () => {
+  it("invokes every registered listener and skips one that unsubscribed", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const unsubscribeFirst = onUnauthorized(first);
+    const unsubscribeSecond = onUnauthorized(second);
+
+    try {
+      notifyUnauthorized();
+      expect(first).toHaveBeenCalledOnce();
+      expect(second).toHaveBeenCalledOnce();
+
+      unsubscribeFirst();
+      notifyUnauthorized();
+      expect(first).toHaveBeenCalledOnce();
+      expect(second).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribeFirst();
+      unsubscribeSecond();
+    }
   });
 });

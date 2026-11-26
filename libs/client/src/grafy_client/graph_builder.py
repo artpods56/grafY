@@ -16,6 +16,7 @@ from grafy_core.artifacts import (
     NodeOutput,
 )
 from grafy_core.domain.graph_documents import (
+    GraphAgent,
     GraphPoint,
     GraphArtifactTypeBinding,
     GraphConversion,
@@ -23,8 +24,11 @@ from grafy_core.domain.graph_documents import (
     GraphEdge,
     GraphInputPlug,
     GraphNode,
+    GraphNodeKind,
+    GraphNodeLayout,
     GraphOrigin,
     GraphPresentationBinding,
+    GraphPresentationAnnotation,
     GraphPresentationBindingMapping,
     GraphPresentationDocument,
     GraphPresentationLink,
@@ -107,6 +111,16 @@ class _AuthoredNode:
     bindings: dict[str, ArtifactTypeKey]
     input_plugs: list[GraphInputPlug]
     position: GraphPoint | None
+    kind: GraphNodeKind = "builtin"
+    layout: GraphNodeLayout | None = None
+
+
+def _fresh_id(prefix: str, start: int, taken: set[str]) -> str:
+    """``prefix-NNNN`` from ``start`` up, skipping ids a loaded Graph already uses."""
+    number = start
+    while f"{prefix}-{number:04d}" in taken:
+        number += 1
+    return f"{prefix}-{number:04d}"
 
 
 def _port(ports: Sequence[CatalogPort], name: str) -> CatalogPort | None:
@@ -135,6 +149,91 @@ class GraphBuilder:
         self._cards: list[GraphPresentationViewer] = []
         self._card_links: list[GraphPresentationLink] = []
         self._card_bindings: list[GraphPresentationBinding] = []
+        # Loaded from an existing Graph and carried through unchanged: nodes the
+        # catalog cannot describe (call nodes, modules, a node of an unsubscribed
+        # pack), canvas annotations and Agents.
+        self._opaque_nodes: dict[str, GraphNode] = {}
+        self._node_order: list[str] = []
+        self._annotations: list[GraphPresentationAnnotation] = []
+        self._agents: list[GraphAgent] = []
+
+    @classmethod
+    def from_document(
+        cls, catalog: NodeCatalog, document: GraphDocument
+    ) -> "GraphBuilder":
+        """A builder holding an existing Graph, to edit it with the same checks.
+
+        Every builtin node the catalog describes becomes a handle that
+        :meth:`connect`, :meth:`place` and :meth:`add_output_card` validate against;
+        anything else is kept as it is. :meth:`build` returns the Graph with the
+        edits applied and every untouched part, layouts and annotations included,
+        exactly as loaded.
+        """
+        builder = cls(catalog)
+        for node in document.nodes:
+            builder._node_order.append(node.id)
+            catalog_node = next(
+                (
+                    candidate
+                    for candidate in catalog.nodes
+                    if node.kind == "builtin"
+                    and candidate.operator_id == node.operator_id
+                    and candidate.operator_version == node.operator_version
+                ),
+                None,
+            )
+            if catalog_node is None:
+                builder._opaque_nodes[node.id] = node
+                continue
+            builder._nodes.append(
+                _AuthoredNode(
+                    handle=NodeHandle(
+                        node_id=node.id, builder_identity=builder._identity
+                    ),
+                    catalog_node=catalog_node,
+                    config=node.config_dict(),
+                    bindings=node.artifact_type_binding_map(),
+                    input_plugs=list(node.input_plugs),
+                    position=node.position,
+                    kind=node.kind,
+                    layout=node.layout,
+                )
+            )
+        builder._edges = list(document.edges)
+        builder._origins = list(document.origins)
+        builder._cards = list(document.presentation.viewers)
+        builder._card_links = list(document.presentation.links)
+        builder._card_bindings = list(document.presentation.bindings)
+        builder._annotations = list(document.presentation.annotations)
+        builder._agents = list(document.agents)
+        return builder
+
+    def node(self, node_id: str) -> NodeHandle:
+        """The handle of a node this builder holds, by id."""
+        authored = self._find_node(node_id)
+        if authored is None:
+            if node_id in self._opaque_nodes:
+                raise GraphBuilderError(
+                    f"Node {node_id!r} is not in the catalog (a call or module "
+                    "node, or a node of an unsubscribed pack); it cannot be "
+                    "validated here"
+                )
+            raise GraphBuilderError(f"No node {node_id!r} in this graph")
+        return authored.handle
+
+    def card(self, card_id: str) -> CardHandle:
+        """The handle of a card this builder holds, by id."""
+        for viewer in self._cards:
+            if viewer.id == card_id:
+                return CardHandle(
+                    card_id=viewer.id,
+                    artifact_ref=viewer.artifact_ref,
+                    builder_identity=self._identity,
+                )
+        raise GraphBuilderError(f"No card {card_id!r} in this graph")
+
+    def _node_ids(self) -> set[str]:
+        return {node.handle.node_id for node in self._nodes} | set(self._opaque_nodes)
 
     def add[
         ConfigT: NodeConfig,
@@ -339,11 +438,14 @@ class GraphBuilder:
                 catalog_node.operator_id.lower(),
             ).strip("-")
             node_id = f"node-{node_number:04d}-{slug}"
+            while node_id in self._node_ids():
+                node_number += 1
+                node_id = f"node-{node_number:04d}-{slug}"
         elif node_id.strip() != node_id or node_id == "":
             raise GraphBuilderError(
                 f"Node id {node_id!r} must be non-blank and trimmed"
             )
-        if self._find_node(node_id) is not None:
+        if node_id in self._node_ids():
             raise GraphBuilderError(f"Node id {node_id!r} is already in this graph")
         handle = NodeHandle(node_id=node_id, builder_identity=self._identity)
         explicit_bindings = dict(bindings or {})
@@ -356,6 +458,7 @@ class GraphBuilder:
                 "received unknown artifact type bindings: "
                 + ", ".join(unknown_bindings)
             )
+        self._node_order.append(node_id)
         self._nodes.append(
             _AuthoredNode(
                 handle=handle,
@@ -516,12 +619,17 @@ class GraphBuilder:
         input_plug: GraphInputPlug | None = None
         if target_port.instance_plugs:
             input_plug = GraphInputPlug(
-                id=f"plug-{len(target_node.input_plugs) + 1:04d}",
+                id=_fresh_id(
+                    "plug",
+                    len(target_node.input_plugs) + 1,
+                    {plug.id for plug in target_node.input_plugs},
+                ),
                 port=target.port,
             )
-        edge_number = len(self._edges) + 1
         edge = GraphEdge(
-            id=f"edge-{edge_number:04d}",
+            id=_fresh_id(
+                "edge", len(self._edges) + 1, {edge.id for edge in self._edges}
+            ),
             from_node=source.node_id,
             from_port=source.port,
             to_node=target.node_id,
@@ -562,7 +670,9 @@ class GraphBuilder:
         raise GraphBuilderError(f"Card {card.card_id} is not in this graph")
 
     def _next_card_id(self) -> str:
-        return f"artifact-viewer-{len(self._cards) + 1:04d}"
+        return _fresh_id(
+            "artifact-viewer", len(self._cards) + 1, {card.id for card in self._cards}
+        )
 
     def _card_position(self, position: GraphPoint | None) -> GraphPoint:
         if position is not None:
@@ -644,11 +754,19 @@ class GraphBuilder:
         input_plug: GraphInputPlug | None = None
         if target_port.instance_plugs:
             input_plug = GraphInputPlug(
-                id=f"plug-{len(target_node.input_plugs) + 1:04d}",
+                id=_fresh_id(
+                    "plug",
+                    len(target_node.input_plugs) + 1,
+                    {plug.id for plug in target_node.input_plugs},
+                ),
                 port=target.port,
             )
         origin = GraphOrigin(
-            id=f"origin-{len(self._origins) + 1:04d}",
+            id=_fresh_id(
+                "origin",
+                len(self._origins) + 1,
+                {origin.id for origin in self._origins},
+            ),
             to_node=target.node_id,
             to_port=target.port,
             to_plug=None if input_plug is None else input_plug.id,
@@ -753,7 +871,11 @@ class GraphBuilder:
         self._add_card(viewer)
         self._card_links.append(
             GraphPresentationLink(
-                id=f"artifact-viewer-edge-{len(self._card_links) + 1:04d}",
+                id=_fresh_id(
+                    "artifact-viewer-edge",
+                    len(self._card_links) + 1,
+                    {link.id for link in self._card_links},
+                ),
                 source_node_id=source.node_id,
                 source_port_name=source.port,
                 target_viewer_id=viewer.id,
@@ -790,7 +912,11 @@ class GraphBuilder:
             raise GraphBuilderError("A card binding needs at least one field pair")
         try:
             binding = GraphPresentationBinding(
-                id=f"artifact-viewer-binding-{len(self._card_bindings) + 1:04d}",
+                id=_fresh_id(
+                    "artifact-viewer-binding",
+                    len(self._card_bindings) + 1,
+                    {binding.id for binding in self._card_bindings},
+                ),
                 source_viewer_id=source_viewer.id,
                 target_viewer_id=target_viewer.id,
                 mappings=tuple(
@@ -806,7 +932,91 @@ class GraphBuilder:
         self._card_bindings.append(binding)
         return binding.id
 
-    def build(self) -> GraphDocument:
+    def build(self, *, require_complete: bool = True) -> GraphDocument:
+        """The Graph document, checked for cycles and, by default, completeness.
+
+        ``require_complete=False`` skips the missing-binding and required-input
+        checks, for a Graph that is being edited and is not runnable yet, the state
+        a canvas is in between two user gestures.
+        """
+        if require_complete:
+            self._require_complete()
+
+        node_ids = self._node_ids()
+        incoming_count = {node_id: 0 for node_id in node_ids}
+        outgoing: dict[str, list[str]] = {}
+        for edge in self._edges:
+            if edge.to_node not in incoming_count or edge.from_node not in node_ids:
+                raise GraphBuilderError(
+                    f"Edge {edge.id} connects a node that is not in this graph"
+                )
+            incoming_count[edge.to_node] += 1
+            outgoing.setdefault(edge.from_node, []).append(edge.to_node)
+        queue = deque(
+            node_id for node_id, count in incoming_count.items() if count == 0
+        )
+        visited_count = 0
+        while queue:
+            node_id = queue.popleft()
+            visited_count += 1
+            for target_node_id in outgoing.get(node_id, []):
+                incoming_count[target_node_id] -= 1
+                if incoming_count[target_node_id] == 0:
+                    queue.append(target_node_id)
+        if visited_count != len(node_ids):
+            raise GraphBuilderError("Graph contains a cycle")
+
+        authored_nodes = {node.handle.node_id: node for node in self._nodes}
+        nodes: list[GraphNode] = []
+        for index, node_id in enumerate(self._node_order):
+            opaque = self._opaque_nodes.get(node_id)
+            if opaque is not None:
+                nodes.append(opaque)
+                continue
+            authored = authored_nodes[node_id]
+            nodes.append(
+                GraphNode(
+                    kind=authored.kind,
+                    id=node_id,
+                    operator_id=authored.catalog_node.operator_id,
+                    operator_version=authored.catalog_node.operator_version,
+                    config=authored.config,
+                    position=(
+                        authored.position
+                        if authored.position is not None
+                        else GraphPoint(
+                            x=float((index % 4) * 360),
+                            y=float((index // 4) * 240),
+                        )
+                    ),
+                    layout=authored.layout,
+                    input_plugs=tuple(authored.input_plugs),
+                    artifact_type_bindings=tuple(
+                        GraphArtifactTypeBinding(
+                            variable=variable,
+                            artifact_type=artifact_type,
+                        )
+                        for variable, artifact_type in sorted(authored.bindings.items())
+                    ),
+                )
+            )
+        try:
+            return GraphDocument(
+                agents=tuple(self._agents),
+                nodes=tuple(nodes),
+                edges=tuple(self._edges),
+                origins=tuple(self._origins),
+                presentation=GraphPresentationDocument(
+                    viewers=tuple(self._cards),
+                    links=tuple(self._card_links),
+                    bindings=tuple(self._card_bindings),
+                    annotations=tuple(self._annotations),
+                ),
+            )
+        except ValidationError as exc:
+            raise GraphBuilderError(f"Graph document is invalid: {exc}") from exc
+
+    def _require_complete(self) -> None:
         for authored in self._nodes:
             missing_bindings = sorted(
                 _artifact_type_variables(authored.catalog_node) - set(authored.bindings)
@@ -827,65 +1037,6 @@ class GraphBuilder:
                         f"{authored.catalog_node.operator_version} required input "
                         f"{port.name!r} has no connection"
                     )
-
-        incoming_count = {node.handle.node_id: 0 for node in self._nodes}
-        outgoing: dict[str, list[str]] = {}
-        for edge in self._edges:
-            incoming_count[edge.to_node] += 1
-            outgoing.setdefault(edge.from_node, []).append(edge.to_node)
-        queue = deque(
-            node_id for node_id, count in incoming_count.items() if count == 0
-        )
-        visited_count = 0
-        while queue:
-            node_id = queue.popleft()
-            visited_count += 1
-            for target_node_id in outgoing.get(node_id, []):
-                incoming_count[target_node_id] -= 1
-                if incoming_count[target_node_id] == 0:
-                    queue.append(target_node_id)
-        if visited_count != len(self._nodes):
-            raise GraphBuilderError("Graph contains a cycle")
-
-        nodes = tuple(
-            GraphNode(
-                kind="builtin",
-                id=authored.handle.node_id,
-                operator_id=authored.catalog_node.operator_id,
-                operator_version=authored.catalog_node.operator_version,
-                config=authored.config,
-                position=(
-                    authored.position
-                    if authored.position is not None
-                    else GraphPoint(
-                        x=float((index % 4) * 360),
-                        y=float((index // 4) * 240),
-                    )
-                ),
-                input_plugs=tuple(authored.input_plugs),
-                artifact_type_bindings=tuple(
-                    GraphArtifactTypeBinding(
-                        variable=variable,
-                        artifact_type=artifact_type,
-                    )
-                    for variable, artifact_type in sorted(authored.bindings.items())
-                ),
-            )
-            for index, authored in enumerate(self._nodes)
-        )
-        try:
-            return GraphDocument(
-                nodes=nodes,
-                edges=tuple(self._edges),
-                origins=tuple(self._origins),
-                presentation=GraphPresentationDocument(
-                    viewers=tuple(self._cards),
-                    links=tuple(self._card_links),
-                    bindings=tuple(self._card_bindings),
-                ),
-            )
-        except ValidationError as exc:
-            raise GraphBuilderError(f"Graph document is invalid: {exc}") from exc
 
 
 __all__ = [

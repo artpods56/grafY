@@ -7,10 +7,13 @@ import type {
   CollaborativeHead,
   CreateProjectRequest,
   GraphDefinition,
+  ImportProjectRequest,
+  ImportProjectResponse,
   InstanceKey,
   InstanceResult,
   InstanceStateList,
   Project,
+  ProjectExport,
   ProjectNodeSecrets,
   Run,
   RunList,
@@ -141,6 +144,36 @@ export function checkpointProject(
     "POST",
     projectPath(workspaceId, projectId, "/checkpoints"),
     { body: requestBody },
+  );
+}
+
+/** Export a whole Project (or one retained checkpoint revision) as portable JSON. */
+export function exportProject(
+  workspaceId: string,
+  projectId: string,
+  options?: { revision?: number; signal?: AbortSignal },
+): Promise<ProjectExport> {
+  const query = new URLSearchParams();
+  if (options?.revision !== undefined) {
+    query.set("revision", String(options.revision));
+  }
+  const suffix = query.size > 0 ? `/export?${query}` : "/export";
+  return request<ProjectExport>(
+    "GET",
+    projectPath(workspaceId, projectId, suffix),
+    { signal: options?.signal },
+  );
+}
+
+/** Import a portable Project JSON envelope as a new Project in the workspace. */
+export function importProject(
+  workspaceId: string,
+  body: ImportProjectRequest,
+): Promise<ImportProjectResponse> {
+  return request<ImportProjectResponse>(
+    "POST",
+    workspacePath(workspaceId, "/projects/import"),
+    { body },
   );
 }
 

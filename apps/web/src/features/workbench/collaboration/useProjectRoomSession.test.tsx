@@ -4,6 +4,28 @@ import * as React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 
+const sessionProbeMocks = vi.hoisted(() => ({
+  getSession: vi.fn(),
+  notifyUnauthorized: vi.fn(),
+}));
+
+vi.mock("@/lib/api/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/auth")>();
+  return {
+    ...actual,
+    getSession: sessionProbeMocks.getSession,
+  };
+});
+
+vi.mock("@/lib/api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/client")>();
+  return {
+    ...actual,
+    notifyUnauthorized: sessionProbeMocks.notifyUnauthorized,
+  };
+});
+
+import { ApiError } from "@/lib/api/client";
 import type {
   ActiveRunSummary,
   CollaborativeHead,
@@ -486,6 +508,9 @@ beforeEach(() => {
   FakeWebSocket.instances = [];
   vi.stubGlobal("WebSocket", FakeWebSocket);
   vi.useFakeTimers();
+  sessionProbeMocks.getSession.mockReset();
+  sessionProbeMocks.getSession.mockResolvedValue({ id: "session" });
+  sessionProbeMocks.notifyUnauthorized.mockReset();
 });
 
 afterEach(() => {
@@ -1192,5 +1217,140 @@ describe("useProjectRoomSession project identity", () => {
 
     expect(socket.readyState).toBe(FakeWebSocket.CLOSED);
     expect(socket.sentFrames()).toEqual([]);
+  });
+});
+
+describe("useProjectRoomSession session expiration", () => {
+  async function stopReconnects(socketCount: number): Promise<void> {
+    await React.act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+    expect(FakeWebSocket.instances).toHaveLength(socketCount);
+  }
+
+  it("expires the browser session when a dropped socket's probe is 401", async () => {
+    sessionProbeMocks.getSession.mockRejectedValue(
+      new ApiError(401, "unauthorized"),
+    );
+    const { socket, room } = await openRoom();
+    const before = FakeWebSocket.instances.length;
+
+    await settle(() => socket.emitClose(1006, "connection_lost"));
+
+    expect(sessionProbeMocks.getSession).toHaveBeenCalledWith(
+      expect.any(AbortSignal),
+    );
+    expect(sessionProbeMocks.notifyUnauthorized).toHaveBeenCalledOnce();
+    expect(room().status).toBe("unsynchronized");
+    await stopReconnects(before);
+  });
+
+  it("expires the browser session when the handshake fails before the room is ready", async () => {
+    sessionProbeMocks.getSession.mockRejectedValue(
+      new ApiError(401, "unauthorized"),
+    );
+    const { socket } = await openRoom({ ready: null });
+
+    await settle(() => socket.emitClose(1006, ""));
+
+    expect(sessionProbeMocks.notifyUnauthorized).toHaveBeenCalledOnce();
+    await stopReconnects(FakeWebSocket.instances.length);
+  });
+
+  it("expires the browser session when access is revoked and the session probe is 401", async () => {
+    sessionProbeMocks.getSession.mockRejectedValue(
+      new ApiError(401, "unauthorized"),
+    );
+    const { close, room } = await openRoom();
+
+    await close(CLOSE_ACCESS_REVOKED, "access_revoked");
+
+    expect(sessionProbeMocks.getSession).toHaveBeenCalledOnce();
+    expect(sessionProbeMocks.notifyUnauthorized).toHaveBeenCalledOnce();
+    expect(room().status).toBe("stopped");
+    expect(room().terminalReason).toBe("access_revoked");
+    await stopReconnects(FakeWebSocket.instances.length);
+  });
+
+  it("keeps reconnecting when the session is still valid", async () => {
+    const { socket, reconnect, room } = await openRoom();
+
+    await settle(() => socket.emitClose(1006, "connection_lost"));
+
+    expect(sessionProbeMocks.getSession).toHaveBeenCalledOnce();
+    expect(sessionProbeMocks.notifyUnauthorized).not.toHaveBeenCalled();
+    const next = await reconnect();
+    await settle(() =>
+      next.emitMessage(
+        roomReady({ head: projectHead({ collaboration_sequence: 5 }) }),
+      ),
+    );
+    expect(room().status).toBe("ready");
+  });
+
+  it.each([
+    ["503", new ApiError(503, "unavailable")],
+    ["a network failure", new TypeError("offline")],
+  ])(
+    "keeps reconnecting when the session probe fails with %s",
+    async (_label, error) => {
+      sessionProbeMocks.getSession.mockRejectedValue(error);
+      const { socket, reconnect, room } = await openRoom();
+
+      await settle(() => socket.emitClose(1006, "connection_lost"));
+
+      expect(sessionProbeMocks.notifyUnauthorized).not.toHaveBeenCalled();
+      const next = await reconnect();
+      await settle(() =>
+        next.emitMessage(
+          roomReady({ head: projectHead({ collaboration_sequence: 5 }) }),
+        ),
+      );
+      expect(room().status).toBe("ready");
+    },
+  );
+
+  it("does not notify when access_revoked still has a live session", async () => {
+    const { close, room } = await openRoom();
+
+    await close(CLOSE_ACCESS_REVOKED, "access_revoked");
+
+    expect(sessionProbeMocks.getSession).toHaveBeenCalledOnce();
+    expect(sessionProbeMocks.notifyUnauthorized).not.toHaveBeenCalled();
+    expect(room().status).toBe("stopped");
+  });
+
+  it("does not probe a project-deleted close", async () => {
+    const { close } = await openRoom();
+
+    await close(CLOSE_PROJECT_DELETED, "project_deleted");
+
+    expect(sessionProbeMocks.getSession).not.toHaveBeenCalled();
+    expect(sessionProbeMocks.notifyUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it("probes once for a reconnect loop and again after the room returns", async () => {
+    const { socket, reconnect } = await openRoom();
+
+    await settle(() => socket.emitClose(1006, ""));
+    const second = await reconnect();
+    await settle(() => second.emitClose(1006, ""));
+    expect(sessionProbeMocks.getSession).toHaveBeenCalledOnce();
+
+    // The second drop backs off by 1.5s, past the harness's 1s step.
+    await React.act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    const third = latestSocket();
+    expect(third).not.toBe(second);
+    await settle(() => {
+      third.open();
+      third.emitMessage(
+        roomReady({ head: projectHead({ collaboration_sequence: 5 }) }),
+      );
+    });
+    await settle(() => third.emitClose(1006, ""));
+    expect(sessionProbeMocks.getSession).toHaveBeenCalledTimes(2);
+    expect(sessionProbeMocks.notifyUnauthorized).not.toHaveBeenCalled();
   });
 });

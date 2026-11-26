@@ -294,6 +294,7 @@ function stubActions(): CanvasMenuActions {
     searchNodes: vi.fn(),
     addNodeHere: vi.fn(),
     addAnnotationHere: vi.fn(),
+    createArtifactHere: vi.fn(),
     selectAll: vi.fn(),
     cleanUpCanvas: vi.fn(),
     fitView: vi.fn(),
