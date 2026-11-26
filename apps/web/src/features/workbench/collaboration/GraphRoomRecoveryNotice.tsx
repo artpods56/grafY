@@ -61,7 +61,7 @@ export function GraphRoomRecoveryNotice({
       <div {...stylex.props(s.copy)}>
         <strong {...stylex.props(s.title)}>{title}</strong>
         <span {...stylex.props(s.message)}>
-          {preservation} Editing, saving, and running are unavailable.
+          {preservation} Editing, saving, and running are unavailable.{" "}
           {recovery}
         </span>
         {failure?.messageType ? (

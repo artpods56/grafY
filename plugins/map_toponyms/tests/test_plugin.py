@@ -14,6 +14,7 @@ def test_catalog_keeps_the_map_operators_and_artifact_types() -> None:
         ("ocr.detect_tiff_text", 1),
         ("ocr.recognize_tiff_text", 1),
         ("ocr.prepare_tiff_labels", 1),
+        ("ocr.postprocess_tiff_regions", 1),
         ("ocr.filter_tiff_readings", 1),
         ("ocr.places_table", 1),
         ("ocr.collect_map_places", 1),
@@ -23,6 +24,7 @@ def test_catalog_keeps_the_map_operators_and_artifact_types() -> None:
         ("ocr.import_label_studio", 1),
         ("table.match_places", 1),
         ("table.transliterate_cyrillic", 1),
+        ("text.transliterate_cyrillic", 1),
     }
     for node in MAP_TOPONYMS.nodes:
         assert registry.node_registration(*node.key).plugin_slug == MAP_TOPONYMS.slug
@@ -34,3 +36,17 @@ def test_catalog_keeps_the_map_operators_and_artifact_types() -> None:
     transliteration = registry.node_registration("table.transliterate_cyrillic", 1)
     assert set(transliteration.node_class.input_contract.ports) == {"table"}
     assert set(transliteration.node_class.output_contract.ports) == {"table"}
+
+    text = registry.node_registration("text.transliterate_cyrillic", 1)
+    assert set(text.node_class.input_contract.ports) == {"text", "recognized"}
+    assert set(text.node_class.output_contract.ports) == {"text", "recognized"}
+    assert text.node_class.input_contract.ports["text"].exclusive_group == "source"
+    assert (
+        text.node_class.input_contract.ports["recognized"].exclusive_group == "source"
+    )
+    assert text.node_class.output_contract.ports["text"].required
+    assert text.node_class.output_contract.ports["text"].requires_input is None
+    assert (
+        text.node_class.output_contract.ports["recognized"].requires_input
+        == "recognized"
+    )

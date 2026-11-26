@@ -259,5 +259,10 @@ class HttpTiler(TilerPort):
                     continue
                 raise ImageProxyError(503, "Tiler timed out", "2") from exc
             except httpx.HTTPError as exc:
+                dropped = isinstance(
+                    exc, httpx.NetworkError | httpx.RemoteProtocolError
+                )
+                if dropped and attempt + 1 < attempts:
+                    continue
                 raise ImageProxyError(503, "Tiler is unavailable", "2") from exc
         raise AssertionError("tiler request attempts exhausted")

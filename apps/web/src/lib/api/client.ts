@@ -12,6 +12,11 @@ export function onUnauthorized(listener: () => void): () => void {
   return () => unauthorizedListeners.delete(listener);
 }
 
+/** Notify AuthSessionBoundary when a non-fetch channel (WebSocket, XHR tile) observes an expired session. */
+export function notifyUnauthorized(): void {
+  for (const listener of unauthorizedListeners) listener();
+}
+
 export function readBrowserCookie(name: string): string | undefined {
   if (typeof document === "undefined") return undefined;
 
@@ -245,7 +250,7 @@ export async function request<T>(
   const res = await fetch(`${API_BASE}${path}`, init);
   if (!res.ok) {
     if (res.status === 401 && path !== "/v1/auth/session") {
-      for (const listener of unauthorizedListeners) listener();
+      notifyUnauthorized();
     }
     const failure = await responseFailure(res, csrfToken);
     throw new ApiError(res.status, failure.detail, failure.code);

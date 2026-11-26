@@ -612,3 +612,78 @@ async def test_recognizer_moving_revision_bypasses_cache():
     assert result.text.regions[0].reading is not None
     assert result.text.regions[0].reading.text == "fresh"
     cache.get_or_compute_many.assert_not_called()
+
+
+async def test_recognizer_preferred_batch_size_drives_wave_size_with_bounded_crop_reads():
+    import asyncio
+
+    workspace_id, artifact_id = uuid4(), uuid4()
+    page_side = 800
+    scan = Image.new("RGB", (page_side, page_side), "white")
+    draw = ImageDraw.Draw(scan)
+    regions: list[TextRegion] = []
+    for index in range(20):
+        left = 10 + (index % 5) * 140
+        top = 10 + (index // 5) * 80
+        right, bottom = left + 50 + index, top + 20
+        draw.rectangle((left, top, right, bottom), fill="black")
+        regions.append(
+            TextRegion(
+                polygon=[(left, top), (right, top), (right, bottom), (left, bottom)]
+            )
+        )
+
+    in_flight = 0
+    peak_reads = 0
+    batches: list[int] = []
+
+    async def read(*, col: int, row: int, width: int, height: int) -> bytes:
+        nonlocal in_flight, peak_reads
+        in_flight += 1
+        peak_reads = max(peak_reads, in_flight)
+        await asyncio.sleep(0)
+        try:
+            buf = BytesIO()
+            scan.crop((col, row, col + width, row + height)).save(buf, format="PNG")
+            return buf.getvalue()
+        finally:
+            in_flight -= 1
+
+    async def open_page(
+        workspace_id: UUID, artifact_id: UUID, *, page: int
+    ) -> TiffPage:
+        del workspace_id, artifact_id
+        return TiffPage(page_side, page_side, read, source_sha256="aa" * 32, page=page)
+
+    class WaveRecognizer(CropTextReader):
+        @property
+        def preferred_batch_size(self) -> int:
+            return 16
+
+        def cache_identity(self) -> ServiceCacheIdentity:
+            return ServiceCacheIdentity("wave-test", "1")
+
+        async def recognize(self, crops: Sequence[bytes]) -> list[TextReading]:
+            batches.append(len(crops))
+            return [
+                TextReading(text=f"r-{idx}", confidence=None, model="wave")
+                for idx in range(len(crops))
+            ]
+
+    source = Ref[TiffFile](
+        artifact_id=artifact_id, artifact_type="file.tiff", schema_version=1
+    )
+    window = TiffPixelWindow(page=0, col=0, row=0, width=page_side, height=page_side)
+    result = await ReadTiffTextNode(open_page).run(
+        NodeExecutionContext(workspace_id=workspace_id),
+        NoConfig(),
+        RecognizeInput(
+            regions=TiffTextRegions(source=source, window=window, regions=regions),
+            recognizer=WaveRecognizer(),
+        ),
+    )
+
+    assert batches == [16, 4]
+    assert peak_reads <= 8
+    assert len(result.text.regions) == 20
+    assert all(item.reading is not None for item in result.text.regions)

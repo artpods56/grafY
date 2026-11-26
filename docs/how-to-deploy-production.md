@@ -349,8 +349,10 @@ Enable the API proxy with `GRAFY_TILER_URL=http://tiler:8100`. The API uses
 `GRAFY_TILER_RENDERER_VERSION` defaults to `1` and must match the tiler renderer
 version; update it whenever renderer settings change output. The API timeout
 is `GRAFY_TILER_TIMEOUT_SECONDS=10` for tiles and thumbnails, and
-`GRAFY_TILER_INFO_TIMEOUT_SECONDS=30` for info. These are whole-request
-deadlines; the API does not retry. Rendering concurrency is bounded in the tiler.
+`GRAFY_TILER_INFO_TIMEOUT_SECONDS=30` for info. Native window reads use
+`GRAFY_TILER_WINDOW_TIMEOUT_SECONDS=30`. These are whole-request deadlines; the
+API retries only a window read, once, after a timeout or a dropped connection.
+Rendering concurrency is bounded in the tiler.
 
 **Sizing and limits.** The defaults suit `ai-ihpan`: 2 CPUs
 (`GRAFY_TILER_CPUS`), 1.5 GiB RAM (`GRAFY_TILER_MEMORY`), an image of about

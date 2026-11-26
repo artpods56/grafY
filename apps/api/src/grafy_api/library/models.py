@@ -61,6 +61,11 @@ class SaveUploadedArtifactRequest(ApiResponse):
     original_filename: BoundedFilename
 
 
+class SaveArtifactRequest(ApiResponse):
+    artifact_id: UUID
+    name: BoundedLibraryName
+
+
 class LibraryFolderResponse(ApiResponse):
     """One row of the Library tree. ``parent_id`` of ``null`` is the root."""
 
@@ -121,6 +126,7 @@ __all__ = [
     "MoveLibraryArtifactsRequest",
     "MoveLibraryFolderRequest",
     "RenameLibraryFolderRequest",
+    "SaveArtifactRequest",
     "SaveInstanceArtifactRequest",
     "SaveUploadedArtifactRequest",
 ]

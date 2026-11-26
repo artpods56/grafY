@@ -124,11 +124,25 @@ export function GeoMapPreview({
   }, [interaction]);
 
   React.useEffect(() => {
-    // The render descriptor carries no vector property fields any more, so the
-    // map publishes none: a card linked into it can offer no map-side field to
-    // map a selection onto.
-    interaction?.onFieldsChange([]);
-  }, [interaction]);
+    if (!interaction) return;
+    // A linked card maps its selection onto these fields, so the map offers
+    // every property column its feature layers carry.
+    const fields = new Map<
+      string,
+      { id: string; title: string; valueType: string }
+    >();
+    for (const layer of descriptor.layers) {
+      if (layer.source.kind !== "geojson") continue;
+      for (const field of layer.source.fields ?? []) {
+        fields.set(field.id, {
+          id: field.id,
+          title: field.title,
+          valueType: field.value_type,
+        });
+      }
+    }
+    interaction.onFieldsChange([...fields.values()]);
+  }, [descriptor.layers, interaction]);
 
   React.useEffect(() => {
     const container = containerRef.current;

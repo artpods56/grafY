@@ -40,7 +40,7 @@ api-dev: db-upgrade
 
 # Start the internal TIFF tile service natively (reads TILER_* from .env).
 tiler:
-    cd apps/tiler && uv run --locked --no-dev python -m grafy_tiler
+    uv run --project apps/tiler --locked --no-dev python -m grafy_tiler
 
 # The tiler is its own uv project on Python 3.13 with its own lock, so these run
 # in apps/tiler/.venv and mirror the CI `tiler` job. The root recipes cannot stand
@@ -61,6 +61,11 @@ typecheck-tiler:
 # Start the web development server.
 web port="":
     bun run --cwd apps/web --bun dev {{ if port != "" {"--port=" + port} else {""} }}
+
+# Build and start the production web server against the local API.
+web-prod port="":
+    GRAFY_API_UPSTREAM="${GRAFY_API_UPSTREAM:-http://127.0.0.1:8000}" bun run --cwd apps/web --bun build
+    GRAFY_API_UPSTREAM="${GRAFY_API_UPSTREAM:-http://127.0.0.1:8000}" bun run --cwd apps/web --bun start {{ if port != "" {"--port=" + port} else {""} }}
 
 # Start the sandbox on a free loopback port without API or Keycloak.
 lab-web port="3301":

@@ -55,7 +55,7 @@ describe("GraphRoomRecoveryNotice", () => {
       "Server-accepted work is preserved",
     );
     expect(container.textContent).toContain(
-      "Editing, saving, and running are unavailable",
+      "Editing, saving, and running are unavailable. Automatic reconnection stopped.",
     );
     const retry = [...container.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Retry connection"),

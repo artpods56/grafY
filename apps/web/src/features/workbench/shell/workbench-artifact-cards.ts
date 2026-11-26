@@ -3,7 +3,7 @@ import { changeOriginCardReferences } from "../artifacts/origin-card-commands";
 
 import { createUuid } from "@/features/workbench/authoring/uuid";
 
-import type { NodeSpec } from "@/lib/api";
+import type { ArtifactRef, NodeSpec } from "@/lib/api";
 
 import {
   DEFAULT_ARTIFACT_CARD_WIDTH,
@@ -124,7 +124,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
         layout?: ArtifactViewerNode["data"]["layout"];
       }[],
     ) => {
-      if (cards.length === 0) return;
+      if (cards.length === 0) return [];
       // One commit, so a drop of several cards is one change to the canvas and
       // one presentation sync rather than a cascade the room replays.
       const added: ArtifactViewerNode[] = cards.map(
@@ -148,7 +148,9 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
       });
       // A held node is not held with the card: the drop is the end of the old
       // selection, or nothing changes when the commit was refused.
-      if (committed) selection.clearWorkflowSelection();
+      if (!committed) return [];
+      selection.clearWorkflowSelection();
+      return added.map((card) => card.id);
     },
     [commitArtifactViewers, selection],
   );
@@ -159,7 +161,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
       position: { x: number; y: number },
       layout?: ArtifactViewerNode["data"]["layout"],
     ) => {
-      addArtifactCards([{ value, position, layout }]);
+      return addArtifactCards([{ value, position, layout }])[0] ?? null;
     },
     [addArtifactCards],
   );
@@ -588,23 +590,34 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
 
   /**
    * One artifact taken out of a sequence onto its own card: at `targetCell`
-   * when it was dropped there, otherwise a cell to the right. What is left
-   * stays a sequence, or a single card when one remains.
+   * when it was dropped there, otherwise a cell to the right. A standalone
+   * sequence shrinks to what is left (or a single card when one remains); a
+   * producer-linked sequence stays wired to its output and hands out a copy.
    */
   const extractArtifactCardItem = React.useCallback(
     (cardId: string, index: number, targetCell?: CellCoord) => {
-      const card = standaloneCard(cardId);
-      if (!card || !localAuthoringEnabled) return;
-      const refs = cardArtifactRefs(card.data.artifactRef);
+      if (!localAuthoringEnabled) return;
+      const standalone = standaloneCard(cardId);
+      const card =
+        standalone ??
+        artifactViewers.nodes.find((node) => node.id === cardId) ??
+        null;
+      if (!card) return;
+      const value = standalone
+        ? standalone.data.artifactRef
+        : (resolveCardValue?.(card) ?? card.data.artifactRef);
+      const refs = cardArtifactRefs(value);
       const extracted = refs[index];
       if (!extracted || refs.length < 2) return;
-      const remaining = refs.filter((_, at) => at !== index);
-      const kept = artifactCardValue(
-        remaining,
-        remaining.length > 1 ? card.data.artifactRef : null,
-      );
-      if (!kept) return;
-      updateArtifactCardRefs(cardId, kept);
+      if (standalone) {
+        const remaining = refs.filter((_, at) => at !== index);
+        const kept = artifactCardValue(
+          remaining,
+          remaining.length > 1 ? standalone.data.artifactRef : null,
+        );
+        if (!kept) return;
+        updateArtifactCardRefs(cardId, kept);
+      }
       const inheritedLayout = card.data.layout ? { ...card.data.layout } : null;
       if (targetCell) {
         addArtifactCard(
@@ -626,10 +639,44 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
     },
     [
       addArtifactCard,
+      artifactViewers.nodes,
       localAuthoringEnabled,
+      resolveCardValue,
       standaloneCard,
       updateArtifactCardRefs,
     ],
+  );
+
+  /**
+   * A standalone card now holds `nextRef`. Origins that were sourced from this
+   * card are rewritten in the same authoring batch, so downstream nodes switch
+   * to the new artifact and go stale.
+   */
+  const replaceArtifactCardRef = React.useCallback(
+    (cardId: string, nextRef: ArtifactRef) => {
+      if (!standaloneCard(cardId)) return;
+      updateArtifactCardRefs(cardId, nextRef);
+    },
+    [standaloneCard, updateArtifactCardRefs],
+  );
+
+  /**
+   * A new standalone card beside `sourceCardId`, far enough that the bodies
+   * do not overlap, holding the whole selection.
+   */
+  const duplicateArtifactCard = React.useCallback(
+    (sourceCardId: string, newRef: ArtifactRef) => {
+      const source = artifactViewers.nodes.find(
+        (node) => node.id === sourceCardId,
+      );
+      if (!source) return null;
+      const footprint = artifactCardFootprint(source);
+      return addArtifactCard(newRef, {
+        x: source.position.x + footprint.width + CELL_SIZE,
+        y: source.position.y,
+      });
+    },
+    [addArtifactCard, artifactViewers.nodes],
   );
 
   /**
@@ -656,6 +703,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
     addArtifactCard,
     addArtifactCards,
     canMergeArtifactCards,
+    duplicateArtifactCard,
     extractArtifactCardItem,
     insertArtifactCardIntoSequence,
     mergeArtifactCardRun,
@@ -663,6 +711,7 @@ export function useArtifactCardCommands(deps: ArtifactCardCommandDeps) {
     removeArtifactCardItem,
     reorderArtifactCardItem,
     collectSelectedArtifacts,
+    replaceArtifactCardRef,
     tidySelectedArtifacts,
     ungroupArtifacts,
     ungroupCollection,

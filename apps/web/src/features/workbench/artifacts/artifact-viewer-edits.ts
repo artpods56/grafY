@@ -88,16 +88,30 @@ export function withViewerEdgeRoute(
   };
 }
 
-export function withViewerBinding(
+/** Stores a link: an existing id keeps its place, a new one joins the end. */
+export function withViewerBindingSaved(
   state: ArtifactViewerCanvasState,
-  bindingId: string,
   binding: ArtifactViewerCanvasState["bindings"][number],
 ): ArtifactViewerCanvasState {
+  if (!state.bindings.some((candidate) => candidate.id === binding.id)) {
+    return { ...state, bindings: [...state.bindings, binding] };
+  }
   return {
     ...state,
     bindings: state.bindings.map((candidate) =>
-      candidate.id === bindingId ? binding : candidate,
+      candidate.id === binding.id ? binding : candidate,
     ),
+  };
+}
+
+/** Drops one link and leaves the cards it joined alone. */
+export function withoutViewerBinding(
+  state: ArtifactViewerCanvasState,
+  bindingId: string,
+): ArtifactViewerCanvasState {
+  return {
+    ...state,
+    bindings: state.bindings.filter((binding) => binding.id !== bindingId),
   };
 }
 

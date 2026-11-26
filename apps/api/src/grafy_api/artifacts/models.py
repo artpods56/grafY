@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import datetime
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
@@ -24,6 +25,7 @@ from grafy_core.spatial_contracts import (
     BasemapKind,
     GeoPropertyValueType,
     GeoRasterStyle as StoredGeoRasterStyle,
+    GeoVectorStyle as StoredGeoVectorStyle,
     GeoBounds,
     GeoFeatureCollectionPayload,
     GeoFeatureCollectionMetadata,
@@ -64,6 +66,21 @@ class ArtifactSummaryResponse(ApiResponse):
         default_factory=list,
     )
     metadata: dict[str, object] = Field(default_factory=dict)
+
+
+class CreateArtifactRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_type: str
+    schema_version: int = Field(default=1, ge=1, strict=True)
+    payload: JsonObject
+    derived_from_artifact_id: UUID | None = None
+    title: str | None = None
+
+
+class CreateArtifactResponse(ArtifactRef):
+    derived_from_artifact_id: UUID | None
+    created_at: datetime
 
 
 class WorkbenchErrorResponse(ApiResponse):
@@ -455,6 +472,10 @@ class GeoVectorStyle(ApiResponse):
     point: GeoPointStyle
     label: GeoLabelStyle | None
 
+    @classmethod
+    def default(cls) -> "GeoVectorStyle":
+        return cls.model_validate(StoredGeoVectorStyle())
+
 
 class GeoCategorizedPointStyle(ApiResponse):
     model_config = ConfigDict(extra="forbid")
@@ -576,9 +597,21 @@ class GeoRasterRenderSourceResponse(ApiResponse):
     attribution: str | None = None
 
 
-# A rendered layer always reads raster tiles. Vector layers carry no rendered
-# source until the GeoJSON renderer exists, so they are absent from `layers`.
-type GeoRenderSourceResponse = GeoRasterRenderSourceResponse
+class GeoJsonRenderSourceResponse(ApiResponse):
+    """A stored feature collection the browser fetches whole and draws itself."""
+
+    kind: Literal["geojson"] = "geojson"
+    artifact_id: UUID
+    data_url: str
+    bounds: GeoBounds | None
+    feature_count: int = Field(ge=0)
+    fields: list[GeoPropertyFieldResponse] = Field(default_factory=list)
+
+
+GeoRenderSourceResponse = Annotated[
+    GeoJsonRenderSourceResponse | GeoRasterRenderSourceResponse,
+    Field(discriminator="kind"),
+]
 
 
 class GeoRenderLayerResponse(ApiResponse):
@@ -648,6 +681,7 @@ __all__ = [
     "GeoFeatureQueryRequest",
     "GeoFeatureQueryResponse",
     "GeoFeatureManifestMetadata",
+    "GeoJsonRenderSourceResponse",
     "GeoMapDocumentPayload",
     "GeoMapLayerPayload",
     "GeoPointCategory",

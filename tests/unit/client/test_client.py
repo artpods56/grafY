@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
@@ -310,6 +311,48 @@ def _client(handler: httpx.MockTransport) -> GrafyClient:
         token=SecretStr("nrt_live_secret"),
         transport=handler,
     )
+
+
+async def test_create_artifact_returns_an_exact_typed_reference() -> None:
+    prior = UUID(int=10)
+    artifact_id = UUID(int=11)
+    digest = "f" * 64
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == f"/v1/workspaces/{WORKSPACE_ID}/artifacts"
+        assert json.loads(request.content) == {
+            "artifact_type": "scalar.text",
+            "schema_version": 1,
+            "payload": {"value": "Revised"},
+            "derived_from_artifact_id": str(prior),
+            "title": "Second draft",
+        }
+        return httpx.Response(
+            201,
+            json={
+                "artifact_id": str(artifact_id),
+                "artifact_type": "scalar.text",
+                "schema_version": 1,
+                "content_hash": digest,
+                "derived_from_artifact_id": str(prior),
+                "created_at": "2026-09-01T10:00:00Z",
+            },
+        )
+
+    async with _client(httpx.MockTransport(respond)) as client:
+        created = await client.artifacts.create_artifact(
+            WORKSPACE_ID,
+            artifact_type="scalar.text",
+            payload={"value": "Revised"},
+            derived_from_artifact_id=prior,
+            title="Second draft",
+        )
+
+    assert created.artifact_id == artifact_id
+    assert created.content_hash == digest
+    assert created.derived_from_artifact_id == prior
+    assert created.created_at == datetime(2026, 9, 1, 10, tzinfo=UTC)
 
 
 @pytest.mark.asyncio

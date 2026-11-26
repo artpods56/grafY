@@ -54,6 +54,7 @@ class Stage:
     editor_token: str
     reader_token: str
     session_cookie: str
+    csrf_value: str
 
     def rpc(
         self,
@@ -124,7 +125,7 @@ def stage_for(tmp_path: Path, name: str) -> Generator[Stage]:
         workspace=tmp_path / "workbench",
     )
 
-    async def prepare() -> tuple[Workspace, Workspace, str, str, str]:
+    async def prepare() -> tuple[Workspace, Workspace, str, str, str, str]:
         async with db(database_url) as database:
             seeder = IdentitySeeder(lambda: SqlAlchemyUnitOfWork(database.sessions))
             owner = await seeder.user(email="owner@example.test", display_name="Owner")
@@ -154,9 +155,16 @@ def stage_for(tmp_path: Path, name: str) -> Generator[Stage]:
                 )
                 raw_tokens.append(raw)
             session = await auth.issue_session(owner.id)
-            return workspace, other, raw_tokens[0], raw_tokens[1], session.cookie_value
+            return (
+                workspace,
+                other,
+                raw_tokens[0],
+                raw_tokens[1],
+                session.cookie_value,
+                session.csrf_value,
+            )
 
-    workspace, other, editor, reader, cookie = asyncio.run(prepare())
+    workspace, other, editor, reader, cookie, csrf_value = asyncio.run(prepare())
     with client_with_overrides(settings=settings) as client:
         yield Stage(
             client=client,
@@ -165,4 +173,5 @@ def stage_for(tmp_path: Path, name: str) -> Generator[Stage]:
             editor_token=editor,
             reader_token=reader,
             session_cookie=cookie,
+            csrf_value=csrf_value,
         )

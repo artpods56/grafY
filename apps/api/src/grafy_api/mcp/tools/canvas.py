@@ -793,7 +793,7 @@ async def place_artifacts(
     ] = None,
     card: Annotated[
         str | None,
-        Field(description="Feed the artifact a Library card on the canvas shows"),
+        Field(description="Feed the artifact a standalone card on the canvas shows"),
     ] = None,
     as_sequence: bool = False,
     collection_mode: Literal["direct", "map"] = "direct",
@@ -841,7 +841,7 @@ async def add_card(
     ] = None,
     artifacts: Annotated[
         list[ArtifactSpec] | None,
-        Field(description="Show these stored artifacts (a Library card)"),
+        Field(description="Show these stored artifacts (a standalone card)"),
     ] = None,
     projection: Annotated[
         list[str] | None,

@@ -26,7 +26,7 @@ from grafy_api.library.models import LibraryItemResponse, LibraryProvenanceRespo
 
 
 class LibraryService:
-    """Save exact node results or uploads without changing the source result."""
+    """Save Workspace artifacts to the Library without changing their content."""
 
     def __init__(
         self,
@@ -138,6 +138,15 @@ class LibraryService:
             LibraryProvenance.from_upload(
                 saved_at=datetime.now(UTC), original_filename=original_filename
             ),
+        )
+
+    async def save_artifact(
+        self, *, workspace_id: UUID, artifact_id: UUID, name: str
+    ) -> LibraryItemResponse:
+        return await self._record(
+            workspace_id,
+            artifact_id,
+            LibraryProvenance.from_authored(saved_at=datetime.now(UTC), name=name),
         )
 
     async def _record(

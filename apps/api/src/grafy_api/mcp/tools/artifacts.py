@@ -1,11 +1,11 @@
-"""Read results: raw text, tables, and geo artifacts."""
+"""Artifacts: author JSON ones, and read raw text, tables, images and geo data."""
 
 from typing import Annotated, Any, Final
 from uuid import UUID
 
 from pydantic import Field
 
-from grafy_api.mcp.context import READ, dump, grafy, tool
+from grafy_api.mcp.context import EDIT, READ, dump, grafy, tool
 
 _MAX_TEXT_BYTES: Final = 256 * 1024
 
@@ -17,6 +17,38 @@ type MatchRows = Annotated[
         description="Keep rows equal to any one of these {column_id: value}",
     ),
 ]
+
+
+async def list_authorable_artifact_types() -> list[dict[str, object]]:
+    """List JSON artifact types and payload schemas accepted by create_artifact."""
+    async with grafy() as (client, workspace_id):
+        catalog = await client.catalog.get(workspace_id)
+    return [spec for spec in catalog.artifact_types if spec.get("authorable") is True]
+
+
+async def create_artifact(
+    artifact_type: str,
+    payload: dict[str, object],
+    schema_version: Annotated[int, Field(ge=1)] = 1,
+    derived_from_artifact_id: UUID | None = None,
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Create an immutable artifact from JSON. Use its hash in author_graph cards.
+
+    Pass the bare type id (for example scalar.text) and its schema version here.
+    Pass id@version and the returned content_hash when placing it on a graph.
+    """
+    async with grafy() as (client, workspace_id):
+        return dump(
+            await client.artifacts.create_artifact(
+                workspace_id,
+                artifact_type=artifact_type,
+                schema_version=schema_version,
+                payload=payload,
+                derived_from_artifact_id=derived_from_artifact_id,
+                title=title,
+            )
+        )
 
 
 async def read_artifact_text(
@@ -122,6 +154,8 @@ async def get_image_info(
 
 
 TOOLS: Final = (
+    tool(list_authorable_artifact_types, READ, tags={"artifacts", "authoring"}),
+    tool(create_artifact, EDIT, tags={"artifacts", "authoring"}),
     tool(read_artifact_text, READ, tags={"artifacts"}),
     tool(get_table_schema, READ, tags={"artifacts", "tables"}),
     tool(read_table_page, READ, tags={"artifacts", "tables"}),

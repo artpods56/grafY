@@ -19,6 +19,19 @@ if TYPE_CHECKING:
 MAX_NODE_PROGRESS_MESSAGE_LENGTH: Final = 1_000
 MAX_NODE_PROGRESS_COUNTER: Final = 9_007_199_254_740_991
 MAX_NODE_ERROR_MESSAGE_LENGTH: Final = 1_000
+MAX_NODE_PREVIEW_BYTES: Final = 2 * 1024 * 1024
+MAX_NODE_PREVIEW_LABEL_LENGTH: Final = 200
+MAX_NODE_PREVIEW_DETAIL_LENGTH: Final = 2_000
+ALLOWED_NODE_PREVIEW_CONTENT_TYPES: Final = frozenset(
+    {
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        "text/plain",
+        "application/json",
+    }
+)
 
 
 class UserFacingNodeError(RuntimeError):
@@ -52,6 +65,20 @@ class NodeProgressReporter(Protocol):
         *,
         current: int | None,
         total: int | None,
+    ) -> None: ...
+
+
+class NodePreviewReporter(Protocol):
+    """Host boundary for ephemeral, opt-in live preview frames from a node."""
+
+    async def report_preview(
+        self,
+        context: "NodeExecutionContext",
+        label: str,
+        *,
+        content_type: str,
+        data: bytes,
+        detail: str | None = None,
     ) -> None: ...
 
 
@@ -168,6 +195,11 @@ class NodeExecutionContext:
         repr=False,
         compare=False,
     )
+    preview_reporter: NodePreviewReporter | None = dataclass_field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     # A context nobody bound secrets onto declares none, so any name a node
     # asks it for is refused as the programming error it is.
     secrets: NodeSecrets = dataclass_field(
@@ -235,6 +267,63 @@ class NodeExecutionContext:
         except Exception:
             # User-visible reporting is best-effort. Reporter failures must not
             # turn a successful node action into a failed graph execution.
+            return
+
+    async def preview(
+        self,
+        label: str,
+        *,
+        data: bytes | str,
+        content_type: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        """Publish one ephemeral live-preview frame for opt-in SSE inspection.
+
+        Frames live only in a bounded in-memory ring buffer and are never stored
+        as artifacts. Oversized payloads and reporter errors are dropped rather
+        than failing the node execution.
+        """
+
+        normalized_label = label.strip()
+        if normalized_label == "":
+            raise ValueError("Node preview label must not be blank")
+        if len(normalized_label) > MAX_NODE_PREVIEW_LABEL_LENGTH:
+            normalized_label = normalized_label[:MAX_NODE_PREVIEW_LABEL_LENGTH]
+
+        resolved_content_type = (
+            content_type
+            if content_type is not None
+            else ("text/plain" if isinstance(data, str) else "image/png")
+        )
+        if resolved_content_type not in ALLOWED_NODE_PREVIEW_CONTENT_TYPES:
+            raise ValueError(
+                f"Unsupported node preview content type {resolved_content_type!r}"
+            )
+
+        reporter = self.preview_reporter
+        if reporter is None:
+            return
+
+        payload = data.encode("utf-8") if isinstance(data, str) else bytes(data)
+        if not payload or len(payload) > MAX_NODE_PREVIEW_BYTES:
+            return
+
+        normalized_detail: str | None = None
+        if detail is not None:
+            trimmed = detail.strip()
+            if trimmed:
+                normalized_detail = trimmed[:MAX_NODE_PREVIEW_DETAIL_LENGTH]
+
+        try:
+            await reporter.report_preview(
+                self,
+                normalized_label,
+                content_type=resolved_content_type,
+                data=payload,
+                detail=normalized_detail,
+            )
+        except Exception:
+            # Live previews are best-effort and must never fail node execution.
             return
 
 

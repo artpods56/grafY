@@ -91,9 +91,14 @@ class Artifact[T]:
 def encode_inline_model(payload: BaseModel) -> EncodedArtifact:
     """Hash the canonical JSON of one inline payload model."""
 
-    payload_json = cast(JsonObject, payload.model_dump(mode="json", by_alias=True))
+    return encode_inline_payload(
+        cast(JsonObject, payload.model_dump(mode="json", by_alias=True))
+    )
+
+
+def encode_inline_payload(payload: JsonObject) -> EncodedArtifact:
     payload_bytes = json.dumps(
-        payload_json,
+        payload,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -102,7 +107,7 @@ def encode_inline_model(payload: BaseModel) -> EncodedArtifact:
         content_type="application/json",
         byte_size=len(payload_bytes),
         sha256=sha256(payload_bytes).hexdigest(),
-        inline_payload=payload_json,
+        inline_payload=payload,
     )
 
 

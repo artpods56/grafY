@@ -6,6 +6,7 @@ import * as stylex from "@stylexjs/stylex";
 import {
   Circle,
   Copy,
+  FilePlus2,
   Grid3x3,
   Layers,
   LayoutGrid,
@@ -65,6 +66,7 @@ export interface CanvasMenuActions {
   searchNodes: () => void;
   addNodeHere: (spec: NodeSpec) => void;
   addAnnotationHere: (kind: AnnotationKind) => void;
+  createArtifactHere: () => void;
   selectAll: () => void;
   fitView: () => void;
   openCanvasLab?: () => void;
@@ -300,6 +302,12 @@ function PaneItems({
           Manage packs
         </MenuItem>
       ) : null}
+      <Item
+        icon={FilePlus2}
+        label="Create artifact"
+        disabled={!canEdit}
+        onClick={actions.createArtifactHere}
+      />
       <Submenu icon={StickyNote} label="Annotation" disabled={!canEdit}>
         {ANNOTATIONS.map((annotation) => (
           <Item

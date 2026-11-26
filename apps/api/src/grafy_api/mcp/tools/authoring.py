@@ -86,7 +86,7 @@ class OriginSpec(ToolModel):
         default=False, description="Pass a single artifact as a one-item sequence"
     )
     card: str | None = Field(
-        default=None, description="Id of a library card in `cards` that owns it"
+        default=None, description="Id of a standalone card in `cards` that owns it"
     )
     collection_mode: Literal["direct", "map"] = "direct"
     conversion_path: list[ConversionSpec] = Field(default_factory=list[ConversionSpec])
@@ -97,7 +97,7 @@ class CardSpec(ToolModel):
 
     id: str = Field(description="Card id; must start with 'artifact-viewer-'")
     artifacts: list[ArtifactSpec] = Field(
-        default_factory=list[ArtifactSpec], description="Library card content"
+        default_factory=list[ArtifactSpec], description="Standalone card content"
     )
     follows: PortRef | None = Field(
         default=None, description="Output card: the node output it shows"
@@ -217,7 +217,7 @@ async def author_graph(
     schema, port shapes and artifact types before anything is sent. The Graph is
     then written in one validated batch (add or replace) and, by default,
     checkpointed. Cards show artifacts on the canvas: give `artifacts` for a
-    Library card or `follows` for a card that shows a node output. To change part
+    standalone card or `follows` for a card that shows a node output. To change part
     of an existing Graph, use the canvas tools instead (add_node, connect, ...).
     """
     all_artifacts = [

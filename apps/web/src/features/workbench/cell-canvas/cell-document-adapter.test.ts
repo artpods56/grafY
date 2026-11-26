@@ -834,6 +834,8 @@ describe("cell document adapter", () => {
           status: "done",
           statusLabel: "42 ms",
           runDisabled: true,
+          runDisabledReason:
+            "Waiting for recent edits to finish saving before running.",
           appendix: {
             title: "Run output",
             kindBadge: "Text",
@@ -877,6 +879,8 @@ describe("cell document adapter", () => {
       kind: "operator",
       statusLabel: "42 ms",
       runDisabled: true,
+      runDisabledReason:
+        "Waiting for recent edits to finish saving before running.",
       appendix: { collapsed: true, title: "Run output" },
     });
 

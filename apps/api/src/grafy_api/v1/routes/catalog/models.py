@@ -24,6 +24,8 @@ from pydantic.errors import PydanticInvalidForJsonSchema
 
 from grafy_api.catalog import (
     CatalogSnapshot,
+    artifact_payload_schema,
+    is_artifact_authorable,
 )
 from grafy_api.catalog_packs import CatalogPack, CatalogPolicy
 from grafy_api.v1.models import (
@@ -103,6 +105,7 @@ class ArtifactTypeSpecResponse(ApiResponse):
     key: ArtifactTypeKeyResponse
     title: str
     payload_schema: dict[str, object]
+    authorable: bool = Field(default_factory=bool)
     field_projections: list[FieldProjectionResponse]
     materialized_json_type: MaterializedJsonType | None = None
     export_formats: list[ArtifactExportFormatResponse] = Field(
@@ -123,7 +126,8 @@ class ArtifactTypeSpecResponse(ApiResponse):
                 schema_version=spec.key.schema_version,
             ),
             title=spec.title,
-            payload_schema=spec.payload_schema,
+            payload_schema=artifact_payload_schema(spec),
+            authorable=is_artifact_authorable(spec),
             field_projections=[
                 FieldProjectionResponse(
                     path=list(projection.path),
@@ -243,6 +247,8 @@ class PortResponse(ApiResponse):
         default_factory=lambda: list[ServiceContractFeaturesResponse]()
     )
     requires_service_feature: RequiresServiceFeatureResponse | None = None
+    requires_input: str | None = None
+    exclusive_group: str | None = None
     shape: PortShape
     accepted_shapes: list[PortShape]
     instance_plugs: bool = False
@@ -339,6 +345,7 @@ class PortResponse(ApiResponse):
                 ArtifactTypeKeyResponse.from_key(key) for key in port.also_accepts
             ],
             service_contracts=[],
+            exclusive_group=port.exclusive_group,
             shape=port.shape,
             accepted_shapes=list(port.accepted_shapes),
             instance_plugs=port.instance_plugs,
@@ -407,6 +414,7 @@ class PortResponse(ApiResponse):
                 if requirement is not None
                 else None
             ),
+            requires_input=port.requires_input,
             shape=port.shape,
             accepted_shapes=[port.shape],
             instance_plugs=False,

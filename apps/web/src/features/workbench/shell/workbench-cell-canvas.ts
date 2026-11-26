@@ -609,6 +609,7 @@ export function buildWorkbenchCellScene({
   secrets,
   engineSettingsHref,
   canRun,
+  runDisabledReason,
   canvasEdges,
   artifactViewerEdges,
   artifactViewerNodes,
@@ -634,6 +635,8 @@ export function buildWorkbenchCellScene({
   /** Owners' Workspace Settings link for an empty engine port. */
   engineSettingsHref?: string;
   canRun: boolean;
+  /** Shown on each operator run control while `canRun` is false. */
+  runDisabledReason?: string;
   canvasEdges?: readonly WorkflowEdge[];
   artifactViewerEdges?: readonly ArtifactViewerEdge[];
   artifactViewerNodes?: readonly ArtifactViewerNode[];
@@ -655,6 +658,7 @@ export function buildWorkbenchCellScene({
     nodeRunState[node.id] = {
       ...status,
       runDisabled: !canRun || !workflowNodeIsSupported(node.data) || isProvider,
+      ...(!canRun && runDisabledReason ? { runDisabledReason } : {}),
       appendix: buildAppendixSpec({
         node,
         status: status.status,
@@ -685,8 +689,10 @@ export function buildWorkbenchCellScene({
     viewerTiffWindows = new Map();
     viewerTiffTexts = new Map();
     const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    // A text card keeps its scan view while it waits for a result, so every
+    // waiting one gets a surface, with or without a linked window.
     const rememberWaitingTiffText = (cardId: string) => {
-      if (!workspaceId || !onOperatorConfigChange || !artifactViewerEdges) {
+      if (!workspaceId || !artifactViewerEdges) {
         return;
       }
       const feed = artifactViewerEdges.find((edge) => edge.target === cardId);
@@ -708,21 +714,23 @@ export function buildWorkbenchCellScene({
       ) {
         return;
       }
-      const linkedWindow = linkedTiffWindow(
-        cardId,
-        artifactViewerEdges,
-        nodesById,
-        document,
-        registry,
-        onOperatorConfigChange,
-      );
-      if (!linkedWindow) return;
-      const thumb = tiffThumbnailUrl(workspaceId, linkedWindow.artifactId);
+      const linkedWindow = onOperatorConfigChange
+        ? linkedTiffWindow(
+            cardId,
+            artifactViewerEdges,
+            nodesById,
+            document,
+            registry,
+            onOperatorConfigChange,
+          )
+        : undefined;
       viewerTiffTexts?.set(cardId, {
         url: null,
         recognized: key.id === "ocr.tiff_recognized_text",
-        linkedWindow,
+        ...(linkedWindow ? { linkedWindow } : {}),
       });
+      if (!linkedWindow) return;
+      const thumb = tiffThumbnailUrl(workspaceId, linkedWindow.artifactId);
       viewerImages?.set(cardId, {
         imageUrl: null,
         stackImageUrls: [],
@@ -818,12 +826,17 @@ export function buildWorkbenchCellScene({
         viewerMetadata.set(card.id, {
           stackItems: refs.map((ref, index) => {
             const item = libraryItemsByArtifactId?.get(ref.artifact_id);
+            const byteSizeLabel = item
+              ? formatLibraryByteSize(item.artifact.byte_size)
+              : null;
             return {
               artifactId: ref.artifact_id,
+              artifact: ref,
               imageUrl: workspaceId
                 ? stackImageUrl(ref, workspaceId, registry)
                 : null,
               label: item ? libraryFileDisplayName(item) : `#${index + 1}`,
+              ...(byteSizeLabel ? { byteSizeLabel } : {}),
             };
           }),
         });
@@ -836,6 +849,8 @@ export function buildWorkbenchCellScene({
         viewerMetadata.set(card.id, {
           filename: libraryFileDisplayName(libraryItem),
           byteSizeLabel: formatLibraryByteSize(libraryItem.artifact.byte_size),
+          inLibrary: true,
+          exportFormats: libraryItem.artifact.download_formats,
         });
       }
     }

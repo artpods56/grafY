@@ -57,6 +57,11 @@ interface UseRunExecutionOptions {
   currentExecutionFingerprint: string;
   /** The canvas' topology matches the head it was read from, so a Run may start. */
   canRunSavedGraph: boolean;
+  /**
+   * Why `canRunSavedGraph` is false. The workbench computes this from the
+   * room and the saved graph; a missing reason falls back to a save wait.
+   */
+  runBlockedReason?: string | null;
   nodeSecretStatuses: NodeSecretStatusesByNode;
   /** True while the Project room is connected: its pushes replace all polling. */
   roomConnected?: boolean;
@@ -76,6 +81,44 @@ export interface OwnRunState {
   scope: RunScope;
   graphId: string;
   targets: readonly RunTargetInput[];
+}
+
+const RUN_BLOCKED_WAITING_FOR_SAVE =
+  "Waiting for recent edits to finish saving before running.";
+
+/**
+ * Why a saved graph cannot start a Run, or null when it can.
+ *
+ * `canRunSavedGraph` is `activeGraph && canStartRun && projectEditsTrusted && !isDirty`.
+ * Unsynced room edits are reported ahead of a plain dirty wait, because those
+ * edits will not finish saving on their own.
+ */
+export function savedGraphRunBlockedReason(input: {
+  readonly activeGraph: boolean;
+  readonly canStartRun: boolean;
+  readonly projectEditsTrusted: boolean;
+  readonly hasUnsyncedRoomEdits: boolean;
+  readonly isDirty: boolean;
+}): string | null {
+  if (
+    input.activeGraph &&
+    input.canStartRun &&
+    input.projectEditsTrusted &&
+    !input.isDirty
+  ) {
+    return null;
+  }
+  if (!input.activeGraph) return "Save the graph before running it.";
+  if (!input.canStartRun) {
+    return "You do not have permission to run this workflow.";
+  }
+  if (!input.projectEditsTrusted) {
+    return "Connection to the server was lost. Wait for reconnection or reload the page before running.";
+  }
+  if (input.hasUnsyncedRoomEdits) {
+    return "Recent changes failed to save to the server. Reload the page to resync before running.";
+  }
+  return RUN_BLOCKED_WAITING_FOR_SAVE;
 }
 
 function isTerminalRunStatus(status: RunStatus): boolean {
@@ -111,6 +154,7 @@ export function useRunExecution({
   activeGraph,
   currentExecutionFingerprint,
   canRunSavedGraph,
+  runBlockedReason = null,
   nodeSecretStatuses,
   roomConnected = false,
   roomActiveRuns = null,
@@ -392,7 +436,7 @@ export function useRunExecution({
         return;
       }
       if (!canRunSavedGraph) {
-        setRunError("Wait for the Project to synchronize before running.");
+        setRunError(runBlockedReason ?? RUN_BLOCKED_WAITING_FOR_SAVE);
         return;
       }
       const execution = executionSubgraphFor(
@@ -514,6 +558,7 @@ export function useRunExecution({
     [
       activeGraph,
       canRunSavedGraph,
+      runBlockedReason,
       edges,
       nodeSecretStatuses,
       nodes,

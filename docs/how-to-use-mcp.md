@@ -84,7 +84,7 @@ Workbench never authorizes MCP.
 | canvas | `get_canvas`, `add_nodes`, `connect`, `configure_node`, `move_items`, `arrange_graph` |
 | runs | `start_run`, `wait_for_run`, `list_instances`, `get_instance_result`, `cancel_run` |
 | library | `list_library`, `upload_file`, `save_result_to_library`, `create_library_folder` |
-| artifacts | `read_artifact_text`, `read_table_page`, `query_table`, `get_geo_render`, `get_image_info` |
+| artifacts | `list_authorable_artifact_types`, `create_artifact`, `read_artifact_text`, `read_table_page`, `query_table`, `get_geo_render`, `get_image_info` |
 | secrets | `get_node_secrets`, `set_node_secret`, `bind_node_secret`, `verify_node_secret` |
 | agents | `list_agent_conversations`, `send_agent_message`, `read_agent_events`, `cancel_agent_turn` |
 

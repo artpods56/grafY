@@ -40,6 +40,8 @@ export type ArtifactRef = Schemas["ArtifactRef"];
 export type ArtifactRefSequence = Schemas["ArtifactRefSequence"];
 export type ArtifactOutputValue = Schemas["ArtifactOutputValue"];
 export type ArtifactSummary = Schemas["ArtifactSummaryResponse"];
+export type CreateArtifactRequest = Schemas["CreateArtifactRequest"];
+export type CreateArtifactResponse = Schemas["CreateArtifactResponse"];
 export type ArtifactExportFormat = Schemas["ArtifactExportFormatResponse"];
 export type TablePage = Schemas["TablePageResponse"];
 export type TableCell = Schemas["TableCellResponse"];
@@ -265,6 +267,7 @@ export type LibraryList = Schemas["LibraryListResponse"];
 export type LibraryFolder = Schemas["LibraryFolderResponse"];
 export type SaveInstanceArtifactRequest =
   Schemas["SaveInstanceArtifactRequest"];
+export type SaveArtifactRequest = Schemas["SaveArtifactRequest"];
 export type SaveUploadedArtifactRequest =
   Schemas["SaveUploadedArtifactRequest"];
 

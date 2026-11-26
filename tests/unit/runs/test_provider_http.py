@@ -74,6 +74,24 @@ async def test_a_window_the_provider_never_answered_is_tried_again(
     assert delays[0] <= delays[1]
 
 
+async def test_a_refusal_is_logged_without_the_key_and_not_shown_to_the_user(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def refuse(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(400, text="image too small, key scoped-test")
+
+    with (
+        serve_client(httpx.AsyncClient(transport=httpx.MockTransport(refuse))),
+        pytest.raises(UserFacingNodeError) as error,
+    ):
+        await post_json(_request())
+
+    assert str(error.value) == "CRAFT returned HTTP 400"
+    assert "status=400 reply='image too small, key <redacted>'" in caplog.text
+    assert "scoped-test" not in caplog.text
+
+
 async def test_attempts_run_out_on_an_http_status_and_on_a_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

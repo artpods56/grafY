@@ -2,8 +2,25 @@
 
 import * as React from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { SWRConfig } from "swr";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/features/workspaces/WorkspaceLayout", () => ({
+  useWorkspaceContext: () => ({
+    workspace: {
+      id: "ws-1",
+      slug: "team",
+      name: "Local",
+      kind: "personal",
+      role: "owner",
+      capabilities: [],
+    },
+    workspaces: [],
+    refreshWorkspaces: async () => undefined,
+  }),
+}));
+
+import * as api from "@/lib/api";
 import {
   computeSequenceSpreadLayout,
   type OpenSequenceSpreadLayout,
@@ -1189,5 +1206,195 @@ describe("CellArtifactSequenceSpread", () => {
       q(container, '[data-sequence-collapse="true"]')!.click();
     });
     expect(handlers.onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders live TableArtifactRenderer in open and stack slots instead of image placeholders", async () => {
+    vi.spyOn(api, "getArtifactTableSchema").mockImplementation(
+      async (_ws, artifactId) => ({
+        artifact_id: artifactId,
+        total_rows: 1,
+        total_columns: 1,
+        columns: [{ id: "name", title: "Name", value_type: "text" }],
+      }),
+    );
+    vi.spyOn(api, "getArtifactTablePage").mockImplementation(
+      async (_ws, artifactId) => ({
+        artifact_id: artifactId,
+        offset: 0,
+        limit: 50,
+        column_offset: 0,
+        column_limit: 50,
+        total_rows: 1,
+        total_columns: 1,
+        columns: [{ id: "name", title: "Name", value_type: "text" }],
+        rows: [{ name: { display: `row-${artifactId}`, truncated: false } }],
+        highlighted_row_indices: [],
+      }),
+    );
+
+    const tableCard: CellCardModel = {
+      ...CARD,
+      id: "tables",
+      title: "Table",
+    };
+    const tableSurface: ArtifactCardSurfaceData = {
+      kind: "artifact",
+      previewKind: "table",
+      artifactTypeId: "table.data",
+      typeLabel: "Table",
+      workspaceId: "ws-1",
+      itemCount: 6,
+      stackItems: Array.from({ length: 6 }, (_, index) => ({
+        artifactId: `t${index}`,
+        artifact: {
+          artifact_id: `t${index}`,
+          artifact_type: "table.data",
+          schema_version: 1,
+        },
+        imageUrl: null,
+        label: `#${index + 1}`,
+      })),
+    };
+    const layout = computeSequenceSpreadLayout({
+      card: tableCard,
+      itemCount: 6,
+      foregroundCards: [tableCard],
+    });
+    if (!layout.canExpand) throw new Error("expected an open table spread");
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    roots.set(root, container);
+    const onReorder = vi.fn();
+
+    await React.act(async () => {
+      root.render(
+        <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
+          <CellArtifactSequenceSpread
+            card={tableCard}
+            surface={tableSurface}
+            layout={layout}
+            foregroundCards={[tableCard]}
+            screenToWorld={(x, y) => ({ x, y })}
+            onClose={vi.fn()}
+            onReorder={onReorder}
+          />
+        </SWRConfig>,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(q(container, '[data-artifact-placeholder="image"]')).toBeNull();
+    expect(q(container, '[data-sequence-item="0"]')?.textContent).toContain(
+      "row-t0",
+    );
+    expect(q(container, '[data-sequence-item="1"]')?.textContent).toContain(
+      "row-t1",
+    );
+    expect(q(container, '[data-sequence-item="2"]')?.textContent).toContain(
+      "row-t2",
+    );
+    const rightStack = q(container, '[data-sequence-stack="right"]')!;
+    expect(rightStack.textContent).toContain("row-t3");
+    expect(
+      q(rightStack, '[data-artifact-preview="table"]')?.hasAttribute("inert"),
+    ).toBe(true);
+
+    // Clicking the right stack still steps the spread to reveal table #5 on the right stack.
+    await React.act(async () => {
+      rightStack.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(q(container, "[data-sequence-range]")?.textContent).toBe("2–5 / 6");
+    expect(q(container, '[data-sequence-item="3"]')?.textContent).toContain(
+      "row-t3",
+    );
+    expect(
+      q(container, '[data-sequence-stack="right"]')?.textContent,
+    ).toContain("row-t4");
+
+    // Pointer-down inside the table body interacts with the table rather than starting a drag.
+    const item2 = q(container, '[data-sequence-item="2"]')!;
+    const tableEl = q(item2, "table")!;
+    const startBody = slotMiddle(layout, 1);
+    pointer("pointerdown", tableEl, startBody.x, startBody.y);
+    pointer("pointermove", window, startBody.x + 260, startBody.y);
+    expect(item2.dataset.sequenceLifted).toBeUndefined();
+    pointer("pointerup", window, startBody.x + 260, startBody.y);
+    expect(onReorder).not.toHaveBeenCalled();
+
+    // Dragging the card's header still reorders the table item in the spread.
+    const header = q(item2, '[data-card-header="true"]')!;
+    pointer("pointerdown", header, startBody.x, startBody.y);
+    const overSlot2 = slotMiddle(layout, 2);
+    pointer("pointermove", window, overSlot2.x + 20, overSlot2.y);
+    expect(item2.dataset.sequenceLifted).toBe("true");
+    pointer("pointerup", window, overSlot2.x + 20, overSlot2.y);
+    expect(onReorder).toHaveBeenCalledWith("tables", 2, 3);
+  });
+
+  it("renders non-image preview kinds using their artifact renderers", () => {
+    const fileSurface: ArtifactCardSurfaceData = {
+      kind: "artifact",
+      previewKind: "file",
+      artifactTypeId: "file.pdf",
+      typeLabel: "PDF",
+      itemCount: 2,
+      stackItems: [
+        {
+          artifactId: "f0",
+          imageUrl: null,
+          label: "doc-1.pdf",
+          byteSizeLabel: "12 KB",
+        },
+        {
+          artifactId: "f1",
+          imageUrl: null,
+          label: "doc-2.pdf",
+          byteSizeLabel: "24 KB",
+        },
+      ],
+    };
+    const { container } = mount(2, { surface: fileSurface, layout: open(2) });
+    expect(q(container, '[data-artifact-placeholder="image"]')).toBeNull();
+    expect(all(container, '[data-artifact-preview="file"]')).toHaveLength(2);
+    expect(q(container, '[data-sequence-item="0"]')?.textContent).toContain(
+      "PDF · 12 KB",
+    );
+    expect(q(container, '[data-sequence-item="1"]')?.textContent).toContain(
+      "PDF · 24 KB",
+    );
+  });
+
+  it("allows extracting items without parting siblings when reorder is disabled", () => {
+    const layout = open(3);
+    const { container, handlers } = mount(3, {
+      onReorder: undefined,
+      onRemoveItem: undefined,
+    });
+    const first = all(container, "[data-sequence-item]")[0]!;
+    const start = slotMiddle(layout, 0);
+    pointer("pointerdown", first, start.x, start.y);
+    // Moving over another slot inside the spread does not reorder or part siblings.
+    const overSlot2 = slotMiddle(layout, 2);
+    pointer("pointermove", window, overSlot2.x, overSlot2.y);
+    expect(
+      q(container, '[data-sequence-item="1"]')?.dataset.sequenceVisualSlot,
+    ).toBe("1");
+    expect(
+      q(container, '[data-sequence-item="0"]')?.dataset.sequenceTargetSlot,
+    ).toBeUndefined();
+    // Pulling outside the spread extracts onto the canvas.
+    const drop = { x: start.x + 3 * CELL_SIZE, y: start.y + 30 * CELL_SIZE };
+    pointer("pointermove", window, drop.x, drop.y);
+    expect(q(container, "[data-sequence-landing]")).not.toBeNull();
+    pointer("pointerup", window, drop.x, drop.y);
+    expect(handlers.onExtract).toHaveBeenCalledWith("pages", 0, {
+      col: 43,
+      row: 34,
+    });
   });
 });

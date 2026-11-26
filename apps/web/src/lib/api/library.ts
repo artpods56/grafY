@@ -2,6 +2,7 @@ import { ApiError, request } from "./client";
 import type {
   LibraryItem,
   LibraryList,
+  SaveArtifactRequest,
   SaveInstanceArtifactRequest,
   SaveUploadedArtifactRequest,
 } from "./contract";
@@ -64,6 +65,19 @@ export function saveInstanceArtifactToLibrary(
     "POST",
     libraryPath(workspaceId, "/from-instance"),
     { body },
+  );
+}
+
+export function saveArtifactToLibrary(
+  workspaceId: string,
+  body: SaveArtifactRequest,
+) {
+  return request<LibraryItem>(
+    "POST",
+    libraryPath(workspaceId, "/from-artifact"),
+    {
+      body,
+    },
   );
 }
 

@@ -12,11 +12,12 @@ import {
   Maximize,
   Maximize2,
   Minus,
+  Pencil,
   Plus,
   RotateCw,
 } from "lucide-react";
 import { IconButton } from "@/components/ui/button";
-import { ApiError } from "@/lib/api/client";
+import { ApiError, notifyUnauthorized } from "@/lib/api/client";
 import {
   getImageInfo,
   imagePath,
@@ -30,6 +31,16 @@ import {
   TiffWindowSelector,
   type TiffWindowSelection,
 } from "./TiffWindowSelector";
+import { TiffRegionsEditOverlay } from "./editors/tiff-text-regions/TiffRegionsEditOverlay";
+import type {
+  TiffTextRegionsEditorAction,
+  TiffTextRegionsEditorState,
+} from "./editors/tiff-text-regions/tiff-text-regions-editor-reducer";
+import {
+  readingLabel,
+  svgNamespace,
+  type PixelPolygon,
+} from "./tiff-reading-label";
 import { GeoMapArtifactRenderer } from "./geo-map-artifact-renderer";
 import { mapInteractionProps } from "./geo-map/map-interaction-props";
 
@@ -121,7 +132,19 @@ export function imageFailure(status: number): string {
   return "Could not load this image. Try again.";
 }
 
-export type PixelPolygon = readonly (readonly [number, number])[];
+export type { PixelPolygon } from "./tiff-reading-label";
+
+export interface TiffRegionEditorSession {
+  readonly active: boolean;
+  readonly canEdit: boolean;
+  readonly state: TiffTextRegionsEditorState | null;
+  readonly dispatch: React.Dispatch<TiffTextRegionsEditorAction>;
+  readonly onStartEdit: () => void;
+  readonly renderControls?: (ctx: {
+    inModal: boolean;
+    shortcutsActive: boolean;
+  }) => React.ReactNode;
+}
 
 type TiffOverlay = {
   page: number;
@@ -172,134 +195,6 @@ export function keepScaleOnSurfaceResize({
   // Then let the page stop at the frame's edge, and stop shrinking at the
   // floor, instead of floating loose until the next gesture touches it.
   viewport.applyConstraints(true);
-}
-
-const svgNamespace = "http://www.w3.org/2000/svg";
-
-type ReadingEdge = {
-  /** The corner this edge is walked from, once it has been pointed rightwards. */
-  x: number;
-  y: number;
-  run: number;
-  rise: number;
-  span: number;
-};
-
-type ReadingFrame = {
-  x: number;
-  y: number;
-  degrees: number;
-  depth: number;
-};
-
-function rightwardEdge(
-  from: readonly [number, number],
-  to: readonly [number, number],
-): ReadingEdge {
-  const [fromX, fromY] = from;
-  const [toX, toY] = to;
-  if (toX < fromX || (toX === fromX && toY < fromY)) {
-    // Words read left to right whichever corner the detector started from, so an
-    // edge that runs back across the page is walked the other way round.
-    return {
-      x: toX,
-      y: toY,
-      run: fromX - toX,
-      rise: fromY - toY,
-      span: Math.hypot(fromX - toX, fromY - toY),
-    };
-  }
-  return {
-    x: fromX,
-    y: fromY,
-    run: toX - fromX,
-    rise: toY - fromY,
-    span: Math.hypot(toX - fromX, toY - fromY),
-  };
-}
-
-/**
- * The line a reading is written along, in page pixels.
- *
- * A scan is rarely square to the text it carries, and the detector returns each
- * region as the quadrangle it found, tilted with the writing. So a baseline
- * cannot be assumed: it is one of the region's long edges, pointed left to right
- * because words read that way whichever corner the detector started at, and the
- * higher of them because the reading is written above what it labels. Depth is
- * measured across that edge rather than down the page, so a region turned 45°
- * does not borrow its own diagonal as a cap height.
- */
-function readingFrame(points: PixelPolygon): ReadingFrame | null {
-  const edges: ReadingEdge[] = [];
-  let first: readonly [number, number] | undefined;
-  let previous: readonly [number, number] | undefined;
-  for (const corner of points) {
-    first ??= corner;
-    if (previous) edges.push(rightwardEdge(previous, corner));
-    previous = corner;
-  }
-  if (first && previous && first !== previous) {
-    edges.push(rightwardEdge(previous, first));
-  }
-  let longest: ReadingEdge | null = null;
-  for (const edge of edges) {
-    if (!longest || edge.span > longest.span) longest = edge;
-  }
-  if (!longest) return null;
-  let baseline: ReadingEdge = longest;
-  for (const edge of edges) {
-    // The edge under the writing is as long as the edge over it and belongs to
-    // the line below, so the highest edge of the region is the one to write on.
-    if (edge.span < longest.span * 0.9) continue;
-    if (edge.y < baseline.y) baseline = edge;
-  }
-  const length = baseline.span || 1;
-  const along = baseline.run / length;
-  const across = baseline.rise / length;
-  let depth = 0;
-  for (const [x, y] of points) {
-    // Positive this way is the side the region's body lies on, that is, below
-    // the writing when it runs left to right.
-    const down = (x - baseline.x) * -across + (y - baseline.y) * along;
-    if (down > depth) depth = down;
-  }
-  return {
-    x: baseline.x,
-    y: baseline.y,
-    degrees: (Math.atan2(baseline.rise, baseline.run) * 180) / Math.PI,
-    depth,
-  };
-}
-
-function readingLabel(
-  points: PixelPolygon,
-  reading: string | null | undefined,
-): SVGTextElement | null {
-  const text = reading?.trim();
-  if (!text) return null;
-  const frame = readingFrame(points);
-  if (!frame) return null;
-  const { x, y, degrees, depth } = frame;
-  const label = document.createElementNS(svgNamespace, "text");
-  label.textContent = text;
-  label.setAttribute("x", String(x));
-  label.setAttribute("y", String(y));
-  label.setAttribute("fill", "darkorange");
-  // Half the region's depth, so a page full of readings stays legible as notes
-  // on the spans instead of competing with the scan itself. The floor is what a
-  // label has to be in page pixels to survive being drawn at all.
-  label.setAttribute("font-size", String(Math.max(4, depth * 0.4)));
-  label.setAttribute("dominant-baseline", "auto");
-  if (degrees) {
-    // Turned about the corner it starts from, so the first letter stays on the
-    // span and the rest of the word follows the tilt away from it.
-    label.setAttribute(
-      "transform",
-      `rotate(${Number(degrees.toFixed(2))} ${x} ${y})`,
-    );
-  }
-  label.style.pointerEvents = "none";
-  return label;
 }
 
 export function createTiffOverlay(
@@ -366,16 +261,23 @@ export function TiffArtifactView({
   artifactId,
   name,
   overlay,
+  outdatedNotice,
   selection,
   onSize,
   inModal = false,
   initialPage,
   onPageChange,
+  regionEditor,
 }: {
   workspaceId: string;
   artifactId: string;
   name: string;
   overlay?: TiffOverlay;
+  /**
+   * Set while `overlay` belongs to an older result: it still picks the page, but
+   * its regions are not drawn, and this says why.
+   */
+  outdatedNotice?: string;
   selection?: TiffWindowSelection;
   /** The page's pixel size, once its tile pyramid describes it. */
   onSize?: (width: number, height: number) => void;
@@ -385,6 +287,7 @@ export function TiffArtifactView({
   initialPage?: number;
   /** Called whenever the viewer pages, so a fullscreen copy can sync its card. */
   onPageChange?: (page: number) => void;
+  regionEditor?: TiffRegionEditorSession;
 }) {
   const [pageState, setPageState] = useState({
     source: initialPage,
@@ -417,7 +320,11 @@ export function TiffArtifactView({
         name={name}
         onPage={changePage}
         overlay={overlay?.page === page ? overlay : undefined}
+        outdatedNotice={outdatedNotice}
         selection={selection}
+        regionEditor={regionEditor}
+        inModal={inModal}
+        shortcutsActive={!fullscreenOpen}
         allowPageChange={Boolean(selection || !overlay)}
         onSize={onSize}
         onRetry={() => setAttempt(attempt + 1)}
@@ -437,7 +344,9 @@ export function TiffArtifactView({
               artifactId={artifactId}
               name={name}
               overlay={overlay}
+              outdatedNotice={outdatedNotice}
               selection={selection}
+              regionEditor={regionEditor}
               inModal
               initialPage={page}
               onPageChange={changePage}
@@ -457,10 +366,14 @@ function TiffPage({
   onPage,
   onRetry,
   overlay,
+  outdatedNotice,
   selection,
   allowPageChange,
   onSize,
   onOpenFullscreen,
+  regionEditor,
+  inModal,
+  shortcutsActive,
 }: {
   artifactId: string;
   path: string;
@@ -470,9 +383,13 @@ function TiffPage({
   onRetry: () => void;
   onSize?: (width: number, height: number) => void;
   overlay?: TiffOverlay;
+  outdatedNotice?: string;
   selection?: TiffWindowSelection;
   allowPageChange: boolean;
   onOpenFullscreen?: () => void;
+  regionEditor?: TiffRegionEditorSession;
+  inModal: boolean;
+  shortcutsActive: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const viewer = useRef<OpenSeadragon.Viewer | null>(null);
@@ -494,7 +411,21 @@ function TiffPage({
     overlay: TiffOverlay;
     text: string;
   } | null>(null);
-  const editableSelection = selection?.wholePage ? undefined : selection;
+  const regionState = regionEditor?.active ? regionEditor.state : null;
+  const regionDispatch = regionEditor?.dispatch;
+  const editingRegions = regionState !== null;
+  const editableSelection =
+    editingRegions || selection?.wholePage ? undefined : selection;
+  const bounds = overlay?.bounds;
+  useEffect(() => {
+    if (editingRegions && info) {
+      regionDispatch?.({
+        type: "set_page_size",
+        width: info.width,
+        height: info.height,
+      });
+    }
+  }, [editingRegions, info, regionDispatch]);
   // A card hands over a fresh callback every render, while the page is fetched
   // by path and page number. The size goes to whichever callback is current.
   const reportSize = useRef(onSize);
@@ -528,6 +459,8 @@ function TiffPage({
         const element = host.current;
         const instance = osd({
           element,
+          // Firefox caps WebGL contexts per tab, so use the 2D canvas drawer.
+          drawer: "canvas",
           showNavigationControl: false,
           showNavigator: false,
           loadTilesWithAjax: true,
@@ -564,10 +497,16 @@ function TiffPage({
         instance.addHandler("open", () => {
           setOpened({ viewer: instance, Point: osd.Point });
         });
-        instance.addHandler("tile-loaded", () => setLoaded(true));
-        instance.addHandler("tile-load-failed", (event) =>
-          setError(imageFailure(event.tileRequest?.status ?? 0)),
-        );
+        function markLoaded() {
+          instance.removeHandler("tile-loaded", markLoaded);
+          setLoaded(true);
+        }
+        instance.addHandler("tile-loaded", markLoaded);
+        instance.addHandler("tile-load-failed", (event) => {
+          const status = event.tileRequest?.status ?? 0;
+          if (status === 401) notifyUnauthorized();
+          setError(imageFailure(status));
+        });
         if (typeof ResizeObserver !== "undefined") {
           surfaceResize = new ResizeObserver(() =>
             keepScaleOnSurfaceResize({
@@ -602,7 +541,21 @@ function TiffPage({
   }, [showMap]);
 
   useEffect(() => {
-    if (!opened || !info || !overlay) return;
+    if (!opened || !bounds || showMap || hasFramedResult.current) return;
+    const { viewer } = opened;
+    const image = viewer.world.getItemAt(0);
+    const { col, row, width, height } = bounds;
+    viewer.viewport.fitBounds(
+      image.imageToViewportRectangle(col, row, width, height),
+      true,
+    );
+    hasFramedResult.current = true;
+  }, [opened, bounds, showMap]);
+
+  const outdated = outdatedNotice !== undefined;
+  useEffect(() => {
+    if (!opened || !info || !overlay || editingRegions || showMap || outdated)
+      return;
     const { viewer } = opened;
     const image = viewer.world.getItemAt(0);
     const layer = createTiffOverlay(
@@ -620,18 +573,12 @@ function TiffPage({
       layer,
       image.imageToViewportRectangle(0, 0, info.width, info.height),
     );
-    if (!hasFramedResult.current) {
-      hasFramedResult.current = true;
-      const { col, row, width, height } = overlay.bounds;
-      viewer.viewport.fitBounds(
-        image.imageToViewportRectangle(col, row, width, height),
-        true,
-      );
-    }
     return () => {
       viewer.removeOverlay(layer);
     };
-  }, [opened, info, overlay]);
+  }, [opened, info, overlay, editingRegions, showMap, outdated]);
+
+  const message = error ?? (loaded ? outdatedNotice : "Loading image…");
 
   const root = stylex.props(s.root);
   const viewport = stylex.props(s.viewport);
@@ -653,13 +600,13 @@ function TiffPage({
       className={`nodrag nopan nowheel ${root.className ?? ""}`}
       style={root.style}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && selectedReading) {
+        if (event.key === "Escape" && selectedReading && !editingRegions) {
           // The reading was dismissed by this view, so the keypress must not
           // reach the fullscreen modal around it and close it.
           event.stopPropagation();
           setSelectedReading(null);
         }
-        if (editing && event.key === "Escape") {
+        if (editing && !editingRegions && event.key === "Escape") {
           event.stopPropagation();
           setEditing(false);
         }
@@ -697,6 +644,23 @@ function TiffPage({
           style={{ ...viewport.style, zIndex: 0 }}
         />
       )}
+      {!showMap &&
+        opened &&
+        info &&
+        loaded &&
+        regionState &&
+        regionDispatch && (
+          <>
+            <TiffRegionsEditOverlay
+              viewer={opened.viewer}
+              PixelPoint={opened.Point}
+              pageSize={info}
+              state={regionState}
+              dispatch={regionDispatch}
+            />
+            {regionEditor?.renderControls?.({ inModal, shortcutsActive })}
+          </>
+        )}
       {!showMap && editableSelection && info && opened && loaded && (
         <TiffWindowSelector
           key={String(editing)}
@@ -710,19 +674,21 @@ function TiffPage({
       {!showMap &&
         loaded &&
         !error &&
+        !editingRegions &&
+        !outdated &&
         selectedReading &&
         selectedReading.overlay === overlay && (
           <div role="status" {...stylex.props(s.reading)}>
             {selectedReading.text}
           </div>
         )}
-      {!showMap && (error || !loaded) ? (
+      {!showMap && message ? (
         <div
           role="status"
           className={status.className}
           style={{ ...status.style, zIndex: 2 }}
         >
-          {error ?? "Loading image…"}
+          {message}
         </div>
       ) : null}
       <div
@@ -772,6 +738,16 @@ function TiffPage({
             >
               <Maximize size={14} />
             </IconButton>
+            {regionEditor?.canEdit && !regionEditor.active && (
+              <IconButton
+                size="2xs"
+                label="Edit regions"
+                disabled={!loaded}
+                onClick={regionEditor.onStartEdit}
+              >
+                <Pencil size={14} />
+              </IconButton>
+            )}
             {editableSelection && (
               <IconButton
                 size="2xs"

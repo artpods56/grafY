@@ -221,6 +221,74 @@ describe("GeoMapPreview", () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
     expect(map.remove).toHaveBeenCalledTimes(1);
   });
+
+  it("offers a linked card the property columns of its feature layers", async () => {
+    const [scan] = DESCRIPTOR.layers;
+    if (!scan) throw new Error("fixture has a scan layer");
+    const pointsSource = {
+      kind: "geojson" as const,
+      artifact_id: "points-artifact",
+      data_url:
+        "/v1/workspaces/workspace-1/artifacts/points/geo/features.geojson",
+      bounds: [30, 54, 31, 55] as [number, number, number, number],
+      feature_count: 2,
+      fields: [
+        { id: "name", title: "Name", value_type: "text" as const },
+        { id: "souls", title: "Souls", value_type: "integer" as const },
+      ],
+    };
+    const descriptor: GeoRenderDescriptor = {
+      ...DESCRIPTOR,
+      layers: [
+        scan,
+        {
+          ...scan,
+          id: "points",
+          title: "Volost centres",
+          source: pointsSource,
+          style: {
+            kind: "vector",
+            fill: { enabled: true, color: "#2563eb", opacity: 0.4 },
+            line: { enabled: true, color: "#2563eb", opacity: 1, width: 2 },
+            outline: { enabled: true, color: "#111827", opacity: 1, width: 1 },
+            point: {
+              enabled: true,
+              color: "#dc2626",
+              opacity: 1,
+              radius: 6,
+              stroke_color: "#ffffff",
+              stroke_width: 1,
+            },
+            label: null,
+          },
+        },
+      ],
+    };
+    const onFieldsChange = vi.fn();
+
+    await mount(
+      <GeoMapPreview
+        descriptor={descriptor}
+        interaction={{
+          outgoingFields: [],
+          selection: { kind: "key-selection", items: [] },
+          incoming: [],
+          onFieldsChange,
+          onSelectionChange: vi.fn(),
+          onActivityChange: vi.fn(),
+        }}
+      />,
+    );
+
+    expect(onFieldsChange).toHaveBeenLastCalledWith([
+      { id: "name", title: "Name", valueType: "text" },
+      { id: "souls", title: "Souls", valueType: "integer" },
+    ]);
+    const style = map.construct.mock.calls[0]?.[0].style;
+    expect(
+      typeof style === "object" && style?.sources["grafy-geo-source-points"],
+    ).toEqual({ type: "geojson", data: `/api${pointsSource.data_url}` });
+  });
 });
 
 describe("GeoMapArtifactRenderer", () => {

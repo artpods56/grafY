@@ -31,11 +31,14 @@ The source artifact remains immutable; the tiler owns disposable derived pixels.
    with the first trimmed entry; tiler verifies either. Main's tiler supported
    rotation but its API signed with the entire comma-separated string. This is
    corrected; the deploy guide describes restart order.
-6. Whole proxy deadlines are 10 seconds for tiles/thumbnails and 30 for info,
-   with no API retries. Tiler down, busy, or timed out returns 503 with
+6. Whole proxy deadlines are 10 seconds for tiles/thumbnails and 30 for info
+   and native windows. Only window reads are retried, once, after a timeout or a
+   dropped connection. Tiler down, busy, or timed out returns 503 with
    `Retry-After` (default 2 seconds, bounded to 1–30). Main used one 35-second
    inactivity timeout. Concurrency and queue limits belong to the tiler and
-   Compose, not a second API admission queue.
+   Compose, not a second API admission queue. The tiler keeps idle connections
+   open longer than the API's pool does, so the API never reuses one that the
+   tiler is closing.
 7. Old artifacts should lazily acquire missing source metadata on first request,
    persisted by the API. Unopenable files should return 422 and persist a
    not-displayable flag. No batch migration. **Deferred:** this requires storage

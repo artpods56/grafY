@@ -61,3 +61,32 @@ async def emit_node_progress(
     result = progress(message, current=current, total=total)
     if isawaitable(result):
         await result
+
+
+async def emit_node_preview(
+    context: object | None,
+    label: str,
+    *,
+    data: bytes | str,
+    content_type: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Publish one ephemeral live-preview frame when ``context`` supports it.
+
+    A missing context or a test double without ``preview`` is a no-op so
+    service providers can emit frames without coupling to the host runtime.
+    """
+
+    if context is None:
+        return
+    preview = getattr(context, "preview", None)
+    if not callable(preview):
+        return
+    result = preview(
+        label,
+        data=data,
+        content_type=content_type,
+        detail=detail,
+    )
+    if isawaitable(result):
+        await result

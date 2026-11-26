@@ -211,6 +211,7 @@ class NodeContractBinder:
         unsupported_outputs: (
             Mapping[InstanceKey, Mapping[str, str]] | None
         ) = None,
+        gated_outputs: Mapping[InstanceKey, Mapping[str, str]] | None = None,
     ) -> BoundNode:
         graph_node = instance.node
         node, registration = self.build_node(graph_node)
@@ -251,6 +252,7 @@ class NodeContractBinder:
             artifact_instance,
             upstream,
             {} if unsupported_outputs is None else unsupported_outputs,
+            {} if gated_outputs is None else gated_outputs,
             resolved_contracts.input_contract.ports,
         )
         invocation = _derive_invocation(view, graph_node.id, incoming)
@@ -282,12 +284,23 @@ class NodeContractBinder:
             providers,
             connections_by_port,
         )
+        exclusive_connected: dict[str, list[str]] = {}
         for name, port in resolved_contracts.input_contract.ports.items():
             if port.required and connections_by_port.get(name, 0) == 0:
                 raise NodeComputationError(
                     f"Node {graph_node.id!r} ({node.operator_id}@"
                     f"{node.operator_version}) required input {name!r} has no "
                     "incoming connection"
+                )
+            if port.exclusive_group is not None and connections_by_port.get(name, 0) > 0:
+                label = (port.title or "").strip() or name.replace("_", " ")
+                exclusive_connected.setdefault(port.exclusive_group, []).append(label)
+        for labels in exclusive_connected.values():
+            if len(labels) > 1:
+                joined = ", ".join(labels)
+                raise NodeComputationError(
+                    f"Node {graph_node.id!r} ({node.operator_id}@"
+                    f"{node.operator_version}) accepts only one of {joined} at a time"
                 )
 
         fed_plugs = {item.to_plug for item in incoming if item.to_plug is not None}
@@ -428,7 +441,7 @@ class NodeContractBinder:
 
         # No contract means no ports a connected provider could fail to produce:
         # that refusal names a registered consumer, never a pass-through.
-        incoming = self._incoming(instance, upstream, {}, {})
+        incoming = self._incoming(instance, upstream, {}, {}, {})
         if not incoming:
             raise NodeComputationError(
                 f"Boundary node {instance.key.node_id!r} of graph "
@@ -479,6 +492,7 @@ class NodeContractBinder:
         instance: ExpandedInstance,
         upstream: Mapping[InstanceKey, Mapping[str, ArtifactOutputValue]],
         unsupported_outputs: Mapping[InstanceKey, Mapping[str, str]],
+        gated_outputs: Mapping[InstanceKey, Mapping[str, str]],
         input_ports: Mapping[str, InputPortSpec],
     ) -> tuple[_Incoming, ...]:
         """Read every connection's upstream result and every origin's value.
@@ -505,6 +519,19 @@ class NodeContractBinder:
                     ) or edge.to_port.replace("_", " ")
                     raise NodeComputationError(
                         f"{label} are not produced by {provider}"
+                    )
+                missing_input = gated_outputs.get(connection.source, {}).get(
+                    edge.from_port
+                )
+                if missing_input is not None:
+                    port = input_ports.get(edge.to_port)
+                    label = (
+                        (port.title or "").strip()
+                        if port is not None
+                        else ""
+                    ) or edge.to_port.replace("_", " ")
+                    raise NodeComputationError(
+                        f"{label} is not produced because {missing_input} is not connected"
                     )
                 raise NodeComputationError(
                     f"Node {instance.key.node_id!r} input {edge.to_port!r} reads "

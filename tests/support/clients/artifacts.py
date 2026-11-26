@@ -62,6 +62,17 @@ class ArtifactsApi:
             headers=headers,
         )
 
+    def geo_features_geojson(
+        self, source_id: UUID, *, headers: Mapping[str, str] | None = None
+    ) -> Response:
+        """Fetch every stored feature as GeoJSON; the body has no JSON model."""
+
+        return self._client.get(
+            f"/v1/workspaces/{self._workspace_id}"
+            f"/artifacts/{source_id}/geo/features.geojson",
+            headers=headers,
+        )
+
     def raster_tilejson(
         self, source_id: UUID, *, headers: Mapping[str, str] | None = None
     ) -> Response:

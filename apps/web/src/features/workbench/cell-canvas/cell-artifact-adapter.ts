@@ -91,8 +91,30 @@ export interface CellViewerMetadata {
   filename?: string | null;
   /** The file's size, already formatted (`12 KB`). */
   byteSizeLabel?: string | null;
+  inLibrary?: boolean;
+  /** Exact download formats when the Library has an artifact summary. */
+  exportFormats?: ArtifactTypeSpec["export_formats"];
   /** Every item of a sequence, named and pictured, for its spread. */
   stackItems?: readonly ArtifactStackItem[];
+}
+
+function artifactDownloadFormats(
+  catalogSpec: ArtifactTypeSpec | undefined,
+  savedFormats: CellViewerMetadata["exportFormats"],
+): NonNullable<ArtifactCardSurfaceData["downloadFormats"]> {
+  const formats = new Set(
+    catalogSpec?.export_formats?.map(({ format }) => format),
+  );
+  for (const { format } of savedFormats ?? []) formats.add(format);
+  const hasJson =
+    formats.delete("json") ||
+    catalogSpec?.authorable === true ||
+    catalogSpec?.bundle.format === "inline-json";
+  if (hasJson) formats.add("json");
+  return Array.from(formats, (format) => ({
+    format,
+    label: format.toUpperCase(),
+  }));
 }
 
 /**
@@ -435,6 +457,13 @@ export function buildViewerCardsAndSurfaces(
     const artifactTypeId = artifactKey?.id ?? "artifact";
     const typeLabel = collectionTypeLabel(artifactKey, registry.artifact_types);
     const previewKind = previewKindFor(artifactKey, registry.artifact_types);
+    const catalogSpec = artifactKey
+      ? registry.artifact_types.find(
+          (candidate) =>
+            candidate.key.id === artifactKey.id &&
+            candidate.key.schema_version === artifactKey.schema_version,
+        )
+      : undefined;
     const viewerPorts: CellPort[] = [];
     if (feedLink || !ref) {
       viewerPorts.push({
@@ -545,6 +574,17 @@ export function buildViewerCardsAndSurfaces(
         ? { workspaceId: options.workspaceId }
         : {}),
       ...(artifact ? { artifact } : {}),
+      ...(artifact && (itemCount ?? 1) === 1
+        ? {
+            downloadFormats: artifactDownloadFormats(
+              catalogSpec,
+              metadata?.exportFormats,
+            ),
+            inLibrary: metadata?.inLibrary === true,
+          }
+        : {}),
+      ...(catalogSpec?.authorable === true ? { authorable: true } : {}),
+      ...(feedLink ? { producerLinked: true } : {}),
       ...(tiffWindow ? { tiffWindow } : {}),
       ...(tiffText ? { tiffText } : {}),
     });

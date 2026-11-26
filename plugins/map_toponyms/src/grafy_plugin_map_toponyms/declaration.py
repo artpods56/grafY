@@ -1,3 +1,4 @@
+from grafy_core.artifact_contracts import MARKDOWN, TEXT_VALUE
 from grafy_core.contracts.ocr import CropTextReader, TextBoxDetector
 from grafy_core.domain.plugin_capabilities import PluginRuntimeCapability
 from grafy_core.plugins import Plugin
@@ -16,3 +17,5 @@ MAP_TOPONYMS.register_service_contract_dependency(TextBoxDetector)
 MAP_TOPONYMS.register_service_contract_dependency(CropTextReader)
 MAP_TOPONYMS.register_artifact_type_dependency(TIFF_FILE)
 MAP_TOPONYMS.register_artifact_type_dependency(TABLE_DATA)
+MAP_TOPONYMS.register_artifact_type_dependency(MARKDOWN)
+MAP_TOPONYMS.register_artifact_type_dependency(TEXT_VALUE)

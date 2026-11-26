@@ -40,9 +40,11 @@ delivery.
 
 ### Artifact
 
-A typed, versioned value produced or consumed by a node. Its payload may be
-inline or stored as content, but its artifact type and schema version are
-always explicit.
+A typed, versioned value that a node can produce or consume and that a user or
+agent can author when its registered type accepts JSON authoring. Its payload
+may be inline or stored as content. Its artifact type and schema version are
+always explicit. Authoring an edit creates a new immutable artifact in the
+same Workspace and can record a reference to the prior artifact as provenance.
 
 ### Artifact type
 
@@ -263,13 +265,13 @@ fingerprint.
 ### Library artifact
 
 The artifact a Workspace owns, shown in the Library drawer. There is one Library
-per Workspace and every member sees it. Uploaded bytes and node results are
-both eligible. A Library artifact is Workspace-owned and independent of any
+per Workspace and every member sees it. Any stored Workspace artifact is
+eligible, including uploads, node results, and artifacts authored on the
+canvas. A Library artifact is Workspace-owned and independent of any
 Project: Projects reference it, and deleting a Project or a checkpoint
 never deletes it. It is a retention root in its own right, so nothing
-collects it while it sits in the Library. Saving into the Library is promotion
-rather than first persist, because the artifact already exists as an upload or a
-stored node result before anyone saves it. Identity is the exact
+collects it while it sits in the Library. Saving into the Library promotes an
+artifact that already exists in the Workspace. Identity is the exact
 artifact reference, so saving the same artifact twice yields one Library
 artifact, and picking one never means taking the newest artifact of a matching
 type. An artifact has one placement in the Library, and moving it never changes
@@ -407,10 +409,10 @@ Spatial sources and map presentation are separate artifact roles. A
 features may contain points, lines, polygons, multipolygons, or geometry
 collections. Its logical source is stored in bounded chunks and stays the only
 copy of the geometry: no derived rendering projection is written beside it, and
-reading one feature or querying matched features reads the stored chunks. No
-renderer draws vector layers yet, so a vector collection or a vector map layer
-contributes no rendered layer to a descriptor while its exact features, property
-fields and footprint stay readable. A map raster is an uploaded georeferenced
+reading one feature or querying matched features reads the stored chunks. A
+map draws a collection by fetching those chunks whole, as one GeoJSON document
+served on request, and styling it in the browser; a collection too large to
+fetch whole is refused rather than tiled. A map raster is an uploaded georeferenced
 `file.tiff@1` read on demand by the tiler, which renders one XYZ tile per
 request; nothing precomputes a pyramid or a Cloud Optimized copy.
 
@@ -424,9 +426,10 @@ pixels, or tiles. The same exact source can therefore participate in
 several independently styled maps without data duplication.
 
 The artifact HTTP adapter resolves those references into one small immutable
-render descriptor. Every rendered layer in it is a raster tile source: a TIFF,
-a mosaic or a remote WMS read through TileJSON plus one tile per request;
-storage bucket names and object keys never cross the API boundary. Renderer
+render descriptor. A raster layer in it is a tile source: a TIFF, a mosaic or a
+remote WMS read through TileJSON plus one tile per request. A feature layer
+names its collection's GeoJSON URL and property fields. Storage bucket names
+and object keys never cross the API boundary. Renderer
 controls are local preview overrides
 unless a workflow deliberately produces another map-layer artifact.
 
@@ -779,6 +782,19 @@ use one connector ring; sequences use two, including a sequence of one item.
 Project commands are validated batches applied against the live head. An accepted
 batch is durable as soon as it commits. Checkpoints are immutable snapshots of the
 live head that can be restored as a new revision.
+
+### Selection link
+
+A stored presentation binding between two artifact cards: rows or features
+selected in the source card are shown in the target card. A link names up to
+eight field pairs and its effects (`focus`, `filter`, `highlight`) and lives in
+the graph document's presentation beside the cards it joins; removing either
+card removes it. Matching is exact: a target row or feature matches when every
+paired field equals the selected value, so both sides need a shared key. The
+selection itself is per session and never saved. A preview takes part by
+publishing its fields and selection and by applying effects; tables and maps do.
+The canvas draws a link as a dashed line between its cards, and the card menu
+creates, edits and removes it.
 
 ### Workbench
 

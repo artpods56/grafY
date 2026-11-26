@@ -39,6 +39,7 @@ from grafy_api.node_secrets import NodeSecretService
 from grafy_api.realtime.agent_events import ProjectAgentEvents
 from grafy_api.realtime.checkpointing import ProjectAutoCheckpointer
 from grafy_api.realtime.hub import ProjectRoomHub
+from grafy_api.realtime.preview_stream import NodePreviewHub, ProjectNodePreview
 from grafy_api.realtime.run_events import ProjectNodeProgress, ProjectRunEvents
 from grafy_api.runs.service import RunService
 from grafy_api.runs.facts import ApplicationFactsFactory
@@ -168,6 +169,7 @@ async def build_app_resources(
 
     projects = ProjectService(new_unit_of_work)
     project_room_hub = ProjectRoomHub.from_settings(settings.realtime)
+    node_preview_hub = NodePreviewHub()
     collaboration = CollaborationService(
         new_unit_of_work,
         command_hmac_key=settings.keys.resolved_command_hmac_key(),
@@ -222,6 +224,7 @@ async def build_app_resources(
         upload_config=UploadServiceConfig.from_settings(settings.uploads),
         node_secrets=node_secrets,
         progress_reporter_factory=lambda: ProjectNodeProgress(project_room_hub),
+        preview_reporter_factory=lambda: ProjectNodePreview(node_preview_hub),
         egress_policy=workbench_egress_policy(settings.egress),
         provider_cache=build_provider_cache(database, settings.provider_cache),
         provider_cache_ttl_seconds=settings.provider_cache.provider_cache_ttl_seconds,
@@ -275,6 +278,7 @@ async def build_app_resources(
         agent_models=agent_models,
         agent_turns=agent_turns,
         project_room_hub=project_room_hub,
+        node_preview_hub=node_preview_hub,
         auto_checkpointer=auto_checkpointer,
     )
     try:

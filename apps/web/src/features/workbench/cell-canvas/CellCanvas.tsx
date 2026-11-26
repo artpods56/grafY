@@ -26,6 +26,11 @@ import { CellArtifactCard, CellCollectionCard } from "./cards/CellArtifactCard";
 import { CellArtifactSequenceSpread } from "./cards/CellArtifactSequenceSpread";
 import { CellOperatorCard } from "./cards/CellOperatorCard";
 import { CellStackTuckLayer, type StackTuck } from "./cards/CellStackTuckLayer";
+import { CellSelectionLinkLayer } from "./CellSelectionLinkLayer";
+import {
+  useSelectionLinksContext,
+  type SelectionLinkLine,
+} from "../artifacts/selection-links/SelectionLinksContext";
 import {
   computeSequenceSpreadLayout,
   findArtifactMergeSuggestions,
@@ -44,6 +49,7 @@ import type {
   CellResizeEdge,
   CellSelectionSnapshot,
   CellViewportApi,
+  InlineArtifactEditingProps,
 } from "./cell-contracts";
 import {
   cellCanvasInteractionReducer,
@@ -164,7 +170,7 @@ export interface CellCanvasHandle {
   cancelGesture(): void;
 }
 
-export interface CellCanvasProps {
+export interface CellCanvasProps extends InlineArtifactEditingProps {
   graph: CellGraph;
   surfaceById: Readonly<Record<string, CellCardSurfaceData>>;
   /** A port to light in a render fixture, using the same key as a wiring target. */
@@ -225,6 +231,10 @@ export interface CellCanvasProps {
     color: AnnotationColorToken,
   ) => void;
   onArtifactInspect?: (cardId: string) => void;
+  onArtifactDownload?: (cardId: string, format: string | null) => void;
+  onArtifactSaveToLibrary?: (cardId: string) => void;
+  onArtifactEdit?: (cardId: string) => void;
+  onArtifactDuplicateAndEdit?: (cardId: string) => void;
   /**
    * Opens downstream discovery from an artifact card that has one output.
    * The point sits just to the right of that card.
@@ -285,6 +295,7 @@ const EMPTY_PORT_IDS: ReadonlySet<string> = new Set();
 const EMPTY_PIPES: readonly StagePipe[] = [];
 const EMPTY_WELLS: readonly StageWell[] = [];
 const EMPTY_REMOTE_PEERS: readonly CellRemotePeerState[] = [];
+const NO_SELECTION_LINK_LINES: readonly SelectionLinkLine[] = [];
 
 const s = stylex.create({
   root: {
@@ -416,6 +427,10 @@ export function CellCanvas({
   onPickServiceEngine,
   onAnnotationColorChange,
   onArtifactInspect,
+  onArtifactDownload,
+  onArtifactSaveToLibrary,
+  onArtifactEdit,
+  onArtifactDuplicateAndEdit,
   onArtifactNextStep,
   canMergeArtifactCards,
   onMergeArtifactCards,
@@ -426,12 +441,16 @@ export function CellCanvas({
   onRemoveArtifactCardItem,
   onUngroupArtifactCard,
   onArtifactImageLoad,
+  inlineEditingCardId,
+  onSetInlineEditingCardId,
+  onInlineArtifactSaved,
   onCollectionRemoveMember,
   onHandleReady,
   onViewportZoomChange,
   onStatsChange,
   children,
 }: CellCanvasProps) {
+  const selectionLinks = useSelectionLinksContext();
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const punched = look.well === "punched";
   const {
@@ -1710,6 +1729,12 @@ export function CellCanvas({
             mergeHover={mergeTarget?.cardId === card.id}
             merging={mergeTarget !== null && draggedCardId === card.id}
             onInspect={onArtifactInspect}
+            onDownload={onArtifactDownload}
+            onSaveToLibrary={onArtifactSaveToLibrary}
+            onEdit={editable ? onArtifactEdit : undefined}
+            onDuplicateAndEdit={
+              editable ? onArtifactDuplicateAndEdit : undefined
+            }
             onNextStep={
               editable &&
               onArtifactNextStep &&
@@ -1725,6 +1750,13 @@ export function CellCanvas({
             onExpandSequence={toggleSequence}
             onUngroup={editable ? onUngroupArtifactCard : undefined}
             onImageLoad={onArtifactImageLoad}
+            inlineEditingCardId={
+              editable && inlineEditingCardId === card.id ? card.id : null
+            }
+            onSetInlineEditingCardId={
+              editable ? onSetInlineEditingCardId : undefined
+            }
+            onInlineArtifactSaved={editable ? onInlineArtifactSaved : undefined}
             sequenceExpanded={openSequence?.card.id === card.id}
             canExpandSequence={spreadableById.get(card.id) ?? true}
           />
@@ -1809,6 +1841,10 @@ export function CellCanvas({
                   }))
                 : []
             }
+          />
+          <CellSelectionLinkLayer
+            cards={graph.cards}
+            lines={selectionLinks?.lines ?? NO_SELECTION_LINK_LINES}
           />
           <div {...stylex.props(s.cards)}>
             <CellStackTuckLayer
@@ -1904,9 +1940,17 @@ export function CellCanvas({
               onPreferredVisibleCountChange={setSpreadVisibleCount}
               onMove={editable && onMoveCards ? moveSpreadSequence : undefined}
               onInspect={onArtifactInspect}
-              onReorder={editable ? onReorderArtifactCardItem : undefined}
+              onReorder={
+                editable && !openSequence.surface.producerLinked
+                  ? onReorderArtifactCardItem
+                  : undefined
+              }
               onExtract={editable ? onExtractArtifactCardItem : undefined}
-              onRemoveItem={editable ? onRemoveArtifactCardItem : undefined}
+              onRemoveItem={
+                editable && !openSequence.surface.producerLinked
+                  ? onRemoveArtifactCardItem
+                  : undefined
+              }
             />
           ) : null}
           <CellRemotePresenceLayer

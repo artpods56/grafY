@@ -15,6 +15,9 @@ import { ApiError, onUnauthorized } from "@/lib/api/client";
 import type { Session } from "@/lib/api/contract";
 import { sandboxSession } from "./dev-session";
 
+/** Skip another focus/visibility probe when the last one succeeded this recently. */
+const SESSION_REVALIDATE_INTERVAL_MS = 30_000;
+
 type AuthState =
   | { kind: "loading" }
   | { kind: "signed-out" }
@@ -205,6 +208,58 @@ export function AuthSessionBoundary({
     loadSession(controller.signal);
     return () => controller.abort();
   }, [loadSession]);
+
+  React.useEffect(() => {
+    if (state.kind !== "authenticated" || sandboxSession()) return;
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      return;
+    }
+
+    const controller = new AbortController();
+    let inFlight = false;
+    let lastSuccessAt: number | null = null;
+
+    // A session can expire while the tab is hidden, and the canvas may not
+    // make another HTTP call. Recheck when the person comes back. A probe
+    // already running, or one that succeeded in the last 30s, is skipped.
+    // Only HTTP 401 ends the session; a blip leaves it authenticated.
+    const probe = () => {
+      if (inFlight) return;
+      if (
+        lastSuccessAt !== null &&
+        Date.now() - lastSuccessAt < SESSION_REVALIDATE_INTERVAL_MS
+      ) {
+        return;
+      }
+      inFlight = true;
+      void getSession(controller.signal)
+        .then(() => {
+          if (controller.signal.aborted) return;
+          lastSuccessAt = Date.now();
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          if (error instanceof ApiError && error.status === 401) {
+            expireSession();
+          }
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") probe();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", probe);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", probe);
+      controller.abort();
+    };
+  }, [expireSession, state.kind]);
 
   const logout = React.useCallback(async () => {
     if (logoutInFlightRef.current) return;

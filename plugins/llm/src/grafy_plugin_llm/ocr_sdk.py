@@ -8,7 +8,7 @@ from grafy_core.artifact_contracts import MarkdownValue
 from grafy_core.contracts.ocr import DocumentOcrResult
 from grafy_core.documents import PdfFile, RasterImage
 from grafy_core.egress import EgressPolicy, EgressRejectedError, PinnedPublicAddressTransport
-from grafy_core.nodes import active_node_context, emit_node_progress
+from grafy_core.nodes import active_node_context, emit_node_preview, emit_node_progress
 from openai import (
     APIConnectionError,
     APIResponseValidationError,
@@ -18,7 +18,6 @@ from openai import (
     OpenAIError,
 )
 from openai.types.chat import (
-    ChatCompletion,
     ChatCompletionContentPartImageParam,
     ChatCompletionContentPartParam,
     ChatCompletionContentPartTextParam,
@@ -28,8 +27,13 @@ from openai.types.chat import (
 )
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 from PIL import Image
-from pydantic import SecretStr, ValidationError
+from pydantic import SecretStr
 
+from grafy_plugin_llm.completion_response import (
+    CompatChatCompletion,
+    check_choice_error,
+    parse_chat_completion,
+)
 from grafy_plugin_llm.ocr import (
     VisionLlmOcrConfig,
     VisionLlmOcrProvider,
@@ -72,7 +76,7 @@ def _data_url(mime: str, image_bytes: bytes) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
-async def _image_data_url(image: RasterImage) -> str:
+async def _prepare_image(image: RasterImage) -> tuple[str, bytes]:
     label = image.filename or "this image"
     try:
         image_bytes = await image.read(max_bytes=VISION_LLM_OCR_MAX_IMAGE_BYTES)
@@ -89,9 +93,9 @@ async def _image_data_url(image: RasterImage) -> str:
     if content_type in _DIRECT_IMAGE_TYPES:
         # image/jpg is not an IANA type. Vision APIs expect image/jpeg.
         mime = "image/jpeg" if content_type == "image/jpg" else content_type
-        return _data_url(mime, image_bytes)
+        return mime, image_bytes
     if content_type in _PNG_CONVERSION_TYPES:
-        return _data_url("image/png", _png_bytes(image_bytes, label))
+        return "image/png", _png_bytes(image_bytes, label)
     raise VisionLlmOcrProviderError(
         f"{label} has unsupported content type {content_type!r}"
     )
@@ -147,18 +151,27 @@ def _status_guidance(status_code: int) -> str:
     return "The provider rejected the request."
 
 
-def _completion_text(completion: ChatCompletion, *, endpoint: str, model: str) -> str:
+def _completion_text(
+    completion: CompatChatCompletion, *, endpoint: str, model: str
+) -> str:
     if not completion.choices:
         raise VisionLlmOcrProviderError(
             f"Vision LLM OCR response from {endpoint!r} contained no choices "
             f"for model {model!r}"
         )
     choice = completion.choices[0]
+    check_choice_error(
+        choice,
+        endpoint=endpoint,
+        model=model,
+        service_name="Vision LLM OCR",
+        error_type=VisionLlmOcrProviderError,
+    )
     if choice.message.refusal is not None and choice.message.refusal != "":
         raise VisionLlmOcrProviderError(
             f"Vision LLM OCR choice {choice.index} was refused for model {model!r}"
         )
-    assistant_content = choice.message.content
+    assistant_content = choice.message.text_content()
     if assistant_content is None or assistant_content == "":
         raise VisionLlmOcrProviderError(
             f"Vision LLM OCR choice {choice.index} did not contain text for "
@@ -190,8 +203,17 @@ class VisionLlmOcrSdkProvider(VisionLlmOcrProvider):
         if isinstance(document, PdfFile):
             raise VisionLlmOcrProviderError(_PDF_MESSAGE)
 
-        await emit_node_progress(active_node_context(), "Preparing image…")
-        data_url = await _image_data_url(document)
+        context = active_node_context()
+        await emit_node_progress(context, "Preparing image…")
+        mime, payload_bytes = await _prepare_image(document)
+        await emit_node_preview(
+            context,
+            f"Page ({document.filename or 'image'})",
+            data=payload_bytes,
+            content_type=mime,
+            detail=config.model,
+        )
+        data_url = _data_url(mime, payload_bytes)
         request: CompletionCreateParamsNonStreaming = {
             "model": config.model,
             "messages": _messages(config, data_url),
@@ -260,15 +282,15 @@ class VisionLlmOcrSdkProvider(VisionLlmOcrProvider):
                 f"{config.model!r} with {exc.__class__.__name__}"
             ) from None
 
-        try:
-            completion = ChatCompletion.model_validate(completion.model_dump())
-        except ValidationError:
-            raise VisionLlmOcrProviderError(
-                f"Vision LLM OCR response from {endpoint!r} did not match the "
-                f"SDK response model for {config.model!r}"
-            ) from None
+        parsed = parse_chat_completion(
+            completion,
+            endpoint=endpoint,
+            model=config.model,
+            service_name="Vision LLM OCR",
+            error_type=VisionLlmOcrProviderError,
+        )
 
-        markdown = _completion_text(completion, endpoint=endpoint, model=config.model)
+        markdown = _completion_text(parsed, endpoint=endpoint, model=config.model)
         return DocumentOcrResult(
             markdown=MarkdownValue(markdown=markdown),
             blocks=None,

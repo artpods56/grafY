@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import ClassVar, Literal, Self
 from uuid import UUID
 
-from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.domain.agent_conversations import AgentConversationEventPayload
 from grafy_core.domain.agent_turns import AgentTurnStatus
 from grafy_core.domain.credentials import (
@@ -21,6 +21,11 @@ class ClientModel(BaseModel):
         frozen=True,
         populate_by_name=True,
     )
+
+
+class CreatedArtifact(ArtifactRef):
+    derived_from_artifact_id: UUID | None
+    created_at: datetime
 
 
 class ServiceContractKey(ClientModel):
@@ -56,6 +61,8 @@ class CatalogPort(ClientModel):
     service_contracts: tuple[ServiceContractKey, ...] = ()
     service_features: tuple[ServiceContractFeatures, ...] = ()
     requires_service_feature: RequiresServiceFeature | None = None
+    requires_input: str | None = None
+    exclusive_group: str | None = None
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...]
     instance_plugs: bool = False
@@ -548,6 +555,7 @@ __all__ = [
     "AgentConversationEvents",
     "AgentModel",
     "AgentTurn",
+    "CreatedArtifact",
     "CatalogConversion",
     "CatalogConversionKey",
     "CatalogNode",
