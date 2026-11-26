@@ -120,7 +120,10 @@ export function TiffTextArtifact({
   onEditingChange,
   onSaveArtifact,
   EditControls = TiffRegionsEditControls,
+  placeholder,
+  viewportProps,
 }: {
+  /** The result to draw, or null while its producer has none that is current. */
   url: string | null;
   workspaceId: string;
   height: number;
@@ -134,7 +137,15 @@ export function TiffTextArtifact({
   onEditingChange?: (editing: boolean) => void;
   onSaveArtifact?: (nextRef: ArtifactRef) => void;
   EditControls?: React.ComponentType<TiffRegionsEditControlsProps>;
+  /** Shown while there is no result and no scan to keep open. */
+  placeholder?: React.ReactNode;
+  /** For the element holding the scan; a placeholder does not get them. */
+  viewportProps?: React.ComponentProps<"div"> & {
+    "data-cell-interactive-viewport"?: string;
+  };
 }) {
+  // The previous result keeps the scan, and so the zoom and pan, while the next
+  // one is on its way.
   const { data, error } = useSWR(url, fetchOverlay, { keepPreviousData: true });
   const [session, dispatch] = useEffectReducer(
     reduceTiffTextEditSession,
@@ -227,14 +238,21 @@ export function TiffTextArtifact({
         }
       : undefined;
   if (!artifactId) {
+    if (url === null) return placeholder;
     return (
       <p role="status">
         {error ? "Text overlay unavailable." : "Loading text regions…"}
       </p>
     );
   }
+  let outdatedNotice: string | undefined;
+  if (data && data.url !== url) {
+    if (url === null) outdatedNotice = "Regions hidden until the next run.";
+    else if (error) outdatedNotice = "Text overlay unavailable.";
+    else outdatedNotice = "Loading text regions…";
+  }
   return (
-    <div style={{ height }}>
+    <div {...viewportProps} style={{ height }}>
       {parsed && !parsed.ok && <p role="alert">{parsed.reason}</p>}
       <TiffArtifactView
         workspaceId={workspaceId}
@@ -243,6 +261,7 @@ export function TiffTextArtifact({
         overlay={
           liveOverlay?.artifactId === artifactId ? liveOverlay : undefined
         }
+        outdatedNotice={outdatedNotice}
         selection={activeSession ? undefined : linkedWindow?.selection}
         regionEditor={regionEditor}
         onSize={onSize}

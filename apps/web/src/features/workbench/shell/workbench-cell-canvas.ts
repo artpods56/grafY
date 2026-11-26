@@ -689,8 +689,10 @@ export function buildWorkbenchCellScene({
     viewerTiffWindows = new Map();
     viewerTiffTexts = new Map();
     const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    // A text card keeps its scan view while it waits for a result, so every
+    // waiting one gets a surface, with or without a linked window.
     const rememberWaitingTiffText = (cardId: string) => {
-      if (!workspaceId || !onOperatorConfigChange || !artifactViewerEdges) {
+      if (!workspaceId || !artifactViewerEdges) {
         return;
       }
       const feed = artifactViewerEdges.find((edge) => edge.target === cardId);
@@ -712,21 +714,23 @@ export function buildWorkbenchCellScene({
       ) {
         return;
       }
-      const linkedWindow = linkedTiffWindow(
-        cardId,
-        artifactViewerEdges,
-        nodesById,
-        document,
-        registry,
-        onOperatorConfigChange,
-      );
-      if (!linkedWindow) return;
-      const thumb = tiffThumbnailUrl(workspaceId, linkedWindow.artifactId);
+      const linkedWindow = onOperatorConfigChange
+        ? linkedTiffWindow(
+            cardId,
+            artifactViewerEdges,
+            nodesById,
+            document,
+            registry,
+            onOperatorConfigChange,
+          )
+        : undefined;
       viewerTiffTexts?.set(cardId, {
         url: null,
         recognized: key.id === "ocr.tiff_recognized_text",
-        linkedWindow,
+        ...(linkedWindow ? { linkedWindow } : {}),
       });
+      if (!linkedWindow) return;
+      const thumb = tiffThumbnailUrl(workspaceId, linkedWindow.artifactId);
       viewerImages?.set(cardId, {
         imageUrl: null,
         stackImageUrls: [],

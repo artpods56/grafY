@@ -746,6 +746,86 @@ it("opens the source TIFF page and draws offset polygons in full-image pixels", 
   }
 });
 
+it("keeps the scan open and hides old regions until the next result arrives", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const triangle = [
+    [10, 10],
+    [20, 10],
+    [15, 20],
+  ];
+  const regionCounts: Record<string, number> = {
+    "/first-result": 1,
+    "/second-result": 2,
+  };
+  const response = vi.fn(async (url: string) => {
+    const count = regionCounts[url];
+    if (count) {
+      return Response.json({
+        source: { artifact_id: "kept-tiff" },
+        window: { page: 1, col: 0, row: 0, width: 100, height: 50 },
+        regions: Array.from({ length: count }, () => ({ polygon: triangle })),
+      });
+    }
+    return Response.json({
+      width: 800,
+      height: 600,
+      page_count: 3,
+      tile_size: 256,
+      min_level: 8,
+      max_level: 10,
+      tile_format: "png",
+    });
+  });
+  vi.stubGlobal("fetch", response);
+  document.body.append(host);
+  const root = createRoot(host);
+  const render = (url: string | null) =>
+    root.render(
+      <TiffTextArtifact
+        workspaceId="test-space"
+        url={url}
+        height={300}
+        placeholder={<p>No result yet</p>}
+      />,
+    );
+  const regions = (count: number) =>
+    document.querySelector(`svg[aria-label="${count} detected text regions"]`);
+  try {
+    await act(async () => render(null));
+    expect(host.textContent).toBe("No result yet");
+
+    await act(async () => render("/first-result"));
+    await vi.waitFor(() => expect(host.querySelector("img")).not.toBeNull());
+    await act(async () =>
+      host.querySelector("img")?.dispatchEvent(new Event("load")),
+    );
+    await vi.waitFor(() => expect(open.handlers.has("open")).toBe(true));
+    await act(async () => {
+      open.handlers.get("open")?.();
+      open.handlers.get("tile-loaded")?.();
+    });
+    expect(regions(1)).not.toBeNull();
+
+    await act(async () => render(null));
+    expect(regions(1)).toBeNull();
+    expect(host.textContent).toContain("Regions hidden until the next run.");
+    // Still page 2 of the same viewer, not the placeholder or a fresh one.
+    expect(
+      host.querySelector("[data-tiff-viewport]")?.getAttribute("data-page"),
+    ).toBe("1");
+
+    await act(async () => render("/second-result"));
+    await vi.waitFor(() => expect(regions(2)).not.toBeNull());
+    expect(host.textContent).not.toContain("Regions hidden");
+    expect(open.viewerStart).toHaveBeenCalledTimes(1);
+    expect(open.viewerDestroy).not.toHaveBeenCalled();
+    // The view was framed once, so a person's zoom and pan are left alone.
+    expect(open.fitBounds).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
 it("inspects OCR text on the source polygon by pointer or keyboard", () => {
   const select = vi.fn();
   const layer = createTiffOverlay(

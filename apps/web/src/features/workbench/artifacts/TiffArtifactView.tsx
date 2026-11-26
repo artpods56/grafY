@@ -261,6 +261,7 @@ export function TiffArtifactView({
   artifactId,
   name,
   overlay,
+  outdatedNotice,
   selection,
   onSize,
   inModal = false,
@@ -272,6 +273,11 @@ export function TiffArtifactView({
   artifactId: string;
   name: string;
   overlay?: TiffOverlay;
+  /**
+   * Set while `overlay` belongs to an older result: it still picks the page, but
+   * its regions are not drawn, and this says why.
+   */
+  outdatedNotice?: string;
   selection?: TiffWindowSelection;
   /** The page's pixel size, once its tile pyramid describes it. */
   onSize?: (width: number, height: number) => void;
@@ -314,6 +320,7 @@ export function TiffArtifactView({
         name={name}
         onPage={changePage}
         overlay={overlay?.page === page ? overlay : undefined}
+        outdatedNotice={outdatedNotice}
         selection={selection}
         regionEditor={regionEditor}
         inModal={inModal}
@@ -337,6 +344,7 @@ export function TiffArtifactView({
               artifactId={artifactId}
               name={name}
               overlay={overlay}
+              outdatedNotice={outdatedNotice}
               selection={selection}
               regionEditor={regionEditor}
               inModal
@@ -358,6 +366,7 @@ function TiffPage({
   onPage,
   onRetry,
   overlay,
+  outdatedNotice,
   selection,
   allowPageChange,
   onSize,
@@ -374,6 +383,7 @@ function TiffPage({
   onRetry: () => void;
   onSize?: (width: number, height: number) => void;
   overlay?: TiffOverlay;
+  outdatedNotice?: string;
   selection?: TiffWindowSelection;
   allowPageChange: boolean;
   onOpenFullscreen?: () => void;
@@ -542,8 +552,10 @@ function TiffPage({
     hasFramedResult.current = true;
   }, [opened, bounds, showMap]);
 
+  const outdated = outdatedNotice !== undefined;
   useEffect(() => {
-    if (!opened || !info || !overlay || editingRegions || showMap) return;
+    if (!opened || !info || !overlay || editingRegions || showMap || outdated)
+      return;
     const { viewer } = opened;
     const image = viewer.world.getItemAt(0);
     const layer = createTiffOverlay(
@@ -564,7 +576,9 @@ function TiffPage({
     return () => {
       viewer.removeOverlay(layer);
     };
-  }, [opened, info, overlay, editingRegions, showMap]);
+  }, [opened, info, overlay, editingRegions, showMap, outdated]);
+
+  const message = error ?? (loaded ? outdatedNotice : "Loading image…");
 
   const root = stylex.props(s.root);
   const viewport = stylex.props(s.viewport);
@@ -661,19 +675,20 @@ function TiffPage({
         loaded &&
         !error &&
         !editingRegions &&
+        !outdated &&
         selectedReading &&
         selectedReading.overlay === overlay && (
           <div role="status" {...stylex.props(s.reading)}>
             {selectedReading.text}
           </div>
         )}
-      {!showMap && (error || !loaded) ? (
+      {!showMap && message ? (
         <div
           role="status"
           className={status.className}
           style={{ ...status.style, zIndex: 2 }}
         >
-          {error ?? "Loading image…"}
+          {message}
         </div>
       ) : null}
       <div

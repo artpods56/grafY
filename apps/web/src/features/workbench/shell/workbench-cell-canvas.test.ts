@@ -1762,20 +1762,21 @@ describe("artifact card pictures", () => {
     };
     const thumb = imageThumbnailUrl(imagePath("ws", "scan"), 0);
     const viewers = artifactViewersFromPresentation(waiting);
-    const { graph: fitted, surfaceById } = buildWorkbenchCellScene({
+    const input = {
       workspaceId: "ws",
       document: textGraph,
       registry: textRegistry,
       presentation: waiting,
       nodes: [producer, textTarget],
       nodeInstanceStates: {},
-      collapsedAppendices: new Set(),
+      collapsedAppendices: new Set<string>(),
       canRun: true,
       artifactViewerEdges: viewers.edges,
       artifactViewerNodes: viewers.nodes,
       imageNaturalSizes: new Map([[thumb, { width: 1200, height: 1600 }]]),
       onOperatorConfigChange: () => {},
-    });
+    };
+    const { graph: fitted, surfaceById } = buildWorkbenchCellScene(input);
     const surface = surfaceById.regions;
     assert(surface?.kind === "artifact");
     expect(surface.previewKind).toBe("tiff-text");
@@ -1794,6 +1795,15 @@ describe("artifact card pictures", () => {
     const card = fitted.cards.find((item) => item.id === "regions");
     expect(card?.widthCells).toBe(10);
     expect(card?.heightCells).toBe(14);
+
+    // A producer with no TIFF input links no window. Its card still gets the
+    // surface that keeps the last scan open.
+    const unlinked = buildWorkbenchCellScene({
+      ...input,
+      document: { ...textGraph, origins: [] },
+    }).surfaceById.regions;
+    assert(unlinked?.kind === "artifact");
+    expect(unlinked.tiffText).toEqual({ url: null, recognized: false });
   });
 
   it("shows what a following card's run produced", () => {

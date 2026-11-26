@@ -1375,45 +1375,48 @@ function ArtifactPreview({
       const scanId = tiffText?.linkedWindow?.artifactId;
       if (workspaceId && tiffText) {
         return (
-          <div
-            data-cell-interactive-viewport={interactive ? "true" : undefined}
-            onPointerDown={interactive ? stopCardDrag : undefined}
-            style={{ width: "100%", height: "100%" }}
-          >
-            <TiffTextArtifact
-              url={tiffText.url}
-              workspaceId={workspaceId}
-              height={plateHeight}
-              linkedWindow={tiffText.linkedWindow}
-              recognized={tiffText.recognized}
-              artifactRef={surface.artifact}
-              canEdit={Boolean(
-                interactive &&
-                surface.authorable &&
-                !surface.producerLinked &&
-                surface.artifact?.schema_version === 1 &&
-                (surface.itemCount ?? 1) === 1 &&
-                onSetInlineEditingCardId &&
-                onInlineArtifactSaved,
-              )}
-              editing={interactive && inlineEditingCardId === card.id}
-              onEditingChange={(next) =>
-                onSetInlineEditingCardId?.(next ? card.id : null)
-              }
-              onSaveArtifact={(nextRef) =>
-                onInlineArtifactSaved?.(card.id, nextRef)
-              }
-              onSize={
-                scanId
-                  ? (width, height) =>
-                      onImageLoad?.(
-                        imageThumbnailUrl(imagePath(workspaceId, scanId), 0),
-                        { width, height },
-                      )
-                  : undefined
-              }
-            />
-          </div>
+          <TiffTextArtifact
+            url={tiffText.url}
+            workspaceId={workspaceId}
+            height={plateHeight}
+            linkedWindow={tiffText.linkedWindow}
+            recognized={tiffText.recognized}
+            placeholder={<FileTile card={card} surface={surface} />}
+            viewportProps={
+              interactive
+                ? {
+                    "data-cell-interactive-viewport": "true",
+                    onPointerDown: stopCardDrag,
+                  }
+                : undefined
+            }
+            artifactRef={surface.artifact}
+            canEdit={Boolean(
+              interactive &&
+              surface.authorable &&
+              !surface.producerLinked &&
+              surface.artifact?.schema_version === 1 &&
+              (surface.itemCount ?? 1) === 1 &&
+              onSetInlineEditingCardId &&
+              onInlineArtifactSaved,
+            )}
+            editing={interactive && inlineEditingCardId === card.id}
+            onEditingChange={(next) =>
+              onSetInlineEditingCardId?.(next ? card.id : null)
+            }
+            onSaveArtifact={(nextRef) =>
+              onInlineArtifactSaved?.(card.id, nextRef)
+            }
+            onSize={
+              scanId
+                ? (width, height) =>
+                    onImageLoad?.(
+                      imageThumbnailUrl(imagePath(workspaceId, scanId), 0),
+                      { width, height },
+                    )
+                : undefined
+            }
+          />
         );
       }
       return <FileTile card={card} surface={surface} />;
