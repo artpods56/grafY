@@ -40,6 +40,8 @@ import {
   type SidePanelViewId,
 } from "../artifacts/side-panel/workbench-side-panel-state";
 import { GraphRoomRecoveryNotice } from "../collaboration/GraphRoomRecoveryNotice";
+import { CanvasCleanupNotice } from "./CanvasCleanupNotice";
+import { CanvasCleanupPopover } from "./CanvasCleanupPopover";
 import { EngineConnectNotice } from "./EngineConnectNotice";
 import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
 import { LinkedViewActivityToast } from "./LinkedViewActivityToast";
@@ -256,14 +258,20 @@ import {
   type WorldPoint,
 } from "../cell-canvas/cell-model";
 import {
+  DEFAULT_CELL_CLEANUP_PARAMS,
   activeRunForNode,
+  buildCleanupUndoPlan,
   buildWorkbenchCellScene,
   cellConnectionToWorkbenchConnection,
   cellRemotePeersFromParticipants,
+  mergeCleanupUndoSnapshots,
   partitionCellMoves,
   partitionCellRemovals,
   partitionCellSelection,
+  planWorkbenchCanvasCleanup,
   resolveCellPortEndpoint,
+  type CellCleanupParams,
+  type CellCleanupUndoSnapshot,
   type CellResolvedConnection,
 } from "./workbench-cell-canvas";
 import { useNodeCommands } from "../authoring/workbench-node-commands";
@@ -459,8 +467,14 @@ function WorkbenchBody({
     () => closeGraphBrowserRef.current(),
     [],
   );
+  const [cleanupPanelOpen, setCleanupPanelOpen] = React.useState(false);
+  const [cleanupParams, setCleanupParams] = React.useState<CellCleanupParams>(
+    DEFAULT_CELL_CLEANUP_PARAMS,
+  );
+  const cleanupWrapRef = React.useRef<HTMLDivElement | null>(null);
   const closeGridPanel = React.useCallback(() => {
     setLabPanelOpen(false);
+    setCleanupPanelOpen(false);
   }, [setLabPanelOpen]);
   const runErrorBridgeRef = React.useRef<{
     set: React.Dispatch<React.SetStateAction<string | null>>;
@@ -1293,7 +1307,6 @@ function WorkbenchBody({
     mergeArtifactCards,
     removeArtifactCardItem,
     reorderArtifactCardItem,
-    tidySelectedArtifacts,
     ungroupArtifacts,
   } = useArtifactCardCommands({
     applyAuthoringCommands,
@@ -3035,6 +3048,275 @@ function WorkbenchBody({
     ],
   );
 
+  const cleanupTargetKey = `${projectId ?? "draft"}:${openGraphId ?? "none"}`;
+  const [cleanupHistory, setCleanupHistory] = React.useState<{
+    targetKey: string;
+    stack: readonly CellCleanupUndoSnapshot[];
+    initialSnapshot: CellCleanupUndoSnapshot;
+    toast: { key: string; lead: string } | null;
+  } | null>(null);
+  const activeCleanupHistory =
+    cleanupHistory && cleanupHistory.targetKey === cleanupTargetKey
+      ? cleanupHistory
+      : null;
+  const activeCleanupToast =
+    activeCleanupHistory?.toast && !engineConnectNotice
+      ? activeCleanupHistory.toast
+      : null;
+  const cleanupUndoCount = activeCleanupHistory?.stack.length ?? 0;
+  const selectedForegroundCount =
+    selectedWorkflowCount + selectedViewerCount + selectedAgentIds.size;
+  const foregroundCardCount =
+    authoredDocument.nodes.length +
+    authoredDocument.agents.length +
+    artifactViewers.nodes.length;
+  const canCleanUpCanvas =
+    Boolean(registry) &&
+    canvasReady &&
+    localAuthoringEnabled &&
+    !running &&
+    foregroundCardCount > 0;
+  const canTidySelection =
+    Boolean(registry) &&
+    canvasReady &&
+    localAuthoringEnabled &&
+    !running &&
+    selectedForegroundCount > 1;
+
+  React.useEffect(() => {
+    if (!cleanupPanelOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setCleanupPanelOpen(false);
+      }
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && cleanupWrapRef.current?.contains(target)) {
+        return;
+      }
+      setCleanupPanelOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [cleanupPanelOpen]);
+
+  const runCanvasCleanup = React.useCallback(
+    (scope: "all" | "selected", paramsOverride?: CellCleanupParams) => {
+      if (!registry || !localAuthoringEnabledRef.current || running) return;
+      const selectedIds =
+        scope === "selected"
+          ? new Set<string>([
+              ...selectedNodeIdSet,
+              ...selectedAgentIds,
+              ...artifactViewersRef.current.nodes
+                .filter((node) => node.selected)
+                .map((node) => node.id),
+            ])
+          : undefined;
+      if (selectedIds && selectedIds.size < 2) return;
+      const currentViewers = artifactViewersRef.current;
+      const plan = planWorkbenchCanvasCleanup({
+        workspaceId,
+        document: authoredDocumentRef.current,
+        artifactViewers: currentViewers,
+        registry,
+        nodes: nodesRef.current,
+        nodeInstanceStates,
+        collapsedAppendices,
+        configSections,
+        imageNaturalSizes: cellImageNaturalSizes,
+        selectedCardIds: selectedIds,
+        params: paramsOverride ?? cleanupParams,
+      });
+      if (!plan.changed) return;
+      if (plan.graphCommands.length > 0) {
+        applyAuthoringCommands(plan.graphCommands);
+      }
+      const presentationChanged =
+        plan.nextArtifactViewers.nodes.some(
+          (node, index) => node !== currentViewers.nodes[index],
+        ) ||
+        plan.nextArtifactViewers.edges.some(
+          (edge, index) => edge !== currentViewers.edges[index],
+        ) ||
+        plan.nextArtifactViewers.annotations.some(
+          (annotation, index) =>
+            annotation !== currentViewers.annotations[index],
+        );
+      if (presentationChanged) {
+        commitArtifactViewers(() => plan.nextArtifactViewers);
+      }
+      if (plan.bounds && cellCanvasHandle && canvasSectionRef.current) {
+        const rect = canvasSectionRef.current.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          const topLeft = cellCanvasHandle.viewportHandle.screenToWorld(
+            rect.left,
+            rect.top,
+          );
+          const bottomRight = cellCanvasHandle.viewportHandle.screenToWorld(
+            rect.right,
+            rect.bottom,
+          );
+          const visMinX = Math.min(topLeft.x, bottomRight.x);
+          const visMaxX = Math.max(topLeft.x, bottomRight.x);
+          const visMinY = Math.min(topLeft.y, bottomRight.y);
+          const visMaxY = Math.max(topLeft.y, bottomRight.y);
+          const planMaxX = plan.bounds.x + plan.bounds.width;
+          const planMaxY = plan.bounds.y + plan.bounds.height;
+          const intersects =
+            planMaxX > visMinX &&
+            plan.bounds.x < visMaxX &&
+            planMaxY > visMinY &&
+            plan.bounds.y < visMaxY;
+          if (!intersects) {
+            cellCanvasHandle.viewportHandle.fitBounds(plan.bounds, 0.2, 1);
+          }
+        }
+      }
+      setPendingConnectionRoute(null);
+      dismissEngineConnectNotice();
+      const lead =
+        scope === "selected"
+          ? `Tidied ${plan.affectedCardCount} selected cards`
+          : plan.experimentCount > 0
+            ? `Cleaned up ${plan.affectedCardCount} cards across ${plan.experimentCount} experiment${plan.experimentCount === 1 ? "" : "s"}`
+            : `Cleaned up ${plan.affectedCardCount} card${plan.affectedCardCount === 1 ? "" : "s"}`;
+      setCleanupHistory((current) => {
+        const sameTarget = current && current.targetKey === cleanupTargetKey;
+        const nextStack = sameTarget
+          ? [...current.stack, plan.undoSnapshot]
+          : [plan.undoSnapshot];
+        const nextInitial = sameTarget
+          ? mergeCleanupUndoSnapshots(
+              current.initialSnapshot,
+              plan.undoSnapshot,
+            )
+          : plan.undoSnapshot;
+        return {
+          targetKey: cleanupTargetKey,
+          stack: nextStack,
+          initialSnapshot: nextInitial,
+          toast: { key: createUuid(), lead },
+        };
+      });
+    },
+    [
+      applyAuthoringCommands,
+      artifactViewersRef,
+      authoredDocumentRef,
+      cellCanvasHandle,
+      cellImageNaturalSizes,
+      cleanupParams,
+      cleanupTargetKey,
+      collapsedAppendices,
+      commitArtifactViewers,
+      configSections,
+      dismissEngineConnectNotice,
+      nodeInstanceStates,
+      registry,
+      running,
+      selectedAgentIds,
+      selectedNodeIdSet,
+      setPendingConnectionRoute,
+      workspaceId,
+    ],
+  );
+
+  const applyCleanupUndoSnapshot = React.useCallback(
+    (snapshot: CellCleanupUndoSnapshot) => {
+      const currentViewers = artifactViewersRef.current;
+      const undo = buildCleanupUndoPlan(
+        authoredDocumentRef.current,
+        currentViewers,
+        snapshot,
+      );
+      if (!undo.changed) return;
+      if (undo.graphCommands.length > 0) {
+        applyAuthoringCommands(undo.graphCommands);
+      }
+      const presentationChanged =
+        undo.nextArtifactViewers.nodes.some(
+          (node, index) => node !== currentViewers.nodes[index],
+        ) ||
+        undo.nextArtifactViewers.edges.some(
+          (edge, index) => edge !== currentViewers.edges[index],
+        ) ||
+        undo.nextArtifactViewers.annotations.some(
+          (annotation, index) =>
+            annotation !== currentViewers.annotations[index],
+        );
+      if (presentationChanged) {
+        commitArtifactViewers(() => undo.nextArtifactViewers);
+      }
+    },
+    [
+      applyAuthoringCommands,
+      artifactViewersRef,
+      authoredDocumentRef,
+      commitArtifactViewers,
+    ],
+  );
+
+  const undoCanvasCleanup = React.useCallback(() => {
+    if (
+      !cleanupHistory ||
+      cleanupHistory.targetKey !== cleanupTargetKey ||
+      cleanupHistory.stack.length === 0 ||
+      !localAuthoringEnabledRef.current ||
+      running
+    ) {
+      setCleanupHistory(null);
+      return;
+    }
+    const latest = cleanupHistory.stack[cleanupHistory.stack.length - 1];
+    if (!latest) {
+      setCleanupHistory(null);
+      return;
+    }
+    const remaining = cleanupHistory.stack.slice(0, -1);
+    if (remaining.length === 0) {
+      setCleanupHistory(null);
+    } else {
+      const remainingInitial = remaining.reduce((acc, snap) =>
+        mergeCleanupUndoSnapshots(acc, snap),
+      );
+      setCleanupHistory({
+        targetKey: cleanupTargetKey,
+        stack: remaining,
+        initialSnapshot: remainingInitial,
+        toast: {
+          key: createUuid(),
+          lead:
+            remaining.length === 1
+              ? "Undid last cleanup · 1 step to initial layout"
+              : `Undid last cleanup · ${remaining.length} steps to initial layout`,
+        },
+      });
+    }
+    applyCleanupUndoSnapshot(latest);
+  }, [applyCleanupUndoSnapshot, cleanupHistory, cleanupTargetKey, running]);
+
+  const revertCanvasCleanupToInitial = React.useCallback(() => {
+    if (
+      !cleanupHistory ||
+      cleanupHistory.targetKey !== cleanupTargetKey ||
+      cleanupHistory.stack.length === 0 ||
+      !localAuthoringEnabledRef.current ||
+      running
+    ) {
+      setCleanupHistory(null);
+      return;
+    }
+    const initial = cleanupHistory.initialSnapshot;
+    setCleanupHistory(null);
+    applyCleanupUndoSnapshot(initial);
+  }, [applyCleanupUndoSnapshot, cleanupHistory, cleanupTargetKey, running]);
+
   // --- The canvas right-click menu --------------------------------------------
 
   const openCanvasMenu = React.useCallback(
@@ -3108,10 +3390,8 @@ function WorkbenchBody({
                 : "Select artifacts of the same type to collect"),
           }
         : null,
-    canTidy:
-      !selectedWorkflowCount &&
-      selectedArtifactCards.length > 1 &&
-      localAuthoringEnabled,
+    canTidy: canTidySelection,
+    canCleanUpCanvas,
   };
   const canvasMenuActions: CanvasMenuActions = {
     searchNodes: () => setLibraryOpen(true, canvasMenuPoint),
@@ -3132,11 +3412,12 @@ function WorkbenchBody({
         ),
       );
     },
+    cleanUpCanvas: () => runCanvasCleanup("all"),
     fitView: () => fitCanvasView(WORKBENCH_FIT_VIEW),
     openCanvasLab: canvasLabEnabled ? () => setLabPanelOpen(true) : undefined,
     runSelection: () => void runWorkflow("selected"),
     collect: collectSelectedArtifacts,
-    tidy: tidySelectedArtifacts,
+    tidy: () => runCanvasCleanup("selected"),
     duplicate: duplicateSelectedNodes,
     remove: deleteSelectedNodes,
     fitSelection: () =>
@@ -3449,6 +3730,7 @@ function WorkbenchBody({
 
   const selectionToolbar =
     selectedWorkflowCount ||
+    canTidySelection ||
     collectsIntoSequence ||
     selectedArtifactCards.length > 1 ||
     selectedCollectionSources.length > 1 ? (
@@ -3502,14 +3784,15 @@ function WorkbenchBody({
             Collect
           </Button>
         ) : null}
-        {!selectedWorkflowCount && selectedArtifactCards.length > 1 ? (
+        {selectedForegroundCount > 1 ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            disabled={!localAuthoringEnabled}
+            disabled={!canTidySelection}
+            title="Resize and arrange the selected cards left to right"
             xstyle={phoneTouch.rail}
-            onClick={tidySelectedArtifacts}
+            onClick={() => runCanvasCleanup("selected")}
           >
             <LayoutGrid size={13} />
             Tidy up
@@ -3986,6 +4269,50 @@ function WorkbenchBody({
           <History size={14} />
         </IconButton>
         <span aria-hidden="true" {...stylex.props(s.railDivider)} />
+        <div ref={cleanupWrapRef} {...stylex.props(s.shapesMenuWrap)}>
+          <IconButton
+            size="lg"
+            variant="ghost"
+            label="Clean up canvas"
+            title={
+              foregroundCardCount
+                ? "Configure and run canvas cleanup"
+                : "Add cards to clean up the canvas"
+            }
+            aria-pressed={cleanupPanelOpen}
+            aria-expanded={cleanupPanelOpen}
+            aria-haspopup="dialog"
+            disabled={!canCleanUpCanvas}
+            xstyle={[
+              phoneTouch.rail,
+              s.dockButton,
+              cleanupPanelOpen && s.dockButtonActive,
+            ]}
+            onClick={() => {
+              closeGraphBrowser();
+              setLibraryOpen(false);
+              setLabPanelOpen(false);
+              closeCanvasPopovers(false);
+              setCleanupPanelOpen((open) => !open);
+            }}
+          >
+            <LayoutGrid size={14} />
+          </IconButton>
+          {cleanupPanelOpen && canCleanUpCanvas ? (
+            <CanvasCleanupPopover
+              params={cleanupParams}
+              onChange={setCleanupParams}
+              onReset={() => setCleanupParams(DEFAULT_CELL_CLEANUP_PARAMS)}
+              onApply={(scope) => runCanvasCleanup(scope)}
+              onUndo={undoCanvasCleanup}
+              onRevertInitial={revertCanvasCleanupToInitial}
+              onClose={() => setCleanupPanelOpen(false)}
+              selectedCount={selectedForegroundCount}
+              canApply={canCleanUpCanvas}
+              undoCount={cleanupUndoCount}
+            />
+          ) : null}
+        </div>
         <IconButton
           size="lg"
           variant="ghost"
@@ -4042,6 +4369,16 @@ function WorkbenchBody({
         lead={engineConnectNotice?.lead ?? null}
         onUndo={undoEngineConnect}
         onDismiss={dismissEngineConnectNotice}
+      />
+      <CanvasCleanupNotice
+        noticeKey={activeCleanupToast?.key ?? null}
+        lead={activeCleanupToast?.lead ?? null}
+        onUndo={undoCanvasCleanup}
+        onDismiss={() =>
+          setCleanupHistory((current) =>
+            current ? { ...current, toast: null } : null,
+          )
+        }
       />
 
       {executionHistoryTarget ? (

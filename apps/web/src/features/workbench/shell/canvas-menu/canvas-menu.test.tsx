@@ -6,6 +6,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { canvasMenuTarget, wantsNativeMenu } from "./canvas-menu-target";
 import type { CanvasMenuRequest } from "./canvas-menu-target";
+import {
+  CanvasContextMenu,
+  type CanvasMenuActions,
+  type CanvasMenuSelection,
+} from "./CanvasContextMenu";
+import { NodeMenuRegistry } from "../node-menu-registry";
 import { useCanvasMenuTrigger } from "./useCanvasMenuTrigger";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -276,8 +282,113 @@ describe("useCanvasMenuTrigger", () => {
         pane.dispatchEvent(tap);
       });
       expect(tap.defaultPrevented).toBe(true);
+      React.act(() => void vi.advanceTimersByTime(600));
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+function stubActions(): CanvasMenuActions {
+  return {
+    searchNodes: vi.fn(),
+    addNodeHere: vi.fn(),
+    addAnnotationHere: vi.fn(),
+    selectAll: vi.fn(),
+    cleanUpCanvas: vi.fn(),
+    fitView: vi.fn(),
+    runSelection: vi.fn(),
+    collect: vi.fn(),
+    tidy: vi.fn(),
+    duplicate: vi.fn(),
+    remove: vi.fn(),
+    fitSelection: vi.fn(),
+    deleteEdge: vi.fn(),
+  };
+}
+
+describe("CanvasContextMenu cleanup actions", () => {
+  it("offers Clean up canvas on the pane menu and invokes cleanUpCanvas", async () => {
+    const actions = stubActions();
+    const selection: CanvasMenuSelection = {
+      count: 0,
+      workflowCount: 0,
+      canRun: false,
+      canDuplicate: false,
+      canDelete: false,
+      collect: null,
+      canTidy: false,
+      canCleanUpCanvas: true,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    roots.push(root);
+    await React.act(async () => {
+      root.render(
+        <CanvasContextMenu
+          request={{ point: { x: 120, y: 120 }, target: { kind: "pane" } }}
+          registry={null}
+          activeGraphId="g1"
+          canEdit={true}
+          selection={selection}
+          nodeMenus={new NodeMenuRegistry()}
+          actions={actions}
+          onClose={() => undefined}
+        />,
+      );
+    });
+
+    const items = Array.from(document.querySelectorAll('[role="menuitem"]'));
+    const cleanUp = items.find((item) =>
+      item.textContent?.includes("Clean up canvas"),
+    ) as HTMLElement | undefined;
+    expect(cleanUp).toBeDefined();
+    expect(cleanUp?.getAttribute("aria-disabled")).not.toBe("true");
+    await React.act(async () => {
+      cleanUp?.click();
+    });
+    expect(actions.cleanUpCanvas).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Tidy up on a mixed selection of workflow and artifact cards", async () => {
+    const actions = stubActions();
+    const selection: CanvasMenuSelection = {
+      count: 3,
+      workflowCount: 2,
+      canRun: true,
+      canDuplicate: true,
+      canDelete: true,
+      collect: null,
+      canTidy: true,
+      canCleanUpCanvas: true,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    roots.push(root);
+    await React.act(async () => {
+      root.render(
+        <CanvasContextMenu
+          request={{ point: { x: 160, y: 160 }, target: { kind: "selection" } }}
+          registry={null}
+          activeGraphId="g1"
+          canEdit={true}
+          selection={selection}
+          nodeMenus={new NodeMenuRegistry()}
+          actions={actions}
+          onClose={() => undefined}
+        />,
+      );
+    });
+
+    const items = Array.from(document.querySelectorAll('[role="menuitem"]'));
+    const tidy = items.find((item) => item.textContent?.includes("Tidy up")) as
+      HTMLElement | undefined;
+    expect(tidy).toBeDefined();
+    await React.act(async () => {
+      tidy?.click();
+    });
+    expect(actions.tidy).toHaveBeenCalledTimes(1);
   });
 });

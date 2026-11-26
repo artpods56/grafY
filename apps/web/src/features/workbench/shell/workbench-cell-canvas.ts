@@ -74,6 +74,16 @@ import {
   type CellViewerImages,
   type CellViewerMetadata,
 } from "../cell-canvas/cell-document-adapter";
+import {
+  DEFAULT_CELL_CLEANUP_PARAMS,
+  buildCleanupUndoPlan,
+  mergeCleanupUndoSnapshots,
+  planCellGraphCleanup,
+  type CellCleanupCardSizePreset,
+  type CellCleanupParams,
+  type CellCleanupPlan,
+  type CellCleanupUndoSnapshot,
+} from "../cell-canvas/cell-graph-cleanup";
 import { CELL_SIZE, cellToWorldOrigin } from "../cell-canvas/cell-model";
 import type { AuthoredGraphDocument } from "../authoring/graph-document";
 import type { ResolvedGraphSemantics } from "../authoring/graph-semantics";
@@ -1152,3 +1162,92 @@ export function partitionCellRemovals(
     removedViewerEdgeIds,
   };
 }
+
+export function planWorkbenchCanvasCleanup({
+  workspaceId,
+  document,
+  artifactViewers,
+  registry,
+  nodes,
+  nodeInstanceStates,
+  collapsedAppendices,
+  configSections,
+  imageNaturalSizes,
+  selectedCardIds,
+  resizeCards,
+  params,
+}: {
+  workspaceId?: string | null;
+  document: AuthoredGraphDocument;
+  artifactViewers: ArtifactViewerCanvasState;
+  registry: NodeRegistry;
+  nodes: readonly WorkflowNode[];
+  nodeInstanceStates: Readonly<Record<string, RoomInstanceState>>;
+  collapsedAppendices: ReadonlySet<string>;
+  configSections?: Readonly<Record<string, Readonly<Record<string, boolean>>>>;
+  imageNaturalSizes?: ReadonlyMap<string, { width: number; height: number }>;
+  selectedCardIds?: ReadonlySet<string>;
+  resizeCards?: boolean;
+  params?: Partial<CellCleanupParams>;
+}): CellCleanupPlan {
+  const nodeRunState: Record<string, CellNodeRunState> = {};
+  for (const node of nodes) {
+    const instance = nodeInstanceStates[node.id];
+    const status = cellNodeStatus(node, instance);
+    nodeRunState[node.id] = {
+      ...status,
+      appendix: buildAppendixSpec({
+        node,
+        status: status.status,
+        instance,
+        registry,
+      }),
+    };
+  }
+
+  const viewerOutputValues = new Map<
+    string,
+    { artifactTypeId: string; schemaVersion: number; shape: "one" | "many" }
+  >();
+  const viewerImages = new Map<string, CellViewerImages>();
+  for (const card of artifactViewers.nodes) {
+    const value = artifactCardConnectionValue(
+      card,
+      artifactViewers.edges,
+      nodes,
+    );
+    const refs = cardArtifactRefs(value);
+    if (!value || refs.length === 0) continue;
+    viewerOutputValues.set(card.id, {
+      artifactTypeId: value.artifact_type,
+      schemaVersion: value.schema_version,
+      shape: "item_refs" in value ? "many" : "one",
+    });
+    if (workspaceId) {
+      viewerImages.set(
+        card.id,
+        viewerImagesFor(refs, workspaceId, registry, imageNaturalSizes),
+      );
+    }
+  }
+
+  return planCellGraphCleanup(document, artifactViewers, registry, {
+    selectedCardIds,
+    resizeCards,
+    params,
+    nodeRunState,
+    collapsedAppendices,
+    configSections,
+    viewerImages,
+    viewerOutputValues,
+  });
+}
+
+export {
+  DEFAULT_CELL_CLEANUP_PARAMS,
+  buildCleanupUndoPlan,
+  mergeCleanupUndoSnapshots,
+  type CellCleanupCardSizePreset,
+  type CellCleanupParams,
+  type CellCleanupUndoSnapshot,
+};

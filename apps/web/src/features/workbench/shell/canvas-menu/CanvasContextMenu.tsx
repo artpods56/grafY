@@ -58,6 +58,7 @@ export interface CanvasMenuSelection {
   /** Present when the selection can be collected; `disabled` says why not. */
   collect: { disabled: boolean; title?: string } | null;
   canTidy: boolean;
+  canCleanUpCanvas: boolean;
 }
 
 /** Every action the menu offers. "Here" means at the point it was opened. */
@@ -66,6 +67,7 @@ export interface CanvasMenuActions {
   addNodeHere: (spec: NodeSpec) => void;
   addAnnotationHere: (kind: AnnotationKind) => void;
   selectAll: () => void;
+  cleanUpCanvas: () => void;
   fitView: () => void;
   openCanvasLab?: () => void;
   runSelection: () => void;
@@ -173,6 +175,7 @@ export function CanvasContextMenu({
             activeGraphId={activeGraphId}
             managePacksHref={managePacksHref}
             canEdit={canEdit}
+            canCleanUpCanvas={selection.canCleanUpCanvas}
             actions={actions}
           />
         ) : target?.kind === "edge" ? (
@@ -236,12 +239,14 @@ function PaneItems({
   activeGraphId,
   managePacksHref,
   canEdit,
+  canCleanUpCanvas,
   actions,
 }: {
   registry: NodeRegistry | null;
   activeGraphId: string | null;
   managePacksHref?: string;
   canEdit: boolean;
+  canCleanUpCanvas: boolean;
   actions: CanvasMenuActions;
 }) {
   // Use the same pack order and Engines groups as the picker.
@@ -315,6 +320,12 @@ function PaneItems({
         icon={SquareDashedMousePointer}
         label="Select all"
         onClick={actions.selectAll}
+      />
+      <Item
+        icon={LayoutGrid}
+        label="Clean up canvas"
+        disabled={!canEdit || !canCleanUpCanvas}
+        onClick={actions.cleanUpCanvas}
       />
       <Item icon={Maximize} label="Fit view" onClick={actions.fitView} />
       {actions.openCanvasLab && (
