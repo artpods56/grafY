@@ -1205,6 +1205,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/export": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Export Project */
+        readonly get: operations["export_project_v1_workspaces__workspace_id__projects__project_id__export_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/projects/{project_id}/folder": {
         readonly parameters: {
             readonly query?: never;
@@ -1750,6 +1767,23 @@ export interface paths {
         readonly put?: never;
         /** Copy Exact Head */
         readonly post: operations["copy_exact_head_v1_workspaces__workspace_id__projects_copies_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/projects/import": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Import Project */
+        readonly post: operations["import_project_v1_workspaces__workspace_id__projects_import_post"];
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -3089,7 +3123,27 @@ export interface components {
          *     declare the interface: a builtin running ``graph.input`` or ``graph.output``
          *     whose config carries ``public_name`` and, for inputs only, ``required``.
          */
-        readonly GraphDefinition: {
+        readonly "GraphDefinition-Input": {
+            readonly document: components["schemas"]["GraphDocument"];
+            /** Id */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /** Refresh Generations */
+            readonly refresh_generations?: {
+                readonly [key: string]: number;
+            };
+        };
+        /**
+         * GraphDefinition
+         * @description One Graph of a Project: its interface, its nodes, its layout.
+         *
+         *     A call node is a ``GraphNode`` with ``kind == "call"``, ``operator_id``
+         *     set to the callee Graph's id and ``operator_version == 1``. Boundary nodes
+         *     declare the interface: a builtin running ``graph.input`` or ``graph.output``
+         *     whose config carries ``public_name`` and, for inputs only, ``required``.
+         */
+        readonly "GraphDefinition-Output": {
             readonly document: components["schemas"]["GraphDocument"];
             /** Id */
             readonly id: string;
@@ -3413,6 +3467,38 @@ export interface components {
             readonly notice?: string | null;
             /** Upload Key */
             readonly upload_key: string;
+        };
+        /**
+         * ImportProjectRequest
+         * @description Portable whole-Project JSON envelope with optional replay identifiers.
+         */
+        readonly ImportProjectRequest: {
+            /** Command Id */
+            readonly command_id?: string | null;
+            readonly document: components["schemas"]["ProjectDocument-Input"];
+            /**
+             * Format
+             * @constant
+             */
+            readonly format: "grafy.project";
+            /**
+             * Format Version
+             * @constant
+             */
+            readonly format_version: 1;
+            /** Name */
+            readonly name: string;
+            /** Project Id */
+            readonly project_id?: string | null;
+        };
+        /**
+         * ImportProjectResponse
+         * @description The newly created Project plus any non-fatal import warnings.
+         */
+        readonly ImportProjectResponse: {
+            readonly project: components["schemas"]["ProjectResponse"];
+            /** Warnings */
+            readonly warnings?: readonly components["schemas"]["ProjectImportWarning"][];
         };
         /**
          * InGraphCommand
@@ -4084,7 +4170,7 @@ export interface components {
              * Format: date-time
              */
             readonly created_at: string;
-            readonly document: components["schemas"]["ProjectDocument"];
+            readonly document: components["schemas"]["ProjectDocument-Output"];
             /** Name */
             readonly name: string;
             /** Revision */
@@ -4127,12 +4213,44 @@ export interface components {
          * ProjectDocument
          * @description The document of a Project: its Graphs and the calls between them.
          */
-        readonly ProjectDocument: {
+        readonly "ProjectDocument-Input": {
             /**
              * Graphs
              * @default []
              */
-            readonly graphs: readonly components["schemas"]["GraphDefinition"][];
+            readonly graphs: readonly components["schemas"]["GraphDefinition-Input"][];
+        };
+        /**
+         * ProjectDocument
+         * @description The document of a Project: its Graphs and the calls between them.
+         */
+        readonly "ProjectDocument-Output": {
+            /**
+             * Graphs
+             * @default []
+             */
+            readonly graphs: readonly components["schemas"]["GraphDefinition-Output"][];
+        };
+        /**
+         * ProjectExportResponse
+         * @description Portable, versioned whole-Project JSON envelope.
+         */
+        readonly ProjectExportResponse: {
+            readonly document: components["schemas"]["ProjectDocument-Output"];
+            /**
+             * Format
+             * @default grafy.project
+             * @constant
+             */
+            readonly format: "grafy.project";
+            /**
+             * Format Version
+             * @default 1
+             * @constant
+             */
+            readonly format_version: 1;
+            /** Name */
+            readonly name: string;
         };
         /** ProjectFolderListResponse */
         readonly ProjectFolderListResponse: {
@@ -4175,7 +4293,7 @@ export interface components {
             readonly checkpoint_sequence: number;
             /** Collaboration Sequence */
             readonly collaboration_sequence: number;
-            readonly document: components["schemas"]["ProjectDocument"];
+            readonly document: components["schemas"]["ProjectDocument-Output"];
             /** Name */
             readonly name: string;
             /**
@@ -4193,6 +4311,29 @@ export interface components {
              * Format: date-time
              */
             readonly updated_at: string;
+        };
+        /**
+         * ProjectImportWarning
+         * @description One non-fatal compatibility or portability note produced during import.
+         */
+        readonly ProjectImportWarning: {
+            /** Agent Id */
+            readonly agent_id?: string | null;
+            /**
+             * Code
+             * @enum {string}
+             */
+            readonly code: "unknown_operator" | "stripped_origins" | "stripped_artifact_cards" | "stripped_library_context_links" | "stripped_card_context_links" | "stripped_legacy_config_keys" | "credentials_required" | "custom_agent_model";
+            /** Graph Id */
+            readonly graph_id?: string | null;
+            /** Message */
+            readonly message: string;
+            /** Node Id */
+            readonly node_id?: string | null;
+            /** Operator Id */
+            readonly operator_id?: string | null;
+            /** Operator Version */
+            readonly operator_version?: number | null;
         };
         /** ProjectListResponse */
         readonly ProjectListResponse: {
@@ -8640,6 +8781,40 @@ export interface operations {
             };
         };
     };
+    readonly export_project_v1_workspaces__workspace_id__projects__project_id__export_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly revision?: number | null;
+            };
+            readonly header?: never;
+            readonly path: {
+                readonly project_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ProjectExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     readonly assign_project_folder_v1_workspaces__workspace_id__projects__project_id__folder_put: {
         readonly parameters: {
             readonly query?: never;
@@ -9694,6 +9869,41 @@ export interface operations {
                 };
                 content: {
                     readonly "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly import_project_v1_workspaces__workspace_id__projects_import_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["ImportProjectRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["ImportProjectResponse"];
                 };
             };
             /** @description Validation Error */

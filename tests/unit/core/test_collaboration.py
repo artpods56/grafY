@@ -32,6 +32,7 @@ from grafy_core.domain.collaboration import (
     MoveNodesCommand,
     PROJECT_COMMAND_ADAPTER,
     ProjectCommand,
+    ProjectExportDocument,
     ProjectHead,
     RefreshNodeCommand,
     RemoveEdgesCommand,
@@ -57,6 +58,7 @@ from grafy_core.domain.collaboration import (
     empty_project_document,
     sanitize_document_for_cross_workspace_copy,
     sanitize_project_for_cross_workspace_copy,
+    sanitize_project_for_portable_transfer,
 )
 from grafy_core.domain.errors import CollaborationCommandRejectedError
 from grafy_core.kernel.project import (
@@ -1613,3 +1615,202 @@ def test_origin_card_ownership_round_trip_and_alignment() -> None:
     payload["source_card_ids"] = ["copy-a", "copy-b"]
     with pytest.raises(ValueError, match="one owner per artifact reference"):
         GraphOrigin.model_validate(payload)
+
+
+def test_portable_transfer_sanitization_strips_workspace_state_and_resets_generations() -> (
+    None
+):
+    from grafy_core.domain.graph_documents import (
+        AgentContextLink,
+        GraphAgent,
+        GraphAnnotationLayout,
+        GraphPresentationAnnotation,
+        GraphPresentationBinding,
+        GraphPresentationBindingMapping,
+        GraphPresentationLink,
+    )
+
+    artifact_ref = ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=ArtifactTypeKey("table.data", 1),
+    )
+    main_doc = GraphDocument(
+        nodes=(
+            _node(
+                "reader",
+                config={
+                    "upload_key": "objects/abc",
+                    "artifact_id": str(uuid4()),
+                    "uploads": [{"key": "x"}],
+                    "keep": {"nested": True},
+                },
+            ),
+            GraphNode(
+                kind=CALL_NODE_KIND,
+                id="call-helper",
+                operator_id="helper",
+                operator_version=CALL_NODE_OPERATOR_VERSION,
+                position=GraphPoint(x=200, y=0),
+            ),
+        ),
+        origins=(
+            GraphOrigin(
+                id="origin-1",
+                to_node="reader",
+                to_port="input",
+                value=artifact_ref,
+            ),
+        ),
+        presentation=GraphPresentationDocument(
+            viewers=(
+                GraphPresentationViewer(
+                    id="artifact-viewer-output",
+                    position=GraphPoint(x=10, y=20),
+                ),
+                GraphPresentationViewer(
+                    id="artifact-viewer-output-2",
+                    position=GraphPoint(x=30, y=40),
+                ),
+                GraphPresentationViewer(
+                    id="artifact-viewer-card",
+                    position=GraphPoint(x=50, y=60),
+                    artifact_ref=artifact_ref,
+                ),
+            ),
+            links=(
+                GraphPresentationLink(
+                    id="artifact-viewer-edge-1",
+                    source_node_id="reader",
+                    source_port_name="text",
+                    target_viewer_id="artifact-viewer-output",
+                ),
+            ),
+            bindings=(
+                GraphPresentationBinding(
+                    id="artifact-viewer-binding-keep",
+                    source_viewer_id="artifact-viewer-output",
+                    target_viewer_id="artifact-viewer-output-2",
+                    mappings=(
+                        GraphPresentationBindingMapping(
+                            source_field="id", target_field="id"
+                        ),
+                    ),
+                    effects=("highlight",),
+                ),
+                GraphPresentationBinding(
+                    id="artifact-viewer-binding-drop",
+                    source_viewer_id="artifact-viewer-card",
+                    target_viewer_id="artifact-viewer-output",
+                    mappings=(
+                        GraphPresentationBindingMapping(
+                            source_field="id", target_field="id"
+                        ),
+                    ),
+                    effects=("filter",),
+                ),
+            ),
+            annotations=(
+                GraphPresentationAnnotation(
+                    id="annotation-note",
+                    kind="text",
+                    position=GraphPoint(x=0, y=0),
+                    layout=GraphAnnotationLayout(width=120, height=60),
+                    text="Keep me",
+                ),
+            ),
+        ),
+        agents=(
+            GraphAgent(
+                id="agent-1",
+                name="Assistant",
+                context=(
+                    AgentContextLink(
+                        id="ctx-node",
+                        kind="node_output",
+                        node_id="reader",
+                        port="text",
+                    ),
+                    AgentContextLink(
+                        id="ctx-keep-card",
+                        kind="card",
+                        card_id="artifact-viewer-output",
+                    ),
+                    AgentContextLink(
+                        id="ctx-drop-card",
+                        kind="card",
+                        card_id="artifact-viewer-card",
+                    ),
+                    AgentContextLink(
+                        id="ctx-library",
+                        kind="library_item",
+                        library_item_id=uuid4(),
+                    ),
+                ),
+            ),
+        ),
+    )
+    helper_doc = GraphDocument(nodes=(_node("h1", config={"label": "ok"}),))
+    project = ProjectDocument(
+        graphs=(
+            GraphDefinition(
+                id="main",
+                name="Main",
+                document=main_doc,
+                refresh_generations={"reader": 4},
+            ),
+            GraphDefinition(
+                id="helper",
+                name="Helper",
+                document=helper_doc,
+                refresh_generations={"h1": 2},
+            ),
+        )
+    )
+
+    sanitized, summary = sanitize_project_for_portable_transfer(project)
+
+    assert summary.stripped_origins == 1
+    assert summary.stripped_artifact_cards == 1
+    assert summary.stripped_library_context_links == 1
+    assert summary.stripped_card_context_links == 1
+    assert summary.stripped_legacy_config_keys == 3
+    assert summary.reset_refresh_generations == 2
+
+    sanitized_main = sanitized.get_graph("main")
+    assert sanitized_main.refresh_generations == {}
+    assert sanitized.get_graph("helper").refresh_generations == {}
+    assert sanitized_main.document.origins == ()
+    assert sanitized_main.document.nodes[0].config_dict() == {"keep": {"nested": True}}
+    assert [v.id for v in sanitized_main.document.presentation.viewers] == [
+        "artifact-viewer-output",
+        "artifact-viewer-output-2",
+    ]
+    assert [b.id for b in sanitized_main.document.presentation.bindings] == [
+        "artifact-viewer-binding-keep"
+    ]
+    assert [a.id for a in sanitized_main.document.presentation.annotations] == [
+        "annotation-note"
+    ]
+    assert [c.id for c in sanitized_main.document.agents[0].context] == [
+        "ctx-node",
+        "ctx-keep-card",
+    ]
+    assert sanitized_main.document.nodes[1].kind == CALL_NODE_KIND
+
+
+def test_project_export_document_validates_envelope() -> None:
+    doc = empty_project_document("main", "Main")
+    envelope = ProjectExportDocument(name="  Demo  ", document=doc)
+    assert envelope.format == "grafy.project"
+    assert envelope.format_version == 1
+    assert envelope.name == "Demo"
+
+    with pytest.raises(ValueError):
+        ProjectExportDocument.model_validate(
+            {
+                "format": "other.project",
+                "format_version": 1,
+                "name": "Demo",
+                "document": doc.model_dump(mode="json"),
+            }
+        )

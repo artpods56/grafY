@@ -24,11 +24,13 @@ from .models import (
     CreatedArtifact,
     GeoFeatureMatch,
     GeoRender,
+    ImportedProject,
     InstanceResult,
     InstanceState,
     NodeCatalog,
     NodeSecretStatus,
     Project,
+    ProjectExport,
     ProjectHead,
     ProjectSummary,
     Run,
@@ -148,6 +150,52 @@ class ProjectClient:
             path=self._path(workspace_id, f"/{project_id}/head"),
         )
         return ProjectHead.model_validate(payload)
+
+    async def export_project(
+        self,
+        workspace_id: UUID,
+        project_id: UUID,
+        *,
+        revision: int | None = None,
+    ) -> ProjectExport:
+        """Export a whole Project (or a specific checkpoint revision) as portable JSON."""
+        params = {"revision": revision} if revision is not None else None
+        payload = await self._transport.request_json(
+            operation="export project",
+            method="GET",
+            path=self._path(workspace_id, f"/{project_id}/export"),
+            params=params,
+        )
+        return ProjectExport.model_validate(payload)
+
+    async def import_project(
+        self,
+        workspace_id: UUID,
+        export_payload: ProjectExport | Mapping[str, object],
+        *,
+        name: str | None = None,
+        project_id: UUID | None = None,
+        command_id: UUID | None = None,
+    ) -> ImportedProject:
+        """Import a portable Project JSON envelope into ``workspace_id``."""
+        body: dict[str, object] = (
+            export_payload.model_dump(mode="json")
+            if isinstance(export_payload, ProjectExport)
+            else dict(export_payload)
+        )
+        if name is not None:
+            body["name"] = name
+        if project_id is not None:
+            body["project_id"] = str(project_id)
+        if command_id is not None:
+            body["command_id"] = str(command_id)
+        payload = await self._transport.request_json(
+            operation="import project",
+            method="POST",
+            path=self._path(workspace_id, "/import"),
+            json_payload=body,
+        )
+        return ImportedProject.model_validate(payload)
 
     async def submit_commands(
         self,

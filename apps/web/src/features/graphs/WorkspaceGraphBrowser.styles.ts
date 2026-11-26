@@ -12,6 +12,16 @@ export const browserStyles = stylex.create({
   partialNotice: {
     margin: "12px 0 0",
   },
+  importNotice: {
+    margin: "0 0 16px",
+  },
+  importWarningList: {
+    margin: "6px 0 0",
+    paddingLeft: "18px",
+  },
+  hiddenFileInput: {
+    display: "none",
+  },
 
   root: {
     height: {

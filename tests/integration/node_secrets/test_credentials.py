@@ -426,6 +426,14 @@ async def test_run_resolves_the_starters_personal_override(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("provider_kind", "verification_url"),
+    [
+        ("openai_compatible", "https://api.openai.com/v1/models"),
+        ("jev", "https://api.typesafe.ai/v1/models"),
+        ("reducto", "https://platform.reducto.ai/jobs?limit=1&exclude_configs=true"),
+    ],
+)
+@pytest.mark.parametrize(
     ("outcome", "expected"),
     [
         (200, "valid"),
@@ -435,14 +443,14 @@ async def test_run_resolves_the_starters_personal_override(
         ("egress", "egress_blocked"),
     ],
 )
-async def test_openai_verifier_returns_sanitized_results(
-    outcome: int | str, expected: str
+async def test_bearer_key_verifiers_return_sanitized_results(
+    provider_kind: str, verification_url: str, outcome: int | str, expected: str
 ) -> None:
     registry = application.build_application_registry()
+    requests: list[httpx.Request] = []
 
     def transport(request: httpx.Request) -> httpx.Response:
-        assert str(request.url) == "https://api.openai.com/v1/models"
-        assert request.headers["Authorization"] == f"Bearer {VALUE}"
+        requests.append(request)
         if outcome == "egress":
             raise EgressRejectedError(VALUE)
         if outcome == "network":
@@ -462,18 +470,24 @@ async def test_openai_verifier_returns_sanitized_results(
         ),
     )
     result = await vault.verify_candidate(
-        provider_kind="openai_compatible", value=SecretStr(VALUE)
+        provider_kind=provider_kind, value=SecretStr(VALUE)
     )
+    (request,) = requests
+    assert (request.method, str(request.url)) == ("GET", verification_url)
+    assert request.headers["Authorization"] == f"Bearer {VALUE}"
     assert result.status == expected
     assert VALUE not in repr(result)
     assert result.account_hint == (
-        "2 models available" if expected == "valid" else None
+        "2 models available"
+        if provider_kind == "openai_compatible" and expected == "valid"
+        else None
     )
 
     unsupported = await vault.verify_candidate(
-        provider_kind="reducto", value=SecretStr(VALUE)
+        provider_kind="s3", value=SecretStr(VALUE)
     )
     assert unsupported.status == "unsupported"
+    assert requests == [request]
 
 
 def test_verification_limit_expires_per_user() -> None:

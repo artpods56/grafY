@@ -23,11 +23,11 @@ from grafy_core.plugins import (
 )
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
-from grafy_plugin_litellm_ocr.auth import API_KEY
+from grafy_plugin_litellm_ocr.auth import API_KEY, LITELLM_ORIGIN
 from grafy_plugin_litellm_ocr.declaration import LITELLM_OCR
 from grafy_core.provider_http import ProviderRequest, post_json
 
-CRAFT_URL = "https://ai-test.ihpan.edu.pl/v1/ocr/craft/detect"
+CRAFT_URL = f"{LITELLM_ORIGIN}/v1/ocr/craft/detect"
 CRAFT_MODEL = "craft-mlt-25k@sha256:4a5efbfb48b4081100544e75e1e2b57f8de3d84f213004b14b85fd4b3748db17"
 _MAX_RESPONSE_BYTES = 4 * 1024**2
 
@@ -173,7 +173,7 @@ class CraftOutput(NodeOutput):
         PluginRuntimeCapability.NODE_SECRETS,
     ),
     http_egress=NodeHttpEgressContract(
-        fixed_destinations=("https://ai-test.ihpan.edu.pl",)
+        fixed_destinations=(LITELLM_ORIGIN,)
     ),
     secret_inputs=(API_KEY,),
 )

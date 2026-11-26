@@ -3187,7 +3187,43 @@
         "title": "GraphConversion",
         "type": "object"
       },
-      "GraphDefinition": {
+      "GraphDefinition-Input": {
+        "additionalProperties": false,
+        "description": "One Graph of a Project: its interface, its nodes, its layout.\n\nA call node is a ``GraphNode`` with ``kind == \"call\"``, ``operator_id``\nset to the callee Graph's id and ``operator_version == 1``. Boundary nodes\ndeclare the interface: a builtin running ``graph.input`` or ``graph.output``\nwhose config carries ``public_name`` and, for inputs only, ``required``.",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/GraphDocument"
+          },
+          "id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "refresh_generations": {
+            "additionalProperties": {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Refresh Generations",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "document"
+        ],
+        "title": "GraphDefinition",
+        "type": "object"
+      },
+      "GraphDefinition-Output": {
         "additionalProperties": false,
         "description": "One Graph of a Project: its interface, its nodes, its layout.\n\nA call node is a ``GraphNode`` with ``kind == \"call\"``, ``operator_id``\nset to the callee Graph's id and ``operator_version == 1``. Boundary nodes\ndeclare the interface: a builtin running ``graph.input`` or ``graph.output``\nwhose config carries ``public_name`` and, for inputs only, ``required``.",
         "properties": {
@@ -4125,6 +4161,84 @@
           "byte_size"
         ],
         "title": "ImageUploadItemResponse",
+        "type": "object"
+      },
+      "ImportProjectRequest": {
+        "additionalProperties": false,
+        "description": "Portable whole-Project JSON envelope with optional replay identifiers.",
+        "properties": {
+          "command_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Id"
+          },
+          "document": {
+            "$ref": "#/components/schemas/ProjectDocument-Input"
+          },
+          "format": {
+            "const": "grafy.project",
+            "title": "Format",
+            "type": "string"
+          },
+          "format_version": {
+            "const": 1,
+            "title": "Format Version",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "required": [
+          "format",
+          "format_version",
+          "name",
+          "document"
+        ],
+        "title": "ImportProjectRequest",
+        "type": "object"
+      },
+      "ImportProjectResponse": {
+        "additionalProperties": false,
+        "description": "The newly created Project plus any non-fatal import warnings.",
+        "properties": {
+          "project": {
+            "$ref": "#/components/schemas/ProjectResponse"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectImportWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "title": "ImportProjectResponse",
         "type": "object"
       },
       "InGraphCommand": {
@@ -6047,7 +6161,7 @@
             "type": "string"
           },
           "document": {
-            "$ref": "#/components/schemas/ProjectDocument"
+            "$ref": "#/components/schemas/ProjectDocument-Output"
           },
           "name": {
             "title": "Name",
@@ -6128,20 +6242,67 @@
         "title": "ProjectCommandReceiptResponse",
         "type": "object"
       },
-      "ProjectDocument": {
+      "ProjectDocument-Input": {
         "additionalProperties": false,
         "description": "The document of a Project: its Graphs and the calls between them.",
         "properties": {
           "graphs": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/GraphDefinition"
+              "$ref": "#/components/schemas/GraphDefinition-Input"
             },
             "title": "Graphs",
             "type": "array"
           }
         },
         "title": "ProjectDocument",
+        "type": "object"
+      },
+      "ProjectDocument-Output": {
+        "additionalProperties": false,
+        "description": "The document of a Project: its Graphs and the calls between them.",
+        "properties": {
+          "graphs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GraphDefinition-Output"
+            },
+            "title": "Graphs",
+            "type": "array"
+          }
+        },
+        "title": "ProjectDocument",
+        "type": "object"
+      },
+      "ProjectExportResponse": {
+        "additionalProperties": false,
+        "description": "Portable, versioned whole-Project JSON envelope.",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/ProjectDocument-Output"
+          },
+          "format": {
+            "const": "grafy.project",
+            "default": "grafy.project",
+            "title": "Format",
+            "type": "string"
+          },
+          "format_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Format Version",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "document"
+        ],
+        "title": "ProjectExportResponse",
         "type": "object"
       },
       "ProjectFolderListResponse": {
@@ -6226,7 +6387,7 @@
             "type": "integer"
           },
           "document": {
-            "$ref": "#/components/schemas/ProjectDocument"
+            "$ref": "#/components/schemas/ProjectDocument-Output"
           },
           "name": {
             "title": "Name",
@@ -6259,6 +6420,91 @@
           "document"
         ],
         "title": "ProjectHeadResponse",
+        "type": "object"
+      },
+      "ProjectImportWarning": {
+        "additionalProperties": false,
+        "description": "One non-fatal compatibility or portability note produced during import.",
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Id"
+          },
+          "code": {
+            "enum": [
+              "unknown_operator",
+              "stripped_origins",
+              "stripped_artifact_cards",
+              "stripped_library_context_links",
+              "stripped_card_context_links",
+              "stripped_legacy_config_keys",
+              "credentials_required",
+              "custom_agent_model"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "graph_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Id"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "operator_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Id"
+          },
+          "operator_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operator Version"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ProjectImportWarning",
         "type": "object"
       },
       "ProjectListResponse": {
@@ -13958,6 +14204,67 @@
         ]
       }
     },
+    "/v1/workspaces/{workspace_id}/projects/import": {
+      "post": {
+        "operationId": "import_project_v1_workspaces__workspace_id__projects_import_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportProjectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Import Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/v1/workspaces/{workspace_id}/projects/starter": {
       "post": {
         "operationId": "create_starter_project_v1_workspaces__workspace_id__projects_starter_post",
@@ -14635,6 +14942,84 @@
           }
         ],
         "summary": "Submit Project Commands",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/v1/workspaces/{workspace_id}/projects/{project_id}/export": {
+      "get": {
+        "operationId": "export_project_v1_workspaces__workspace_id__projects__project_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "revision",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          },
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Project",
         "tags": [
           "projects"
         ]

@@ -1,9 +1,11 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import ClassVar
+from typing import ClassVar, Literal
 from uuid import UUID
 
 from grafy_core.domain.collaboration import (
+    PROJECT_EXPORT_FORMAT,
+    PROJECT_EXPORT_FORMAT_VERSION,
     ProjectHead,
     CommandReceiptOutcome,
     ProjectCommand,
@@ -409,3 +411,69 @@ class CopyExactHeadRequest(ProjectApiModel):
         if isinstance(value, str):
             return value.strip()
         return value
+
+
+class ProjectExportResponse(ProjectApiModel):
+    """Portable, versioned whole-Project JSON envelope."""
+
+    format: Literal["grafy.project"] = PROJECT_EXPORT_FORMAT
+    format_version: Literal[1] = PROJECT_EXPORT_FORMAT_VERSION
+    name: str
+    document: ProjectDocument
+
+
+class ImportProjectRequest(ProjectApiModel):
+    """Portable whole-Project JSON envelope with optional replay identifiers."""
+
+    format: Literal["grafy.project"]
+    format_version: Literal[1]
+    name: str = Field(min_length=1, max_length=160)
+    document: ProjectDocument
+    project_id: UUID | None = None
+    command_id: UUID | None = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def require_replay_pair(self) -> "ImportProjectRequest":
+        """A replayable import needs the id a retry would find the receipt under."""
+
+        if self.command_id is not None and self.project_id is None:
+            raise ValueError(
+                "command_id is only accepted together with an explicit project_id"
+            )
+        return self
+
+
+ProjectImportWarningCode = Literal[
+    "unknown_operator",
+    "stripped_origins",
+    "stripped_artifact_cards",
+    "stripped_library_context_links",
+    "stripped_card_context_links",
+    "stripped_legacy_config_keys",
+    "credentials_required",
+    "custom_agent_model",
+]
+
+
+class ProjectImportWarning(ProjectApiModel):
+    """One non-fatal compatibility or portability note produced during import."""
+
+    code: ProjectImportWarningCode
+    message: str
+    graph_id: str | None = None
+    node_id: str | None = None
+    operator_id: str | None = None
+    operator_version: int | None = None
+    agent_id: str | None = None
+
+
+class ImportProjectResponse(ProjectApiModel):
+    """The newly created Project plus any non-fatal import warnings."""
+
+    project: ProjectResponse
+    warnings: list[ProjectImportWarning] = Field(default_factory=list)

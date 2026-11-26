@@ -1357,3 +1357,168 @@ async def test_no_project_operation_touches_node_secrets(harness: Harness) -> No
     )
 
     assert harness.factory.secrets_touched is False
+
+
+async def test_import_project_stages_multi_graph_document_and_sanitizes(
+    harness: Harness,
+) -> None:
+    from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
+    from grafy_core.domain.graph_documents import (
+        GraphOrigin,
+        GraphPresentationDocument,
+        GraphPresentationViewer,
+    )
+    from grafy_core.kernel.project import (
+        CALL_NODE_KIND,
+        CALL_NODE_OPERATOR_VERSION,
+        GraphDefinition,
+    )
+
+    workspace, owner = harness.workspace(name="Target", slug="target")
+    ref = ArtifactRef.from_key(
+        artifact_id=uuid4(),
+        key=ArtifactTypeKey("scalar.text", 1),
+    )
+    # Caller graph appears BEFORE callee graph to verify atomic multi-graph staging.
+    document = ProjectDocument(
+        graphs=(
+            GraphDefinition(
+                id="main",
+                name="Main",
+                document=GraphDocument(
+                    nodes=(
+                        node("n1", upload_key="secret-key", keep="yes"),
+                        GraphNode(
+                            kind=CALL_NODE_KIND,
+                            id="call-sub",
+                            operator_id="sub",
+                            operator_version=CALL_NODE_OPERATOR_VERSION,
+                            position=GraphPoint(x=40, y=40),
+                        ),
+                    ),
+                    origins=(
+                        GraphOrigin(
+                            id="origin-1",
+                            to_node="n1",
+                            to_port="text",
+                            value=ref,
+                        ),
+                    ),
+                    presentation=GraphPresentationDocument(
+                        viewers=(
+                            GraphPresentationViewer(
+                                id="artifact-viewer-card",
+                                position=GraphPoint(x=0, y=0),
+                                artifact_ref=ref,
+                            ),
+                        )
+                    ),
+                ),
+                refresh_generations={"n1": 3},
+            ),
+            GraphDefinition(
+                id="sub",
+                name="Subgraph",
+                document=GraphDocument(nodes=(node("s1", keep="sub"),)),
+                refresh_generations={"s1": 1},
+            ),
+        )
+    )
+
+    imported = await harness.service.import_project(
+        actor=owner,
+        workspace_id=workspace.id,
+        name="  Imported Project  ",
+        document=document,
+    )
+
+    assert imported.project.name == "Imported Project"
+    assert imported.head.checkpoint_revision == 1
+    assert imported.head.collaboration_sequence == 0
+    assert [g.id for g in imported.head.document.graphs] == ["main", "sub"]
+    imported_main = imported.head.document.get_graph("main")
+    assert imported_main.document.origins == ()
+    assert imported_main.document.presentation.viewers == ()
+    assert imported_main.document.nodes[0].config_dict() == {"keep": "yes"}
+    assert imported_main.refresh_generations == {}
+    assert imported.head.document.get_graph("sub").refresh_generations == {}
+    assert (
+        harness.store.audit[-1].operation == "collaboration.project.import"
+    )
+
+
+async def test_import_project_idempotent_replay_and_mismatch(
+    harness: Harness,
+) -> None:
+    from grafy_core.kernel.project import GraphDefinition
+
+    workspace, owner = harness.workspace(name="Target", slug="target")
+    doc = ProjectDocument(
+        graphs=(
+            GraphDefinition(
+                id="main", name="Main", document=GraphDocument(nodes=(node("n1"),))
+            ),
+        )
+    )
+    project_id, command_id = uuid4(), uuid4()
+
+    first = await harness.service.import_project(
+        actor=owner,
+        workspace_id=workspace.id,
+        name="Replayable",
+        document=doc,
+        project_id=project_id,
+        command_id=command_id,
+    )
+    replay = await harness.service.import_project(
+        actor=owner,
+        workspace_id=workspace.id,
+        name="Replayable",
+        document=doc,
+        project_id=project_id,
+        command_id=command_id,
+    )
+
+    assert first.project.id == project_id
+    assert replay.project.id == project_id
+    assert replay.receipt is not None
+    assert replay.receipt.outcome is CommandReceiptOutcome.IDEMPOTENT_REPLAY
+
+    with pytest.raises(CollaborationIdempotencyMismatchError):
+        await harness.service.import_project(
+            actor=owner,
+            workspace_id=workspace.id,
+            name="Different Name",
+            document=doc,
+            project_id=project_id,
+            command_id=command_id,
+        )
+
+
+async def test_import_project_rejects_empty_graphs_and_unauthorized_actor(
+    harness: Harness,
+) -> None:
+    from grafy_core.kernel.project import GraphDefinition
+
+    workspace, owner = harness.workspace(name="Target", slug="target")
+    viewer = harness.add_member(workspace, name="Viewer", role=WorkspaceRole.VIEWER)
+
+    with pytest.raises(CollaborationCommandRejectedError) as exc_info:
+        await harness.service.import_project(
+            actor=owner,
+            workspace_id=workspace.id,
+            name="Empty",
+            document=ProjectDocument(graphs=()),
+        )
+    assert "at least one graph" in str(exc_info.value)
+
+    doc = ProjectDocument(
+        graphs=(GraphDefinition(id="main", name="Main", document=GraphDocument()),)
+    )
+    with pytest.raises(CapabilityDeniedError):
+        await harness.service.import_project(
+            actor=viewer,
+            workspace_id=workspace.id,
+            name="Denied",
+            document=doc,
+        )
