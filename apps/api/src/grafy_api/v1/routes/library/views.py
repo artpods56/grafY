@@ -1,10 +1,14 @@
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
-from grafy_core.domain.identity import WorkspaceCapability
+from grafy_core.domain.identity import WorkspaceAccess, WorkspaceCapability
 
 from grafy_api.services.errors import WorkbenchOperationError
-from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
+from grafy_api.v1.routes.auth.dependencies import (
+    require_workspace_capability,
+    require_workspace_capability_dependency,
+)
 from grafy_api.v1.routes.starter_dependencies import StarterDependency
 
 from .dependencies import LibraryDependency, LibraryFoldersDependency
@@ -17,6 +21,7 @@ from grafy_api.library.models import (
     MoveLibraryArtifactsRequest,
     MoveLibraryFolderRequest,
     RenameLibraryFolderRequest,
+    SaveArtifactRequest,
     SaveInstanceArtifactRequest,
     SaveUploadedArtifactRequest,
 )
@@ -26,6 +31,10 @@ folders_router = APIRouter(
     prefix="/workspaces/{workspace_id}/library/folders",
     tags=["library folders"],
 )
+EditProject = Annotated[
+    WorkspaceAccess,
+    require_workspace_capability_dependency(WorkspaceCapability.EDIT_PROJECT),
+]
 
 
 # [TODO] we should probably check what are these services throwing and ensure that we handle these errors correctly
@@ -89,6 +98,19 @@ async def save_library_artifact_from_upload(
         workspace_id=access.workspace_id,
         artifact_id=body.artifact_id,
         original_filename=body.original_filename,
+    )
+
+
+@router.post("/artifacts/from-artifact", response_model=LibraryItemResponse)
+async def save_library_artifact_from_artifact(
+    body: SaveArtifactRequest,
+    service: LibraryDependency,
+    access: EditProject,
+) -> LibraryItemResponse:
+    return await service.save_artifact(
+        workspace_id=access.workspace_id,
+        artifact_id=body.artifact_id,
+        name=body.name,
     )
 
 

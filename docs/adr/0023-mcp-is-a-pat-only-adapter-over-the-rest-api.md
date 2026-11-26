@@ -47,9 +47,11 @@ against the live node catalog (operator identity, config schema, port shapes, ar
 types, conversions, required inputs, cycles), then writes it as one `add_graph` or
 `replace_document` batch and checkpoints it. The server validates that batch again.
 Origins carry the exact `ArtifactRef`, content hash included; the tool resolves a
-missing hash from the Library. Artifact cards are authored only in the two forms the
-Workbench creates (a Library card and a card following an output), plus card-to-card
-interaction bindings; the deprecated standalone viewer is not authorable.
+missing hash from the Library. `create_artifact` writes a new Workspace artifact
+through REST with `edit_project` and returns the exact reference. To place that
+artifact on the canvas, pass its hash and versioned type to `author_graph` as a
+standalone card. The graph spec can also bind the card to node inputs and other
+cards, or define a card that follows a node output.
 
 **Workspace listing accepts a PAT.** `GET /v1/workspaces` answers a token with its one
 Workspace and the capabilities it holds there (scopes ∩ role). Identity, credential and

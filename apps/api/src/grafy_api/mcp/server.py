@@ -127,7 +127,7 @@ class OriginSpec(_ToolModel):
         default=False, description="Pass a single artifact as a one-item sequence"
     )
     card: str | None = Field(
-        default=None, description="Id of a library card in `cards` that owns it"
+        default=None, description="Id of a standalone card in `cards` that owns it"
     )
     collection_mode: Literal["direct", "map"] = "direct"
     conversion_path: list[ConversionSpec] = Field(default_factory=list)
@@ -138,7 +138,7 @@ class CardSpec(_ToolModel):
 
     id: str = Field(description="Card id; must start with 'artifact-viewer-'")
     artifacts: list[ArtifactSpec] = Field(
-        default_factory=list, description="Library card content"
+        default_factory=list, description="Standalone card content"
     )
     follows: PortRef | None = Field(
         default=None, description="Output card: the node output it shows"
@@ -413,7 +413,7 @@ async def author_graph(
     schema, port shapes and artifact types before anything is sent. The Graph is
     then written in one validated batch (add or replace) and, by default,
     checkpointed. Cards show artifacts on the canvas: give `artifacts` for a
-    Library card or `follows` for a card that shows a node output.
+    standalone card or `follows` for a card that shows a node output.
     """
     async with _grafy(ctx) as (grafy, workspace_id):
         hashes: dict[UUID, str | None] = {}
@@ -664,6 +664,39 @@ async def upload_file(
     }
 
 
+async def list_authorable_artifact_types(ctx: Context) -> list[dict[str, object]]:
+    """List JSON artifact types and payload schemas accepted by create_artifact."""
+    async with _grafy(ctx) as (grafy, workspace_id):
+        catalog = await grafy.catalog.get(workspace_id)
+    return [spec for spec in catalog.artifact_types if spec.get("authorable") is True]
+
+
+async def create_artifact(
+    ctx: Context,
+    artifact_type: str,
+    payload: dict[str, object],
+    schema_version: Annotated[int, Field(ge=1)] = 1,
+    derived_from_artifact_id: UUID | None = None,
+    title: str | None = None,
+) -> dict[str, Any]:
+    """Create an immutable artifact from JSON. Use its hash in author_graph cards.
+
+    Pass the bare type id (for example scalar.text) and its schema version here.
+    Pass id@version and the returned content_hash when placing it on a graph.
+    """
+    async with _grafy(ctx) as (grafy, workspace_id):
+        return _dump(
+            await grafy.artifacts.create_artifact(
+                workspace_id,
+                artifact_type=artifact_type,
+                schema_version=schema_version,
+                payload=payload,
+                derived_from_artifact_id=derived_from_artifact_id,
+                title=title,
+            )
+        )
+
+
 async def read_artifact_text(
     ctx: Context,
     artifact_id: UUID,
@@ -772,6 +805,8 @@ TOOLS: Final = (
     get_instance_result,
     list_library,
     upload_file,
+    list_authorable_artifact_types,
+    create_artifact,
     read_artifact_text,
     get_table_schema,
     read_table_page,

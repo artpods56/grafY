@@ -1292,6 +1292,105 @@ it("wires workflow metadata, live viewer outputs, origin edges, service provider
   ]);
 });
 
+describe("artifact card downloads", () => {
+  it.each([
+    {
+      id: "table.data",
+      bundle: "table-bundle",
+      previewKind: "table",
+      authorable: true,
+      formats: ["json", "csv", "csv"],
+      expected: [
+        { format: "csv", label: "CSV" },
+        { format: "json", label: "JSON" },
+      ],
+    },
+    {
+      id: "scalar.text",
+      bundle: "inline-json",
+      previewKind: "text",
+      authorable: true,
+      formats: ["txt"],
+      expected: [
+        { format: "txt", label: "TXT" },
+        { format: "json", label: "JSON" },
+      ],
+    },
+    {
+      id: "ocr.tiff_text_regions",
+      bundle: "inline-json",
+      previewKind: "tiff-text",
+      authorable: true,
+      formats: [],
+      expected: [{ format: "json", label: "JSON" }],
+    },
+    {
+      id: "file.tiff",
+      bundle: "binary-file",
+      previewKind: "tiff",
+      authorable: false,
+      formats: [],
+      expected: [],
+    },
+  ] as const)(
+    "derives export choices for $id",
+    ({ id, bundle, previewKind, authorable, formats, expected }) => {
+      const presentation: GraphPresentation = {
+        viewers: [
+          {
+            id: "downloadable",
+            position: { x: 0, y: 0 },
+            artifact_ref: {
+              artifact_id: "artifact-1",
+              artifact_type: id,
+              schema_version: 1,
+            },
+            mode: "artifact",
+          },
+        ],
+        links: [],
+        annotations: [],
+        bindings: [],
+      };
+      const viewers = artifactViewersFromPresentation(presentation);
+      const { surfaceById } = buildWorkbenchCellScene({
+        workspaceId: "ws",
+        document: graph,
+        registry: {
+          ...registry,
+          artifact_types: [
+            {
+              key: { id, schema_version: 1 },
+              title: id,
+              authorable,
+              preview_kind: previewKind,
+              bundle: { format: bundle, version: 1 },
+              export_formats: formats.map((format) => ({
+                format,
+                content_type: "application/octet-stream",
+                filename: `artifact.${format}`,
+              })),
+              field_projections: [],
+              payload_schema: {},
+            },
+          ],
+        },
+        presentation,
+        nodes: [],
+        nodeInstanceStates: {},
+        collapsedAppendices: new Set(),
+        canRun: false,
+        artifactViewerEdges: viewers.edges,
+        artifactViewerNodes: viewers.nodes,
+      });
+      expect(surfaceById.downloadable).toMatchObject({
+        downloadFormats: expected,
+        inLibrary: false,
+      });
+    },
+  );
+});
+
 describe("artifact card pictures", () => {
   const png = (id: string) => ({
     artifact_id: id,
@@ -1750,6 +1849,7 @@ describe("artifact card pictures", () => {
     expect(surfaceById.jpeg).toMatchObject({
       filename: "amalfi.jpg",
       byteSizeLabel: "242 KB",
+      inLibrary: true,
     });
     // Without an upload's original filename, the Library's own name.
     expect(surfaceById.png).toMatchObject({
@@ -1791,11 +1891,49 @@ describe("artifact card pictures", () => {
       ],
     ]);
     expect(build("ws", library).surfaceById.pages).toMatchObject({
+      workspaceId: "ws",
       stackItems: [
-        { artifactId: "s1", imageUrl: url("s1"), label: "#1" },
-        { artifactId: "s2", imageUrl: url("s2"), label: "page-2.png" },
-        { artifactId: "s3", imageUrl: url("s3"), label: "#3" },
-        { artifactId: "s4", imageUrl: url("s4"), label: "#4" },
+        {
+          artifactId: "s1",
+          artifact: {
+            artifact_id: "s1",
+            artifact_type: "file.png",
+            schema_version: 1,
+          },
+          imageUrl: url("s1"),
+          label: "#1",
+        },
+        {
+          artifactId: "s2",
+          artifact: {
+            artifact_id: "s2",
+            artifact_type: "file.png",
+            schema_version: 1,
+          },
+          imageUrl: url("s2"),
+          label: "page-2.png",
+          byteSizeLabel: "10 B",
+        },
+        {
+          artifactId: "s3",
+          artifact: {
+            artifact_id: "s3",
+            artifact_type: "file.png",
+            schema_version: 1,
+          },
+          imageUrl: url("s3"),
+          label: "#3",
+        },
+        {
+          artifactId: "s4",
+          artifact: {
+            artifact_id: "s4",
+            artifact_type: "file.png",
+            schema_version: 1,
+          },
+          imageUrl: url("s4"),
+          label: "#4",
+        },
       ],
     });
     // Without a workspace the tiles keep their names and drop the pictures.

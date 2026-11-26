@@ -117,12 +117,13 @@ class NodeComputationRunner:
                 )
             return {GRAPH_BOUNDARY_PORT: value}
 
-        unsupported = await self._unsupported_outputs(upstream)
+        unsupported, gated = await self._omitted_outputs(upstream)
         bound = self._binder.bind(
             instance,
             upstream,
             request.service_sources,
             unsupported,
+            gated,
         )
         # Secrets belong to the node that is about to run, so they are bound here,
         # once, to this Project's identity and to the operator's own declaration:
@@ -158,41 +159,58 @@ class NodeComputationRunner:
             bound_services=bound_services,
         )
 
-    async def _unsupported_outputs(
+    async def _omitted_outputs(
         self,
         upstream: Mapping[InstanceKey, Mapping[str, ArtifactOutputValue]],
-    ) -> dict[InstanceKey, dict[str, str]]:
-        """Read ``unsupported_outputs`` from any sibling artifact of each source.
+    ) -> tuple[dict[InstanceKey, dict[str, str]], dict[InstanceKey, dict[str, str]]]:
+        """Read ``unsupported_outputs`` and ``gated_outputs`` from sibling artifacts.
 
-        An optional output the provider does not produce is omitted from the
-        stored result and named in that metadata, so a downstream binder can say
-        who left the port empty.
+        An optional output left empty by a service provider or an unconnected
+        input is omitted from the stored result and named in metadata, so a
+        downstream binder can explain why the port is empty.
         """
 
         from grafy_core.artifacts import ArtifactRefSequence
 
-        found: dict[InstanceKey, dict[str, str]] = {}
+        unsupported: dict[InstanceKey, dict[str, str]] = {}
+        gated: dict[InstanceKey, dict[str, str]] = {}
         for key, outputs in upstream.items():
             for value in outputs.values():
-                raw: object | None = None
                 if isinstance(value, ArtifactRefSequence):
-                    raw = value.metadata.get("unsupported_outputs")
+                    metadata = value.metadata
                 else:
                     stored = await self._edge_values.values.open(
                         value, self._workspace_id
                     )
-                    raw = stored.row.metadata.get("unsupported_outputs")
-                if not isinstance(raw, dict):
-                    continue
-                mapping = {
-                    str(port): str(provider)
-                    for port, provider in cast(dict[object, object], raw).items()
-                    if isinstance(port, str) and isinstance(provider, str)
-                }
-                if mapping:
-                    found[key] = mapping
+                    metadata = stored.row.metadata
+                raw_unsupported = metadata.get("unsupported_outputs")
+                raw_gated = metadata.get("gated_outputs")
+                found_any = False
+                if isinstance(raw_unsupported, dict):
+                    mapping = {
+                        str(port): str(provider)
+                        for port, provider in cast(
+                            dict[object, object], raw_unsupported
+                        ).items()
+                        if isinstance(port, str) and isinstance(provider, str)
+                    }
+                    if mapping:
+                        unsupported[key] = mapping
+                        found_any = True
+                if isinstance(raw_gated, dict):
+                    mapping = {
+                        str(port): str(input_label)
+                        for port, input_label in cast(
+                            dict[object, object], raw_gated
+                        ).items()
+                        if isinstance(port, str) and isinstance(input_label, str)
+                    }
+                    if mapping:
+                        gated[key] = mapping
+                        found_any = True
+                if found_any:
                     break
-        return found
+        return unsupported, gated
 
     async def _read_upstream(
         self, request: ComputationRequest

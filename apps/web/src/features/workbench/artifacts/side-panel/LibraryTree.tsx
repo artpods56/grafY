@@ -25,8 +25,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { artifactContentUrl, type PlacedLibraryItem } from "@/lib/api";
+import {
+  artifactContentUrl,
+  artifactDownloadUrl,
+  type PlacedLibraryItem,
+} from "@/lib/api";
 import { tokens } from "@/lib/stylex/tokens.stylex";
+import { triggerArtifactDownload } from "../artifact-download";
 import { BLOB_ARTIFACT_NOTICE, isBlobArtifact } from "../blob-notice";
 import {
   dropEffectFor,
@@ -525,6 +530,9 @@ function FileRow({ file }: { file: LibraryFileNode }) {
   const tree = useLibraryTree();
   const { item } = file;
   const artifactId = item.artifact.artifact_id;
+  const formats = new Set(
+    item.artifact.download_formats?.map(({ format }) => format),
+  );
   const displayName = libraryFileDisplayName(item);
   const contentUrl = artifactContentUrl(
     tree.workspaceId,
@@ -599,6 +607,18 @@ function FileRow({ file }: { file: LibraryFileNode }) {
           disabled={contentUrl === null}
           onSelect={() => openInNewTab(contentUrl)}
         />
+        {Array.from(formats, (format) => (
+          <RowMenuItem
+            key={format}
+            icon={Download}
+            label={`Download ${format.toUpperCase()}`}
+            onSelect={() =>
+              triggerArtifactDownload(
+                artifactDownloadUrl(tree.workspaceId, artifactId, format),
+              )
+            }
+          />
+        ))}
         <RowMenuItem
           icon={Link2}
           label="Copy link"

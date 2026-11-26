@@ -9,10 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 import type { ArtifactViewerCanvasState } from "../artifacts/artifact-viewer";
-import type {
-  ArtifactInteractionField,
-  ArtifactViewerActivity,
-} from "../artifacts/artifact-interactions";
+import type { ArtifactViewerActivity } from "../artifacts/artifact-interactions";
 import {
   useArtifactViewerCommands,
   useArtifactViewerState,
@@ -38,7 +35,6 @@ type Harness = {
     string,
     { activity: ArtifactViewerActivity; revision: number }
   >;
-  fields: Record<string, ArtifactInteractionField[]>;
   runError: string | null;
 };
 
@@ -52,10 +48,6 @@ async function mountHarness(options: {
   function HarnessComponent() {
     const [artifactViewers, setArtifactViewers, artifactViewersRef] =
       useArtifactViewerState(EMPTY_STATE);
-    const [, setArtifactViewerSelections] = React.useState({});
-    const [fields, setArtifactViewerFields] = React.useState<
-      Record<string, ArtifactInteractionField[]>
-    >({});
     const [activities, setArtifactViewerActivities] = React.useState<
       Record<string, { activity: ArtifactViewerActivity; revision: number }>
     >({});
@@ -82,8 +74,6 @@ async function mountHarness(options: {
       localAuthoringEnabledRef,
       presentationRoomSyncRef,
       setArtifactViewerActivities,
-      setArtifactViewerFields,
-      setArtifactViewerSelections,
       setArtifactViewers,
       setRunError,
     });
@@ -92,7 +82,6 @@ async function mountHarness(options: {
       commands,
       annotations: artifactViewers.annotations.length,
       activities,
-      fields,
       runError,
     };
     return null;
@@ -167,29 +156,6 @@ describe("useArtifactViewerCommands", () => {
     expect(submitted).toHaveLength(1);
     expect(view.harness.annotations).toBe(1);
     expect(submitted[0]?.annotations[0]?.id).toBe("note-1");
-    view.unmount();
-  });
-
-  it("keeps the previous field record when the reported fields are unchanged", async () => {
-    const submitted: ArtifactViewerCanvasState[] = [];
-    const view = await mountHarness({ submits: submitted });
-    const fields: ArtifactInteractionField[] = [
-      { id: "city", title: "City", valueType: "string" },
-    ];
-
-    await act(async () => {
-      view.harness.commands.updateArtifactViewerFields("node-1", fields);
-    });
-    const afterFirst = view.harness.fields;
-
-    await act(async () => {
-      view.harness.commands.updateArtifactViewerFields("node-1", [
-        { id: "city", title: "City", valueType: "string" },
-      ]);
-    });
-
-    expect(view.harness.fields).toBe(afterFirst);
-    expect(view.harness.fields["node-1"]).toEqual(fields);
     view.unmount();
   });
 

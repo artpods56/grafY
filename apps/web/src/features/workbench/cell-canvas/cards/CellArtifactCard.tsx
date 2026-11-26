@@ -3,9 +3,15 @@
 import * as React from "react";
 import * as stylex from "@stylexjs/stylex";
 import {
+  BookmarkPlus,
+  CopyPlus,
+  Download,
   FileText,
   Layers,
+  Link,
+  Link2,
   Map as MapIcon,
+  Pencil,
   Plus,
   ScanSearch,
   Ungroup,
@@ -34,10 +40,16 @@ import { useHtmlPage } from "../../artifacts/artifact-renderers/html-page";
 import { ImageCardPreview } from "../../artifacts/artifact-renderers/image-card-preview";
 import { TableArtifactRenderer } from "../../artifacts/artifact-renderers/table-renderer";
 import { TiffTextArtifact } from "../../artifacts/artifact-renderers/tiff-text-renderer";
+import type { ArtifactViewerInteractionContext } from "../../artifacts/artifact-interactions";
+import {
+  useSelectionLinksContext,
+  type SelectionLinkMenuItem,
+} from "../../artifacts/selection-links/SelectionLinksContext";
 
 import type {
   ArtifactCardSurfaceData,
   CollectionCardSurfaceData,
+  InlineArtifactEditingProps,
 } from "../cell-contracts";
 import { cellCornerRadius, type CellStackStyle } from "../cell-glass-stage";
 import {
@@ -238,6 +250,10 @@ const s = stylex.create({
     position: "absolute",
     inset: 0,
     overflow: "hidden",
+  },
+  // Non-interactive faces (spread side stacks, transition clones) never capture pointers.
+  previewStatic: {
+    pointerEvents: "none",
   },
   // Sits in the plate, clear of the output well on the card's right edge.
   nextStep: {
@@ -564,9 +580,16 @@ function TypeDot({ artifactTypeId }: { artifactTypeId: string }) {
 
 // --- Artifact card ---------------------------------------------------------
 
-export interface CellArtifactCardProps extends CellCardBaseProps {
+export interface CellArtifactCardProps
+  extends CellCardBaseProps, InlineArtifactEditingProps {
   surface: ArtifactCardSurfaceData;
   onInspect?: (cardId: string) => void;
+  onDownload?: (cardId: string, format: string | null) => void;
+  onSaveToLibrary?: (cardId: string) => void;
+  /** Opens the editor for a standalone authorable artifact. */
+  onEdit?: (cardId: string) => void;
+  /** Opens duplicate-and-edit for a producer-linked authorable artifact. */
+  onDuplicateAndEdit?: (cardId: string) => void;
   /** Opens the list of steps this card's one output can feed. */
   onNextStep?: () => void;
   /** Lays a sequence open in place, from its count or its menu. */
@@ -596,10 +619,19 @@ export interface CellArtifactCardProps extends CellCardBaseProps {
 const BOXED_IN_HINT = "Move card into open space to spread";
 
 function CellArtifactCardImpl(props: CellArtifactCardProps) {
-  const { card, surface, onInspect, onExpandSequence, onUngroup } = props;
+  const {
+    card,
+    surface,
+    onInspect,
+    onEdit,
+    onDuplicateAndEdit,
+    onExpandSequence,
+    onUngroup,
+  } = props;
   const sequenceExpanded = props.sequenceExpanded ?? false;
   const canExpandSequence = props.canExpandSequence ?? true;
   const state = useResolvedCardState(card.id, props);
+  const selectionLinks = useSelectionLinksContext();
   const image = surface.previewKind === "image";
   const stackable = image || surface.previewKind === "tiff";
   const itemCount = surface.itemCount ?? 1;
@@ -612,6 +644,38 @@ function CellArtifactCardImpl(props: CellArtifactCardProps) {
   // so the picture itself stays clean.
   const measure = surface.dimensionsLabel ?? surface.byteSizeLabel;
   const headerLabel = surface.filename ?? measure ?? null;
+  const artifactItems = artifactMenuItems({
+    cardId: card.id,
+    surface,
+    sequence,
+    canExpandSequence,
+    authoringAction: artifactCardAuthoringAction({
+      authorable: surface.authorable === true,
+      producerLinked: surface.producerLinked === true,
+      itemCount,
+      hasArtifact: surface.artifact != null,
+    }),
+    onInspect,
+    onDownload: props.onDownload,
+    onSaveToLibrary: props.onSaveToLibrary,
+    onEdit,
+    onDuplicateAndEdit,
+    onExpandSequence,
+    onUngroup,
+  });
+  const linkItems: CellCardMenuItem[] = (
+    selectionLinks?.menuItemsFor(card.id) ?? []
+  ).map((item: SelectionLinkMenuItem): CellCardMenuItem => ({
+    id: item.id,
+    label: item.label,
+    onSelect: item.onSelect,
+    icon:
+      item.id === "selection-link-new" ? (
+        <Link2 size={13} />
+      ) : (
+        <Link size={13} />
+      ),
+  }));
 
   let headerMeta: React.ReactNode = null;
   if (sequence) {
@@ -668,37 +732,26 @@ function CellArtifactCardImpl(props: CellArtifactCardProps) {
         ) : null
       }
       menuDetail={surface.typeLabel}
-      menuItems={artifactMenuItems({
-        cardId: card.id,
-        sequence,
-        canExpandSequence,
-        onInspect,
-        onExpandSequence,
-        onUngroup,
-      })}
+      menuItems={
+        linkItems.length > 0
+          ? [...(artifactItems ?? []), ...linkItems]
+          : artifactItems
+      }
     >
-      <div
-        data-artifact-preview={surface.previewKind}
-        {...stylex.props(
-          s.preview,
-          image && s.checker,
-          surface.previewKind === "map" && s.map,
-        )}
-      >
-        <ArtifactPreview
-          card={card}
-          surface={surface}
-          selected={state.selected}
-          onImageLoad={props.onImageLoad}
-        />
-      </div>
-      {image && surface.imageUrl ? (
-        <span
-          aria-hidden="true"
-          data-artifact-image-frame="true"
-          {...stylex.props(s.imageFrame)}
-        />
-      ) : null}
+      <ArtifactPlatePreview
+        card={card}
+        surface={surface}
+        selected={state.selected}
+        interaction={
+          (surface.itemCount ?? 1) <= 1
+            ? selectionLinks?.interactionFor(card.id)
+            : undefined
+        }
+        onImageLoad={props.onImageLoad}
+        inlineEditingCardId={props.inlineEditingCardId}
+        onSetInlineEditingCardId={props.onSetInlineEditingCardId}
+        onInlineArtifactSaved={props.onInlineArtifactSaved}
+      />
       {props.onNextStep ? (
         <Button
           type="button"
@@ -826,29 +879,100 @@ function StackCount({
   );
 }
 
+/** Edit vs duplicate-and-edit for a single authorable artifact on a card. */
+export function artifactCardAuthoringAction(input: {
+  authorable: boolean;
+  producerLinked: boolean;
+  itemCount: number;
+  hasArtifact: boolean;
+}): "edit" | "duplicate" | null {
+  if (!input.authorable || !input.hasArtifact || input.itemCount !== 1) {
+    return null;
+  }
+  return input.producerLinked ? "duplicate" : "edit";
+}
+
 /** What an artifact card's "⋯" menu offers beyond what every card has. */
-function artifactMenuItems({
+export function artifactMenuItems({
   cardId,
+  surface,
   sequence,
   canExpandSequence,
+  authoringAction,
   onInspect,
+  onDownload,
+  onSaveToLibrary,
+  onEdit,
+  onDuplicateAndEdit,
   onExpandSequence,
   onUngroup,
 }: {
   cardId: string;
+  surface: ArtifactCardSurfaceData;
   sequence: boolean;
   canExpandSequence: boolean;
+  authoringAction: "edit" | "duplicate" | null;
   onInspect?: (cardId: string) => void;
+  onDownload?: (cardId: string, format: string | null) => void;
+  onSaveToLibrary?: (cardId: string) => void;
+  onEdit?: (cardId: string) => void;
+  onDuplicateAndEdit?: (cardId: string) => void;
   onExpandSequence?: (cardId: string) => void;
   onUngroup?: (cardId: string) => void;
 }): CellCardMenuItem[] | undefined {
   const items: CellCardMenuItem[] = [];
+  if (authoringAction === "edit" && onEdit) {
+    items.push({
+      id: "edit",
+      label: "Edit",
+      icon: <Pencil size={13} />,
+      onSelect: () => onEdit(cardId),
+    });
+  }
+  if (authoringAction === "duplicate" && onDuplicateAndEdit) {
+    items.push({
+      id: "duplicate-edit",
+      label: "Duplicate & Edit",
+      icon: <CopyPlus size={13} />,
+      onSelect: () => onDuplicateAndEdit(cardId),
+    });
+  }
   if (onInspect) {
     items.push({
       id: "inspect",
       label: "Inspect",
       icon: <ScanSearch size={13} />,
       onSelect: () => onInspect(cardId),
+    });
+  }
+  const singleArtifact = surface.artifact && (surface.itemCount ?? 1) === 1;
+  if (singleArtifact && surface.workspaceId && onDownload) {
+    const formats = surface.downloadFormats;
+    if (formats?.length) {
+      for (const { format, label } of formats) {
+        items.push({
+          id: `download-${format}`,
+          label: `Download ${label}`,
+          icon: <Download size={13} />,
+          onSelect: () => onDownload(cardId, format),
+        });
+      }
+    } else {
+      items.push({
+        id: "download",
+        label: "Download",
+        icon: <Download size={13} />,
+        onSelect: () => onDownload(cardId, null),
+      });
+    }
+  }
+  if (singleArtifact && onSaveToLibrary) {
+    items.push({
+      id: "save-to-library",
+      label: surface.inLibrary ? "Saved in Library" : "Save to Library",
+      icon: <BookmarkPlus size={13} />,
+      disabled: surface.inLibrary,
+      onSelect: () => onSaveToLibrary(cardId),
     });
   }
   if (sequence && onExpandSequence) {
@@ -1107,20 +1231,94 @@ function LiveCardText({
   );
 }
 
-function ArtifactPreview({
+/**
+ * Shared artifact plate body for both `CellArtifactCard` and open items in
+ * `CellArtifactSequenceSpread`. Every `ArtifactPreviewKind` resolves here so
+ * expanded sequence items use the same renderers as single cards.
+ */
+export function ArtifactPlatePreview({
   card,
   surface,
   selected,
+  interactive = true,
+  interaction,
   onImageLoad,
+  inlineEditingCardId,
+  onSetInlineEditingCardId,
+  onInlineArtifactSaved,
 }: {
   card: CellArtifactCardProps["card"];
   surface: ArtifactCardSurfaceData;
   selected: boolean;
+  /**
+   * False for non-interactive spread faces (side stacks, under-cards, tuck
+   * animations): disables pointer hit-testing and tab stops so the outer
+   * control or animation owns every interaction.
+   */
+  interactive?: boolean;
+  interaction?: ArtifactViewerInteractionContext;
   onImageLoad?: (
     imageUrl: string,
     size: { width: number; height: number },
   ) => void;
-}) {
+} & InlineArtifactEditingProps) {
+  const image = surface.previewKind === "image";
+  return (
+    <>
+      <div
+        data-artifact-preview={surface.previewKind}
+        inert={!interactive}
+        {...stylex.props(
+          s.preview,
+          image && s.checker,
+          surface.previewKind === "map" && s.map,
+          !interactive && s.previewStatic,
+        )}
+      >
+        <ArtifactPreview
+          card={card}
+          surface={surface}
+          selected={interactive && selected}
+          interactive={interactive}
+          interaction={interaction}
+          onImageLoad={onImageLoad}
+          inlineEditingCardId={inlineEditingCardId}
+          onSetInlineEditingCardId={onSetInlineEditingCardId}
+          onInlineArtifactSaved={onInlineArtifactSaved}
+        />
+      </div>
+      {image && surface.imageUrl ? (
+        <span
+          aria-hidden="true"
+          data-artifact-image-frame="true"
+          {...stylex.props(s.imageFrame)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ArtifactPreview({
+  card,
+  surface,
+  selected,
+  interactive = true,
+  interaction,
+  onImageLoad,
+  inlineEditingCardId,
+  onSetInlineEditingCardId,
+  onInlineArtifactSaved,
+}: {
+  card: CellArtifactCardProps["card"];
+  surface: ArtifactCardSurfaceData;
+  selected: boolean;
+  interactive?: boolean;
+  interaction?: ArtifactViewerInteractionContext;
+  onImageLoad?: (
+    imageUrl: string,
+    size: { width: number; height: number },
+  ) => void;
+} & InlineArtifactEditingProps) {
   const plateHeight =
     card.heightCells * CELL_SIZE - CARD_PLATE_TOP - CARD_PLATE_BOTTOM_INSET;
   const alt = surface.filename ?? card.title;
@@ -1137,7 +1335,7 @@ function ArtifactPreview({
       );
     case "tiff": {
       const { workspaceId, artifact } = surface;
-      if (workspaceId && artifact) {
+      if (interactive && workspaceId && artifact) {
         return (
           <div
             data-cell-interactive-viewport="true"
@@ -1178,8 +1376,8 @@ function ArtifactPreview({
       if (workspaceId && tiffText) {
         return (
           <div
-            data-cell-interactive-viewport="true"
-            onPointerDown={stopCardDrag}
+            data-cell-interactive-viewport={interactive ? "true" : undefined}
+            onPointerDown={interactive ? stopCardDrag : undefined}
             style={{ width: "100%", height: "100%" }}
           >
             <TiffTextArtifact
@@ -1188,6 +1386,23 @@ function ArtifactPreview({
               height={plateHeight}
               linkedWindow={tiffText.linkedWindow}
               recognized={tiffText.recognized}
+              artifactRef={surface.artifact}
+              canEdit={Boolean(
+                interactive &&
+                surface.authorable &&
+                !surface.producerLinked &&
+                surface.artifact?.schema_version === 1 &&
+                (surface.itemCount ?? 1) === 1 &&
+                onSetInlineEditingCardId &&
+                onInlineArtifactSaved,
+              )}
+              editing={interactive && inlineEditingCardId === card.id}
+              onEditingChange={(next) =>
+                onSetInlineEditingCardId?.(next ? card.id : null)
+              }
+              onSaveArtifact={(nextRef) =>
+                onInlineArtifactSaved?.(card.id, nextRef)
+              }
               onSize={
                 scanId
                   ? (width, height) =>
@@ -1208,7 +1423,7 @@ function ArtifactPreview({
       if (workspaceId && artifact) {
         return (
           <div
-            onPointerDown={stopCardDrag}
+            onPointerDown={interactive ? stopCardDrag : undefined}
             style={{ width: "100%", height: "100%" }}
           >
             <TableArtifactRenderer
@@ -1222,6 +1437,7 @@ function ArtifactPreview({
               mode="table"
               presentation="canvas"
               availableHeight={plateHeight}
+              interaction={interaction}
             />
           </div>
         );
@@ -1267,8 +1483,8 @@ function ArtifactPreview({
       if (workspaceId && artifact) {
         return (
           <div
-            data-cell-interactive-viewport="true"
-            onPointerDown={stopCardDrag}
+            data-cell-interactive-viewport={interactive ? "true" : undefined}
+            onPointerDown={interactive ? stopCardDrag : undefined}
             style={{ width: "100%", height: "100%" }}
           >
             <GeoMapArtifactRenderer
@@ -1277,6 +1493,7 @@ function ArtifactPreview({
               autoLoad
               presentation="canvas"
               availableHeight={Math.max(120, plateHeight - 2)}
+              interaction={interaction}
             />
           </div>
         );

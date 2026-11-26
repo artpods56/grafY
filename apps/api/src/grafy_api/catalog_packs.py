@@ -42,7 +42,11 @@ PACKS = (
         "Document OCR",
         "Read scanned documents and extract tables from Markdown.",
         default_enabled=True,
-        operators=("ocr.read_document", "table.extract_from_markdown"),
+        operators=(
+            "ocr.read_document",
+            "text.transliterate_cyrillic",
+            "table.extract_from_markdown",
+        ),
         include_providers_for=(ServiceContractKey("ocr.document", 1),),
     ),
     PackDefinition(
@@ -79,6 +83,7 @@ PACKS = (
         operators=(
             "ocr.detect_tiff_text",
             "ocr.prepare_tiff_labels",
+            "ocr.postprocess_tiff_regions",
             "ocr.recognize_tiff_text",
             "ocr.filter_tiff_readings",
             "ocr.places_table",
@@ -87,6 +92,7 @@ PACKS = (
             "ocr.filter_tiff_jev",
             "table.match_places",
             "table.transliterate_cyrillic",
+            "text.transliterate_cyrillic",
         ),
         include_providers_for=(
             ServiceContractKey("ocr.box_detector", 1),

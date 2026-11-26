@@ -10,6 +10,12 @@
    Graph and open the resulting map.
 5. To join several sheets, connect them to **Raster mosaic layer** in
    bottom-to-top order. Check the overlap and transparent edges.
+6. To draw points, lines or areas over the scan, turn a table with a WKT column
+   into features with **Table to geo features**, connect them to **Vector map
+   layer**, and gather both layers with **Group into a list**, raster first:
+   the list runs bottom to top. Connect the list to **Compose map**, run it, and
+   click a feature to see its properties. The map fetches each collection whole
+   as GeoJSON, so one larger than 16 MiB is refused with 413.
 
 The retired **Import raster scan** operator produces no artifact any more, so a
 saved Graph that used it fails with an unknown operator until its raster is

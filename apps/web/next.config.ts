@@ -9,10 +9,11 @@ const nextConfig: NextConfig = {
   // (65m) so the dev proxy accepts everything the API's 64 MiB cap does.
   experimental: { proxyClientMaxBodySize: "65mb" },
   async rewrites() {
-    if (process.env.NODE_ENV !== "development") return [];
-
     const apiUpstream =
-      process.env.GRAFY_API_UPSTREAM ?? "http://127.0.0.1:8000";
+      process.env.GRAFY_API_UPSTREAM?.trim() ||
+      (process.env.NODE_ENV === "development" ? "http://127.0.0.1:8000" : "");
+    if (!apiUpstream) return [];
+
     return [
       {
         source: "/api/:path*",

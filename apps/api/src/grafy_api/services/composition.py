@@ -30,6 +30,7 @@ from grafy_api.runs.node_runner import NodeComputationRunnerFactory
 from grafy_api.uploads import UploadService, UploadServiceConfig
 from grafy_core.ports.storage import PresigningStorage
 from grafy_api.artifacts.content import ArtifactContentService
+from grafy_api.artifacts.authoring import ArtifactAuthoringService
 from grafy_api.artifacts.images import ArtifactImageService
 from grafy_api.artifacts.tiler_client import HttpTiler
 from grafy_shared.config.tiler import TilerConfig
@@ -50,6 +51,7 @@ class WorkbenchComponents:
     uploads: UploadService
     runner_factory: NodeComputationRunnerFactory
     artifact_content: ArtifactContentService
+    artifact_authoring: ArtifactAuthoringService
     artifact_images: ArtifactImageService
     artifact_tables: ArtifactTableService
     artifact_geo: ArtifactGeoService
@@ -210,6 +212,14 @@ def build_workbench_components(
         uploads=uploads,
         runner_factory=runners,
         artifact_content=artifact_content,
+        artifact_authoring=ArtifactAuthoringService(
+            uow,
+            resolved_storage,
+            artifact_types,
+            values,
+            bucket=bucket,
+            storage_backend=storage_backend,
+        ),
         artifact_images=artifact_images,
         artifact_tables=artifact_tables,
         artifact_geo=artifact_geo,

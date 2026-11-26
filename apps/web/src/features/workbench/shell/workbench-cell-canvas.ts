@@ -822,12 +822,17 @@ export function buildWorkbenchCellScene({
         viewerMetadata.set(card.id, {
           stackItems: refs.map((ref, index) => {
             const item = libraryItemsByArtifactId?.get(ref.artifact_id);
+            const byteSizeLabel = item
+              ? formatLibraryByteSize(item.artifact.byte_size)
+              : null;
             return {
               artifactId: ref.artifact_id,
+              artifact: ref,
               imageUrl: workspaceId
                 ? stackImageUrl(ref, workspaceId, registry)
                 : null,
               label: item ? libraryFileDisplayName(item) : `#${index + 1}`,
+              ...(byteSizeLabel ? { byteSizeLabel } : {}),
             };
           }),
         });
@@ -840,6 +845,8 @@ export function buildWorkbenchCellScene({
         viewerMetadata.set(card.id, {
           filename: libraryFileDisplayName(libraryItem),
           byteSizeLabel: formatLibraryByteSize(libraryItem.artifact.byte_size),
+          inLibrary: true,
+          exportFormats: libraryItem.artifact.download_formats,
         });
       }
     }

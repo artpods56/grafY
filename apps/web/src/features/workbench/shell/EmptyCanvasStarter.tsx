@@ -19,12 +19,14 @@ export function EmptyCanvasStarter({
   onFiles,
   onSample,
   onBrowseSteps,
+  onCreateArtifact,
 }: {
   status: string | null;
   samplePending?: boolean;
   onFiles: (files: readonly File[]) => void;
   onSample: () => void;
   onBrowseSteps: () => void;
+  onCreateArtifact?: () => void;
 }) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const busy = status !== null || samplePending;
@@ -82,6 +84,17 @@ export function EmptyCanvasStarter({
         <Button type="button" variant="ghost" size="sm" onClick={onBrowseSteps}>
           Browse steps
         </Button>
+        {onCreateArtifact ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={onCreateArtifact}
+          >
+            Create artifact
+          </Button>
+        ) : null}
       </div>
       {status ? (
         <p role="status" {...stylex.props(styles.status)}>

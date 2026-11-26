@@ -1148,3 +1148,72 @@ async def test_room_cancellation_does_not_cancel_queued_derivation(
         caller.cancel()
         await asyncio.gather(caller, return_exceptions=True)
         await service.close()
+
+
+async def test_toggling_config_back_to_a_cached_value_restores_its_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = harness(tmp_path, monkeypatch, project=document(main_graph(value=1)))
+
+    # Run config A (value=1).
+    await service.start(targets=[target("value")])
+    await service.running("value")
+    fp_a = _fingerprint_of(service, "value")
+    await service.complete("value")
+
+    # Toggle to config B (value=2) and run.
+    service.documents.edit(document(main_graph(value=2)))
+    await service.service.project_changed(
+        workspace_id=WORKSPACE_ID, project_id=PROJECT_ID
+    )
+    service.reset_runner()
+    await service.start(targets=[target("value")])
+    await service.running("value")
+    fp_b = _fingerprint_of(service, "value")
+    assert fp_b != fp_a
+    await service.complete("value")
+
+    # Toggle back to config A (value=1): it is already fresh in the result store,
+    # so both snapshot and instance_result must return fp_a instead of stale fp_b.
+    service.documents.edit(document(main_graph(value=1)))
+    await service.service.project_changed(
+        workspace_id=WORKSPACE_ID, project_id=PROJECT_ID
+    )
+    states = await service.states(GRAPH)
+    value_state = next(s for s in states if s.key.node_id == "value")
+    assert value_state.state is InstanceState.FRESH
+    assert value_state.fingerprint == fp_a
+    assert value_state.last_result_fingerprint == fp_a
+
+    snapshot, result = await service.service.instance_result(
+        workspace_id=WORKSPACE_ID,
+        project_id=PROJECT_ID,
+        key=value_state.key,
+    )
+    assert snapshot.last_result_fingerprint == fp_a
+    assert result is not None
+    assert result.fingerprint == fp_a
+
+    # Rerunning the fresh target updates its persisted pointer to fp_a too.
+    service.reset_runner()
+    await service.start(targets=[target("value")])
+    assert service.runner.calls == []
+    pointer = await service.store.get_pointer(value_state.key)
+    assert pointer is not None
+    assert pointer.last_result_fingerprint == fp_a
+
+    # Moving to an uncached config C (value=3) now keeps showing A while stale.
+    service.documents.edit(document(main_graph(value=3)))
+    await service.service.project_changed(
+        workspace_id=WORKSPACE_ID, project_id=PROJECT_ID
+    )
+    stale_snapshot, stale_result = await service.service.instance_result(
+        workspace_id=WORKSPACE_ID,
+        project_id=PROJECT_ID,
+        key=value_state.key,
+    )
+    assert stale_snapshot.state is InstanceState.STALE
+    assert stale_snapshot.last_result_fingerprint == fp_a
+    assert stale_result is not None
+    assert stale_result.fingerprint == fp_a
+    await service.close()

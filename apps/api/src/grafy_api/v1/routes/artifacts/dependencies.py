@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from grafy_api.app_state import get_resources
+from grafy_api.artifacts.authoring import ArtifactAuthoringService
 from grafy_api.artifacts.content import ArtifactContentService
 from grafy_api.artifacts.images import ArtifactImageService
 from grafy_api.artifacts.geo import ArtifactGeoService
@@ -12,6 +13,10 @@ from grafy_api.artifacts.tables import ArtifactTableService
 
 def artifact_content_service(request: Request) -> ArtifactContentService:
     return get_resources(request.app).workbench.artifact_content
+
+
+def artifact_authoring_service(request: Request) -> ArtifactAuthoringService:
+    return get_resources(request.app).workbench.artifact_authoring
 
 
 def artifact_table_service(request: Request) -> ArtifactTableService:
@@ -38,6 +43,9 @@ ArtifactContentDependency = Annotated[
     ArtifactContentService,
     Depends(artifact_content_service),
 ]
+ArtifactAuthoringDependency = Annotated[
+    ArtifactAuthoringService, Depends(artifact_authoring_service)
+]
 ArtifactTableDependency = Annotated[
     ArtifactTableService,
     Depends(artifact_table_service),
@@ -52,6 +60,7 @@ ArtifactGeoTileDependency = Annotated[
 ]
 
 __all__ = [
+    "ArtifactAuthoringDependency",
     "ArtifactContentDependency",
     "ArtifactImageDependency",
     "artifact_image_service",
@@ -59,6 +68,7 @@ __all__ = [
     "ArtifactGeoTileDependency",
     "ArtifactTableDependency",
     "artifact_content_service",
+    "artifact_authoring_service",
     "artifact_geo_service",
     "artifact_geo_tile_service",
     "artifact_table_service",

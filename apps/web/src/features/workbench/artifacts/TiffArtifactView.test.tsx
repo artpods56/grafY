@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { onUnauthorized } from "@/lib/api/client";
 
 import type { GeoRenderDescriptor } from "@/lib/api";
+import { onUnauthorized } from "@/lib/api/client";
 import { TiffTextArtifact } from "./artifact-renderers/tiff-text-renderer";
 import { createTiffOverlay, TiffArtifactView } from "./TiffArtifactView";
 
@@ -144,10 +144,12 @@ vi.mock("openseadragon", () => ({
       open.options.push(options);
       const viewport = open.viewport();
       const viewer = {
+        element: options.element,
         addHandler: (
           name: string,
           handler: (event?: OsdHandlerEvent) => void,
         ) => open.handlers.set(name, handler),
+        removeHandler: (name: string) => open.handlers.delete(name),
         viewport,
         world: {
           getItemAt: () => ({
@@ -826,4 +828,201 @@ it("turns a reading right side up when its region was found backwards", () => {
   expect(label?.getAttribute("x")).toBe("301");
   expect(label?.getAttribute("y")).toBe("186");
   expect(label?.getAttribute("transform")).toBe("rotate(-20.22 301 186)");
+});
+
+it("shares one edit session across the card and fullscreen and saves a derived artifact", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const url = "/editable-regions";
+  const artifact = {
+    artifact_id: "original-regions",
+    artifact_type: "ocr.tiff_recognized_text",
+    schema_version: 1,
+  };
+  const nextRef = {
+    ...artifact,
+    artifact_id: "updated-regions",
+    content_hash: null,
+  };
+  const polygon = [
+    [10, 10],
+    [50, 10],
+    [50, 30],
+    [10, 30],
+  ];
+  const payload = {
+    source: {
+      artifact_id: "source-tiff",
+      artifact_type: "file.tiff",
+      schema_version: 1,
+    },
+    window: { page: 0, col: 10, row: 10, width: 100, height: 50 },
+    regions: [
+      {
+        polygon,
+        reading: { text: "Original", confidence: null, model: "ocr" },
+      },
+    ],
+  };
+  const save = vi
+    .fn()
+    .mockReturnValueOnce(
+      Response.json({ detail: "Save failed" }, { status: 400 }),
+    )
+    .mockReturnValueOnce(Response.json(nextRef));
+  const respond = vi.fn(async (request: string, init?: RequestInit) => {
+    if (request === url) return Response.json(payload);
+    if (init?.method === "POST") {
+      expect(request).toBe("/api/v1/workspaces/test-space/artifacts");
+      return save(JSON.parse(String(init.body)));
+    }
+    return Response.json({
+      width: 800,
+      height: 600,
+      page_count: 1,
+      tile_size: 256,
+      min_level: 8,
+      max_level: 10,
+      tile_format: "png",
+    });
+  });
+  vi.stubGlobal("fetch", respond);
+  document.body.append(host);
+  const root = createRoot(host);
+  const saved = vi.fn();
+
+  function Harness() {
+    const [editing, setEditing] = useState(false);
+    return (
+      <TiffTextArtifact
+        url={url}
+        workspaceId="test-space"
+        height={300}
+        artifactRef={artifact}
+        canEdit
+        recognized
+        editing={editing}
+        onEditingChange={setEditing}
+        onSaveArtifact={saved}
+        EditControls={({
+          state,
+          dispatch,
+          inModal,
+          shortcutsActive,
+          saving,
+          error,
+          onSave,
+        }) => (
+          <div
+            data-test-controls={inModal ? "modal" : "inline"}
+            data-shortcuts={shortcutsActive}
+          >
+            <span>{state.payload.regions[0]?.reading?.text}</span>
+            <button
+              onClick={() =>
+                dispatch({
+                  type: "set_reading_text",
+                  index: 0,
+                  text: "Corrected",
+                })
+              }
+            >
+              Correct reading
+            </button>
+            <button disabled={!state.isDirty || saving} onClick={onSave}>
+              Save
+            </button>
+            {error && <span role="alert">{error}</span>}
+          </div>
+        )}
+      />
+    );
+  }
+
+  function button(scope: ParentNode, label: string) {
+    const found = Array.from(scope.querySelectorAll("button")).find(
+      (item) =>
+        item.getAttribute("aria-label") === label || item.textContent === label,
+    );
+    if (!found) throw new Error(`Missing ${label} button`);
+    return found;
+  }
+
+  async function openViewer(scope: ParentNode, count: number) {
+    await act(() => {
+      scope.querySelector("img")?.dispatchEvent(new Event("load"));
+    });
+    await vi.waitFor(() =>
+      expect(open.viewerStart).toHaveBeenCalledTimes(count),
+    );
+    await act(() => {
+      open.handlers.get("open")?.();
+      open.handlers.get("tile-loaded")?.();
+    });
+  }
+
+  try {
+    await act(() => root.render(<Harness />));
+    await vi.waitFor(() => expect(host.querySelector("img")).not.toBeNull());
+    await openViewer(host, 1);
+    expect(
+      document.querySelector('svg[aria-label="1 recognized text regions"]'),
+    ).not.toBeNull();
+
+    await act(() => button(host, "Edit regions").click());
+    expect(open.viewerStart).toHaveBeenCalledTimes(1);
+    expect(open.fitBounds).toHaveBeenCalledTimes(1);
+    expect(
+      document.querySelector('svg[aria-label="1 recognized text regions"]'),
+    ).toBeNull();
+    expect(document.querySelectorAll("[data-region-index]")).toHaveLength(1);
+    const inline = host.querySelector('[data-test-controls="inline"]');
+    expect(inline?.getAttribute("data-shortcuts")).toBe("true");
+
+    await act(() => button(host, "Open fullscreen").click());
+    const modal = document.querySelector('[role="dialog"]');
+    if (!modal) throw new Error("Missing fullscreen viewer");
+    await openViewer(modal, 2);
+    expect(
+      modal
+        .querySelector('[data-test-controls="modal"]')
+        ?.getAttribute("data-shortcuts"),
+    ).toBe("true");
+    expect(inline?.getAttribute("data-shortcuts")).toBe("false");
+    await act(() => button(modal, "Correct reading").click());
+    expect(inline?.textContent).toContain("Corrected");
+    await act(() => button(modal, "Close").click());
+
+    expect(inline?.getAttribute("data-shortcuts")).toBe("true");
+    expect(button(host, "Save").disabled).toBe(false);
+    await act(() => button(host, "Save").click());
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "Save failed",
+    );
+    expect(button(host, "Save").disabled).toBe(false);
+    expect(saved).not.toHaveBeenCalled();
+
+    await act(() => button(host, "Save").click());
+    expect(save).toHaveBeenLastCalledWith({
+      artifact_type: artifact.artifact_type,
+      schema_version: 1,
+      derived_from_artifact_id: artifact.artifact_id,
+      payload: {
+        ...payload,
+        regions: [
+          {
+            polygon,
+            reading: { text: "Corrected", confidence: null, model: "ocr" },
+          },
+        ],
+      },
+    });
+    expect(saved).toHaveBeenCalledExactlyOnceWith(nextRef);
+    expect(button(host, "Save").disabled).toBe(true);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(
+      respond.mock.calls.filter(([request]) => request === url),
+    ).toHaveLength(1);
+  } finally {
+    await act(() => root.unmount());
+  }
 });

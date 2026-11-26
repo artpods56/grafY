@@ -1,6 +1,7 @@
 export * from "./contract";
 export * from "./auth";
 export * from "./workbench";
+export * from "./artifacts";
 export * from "./projects";
 export * from "./workspaces";
 export * from "./library";

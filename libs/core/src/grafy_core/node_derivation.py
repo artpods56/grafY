@@ -9,6 +9,7 @@ from grafy_core.node_ports import (
     ArtifactTypeContract,
     ArtifactTypeVariable,
     Binds,
+    ExclusiveGroup,
     InputContract,
     InputPortSpec,
     NodeContractError,
@@ -18,6 +19,7 @@ from grafy_core.node_ports import (
     PortShape,
     Ref,
     RefSequence,
+    RequiresInput,
     RequiresServiceFeature,
     ServiceContractFeatures,
     ServiceContractKey,
@@ -29,8 +31,20 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
     ports: dict[str, InputPortSpec] = {}
     for name, field in model.model_fields.items():
         plugs, binds = _markers(model, name, field.metadata)
+        exclusive_groups = [
+            marker for marker in field.metadata if isinstance(marker, ExclusiveGroup)
+        ]
+        if len(exclusive_groups) > 1:
+            raise NodeContractError(
+                f"{model.__name__}.{name} declares multiple exclusive groups"
+            )
         described = _describe(model, name, field.annotation, plugs, binds, output=False)
         if described is None:
+            if exclusive_groups:
+                raise NodeContractError(
+                    f"{model.__name__}.{name} declares an exclusive group "
+                    "but is not an input port"
+                )
             continue
         variadic, instance, spare, agent_default = _plug_flags(plugs)
         if described.kind == "service":
@@ -54,6 +68,7 @@ def derive_input_contract[T: BaseModel](model: type[T]) -> InputContract[T]:
             agent_default=agent_default,
             kind=described.kind,
             service_contracts=described.service_contracts,
+            exclusive_group=exclusive_groups[0].name if exclusive_groups else None,
         )
     return InputContract(model=model, ports=ports)
 
@@ -71,11 +86,23 @@ def derive_output_contract[T: BaseModel](model: type[T]) -> OutputContract[T]:
             raise NodeContractError(
                 f"{model.__name__}.{name} declares multiple service feature requirements"
             )
+        input_requirements = [
+            marker for marker in field.metadata if isinstance(marker, RequiresInput)
+        ]
+        if len(input_requirements) > 1:
+            raise NodeContractError(
+                f"{model.__name__}.{name} declares multiple input requirements"
+            )
         described = _describe(model, name, field.annotation, plugs, binds, output=True)
         if described is None:
             if requirements:
                 raise NodeContractError(
                     f"{model.__name__}.{name} requires a service feature "
+                    "but is not an output port"
+                )
+            if input_requirements:
+                raise NodeContractError(
+                    f"{model.__name__}.{name} requires an input "
                     "but is not an output port"
                 )
             continue
@@ -91,6 +118,9 @@ def derive_output_contract[T: BaseModel](model: type[T]) -> OutputContract[T]:
             service_contracts=described.service_contracts,
             service_features=described.service_features,
             requires_service_feature=requirements[0] if requirements else None,
+            requires_input=(
+                input_requirements[0].input_port if input_requirements else None
+            ),
         )
     return OutputContract(model=model, ports=ports)
 
@@ -615,6 +645,7 @@ def validate_service_node(
     service_outputs = [
         port for port in outputs.ports.values() if port.kind == "service"
     ]
+    exclusive_counts: dict[str, int] = {}
     for port in inputs.ports.values():
         if port.kind == "service" and (
             port.shape is not PortShape.ONE or port.variadic or port.instance_plugs
@@ -623,21 +654,47 @@ def validate_service_node(
                 f"{name}.{port.name} service port must be one value, not "
                 "variadic or instance plugs"
             )
+        if port.exclusive_group is not None:
+            exclusive_counts[port.exclusive_group] = (
+                exclusive_counts.get(port.exclusive_group, 0) + 1
+            )
+    for group_name, count in exclusive_counts.items():
+        if count < 2:
+            raise NodeContractError(
+                f"{name} exclusive group {group_name!r} must include at least two inputs"
+            )
     for port in outputs.ports.values():
         requirement = port.requires_service_feature
-        if requirement is None:
-            continue
-        if port.required or port.kind == "service":
-            raise NodeContractError(
-                f"{name}.{port.name} requires a service feature but is not "
-                "an optional artifact output"
-            )
-        service_input = inputs.ports.get(requirement.input_port)
-        if service_input is None or service_input.kind != "service":
-            raise NodeContractError(
-                f"{name}.{port.name} requires a service feature from "
-                f"{requirement.input_port!r}, which is not a service input"
-            )
+        if requirement is not None:
+            if port.required or port.kind == "service":
+                raise NodeContractError(
+                    f"{name}.{port.name} requires a service feature but is not "
+                    "an optional artifact output"
+                )
+            service_input = inputs.ports.get(requirement.input_port)
+            if service_input is None or service_input.kind != "service":
+                raise NodeContractError(
+                    f"{name}.{port.name} requires a service feature from "
+                    f"{requirement.input_port!r}, which is not a service input"
+                )
+        required_input = port.requires_input
+        if required_input is not None:
+            if requirement is not None:
+                raise NodeContractError(
+                    f"{name}.{port.name} cannot require both a service feature "
+                    "and an input port"
+                )
+            if port.required or port.kind == "service":
+                raise NodeContractError(
+                    f"{name}.{port.name} requires an input port but is not "
+                    "an optional artifact output"
+                )
+            target_input = inputs.ports.get(required_input)
+            if target_input is None or target_input.kind == "service":
+                raise NodeContractError(
+                    f"{name}.{port.name} requires input {required_input!r}, "
+                    "which is not an artifact input"
+                )
     for port in service_outputs:
         if port.shape is not PortShape.ONE:
             raise NodeContractError(

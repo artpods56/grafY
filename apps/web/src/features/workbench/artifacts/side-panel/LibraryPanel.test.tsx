@@ -194,8 +194,7 @@ async function deleteItemOfFolder(folderId: string): Promise<HTMLElement> {
   return item;
 }
 
-/** The same for an artifact row, whose menu item names the Library. */
-async function deleteItemOfArtifact(artifactId: string): Promise<HTMLElement> {
+async function openArtifactMenu(artifactId: string): Promise<HTMLElement[]> {
   const label = fileRow(artifactId).dataset.treeLabel ?? "";
   const trigger = fileRow(artifactId).querySelector<HTMLElement>(
     `[aria-label="Actions for ${label}"]`,
@@ -204,9 +203,13 @@ async function deleteItemOfArtifact(artifactId: string): Promise<HTMLElement> {
   await React.act(async () => {
     trigger.click();
   });
-  const item = [
-    ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-  ].find((element) => element.textContent?.startsWith("Delete"));
+  return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+}
+
+async function deleteItemOfArtifact(artifactId: string): Promise<HTMLElement> {
+  const item = (await openArtifactMenu(artifactId)).find((element) =>
+    element.textContent?.startsWith("Delete"),
+  );
   if (!item) throw new Error(`No Delete item in the menu for ${artifactId}`);
   return item;
 }
@@ -392,6 +395,59 @@ afterEach(() => {
 });
 
 describe("LibraryPanel", () => {
+  it("downloads an authored artifact's advertised formats from its row menu", async () => {
+    const authored: PlacedLibraryItem = {
+      ...RUN_ITEM,
+      name: "Edited table",
+      provenance: {
+        source: "authored",
+        saved_at: "2026-09-11T12:00:00Z",
+        call_path: [],
+      },
+      artifact: {
+        ...RUN_ITEM.artifact,
+        download_formats: [
+          {
+            format: "json",
+            content_type: "application/json",
+            filename: "table.json",
+          },
+          { format: "csv", content_type: "text/csv", filename: "table.csv" },
+        ],
+      },
+      folder_id: null,
+    };
+    const { workspaceId } = await renderPanel({
+      folders: [],
+      items: [authored],
+    });
+    const items = await openArtifactMenu(authored.artifact.artifact_id);
+    expect(items.map((item) => item.textContent)).toEqual(
+      expect.arrayContaining([
+        "Open original",
+        "Download JSON",
+        "Download CSV",
+      ]),
+    );
+    const csv = items.find((item) => item.textContent === "Download CSV");
+    if (!csv) throw new Error("No CSV download in the artifact menu");
+    const downloads: string[] = [];
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        expect(this.hasAttribute("download")).toBe(true);
+        downloads.push(this.getAttribute("href") ?? "");
+      });
+    try {
+      await selectMenuItem(csv);
+      expect(downloads).toEqual([
+        `/api/v1/workspaces/${workspaceId}/artifacts/artifact-run/download?format=csv`,
+      ]);
+    } finally {
+      click.mockRestore();
+    }
+  });
+
   beforeEach(() => {
     installMemoryStorage();
     vi.stubGlobal(

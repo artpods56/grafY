@@ -167,6 +167,23 @@ export function toRoomGraphBodyCommand(
         (candidate) => candidate.id === command.node_id,
       );
       if (!node) return null;
+      if (command.value === undefined) {
+        // A cleared field is unset, not null: JSON drops an undefined `value`,
+        // and the server refuses a configuration update without one. Unsetting
+        // is a whole-config replacement that leaves the key out, which is what
+        // the local document holds once the key is undefined.
+        const current = node.config ?? {};
+        const config = { ...current };
+        delete config[command.field];
+        return asRoomBody({
+          kind: "update_node_configuration_and_input_plugs",
+          node_id: command.node_id,
+          config,
+          input_plugs: [...node.input_plugs],
+          expected_config: { ...current },
+          expected_plug_ids: node.input_plugs.map((plug) => plug.id),
+        });
+      }
       return asRoomBody({
         kind: "update_node_configuration",
         node_id: command.node_id,

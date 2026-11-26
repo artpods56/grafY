@@ -304,6 +304,23 @@ export interface paths {
         readonly patch?: never;
         readonly trace?: never;
     };
+    readonly "/v1/workspaces/{workspace_id}/artifacts": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Create Artifact */
+        readonly post: operations["create_artifact_v1_workspaces__workspace_id__artifacts_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/workspaces/{workspace_id}/artifacts/{artifact_id}/content": {
         readonly parameters: {
             readonly query?: never;
@@ -502,6 +519,26 @@ export interface paths {
         readonly put?: never;
         /** Create Table Text Artifacts */
         readonly post: operations["create_table_text_artifacts_v1_workspaces__workspace_id__artifacts__artifact_id__table_text_artifacts_post"];
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/artifacts/{source_id}/geo/features.geojson": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Geo Features Geojson
+         * @description Every stored feature of one collection, as the GeoJSON the map draws.
+         */
+        readonly get: operations["get_geo_features_geojson_v1_workspaces__workspace_id__artifacts__source_id__geo_features_geojson_get"];
+        readonly put?: never;
+        readonly post?: never;
         readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
@@ -730,6 +767,23 @@ export interface paths {
          * @description Delete one Library artifact. Saved work that still uses it is refused.
          */
         readonly delete: operations["delete_library_artifact_v1_workspaces__workspace_id__library_artifacts__artifact_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/workspaces/{workspace_id}/library/artifacts/from-artifact": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Save Library Artifact From Artifact */
+        readonly post: operations["save_library_artifact_from_artifact_v1_workspaces__workspace_id__library_artifacts_from_artifact_post"];
+        readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -2259,6 +2313,8 @@ export interface components {
         };
         /** ArtifactTypeSpecResponse */
         readonly ArtifactTypeSpecResponse: {
+            /** Authorable */
+            readonly authorable?: boolean;
             readonly bundle: components["schemas"]["ArtifactBundleContractResponse"];
             readonly confirmation_rule?: components["schemas"]["ConfirmationRuleResponse"];
             /** Export Formats */
@@ -2461,6 +2517,45 @@ export interface components {
              * Format: uuid
              */
             readonly source_workspace_id: string;
+        };
+        /** CreateArtifactRequest */
+        readonly CreateArtifactRequest: {
+            /** Artifact Type */
+            readonly artifact_type: string;
+            /** Derived From Artifact Id */
+            readonly derived_from_artifact_id?: string | null;
+            /** Payload */
+            readonly payload: {
+                readonly [key: string]: unknown;
+            };
+            /**
+             * Schema Version
+             * @default 1
+             */
+            readonly schema_version: number;
+            /** Title */
+            readonly title?: string | null;
+        };
+        /** CreateArtifactResponse */
+        readonly CreateArtifactResponse: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            readonly artifact_id: string;
+            /** Artifact Type */
+            readonly artifact_type: string;
+            /** Content Hash */
+            readonly content_hash?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /** Derived From Artifact Id */
+            readonly derived_from_artifact_id: string | null;
+            /** Schema Version */
+            readonly schema_version: number;
         };
         /** CreateCredentialRequest */
         readonly CreateCredentialRequest: {
@@ -2715,6 +2810,29 @@ export interface components {
             /** Opacity */
             readonly opacity: number;
         };
+        /**
+         * GeoJsonRenderSourceResponse
+         * @description A stored feature collection the browser fetches whole and draws itself.
+         */
+        readonly GeoJsonRenderSourceResponse: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            readonly artifact_id: string;
+            readonly bounds: components["schemas"]["GeoBounds"] | null;
+            /** Data Url */
+            readonly data_url: string;
+            /** Feature Count */
+            readonly feature_count: number;
+            /** Fields */
+            readonly fields?: readonly components["schemas"]["GeoPropertyFieldResponse"][];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "geojson";
+        };
         /** GeoLabelStyle */
         readonly GeoLabelStyle: {
             /** Color */
@@ -2767,6 +2885,31 @@ export interface components {
             readonly stroke_color: string;
             /** Stroke Width */
             readonly stroke_width: number;
+        };
+        /** GeoPropertyFieldResponse */
+        readonly GeoPropertyFieldResponse: {
+            /** Id */
+            readonly id: string;
+            /** Title */
+            readonly title: string;
+            readonly value_type: components["schemas"]["GeoPropertyValueType"];
+        };
+        /** @enum {string} */
+        readonly GeoPropertyValueType: "text" | "integer" | "number" | "boolean" | "null" | "mixed" | "unknown";
+        /** GeoRasterRenderSourceResponse */
+        readonly GeoRasterRenderSourceResponse: {
+            /** Artifact Id */
+            readonly artifact_id: string | null;
+            /** Attribution */
+            readonly attribution?: string | null;
+            readonly bounds: components["schemas"]["GeoBounds"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            readonly kind: "raster";
+            /** Tilejson Url */
+            readonly tilejson_url: string;
         };
         /** GeoRasterStyle */
         readonly GeoRasterStyle: {
@@ -2829,7 +2972,8 @@ export interface components {
             readonly min_zoom: number;
             /** Opacity */
             readonly opacity: number;
-            readonly source: components["schemas"]["GeoRenderSourceResponse"];
+            /** Source */
+            readonly source: components["schemas"]["GeoJsonRenderSourceResponse"] | components["schemas"]["GeoRasterRenderSourceResponse"];
             /** Style */
             readonly style: components["schemas"]["GeoVectorStyle"] | components["schemas"]["GeoCategorizedPointStyle"] | components["schemas"]["GeoRasterStyle"];
             /** Title */
@@ -2864,22 +3008,6 @@ export interface components {
             readonly kind: components["schemas"]["GeoArtifactKind"];
             /** Layers */
             readonly layers: readonly components["schemas"]["GeoRenderLayerResponse"][];
-        };
-        /** GeoRasterRenderSourceResponse */
-        readonly GeoRenderSourceResponse: {
-            /** Artifact Id */
-            readonly artifact_id: string | null;
-            /** Attribution */
-            readonly attribution?: string | null;
-            readonly bounds: components["schemas"]["GeoBounds"];
-            /**
-             * Kind
-             * @default raster
-             * @constant
-             */
-            readonly kind: "raster";
-            /** Tilejson Url */
-            readonly tilejson_url: string;
         };
         /** GeoVectorStyle */
         readonly GeoVectorStyle: {
@@ -3442,7 +3570,7 @@ export interface components {
             readonly source: components["schemas"]["LibrarySource"];
         };
         /** @enum {string} */
-        readonly LibrarySource: "instance" | "upload";
+        readonly LibrarySource: "instance" | "upload" | "authored";
         /** MagicSegmentResponse */
         readonly MagicSegmentResponse: {
             /** Offset */
@@ -3818,6 +3946,8 @@ export interface components {
              * @enum {string}
              */
             readonly direction: "input" | "output";
+            /** Exclusive Group */
+            readonly exclusive_group?: string | null;
             /**
              * Instance Plugs
              * @default false
@@ -3836,6 +3966,8 @@ export interface components {
              * @default true
              */
             readonly required: boolean;
+            /** Requires Input */
+            readonly requires_input?: string | null;
             readonly requires_service_feature?: components["schemas"]["RequiresServiceFeatureResponse"] | null;
             /** Service Contracts */
             readonly service_contracts?: readonly components["schemas"]["ServiceContractKeyResponse"][];
@@ -4335,6 +4467,16 @@ export interface components {
             readonly call_path: readonly string[];
             /** Node Id */
             readonly node_id: string;
+        };
+        /** SaveArtifactRequest */
+        readonly SaveArtifactRequest: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            readonly artifact_id: string;
+            /** Name */
+            readonly name: string;
         };
         /** SaveInstanceArtifactRequest */
         readonly SaveInstanceArtifactRequest: {
@@ -5700,6 +5842,48 @@ export interface operations {
             };
         };
     };
+    readonly create_artifact_v1_workspaces__workspace_id__artifacts_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["CreateArtifactRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["CreateArtifactResponse"];
+                };
+            };
+            /** @description Referenced artifact not found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     readonly get_artifact_content_v1_workspaces__workspace_id__artifacts__artifact_id__content_get: {
         readonly parameters: {
             readonly query?: never;
@@ -6590,6 +6774,74 @@ export interface operations {
             };
         };
     };
+    readonly get_geo_features_geojson_v1_workspaces__workspace_id__artifacts__source_id__geo_features_geojson_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly source_id: string;
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/geo+json": unknown;
+                };
+            };
+            /** @description Not a feature collection */
+            readonly 400: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Artifact not found */
+            readonly 404: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Too many features to draw on a map */
+            readonly 413: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Feature content is unavailable */
+            readonly 500: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["WorkbenchErrorResponse"];
+                };
+            };
+        };
+    };
     readonly get_geo_exact_feature_v1_workspaces__workspace_id__artifacts__source_id__geo_features__feature_index__get: {
         readonly parameters: {
             readonly query?: never;
@@ -7247,6 +7499,41 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly save_library_artifact_from_artifact_v1_workspaces__workspace_id__library_artifacts_from_artifact_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly workspace_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["SaveArtifactRequest"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["LibraryItemResponse"];
+                };
             };
             /** @description Validation Error */
             readonly 422: {

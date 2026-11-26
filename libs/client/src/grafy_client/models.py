@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import ClassVar, Literal, Self
 from uuid import UUID
 
-from grafy_core.artifacts import ArtifactTypeKey
+from grafy_core.artifacts import ArtifactRef, ArtifactTypeKey
 from grafy_core.kernel.project import ProjectDocument
 from grafy_core.nodes import PortShape
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -14,6 +14,11 @@ class ClientModel(BaseModel):
         frozen=True,
         populate_by_name=True,
     )
+
+
+class CreatedArtifact(ArtifactRef):
+    derived_from_artifact_id: UUID | None
+    created_at: datetime
 
 
 class ServiceContractKey(ClientModel):
@@ -49,6 +54,8 @@ class CatalogPort(ClientModel):
     service_contracts: tuple[ServiceContractKey, ...] = ()
     service_features: tuple[ServiceContractFeatures, ...] = ()
     requires_service_feature: RequiresServiceFeature | None = None
+    requires_input: str | None = None
+    exclusive_group: str | None = None
     shape: PortShape
     accepted_shapes: tuple[PortShape, ...]
     instance_plugs: bool = False
@@ -340,6 +347,7 @@ class InstanceResult(ClientModel):
 
 
 __all__ = [
+    "CreatedArtifact",
     "CatalogConversion",
     "CatalogConversionKey",
     "CatalogNode",

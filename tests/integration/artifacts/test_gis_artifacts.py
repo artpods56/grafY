@@ -41,6 +41,7 @@ from grafy_core.domain.identity import (
 
 from grafy_api.artifact_availability import ArtifactAvailability
 from grafy_api.artifacts.geo import ArtifactGeoService
+from grafy_api.artifacts import geo_tiles
 from grafy_api.artifacts.geo_tiles import ArtifactGeoTileService
 from grafy_api.artifacts.models import (
     ArtifactExactMatchRow,
@@ -483,14 +484,14 @@ def _ref(artifact: ArtifactObject) -> JsonObject:
     return cast(JsonObject, artifact.ref().model_dump(mode="json"))
 
 
-def test_feature_collection_reads_features_without_rendering_them(
+def _features_url(artifact: ArtifactObject) -> str:
+    return f"/v1/workspaces/{WORKSPACE_ID}/artifacts/{artifact.id}/geo/features.geojson"
+
+
+def test_feature_collection_renders_as_one_geojson_layer(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
-    """Exact features stay readable while no renderer draws them.
-
-    The descriptor says what the map would draw, so a collection with no
-    GeoJSON renderer draws nothing while its bounds still position the camera.
-    """
+    """The descriptor names the collection; its features stay readable one by one."""
     client, uow, storage = geo_artifact_client
     artifacts = GrafyApi(client).workspace(WORKSPACE_ID).artifacts
     features = [
@@ -506,15 +507,26 @@ def test_feature_collection_reads_features_without_rendering_them(
         )
     )
 
+    storage.loaded_paths.clear()
     descriptor = artifacts.geo_render(artifact.id)
     assert descriptor.status_code == 200
-    assert descriptor.json() == {
+    body = descriptor.json()
+    assert body["kind"] == "feature_collection"
+    assert body["initial_bounds"] == [0.0, 0.0, 64.0, 64.0]
+    [layer] = body["layers"]
+    assert layer["id"] == str(artifact.id)
+    assert layer["title"] == "Observation points"
+    assert layer["style"]["kind"] == "vector"
+    assert layer["source"] == {
+        "kind": "geojson",
         "artifact_id": str(artifact.id),
-        "kind": "feature_collection",
-        "basemap": "openstreetmap",
-        "initial_bounds": [0.0, 0.0, 64.0, 64.0],
-        "layers": [],
+        "data_url": _features_url(artifact),
+        "bounds": [0.0, 0.0, 64.0, 64.0],
+        "feature_count": 65,
+        "fields": [{"id": "name", "title": "name", "value_type": "text"}],
     }
+    # Describing the layer reads no feature data; the browser fetches it.
+    assert storage.loaded_paths == []
 
     storage.loaded_paths.clear()
     exact = artifacts.geo_exact_feature(artifact.id, 55)
@@ -553,10 +565,51 @@ def test_feature_collection_reads_features_without_rendering_them(
     assert missing.json()["matched_feature_count"] == 0
 
 
-def test_rendered_layers_are_raster_sources_only(
+def test_features_geojson_serves_the_stored_collection(
+    geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, uow, storage = geo_artifact_client
+    artifacts = GrafyApi(client).workspace(WORKSPACE_ID).artifacts
+    features = [_point_feature(1, 5.0, 25.0), _point_feature(2, 6.0, 26.0)]
+    collection = asyncio.run(
+        _feature_artifact(
+            uow,
+            storage,
+            source_name="Volost centres",
+            features=features,
+            bounds=(5.0, 25.0, 6.0, 26.0),
+        )
+    )
+
+    response = artifacts.geo_features_geojson(collection.id)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/geo+json"
+    assert response.headers["etag"] == f'"{collection.sha256}"'
+    assert sha256(response.content).hexdigest() == collection.sha256
+    document = response.json()
+    assert document["type"] == "FeatureCollection"
+    assert document["features"] == features
+
+    other_workspace = GrafyApi(client).workspace(UUID(int=90)).artifacts
+    assert other_workspace.geo_features_geojson(collection.id).status_code == 404
+    assert artifacts.geo_features_geojson(UUID(int=91)).status_code == 404
+    tiff = asyncio.run(_tiff_artifact(uow))
+    assert artifacts.geo_features_geojson(tiff.id).status_code == 400
+
+    # A collection too large to draw whole is refused before a chunk is read.
+    monkeypatch.setattr(geo_tiles, "GEO_FEATURE_DRAW_MAX_BYTES", 10)
+    storage.loaded_paths.clear()
+    too_large = artifacts.geo_features_geojson(collection.id)
+    assert too_large.status_code == 413
+    assert storage.loaded_paths == []
+
+
+def test_vector_layers_render_from_their_collection_geojson(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
-    """A vector layer in a map renders nothing, so no layer carries a vector source."""
+    """A layer draws the collection it references, styled by the layer."""
     client, uow, storage = geo_artifact_client
     artifacts = GrafyApi(client).workspace(WORKSPACE_ID).artifacts
     vector = asyncio.run(
@@ -602,7 +655,12 @@ def test_rendered_layers_are_raster_sources_only(
 
     vector_descriptor = artifacts.geo_render(vector_layer.id)
     assert vector_descriptor.status_code == 200
-    assert vector_descriptor.json()["layers"] == []
+    [drawn] = vector_descriptor.json()["layers"]
+    assert drawn["id"] == str(vector_layer.id)
+    assert drawn["title"] == "Points as a layer"
+    assert drawn["style"] == _vector_style()
+    assert drawn["source"]["artifact_id"] == str(vector.id)
+    assert drawn["source"]["data_url"] == _features_url(vector)
     assert vector_descriptor.json()["initial_bounds"] == [5.0, 25.0, 5.0, 25.0]
 
     document = asyncio.run(
@@ -618,11 +676,17 @@ def test_rendered_layers_are_raster_sources_only(
     )
     mixed = artifacts.geo_render(document.id)
     assert mixed.status_code == 200
-    assert [layer["title"] for layer in mixed.json()["layers"]] == ["Sheet"]
-    assert [layer["source"]["kind"] for layer in mixed.json()["layers"]] == ["raster"]
+    assert [layer["title"] for layer in mixed.json()["layers"]] == [
+        "Points as a layer",
+        "Sheet",
+    ]
+    assert [layer["source"]["kind"] for layer in mixed.json()["layers"]] == [
+        "geojson",
+        "raster",
+    ]
 
 
-def test_empty_feature_collection_keeps_a_bounded_descriptor(
+def test_empty_feature_collection_draws_an_empty_layer(
     geo_artifact_client: tuple[TestClient, InMemoryUnitOfWork, TrackingStorage],
 ) -> None:
     client, uow, storage = geo_artifact_client
@@ -641,8 +705,14 @@ def test_empty_feature_collection_keeps_a_bounded_descriptor(
     response = artifacts.geo_render(artifact.id)
 
     assert response.status_code == 200
-    assert response.json()["layers"] == []
     assert response.json()["initial_bounds"] is None
+    [layer] = response.json()["layers"]
+    assert layer["source"]["feature_count"] == 0
+    assert layer["source"]["bounds"] is None
+    assert layer["source"]["fields"] == []
+    geojson = artifacts.geo_features_geojson(artifact.id)
+    assert geojson.status_code == 200
+    assert geojson.json()["features"] == []
 
 
 def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
@@ -771,19 +841,27 @@ def test_map_document_resolves_ordered_vector_raster_and_wms_layers(
     descriptor = response.json()
     assert descriptor["kind"] == "map_document"
     assert descriptor["initial_bounds"] == [-10.0, -8.0, 30.0, 25.0]
-    # The vector layers contribute their footprint to the camera only: no
-    # GeoJSON renderer exists yet, so nothing is drawn for them.
     assert [layer["title"] for layer in descriptor["layers"]] == [
+        "First observations",
         "Historical scan",
+        "Second observations",
         "Atlas Fontium",
     ]
     assert [layer["source"]["kind"] for layer in descriptor["layers"]] == [
+        "geojson",
         "raster",
+        "geojson",
         "raster",
     ]
-    assert descriptor["layers"][0]["source"]["artifact_id"] == str(raster_source.id)
-    assert descriptor["layers"][1]["source"]["artifact_id"] is None
-    assert descriptor["layers"][1]["source"]["attribution"] == "Atlas Fontium"
+    first, scan, second, atlas = descriptor["layers"]
+    assert first["source"]["data_url"] == _features_url(first_source)
+    assert (first["opacity"], first["min_zoom"], first["max_zoom"]) == (0.8, 1, 18)
+    assert second["visible"] is False
+    assert second["style"] == _categorized_point_style()
+    assert second["source"]["data_url"] == _features_url(second_source)
+    assert scan["source"]["artifact_id"] == str(raster_source.id)
+    assert atlas["source"]["artifact_id"] is None
+    assert atlas["source"]["attribution"] == "Atlas Fontium"
 
     # The `url` query param is not declared by the route (it must be ignored),
     # so the typed client cannot express this request; use the raw client.
@@ -981,7 +1059,10 @@ def test_combined_render_preserves_layer_order_and_workspace_scope(
     assert descriptor["kind"] == "map_document"
     assert descriptor["basemap"] == "none"
     assert descriptor["initial_bounds"] == [5, 10, 20, 25]
-    assert [layer["title"] for layer in descriptor["layers"]] == ["georeferenced.tif"]
+    assert [layer["title"] for layer in descriptor["layers"]] == [
+        "georeferenced.tif",
+        "Points",
+    ]
     other_workspace = f"/v1/workspaces/{UUID(int=90)}/artifacts/geo/render"
     assert (
         client.post(other_workspace, json={"artifact_ids": [str(tiff.id)]}).status_code

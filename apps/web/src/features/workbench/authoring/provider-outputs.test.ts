@@ -8,6 +8,10 @@ import {
 } from "../test-fixtures";
 
 import {
+  exclusiveInputLabel,
+  exclusiveInputReason,
+  gatedOutputForPort,
+  gatedOutputLabel,
   notProducedInputReasons,
   unsupportedOutputForPort,
   unsupportedOutputLabel,
@@ -201,5 +205,109 @@ describe("provider-dependent outputs", () => {
         message: "Boxes are not produced by Reducto",
       },
     ]);
+  });
+
+  it("dims input-gated outputs and exclusive sibling inputs based on what is connected", () => {
+    const textIn = artifactPortFixture({
+      name: "text",
+      title: "Text",
+      direction: "input",
+      required: false,
+      exclusive_group: "source",
+    });
+    const recognizedIn = artifactPortFixture({
+      name: "recognized",
+      title: "Recognized text",
+      direction: "input",
+      required: false,
+      exclusive_group: "source",
+    });
+    const textOut = artifactPortFixture({
+      name: "text",
+      title: "Latin text",
+      direction: "output",
+      required: false,
+      requires_input: "text",
+    });
+    const recognizedOut = artifactPortFixture({
+      name: "recognized",
+      title: "Latin detections",
+      direction: "output",
+      required: false,
+      requires_input: "recognized",
+    });
+    const upstreamOut = artifactPort("markdown", "output", true, "Markdown");
+    const downstreamIn = artifactPort("labels", "input", true, "Labels");
+    const upstream = {
+      id: "up",
+      data: createWorkflowNodeData(
+        spec("test.up", "Source", [], [upstreamOut]),
+      ),
+    };
+    const translit = {
+      id: "translit",
+      data: createWorkflowNodeData(
+        spec(
+          "text.transliterate_cyrillic",
+          "Transliterate Cyrillic",
+          [textIn, recognizedIn],
+          [textOut, recognizedOut],
+        ),
+      ),
+    };
+    const downstream = {
+      id: "down",
+      data: createWorkflowNodeData(
+        spec("test.down", "Consumer", [downstreamIn], []),
+      ),
+    };
+
+    // Unconnected: both outputs gated, neither input blocked.
+    expect(gatedOutputLabel(gatedOutputForPort(textOut, translit, [])!)).toBe(
+      "Connect Text",
+    );
+    expect(
+      gatedOutputLabel(gatedOutputForPort(recognizedOut, translit, [])!),
+    ).toBe("Connect Recognized text");
+    expect(exclusiveInputReason(textIn, translit, [])).toBeNull();
+    expect(exclusiveInputReason(recognizedIn, translit, [])).toBeNull();
+
+    // Connecting Text via an edge activates Latin text and dims Recognized text + Latin detections.
+    const wiredEdges = [
+      edge("e1", "up", upstreamOut, "translit", textIn),
+      edge("e2", "translit", recognizedOut, "down", downstreamIn),
+    ];
+    expect(gatedOutputForPort(textOut, translit, wiredEdges)).toBeNull();
+    expect(
+      gatedOutputLabel(
+        gatedOutputForPort(recognizedOut, translit, wiredEdges)!,
+      ),
+    ).toBe("Connect Recognized text");
+    expect(exclusiveInputReason(textIn, translit, wiredEdges)).toBeNull();
+    expect(
+      exclusiveInputLabel(
+        exclusiveInputReason(recognizedIn, translit, wiredEdges)!,
+      ),
+    ).toBe("Using Text");
+    expect(
+      notProducedInputReasons(
+        "down",
+        [upstream, translit, downstream],
+        wiredEdges,
+      ),
+    ).toEqual([
+      {
+        portName: "labels",
+        message:
+          "Labels is not produced because Recognized text is not connected",
+      },
+    ]);
+
+    // Connecting Recognized text via an origin activates Latin detections and dims Text.
+    const origins = [{ to_node: "translit", to_port: "recognized" }];
+    expect(gatedOutputForPort(recognizedOut, translit, [], origins)).toBeNull();
+    expect(
+      exclusiveInputLabel(exclusiveInputReason(textIn, translit, [], origins)!),
+    ).toBe("Using Recognized text");
   });
 });

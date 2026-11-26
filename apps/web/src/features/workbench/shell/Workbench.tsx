@@ -5,12 +5,16 @@ import { duplicateArtifactViewers } from "../artifacts/artifact-viewer-edits";
 import * as React from "react";
 import useSWR, { useSWRConfig } from "swr";
 import {
+  artifactDownloadUrl,
+  artifactInlineContentUrl,
   libraryFoldersApi,
+  saveArtifactToLibrary,
   seedStarterSample,
   uploadFile,
   saveUploadedArtifactToLibrary,
   type PlacedLibraryItem,
 } from "@/lib/api";
+import { triggerArtifactDownload } from "../artifacts/artifact-download";
 import {
   artifactDropGroups,
   libraryDragKind,
@@ -21,6 +25,7 @@ import {
   Bot,
   Circle,
   Copy,
+  FilePlus2,
   History,
   Layers,
   LayoutGrid,
@@ -41,6 +46,15 @@ import { EngineConnectNotice } from "./EngineConnectNotice";
 import { GlobalIssueToastList, type GlobalIssue } from "./GlobalIssueToastList";
 import { LinkedViewActivityToast } from "./LinkedViewActivityToast";
 import { useServiceEnginePrompt } from "./use-service-engine-prompt";
+import { ArtifactEditorDialog } from "../artifacts/editors/ArtifactEditorDialog";
+import { SelectionLinkDialog } from "../artifacts/selection-links/SelectionLinkDialog";
+import { SelectionLinksContext } from "../artifacts/selection-links/SelectionLinksContext";
+import {
+  selectionLinkCapability,
+  type SelectionLinkCard,
+} from "../artifacts/selection-links/selection-links-reducer";
+import { useSelectionLinks } from "../artifacts/selection-links/useSelectionLinks";
+import type { ArtifactEditorSession } from "../artifacts/editors/types";
 import { ArtifactFolderDropDialog } from "../artifacts/ArtifactFolderDropDialog";
 import { ConnectionRouteDialog } from "../authoring/ConnectionRouteDialog";
 import { CanvasLabPanel } from "../cell-canvas/CanvasLabPanel";
@@ -153,11 +167,7 @@ import {
   savedGraphExecutionFingerprint,
 } from "../authoring/saved-graph";
 import { resolveGraphSemantics } from "../authoring/graph-semantics";
-import {
-  type ArtifactInteractionField,
-  type ArtifactKeySelection,
-  type ArtifactViewerActivity,
-} from "../artifacts/artifact-interactions";
+import { type ArtifactViewerActivity } from "../artifacts/artifact-interactions";
 import {
   connectionRouteForPortSelection,
   connectionRouteMatchesSelection,
@@ -278,6 +288,7 @@ import {
   registryWithProjectGraphs,
 } from "../authoring/project-graphs";
 import {
+  type ArtifactRef,
   type GraphDefinition,
   type NodeSpec,
   type RunEdgeCollectionMode,
@@ -365,6 +376,14 @@ function PresenceAwareCellCanvas({
   );
 }
 
+function isInlineEditableTiffRegions(ref: ArtifactRef): boolean {
+  return (
+    ref.schema_version === 1 &&
+    (ref.artifact_type === "ocr.tiff_text_regions" ||
+      ref.artifact_type === "ocr.tiff_recognized_text")
+  );
+}
+
 export function Workbench(props: WorkbenchProps) {
   return (
     <React.Suspense fallback={null}>
@@ -383,6 +402,7 @@ function WorkbenchBody({
   // The address names a Project; the Graphs live inside it.
   const projectId = initialProjectId;
   const { mutate: mutateCache } = useSWRConfig();
+  const [toastManager] = React.useState(() => Toast.createToastManager());
   const {
     data: apiRegistry,
     error: registryError,
@@ -539,6 +559,11 @@ function WorkbenchBody({
     requestCanvasRefit,
   } = authoring;
   const [samplePending, setSamplePending] = React.useState(false);
+  const [artifactEditor, setArtifactEditor] =
+    React.useState<ArtifactEditorSession | null>(null);
+  const [inlineEditingCardId, setInlineEditingCardId] = React.useState<
+    string | null
+  >(null);
   const graphSemantics = React.useMemo(
     () => (registry ? resolveGraphSemantics(authoredDocument, registry) : null),
     [authoredDocument, registry],
@@ -635,12 +660,6 @@ function WorkbenchBody({
   });
   const [nodeMenus] = React.useState(() => new NodeMenuRegistry());
   const canvasSectionRef = React.useRef<HTMLElement>(null);
-  const [, setArtifactViewerSelections] = React.useState<
-    Record<string, ArtifactKeySelection>
-  >({});
-  const [, setArtifactViewerFields] = React.useState<
-    Record<string, ArtifactInteractionField[]>
-  >({});
   const [artifactViewerActivities, setArtifactViewerActivities] =
     React.useState<Record<string, ActiveArtifactViewerActivity>>({});
   const artifactViewerActivityRevisionRef = React.useRef(0);
@@ -706,8 +725,11 @@ function WorkbenchBody({
     commitArtifactViewers,
     removeAnnotation,
     removeArtifactViewer,
+    removeArtifactViewerBinding,
+    saveArtifactViewerBinding,
     updateAnnotationColor,
     updateAnnotationLayout,
+    updateArtifactViewerActivity,
     updateArtifactViewerEdge,
     updateArtifactViewerLayout,
   } = useArtifactViewerCommands({
@@ -720,8 +742,6 @@ function WorkbenchBody({
     localAuthoringEnabledRef,
     presentationRoomSyncRef,
     setArtifactViewerActivities,
-    setArtifactViewerFields,
-    setArtifactViewerSelections,
     setArtifactViewers,
     setRunError,
   });
@@ -1271,15 +1291,18 @@ function WorkbenchBody({
   );
 
   const {
+    addArtifactCard,
     addArtifactCards,
     canMergeArtifactCards,
     collectSelectedArtifacts,
+    duplicateArtifactCard,
     extractArtifactCardItem,
     insertArtifactCardIntoSequence,
     mergeArtifactCardRun,
     mergeArtifactCards,
     removeArtifactCardItem,
     reorderArtifactCardItem,
+    replaceArtifactCardRef,
     tidySelectedArtifacts,
     ungroupArtifacts,
   } = useArtifactCardCommands({
@@ -1897,6 +1920,92 @@ function WorkbenchBody({
       return screenToCanvasPoint(client) ?? fallback;
     },
     [screenToCanvasPoint],
+  );
+
+  const openCreateArtifact = React.useCallback(
+    (position?: { x: number; y: number }) => {
+      if (!localAuthoringEnabled) return;
+      setArtifactEditor({
+        kind: "create",
+        position: position ?? canvasCenter({ x: 80, y: 80 }),
+      });
+    },
+    [canvasCenter, localAuthoringEnabled, setArtifactEditor],
+  );
+
+  const openEditArtifact = React.useCallback(
+    (cardId: string) => {
+      const card = artifactViewers.nodes.find((node) => node.id === cardId);
+      const refs = cardArtifactRefs(card?.data.artifactRef);
+      const sourceRef = refs.length === 1 ? refs[0] : undefined;
+      if (!sourceRef) return;
+      if (isInlineEditableTiffRegions(sourceRef)) {
+        setInlineEditingCardId(cardId);
+      } else {
+        setArtifactEditor({ kind: "edit", cardId, sourceRef });
+      }
+    },
+    [artifactViewers.nodes, setArtifactEditor, setInlineEditingCardId],
+  );
+
+  const openDuplicateArtifact = React.useCallback(
+    (cardId: string) => {
+      const card = artifactViewers.nodes.find((node) => node.id === cardId);
+      if (!card) return;
+      const value =
+        artifactCardConnectionValue(card, artifactViewers.edges, nodes) ??
+        card.data.artifactRef;
+      const refs = cardArtifactRefs(value);
+      const sourceRef = refs.length === 1 ? refs[0] : undefined;
+      if (!sourceRef) return;
+      if (isInlineEditableTiffRegions(sourceRef)) {
+        const newCardId = duplicateArtifactCard(cardId, sourceRef);
+        if (newCardId) setInlineEditingCardId(newCardId);
+      } else {
+        setArtifactEditor({
+          kind: "duplicate",
+          sourceCardId: cardId,
+          sourceRef,
+        });
+      }
+    },
+    [
+      artifactViewers.edges,
+      artifactViewers.nodes,
+      duplicateArtifactCard,
+      nodes,
+      setArtifactEditor,
+      setInlineEditingCardId,
+    ],
+  );
+
+  const handleInlineArtifactSaved = React.useCallback(
+    (cardId: string, nextRef: ArtifactRef) => {
+      replaceArtifactCardRef(cardId, nextRef);
+      setInlineEditingCardId((current) =>
+        current === cardId ? null : current,
+      );
+    },
+    [replaceArtifactCardRef, setInlineEditingCardId],
+  );
+
+  const handleArtifactEditorSaved = React.useCallback(
+    (ref: ArtifactRef, session: ArtifactEditorSession) => {
+      if (session.kind === "create") {
+        addArtifactCard(ref, session.position);
+      } else if (session.kind === "edit") {
+        replaceArtifactCardRef(session.cardId, ref);
+      } else {
+        duplicateArtifactCard(session.sourceCardId, ref);
+      }
+      setArtifactEditor(null);
+    },
+    [
+      addArtifactCard,
+      duplicateArtifactCard,
+      replaceArtifactCardRef,
+      setArtifactEditor,
+    ],
   );
 
   const placeStarterSample = React.useCallback(async () => {
@@ -3025,6 +3134,91 @@ function WorkbenchBody({
     ],
   );
 
+  const selectionLinkCards = React.useMemo<SelectionLinkCard[]>(() => {
+    if (!cellScene) return [];
+    return cellScene.graph.cards.flatMap((card) => {
+      const surface = cellScene.surfaceById[card.id];
+      if (
+        surface?.kind !== "artifact" ||
+        !surface.artifact ||
+        (surface.itemCount ?? 1) > 1
+      ) {
+        return [];
+      }
+      const capability = selectionLinkCapability(surface.previewKind);
+      if (!capability.source && capability.effects.length === 0) return [];
+      // Name the card the way its header does, type then file, so two
+      // tables on the canvas read as different targets in the link editor.
+      const name =
+        surface.filename ?? surface.dimensionsLabel ?? surface.byteSizeLabel;
+      return [
+        {
+          id: card.id,
+          title: name ? `${card.title} · ${name}` : card.title,
+          capability,
+        },
+      ];
+    });
+  }, [cellScene]);
+  const selectionLinks = useSelectionLinks({
+    cards: selectionLinkCards,
+    bindings: activeArtifactViewers.bindings,
+    editable: localAuthoringEnabled,
+    saveBinding: saveArtifactViewerBinding,
+    removeBinding: removeArtifactViewerBinding,
+    onActivityChange: updateArtifactViewerActivity,
+  });
+
+  const onArtifactDownload = React.useCallback(
+    (cardId: string, format: string | null) => {
+      const surface = cellScene?.surfaceById[cardId];
+      if (surface?.kind !== "artifact" || (surface.itemCount ?? 1) !== 1)
+        return;
+      const artifactId = surface.artifact?.artifact_id;
+      if (!artifactId) return;
+      triggerArtifactDownload(
+        format
+          ? artifactDownloadUrl(workspaceId, artifactId, format)
+          : artifactInlineContentUrl(workspaceId, artifactId),
+      );
+    },
+    [cellScene, workspaceId],
+  );
+
+  const onArtifactSaveToLibrary = React.useCallback(
+    async (cardId: string) => {
+      if (!canEditProject) return;
+      const surface = cellScene?.surfaceById[cardId];
+      if (surface?.kind !== "artifact" || (surface.itemCount ?? 1) !== 1)
+        return;
+      const artifactId = surface.artifact?.artifact_id;
+      if (!artifactId || surface.inLibrary) return;
+      const displayName =
+        surface.filename?.trim() ||
+        `${surface.typeLabel} · ${artifactId.slice(0, 8)}`;
+      try {
+        const item = await saveArtifactToLibrary(workspaceId, {
+          artifact_id: artifactId,
+          name: Array.from(displayName).slice(0, 160).join(""),
+        });
+        void mutateCache(["library-tree", workspaceId]);
+        toastManager.add({
+          title: "Saved in Library",
+          description: item.name,
+          type: "success",
+        });
+      } catch (error) {
+        toastManager.add({
+          title: "Could not save to Library",
+          description: error instanceof Error ? error.message : undefined,
+          type: "error",
+          priority: "high",
+        });
+      }
+    },
+    [canEditProject, cellScene, mutateCache, toastManager, workspaceId],
+  );
+
   // --- The canvas right-click menu --------------------------------------------
 
   const openCanvasMenu = React.useCallback(
@@ -3109,6 +3303,7 @@ function WorkbenchBody({
       addCatalogNode(spec, canvasMenuPoint ?? undefined, false),
     addAnnotationHere: (kind) =>
       addAnnotation(kind, canvasMenuPoint ?? undefined),
+    createArtifactHere: () => openCreateArtifact(canvasMenuPoint ?? undefined),
     selectAll: () => {
       if (!cellScene) return;
       canvasSelection.selectOnly(
@@ -3631,6 +3826,7 @@ function WorkbenchBody({
                   void placeStarterSample();
                 }}
                 onBrowseSteps={() => setLibraryOpen(true)}
+                onCreateArtifact={() => openCreateArtifact()}
               />
             </div>
           ) : canvasUpload ? (
@@ -3639,174 +3835,194 @@ function WorkbenchBody({
             </div>
           ) : null}
           {cellScene && (
-            <PresenceAwareCellCanvas
-              presenceStore={projectRoom.presenceStore}
-              localSessionId={projectRoom.localSessionId}
-              graphId={openGraphId}
-              {...cellScene}
-              look={cellLook}
-              routing={cellRouting}
-              editable={localAuthoringEnabled}
-              selectedCardIds={cellSelectedCardIds}
-              selectedPipeIds={selectedEdgeIdSet}
-              inspectedPipeId={activeInspectedPipe?.pipe.edge.id ?? null}
-              autoFitOnMount={false}
-              exposeDebugApi={process.env.NODE_ENV !== "production"}
-              onHandleReady={setCellCanvasHandle}
-              onViewportZoomChange={setViewportZoom}
-              onMoveCards={moveCellCards}
-              onDragCardsProgress={onDragCardsProgress}
-              onResizeCard={resizeCellCard}
-              onCanConnect={(candidate) => {
-                const connection = cellConnectionToWorkbenchConnection(
-                  nodes,
-                  artifactViewers.nodes,
-                  candidate,
-                );
-                return connection !== null && isValidConnection(connection);
-              }}
-              onConnect={(candidate) => {
-                const connection = cellConnectionToWorkbenchConnection(
-                  nodes,
-                  artifactViewers.nodes,
-                  candidate,
-                );
-                if (connection) onConnect(connection);
-              }}
-              onConnectDropEmpty={onCellConnectDropEmpty}
-              onArtifactNextStep={
-                localAuthoringEnabled ? continueFromArtifactCard : undefined
-              }
-              onRemoveCards={(ids) => removeCellElements(ids, [])}
-              onRemovePipes={(ids) => removeCellElements([], ids)}
-              onSelectionChange={(selection) =>
-                canvasSelection.selectOnly(
-                  partitionCellSelection(
-                    selection,
-                    authoredDocumentRef.current,
-                    artifactViewers,
-                  ),
-                )
-              }
-              onPaneClick={() => {
-                onCloseGraphBrowser();
-                closeGridPanel();
-                closeCanvasPopovers(false);
-              }}
-              onSelectEdgeAttachment={(pipeId, anchor) =>
-                toggleInspectedPipe(
-                  openGraphId,
-                  pipeId,
-                  anchor ?? canvasCenter({ x: 0, y: 0 }),
-                )
-              }
-              onOperatorRun={(cardId) => {
-                canvasSelection.selectOnly({ nodeIds: [cardId] });
-                void runWorkflow("selected", [cardId]);
-              }}
-              onOperatorConfigChange={updateConfig}
-              onOperatorToggleConfigSection={setConfigSection}
-              onOperatorApplySecret={
-                canManageSecrets ? applyConfiguredNodeSecret : undefined
-              }
-              onOperatorRemoveSecret={
-                canManageSecrets ? removeConfiguredNodeSecret : undefined
-              }
-              onOperatorAddPlug={addNodeInputPlug}
-              onOperatorRemovePlug={(cardId, portName, plugId) =>
-                removeNodeInputPlug(
-                  cardId,
-                  plugId.startsWith(`${portName}::`)
-                    ? plugId.slice(portName.length + 2)
-                    : plugId,
-                )
-              }
-              onOperatorToggleAppendix={toggleAppendix}
-              onPickServiceEngine={
-                localAuthoringEnabled ? pickEngine : undefined
-              }
-              onAnnotationColorChange={(cardId, color) =>
-                updateAnnotationColor(cardId, annotationHexFromToken(color))
-              }
-              canMergeArtifactCards={canMergeArtifactCards}
-              onMergeArtifactCards={mergeArtifactCards}
-              onReorderArtifactCardItem={reorderArtifactCardItem}
-              onMergeArtifactCardRun={mergeArtifactCardRun}
-              onInsertArtifactCardIntoSequence={insertArtifactCardIntoSequence}
-              onExtractArtifactCardItem={extractArtifactCardItem}
-              onRemoveArtifactCardItem={removeArtifactCardItem}
-              onUngroupArtifactCard={ungroupArtifacts}
-              onArtifactImageLoad={onCellArtifactImageLoad}
-              onCollectionRemoveMember={(cardId, memberId) =>
-                removeNodeInputPlug(
-                  cardId,
-                  memberId.startsWith(`${COLLECTION_PORT}::`)
-                    ? memberId.slice(COLLECTION_PORT.length + 2)
-                    : memberId,
-                )
-              }
-            >
-              {selectionToolbar ? (
-                <div
-                  data-cell-canvas-chrome="true"
-                  {...stylex.props(s.selectionToolbar, s.cellSelectionToolbar)}
-                  onPointerDown={(event) => event.stopPropagation()}
-                >
-                  {selectionToolbar}
-                </div>
-              ) : null}
-              {registry && activeContextualDiscovery ? (
-                <CellContextualNodeDiscovery
-                  key={`${activeContextualDiscovery.sourceNodeId}:${JSON.stringify(activeContextualDiscovery.sourceEndpoint)}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
-                  session={activeContextualDiscovery}
-                  registry={registry}
-                  sourcePoint={discoverySourcePoint}
-                  canInsert={localAuthoringEnabled}
-                  insertDisabledReason={localAuthoringBlockedMessage}
-                  onClose={() => {
-                    if (activeContextualDiscovery.trigger === "port_prompt") {
-                      closePrompt();
+            <SelectionLinksContext.Provider value={selectionLinks.context}>
+              <PresenceAwareCellCanvas
+                presenceStore={projectRoom.presenceStore}
+                localSessionId={projectRoom.localSessionId}
+                graphId={openGraphId}
+                {...cellScene}
+                look={cellLook}
+                routing={cellRouting}
+                editable={localAuthoringEnabled}
+                selectedCardIds={cellSelectedCardIds}
+                selectedPipeIds={selectedEdgeIdSet}
+                inspectedPipeId={activeInspectedPipe?.pipe.edge.id ?? null}
+                autoFitOnMount={false}
+                exposeDebugApi={process.env.NODE_ENV !== "production"}
+                onHandleReady={setCellCanvasHandle}
+                onViewportZoomChange={setViewportZoom}
+                onMoveCards={moveCellCards}
+                onDragCardsProgress={onDragCardsProgress}
+                onResizeCard={resizeCellCard}
+                onCanConnect={(candidate) => {
+                  const connection = cellConnectionToWorkbenchConnection(
+                    nodes,
+                    artifactViewers.nodes,
+                    candidate,
+                  );
+                  return connection !== null && isValidConnection(connection);
+                }}
+                onConnect={(candidate) => {
+                  const connection = cellConnectionToWorkbenchConnection(
+                    nodes,
+                    artifactViewers.nodes,
+                    candidate,
+                  );
+                  if (connection) onConnect(connection);
+                }}
+                onConnectDropEmpty={onCellConnectDropEmpty}
+                onArtifactNextStep={
+                  localAuthoringEnabled ? continueFromArtifactCard : undefined
+                }
+                onRemoveCards={(ids) => removeCellElements(ids, [])}
+                onRemovePipes={(ids) => removeCellElements([], ids)}
+                onSelectionChange={(selection) =>
+                  canvasSelection.selectOnly(
+                    partitionCellSelection(
+                      selection,
+                      authoredDocumentRef.current,
+                      artifactViewers,
+                    ),
+                  )
+                }
+                onPaneClick={() => {
+                  onCloseGraphBrowser();
+                  closeGridPanel();
+                  closeCanvasPopovers(false);
+                }}
+                onSelectEdgeAttachment={(pipeId, anchor) =>
+                  toggleInspectedPipe(
+                    openGraphId,
+                    pipeId,
+                    anchor ?? canvasCenter({ x: 0, y: 0 }),
+                  )
+                }
+                onOperatorRun={(cardId) => {
+                  canvasSelection.selectOnly({ nodeIds: [cardId] });
+                  void runWorkflow("selected", [cardId]);
+                }}
+                onOperatorConfigChange={updateConfig}
+                onOperatorToggleConfigSection={setConfigSection}
+                onOperatorApplySecret={
+                  canManageSecrets ? applyConfiguredNodeSecret : undefined
+                }
+                onOperatorRemoveSecret={
+                  canManageSecrets ? removeConfiguredNodeSecret : undefined
+                }
+                onOperatorAddPlug={addNodeInputPlug}
+                onOperatorRemovePlug={(cardId, portName, plugId) =>
+                  removeNodeInputPlug(
+                    cardId,
+                    plugId.startsWith(`${portName}::`)
+                      ? plugId.slice(portName.length + 2)
+                      : plugId,
+                  )
+                }
+                onOperatorToggleAppendix={toggleAppendix}
+                onPickServiceEngine={
+                  localAuthoringEnabled ? pickEngine : undefined
+                }
+                onAnnotationColorChange={(cardId, color) =>
+                  updateAnnotationColor(cardId, annotationHexFromToken(color))
+                }
+                canMergeArtifactCards={canMergeArtifactCards}
+                onMergeArtifactCards={mergeArtifactCards}
+                onReorderArtifactCardItem={reorderArtifactCardItem}
+                onMergeArtifactCardRun={mergeArtifactCardRun}
+                onInsertArtifactCardIntoSequence={
+                  insertArtifactCardIntoSequence
+                }
+                onExtractArtifactCardItem={extractArtifactCardItem}
+                onRemoveArtifactCardItem={removeArtifactCardItem}
+                onUngroupArtifactCard={ungroupArtifacts}
+                onArtifactDownload={onArtifactDownload}
+                onArtifactSaveToLibrary={
+                  canEditProject ? onArtifactSaveToLibrary : undefined
+                }
+                onArtifactEdit={
+                  localAuthoringEnabled ? openEditArtifact : undefined
+                }
+                onArtifactDuplicateAndEdit={
+                  localAuthoringEnabled ? openDuplicateArtifact : undefined
+                }
+                inlineEditingCardId={inlineEditingCardId}
+                onSetInlineEditingCardId={setInlineEditingCardId}
+                onInlineArtifactSaved={handleInlineArtifactSaved}
+                onArtifactImageLoad={onCellArtifactImageLoad}
+                onCollectionRemoveMember={(cardId, memberId) =>
+                  removeNodeInputPlug(
+                    cardId,
+                    memberId.startsWith(`${COLLECTION_PORT}::`)
+                      ? memberId.slice(COLLECTION_PORT.length + 2)
+                      : memberId,
+                  )
+                }
+              >
+                {selectionToolbar ? (
+                  <div
+                    data-cell-canvas-chrome="true"
+                    {...stylex.props(
+                      s.selectionToolbar,
+                      s.cellSelectionToolbar,
+                    )}
+                    onPointerDown={(event) => event.stopPropagation()}
+                  >
+                    {selectionToolbar}
+                  </div>
+                ) : null}
+                {registry && activeContextualDiscovery ? (
+                  <CellContextualNodeDiscovery
+                    key={`${activeContextualDiscovery.sourceNodeId}:${JSON.stringify(activeContextualDiscovery.sourceEndpoint)}:${activeContextualDiscovery.flowPosition.x}:${activeContextualDiscovery.flowPosition.y}`}
+                    session={activeContextualDiscovery}
+                    registry={registry}
+                    sourcePoint={discoverySourcePoint}
+                    canInsert={localAuthoringEnabled}
+                    insertDisabledReason={localAuthoringBlockedMessage}
+                    onClose={() => {
+                      if (activeContextualDiscovery.trigger === "port_prompt") {
+                        closePrompt();
+                      }
+                      closeContextualDiscovery();
+                    }}
+                    onConfirm={confirmContextualDiscovery}
+                    onPlaceOutputCard={placeDiscoveredOutputCard}
+                  />
+                ) : null}
+                {activeInspectedPipe ? (
+                  <CellPipeInspector
+                    pipe={activeInspectedPipe.pipe}
+                    anchor={activeInspectedPipe.anchor}
+                    editable={localAuthoringEnabled && !running}
+                    servicePreview={
+                      activeInspectedServicePreview
+                        ? {
+                            summary: `${activeInspectedServicePreview.providerTitle} → ${activeInspectedServicePreview.consumerTitle}`,
+                            hint: "Stream live frames (contact sheets, crops, or pages) processed by this node.",
+                            actionLabel: "Live preview",
+                            onInspect: () =>
+                              setLivePreviewTarget(
+                                activeInspectedServicePreview.target,
+                              ),
+                          }
+                        : null
                     }
-                    closeContextualDiscovery();
-                  }}
-                  onConfirm={confirmContextualDiscovery}
-                  onPlaceOutputCard={placeDiscoveredOutputCard}
-                />
-              ) : null}
-              {activeInspectedPipe ? (
-                <CellPipeInspector
-                  pipe={activeInspectedPipe.pipe}
-                  anchor={activeInspectedPipe.anchor}
-                  editable={localAuthoringEnabled && !running}
-                  servicePreview={
-                    activeInspectedServicePreview
-                      ? {
-                          summary: `${activeInspectedServicePreview.providerTitle} → ${activeInspectedServicePreview.consumerTitle}`,
-                          hint: "Stream live frames (contact sheets, crops, or pages) processed by this node.",
-                          actionLabel: "Live preview",
-                          onInspect: () =>
-                            setLivePreviewTarget(
-                              activeInspectedServicePreview.target,
-                            ),
-                        }
-                      : null
-                  }
-                  onClose={closeInspectedPipe}
-                  onUpdateWorkflowEdge={updateEdge}
-                  onUpdateOriginCollectionMode={(originId, collectionMode) =>
-                    applyAuthoringCommands([
-                      {
-                        kind: "update_origin",
-                        origin_id: originId,
-                        update: { collection_mode: collectionMode },
-                      },
-                    ])
-                  }
-                  onUpdateViewerEdge={updateArtifactViewerEdge}
-                  onRemovePipe={(pipeId) => removeCellElements([], [pipeId])}
-                />
-              ) : null}
-            </PresenceAwareCellCanvas>
+                    onClose={closeInspectedPipe}
+                    onUpdateWorkflowEdge={updateEdge}
+                    onUpdateOriginCollectionMode={(originId, collectionMode) =>
+                      applyAuthoringCommands([
+                        {
+                          kind: "update_origin",
+                          origin_id: originId,
+                          update: { collection_mode: collectionMode },
+                        },
+                      ])
+                    }
+                    onUpdateViewerEdge={updateArtifactViewerEdge}
+                    onRemovePipe={(pipeId) => removeCellElements([], [pipeId])}
+                  />
+                ) : null}
+              </PresenceAwareCellCanvas>
+            </SelectionLinksContext.Provider>
           )}
           <PresenceOverlay
             store={projectRoom.presenceStore}
@@ -3855,6 +4071,23 @@ function WorkbenchBody({
           }}
         >
           <Plus size={14} />
+        </IconButton>
+        <IconButton
+          size="lg"
+          variant="ghost"
+          label="Create artifact"
+          title="Create artifact"
+          disabled={!localAuthoringEnabled}
+          xstyle={[phoneTouch.rail, s.dockButton]}
+          {...firefoxDynamicButtonProps}
+          onClick={() => {
+            closeGraphBrowser();
+            setLibraryOpen(false);
+            setLabPanelOpen(false);
+            openCreateArtifact();
+          }}
+        >
+          <FilePlus2 size={14} />
         </IconButton>
         <div {...stylex.props(s.shapesMenuWrap)}>
           <IconButton
@@ -4017,7 +4250,7 @@ function WorkbenchBody({
         onFitView={() => fitCanvasView(WORKBENCH_FIT_VIEW)}
       />
 
-      <Toast.Provider timeout={8000} limit={3}>
+      <Toast.Provider timeout={8000} limit={3} toastManager={toastManager}>
         <GlobalIssueToastList
           issues={globalIssues}
           onDismiss={dismissGlobalIssue}
@@ -4091,6 +4324,21 @@ function WorkbenchBody({
           managePacksHref={managePacksHref}
         />
       ) : null}
+
+      <ArtifactEditorDialog
+        session={artifactEditor}
+        workspaceId={workspaceId}
+        artifactTypes={registry?.artifact_types ?? []}
+        onSaved={handleArtifactEditorSaved}
+        onClose={() => setArtifactEditor(null)}
+      />
+
+      <SelectionLinkDialog
+        editor={selectionLinks.editor}
+        cards={selectionLinks.cards}
+        fields={selectionLinks.fields}
+        dispatch={selectionLinks.dispatch}
+      />
 
       <NodeLivePreviewModal
         open={livePreviewTarget !== null}

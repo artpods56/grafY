@@ -398,6 +398,45 @@ def test_a_command_the_document_refuses_is_answered_without_closing_the_room(
     assert _head_of(harness, project_id)["name"] == "Still alive"
 
 
+def test_a_batch_the_server_cannot_read_is_rejected_without_closing_the_room(
+    harness: RoomHarness,
+) -> None:
+    """A malformed batch is a rejection, not a protocol error.
+
+    A cleared config field once left the wire without its ``value``. Closing the room
+    for it handed the client the same batch to replay into every new socket, and the
+    workbench sat in "Stale graph — read only" until a reload.
+    """
+
+    project_id = harness.project_id
+
+    with harness.open_room(project_id) as room:
+        ready = room.expect("room.ready")
+        frame = command_batch(
+            ready,
+            [
+                InGraphCommand(
+                    graph_id=FLOW_GRAPH_ID,
+                    command=UpdateNodeConfigurationCommand(
+                        node_id="first", field="value", value=2
+                    ),
+                )
+            ],
+        )
+        del frame["commands"][0]["command"]["value"]
+        room.send(frame)
+
+        rejected = room.expect("project.command.rejected")
+        assert rejected["command_id"] == frame["command_id"]
+        assert rejected["error_code"] == "invalid_command"
+        assert "value" in rejected["detail"]
+
+        room.send(rename(ready, "Still alive"))
+        accepted = room.expect("project.command.accepted")
+
+    assert [command["name"] for command in accepted["commands"]] == ["Still alive"]
+
+
 def test_a_retried_command_replays_and_is_not_fanned_out_twice(
     harness: RoomHarness,
 ) -> None:

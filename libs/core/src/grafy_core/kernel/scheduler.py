@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import logging
 from collections import deque
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from uuid import UUID
@@ -19,6 +20,8 @@ from grafy_core.kernel.lifecycle import (
     transition,
 )
 from grafy_core.kernel.results import FailureRecord, ResultStore
+
+logger = logging.getLogger(__name__)
 
 type RunId = str
 
@@ -390,8 +393,20 @@ class _Scheduler:
         except Exception as exc:
             # Failures live on the instance pointers, never in the result store.
             record.failure = str(exc) or exc.__class__.__name__
-            with contextlib.suppress(Exception):
+            # A pointer keeps only the message, so the traceback and its causes
+            # are logged here or lost.
+            logger.error(
+                "computation_failed node_id=%s graph_id=%s",
+                record.plan.representative.key.node_id,
+                record.plan.representative.key.graph_id,
+                exc_info=exc,
+            )
+            try:
                 await self._record_failure(record)
+            except Exception:
+                logger.exception(
+                    "computation_failure_not_recorded fingerprint=%s", fingerprint
+                )
             self._finish(record, ComputationEvent.FAIL)
         else:
             self._finish(record, ComputationEvent.SUCCEED)

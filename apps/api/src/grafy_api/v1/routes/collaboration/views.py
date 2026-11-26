@@ -25,7 +25,7 @@ something is computing.
 import asyncio
 import contextlib
 import logging
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, status
@@ -263,7 +263,21 @@ async def join_project_room(
                 raw = await websocket.receive_json()
                 try:
                     message = CLIENT_ROOM_MESSAGE_ADAPTER.validate_python(raw)
-                except ValidationError:
+                except ValidationError as exc:
+                    command_id = _unreadable_submit_command_id(raw)
+                    if command_id is not None:
+                        # A batch the server cannot read is refused like one the
+                        # document refuses. Closing instead would hand the client
+                        # back the same batch to replay into every new socket.
+                        await hub.deliver_private(
+                            session,
+                            ProjectCommandRejectedMessage(
+                                command_id=command_id,
+                                error_code="invalid_command",
+                                detail=_bounded_detail(_validation_detail(exc)),
+                            ),
+                        )
+                        continue
                     await hub.close_session(
                         session,
                         code=CLOSE_PROTOCOL_ERROR[0],
@@ -638,6 +652,39 @@ async def _reject_command(
             detail=_bounded_detail(detail),
         ),
     )
+
+
+def _unreadable_submit_command_id(raw: object) -> UUID | None:
+    """The command id of a submit frame whose batch failed validation, if it has one.
+
+    Only a frame that names itself ``project.command.submit`` and carries a readable
+    id can be answered with a rejection the client correlates; anything else is a
+    protocol error.
+    """
+
+    if not isinstance(raw, dict):
+        return None
+    frame = cast("dict[str, object]", raw)
+    if frame.get("type") != "project.command.submit":
+        return None
+    command_id = frame.get("command_id")
+    if not isinstance(command_id, str):
+        return None
+    try:
+        return UUID(command_id)
+    except ValueError:
+        return None
+
+
+def _validation_detail(exc: ValidationError) -> str:
+    """Where a refused batch broke, without echoing the values it carried."""
+
+    errors = exc.errors(include_input=False, include_url=False)
+    locations = "; ".join(
+        f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+        for error in errors[:3]
+    )
+    return f"The command batch is malformed ({locations})."
 
 
 def _bounded_detail(detail: str) -> str:

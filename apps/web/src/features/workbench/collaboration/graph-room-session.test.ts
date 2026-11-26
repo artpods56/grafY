@@ -1022,6 +1022,54 @@ describe("ProjectRoomSession", () => {
     expect(reconnectReady?.head.collaboration_sequence).toBe(5);
   });
 
+  it("drops a batch the server keeps closing on instead of replaying it forever", async () => {
+    const onCommandRejected = vi.fn();
+    const { session, socket } = connectReadySession({
+      createCommandId: () => "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      onCommandRejected,
+    });
+
+    const poisoned = session.submitCommands([renameProject("Unreadable")]);
+    let settled = false;
+    void poisoned.catch(() => {
+      settled = true;
+    });
+
+    // The first protocol_error close may be about any frame: replay once.
+    socket.emitClose(CLOSE_PROTOCOL_ERROR, "protocol_error");
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(session.getStatus()).toBe("unsynchronized");
+
+    session.connect();
+    const second = reconnectedSocket(socket);
+    second.emitMessage(roomReady());
+    expect(second.sent).toHaveLength(1);
+    expect(second.lastSent()).toMatchObject({
+      command_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    });
+
+    // The same batch closed the room again: it is the frame, not the network.
+    second.emitClose(CLOSE_PROTOCOL_ERROR, "protocol_error");
+    await expect(poisoned).rejects.toMatchObject({
+      name: "ProjectRoomCommandError",
+      errorCode: "invalid_command",
+    });
+    expect(onCommandRejected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        error_code: "invalid_command",
+      }),
+    );
+
+    // The next room is ready and sends nothing: the loop is broken.
+    session.connect();
+    const third = reconnectedSocket(second);
+    third.emitMessage(roomReady());
+    expect(session.getStatus()).toBe("ready");
+    expect(third.sent).toHaveLength(0);
+  });
+
   it("rejects a command when the server rejects it", async () => {
     const { session, socket } = connectReadySession({
       createCommandId: () => "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",

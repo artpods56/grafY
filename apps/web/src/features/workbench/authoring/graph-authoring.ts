@@ -308,10 +308,41 @@ export function isConnectionAccepted(
     );
   }
   if (input.variadic) return true;
-  return !edges.some(
-    (edge) =>
-      edge.id !== existingEdgeId &&
-      edge.target === connection.target &&
-      edge.targetPort === connection.targetPort,
-  );
+  if (
+    edges.some(
+      (edge) =>
+        edge.id !== existingEdgeId &&
+        edge.target === connection.target &&
+        edge.targetPort === connection.targetPort,
+    )
+  ) {
+    return false;
+  }
+  if (input.exclusive_group) {
+    const siblingPorts = new Set(
+      targetNode.data.spec.inputs
+        .filter(
+          (port) =>
+            port.name !== input.name &&
+            port.exclusive_group === input.exclusive_group,
+        )
+        .map((port) => port.name),
+    );
+    const siblingConnectedByEdge = edges.some(
+      (edge) =>
+        edge.id !== existingEdgeId &&
+        edge.data?.enabled !== false &&
+        edge.target === connection.target &&
+        siblingPorts.has(edge.targetPort),
+    );
+    const siblingConnectedByOrigin = origins.some(
+      (origin) =>
+        origin.to_node === connection.target &&
+        siblingPorts.has(origin.to_port),
+    );
+    if (siblingConnectedByEdge || siblingConnectedByOrigin) {
+      return false;
+    }
+  }
+  return true;
 }

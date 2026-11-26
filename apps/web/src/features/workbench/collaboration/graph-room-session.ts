@@ -857,7 +857,11 @@ export class ProjectRoomSession {
     this.activeRuns = new Map();
     this.listeners.onActiveRunsChange?.([]);
     this.clearPresence();
-    this.outbox.interruptInFlight();
+    this.outbox.interruptInFlight(
+      failure.reason === "protocol_error" && failure.phase === "close"
+        ? "protocol_error"
+        : null,
+    );
     this.generation += 1;
     const socket = this.socket;
     this.socket = null;
