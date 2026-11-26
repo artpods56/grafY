@@ -280,7 +280,9 @@ async def test_a_diamond_runs_its_join_only_after_both_branches() -> None:
 # 3. Failure and skip propagation.
 
 
-async def test_a_failure_skips_every_dependent_and_fails_the_run() -> None:
+async def test_a_failure_skips_every_dependent_and_fails_the_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     store = InMemoryResultStore()
     runner = FakeRunner(failing=["A"])
     scheduler = build_scheduler(store=store, runner=runner, concurrency=2)
@@ -306,6 +308,11 @@ async def test_a_failure_skips_every_dependent_and_fails_the_run() -> None:
         "E": ComputationState.SUCCEEDED,
     }
     assert dict(result.failures) == {"A": "A could not compute"}
+    # The log is the only place the traceback survives.
+    [logged] = [r for r in caplog.records if r.name.endswith("kernel.scheduler")]
+    assert logged.getMessage().startswith("computation_failed node_id=A ")
+    assert logged.exc_info is not None
+    assert str(logged.exc_info[1]) == "A could not compute"
 
     failed_pointer = await store.get_pointer(_key("A"))
     assert failed_pointer is not None

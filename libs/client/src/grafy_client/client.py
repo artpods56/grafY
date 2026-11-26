@@ -21,6 +21,7 @@ from grafy_core.domain.graph_documents import GraphDocument
 from .errors import ExecutionTimeoutError, GrafyClientError
 from .library import LibraryClient
 from .models import (
+    CreatedArtifact,
     GeoFeatureMatch,
     GeoRender,
     ImportedProject,
@@ -574,13 +575,41 @@ class UploadClient:
 
 
 class ArtifactClient:
-    """Read-side helpers for table and geo artifacts and raw artifact bytes."""
+    """Create and inspect Workspace artifacts."""
 
     def __init__(self, transport: HttpTransport) -> None:
         self._transport = transport
 
     def _path(self, workspace_id: UUID, artifact_id: UUID, suffix: str) -> str:
         return f"/v1/workspaces/{workspace_id}/artifacts/{artifact_id}{suffix}"
+
+    async def create_artifact(
+        self,
+        workspace_id: UUID,
+        *,
+        artifact_type: str,
+        payload: Mapping[str, object],
+        schema_version: int = 1,
+        derived_from_artifact_id: UUID | None = None,
+        title: str | None = None,
+    ) -> CreatedArtifact:
+        result = await self._transport.request_json(
+            operation="create artifact",
+            method="POST",
+            path=f"/v1/workspaces/{workspace_id}/artifacts",
+            json_payload={
+                "artifact_type": artifact_type,
+                "schema_version": schema_version,
+                "payload": dict(payload),
+                "derived_from_artifact_id": (
+                    str(derived_from_artifact_id)
+                    if derived_from_artifact_id is not None
+                    else None
+                ),
+                "title": title,
+            },
+        )
+        return CreatedArtifact.model_validate(result)
 
     async def content(self, workspace_id: UUID, artifact_id: UUID) -> bytes:
         response = await self._transport.send(

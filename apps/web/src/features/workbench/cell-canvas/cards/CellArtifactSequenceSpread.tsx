@@ -7,13 +7,13 @@ import {
   ChevronRight,
   GripHorizontal,
   GripVertical,
-  ImageIcon,
   Layers,
   ScanSearch,
   Trash2,
 } from "lucide-react";
 
 import { IconButton } from "@/components/ui/button";
+import { artifactInlineContentUrl } from "@/lib/api";
 import { useEffectReducer } from "@/lib/state/use-effect-reducer";
 import { tokens } from "@/lib/stylex/tokens.stylex";
 
@@ -41,6 +41,7 @@ import {
 } from "../cell-model";
 import { shouldAnimateMotion } from "../cell-transitions";
 import {
+  ArtifactPlatePreview,
   ArtifactStackBacks,
   STACK_BACK_COUNT,
   stackDepthTransform,
@@ -101,8 +102,6 @@ const EXTERNAL_GAP_SHIFT = 8;
 /** How far every card slides off an edge gap, so the bar clears the frame. */
 const EXTERNAL_EDGE_SHIFT = 10;
 
-const IMAGE_HAIRLINE =
-  "inset 0 0 0 1px light-dark(color-mix(in srgb, black 9%, transparent), color-mix(in srgb, white 10%, transparent))";
 const LIFTED_SHADOW =
   "0 10px 24px -6px light-dark(color-mix(in srgb, black 28%, transparent), color-mix(in srgb, black 60%, transparent))";
 const HANDLE_SHADOW =
@@ -198,35 +197,6 @@ const s = stylex.create({
   },
   grabbing: {
     cursor: "grabbing",
-  },
-  checker: {
-    position: "absolute",
-    inset: 0,
-    overflow: "hidden",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: tokens.colorSubtle,
-    backgroundColor: tokens.colorSurfaceSunken,
-    backgroundImage: `repeating-conic-gradient(${tokens.colorSurfaceRaised} 0% 25%, transparent 0% 50%)`,
-    backgroundSize: "14px 14px",
-  },
-  image: {
-    position: "absolute",
-    inset: 0,
-    display: "block",
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    pointerEvents: "none",
-    userSelect: "none",
-  },
-  imageFrame: {
-    position: "absolute",
-    inset: 0,
-    borderRadius: "inherit",
-    boxShadow: IMAGE_HAIRLINE,
-    pointerEvents: "none",
   },
   stack: {
     cursor: "pointer",
@@ -418,6 +388,52 @@ function fallbackItems(count: number): ArtifactStackItem[] {
   }));
 }
 
+/**
+ * Builds the single-item surface handed to `ArtifactPlatePreview` for one slot
+ * in the spread. Transient animation clones skip live WebGL/tile mounts so
+ * 200ms transitions do not spin up throwaway renderers.
+ */
+function itemSurfaceFor(
+  surface: ArtifactCardSurfaceData,
+  item: ArtifactStackItem | undefined,
+  { transient = false }: { transient?: boolean } = {},
+): ArtifactCardSurfaceData {
+  const artifact = item?.artifact;
+  const workspaceId = surface.workspaceId;
+  const tiffText =
+    !transient && surface.previewKind === "tiff-text" && workspaceId && artifact
+      ? {
+          url: artifactInlineContentUrl(workspaceId, artifact.artifact_id),
+          recognized: artifact.artifact_type === "ocr.tiff_recognized_text",
+        }
+      : undefined;
+  const useLiveArtifact =
+    artifact && !(transient && surface.previewKind === "map");
+  return {
+    kind: "artifact",
+    previewKind: surface.previewKind,
+    artifactTypeId: artifact?.artifact_type ?? surface.artifactTypeId,
+    typeLabel: surface.typeLabel,
+    filename: item?.label,
+    byteSizeLabel: item?.byteSizeLabel,
+    imageUrl: item?.imageUrl ?? null,
+    itemCount: surface.itemCount,
+    workspaceId,
+    ...(useLiveArtifact ? { artifact } : {}),
+    ...(tiffText ? { tiffText } : {}),
+    ...(!artifact && surface.previewText !== undefined
+      ? { previewText: surface.previewText }
+      : {}),
+    ...(!artifact && surface.tableHeaders
+      ? { tableHeaders: surface.tableHeaders }
+      : {}),
+    ...(!artifact && surface.tableRows ? { tableRows: surface.tableRows } : {}),
+    ...(!artifact && surface.dimensionsLabel
+      ? { dimensionsLabel: surface.dimensionsLabel }
+      : {}),
+  };
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -435,6 +451,7 @@ interface SpreadLive {
   layoutTotalCols: number;
   card: CellCardModel;
   foregroundCards: readonly CellCardModel[];
+  canReorder: boolean;
   canExtract: boolean;
   cardId: string;
   onClose: () => void;
@@ -458,6 +475,7 @@ function hitScene(live: SpreadLive): SpreadHitScene {
     layoutTotalCols: live.layoutTotalCols,
     card: live.card,
     foregroundCards: live.foregroundCards,
+    canReorder: live.canReorder,
     canExtract: live.canExtract,
   };
 }
@@ -670,6 +688,7 @@ export function CellArtifactSequenceSpread({
       layoutTotalCols: layout.totalCols,
       card,
       foregroundCards,
+      canReorder: Boolean(onReorder),
       canExtract: Boolean(onExtract),
       cardId: card.id,
       onClose,
@@ -710,6 +729,17 @@ export function CellArtifactSequenceSpread({
     if (!element || !layout.windowed) return;
     const onWheel = (event: WheelEvent) => {
       if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+      const target = event.target;
+      if (target instanceof Element) {
+        if (target.closest("[data-cell-interactive-viewport]")) return;
+        const nowheel = target.closest(".nowheel, [data-cell-nowheel]");
+        if (
+          nowheel instanceof HTMLElement &&
+          nowheel.scrollWidth > nowheel.clientWidth + 1
+        ) {
+          return;
+        }
+      }
       event.preventDefault();
       event.stopPropagation();
       const live = liveRef.current;
@@ -846,6 +876,16 @@ export function CellArtifactSequenceSpread({
       return;
     }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable)
+    ) {
+      return;
+    }
     const direction = event.key === "ArrowLeft" ? -1 : 1;
     if (event.altKey) {
       const index = activeIndex;
@@ -998,25 +1038,20 @@ export function CellArtifactSequenceSpread({
     paddingInline: CARD_PLATE_INSET_X,
   };
 
-  const renderPicture = (item: ArtifactStackItem | undefined) => (
-    <>
-      <span {...stylex.props(s.checker)}>
-        {item?.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- artifact bytes have no predictable size for the image optimizer
-          <img
-            src={item.imageUrl}
-            alt={item.label}
-            draggable={false}
-            {...stylex.props(s.image)}
-          />
-        ) : (
-          <ImageIcon size={18} aria-hidden="true" />
-        )}
-      </span>
-      {item?.imageUrl ? (
-        <span aria-hidden="true" {...stylex.props(s.imageFrame)} />
-      ) : null}
-    </>
+  const renderItemPlate = (
+    item: ArtifactStackItem | undefined,
+    {
+      active = false,
+      interactive = false,
+      transient = false,
+    }: { active?: boolean; interactive?: boolean; transient?: boolean } = {},
+  ) => (
+    <ArtifactPlatePreview
+      card={card}
+      surface={itemSurfaceFor(surface, item, { transient })}
+      selected={active}
+      interactive={interactive}
+    />
   );
 
   const menuItemsFor = (index: number): CellCardMenuItem[] => {
@@ -1185,7 +1220,7 @@ export function CellArtifactSequenceSpread({
           data-plate-shadow="none"
           {...styled(depthPlateBox(sinkDepth), ...plateLook(false, false))}
         >
-          {renderPicture(item)}
+          {renderItemPlate(item, { interactive: false, transient: true })}
           {renderDepthVeil(sinkDepth)}
         </article>
       </div>
@@ -1316,7 +1351,7 @@ export function CellArtifactSequenceSpread({
             dropping && s.stackDrop,
           )}
         >
-          {renderPicture(item)}
+          {renderItemPlate(item, { interactive: false })}
           {renderDepthVeil(liftDepth)}
         </article>
       </div>
@@ -1489,7 +1524,10 @@ export function CellArtifactSequenceSpread({
             lifted && s.liftedPlate,
           )}
         >
-          {renderPicture(item)}
+          {renderItemPlate(item, {
+            active,
+            interactive: !lifted && !closing,
+          })}
           {renderDepthVeil(liftDepth)}
         </article>
       </div>
@@ -1540,7 +1578,7 @@ export function CellArtifactSequenceSpread({
           data-plate-shadow="none"
           {...styled(plateBox, ...plateLook(false, false))}
         >
-          {renderPicture(tuck.item)}
+          {renderItemPlate(tuck.item, { interactive: false, transient: true })}
         </article>
       </div>
     );
@@ -1588,7 +1626,7 @@ export function CellArtifactSequenceSpread({
           data-plate-shadow="none"
           {...styled(plateBox, ...plateLook(false, false))}
         >
-          {renderPicture(tuck.item)}
+          {renderItemPlate(tuck.item, { interactive: false, transient: true })}
         </article>
       </div>
     );

@@ -22,6 +22,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 
 from grafy_core.domain.identity import WorkspaceCapability
 from grafy_core.kernel.instances import InstanceKey
@@ -29,6 +30,7 @@ from grafy_core.kernel.instances import InstanceKey
 from grafy_api.runs.ports import RunRejectedError
 from grafy_api.v1.routes.auth.dependencies import require_workspace_capability
 from grafy_api.v1.routes.runs.dependencies import (
+    NodePreviewHubDependency,
     ProjectScopeDependency,
     RunServiceDependency,
 )
@@ -205,6 +207,41 @@ async def get_instance_result(
     except RunRejectedError as exc:
         raise _rejected(exc) from exc
     return InstanceResultResponse.from_result(snapshot, result)
+
+
+@router.get("/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/preview-stream")
+async def stream_node_preview(
+    project_id: UUID,
+    graph_id: str,
+    node_id: str,
+    project: ProjectScopeDependency,
+    previews: NodePreviewHubDependency,
+    runs_access: require_workspace_capability(WorkspaceCapability.VIEW_RUNS),
+    artifacts_access: require_workspace_capability(WorkspaceCapability.VIEW_ARTIFACTS),
+) -> StreamingResponse:
+    """Opt-in Server-Sent Events stream of ephemeral live preview frames for one node.
+
+    Replays the bounded in-memory ring buffer for the node's latest computation
+    and streams new frames as the node or its connected service providers emit
+    them. Requires both ``view_runs`` and ``view_artifacts`` because frames may
+    show cropped image regions or prompt text derived from workspace artifacts.
+    """
+
+    del project_id, runs_access, artifacts_access
+    return StreamingResponse(
+        previews.subscribe(
+            workspace_id=project.workspace_id,
+            project_id=project.id,
+            graph_id=graph_id,
+            node_id=node_id,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 __all__ = ["router"]

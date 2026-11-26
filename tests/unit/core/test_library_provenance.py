@@ -148,6 +148,29 @@ def test_upload_provenance_rejects_instance_facts() -> None:
         )
 
 
+def test_authored_provenance_round_trips_with_trimmed_name() -> None:
+    provenance = LibraryProvenance.from_authored(saved_at=NOW, name="  Draft  ")
+    assert LibraryProvenance.model_validate_json(provenance.model_dump_json()) == (
+        LibraryProvenance(source="authored", saved_at=NOW, name="Draft")
+    )
+
+
+@pytest.mark.parametrize(
+    "facts",
+    [
+        {"name": " "},
+        {"name": "a" * 161},
+        {"name": "Draft", "original_filename": "draft.txt"},
+        {"name": "Draft", "call_path": ["call"]},
+    ],
+)
+def test_authored_provenance_rejects_invalid_facts(facts: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        LibraryProvenance.model_validate(
+            {"source": "authored", "saved_at": NOW, **facts}
+        )
+
+
 def test_instance_provenance_rejects_an_uploaded_filename() -> None:
     with pytest.raises(ValidationError):
         LibraryProvenance(

@@ -19,13 +19,14 @@ import {
   withAnnotationColor,
   withAnnotationLayout,
   withAnnotationText,
-  withViewerBinding,
+  withViewerBindingSaved,
   withViewerEdge,
   withViewerEdgeRoute,
   withViewerLayout,
   withViewerMode,
   withoutAnnotation,
   withoutViewer,
+  withoutViewerBinding,
   withoutViewerEdgesFromNodes,
 } from "./artifact-viewer-edits";
 import type { ArtifactViewerBinding } from "./artifact-interactions";
@@ -165,20 +166,41 @@ describe("artifact viewer presentation edits", () => {
     expect(next.edges[1]?.data?.routeOffset).toEqual({ x: 12, y: -8 });
   });
 
-  it("swaps a binding by identity", () => {
+  it("keeps an edited link in its place and puts a new one at the end", () => {
     const current = state({
       bindings: [binding("b1", "viewer-a"), binding("b2", "viewer-c")],
     });
 
-    const next = withViewerBinding(current, "b1", {
+    const edited = withViewerBindingSaved(current, {
       ...binding("b1", "viewer-z"),
-      emptySelection: "show_all",
+      effects: ["highlight"],
     });
+    const added = withViewerBindingSaved(current, binding("b3", "viewer-d"));
 
-    expect(next.bindings.map((item) => item.sourceViewerId)).toEqual([
+    expect(edited.bindings.map((item) => item.id)).toEqual(["b1", "b2"]);
+    expect(edited.bindings.map((item) => item.sourceViewerId)).toEqual([
       "viewer-z",
       "viewer-c",
     ]);
+    expect(added.bindings.map((item) => item.id)).toEqual(["b1", "b2", "b3"]);
+    expect(current.bindings).toHaveLength(2);
+  });
+
+  it("removes one link and leaves the cards and the other links alone", () => {
+    const current = state({
+      nodes: [viewer("a"), viewer("b")],
+      edges: [viewerEdge("e1", "a", "b")],
+      bindings: [binding("b1", "viewer-a"), binding("b2", "viewer-c")],
+    });
+
+    const next = withoutViewerBinding(current, "b1");
+
+    expect(next.bindings.map((item) => item.id)).toEqual(["b2"]);
+    expect(next.nodes).toBe(current.nodes);
+    expect(next.edges).toBe(current.edges);
+    expect(withoutViewerBinding(next, "never-there").bindings).toEqual(
+      next.bindings,
+    );
   });
 
   it("removes a card with the edges and bindings that named it", () => {

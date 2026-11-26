@@ -28,6 +28,7 @@ import type { ActiveSavedGraph } from "../collaboration/useSavedGraphLifecycle";
 import {
   RUN_SURFACE_POLL_INTERVAL_MS,
   runRejectionMessage,
+  savedGraphRunBlockedReason,
   useRunExecution,
 } from "./useRunExecution";
 
@@ -514,6 +515,55 @@ describe("reading what a Graph's node instances hold", () => {
   });
 });
 
+describe("savedGraphRunBlockedReason", () => {
+  const open = {
+    activeGraph: true,
+    canStartRun: true,
+    projectEditsTrusted: true,
+    hasUnsyncedRoomEdits: false,
+    isDirty: false,
+  };
+
+  it("allows a saved graph whose edits are trusted and current", () => {
+    expect(savedGraphRunBlockedReason(open)).toBeNull();
+  });
+
+  it("names the first reason a run is blocked", () => {
+    expect(
+      savedGraphRunBlockedReason({
+        ...open,
+        activeGraph: false,
+        canStartRun: false,
+      }),
+    ).toBe("Save the graph before running it.");
+    expect(savedGraphRunBlockedReason({ ...open, canStartRun: false })).toBe(
+      "You do not have permission to run this workflow.",
+    );
+    expect(
+      savedGraphRunBlockedReason({
+        ...open,
+        projectEditsTrusted: false,
+        hasUnsyncedRoomEdits: true,
+        isDirty: true,
+      }),
+    ).toBe(
+      "Connection to the server was lost. Wait for reconnection or reload the page before running.",
+    );
+    expect(
+      savedGraphRunBlockedReason({
+        ...open,
+        hasUnsyncedRoomEdits: true,
+        isDirty: true,
+      }),
+    ).toBe(
+      "Recent changes failed to save to the server. Reload the page to resync before running.",
+    );
+    expect(savedGraphRunBlockedReason({ ...open, isDirty: true })).toBe(
+      "Waiting for recent edits to finish saving before running.",
+    );
+  });
+});
+
 describe("asking for a Run", () => {
   it("submits OCR as the target while leaving its reader as an upstream dependency", async () => {
     const reader: Port = {
@@ -759,8 +809,31 @@ describe("asking for a Run", () => {
     });
 
     expect(setRunError).toHaveBeenCalledWith(
-      "Wait for the Project to synchronize before running.",
+      "Waiting for recent edits to finish saving before running.",
     );
+    expect(api.startRun).not.toHaveBeenCalled();
+    await hook.unmount();
+  });
+
+  it("uses the blocked reason the workbench computed", async () => {
+    const setRunError = vi.fn();
+    const canvas = canvasState([workflowNode("a")]);
+    const reason = "You do not have permission to run this workflow.";
+    const hook = await renderHook(
+      useRunExecution,
+      hookOptions(canvas, {
+        setRunError,
+        canRunSavedGraph: false,
+        runBlockedReason: reason,
+      }),
+    );
+    await settle();
+
+    await React.act(async () => {
+      await hook.result.current.runWorkflow("all");
+    });
+
+    expect(setRunError).toHaveBeenCalledWith(reason);
     expect(api.startRun).not.toHaveBeenCalled();
     await hook.unmount();
   });

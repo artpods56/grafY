@@ -568,7 +568,12 @@ async def test_operation_timeouts(proxy: Harness) -> None:
     assert proxy.requests[-1].extensions["timeout"]["read"] == 30
 
 
-async def test_a_window_timeout_is_retried_once(proxy: Harness) -> None:
+@pytest.mark.parametrize(
+    "fault", ["ReadTimeout", "ReadError", "WriteError", "RemoteProtocolError"]
+)
+async def test_a_transient_window_failure_is_retried_once(
+    proxy: Harness, fault: str
+) -> None:
     import httpx
     from grafy_api.artifacts.images import TiffSource
 
@@ -579,7 +584,7 @@ async def test_a_window_timeout_is_retried_once(proxy: Harness) -> None:
         calls += 1
         assert request.extensions["timeout"]["read"] == 30
         if calls == 1:
-            raise httpx.ReadTimeout("slow window", request=request)
+            raise getattr(httpx, fault)("transient", request=request)
         return httpx.Response(
             200,
             content=b"png",

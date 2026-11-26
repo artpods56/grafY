@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ApiError } from "@/lib/api/client";
 import type {
   ActiveRunSummary,
   CollaborativeHead,
@@ -1021,6 +1022,54 @@ describe("ProjectRoomSession", () => {
     expect(reconnectReady?.head.collaboration_sequence).toBe(5);
   });
 
+  it("drops a batch the server keeps closing on instead of replaying it forever", async () => {
+    const onCommandRejected = vi.fn();
+    const { session, socket } = connectReadySession({
+      createCommandId: () => "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      onCommandRejected,
+    });
+
+    const poisoned = session.submitCommands([renameProject("Unreadable")]);
+    let settled = false;
+    void poisoned.catch(() => {
+      settled = true;
+    });
+
+    // The first protocol_error close may be about any frame: replay once.
+    socket.emitClose(CLOSE_PROTOCOL_ERROR, "protocol_error");
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(session.getStatus()).toBe("unsynchronized");
+
+    session.connect();
+    const second = reconnectedSocket(socket);
+    second.emitMessage(roomReady());
+    expect(second.sent).toHaveLength(1);
+    expect(second.lastSent()).toMatchObject({
+      command_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    });
+
+    // The same batch closed the room again: it is the frame, not the network.
+    second.emitClose(CLOSE_PROTOCOL_ERROR, "protocol_error");
+    await expect(poisoned).rejects.toMatchObject({
+      name: "ProjectRoomCommandError",
+      errorCode: "invalid_command",
+    });
+    expect(onCommandRejected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        error_code: "invalid_command",
+      }),
+    );
+
+    // The next room is ready and sends nothing: the loop is broken.
+    session.connect();
+    const third = reconnectedSocket(second);
+    third.emitMessage(roomReady());
+    expect(session.getStatus()).toBe("ready");
+    expect(third.sent).toHaveLength(0);
+  });
+
   it("rejects a command when the server rejects it", async () => {
     const { session, socket } = connectReadySession({
       createCommandId: () => "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -1710,5 +1759,238 @@ describe("ProjectRoomSession", () => {
     expect(session.getStatus()).toBe("stopped");
     expect(session.getParticipants()).toHaveLength(0);
     expect(onPresenceChange).toHaveBeenCalled();
+  });
+});
+
+async function flushSessionProbe(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function openProbedSession(
+  probe: NonNullable<ProjectRoomSessionOptions["probeSession"]>,
+  options: Partial<ProjectRoomSessionOptions> = {},
+): { session: ProjectRoomSession; socket: FakeWebSocket } {
+  const session = new ProjectRoomSession({
+    workspaceId: WORKSPACE_ID,
+    projectId: PROJECT_ID,
+    webSocketFactory: (url) => new FakeWebSocket(url) as unknown as WebSocket,
+    reconnectDelayMs: 10,
+    ...options,
+    probeSession: probe,
+  });
+  session.connect();
+  const socket = FakeWebSocket.instances.at(-1);
+  if (!socket) throw new Error("expected websocket");
+  socket.open();
+  socket.emitMessage(roomReady());
+  return { session, socket };
+}
+
+describe("project room session expiration probe", () => {
+  it("stops reconnecting when a dropped socket's session probe is 401", async () => {
+    vi.useFakeTimers();
+    const probe = vi.fn((_signal: AbortSignal) =>
+      Promise.reject(new ApiError(401, "unauthorized")),
+    );
+    const { session, socket } = openProbedSession(probe);
+    const before = FakeWebSocket.instances.length;
+
+    socket.emitClose(1006, "connection_lost");
+    await flushSessionProbe();
+
+    expect(probe).toHaveBeenCalledOnce();
+    expect(probe.mock.calls[0]?.[0]).toBeInstanceOf(AbortSignal);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(FakeWebSocket.instances).toHaveLength(before);
+    expect(session.getStatus()).toBe("unsynchronized");
+    session.disconnect();
+  });
+
+  it("keeps reconnecting when the session probe succeeds", async () => {
+    vi.useFakeTimers();
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const { socket } = openProbedSession(probe);
+
+    socket.emitClose(1006, "");
+    await flushSessionProbe();
+
+    expect(probe).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(FakeWebSocket.instances.length).toBeGreaterThan(1);
+  });
+
+  it.each([
+    ["503", new ApiError(503, "unavailable")],
+    ["a network failure", new TypeError("offline")],
+  ])(
+    "keeps reconnecting when the session probe fails with %s",
+    async (_label, error) => {
+      vi.useFakeTimers();
+      const probe = vi.fn().mockRejectedValue(error);
+      const { socket } = openProbedSession(probe);
+
+      socket.emitClose(1006, "connection_lost");
+      await flushSessionProbe();
+
+      expect(probe).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(FakeWebSocket.instances.length).toBeGreaterThan(1);
+    },
+  );
+
+  it("probes once per reconnect episode and again after the room is ready", async () => {
+    vi.useFakeTimers();
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const { socket } = openProbedSession(probe);
+
+    socket.emitClose(1006, "");
+    await flushSessionProbe();
+    await vi.advanceTimersByTimeAsync(10);
+    FakeWebSocket.instances.at(-1)!.emitClose(1006, "");
+    await flushSessionProbe();
+    expect(probe).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(20);
+    const restored = FakeWebSocket.instances.at(-1)!;
+    restored.open();
+    restored.emitMessage(roomReady());
+    restored.emitClose(1006, "");
+    await flushSessionProbe();
+    expect(probe).toHaveBeenCalledTimes(2);
+  });
+
+  it("probes again when a drop lands while the previous probe is still in flight after ready", async () => {
+    vi.useFakeTimers();
+    let release: (() => void) | undefined;
+    const probe = vi.fn(
+      (signal: AbortSignal) =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+          signal.addEventListener("abort", () => resolve());
+        }),
+    );
+    const { session, socket } = openProbedSession(probe);
+
+    socket.emitClose(1006, "");
+    await Promise.resolve();
+    expect(probe).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(10);
+    const next = FakeWebSocket.instances.at(-1)!;
+    next.open();
+    next.emitMessage(roomReady());
+    next.emitClose(1006, "");
+    await Promise.resolve();
+    expect(probe).toHaveBeenCalledOnce();
+
+    release?.();
+    await flushSessionProbe();
+    expect(probe).toHaveBeenCalledTimes(2);
+    session.disconnect();
+  });
+
+  it("probes on access_revoked without opening another socket", async () => {
+    vi.useFakeTimers();
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const { session, socket } = openProbedSession(probe);
+    const before = FakeWebSocket.instances.length;
+
+    socket.emitClose(CLOSE_ACCESS_REVOKED, "access_revoked");
+    await flushSessionProbe();
+
+    expect(probe).toHaveBeenCalledOnce();
+    expect(session.getStatus()).toBe("stopped");
+    expect(session.getTerminalReason()).toBe("access_revoked");
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(FakeWebSocket.instances).toHaveLength(before);
+    session.disconnect();
+  });
+
+  it("does not probe when the room closes because the project was deleted", async () => {
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const { socket } = openProbedSession(probe);
+
+    socket.emitClose(CLOSE_PROJECT_DELETED, "project_deleted");
+    await flushSessionProbe();
+
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("does not probe a protocol error", async () => {
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const { socket } = openProbedSession(probe);
+
+    socket.emitMessage({ protocol_version: 1, type: "room.ready" });
+    await flushSessionProbe();
+
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("probes a failed handshake and stops retrying on 401", async () => {
+    vi.useFakeTimers();
+    const factory = vi.fn(() => {
+      throw new Error("handshake refused");
+    });
+    const probe = vi.fn((_signal: AbortSignal) =>
+      Promise.reject(new ApiError(401, "unauthorized")),
+    );
+    const session = new ProjectRoomSession({
+      workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
+      webSocketFactory: factory,
+      reconnectDelayMs: 10,
+      probeSession: probe,
+    });
+
+    session.connect();
+    await flushSessionProbe();
+
+    expect(factory).toHaveBeenCalledOnce();
+    expect(probe).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(factory).toHaveBeenCalledOnce();
+    session.disconnect();
+  });
+
+  it("retries a failed handshake when the session probe is not 401", async () => {
+    vi.useFakeTimers();
+    const factory = vi.fn(() => {
+      throw new Error("handshake refused");
+    });
+    const probe = vi.fn().mockRejectedValue(new ApiError(503, "unavailable"));
+    const session = new ProjectRoomSession({
+      workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
+      webSocketFactory: factory,
+      reconnectDelayMs: 10,
+      probeSession: probe,
+    });
+
+    session.connect();
+    await flushSessionProbe();
+    expect(factory).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(10);
+    expect(factory).toHaveBeenCalledTimes(2);
+    session.disconnect();
+  });
+
+  it("aborts an in-flight session probe on disconnect", async () => {
+    let signal: AbortSignal | undefined;
+    const probe = vi.fn((next: AbortSignal) => {
+      signal = next;
+      return new Promise<void>(() => undefined);
+    });
+    const { session, socket } = openProbedSession(probe);
+
+    socket.emitClose(1006, "");
+    await Promise.resolve();
+    expect(probe).toHaveBeenCalledOnce();
+
+    session.disconnect();
+    expect(signal?.aborted).toBe(true);
   });
 });

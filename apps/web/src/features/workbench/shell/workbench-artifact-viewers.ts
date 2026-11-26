@@ -11,12 +11,13 @@ import {
   withAnnotationLayout,
   withAnnotationText,
   withoutAnnotation,
-  withViewerBinding,
+  withViewerBindingSaved,
   withViewerEdge,
   withViewerEdgeRoute,
   withViewerLayout,
   withViewerMode,
   withoutViewer,
+  withoutViewerBinding,
 } from "../artifacts/artifact-viewer-edits";
 import type {
   ArtifactViewerCanvasState,
@@ -24,8 +25,6 @@ import type {
   ArtifactViewerNode,
 } from "../artifacts/artifact-viewer";
 import type {
-  ArtifactInteractionField,
-  ArtifactKeySelection,
   ArtifactViewerActivity,
   ArtifactViewerBinding,
 } from "../artifacts/artifact-interactions";
@@ -76,12 +75,6 @@ export type ArtifactViewerCommandDeps = {
   setArtifactViewers: React.Dispatch<
     React.SetStateAction<ArtifactViewerCanvasState>
   >;
-  setArtifactViewerSelections: React.Dispatch<
-    React.SetStateAction<Record<string, ArtifactKeySelection>>
-  >;
-  setArtifactViewerFields: React.Dispatch<
-    React.SetStateAction<Record<string, ArtifactInteractionField[]>>
-  >;
   setArtifactViewerActivities: React.Dispatch<
     React.SetStateAction<
       Record<string, { activity: ArtifactViewerActivity; revision: number }>
@@ -114,8 +107,6 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
     localAuthoringEnabledRef,
     presentationRoomSyncRef,
     setArtifactViewerActivities,
-    setArtifactViewerFields,
-    setArtifactViewerSelections,
     setArtifactViewers,
     setRunError,
   } = deps;
@@ -181,28 +172,6 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
     [commitArtifactViewers],
   );
 
-  const updateArtifactViewerSelection = React.useCallback(
-    (nodeId: string, selection: ArtifactKeySelection) => {
-      setArtifactViewerSelections((current) => ({
-        ...current,
-        [nodeId]: selection,
-      }));
-    },
-    [setArtifactViewerSelections],
-  );
-
-  const updateArtifactViewerFields = React.useCallback(
-    (nodeId: string, fields: ArtifactInteractionField[]) => {
-      setArtifactViewerFields((current) => {
-        if (JSON.stringify(current[nodeId] ?? []) === JSON.stringify(fields)) {
-          return current;
-        }
-        return { ...current, [nodeId]: fields };
-      });
-    },
-    [setArtifactViewerFields],
-  );
-
   const updateArtifactViewerActivity = React.useCallback(
     (nodeId: string, activity: ArtifactViewerActivity | null) => {
       if (!activity) {
@@ -229,10 +198,19 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
     [artifactViewerActivityRevisionRef, setArtifactViewerActivities],
   );
 
-  const updateArtifactViewerBinding = React.useCallback(
-    (bindingId: string, binding: ArtifactViewerBinding) => {
+  const saveArtifactViewerBinding = React.useCallback(
+    (binding: ArtifactViewerBinding) => {
       commitArtifactViewers((current) =>
-        withViewerBinding(current, bindingId, binding),
+        withViewerBindingSaved(current, binding),
+      );
+    },
+    [commitArtifactViewers],
+  );
+
+  const removeArtifactViewerBinding = React.useCallback(
+    (bindingId: string) => {
+      commitArtifactViewers((current) =>
+        withoutViewerBinding(current, bindingId),
       );
     },
     [commitArtifactViewers],
@@ -266,16 +244,6 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
         artifactViewers.nodes.find((node) => node.id === nodeId),
       ]);
       commitArtifactViewers((current) => withoutViewer(current, nodeId));
-      setArtifactViewerSelections((current) => {
-        const next = { ...current };
-        delete next[nodeId];
-        return next;
-      });
-      setArtifactViewerFields((current) => {
-        const next = { ...current };
-        delete next[nodeId];
-        return next;
-      });
       setArtifactViewerActivities((current) => {
         if (!current[nodeId]) return current;
         const next = { ...current };
@@ -288,8 +256,6 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
       commitArtifactViewers,
       dropOriginsCarriedByCards,
       setArtifactViewerActivities,
-      setArtifactViewerFields,
-      setArtifactViewerSelections,
     ],
   );
 
@@ -335,13 +301,12 @@ export function useArtifactViewerCommands(deps: ArtifactViewerCommandDeps) {
     updateAnnotationColor,
     updateAnnotationLayout,
     updateAnnotationText,
+    removeArtifactViewerBinding,
+    saveArtifactViewerBinding,
     updateArtifactViewerActivity,
-    updateArtifactViewerBinding,
     updateArtifactViewerEdge,
     updateArtifactViewerEdgeRoute,
-    updateArtifactViewerFields,
     updateArtifactViewerLayout,
     updateArtifactViewerMode,
-    updateArtifactViewerSelection,
   };
 }

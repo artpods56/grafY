@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { NodeRegistry, NodeSpec, Port } from "@/lib/api";
 import {
@@ -43,7 +43,12 @@ import {
   CellAgentCard,
   CellAnnotationCard,
 } from "./CellAnnotationAndAgentCards";
-import { CellArtifactCard, CellCollectionCard } from "./CellArtifactCard";
+import {
+  artifactCardAuthoringAction,
+  artifactMenuItems,
+  CellArtifactCard,
+  CellCollectionCard,
+} from "./CellArtifactCard";
 import { CellOperatorCard } from "./CellOperatorCard";
 import { buildOperatorCardsAndSurfaces } from "../cell-operator-adapter";
 import {
@@ -410,6 +415,33 @@ describe("CellOperatorCard", () => {
     expect(selected).toContain('data-card-status="error"');
     expect(selected).toContain("Error");
     expect(selected).not.toContain('data-card-run-error="true"');
+  });
+
+  it("names why the run button is unavailable and keeps its accessible name", () => {
+    const reason = "Waiting for recent edits to finish saving before running.";
+    const headerOf = (html: string) =>
+      html.slice(
+        html.indexOf('data-card-header="true"'),
+        html.indexOf("<article"),
+      );
+    const blocked = headerOf(
+      renderOperator(
+        operatorSurface({ runDisabled: true, runDisabledReason: reason }),
+        { selected: true },
+      ).html,
+    );
+    expect(blocked).toContain('aria-label="Run Merge"');
+    expect(blocked).toContain(`title="${reason}"`);
+    expect(blocked).toContain("disabled");
+
+    const unnamed = headerOf(
+      renderOperator(operatorSurface({ runDisabled: true }), {
+        selected: true,
+      }).html,
+    );
+    expect(unnamed).toContain('aria-label="Run Merge"');
+    expect(unnamed).toContain('title="Run Merge"');
+    expect(unnamed).not.toContain(reason);
   });
 
   it("omits the run action without an onRun handler", () => {
@@ -893,7 +925,131 @@ function renderArtifact(
   );
 }
 
+describe("artifactCardAuthoringAction", () => {
+  it("offers Edit on a standalone authorable card and Duplicate & Edit on a producer card", () => {
+    expect(
+      artifactCardAuthoringAction({
+        authorable: true,
+        producerLinked: false,
+        itemCount: 1,
+        hasArtifact: true,
+      }),
+    ).toBe("edit");
+    expect(
+      artifactCardAuthoringAction({
+        authorable: true,
+        producerLinked: true,
+        itemCount: 1,
+        hasArtifact: true,
+      }),
+    ).toBe("duplicate");
+    expect(
+      artifactCardAuthoringAction({
+        authorable: true,
+        producerLinked: false,
+        itemCount: 2,
+        hasArtifact: true,
+      }),
+    ).toBeNull();
+    expect(
+      artifactCardAuthoringAction({
+        authorable: false,
+        producerLinked: false,
+        itemCount: 1,
+        hasArtifact: true,
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("CellArtifactCard", () => {
+  const menuSurface: ArtifactCardSurfaceData = {
+    ...PREVIEWS.table,
+    workspaceId: "ws",
+    artifact: {
+      artifact_id: "table",
+      artifact_type: "table.data",
+      schema_version: 1,
+    },
+  };
+  const menuInput = {
+    cardId: ARTIFACT_CARD.id,
+    surface: menuSurface,
+    sequence: false,
+    canExpandSequence: false,
+    authoringAction: null,
+  };
+
+  it("offers each structured format and saves the card's artifact to the Library", () => {
+    const onDownload = vi.fn();
+    const onSaveToLibrary = vi.fn();
+    const items = artifactMenuItems({
+      ...menuInput,
+      surface: {
+        ...menuSurface,
+        downloadFormats: [
+          { format: "csv", label: "CSV" },
+          { format: "json", label: "JSON" },
+        ],
+      },
+      onDownload,
+      onSaveToLibrary,
+    });
+    expect(items?.map((item) => item.label)).toEqual([
+      "Download CSV",
+      "Download JSON",
+      "Save to Library",
+    ]);
+    items?.forEach((item) => item.onSelect());
+    expect(onDownload.mock.calls).toEqual([
+      [ARTIFACT_CARD.id, "csv"],
+      [ARTIFACT_CARD.id, "json"],
+    ]);
+    expect(onSaveToLibrary).toHaveBeenCalledExactlyOnceWith(ARTIFACT_CARD.id);
+  });
+
+  it("offers a raw download and disables saving a card already in the Library", () => {
+    const onDownload = vi.fn();
+    const items = artifactMenuItems({
+      ...menuInput,
+      surface: {
+        ...PREVIEWS.tiff,
+        workspaceId: "ws",
+        artifact: {
+          artifact_id: "scan",
+          artifact_type: "file.tiff",
+          schema_version: 1,
+        },
+        downloadFormats: [],
+        inLibrary: true,
+      },
+      onDownload,
+      onSaveToLibrary: vi.fn(),
+    });
+    expect(items).toMatchObject([
+      { label: "Download" },
+      { label: "Saved in Library", disabled: true },
+    ]);
+    items?.find((item) => item.label === "Download")?.onSelect();
+    expect(onDownload).toHaveBeenCalledExactlyOnceWith(ARTIFACT_CARD.id, null);
+  });
+
+  it("hides Library saving without a callback and hides both actions on stacks", () => {
+    const onDownload = vi.fn();
+    expect(artifactMenuItems({ ...menuInput, onDownload })).toMatchObject([
+      { label: "Download" },
+    ]);
+    expect(
+      artifactMenuItems({
+        ...menuInput,
+        surface: { ...menuSurface, itemCount: 2 },
+        sequence: true,
+        onDownload,
+        onSaveToLibrary: vi.fn(),
+      }),
+    ).toBeUndefined();
+  });
+
   for (const kind of Object.keys(PREVIEWS) as ArtifactPreviewKind[]) {
     it(`renders a ${kind} preview inside its exact cells`, () => {
       const html = renderArtifact(PREVIEWS[kind]);
@@ -2666,5 +2822,102 @@ describe("engine picker and pre-run output dimming", () => {
       open.card.ports.find((port) => port.id === "boxes")?.mutedCaption,
     ).toBeUndefined();
     expect(open.surface.servicePortPrompts?.engine?.mode).toBe("pick");
+  });
+
+  it("dims exclusive sibling inputs and input-gated outputs until their lane is connected", () => {
+    const transliterateSpec = nodeSpecFixture({
+      operator_id: "text.transliterate_cyrillic",
+      title: "Transliterate Cyrillic",
+      plugin_slug: "ocr",
+      inputs: [
+        artifactPortFixture({
+          name: "text",
+          title: "Text",
+          direction: "input",
+          required: false,
+          exclusive_group: "source",
+        }),
+        artifactPortFixture({
+          name: "recognized",
+          title: "Recognized text",
+          direction: "input",
+          required: false,
+          exclusive_group: "source",
+        }),
+      ],
+      outputs: [
+        artifactPortFixture({
+          name: "text",
+          title: "Latin text",
+          direction: "output",
+          required: false,
+          requires_input: "text",
+        }),
+        artifactPortFixture({
+          name: "recognized",
+          title: "Latin detections",
+          direction: "output",
+          required: false,
+          requires_input: "recognized",
+        }),
+      ],
+    });
+    const sourceSpec = nodeSpecFixture({
+      operator_id: "test.source",
+      title: "Source",
+      plugin_slug: "ocr",
+      outputs: [
+        artifactPortFixture({
+          name: "out",
+          title: "Markdown",
+          direction: "output",
+        }),
+      ],
+    });
+
+    const idle = ocrScene([sourceSpec, transliterateSpec]);
+    const idleCard = operatorOf(idle, "text.transliterate_cyrillic");
+    expect(
+      idleCard.card.ports.find(
+        (port) => port.direction === "output" && port.id === "text",
+      )?.mutedCaption,
+    ).toBe("Connect Text");
+    expect(
+      idleCard.card.ports.find(
+        (port) => port.direction === "output" && port.id === "recognized",
+      )?.mutedCaption,
+    ).toBe("Connect Recognized text");
+
+    const wired = ocrScene(
+      [sourceSpec, transliterateSpec],
+      [
+        ocrEdge(
+          "e1",
+          "test.source",
+          "out",
+          "text.transliterate_cyrillic",
+          "text",
+        ),
+      ],
+    );
+    const wiredCard = operatorOf(wired, "text.transliterate_cyrillic");
+    expect(
+      wiredCard.card.ports.find(
+        (port) => port.direction === "output" && port.id === "text",
+      )?.mutedCaption,
+    ).toBeUndefined();
+    expect(
+      wiredCard.card.ports.find(
+        (port) => port.direction === "output" && port.id === "recognized",
+      )?.mutedCaption,
+    ).toBe("Connect Recognized text");
+    expect(
+      wiredCard.card.ports.find(
+        (port) => port.direction === "input" && port.id === "recognized",
+      )?.mutedCaption,
+    ).toBe("Using Text");
+    const html = paintOperator(wiredCard.card, wiredCard.surface);
+    expect(html).toContain('data-port-caption="Using Text"');
+    expect(html).toContain('data-port-caption="Connect Recognized text"');
   });
 });

@@ -2408,6 +2408,11 @@ function CellOperatorCardImpl(props: CellOperatorCardProps) {
           variant="ghost"
           label={`Run ${card.title}`}
           disabled={surface.runDisabled}
+          title={
+            surface.runDisabled && surface.runDisabledReason
+              ? surface.runDisabledReason
+              : undefined
+          }
           onPointerDown={stopCardDrag}
           onClick={() => onRun(card.id)}
         >

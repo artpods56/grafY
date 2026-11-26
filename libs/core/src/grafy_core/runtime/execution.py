@@ -142,6 +142,14 @@ class NodeRuntime:
         )
         if unsupported:
             context.output_metadata["unsupported_outputs"] = unsupported
+        gated = _gated_outputs(
+            output_contract,
+            resolved_contracts.input_contract,
+            validated_output,
+            inputs,
+        )
+        if gated:
+            context.output_metadata["gated_outputs"] = gated
         recorded: JsonObject = {} if metadata is None else dict(metadata)
         if context.output_metadata:
             recorded.update(context.output_metadata)
@@ -180,3 +188,35 @@ def _unsupported_outputs(
         else:
             unsupported[port.name] = provider.title
     return unsupported
+
+
+def _gated_outputs(
+    output_contract: OutputContract[BaseModel],
+    input_contract: InputContract[BaseModel],
+    output: BaseModel,
+    inputs: Mapping[str, object],
+) -> dict[str, str]:
+    gated: dict[str, str] = {}
+    for port in output_contract.ports.values():
+        required_input = port.requires_input
+        if required_input is None:
+            continue
+        input_port = input_contract.ports[required_input]
+        input_label = (input_port.title or "").strip() or required_input.replace(
+            "_", " "
+        )
+        connected = inputs.get(required_input) is not None
+        value: object = getattr(output, port.name)
+        if connected:
+            if value is None:
+                raise UserFacingNodeError(
+                    f"Output {port.name!r} was not produced even though "
+                    f"{input_label} was connected"
+                )
+        elif value is not None:
+            raise UserFacingNodeError(
+                f"Output {port.name!r} was produced without {input_label} connected"
+            )
+        else:
+            gated[port.name] = input_label
+    return gated

@@ -31,13 +31,17 @@ from grafy_api.artifacts.models import (
     ArtifactExactMatchRow,
     GeoArtifactRefPayload,
     GeoBounds,
+    GeoCategorizedPointStyle,
     GeoFeatureQueryResponse,
+    GeoJsonRenderSourceResponse,
     GeoMapDocumentPayload,
     GeoMapLayerPayload,
+    GeoPropertyFieldResponse,
     GeoRasterRenderSourceResponse,
     GeoRasterStyle,
     GeoRenderLayerResponse,
     GeoRenderResponse,
+    GeoVectorStyle,
     interaction_values_equal,
 )
 
@@ -51,9 +55,9 @@ RASTER_SOURCE_TYPES = (TIFF_ARTIFACT_TYPE,)
 
 @dataclass(frozen=True, slots=True)
 class _ResolvedRenderLayer:
-    """One map layer's rendered layer (None when nothing draws it) and footprint."""
+    """One map layer's rendered layer and footprint."""
 
-    layer: GeoRenderLayerResponse | None
+    layer: GeoRenderLayerResponse
     bounds: GeoBounds | None
 
 
@@ -134,6 +138,60 @@ def collection_bounds(artifact: ArtifactObject) -> GeoBounds | None:
         numbers.append(float(item))
     west, south, east, north = numbers
     return (west, south, east, north)
+
+
+def _feature_render_layer(
+    artifact: ArtifactObject,
+    *,
+    layer_id: str,
+    title: str,
+    visible: bool,
+    opacity: float,
+    min_zoom: int,
+    max_zoom: int,
+    style: GeoVectorStyle | GeoCategorizedPointStyle,
+) -> GeoRenderLayerResponse:
+    """A stored feature collection drawn by the browser from its GeoJSON.
+
+    The descriptor names the collection; the browser fetches the stored
+    features when it draws them. Nothing is derived when the collection is
+    written.
+    """
+    # The property columns recorded when the collection was written, so a card
+    # linked to the map can offer them as selection fields.
+    invalid_fields = (
+        f"Feature collection artifact {artifact.id} has invalid "
+        "property_fields metadata"
+    )
+    stored_fields = artifact.metadata.get("property_fields", [])
+    if not isinstance(stored_fields, list):
+        raise ArtifactContentUnavailableError(invalid_fields)
+    try:
+        fields = [
+            GeoPropertyFieldResponse.model_validate(field)
+            for field in cast(list[object], stored_fields)
+        ]
+    except ValueError as exc:
+        raise ArtifactContentUnavailableError(invalid_fields) from exc
+    return GeoRenderLayerResponse(
+        id=layer_id,
+        title=title,
+        visible=visible,
+        opacity=opacity,
+        min_zoom=min_zoom,
+        max_zoom=max_zoom,
+        source=GeoJsonRenderSourceResponse(
+            artifact_id=artifact.id,
+            data_url=(
+                f"/v1/workspaces/{artifact.workspace_id}/artifacts/"
+                f"{artifact.id}/geo/features.geojson"
+            ),
+            bounds=collection_bounds(artifact),
+            feature_count=feature_count(artifact),
+            fields=fields,
+        ),
+        style=style,
+    )
 
 
 async def resolve_exact_artifacts(
@@ -230,12 +288,7 @@ class ArtifactGeoService:
         *,
         workspace_id: UUID,
     ) -> list[UUID]:
-        """Feature collections one geo artifact reads, in draw order.
-
-        Feature data and how it is drawn are separate questions: a linked query
-        covers the collections a map references even while the renderer draws no
-        vector layer for them.
-        """
+        """Feature collections one geo artifact reads, in draw order."""
         if artifact.artifact_type == GEO_FEATURE_COLLECTION_ARTIFACT_TYPE:
             return [artifact.id]
         if artifact.artifact_type == GEO_MAP_LAYER_ARTIFACT_TYPE:
@@ -414,15 +467,23 @@ class ArtifactGeoService:
             )
         try:
             if artifact.artifact_type == GEO_FEATURE_COLLECTION_ARTIFACT_TYPE:
-                # Exact features, styles and bounds are all readable; nothing
-                # draws them until a GeoJSON renderer exists (CONTEXT.md, spatial
-                # artifact model).
+                name = artifact.metadata.get("source_name")
+                feature_layer = _feature_render_layer(
+                    artifact,
+                    layer_id=str(artifact.id),
+                    title=name if isinstance(name, str) and name else "Features",
+                    visible=True,
+                    opacity=1.0,
+                    min_zoom=0,
+                    max_zoom=22,
+                    style=GeoVectorStyle.default(),
+                )
                 return GeoRenderResponse(
                     artifact_id=artifact.id,
                     kind="feature_collection",
                     basemap="openstreetmap",
-                    initial_bounds=collection_bounds(artifact),
-                    layers=[],
+                    initial_bounds=feature_layer.source.bounds,
+                    layers=[feature_layer],
                 )
             if artifact.artifact_type == TIFF_ARTIFACT_TYPE:
                 tiler = require_raster_tiler(self._tiler, self._tiler_config)
@@ -456,7 +517,7 @@ class ArtifactGeoService:
                     artifact,
                     workspace_id=workspace_id,
                 )
-                layers = [] if resolved.layer is None else [resolved.layer]
+                layers = [resolved.layer]
                 return GeoRenderResponse(
                     artifact_id=artifact.id,
                     kind="map_layer",
@@ -480,8 +541,7 @@ class ArtifactGeoService:
                         layer_artifact,
                         workspace_id=workspace_id,
                     )
-                    if resolved.layer is not None:
-                        document_layers.append(resolved.layer)
+                    document_layers.append(resolved.layer)
                     if resolved.bounds is not None:
                         layer_bounds.append(resolved.bounds)
                 effective_bounds = document.initial_bounds
@@ -530,10 +590,17 @@ class ArtifactGeoService:
             )[0]
             if layer.style.kind == "raster":
                 raise ValueError("Feature collection layer has non-vector style")
-            # Exact features stay readable through /geo/feature* and the layer
-            # keeps its footprint for the camera; only the rendered layer is
-            # missing, until its GeoJSON renderer exists.
-            return _ResolvedRenderLayer(None, collection_bounds(source_artifact))
+            rendered = _feature_render_layer(
+                source_artifact,
+                layer_id=str(layer_artifact.id),
+                title=layer.title,
+                visible=layer.visible,
+                opacity=layer.opacity,
+                min_zoom=layer.min_zoom,
+                max_zoom=layer.max_zoom,
+                style=layer.style,
+            )
+            return _ResolvedRenderLayer(rendered, rendered.source.bounds)
         if layer.source.kind == "raster_scan":
             source_artifact = (
                 await resolve_exact_artifacts(

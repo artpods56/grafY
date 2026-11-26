@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "./client";
-import { deleteLibraryArtifact, LibraryArtifactInUseError } from "./library";
+import {
+  deleteLibraryArtifact,
+  LibraryArtifactInUseError,
+  saveArtifactToLibrary,
+} from "./library";
 
 /**
  * The seam between the Library artifact routes and the panel.
@@ -49,6 +53,23 @@ function lastRequest(): RecordedRequest {
 afterEach(() => {
   vi.unstubAllGlobals();
   requests.length = 0;
+});
+
+describe("saveArtifactToLibrary", () => {
+  it("promotes an exact artifact by id and returns the saved item", async () => {
+    const body = { artifact_id: "draft-1", name: "Draft text" };
+    const item = {
+      artifact: { artifact_id: "draft-1" },
+      name: "Draft text",
+      provenance: { source: "authored" },
+    };
+    stubServer(() => jsonResponse(item));
+
+    expect(await saveArtifactToLibrary(WORKSPACE, body)).toEqual(item);
+    expect(lastRequest().path).toBe(`${ARTIFACTS_PATH}/from-artifact`);
+    expect(lastRequest().init.method).toBe("POST");
+    expect(lastRequest().init.body).toBe(JSON.stringify(body));
+  });
 });
 
 describe("deleteLibraryArtifact", () => {

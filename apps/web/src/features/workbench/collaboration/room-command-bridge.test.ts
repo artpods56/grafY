@@ -178,6 +178,56 @@ describe("room-command-bridge", () => {
     });
   });
 
+  it("unsets a cleared config field instead of sending a value JSON drops", () => {
+    const cleared = {
+      ...document,
+      nodes: [
+        {
+          ...document.nodes[0]!,
+          config: { threshold: 1, keep: "yes" },
+          input_plugs: [{ id: "plug-1", port: "rows" }],
+        },
+      ],
+    };
+    const body = toRoomGraphBodyCommand(
+      {
+        kind: "update_node_configuration",
+        node_id: "a",
+        field: "threshold",
+        value: undefined,
+      },
+      cleared,
+    );
+    // The wire frame keeps every key it names: a missing `value` fails the
+    // server's model and used to close the room with protocol_error.
+    expect(JSON.parse(JSON.stringify(body))).toEqual({
+      kind: "update_node_configuration_and_input_plugs",
+      node_id: "a",
+      config: { keep: "yes" },
+      input_plugs: [{ id: "plug-1", port: "rows" }],
+      expected_config: { threshold: 1, keep: "yes" },
+      expected_plug_ids: ["plug-1"],
+    });
+    // A number still travels as a single-field update.
+    expect(
+      toRoomGraphBodyCommand(
+        {
+          kind: "update_node_configuration",
+          node_id: "a",
+          field: "threshold",
+          value: 9,
+        },
+        cleared,
+      ),
+    ).toEqual({
+      kind: "update_node_configuration",
+      node_id: "a",
+      field: "threshold",
+      value: 9,
+      expected_value: 1,
+    });
+  });
+
   it("names a Graph at the Project level, never inside one", () => {
     const room = toRoomGraphCommand(
       { kind: "rename_graph", name: "Next" },

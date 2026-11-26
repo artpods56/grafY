@@ -97,6 +97,9 @@ async function mount(options: {
   origins?: readonly SavedGraphOrigin[];
   localAuthoringEnabled?: boolean;
   groupingDisabledReason?: string | null;
+  resolveCardValue?: (
+    node: ArtifactViewerNode,
+  ) => NonNullable<ArtifactViewerNode["data"]["artifactRef"]> | null;
 }) {
   const base = {
     ...state(options.nodes ?? [], options.annotations ?? []),
@@ -131,6 +134,7 @@ async function mount(options: {
       },
       groupingDisabledReason: options.groupingDisabledReason ?? null,
       localAuthoringEnabled: options.localAuthoringEnabled ?? true,
+      resolveCardValue: options.resolveCardValue,
       selection: {
         clearWorkflowSelection: () => {
           cleared.push("workflow");
@@ -155,14 +159,18 @@ describe("useArtifactCardCommands", () => {
   it("places a new card selected and deselects the cards already on the canvas", async () => {
     const view = await mount({ nodes: [card("card-1", true)] });
 
+    let id: string | null = null;
     await act(async () => {
-      view.read().addArtifactCard(cardValue(["art-new"]), { x: 40, y: 60 });
+      id = view
+        .read()
+        .addArtifactCard(cardValue(["art-new"]), { x: 40, y: 60 });
     });
 
     const next = view.committed.at(-1);
     expect(next?.nodes).toHaveLength(2);
     expect(next?.nodes[0]?.selected).toBe(false);
     const placed = next?.nodes[1];
+    expect(id).toBe(placed?.id);
     expect(placed?.selected).toBe(true);
     expect(placed?.position).toEqual({ x: 40, y: 60 });
     expect(placed?.data.layout).toBeNull();
@@ -194,7 +202,9 @@ describe("useArtifactCardCommands", () => {
     });
 
     await act(async () => {
-      view.read().addArtifactCard(cardValue(["art-new"]), { x: 40, y: 60 });
+      expect(
+        view.read().addArtifactCard(cardValue(["art-new"]), { x: 40, y: 60 }),
+      ).toBeNull();
     });
 
     expect(view.committed).toEqual([]);
@@ -512,6 +522,51 @@ describe("sequence authoring", () => {
     view.unmount();
   });
 
+  it("pulls a copy out of a producer-linked sequence onto the canvas without mutating the feed", async () => {
+    const follower: ArtifactViewerNode = {
+      ...placedCard("feed-seq", ["t1", "t2", "t3"]),
+      data: {
+        layout: { width: 250, bodyHeight: 200 },
+        mode: "artifact",
+        artifactRef: null,
+      },
+    };
+    const liveSequence = cardValue(["t1", "t2", "t3"]);
+    const view = await mount({
+      nodes: [follower],
+      edges: [
+        {
+          id: "feed",
+          type: ARTIFACT_VIEWER_EDGE_TYPE,
+          source: "producer",
+          target: "feed-seq",
+          targetHandle: "artifact-viewer-input",
+          data: { sourcePortName: "tables" },
+        },
+      ],
+      resolveCardValue: (node) =>
+        node.id === "feed-seq" ? liveSequence : null,
+    });
+    await act(async () => {
+      view.read().extractArtifactCardItem("feed-seq", 1, { col: 30, row: 12 });
+    });
+    // One commit adding the standalone card; the producer-linked card stays wired and untouched.
+    expect(view.committed).toHaveLength(1);
+    const next = view.committed[0];
+    expect(next?.nodes).toHaveLength(2);
+    expect(next?.nodes[0]?.data.artifactRef).toBeNull();
+    expect(next?.edges).toHaveLength(1);
+    const extracted = next?.nodes[1];
+    expect(extracted?.data.artifactRef).toEqual(single("t2"));
+    expect(extracted?.data.layout).toEqual({ width: 250, bodyHeight: 200 });
+    expect(extracted?.position).toEqual({
+      x: 30 * CELL_SIZE,
+      y: 12 * CELL_SIZE,
+    });
+    expect(extracted?.selected).toBe(true);
+    view.unmount();
+  });
+
   it("merges a whole flush run onto its target in visual order at the leftmost card's position", async () => {
     const view = await mount({
       nodes: [
@@ -717,6 +772,104 @@ describe("addArtifactCards", () => {
     });
 
     expect(view.committed).toEqual([]);
+    view.unmount();
+  });
+});
+
+describe("replaceArtifactCardRef", () => {
+  it("updates the standalone card and rewrites bound origins", async () => {
+    const nextRef = {
+      artifact_id: "art-next",
+      artifact_type: "file.jpeg",
+      schema_version: 1,
+      content_hash: "abc",
+    };
+    const view = await mount({
+      nodes: [placedCard("card-1", ["art-old"])],
+      origins: [origin("wired", ["card-1"], single("art-old"))],
+    });
+
+    await act(async () => {
+      view.read().replaceArtifactCardRef("card-1", nextRef);
+    });
+
+    expect(view.committed.at(-1)?.nodes[0]?.data.artifactRef).toEqual(nextRef);
+    expect(view.commands).toHaveLength(1);
+    const [command] = view.commands[0] ?? [];
+    expect(command).toMatchObject({
+      kind: "update_origin",
+      origin_id: "wired",
+      update: {
+        value: nextRef,
+        source_card_ids: ["card-1"],
+      },
+    });
+    view.unmount();
+  });
+
+  it("leaves a producer-linked card's ref and origins alone", async () => {
+    const follower: ArtifactViewerNode = {
+      ...placedCard("follow", ["f1"]),
+      data: { layout: null, mode: "artifact", artifactRef: single("f1") },
+    };
+    const view = await mount({
+      nodes: [follower],
+      edges: [
+        {
+          id: "feed",
+          type: ARTIFACT_VIEWER_EDGE_TYPE,
+          source: "producer",
+          target: "follow",
+          targetHandle: "artifact-viewer-input",
+          data: { sourcePortName: "out" },
+        },
+      ],
+      origins: [origin("wired", ["follow"], single("f1"))],
+    });
+
+    await act(async () => {
+      view.read().replaceArtifactCardRef("follow", {
+        artifact_id: "art-next",
+        artifact_type: "file.jpeg",
+        schema_version: 1,
+      });
+    });
+
+    expect(view.committed).toEqual([]);
+    expect(view.commands).toEqual([]);
+    view.unmount();
+  });
+});
+
+describe("duplicateArtifactCard", () => {
+  it("places a new card beside the source and hands it the selection", async () => {
+    const source = placedCard("source", ["s1"]);
+    const view = await mount({
+      nodes: [{ ...source, selected: true }],
+    });
+    const nextRef = {
+      artifact_id: "s1-copy",
+      artifact_type: "file.jpeg",
+      schema_version: 1,
+    };
+
+    let newCardId: string | null = null;
+    await act(async () => {
+      expect(view.read().duplicateArtifactCard("missing", nextRef)).toBeNull();
+      newCardId = view.read().duplicateArtifactCard("source", nextRef);
+    });
+
+    const next = view.committed.at(-1);
+    const placed = next?.nodes.at(-1);
+    expect(newCardId).toBe(placed?.id);
+    expect(placed?.data.artifactRef).toEqual(nextRef);
+    expect(placed?.selected).toBe(true);
+    expect(next?.nodes[0]?.selected).toBe(false);
+    expect(placed?.position).toEqual({
+      x: 100 + 10 * CELL_SIZE + CELL_SIZE,
+      y: 200,
+    });
+    expect(view.cleared).toEqual(["workflow"]);
     view.unmount();
   });
 });

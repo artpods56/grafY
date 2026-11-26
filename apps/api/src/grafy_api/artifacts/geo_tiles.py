@@ -10,6 +10,7 @@ from grafy_core.artifacts import ArtifactObject
 from grafy_core.egress import validated_public_destination
 from grafy_core.ports.artifacts import UnitOfWorkPort
 from grafy_core.ports.storage import FileStoragePort
+from grafy_core.spatial_storage import load_feature_collection
 from grafy_shared.config.tiler import TilerConfig
 
 from grafy_api.artifact_availability import ArtifactAvailability
@@ -18,7 +19,10 @@ from grafy_api.services.errors import (
     WorkbenchOperationError,
 )
 
-from grafy_api.artifacts.errors import GeoRasterTileNotFoundError
+from grafy_api.artifacts.errors import (
+    ArtifactResponseTooLargeError,
+    GeoRasterTileNotFoundError,
+)
 from grafy_api.artifacts.geo import (
     GEO_FEATURE_COLLECTION_ARTIFACT_TYPE,
     GEO_MAP_LAYER_ARTIFACT_TYPE,
@@ -43,10 +47,17 @@ from grafy_api.artifacts.images import (
 )
 from grafy_api.artifacts.models import (
     GeoExactFeatureResponse,
+    GeoFeatureCollectionPayload,
+    GeoFeatureManifestMetadata,
     GeoMapLayerPayload,
     GeoRasterTileJsonResponse,
 )
 from grafy_api.artifacts.wms import GeoTileRead, WmsTileClient
+
+
+# The browser parses and draws a feature collection whole, so the map only
+# takes one it can hold comfortably. Larger collections need tiles.
+GEO_FEATURE_DRAW_MAX_BYTES = 16 * 1_024 * 1_024
 
 
 def _in_xyz_grid(z: int, x: int, y: int) -> bool:
@@ -126,6 +137,44 @@ class ArtifactGeoTileService:
             raise ArtifactContentUnavailableError(
                 f"Could not load feature {feature_index} from artifact {artifact.id}"
             ) from exc
+
+    async def load_feature_geojson(self, artifact: ArtifactObject) -> bytes:
+        """The stored features of one collection, as the GeoJSON a map draws."""
+        if (
+            artifact.artifact_type != GEO_FEATURE_COLLECTION_ARTIFACT_TYPE
+            or artifact.schema_version != 1
+            or artifact.metadata.get("storage_format")
+            != JSON_COLLECTIONS_STORAGE_FORMAT
+        ):
+            raise WorkbenchOperationError(
+                f"Artifact {artifact.id} is not a geo.feature_collection@1 artifact"
+            )
+        # The stored byte size is the canonical GeoJSON's, so an oversized
+        # collection is refused before a chunk is read.
+        if (
+            artifact.byte_size is not None
+            and artifact.byte_size > GEO_FEATURE_DRAW_MAX_BYTES
+        ):
+            raise ArtifactResponseTooLargeError(
+                artifact_id=artifact.id,
+                byte_size=artifact.byte_size,
+                max_byte_size=GEO_FEATURE_DRAW_MAX_BYTES,
+            )
+        try:
+            loaded = await load_feature_collection(
+                artifact,
+                self._storage,
+                feature_count=feature_count(artifact),
+                metadata_type=GeoFeatureManifestMetadata,
+                payload_type=GeoFeatureCollectionPayload,
+            )
+        except ArtifactContentUnavailableError:
+            raise
+        except Exception as exc:
+            raise ArtifactContentUnavailableError(
+                f"Could not load the features of artifact {artifact.id}"
+            ) from exc
+        return loaded.content
 
     async def load_raster_tilejson(
         self,
@@ -323,4 +372,5 @@ async def _render_geo_mosaic_tile(
 
 __all__ = [
     "ArtifactGeoTileService",
+    "GEO_FEATURE_DRAW_MAX_BYTES",
 ]

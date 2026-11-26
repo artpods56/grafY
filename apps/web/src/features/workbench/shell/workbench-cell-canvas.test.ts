@@ -218,7 +218,11 @@ describe("buildWorkbenchCellScene", () => {
     last_result_fingerprint: "result",
     error: null,
   } satisfies RoomInstanceState;
-  const scene = (state: RoomInstanceState["state"], canRun = true) =>
+  const scene = (
+    state: RoomInstanceState["state"],
+    canRun = true,
+    runDisabledReason?: string,
+  ) =>
     buildWorkbenchCellScene({
       document: graph,
       registry,
@@ -233,6 +237,7 @@ describe("buildWorkbenchCellScene", () => {
       },
       collapsedAppendices: new Set(["source"]),
       canRun,
+      runDisabledReason,
     });
   it.each([
     ["queued", "working", "Queued"],
@@ -253,6 +258,17 @@ describe("buildWorkbenchCellScene", () => {
       });
     },
   );
+  it("explains a blocked run on the operator surface only while running is unavailable", () => {
+    const reason = "Save the graph before running it.";
+    expect(scene("fresh", false, reason).surfaceById.source).toMatchObject({
+      runDisabled: true,
+      runDisabledReason: reason,
+    });
+    expect(scene("fresh", true, reason).surfaceById.source).not.toHaveProperty(
+      "runDisabledReason",
+    );
+  });
+
   it("builds output and error appendices with the saved collapse state", () => {
     expect(scene("fresh", false).surfaceById.source).toMatchObject({
       runDisabled: true,
@@ -1276,6 +1292,105 @@ it("wires workflow metadata, live viewer outputs, origin edges, service provider
   ]);
 });
 
+describe("artifact card downloads", () => {
+  it.each([
+    {
+      id: "table.data",
+      bundle: "table-bundle",
+      previewKind: "table",
+      authorable: true,
+      formats: ["json", "csv", "csv"],
+      expected: [
+        { format: "csv", label: "CSV" },
+        { format: "json", label: "JSON" },
+      ],
+    },
+    {
+      id: "scalar.text",
+      bundle: "inline-json",
+      previewKind: "text",
+      authorable: true,
+      formats: ["txt"],
+      expected: [
+        { format: "txt", label: "TXT" },
+        { format: "json", label: "JSON" },
+      ],
+    },
+    {
+      id: "ocr.tiff_text_regions",
+      bundle: "inline-json",
+      previewKind: "tiff-text",
+      authorable: true,
+      formats: [],
+      expected: [{ format: "json", label: "JSON" }],
+    },
+    {
+      id: "file.tiff",
+      bundle: "binary-file",
+      previewKind: "tiff",
+      authorable: false,
+      formats: [],
+      expected: [],
+    },
+  ] as const)(
+    "derives export choices for $id",
+    ({ id, bundle, previewKind, authorable, formats, expected }) => {
+      const presentation: GraphPresentation = {
+        viewers: [
+          {
+            id: "downloadable",
+            position: { x: 0, y: 0 },
+            artifact_ref: {
+              artifact_id: "artifact-1",
+              artifact_type: id,
+              schema_version: 1,
+            },
+            mode: "artifact",
+          },
+        ],
+        links: [],
+        annotations: [],
+        bindings: [],
+      };
+      const viewers = artifactViewersFromPresentation(presentation);
+      const { surfaceById } = buildWorkbenchCellScene({
+        workspaceId: "ws",
+        document: graph,
+        registry: {
+          ...registry,
+          artifact_types: [
+            {
+              key: { id, schema_version: 1 },
+              title: id,
+              authorable,
+              preview_kind: previewKind,
+              bundle: { format: bundle, version: 1 },
+              export_formats: formats.map((format) => ({
+                format,
+                content_type: "application/octet-stream",
+                filename: `artifact.${format}`,
+              })),
+              field_projections: [],
+              payload_schema: {},
+            },
+          ],
+        },
+        presentation,
+        nodes: [],
+        nodeInstanceStates: {},
+        collapsedAppendices: new Set(),
+        canRun: false,
+        artifactViewerEdges: viewers.edges,
+        artifactViewerNodes: viewers.nodes,
+      });
+      expect(surfaceById.downloadable).toMatchObject({
+        downloadFormats: expected,
+        inLibrary: false,
+      });
+    },
+  );
+});
+
 describe("artifact card pictures", () => {
   const png = (id: string) => ({
     artifact_id: id,
@@ -1647,20 +1762,21 @@ describe("artifact card pictures", () => {
     };
     const thumb = imageThumbnailUrl(imagePath("ws", "scan"), 0);
     const viewers = artifactViewersFromPresentation(waiting);
-    const { graph: fitted, surfaceById } = buildWorkbenchCellScene({
+    const input = {
       workspaceId: "ws",
       document: textGraph,
       registry: textRegistry,
       presentation: waiting,
       nodes: [producer, textTarget],
       nodeInstanceStates: {},
-      collapsedAppendices: new Set(),
+      collapsedAppendices: new Set<string>(),
       canRun: true,
       artifactViewerEdges: viewers.edges,
       artifactViewerNodes: viewers.nodes,
       imageNaturalSizes: new Map([[thumb, { width: 1200, height: 1600 }]]),
       onOperatorConfigChange: () => {},
-    });
+    };
+    const { graph: fitted, surfaceById } = buildWorkbenchCellScene(input);
     const surface = surfaceById.regions;
     assert(surface?.kind === "artifact");
     expect(surface.previewKind).toBe("tiff-text");
@@ -1679,6 +1795,15 @@ describe("artifact card pictures", () => {
     const card = fitted.cards.find((item) => item.id === "regions");
     expect(card?.widthCells).toBe(10);
     expect(card?.heightCells).toBe(14);
+
+    // A producer with no TIFF input links no window. Its card still gets the
+    // surface that keeps the last scan open.
+    const unlinked = buildWorkbenchCellScene({
+      ...input,
+      document: { ...textGraph, origins: [] },
+    }).surfaceById.regions;
+    assert(unlinked?.kind === "artifact");
+    expect(unlinked.tiffText).toEqual({ url: null, recognized: false });
   });
 
   it("shows what a following card's run produced", () => {
@@ -1734,6 +1859,7 @@ describe("artifact card pictures", () => {
     expect(surfaceById.jpeg).toMatchObject({
       filename: "amalfi.jpg",
       byteSizeLabel: "242 KB",
+      inLibrary: true,
     });
     // Without an upload's original filename, the Library's own name.
     expect(surfaceById.png).toMatchObject({
@@ -1775,11 +1901,49 @@ describe("artifact card pictures", () => {
       ],
     ]);
     expect(build("ws", library).surfaceById.pages).toMatchObject({
+      workspaceId: "ws",
       stackItems: [
-        { artifactId: "s1", imageUrl: url("s1"), label: "#1" },
-        { artifactId: "s2", imageUrl: url("s2"), label: "page-2.png" },
-        { artifactId: "s3", imageUrl: url("s3"), label: "#3" },
-        { artifactId: "s4", imageUrl: url("s4"), label: "#4" },
+        {
+          artifactId: "s1",
+          artifact: {
+            artifact_id: "s1",
+            artifact_type: "file.png",
+            schema_version: 1,
+          },
+          imageUrl: url("s1"),
+          label: "#1",
+        },
+        {
+          artifactId: "s2",
+          artifact: {
+            artifact_id: "s2",
+            artifact_type: "file.png",
+            schema_version: 1,
+          },
+          imageUrl: url("s2"),
+          label: "page-2.png",
+          byteSizeLabel: "10 B",
+        },
+        {
+          artifactId: "s3",
+          artifact: {
+            artifact_id: "s3",
+            artifact_type: "file.png",
+            schema_version: 1,
+          },
+          imageUrl: url("s3"),
+          label: "#3",
+        },
+        {
+          artifactId: "s4",
+          artifact: {
+            artifact_id: "s4",
+            artifact_type: "file.png",
+            schema_version: 1,
+          },
+          imageUrl: url("s4"),
+          label: "#4",
+        },
       ],
     });
     // Without a workspace the tiles keep their names and drop the pictures.

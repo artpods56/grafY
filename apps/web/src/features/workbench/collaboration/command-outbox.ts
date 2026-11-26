@@ -59,7 +59,16 @@ interface QueuedCommand {
   observedSequence: number | null;
   accepted: ProjectCommandAcceptedMessage | null;
   receipt: ProjectCommandReceiptMessage | null;
+  /** How many times the server closed with `protocol_error` while this was in flight. */
+  protocolErrorCloses: number;
 }
+
+/**
+ * A batch the server answered twice by closing with `protocol_error` is a frame
+ * it cannot parse. Replaying it again would close the next socket too, and every
+ * `room.ready` in between resets the reconnect budget, so the room would loop.
+ */
+const MAX_PROTOCOL_ERROR_CLOSES = 2;
 
 export interface ProjectRoomCommandOutboxOptions {
   /**
@@ -160,6 +169,7 @@ export class ProjectRoomCommandOutbox {
         observedSequence: null,
         accepted: null,
         receipt: null,
+        protocolErrorCloses: 0,
       });
     });
     this.notifyPendingCommands();
@@ -273,10 +283,30 @@ export class ProjectRoomCommandOutbox {
    * Put an interrupted in-flight command back at the front of the queue. Its
    * original epoch and observed sequence stay attached so the retry replays the
    * same submission under the server's idempotency contract.
+   *
+   * `protocol_error` says the server refused a frame this client wrote. A batch
+   * that was in flight for that close twice is the frame: it is rejected as
+   * `invalid_command` rather than replayed into the next socket.
    */
-  interruptInFlight(): void {
+  interruptInFlight(cause: "protocol_error" | null = null): void {
     if (!this.inFlight) return;
     const interrupted = this.inFlight;
+    if (cause === "protocol_error") {
+      interrupted.protocolErrorCloses += 1;
+      if (interrupted.protocolErrorCloses >= MAX_PROTOCOL_ERROR_CLOSES) {
+        this.applyRejected({
+          protocol_version: ROOM_PROTOCOL_VERSION,
+          type: "project.command.rejected",
+          command_id: interrupted.commandId,
+          error_code: "invalid_command",
+          detail:
+            "The server could not read this change and closed the connection each time it was sent. It was discarded.",
+          current_room_epoch: null,
+          current_sequence: null,
+        });
+        return;
+      }
+    }
     this.inFlight = null;
     this.queue.unshift(interrupted);
   }
