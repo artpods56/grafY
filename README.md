@@ -1,29 +1,66 @@
-# Grafy Workbench
+<div align="center">
 
-Grafy is a node-first workbench for building and running typed artifact
-graphs. Nodes declare typed ports, while edges may select schema-derived or
-explicit fields from compound artifacts or apply an ordered path of declared,
-versioned artifact conversions before a downstream node executes.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/grafy-logo-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/grafy-logo-light.png" />
+  <img alt="grafY" src="docs/assets/grafy-logo-light.png" width="260" />
+</picture>
 
-Each edge declares how its value is transported. `direct` passes a compatible
-value with its collection shape unchanged; `map` connects a sequence to one
-item input, invokes the target once per item, broadcasts its other inputs, and
-returns ordered output sequences. The runtime derives invocation from those
-edges, so mapping is explicit workflow structure rather than hidden node state.
+### A node-first workbench for building and running typed artifact graphs
 
-Field projection and artifact conversion are distinct compatibility primitives.
-Nested JSON Schema `string` and `integer` leaves are automatically exposed as
-the installed canonical scalar artifact types. Structural projection remains a
-runtime capability for compound artifact types supplied by plugins; its
-behavioral coverage uses a test/plugin compound type rather than a production
-tutorial node. A declared conversion can then materialize a projected integer
-as `scalar.text@1`. If the registry declares `X -> Y` and `Y -> Z`, the
-workbench can persist and execute the exact `X -> Y -> Z` path on one edge.
-These choices remain visible without adding boilerplate adapter nodes.
-Configurable or domain-significant transformations remain nodes.
+[Quick start](#quick-start) · [Architecture](#architecture) · [Node families](#node-families) · [GIS & Maps](#compose-vector-and-raster-maps) · [LLMs](#try-openai-compatible-generation) · [Verify](#verify) · [Containers](#containers)
 
-For native development and local script authentication, see
-[Run Grafy locally](docs/how-to-run-local.md).
+<br />
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/workbench-ocr-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/workbench-ocr-light.png" />
+  <img alt="grafY workbench canvas showing an OCR and table extraction pipeline" src="docs/assets/workbench-ocr-light.png" width="100%" />
+</picture>
+
+*An OCR-to-table pipeline in grafY: an uploaded parish register scan (`file.png@1`) automatically converts on the edge (`1 conv`) into a raster, feeds **Document OCR** paired with a **Mistral OCR** service provider, extracts structured rows from Markdown, and renders the resulting **Table** artifact.*
+
+</div>
+
+---
+
+## Overview
+
+**Grafy** is a node-first workbench for building, inspecting, and running typed artifact graphs. Nodes declare typed ports, while edges may select schema-derived or explicit fields from compound artifacts or apply an ordered path of declared, versioned artifact conversions before a downstream node executes.
+
+- **Explicit collection transport (`direct` vs `map`).** Every edge declares how values move. `direct` passes a compatible value with its collection shape unchanged; `map` connects a sequence to one item input, invokes the target once per item, broadcasts its other inputs, and returns ordered output sequences. Mapping is explicit graph structure rather than hidden node state.
+- **Zero-boilerplate edge compatibility.** Field projection and artifact conversion are distinct compatibility primitives. Nested JSON Schema `string` and `integer` leaves are exposed as canonical scalar artifact types, and declared conversions (for example `file.png@1 -> image.raster@1` or chained `X -> Y -> Z` paths) persist and execute directly on one edge without cluttering the canvas with adapter nodes. Configurable or domain-significant transformations remain visible nodes.
+- **Fingerprint-cached Runs & inline artifact viewers.** Node outputs are content-addressed and stored append-only in the Workspace result store. Only the stale upstream closure re-executes on a Run, and artifacts render directly on the canvas as interactive images, Markdown, structured tables, or tiled GeoTIFF and vector maps.
+- **Collaborative Projects, Agents & MCP.** Workspaces scope Projects, multi-Graph compositions, shared Libraries, Tool packs, write-only encrypted provider credentials, canvas Agents with node tool links, and programmatic authoring through the [Grafy MCP server](docs/how-to-use-mcp.md).
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/workbench-table-dark.png" />
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/workbench-table-light.png" />
+  <img alt="grafY workbench showing a live-executed Markdown-to-Table graph with structured rows" src="docs/assets/workbench-table-light.png" width="100%" />
+</picture>
+
+*A live-executed graph turning an authored Markdown artifact into a typed, paginated **Table** artifact (`6 rows · 4 columns`) with inline column controls and JSON export.*
+</div>
+
+---
+
+## Quick start
+
+For full native development setup, local OIDC / dev login, and script PAT minting, see [Run Grafy locally](docs/how-to-run-local.md).
+
+```bash
+just install
+just dev
+```
+
+- **Workbench UI:** <http://localhost:3000>
+- **Workbench API:** <http://localhost:8000> (health check at `/health`)
+- **Internal TIFF tiler:** <http://localhost:8100>
+
+The workbench defaults to local artifact storage and a local API URL. Set `GRAFY_STORAGE_BACKEND=s3` plus the S3 settings in `.env.example` for AWS S3 or an S3-compatible store such as MinIO.
+
+---
 
 ## Architecture
 
@@ -33,60 +70,52 @@ flowchart LR
     API --> Core["Typed artifact-graph runtime"]
     API --> Persistence["SQLAlchemy repositories + UoW"]
     Persistence --> SQL["SQLite or PostgreSQL"]
-    SQL --> Graphs["Saved graph documents"]
-    SQL --> Secrets["Encrypted graph/node secrets"]
+    SQL --> Graphs["Saved Projects & Graphs"]
+    SQL --> Secrets["Encrypted provider credentials"]
     API --> Storage["Local or S3 artifact object storage"]
+    API --> Tiler["Internal GeoTIFF tiler"]
     Families["Registered node families: builtins + plugins/"] --> API
     API --> Egress["Egress guard for user-supplied destinations"]
 ```
 
-- `apps/web` owns the canvas, node rendering, schema-driven controls, and edge
-  projection/conversion/mapping editor.
-- `apps/api` owns execution composition and the HTTP adapters for execution and
-  saved-graph CRUD under `/v1`.
-- `libs/core/src/grafy_core` owns artifacts, nodes, ports, projections,
-  conversions, runtime execution, saved-graph aggregates and use cases, the
-  Plugin contract, producer-neutral artifact contracts, portable runtime
-  primitives, and graph-Module boundaries.
-- `libs/persistence` owns the async SQLAlchemy repository and unit-of-work
-  adapters for saved graphs and graph materialization bindings. Alembic is the
-  only schema authority.
-- `libs/storage` owns the local and S3-compatible object stores.
-- `libs/workbench` owns the app-built-in node families: Image, Sequence, Value,
-  Text, Schema, Table, and File. These run in-process with the API and are
-  not Plugin packages.
-- `plugins/gis` owns exact WGS84 vector sources, OGC WFS/WMS integration,
-  lightweight map-layer recipes, and ordered map composition. Map sources are
-  uploaded georeferenced TIFFs; MapLibre draws tiles the tiler renders on demand
-  without downloading complete source artifacts into the browser.
-- `plugins/llm` owns provider-backed generation. Its generic OpenAI-compatible
-  Chat Completions node wraps the official OpenAI Python SDK, consumes exact
-  prompt messages and an optional runtime JSON Schema, and keeps credentials
-  outside core. Deterministic prompt-message construction lives in this plugin.
-- `plugins/mistral` owns Mistral OCR. It wraps `mistralai` and recognizes an
-  HTTPS document URL or a raster image, producing Markdown, a blocks table,
-  page regions. The API key stays in node-secret storage.
-- `plugins/reducto` owns Reducto Parse. It wraps `reductoai` and parses an HTTPS
-  document URL or a raster image, producing Markdown and a blocks table. The API
-  key stays in node-secret storage.
-- `CONTEXT.md` defines the product vocabulary and active scope.
+| Package | Responsibility |
+| --- | --- |
+| `apps/web` | Infinite studio canvas, node & artifact viewers, schema-driven controls, edge projection/conversion/mapping editor, Library & Agent panels. |
+| `apps/api` | Execution composition, collaboration rooms, and HTTP adapters under `/v1`. |
+| `apps/tiler` | Standalone Python 3.13 internal TIFF tile and native window renderer (GDAL/rasterio) for GIS rasters and high-resolution archival scans. |
+| `libs/core` | Artifacts, nodes, ports, service contracts, projections, conversions, runtime execution, Project/Graph aggregates, and Plugin contracts. |
+| `libs/workbench` | App-built-in node families: `Image`, `Sequence`, `Value`, `Text`, `Schema`, `Table`, `File`, and `OCR`. Runs in-process with the API. |
+| `libs/persistence` | Async SQLAlchemy repositories and unit-of-work adapters (SQLite & PostgreSQL). Alembic is the only schema authority. |
+| `libs/storage` | Local filesystem and S3-compatible object storage adapters. |
+| `libs/client` | Programmatic Python client and FastMCP server for authoring and running Graphs over the REST API. |
+| `libs/crypto` & `libs/shared` | Shared credential/token cryptography and leaf configuration package. |
+| `plugins/*` | Application-code node families: `gis`, `image`, `table`, `llm`, `mistral`, `reducto`, `litellm_ocr`, and `map_toponyms`. |
 
-There is intentionally no legacy extraction pipeline, Dagster deployment,
-message broker, worker service, or platform API in this workspace.
+See [CONTEXT.md](CONTEXT.md) for the authoritative product vocabulary and active scope, and [docs/adr/](docs/adr/) for architecture decision records.
+
+There is intentionally no legacy extraction pipeline, Dagster deployment, message broker, worker service, or platform API in this workspace.
+
+---
 
 ## Node families
 
-Each Plugin package under `plugins/` exports one `grafy_core.plugins.Plugin` declaration,
-and `apps/api/src/grafy_api/services/families.py` decides which of them this build
-registers (ADR 0017). A registered family is application code: it executes in the API
-process, identifies by family slug plus the deployment build digest, and has no release,
-revision, installation or selection. A package that the composition does not list serves
-nothing, so adding a dependency alone does not activate a family.
+Each Plugin package under `plugins/` exports one `grafy_core.plugins.Plugin` declaration, and [`apps/api/src/grafy_api/services/families.py`](apps/api/src/grafy_api/services/families.py) decides which of them this build registers ([ADR 0017](docs/adr/0017-plugins-are-application-code-in-process.md)). A registered family is application code: it executes in the API process, identifies by family slug plus the deployment build digest, and has no release, revision, installation, or selection. A package that the composition does not list serves nothing, so adding a dependency alone does not activate a family.
+
+Registered Plugin families in this build:
+
+- **`plugins/gis`** — Exact WGS84 vector sources, OGC WFS/WMS integration, lightweight map-layer recipes, and ordered map composition rendered via MapLibre and the internal tiler.
+- **`plugins/image`** & **`plugins/table`** — Extended image and tabular operations building on the producer-neutral `image.raster@1` and `table.data@1` contracts.
+- **`plugins/llm`** — Provider-backed OpenAI-compatible Chat Completions (wrapping the official OpenAI Python SDK) and deterministic prompt-message construction.
+- **`plugins/mistral`**, **`plugins/reducto`**, **`plugins/litellm_ocr`** — Document OCR providers implementing the `ocr.document@1` service contract consumed by the builtin **Document OCR** node, keeping API keys in encrypted credential storage.
+- **`plugins/map_toponyms`** — Historical map text-box detection, baseline span preparation, crop recognition, and place-name extraction over multi-page TIFF sheets.
+
 ### Develop against local families
 
-`just api-dev` reloads on edits under `apps`, `libs` and `plugins`, so a family edit is
-live on the next request. Nodes always run in the API process with no sandbox, no egress
-broker and no release pin, and the catalog is the set of operators this build registered.
+`just api-dev` reloads on edits under `apps`, `libs`, and `plugins`, so a family edit is live on the next request. Nodes always run in the API process with no sandbox, no egress broker, and no release pin, and the catalog is the set of operators this build registered.
+
+---
+
+## Workflows
 
 ### Compose vector and raster maps
 
@@ -94,7 +123,7 @@ The GIS workflow separates exact data from rendering instructions:
 
 ```mermaid
 flowchart LR
-  SQL["SQL table with WKT"] --> F["Table to geo features"]
+  SQL["Table with WKT"] --> F["Table to geo features"]
   WFS["Import OGC WFS"] --> F2["Exact feature collection"]
   TIFF["Uploaded GeoTIFF"] --> R["file.tiff"]
   F --> VL["Vector map layer"]
@@ -107,65 +136,15 @@ flowchart LR
   C --> M["Compose map"]
 ```
 
-`geo.feature_collection@1` is the exact WGS84 vector source, and its stored JSON
-chunks are the only copy of its geometry. A georeferenced `file.tiff@1` is a map
-raster: the tiler renders each requested tile from the stored file. No vector
-renderer exists yet, so a vector layer contributes its footprint to a map but no
-rendered layer. `geo.map_layer@1` references one
-source and owns its style, visibility, opacity, attribution, and zoom range.
-`geo.map_document@1` contains only an ordered list of layer references, a
-basemap choice, and optional initial bounds.
+`geo.feature_collection@1` is the exact WGS84 vector source, and its stored JSON chunks are the only copy of its geometry. A georeferenced `file.tiff@1` is a map raster: the tiler renders each requested XYZ tile on demand from the stored file without downloading complete source artifacts into the browser. `geo.map_layer@1` references one source and owns its style, visibility, opacity, attribution, and zoom range. `geo.map_document@1` contains only an ordered list of layer references, a basemap choice, and optional initial bounds.
 
-For database WKT, configure **Table to geo features** with the geometry column
-and its actual source CRS; the node reprojects supported point, line, polygon,
-multi-geometry, and geometry-collection values to exact EPSG:4326 features.
-Create a **Vector map layer** for each vector source and a **Raster map layer**
-for each GeoTIFF. Collect the `geo.map_layer@1` outputs in drawing order, then
-connect the ordered sequence to **Compose map**. The preview loads only after an
-explicit click and exposes local order, visibility, opacity, zoom, vector style,
-label, and raster image controls.
+For tabular WKT, configure **Table to geo features** with the geometry column and its source CRS; the node reprojects supported point, line, polygon, multi-geometry, and geometry-collection values to exact EPSG:4326 features. Create a **Vector map layer** for each vector source and a **Raster map layer** for each GeoTIFF, collect the `geo.map_layer@1` outputs in drawing order, and connect the ordered sequence to **Compose map**. The preview loads on click and exposes local order, visibility, opacity, zoom, vector style, label, and raster image controls.
 
-External GeoServer-compatible services follow the same model. **Import OGC
-WFS features** takes a bounded snapshot into an exact feature artifact. **Remote
-WMS map layer** keeps the remote raster live and proxies only requested image
-tiles. For Atlas Fontium, use
-`https://data.atlasfontium.pl/geoserver/ows`; example layer names include
-`geonode:powiaty`, `geonode:miejscowosci`, and historical raster layers exposed
-by its capabilities document. Service URLs must be public and credential-free,
-and WMS layers require explicit bounds and attribution.
-
-This is a clean-break development contract: rerun old GIS nodes to create the
-new source projections and reference-only map artifacts. The API intentionally
-does not reconstruct or page legacy embedded map documents.
-
-Open <http://localhost:3000>. The API is available at
-<http://localhost:8000>; its health endpoint is `/health`.
-
-The workbench defaults to local artifact storage and a local API URL. Set
-`GRAFY_STORAGE_BACKEND=s3` plus the S3 settings shown in `.env.example` for
-AWS S3 or an S3-compatible service such as MinIO.
-
-The OpenAI-compatible node uses a write-only key configured on a saved node,
-not an environment-specific provider variable. Generate one stable encryption
-key for the Grafy server and put it in `.env` before configuring node keys:
-
-```bash
-openssl rand -base64 32
-```
-
-Assign the result to `GRAFY_CREDENTIAL_ENCRYPTION_KEY`. Keep that value
-stable and backed up: replacing or losing it makes existing encrypted node
-keys unusable. Graph documents, run requests, artifact payloads, and read APIs
-never contain provider keys. Stored ciphertext is bound to graph id, node id,
-operator version, secret name, and the normalized `base_url`; changing the URL
-deletes the old binding and requires explicitly applying a key for the new
-endpoint. Removing a node likewise deletes its encrypted node secrets, so
-reusing the node id cannot reactivate an old credential.
+External GeoServer-compatible services follow the same model. **Import OGC WFS features** takes a bounded snapshot into an exact feature artifact, while **Remote WMS map layer** keeps the remote raster live and proxies only requested image tiles. For Atlas Fontium, use `https://data.atlasfontium.pl/geoserver/ows` (for example `geonode:powiaty` or `geonode:miejscowosci`). Service URLs must be public and credential-free, and WMS layers require explicit bounds and attribution. See [Run and verify a GIS raster import](docs/how-to-run-gis.md) for local GDAL and tiler setup.
 
 ### Try OpenAI-compatible generation
 
-Build one provider-neutral prompt graph, then connect it to the generic external
-LLM node:
+Build one provider-neutral prompt graph, then connect it to the generic external LLM node:
 
 ```mermaid
 flowchart LR
@@ -179,20 +158,9 @@ flowchart LR
   Collect --> LLM
 ```
 
-Add the system message to Collect before the user message. Keep the Collect to
-LLM edge in `direct` mode so the LLM receives the ordered conversation once;
-`map` would invoke it independently for every message. Configure the node's
-base URL, model, generation limits, and write-only API key after saving the
-graph. The default endpoint is OpenAI, while the same node can target an
-OpenAI-compatible LiteLLM or OpenRouter base URL. Remote endpoints must use
-HTTPS; plain HTTP is accepted only for localhost and loopback development.
+Add the system message to **Collect** before the user message. Keep the Collect-to-LLM edge in `direct` mode so the LLM receives the ordered conversation once (`map` would invoke it independently for every message). Configure the node's base URL, model, generation limits, and write-only API key after saving the Project. The default endpoint is OpenAI, while the same node can target an OpenAI-compatible LiteLLM or OpenRouter base URL. Remote endpoints must use HTTPS; plain HTTP is accepted only for localhost and loopback development.
 
-Connect Schema Builder only when structured output is needed. It emits Draft
-2020-12 JSON text with an object root. Add primitive fields inside the node;
-choose Schema, or Sequence with Schema items, to expose a field-owned input
-socket for another builder. The request uses Chat Completions `json_schema`
-response format and Grafy validates the returned object locally. For
-example:
+Connect **Schema Builder** when structured output is needed. It emits Draft 2020-12 JSON text with an object root: add primitive fields inline, or choose Schema / Sequence of Schema to expose a field-owned input plug for another builder. The request uses Chat Completions `json_schema` response format and Grafy validates the returned object locally:
 
 ```json
 {
@@ -205,49 +173,37 @@ example:
 }
 ```
 
-The OpenAI-compatible adapter accepts PNG, JPEG, GIF, and WebP image
-artifacts on user messages. It bounds one request to eight images, 20,000,000
-bytes per image, and 50,000,000 image bytes in aggregate before base64 encoding.
+The OpenAI-compatible adapter accepts PNG, JPEG, GIF, and WebP image artifacts on user messages (bounded to 8 images, 20 MB per image, and 50 MB aggregate before base64 encoding).
 
-Workspace members with execution authority may use a configured node secret
-without retrieving it. Replacing or removing that secret requires the separate
-`manage_secrets` capability; PAT automation must request that scope explicitly,
-and its effective authority remains bounded by current Workspace membership.
-Expose Grafy through HTTPS so browser sessions and bearer credentials are never
-sent over an unprotected network.
+#### Write-only encrypted credentials
+
+Provider nodes and the OpenAI-compatible node use write-only credentials encrypted at rest—never stored in Graph documents, run requests, artifact payloads, or read APIs. Generate one stable encryption key for the Grafy server and set `GRAFY_CREDENTIAL_ENCRYPTION_KEY` in `.env`:
+
+```bash
+openssl rand -base64 32
+```
+
+Keep that value stable and backed up: replacing or losing it makes existing encrypted credentials unusable. Workspace members with execution authority may run a node using a bound credential without retrieving it; creating, rotating, or removing shared credentials requires the separate `manage_secrets` capability. Expose Grafy through HTTPS so browser sessions and bearer credentials are never sent over an unprotected network.
+
+---
 
 ## Verify
 
 ### Install and run commit hooks
 
-`just install` installs the repository dependencies and enables the local commit
-hook. To enable the hook on its own, run `uv run prek install`.
+`just install` installs the repository dependencies and enables the local commit hook. To enable the hook on its own, run `uv run prek install`.
 
-Git then runs the staged-file checks from `.pre-commit-config.yaml` before each
-commit. To run the checks manually on staged files, use `uv run prek run`. To
-validate the configuration and run every hook on all tracked files, use
-`just hooks-check`. If a check fails, fix the reported files and rerun it before
-committing.
+Git then runs the staged-file checks from `.pre-commit-config.yaml` before each commit. To run checks manually on staged files, use `uv run prek run`. To validate the configuration and run every hook on all tracked files, use `just hooks-check`.
 
-The hooks cover Python Ruff lint, web ESLint and Prettier, and fast repository
-hygiene checks. Tests, type checks, generated API contracts, and builds remain
-in CI and the existing `just check` recipe.
-
-Run the full retained contract:
+The hooks cover Python Ruff lint, web ESLint and Prettier, and fast repository hygiene checks. Tests, type checks, generated API contracts, and builds remain in CI and `just check`:
 
 ```bash
 just check
 ```
 
-The check runs backend tests, Python and TypeScript lint/type checks, verifies
-that the generated OpenAPI client is current, and builds the production web
-bundle. Python verification enables every declared development extra so all
-System Plugin families remain covered without making them ambient runtime
-discoveries.
+`just check` runs backend tests, Python and TypeScript lint/type checks, verifies that the generated OpenAPI client is current, and builds the production web bundle.
 
-`apps/tiler` is its own uv project on Python 3.13, so it is not covered by
-`just check`. Verify it with `just test-tiler`, `just lint-tiler`, and
-`just typecheck-tiler`, which use `apps/tiler/.venv`.
+`apps/tiler` is its own uv project on Python 3.13, so it is verified separately via `just test-tiler`, `just lint-tiler`, and `just typecheck-tiler` (which run in `apps/tiler/.venv`).
 
 To exercise the runtime without the browser:
 
@@ -255,16 +211,15 @@ To exercise the runtime without the browser:
 just smoke
 ```
 
+---
+
 ## Containers
 
-The API image installs `grafy-api` with the application families this build
-registers — the `grafy_workbench` builtins and the `plugins/` packages — plus the
-GDAL tools the GIS family shells out to. There is no Plugin runtime image, no
-publisher image and no Docker CLI in the API image: every family executes inside the
-API process. A one-shot migration service must complete before the API starts.
-SQLite, uploads, and artifact objects share the durable `grafy-data` volume.
+The API image installs `grafy-api` with the application families this build registers—the `grafy_workbench` builtins and the `plugins/` packages—plus the GDAL tools the GIS family shells out to. Every family executes inside the API process. A one-shot migration service completes before the API starts, and SQLite, uploads, and artifact objects share the durable `grafy-data` volume.
 
 ```bash
 just docker-up
 just docker-down
 ```
+
+For production deployment with PostgreSQL, MinIO/S3, and the internal tiler, see [Deploy Grafy to production](docs/how-to-deploy-production.md).
