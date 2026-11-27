@@ -104,6 +104,8 @@ vi.mock("@/hooks/use-api", () => ({
   useProjectSummaryRefresh: () => vi.fn(),
   useWorkspaces: () => ({ data: [] }),
   useMyWorkspaceInvitations: () => ({ data: [], mutate: vi.fn() }),
+  // No operator status means the rail shows no "Feedback reports" entry.
+  useOperatorStatus: () => ({ data: undefined }),
 }));
 
 const mountedRoots = new Set<Root>();

@@ -5,6 +5,7 @@ import { SWRConfig } from "swr";
 import { ApiError, request } from "@/lib/api/client";
 import { ThemeProvider } from "@/components/theme";
 import { AuthSessionBoundary } from "@/features/auth/AuthSessionBoundary";
+import { FeedbackProvider } from "@/features/feedback/FeedbackProvider";
 
 const apiFetcher = (path: string) => request<unknown>("GET", path);
 
@@ -23,7 +24,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
           errorRetryCount: 2,
         }}
       >
-        <AuthSessionBoundary>{children}</AuthSessionBoundary>
+        <AuthSessionBoundary>
+          <FeedbackProvider>{children}</FeedbackProvider>
+        </AuthSessionBoundary>
       </SWRConfig>
     </ThemeProvider>
   );

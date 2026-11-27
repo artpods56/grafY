@@ -24,6 +24,10 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
     schema = app_with_overrides(settings=settings).openapi()
 
     assert set(schema["paths"]) == {
+        "/v1/admin/feedback",
+        "/v1/admin/feedback/{report_id}",
+        "/v1/admin/feedback/{report_id}/screenshot",
+        "/v1/admin/operator",
         "/v1/admin/users/{user_id}",
         "/v1/admin/users/{user_id}/disable",
         "/v1/admin/users/{user_id}/enable",
@@ -32,6 +36,7 @@ def test_openapi_contains_exact_public_routes(settings: Settings) -> None:
         "/v1/auth/session",
         "/v1/auth/sessions",
         "/v1/auth/sessions/{session_id}",
+        "/v1/feedback",
         "/v1/me/credentials",
         "/v1/me/credentials/verify",
         "/v1/me/credentials/{credential_id}",

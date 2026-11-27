@@ -12,3 +12,4 @@ export * from "./library-folders";
 export type { LibraryFolder } from "./contract";
 
 export * from "./credentials";
+export * from "./feedback";

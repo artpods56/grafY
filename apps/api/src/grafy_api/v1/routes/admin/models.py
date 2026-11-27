@@ -24,3 +24,9 @@ class AdminUserResponse(BaseModel):
             active=user.active,
             updated_at=user.updated_at,
         )
+
+
+class AdminOperatorStatusResponse(BaseModel):
+    """Whether the signed-in user may use the operator surfaces."""
+
+    is_operator: bool

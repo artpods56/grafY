@@ -35,6 +35,7 @@ from grafy_api.agents.project_tools import ProjectContextReader, build_toolbox_f
 from grafy_api.agents.turns import AgentService
 from grafy_api.services.families import build_application_registry
 from grafy_api.credentials import CredentialService
+from grafy_api.feedback import FeedbackService
 from grafy_api.node_secrets import NodeSecretService
 from grafy_api.realtime.agent_events import ProjectAgentEvents
 from grafy_api.realtime.checkpointing import ProjectAutoCheckpointer
@@ -192,6 +193,11 @@ async def build_app_resources(
         provider_secrets=settings.providers,
         credentials=credentials,
     )
+    feedback = FeedbackService(
+        uow_factory=new_unit_of_work,
+        storage=storage,
+        bucket=settings.storage.storage_bucket,
+    )
     # An Agent's own key is sealed with the same deployment key as a node secret, and
     # its endpoint is dialed against the same egress grants the workbench was built with.
     agent_keys = AgentKeyService(
@@ -273,6 +279,7 @@ async def build_app_resources(
         collaboration=collaboration,
         node_secrets=node_secrets,
         credentials=credentials,
+        feedback=feedback,
         agent_keys=agent_keys,
         agent_conversations=agent_conversations,
         agent_models=agent_models,

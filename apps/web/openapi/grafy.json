@@ -187,6 +187,20 @@
         "title": "AddOriginCommand",
         "type": "object"
       },
+      "AdminOperatorStatusResponse": {
+        "description": "Whether the signed-in user may use the operator surfaces.",
+        "properties": {
+          "is_operator": {
+            "title": "Is Operator",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_operator"
+        ],
+        "title": "AdminOperatorStatusResponse",
+        "type": "object"
+      },
       "AdminUserResponse": {
         "description": "A user as an operator sees them: who they are and whether they may sign in.",
         "properties": {
@@ -1270,6 +1284,32 @@
         "title": "AssistantThinkingPayload",
         "type": "object"
       },
+      "Body_submit_feedback_v1_feedback_post": {
+        "properties": {
+          "report": {
+            "description": "FeedbackReportSubmission as JSON",
+            "title": "Report",
+            "type": "string"
+          },
+          "screenshot": {
+            "anyOf": [
+              {
+                "contentMediaType": "application/octet-stream",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Screenshot"
+          }
+        },
+        "required": [
+          "report"
+        ],
+        "title": "Body_submit_feedback_v1_feedback_post",
+        "type": "object"
+      },
       "CancelAgentTurnRequest": {
         "additionalProperties": false,
         "description": "Stop the conversation's turn. With no `turn_id`, whatever is running now.",
@@ -2145,6 +2185,460 @@
           "node"
         ],
         "title": "DuplicateNodeCommand",
+        "type": "object"
+      },
+      "FeedbackClient": {
+        "additionalProperties": false,
+        "description": "The browser the report came from.",
+        "properties": {
+          "color_scheme": {
+            "enum": [
+              "light",
+              "dark"
+            ],
+            "title": "Color Scheme",
+            "type": "string"
+          },
+          "device_pixel_ratio": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 16.0,
+            "title": "Device Pixel Ratio",
+            "type": "number"
+          },
+          "user_agent": {
+            "maxLength": 512,
+            "title": "User Agent",
+            "type": "string"
+          },
+          "viewport_height": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Viewport Height",
+            "type": "integer"
+          },
+          "viewport_width": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Viewport Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "viewport_width",
+          "viewport_height",
+          "device_pixel_ratio",
+          "user_agent",
+          "color_scheme"
+        ],
+        "title": "FeedbackClient",
+        "type": "object"
+      },
+      "FeedbackElement": {
+        "additionalProperties": false,
+        "description": "The element a person picked, described well enough to find it again.",
+        "properties": {
+          "canvas_item_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Canvas Item Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "rect": {
+            "$ref": "#/components/schemas/FeedbackRect"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "selector": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Selector",
+            "type": "string"
+          },
+          "tag": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Tag",
+            "type": "string"
+          },
+          "test_id": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Test Id"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "tag",
+          "selector",
+          "rect"
+        ],
+        "title": "FeedbackElement",
+        "type": "object"
+      },
+      "FeedbackKind": {
+        "enum": [
+          "bug",
+          "idea",
+          "other"
+        ],
+        "title": "FeedbackKind",
+        "type": "string"
+      },
+      "FeedbackReceiptResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "title": "FeedbackReceiptResponse",
+        "type": "object"
+      },
+      "FeedbackRect": {
+        "additionalProperties": false,
+        "description": "The picked element's box in CSS pixels, relative to the viewport.",
+        "properties": {
+          "height": {
+            "minimum": 0.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "width": {
+            "minimum": 0.0,
+            "title": "Width",
+            "type": "number"
+          },
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "title": "FeedbackRect",
+        "type": "object"
+      },
+      "FeedbackReportListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackReportResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before"
+          }
+        },
+        "required": [
+          "items",
+          "next_before"
+        ],
+        "title": "FeedbackReportListResponse",
+        "type": "object"
+      },
+      "FeedbackReportResponse": {
+        "properties": {
+          "client": {
+            "$ref": "#/components/schemas/FeedbackClient"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "element": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackElement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "github_issue_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Issue Url"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FeedbackKind"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "page_path": {
+            "title": "Page Path",
+            "type": "string"
+          },
+          "reporter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackReporterResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "screenshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackScreenshotResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/FeedbackStatus"
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackWorkspaceResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "kind",
+          "message",
+          "page_path",
+          "status",
+          "resolved_at",
+          "github_issue_url",
+          "reporter",
+          "workspace",
+          "element",
+          "client",
+          "screenshot"
+        ],
+        "title": "FeedbackReportResponse",
+        "type": "object"
+      },
+      "FeedbackReportUpdate": {
+        "additionalProperties": false,
+        "description": "Fields left out stay as they are; ``github_issue_url: null`` clears the link.",
+        "properties": {
+          "github_issue_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "pattern": "^https://github\\.com/\\S+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Issue Url"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "FeedbackReportUpdate",
+        "type": "object"
+      },
+      "FeedbackReporterResponse": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "display_name"
+        ],
+        "title": "FeedbackReporterResponse",
+        "type": "object"
+      },
+      "FeedbackScreenshotResponse": {
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_type",
+          "byte_size"
+        ],
+        "title": "FeedbackScreenshotResponse",
+        "type": "object"
+      },
+      "FeedbackStatus": {
+        "enum": [
+          "open",
+          "resolved"
+        ],
+        "title": "FeedbackStatus",
+        "type": "string"
+      },
+      "FeedbackWorkspaceResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "title": "FeedbackWorkspaceResponse",
         "type": "object"
       },
       "FieldProjectionResponse": {
@@ -9144,6 +9638,304 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/admin/feedback": {
+      "get": {
+        "operationId": "list_feedback_reports_v1_admin_feedback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/FeedbackStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackReportListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "List Feedback Reports",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/feedback/{report_id}": {
+      "delete": {
+        "operationId": "delete_feedback_report_v1_admin_feedback__report_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Delete Feedback Report",
+        "tags": [
+          "admin"
+        ]
+      },
+      "get": {
+        "operationId": "get_feedback_report_v1_admin_feedback__report_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Feedback Report",
+        "tags": [
+          "admin"
+        ]
+      },
+      "patch": {
+        "operationId": "update_feedback_report_v1_admin_feedback__report_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackReportUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Update Feedback Report",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/feedback/{report_id}/screenshot": {
+      "get": {
+        "operationId": "get_feedback_screenshot_v1_admin_feedback__report_id__screenshot_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "report_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Report Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {},
+              "image/png": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Feedback Screenshot",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/v1/admin/operator": {
+      "get": {
+        "description": "Any signed-in user may ask; the answer is false for everyone else.",
+        "operationId": "get_operator_status_v1_admin_operator_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOperatorStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Get Operator Status",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/v1/admin/users/{user_id}": {
       "get": {
         "operationId": "get_user_v1_admin_users__user_id__get",
@@ -9522,6 +10314,52 @@
         "summary": "Revoke Session",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/v1/feedback": {
+      "post": {
+        "operationId": "submit_feedback_v1_feedback_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_submit_feedback_v1_feedback_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackReceiptResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "summary": "Submit Feedback",
+        "tags": [
+          "feedback"
         ]
       }
     },

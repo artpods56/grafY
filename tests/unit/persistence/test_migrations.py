@@ -58,7 +58,7 @@ VAULT_TABLES = {
     "node_shared_credential_bindings",
     "node_user_credential_overrides",
 }
-HEAD_TABLES = BASELINE_TABLES | VAULT_TABLES | {"workspace_packs"}
+HEAD_TABLES = BASELINE_TABLES | VAULT_TABLES | {"workspace_packs", "feedback_reports"}
 
 
 def _alembic_config() -> Config:
@@ -93,25 +93,28 @@ async def _postgresql_migration_state(
         await engine.dispose()
 
 
-def test_workspace_packs_revision_follows_credentials() -> None:
+def test_revisions_form_one_chain() -> None:
     files = sorted(path.name for path in MIGRATION_DIRECTORY.glob("*.py"))
     assert files == [
         "0001_baseline.py",
         "0002_credentials_and_selections.py",
         "0003_workspace_packs.py",
+        "0004_feedback_reports.py",
     ]
 
     script = ScriptDirectory.from_config(_alembic_config())
-    assert script.get_heads() == ["0003_workspace_packs"]
+    assert script.get_heads() == ["0004_feedback_reports"]
     revisions = list(script.walk_revisions())
     assert [revision.revision for revision in revisions] == [
+        "0004_feedback_reports",
         "0003_workspace_packs",
         "0002_credentials_and_selections",
         "0001_baseline",
     ]
-    assert revisions[0].down_revision == "0002_credentials_and_selections"
-    assert revisions[1].down_revision == "0001_baseline"
-    assert revisions[2].down_revision is None
+    assert revisions[0].down_revision == "0003_workspace_packs"
+    assert revisions[1].down_revision == "0002_credentials_and_selections"
+    assert revisions[2].down_revision == "0001_baseline"
+    assert revisions[3].down_revision is None
 
 
 def test_fresh_postgresql_database_upgrades_to_head(

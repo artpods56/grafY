@@ -13,7 +13,10 @@ from fastapi import APIRouter, Depends
 
 from grafy_core.domain.identity import ActorContext
 
-from grafy_api.v1.routes.admin.models import AdminUserResponse
+from grafy_api.v1.routes.admin.models import (
+    AdminOperatorStatusResponse,
+    AdminUserResponse,
+)
 from grafy_api.v1.routes.auth.dependencies import (
     IdentityServiceDependency,
     browser_actor,
@@ -50,3 +53,13 @@ async def enable_user(
 ) -> AdminUserResponse:
     user = await identity.enable_user(actor=actor, user_id=user_id)
     return AdminUserResponse.from_user(user)
+
+
+@router.get("/operator", response_model=AdminOperatorStatusResponse)
+async def get_operator_status(
+    actor: Annotated[ActorContext, Depends(browser_actor)],
+    identity: IdentityServiceDependency,
+) -> AdminOperatorStatusResponse:
+    """Any signed-in user may ask; the answer is false for everyone else."""
+
+    return AdminOperatorStatusResponse(is_operator=await identity.is_operator(actor))

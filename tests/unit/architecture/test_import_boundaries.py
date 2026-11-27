@@ -464,6 +464,7 @@ def test_application_owners_do_not_depend_on_route_modules() -> None:
         api_root / "node_secrets.py",
         api_root / "credentials.py",
         api_root / "uploads.py",
+        api_root / "feedback.py",
         api_root / "services" / "composition.py",
     ]
     # Composition and the HTTP error boundary read app state on purpose. They

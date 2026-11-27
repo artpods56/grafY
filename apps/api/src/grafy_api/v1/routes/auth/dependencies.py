@@ -16,6 +16,7 @@ from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
 
 from grafy_core.application.identity import IdentityService
+from grafy_core.domain.errors import OperatorRequiredError
 from grafy_core.domain.identity import (
     ActorContext,
     WorkspaceAccess,
@@ -103,6 +104,17 @@ async def browser_actor(
         )
         request.state.auth_failure_audited = True
         raise
+
+
+async def operator_actor(
+    actor: Annotated[ActorContext, Depends(browser_actor)],
+    identity: IdentityServiceDependency,
+) -> ActorContext:
+    """A browser session whose user is a deployment operator, or 403."""
+
+    if not await identity.is_operator(actor):
+        raise OperatorRequiredError(f"User {actor.user_id} is not an operator")
+    return actor
 
 
 async def workspace_actor(
@@ -227,6 +239,7 @@ __all__ = [
     "identity_service",
     "identity_uow_factory",
     "listing_principal",
+    "operator_actor",
     "require_workspace_capability",
     "session_cookie_scheme",
     "workspace_actor",

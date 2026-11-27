@@ -441,6 +441,13 @@ export const railStyles = stylex.create({
     marginTop: "auto",
     marginBottom: "-8px",
   },
+  // Sits under Settings at the project list's row rhythm (Settings already pulls 8px
+  // of the rail gap), and is now the last item, so it tucks against the account footer.
+  railFeedback: {
+    flexShrink: 0,
+    marginTop: "-6px",
+    marginBottom: "-8px",
+  },
   itemSpan: {
     flex: "0 0 auto",
     width: "var(--grafy-rail-text)",
