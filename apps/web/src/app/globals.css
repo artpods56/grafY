@@ -87,7 +87,7 @@ body.grafy-side-panel-resizing {
    StyleX's `priority*` layers after this list, so a kit style wins on
    any property it sets. Unlayered rules above and below the legacy
    block still beat StyleX: fonts, keyframes, shell tokens, dialog and
-   toast motion, and the rail select's own chrome. */
+   toast motion. */
 @layer resets, legacy;
 
 @layer resets {
@@ -126,6 +126,19 @@ body.grafy-side-panel-resizing {
 
   button {
     font: inherit;
+  }
+
+  /* Chrome on Linux and Windows paints a native select's popup from CSS. Left
+     to inherit, a select with a translucent or transparent background lists
+     light or invisible text on white, so options carry their own opaque pair. */
+  option,
+  optgroup {
+    background-color: light-dark(#ffffff, #1f232a);
+    color: light-dark(#1f2328, #eceff4);
+  }
+
+  option:disabled {
+    color: light-dark(#7a828f, #7d8594);
   }
 
   a {

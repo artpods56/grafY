@@ -140,8 +140,6 @@ cannot resolve, which `tsc` and Vitest both pass.
     `data-swiping` is set. The stack rule supplies the gap above `Notice`'s margin.
   - MapLibre cursor overrides, `[data-canvas-lab-frozen]`, and the lab panel's 44px
     floor (`max-width: 620px` together with `pointer: coarse`).
-  - The rail workspace `<select>` chrome: icon padding, collapsed transparency, and
-    the 44px phone row. The control is the kit `Select`; those rules are the rail's face.
 - Member-form and member-row selects are the kit `Select` with `xstyle={phoneTouch.on}`.
   Their old border, background, radius, and global 44px rule are gone. Token-form
   selects are the kit `Select` at its `md` size (32px); that form had no 620px floor.
