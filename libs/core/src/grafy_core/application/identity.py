@@ -971,24 +971,34 @@ class IdentityService:
             await uow.commit()
         return user
 
+    async def is_operator(self, actor: ActorContext) -> bool:
+        """Whether ``actor`` holds deployment-operator authority right now."""
+
+        async with self._uow_factory() as uow:
+            return await self._is_operator(uow, actor)
+
+    async def _is_operator(
+        self,
+        unit_of_work: IdentityUnitOfWorkPort,
+        actor: ActorContext,
+    ) -> bool:
+        # A workspace-bound PAT never carries operator authority.
+        if actor.credential_workspace_id is not None:
+            return False
+        user = await unit_of_work.identity.get_user(actor.user_id)
+        return (
+            user is not None
+            and user.active
+            and user.email_verified
+            and user.normalized_email in self._operator_emails
+        )
+
     async def _require_operator(
         self,
         unit_of_work: IdentityUnitOfWorkPort,
         actor: ActorContext,
     ) -> None:
-        # A workspace-bound PAT never carries operator authority.
-        user = (
-            None
-            if actor.credential_workspace_id is not None
-            else await unit_of_work.identity.get_user(actor.user_id)
-        )
-        if (
-            user is None
-            or not user.active
-            or not user.email_verified
-            or user.normalized_email is None
-            or user.normalized_email not in self._operator_emails
-        ):
+        if not await self._is_operator(unit_of_work, actor):
             raise OperatorRequiredError(f"User {actor.user_id} is not an operator")
 
     async def _revoke_personal_access_token(

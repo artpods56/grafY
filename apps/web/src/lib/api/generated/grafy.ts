@@ -4,6 +4,79 @@
  */
 
 export interface paths {
+    readonly "/v1/admin/feedback": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** List Feedback Reports */
+        readonly get: operations["list_feedback_reports_v1_admin_feedback_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/admin/feedback/{report_id}": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Feedback Report */
+        readonly get: operations["get_feedback_report_v1_admin_feedback__report_id__get"];
+        readonly put?: never;
+        readonly post?: never;
+        /** Delete Feedback Report */
+        readonly delete: operations["delete_feedback_report_v1_admin_feedback__report_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        /** Update Feedback Report */
+        readonly patch: operations["update_feedback_report_v1_admin_feedback__report_id__patch"];
+        readonly trace?: never;
+    };
+    readonly "/v1/admin/feedback/{report_id}/screenshot": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /** Get Feedback Screenshot */
+        readonly get: operations["get_feedback_screenshot_v1_admin_feedback__report_id__screenshot_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/admin/operator": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        /**
+         * Get Operator Status
+         * @description Any signed-in user may ask; the answer is false for everyone else.
+         */
+        readonly get: operations["get_operator_status_v1_admin_operator_get"];
+        readonly put?: never;
+        readonly post?: never;
+        readonly delete?: never;
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
     readonly "/v1/admin/users/{user_id}": {
         readonly parameters: {
             readonly query?: never;
@@ -136,6 +209,23 @@ export interface paths {
         readonly post?: never;
         /** Revoke Session */
         readonly delete: operations["revoke_session_v1_auth_sessions__session_id__delete"];
+        readonly options?: never;
+        readonly head?: never;
+        readonly patch?: never;
+        readonly trace?: never;
+    };
+    readonly "/v1/feedback": {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly get?: never;
+        readonly put?: never;
+        /** Submit Feedback */
+        readonly post: operations["submit_feedback_v1_feedback_post"];
+        readonly delete?: never;
         readonly options?: never;
         readonly head?: never;
         readonly patch?: never;
@@ -1948,6 +2038,14 @@ export interface components {
             readonly origin: components["schemas"]["GraphOrigin"];
         };
         /**
+         * AdminOperatorStatusResponse
+         * @description Whether the signed-in user may use the operator surfaces.
+         */
+        readonly AdminOperatorStatusResponse: {
+            /** Is Operator */
+            readonly is_operator: boolean;
+        };
+        /**
          * AdminUserResponse
          * @description A user as an operator sees them: who they are and whether they may sign in.
          */
@@ -2401,6 +2499,16 @@ export interface components {
             /** Text */
             readonly text: string;
         };
+        /** Body_submit_feedback_v1_feedback_post */
+        readonly Body_submit_feedback_v1_feedback_post: {
+            /**
+             * Report
+             * @description FeedbackReportSubmission as JSON
+             */
+            readonly report: string;
+            /** Screenshot */
+            readonly screenshot?: string | null;
+        };
         /**
          * CancelAgentTurnRequest
          * @description Stop the conversation's turn. With no `turn_id`, whatever is running now.
@@ -2762,6 +2870,158 @@ export interface components {
             readonly node: components["schemas"]["GraphNode"];
             /** Source Node Id */
             readonly source_node_id: string;
+        };
+        /**
+         * FeedbackClient
+         * @description The browser the report came from.
+         */
+        readonly FeedbackClient: {
+            /**
+             * Color Scheme
+             * @enum {string}
+             */
+            readonly color_scheme: "light" | "dark";
+            /** Device Pixel Ratio */
+            readonly device_pixel_ratio: number;
+            /** User Agent */
+            readonly user_agent: string;
+            /** Viewport Height */
+            readonly viewport_height: number;
+            /** Viewport Width */
+            readonly viewport_width: number;
+        };
+        /**
+         * FeedbackElement
+         * @description The element a person picked, described well enough to find it again.
+         */
+        readonly FeedbackElement: {
+            /** Canvas Item Id */
+            readonly canvas_item_id?: string | null;
+            /** Label */
+            readonly label?: string | null;
+            readonly rect: components["schemas"]["FeedbackRect"];
+            /** Role */
+            readonly role?: string | null;
+            /** Selector */
+            readonly selector: string;
+            /** Tag */
+            readonly tag: string;
+            /** Test Id */
+            readonly test_id?: string | null;
+            /** Text */
+            readonly text?: string | null;
+        };
+        /**
+         * FeedbackKind
+         * @enum {string}
+         */
+        readonly FeedbackKind: "bug" | "idea" | "other";
+        /** FeedbackReceiptResponse */
+        readonly FeedbackReceiptResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+        };
+        /**
+         * FeedbackRect
+         * @description The picked element's box in CSS pixels, relative to the viewport.
+         */
+        readonly FeedbackRect: {
+            /** Height */
+            readonly height: number;
+            /** Width */
+            readonly width: number;
+            /** X */
+            readonly x: number;
+            /** Y */
+            readonly y: number;
+        };
+        /** FeedbackReporterResponse */
+        readonly FeedbackReporterResponse: {
+            /** Display Name */
+            readonly display_name: string | null;
+            /** Email */
+            readonly email: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+        };
+        /** FeedbackReportListResponse */
+        readonly FeedbackReportListResponse: {
+            /** Items */
+            readonly items: readonly components["schemas"]["FeedbackReportResponse"][];
+            /** Next Before */
+            readonly next_before: string | null;
+        };
+        /** FeedbackReportResponse */
+        readonly FeedbackReportResponse: {
+            readonly client: components["schemas"]["FeedbackClient"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            readonly created_at: string;
+            readonly element: components["schemas"]["FeedbackElement"] | null;
+            /** Github Issue Url */
+            readonly github_issue_url: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            readonly kind: components["schemas"]["FeedbackKind"];
+            /** Message */
+            readonly message: string;
+            /** Page Path */
+            readonly page_path: string;
+            readonly reporter: components["schemas"]["FeedbackReporterResponse"] | null;
+            /** Resolved At */
+            readonly resolved_at: string | null;
+            readonly screenshot: components["schemas"]["FeedbackScreenshotResponse"] | null;
+            readonly status: components["schemas"]["FeedbackStatus"];
+            readonly workspace: components["schemas"]["FeedbackWorkspaceResponse"] | null;
+        };
+        /**
+         * FeedbackReportUpdate
+         * @description Fields left out stay as they are; ``github_issue_url: null`` clears the link.
+         */
+        readonly FeedbackReportUpdate: {
+            /** Github Issue Url */
+            readonly github_issue_url?: string | null;
+            readonly status?: components["schemas"]["FeedbackStatus"] | null;
+        };
+        /** FeedbackScreenshotResponse */
+        readonly FeedbackScreenshotResponse: {
+            /** Byte Size */
+            readonly byte_size: number;
+            /** Content Type */
+            readonly content_type: string;
+        };
+        /**
+         * FeedbackStatus
+         * @enum {string}
+         */
+        readonly FeedbackStatus: "open" | "resolved";
+        /** FeedbackWorkspaceResponse */
+        readonly FeedbackWorkspaceResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            readonly id: string;
+            /** Name */
+            readonly name: string;
+            /** Slug */
+            readonly slug: string;
         };
         /** FieldProjectionResponse */
         readonly FieldProjectionResponse: {
@@ -5390,6 +5650,186 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    readonly list_feedback_reports_v1_admin_feedback_get: {
+        readonly parameters: {
+            readonly query?: {
+                readonly before?: string | null;
+                readonly limit?: number;
+                readonly status?: components["schemas"]["FeedbackStatus"] | null;
+            };
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["FeedbackReportListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_feedback_report_v1_admin_feedback__report_id__get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly report_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["FeedbackReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly delete_feedback_report_v1_admin_feedback__report_id__delete: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly report_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 204: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly update_feedback_report_v1_admin_feedback__report_id__patch: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly report_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "application/json": components["schemas"]["FeedbackReportUpdate"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["FeedbackReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_feedback_screenshot_v1_admin_feedback__report_id__screenshot_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path: {
+                readonly report_id: string;
+            };
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "image/jpeg": unknown;
+                    readonly "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly get_operator_status_v1_admin_operator_get: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody?: never;
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 200: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["AdminOperatorStatusResponse"];
+                };
+            };
+        };
+    };
     readonly get_user_v1_admin_users__user_id__get: {
         readonly parameters: {
             readonly query?: never;
@@ -5622,6 +6062,39 @@ export interface operations {
                     readonly [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            readonly 422: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readonly submit_feedback_v1_feedback_post: {
+        readonly parameters: {
+            readonly query?: never;
+            readonly header?: never;
+            readonly path?: never;
+            readonly cookie?: never;
+        };
+        readonly requestBody: {
+            readonly content: {
+                readonly "multipart/form-data": components["schemas"]["Body_submit_feedback_v1_feedback_post"];
+            };
+        };
+        readonly responses: {
+            /** @description Successful Response */
+            readonly 201: {
+                headers: {
+                    readonly [name: string]: unknown;
+                };
+                content: {
+                    readonly "application/json": components["schemas"]["FeedbackReceiptResponse"];
+                };
             };
             /** @description Validation Error */
             readonly 422: {

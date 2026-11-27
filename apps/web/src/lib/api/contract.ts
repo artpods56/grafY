@@ -275,3 +275,28 @@ export type SaveUploadedArtifactRequest =
 
 export type UploadResponse = Schemas["ImageUploadItemResponse"];
 export type UploadTarget = Schemas["UploadTargetResponse"];
+
+// --- Feedback --------------------------------------------------------------
+
+export type FeedbackKind = Schemas["FeedbackKind"];
+export type FeedbackStatus = Schemas["FeedbackStatus"];
+export type FeedbackElement = Schemas["FeedbackElement"];
+export type FeedbackClient = Schemas["FeedbackClient"];
+export type FeedbackReceipt = Schemas["FeedbackReceiptResponse"];
+export type FeedbackReport = Schemas["FeedbackReportResponse"];
+export type FeedbackReportList = Schemas["FeedbackReportListResponse"];
+export type FeedbackReportUpdate = Schemas["FeedbackReportUpdate"];
+export type AdminOperatorStatus = Schemas["AdminOperatorStatusResponse"];
+
+/**
+ * The JSON the browser sends in the `report` form field of `POST /v1/feedback`.
+ * The route reads it from a multipart field, so the schema does not name it.
+ */
+export interface FeedbackReportSubmission {
+  readonly kind: FeedbackKind;
+  readonly message: string;
+  readonly page_path: string;
+  readonly workspace_id: string | null;
+  readonly element: FeedbackElement | null;
+  readonly client: FeedbackClient;
+}

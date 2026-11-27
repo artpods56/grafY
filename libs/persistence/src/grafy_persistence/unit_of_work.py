@@ -37,6 +37,11 @@ from grafy_core.ports.credentials import (
     CredentialRepositoryPort,
     NodeCredentialSelectionRepositoryPort,
 )
+from grafy_core.ports.feedback import (
+    FeedbackRepositoryPort,
+    FeedbackUnitOfWorkPort,
+)
+from grafy_persistence.adapters.repositories.feedback import SqlFeedbackRepository
 from grafy_persistence.adapters.repositories.credentials import (
     SqlCredentialRepository,
     SqlNodeCredentialSelectionRepository,
@@ -90,6 +95,7 @@ class _SqlAlchemyUnitOfWorkState:
     identity: IdentityRepositoryPort
     security_audit: SecurityAuditRepositoryPort
     workspace_packs: WorkspacePackRepositoryPort
+    feedback: FeedbackRepositoryPort
     uploads: UploadRepositoryPort
     library_folders: LibraryFolderRepositoryPort
     collaboration: CollaborationRepositoryPort
@@ -205,6 +211,7 @@ class SqlAlchemyUnitOfWork(
     AgentKeyUnitOfWorkPort,
     AgentConversationUnitOfWorkPort,
     AgentTurnUnitOfWorkPort,
+    FeedbackUnitOfWorkPort,
     IdentityUnitOfWorkPort,
     UploadUnitOfWorkPort,
     CollaborationUnitOfWorkPort,
@@ -292,6 +299,11 @@ class SqlAlchemyUnitOfWork(
 
     @property
     @override
+    def feedback(self) -> FeedbackRepositoryPort:
+        return self._entered_state().feedback
+
+    @property
+    @override
     def security_audit(self) -> SecurityAuditRepositoryPort:
         return self._entered_state().security_audit
 
@@ -332,6 +344,7 @@ class SqlAlchemyUnitOfWork(
                 agent_turns=SqlAgentTurnRepository(session),
                 identity=SqlIdentityRepository(session),
                 workspace_packs=SqlWorkspacePackRepository(session),
+                feedback=SqlFeedbackRepository(session),
                 security_audit=SqlSecurityAuditRepository(session),
                 uploads=SqlUploadRepository(session),
                 library_folders=SqlLibraryFolderRepository(session),

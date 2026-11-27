@@ -3,12 +3,14 @@
 import * as React from "react";
 import useSWR, { useSWRConfig, type ScopedMutator } from "swr";
 import {
+  getOperatorStatus,
   listMyWorkspaceInvitations,
   listWorkspaceInvitations,
   listWorkspaceMembers,
   listWorkspacePacks,
   listWorkspaces,
   workspacePacksPath,
+  type AdminOperatorStatus,
   type CatalogPack,
   type NodeRegistry,
   type ProjectList,
@@ -122,5 +124,13 @@ export function useMyWorkspaceInvitations(userId: string | undefined) {
   return useSWR<readonly WorkspaceInvitationForRecipient[]>(
     userId ? ["my-workspace-invitations", userId] : null,
     () => listMyWorkspaceInvitations(),
+  );
+}
+
+/** Whether the signed-in user may open the operator surfaces. */
+export function useOperatorStatus(userId: string | undefined) {
+  return useSWR<AdminOperatorStatus>(
+    userId ? ["operator-status", userId] : null,
+    () => getOperatorStatus(),
   );
 }

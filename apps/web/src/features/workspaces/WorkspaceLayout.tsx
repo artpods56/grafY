@@ -7,11 +7,13 @@ import {
   ChevronsUpDown,
   Download,
   FolderTree,
+  Inbox,
   Layers,
   LoaderCircle,
   LogOut,
   Mail,
   Menu as MenuIcon,
+  MessageSquarePlus,
   Monitor,
   Moon,
   PanelLeftClose,
@@ -51,6 +53,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuthSession } from "@/features/auth/AuthSessionBoundary";
+import { useFeedback } from "@/features/feedback/FeedbackProvider";
 import { useWorkbenchChrome } from "@/features/workbench/shell/WorkbenchChromeContext";
 import { SIDE_PANEL_ELEMENT_ID } from "@/features/workbench/artifacts/side-panel/workbench-side-panel-state";
 import {
@@ -60,6 +63,7 @@ import {
 import {
   useProjectSummaryRefresh,
   useMyWorkspaceInvitations,
+  useOperatorStatus,
   useWorkspaceProjects,
   useWorkspaces,
 } from "@/hooks/use-api";
@@ -343,6 +347,8 @@ export function WorkspaceRail({
     error: invitationError,
     mutate: mutateInvitations,
   } = useMyWorkspaceInvitations(session.user_id);
+  const feedback = useFeedback();
+  const { data: operatorStatus } = useOperatorStatus(session.user_id);
   const [invitationDialogOpen, setInvitationDialogOpen] = React.useState(false);
   const [invitationBusyId, setInvitationBusyId] = React.useState<string | null>(
     null,
@@ -1402,6 +1408,37 @@ export function WorkspaceRail({
           </span>
         </button>
 
+        {feedback ? (
+          <button
+            type="button"
+            className={
+              stylex.props(railStyles.railItem, railStyles.railFeedback)
+                .className
+            }
+            onClick={() => {
+              closeMobileNavigation(false);
+              feedback.start({ workspaceId: activeWorkspace?.id ?? null });
+            }}
+            title="Send feedback"
+          >
+            <MessageSquarePlus
+              size={15}
+              aria-hidden="true"
+              className={railIconClass}
+            />
+            <span
+              className={
+                stylex.props(
+                  railStyles.itemSpan,
+                  visuallyCollapsed && railStyles.copyHidden,
+                ).className
+              }
+            >
+              Send feedback
+            </span>
+          </button>
+        ) : null}
+
         <div className={stylex.props(railStyles.railFooter).className}>
           <Popover.Root
             open={accountMenuOpen}
@@ -1442,7 +1479,10 @@ export function WorkspaceRail({
                 ) : null}
               </span>
             </Popover.Trigger>
-            <Popover.Portal container={mobileViewport ? mobileRailRef : null}>
+            {/* `undefined`, not `null`: Base UI waits forever for an explicit null container. */}
+            <Popover.Portal
+              container={mobileViewport ? mobileRailRef : undefined}
+            >
               <Popover.Positioner
                 className={stylex.props(railStyles.accountPositioner).className}
                 side="top"
@@ -1513,6 +1553,22 @@ export function WorkspaceRail({
                     }
                     role="separator"
                   />
+                  {operatorStatus?.is_operator ? (
+                    <button
+                      type="button"
+                      className={
+                        stylex.props(railStyles.accountMenuItem).className
+                      }
+                      onClick={() => {
+                        setAccountMenuPath(null);
+                        closeMobileNavigation(false);
+                        router.push("/admin/feedback");
+                      }}
+                    >
+                      <Inbox size={14} aria-hidden="true" />
+                      Feedback reports
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className={
