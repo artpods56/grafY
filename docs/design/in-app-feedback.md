@@ -45,11 +45,19 @@ rather than its icon, or a canvas card (`data-card-id`) rather than a text run.
 The screenshot is taken before the dialog opens, and the picker's own chrome carries
 `data-feedback-ui`, so the image never shows Grafy's feedback UI. `modern-screenshot`
 redraws the DOM rather than reading pixels from the screen. As a result, WebGL
-canvases (MapLibre maps, some scan viewers) come out blank, and scrolled lists show
-their top. The dialog warns when a canvas overlaps the crop. The browser's
-screen-capture API would capture exact pixels, but it asks for permission every
-time. The crop is the element plus 48px around it, with the element outlined in
-the image. It is sent only when the person leaves **Include screenshot** ticked.
+canvases (MapLibre maps, some scan viewers) come out blank, and the dialog warns
+when a canvas overlaps the crop. The browser's screen-capture API would capture
+exact pixels, but it asks for permission every time. The crop is the element plus
+48px around it, with the element outlined in the image. It is sent only when the
+person leaves **Include screenshot** ticked.
+
+Only the region around the pick is redrawn. Firefox took a minute to draw a whole
+workbench page of about 10k elements, and the picker gave up, so the redraw starts
+at the nearest clipping ancestor that can hold the crop (the canvas, for anything
+on it). Out-of-flow elements that do not reach the crop, such as far-away cards,
+are left out, which cannot move anything else. If the redraw still fails, one retry
+leaves images, canvases and frames out. Large crops are drawn smaller and stepped
+down to JPEG to stay under the upload limit.
 
 The server accepts PNG or JPEG up to 2 MiB, checked by magic bytes, and at most 20
 reports per person per hour.

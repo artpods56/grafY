@@ -92,7 +92,10 @@ function runFeedbackEffect(
             url: URL.createObjectURL(blob),
             mayMissCanvas,
           }),
-        () => dispatch({ type: "captureFailed" }),
+        (error: unknown) => {
+          console.warn("Feedback screenshot failed.", error);
+          dispatch({ type: "captureFailed" });
+        },
       );
       return;
     case "send":

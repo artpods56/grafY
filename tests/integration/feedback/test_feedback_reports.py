@@ -166,6 +166,11 @@ async def test_a_member_sends_feedback_and_an_operator_triages_it(
             )
             assert not_github.status_code == 422
 
+            # A row whose object is gone answers 404 rather than failing.
+            [stored] = (tmp_path / "workspace").rglob(f"{report_id}.png")
+            stored.unlink()
+            assert client.get(f"{report_path}/screenshot").status_code == 404
+
             assert client.delete(report_path, headers=headers).status_code == 204
             assert client.get(report_path).status_code == 404
             assert client.get(f"{report_path}/screenshot").status_code == 404

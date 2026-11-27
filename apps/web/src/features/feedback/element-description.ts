@@ -178,6 +178,14 @@ function cssPath(element: Element): string {
   return parts.join(" > ").slice(0, 1000) || element.tagName.toLowerCase();
 }
 
+/** Text as laid out, so separate blocks stay separate words; jsdom has no innerText. */
+function visibleText(element: Element): string | null {
+  if (element instanceof HTMLElement && typeof element.innerText === "string") {
+    return element.innerText;
+  }
+  return element.textContent;
+}
+
 /** Describe the picked element for the report and name it for the person. */
 export function describeTarget(element: Element): PickedTarget {
   const rect = element.getBoundingClientRect();
@@ -185,7 +193,18 @@ export function describeTarget(element: Element): PickedTarget {
   const role = element.getAttribute("role") ?? implicitRole(element);
   const card = element.closest("[data-card-id]");
   const label = accessibleLabel(element);
-  const text = squash(element.textContent, MAX_TEXT);
+  const text = squash(visibleText(element), MAX_TEXT);
+  // A card reads as one block of its contents; its first line is its title.
+  const cardTitle =
+    card === element
+      ? squash(
+          visibleText(card.querySelector("[data-card-header]") ?? card)?.split(
+            "\n",
+            1,
+          )[0],
+          MAX_NAME_LABEL,
+        )
+      : null;
   const description: FeedbackElement = {
     tag: tag.slice(0, 32),
     selector: cssPath(element),
@@ -197,7 +216,8 @@ export function describeTarget(element: Element): PickedTarget {
     rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
   };
 
-  const shown = label ?? (text && text.length <= MAX_NAME_LABEL ? text : null);
+  const shown =
+    label ?? cardTitle ?? (text && text.length <= MAX_NAME_LABEL ? text : null);
   const cardKind = card
     ? (CARD_KIND_NAMES[card.getAttribute("data-card-kind") ?? ""] ?? "Card")
     : null;
