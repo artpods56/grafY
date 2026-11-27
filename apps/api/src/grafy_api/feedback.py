@@ -158,6 +158,9 @@ class FeedbackService:
             report = await uow.feedback.get(report_id)
         if report is None or report.screenshot is None:
             raise NotFoundError("Feedback screenshot", str(report_id))
+        # The row can outlive its object, for example after the bucket changes.
+        if await self._storage.stat(self._bucket, report.screenshot.path) is None:
+            raise NotFoundError("Feedback screenshot", str(report_id))
         stream = await self._storage.load(self._bucket, report.screenshot.path)
         with stream:
             data = stream.read()
